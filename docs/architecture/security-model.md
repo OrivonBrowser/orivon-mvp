@@ -102,7 +102,9 @@ Three precision requirements, since the general statement permits a wrong implem
 - **`*` means public unicast only.** A P2P app declares `tcp.connect: ["*:*"]`, so this must
   be specified, not inferred: private ranges, loopback, link-local, broadcast and multicast are
   denied unless separately declared. This holds for `*` paired with any port or port range
-  (`*:6697`, `*:8000-8999`), not only `*:*`. A reserved port (A82) is reachable under `*` only
+  (`*:6697`, `*:8000-8999`), not only `*:*`, for a `tcp.connect` name by its resolved address and
+  for an `https.connect` request only when it is itself an address literal: `https.connect` never
+  resolves, so a public name that resolves to a local address still passes (A245). A reserved port (A82) is reachable under `*` only
   from a pattern that names that exact port, such as `*:6697`; `*:*` and ranges never reach it,
   and adding such a pattern to a manifest that had `*:*` re-prompts (T19).
 - **Resolve once, validate every returned address, then connect to the IP literal.** Checking a

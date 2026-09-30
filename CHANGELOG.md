@@ -15,7 +15,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 - **A wildcard host pairs with a port in `tcp.connect` and `https.connect`**: `*:6697` and `*:6660-6699` are declarable, so an
   app that dials a server the person types reaches a reserved port by naming it. `*:*` and ranges still skip reserved ports, and
-  the prompt names the ports a wildcard pattern opens; `udp.send` keeps `*:*` only.
+  the prompt names the ports a wildcard pattern opens and what each is for, and every named pattern the wildcard does not cover; a
+  granted `*` covers public hosts only, so naming a local address under it asks again; `udp.send` keeps `*:*` only.
 - **A forked child behaves as a Node child does**: it ends when nothing listens on its IPC channel, `setTimeout` and friends
   return Node's objects (`unref`, `refresh`), `process.versions.node` is set, a taken port is `EADDRINUSE`, a bundled
   `require('assert')` is the function, and `fs.Stats` reports the modes of an app-private store. The Lounge's server runs on it.

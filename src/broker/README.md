@@ -63,8 +63,9 @@ pattern that names the exact port, which a person then approved. It does not lim
 `checkConnect`. A wildcard host follows the same rule: `*:6697` names the port and reaches it,
 `*:*` and `*:6660-6699` do not, and the host must still be public unicast. `tcp.connect` and
 `https.connect` may declare a wildcard host with a port or a range; `udp.send` only `*:*`. An
-update that adds a pattern naming a reserved port widens reach even under a granted `*:*`
-(`policy/update.ts`'s `covers`). Why a range is not a naming, why the check is per pattern, and
+update that adds a pattern naming a reserved port, or a private or loopback address, widens reach
+even under a granted `*:*` (`policy/update.ts`'s `covers`, which reads the grammar through
+`connect-patterns.ts`). Why a range is not a naming, why the check is per pattern, and
 where it runs: `reserved-ports.ts` and `connect-preflight.ts`.
 
 ### `index.ts` and the files split from it
