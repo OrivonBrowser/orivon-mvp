@@ -118,7 +118,9 @@ export class IncomingMessage extends Readable {
    * never attached a handler to from throwing an uncaught 'aborted'.
    */
   override _destroy (error: Error | null, callback: (error?: Error | null) => void): void {
-    if (!this.complete) {
+    // A message whose end was never read counts as aborted even when all of it arrived, as in Node.
+    const state = this as unknown as { _readableState?: { endEmitted?: boolean } }
+    if (!this.complete || state._readableState?.endEmitted !== true) {
       this.aborted = true
       this.emit('aborted')
       if (this.socket !== null && !this.socket.destroyed) this.socket.destroy()

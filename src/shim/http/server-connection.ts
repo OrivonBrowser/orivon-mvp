@@ -59,7 +59,6 @@ export class HttpConnection {
   private backlog: Uint8Array = new Uint8Array(0)
   private hold = false
   private pausedForBacklog = false
-  private peerEnded = false
   private failed = false
   private upgraded = false
   private gone = false
@@ -107,8 +106,6 @@ export class HttpConnection {
       this.parser = null
       this.hold = true
       this.settle()
-    } else if (this.peerEnded && parser.midMessage) {
-      this.clientError(codedError(Error, 'HPE_INVALID_EOF_STATE', 'Parse Error'))
     }
   }
 
@@ -190,7 +187,7 @@ export class HttpConnection {
   /** Both halves of the current request are done: close, or go on to the next one. */
   private settle (): void {
     if (this.req === null || !this.requestDone || !this.responseFinished) return
-    const last = this.res?._last === true || (this.peerEnded && this.backlog.length === 0)
+    const last = this.res?._last === true
     this.req = null
     this.res = null
     this.requestDone = false
@@ -234,10 +231,17 @@ export class HttpConnection {
     this.destroySoon()
   }
 
+  /**
+   * The peer's FIN. As Node's server does not keep a half-open connection, a
+   * request still waiting for its response is aborted and the socket ends; a
+   * request cut off part-way gets the clientError treatment instead.
+   */
   private readonly onEnd = (): void => {
-    this.peerEnded = true
-    if (this.parser?.midMessage === true) this.clientError(codedError(Error, 'HPE_INVALID_EOF_STATE', 'Parse Error'))
-    else if (this.req === null && this.backlog.length === 0) this.socket.end()
+    if (this.gone || this.upgraded || this.failed) return
+    if (this.parser?.midMessage === true) { this.clientError(codedError(Error, 'HPE_INVALID_EOF_STATE', 'Parse Error')); return }
+    this.hold = true
+    if (this.req !== null && !this.responseFinished) this.req.destroy(connResetError('aborted'))
+    this.socket.end()
   }
 
   private readonly onError = (error: Error): void => {

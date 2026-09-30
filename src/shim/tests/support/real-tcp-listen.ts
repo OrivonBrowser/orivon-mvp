@@ -9,18 +9,45 @@
 // closes every accepted socket, as the broker does with its derived handles.
 
 import { createServer as createRealServer, type Socket as RealSocket } from 'node:net'
-import { Duplex } from 'node:stream'
 import type { TcpServer, TcpSocket } from '../../../contracts/handles.js'
 import type { NetListenFn } from '../../net/server.js'
 
+/**
+ * The byte streams of one accepted socket. Built by hand: Duplex.toWeb waits for
+ * 'close' before it ends the readable side, and a half-open socket (the peer sent
+ * its FIN, this side has not) never closes, so the broker's "readable ended on FIN"
+ * would go unseen.
+ */
+function streamsOf (raw: RealSocket): { readable: ReadableStream<Uint8Array>, writable: WritableStream<Uint8Array> } {
+  let ended = false
+  const readable = new ReadableStream<Uint8Array>({
+    start (controller) {
+      raw.on('data', (chunk: Buffer) => {
+        controller.enqueue(new Uint8Array(chunk))
+        if ((controller.desiredSize ?? 0) <= 0) raw.pause()
+      })
+      raw.on('end', () => { ended = true; controller.close() })
+      raw.on('close', () => { if (!ended) { ended = true; controller.error(new Error('connection reset')) } })
+    },
+    pull () { raw.resume() },
+    cancel () { raw.destroy() }
+  }, { highWaterMark: 64 * 1024, size: (chunk) => chunk.byteLength })
+  const writable = new WritableStream<Uint8Array>({
+    write: async (chunk) => await new Promise<void>((resolve, reject) => { raw.write(chunk, (error) => (error == null ? resolve() : reject(error))) }),
+    close: async () => await new Promise<void>((resolve) => { raw.end(() => resolve()) }),
+    abort: () => { raw.destroy() }
+  })
+  return { readable, writable }
+}
+
 function wrap (raw: RealSocket): TcpSocket {
-  const web = Duplex.toWeb(raw)
+  const { readable, writable } = streamsOf(raw)
   return {
     id: 'real-accepted-socket',
     closed: new Promise<void>((resolve) => raw.once('close', () => resolve())),
     close: async () => { raw.destroy() },
-    readable: web.readable as ReadableStream<Uint8Array>,
-    writable: web.writable as WritableStream<Uint8Array>,
+    readable,
+    writable,
     remoteAddress: raw.remoteAddress ?? '127.0.0.1',
     remotePort: raw.remotePort ?? 0,
     localAddress: raw.localAddress ?? '127.0.0.1',
