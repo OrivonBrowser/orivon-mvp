@@ -85,7 +85,8 @@ export function createOverlayView (spec: OverlayViewSpec): OverlayViewHandle {
   view.setBorderRadius(CORNER_RADIUS)
   registerOverlayIpc(contents, url, spec.port)
   spec.onCreated?.(contents)
-  contents.on('blur', spec.onBlur)
+  // Not from inside the native call that raised it: a window shrunk under an open popup blurs the popup while the resize is still running, and taking the view out of the window there kills the process.
+  contents.on('blur', () => { setImmediate(spec.onBlur) })
   contents.on('focus', spec.onFocus)
   contents.on('render-process-gone', spec.onGone)
   void contents.loadURL(url)

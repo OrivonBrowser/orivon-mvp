@@ -90,6 +90,17 @@ describe('createOverlayView', () => {
     expect(on.mock.calls.map(([event]) => event)).toEqual(expect.arrayContaining(['blur', 'focus']))
   })
 
+  it('reports a blur after the native call that raised it has returned', async () => {
+    const onBlur = vi.fn()
+    createOverlayView({ ...spec(), onBlur })
+    const on = state.contents?.['on'] as ReturnType<typeof vi.fn>
+    const raise = on.mock.calls.find(([event]) => event === 'blur')?.[1] as () => void
+    raise()
+    expect(onBlur).not.toHaveBeenCalled()
+    await new Promise((resolve) => { setImmediate(resolve) })
+    expect(onBlur).toHaveBeenCalledTimes(1)
+  })
+
   it('reports a renderer that died to the host', () => {
     const onGone = vi.fn()
     createOverlayView({ ...spec(), onGone })
