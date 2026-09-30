@@ -29,18 +29,12 @@ import { resolveSignInHosts } from './sign-in-identity-test-seam.js'
  * navigation that starts elsewhere from a `loadURL` while the tab is on a
  * sign-in host still leaves with the Firefox User-Agent.
  *
- * Both UA strings are built lazily, inside the handler, and only on an
- * actual CHANGE of state -- never at wire time, and never on a navigation
- * that leaves the identity exactly as it already was. Two reasons, both
- * load-bearing: an ordinary tab that never visits a sign-in host must never
- * call `webContents.setUserAgent()` at all (Electron has no "unset", so a
- * redundant call is not a no-op, just a wasted one -- every navigation
- * would otherwise re-assert the same Chrome UA it already carries); and
- * `process.versions.chrome` (`chromeUserAgent`'s own input) does not exist
- * outside a real Electron process, which is exactly the environment
- * `tabs.test.ts` wires this same function under with a plain mocked
- * `WebContents` -- computing it unconditionally at wire time broke every
- * such test, not just a sign-in one. */
+ * Both UA strings are built lazily, only on an actual CHANGE of state: an
+ * ordinary tab that never visits a sign-in host must never call
+ * `webContents.setUserAgent()` (Electron has no "unset"), and
+ * `process.versions.chrome` does not exist outside a real Electron process,
+ * which is where `tabs.test.ts` wires this function with a mocked
+ * `WebContents`. */
 export function wireSignInIdentity (webContents: WebContents): void {
   const hosts = resolveSignInHosts()
   let usingFirefoxIdentity = false
