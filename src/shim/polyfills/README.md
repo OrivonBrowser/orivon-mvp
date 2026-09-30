@@ -3,7 +3,7 @@
 **What lives here.** The modules a dependency graph needs just to *evaluate*, independent of any
 capability: wrappers over the `buffer`, `crypto`, `os`, `path`, `util` and `zlib` packages, and
 hand-written `assert`, `querystring`, `string_decoder`, `timers`, `url` and `stream/promises`,
-`module` (`createRequire` for a native addon's `.node` path, over [`../addon/`](../addon/)),
+`module` (`createRequire`: a native addon's `.node` path over [`../addon/`](../addon/), and any other file through [`cjs-loader.ts`](cjs-loader.ts)),
 `worker_threads` (`Worker` over [`../child-process/`](../child-process/)'s Web Worker runtime,
 `isMainThread`/`parentPort`/`workerData` read at evaluation time) and `vm`
 (code run in the page's own context), and the modules a server's dependency graph asks for as it
@@ -62,3 +62,19 @@ more. Provisional: what would settle it is the platform's `AsyncContext`, which 
 **`diagnostics_channel` is real JavaScript** ([`diagnostics-channel.ts`](diagnostics-channel.ts)):
 one channel per name held by a `WeakRef`, `bindStore`/`runStores` over `AsyncLocalStorage`, and
 `tracingChannel`. A subscriber that throws surfaces on the next tick, as in Node.
+
+**The run-time `require` reads files and names builtins; it never searches `node_modules`**
+([`cjs-loader.ts`](cjs-loader.ts), behind `createRequire` and a forked child's global
+`require`). A relative or absolute path loads through the exact name, `.js`, `.cjs`, `.json` and
+`/index.js`, read with the shim's `readFileSync` (so it works on a page as well as in a Worker)
+and evaluated by `vm.compileFunction` with `(exports, require, module, __filename, __dirname)`.
+That evaluation needs the served CSP's `'unsafe-eval'`, which a page's document and the child
+host's document both carry, and a Worker started from a `blob:` URL inherits; where a CSP refuses
+it the call fails with a named error, never silently. A bare name is answered from
+[`cjs-builtins.ts`](cjs-builtins.ts)'s table, or fails `MODULE_NOT_FOUND` with a message that says
+there is no `node_modules` resolution: `ws`'s `try { require('bufferutil') }` depends on that
+code. `child_process`, `wasi`, `worker_threads` and `electron` are left out of the table, since
+each stands on machinery a loader should not pull into every bundle; `registerBuiltin` adds
+one. Every module's `require` shares one cache, keyed by resolved path. Cycles return the partial
+exports as Node does, and a module that throws is dropped from the cache. Provisional: package
+resolution would settle whether a `node_modules` directory ever appears in an app's own fs.

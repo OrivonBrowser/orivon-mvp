@@ -63,6 +63,17 @@ from that text through a `blob:` URL, which works whatever bundler a port uses a
 CSP's `worker-src 'self' blob:`. `tests/runtime-bundle.test.ts` fails when it is stale: after
 changing anything the runtime imports, run it with `ORIVON_WRITE_WORKER_RUNTIME=1`.
 
+**A forked child or thread gets a global `require`** (`runtime-fork.ts`'s `setupChildProcess`),
+the loader behind `createRequire` ([`../polyfills/cjs-loader.ts`](../polyfills/cjs-loader.ts)):
+esbuild's `__require` helper reads a global `require` when a bundle's dynamic `require` runs. The
+loader's builtin table statically holds most of the shim, which makes `runtime.generated.json`
+roughly five times larger than it was without it; every child pays that parse, a spawned WASI
+program included.
+
+**A forked child's `console` methods also write to its stdout and stderr** (`routeConsole`), so
+the parent's `child.stdout` and `child.stderr` see them; the Worker's own console still gets every
+call.
+
 **`early-globals.ts` must stay the runtime's first import.** Polyfills in the bundle read
 `process` while they load; in a tab the preload installs it first, and in a Worker this module does.
 

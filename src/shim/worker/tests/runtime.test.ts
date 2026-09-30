@@ -207,6 +207,19 @@ describe('runFork', () => {
     expect(own).toEqual(['log:listening on %s:%d 127.0.0.1 9000', 'info:[object Object]', 'warn:careful', 'error:boom 7'])
   })
 
+  it('installs a global require that esbuild\'s __require finds: a builtin by name, MODULE_NOT_FOUND for any other bare name', async () => {
+    const scope = fakeScope()
+    const parent = fakeParent()
+    let seen: { path: unknown, code: unknown } | undefined
+    await runFork(forkStart(await orivonPort()), parent, scope, async () => {
+      const require = (scope as unknown as { require: (id: string) => unknown }).require
+      let code: unknown
+      try { require('bufferutil') } catch (error) { code = (error as { code?: string }).code }
+      seen = { path: typeof (require('path') as { join: unknown }).join, code }
+    })
+    expect(seen).toEqual({ path: 'function', code: 'MODULE_NOT_FOUND' })
+  })
+
   it('holds a message sent while the module loads, and delivers it once the module has run', async () => {
     const scope = fakeScope()
     const parent = fakeParent()
