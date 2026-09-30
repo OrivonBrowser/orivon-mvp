@@ -61,7 +61,7 @@ root is a no-op: a rename is only as durable as the broker's own `rename()` make
 for `ctime` and `ino`, and `express.static` throws without them). `orivon.fs` reports size, kind
 and mtime, so every other field is a fixed answer: `ino` is a 53-bit FNV-style hash of the
 confined path (stable for one path, different across paths); `dev` 1, `nlink` 1, `uid` and `gid`
-0, `rdev` 0; `mode` is a regular file `0o644` or a directory `0o755`; `blksize` 4096 and
+0, `rdev` 0; `mode` is a regular file `0o600` or a directory `0o700` (the app's files are private to the app, and a server that warns about a world-readable file finds none); `blksize` 4096 and
 `blocks` counts 512-byte units of whole 4096-byte blocks; `atime`, `ctime` and `birthtime`
 follow `mtime`. The `is*` device predicates are false.
 

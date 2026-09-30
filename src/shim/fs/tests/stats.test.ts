@@ -50,6 +50,11 @@ describe('toNodeStats: the full Node field set', () => {
     expect(toNodeStats(file).blocks).toBe(16)
   })
 
+  it('reports what an app-private store is: no permission for anyone but the owner, so a server that checks for a world-readable file finds none', () => {
+    expect(toNodeStats(file).mode & 0o777).toBe(0o600)
+    expect(toNodeStats({ size: 0, isFile: false, isDirectory: true, mtimeMs: 0 }).mode & 0o777).toBe(0o700)
+  })
+
   it('has the shape the etag package checks', () => {
     const stats = toNodeStats(file, '/a')
     expect(typeof stats === 'object' && stats.ctime instanceof Date && typeof stats.ino === 'number').toBe(true)

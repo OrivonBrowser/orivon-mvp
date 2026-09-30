@@ -60,7 +60,7 @@ export function toNodeStats (stat: FileStat, identity = ''): NodeStats {
   return {
     dev: 1,
     ino: inodeOf(identity),
-    mode: stat.isDirectory ? S_IFDIR | 0o755 : S_IFREG | 0o644,
+    mode: stat.isDirectory ? S_IFDIR | 0o700 : S_IFREG | 0o600,
     nlink: 1,
     uid: 0,
     gid: 0,
