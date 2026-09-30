@@ -49,6 +49,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Volume Master works; link middle-clicks no longer crash; no white flashes; Settings updates live; extension popups close. Google sign-in still refused.
 - Google's sign-in pages now get a Firefox identity (headers, user agent, no userAgentData); untested against a real account until the owner tries it.
 - The compatibility matrix lists every Node module, Electron export, permission and protocol, checked against the code: about 1,500 rows, most of them gaps.
+- The Lounge runs its real, unmodified Node server in a forked Worker: accounts, IRC, SQLite scrollback, all driven end to end headless.
 
 ### In my head
 - Explored what `child_process` can safely mean: a WASI program in the app's own tab, native `subprocess` still excluded (`docs/planning/child-process-design.md`).
