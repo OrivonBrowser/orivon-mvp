@@ -3,6 +3,7 @@
 import type { WebContents } from 'electron'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { BLANK_URL } from './tab-factory.js'
+import { signalState } from './tab-signals.js'
 import type { TabRecord, TabState } from './tab-types.js'
 
 /** What a TabState reads that is not on the record or the page. */
@@ -27,6 +28,11 @@ export function buildTabState (id: string, record: TabRecord | undefined, wc: We
     favicon: record?.favicon ?? null,
     isNewTab: url === BLANK_URL || (record?.isDashboardTab === true && url === env.dashboardUrl),
     splitWith: env.partnerOf(id),
-    isInternal: record?.internalPage != null
+    isInternal: record?.internalPage != null,
+    pinned: record?.pinned ?? false,
+    muted: record?.muted ?? false,
+    audible: false,
+    crashed: record?.crashed ?? null,
+    ...(record === undefined ? {} : signalState(record, wc))
   }
 }

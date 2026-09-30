@@ -96,7 +96,9 @@ export class TabManager {
       atCapacity: () => this.atCapacity(),
       htmlFullscreenChanged: (id, entered) => { shell?.htmlFullscreenChanged(id, entered) },
       isClosing: () => this.disposed,
-      devtools: shell?.devtools
+      devtools: shell?.devtools,
+      services: shell?.services,
+      runCommand: (id) => { shell?.runCommand?.(id) }
     }
     this.opener = new TabOpener({
       add: (id, record) => { this.add(id, record) },
@@ -238,6 +240,8 @@ export class TabManager {
   private forgetTab (id: string, closeView: boolean, handedOn = false): void {
     const record = this.tabs.get(id)
     if (record === undefined) return
+    const reason = this.disposed ? 'window-closing' : handedOn ? 'moved' : closeView ? 'closed' : 'gone'
+    this.shell?.tabLifecycle?.tabClosing({ id, index: this.order.indexOf(id), record, reason, window: this.viewHost.window })
     // Every reason a tab leaves (closed, crashed, handed on) is "gone" alike.
     this.shell?.tabLifecycle?.tabClosed(record.view.webContents)
 

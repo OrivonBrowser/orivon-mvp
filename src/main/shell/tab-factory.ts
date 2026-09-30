@@ -68,6 +68,9 @@ export class TabFactory {
       isDashboardTab: false,
       internalPage: null,
       parkedViews: new Map(),
+      pinned: false,
+      muted: false,
+      crashed: null,
       ...extra
     }
   }

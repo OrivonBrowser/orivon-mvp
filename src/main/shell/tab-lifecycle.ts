@@ -12,11 +12,28 @@
 // event fires unconditionally, so one place decides what "no window yet"
 // means rather than every call site guessing.
 import type { BaseWindow, WebContents } from 'electron'
+import type { TabRecord } from './tab-types.js'
+
+/** Why a tab leaves its window: closed by the person or the app, its renderer gone,
+ * handed to another window alive, or the window itself closing. */
+export type TabClosingReason = 'closed' | 'gone' | 'moved' | 'window-closing'
+
+/** What a closing tab still holds when `tabClosing` fires: its record, with the
+ * view alive, and the position it had in the strip. */
+export interface TabClosingInfo {
+  readonly id: string
+  readonly index: number
+  readonly record: TabRecord
+  readonly reason: TabClosingReason
+  readonly window: BaseWindow | undefined
+}
 
 export interface TabLifecycleListener {
   tabCreated?: (contents: WebContents, window: BaseWindow | undefined) => void
   tabActivated?: (contents: WebContents) => void
   tabClosed?: (contents: WebContents) => void
+  /** Ahead of `tabClosed`, while the tab is still in the collection. */
+  tabClosing?: (info: TabClosingInfo) => void
   /** A navigation swapped this tab's WebContentsView for a fresh one
    * (tab-view.ts's repartitionView) -- same tab, new WebContents; the old
    * one is retired right after. */
@@ -38,6 +55,10 @@ export class TabLifecycle {
 
   tabActivated (contents: WebContents): void {
     for (const listener of this.listeners) listener.tabActivated?.(contents)
+  }
+
+  tabClosing (info: TabClosingInfo): void {
+    for (const listener of this.listeners) listener.tabClosing?.(info)
   }
 
   tabClosed (contents: WebContents): void {

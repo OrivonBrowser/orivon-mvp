@@ -18,6 +18,7 @@ import { parseInternalUrl } from '../pages/internal-pages.js'
 import { releaseOriginDocument, trackDocumentOrigin } from './tab-origin-liveness.js'
 import { wireSignInIdentity } from './sign-in-identity-tab.js'
 import { watchAppTab } from './app-tab-watch.js'
+import { wireTabSignals } from './tab-signals.js'
 import { APP_TAB_FLAG, appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, partitionChanged, partitionForTarget } from './tab-partition.js'
 
 export { popupTargetIsApp } from './popup-opener.js'
@@ -302,6 +303,7 @@ export function wireView (id: string, record: TabRecord): void {
     webPreferencesFor: (url) => tabWebPreferences(record.host.preloadPath, undefined, appTabArgsFor(url, record.host.broker)),
     isApp: (url) => popupTargetIsApp(url, record.host.broker)
   }, () => ({ url: wc.getURL(), partition: record.partition })))
+  wireTabSignals(id, record)
 }
 
 /** A snapshot of a page, for the floating preview a tear-off drag shows (tear-drag.ts). `null` for a gone or
