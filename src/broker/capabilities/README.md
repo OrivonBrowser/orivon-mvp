@@ -3,6 +3,10 @@
 **What lives here.** The entry points `createBroker` ([`../index.ts`](../index.ts)) returns, one
 file per capability (`net`, `fs`, `user-selected`, `id`, `secrets`, `web`, and `embed` for
 `web.embed`'s broker half, `ADR-0039`), plus the helpers they share.
+[`listener-registry.ts`](listener-registry.ts) is one of them: which ports each origin holds a
+listener on, written by `net.ts`'s `listen` and read by `embed.ts`, because `web.embed`'s local
+pattern (`ADR-0047`) loads only while the embedding app holds its port. `createBroker` builds it
+once and hands the same object to both.
 [`declined-consent.ts`](declined-consent.ts) is not an `orivon.*` capability: it is the advisory
 decline-tracking surface (A145) `createBroker` returns directly, split out here for the same
 "no state of its own, only `GrantLedger` and `canonical` taken as constructed dependencies" shape

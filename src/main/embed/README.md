@@ -9,7 +9,9 @@ and `did-attach-webview` (register the guest with the broker so a revoke closes 
 popups, forget it when it goes) on every `WebContents`, and each embed partition's session
 (no downloads, every document request judged fresh). `embed-subsystem.ts`: registers the
 host, and answers `EMBED_SCRIPT_CHANNEL`, the one thing a shown page's preload
-(`src/preload/embed.ts`) asks: which script its app set with `orivon.web.setEmbedScript`.
+(`src/preload/embed.ts`) asks: which script its app set with `orivon.web.setEmbedScript`. A document under a local pattern
+(`http://*.localhost:<port>`, `ADR-0047`) loads only while `broker.embed.holdsListenerSync`
+says the embedding app itself holds a listener on that port; the guard resolves no name for it.
 
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`broker-contracts.ts`
 types, `policy/embed-origin.ts`'s document gate, `policy/address.ts`'s address classes, `policy/origin.ts`, `grants/origin-hash.ts`);
@@ -62,6 +64,14 @@ it was showing. Electron's `<webview>` fires no `did-fail-load` for that case, m
 Electron 44; the element's `loadURL()` promise rejects instead, and
 [`../../../test/e2e-embed.test.ts`](../../../test/e2e-embed.test.ts) asserts exactly that. A
 `file:` URL is refused the same way: `onBeforeRequest` sees it, so no second gate is needed.
+
+**A local pattern is asked of the broker, with the app origin the partition was configured for.**
+`guestRequestAllowed` takes the question as a function (`listenerHeld`) and refuses when it is
+absent or throws, so a caller that forgets to wire it shows no local page rather than every one.
+The answer is read on every document load, so an app that closes its listener stops the next
+load at once; a page already showing stays until it navigates. `*.localhost` is Chromium's own
+loopback answer, so no lookup happens and nothing else on this computer can be reached by name
+through the pattern.
 
 **The script's identity comes from the sender, never the request.** `EMBED_SCRIPT_CHANNEL` is
 synchronous so the script runs before the page's own code, and its reply is decided from
