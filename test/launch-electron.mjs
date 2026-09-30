@@ -18,9 +18,10 @@
 // the load-bearing bit that must survive spike/ being deleted. See
 // .claude/skills/orivon-electron/SKILL.md for the full incident writeup.
 import { _electron as electron } from 'playwright'
+import { rmSync } from 'node:fs'
 import { mkdtemp, readdir, readFile, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve, sep } from 'node:path'
+import { join, resolve } from 'node:path'
 import { attachCollectors, holdEvidence } from './qa-evidence.mjs'
 
 /**
@@ -99,6 +100,15 @@ export const APP_CLOSE_RACE_MS = 8_000
  */
 const USER_DATA_DIRS = new WeakMap()
 
+/** Every profile directory this process has been told about and not yet removed:
+ * the only ones launchElectron({ reuseProfile }) will accept. */
+const KNOWN_PROFILES = new Set()
+
+/** Profiles kept by closeElectron({ keepProfile }) and not yet taken over by a
+ * relaunch. Swept at process exit, so a failed relaunch cannot leak one. */
+const KEPT_PROFILES = new Set()
+let sweepKeptAtExit = false
+
 /**
  * The root pid of each launch, read once at launch. A test that makes the
  * app quit by itself leaves Playwright's connection torn down, after which
@@ -135,7 +145,11 @@ const SEEN_PIDS = new Set()
  * @param {{ userDataDir?: string }} [state]
  */
 export function registerLaunchForTeardown (app, { userDataDir } = {}) {
-  if (userDataDir !== undefined) USER_DATA_DIRS.set(app, userDataDir)
+  if (userDataDir !== undefined) {
+    USER_DATA_DIRS.set(app, userDataDir)
+    KNOWN_PROFILES.add(resolve(userDataDir))
+    KEPT_PROFILES.delete(resolve(userDataDir))
+  }
   const pid = app.process().pid
   if (pid !== undefined) {
     SEEN_PIDS.add(pid)
@@ -173,9 +187,10 @@ export function registerLaunchForTeardown (app, { userDataDir } = {}) {
  * @param {string} [options.reuseProfile] A profile directory from an earlier
  *   launch in this process, kept by closeElectron(app, { keepProfile: true }),
  *   for a test that relaunches on the state the first run wrote. Only a
- *   directory this file created (a temp `orivon-test-*`) is accepted, so the
+ *   directory this process's launcher made is accepted, so the
  *   never-touch-the-real-profile guarantee below still holds; the next
- *   closeElectron() removes it as usual.
+ *   closeElectron() removes it as usual, and if nothing relaunches on it the
+ *   process's exit removes it.
  * @returns {Promise<import('playwright').ElectronApplication>} Launched
  *   against a fresh, unique --user-data-dir -- never this machine's real
  *   `orivon` profile. See the userDataDir comment below.
@@ -235,7 +250,7 @@ export async function launchElectron ({
   // what "hermetic by construction" (this file's own header, and
   // smoke.mjs's) already promised for the network; it never covered disk.
   if (reuseProfile !== undefined && !isOwnTempProfile(reuseProfile)) {
-    throw new Error(`reuseProfile must be a temp orivon-test-* directory made by launchElectron, got ${reuseProfile}`)
+    throw new Error(`reuseProfile must be a profile directory this process made and kept, got ${reuseProfile}`)
   }
   const userDataDir = reuseProfile ?? await mkdtemp(join(tmpdir(), 'orivon-test-'))
   let app
@@ -302,7 +317,7 @@ export async function launchElectron ({
   MAIN_OUTPUT.set(app, () => capturedOutput)
   // Failure evidence (qa-evidence.mjs): recorded from here on, written only
   // if the test that owns this launch fails.
-  attachCollectors(app)
+  attachCollectors(app, { mainLog: () => mainOutput(app) })
 
   // Assert we got Electron, not Node wearing its binary. If this throws, no
   // result from this run may be trusted.
@@ -564,10 +579,20 @@ async function rmUserDataDir (dir, context) {
   })
 }
 
-/** True only for a directory under the OS temp dir named like the ones launchElectron makes. */
+/** True only for a profile directory this process made and has not removed. */
 function isOwnTempProfile (dir) {
-  const full = resolve(dir)
-  return full.startsWith(resolve(tmpdir()) + sep) && full.slice(resolve(tmpdir()).length + 1).startsWith('orivon-test-')
+  return KNOWN_PROFILES.has(resolve(dir))
+}
+
+function keepProfileOf (app) {
+  const dir = USER_DATA_DIRS.get(app)
+  if (dir === undefined) return
+  USER_DATA_DIRS.delete(app)
+  KEPT_PROFILES.add(resolve(dir))
+  if (!sweepKeptAtExit) {
+    sweepKeptAtExit = true
+    process.once('exit', () => { for (const kept of KEPT_PROFILES) rmSync(kept, { recursive: true, force: true }) })
+  }
 }
 
 /**
@@ -585,6 +610,7 @@ async function removeUserDataDirFor (app) {
   const dir = USER_DATA_DIRS.get(app)
   if (dir === undefined) return
   USER_DATA_DIRS.delete(app)
+  KNOWN_PROFILES.delete(resolve(dir))
   await rmUserDataDir(dir, 'closeElectron')
 }
 
@@ -659,7 +685,7 @@ export async function closeElectron (app, { raceMs = APP_CLOSE_RACE_MS, beforeCl
       console.error(`[closeElectron] pid ${pid} still reported alive after SIGKILL and a 5s wait`)
     }
   } finally {
-    if (keepProfile) USER_DATA_DIRS.delete(app)
+    if (keepProfile) keepProfileOf(app)
     else await removeUserDataDirFor(app)
   }
 }

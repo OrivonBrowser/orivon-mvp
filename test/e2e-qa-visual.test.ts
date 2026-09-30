@@ -117,7 +117,7 @@ it('the shell looks right in each state it can be in', async () => {
       check('the address bar keeps the address that failed', (await chrome.inputValue('#address')) === 'http://unresolvable.invalid/', await chrome.inputValue('#address'))
       check('back is enabled, so the person can leave the failed page', await chrome.isEnabled('#back'))
       await state(check, app, 'navigation-failure', {
-        expected: 'Today (open question A305) a blank white view under the tab strip, with the failed address in the address bar and its host as the tab title. A message or error page here means A305 was fixed: update this expectation and re-record the baseline.',
+        expected: 'Today a blank white view under the tab strip, with the failed address in the address bar and its host as the tab title: the shell draws no failure message (docs/open-questions.md, a failed navigation). A message or error page here means that was fixed: update this expectation and re-record the baseline.',
         action: 'Typed http://unresolvable.invalid/ under a resolver that answers nothing but loopback.'
       })
     })

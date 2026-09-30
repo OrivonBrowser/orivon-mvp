@@ -110,12 +110,15 @@ export interface BaselineResult {
 
 /**
  * Compares `png` with the machine-local baseline called `name`. No baseline,
- * or ORIVON_QA_UPDATE_BASELINES=1, records one. CI=true skips the comparison:
- * a baseline is only meaningful on the machine and fonts that recorded it.
+ * or ORIVON_QA_UPDATE_BASELINES=1, records one. Only `npm run qa` and
+ * `qa:visual` compare (ORIVON_QA_PIXELS=1), and never under CI=true: a baseline
+ * is only meaningful on the machine and fonts that recorded it, so a plain
+ * `test:e2e` must not fail on one.
  */
 export async function compareBaseline (name: string, png: Buffer, options: { maxDiffRatio?: number, ignore?: Rect[], outDir?: string } = {}): Promise<BaselineResult> {
   const maxDiffRatio = options.maxDiffRatio ?? DEFAULT_MAX_DIFF_RATIO
   if (process.env['CI'] === 'true') return { status: 'skipped', maxDiffRatio, detail: 'CI=true: pixel baselines are machine-local' }
+  if (process.env['ORIVON_QA_PIXELS'] !== '1') return { status: 'skipped', maxDiffRatio, detail: 'pixel comparison runs only under npm run qa or qa:visual' }
   const baselinePath = join(baselineDir(), `${slug(name)}.png`)
   const existing = await readFile(baselinePath).catch(() => undefined)
   if (existing === undefined || process.env['ORIVON_QA_UPDATE_BASELINES'] === '1') {
@@ -213,6 +216,7 @@ export async function captureState (app: ElectronApplication, name: string, spec
   }
 
   const composite: Buffer | undefined = snap.composites[0]?.png
+  const approximate = snap.composites[0]?.ambiguous === true
   const since = lastMark.get(app) ?? { console: 0, pageErrors: 0 }
   lastMark.set(app, mark(app))
   const errors = errorsSince(app, since).filter((e) => spec.includeContentErrors === true || !isContent(e.url))
@@ -224,7 +228,8 @@ export async function captureState (app: ElectronApplication, name: string, spec
     await mkdir(STATES_DIR, { recursive: true })
     png = join(STATES_DIR, `${slug(name)}.png`)
     await writeFile(png, composite)
-    baseline = await compareBaseline(name, composite, { ...(spec.maxDiffRatio === undefined ? {} : { maxDiffRatio: spec.maxDiffRatio }), ignore: spec.ignore ?? [] })
+    if (approximate) baseline = { status: 'skipped', maxDiffRatio: spec.maxDiffRatio ?? DEFAULT_MAX_DIFF_RATIO, detail: 'two shown views could not be told apart, so the composite may pair them wrongly' }
+    else baseline = await compareBaseline(name, composite, { ...(spec.maxDiffRatio === undefined ? {} : { maxDiffRatio: spec.maxDiffRatio }), ignore: spec.ignore ?? [] })
   }
 
   const ariaExcerpt = snap.views

@@ -5,7 +5,7 @@
 [`apps/`](apps/) — the apps those suites serve. Unit tests are colocated
 (`src/**/*.test.ts`) and do not belong here.
 
-**What it depends on.** `@playwright/test`, `electron`.
+**What it depends on.** `@playwright/test`, `electron`, and `pngjs` and `pixelmatch` for the visual helpers.
 
 **What it must never import.** Nothing is forbidden in the harness or the suites.
 [`apps/`](apps/) is the exception and the point: nothing under it may import anything from
@@ -41,6 +41,21 @@ argv too).
 `launch-electron-teardown.test.ts` unit-tests all of this against plain `node` child processes,
 never a real Electron launch -- see its own header for exactly what that approach can and cannot
 prove.
+
+## Failure evidence and visual QA
+
+| File | Job |
+|---|---|
+| `qa-evidence.mjs` | Records each launched app and snapshots it at close; writes the bundle of a failed test. Called by `launch-electron.mjs`; it never throws into a launch or a teardown |
+| `qa-setup.ts`, `qa-global-setup.ts` | Vitest setup: decide per test whether to write or drop the held bundles, and clear `qa-artifacts/latest/` once per run |
+| `qa-layout-audit.mjs` | The in-page layout audit. Plain JavaScript and self-contained: Playwright serialises the function, so it may close over nothing |
+| `qa-visual.ts` | The audit wrapper, the machine-local pixel baseline, `captureState` and `checkState` |
+| `qa-helpers.ts` | A port-0 fixture server, a launched shell, and navigation that waits on what it asserts |
+| `e2e-qa-*.test.ts`, `qa-visual.test.ts`, `qa-evidence.test.ts` | The specs; `docs/development/testing.md` §Visual QA and failure evidence lists what each proves |
+
+`launchElectron({ reuseProfile })` relaunches on a profile that `closeElectron(app, { keepProfile: true })`
+kept, for a test that needs the first run's state on disk; only a temp `orivon-test-*` directory the
+launcher made is accepted, so a spec still cannot reach the real profile.
 
 ## Known risk
 

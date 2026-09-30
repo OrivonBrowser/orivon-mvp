@@ -1631,7 +1631,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A305: A failed navigation leaves a blank view and says nothing **[AI-REC]**
+### A308: A failed navigation leaves a blank view and says nothing **[AI-REC]**
 
 - **Question:** Typing an address that cannot be reached (an unresolvable name under the test resolver) leaves the
   tab on an empty white view: the address bar and tab title show the address, nothing says the load failed. The
@@ -1643,7 +1643,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A306: The welcome screen's corner prism covers the brand logo **[OWNER]**
+### A309: The welcome screen's corner prism covers the brand logo **[OWNER]**
 
 - **Question:** `.brand-logo` is a 40 px circle at the top-left, but `.prism` (115 x 158 px, pinned to the window's
   corner, painted later with no `z-index`) covers that spot, so the "ORIVON" wordmark shows with an empty gap

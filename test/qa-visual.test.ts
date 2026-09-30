@@ -100,6 +100,7 @@ describe('compareBaseline', () => {
     dir = await mkdtemp(join(tmpdir(), 'orivon-qa-baseline-test-'))
     vi.stubEnv('ORIVON_QA_BASELINES', join(dir, 'baselines'))
     vi.stubEnv('CI', '')
+    vi.stubEnv('ORIVON_QA_PIXELS', '1')
     vi.stubEnv('ORIVON_QA_UPDATE_BASELINES', '')
   })
   afterEach(async () => {
@@ -141,6 +142,13 @@ describe('compareBaseline', () => {
     expect((await compareBaseline('s', withSquare(20, 20, 10), opts())).status).toBe('recorded')
     vi.stubEnv('ORIVON_QA_UPDATE_BASELINES', '')
     expect((await compareBaseline('s', withSquare(20, 20, 10), opts())).status).toBe('match')
+  })
+
+  it('does nothing unless the qa scripts asked for pixels: no comparison, no baseline written', async () => {
+    vi.stubEnv('ORIVON_QA_PIXELS', '')
+    const r = await compareBaseline('s', flat(), opts())
+    expect(r.status).toBe('skipped')
+    await expect(readFile(join(baselineDir(), 's.png'))).rejects.toThrow()
   })
 
   it('does nothing under CI=true: no comparison, no baseline written', async () => {

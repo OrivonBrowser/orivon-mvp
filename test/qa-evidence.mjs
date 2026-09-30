@@ -24,12 +24,13 @@ const LIST_CAP = 500
 const SNAPSHOT_BUDGET_MS = 3_000
 const HELD_CAP = 8
 const ORPHAN_SHOT_MS = 600
+const HOLD_BUDGET_MS = 3_500
 const DOM_CAP_BYTES = 200_000
 
 /** @typedef {{ url: string, title: string, png: Buffer | undefined, aria: string | undefined, html: string | undefined, errors: string[] }} ViewSnapshot */
 /** @typedef {{ url: string, bounds: { x: number, y: number, width: number, height: number }, visible: boolean }} ViewGeometry */
 /** @typedef {{ width: number, height: number, views: ViewGeometry[] }} WindowGeometry */
-/** @typedef {{ views: ViewSnapshot[], composites: Array<{ width: number, height: number, png: Buffer }>, geometry: WindowGeometry[], errors: string[] }} WindowSnapshot */
+/** @typedef {{ views: ViewSnapshot[], composites: Array<{ width: number, height: number, png: Buffer, ambiguous: boolean }>, geometry: WindowGeometry[], errors: string[] }} WindowSnapshot */
 
 const COLLECTORS = new WeakMap()
 /** Apps with collectors that have not been closed yet. */
@@ -37,9 +38,17 @@ const LIVE = new Set()
 /** Bundles taken at close, waiting for the test's verdict. */
 let held = []
 
-export const evidenceEnabled = () => process.env['ORIVON_QA_EVIDENCE'] !== 'off'
+/** On under Vitest, where qa-setup.ts decides what to write; off for a plain
+ * script (smoke) that has nothing to write it, unless ORIVON_QA_EVIDENCE=on. */
+export const evidenceEnabled = () => {
+  const setting = process.env['ORIVON_QA_EVIDENCE']
+  return setting !== 'off' && (setting === 'on' || process.env['VITEST'] !== undefined)
+}
 
-function push (list, item) {
+/** Capped lists shift their oldest entry out, so a position in one is not a
+ * stable mark: each entry of a list that mark() reads carries a running `n`. */
+function push (list, item, counters, key) {
+  if (counters !== undefined) item.n = counters[key] = (counters[key] ?? 0) + 1
   list.push(item)
   if (list.length > LIST_CAP) list.shift()
 }
@@ -58,10 +67,13 @@ async function within (promise, ms, fallback) {
 }
 
 /** Starts recording `app`'s console warnings and errors, page errors, failed
- * requests, page crashes and main-process events. Safe on a fake app. */
-export function attachCollectors (app) {
+ * requests, page crashes and main-process events. Safe on a fake app.
+ * `mainLog` reads the app's own output, for a bundle taken while it still runs.
+ * @param {any} app
+ * @param {{ mainLog?: () => string }} [options] */
+export function attachCollectors (app, { mainLog = () => '' } = {}) {
   if (!evidenceEnabled() || typeof app?.on !== 'function' || typeof app.windows !== 'function') return
-  const c = { console: [], pageErrors: [], failedRequests: [], crashes: [], traceZip: undefined }
+  const c = { console: [], pageErrors: [], failedRequests: [], crashes: [], seq: { console: 0, pageErrors: 0 }, mainLog, traceZip: undefined }
   COLLECTORS.set(app, c)
   LIVE.add(app)
 
@@ -70,11 +82,11 @@ export function attachCollectors (app) {
     page.on('console', (m) => {
       const type = m.type()
       if (type === 'error' || type === 'warning') {
-        push(c.console, { t: Date.now(), type, text: m.text().slice(0, 2000), url: at(), location: m.location() })
+        push(c.console, { t: Date.now(), type, text: m.text().slice(0, 2000), url: at(), location: m.location() }, c.seq, 'console')
       }
     })
     page.on('pageerror', (e) => {
-      push(c.pageErrors, { t: Date.now(), url: at(), message: String(e?.message ?? e).slice(0, 2000), stack: String(e?.stack ?? '').slice(0, 4000) })
+      push(c.pageErrors, { t: Date.now(), url: at(), message: String(e?.message ?? e).slice(0, 2000), stack: String(e?.stack ?? '').slice(0, 4000) }, c.seq, 'pageErrors')
     })
     page.on('requestfailed', (r) => {
       push(c.failedRequests, { t: Date.now(), url: r.url(), method: r.method(), failure: r.failure()?.errorText ?? '', page: at() })
@@ -106,10 +118,10 @@ export function attachCollectors (app) {
   }
 }
 
-/** How many console/pageError entries exist now; pass to entriesSince(). */
+/** How many console and page-error entries have been recorded so far; pass to errorsSince(). */
 export function mark (app) {
   const c = COLLECTORS.get(app)
-  return { console: c?.console.length ?? 0, pageErrors: c?.pageErrors.length ?? 0 }
+  return { console: c?.seq.console ?? 0, pageErrors: c?.seq.pageErrors ?? 0 }
 }
 
 /** Console errors (not warnings) and page errors recorded after `since`. */
@@ -117,8 +129,8 @@ export function errorsSince (app, since) {
   const c = COLLECTORS.get(app)
   if (c === undefined) return []
   return [
-    ...c.console.slice(since.console).filter((e) => e.type === 'error').map((e) => ({ kind: 'console.error', url: e.url, text: e.text })),
-    ...c.pageErrors.slice(since.pageErrors).map((e) => ({ kind: 'pageerror', url: e.url, text: e.message }))
+    ...c.console.filter((e) => e.n > since.console && e.type === 'error').map((e) => ({ kind: 'console.error', url: e.url, text: e.text })),
+    ...c.pageErrors.filter((e) => e.n > since.pageErrors).map((e) => ({ kind: 'pageerror', url: e.url, text: e.message }))
   ]
 }
 
@@ -184,13 +196,19 @@ function compose (geometry, snaps) {
   return geometry.map((win) => {
     const canvas = new PNG({ width: Math.max(1, win.width), height: Math.max(1, win.height) })
     canvas.data.fill(0x80)
-    for (const view of win.views) {
-      if (!view.visible) continue
+    const shown = win.views.filter((v) => v.visible)
+    // Two shown views on one URL cannot be told apart by URL, and two candidates
+    // of one size cannot be told apart by size: the pairing may then be swapped.
+    let ambiguous = shown.some((v, i) => shown.findIndex((o) => o.url === v.url) !== i)
+    for (const view of shown) {
+      const sizeOf = (e) => { try { return decoded(e).width === view.bounds.width && decoded(e).height === view.bounds.height } catch { return false } }
       const byUrl = pool.findIndex((e) => e.snap.url === view.url)
-      const bySize = () => pool.findIndex((e) => {
-        try { return decoded(e).width === view.bounds.width && decoded(e).height === view.bounds.height } catch { return false }
-      })
-      const i = byUrl >= 0 ? byUrl : bySize()
+      let i = byUrl
+      if (i < 0) {
+        const candidates = pool.filter(sizeOf)
+        if (candidates.length > 1) ambiguous = true
+        i = candidates.length === 0 ? -1 : pool.indexOf(candidates[0])
+      }
       if (i < 0) continue
       const entry = pool.splice(i, 1)[0]
       try {
@@ -198,7 +216,7 @@ function compose (geometry, snaps) {
         PNG.bitblt(src, canvas, 0, 0, Math.min(src.width, view.bounds.width), Math.min(src.height, view.bounds.height), Math.max(0, view.bounds.x), Math.max(0, view.bounds.y))
       } catch { /* undecodable view: leave the gap visible */ }
     }
-    return { width: win.width, height: win.height, png: PNG.sync.write(canvas) }
+    return { width: win.width, height: win.height, png: PNG.sync.write(canvas), ambiguous }
   })
 }
 
@@ -243,13 +261,7 @@ async function stopTrace (app, c) {
   c.traceZip = path
 }
 
-/** Everything known about `app` right now, as a bundle writeEvidenceBundle() can write. */
-export async function bundleFor (app, { mainLog = '', alive = true } = {}) {
-  const c = COLLECTORS.get(app)
-  if (c === undefined) return undefined
-  const snap = alive ? await snapshotWindows(app) : { views: [], composites: [], geometry: [], errors: ['app already exited'] }
-  const mainEvents = alive ? (await within(app.evaluate(() => globalThis.__orivonQaEvents ?? []), 1_000, [])) ?? [] : []
-  if (alive) await stopTrace(app, c)
+function bundleOf (c, snap, mainEvents, mainLog) {
   return {
     snap,
     mainEvents,
@@ -262,16 +274,36 @@ export async function bundleFor (app, { mainLog = '', alive = true } = {}) {
   }
 }
 
-/** Called by closeElectron(): keeps the app's final state until the verdict. */
-export async function holdEvidence (app, options) {
+const noSnapshot = (reason) => ({ views: [], composites: [], geometry: [], errors: [reason] })
+
+/** Everything known about `app` right now, as a bundle writeEvidenceBundle() can write.
+ * `mainLog` defaults to the launcher's own capture of the app's output.
+ * @param {any} app
+ * @param {{ mainLog?: string, alive?: boolean }} [options] */
+export async function bundleFor (app, { mainLog, alive = true } = {}) {
+  const c = COLLECTORS.get(app)
+  if (c === undefined) return undefined
+  const log = mainLog ?? c.mainLog()
+  if (!alive) return bundleOf(c, noSnapshot('app already exited'), [], log)
+  const snap = await snapshotWindows(app)
+  const mainEvents = (await within(app.evaluate(() => globalThis.__orivonQaEvents ?? []), 1_000, [])) ?? []
+  await stopTrace(app, c)
+  return bundleOf(c, snap, mainEvents, log)
+}
+
+/** Called by closeElectron(): keeps the app's final state until the verdict.
+ * Bounded as a whole, because a hung app is exactly when closeElectron runs.
+ * @param {any} app
+ * @param {{ mainLog?: string, alive?: boolean }} [options] */
+export async function holdEvidence (app, options = {}) {
   if (!LIVE.has(app)) return
   LIVE.delete(app)
+  const c = COLLECTORS.get(app)
   try {
-    const bundle = await bundleFor(app, options)
-    if (bundle !== undefined) {
-      held.push(bundle)
-      for (const dropped of held.splice(0, Math.max(0, held.length - HELD_CAP))) await dropBundle(dropped)
-    }
+    const bundle = await within(bundleFor(app, options), HOLD_BUDGET_MS,
+      bundleOf(c, noSnapshot(`no snapshot within ${String(HOLD_BUDGET_MS)}ms`), [], options.mainLog ?? c.mainLog()))
+    held.push(bundle)
+    for (const dropped of held.splice(0, Math.max(0, held.length - HELD_CAP))) await dropBundle(dropped)
   } catch (e) {
     console.error('[qa-evidence] could not hold evidence:', e)
   }
@@ -330,7 +362,7 @@ export async function writeFailureEvidence ({ file, name, error, retried }) {
   const bundles = held
   held = []
   for (const app of liveApps()) {
-    const bundle = await bundleFor(app, { mainLog: '', alive: true }).catch(() => undefined)
+    const bundle = await bundleFor(app, { alive: true }).catch(() => undefined)
     if (bundle !== undefined) bundles.push(bundle)
   }
   const rel = join(slug(file), slug(name))
