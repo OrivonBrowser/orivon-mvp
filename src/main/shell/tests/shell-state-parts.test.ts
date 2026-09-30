@@ -7,9 +7,9 @@ const ctx = { window: {}, services: {} } as unknown as WindowContext
 const tabs = { tabs: [], activeTabId: null }
 
 describe('the shell state parts', () => {
-  it('ship empty: no field joins the state until a feature adds its line', () => {
-    expect(SHELL_STATE_PARTS).toEqual([])
-    expect(readStateParts(ctx, tabs)).toEqual({})
+  it('adds no field when no part is registered', () => {
+    expect(SHELL_STATE_PARTS.map((part) => part.name)).toEqual(['home'])
+    expect(readStateParts(ctx, tabs, [])).toEqual({})
   })
 
   it('merges what every part reads, handing each the window\'s context and the tabs', () => {

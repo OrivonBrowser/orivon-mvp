@@ -43,8 +43,10 @@ export function resolveDashboardUrl (): string {
  * `intro`: the process's first window on a launch that opens on the welcome
  * screen (./intro-state.ts). */
 export function createShellWindow (ctx: SubsystemContext, services: ShellServices, options: ShellWindowOptions = {}): BaseWindow {
-  const { intro, first, place, firstOfLaunch, instant } = options
-  const frame = createWindowFrame(import.meta.dirname, place, services.profiles.isPrivate)
+  const { intro, first, place, firstOfLaunch, instant, maximized } = options
+  // Every window of a kiosk process is a kiosk window: a popup's window must not bring the chrome back.
+  const { kiosk } = services
+  const frame = createWindowFrame(import.meta.dirname, place, services.profiles.isPrivate, kiosk)
   const { win } = frame
 
   const devServerUrl = validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL'])
@@ -133,7 +135,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     hideNotice: () => { notice.hide() }
   })
 
-  const { chromeHeight, layoutChrome, tabBounds } = createWindowLayout({ win, chrome, fullscreenTabId: () => fullscreen.tabId, bookmarksBarShown })
+  const { chromeHeight, layoutChrome, tabBounds } = createWindowLayout({ win, chrome, fullscreenTabId: () => fullscreen.tabId, bookmarksBarShown, kiosk })
 
   function layoutAll (): void {
     layoutChrome()
@@ -278,7 +280,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   if (intro !== undefined) showIntro(win, tabs, intro)
   runWindowHooks('opened', context, options)
 
-  showWhenReady(frame, { firstOfLaunch, instant })
+  showWhenReady(frame, { firstOfLaunch, instant, maximized })
 
   return win
 }

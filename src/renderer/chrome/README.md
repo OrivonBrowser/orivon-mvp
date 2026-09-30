@@ -9,6 +9,7 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 | `modules.ts` | `CHROME_MODULES` and `TAB_DECORATORS`, one line per feature, and `dispatchShellEvent` |
 | `tab-strip.ts` | the tabs, the new-tab button, the empty tail, the cross-window drop mark |
 | `navigation.ts` | back, forward, reload, the address bar |
+| `home-button.ts` | the Home button, shown while `toolbar.home` is on |
 | `site-badges.ts` | the Web3 Score shield and mark, the permissions key |
 | `cluster.ts` | the bookmark star, the zoom chip, the all-sites button, the profile chip, the menu button |
 | `bookmarks-bar.ts` | the row under the toolbar |

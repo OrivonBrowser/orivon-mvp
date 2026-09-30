@@ -30,6 +30,7 @@ const ROWS: ReadonlyArray<[id: string, label: string, category: string, binding:
 
 // Rows whose feature has landed: they run, so they are no longer pending.
 const LANDED = new Set([
+  'nav.home',
   'tab.closeOthers',
   'tab.closeRight',
   'tab.duplicate',

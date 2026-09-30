@@ -14,7 +14,7 @@ export interface ToolbarButtonSpec {
   order: number
   label: string
   icon: () => SVGSVGElement
-  onClick: (el: HTMLButtonElement) => void
+  onClick: (el: HTMLButtonElement, event: MouseEvent) => void
 }
 
 export interface ChromeContext {

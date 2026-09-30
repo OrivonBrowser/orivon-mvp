@@ -4,6 +4,7 @@ import type { ChromeContext, ChromeModule, TabDecorator } from './context.js'
 import { contained } from './contain.js'
 import { createBookmarksBar } from './bookmarks-bar.js'
 import { createCluster } from './cluster.js'
+import { createHomeButton } from './home-button.js'
 import { createNavigation } from './navigation.js'
 import { createSiteBadges } from './site-badges.js'
 import { decorateTabBadges } from './tab-badges.js'
@@ -18,6 +19,7 @@ export const TAB_DECORATORS: readonly TabDecorator[] = [
 export const CHROME_MODULES: readonly ChromeModule[] = [
   createTabStrip(TAB_DECORATORS),
   createNavigation(),
+  createHomeButton(),
   createSiteBadges(),
   createCluster(),
   createBookmarksBar()

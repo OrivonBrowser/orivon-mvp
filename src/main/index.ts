@@ -1,4 +1,4 @@
-import { app, BaseWindow, dialog, nativeTheme, session } from 'electron'
+import { app, BaseWindow, dialog, nativeTheme, screen, session } from 'electron'
 import { createShellWindow, resolveDashboardUrl } from './shell/window.js'
 import { openUrlsOnSecondLaunch } from './shell/opener.js'
 import { createShellServices } from './shell/shell-services.js'
@@ -156,7 +156,7 @@ function boot (runtime: Runtime): void {
     publishWindowForSender(ctx, (sender) => shell.windows.findTab(sender)?.window.window)
     // Before the first window, so it opens in the chosen theme with the chosen
     // bookmarks bar rather than changing after it is on screen.
-    await Promise.all([shell.settings.load(), shell.shortcutStore.load(), shell.zoomStore.load(), shell.session.load()])
+    await Promise.all([shell.settings.load(), shell.shortcutStore.load(), shell.windowState.load(), shell.zoomStore.load(), shell.session.load()])
     seedClosedStack(shell.closedTabs, shell.session.previous())
     applyThemeSetting(shell.settings, nativeTheme)
     // The light client starts after the first page loads, by which time the settings have been read: the person's choice reaches it.
@@ -205,7 +205,7 @@ function boot (runtime: Runtime): void {
       try {
         // Only this first window can open on the welcome screen: the macOS
         // 'activate' below recreates a window in a process that has already shown it.
-        const plan = firstWindowOptions({ services: shell, isPrivate: false, argv: process.argv })
+        const plan = firstWindowOptions({ services: shell, isPrivate: false, argv: process.argv, displays: screen.getAllDisplays() })
         createShellWindow(ctx, shell, { ...plan, intro: plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')), firstOfLaunch: true })
       } finally {
         markStarted()

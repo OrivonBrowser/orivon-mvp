@@ -58,7 +58,7 @@ export const COMMANDS = [
   { id: 'nav.reload', label: 'Reload', category: 'navigation', default: 'Mod+R', aliases: ['F5'] },
   { id: 'nav.hardReload', label: 'Reload without the cache', category: 'navigation', default: 'Mod+Shift+R', aliases: ['Ctrl+F5'] },
   { id: 'nav.stop', label: 'Stop loading', category: 'navigation', pending: true },
-  { id: 'nav.home', label: 'Home page', category: 'navigation', default: 'Alt+Home', pending: true },
+  { id: 'nav.home', label: 'Home page', category: 'navigation', default: 'Alt+Home' },
   { id: 'nav.focusAddress', label: 'Go to the address bar', category: 'navigation', default: 'Mod+L', aliases: ['F6', 'Alt+D'] },
   { id: 'zoom.in', label: 'Zoom in', category: 'navigation', default: 'Mod+=', aliases: ['Mod++'], repeatable: true },
   { id: 'zoom.out', label: 'Zoom out', category: 'navigation', default: 'Mod+-', repeatable: true },

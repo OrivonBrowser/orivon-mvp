@@ -17,7 +17,7 @@ export function toolbarButton (spec: ToolbarButtonSpec): HTMLButtonElement {
   button.setAttribute('aria-label', spec.label)
   button.style.order = String(spec.order)
   button.append(spec.icon())
-  button.addEventListener('click', () => { spec.onClick(button) })
+  button.addEventListener('click', (event) => { spec.onClick(button, event) })
   slot.append(button)
   return button
 }

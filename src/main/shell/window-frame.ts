@@ -49,6 +49,8 @@ export interface WindowFrame {
   readonly win: BaseWindow
   /** Where the window was asked to open, re-asserted by `showWhenReady`. */
   readonly initialBounds: { x: number, y: number, width: number, height: number }
+  /** A kiosk window holds the whole screen: nothing re-asserts a size on it. */
+  readonly kiosk: boolean
 }
 
 /** The window's own background colour for the current OS/app theme -- exported
@@ -64,7 +66,7 @@ export function windowBackgroundColor (isPrivate: boolean): string {
 
 /** `dirname`: the calling module's own `import.meta.dirname`, from which a run
  * from source finds the repo's build/icon.png (out/main -> ../../build). */
-export function createWindowFrame (dirname: string, place: Placement = {}, isPrivate = false): WindowFrame {
+export function createWindowFrame (dirname: string, place: Placement = {}, isPrivate = false, kiosk = false): WindowFrame {
   const overlay = (): { color: string, symbolColor: string } => isPrivate
     ? (nativeTheme.shouldUseDarkColors ? OVERLAY_PRIVATE_DARK : OVERLAY_PRIVATE_LIGHT)
     : (nativeTheme.shouldUseDarkColors ? OVERLAY_DARK : OVERLAY_LIGHT)
@@ -105,6 +107,7 @@ export function createWindowFrame (dirname: string, place: Placement = {}, isPri
   const win = new BaseWindow({
     ...initialBounds,
     show: false,
+    kiosk,
     icon: iconPath,
     backgroundColor: background(),
     titleBarStyle: 'hidden',
@@ -134,7 +137,7 @@ export function createWindowFrame (dirname: string, place: Placement = {}, isPri
   const unregisterOverlayThemeListener = onThemeUpdated(applyOverlayForTheme)
   win.on('closed', () => { unregisterOverlayThemeListener() })
 
-  return { win, initialBounds }
+  return { win, initialBounds, kiosk }
 }
 
 export interface ShowOptions {
@@ -144,10 +147,12 @@ export interface ShowOptions {
   /** Shows the window at once instead of racing `ready-to-show` against the fallback timer -- for a window
    * whose content (a moved tab) is already rendered elsewhere, so nothing here is worth waiting on. */
   instant?: boolean | undefined
+  /** Maximised once shown, from the size `initialBounds` names: un-maximising returns to it. */
+  maximized?: boolean | undefined
 }
 
 /** Shows the window once it can paint, and once only. */
-export function showWhenReady ({ win, initialBounds }: WindowFrame, options: ShowOptions = {}): void {
+export function showWhenReady ({ win, initialBounds, kiosk }: WindowFrame, options: ShowOptions = {}): void {
   const skipFocus = NO_FOCUS && options.firstOfLaunch === true
   // Electron's type declarations only put 'ready-to-show' on BrowserWindow's
   // typed event union; BaseWindow's own doc doesn't enumerate it either.
@@ -186,7 +191,9 @@ export function showWhenReady ({ win, initialBounds }: WindowFrame, options: Sho
     // offsets). The constructor size loses that argument; a setBounds once
     // the window is mapped is honoured. Harmless where the first size
     // already stuck -- it sets what is already set.
+    if (kiosk) return
     win.setBounds(initialBounds)
+    if (options.maximized === true) win.maximize()
   }
   // A tear-off or a moved-tab window's content is already rendered
   // somewhere (the tab it is given), so there is nothing worth racing

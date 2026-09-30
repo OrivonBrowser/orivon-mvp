@@ -76,6 +76,8 @@ export interface ShellState extends TabsSnapshot {
   zoomPercent: number | null
   /** Which profile this window is, for the chip beside the menu. */
   profile: { name: string, color: string, isPrivate: boolean, shown: boolean }
+  /** Whether the toolbar shows the Home button (`toolbar.home`). */
+  homeButton: boolean
 }
 
 export interface Bounds {

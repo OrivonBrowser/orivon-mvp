@@ -9,8 +9,8 @@ import { ClosedStack } from '../../session-restore/closed-stack.js'
 interface Tab { id: string, url: string, title: string, isNewTab: boolean, isInternal: boolean, splitWith: string | null, pinned: boolean, muted: boolean }
 const tab = (id: string, extra: Partial<Tab> = {}): Tab => ({ id, url: `https://${id}.example/`, title: id, isNewTab: false, isInternal: false, splitWith: null, pinned: false, muted: false, ...extra })
 
-function harness (tabs: Tab[], activeTabId: string | null): { target: ShellWindow, zoom: Record<'step' | 'reset', ReturnType<typeof vi.fn>>, devtools: Record<'toggle', ReturnType<typeof vi.fn>>, profiles: Record<'openPrivate', ReturnType<typeof vi.fn>>, calls: Record<string, ReturnType<typeof vi.fn>>, bookmarks: Record<string, ReturnType<typeof vi.fn>>, deps: CommandDeps & { openWindow: ReturnType<typeof vi.fn<() => void>>, quit: ReturnType<typeof vi.fn<() => void>> }, send: ReturnType<typeof vi.fn> } {
-  const calls = Object.fromEntries(['createTab', 'closeTab', 'activateTab', 'back', 'forward', 'reload', 'openInternal', 'reloadIgnoringCache', 'moveTab', 'toggle', 'changed', 'setAudioMuted', 'focusOther', 'swap', 'rotate'].map((name) => [name, vi.fn()]))
+function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: boolean, homeUrl?: string } = {}): { target: ShellWindow, zoom: Record<'step' | 'reset', ReturnType<typeof vi.fn>>, devtools: Record<'toggle', ReturnType<typeof vi.fn>>, profiles: Record<'openPrivate', ReturnType<typeof vi.fn>>, calls: Record<string, ReturnType<typeof vi.fn>>, bookmarks: Record<string, ReturnType<typeof vi.fn>>, deps: CommandDeps & { openWindow: ReturnType<typeof vi.fn<() => void>>, quit: ReturnType<typeof vi.fn<() => void>> }, send: ReturnType<typeof vi.fn> } {
+  const calls = Object.fromEntries(['createTab', 'navigate', 'closeTab', 'activateTab', 'back', 'forward', 'reload', 'openInternal', 'reloadIgnoringCache', 'moveTab', 'toggle', 'changed', 'setAudioMuted', 'focusOther', 'swap', 'rotate'].map((name) => [name, vi.fn()]))
   const send = vi.fn()
   const window = { close: vi.fn(), setFullScreen: vi.fn(), isFullScreen: vi.fn(() => false), isAlwaysOnTop: vi.fn(() => false), setAlwaysOnTop: vi.fn(), getBounds: vi.fn(() => ({ x: 10, y: 20, width: 800, height: 600 })) }
   const target = {
@@ -34,7 +34,7 @@ function harness (tabs: Tab[], activeTabId: string | null): { target: ShellWindo
   const zoom = { step: vi.fn(), reset: vi.fn() }
   const devtools = { toggle: vi.fn() }
   const profiles = { openPrivate: vi.fn() }
-  return { target, zoom, devtools, profiles, calls: { ...calls, close: window.close as never, setFullScreen: window.setFullScreen as never, setAlwaysOnTop: window.setAlwaysOnTop as never }, bookmarks, deps: { services: { bookmarks, zoom, devtools, profiles, closedTabs: new ClosedStack() } as unknown as ShellServices, openWindow: vi.fn<() => void>(), quit: vi.fn<() => void>() }, send }
+  return { target, zoom, devtools, profiles, calls: { ...calls, close: window.close as never, setFullScreen: window.setFullScreen as never, setAlwaysOnTop: window.setAlwaysOnTop as never }, bookmarks, deps: { services: { bookmarks, zoom, devtools, profiles, closedTabs: new ClosedStack(), kiosk: options.kiosk === true, settings: { get: () => options.homeUrl ?? '' } } as unknown as ShellServices, openWindow: vi.fn<() => void>(), quit: vi.fn<() => void>() }, send }
 }
 
 describe('the tab-state commands', () => {
@@ -185,6 +185,36 @@ describe('runCommand', () => {
     const { target, calls, deps } = harness([tab('a')], 'a')
     runCommand('window.alwaysOnTop', target, deps)
     expect(calls['setAlwaysOnTop']).toHaveBeenCalledWith(true)
+  })
+
+  it('goes home: the home page in this tab, else the new tab page unless that is what is showing', () => {
+    const withHome = harness([tab('a')], 'a', { homeUrl: 'example.com' })
+    runCommand('nav.home', withHome.target, withHome.deps)
+    expect(withHome.calls['navigate']).toHaveBeenCalledWith('a', 'https://example.com/')
+
+    const without = harness([tab('a')], 'a')
+    runCommand('nav.home', without.target, without.deps)
+    expect(without.calls['createTab']).toHaveBeenCalledTimes(1)
+
+    const onNewTab = harness([tab('n', { isNewTab: true })], 'n')
+    runCommand('nav.home', onNewTab.target, onNewTab.deps)
+    expect(onNewTab.calls['createTab']).not.toHaveBeenCalled()
+  })
+
+  it('in a kiosk runs only what a kiosk allows', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a', { kiosk: true })
+    for (const id of ['tab.new', 'tab.close', 'window.new', 'window.newPrivate', 'window.fullscreen', 'window.alwaysOnTop', 'settings.open', 'nav.home'] as const) runCommand(id, target, deps)
+    expect(calls['createTab']).not.toHaveBeenCalled()
+    expect(calls['closeTab']).not.toHaveBeenCalled()
+    expect(calls['setFullScreen']).not.toHaveBeenCalled()
+    expect(calls['setAlwaysOnTop']).not.toHaveBeenCalled()
+    expect(calls['openInternal']).not.toHaveBeenCalled()
+    expect(deps.openWindow).not.toHaveBeenCalled()
+
+    runCommand('nav.reload', target, deps)
+    runCommand('app.quit', target, deps)
+    expect(calls['reload']).toHaveBeenCalledWith('a')
+    expect(deps.quit).toHaveBeenCalledTimes(1)
   })
 
   it('zooms the site the active page is on, and does nothing where a page has no site', () => {

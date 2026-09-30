@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { BOOKMARKS_BAR_HEIGHT, CHROME_HEIGHT, CHROME_TOP_ROWS, createWindowLayout } from '../window-layout.js'
 
-function setup (options: { fullscreen?: string | null, bar?: boolean, destroyed?: boolean } = {}): { layout: ReturnType<typeof createWindowLayout>, chrome: { setVisible: ReturnType<typeof vi.fn>, setBounds: ReturnType<typeof vi.fn> }, state: { fullscreen: string | null, bar: boolean, destroyed: boolean } } {
+function setup (options: { fullscreen?: string | null, bar?: boolean, destroyed?: boolean, kiosk?: boolean } = {}): { layout: ReturnType<typeof createWindowLayout>, chrome: { setVisible: ReturnType<typeof vi.fn>, setBounds: ReturnType<typeof vi.fn> }, state: { fullscreen: string | null, bar: boolean, destroyed: boolean } } {
   const state = { fullscreen: options.fullscreen ?? null, bar: options.bar ?? false, destroyed: options.destroyed ?? false }
   const win = { isDestroyed: () => state.destroyed, getContentBounds: () => ({ x: 0, y: 0, width: 1000, height: 700 }) }
   const chrome = { setVisible: vi.fn(), setBounds: vi.fn() }
-  const layout = createWindowLayout({ win: win as never, chrome: chrome as never, fullscreenTabId: () => state.fullscreen, bookmarksBarShown: () => state.bar })
+  const layout = createWindowLayout({ win: win as never, chrome: chrome as never, fullscreenTabId: () => state.fullscreen, bookmarksBarShown: () => state.bar, kiosk: options.kiosk === true })
   return { layout, chrome, state }
 }
 
@@ -39,6 +39,16 @@ describe('createWindowLayout', () => {
 
     layout.layoutChrome()
 
+    expect(chrome.setVisible).toHaveBeenCalledWith(false)
+    expect(layout.tabBounds()).toEqual({ x: 0, y: 0, width: 1000, height: 700 })
+  })
+
+  it('has no chrome in a kiosk: the page takes the whole window and the chrome stays hidden', () => {
+    const { layout, chrome } = setup({ kiosk: true, bar: true })
+
+    layout.layoutChrome()
+
+    expect(layout.chromeHeight()).toBe(0)
     expect(chrome.setVisible).toHaveBeenCalledWith(false)
     expect(layout.tabBounds()).toEqual({ x: 0, y: 0, width: 1000, height: 700 })
   })

@@ -133,6 +133,7 @@ describe('createWindowState', () => {
 
     stop()
 
-    expect(unsubscribed).toHaveBeenCalledTimes(4)
+    // The bookmarks, zoom, profile and settings listeners, and the home state part's settings listener.
+    expect(unsubscribed).toHaveBeenCalledTimes(5)
   })
 })
