@@ -13,6 +13,7 @@ import type { DevToolsGate } from '../devtools/devtools-service.js'
 import type { TabLifecycle } from './tab-lifecycle.js'
 import type { ShellServices } from './shell-services.js'
 import type { CommandId } from '../shortcuts/commands.js'
+import type { SleepingTab, TabGroupState } from './tab-extra-types.js'
 
 export interface TabState {
   id: string
@@ -59,6 +60,12 @@ export interface TabState {
   audible: boolean
   /** Why the page's renderer died (`render-process-gone`'s reason), or null while it lives. */
   crashed: string | null
+  /** The id of the group the tab is in. Absent reads as no group. */
+  group?: string | null
+  /** The tab's page is not loaded: it is waiting to be woken. Absent reads as false. */
+  sleeping?: boolean
+  /** The page looks like an article the reader view can show. Absent reads as false. */
+  readable?: boolean
 }
 
 /** What TabManager itself knows. Bookmarks are a separate store
@@ -85,6 +92,16 @@ export interface ShellState extends TabsSnapshot {
   showFullUrl: boolean
   /** The key caps bound to the commands the chrome names in a tooltip, or null when one is cleared. */
   shortcutKeys: { readonly 'nav.home': readonly string[] | null, readonly 'tab.search': readonly string[] | null }
+  /** The tab groups of this window, in strip order. Absent reads as none. */
+  groups?: TabGroupState[]
+  /** Whether the side panel is open, and on which side. Absent reads as closed. */
+  sidePanel?: { open: boolean, side: 'left' | 'right' }
+  /** Which toolbar buttons are shown, by button id. Absent reads as every button. */
+  toolbar?: Record<string, boolean>
+  /** The interface scale, 1 being 100%. Absent reads as 1. */
+  uiScale?: number
+  /** What pointing at a tab shows. Absent reads as the preview. */
+  hoverCard?: 'off' | 'text' | 'preview'
 }
 
 export interface Bounds {
@@ -243,4 +260,12 @@ export interface TabRecord {
   muted?: boolean
   /** Why the renderer died, or null. Set from `render-process-gone`, cleared on the next load. Absent reads as null. */
   crashed?: string | null
+  /** The id of the tab's group. Absent reads as null. */
+  groupId?: string | null
+  /** When the tab last stopped being the one in front, in milliseconds since the epoch. Absent until it has been. */
+  lastActiveAt?: number
+  /** What a tab put to sleep keeps; its view is blank meanwhile. Absent reads as null. */
+  sleeping?: SleepingTab | null
+  /** Set on a reader tab: the id of the tab it was made from. Absent reads as null. */
+  reader?: { source: string } | null
 }

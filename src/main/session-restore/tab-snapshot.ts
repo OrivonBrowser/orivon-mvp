@@ -108,9 +108,15 @@ export function rememberOpenedFrom (record: TabRecord, snapshot: TabSnapshot): v
  * page that is gone, and any address a tab would refuse to open (`view-source:`, a blob, `about:blank`).
  */
 export function snapshotOf (record: TabRecord, wc: WebContents): TabSnapshot | null {
+  const pinned = record.pinned === true
+  // A sleeping tab's view is blank, so what the page was comes from what sleeping kept.
+  if (record.sleeping != null) {
+    const { url, title, entries, index } = record.sleeping
+    // Address and title only: `pageState` holds what was typed into forms.
+    return sanitizeSnapshot({ url, title, pinned, ...boundHistory(entries.map((entry) => ({ url: entry.url, title: entry.title })), index) })
+  }
   if (record.isDashboardTab || wc.isDestroyed()) return null
   const title = wc.getTitle()
-  const pinned = record.pinned === true
   if (record.internalPage !== null) {
     const address = parseInternalUrl(wc.getURL()) ?? openedFrom.get(record)?.internal ?? { page: record.internalPage, path: '/' }
     return sanitizeSnapshot({ url: internalUrl(address.page, address.path), title, pinned, internal: address })

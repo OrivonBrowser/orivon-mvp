@@ -65,6 +65,9 @@ export class TabFactory {
       pinned: false,
       muted: false,
       crashed: null,
+      groupId: null,
+      sleeping: null,
+      reader: null,
       ...extra
     }
   }
