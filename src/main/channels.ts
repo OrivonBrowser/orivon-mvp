@@ -102,6 +102,12 @@ export const MENU_COMMAND_CHANNEL = 'orivon-menu:command'
  * list and reset its own state (scroll position, keyboard focus). */
 export const MENU_SHOWN_CHANNEL = 'orivon-menu:shown'
 
+/** An overlay's own WebContentsView -> main: `{ type: 'ready' | 'request' | 'size' | 'close' }`. See ./overlays/overlay-ipc.ts. */
+export const OVERLAY_COMMAND_CHANNEL = 'orivon-overlay:command'
+
+/** Main -> an overlay's own view: `{ type: 'show', payload }` on a warm view's every later show, and `{ type: 'event', event }` from `overlays.send`. */
+export const OVERLAY_EVENT_CHANNEL = 'orivon-overlay:event'
+
 /** The split backdrop's own view -> main: the divider being dragged or reset. See ./shell/split-frame.ts. */
 export const SPLIT_FRAME_CHANNEL = 'orivon-split:command'
 
