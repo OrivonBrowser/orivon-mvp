@@ -1675,10 +1675,12 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 ### A314: A connect grant cannot pair a wildcard host with one port **[AI-REC]**
 
 - **Question:** `net.tcp.connect` and `net.https.connect` accept `*` as a host only in `*:*`. An app that dials
-  whatever server its user names on one service port (IRC on 6697) must ask for every port on every host.
+  whatever server its user names on one service port (a mail client on 993, a chat client on 5222) must ask for
+  every port on every host.
 - **Why it matters:** the consent prompt then shows unlimited network access for an app that needs one port.
 - **Options:** accept `*:<port>` and `*:<low>-<high>` in the loader and the broker, still refusing private
-  addresses under `*` (rec.); leave `*:*` as the only wildcard.
+  addresses under `*` and never reaching a reserved port, which only a named host reaches (d-0241) (rec.);
+  leave `*:*` as the only wildcard.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** a narrower grant for The Lounge's port
 
