@@ -1,10 +1,13 @@
 # `src/main/sessions/`: what an Electron `Session` is allowed to do
 
 **What lives here.** `permission-gate.ts` denies every Chromium permission (camera, clipboard
-reads, geolocation, ...) on every session a tab can reach, except the names in the table below,
-plus one conditional case: `'media'` for a `chrome-extension://` origin redeeming a live
-`chrome.tabCapture` grant (`tab-capture-grants.ts`'s own doc; wired from
-[`../extensions/extension-host.ts`](../extensions/extension-host.ts)). `external-links.ts` and
+reads, geolocation, ...) on every session a tab can reach, except the names in the table below
+(`allowed-permissions.ts`), plus one conditional case: `'media'` for a `chrome-extension://`
+origin redeeming a live `chrome.tabCapture` grant (`tab-capture-media.ts`, with
+`tab-capture-grants.ts`'s own doc; wired from
+[`../extensions/extension-host.ts`](../extensions/extension-host.ts)). Before its own rules the
+gate asks `site-asks.ts`, a registry of per-site askers: each answers only the permissions it owns,
+only for a tab, and answers `undefined` otherwise, so the gate's rules decide. `external-links.ts` and
 `site-notifications.ts` decide the two that ask the person; `notification-decisions.ts` remembers
 each site's notification answer; `tab-prompts.ts` is what each tab remembers between questions.
 `web-context-host.ts` is `ADR-0019`'s Electron half of the isolated `WebContext`: the real
