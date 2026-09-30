@@ -44,6 +44,8 @@ export interface PasswordVault {
   /** Adds a login, or replaces the password of the one with the same origin and username. Null when it cannot be kept. */
   save: (entry: LoginInput) => Promise<Login | null>
   remove: (id: string) => boolean
+  /** Records that the login was just filled into a page, so the chooser lists the one used last first. */
+  touch?: (id: string) => void
   readonly never: NeverSaved
   onChange: (listener: () => void) => () => void
 }
@@ -70,6 +72,12 @@ export function memoryVault (state: VaultState = 'ready'): PasswordVault {
       logins.set(login.id, { login, password: entry.password })
       changed()
       return await Promise.resolve(login)
+    },
+    touch: (id) => {
+      const entry = logins.get(id)
+      if (entry === undefined) return
+      logins.set(id, { login: { ...entry.login, used: Date.now() }, password: entry.password })
+      changed()
     },
     remove: (id) => {
       const removed = logins.delete(id)

@@ -444,6 +444,45 @@ describe('createOverlayHost: focus', () => {
     expect(address.focus).toHaveBeenCalledTimes(1)
   })
 
+  it('a never-focus overlay whose handler takes the keyboard keeps it, and hands it back on close', () => {
+    const address = tab(); address.id = 5
+    focus.current = address
+    let takeFocus: (() => void) | undefined
+    const { host } = setup([def('bar', { layer: 'bar', focus: 'never', closeOn: CLOSE_LIKE_BAR, attach: (win) => { takeFocus = win.takeFocus; return { request: () => undefined } } })])
+    host.show('bar')
+    expect(views[0]?.focusWanted).toBeNull()
+    takeFocus?.()
+    expect(views[0]?.focusWanted?.()).toBe(true)
+    views[0]?.spec.onFocus()
+    expect(address.focus).not.toHaveBeenCalled()
+    host.close('bar')
+    expect(address.focus).toHaveBeenCalledTimes(1)
+    // The next showing starts without the keyboard again.
+    host.show('bar')
+    views.at(-1)?.spec.onFocus()
+    expect(address.focus).toHaveBeenCalledTimes(2)
+  })
+
+  it('asking for the keyboard does nothing for a taking overlay, a closed one, or while another window is in use', () => {
+    let takeFocus: (() => void) | undefined
+    const attach = (win: { takeFocus?: () => void }): OverlayHandler => { takeFocus = win.takeFocus; return { request: () => undefined } }
+    const taking = setup([def('a', { attach: attach as never })])
+    taking.host.show('a', ANCHOR)
+    views[0]!.focusWanted = null
+    takeFocus?.()
+    expect(views[0]?.focusWanted).toBeNull()
+    taking.host.close('a')
+    const closed = setup([def('bar', { layer: 'bar', focus: 'never', closeOn: CLOSE_LIKE_BAR, attach: attach as never })])
+    closed.host.show('bar')
+    closed.host.close('bar')
+    takeFocus?.()
+    expect(views.at(-1)?.focusWanted).toBeNull()
+    const away = setup([def('bar2', { layer: 'bar', focus: 'never', closeOn: CLOSE_LIKE_BAR, attach: attach as never })], tab(), { focused: false, otherFocused: true })
+    away.host.show('bar2')
+    takeFocus?.()
+    expect(views.at(-1)?.focusWanted).toBeNull()
+  })
+
   it('a taking overlay ignores its own focus event', () => {
     const { host, active } = setup([def('a')])
     host.show('a', ANCHOR)

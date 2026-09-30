@@ -8,6 +8,7 @@ import { createBookmarksBar } from './bookmarks-bar.js'
 import { createCluster } from './cluster.js'
 import { createHomeButton } from './home-button.js'
 import { createNavigation } from './navigation.js'
+import { createPasswordKey } from './password-key.js'
 import { createPromptAnchor } from './prompt-anchor.js'
 import { createReloadStop } from './reload-stop.js'
 import { createSiteAccessChip } from './site-access-chip.js'
@@ -34,6 +35,7 @@ export const CHROME_MODULES: readonly ChromeModule[] = [
   createHomeButton(),
   createSiteBadges(),
   createSiteAccessChip(),
+  createPasswordKey(),
   createPromptAnchor(),
   createCluster(),
   createBookmarksBar()

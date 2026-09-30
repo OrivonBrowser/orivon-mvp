@@ -187,6 +187,11 @@ export function keyIcon (): SVGSVGElement {
   return icon((el) => { el.append(path('M21 2l-2 2m-7.6 7.6a5.5 5.5 0 1 1-7.8 7.8 5.5 5.5 0 0 1 7.8-7.8zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4', '2')) })
 }
 
+/** A text field holding three dots: the password button in the address bar (the site button there is already a key). */
+export function passwordIcon (): SVGSVGElement {
+  return icon((el) => { el.append(rect(2, 6, 20, 12, 3), line(7, 12, 7.01, 12), line(12, 12, 12.01, 12), line(17, 12, 17.01, 12)) })
+}
+
 /** Three sliders, for the section of per-site choices. */
 export function slidersIcon (): SVGSVGElement {
   return icon((el) => { el.append(line(4, 7, 20, 7), line(4, 12, 20, 12), line(4, 17, 20, 17), circle(9, 7, 2), circle(15, 12, 2), circle(8, 17, 2)) })

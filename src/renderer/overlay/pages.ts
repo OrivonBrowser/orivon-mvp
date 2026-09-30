@@ -5,6 +5,8 @@ import { bookmarkFolderPage } from './bookmark-folder/page.js'
 import { findPage } from './find/page.js'
 import { menuPage } from './menu/page.js'
 import { omniboxPage } from './omnibox/page.js'
+import { passwordFillPage } from './password-fill/page.js'
+import { passwordSavePage } from './password-save/page.js'
 import { qrPage } from './qr/page.js'
 import { restorePage } from './restore/page.js'
 import { sadTabPage } from './sad-tab/page.js'
@@ -18,6 +20,9 @@ export const OVERLAY_PAGES: Readonly<Record<string, OverlayPage>> = {
   find: findPage,
   menu: menuPage,
   omnibox: omniboxPage,
+  'password-fill': passwordFillPage,
+  'password-save': passwordSavePage,
+  'password-suggest': passwordFillPage,
   qr: qrPage,
   restore: restorePage,
   'sad-tab': sadTabPage,

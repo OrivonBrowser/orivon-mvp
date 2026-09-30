@@ -3,6 +3,7 @@ import { exposeFetchRoute } from './expose-fetch-route.js'
 import { exposeShimGlobals } from './expose-shim-globals.js'
 import { exposeChildHostConnect } from './expose-child-host-connect.js'
 import { installEmbedEventRelay } from './embed-event-relay.js'
+import { installFormWatch } from './form-watch.js'
 import { installManifestHintWatcher } from './manifest-hint.js'
 import { hideUserAgentDataOnSignInHosts } from './sign-in-identity.js'
 
@@ -39,6 +40,9 @@ export function exposeOrdinaryTabSurface (): void {
   // not matter -- this never touches window.orivon, only the DOM and
   // ipcRenderer.
   installManifestHintWatcher()
+  // Saving and filling passwords: inert until main says the vault can keep logins, and it
+  // exposes nothing to the page. Never reaches a subframe.
+  installFormWatch()
   // ADR-0047: the popups and downloads of a page this tab shows in a
   // <webview>, told to the element. Idle until main sends.
   installEmbedEventRelay()
