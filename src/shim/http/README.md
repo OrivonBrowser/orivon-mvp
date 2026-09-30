@@ -55,13 +55,15 @@ therefore gets nothing, as it would from Node.
 [`../net/server.ts`](../net/server.ts) closes every accepted socket with the listener, because the
 broker closes a server handle's derived sockets. `http.Server` holds that close back until the
 last connection that is answering a request has finished, and closes idle ones at once; the net
-listener stays bound until then and a connection that arrives meanwhile is closed on accept, where
-Node would refuse it at the port. A socket handed over by `upgrade` or `connect` counts as
-connected until it closes.
+listener stays bound until then, so the port keeps accepting and then closing new connections until
+the last request finishes, where Node would refuse them at the port. `listen()` in that window
+throws `ERR_SERVER_ALREADY_LISTEN` and leaves the pending close alone. A socket handed over by
+`upgrade` or `connect` counts as connected until it closes.
 
 **The timeouts run on plain timers.** `headersTimeout` and `requestTimeout` answer `408` through
 `clientError`, and `keepAliveTimeout` closes an idle connection, each at the time given, where
-Node checks them on a sweep every `connectionsCheckingInterval`. `server.timeout` is the socket's
+Node checks them on a sweep every `connectionsCheckingInterval`. `headersTimeout` counts from the
+connection's start for its first request, so a connection that sends nothing gets the `408`. `server.timeout` is the socket's
 idle timeout, and the `timeout` event is raised on the request, the response and the server in
 Node's order.
 
