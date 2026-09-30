@@ -25,7 +25,7 @@ export interface BarMenuActions {
   remove: () => void
   toggleBar: () => void
   /** Absent while the Bookmark manager command is still a stub: no row then. */
-  openManager?: () => void
+  openManager?: (() => void) | undefined
 }
 
 /** "Open All (7)", or "Open All (25 of 40)" when a folder holds more than one Open all makes. */
