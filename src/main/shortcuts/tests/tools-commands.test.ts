@@ -36,6 +36,12 @@ describe('the page-tools command rows', () => {
     expect(def?.yieldToApp === true).toBe(yields)
   })
 
+  it('marks every row without a feature behind it pending, and no other row', () => {
+    const pending = COMMANDS.filter((def) => (def as CommandDef).pending === true).map((def) => def.id)
+
+    expect(pending).toEqual(ROWS.map(([id]) => id).filter((id) => id !== 'window.alwaysOnTop'))
+  })
+
   it('gives find next and previous their function-key aliases', () => {
     expect(commandById('find.next')).toMatchObject({ aliases: ['F3'] })
     expect(commandById('find.previous')).toMatchObject({ aliases: ['Shift+F3'] })

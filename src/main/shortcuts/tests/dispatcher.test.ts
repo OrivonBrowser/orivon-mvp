@@ -9,6 +9,21 @@ import type { PressedKey } from '../dispatcher.js'
 import { ShortcutService } from '../shortcut-service.js'
 import { ShortcutStore } from '../shortcut-store.js'
 
+// Every command that yields to an app is still a reserved row, and the dispatcher skips those; the
+// yield tests read them as if their feature had landed.
+const feature = vi.hoisted(() => ({ landed: false }))
+vi.mock('../commands.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../commands.js')>()
+  return {
+    ...real,
+    commandById: (id: string) => {
+      const def = real.commandById(id)
+      return feature.landed && def !== undefined ? { ...def, pending: undefined } : def
+    }
+  }
+})
+afterEach(() => { feature.landed = false })
+
 let dir: string
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'orivon-dispatcher-')) })
 afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
@@ -51,6 +66,15 @@ describe('attachShortcuts', () => {
     expect(event.preventDefault).toHaveBeenCalledTimes(1)
   })
 
+  it('leaves the chord of a reserved command to the page until its feature lands', async () => {
+    const { press, run } = await setup()
+
+    const event = press(key('s', 'KeyS', { control: true }))
+
+    expect(run).not.toHaveBeenCalled()
+    expect(event.preventDefault).not.toHaveBeenCalled()
+  })
+
   it('leaves alone a key that is bound to nothing, a key release, a modifier on its own, and composition', async () => {
     const { press, run } = await setup()
 
@@ -86,6 +110,7 @@ describe('attachShortcuts', () => {
   })
 
   it('leaves a yielding key to a registered app\'s tab: the app gets it, unhandled', async () => {
+    feature.landed = true
     const { press, run } = await setup({ appTab: true })
 
     const find = press(key('f', 'KeyF', { control: true }))
@@ -106,6 +131,7 @@ describe('attachShortcuts', () => {
   })
 
   it('runs a yielding key in an ordinary tab', async () => {
+    feature.landed = true
     const { press, run } = await setup()
 
     const event = press(key('f', 'KeyF', { control: true }))

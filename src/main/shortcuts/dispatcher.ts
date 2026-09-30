@@ -46,7 +46,10 @@ export function attachShortcuts (contents: WebContents, service: ShortcutService
     // A page in fullscreen keeps every key (Escape leaves it, in the browser process).
     if (target === null || target.suspended) return
     // The app has its own version of this key (find, print, save): it gets it, and the browser's stays unused there.
-    if (target.isAppTab && commandById(id)?.yieldToApp === true) return
+    const def = commandById(id)
+    if (target.isAppTab && def?.yieldToApp === true) return
+    // A reserved command has nothing to run, so taking its chord would only stop the page's own handler for it.
+    if (def?.pending === true) return
     event.preventDefault()
     if (input.isAutoRepeat && !service.isRepeatable(id)) return
     target.run(id)
