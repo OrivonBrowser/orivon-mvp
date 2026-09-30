@@ -216,11 +216,15 @@ describe('socketReadable / socketWritable -- basic correctness', () => {
 
 describe('socketReadable / socketWritable under concurrent teardown churn (G3)', () => {
   it('never throws an uncaughtException across many concurrent dial/cancel/abort/destroy sequences', async () => {
-    const resetServer = createServer((socket) => { socket.resetAndDestroy() })
+    // The peers are this test's own: a dial that resets before the server's accept callback runs
+    // hands that callback a connection already reset, and its socket reports ECONNRESET. Only a
+    // socket the code under test owns may count as an uncaught exception here.
+    const peerErrors = (socket: Socket): void => { socket.on('error', () => {}) }
+    const resetServer = createServer((socket) => { peerErrors(socket); socket.resetAndDestroy() })
     await new Promise<void>((resolve) => { resetServer.listen(0, '127.0.0.1', () => resolve()) })
     const resetPort = (resetServer.address() as { port: number }).port
 
-    const closeServer = createServer((socket) => { socket.end() })
+    const closeServer = createServer((socket) => { peerErrors(socket); socket.end() })
     await new Promise<void>((resolve) => { closeServer.listen(0, '127.0.0.1', () => resolve()) })
     const closePort = (closeServer.address() as { port: number }).port
 
