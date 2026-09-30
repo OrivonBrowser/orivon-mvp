@@ -72,8 +72,6 @@ export const COMMANDS = [
   { id: 'bookmark.allTabs', label: 'Bookmark all tabs', category: 'navigation', default: 'Mod+Shift+D' },
   { id: 'bookmarks.open', label: 'Bookmark manager', category: 'navigation', default: 'Mod+Shift+O' },
   { id: 'bookmarks.toggleBar', label: 'Show bookmarks bar', category: 'navigation', default: 'Mod+Shift+B' },
-  { id: 'readingList.add', label: 'Add page to reading list', category: 'navigation', pending: true },
-  { id: 'readingList.open', label: 'Reading list', category: 'navigation', pending: true },
   { id: 'find.open', label: 'Find in page', category: 'tools', default: 'Mod+F', yieldToApp: true },
   { id: 'find.next', label: 'Find next', category: 'tools', default: 'Mod+G', aliases: ['F3'], repeatable: true, yieldToApp: true },
   { id: 'find.previous', label: 'Find previous', category: 'tools', default: 'Mod+Shift+G', aliases: ['Shift+F3'], repeatable: true, yieldToApp: true },

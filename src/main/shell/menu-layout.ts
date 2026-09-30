@@ -36,11 +36,9 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
   'bookmark.toggle',
   { submenu: 'Bookmarks', items: [
     'bookmark.allTabs',
-    'readingList.add',
     '-',
     { check: 'bookmarks.toggleBar', on: ({ services }) => bookmarksBarShown(services) },
     'bookmarks.open',
-    'readingList.open',
     '-',
     'import.open'
   ] },

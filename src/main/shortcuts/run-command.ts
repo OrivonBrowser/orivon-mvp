@@ -89,8 +89,6 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'bookmark.toggle': starCommand({ window: target, services }); return
     case 'bookmark.allTabs': openBookmarkAllTabs({ window: target, services }); return
     case 'window.new': deps.openWindow({ place: cascadeFrom(window.getBounds()) }); return
-    case 'readingList.add': return
-    case 'readingList.open': return
     case 'tab.moveLeft': case 'tab.moveRight': {
       if (active === undefined) return
       // A joined pair moves as one, from where it begins.
