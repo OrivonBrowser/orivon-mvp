@@ -263,6 +263,7 @@ guessed. Rows with no ID were lifted out of the prose of the documents named bes
 | `d-0263` | 2026-09-30 | A toast's link is the only page-triggered action an overlay has: main runs the command of the toast it showed, never one the page names. A toast with a link stays 8 seconds and pauses while the pointer is on it; a saving toast stays until it ends. AI | `../../src/main/page-tools/README.md` |
 | `d-0264` | 2026-09-30 | A tab zooms per webContents (Electron's `isolated` mode), so the page's pixels scale; the chrome and popovers stay in `manual` mode and never zoom. Measured in Electron 44: in `manual` mode the stored factor changed and the page's `innerWidth` did not. AI | `../../src/main/zoom/README.md` |
 | `d-0265` | 2026-09-30 | Orivon's own overlays are views of one host that share one preload bridge, each reaching only its own handler, checked by sender frame and exact address on every call. AI, *proposed* | [`ADR-0048`](ADR-0048-orivon-s-own-overlays-share-one-host-and-one-preload-bridge.md) |
+| `d-0266` | 2026-10-01 | The compatibility matrix page carries Tables 1, 2, 3 and 5 as readable tables in the page's own style, one row per topic saying what works, what does not and what the app sees at the gap; the pages under `docs/planning/compatibility/` keep the item-by-item lists for looking up one name. Owner: the index-and-tally page was not readable for a person | [`compatibility-matrix.md`](../planning/compatibility-matrix.md) |
 
 ## Directives
 

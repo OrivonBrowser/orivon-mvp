@@ -1,8 +1,8 @@
 # Table 3e: crypto, compression and buffers
 
-One part of the [compatibility matrix](../compatibility-matrix.md), which holds the legend, the
-definition of every column and the index of all tables. This page says what works today and
-nothing else.
+One part of the [compatibility matrix](../compatibility-matrix.md). The matrix page has this
+table in readable form, one row per topic; this page lists every item one by one, for looking up a
+single name. It says what works today and nothing else.
 
 The universe is Node 24's `crypto` (69 exports, the 52 names `getHashes()` returns, the 134 names `getCiphers()` returns, the 82 names `getCurves()` returns, and the members of `Hash`, `Hmac`, `Cipheriv`, `Decipheriv`, `Sign`, `Verify`, `ECDH`, `DiffieHellman`, `DiffieHellmanGroup`, `KeyObject`, `X509Certificate` and `Certificate`), `zlib` (47 exports) and `buffer` (14 exports, with the 12 statics and 95 prototype names of `Buffer`). The answers describe the code an app's own bundle holds when it bundles the alias table of [`module-map.ts`](../../../src/shim/module-map.ts) for the browser, compared with Node 24.11.1 output byte for byte. A missing module member refuses by name when called; it has `typeof` `'function'`, so a feature test such as `if (crypto.scrypt)` passes and the call then refuses. An algorithm or option missing inside a present function throws a plain `Error` or `TypeError`, with no named refusal. Apart from `zlib`'s corrupt-data errors, no error the polyfills throw carries Node's `code`.
 

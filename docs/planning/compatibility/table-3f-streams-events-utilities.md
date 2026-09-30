@@ -1,8 +1,8 @@
 # Table 3f: streams, events, utilities, timers, assert
 
-One part of the [compatibility matrix](../compatibility-matrix.md), which holds the legend, the
-definition of every column and the index of all tables. This page says what works today and
-nothing else.
+One part of the [compatibility matrix](../compatibility-matrix.md). The matrix page has this
+table in readable form, one row per topic; this page lists every item one by one, for looking up a
+single name. It says what works today and nothing else.
 
 Node 24.11's exports of `stream` (23), `stream/promises` (2), `stream/web` (17), `stream/consumers` (5), `events` (15), `util` (33), `util/types` (43), `string_decoder` (1), `url` (14), `querystring` (7), `timers` (7), `timers/promises` (4), `assert` (22), `assert/strict` (22), `punycode` (6) and `sys` (33), which is 254 names in 16 specifiers, the six `_stream_*` specifiers, and the members of the stream classes; every name is in a row below. `events` also has two non-enumerable internals, `kMaxEventTargetListeners` and `kMaxEventTargetListenersWarned`, which the `events` row names. `stream` and `events` are unwrapped package rows of [`module-map.ts`](../../../src/shim/module-map.ts), so a member they lack reads `undefined` and a call is a bare `TypeError`; a member of a wrapped module that is missing refuses by name when called and has `typeof` `'function'`. The other modules are in [Table 2a](table-2a-node-modules.md), and timer handles are in [Table 3a](table-3a-globals-and-process.md).
 
