@@ -130,7 +130,9 @@ export function installEmbedHost (broker: Broker, preloadPath = join(import.meta
 
   function sendToApp (guestId: number, name: 'orivon-popup' | 'orivon-download', detail: EmbedPopup | EmbedDownload): void {
     const embedder = embedders.get(guestId)
-    if (embedder === undefined || embedder.page.isDestroyed() || !embedder.allow()) return
+    if (embedder === undefined || embedder.page.isDestroyed()) return
+    // Only the app's own document is told: the page holding the element may have committed another origin since.
+    if (embedderOrigin(embedder.page) !== owners.get(guestId) || !embedder.allow()) return
     try {
       embedder.page.mainFrame.send(EMBED_EVENT_CHANNEL, guestId, name, detail)
     } catch {

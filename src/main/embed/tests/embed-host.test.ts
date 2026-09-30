@@ -474,4 +474,31 @@ describe('installEmbedHost -- a shown page\'s popups and downloads are told to i
     embedder.mainFrame.send.mockImplementation(() => { throw new Error('Render frame was disposed') })
     expect(handler()({ url: 'https://a.example/x', frameName: '', disposition: 'default', referrer: { url: '' } })).toEqual({ action: 'deny' })
   })
+
+  // The page that holds the element may have committed another origin while its guest lives; that
+  // document must not learn what the guest's page asked for.
+  it('drops a notice when the embedder\'s main frame is no longer the app origin that owns the guest, and still denies the window', () => {
+    const { embedder, handler } = attached()
+    embedder.mainFrame.url = `${ORIGIN_B}/elsewhere`
+    expect(handler()({ url: 'https://a.example/x', frameName: '', disposition: 'default', referrer: { url: '' } })).toEqual({ action: 'deny' })
+    expect(embedder.mainFrame.send).not.toHaveBeenCalled()
+  })
+
+  it('drops a download notice the same way', () => {
+    const { embedder, session } = attached()
+    embedder.mainFrame.url = `${ORIGIN_B}/elsewhere`
+    const event = { preventDefault: vi.fn() }
+    willDownload(session)(event, item(), { id: 42 })
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)
+    expect(embedder.mainFrame.send).not.toHaveBeenCalled()
+  })
+
+  it('sends again once the main frame is back on the owning origin', () => {
+    const { embedder, handler } = attached()
+    embedder.mainFrame.url = `${ORIGIN_B}/elsewhere`
+    handler()({ url: 'https://a.example/x', frameName: '', disposition: 'default', referrer: { url: '' } })
+    embedder.mainFrame.url = `${ORIGIN_A}/tab`
+    handler()({ url: 'https://a.example/y', frameName: '', disposition: 'default', referrer: { url: '' } })
+    expect(embedder.mainFrame.send).toHaveBeenCalledTimes(1)
+  })
 })

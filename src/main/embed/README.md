@@ -94,7 +94,8 @@ cancels every download after reading the item, then sends the embedder's main fr
 `EMBED_EVENT_CHANNEL` with the guest's id, the event name and the detail `embed-events.ts` built.
 [`../../preload/embed-event-relay.ts`](../../preload/embed-event-relay.ts) finds the `<webview>`
 whose `getWebContentsId()` matches and dispatches the event in the main world; an id no element
-matches is dropped. The embedder is recorded at `did-attach-webview`, and forgotten with the guest.
+matches is dropped. A notice is sent only while that main frame is still on the app origin that
+owns the guest; a page that committed another origin hears nothing. The embedder is recorded at `did-attach-webview`, and forgotten with the guest.
 Every field a shown page chooses is bounded: an address (`url`, `referrer`) past
 `LIMITS.embedEventUrlBytes`, and a `frameName`, `filename` or `mimeType` past `NOTICE_TEXT_BYTES`
 (4096 UTF-8 bytes), each arrives as `''`.
