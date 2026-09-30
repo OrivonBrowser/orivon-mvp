@@ -262,7 +262,7 @@ it('draws the strip and the card in light and dark, at 1280 and 700 wide', async
         await card.emulateMedia({ colorScheme: scheme })
         await delay(400)
         await shoot(`card-${String(width)}-${scheme}`)
-        if (width === 1280) await card.screenshot({ path: SHOTS_DIR === undefined ? '/dev/null' : join(SHOTS_DIR, `card-only-${scheme}.png`) })
+        if (width === 1280 && SHOTS_DIR !== undefined) await card.screenshot({ path: join(SHOTS_DIR, `card-only-${scheme}.png`) })
         await pressEnter(card)
         await waitCard(app, false)
         await waitCrashedMark(chrome, 'sad fixture', false)
