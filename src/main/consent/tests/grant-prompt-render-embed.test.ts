@@ -95,5 +95,19 @@ describe('describeCapabilityGrant -- web.embed with a local pattern (ADR-0047)',
     expect(describeCapabilityGrant('web.embed', ['*']).message).toContain('Show any website inside itself, and read and change what those pages show')
     expect(describeCapabilityGrant('web.embed', ['https://example.com']).message).toContain('read and change what they show')
   })
-})
 
+  // "*" does not reach an exact private or loopback origin, so beside "*" those are exactly the
+  // entries a person must be able to read: none is folded into "and N more".
+  it('names every exact origin beside "*", however many there are', () => {
+    const origins = Array.from({ length: 60 }, (_, i) => `http://10.0.0.${String(i + 1)}:8080`)
+    const row = describeCapabilityGrant('web.embed', ['*', ...origins])
+    for (let i = 0; i < 60; i += 1) expect(row.message).toContain(`10.0.0.${String(i + 1)}:8080`)
+    expect(row.message).not.toMatch(/and \d+ more/)
+    expect(row.message).toContain('any website')
+  })
+
+  it('still caps a list of exact origins with no "*"', () => {
+    const origins = Array.from({ length: 60 }, (_, i) => `https://site-${String(i)}.example`)
+    expect(describeCapabilityGrant('web.embed', origins).message).toMatch(/and 40 more/)
+  })
+})
