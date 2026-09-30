@@ -63,7 +63,10 @@ describe('console', () => {
     spy.mockRestore()
   })
 
-  it('refuses Console by name', () => {
-    expect(() => new (consoleNamespace.Console as unknown as new () => unknown)()).toThrow(/console\.Console/)
+  it('exports a Console that writes to the streams it is given, and refuses members it lacks by name', () => {
+    const chunks: string[] = []
+    new consoleNamespace.Console({ write: (chunk: string) => { chunks.push(chunk) } }).log('to a stream')
+    expect(chunks).toEqual(['to a stream\n'])
+    expect(() => { (consoleNamespace as unknown as { profile: () => void }).profile() }).toThrow(/console\.profile/)
   })
 })
