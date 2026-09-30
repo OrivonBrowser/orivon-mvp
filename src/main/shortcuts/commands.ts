@@ -50,7 +50,7 @@ export const COMMANDS = [
   { id: 'tab.mute', label: 'Mute tab', category: 'tabs' },
   { id: 'tab.closeOthers', label: 'Close other tabs', category: 'tabs' },
   { id: 'tab.closeRight', label: 'Close tabs to the right', category: 'tabs' },
-  { id: 'tab.search', label: 'Search tabs', category: 'tabs', default: 'Mod+Shift+A', pending: true },
+  { id: 'tab.search', label: 'Search tabs', category: 'tabs', default: 'Mod+Shift+A' },
   ...GO_TO_TAB,
   { id: 'tab.gotoLast', label: 'Go to the last tab', category: 'tabs', default: 'Mod+9' },
   { id: 'nav.back', label: 'Back', category: 'navigation', default: 'Alt+Left', macDefault: 'Mod+[' },

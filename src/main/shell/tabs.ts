@@ -144,8 +144,10 @@ export class TabManager {
     this.order.push(id)
   }
 
-  onStateChange (cb: (state: TabsSnapshot) => void): void {
+  /** Returns the removal. */
+  onStateChange (cb: (state: TabsSnapshot) => void): () => void {
     this.listeners.add(cb)
+    return () => { this.listeners.delete(cb) }
   }
 
   /** The window is closing: closes every tab's views and stops reacting, so

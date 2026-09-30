@@ -75,6 +75,15 @@ describe('the main menu layout', () => {
     expect(items[at - 1]).toMatchObject({ label: 'Print' })
     expect(items[at + 1]).toMatchObject({ label: 'Save page as' })
   })
+
+  it('lists Search tabs with its key in More tools, right after Split view', async () => {
+    const { ctx } = await setup()
+    const more = menuItems(ctx).find((item) => item.kind === 'submenu')
+    const rows = more?.kind === 'submenu' ? more.items : []
+    const at = rows.findIndex((item) => item.kind === 'command' && item.id === 'tab.search')
+    expect(rows[at]).toMatchObject({ label: 'Search tabs', keys: ['Ctrl', 'Shift', 'A'] })
+    expect(rows[at - 1]).toMatchObject({ id: 'split.toggle' })
+  })
 })
 
 describe('menuItems', () => {
@@ -136,7 +145,7 @@ describe('runnableIds', () => {
   it('holds every listed command at every depth, and the zoom row\'s four', async () => {
     const { ctx } = await setup()
     const ids = runnableIds(menuItems(ctx))
-    for (const id of ['tab.new', 'split.toggle', 'page.print', 'page.save', 'page.screenshot', 'page.pip', 'page.pdf', 'page.viewSource', 'window.alwaysOnTop', 'zoom.in', 'zoom.out', 'zoom.reset', 'window.fullscreen']) expect(ids.has(id as never), id).toBe(true)
+    for (const id of ['tab.new', 'split.toggle', 'tab.search', 'page.print', 'page.save', 'page.screenshot', 'page.pip', 'page.pdf', 'page.viewSource', 'window.alwaysOnTop', 'zoom.in', 'zoom.out', 'zoom.reset', 'window.fullscreen']) expect(ids.has(id as never), id).toBe(true)
     expect(ids.has('tab.close')).toBe(false)
   })
 

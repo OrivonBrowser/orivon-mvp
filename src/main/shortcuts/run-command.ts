@@ -11,6 +11,7 @@ import type { ShellWindowOptions } from '../shell/window-options.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import { reopenClosed } from '../session-restore/reopen.js'
+import { TAB_SEARCH_OVERLAY } from '../tab-search/tab-search-overlay.js'
 import { kioskAllows } from '../window-state/kiosk.js'
 import type { CommandId } from './commands.js'
 import { pdfCommand, pipCommand, printCommand, saveCommand, screenshotCommand, viewSourceCommand } from '../page-tools/page-commands.js'
@@ -99,6 +100,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'tab.mute': if (active !== undefined) toggleMute(tabs, active.id); return
     case 'tab.closeOthers': if (active !== undefined) closeOthers(tabs, active.id); return
     case 'tab.closeRight': if (active !== undefined) closeToRight(tabs, active.id); return
+    case 'tab.search': target.overlays.toggle(TAB_SEARCH_OVERLAY); return
     case 'window.newPrivate': services.profiles.openPrivate(); return
     case 'profiles.open': tabs.openInternal('profiles'); return
     case 'window.close': window.close(); return
@@ -108,7 +110,6 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'extensions.open': tabs.openInternal('extensions'); return
     case 'app.quit': deps.quit(); return
     // Ids the tools work reserves: each does nothing until the feature that owns it replaces its line and drops `pending` on its COMMANDS row.
-    case 'tab.search': return
     case 'page.print': void printCommand(target); return
     case 'page.pdf': void pdfCommand(target, realDeps); return
     case 'page.save': void saveCommand(target, realDeps); return

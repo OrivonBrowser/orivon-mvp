@@ -4,6 +4,7 @@ import { findOverlay } from '../find/find-overlay.js'
 import { screenshotOverlay, toastOverlay } from '../page-tools/page-overlays.js'
 import { sadTabOverlay } from '../sad-tab/sad-tab-overlay.js'
 import { menuOverlay } from '../shell/menu-overlay.js'
+import { tabSearchOverlay } from '../tab-search/tab-search-overlay.js'
 import type { OverlayDef } from './overlay-types.js'
 
 export const OVERLAYS: readonly OverlayDef[] = [
@@ -11,5 +12,6 @@ export const OVERLAYS: readonly OverlayDef[] = [
   menuOverlay,
   sadTabOverlay,
   screenshotOverlay,
+  tabSearchOverlay,
   toastOverlay
 ]

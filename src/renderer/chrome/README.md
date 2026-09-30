@@ -8,6 +8,7 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 | `context.ts` | `ChromeModule`, `ChromeContext`, `TabDecorator`; the state every module reads; `must`, `hasSite`, `anchorFor` |
 | `modules.ts` | `CHROME_MODULES` and `TAB_DECORATORS`, one line per feature, and `dispatchShellEvent` |
 | `tab-strip.ts` | the tabs, the new-tab button, the empty tail, the cross-window drop mark |
+| `tab-search-button.ts` | the button at the strip's right end that opens tab search |
 | `navigation.ts` | back, forward, reload, the address bar |
 | `home-button.ts` | the Home button, shown while `toolbar.home` is on |
 | `site-badges.ts` | the Web3 Score shield and mark, the permissions key |

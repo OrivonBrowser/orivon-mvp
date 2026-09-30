@@ -34,6 +34,7 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
   'page.save',
   { submenu: 'More tools', items: [
     'split.toggle',
+    'tab.search',
     'page.screenshot',
     'page.pip',
     'page.pdf',

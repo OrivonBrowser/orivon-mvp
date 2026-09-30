@@ -9,20 +9,21 @@ import type { PressedKey } from '../dispatcher.js'
 import { ShortcutService } from '../shortcut-service.js'
 import { ShortcutStore } from '../shortcut-store.js'
 
-// Every command that yields to an app is still a reserved row, and the dispatcher skips those; the
-// yield tests read them as if their feature had landed.
-const feature = vi.hoisted(() => ({ landed: false }))
+// A reserved row is one whose feature has not landed, and the dispatcher skips it. No real row is reserved
+// now, so the test of that rule reserves one itself; the yield tests read every row as landed.
+const feature = vi.hoisted(() => ({ landed: false, reserved: '' }))
 vi.mock('../commands.js', async (importOriginal) => {
   const real = await importOriginal<typeof import('../commands.js')>()
   return {
     ...real,
     commandById: (id: string) => {
       const def = real.commandById(id)
+      if (def !== undefined && id === feature.reserved) return { ...def, pending: true as const }
       return feature.landed && def !== undefined ? { ...def, pending: undefined } : def
     }
   }
 })
-afterEach(() => { feature.landed = false })
+afterEach(() => { feature.landed = false; feature.reserved = '' })
 
 let dir: string
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'orivon-dispatcher-')) })
@@ -67,6 +68,7 @@ describe('attachShortcuts', () => {
   })
 
   it('leaves the chord of a reserved command to the page until its feature lands', async () => {
+    feature.reserved = 'tab.search'
     const { press, run } = await setup()
 
     const event = press(key('A', 'KeyA', { control: true, shift: true }))
