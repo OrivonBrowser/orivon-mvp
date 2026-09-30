@@ -248,6 +248,18 @@ describe('runFork', () => {
     expect(parent.posts).toContainEqual({ type: 'ipc', message: { configuredWith: 'config' } })
   })
 
+  it('reports the Node version a child claims, since a package run there reads process.versions.node', async () => {
+    const scope = fakeScope()
+    const parent = fakeParent()
+    let seen: { version: string, versions: Record<string, string>, release: { name: string } } | undefined
+    await runFork(forkStart(await orivonPort()), parent, scope, async () => {
+      seen = scope.process as unknown as typeof seen
+    })
+    expect(seen?.versions['node']).toMatch(/^\d+\.\d+\.\d+$/)
+    expect(seen?.version).toBe(`v${seen?.versions['node'] ?? ''}`)
+    expect(seen?.release.name).toBe('node')
+  })
+
   it('ends on its own with code 0, after beforeExit, when nothing is pending and nothing listens on the channel, as a Node child does', async () => {
     const scope = fakeScope()
     const parent = fakeParent()

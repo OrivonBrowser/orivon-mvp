@@ -37,6 +37,9 @@ type SendCallback = (error: Error | null) => void
 /** Thrown by process.exit to unwind the code after it; the runtime swallows it. */
 class ChildExit extends Error {}
 
+/** The Node release a child claims: the first one with `node:sqlite` unflagged. */
+const NODE_VERSION = '22.13.0'
+
 type Mutable<T> = { -readonly [K in keyof T]: T[K] }
 
 type BaseProcess = Mutable<ShimProcess> & { stdin: Readable }
@@ -105,6 +108,10 @@ export function setupChildProcess (scope: ForkScope, parent: ParentChannel, star
     return true
   }
 
+  // A child is a Node program, unlike a page: packages read these to pick their Node branch.
+  proc.versions = { ...proc.versions, node: NODE_VERSION }
+  proc.version = `v${NODE_VERSION}`
+  proc.release = { name: 'node' }
   proc.argv = [...start.argv]
   proc.env = { ...start.env }
   proc.cwd = () => start.cwd
