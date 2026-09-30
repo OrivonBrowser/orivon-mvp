@@ -18,7 +18,7 @@ import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { requestPartition, withPartition } from '../verifier/partition.js'
 import { EMBED_EVENT_CHANNEL } from '../channels.js'
 import type { EmbedDownload, EmbedPopup } from '../../contracts/index.js'
-import { embedPartitionFor, guestRequestAllowed, hardenGuest } from './embed-guard.js'
+import { embedPartitionFor, guestRequestAllowed, hardenGuest, showsLocalPageOn } from './embed-guard.js'
 import { createNoticeBudget, downloadDetail, popupDetail } from './embed-events.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 
@@ -124,6 +124,7 @@ function configureEmbedSession (embedSession: Session, appOrigin: string, broker
 /** Installs the host: `will-attach-webview` and `did-attach-webview` on every WebContents from now on. */
 export function installEmbedHost (broker: Broker, preloadPath = join(import.meta.dirname, '../preload/embed.js')): EmbedHost {
   const owners = new Map<number, string>()
+  const guests = new Map<number, WebContents>()
   /** Guest id -> the page that holds its `<webview>`, where a notice for the guest is sent, and how many more this second. */
   const embedders = new Map<number, { readonly page: WebContents, readonly allow: () => boolean }>()
   const configured = new Set<string>()
@@ -165,6 +166,7 @@ export function installEmbedHost (broker: Broker, preloadPath = join(import.meta
       return
     }
     owners.set(guest.id, appOrigin)
+    guests.set(guest.id, guest)
     embedders.set(guest.id, { page: embedder, allow: createNoticeBudget() })
     // A shown page opens no windows: what it asked for reaches the app as an
     // event on the element, and the app decides.
@@ -174,10 +176,27 @@ export function installEmbedHost (broker: Broker, preloadPath = join(import.meta
     })
     guest.once('destroyed', () => {
       owners.delete(guest.id)
+      guests.delete(guest.id)
       embedders.delete(guest.id)
       registered.release()
     })
   }
+
+  // A page shown from a listener the app has since closed would keep same-origin
+  // access to whatever binds the port next, so it is closed the way a revoked grant
+  // closes it (ADR-0047). Every frame is judged: a local page may sit in a subframe.
+  broker.embed.onListenerClosed((appOrigin, port) => {
+    const patterns = broker.embed.originsSync(appOrigin)
+    if (patterns === undefined) return
+    for (const [id, guest] of [...guests]) {
+      if (owners.get(id) !== appOrigin || guest.isDestroyed()) continue
+      try {
+        if (showsLocalPageOn(guest.mainFrame.framesInSubtree.map((frame) => frame.url), patterns, port)) guest.close()
+      } catch {
+        // A frame went away while it was read: it is on its way out anyway.
+      }
+    }
+  })
 
   app.on('web-contents-created', (_event, contents) => {
     // Denies from the moment a guest exists: `disablePopups` is off (embed-guard.ts), so a

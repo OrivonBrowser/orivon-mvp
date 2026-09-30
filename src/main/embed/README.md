@@ -72,9 +72,14 @@ Electron 44; the element's `loadURL()` promise rejects instead, and
 `guestRequestAllowed` takes the question as a function (`listenerHeld`) and refuses when it is
 absent or throws, so a caller that forgets to wire it shows no local page rather than every one.
 The answer is read on every document load, so an app that closes its listener stops the next
-load at once; a page already showing stays until it navigates. `*.localhost` is Chromium's own
-loopback answer, so no lookup happens and nothing else on this computer can be reached by name
-through the pattern.
+load at once. A page already showing would keep same-origin access to whatever binds the port
+next, so when the broker reports the app's last listener on a port closed
+(`broker.embed.onListenerClosed`), the host closes every guest of that app showing a local-pattern
+document on that port, in its top frame or any frame inside it (`showsLocalPageOn`), the way a
+revoked grant closes it. Every `.localhost` name is mapped to IPv4 loopback by the process-wide
+resolver rules (`../verifier/resolver-rules.ts`), the address the app's listener binds, so a server
+on `[::1]` cannot answer for it; no lookup happens, and nothing else on this computer can be
+reached by name through the pattern.
 
 **The script's identity comes from the sender, never the request.** `EMBED_SCRIPT_CHANNEL` is
 synchronous so the script runs before the page's own code, and its reply is decided from

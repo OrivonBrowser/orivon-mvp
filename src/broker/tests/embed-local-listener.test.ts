@@ -4,7 +4,7 @@
 // `orivon.net.listen` registered: any scope counts, another origin's
 // listener never does, and the answer follows the handle's whole life.
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createBroker } from '../index.js'
 import type { Broker } from '../broker-contracts.js'
 import { APP, baseDeps, manifestWith, okListenedServer } from './index.test-helpers.js'
@@ -88,5 +88,40 @@ describe('broker.embed.holdsListenerSync', () => {
     const server = await broker.net.listen(APP, { port: 30005 })
     server.fail('reset')
     expect(broker.embed.holdsListenerSync(APP, 30005)).toBe(false)
+  })
+})
+
+describe('broker.embed.onListenerClosed', () => {
+  it('tells a subscriber the origin and port when the app closes its last listener on it', async () => {
+    const broker = await brokerListeningOn([30005])
+    const heard = vi.fn()
+    broker.embed.onListenerClosed(heard)
+    const server = await broker.net.listen(APP, { port: 30005 })
+    expect(heard).not.toHaveBeenCalled()
+    await server.close()
+    expect(heard).toHaveBeenCalledExactlyOnceWith(APP, 30005)
+  })
+
+  it('tells it when the grant that authorised the listener is revoked', async () => {
+    const broker = await brokerListeningOn([30005])
+    const heard = vi.fn()
+    broker.embed.onListenerClosed(heard)
+    await broker.net.listen(APP, { port: 30005 })
+    const grant = (await broker.app.grants(APP)).find((g) => g.capability === 'tcp.listen.network')
+    await broker.revoke(APP, grant!.id)
+    expect(heard).toHaveBeenCalledExactlyOnceWith(APP, 30005)
+  })
+
+  it('tells it when the listener failed on its own, and stops once unsubscribed', async () => {
+    const broker = await brokerListeningOn([30005, 30006])
+    const heard = vi.fn()
+    const unsubscribe = broker.embed.onListenerClosed(heard)
+    const server = await broker.net.listen(APP, { port: 30005 })
+    server.fail('reset')
+    expect(heard).toHaveBeenCalledExactlyOnceWith(APP, 30005)
+    unsubscribe()
+    const second = await broker.net.listen(APP, { port: 30006 })
+    await second.close()
+    expect(heard).toHaveBeenCalledTimes(1)
   })
 })

@@ -129,3 +129,16 @@ export async function guestRequestAllowed (
   }
   return addresses.length > 0 && addresses.every(isPublicUnicast)
 }
+
+/**
+ * Whether any of `frameUrls` (a shown page's top frame and every frame inside
+ * it) is a document under one of `patterns`' local patterns on `port`: a
+ * page whose server was the listener the app held there. An exact origin the
+ * manifest names is not one, since the person granted it by address.
+ */
+export function showsLocalPageOn (frameUrls: readonly string[], patterns: readonly Pattern[], port: number): boolean {
+  return frameUrls.some((url) => {
+    const admission = embedAdmissionKind(url, patterns)
+    return admission.kind === 'local' && admission.port === port
+  })
+}

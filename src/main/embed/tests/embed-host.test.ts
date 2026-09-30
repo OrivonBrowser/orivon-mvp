@@ -56,20 +56,22 @@ function fakeEmbedder (url: string): EventEmitter & { mainFrame: { url: string, 
 }
 
 /** `session` is the guest's OWN Session object, the way Electron hands back whatever `webPreferences.partition` the attach actually used -- did-attach-webview reads origin from it, never from the embedder. */
-function fakeGuest (id: number, session: FakeSession): { id: number, session: FakeSession, isDestroyed: () => boolean, close: ReturnType<typeof vi.fn>, setWindowOpenHandler: ReturnType<typeof vi.fn>, once: ReturnType<typeof vi.fn> } {
-  return { id, session, isDestroyed: () => false, close: vi.fn(), setWindowOpenHandler: vi.fn(), once: vi.fn() }
+function fakeGuest (id: number, session: FakeSession, frameUrls: readonly string[] = []): { id: number, session: FakeSession, isDestroyed: () => boolean, close: ReturnType<typeof vi.fn>, setWindowOpenHandler: ReturnType<typeof vi.fn>, once: ReturnType<typeof vi.fn>, mainFrame: { framesInSubtree: Array<{ url: string }> } } {
+  return { id, session, isDestroyed: () => false, close: vi.fn(), setWindowOpenHandler: vi.fn(), once: vi.fn(), mainFrame: { framesInSubtree: frameUrls.map((url) => ({ url })) } }
 }
 
 function fakeBroker (
   origins: ReadonlySet<string>,
   attach: ReturnType<typeof vi.fn>,
   patterns: readonly string[] = ['*'],
-  holdsListenerSync: (origin: string, port: number) => boolean = () => false
+  holdsListenerSync: (origin: string, port: number) => boolean = () => false,
+  onListenerClosed: (listener: (origin: string, port: number) => void) => () => void = () => () => {}
 ): Broker {
   return {
     embed: {
       originsSync: (origin: string) => origins.has(origin) ? patterns : undefined,
       holdsListenerSync,
+      onListenerClosed,
       scriptSync: () => undefined,
       attach,
       setScript: async () => {}
@@ -500,5 +502,71 @@ describe('installEmbedHost -- a shown page\'s popups and downloads are told to i
     embedder.mainFrame.url = `${ORIGIN_A}/tab`
     handler()({ url: 'https://a.example/y', frameName: '', disposition: 'default', referrer: { url: '' } })
     expect(embedder.mainFrame.send).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ADR-0047: the listener check gates loads, so a page already showing would
+// keep same-origin access to whatever binds the port after the app's
+// listener is gone. The host closes it, the way a revoked grant does.
+describe('installEmbedHost -- a shown local page does not outlive the app\'s listener', () => {
+  const PATTERNS = ['*', 'http://*.localhost:8123']
+
+  beforeEach(() => {
+    fakeApp.removeAllListeners()
+    sessionsByPartition.clear()
+  })
+
+  function setup (): { closed: (origin: string, port: number) => void, attachGuest: (id: number, origin: string, frames: readonly string[]) => ReturnType<typeof fakeGuest> } {
+    let closed: (origin: string, port: number) => void = () => {}
+    const broker = fakeBroker(new Set([ORIGIN_A, ORIGIN_B]), vi.fn(() => ({ release: vi.fn() })), PATTERNS, () => true, (listener) => { closed = listener; return () => {} })
+    installEmbedHost(broker, '/preload/embed.js')
+    return {
+      closed: (origin, port) => { closed(origin, port) },
+      attachGuest: (id, origin, frames) => {
+        const embedder = fakeEmbedder(`${origin}/tab`)
+        fakeApp.emit('web-contents-created', {}, embedder)
+        embedder.emit('will-attach-webview', { preventDefault: vi.fn() }, {}, {})
+        const session = sessionsByPartition.get(embedPartitionFor(origin))
+        if (session === undefined) throw new Error('no session was configured')
+        const guest = fakeGuest(id, session, frames)
+        embedder.emit('did-attach-webview', {}, guest)
+        return guest
+      }
+    }
+  }
+
+  it('closes a guest showing a page under the pattern on that port, and only that guest', () => {
+    const { closed, attachGuest } = setup()
+    const local = attachGuest(1, ORIGIN_A, ['http://a.localhost:8123/'])
+    const ordinary = attachGuest(2, ORIGIN_A, ['https://example.com/'])
+    const otherPort = attachGuest(3, ORIGIN_A, ['http://a.localhost:8124/'])
+    closed(ORIGIN_A, 8123)
+    expect(local.close).toHaveBeenCalledTimes(1)
+    expect(ordinary.close).not.toHaveBeenCalled()
+    expect(otherPort.close).not.toHaveBeenCalled()
+  })
+
+  it('closes a guest that shows the local page only in a frame inside its top page', () => {
+    const { closed, attachGuest } = setup()
+    const guest = attachGuest(1, ORIGIN_A, ['https://example.com/', 'http://b.localhost:8123/frame'])
+    closed(ORIGIN_A, 8123)
+    expect(guest.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves another app\'s guests alone, whatever they show', () => {
+    const { closed, attachGuest } = setup()
+    const theirs = attachGuest(1, ORIGIN_B, ['http://a.localhost:8123/'])
+    closed(ORIGIN_A, 8123)
+    expect(theirs.close).not.toHaveBeenCalled()
+  })
+
+  it('skips a guest already destroyed, and a guest whose frames cannot be read', () => {
+    const { closed, attachGuest } = setup()
+    const destroyed = attachGuest(1, ORIGIN_A, ['http://a.localhost:8123/'])
+    destroyed.isDestroyed = () => true
+    const unreadable = attachGuest(2, ORIGIN_A, [])
+    Object.defineProperty(unreadable, 'mainFrame', { get: () => { throw new Error('Render frame was disposed') } })
+    expect(() => { closed(ORIGIN_A, 8123) }).not.toThrow()
+    expect(destroyed.close).not.toHaveBeenCalled()
   })
 })
