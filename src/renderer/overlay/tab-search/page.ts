@@ -167,7 +167,8 @@ export const tabSearchPage: OverlayPage = {
         list.replaceChildren(...children)
         for (const el of list.querySelectorAll<HTMLElement>('[data-key]')) elements.set(el.dataset['key'] ?? '', el)
       }
-      count.textContent = countLine(rows.filter((row) => !hidden.has(keyOf(row))))
+      const visible = rows.filter((row) => !hidden.has(keyOf(row)))
+      count.textContent = query.trim() === '' ? countLine(visible) : countLine(visible, groups.find((group) => group.id === 'open')?.items.length ?? 0)
       setSelected(at, false)
       // A row rebuilt under the focus (an update arrived while Tab had reached a close button) gives it back to the field.
       if (inList) input.focus()
