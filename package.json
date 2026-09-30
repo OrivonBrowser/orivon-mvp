@@ -64,6 +64,7 @@
     "pbf": "^4.0.2",
     "qrcode-generator": "2.0.4",
     "stream-browserify": "^3.0.0",
+    "tldts": "7.4.16",
     "util": "^0.12.5",
     "viem": "^2.56.8"
   },

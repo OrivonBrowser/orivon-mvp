@@ -44,6 +44,32 @@ const SPECS = {
   // Whether pages are written down, and for how long. 90 days is provisional: what a person expects a browser to remember is not yet measured.
   'history.remember': { kind: 'bool', default: true },
   'history.retentionDays': { kind: 'enum', options: ['7', '30', '90', 'forever'], default: '90', labels: { 7: '7 days', 30: '30 days', 90: '90 days', forever: 'Forever' } },
+  // Network privacy: what Orivon tells sites and how it connects. All off or permissive until the person chooses.
+  'privacy.cookies': { kind: 'enum', options: ['all', 'blockThirdParty'], default: 'all' },
+  'privacy.globalPrivacyControl': { kind: 'bool', default: false },
+  'privacy.doNotTrack': { kind: 'bool', default: false },
+  'privacy.httpsOnly': { kind: 'bool', default: false },
+  'privacy.secureDns': { kind: 'enum', options: ['off', 'automatic', 'cloudflare', 'quad9'], default: 'off' },
+  // What a site may do without being asked about it, one default per kind (site-settings/kinds.ts lists them). A site's own answer overrides.
+  'sites.camera': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },
+  'sites.microphone': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },
+  'sites.location': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },
+  'sites.clipboardRead': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },
+  'sites.midi': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },
+  'sites.idle': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },
+  'sites.windowManagement': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },
+  'sites.notifications': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },
+  'sites.devices': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },
+  'sites.screenShare': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },
+  'sites.autoDownloads': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },
+  'sites.popups': { kind: 'enum', options: ['block', 'allow'], default: 'block' },
+  'sites.javascript': { kind: 'enum', options: ['allow', 'block'], default: 'allow' },
+  'sites.images': { kind: 'enum', options: ['allow', 'block'], default: 'allow' },
+  'sites.sound': { kind: 'enum', options: ['allow', 'block'], default: 'allow' },
+  // Whether Orivon offers to keep a login a person types, and to fill one they saved.
+  'passwords.offerToSave': { kind: 'bool', default: true },
+  'passwords.autofill': { kind: 'bool', default: true },
+  'autofill.addresses': { kind: 'bool', default: true },
   // Whether Orivon asks GitHub, once a day, if a newer release exists. It never installs anything. Off until the owner decides.
   'updates.check': { kind: 'bool', default: false },
   // Whether `.eth` names are proven by a light client that runs on this computer. Read when Orivon starts.
