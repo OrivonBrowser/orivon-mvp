@@ -143,10 +143,10 @@ describe('hintFor', () => {
     expect(hintFor(stack)).toBe('W0')
   })
 
-  it('falls back to the address for an untitled page, and folds line breaks in a title', () => {
+  it('falls back to the host for an untitled page, and folds line breaks in a title', () => {
     const stack = new ClosedStack()
     stack.push({ kind: 'tab', tab: { url: 'https://a.example/', title: '', pinned: false }, index: 0, windowKey: 1 })
-    expect(hintFor(stack)).toBe('https://a.example/')
+    expect(hintFor(stack)).toBe('a.example')
     stack.push({ kind: 'tab', tab: { url: 'https://a.example/', title: 'One\n  Two', pinned: false }, index: 0, windowKey: 1 })
     expect(hintFor(stack)).toBe('One Two')
   })

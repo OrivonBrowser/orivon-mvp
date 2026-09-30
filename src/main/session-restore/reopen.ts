@@ -44,8 +44,17 @@ export function reopenClosed (target: ShellWindow, deps: CommandDeps): void {
   }
 }
 
+/** The page's title, else where it is from: a bare address is not a name. */
 function labelOf (tab: { title: string, url: string }): string {
-  return (tab.title.length > 0 ? tab.title : tab.url).replace(/\s+/g, ' ').trim()
+  return (tab.title.length > 0 ? tab.title : hostOf(tab.url)).replace(/\s+/g, ' ').trim()
+}
+
+function hostOf (url: string): string {
+  try {
+    return new URL(url).host || url
+  } catch {
+    return url
+  }
 }
 
 /** What the menu shows beside "Reopen closed tab": the title of what would come back, or how many tabs. */
