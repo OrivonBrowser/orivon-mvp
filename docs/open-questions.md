@@ -1633,3 +1633,33 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   (`z-index`), or move the prism clear of the brand (rec.: the owner picks); leave it.
 - **Who decides:** owner
 - **Blocks:** nothing
+
+### A310: A connect grant cannot pair a wildcard host with one port **[AI-REC]**
+
+- **Question:** `net.tcp.connect` and `net.https.connect` accept `*` as a host only in `*:*`. An app that dials
+  whatever server its user names on one service port (IRC on 6697) must ask for every port on every host.
+- **Why it matters:** the consent prompt then shows unlimited network access for an app that needs one port.
+- **Options:** accept `*:<port>` and `*:<low>-<high>` in the loader and the broker, still refusing private
+  addresses under `*` (rec.); leave `*:*` as the only wildcard.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** a narrower grant for The Lounge's port
+
+### A311: The `node:sqlite` VFS assumes one connection per file **[AI-REC]**
+
+- **Question:** the VFS takes no lock and caches file size and existence, which is safe only while one
+  connection uses a file. Nothing refuses a second connection to the same file, in the same context or another.
+- **Why it matters:** a second connection would read stale pages and could corrupt the database.
+- **Options:** refuse a second open of a file already open in any context of the app (rec.); a lock over
+  `orivon.fs`; leave it to the app.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A312: Every forked child parses a runtime of about 1 MB **[AI-REC]**
+
+- **Question:** the builtin table behind a child's run-time `require` holds most of the shim statically, so the
+  Worker runtime bundle is about 1 MB, parsed by every child.
+- **Why it matters:** start-up time and memory for each child, most of which never call `require` at run time.
+- **Options:** load the table's modules on first `require` (rec.); a smaller table plus `registerBuiltin` per
+  app; accept the size.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
