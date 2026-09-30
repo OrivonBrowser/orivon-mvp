@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { WebPreferences } from 'electron'
 import { partitionFor } from '../../../broker/grants/origin-hash.js'
-import { embedPartitionFor, guestRequestAllowed, hardenGuest } from '../embed-guard.js'
+import { embedPartitionFor, guestRequestAllowed, hardenGuest, showsLocalPageOn } from '../embed-guard.js'
 
 // ADR-0039: whatever a <webview> asked for, the guest it gets is sandboxed,
 // isolated, in the app's own embed partition, running the shell's preload.
@@ -229,5 +229,34 @@ describe('guestRequestAllowed -- the local pattern', () => {
     const { resolve, calls } = neverResolves()
     await expect(guestRequestAllowed('https://attacker.example/', 'mainFrame', ['*', ...local], resolve, () => true)).resolves.toBe(false)
     expect(calls).toEqual(['attacker.example'])
+  })
+})
+
+// ADR-0047: a page already showing outlives the listener it was loaded from,
+// and whatever binds the port next would answer it same-origin. The host
+// closes such a page; this decides which pages those are.
+describe('showsLocalPageOn', () => {
+  const patterns = ['http://*.localhost:8123', 'http://*.gateway.localhost:8124', 'https://example.com']
+
+  it('is true for a document under a local pattern on that port, in any frame', () => {
+    expect(showsLocalPageOn(['https://example.com/', 'http://a.localhost:8123/x'], patterns, 8123)).toBe(true)
+    expect(showsLocalPageOn(['http://site.gateway.localhost:8124/'], patterns, 8124)).toBe(true)
+  })
+
+  it('is true for a blob: page minted by such an origin', () => {
+    expect(showsLocalPageOn(['blob:http://a.localhost:8123/123e4567-e89b-12d3-a456-426614174000'], patterns, 8123)).toBe(true)
+  })
+
+  it('is false for another port, an ordinary site, about:blank and a URL that does not parse', () => {
+    expect(showsLocalPageOn(['http://a.localhost:8123/'], patterns, 8124)).toBe(false)
+    expect(showsLocalPageOn(['https://example.com/', 'about:blank', 'not a url', ''], patterns, 8123)).toBe(false)
+  })
+
+  it('is false for an exact origin the manifest named, which a person granted by address', () => {
+    expect(showsLocalPageOn(['http://a.localhost:8123/'], [...patterns, 'http://a.localhost:8123'], 8123)).toBe(false)
+  })
+
+  it('is false with no frames at all', () => {
+    expect(showsLocalPageOn([], patterns, 8123)).toBe(false)
   })
 })

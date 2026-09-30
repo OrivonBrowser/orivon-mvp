@@ -32,7 +32,7 @@ runs in another process, and only [`host-supervisor.ts`](host-supervisor.ts) tal
 ## Design notes
 
 Each file's own header covers its rule (one owner of `--host-resolver-rules`, the synchronous
-port probe, fingerprint-only certificates, request deadlines and backoff, the checkpoint's age).
+port probe, `.localhost` names to IPv4 loopback so a local-pattern page cannot reach a server on `[::1]`, fingerprint-only certificates, request deadlines and backoff, the checkpoint's age).
 What is here has no other home.
 
 **The partition stamp is on every session that can reach the verifier over Chromium's own

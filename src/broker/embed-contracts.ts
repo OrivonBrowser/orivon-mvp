@@ -28,6 +28,13 @@ export interface BrokerEmbedMethods {
    * origin that does not parse.
    */
   holdsListenerSync(origin: string, port: number): boolean
+  /**
+   * Calls `listener(origin, port)` when `origin`'s last listener on `port`
+   * closes, by any path (its own close, a revoked or narrowed grant, a
+   * failure), so the shell can close a page it still shows from that port
+   * (ADR-0047). Returns the unsubscribe.
+   */
+  onListenerClosed(listener: (origin: string, port: number) => void): () => void
   /** The script `setScript` stored for `origin`, or undefined with none set or no live grant. */
   scriptSync(origin: string): string | undefined
   /**

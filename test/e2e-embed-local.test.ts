@@ -13,16 +13,16 @@
 //   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/e2e-embed-local.test.ts
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { createServer as createHttpServer } from 'node:http'
+import type { Server as HttpServer } from 'node:http'
 import { createServer as createTcpServer } from 'node:net'
 import type { Server as TcpServer } from 'node:net'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
+import { HERMETIC_RESOLVER } from './smoke-helpers.mjs'
 import { asPage, closeElectronApp, navigateToFixture, runPhase, waitForTcpReady } from './e2e-helpers.js'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
 
 const HOST = '127.0.0.1'
-/** The suite's hermetic resolver (smoke-helpers.mjs's HERMETIC_RESOLVER) with every `localhost` name left to Chromium, which answers it with loopback itself. */
-const LOCALHOST_RESOLVER = '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE *.localhost, EXCLUDE localhost'
 const APP_PORT = 9171
 const OTHER_PORT = 9172
 const APP_SERVER_PORT = 9173
@@ -35,6 +35,8 @@ const TEST_TIMEOUT_MS = 180_000
 /** The app's own listener, the port a listener of another program holds, and the patterns the manifest names. */
 const BARE_PATTERN = `http://*.localhost:${APP_PORT}`
 const NAMED_PATTERN = `http://*.shared.localhost:${APP_PORT}`
+/** An ordinary granted page, named by exact origin: the app's own page server. */
+const ORDINARY_ORIGIN = FIXTURE_ORIGIN
 const OTHER_PATTERN = `http://*.localhost:${OTHER_PORT}`
 
 // The app's own page and the script asPage (e2e-helpers.ts) loads into it, served from this file rather than
@@ -55,7 +57,26 @@ const PAGE_TITLE = 'Orivon embed local fixture'
 let strangerConnections = 0
 const stranger: TcpServer = createTcpServer((socket) => { strangerConnections += 1; socket.destroy() })
 
+/**
+ * Another program on the IPv6 loopback address, on the app's own port, serving a page nothing else does. Chromium
+ * resolves a `localhost` name to both families and tries IPv6 first, so without the shell's own `.localhost`
+ * rule this program would answer for the app's pages. Null when this machine has no IPv6 loopback.
+ */
+let ipv6Connections = 0
+let ipv6Server: HttpServer | null = null
+const INTRUDER_TITLE = 'a program on the IPv6 loopback'
+
 beforeAll(async () => {
+  const intruder = createHttpServer((_req, res) => {
+    ipv6Connections += 1
+    res.writeHead(200, { 'content-type': 'text/html' }).end(`<!doctype html><title>${INTRUDER_TITLE}</title>`)
+  })
+  const bound = await new Promise<boolean>((resolve) => {
+    intruder.once('error', () => { resolve(false) })
+    intruder.listen(APP_PORT, '::1', () => { resolve(true) })
+  })
+  if (bound) ipv6Server = intruder
+  else console.error('[skipped] no IPv6 loopback on this machine: the IPv6 checks in e2e-embed-local do not run')
   await Promise.all([
     new Promise<void>((resolve) => { appServer.listen(APP_SERVER_PORT, HOST, resolve) }),
     new Promise<void>((resolve) => { stranger.listen(OTHER_PORT, HOST, resolve) })
@@ -65,7 +86,7 @@ beforeAll(async () => {
 }, 15_000)
 
 afterAll(async () => {
-  await Promise.all([appServer, stranger].map(async (server) => await new Promise<void>((resolve) => { server.close(() => resolve()) })))
+  await Promise.all([appServer, stranger, ...(ipv6Server === null ? [] : [ipv6Server])].map(async (server) => await new Promise<void>((resolve) => { server.close(() => resolve()) })))
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
@@ -87,12 +108,15 @@ function manifestFor (id: string, origins: readonly string[]): Manifest {
 interface E2eSurface {
   show: (id: string, url: string) => Promise<string>
   run: (id: string, code: string) => Promise<unknown>
+  /** The ids of the elements whose shown page has been closed by the shell. */
+  destroyed: () => string[]
 }
 
 /** Installed on the app page (through Playwright, so it may not use `orivon`): builds `<webview>`s and drives them. */
 function installSurface (): void {
   interface Element_ extends HTMLElement { loadURL: (url: string) => Promise<void>, executeJavaScript: (code: string) => Promise<unknown> }
   const views = new Map<string, Element_>()
+  const destroyed: string[] = []
   const surface = {
     // The element is attached on `about:blank` (always admitted), then sent to `url`: a document the grant refuses
     // makes `loadURL` reject and leaves the element on the blank page (README.md of src/main/embed).
@@ -106,6 +130,7 @@ function installSurface (): void {
         const ready = new Promise<void>((resolve) => { created.addEventListener('did-finish-load', () => { resolve() }, { once: true }) })
         document.body.appendChild(created)
         await ready
+        created.addEventListener('destroyed', () => { destroyed.push(id) })
         views.set(id, created)
         el = created
       }
@@ -121,6 +146,9 @@ function installSurface (): void {
       const el = views.get(id)
       if (el === undefined) throw new Error(`no view ${id}`)
       return await el.executeJavaScript(code)
+    },
+    destroyed (): string[] {
+      return destroyed.slice()
     }
   }
   ;(window as unknown as { __e2e: E2eSurface }).__e2e = surface
@@ -180,10 +208,21 @@ async function grant (app: Awaited<ReturnType<typeof launchElectron>>, manifest:
   return outcome
 }
 
-function drive (view: Awaited<ReturnType<typeof navigateToFixture>>): { show: (id: string, url: string) => Promise<string>, run: (id: string, code: string) => Promise<unknown> } {
+function drive (view: Awaited<ReturnType<typeof navigateToFixture>>): { show: (id: string, url: string) => Promise<string>, run: (id: string, code: string) => Promise<unknown>, destroyed: () => Promise<string[]> } {
   return {
+    destroyed: async () => await view.evaluate(() => (window as unknown as { __e2e: E2eSurface }).__e2e.destroyed()),
     show: async (id, url) => await view.evaluate(([i, u]: [string, string]) => (window as unknown as { __e2e: E2eSurface }).__e2e.show(i, u), [id, url] as [string, string]),
     run: async (id, code) => await view.evaluate(([i, c]: [string, string]) => (window as unknown as { __e2e: E2eSurface }).__e2e.run(i, c), [id, code] as [string, string])
+  }
+}
+
+/** Polls `read` until it answers something other than null, or gives up after the step budget. */
+async function waitForResult<T> (read: () => Promise<T | null>): Promise<T | null> {
+  const deadline = Date.now() + STEP_TIMEOUT_MS
+  for (;;) {
+    const answer = await read()
+    if (answer !== null || Date.now() >= deadline) return answer
+    await new Promise((resolve) => { setTimeout(resolve, 100) })
   }
 }
 
@@ -194,17 +233,17 @@ it(
   'another program\'s port and a closed listener do not load, and a cookie set for "localhost" does not cross labels',
   async () => {
     await runPhase('web.embed local pattern e2e', async (check: Check) => {
-      const app = await launchElectron({ appPath: '.', args: [LOCALHOST_RESOLVER] })
+      const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
       try {
-        const manifest = manifestFor('app.orivon.embed-local-e2e', [BARE_PATTERN, NAMED_PATTERN, OTHER_PATTERN])
+        const manifest = manifestFor('app.orivon.embed-local-e2e', [BARE_PATTERN, NAMED_PATTERN, OTHER_PATTERN, ORDINARY_ORIGIN])
         const installed = await grant(app, manifest, 'tcp.listen.local', [String(APP_PORT)])
         check('the developer-only grant hook is installed in this build', installed)
         if (!installed) throw new Error('dev-grant hook missing -- was this built via npm run test:e2e?')
-        await grant(app, manifest, 'web.embed', [BARE_PATTERN, NAMED_PATTERN, OTHER_PATTERN])
+        await grant(app, manifest, 'web.embed', [BARE_PATTERN, NAMED_PATTERN, OTHER_PATTERN, ORDINARY_ORIGIN])
 
         const view = await navigateToFixture(app, FIXTURE_URL, PAGE_TITLE)
         await view.evaluate(installSurface)
-        const { show, run } = drive(view)
+        const { show, run, destroyed } = drive(view)
 
         // ---- (1) the app holds no listener yet, so a page under its own pattern does not load.
         const before = await show('a', `http://a.localhost:${APP_PORT}/`)
@@ -240,6 +279,12 @@ it(
         const sa = await show('sa', `http://a.shared.localhost:${APP_PORT}/`)
         const sb = await show('sb', `http://b.shared.localhost:${APP_PORT}/`)
         check('two labels under the named form load', sa === 'loaded' && sb === 'loaded', JSON.stringify({ sa, sb }))
+        const namedTitles = [String(await run('sa', 'document.title')), String(await run('sb', 'document.title'))]
+        if (ipv6Server !== null) {
+          check('the bare form shows the app\'s own page while another program holds the same port on ::1', infoA.title === `a.localhost:${APP_PORT}` && infoB.title === `b.localhost:${APP_PORT}`, JSON.stringify({ infoA, infoB }))
+          check('the <name> form shows the app\'s own page while another program holds the same port on ::1', namedTitles[0] === `a.shared.localhost:${APP_PORT}` && namedTitles[1] === `b.shared.localhost:${APP_PORT}`, JSON.stringify(namedTitles))
+          check('the program on ::1 received no connection', ipv6Connections === 0, `${String(ipv6Connections)} (title it serves: ${INTRUDER_TITLE})`)
+        }
         await run('sa', 'document.cookie = "named=1; Domain=shared.localhost; path=/"; 0')
         const namedAtSa = String(await run('sa', 'document.cookie'))
         const namedAtSb = String(await run('sb', 'document.cookie'))
@@ -270,13 +315,23 @@ it(
         check('a listener another program holds on a named port does not load', strangerLoad === 'refused:ERR_FAILED', strangerLoad)
         check('the request never reached that listener', strangerConnections === 0, String(strangerConnections))
 
-        // ---- (7) the app closes its listener: the same address no longer loads.
+        // ---- (7) the app closes its listener: the pages it shows from it are closed, an ordinary granted page is not,
+        // and the address is refused from then on.
+        const ordinary = await show('ord', `${ORDINARY_ORIGIN}/`)
+        check('an ordinary page under an exact origin loads', ordinary === 'loaded', ordinary)
+        const showingBefore = await destroyed()
+        check('no shown page has been closed yet', showingBefore.length === 0, JSON.stringify(showingBefore))
         const closed = await asPage(view, setAsPageScript, AS_PAGE_URL, closeOwnServer)
         check('the app closes its listener', closed === 'closed', closed)
-        const after = await show('a', `http://a.localhost:${APP_PORT}/?again`)
+        const localIds = ['a', 'b', 'sa', 'sb', 'l63']
+        const closedIds = await waitForResult(async () => {
+          const ids = await destroyed()
+          return localIds.every((id) => ids.includes(id)) ? ids : null
+        })
+        check('every element showing a page from that listener is closed by the shell', closedIds !== null, JSON.stringify(await destroyed()))
+        check('the ordinary page\'s element is untouched', !(closedIds ?? await destroyed()).includes('ord') && String(await run('ord', 'document.title')) === PAGE_TITLE, JSON.stringify(await destroyed()))
         const afterFresh = await show('fresh', `http://c.localhost:${APP_PORT}/`)
-        check('the address that loaded now refuses, in the element that showed it', after === 'refused:ERR_FAILED', after)
-        check('a new label refuses too', afterFresh === 'refused:ERR_FAILED', afterFresh)
+        check('a new label is refused', afterFresh === 'refused:ERR_FAILED', afterFresh)
       } finally {
         await closeElectronApp(app)
       }
@@ -289,7 +344,7 @@ it(
   '"*" listed beside a local pattern still leaves loopback closed by address and by the bare name, and the pattern loads',
   async () => {
     await runPhase('web.embed "*" beside a local pattern e2e', async (check: Check) => {
-      const app = await launchElectron({ appPath: '.', args: [LOCALHOST_RESOLVER] })
+      const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
       try {
         const manifest = manifestFor('app.orivon.embed-local-e2e-wildcard', ['*', BARE_PATTERN])
         const installed = await grant(app, manifest, 'tcp.listen.local', [String(APP_PORT)])

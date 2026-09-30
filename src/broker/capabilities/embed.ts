@@ -81,5 +81,5 @@ export function createEmbedCapability ({ handleTable, ledger, canonical, listene
     scripts.delete(key)
   }
 
-  return { originsSync, holdsListenerSync, scriptSync, attach, setScript, forgetScript }
+  return { originsSync, holdsListenerSync, onListenerClosed: listeners.onLastForgotten, scriptSync, attach, setScript, forgetScript }
 }

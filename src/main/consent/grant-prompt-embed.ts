@@ -37,8 +37,10 @@ export function describeEmbedGrant (patterns: readonly Pattern[]): CapabilityGra
   const phrases: string[] = []
   if (anySite) phrases.push('any website')
   // Decision 10: capped, "and N more" -- a manifest can declare up to
-  // MAX_PATTERNS (256) embed origins, all joined onto this one line.
-  if (hosts.length > 0) phrases.push(`pages from ${joinCapped(hosts)}`)
+  // MAX_PATTERNS (256) embed origins, all joined onto this one line. Beside
+  // "*" it is not capped: what "*" does not reach is exactly what an exact
+  // origin adds (a private or loopback address), so none may be hidden.
+  if (hosts.length > 0) phrases.push(`pages from ${anySite ? hosts.join(', ') : joinCapped(hosts)}`)
   if (localPorts.length > 0) phrases.push(`pages it serves itself from this computer (${portsPhrase(localPorts)})`)
   const onlyExact = phrases.length === 1 && hosts.length > 0
   const explanation = 'Those pages open in a session kept apart from your ordinary browsing. The app can see and change everything you do on them.'
