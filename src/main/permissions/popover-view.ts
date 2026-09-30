@@ -133,6 +133,8 @@ export interface PopoverView {
    * for) and a no-op if already built. Idempotent: safe to call from a hover
    * handler that can fire more than once. */
   prewarm: () => void
+  /** Moves an open popup back above every other child of the window, where a later `addChildView` of a sibling left it under. */
+  restack: () => void
 }
 
 /** Exported for its own unit tests (popover-view.test.ts): pure geometry, no view or IPC involved. */
@@ -301,6 +303,7 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
     },
     close: hide,
     isOpen: () => shown !== null,
-    prewarm () { if (spec.warm === true) ensureWarmView() }
+    prewarm () { if (spec.warm === true) ensureWarmView() },
+    restack () { if (shown !== null && !shown.webContents.isDestroyed()) contentView.addChildView(shown) }
   }
 }

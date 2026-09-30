@@ -36,8 +36,8 @@ export interface OverlayHostDeps {
 }
 
 export type OverlayHostHandle = OverlayHost & {
-  /** Puts a legacy panel under the same close-all and relayout rules. `close` must be idempotent. */
-  adopt: (panel: { close: () => void }) => void
+  /** Puts a legacy panel under the same close-all and relayout rules. `close` must be idempotent. `restack`, when given, lifts the panel's own view: the host calls it after the bars and before the popups, so a bar re-added on a state push never covers an open panel. */
+  adopt: (panel: { close: () => void }, restack?: () => void) => void
   /** Closes the popup overlays but not the adopted panels: for a panel that toggles itself after. */
   closeOverlays: () => void
   tabSwitched: () => void
@@ -80,7 +80,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
       anchor: undefined, height: def.height?.initial ?? DEFAULT_HEIGHT.initial, returnTo: undefined, lastBlurCloseAt: 0
     })
   }
-  const adopted: Array<{ close: () => void }> = []
+  const adopted: Array<{ close: () => void, restack?: (() => void) | undefined }> = []
   /** Open slots, oldest first: the order they were shown in. */
   let openOrder: Slot[] = []
   let disposed = false
@@ -139,6 +139,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
         close: (reason) => { if (current()) closeSlot(slot, reason) }
       },
       onBlur: () => { if (current() && slot.open && slot.def.closeOn.blur) closeSlot(slot, 'blur') },
+      onGone: () => { if (current()) discardView(slot) },
       // A click gave focus to a view that must never hold it: hand it straight back.
       onFocus: () => { if (current() && slot.open && slot.def.focus === 'never') restoreFocus(slot, 'request') }
     })
@@ -150,6 +151,16 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
 
   const ensureView = (slot: Slot): OverlayViewHandle =>
     slot.view !== null && !slot.view.isDestroyed() ? slot.view : buildView(slot)
+
+  /** A dead renderer is not a destroyed webContents, so `ensureView` would keep handing it out: close the slot and drop the view, and the next show or prewarm builds a fresh one. */
+  function discardView (slot: Slot): void {
+    closeSlot(slot, 'request')
+    slot.view?.destroy()
+    slot.view = null
+    slot.pageReady = false
+    slot.pending = null
+    slot.queued = []
+  }
 
   function closeSlot (slot: Slot, reason: OverlayCloseReason): void {
     if (!slot.open) return
@@ -184,8 +195,11 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
 
   function restack (): void {
     if (disposed) return
-    const order = [...openOrder.filter((slot) => slot.def.layer === 'bar'), ...openOrder.filter((slot) => slot.def.layer === 'popup')]
-    for (const slot of order) slot.view?.attach(deps.contentView)
+    for (const slot of openOrder.filter((other) => other.def.layer === 'bar')) slot.view?.attach(deps.contentView)
+    for (const panel of adopted) {
+      try { panel.restack?.() } catch (error) { console.error('[overlay] restacking an adopted panel failed', error) }
+    }
+    for (const slot of openOrder.filter((other) => other.def.layer === 'popup')) slot.view?.attach(deps.contentView)
   }
 
   function show (name: string, anchor?: OverlayAnchor, payload?: unknown): void {
@@ -249,7 +263,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
       if (slot !== undefined && slot.def.keep === 'warm' && !disposed) ensureView(slot)
     },
     send,
-    adopt: (panel) => { adopted.push(panel) },
+    adopt: (panel, restackPanel) => { adopted.push({ close: () => { panel.close() }, restack: restackPanel }) },
     closeOverlays: () => { closeOverlayPopups(undefined, 'request') },
     tabSwitched: () => {
       for (const slot of openSlots()) if (slot.def.closeOn.tabSwitch) closeSlot(slot, 'tab-switch')

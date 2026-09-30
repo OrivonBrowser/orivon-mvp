@@ -291,6 +291,81 @@ describe('createOverlayHost: restack order', () => {
   })
 })
 
+describe('createOverlayHost: restack with adopted panels', () => {
+  const panel = (name: string, order: string[]): { close: () => void, restack: () => void } => ({ close: vi.fn(), restack: () => { order.push(name) } })
+
+  it('lifts an adopted panel after the bars and before the popups', () => {
+    const order: string[] = []
+    const { host } = setup([def('pop'), def('bar', { layer: 'bar', focus: 'never', closeOn: CLOSE_LIKE_BAR })])
+    const adopted = panel('adopted', order)
+    host.adopt(adopted, adopted.restack)
+    host.show('bar'); host.show('pop', ANCHOR)
+    for (const view of views) {
+      const push = view.log.push.bind(view.log)
+      view.log.push = (...items: string[]) => { if (items[0] === 'attach') order.push(view.id === views[0]?.id ? 'bar' : 'pop'); return push(...items) }
+    }
+    host.restack()
+    expect(order).toEqual(['bar', 'adopted', 'pop'])
+  })
+
+  it('skips a panel adopted without a restack, and survives one that throws', () => {
+    const complaint = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { host } = setup([def('bar', { layer: 'bar', focus: 'never', closeOn: CLOSE_LIKE_BAR })])
+    const later = vi.fn()
+    host.adopt({ close: vi.fn() })
+    host.adopt({ close: vi.fn() }, () => { throw new Error('boom') })
+    host.adopt({ close: vi.fn() }, later)
+    host.show('bar')
+    expect(() => { host.restack() }).not.toThrow()
+    expect(later).toHaveBeenCalledTimes(1)
+    expect(complaint).toHaveBeenCalledTimes(1)
+    complaint.mockRestore()
+  })
+
+  it('still closes an adopted panel on a tab switch when it has a restack', () => {
+    const { host } = setup([def('a')])
+    const adopted = panel('p', [])
+    host.adopt(adopted, adopted.restack)
+    host.tabSwitched()
+    expect(adopted.close).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('createOverlayHost: a renderer that died', () => {
+  it('closes an open overlay, reports it closed and builds a fresh view on the next show', () => {
+    const closed = vi.fn()
+    const { host } = setup([def('a', { keep: 'warm' }, { closed })])
+    host.show('a', ANCHOR)
+    views[0]?.spec.onGone()
+    expect(host.isOpen('a')).toBe(false)
+    expect(closed).toHaveBeenCalledWith('request')
+    expect(views[0]?.destroyed).toBe(true)
+    host.show('a', ANCHOR)
+    expect(views).toHaveLength(2)
+    expect(host.isOpen('a')).toBe(true)
+  })
+
+  it('rebuilds a prewarmed overlay that was never shown', () => {
+    const { host } = setup([def('w', { keep: 'warm' })])
+    host.prewarm('w')
+    views[0]?.spec.onGone()
+    expect(views[0]?.destroyed).toBe(true)
+    host.prewarm('w')
+    expect(views).toHaveLength(2)
+  })
+
+  it('ignores a report from a view it already replaced', () => {
+    const { host } = setup([def('w', { keep: 'warm' })])
+    host.prewarm('w')
+    views[0]?.spec.onGone()
+    host.prewarm('w')
+    views[0]?.spec.onGone()
+    host.show('w', ANCHOR)
+    expect(host.isOpen('w')).toBe(true)
+    expect(views).toHaveLength(2)
+  })
+})
+
 describe('createOverlayHost: focus', () => {
   it('a taking overlay focuses its page, and hands focus back to what held it', () => {
     const address = tab(); address.id = 5

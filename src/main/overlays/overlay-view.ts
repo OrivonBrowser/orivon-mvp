@@ -45,6 +45,8 @@ export interface OverlayViewSpec {
   readonly port: OverlayPort
   readonly onBlur: () => void
   readonly onFocus: () => void
+  /** The page's renderer process died (crashed, was killed or ran out of memory); the webContents itself is not destroyed. */
+  readonly onGone: () => void
   /** Called once with the new webContents, before its page loads: where a caller wires per-contents behaviour such as the browser's shortcuts. */
   readonly onCreated?: ((contents: WebContents) => void) | undefined
 }
@@ -85,6 +87,7 @@ export function createOverlayView (spec: OverlayViewSpec): OverlayViewHandle {
   spec.onCreated?.(contents)
   contents.on('blur', spec.onBlur)
   contents.on('focus', spec.onFocus)
+  contents.on('render-process-gone', spec.onGone)
   void contents.loadURL(url)
 
   return {

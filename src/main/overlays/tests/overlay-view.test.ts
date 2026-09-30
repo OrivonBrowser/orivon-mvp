@@ -39,7 +39,7 @@ const { createOverlayView, overlayUrl } = await import('../overlay-view.js')
 
 const PORT = { ready: vi.fn(), request: vi.fn(), size: vi.fn(), close: vi.fn() }
 const spec = (surface: 'panel' | 'menu' = 'panel'): Parameters<typeof createOverlayView>[0] =>
-  ({ dirname: '/app/out/main', def: { name: 'demo', surface }, port: PORT, onBlur: vi.fn(), onFocus: vi.fn() })
+  ({ dirname: '/app/out/main', def: { name: 'demo', surface }, port: PORT, onBlur: vi.fn(), onFocus: vi.fn(), onGone: vi.fn() })
 
 afterEach(() => { calls.length = 0; theme.dark = false })
 
@@ -88,6 +88,14 @@ describe('createOverlayView', () => {
     createOverlayView(s)
     const on = state.contents?.['on'] as ReturnType<typeof vi.fn>
     expect(on.mock.calls.map(([event]) => event)).toEqual(expect.arrayContaining(['blur', 'focus']))
+  })
+
+  it('reports a renderer that died to the host', () => {
+    const onGone = vi.fn()
+    createOverlayView({ ...spec(), onGone })
+    const on = state.contents?.['on'] as ReturnType<typeof vi.fn>
+    const registered = on.mock.calls.find(([event]) => event === 'render-process-gone')
+    expect(registered?.[1]).toBe(onGone)
   })
 
   it('repaints on a theme change', () => {

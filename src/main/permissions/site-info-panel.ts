@@ -30,6 +30,7 @@ export interface SiteInfoPanel {
   toggle: (anchor: PopoverAnchor, origin: string, page: SiteInfoPage) => void
   close: () => void
   isOpen: () => boolean
+  restack: () => void
 }
 
 export function createSiteInfoPanel (
@@ -69,6 +70,7 @@ export function createSiteInfoPanel (
       popover.toggle(anchor, [`--orivon-site-info-page=${page}`, `--orivon-site-info-origin=${origin}`])
     },
     close: popover.close,
-    isOpen: popover.isOpen
+    isOpen: popover.isOpen,
+    restack: popover.restack
   }
 }

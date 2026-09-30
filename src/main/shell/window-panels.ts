@@ -87,7 +87,7 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, chrome
     dirname
   )
 
-  overlays.adopt(permissions)
-  overlays.adopt(siteInfo)
+  overlays.adopt(permissions, permissions.restack)
+  overlays.adopt(siteInfo, siteInfo.restack)
   return { permissions, siteInfo, memory, siteInfoController }
 }
