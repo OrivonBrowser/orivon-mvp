@@ -77,9 +77,12 @@ describe('a component writing a two-piece response then dropping its socket (no 
     // program that simply lets the connected socket go out of scope.
     socket[Symbol.dispose]()
 
-    // Give the fake broker's delayed write (and the close) time to settle.
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    // Wait for the fake broker's delayed write to land, not for a fixed time: a dropped
+    // piece never lands, so the bug still fails this, at the deadline.
+    const expected = 'HEADERS\r\n\r\nBODYBODYBODY'
+    const deadline = Date.now() + 2000
+    while (received() !== expected && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10))
 
-    expect(received()).toBe('HEADERS\r\n\r\nBODYBODYBODY')
+    expect(received()).toBe(expected)
   })
 })
