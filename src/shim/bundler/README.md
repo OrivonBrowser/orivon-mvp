@@ -63,12 +63,22 @@ A bundle split into chunks needs the file beside the chunk that holds the engine
 bundle needs it beside that file. `loadSqliteEngine({ wasmBinary })` in a ready module of the app's
 own replaces the fetch.
 
+### `better-sqlite3`
+
+An import or `require` of the npm package `better-sqlite3` resolves to the shim's adapter over
+`node:sqlite` ([`../sqlite/better-sqlite3.ts`](../sqlite/better-sqlite3.ts)), so the port's code is
+unchanged and the package's native addon is never bundled. The `node:sqlite` set-up above applies: the
+entry imports `orivon-node-shim/sqlite-ready` first and the bundle ships `sqlite3.wasm`. A `require()` of
+it is the `Database` function itself, as the package's `module.exports = Database` is.
+
 ## What the plugin does
 
 - Every `ready` row of `module-map.ts` matches its specifier whole, bare and `node:`-prefixed; a
   `prefixOnly` row (`sqlite`) matches `node:sqlite` alone, since the bare name is another npm package.
   A `local` row resolves to the `.ts` file in this checkout, a `package` row to the package in
   this checkout's `node_modules`, whatever directory the port builds from.
+- The package `better-sqlite3` resolves to the adapter in `sqlite/`, apart from the table: a row of
+  `module-map.ts` is a Node builtin.
 - Any other Node builtin (`cluster`, `v8`, `inspector`, ...) fails the build with
   an error naming the specifier and the file that imported it. Left to esbuild, `platform: 'node'`
   would keep it as an external `import`, and the bundle would fail only when run.

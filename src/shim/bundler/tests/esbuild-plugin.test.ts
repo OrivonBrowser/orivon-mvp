@@ -125,6 +125,18 @@ describe('orivonShimPlugin', () => {
     expect(error?.errors[0]?.text).toContain('Could not resolve "sqlite"')
   })
 
+  it('maps better-sqlite3 to the shim\'s adapter, and a require() of it is the Database itself', async () => {
+    const { inputs } = await bundle("import Database from 'better-sqlite3'\nglobalThis.Database = Database")
+    expect(inputs.some((input) => input.endsWith('src/shim/sqlite/better-sqlite3.ts'))).toBe(true)
+    expect(inputs.some((input) => input.includes('node_modules/better-sqlite3'))).toBe(false)
+    const { text } = await bundle("const Database = require('better-sqlite3')\nconsole.log(JSON.stringify([typeof Database, typeof Database.SqliteError, typeof Database.prototype.prepare]))")
+    const file = join(dir, 'require-better-sqlite3.mjs')
+    writeFileSync(file, text)
+    const result = spawnNode(file)
+    expect(result.stderr).toBe('')
+    expect(JSON.parse(result.stdout)).toEqual(['function', 'function', 'function'])
+  }, 60_000)
+
   it('bundles the SQLite engine\'s browser build under platform node, and lists the wasm it fetches', async () => {
     const { inputs } = await bundle("import 'orivon-node-shim/sqlite-ready'")
     expect(inputs.some((input) => input.endsWith('@sqlite.org/sqlite-wasm/dist/index.mjs'))).toBe(true)
