@@ -17,13 +17,14 @@ html, body {
   min-height: 0;
   margin: 0;
   overflow: hidden;
-  background: transparent;
   color: var(--wink);
   font-size: 13px;
   line-height: 1.4;
 }
 
-body { display: flex; flex-direction: column; }
+/* The page paints its own surface as well as main's pre-paint colour, so the two never disagree about the theme. */
+html { background: transparent; }
+body { display: flex; flex-direction: column; background: var(--wbg); }
 
 /* The box that scrolls when the view is shorter than its content. */
 #scroll {

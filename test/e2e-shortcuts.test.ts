@@ -191,24 +191,23 @@ it('opens the main menu from the toolbar, lists commands under their keys, and r
   try {
     expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
     const chrome = findChrome(app)
-    const menuPage = (): Page | undefined => app.windows().find((w) => w.url().endsWith('/menu/index.html'))
+    const menuPage = (): Page | undefined => app.windows().find((w) => w.url().includes('overlay=menu'))
 
     await chrome.click('#menu')
     expect(await waitFor(() => menuPage() !== undefined)).toBe(true)
     const menu = menuPage() as Page
-    await menu.waitForSelector('.item')
-    const entries = await menu.locator('.item').allTextContents()
+    await menu.waitForSelector('.menu-row')
+    const entries = await menu.locator('.menu-row').allTextContents()
     expect(entries).toContain('New tabCtrl+T')
     expect(entries).toContain('Open SettingsCtrl+,')
 
-    await menu.locator('.item', { hasText: 'Open Settings' }).click()
+    await menu.locator('.menu-row', { hasText: 'Open Settings' }).click()
 
     expect(await waitFor(() => settingsPage(app) !== undefined)).toBe(true)
-    // Not menuPage() === undefined: the menu is kept warm (shell/popover-
-    // view.ts's `warm`), so its webContents survives being hidden and
-    // app.windows() keeps listing it -- popoverShown reads whether it is
-    // actually attached to the screen instead.
-    expect(await waitFor(async () => !(await popoverShown(app, '/menu/')))).toBe(true)
+    // Not menuPage() === undefined: the menu is kept warm, so its webContents
+    // survives being hidden and app.windows() keeps listing it -- popoverShown
+    // reads whether it is actually attached to the screen instead.
+    expect(await waitFor(async () => !(await popoverShown(app, 'overlay=menu')))).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)

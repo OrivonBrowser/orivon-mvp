@@ -1,4 +1,4 @@
-// The main menu is kept warm (shell/popover-view.ts's `warm`): once built,
+// The main menu is kept warm (an overlay with `keep: 'warm'`): once built,
 // its WebContentsView is reused on every open rather than destroyed and
 // rebuilt. It is NOT built at window construction -- every window would
 // otherwise carry a hidden renderer process nobody may ever open (this is
@@ -25,11 +25,11 @@ const SILENT = {
 
 function menuWebContentsId (app: Awaited<ReturnType<typeof launchElectron>>): Promise<number | undefined> {
   return app.evaluate(({ webContents }) =>
-    webContents.getAllWebContents().find((wc) => wc.getURL().includes('/menu/'))?.id)
+    webContents.getAllWebContents().find((wc) => wc.getURL().includes('overlay=menu'))?.id)
 }
 
 function menuPage (app: Awaited<ReturnType<typeof launchElectron>>): ReturnType<typeof app.windows>[number] | undefined {
-  return app.windows().find((w) => w.url().endsWith('/menu/index.html'))
+  return app.windows().find((w) => w.url().includes('overlay=menu'))
 }
 
 it('builds no menu view at launch, builds one on the button\'s own hover, and reuses it on every open', async () => {
@@ -50,24 +50,24 @@ it('builds no menu view at launch, builds one on the button\'s own hover, and re
     const builtOnHover = await menuWebContentsId(app)
 
     await chrome.click('#menu')
-    expect(await waitFor(async () => await popoverShown(app, '/menu/'))).toBe(true)
-    await menuPage(app)?.waitForSelector('.item')
+    expect(await waitFor(async () => await popoverShown(app, 'overlay=menu'))).toBe(true)
+    await menuPage(app)?.waitForSelector('.menu-row')
     expect(await menuWebContentsId(app)).toBe(builtOnHover)
 
     // Close (the same button toggles it) and reopen: the webContents
     // survives being hidden (popoverShown reads that; app.windows() cannot --
     // see popoverShown's own doc) and is the SAME one, never rebuilt.
     await chrome.click('#menu')
-    expect(await waitFor(async () => !(await popoverShown(app, '/menu/')))).toBe(true)
+    expect(await waitFor(async () => !(await popoverShown(app, 'overlay=menu')))).toBe(true)
 
-    // Past REOPEN_DEBOUNCE_MS (popover-view.ts): an immediate second toggle
+    // Past REOPEN_DEBOUNCE_MS (overlay-host.ts): an immediate second toggle
     // is read as this close's own echo, not fresh intent -- correct for a
     // real click-away, but this test's own explicit close needs to clear it
     // before reopening on purpose.
     await new Promise((resolve) => { setTimeout(resolve, 350) })
     await chrome.click('#menu')
-    expect(await waitFor(async () => await popoverShown(app, '/menu/'))).toBe(true)
-    await menuPage(app)?.waitForSelector('.item')
+    expect(await waitFor(async () => await popoverShown(app, 'overlay=menu'))).toBe(true)
+    await menuPage(app)?.waitForSelector('.menu-row')
     expect(await menuWebContentsId(app)).toBe(builtOnHover)
   } finally {
     await closeElectron(app)
@@ -86,8 +86,8 @@ it('a click with no prior hover still opens the menu, building it then', async (
     // was tab-stopped to without a preceding hover.
     await chrome.evaluate(() => { document.querySelector<HTMLButtonElement>('#menu')?.click() })
 
-    expect(await waitFor(async () => await popoverShown(app, '/menu/'))).toBe(true)
-    await menuPage(app)?.waitForSelector('.item')
+    expect(await waitFor(async () => await popoverShown(app, 'overlay=menu'))).toBe(true)
+    await menuPage(app)?.waitForSelector('.menu-row')
   } finally {
     await closeElectron(app)
     expect(await assertNoElectronSurvivors()).toEqual([])

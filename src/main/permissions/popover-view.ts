@@ -88,8 +88,7 @@ export interface PopoverSpec {
    * independent of `room` below (which still applies on top of this): a
    * fixed cap for a popup whose list can run long (permissions, site-info),
    * or `Number.POSITIVE_INFINITY` for one that should simply show all of its
-   * content -- the menu -- so only the window's own height ever makes it
-   * scroll. Defaults to `MAX_HEIGHT`, the fixed cap a popup that does not set this field gets. */
+   * content, so only the window's own height ever makes it scroll. Defaults to `MAX_HEIGHT`, the fixed cap a popup that does not set this field gets. */
   readonly maxHeight?: number
   /** This popup's own `--wbg` token, literally, both themes -- what the view
    * is painted BEFORE its own page has loaded that CSS, so nothing white
@@ -104,15 +103,14 @@ export interface PopoverSpec {
    * attaches/detaches it, never re-navigates it. Only safe for a popup whose
    * content takes no per-open argument (`extraArgs` below is ignored for a
    * `warm` popup's own construction, since a warm view is built once, before
-   * any `toggle()` call ever supplies one) -- the main menu is the only
-   * caller today; permissions and site-info both need a different origin's
-   * data on each open and stay on the ordinary create/destroy path.
+   * any `toggle()` call ever supplies one). Permissions and site-info both
+   * need a different origin's data on each open and stay on the ordinary
+   * create/destroy path.
    * NOT built at construction: every window would otherwise carry a hidden
    * renderer process nobody may ever open (`npm run smoke`'s own two-window
    * count, and every e2e launch, measures exactly this). `prewarm()` on the
    * returned `PopoverView` builds it on demand instead -- the caller decides
-   * when that is worth doing (menu-panel.ts: the toolbar button's own hover/
-   * focus). A `toggle()` reaching a still-unbuilt warm popup builds it then,
+   * when that is worth doing (say, a toolbar button's own hover/focus). A `toggle()` reaching a still-unbuilt warm popup builds it then,
    * the same as any other click. `onShow` is how a warm popup's own page is
    * told to refresh, since its document is never reloaded.
    */
