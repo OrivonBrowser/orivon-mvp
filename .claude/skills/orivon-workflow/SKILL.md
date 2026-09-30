@@ -19,6 +19,7 @@ Plugins are project-scoped (`.claude/settings.json`) and travel with the reposit
 | `context7` (MCP) | **Manual, before code against Electron or webtorrent APIs** | `protocol.handle`, `utilityProcess`, `MessagePortMain`, `WebContentsView`, `session`, `safeStorage`. Electron 44 is newer than training data: check a signature live |
 | `playwright` (MCP) | **Manual: the localhost fixture app** | Driving a real web page. The Electron e2e uses the `_electron` library, not this |
 | `orivon-electron` skill | **Manual, before writing or debugging Electron code** | Renderer bundling, `app.windows()` over `app.firstWindow()`, `MessagePortMain` silent failures |
+| `orivon-qa` skill | **Manual, after a UI, flow or boundary change, and before calling it done** | Which QA to run, how to read an e2e failure and a screenshot, the fix loop |
 | `orivon-comments` skill | **Manual, before writing a comment in `src/`** | Where rationale goes, and a header over budget |
 | `claude-security` | **Manual, before packaging (step 10)** | Whole-repository vulnerability scan. Expensive: milestones only |
 | `claude-md-management` | **Manual, `/revise-claude-md`** at the end of a session that changed an assumption in CLAUDE.md | Keeps CLAUDE.md true |
@@ -39,12 +40,13 @@ Two practices with no tool behind them:
 
 ## At the end of a build step
 
-1. The adversarial review above.
-2. **The readability check.** Give the owner the one document a newcomer would hit at that
+1. The QA the `orivon-qa` skill names for what the step touched (`npm run qa`), with the screenshots read.
+2. The adversarial review above.
+3. **The readability check.** Give the owner the one document a newcomer would hit at that
    point and ask only: *"Read this cold. Where is the first place you got lost, or had to
    guess?"* Record the answer in `docs/development/readability-log.md` (method in its
    §The protocol). "Nothing confused me" is a result, and it is logged.
-3. `scope.md` records what landed.
+4. `scope.md` records what landed.
 
 ## At the end of a notable session
 

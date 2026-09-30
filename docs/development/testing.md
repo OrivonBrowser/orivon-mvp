@@ -2,8 +2,10 @@
 
 ## Read this first, because the test suite looks neglected and is not
 
-There are no UI tests, no coverage targets, and a deliberately small number of unit tests. That
-is a decision, not a backlog ([`build-plan.md`](../planning/build-plan.md) §Testing).
+There are no coverage targets and a deliberately small number of unit tests, and the UI is
+covered by an end-to-end suite that drives the real shell (§Visual QA and failure evidence). The
+small unit count is a decision, not a backlog ([`build-plan.md`](../planning/build-plan.md)
+§Testing).
 
 The reasoning: this is a browser built by one person, and at that scale broad test suites
 cost more than they return: they are written once, then maintained forever, against code that
@@ -26,6 +28,7 @@ seconds, and a test would be paying rent to tell you something you already know.
 | `npm test` | Vitest. `environment: 'node'`, no DOM. Picks up `src/**/*.test.ts` and `scripts/**/*.test.ts` |
 | `npm run smoke` | Builds and drives the real shell with real clicks. The only check that proves a window appears |
 | `npm run test:e2e` | Builds, then runs [`test/e2e-capability-boundary.test.ts`](../../test/e2e-capability-boundary.test.ts) (TCP) and [`test/e2e-udp-capability.test.ts`](../../test/e2e-udp-capability.test.ts) (UDP) via [`test/vitest.e2e.config.ts`](../../test/vitest.e2e.config.ts); see §The end-to-end test below. Runs automatically in CI's `e2e` job on every push and pull request. Needs a display; on Linux with `xvfb-run` installed it uses a virtual one automatically (see [setup.md](setup.md) "The no-focus switch"), so a plain `npm run test:e2e` is safe with no wrapper, and on a platform with no virtual display it runs directly instead, without stealing your keyboard focus |
+| `npm run qa` · `qa:visual` · `qa:report` | The QA specs and the inspection sheet; §Visual QA and failure evidence |
 
 Unit tests are **colocated** with what they test: `src/main/tests/omnibox.test.ts` sits beside
 `src/main/browsing/omnibox.ts`.
@@ -258,6 +261,75 @@ makes every service-worker-dependent check fail, which is not a sign this file i
 
 ---
 
+## Visual QA and failure evidence
+
+The e2e suite also carries a layer for what a person would see, and for what a failed spec leaves
+behind. The [`orivon-qa`](../../.claude/skills/orivon-qa/SKILL.md) skill is the working procedure;
+this section is the reference.
+
+**Commands.** `npm run qa` runs the QA specs and writes the inspection sheet; `npm run qa:visual`
+runs only the visual ones; `npm run qa:report` rebuilds `qa-artifacts/latest/inspect.md` from the
+last run. All three launch Electron headless, like `test:e2e`.
+
+| Spec | Proves |
+|---|---|
+| [`e2e-qa-audit`](../../test/e2e-qa-audit.test.ts) | Every layout-audit rule fires on a page broken on purpose, and none on a clean one |
+| [`e2e-qa-visual`](../../test/e2e-qa-visual.test.ts) | Eleven shell states: layout audit clean, no shell errors, something painted, and under `qa` the pixel baseline matched |
+| [`e2e-qa-journey`](../../test/e2e-qa-journey.test.ts) | A bookmark starred in the toolbar is on disk, survives a relaunch on the same profile, and so does removing it |
+| [`e2e-qa-adversarial`](../../test/e2e-qa-adversarial.test.ts) | Corrupt profile files, tab churn, a killed renderer and an abandoned load leave the shell working and consistent |
+| [`e2e-qa-evidence`](../../test/e2e-qa-evidence.test.ts) | The failure bundle holds what the page logged and threw, a dead renderer, the main log and real pixels |
+
+**Failure evidence, for every e2e spec.** [`launch-electron.mjs`](../../test/launch-electron.mjs)
+starts recording each launched app ([`qa-evidence.mjs`](../../test/qa-evidence.mjs)) and, at close,
+snapshots its final state. [`qa-setup.ts`](../../test/qa-setup.ts), a Vitest setup file, writes that
+snapshot only if the test failed, and drops it otherwise. A failed spec leaves
+`qa-artifacts/latest/<spec>/<test>/` (gitignored; linked from `qa-artifacts/latest/index.md`):
+
+```
+summary.md                     the error, and a line per launch
+launch-N/screenshots/          one PNG per shown view, and window-0-composite.png
+launch-N/aria/  dom/           the accessibility tree and the redacted DOM of every page
+launch-N/console.json          warnings and errors the pages logged
+launch-N/page-errors.json      uncaught page errors, with stacks
+launch-N/failed-requests.json  requests that failed, with the reason
+launch-N/crashes.json  main-events.json  main.log
+launch-N/trace.zip             only with ORIVON_QA_TRACE=1
+```
+
+CI uploads `qa-artifacts/latest/` when the `e2e` job fails. Collection runs under Vitest, where the
+setup file can write it; `ORIVON_QA_EVIDENCE=on` asks for it in a plain script and `off` turns it off. Typed values in password inputs are dropped from the DOM dump; the profile is a
+throwaway and the network is blackholed, so nothing else sensitive is written.
+
+**The layout audit** ([`qa-layout-audit.mjs`](../../test/qa-layout-audit.mjs)) runs inside each
+shown shell view and reports: content outside the viewport, clipped text, a control covered by
+another element, a zero-size control, unexpected scrolling, a broken image or empty icon, a modal
+that is off-centre or outside the window, and `disabled` disagreeing with `aria-disabled`. An
+intended case is allowlisted in the spec with a written reason. A control hidden by `opacity` is
+not audited, because hover-revealed buttons make that mostly intended.
+
+**Pixel baselines** are machine-local, in `$XDG_CACHE_HOME/orivon-qa/baselines/<platform>/`
+(`ORIVON_QA_BASELINES` overrides), shared by every worktree on the machine and never committed.
+The comparison runs only under `npm run qa` and `qa:visual` (they set `ORIVON_QA_PIXELS=1`), so an
+ordinary `npm run test:e2e` never fails on a baseline that belongs to one machine, and `CI=true`
+skips it as well. The first run records each; `ORIVON_QA_UPDATE_BASELINES=1` re-records after an
+intended change, once the new screenshot has been looked at. A baseline only means something on the
+machine and fonts that made it. The tolerance is 0.005% of the window,
+about 50 pixels: an unchanged state measures 0.000%, and growing the tab titles by one pixel moves
+0.02% or more, so anything looser misses a real change. A region that legitimately changes is
+masked in the spec (`ignore`), never covered by a looser tolerance.
+
+**Reading the states.** `qa:report` lists each captured state with what it should show, what the
+deterministic checks found and a blank Verdict. A reader looks at the PNG and fills it in:
+`expected-variation`, `harmless`, `defect`, `functional-bug` or `needs-human-review`. The
+deterministic checks already fail the spec; the reading is for what they cannot see, and a state
+is judged right only on positive evidence that it shows what it should.
+
+**Limits.** The consent prompts are native dialogs, so a screenshot cannot show them and the specs
+replace them. `capturePage()` fails without a GPU, so captures go through Playwright's own
+screenshot of each view (measured behaviour in the `orivon-electron` skill). An uncaught exception
+in the main process raises a blocking error dialog, so no spec provokes one. Malformed calls to
+`window.orivon.*` are not covered yet.
+
 ## Guards
 
 Twelve checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
@@ -296,6 +368,6 @@ pull request, that builds the real app and runs §The end-to-end test's `npm run
 `xvfb-run` (no display server on `ubuntu-latest` otherwise). Kept separate from the job above: it
 needs a real Electron build and a display server, takes far longer than the unit suite, and a
 failure there means something different, namely that the capability boundary itself broke, so it reads as
-its own red X.
+its own red X. When it fails, the job uploads `qa-artifacts/latest/` (§Visual QA and failure evidence).
 
 **With no dedicated code reviewer, CI is the reviewer.** A red pull request does not merge.

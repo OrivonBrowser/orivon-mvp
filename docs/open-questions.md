@@ -1630,3 +1630,27 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   then confirm the query is refused (rec.); find the Electron native binding that answers and patch it; leave it.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
+
+### A308: A failed navigation leaves a blank view and says nothing **[AI-REC]**
+
+- **Question:** Typing an address that cannot be reached (an unresolvable name under the test resolver) leaves the
+  tab on an empty white view: the address bar and tab title show the address, nothing says the load failed. The
+  view's accessibility tree is empty, and `did-fail-load` is handled only for the welcome screen.
+- **Why it matters:** a person who mistypes an address, or opens a site that is down, cannot tell a failure from a
+  page that is still loading.
+- **Options:** an `orivon:` error page shown in the tab with the address, the failure and a retry (rec.); Chromium's
+  own error page, if the embedder can enable it; leave it.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A309: The welcome screen's corner prism covers the brand logo **[OWNER]**
+
+- **Question:** `.brand-logo` is a 40 px circle at the top-left, but `.prism` (115 x 158 px, pinned to the window's
+  corner, painted later with no `z-index`) covers that spot, so the "ORIVON" wordmark shows with an empty gap
+  before it. A full-window capture of the welcome screen shows the prism and no logo.
+- **Why it matters:** the first screen a new person sees either hides the product's logo by accident or replaces it
+  on purpose, and nothing in the source says which.
+- **Options:** keep the prism as the mark and drop `.brand-logo` and its gap; lift the brand above the prism
+  (`z-index`), or move the prism clear of the brand (rec.: the owner picks); leave it.
+- **Who decides:** owner
+- **Blocks:** nothing
