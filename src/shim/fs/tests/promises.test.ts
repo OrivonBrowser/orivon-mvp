@@ -124,7 +124,7 @@ describe('fs.promises', () => {
   it('constants carries the same object fs.constants does', async () => {
     installFakeOrivon()
     const { promises } = await import('../promises.js')
-    expect(promises.constants).toEqual({ F_OK: 0, R_OK: 4, W_OK: 2, X_OK: 1 })
+    expect(promises.constants).toEqual({ F_OK: 0, R_OK: 4, W_OK: 2, X_OK: 1, O_RDONLY: 0, O_WRONLY: 1, O_RDWR: 2, O_CREAT: 64, O_EXCL: 128, O_TRUNC: 512, O_APPEND: 1024, O_NONBLOCK: 2048, O_NOFOLLOW: 131072 })
   })
 
   it('rmdir removes an empty directory with no recursive option', async () => {

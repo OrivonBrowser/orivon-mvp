@@ -429,7 +429,7 @@ describe('fs.constants', () => {
   it('is a real object carrying the four access() modes nedb\'s existsAsync reads (fs.constants.F_OK)', async () => {
     installFakeOrivon()
     const fs = (await import('../fs.js')).default
-    expect(fs.constants).toEqual({ F_OK: 0, R_OK: 4, W_OK: 2, X_OK: 1 })
+    expect(fs.constants).toEqual({ F_OK: 0, R_OK: 4, W_OK: 2, X_OK: 1, O_RDONLY: 0, O_WRONLY: 1, O_RDWR: 2, O_CREAT: 64, O_EXCL: 128, O_TRUNC: 512, O_APPEND: 1024, O_NONBLOCK: 2048, O_NOFOLLOW: 131072 })
   })
 
   it('is the SAME object on fs.promises.constants, matching real Node', async () => {

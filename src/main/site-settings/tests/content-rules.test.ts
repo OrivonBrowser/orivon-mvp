@@ -96,6 +96,16 @@ describe('requestPage', () => {
     expect(requestPage({ frame: { top: { url: 'https://a.example/top' } }, referrer: 'https://b.example/', webContents: tab('https://c.example/') })).toBe('https://a.example/top')
   })
 
+  it('takes the address that sent a request from the top document, since the frame can still hold the page it is leaving', () => {
+    expect(requestPage({ frame: { parent: null, top: { url: 'https://leaving.example/' } }, referrer: 'https://arriving.example/', webContents: tab('https://leaving.example/') })).toBe('https://arriving.example/')
+    // No referrer (a no-referrer policy): the frame's address, as before.
+    expect(requestPage({ frame: { parent: null, top: { url: 'https://a.example/' } }, referrer: '', webContents: tab('https://c.example/') })).toBe('https://a.example/')
+  })
+
+  it('keeps the top frame\'s address for a request from a frame inside the page, whose referrer is that frame', () => {
+    expect(requestPage({ frame: { parent: {}, top: { url: 'https://a.example/' } }, referrer: 'https://embedded.example/', webContents: tab('https://a.example/') })).toBe('https://a.example/')
+  })
+
   it('falls back to the address that sent the request, then to the tab', () => {
     expect(requestPage({ frame: null, referrer: 'https://b.example/', webContents: tab('https://c.example/') })).toBe('https://b.example/')
     expect(requestPage({ referrer: '', webContents: tab('https://c.example/') })).toBe('https://c.example/')

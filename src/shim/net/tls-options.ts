@@ -9,6 +9,7 @@ import type { SecureConnectOptions } from '../../contracts/capability-api.js'
 import type { PeerCertificate, SecureHandshake } from '../../contracts/handles.js'
 import { isIP } from './isip.js'
 import { refuseShim, type OrivonShimError } from '../errors.js'
+import { verificationError } from './tls-verify-errors.js'
 
 export type BrokerTlsOptions = Omit<SecureConnectOptions, 'host' | 'port'>
 type IdentityCheck = (hostname: string, cert: Record<string, unknown>) => unknown
@@ -128,11 +129,6 @@ export function nodePeerCertificate (cert: PeerCertificate | null | undefined): 
   return shaped
 }
 
-/** Node's verification error, rebuilt from the code the broker reported. */
-function chainError (code: string): Error & { code: string } {
-  return Object.assign(new Error(`certificate verification failed: ${code}`), { code })
-}
-
 /**
  * What the TLSSocket reports once the broker's handshake completed, and the
  * error that must destroy it before a byte is written, if any.
@@ -153,7 +149,7 @@ export function verdictFor (handshake: Partial<SecureHandshake>, plan: TlsPlan, 
 
   let error: Error | undefined
   if (!authorized && reported !== 'ERR_TLS_CERT_ALTNAME_INVALID') {
-    error = chainError(reported)
+    error = verificationError(reported)
   } else {
     try {
       const result = check(identityHost, nodePeerCertificate(handshake.peerCertificate))

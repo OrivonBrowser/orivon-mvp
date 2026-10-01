@@ -141,8 +141,28 @@ describe('rejectUnauthorized: false really connects', () => {
     const socket = tls.connect({ host: 'self-signed.example', port: 50002 })
 
     const outcome = await settled(socket)
-    expect(outcome).toMatchObject({ code: 'DEPTH_ZERO_SELF_SIGNED_CERT' })
-    expect((outcome as Error).message).not.toMatch(/not applied/)
+    expect(outcome).toMatchObject({ code: 'DEPTH_ZERO_SELF_SIGNED_CERT', orivonCode: 'unreachable' })
+    // What an app prints, as The Lounge does: Node's own text, never the broker's fixed message.
+    expect(String(outcome)).toBe('Error: self-signed certificate')
+  })
+
+  it('a hostname the broker refused reads as Node\'s altname error', async () => {
+    const refusal = Object.assign(new Error('the secure connection failed'), { name: 'OrivonError', code: 'unreachable', platformCode: 'ERR_TLS_CERT_ALTNAME_INVALID' })
+    installFakeOrivon({}, refusal)
+    const tls = await tlsModule()
+    const outcome = await settled(tls.connect({ host: 'other.example', port: 443 }))
+
+    expect(outcome).toMatchObject({ code: 'ERR_TLS_CERT_ALTNAME_INVALID' })
+    expect(String(outcome)).toBe('Error: Hostname/IP does not match certificate\'s altnames')
+  })
+
+  it('a failure before the handshake keeps its network error', async () => {
+    const refusal = Object.assign(new Error('the network operation failed'), { name: 'OrivonError', code: 'unreachable', platformCode: 'ECONNREFUSED' })
+    installFakeOrivon({}, refusal)
+    const tls = await tlsModule()
+    const outcome = await settled(tls.connect({ host: 'irc.example', port: 6697 }))
+
+    expect(outcome).toMatchObject({ code: 'ECONNREFUSED', syscall: 'connect', port: 6697 })
   })
 })
 
@@ -206,7 +226,7 @@ describe('checkServerIdentity runs in the shim, against the reported certificate
     const check = vi.fn(() => undefined)
     const socket = tls.connect({ host: 'electrum.example', port: 50002, checkServerIdentity: check })
 
-    expect(await settled(socket)).toMatchObject({ code: 'DEPTH_ZERO_SELF_SIGNED_CERT' })
+    expect(await settled(socket)).toMatchObject({ code: 'DEPTH_ZERO_SELF_SIGNED_CERT', message: 'self-signed certificate' })
     expect(check).not.toHaveBeenCalled()
   })
 

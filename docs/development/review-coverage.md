@@ -296,6 +296,14 @@ In all, 56 findings, 56 confirmed, none refuted.
 
 In all, 61 findings, 61 confirmed, none refuted.
 
+### `stream/lounge-tls-errors`: Node's error for a refused certificate, and The Lounge over TLS (2026-10-01)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| `/code-review` at medium effort | The branch against `main` | No findings |
+| The new TLS checks run against the bundle built before the fix | `test/e2e-the-lounge-real.test.ts` step j | The trusted-only check failed with the old text, as reported; the rest passed |
+| `/code-review` at medium effort | The Settings switch redraw fix | One finding, fixed: the control a redraw refocuses was unsettled, so it held later pushes; a new `e2e-settings-live` spec fails without the fix |
+
 ### `stream/b5-extensions`: the Extensions menu and pinning, optional permissions, command keys, the library APIs, `declarativeNetRequest` (2026-10-01)
 
 | Mechanism | Scope | Outcome |
