@@ -144,6 +144,7 @@ async function closeTab (chrome: Page, id: string): Promise<void> {
 it('follows the default for every site as it is changed, on the next load, including a cached page', async () => {
   const { app, chrome } = await launchSeeded({})
   try {
+    expect(await waitFor(async () => (await tabIds(chrome)).length === 1)).toBe(true)
     const first = (await tabIds(chrome))[0] as string
     let view = await visit(app, chrome, `${z.origin}/cached`)
     expect(await titleOf(view)).toBe('script ran')

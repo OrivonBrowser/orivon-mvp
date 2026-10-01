@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createContentRules, isPdf, SCRIPT_BLOCK_POLICY, withScriptBlock } from '../content-rules.js'
+import { createContentRules, isPdf, requestPage, SCRIPT_BLOCK_POLICY, withScriptBlock } from '../content-rules.js'
 import type { ContentKind } from '../content-rules.js'
 import { SiteSettingsStore } from '../site-settings-store.js'
 
@@ -86,5 +86,33 @@ describe('isPdf', () => {
     expect(isPdf({ 'content-type': ['Application/PDF; charset=binary'] })).toBe(true)
     expect(isPdf({ 'content-type': ['text/html'] })).toBe(false)
     expect(isPdf({})).toBe(false)
+  })
+})
+
+describe('requestPage', () => {
+  const tab = (url: string) => ({ getURL: () => url })
+
+  it('takes the top frame\'s address first', () => {
+    expect(requestPage({ frame: { top: { url: 'https://a.example/top' } }, referrer: 'https://b.example/', webContents: tab('https://c.example/') })).toBe('https://a.example/top')
+  })
+
+  it('falls back to the address that sent the request, then to the tab', () => {
+    expect(requestPage({ frame: null, referrer: 'https://b.example/', webContents: tab('https://c.example/') })).toBe('https://b.example/')
+    expect(requestPage({ referrer: '', webContents: tab('https://c.example/') })).toBe('https://c.example/')
+  })
+
+  it('skips an answer that is not a website: a tab still showing the page it is leaving', () => {
+    expect(requestPage({ frame: { top: { url: '' } }, referrer: 'https://b.example/', webContents: tab('file:///app/newtab/index.html') })).toBe('https://b.example/')
+    expect(requestPage({ webContents: tab('orivon://settings/') })).toBeUndefined()
+  })
+
+  it('treats a read that throws as unknown and tries the next', () => {
+    const frame = { get top (): never { throw new Error('frame gone') } }
+    expect(requestPage({ frame, webContents: tab('https://c.example/') })).toBe('https://c.example/')
+    expect(requestPage({ frame, webContents: { getURL: () => { throw new Error('destroyed') } } })).toBeUndefined()
+  })
+
+  it('answers nothing when it has nothing', () => {
+    expect(requestPage({})).toBeUndefined()
   })
 })

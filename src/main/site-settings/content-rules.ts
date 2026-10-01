@@ -41,6 +41,35 @@ export function createContentRules (deps: ContentRulesDeps): ContentRules {
   }
 }
 
+/** What Electron's request details offer, described structurally so a test needs no Electron. */
+export interface RequestPageFacts {
+  readonly frame?: { readonly top?: { readonly url: string } | null } | null
+  readonly referrer?: string
+  readonly webContents?: { readonly getURL: () => string } | undefined
+}
+
+/**
+ * The page a request belongs to: the top frame's address, else the address that sent the request, else the
+ * tab's. The first that is a website wins, because the tab's own address can still be the page it is leaving
+ * while a navigation is under way. Every read can throw (a frame that navigated or died): that answer is "unknown".
+ */
+export function requestPage (details: RequestPageFacts): string | undefined {
+  const reads: Array<() => string | undefined> = [
+    () => details.frame?.top?.url,
+    () => details.referrer,
+    () => details.webContents?.getURL()
+  ]
+  for (const read of reads) {
+    try {
+      const url = read()
+      if (url !== undefined && isWebAddress(url)) return url
+    } catch {
+      // A detached frame or a destroyed tab: try the next.
+    }
+  }
+  return undefined
+}
+
 /** A second policy beside whatever the page sends: policies intersect, so this only ever removes what a script may do. Inline handlers and `javascript:` addresses are covered as well as script files. */
 export const SCRIPT_BLOCK_POLICY = "script-src 'none'"
 

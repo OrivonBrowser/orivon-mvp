@@ -10,10 +10,9 @@ import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import type { ShellInstaller } from '../shell/shell-installers.js'
 import { applyMuted } from '../shell/signals/audio.js'
-import { topUrlOf } from '../privacy/cookie-policy.js'
 import { askSite } from './ask-site.js'
 import { createAutoDownloads } from './auto-downloads.js'
-import { createContentRules, isPdf, withScriptBlock } from './content-rules.js'
+import { createContentRules, isPdf, requestPage, withScriptBlock } from './content-rules.js'
 import type { ContentKind } from './content-rules.js'
 import { pageAccess } from './page-access.js'
 import { createPopupBlocker } from './popup-blocker.js'
@@ -47,12 +46,12 @@ export const installContentSettings: ShellInstaller = {
     owner.onHeadersReceived(CONTENT_ORDER, { urls: WEB, types: ['mainFrame', 'subFrame'] }, WEB_ADDRESS, (details, current) => {
       if (details.resourceType !== 'mainFrame' && details.resourceType !== 'subFrame') return current
       // A main frame's own address is the page; a frame's page is the top document it sits in.
-      const page = details.resourceType === 'mainFrame' ? details.url : topUrlOf(details)
+      const page = details.resourceType === 'mainFrame' ? details.url : requestPage(details)
       if (!rules.scriptsBlocked(page) || isPdf(current.responseHeaders)) return current
       return { ...current, responseHeaders: withScriptBlock(current.responseHeaders) }
     })
     owner.onBeforeRequest(CONTENT_ORDER, { urls: WEB, types: ['image'] }, WEB_ADDRESS, (details, current) => {
-      return details.resourceType === 'image' && rules.imagesBlocked(topUrlOf(details)) ? { cancel: true } : current
+      return details.resourceType === 'image' && rules.imagesBlocked(requestPage(details)) ? { cancel: true } : current
     })
 
     siteSound.bind((pageUrl) => rules.soundBlocked(pageUrl))

@@ -20,8 +20,7 @@
 | `auto-downloads.ts` | holds a second download a page starts without a click and asks about it as the `autoDownloads` kind |
 
 **What it depends on.** `electron` (types), [`../shell/`](../shell/) (`ShellInstaller`, `ShellServices`, the
-window registry, the prompt anchor, `signals/audio.ts`'s `applyMuted`), [`../privacy/cookie-policy.ts`](../privacy/cookie-policy.ts)
-(`topUrlOf`: the page a request belongs to), [`../downloads/`](../downloads/) (`StartInfo`),
+window registry, the prompt anchor, `signals/audio.ts`'s `applyMuted`), [`../downloads/`](../downloads/) (`StartInfo`),
 [`../sessions/web-request-owner.ts`](../sessions/web-request-owner.ts) (the one owner of the default session's request events), [`../overlays/`](../overlays/) (`requestSlot`),
 [`../sessions/site-asks.ts`](../sessions/site-asks.ts) (the registry the asker joins),
 [`../consent/grant-prompt-origin.ts`](../consent/grant-prompt-origin.ts) (how a site is written for the person),
