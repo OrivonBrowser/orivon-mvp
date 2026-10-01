@@ -2,7 +2,7 @@
    the group labels, the marks on the right, the close button that appears on the row aimed at, and the
    new-tab mark. The overlay's own #scroll does the scrolling, so the field stays in view. */
 
-body[data-overlay='tab-search'] #scroll { scroll-padding-top: 52px; scrollbar-width: thin; scrollbar-color: var(--wborder) transparent; }
+body[data-overlay='tab-search'] #scroll { scroll-padding-top: 52px; }
 
 body[data-overlay='tab-search'] .ts-head {
   position: sticky;

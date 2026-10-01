@@ -131,7 +131,13 @@ export function renderRow (row: Row, state: SettingsState): HTMLElement {
     case 'toggle': field = renderToggle(control, state, controlId); break
     case 'text': field = renderText(control, state, controlId); break
     case 'pageList': field = renderPageList(control, state, controlId); break
-    case 'action': field = renderAction(control, state); break
+    case 'action': {
+      const button = renderAction(control, state)
+      if (control.shows === undefined) { field = button; break }
+      const shown = control.shows(state)
+      field = h('span', { className: 'action-value' }, h('span', { className: 'value', textContent: shown, title: shown }), button)
+      break
+    }
     case 'shortcut': field = renderShortcut(control, state); break
     case 'clearData': field = renderClearData(state); break
     case 'apps': field = renderApps(state); break

@@ -38,7 +38,8 @@
   color: var(--wink-dim);
   font-size: 12.5px;
 }
-.engine-actions { flex: none; display: inline-flex; align-items: center; gap: 4px; }
+.engine-actions { flex: none; display: grid; grid-template-columns: 96px 28px 28px; gap: 4px; justify-items: end; align-items: center; }
+.engine-slot { width: 28px; height: 28px; }
 
 .engine-add { justify-self: start; }
 .engine-note { margin: 0; }

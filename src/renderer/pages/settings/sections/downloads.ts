@@ -15,14 +15,8 @@ export const downloads: Section = {
       id: 'downloads-folder',
       label: 'Save files to',
       help: 'Where downloaded files go. A name that is already taken gets a number.',
-      keywords: ['download location', 'folder', 'directory', 'path', 'where', 'save'],
-      control: { type: 'info', text: (state) => state.downloads.folder }
-    },
-    {
-      id: 'downloads-change-folder',
-      label: 'Download folder',
-      keywords: ['download location', 'folder', 'directory', 'change', 'choose', 'browse'],
-      control: { type: 'action', label: 'Change…', run: async (state) => { await state.downloads.choose() } }
+      keywords: ['download location', 'folder', 'directory', 'path', 'where', 'save', 'change', 'choose', 'browse'],
+      control: { type: 'action', label: 'Change…', shows: (state) => state.downloads.folder, run: async (state) => { await state.downloads.choose() } }
     },
     {
       id: 'downloads-default-folder',
