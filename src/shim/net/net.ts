@@ -5,6 +5,7 @@
 // calls net.isIP() before every send, not a socket method, and its absence
 // is what silently breaks the DHT with no error at all.
 
+import { retryLimited } from '../limit-retry.js'
 import { getOrivon } from '../orivon-global.js'
 import { Socket, createConnectFactory } from './socket.js'
 import { Server, createServerFactory } from './server.js'
@@ -18,8 +19,8 @@ export { isIP, isIPv4, isIPv6 } from './isip.js'
 // Node's net.Stream is a legacy alias for net.Socket, not a separate class.
 export { Socket as Stream } from './socket.js'
 
-const connect = createConnectFactory((opts) => getOrivon().net.connect(opts))
-const createServer = createServerFactory((opts) => getOrivon().net.listen(opts))
+const connect = createConnectFactory(async (opts) => await retryLimited(async () => await getOrivon().net.connect(opts)))
+const createServer = createServerFactory(async (opts) => await retryLimited(async () => await getOrivon().net.listen(opts)))
 
 export { connect, createServer }
 export const createConnection = connect

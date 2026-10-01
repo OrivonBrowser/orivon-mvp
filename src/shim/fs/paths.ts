@@ -8,6 +8,7 @@
 import { isAbsolute, normalize } from 'path'
 import { getOrivon } from '../orivon-global.js'
 import { codedError, toNodeError } from '../node-errors.js'
+import { retryLimited } from '../limit-retry.js'
 import { VIRTUAL_ROOT, VIRTUAL_TMPDIR } from '../virtual-root.js'
 import { syncFs } from './sync-orivon.js'
 
@@ -37,9 +38,9 @@ export function fsError (code: string, description: string, syscall: string, pat
  * Wrap the orivon.fs call only: an error already Node-shaped (from this
  * file, or fs/root.ts) would come out of toNodeError as 'internal'.
  */
-export async function guarded<T> (run: () => Promise<T>): Promise<T> {
+export async function guarded<T> (run: () => Promise<T>, pause?: (ms: number) => Promise<void>): Promise<T> {
   try {
-    return await run()
+    return await retryLimited(run, pause)
   } catch (error) {
     throw toNodeError(error)
   }
