@@ -6,7 +6,7 @@ import { hostWords } from '../../broker/policy/extension-permission-words.js'
 import { permissionLine } from '../../broker/policy/extension-manifest.js'
 import { isStrippedPermissionName } from './extension-permission-check.js'
 import type { ExtensionPart } from './extensions-detail-parts.js'
-import type { ExtensionPageCommand } from './extensions-page-commands.js'
+import type { ExtensionsDomainDeps } from './extensions-domain.js'
 import { subtractGranted } from './optional-permissions.js'
 
 export interface GrantedItem {
@@ -42,7 +42,7 @@ export const optionalPart: ExtensionPart = (entry, facts, deps) => {
 }
 
 /** Takes back one granted item and tells the extension; a value that is not currently granted does nothing. */
-function revoke (field: 'permissions' | 'origins'): ExtensionPageCommand {
+function revoke (field: 'permissions' | 'origins'): (body: Readonly<Record<string, unknown>>, deps: ExtensionsDomainDeps) => Promise<{ ok: true } | undefined> {
   const key = field === 'permissions' ? 'permission' : 'origin'
   return async (body, deps) => {
     const { id } = body
