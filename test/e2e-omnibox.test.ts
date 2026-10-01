@@ -219,7 +219,9 @@ it('moves the selection with the arrows, goes to the selected row on Enter, and 
 
     await chrome.keyboard.press('ArrowDown')
     expect(await waitFor(async () => (await selectedRow(app)).includes('Delta tab'))).toBe(true)
-    expect(await chrome.evaluate(() => (document.querySelector('#address') as HTMLInputElement).getAttribute('aria-activedescendant'))).toBe('omnibox-option-1')
+    // The rows are in another view, so the selected one is said through a live region of the chrome's own.
+    expect(await waitFor(async () => (await chrome.locator('.address-live').textContent())?.includes('Delta tab') === true)).toBe(true)
+    expect(await chrome.locator('#address').getAttribute('aria-activedescendant')).toBeNull()
     await chrome.keyboard.press('ArrowDown')
     expect(await waitFor(async () => (await selectedRow(app)).includes('Gamma bookmark'))).toBe(true)
     expect((await field(chrome)).value).toBe(`${server.origin}/gamma`)

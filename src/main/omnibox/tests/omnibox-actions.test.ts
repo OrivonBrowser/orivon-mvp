@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { CHROME_ACTIONS, runChromeAction } from '../../shell/chrome-actions.js'
+import { createOmniboxOverlay } from '../omnibox-overlay.js'
 import type { WindowContext } from '../../shell/window-context.js'
 import { SHELL_EVENT_CHANNEL } from '../../channels.js'
 
@@ -90,7 +91,7 @@ describe('the omnibox chrome actions', () => {
     it('moves the selection and tells the dropdown', () => {
       const { run, here, anchor } = setup({ history: [{ url: 'https://example.com/', title: 'Example' }] })
       const { seq } = run('omnibox.query', { text: 'exa', typing: false, anchor }) as { seq: number }
-      expect(run('omnibox.select', { step: 1, seq })).toEqual({ selected: 1, fill: 'https://example.com/' })
+      expect(run('omnibox.select', { step: 1, seq })).toEqual({ selected: 1, fill: 'https://example.com/', announce: 'Example, example.com, 2 of 2' })
       expect(here.overlays.send).toHaveBeenLastCalledWith('omnibox', expect.objectContaining({ selected: 1 }))
     })
 
@@ -169,6 +170,8 @@ describe('the omnibox chrome actions', () => {
       run('omnibox.query', { text: 'exam', typing: false, anchor })
       expect(run('omnibox.pick', { index: 1, disposition: 'current', seq })).toBe(false)
       expect(here.manager.navigate).not.toHaveBeenCalled()
+      // Nothing is left to choose from, so the dropdown goes with the refusal.
+      expect(here.overlays.close).toHaveBeenCalledWith('omnibox')
     })
 
     it('can be made through the overlay by an index alone', () => {
@@ -176,6 +179,20 @@ describe('the omnibox chrome actions', () => {
       run('omnibox.query', { text: 'exa', typing: false, anchor })
       run('omnibox.pick', { index: 1, disposition: 'current' })
       expect(here.manager.navigate).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('the dropdown closing on its own', () => {
+    it('tells the chrome when main closed it, so it stops believing it is open, and not when the chrome asked', () => {
+      const { here } = setup()
+      const handler = createOmniboxOverlay({ window: here.entry } as never)
+      for (const reason of ['tab-switch', 'navigation', 'layout', 'window-closed'] as const) {
+        handler.closed?.(reason)
+        expect(here.sent).toEqual([[SHELL_EVENT_CHANNEL, { type: 'module', module: 'address-suggest', payload: { type: 'closed' } }]])
+        here.sent.length = 0
+      }
+      handler.closed?.('request')
+      expect(here.sent).toEqual([])
     })
   })
 

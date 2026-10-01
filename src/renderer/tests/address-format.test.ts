@@ -57,7 +57,7 @@ describe('formatAddress', () => {
     expect(parts.map((part) => part.text).join('')).toBe(`example.com/${'a'.repeat(300)}`)
     const huge = formatAddress(`https://example.com/${'a'.repeat(100000)}`, { full: false })
     expect(huge.map((part) => part.text).join('').length).toBeLessThanOrEqual(512)
-    expect(huge[0]).toEqual({ text: 'example.com', tone: 'strong' })
+    expect(huge[0]).toEqual({ text: 'example.com', tone: 'strong', fixed: true })
   })
 
   it('never merges the two tones', () => {
@@ -65,5 +65,24 @@ describe('formatAddress', () => {
       const parts = formatAddress(url, { full: false })
       parts.forEach((part, index) => { if (index > 0) expect(part.tone).not.toBe(parts[index - 1]?.tone) })
     }
+  })
+})
+
+describe('the part of an address a long run of labels or text must not push out of view', () => {
+  it('marks the site\'s own name as the one fixed part, however long what comes before and after it is', () => {
+    const subdomain = `accounts.google.com.${'verify-session-0000.'.repeat(8)}`
+    const parts = formatAddress(`https://${subdomain}evil.example/${'p'.repeat(300)}`, { full: false })
+    expect(parts.map((part) => part.fixed === true)).toEqual([false, true, false])
+    expect(parts[1]).toEqual({ text: 'evil.example', tone: 'strong', fixed: true })
+    expect(parts[0]?.text.startsWith('accounts.google.com.')).toBe(true)
+  })
+
+  it('marks nothing as fixed for an address with no host of its own', () => {
+    for (const url of ['file:///home/me/a.html', 'about:blank']) expect(formatAddress(url, { full: false }).some((part) => part.fixed === true)).toBe(false)
+  })
+
+  it('keeps the host in the cut when a scheme and userinfo are very long', () => {
+    const parts = formatAddress(`https://${'u'.repeat(900)}@evil.example/`, { full: true })
+    expect(parts.some((part) => part.fixed === true && part.text === 'evil.example')).toBe(true)
   })
 })

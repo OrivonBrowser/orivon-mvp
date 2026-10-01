@@ -2,6 +2,7 @@
 // so a redirect or a back navigation can never leave a stale lock.
 import { BUILTIN_ADDRESSES } from '../../../protocols/builtin.js'
 import { connectionOf } from '../../browsing/connection.js'
+import { loadFailed } from '../load-failure.js'
 import { appTabViews } from '../tab-partition.js'
 import type { TabSignal } from '../tab-signals.js'
 
@@ -25,7 +26,8 @@ export const connectionSignal: TabSignal = {
         displayUrl: BUILTIN_ADDRESSES.displayUrl(url),
         appTab: appTabViews.has(record.view),
         internal: record.internalPage != null,
-        served: servedByGateway(url)
+        served: servedByGateway(url),
+        failed: loadFailed(wc)
       })
     }
   }

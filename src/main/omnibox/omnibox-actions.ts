@@ -3,7 +3,7 @@
 // one the service holds, reached by an index.
 import { aliasToInternal, viewSourceTarget } from '../pages/internal-aliases.js'
 import { parseInternalUrl } from '../pages/internal-pages.js'
-import { openViewSource } from '../page-tools/view-source.js'
+import { openTypedViewSource } from '../page-tools/view-source.js'
 import type { ChromeAction } from '../shell/chrome-actions.js'
 import { sendChromeEvent } from '../shell/shell-events.js'
 import type { WindowContext } from '../shell/window-context.js'
@@ -61,7 +61,13 @@ export const omniboxSelect: ChromeAction = (payload, ctx) => {
 /** `{ index, disposition, seq? }`: does what choosing that row does. */
 export const omniboxPick: ChromeAction = (payload, ctx) => {
   if (!isRecord(payload) || !isIndex(payload['index']) || !isDisposition(payload['disposition']) || !isSeq(payload['seq'])) return undefined
-  return pickRow(ctx, payload['index'], payload['disposition'], payload['seq'])
+  const done = pickRow(ctx, payload['index'], payload['disposition'], payload['seq'])
+  // A choice that was refused (the rows it named have gone) leaves nothing to choose from: the dropdown goes too.
+  if (!done) {
+    existingOmnibox(ctx.window)?.reset()
+    ctx.window.overlays.close(OMNIBOX_OVERLAY)
+  }
+  return done
 }
 
 /** `{ typed? }`: hides the rows. `typed` is what was submitted, to count as typed when it is an address. */
@@ -77,9 +83,9 @@ export const omniboxClose: ChromeAction = (payload, ctx) => {
 }
 
 /** Runs the choice of row `index` of the window's rows. Shared by the chrome (keys) and the overlay (mouse). */
-export function pickRow (ctx: WindowContext, index: number, disposition: Disposition, seq: number | undefined): boolean {
+export function pickRow (ctx: WindowContext, index: number, disposition: Disposition, seq: number | undefined, rev?: number): boolean {
   const service = existingOmnibox(ctx.window)
-  const outcome = service?.pick(index, disposition, seq)
+  const outcome = service?.pick(index, disposition, seq, rev)
   if (service === undefined || outcome === undefined) return false
   service.reset()
   ctx.window.overlays.close(OMNIBOX_OVERLAY)
@@ -105,7 +111,7 @@ function perform (ctx: WindowContext, outcome: Outcome): void {
   } else if (internal !== null) {
     tabs.openInternal(internal.page, internal.path)
   } else if (source !== null) {
-    openViewSource(tabs, source)
+    openTypedViewSource(tabs, source)
   } else {
     tabs.createTab(outcome.target, outcome.disposition === 'tab')
   }
