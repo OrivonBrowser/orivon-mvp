@@ -12,7 +12,7 @@ import { DebouncedWriter } from '../storage/debounced-writer.js'
 import { MAX_TITLE_LENGTH, MAX_URL_LENGTH } from './history-store.js'
 import type { HistoryEntry, HistoryImportRow, HistoryQuery, HistoryStore, HistorySuggestion } from './history-store.js'
 import { dropFtsIndex, migrate, rebuildFtsIndex, rollback } from './history-schema.js'
-import { faviconsForHosts, prepareFaviconStatements, pruneHostFavicons, setHostFavicon, withFavicons } from './history-favicons.js'
+import { MAX_HISTORY_FAVICON_CHARS, faviconsForHosts, prepareFaviconStatements, pruneHostFavicons, setHostFavicon, withFavicons } from './history-favicons.js'
 import { deletePagesByIds, MAX_IDS, pagesByIds, prepareIdStatements } from './history-ids.js'
 import { importHistoryRows } from './history-import.js'
 import { FTS_DENSITY_LIMIT, listPages, prepareListStatements } from './history-list.js'
@@ -42,6 +42,7 @@ type Change =
   | { readonly type: 'visit', readonly url: string, readonly title: string, readonly at: number }
   | { readonly type: 'title', readonly url: string, readonly title: string }
   | { readonly type: 'typed', readonly url: string, readonly at: number }
+  | { readonly type: 'favicon', readonly host: string, readonly data: string, readonly at: number }
 
 export class SqliteHistoryStore implements HistoryStore {
   readonly kind = 'sqlite'
@@ -182,6 +183,10 @@ export class SqliteHistoryStore implements HistoryStore {
           setTitle.run(change.title, change.url, change.title)
           continue
         }
+        if (change.type === 'favicon') {
+          setHostFavicon(this.db, change.host, change.data, () => change.at)
+          continue
+        }
         if (change.type === 'typed') {
           if (!markPageTyped(this.db, change.url)) this.waitForPage(change.url, change.at)
           continue
@@ -260,9 +265,16 @@ export class SqliteHistoryStore implements HistoryStore {
     if (visitedAt - typedAt <= TYPED_WAIT_MS) markPageTyped(this.db, url)
   }
 
-  setFavicon (host: string, dataUrl: string): void { setHostFavicon(this.db, host, dataUrl) }
+  /** Queued with the visits, so an icon is one more row in their transaction and never a write of its own. */
+  setFavicon (host: string, dataUrl: string): void {
+    if (host === '' || dataUrl.length > MAX_HISTORY_FAVICON_CHARS) return
+    this.enqueue({ type: 'favicon', host, data: dataUrl, at: Date.now() })
+  }
 
-  faviconsFor (hosts: readonly string[]): Record<string, string> { return faviconsForHosts(this.db, hosts) }
+  faviconsFor (hosts: readonly string[]): Record<string, string> {
+    this.drain()
+    return faviconsForHosts(this.db, hosts)
+  }
 
   pruneFavicons (): void { pruneHostFavicons(this.db) }
 
@@ -278,7 +290,8 @@ export class SqliteHistoryStore implements HistoryStore {
 
   importPages (rows: readonly HistoryImportRow[]): number {
     this.drain()
-    return importHistoryRows(this.db, rows)
+    const kept = (this.statements.count.get() as { n: number }).n
+    return importHistoryRows(this.db, rows, Math.max(this.limits.maxPages - kept, 0))
   }
 
   count (): number {

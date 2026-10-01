@@ -1,8 +1,8 @@
 # Table 3k: protocol stacks, by the primitive each needs
 
-One part of the [compatibility matrix](../compatibility-matrix.md), which holds the legend, the
-definition of every column and the index of all tables. This page says what works today and
-nothing else.
+One part of the [compatibility matrix](../compatibility-matrix.md). The matrix page has this
+table in readable form, one row per topic; this page lists every item one by one, for looking up a
+single name. It says what works today and nothing else.
 
 The universe is 58 network primitives (`P01` to `P58`, what a transport or service needs from the machine) and the 178 protocol stacks an app is built on (`S001` to `S178`, in seven families), each listed with the primitives it needs. A primitive's detail lives in [Table 1a](table-1-capabilities.md), [Table 1b](table-1-capabilities.md) and [Table 3d](table-3d-network.md), and the rows here only point to it. What a protocol needs (its ports, its upgrade steps, the usual npm package) is general knowledge of the protocol, not a claim about Orivon. Which hosts, ports and addresses a grant admits is the pattern grammar in [Table 1a](table-1-capabilities.md).
 
@@ -60,7 +60,7 @@ The universe is 58 network primitives (`P01` to `P58`, what a transport or servi
 | P48 Checks against DNS rebinding | ✅ built | The broker resolves once, checks every answer and dials the checked literal. `https.connect` with default verification matches the name and does not resolve, so a public name whose record points at a private address is not caught there |
 | P49 Ephemeral local ports | ⚠️ differs | `listen(0)` and `bind(0)` pick a random port inside the granted ranges, never an operating-system one; an app with no range to spare fails `limit` after 64 tries |
 | P50 Privileged ports (below 1024) for listen and bind | 🚫 excluded by design | Denied outright at every tier, and a range that starts below 1024 is discarded whole ([`capability-api.md`](../../architecture/capability-api.md)) |
-| P51 Outbound to ports 23, 25, 53, 139, 445, 465, 587, 3389, 6667 and 6697 | ⚠️ partial | A wildcard, a `*` port or a range never reaches them. A single pattern that spells the exact port and matches the host does, for `tcp.connect`, `udp.send` and `https.connect`. A server typed in by the person is unreachable on these ports; a fixed, named server works |
+| P51 Outbound to ports 23, 25, 53, 139, 445, 465, 587, 3389, 6667 and 6697 | ⚠️ partial | `*:*` and a range never reach them. A single pattern that spells the exact port does: `host:port` for `tcp.connect`, `udp.send` and `https.connect`, and `*:port` for `tcp.connect` and `https.connect`, which reaches any public server on that port, so a server the person types in is reachable. `udp.send` accepts the wildcard host only as `*:*`, so a DNS server typed in stays unreachable (A304) |
 | P52 Multicast and broadcast receive | ❌ missing | `udpBind` binds `0.0.0.0` (network scope) or `127.0.0.1` (local scope) and no group can be joined, so only unicast and directed traffic arrives |
 | P53 `dns.lookup` for a name that resolves only to a private address | ⚠️ differs | `net.connect('nas.internal', 5000)` succeeds under the literal `192.168.1.50:5000`, because the broker checks the resolved address against the literal. `dns.lookup('nas.internal')` fails `denied` under that literal alone, since an address literal authorises no name, and fails `unreachable` when a `*` or a hostname pattern authorises the lookup and the private answer is filtered out |
 | P54 Operating-system proxy (system proxy, PAC) | ⚠️ differs | While a system proxy applies to the destination, every `orivon.net` call is `denied`; the routed `fetch` then falls back to the native path. `HTTP_PROXY` variables are never read |
@@ -165,13 +165,13 @@ A stack reads ✅ built when its ordinary client path runs under the grants name
 
 | Protocol or stack | Primitives it needs | Status | What is missing, or the condition |
 |---|---|:--:|---|
-| IRC over TLS on 6697, with SASL (S081) | P05, P51 | ⚠️ partial | Port 6697 is reserved: `https.connect` must hold a pattern that spells `host:6697`, and `*:*` does not reach it. A client that lets the person type any server cannot connect on its default port |
+| IRC over TLS on 6697, with SASL (S081) | P05, P51 | ⚠️ partial | Port 6697 is reserved, so `*:*` does not reach it. `https.connect: ["*:6697"]` reaches any public server on that port, and the prompt names the port. Not yet run against a real IRC server |
 | IRC plain TCP on 6667, with DCC chat and file transfer (S082) | P01, P51, P12, P13 | ⚠️ partial | Port 6667 is reserved as above. DCC needs a listener the peer can reach (`tcp.listen.network` and a forwarded port, P39) |
 | XMPP with STARTTLS on 5222 (S083) | P06 | ❌ missing | The stream is plain until `<starttls/>`, then upgraded in place (P06) |
 | XMPP direct TLS on 5223 (S084) | P05 | ✅ built | `https.connect` naming the server. Few servers offer it |
 | XMPP SRV discovery, `_xmpp-client._tcp` (S085) | P24 | ❌ missing | `dns.resolveSrv` refuses by name. The client is told the host, or asks a DoH resolver |
 | XMPP over WebSocket and BOSH (S086) | P29, P25 | ✅ built | `https.connect` naming the server |
-| SMTP with implicit TLS on 465 (S087) | P05, P51 | ⚠️ partial | Port 465 is reserved: works only for hosts whose exact `host:465` is in `https.connect` |
+| SMTP with implicit TLS on 465 (S087) | P05, P51 | ⚠️ partial | Port 465 is reserved, so `*:*` does not reach it. `https.connect: ["*:465"]` reaches any public server on that port, and a named `host:465` reaches that host. Not yet run against a real mail server |
 | SMTP submission with STARTTLS on 587 (S088) | P06, P51 | ❌ missing | STARTTLS (P06), and port 587 is reserved (P51). The most common mail submission path |
 | SMTP on port 25, direct-to-MX delivery (S089) | P51, P24, P06 | ❌ missing | Port 25 is reserved, `resolveMx` refuses by name (P24), and delivery uses STARTTLS (P06) |
 | IMAP with implicit TLS on 993 (S090) | P05 | ✅ built | `https.connect: ["*:*"]` reaches any public server; 993 is not reserved |
@@ -216,7 +216,7 @@ A stack reads ✅ built when its ordinary client path runs under the grants name
 | FTP control channel, passive mode (S129) | P01, P04 | ⚠️ partial | The server's `PASV` reply names an address and port chosen at run time. It is reachable under `*:*` only when public; a private answer is denied (P02) |
 | FTP active mode, `PORT` (S130) | P12, P13 | ⚠️ partial | Needs a listener the server can reach (P12, P13, P39) |
 | Implicit FTPS on 990 (S132) | P05 | ✅ built | `https.connect` naming the host. The data channel is a second implicit-TLS connection to a run-time port |
-| SMB and CIFS, TCP 445 and 139 (S133) | P01, P51 | ⚠️ partial | Ports 445 and 139 are reserved: works only for a declared `host:445` (or `:139`) pattern, and the server is usually on the LAN (P02) |
+| SMB and CIFS, TCP 445 and 139 (S133) | P01, P51 | ⚠️ partial | Ports 445 and 139 are reserved, so `*:*` does not reach them. `tcp.connect: ["*:445"]` reaches any public server, and a named `host:445` reaches that host. The server is usually on the LAN, which needs its address written as a literal (P02) |
 | NFS, TCP 2049 with the portmapper (S134) | P01, P15 | ⚠️ partial | RPC over TCP is plain. The portmapper lookup uses UDP 111, and LAN targets need literals (P02) |
 | WebDAV, CalDAV and CardDAV (S135) | P25 | ✅ built | `https.connect` naming the server. `PROPFIND` and `REPORT` pass through the routed `fetch`, with no cookie jar |
 | S3 and S3-compatible object stores (S136) | P25, P38 | ⚠️ partial | `https.connect` for the endpoint. SDK v3's Node handler relies on `Agent` pooling and streamed uploads, and the routed `fetch` buffers its request body (P38); the browser handler works |
@@ -283,7 +283,6 @@ The rows are ordered by how many stacks each primitive blocks or limits. "Blocks
 | Reach a port behind a NAT (P39, P13) | Matrix homeserver and ActivityPub server (S030, S032), webhooks (S173), BitTorrent port mapping (S009), I2P router (S074) | BitTorrent peer wire (S001), Lightning BOLT (S040), IRC DCC (S082), FTP active mode (S130) |
 | Unix domain sockets and named pipes (P22) | Core Lightning `lightning-rpc` (S044), PostgreSQL, MySQL and Redis sockets and ssh-agent (S114, S117, S121, S128), Docker Engine API socket (S140) | syslog (S160) |
 | DNS record queries (P24) | XMPP SRV (S085), MongoDB `mongodb+srv` (S119), direct-to-MX SMTP (S089) | IPFS `dnsaddr` and DNSLink (S019), Bitcoin DNS seeds (S035), ENS and DNSLink (S167) |
-| Reserved ports named by a pattern the person can type (P51) | SMTP on 587 and on 25 (S088, S089) | IRC over TLS (S081), IRC plain (S082), SMTP on 465 (S087), SMB (S133) |
 | HTTP/2 client (P26) | LND gRPC, Core Lightning gRPC and Zcash lightwalletd gRPC (S041, S045, S056), gRPC over HTTP/2 (S144) | APNs (S176) |
 | UDP send-only socket with no inbound grant (P16); a `udp.bind.local` socket cannot send to a public address | None | BitTorrent UDP trackers (S003), Discord voice (S098), SIP over UDP (S103), NTP (S158), syslog (S160) |
 | A TUN device (not a network primitive; no primitive offers it) | Lokinet (S076), Yggdrasil and CJDNS (S077), system-wide VPN (S079) | WireGuard in user space (S078), VPN-style apps (S080) |

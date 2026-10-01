@@ -3,8 +3,18 @@
 // Pure: no Electron, no Node.
 
 const DANGEROUS_EXTENSIONS: ReadonlySet<string> = new Set([
-  'exe', 'msi', 'bat', 'cmd', 'com', 'scr', 'pif', 'ps1', 'vbs', 'js', 'jse', 'wsf', 'hta', 'lnk', 'reg', 'dll',
-  'jar', 'sh', 'run', 'appimage', 'deb', 'rpm', 'dmg', 'pkg', 'app', 'command', 'desktop', 'apk'
+  // Programs and installers.
+  'exe', 'msi', 'msp', 'mst', 'msix', 'msixbundle', 'appx', 'appxbundle', 'com', 'scr', 'pif', 'dll', 'jar', 'jnlp',
+  'run', 'appimage', 'deb', 'rpm', 'dmg', 'pkg', 'mpkg', 'app', 'apk', 'gadget', 'application', 'xbap',
+  // Scripts, which a double click hands to an interpreter.
+  'bat', 'cmd', 'ps1', 'psm1', 'psd1', 'ps1xml', 'psc1', 'vbs', 'vbe', 'vb', 'js', 'jse', 'wsf', 'wsh', 'ws', 'wsc',
+  'sh', 'bash', 'command', 'py', 'pyw', 'pl', 'rb', 'scpt', 'applescript', 'workflow', 'terminal',
+  // Windows files that run something when opened: control panel and management consoles, help files, shortcuts and
+  // links, setup information, registry changes.
+  'cpl', 'msc', 'chm', 'scf', 'lnk', 'url', 'website', 'inf', 'reg', 'hta', 'appref-ms', 'settingcontent-ms',
+  'desktop', 'webloc', 'inetloc', 'fileloc',
+  // Disc and disk images, which the operating system mounts and so skips the mark that says a file came from the web.
+  'iso', 'img', 'vhd', 'vhdx'
 ])
 
 const EXECUTABLE_MIME_TYPES: ReadonlySet<string> = new Set([

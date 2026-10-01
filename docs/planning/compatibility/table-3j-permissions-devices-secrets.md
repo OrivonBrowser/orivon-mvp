@@ -1,8 +1,8 @@
 # Table 3j: permissions, devices, identity and secrets
 
-One part of the [compatibility matrix](../compatibility-matrix.md), which holds the legend, the
-definition of every column and the index of all tables. This page says what works today and
-nothing else.
+One part of the [compatibility matrix](../compatibility-matrix.md). The matrix page has this
+table in readable form, one row per topic; this page lists every item one by one, for looking up a
+single name. It says what works today and nothing else.
 
 The universe is the 24 permission strings in Electron 44's typings for `setPermissionRequestHandler` (20) and `setPermissionCheckHandler` (19, of which `hid`, `serial`, `usb` and `deprecated-sync-clipboard-read` are check-only), the 2 further names the gate's own test finds Chromium asking on every popup and fullscreen request (`automatic-fullscreen`, `web-app-installation`), the 4 chooser events (`select-hid-device`, `select-serial-port`, `select-usb-device`, `select-bluetooth-device`), the 4 device and media handlers (`setDevicePermissionHandler`, `setBluetoothPairingHandler`, `setDisplayMediaRequestHandler`, `setUSBProtectedClassesHandler`), and the device, sensor and identity APIs that carry no Electron permission string. [`permission-gate.ts`](../../../src/main/sessions/permission-gate.ts) answers every string on every session Electron creates, an app's partition and a `<webview>` guest's partition included, and denies every name it does not allow. The isolated web-context sessions and the hidden child-host sessions then replace both handlers with ones that deny every name, the four allowed ones included. The shell installs none of the chooser or pairing handlers. Counts of the form "N of 80" are open-source Electron apps scanned.
 

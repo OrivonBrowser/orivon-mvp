@@ -2,7 +2,7 @@
 // shaped as main builds it is dropped, since the page draws text that came from web pages.
 import type { PageRow } from '../../../main/omnibox/omnibox-service.js'
 
-export interface RowsMessage { seq: number, rows: PageRow[], selected: number }
+export interface RowsMessage { seq: number, rev: number, rows: PageRow[], selected: number }
 
 const KINDS = ['verbatim', 'search', 'history', 'bookmark', 'tab']
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
@@ -33,7 +33,7 @@ export function asRowsMessage (value: unknown): RowsMessage | null {
   if (!isRecord(value) || typeof value['seq'] !== 'number' || !Array.isArray(value['rows'])) return null
   const rows = value['rows'].map(asRow).filter((row): row is PageRow => row !== null)
   const selected = typeof value['selected'] === 'number' && Number.isInteger(value['selected']) ? value['selected'] : 0
-  return { seq: value['seq'], rows, selected: Math.min(Math.max(selected, 0), Math.max(rows.length - 1, 0)) }
+  return { seq: value['seq'], rev: typeof value['rev'] === 'number' ? value['rev'] : 0, rows, selected: Math.min(Math.max(selected, 0), Math.max(rows.length - 1, 0)) }
 }
 
 /** What Ctrl or Command with a click asks for, and what a middle press always does. */

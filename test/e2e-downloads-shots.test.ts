@@ -42,6 +42,9 @@ it('photographs the downloads page in each state', async () => {
 
     await clickLink(files, '#file')
     await clickLink(files, '#exe')
+    await page.waitForSelector('.download.is-held')
+    await shoot(app, page, 'downloads-held')
+    await row(page, 'setup.exe').locator('[data-action="keep"]').click()
     await waitFor(async () => await page.locator('.download.is-completed').count() === 2)
     await clickLink(files, '#broken')
     await page.waitForSelector('.download.is-interrupted', { timeout: 20_000 })

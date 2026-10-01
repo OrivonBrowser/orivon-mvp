@@ -25,7 +25,7 @@ import type {
   WebCapability
 } from '../../contracts/index.js'
 import { MAX_HOST_LENGTH, MAX_PORT } from '../../broker/policy/canonical-host.js'
-import { declarableConnectHostRejection, parsePattern as parseConnectPattern } from '../../broker/policy/connect-patterns.js'
+import { declarableConnectHostRejection, parsePattern as parseConnectPattern, type ConnectPatternKind } from '../../broker/policy/connect-patterns.js'
 import { ownProperty } from '../../broker/policy/own-property.js'
 import { webContextOriginRejection } from '../../broker/policy/web-context-origin.js'
 import { readEmbed } from './embed.js'
@@ -111,8 +111,9 @@ function validatePortRangePattern (pattern: string, field: string): void {
 }
 
 /**
- * `tcp.connect` / `udp.send`: host:port, `"*:*"` explicitly allowed
- * (capability-api.md).
+ * `tcp.connect` / `https.connect` / `udp.send`: host:port. A wildcard host
+ * pairs with any port or port range for the first two and only as `"*:*"`
+ * for `udp.send` (capability-api.md).
  *
  * connect-patterns.ts's parsePattern only SPLITS the string -- it does not
  * check that the port half is a real port or range, because at connect time
@@ -123,7 +124,7 @@ function validatePortRangePattern (pattern: string, field: string): void {
  * runtime already treats as valid, so it cannot reject a pattern the runtime
  * would otherwise honour.
  */
-function validateConnectPattern (pattern: string, field: string): void {
+function validateConnectPattern (pattern: string, field: string, kind: ConnectPatternKind): void {
   // parseConnectPattern trims the WHOLE pattern before splitting, so leading
   // or trailing whitespace never survives into `parsed.host` -- but the
   // ORIGINAL string is what gets stored in the manifest and rendered in the
@@ -140,7 +141,7 @@ function validateConnectPattern (pattern: string, field: string): void {
   if (parsed.port !== '*' && parsePortRange(parsed.port) === null) {
     reject(`${field} has a malformed port: ${describeValue(pattern)}`)
   }
-  validateConnectHost(parsed.host, pattern, field)
+  validateConnectHost(parsed.host, pattern, field, kind)
 }
 
 /**
@@ -158,15 +159,18 @@ function validateConnectPattern (pattern: string, field: string): void {
  * implementation of the grammar, one of the wording (code-guidelines.md
  * Rule 3), never two of either.
  */
-function validateConnectHost (host: string, pattern: string, field: string): void {
-  const rejection = declarableConnectHostRejection(host, pattern)
+function validateConnectHost (host: string, pattern: string, field: string, kind: ConnectPatternKind): void {
+  const rejection = declarableConnectHostRejection(host, pattern, kind)
   if (rejection === null) return
   switch (rejection) {
     case 'wildcard-needs-wildcard-port':
       reject(
-        `${field}: the "*" wildcard host is only accepted paired with a "*" port, as "*:*" ` +
-        `(capability-api.md's only documented wildcard declaration) -- got ${describeValue(pattern)}`
+        `${field}: udp.send accepts the "*" wildcard host only paired with a "*" port, as "*:*" ` +
+        `(a wildcard with a bounded port is accepted for tcp.connect and https.connect only) -- got ${describeValue(pattern)}`
       )
+      break
+    case 'bracketed-wildcard':
+      reject(`${field}: write the wildcard host as "*", never bracketed -- got ${describeValue(pattern)}`)
       break
     case 'sub-glob':
       reject(
@@ -240,7 +244,7 @@ function readTcp (raw: unknown, path: string): TcpCapability {
   if (extra !== null) reject(`${path} has an unrecognised field: ${describeValue(extra)}`)
 
   const connect = optionalStringArray(raw, path, 'connect', MAX_PATTERNS, (pattern, i) => {
-    validateConnectPattern(pattern, `${path}.connect[${i}]`)
+    validateConnectPattern(pattern, `${path}.connect[${i}]`, 'tcp.connect')
   })
   const listenRaw = ownProperty(raw, 'listen', isAny)
   const listen = listenRaw === undefined ? undefined : readBindScopes(listenRaw, `${path}.listen`)
@@ -259,7 +263,7 @@ function readUdp (raw: unknown, path: string): UdpCapability {
   const bindRaw = ownProperty(raw, 'bind', isAny)
   const bind = bindRaw === undefined ? undefined : readBindScopes(bindRaw, `${path}.bind`)
   const send = optionalStringArray(raw, path, 'send', MAX_PATTERNS, (pattern, i) => {
-    validateConnectPattern(pattern, `${path}.send[${i}]`)
+    validateConnectPattern(pattern, `${path}.send[${i}]`, 'udp.send')
   })
 
   const result: { bind?: BindScopes, send?: readonly Pattern[] } = {}
@@ -290,7 +294,7 @@ function readHttps (raw: unknown, path: string): HttpsCapability {
   if (extra !== null) reject(`${path} has an unrecognised field: ${describeValue(extra)}`)
 
   const connect = optionalStringArray(raw, path, 'connect', MAX_PATTERNS, (pattern, i) => {
-    validateConnectPattern(pattern, `${path}.connect[${i}]`)
+    validateConnectPattern(pattern, `${path}.connect[${i}]`, 'https.connect')
   })
 
   return connect === undefined ? {} : { connect }

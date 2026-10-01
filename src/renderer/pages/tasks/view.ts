@@ -3,7 +3,7 @@
 // across every two-second update, and only a changed cell is rewritten.
 import { h } from '../shared/dom.js'
 import {
-  appsIcon, arrowDownIcon, arrowUpIcon, developerIcon, gearIcon, infoIcon, panelRightIcon, puzzleIcon, tabsIcon
+  activityIcon, appsIcon, arrowDownIcon, arrowUpIcon, developerIcon, gearIcon, infoIcon, panelRightIcon, puzzleIcon, tabsIcon
 } from '../shared/icons.js'
 import { formatCpu, formatMemory, formatPid } from './sort.js'
 import type { DisplayRow, SortKey } from './sort.js'
@@ -204,11 +204,11 @@ export function createTasksView (state: TasksState): TasksView {
   const element = h('main', { className: 'page' },
     h('header', { className: 'head' },
       h('div', { className: 'head-text' },
-        h('h1', null, developerIcon(), 'Task manager'),
-        h('p', { className: 'intro', textContent: 'Memory and processor use of Orivon\'s processes. Updates every 2 seconds.' })),
-      endButton),
+        h('h1', null, activityIcon(), 'Task manager'),
+        h('p', { className: 'intro', textContent: 'Memory and processor use of Orivon\'s processes. Updates every 2 seconds.' }))),
     notice,
     unavailable,
+    h('div', { className: 'btn-row' }, endButton),
     h('div', { className: 'table-wrap card' }, table))
 
   return { element, render: () => { render() } }

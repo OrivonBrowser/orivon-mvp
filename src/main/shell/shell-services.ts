@@ -4,6 +4,7 @@
 import { join } from 'node:path'
 import { app, session } from 'electron'
 import { BookmarkStore } from '../browsing/bookmarks.js'
+import { SearchEngineStore } from '../browsing/search-engine-store.js'
 import { InternalPageRegistry } from '../pages/internal-registry.js'
 import { SettingsStore } from '../settings/settings-store.js'
 import { SHELL_PARTITION } from './shell-session.js'
@@ -61,6 +62,8 @@ export interface ShellServices {
   readonly passwords: PasswordVault
   readonly profiles: ProfilesService
   /** The open windows, kept in `session.json`; a private session writes nothing. */
+  /** The engines a keyword searches: the built-in ones and the person's own; a private session reads the list and never changes it. */
+  readonly searchEngines: SearchEngineStore
   readonly session: SessionLog
   readonly settings: SettingsStore
   readonly shortcuts: ShortcutService
@@ -121,6 +124,7 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     kiosk,
     passwords: memoryVault(),
     profiles: new ProfilesService(runtime, undefined, kiosk),
+    searchEngines: new SearchEngineStore(join(userDataPath, 'search-engines.json'), { readOnly: runtime.isPrivate }),
     session: runtime.isPrivate || kiosk ? new NullSessionStore() : new SessionStore(join(userDataPath, 'session.json')),
     settings,
     shortcuts: new ShortcutService(shortcutStore, platform),

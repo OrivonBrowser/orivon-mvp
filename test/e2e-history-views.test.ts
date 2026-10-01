@@ -160,11 +160,12 @@ it('draws a site\'s icon in its rows, sorts by visits and by name, and groups by
     await page.fill('input[type=search]', '')
     expect(await waitFor(async () => (await titles(page)).length === 40)).toBe(true)
 
-    // Most visited: the page with 38 visits leads and says so; grouping is unavailable while sorted.
+    // Most visited: the page with 38 visits leads and says so, with the day it was last seen; grouping is hidden while sorted.
     await page.selectOption('select.sort', 'visits')
     expect(await waitFor(async () => (await titles(page))[0] === 'Page 03')).toBe(true)
-    expect(await page.locator('.entry .time').first().textContent()).toBe('38 visits')
-    expect(await page.locator('.segmented button').evaluateAll((buttons) => buttons.every((button) => (button as HTMLButtonElement).disabled))).toBe(true)
+    expect(await page.locator('.entry .time').first().locator('span').first().textContent()).toBe('38 visits')
+    expect(await page.locator('.entry .time .time-when').first().textContent()).toMatch(/^(Today|Yesterday|[A-Z][a-z]{2} \d{1,2})/)
+    expect(await page.locator('.control', { hasText: 'Group' }).isHidden()).toBe(true)
     expect(await page.locator('.day h2').count()).toBe(0)
     await shoot(page, 'most-visited')
 
@@ -176,13 +177,13 @@ it('draws a site\'s icon in its rows, sorts by visits and by name, and groups by
     await page.selectOption('select.sort', 'recent')
     expect(await waitFor(async () => (await page.locator('.day h2').count()) > 0)).toBe(true)
 
-    // By session: the header reads from the first to the last visit, with the page count; collapsing hides the rows.
+    // By session: the header reads from the first to the last visit (the day is the heading above it), with the page count; collapsing hides the rows.
     await page.locator('.segmented button', { hasText: 'By session' }).click()
     const time = async (at: number): Promise<string> => await page.evaluate((stamp) => new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(stamp), at)
     const heads = page.locator('.session-head')
-    expect(await heads.first().locator('.session-label').textContent()).toBe(`Yesterday, ${await time(local(1, 15, 0))} to ${await time(local(1, 15, 5))}`)
+    expect(await heads.first().locator('.session-label').textContent()).toBe(`${await time(local(1, 15, 0))} to ${await time(local(1, 15, 5))}`)
     expect(await heads.first().locator('.session-count').textContent()).toBe('2 pages')
-    expect(await heads.nth(1).locator('.session-label').textContent()).toBe(`Yesterday, ${await time(local(1, 12, 0))} to ${await time(local(1, 12, 30))}`)
+    expect(await heads.nth(1).locator('.session-label').textContent()).toBe(`${await time(local(1, 12, 0))} to ${await time(local(1, 12, 30))}`)
     expect(await heads.nth(1).locator('.session-count').textContent()).toBe('4 pages')
     await shoot(page, 'by-session')
     await heads.nth(1).click()

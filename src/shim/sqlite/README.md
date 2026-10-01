@@ -14,6 +14,7 @@ additions says why this package). Durable: WebAssembly and the synchronous file 
 | `vfs.ts`, `files.ts`, `buffered-file.ts` | The SQLite VFS over the app's files, and the calls it makes |
 | `database.ts`, `statement.ts` | `DatabaseSync`, `StatementSync` |
 | `errors.ts`, `constants.ts`, `index.ts` | Node's error shapes, `sqlite.constants`, the module |
+| `better-sqlite3.ts`, `better-sqlite3-statement.ts`, `better-sqlite3-binding.ts`, `better-sqlite3-errors.ts` | The `better-sqlite3` API over `DatabaseSync`: `Database`, `Statement`, how arguments bind, `SqliteError` |
 
 **What it depends on.** [`../errors.ts`](../errors.ts), [`../node-errors.ts`](../node-errors.ts),
 [`../fs/paths.ts`](../fs/paths.ts) and [`../fs/sync-orivon.ts`](../fs/sync-orivon.ts) (the same
@@ -36,6 +37,33 @@ confinement and synchronous channel `fs.openSync` uses), [`../virtual-root.ts`](
   `loadSqliteEngine({ wasmBinary })` from a ready module of the app's own.
 - **Bundle the package with the `browser` or `import` condition.** Its `node` condition names a build
   that only Node can run; the unit suite aliases the browser build for the same reason.
+
+## `better-sqlite3`
+
+Code written for the npm package `better-sqlite3` (synchronous, v9 to v12) runs on
+[`better-sqlite3.ts`](better-sqlite3.ts), which wraps `DatabaseSync` and `StatementSync`. **A bundle
+points the name `better-sqlite3` at that file.** [`../bundler/`](../bundler/README.md)'s plugin does
+it for a port; another build aliases `better-sqlite3` to the file itself, and for a CommonJS
+`require('better-sqlite3')` exports the default. Everything in §What an app must do applies: the
+engine is loaded first, and a database file works only in a forked child or thread of an isolated app.
+
+**Built:** `new Database(filename, options)` and `Database(filename, options)` (options `readonly`,
+`fileMustExist`, `timeout`, `verbose`, `nativeBinding`, the last ignored); `name`, `open`,
+`inTransaction`, `readonly`, `memory`; `prepare`, `exec` (returns the database), `pragma` (rows, or
+`{ simple: true }`; a pragma that sets a value works), `transaction` (`BEGIN` and `COMMIT`, `ROLLBACK`
+on a throw, a savepoint when nested, the `.deferred`, `.immediate` and `.exclusive` variants),
+`close`, `defaultSafeIntegers`, `unsafeMode` (a no-op). `Statement`: `run`, `get`, `all`, `iterate`,
+`pluck`, `raw`, `expand`, `columns`, `bind`, `safeIntegers`, `source`, `reader`, `readonly`, `database`.
+`Database.SqliteError` is thrown for an engine failure, with `code` the extended result code's name
+(`SQLITE_CONSTRAINT_UNIQUE`).
+
+**Refused by name, `'not-built'`:** `function`, `aggregate`, `table`, `backup`, `serialize`,
+`loadExtension`, and a `Buffer` as the filename.
+
+**Different from `better-sqlite3`:** `verbose` receives each statement's SQL with its parameters
+filled in, after the statement ran; `prepare` does not refuse a string of several statements (the
+first is prepared); a missing directory is the engine's `SQLITE_CANTOPEN`, not a `TypeError`; a
+statement used while an iterator is open is not refused; the limits of §What works, and where apply.
 
 ## What works, and where
 
@@ -100,6 +128,25 @@ holds the numbers):
 
 A transaction of many statements pays the journal once, so batch inserts in `BEGIN` ... `COMMIT`.
 `locking_mode = exclusive` skips the change check and is safe only when no second connection ever opens the file.
+
+**`better-sqlite3` is reached by a bundler's alias, and not by a row of [`module-map.ts`](../module-map.ts).**
+That table is the Node builtins: `module.builtinModules`, `isBuiltin`, a run-time `require` of a builtin and
+the frozen list of Node's exports are all read from it, and a row for an npm package would make each of them
+call that package a builtin. The bundler plugin names the package in a table of its own
+(`PACKAGE_REPLACEMENTS` in [`../bundler/esbuild-plugin.ts`](../bundler/esbuild-plugin.ts)), so a port's
+`import Database from 'better-sqlite3'` and `require('better-sqlite3')` both reach the adapter, and a
+build of another tool writes one alias.
+
+**The adapter shapes every row and binds every value itself**, because `better-sqlite3` and `node:sqlite` differ
+where an app would notice. The inner statement always reads integers as bigints and rows as arrays; the adapter
+returns a number for an integer beyond 2^53 with the precision loss `better-sqlite3` has, and a bigint only
+under `safeIntegers`. A JavaScript integer that fits 32 bits binds as INTEGER and every other number as REAL
+(`node:sqlite` binds every number as REAL, which changes `typeof(?)` and a `LIMIT ?` over an untyped value), a
+boolean is a `TypeError`, and `undefined` is NULL. A parameter is found by its declared name, read through
+`statementTraits` in [`statement.ts`](statement.ts): a bare `?` takes the next positional value, `?NNN` the
+value at that number, and `@name`, `:name` and `$name` the object's bare key, with `better-sqlite3`'s
+`RangeError` for too few, too many or a missing one. A `PRAGMA` statement counts as returning data even when
+it has no columns, so `pragma('user_version = 3')` returns `[]` as it does there.
 
 **The package's own `sqlite3_bind_text` wrapper is not used**: in this release it throws for every string (it
 reads an undefined variable), so [`statement.ts`](statement.ts) allocates and binds through the engine's raw exports.

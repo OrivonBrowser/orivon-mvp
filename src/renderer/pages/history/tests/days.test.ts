@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { HistoryEntry } from '../../../../main/history/history-store.js'
-import { dayLabel, groupByDay } from '../days.js'
+import { dateTimeLabel, dayLabel, groupByDay } from '../days.js'
 
 const at = (year: number, month: number, day: number, hour = 12): number => new Date(year, month - 1, day, hour).getTime()
 const entry = (id: number, lastVisit: number): HistoryEntry => ({ id, url: `https://s${String(id)}.example/`, title: `S${String(id)}`, lastVisit, visitCount: 1 })
@@ -38,5 +38,19 @@ describe('groupByDay', () => {
 
   it('has no groups for no entries', () => {
     expect(groupByDay([], Date.now())).toEqual([])
+  })
+})
+
+describe('dateTimeLabel', () => {
+  const now = at(2026, 9, 28, 9)
+
+  it('puts the time after Today and Yesterday', () => {
+    expect(dateTimeLabel(at(2026, 9, 28, 3), now, 'en-US')).toBe('Today, 3:00 AM')
+    expect(dateTimeLabel(at(2026, 9, 27, 21), now, 'en-US')).toBe('Yesterday, 9:00 PM')
+  })
+
+  it('gives an earlier day as a date and time, with the year only when it is not this one', () => {
+    expect(dateTimeLabel(at(2026, 9, 11, 3), now, 'en-US')).toBe('Sep 11, 3:00 AM')
+    expect(dateTimeLabel(at(2025, 12, 31, 21), now, 'en-US')).toBe('Dec 31, 2025, 9:00 PM')
   })
 })

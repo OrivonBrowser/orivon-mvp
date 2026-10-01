@@ -34,12 +34,12 @@ describe('the task list', () => {
     expect(find(rows, 12)?.name).toBe('Internal page: Settings')
   })
 
-  it('ends a tab, an app and an extension, and not an internal page or one of Orivon\'s own views', () => {
+  it('ends a tab and an app, and not an extension, an internal page or one of Orivon\'s own views', () => {
     const rows = buildTasks(
       [metric(10, 'Tab'), metric(11, 'Tab'), metric(12, 'Tab'), metric(13, 'Tab'), metric(14, 'Tab')],
       [page(10, 'tab', 'a', 't1'), page(11, 'app', 'b', 't2'), page(12, 'extension', 'c'), page(13, 'internal', 'Settings', 't3'), page(14, 'shell', '')]
     )
-    expect([10, 11, 12, 13, 14].map((pid) => find(rows, pid)?.endable)).toEqual([true, true, true, false, false])
+    expect([10, 11, 12, 13, 14].map((pid) => find(rows, pid)?.endable)).toEqual([true, true, false, false, false])
   })
 
   it('names the overlay and the window interface', () => {
@@ -63,9 +63,9 @@ describe('the task list', () => {
     expect(rows[0]?.children).toHaveLength(1)
   })
 
-  it('names a utility process by its service and lets it be ended', () => {
+  it('names a utility process by its service and never lets it be ended: the network, storage and verifier services are not a tab\'s', () => {
     const rows = buildTasks([metric(40, 'Utility', 500, 0, { name: 'Network Service', serviceName: 'network.mojom.NetworkService' }), metric(41, 'Utility', 500, 0, { serviceName: 'audio.mojom.AudioService' })], [])
-    expect(find(rows, 40)).toMatchObject({ name: 'Utility: Network Service', kind: 'utility', endable: true })
+    expect(find(rows, 40)).toMatchObject({ name: 'Utility: Network Service', kind: 'utility', endable: false })
     expect(find(rows, 41)?.name).toBe('Utility: audio.mojom.AudioService')
   })
 
@@ -104,9 +104,9 @@ describe('what may be ended', () => {
     [page(10, 'tab', 'a', 't1')]
   )
 
-  it('allows a tab and a utility process that are in the fresh reading', () => {
+  it('allows a tab that is in the fresh reading, and refuses a utility process', () => {
     expect(canEnd(rows, 10)).toBe(true)
-    expect(canEnd(rows, 40)).toBe(true)
+    expect(canEnd(rows, 40)).toBe(false)
   })
 
   it('refuses the browser, the graphics process, and a process id that is gone', () => {

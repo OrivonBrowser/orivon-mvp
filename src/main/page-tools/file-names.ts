@@ -17,7 +17,7 @@ export function safeFileName (title: string, ext: string): string {
 
 const two = (n: number): string => String(n).padStart(2, '0')
 
-/** `Screenshot 2026-09-30 at 14.05.09.png`, in the local time of `date`. */
+/** `Screenshot <day> at <time>.png`, in the local time of `date`. */
 export function screenshotName (date: Date): string {
   const day = `${String(date.getFullYear())}-${two(date.getMonth() + 1)}-${two(date.getDate())}`
   const time = `${two(date.getHours())}.${two(date.getMinutes())}.${two(date.getSeconds())}`

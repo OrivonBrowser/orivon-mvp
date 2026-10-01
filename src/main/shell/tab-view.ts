@@ -18,6 +18,7 @@ import { repartitionView } from './tab-parking.js'
 import { parseInternalUrl } from '../pages/internal-pages.js'
 import { canViewSource } from '../page-tools/view-source.js'
 import { releaseOriginDocument, trackDocumentOrigin } from './tab-origin-liveness.js'
+import { watchLoadFailure } from './load-failure.js'
 import { wireSignInIdentity } from './sign-in-identity-tab.js'
 import { watchAppTab } from './app-tab-watch.js'
 import { wireTabSignals } from './tab-signals.js'
@@ -122,6 +123,7 @@ export function wireView (id: string, record: TabRecord): void {
   const shown = (): boolean => record.view === view
   wireSignInIdentity(wc) // ./sign-in-identity-tab.ts's own header says why this runs here.
   wc.on('page-title-updated', () => { record.host.emitState() })
+  watchLoadFailure(wc, () => { record.host.emitState() })
   // A press in a pane is the person choosing it, in a split. Not focus, which a page loading in the other pane can take.
   wc.on('input-event', (_event, input) => { if (input.type === 'mouseDown') record.host.paneClicked(id) })
   wc.on('did-navigate', (_event, navigatedUrl: string) => {

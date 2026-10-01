@@ -15,14 +15,8 @@ export const downloads: Section = {
       id: 'downloads-folder',
       label: 'Save files to',
       help: 'Where downloaded files go. A name that is already taken gets a number.',
-      keywords: ['download location', 'folder', 'directory', 'path', 'where', 'save'],
-      control: { type: 'info', text: (state) => state.downloads.folder }
-    },
-    {
-      id: 'downloads-change-folder',
-      label: 'Download folder',
-      keywords: ['download location', 'folder', 'directory', 'change', 'choose', 'browse'],
-      control: { type: 'action', label: 'Change…', run: async (state) => { await state.downloads.choose() } }
+      keywords: ['download location', 'folder', 'directory', 'path', 'where', 'save', 'change', 'choose', 'browse'],
+      control: { type: 'action', label: 'Change…', shows: (state) => state.downloads.folder, run: async (state) => { await state.downloads.choose() } }
     },
     {
       id: 'downloads-default-folder',
@@ -38,6 +32,13 @@ export const downloads: Section = {
       help: 'Orivon shows a save dialog for every download.',
       keywords: ['download location', 'prompt', 'dialog', 'save as', 'ask', 'folder'],
       control: { type: 'toggle', key: 'downloads.askWhere' }
+    },
+    {
+      id: 'downloads-show-bubble',
+      label: 'Show downloads when a download starts',
+      help: 'The list of downloads opens under the toolbar button when a file begins to download, and closes by itself when they are done.',
+      keywords: ['download bubble', 'popup', 'panel', 'shelf', 'bar', 'notification', 'show', 'open', 'start'],
+      control: { type: 'toggle', key: 'downloads.showBubble' }
     }
   ]
 }

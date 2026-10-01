@@ -269,3 +269,19 @@ see in the PR itself.
 | The whole end-to-end suite in chunks, with the unit suite and every guard | The merged branch | One regression and one crash, both fixed with a test; the rest green, or held by ports another process owned |
 
 In all, 54 findings, 54 confirmed, none refuted.
+
+### `stream/compat-readable`: the compatibility matrix in readable form (2026-10-01)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| `/code-review` at medium effort | The pull request | Two findings, both fixed: the page had lost the legend the detail pages rely on (status symbols, the four ways a gap shows, the "Web platform:" rows, the app-scan counts), and Table 1's Broker column pointed at `index.ts` alone although the broker is split. Its spot checks of summary rows against the detail pages (crypto, zlib, `Buffer`, `events`, `util`, `assert`, `process`, the Electron and Node counts) all matched |
+
+### `stream/b2-library`: downloads, bookmarks, history, the address bar, import, search engines, About and the task manager (2026-10-01)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| Code review by area, by Opus agents, each finding then attacked by a second agent trying to refute it | The branch against `main`, split into downloads, bookmarks, the address bar and its dropdown, and history, information pages and import | 32 findings, all confirmed. All were fixed with tests, two in part: the list of types Orivon may open stays a block list (A322), and a stored site icon is capped but not resized |
+| A designer's review of screenshots of every new surface, light and dark | The Downloads page and bubble, the bookmark bar, manager and bubbles, History, the address dropdown, import, About, the task manager and the Settings rows | 24 findings, all confirmed and fixed; one with a different wording from the one proposed |
+| The unit suite, every guard, smoke and 39 end-to-end files in three chunks, after the merge and again after the fixes | The merged branch | One timing regression in a test, fixed without weakening an assertion; the rest green |
+
+In all, 56 findings, 56 confirmed, none refuted.

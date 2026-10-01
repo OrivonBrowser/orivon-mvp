@@ -103,6 +103,13 @@ export function makeBarDraggable (el: HTMLElement, host: BarDragHost): void {
 
   el.addEventListener('pointermove', (event) => {
     if (start === null) return
+    // The press was let go somewhere this item never heard of (it is only captured once a drag begins), so what moves
+    // now is a hover, and must not begin a drag.
+    if ((event.buttons & 1) === 0) {
+      if (active) cancel?.()
+      else start = null
+      return
+    }
     if (!active) {
       if (Math.hypot(event.clientX - start.x, event.clientY - start.y) < BAR_DRAG_THRESHOLD_PX) return
       active = true

@@ -5,6 +5,7 @@ import type { InternalDomain } from '../pages/internal-ipc.js'
 import { handleHistoryAction } from './history-actions.js'
 import type { HistoryActionDeps } from './history-actions.js'
 import { MAX_IDS } from './history-ids.js'
+import { packEntries } from './history-pack.js'
 import type { HistoryService } from './history-service.js'
 import type { HistoryOrder } from './history-store.js'
 
@@ -51,9 +52,9 @@ export function historyDomain (history: HistoryService, actions?: HistoryActionD
           // Most visited and by title have no cursor: the page pages through them by offset.
           if (order !== undefined && order !== 'recent') {
             const offset = Number.isFinite(request.offset) ? Math.trunc(request.offset as number) : undefined
-            return { entries: history.listOrdered({ ...query, order, ...(offset === undefined ? {} : { offset }) }), status: history.status() }
+            return { ...packEntries(history.listOrdered({ ...query, order, ...(offset === undefined ? {} : { offset }) })), status: history.status() }
           }
-          return { entries: history.list({ ...query, ...(after === undefined ? {} : { after }) }), status: history.status() }
+          return { ...packEntries(history.list({ ...query, ...(after === undefined ? {} : { after }) })), status: history.status() }
         }
         case 'remove':
           if (Number.isInteger(request.id)) history.remove(request.id as number)

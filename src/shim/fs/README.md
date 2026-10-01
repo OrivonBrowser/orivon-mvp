@@ -18,6 +18,16 @@ README's "What it must never import".
 
 ## Design notes
 
+**An asynchronous call the limiter refuses is asked again** (`../limit-retry.ts`, used by `paths.ts`'s `guarded`: pauses from 10 ms to 800 ms, thirteen retries, about five seconds)
+the same way, for the same reason.
+
+**A synchronous call the broker's per-origin limiter refuses is asked again** (`sync-orivon.ts`'s
+`guardedSync`): it backs off from 25 ms up to 200 ms for at most 40 attempts, then throws the error. The
+limiter refuses before anything runs, so asking again cannot repeat an effect, and a synchronous caller
+cannot wait and ask again itself -- a program that starts with a burst of file calls would otherwise fail
+the first call past the bucket. `existsSync`'s own probe asks again the same way, so a refused stat is never read
+as a missing file.
+
 **Every `fs` `*Sync` export, including `realpathSync`, works only in a Worker of a
 cross-origin isolated app** ([`ADR-0016`](../../../docs/decisions/ADR-0016-synchronous-file-reads-are-permitted.md)'s
 amendment), except `readFileSync`/`existsSync`, which work everywhere -- over the Worker's

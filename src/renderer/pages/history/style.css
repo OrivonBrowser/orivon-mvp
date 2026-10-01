@@ -1,5 +1,6 @@
 @import '../shared/tokens.css';
 @import '../shared/controls.css';
+@import '../shared/row-menu.css';
 
 .page { max-width: 860px; margin: 0 auto; padding: 40px 24px 64px; }
 
@@ -15,6 +16,7 @@
 .view-bar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
 .view-controls { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
 .control { display: flex; align-items: center; gap: 8px; }
+.control[hidden] { display: none; }
 .control-label { color: var(--wink-dim); font-size: 13px; }
 .select.sort { width: 160px; }
 /* Always in place, so choosing By session moves nothing. */
@@ -105,6 +107,8 @@
 .site-mark.icon { border-radius: 7px; background: var(--wsurface); }
 .site-mark.icon img { width: 16px; height: 16px; object-fit: contain; }
 
+.time.dated { min-width: 120px; }
+.time-when { display: block; font-size: 11.5px; }
 .time { flex: none; min-width: 76px; text-align: right; color: var(--wink-dim); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .target { display: grid; min-width: 0; flex: 1 1 auto; color: inherit; text-decoration: none; }
 .target:hover .title { text-decoration: underline; }
@@ -115,31 +119,6 @@
 .entry .btn.icon { opacity: 0; }
 .entry:hover .btn.icon, .entry:focus-within .btn.icon { opacity: 1; }
 .entry .remove:hover:not([disabled]) { background: var(--wdanger-wash); color: var(--wdanger); }
-
-.row-menu {
-  position: fixed;
-  z-index: 50;
-  display: grid;
-  gap: 2px;
-  min-width: 200px;
-  padding: 4px;
-  border: 1px solid var(--wborder);
-  border-radius: 8px;
-  background: var(--wpanel);
-}
-.row-menu-item {
-  padding: 6px 10px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-  transition: background-color 0.12s;
-}
-.row-menu-item:hover, .row-menu-item:focus-visible { background: var(--whover); }
-.row-menu-item:focus-visible { outline-offset: -2px; }
-.row-menu-item.danger { color: var(--wdanger); }
-.row-menu-item.danger:hover, .row-menu-item.danger:focus-visible { background: var(--wdanger-wash); }
 
 .more { display: flex; justify-content: center; margin-top: 8px; }
 .more .btn[hidden] { display: none; }

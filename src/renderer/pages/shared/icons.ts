@@ -131,9 +131,19 @@ export function fileIcon (): SVGSVGElement {
   return icon((el) => { el.append(path('M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z', '2'), path('M14 2v4a2 2 0 0 0 2 2h4', '2')) })
 }
 
-/** Outline only; a caller that wants it filled (a bookmarked page) sets `fill: currentColor` on it. */
-export function starIcon (): SVGSVGElement {
-  return icon((el) => { el.append(path('M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.9L12 17.8 5.8 21l1.2-6.9-5-4.9 6.9-1z', '2')) })
+/** The ribbon of the toolbar's bookmark button. Outline only; a caller that wants it filled (a bookmarked page) sets `fill: currentColor` on it. */
+export function bookmarkIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z', '2')) })
+}
+
+/** An import: a folder with an arrow going in. */
+export function importIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M2 9V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1', '2'), path('M2 13h10', '2'), path('m9 16 3-3-3-3', '2')) })
+}
+
+/** A pulse line: the task manager's mark. */
+export function activityIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2', '2')) })
 }
 
 export function chevronRightIcon (): SVGSVGElement {

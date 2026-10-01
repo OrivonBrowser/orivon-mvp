@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { MAX_FAVICON_HOSTS, faviconsForHosts, pruneHostFavicons, setHostFavicon, withFavicons } from '../history-favicons.js'
+import { MAX_FAVICON_HOSTS, MAX_HISTORY_FAVICON_CHARS, faviconsForHosts, pruneHostFavicons, setHostFavicon, withFavicons } from '../history-favicons.js'
 import { migrate } from '../history-schema.js'
 import { NullHistoryStore } from '../history-store.js'
 import type { HistoryStore } from '../history-store.js'
@@ -29,13 +29,33 @@ describe('the favicons table', () => {
     expect(faviconsForHosts(db, ['a.example'])).toEqual({ 'a.example': GIF })
   })
 
-  it('does not write again for an icon it already has', () => {
+  it('notes the time of an icon it already has without changing it, so a site seen again is the last to go', () => {
     const db = database()
     let clock = 10
     setHostFavicon(db, 'a.example', PNG, () => clock)
     clock = 99
     setHostFavicon(db, 'a.example', PNG, () => clock)
-    expect((db.prepare('SELECT updated FROM favicons').get() as { updated: number }).updated).toBe(10)
+    expect(db.prepare('SELECT updated, data FROM favicons').get()).toMatchObject({ updated: 99, data: PNG })
+  })
+
+  it('trims the sites seen longest ago, not those whose icon changed longest ago', () => {
+    const db = database()
+    for (let n = 0; n < MAX_FAVICON_HOSTS; n += 1) setHostFavicon(db, `h${String(n).padStart(5, '0')}.example`, icon(n), () => n)
+    // The oldest site is seen again with the icon it has, then one more site arrives.
+    setHostFavicon(db, 'h00000.example', icon(0), () => MAX_FAVICON_HOSTS + 1)
+    setHostFavicon(db, 'new.example', PNG, () => MAX_FAVICON_HOSTS + 2)
+    const kept = hosts(db)
+    expect(kept).toHaveLength(MAX_FAVICON_HOSTS)
+    expect(kept).toContain('h00000.example')
+    expect(kept).not.toContain('h00001.example')
+  })
+
+  it('keeps no icon larger than the cap', () => {
+    const db = database()
+    const big = `data:image/png;base64,iVBORw0KGgo=${'A'.repeat(MAX_HISTORY_FAVICON_CHARS)}`
+    setHostFavicon(db, 'big.example', big)
+    setHostFavicon(db, 'small.example', PNG)
+    expect(hosts(db)).toEqual(['small.example'])
   })
 
   it('refuses what is not an image, what lies about being one, and what is too large', () => {

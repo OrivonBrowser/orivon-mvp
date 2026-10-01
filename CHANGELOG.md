@@ -13,6 +13,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **Downloads have a page, a toolbar button and a bubble** (Ctrl+J): files save into the Downloads folder or the one
+  you choose, or ask each time; pause, resume, cancel and retry; a ring shows progress and a new download peeks.
+- **A file that runs code waits for your answer**: it sits as `Unconfirmed ... .download` until you press Keep or Discard,
+  and Orivon never opens it for you.
+- **Bookmarks have folders**, a bar with a menu for each and drag to reorder, a manager (Ctrl+Shift+O), an edit bubble
+  on the star, Bookmark all tabs (Ctrl+Shift+D) and HTML import and export; an older flat file is carried over.
+- **The address bar suggests as you type** from history, bookmarks and open tabs, finishes the text inline, searches
+  after a `?` or a site keyword (`w cats`), hides `https://` and `www.`, marks insecure pages, and makes a QR code.
+- **The search engine's own suggestions are available, off by default** (Settings > Search); a private window never
+  asks for them.
+- **History shows site icons**, groups by day or by session, sorts by recency, visits or name, selects many rows, and
+  lists the recently closed tabs.
+- **Import bookmarks and history from Chrome, Chromium, Edge, Brave or Firefox**, or bookmarks from an HTML file, at
+  `orivon://import`; passwords are not imported.
+- **About and a task manager** (`orivon://about`, `orivon://tasks`, Shift+Esc), `about:` and `chrome://` names typed in
+  the bar, typed `view-source:`, and a JavaScript console shortcut (Ctrl+Shift+J).
+- **`better-sqlite3` runs on the Node shim**: an adapter over `node:sqlite` with `Database`, `Statement` (`run`, `get`, `all`, `iterate`,
+  `pluck`, `raw`, `expand`, `bind`, `safeIntegers`), `pragma`, `transaction` with its variants and `SqliteError`; the esbuild plugin
+  points the package name at it. `function`, `aggregate`, `table`, `backup`, `serialize` and `loadExtension` refuse by name.
+- **A program that starts with a burst of file calls no longer fails on the first one past the limit**: a synchronous `fs` call
+  that the per-origin limiter refuses is asked again with a growing pause, and a WebAssembly program's file call is retried for
+  about five seconds before it sees `EMFILE`.
+- **An asynchronous file call the limiter refuses is asked again too** (`fs.promises`, `readFile`, `writeFile`), and so is `readFileSync`
+  in a Worker, for about five seconds before the call fails, so an app that loads its data files beside another program doing the same does not see the limit as an error.
+- **A spawned program is given the app's files under their own path as well as `/`**, so a path the app holds
+  (`/orivon/app/...`) means the same file to the program.
+- **A wildcard host pairs with a port in `tcp.connect` and `https.connect`**: `*:6697` and `*:6660-6699` are declarable, so an
+  app that dials a server the person types reaches a reserved port by naming it. `*:*` and ranges still skip reserved ports, and
+  the prompt names the ports a wildcard pattern opens and what each is for, and every named pattern the wildcard does not cover; a
+  granted `*` covers public hosts only, so naming a local address under it asks again; `udp.send` keeps `*:*` only.
 - **Tabs can be pinned, muted and duplicated**, and show when a page is playing sound; Close other tabs and Close tabs
   to the right keep pinned ones. A long strip scrolls and keeps the tab in front in view.
 - **A closed tab or window comes back with Ctrl+Shift+T**, in its place and with its history; the main menu names what
@@ -42,9 +72,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   the app's files (a rollback journal, page-level writes) in a forked child or thread of a cross-origin isolated app, and
   `:memory:` everywhere. A commit reaches the file at the end of its transaction, `synchronous=off` included. Function, aggregate,
   session, extension and backup members refuse by name.
-- **The compatibility matrix lists everything a ported app can need**, not only what ports have hit: every
-  Node builtin, every `electron` export, every `orivon.*` member, permission string and protocol stack has a
-  row, checked against the code, one sub-table per file under `docs/planning/compatibility/`.
+- **The compatibility matrix covers everything a ported app can need**, in readable tables, one row per topic:
+  what works, what does not, and what the app sees at the gap. Every Node builtin, `electron` export, `orivon.*`
+  member, permission and protocol is also listed one by one, checked against the code, in `docs/planning/compatibility/`.
 - **An app can show pages it serves itself**, each at an origin of its own, beside ordinary websites: a
   `web.embed` local pattern (`http://*.localhost:<port>`), admitted only while the app holds a listener on
   that port (ADR-0047).
@@ -181,6 +211,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - **AGPL-3.0-only licence.**
 
 ### Fixed
+
+- **An app that shows pages it serves itself is granted `web.embed` again**: a local pattern (`http://*.localhost:<port>`) or an exact
+  `http://` origin was read as a `host:port` pattern, which it is not, so no manifest declaring one was ever allowed to grant it. The
+  subset check now compares any whole-origin pattern exactly.
 
 - **Page zoom scales the page in every tab**: a tab's zoom now resizes what is drawn, where before only the percentage
   changed.

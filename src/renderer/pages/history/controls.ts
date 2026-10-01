@@ -8,7 +8,7 @@ const SORTS: ReadonlyArray<readonly [HistoryOrder, string]> = [['recent', 'Most 
 
 export interface Controls {
   readonly element: HTMLElement
-  /** Shows the current choices; grouping is unavailable while the list is sorted. */
+  /** Shows the current choices; grouping is hidden while the list is sorted. */
   sync: (grouping: Grouping, order: HistoryOrder) => void
 }
 
@@ -21,8 +21,9 @@ export function createControls (onGroup: (grouping: Grouping) => void, onSort: (
   sort.id = 'sort'
   sort.addEventListener('change', () => { onSort(sort.value as HistoryOrder) })
   const hint = h('p', { className: 'hint', textContent: 'Groups pages you visited close together.' })
+  const groupWrap = h('div', { className: 'control' }, h('span', { className: 'control-label', textContent: 'Group' }), group)
   const element = h('div', { className: 'view-controls' },
-    h('div', { className: 'control' }, h('span', { className: 'control-label', textContent: 'Group' }), group),
+    groupWrap,
     h('div', { className: 'control' }, h('label', { className: 'control-label', htmlFor: 'sort', textContent: 'Sort' }), sort),
     hint)
   return {
@@ -31,9 +32,9 @@ export function createControls (onGroup: (grouping: Grouping) => void, onSort: (
       GROUPS.forEach(([value], index) => {
         const button = buttons[index] as HTMLButtonElement
         button.setAttribute('aria-pressed', String(value === grouping))
-        button.disabled = order !== 'recent'
-        button.title = order === 'recent' ? '' : 'Grouping applies to the most recent order.'
       })
+      // Grouping only means something in the most recent order, so it is out of the way in the others.
+      groupWrap.hidden = order !== 'recent'
       sort.value = order
       hint.classList.toggle('shown', grouping === 'session' && order === 'recent')
     }

@@ -15,6 +15,7 @@ import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput, profileDirOf } from './launch-electron.mjs'
 import { commandById } from '../src/main/shortcuts/commands.js'
 import { pressKey } from './e2e-helpers.js'
+import { removeThroughBubble } from './bookmark-bubble-helpers.js'
 import { bookmarksBarMatches, bookmarkUrls, delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, popoverShown, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
 
 // The menu lists the manager once its command stops being a stub.
@@ -316,7 +317,7 @@ it('offers the right-click menus and deletes from them', async () => {
 
     await chrome.click('#bookmarks-list .bmitem[data-id="bar1"]', { button: 'right' })
     expect(await waitFor(async () => (await labels()).length > 0)).toBe(true)
-    expect(await labels()).toEqual(['Open in New Tab', 'Open in New Window', 'Open in Private Window', '-', 'Copy Link', 'Delete', '-', 'Show Bookmarks Bar', ...MANAGER_ROW])
+    expect(await labels()).toEqual(['Open in New Tab', 'Open in New Window', 'Open in Private Window', '-', 'Edit…', 'Copy Link', 'Delete', '-', 'Add Folder…', '-', 'Show Bookmarks Bar', ...MANAGER_ROW])
     const before = await tabIds(chrome)
     await choose('Open in New Tab')
     expect(await waitFor(async () => (await tabIds(chrome)).length === before.length + 1)).toBe(true)
@@ -324,12 +325,12 @@ it('offers the right-click menus and deletes from them', async () => {
     await reset()
     await chrome.click('#bookmarks-list .bmitem[data-id="work0000000"]', { button: 'right' })
     expect(await waitFor(async () => (await labels()).length > 0)).toBe(true)
-    expect(await labels()).toEqual(['Open All (3)', '-', 'Delete', '-', 'Show Bookmarks Bar', ...MANAGER_ROW])
+    expect(await labels()).toEqual(['Open All (3)', '-', 'Rename…', 'Delete', '-', 'Add Folder…', '-', 'Show Bookmarks Bar', ...MANAGER_ROW])
 
     await reset()
     await chrome.mouse.click(900, 90, { button: 'right' })
     expect(await waitFor(async () => (await labels()).length > 0)).toBe(true)
-    expect(await labels()).toEqual(['Show Bookmarks Bar', ...MANAGER_ROW])
+    expect(await labels()).toEqual(['Add Folder…', '-', 'Show Bookmarks Bar', ...MANAGER_ROW])
 
     await reset()
     await chrome.click('#bookmarks-list .bmitem[data-id="bar1"]', { button: 'right' })
@@ -420,8 +421,8 @@ it('marks the star from the store, follows the active tab, and unstars the page'
     await chrome.click(`.tab[data-id="${(await tabIds(chrome))[1] as string}"]`)
     expect((await waitForTab(chrome, { address: pageUrl('starred'), bookmarked: true })).ok).toBe(true)
 
-    // Starred again from the tab in front, it comes off.
-    await chrome.click('#bookmark-toggle')
+    // The star on a starred page opens the bubble, and its Remove takes the bookmark off.
+    await removeThroughBubble(app, chrome)
     expect((await waitForTab(chrome, { bookmarked: false })).ok).toBe(true)
     expect(await waitFor(async () => (await fileOf(app)).roots['bar']?.every((node) => node['url'] !== pageUrl('starred')) === true)).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')

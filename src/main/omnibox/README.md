@@ -2,23 +2,26 @@
 
 **What lives here.** The rows under the address bar and what finishing the text means. `suggest.ts` is the
 ranking (pure), `suggest-sources.ts` reads the bookmarks, the history and the open tabs into scored rows and
-is where a source that waits would be listed, `verbatim-row.ts` is the first row ("Go to address" or "Search
+lists the sources that wait, `suggest-fetch.ts` (with `suggest-parse.ts`) is the one of those that asks the default
+engine for suggestions, `verbatim-row.ts` is the first row ("Go to address" or "Search
 <engine>", decided by the same classifier Enter uses), `omnibox-service.ts` holds one window's rows and what
 choosing one means, `omnibox-window.ts` hands that service the window's stores, `omnibox-actions.ts` is what the
 chrome asks (`omnibox.query`, `select`, `pick`, `close`) and what a choice does to the window, and
 `omnibox-overlay.ts` declares the dropdown, drawn by
 [`../../renderer/overlay/omnibox/`](../../renderer/overlay/omnibox/) and driven by
 [`../../renderer/chrome/address-suggest.ts`](../../renderer/chrome/address-suggest.ts). `omnibox-names.ts` holds the
-two names they share.
+two names they share. `suggest-net.ts` binds the request to `net.fetch`, and `suggest-test-seam.ts` lets a test build
+point it at a local fixture.
 
-**Tied to Electron only in** `omnibox-overlay.ts` and `omnibox-actions.ts`, through the overlay host and the
+**Tied to Electron only in** `omnibox-overlay.ts`, `omnibox-actions.ts` and `suggest-net.ts`, through the overlay host and the
 window they are given. The ranking, the sources, the service and the first row take plain values.
 
 **What it depends on.** [`../overlays/`](../overlays/) (`overlay-types.ts`); [`../shell/`](../shell/) (the window
 context, the chrome actions, the tab state); [`../history/`](../history/) and [`../browsing/`](../browsing/) (types
 and the address classifier); [`../pages/`](../pages/) (own pages and the names other browsers give them are opened before anything is classified); [`../page-tools/`](../page-tools/) (`view-source.ts`).
 
-**What it must never import.** The renderer, or a network module: nothing typed here leaves the process.
+**What it must never import.** The renderer, or a network module other than `suggest-net.ts`: what is typed leaves
+the process only through `suggest-fetch.ts`, and only while every guard in its `mayRequest` holds.
 
 **Owner stream.** `shell`.
 
@@ -46,3 +49,12 @@ when the whole address was finished from it.
 
 **Open tabs are offered across windows, the tab being used and blank tabs excepted.** Choosing one activates it in
 its own window and closes the empty tab the choice was made from.
+
+**Engine suggestions are the one place typed text leaves the machine before Enter.** They are off until the person
+turns on `search.suggestions`, never asked for in a private session, and asked only for text Enter would send to the
+default engine as typed: not an address, not a page of the shell, not a keyword search, not a forced `?` search, two
+to 200 characters. The request goes to the engine's own https address with no cookie, no referrer and no redirect,
+after 150 ms without typing, and is cancelled by the next keystroke; the answer is read up to 64 KB and cut to four
+strings of at most 200 characters with control and direction characters removed. Only a built-in engine has an
+address (`SEARCH_ENGINES` in [`../browsing/search-engines.ts`](../browsing/search-engines.ts)), so a person's own
+engine never gets one. The rows join after row 1 as late rows and never move the selected one.

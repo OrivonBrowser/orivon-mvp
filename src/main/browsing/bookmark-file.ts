@@ -2,7 +2,7 @@
 // `bookmarks.json` is a plain user-writable file, so anything in it is untrusted input to a privileged
 // view: every address is checked again and every icon is decoded and re-encoded on the way in.
 import { decodeDataUrl, MAX_FAVICON_BYTES, toDataUrl } from './favicon-format.js'
-import { MAX_DEPTH, MAX_NODES, ROOTS, clipTitle, emptyDraft, freshId, randomId } from './bookmark-tree.js'
+import { ID_PATTERN, MAX_DEPTH, MAX_NODES, ROOTS, clipTitle, emptyDraft, freshId, randomId } from './bookmark-tree.js'
 import type { BookmarkTree, IdSource, TreeDraft } from './bookmark-tree.js'
 import type { BookmarkNode, BookmarkRoot } from './bookmark-types.js'
 import { sanitizeDirectUrl } from './omnibox.js'
@@ -57,8 +57,9 @@ function readNode (raw: unknown, parent: string, depth: number, draft: TreeDraft
   if (title === null) return null
   const added = typeof raw['added'] === 'number' && Number.isFinite(raw['added']) ? raw['added'] : 0
   const given = raw['id']
-  // A missing, reused or root-named id gets a new one: ids are stable from the first load on.
-  const id = typeof given === 'string' && given.length > 0 && given.length <= 64 && !draft.nodes.has(given) ? given : freshId(draft.nodes, newId)
+  // A missing, reused, root-named or oddly shaped id gets a new one: ids are stable from the first load on, and the
+  // manager page can only name a node whose id looks like one.
+  const id = typeof given === 'string' && ID_PATTERN.test(given) && !draft.nodes.has(given) ? given : freshId(draft.nodes, newId)
   if (raw['kind'] === 'url') {
     const url = typeof raw['url'] === 'string' ? sanitizeDirectUrl(raw['url']) : null
     if (url === null) return null

@@ -41,6 +41,19 @@ describe('throttleChanges', () => {
     expect(send).toHaveBeenCalledTimes(2)
   })
 
+  it('sends nothing after it is cancelled, and starts afresh when a change comes later', () => {
+    const send = vi.fn()
+    const push = throttleChanges(send, 250)
+    push(entry('a', 1))
+    push(entry('a', 2))
+    push.cancel()
+    vi.advanceTimersByTime(1000)
+    expect(send).toHaveBeenCalledTimes(1)
+    push(entry('a', 3))
+    expect(send).toHaveBeenCalledTimes(2)
+    expect(send).toHaveBeenLastCalledWith(entry('a', 3))
+  })
+
   it('keeps a null over an entry that follows it', () => {
     const send = vi.fn()
     const push = throttleChanges(send, 250)

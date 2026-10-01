@@ -6,7 +6,8 @@ layout, the menu tick and `Mod+Shift+B`); `bar-state.ts` (the `bookmarked` field
 reads); `bar-actions.ts` (the chrome's calls: `bookmarks.bar`, `bookmarks.open`, `bookmarks.menu`, `bookmarks.move`,
 `bookmarks.folder`); `bar-menu.ts` (the right-click menu as a native template, pure) and `bar-menu-runner.ts`
 (builds it and pops it up); `folder-overlay.ts` and `folder-model.ts` (the folder menu overlay and what it lists);
-`open-bookmark.ts` (opening an item in the tab, behind it, in a window or a private window, and Open all).
+`open-bookmark.ts` (opening an item in the tab, behind it, in a window or a private window, and Open all). The menu's
+Edit…, Rename… and Add Folder… hand over to [`../bookmark-bubble/`](../bookmark-bubble/), which owns the bubble.
 
 **Tied to Electron.** `bar-menu-runner.ts` (`Menu`, `clipboard`) and `folder-overlay.ts`, through the overlay host;
 the rest is plain TypeScript over `BookmarkStore` and would outlive a change of shell.

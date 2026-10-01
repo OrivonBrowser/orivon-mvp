@@ -56,10 +56,49 @@ export function syncFs (api: string): SyncOrivonFs {
   return fs
 }
 
-/** Runs one orivon.fs call, rethrowing its OrivonError as a Node-shaped one -- fs/paths.ts's guarded(), synchronous. */
-export function guardedSync<T> (run: () => T): T {
+/**
+ * A rate-limited call was refused before it ran, so asking again is safe, and a synchronous caller has no
+ * way to wait and ask again itself: a burst of calls (a program starting up) would otherwise fail the
+ * first call past the origin's bucket.
+ */
+const LIMIT_RETRIES = 40
+const LIMIT_BACKOFF_MS = 25
+
+function isLimit (error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'limit'
+}
+
+/** Blocks for `ms`, or returns false where a thread may not block (a page's main thread): there the refusal is the answer. */
+function sleepSync (ms: number): boolean {
   try {
-    return run()
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Runs `run`, asking again while the limiter refuses it; any other error, or the last refusal, is thrown as it came. */
+function retryLimited<T> (run: () => T, sleep: (ms: number) => boolean | void): T {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return run()
+    } catch (error) {
+      if (attempt >= LIMIT_RETRIES || !isLimit(error)) throw error
+      if (sleep(LIMIT_BACKOFF_MS * Math.min(attempt + 1, 8)) === false) throw error
+    }
+  }
+}
+
+/** `run`, asked again while the limiter refuses it, with its errors left as they are for a caller that maps them itself. */
+export function retriedSync<T> (run: () => T): T {
+  return retryLimited(run, sleepSync)
+}
+
+/** Runs one orivon.fs call, rethrowing its OrivonError as a Node-shaped one -- fs/paths.ts's guarded(), synchronous. */
+export function guardedSync<T> (run: () => T, sleep: (ms: number) => boolean | void = sleepSync): T {
+  try {
+    return retryLimited(run, sleep)
   } catch (error) {
     throw toNodeError(error)
   }
@@ -70,9 +109,10 @@ export function tryStatSync (confined: string): boolean | undefined {
   const fs = trySyncFs()
   if (fs === undefined) return undefined
   try {
-    fs.stat(confined)
+    retryLimited(() => fs.stat(confined), sleepSync)
     return true
   } catch {
+    // Missing, or refused for good: a limit that outlasts the retries is not an answer about the file, but existsSync has no other.
     return false
   }
 }

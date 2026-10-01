@@ -8,8 +8,6 @@ import type { QrSaveDeps } from './qr-download.js'
 import type { SettingsStore } from '../settings/settings-store.js'
 
 const SHEET_WIDTH = 300
-/** The clipboard can stall under a display with no clipboard owner; the sheet must not wait on it. */
-const CLIPBOARD_LIMIT_MS = 1000
 /** An address longer than this is not something a clipboard write or a sheet should carry. */
 const MAX_ADDRESS = 32768
 
@@ -57,16 +55,13 @@ export function qrOverlayFor (deps: QrDeps): OverlayDef {
           const request = asCommand(command)
           if (request === undefined || address === undefined) return undefined
           if (request.type === 'copy') {
-            const written = new Promise<boolean>((resolve) => {
-              try {
-                deps.writeClipboard(address ?? '')
-                resolve(true)
-              } catch {
-                resolve(false)
-              }
-            })
-            const limit = new Promise<boolean>((resolve) => { setTimeout(() => { resolve(false) }, CLIPBOARD_LIMIT_MS).unref() })
-            return { ok: await Promise.race([written, limit]) }
+            // The write is synchronous, so nothing here could cut a stalled one short: it either returns or throws.
+            try {
+              deps.writeClipboard(address)
+              return { ok: true }
+            } catch {
+              return { ok: false }
+            }
           }
           return { ok: await saveQrPng({ ...deps, downloadsDir: () => deps.downloadsDir(services.settings) }, address, request.png) !== undefined }
         }
