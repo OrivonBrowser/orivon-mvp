@@ -97,6 +97,21 @@ describe('opening and closing', () => {
     expect(host.isOpen()).toBe(false)
   })
 
+  it('says so when a toggle finds the window too narrow, and not in a kiosk or when it opens', () => {
+    win.state.width = 700
+    host.toggle()
+    expect(win.ctx.window.overlays.show).toHaveBeenCalledWith('toast', undefined, { code: 'sidePanelNarrow' })
+    vi.mocked(win.ctx.window.overlays.show).mockClear()
+    win.state.overlayOpen = false
+    win.state.kiosk = true
+    host.toggle()
+    win.state.kiosk = false
+    win.state.width = 1280
+    host.toggle()
+    expect(win.ctx.window.overlays.show).toHaveBeenCalledTimes(1)
+    expect(win.ctx.window.overlays.show).toHaveBeenCalledWith('side-panel')
+  })
+
   it('takes no room in HTML fullscreen or once the window narrows, and takes it again after', () => {
     host.open()
     win.state.fullscreen = true
@@ -168,12 +183,26 @@ describe('width and side', () => {
   })
 })
 
+describe('a listener that asks before the panel exists', () => {
+  it('hears the panel once it is made', () => {
+    const early = fakeWindow()
+    registerStore(early.ctx.services, new MemorySidePanelStore())
+    wireSidePanel(early.ctx.window.window, early.wiring)
+    const heard = vi.fn()
+    sidePanelFor(early.ctx.window).onChange(heard)
+    createSidePanel(early.ctx).open()
+    expect(heard).toHaveBeenCalled()
+  })
+})
+
 describe('the guest slot', () => {
   const entry = { id: 'ext:abcdef', title: 'Notes' }
 
+  beforeEach(() => { setGuestEntries([entry, { id: 'ext:one', title: 'One' }, { id: 'ext:two', title: 'Two' }]) })
+
   it('puts a guest view in the window at the body, above the panel once the overlay host restacks', () => {
     const guest = fakeGuestView()
-    host.open()
+    host.open(entry.id)
     host.setGuest({ id: entry.id, title: 'Notes', view: guest.view })
 
     expect(win.children).toContain(guest.view)
@@ -188,23 +217,82 @@ describe('the guest slot', () => {
 
   it('is never closed by the overlay host closing popups', () => {
     const guest = fakeGuestView()
-    host.open()
+    host.open(entry.id)
     host.setGuest({ id: entry.id, title: 'Notes', view: guest.view })
     win.adopted[0]?.close()
     expect(win.children).toContain(guest.view)
   })
 
-  it('keeps a guest out of the window while the panel is closed and shows it when the panel opens', () => {
+  it('shows a guest chosen while the panel was closed once the panel opens', () => {
     const guest = fakeGuestView()
+    host.open(entry.id)
+    host.close()
+    host.open(entry.id)
     host.setGuest({ id: entry.id, title: 'Notes', view: guest.view })
+    expect(win.children).toContain(guest.view)
+  })
+
+  it('closes at once a guest handed over while the panel is closed', () => {
+    const closed = vi.fn()
+    const guest = fakeGuestView()
+    host.setGuest({ id: entry.id, title: 'Notes', view: guest.view, closed })
+    expect(closed).toHaveBeenCalledTimes(1)
     expect(win.children).not.toContain(guest.view)
+    expect(host.view()).toBe('bookmarks')
     host.open()
+    expect(host.view()).toBe('bookmarks')
+  })
+
+  it('drops a late answer for an entry the person has moved away from', () => {
+    const closed = vi.fn()
+    const guest = fakeGuestView()
+    host.open(entry.id)
+    host.choose('history')
+    host.setGuest({ id: entry.id, title: 'Notes', view: guest.view, closed })
+    expect(closed).toHaveBeenCalledTimes(1)
+    expect(win.children).not.toContain(guest.view)
+    expect(host.view()).toBe('history')
+  })
+
+  it('closes the outgoing guest when another entry answers with the same view', () => {
+    const first = vi.fn()
+    const second = vi.fn()
+    const shared = fakeGuestView().view
+    host.open('ext:one')
+    host.setGuest({ id: 'ext:one', title: 'One', view: shared, closed: first })
+    host.choose('ext:two')
+    host.setGuest({ id: 'ext:two', title: 'Two', view: shared, closed: second })
+    expect(first).toHaveBeenCalledTimes(1)
+    expect(second).not.toHaveBeenCalled()
+  })
+
+  it('steps aside while the view picker is open, so its list is not under the guest', () => {
+    const guest = fakeGuestView()
+    host.open(entry.id)
+    host.setGuest({ id: entry.id, title: 'Notes', view: guest.view })
+    host.pickerToggled(true)
+    expect(win.children).not.toContain(guest.view)
+    win.children.length = 0
+    win.adopted[0]?.restack?.()
+    expect(win.children).not.toContain(guest.view)
+    host.pickerToggled(false)
+    expect(win.children).toContain(guest.view)
+  })
+
+  it('forgets an open picker when the panel closes and opens again', () => {
+    const guest = fakeGuestView()
+    host.open(entry.id)
+    host.setGuest({ id: entry.id, title: 'Notes', view: guest.view })
+    host.pickerToggled(true)
+    host.close()
+    host.open(entry.id)
+    host.setGuest({ id: entry.id, title: 'Notes', view: guest.view })
     expect(win.children).toContain(guest.view)
   })
 
   it('follows the panel when the window moves it', () => {
     const guest = fakeGuestView()
-    host.open()
+    host.open(entry.id)
     host.setGuest({ id: entry.id, title: 'Notes', view: guest.view })
     win.state.width = 1000
     host.moved()
@@ -213,7 +301,7 @@ describe('the guest slot', () => {
 
   it('hides the guest in HTML fullscreen', () => {
     const guest = fakeGuestView()
-    host.open()
+    host.open(entry.id)
     host.setGuest({ id: entry.id, title: 'Notes', view: guest.view })
     win.state.fullscreen = true
     host.moved()
@@ -222,7 +310,7 @@ describe('the guest slot', () => {
 
   it('runs `closed` once when the panel closes', () => {
     const closed = vi.fn()
-    host.open()
+    host.open(entry.id)
     host.setGuest({ id: entry.id, title: 'Notes', view: fakeGuestView().view, closed })
     host.close()
     host.close()
@@ -232,7 +320,7 @@ describe('the guest slot', () => {
 
   it('runs `closed` once when another view is chosen, and falls back to the last of Orivon views', () => {
     const closed = vi.fn()
-    host.open('history')
+    host.open(entry.id)
     host.setGuest({ id: entry.id, title: 'Notes', view: fakeGuestView().view, closed })
     host.choose('downloads')
     expect(closed).toHaveBeenCalledTimes(1)
@@ -242,8 +330,9 @@ describe('the guest slot', () => {
   it('runs `closed` once for a guest replaced by another, and once for setGuest(null)', () => {
     const first = vi.fn()
     const second = vi.fn()
-    host.open()
+    host.open('ext:one')
     host.setGuest({ id: 'ext:one', title: 'One', view: fakeGuestView().view, closed: first })
+    host.open('ext:two')
     host.setGuest({ id: 'ext:two', title: 'Two', view: fakeGuestView().view, closed: second })
     expect(first).toHaveBeenCalledTimes(1)
     host.setGuest(null)
@@ -255,7 +344,7 @@ describe('the guest slot', () => {
 
   it('survives a throwing `closed` and a view that was destroyed', () => {
     const guest = fakeGuestView()
-    host.open()
+    host.open(entry.id)
     host.setGuest({ id: entry.id, title: 'Notes', view: guest.view, closed: () => { throw new Error('boom') } })
     guest.destroy()
     expect(() => { host.close() }).not.toThrow()

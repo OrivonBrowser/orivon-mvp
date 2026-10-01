@@ -46,7 +46,8 @@ describe('the side panel as a pane of the F6 order', () => {
     const guestFocus = { value: false }
     const guest = view('chrome-extension://abc/panel.html', guestFocus)
     win.children.push(view('file:///overlay/index.html?overlay=side-panel&surface=panel', own))
-    host.open()
+    setGuestEntries([{ id: 'ext:abc', title: 'Notes' }])
+    host.open('ext:abc')
     host.setGuest({ id: 'ext:abc', title: 'Notes', view: guest as never })
 
     sidePanelPane.focus(win.ctx)

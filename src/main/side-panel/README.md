@@ -22,13 +22,16 @@ the page area shrinks by the panel's width, in `tabBounds()` of [`../shell/windo
 `WebContentsView` over the body below the header, above the panel and under every popup, and `closed` runs once
 when it leaves. `setGuestEntries(entries)` adds `ext:<id>` entries to every window's picker, and
 `onGuestChosen(listener)` hears a picker choice, `open(entryId)` or `toggle(entryId)`; the listener owns the view
-and answers with `setGuest`. All of it is main-side: the page can only choose an entry the list holds.
+and answers with `setGuest`. The answer is for the entry the panel is showing: once the person has picked another
+view, or while the panel is closed, a late `setGuest` is dropped and its `closed` runs at once. The guest steps aside
+while the view picker's list is open, since it sits above the panel's page. All of it is main-side: the page can only
+choose an entry the list holds.
 
 **Tied to Electron, entirely.** The model, the requests and the views' row building import no `electron` value;
 the host, the overlay and the store do.
 
 **What it depends on.** `electron` (types), [`../overlays/`](../overlays/), [`../shell/`](../shell/) (types, the
-open-bookmark helper), the bookmark, history and download services through `ShellServices`.
+open-bookmark helper), [`../page-tools/`](../page-tools/) (the toast), the bookmark, history and download services through `ShellServices`.
 
 **What it must never import.** The renderer, or a value from [`../shell/tabs.ts`](../shell/tabs.ts).
 

@@ -45,6 +45,7 @@ export const TOAST_TEXT = {
   sleepOther: { text: 'This tab cannot be put to sleep.', tone: 'info' },
   caretOn: { text: 'Caret browsing is on', tone: 'info' },
   caretOff: { text: 'Caret browsing is off', tone: 'info' },
+  sidePanelNarrow: { text: 'Make the window wider to open the side panel', tone: 'info' },
   notReadable: { text: 'Reader view is not available for this page.', tone: 'info' }
 } as const satisfies Record<string, ToastText>
 

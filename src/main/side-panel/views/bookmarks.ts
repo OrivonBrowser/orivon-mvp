@@ -18,6 +18,17 @@ function rowOf (node: BookmarkNode, level: number, open: ReadonlySet<string>): P
   return { id: node.id, kind: 'item', title: node.title === '' ? (node.url ?? '') : node.title, ...(host === '' ? {} : { sub: host }), favicon: node.favicon ?? null, level }
 }
 
+/** Whether a node hangs under the bar or Other bookmarks, the two trees this view lists: a reading list page does not. */
+function listed (store: { node: (id: string) => BookmarkNode | undefined }, node: BookmarkNode): boolean {
+  let at: BookmarkNode | undefined = node
+  for (let hops = 0; at !== undefined && hops < 64; hops += 1) {
+    if (at.parent === 'bar' || at.parent === 'other') return true
+    if (at.parent === 'reading') return false
+    at = store.node(at.parent)
+  }
+  return false
+}
+
 export const bookmarksView: PanelViewDef = {
   id: 'bookmarks',
   title: 'Bookmarks',
@@ -45,10 +56,11 @@ export const bookmarksView: PanelViewDef = {
   },
   resolve ({ services }, id) {
     const node = services.bookmarks.node(id)
-    return node?.kind === 'url' && node.url !== undefined ? sanitizeDirectUrl(node.url) : null
+    return node?.kind === 'url' && node.url !== undefined && listed(services.bookmarks, node) ? sanitizeDirectUrl(node.url) : null
   },
   remove ({ services }, id) {
-    if (services.bookmarks.node(id)?.kind === 'url') services.bookmarks.remove([id])
+    const node = services.bookmarks.node(id)
+    if (node?.kind === 'url' && listed(services.bookmarks, node)) services.bookmarks.remove([id])
   },
   watch: ({ services }, changed) => services.bookmarks.onChange(changed)
 }

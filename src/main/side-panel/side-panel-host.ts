@@ -4,6 +4,7 @@
 import type { BaseWindow, WebContents, WebContentsView } from 'electron'
 import { dockBounds } from '../overlays/overlay-bounds.js'
 import type { OverlayHostHandle } from '../overlays/overlay-host.js'
+import { showToast } from '../page-tools/toast.js'
 import { contain } from '../shell/contain.js'
 import type { PageInsets } from '../shell/window-layout.js'
 import type { Bounds } from '../shell/tab-types.js'
@@ -39,7 +40,7 @@ export interface SidePanelHost {
   side: () => PanelSide
   /** The panel below its header, in window-content pixels; null while it is closed or hidden. */
   bodyBounds: () => Bounds | null
-  /** Shows a view Orivon does not draw over the body, header kept. */
+  /** Shows a view Orivon does not draw over the body, header kept. It answers the entry the panel is showing: one handed over after another view was chosen, or while the panel is closed, is closed again at once. */
   setGuest: (guest: PanelGuest | null) => void
   onChange: (listener: () => void) => () => void
 }
@@ -66,7 +67,8 @@ const NOBODY: SidePanelHost = {
 
 /** The window's panel; an inert one for a window that has none (it is being built or closed). */
 export function sidePanelFor (window: ShellWindow): SidePanelHost {
-  return hosts.get(window.window) ?? NOBODY
+  // A window hook that sorts before the panel's own asks before the panel exists: it still hears the panel once it does.
+  return hosts.get(window.window) ?? { ...NOBODY, onChange: (listener) => onPanelChange(window, listener) }
 }
 
 /** Calls `listener` whenever this window's panel opens, closes, changes view, width or side; returns the stop. */
@@ -109,6 +111,7 @@ export class PanelHost implements SidePanelHost {
   private guest: PanelGuest | null = null
   private pendingWidth: number | null = null
   private stopped = false
+  private pickerOpen = false
 
   constructor (private readonly ctx: WindowContext, private readonly wiring: PanelWiring | undefined) {
     this.current = this.storedView()
@@ -169,7 +172,7 @@ export class PanelHost implements SidePanelHost {
     if (this.stopped || !this.room()) return
     if (viewId !== undefined && !this.accepts(viewId)) return
     const was = this.wanted
-    if (!was) this.shownWidth = this.store().get().width
+    if (!was) { this.shownWidth = this.store().get().width; this.pickerOpen = false }
     this.wanted = true
     // Before the page and the overlay are laid out: both read the page area this changes.
     if (viewId !== undefined) this.choose(viewId)
@@ -182,6 +185,7 @@ export class PanelHost implements SidePanelHost {
   close (): void {
     if (!this.wanted) return
     this.wanted = false
+    this.pickerOpen = false
     this.release()
     this.fallBack()
     this.window.overlays.close(SIDE_PANEL_OVERLAY)
@@ -192,7 +196,11 @@ export class PanelHost implements SidePanelHost {
 
   toggle (viewId?: string): void {
     if (this.isOpen() && (viewId === undefined || viewId === this.current)) this.close()
-    else this.open(viewId)
+    else {
+      // A window too narrow for the panel says so, since a button or a key that does nothing reads as broken.
+      if (!this.stopped && !this.room() && !this.ctx.services.kiosk) showToast(this.window, 'sidePanelNarrow')
+      this.open(viewId)
+    }
   }
 
   /** The panel's page chose a view, or `open` named one. */
@@ -232,12 +240,21 @@ export class PanelHost implements SidePanelHost {
       this.notify()
       return
     }
-    if (this.guest !== null && this.guest.view !== guest.view) this.release()
+    // The answer to an entry the person has since moved away from: the panel shows what they chose last.
+    if (guest.id !== this.current) { try { guest.closed?.() } catch { /* nothing holds it */ } return }
+    if (this.guest !== null && (this.guest.view !== guest.view || this.guest.id !== guest.id)) this.release()
     this.guest = guest
     this.current = guest.id
     this.window.overlays.send(SIDE_PANEL_OVERLAY, { type: 'view', view: guest.id, guest: this.guestSummary() })
     this.syncGuest()
     this.notify()
+  }
+
+  /** The view picker's list opened or closed. A guest sits above the panel's page, so it steps aside while the list is open. */
+  pickerToggled (open: boolean): void {
+    if (this.pickerOpen === open) return
+    this.pickerOpen = open
+    this.syncGuest()
   }
 
   /** The guest, as the page draws its header. */
@@ -250,6 +267,7 @@ export class PanelHost implements SidePanelHost {
     if (reason === 'window-closed') { this.release(); return }
     if (!this.wanted) return
     this.wanted = false
+    this.pickerOpen = false
     this.release()
     this.fallBack()
     this.window.relayout()
@@ -306,7 +324,7 @@ export class PanelHost implements SidePanelHost {
 
   /** Called by the overlay host on every restack: the guest sits directly above the panel and under the popups. */
   restackGuest (): void {
-    if (this.guest !== null && this.visible()) this.attachGuest(this.guest)
+    if (this.guest !== null && this.visible() && !this.pickerOpen) this.attachGuest(this.guest)
   }
 
   onChange (listener: () => void): () => void {
@@ -346,7 +364,7 @@ export class PanelHost implements SidePanelHost {
   /** Shows the guest while the panel shows, hides it while the panel does not. */
   private syncGuest (): void {
     if (this.guest === null) return
-    if (this.visible()) this.attachGuest(this.guest)
+    if (this.visible() && !this.pickerOpen) this.attachGuest(this.guest)
     else this.detachGuest(this.guest)
   }
 

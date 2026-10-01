@@ -9,6 +9,7 @@ export type PanelRequest =
   | { type: 'remove', view: string, id: string }
   | { type: 'menu', view: string, id: string }
   | { type: 'view', view: string }
+  | { type: 'picker', open: boolean }
   | { type: 'page', view: string }
   | { type: 'resize', width: number }
   | { type: 'focus-page' }
@@ -37,6 +38,8 @@ export function asRequest (command: unknown): PanelRequest | undefined {
       return text(view, MAX_VIEW) && text(id, MAX_ID) ? { type, view, id } : undefined
     case 'view': case 'page':
       return text(view, MAX_VIEW) ? { type, view } : undefined
+    case 'picker':
+      return typeof open === 'boolean' ? { type, open } : undefined
     case 'resize':
       return typeof width === 'number' && Number.isFinite(width) ? { type, width } : undefined
     case 'focus-page': case 'close':

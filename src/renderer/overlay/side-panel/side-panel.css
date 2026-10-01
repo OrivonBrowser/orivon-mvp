@@ -58,7 +58,10 @@ body[data-overlay='side-panel'] .sp-picker-list {
   padding: 4px;
   border: 1px solid var(--wborder);
   border-radius: 8px;
-  background: var(--wsurface);
+  background: var(--wpanel);
+}
+@media (prefers-color-scheme: dark) {
+  body[data-overlay='side-panel'] .sp-picker-list { background: var(--wsurface); }
 }
 body[data-overlay='side-panel'] .sp-picker-list[hidden] { display: none; }
 body[data-overlay='side-panel'] .sp-picker-list .listbox { outline: none; }
@@ -114,13 +117,15 @@ body[data-overlay='side-panel'] .listbox-item.no-sub > .item-title { grid-row: 1
 body[data-overlay='side-panel'] mark { background: color-mix(in srgb, var(--waccent-text) 18%, transparent); color: inherit; font-weight: 600; border-radius: 2px; }
 
 body[data-overlay='side-panel'] .sp-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 10px 10px 4px;
   color: var(--wink-dim);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
+body[data-overlay='side-panel'] .sp-group::after { content: ''; flex: 1; height: 1px; background: var(--wborder); }
 body[data-overlay='side-panel'] .sp-group:first-child { padding-top: 4px; }
 
 body[data-overlay='side-panel'] .sp-tree .tree-item { min-height: 30px; box-sizing: border-box; padding-top: 3px; padding-bottom: 3px; }
@@ -151,7 +156,7 @@ body[data-overlay='side-panel'] .sp-edge {
   z-index: 3;
   top: 0;
   bottom: 0;
-  width: 6px;
+  width: 8px;
   cursor: col-resize;
 }
 body[data-overlay='side-panel'][data-side='right'] .sp-edge { left: 0; }
@@ -171,5 +176,7 @@ body[data-overlay='side-panel'][data-side='left'] .sp-edge::after { right: 0; }
 body[data-overlay='side-panel'] .sp-edge:hover::after,
 body[data-overlay='side-panel'] .sp-edge:focus-visible::after,
 body[data-overlay='side-panel'] .is-dragging .sp-edge::after { opacity: 1; }
-body[data-overlay='side-panel'] .sp-edge:focus-visible { outline: none; }
+/* Focus is a wider line with a ring, so a keyboard stop reads differently from the pointer passing over. */
+body[data-overlay='side-panel'] .sp-edge:focus-visible::after { width: 4px; }
+body[data-overlay='side-panel'] .sp-edge:focus-visible { outline: 2px solid var(--waccent-text); outline-offset: -2px; border-radius: 2px; }
 body[data-overlay='side-panel'] .is-dragging { user-select: none; }

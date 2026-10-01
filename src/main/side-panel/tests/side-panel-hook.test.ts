@@ -5,7 +5,7 @@ import { WINDOW_HOOKS } from '../../shell/window-hooks.js'
 import { OVERLAYS } from '../../overlays/overlays.js'
 import { fakeWindow } from './panel-fakes.js'
 import { sidePanelHook } from '../side-panel-hook.js'
-import { sidePanelFor, wireSidePanel } from '../side-panel-host.js'
+import { setGuestEntries, sidePanelFor, wireSidePanel } from '../side-panel-host.js'
 import { sidePanelOverlay } from '../side-panel-overlay.js'
 import { MIN_WINDOW_WIDTH } from '../side-panel-model.js'
 
@@ -23,7 +23,8 @@ describe('the window hook', () => {
     wireSidePanel(win.ctx.window.window, win.wiring)
     sidePanelHook.opened?.(win.ctx, {})
     const host = sidePanelFor(win.ctx.window)
-    host.open()
+    setGuestEntries([{ id: 'ext:a', title: 'A' }])
+    host.open('ext:a')
     expect(host.isOpen()).toBe(true)
 
     const closed = vi.fn()

@@ -111,6 +111,7 @@ export function createSidePanelHandler (win: OverlayWindow): OverlayHandler {
         case 'remove': viewById(asked.view)?.remove?.(win, asked.id); return undefined
         case 'menu': menu(asked.view, asked.id); return undefined
         case 'view': host.choose(asked.view); return undefined
+        case 'picker': host.pickerToggled(asked.open); return undefined
         case 'page': {
           const page = viewById(asked.view)?.page
           if (page !== undefined) window.tabs.openInternal(page.id)

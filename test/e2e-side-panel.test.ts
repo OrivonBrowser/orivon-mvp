@@ -237,11 +237,20 @@ it('opens beside the page, lists bookmarks, filters, shows history, resizes, rem
     expect((await frameOf(app, 'overlay=side-panel')).view).toMatchObject({ x: 0, width: 408 })
     await shoot(app, chrome, page, 'left')
 
+    // On the left the edge is on the page side: Right widens the panel, and Left takes it back.
+    await page.focus('.sp-edge')
+    await page.keyboard.press('ArrowRight')
+    expect(await waitFor(async () => (await frameOf(app, tab)).view?.x === 424)).toBe(true)
+    await page.keyboard.press('ArrowLeft')
+    expect(await waitFor(async () => (await frameOf(app, tab)).view?.x === 408)).toBe(true)
+
     // A guest view sits at the body, and the main menu opens above it.
     await app.evaluate(({ WebContentsView }) => {
       const seam = (globalThis as unknown as { __orivonDevSidePanel: Seam }).__orivonDevSidePanel
       const view = new WebContentsView()
       void view.webContents.loadURL('data:text/html,<body style="margin:0;background:%23123"><p style="color:white">guest</p>')
+      seam.setGuestEntries([{ id: 'ext:guestview', title: 'Guest view' }])
+      seam.host(0)['choose']?.('ext:guestview')
       seam.host(0)['setGuest']?.({ id: 'ext:guestview', title: 'Guest view', view })
     })
     const body = await app.evaluate(() => (globalThis as unknown as { __orivonDevSidePanel: Seam }).__orivonDevSidePanel.host(0)['bodyBounds']?.())
@@ -259,6 +268,17 @@ it('opens beside the page, lists bookmarks, filters, shows history, resizes, rem
     expect(order.menu).toBeGreaterThan(order.guest)
     await menuPageOf(app)?.keyboard.press('Escape').catch(() => {})
     await shoot(app, chrome, page, 'guest')
+
+    // The view picker's list opens over the guest's place: the guest steps aside, and choosing a view leaves the guest.
+    const guestInWindow = async (): Promise<boolean> => await app.evaluate(({ BaseWindow }) => {
+      const urls = BaseWindow.getAllWindows()[0]?.contentView.children.map((child) => (child as unknown as { webContents?: { getURL: () => string } }).webContents?.getURL() ?? '') ?? []
+      return urls.some((url) => url.includes('data:text/html'))
+    })
+    await page.click('.sp-picker')
+    expect(await waitFor(async () => !(await guestInWindow()))).toBe(true)
+    await page.click('.sp-choice:has-text("Bookmarks")')
+    await expect.poll(async () => await page.locator('.sp-picker-name').innerText()).toBe('Bookmarks')
+    expect(await guestInWindow()).toBe(false)
 
     // Back on the right with a plain view, then a 700px window has no panel at all.
     await app.evaluate(() => { (globalThis as unknown as { __orivonDevSidePanel: Seam }).__orivonDevSidePanel.setSetting('sidePanel.side', 'right') })
@@ -293,6 +313,8 @@ it('keeps no file in a private window, says it keeps no history, and shows the e
     await page.focus('.sp-edge')
     await page.keyboard.press('ArrowLeft')
     expect(await page.getAttribute('.sp-edge', 'aria-valuenow')).toBe('376')
+    // Main applied the width, so the file's absence follows a write it did process.
+    expect(await waitFor(async () => (await frameOf(app, 'overlay=side-panel')).view?.width === 376)).toBe(true)
     await delay(1200)
     expect(existsSync(join(profileDirOf(app) as string, 'side-panel.json'))).toBe(false)
     expect(mainOutput(app)).not.toContain('uncaught exception')

@@ -20,8 +20,9 @@ export function createSidePanelButton (): ChromeModule {
     }
     const narrow = window.innerWidth < (panel?.minWindow ?? 0)
     button.disabled = narrow
-    button.setAttribute('aria-pressed', String(panel?.open === true))
-    button.classList.toggle('active', panel?.open === true)
+    const shown = panel?.open === true && !narrow
+    button.setAttribute('aria-pressed', String(shown))
+    button.classList.toggle('active', shown)
     // The binding can be changed in Settings, so the tooltip names the one that runs now.
     const keys = state.shortcutKeys['sidePanel.toggle']
     const base = keys === null ? 'Side panel' : `Side panel (${formatKeys(keys, document.documentElement.dataset['platform'] ?? '')})`

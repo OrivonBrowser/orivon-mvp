@@ -16,7 +16,8 @@ export interface Picker {
 
 interface Choice { id: string, title: string, icon: () => Element }
 
-export function createPicker (choose: (id: string) => void): Picker {
+/** `toggled` hears the list open and close, so main can lift a view that would cover it. */
+export function createPicker (choose: (id: string) => void, toggled: (open: boolean) => void = () => {}): Picker {
   let choices: Choice[] = []
   let current = ''
   let active = 0
@@ -41,7 +42,9 @@ export function createPicker (choose: (id: string) => void): Picker {
   }
 
   function close (focusButton: boolean): void {
+    const was = isOpen()
     list.hidden = true
+    if (was) toggled(false)
     button.setAttribute('aria-expanded', 'false')
     if (focusButton) button.focus()
   }
@@ -49,6 +52,7 @@ export function createPicker (choose: (id: string) => void): Picker {
   function open (): void {
     active = Math.max(0, choices.findIndex((choice) => choice.id === current))
     list.hidden = false
+    toggled(true)
     button.setAttribute('aria-expanded', 'true')
     markActive()
     options.focus()

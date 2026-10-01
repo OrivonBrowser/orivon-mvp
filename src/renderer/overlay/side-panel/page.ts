@@ -40,7 +40,7 @@ export const sidePanelPage: OverlayPage = {
     const root = h('div', { className: 'sp' })
     const send = (command: unknown): void => { void overlay.request(command) }
     const edge = createEdge((width) => { send({ type: 'resize', width }) }, root)
-    const picker = createPicker((id) => { choose(id) })
+    const picker = createPicker((id) => { choose(id) }, (open) => { send({ type: 'picker', open }) })
     const close = h('button', { type: 'button', className: 'btn icon sp-close', ariaLabel: 'Close side panel', title: 'Close side panel' }, closeIcon())
     const input = h('input', { className: 'text search sp-input', type: 'search', spellcheck: false, autocomplete: 'off' })
     const list = h('ul', { className: 'sp-list' })
@@ -300,6 +300,7 @@ export const sidePanelPage: OverlayPage = {
           if (event['side'] === 'left' || event['side'] === 'right') {
             root.dataset['side'] = event['side']
             document.body.dataset['side'] = event['side']
+            edge.setSide(event['side'])
           }
           break
         case 'guests': guests = asGuests(event['guests']); draw(); break

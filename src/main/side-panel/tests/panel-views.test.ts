@@ -126,6 +126,17 @@ describe('the bookmarks view', () => {
     expect(store.node(news)).toBeUndefined()
   })
 
+  it('never opens or removes a reading list page, which another view lists', () => {
+    const { ctx, store } = seeded()
+    store.addUrl({ url: 'https://later.example/', title: 'Later', parent: 'reading' })
+    const loaf = store.search('Loaf', 5)[0]?.id ?? ''
+    expect(view('bookmarks').resolve?.(ctx, loaf)).toBe('https://bread.example/loaf')
+    const later = store.children('reading')[0]?.id ?? ''
+    expect(view('bookmarks').resolve?.(ctx, later)).toBeNull()
+    view('bookmarks').remove?.(ctx, later)
+    expect(store.node(later)).toBeDefined()
+  })
+
   it('follows the store', () => {
     const { ctx, store } = seeded()
     const changed = vi.fn()

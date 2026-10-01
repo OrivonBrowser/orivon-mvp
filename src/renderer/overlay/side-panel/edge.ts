@@ -11,6 +11,8 @@ const KEY_SETTLE_MS = 400
 export interface Edge {
   readonly el: HTMLElement
   update: (state: { side: Side, width: number, limits: Limits }) => void
+  /** The panel moved to the other side while open: the keys and the drag now widen toward the page from there. */
+  setSide: (side: Side) => void
 }
 
 export function createEdge (resize: (width: number) => void, root: HTMLElement): Edge {
@@ -81,6 +83,7 @@ export function createEdge (resize: (width: number) => void, root: HTMLElement):
       limits = state.limits
       if (wanted === state.width) wanted = null
       show()
-    }
+    },
+    setSide (next) { side = next }
   }
 }
