@@ -16,6 +16,7 @@
 // and 'service-worker' preload types, exactly as
 // vendor/.../src/browser/index.ts's own prependPreload would have pointed
 // at its own file.
+import './extension-apis/register.js'
 import '../../vendor/electron-chrome-extensions/src/preload.js'
 import { installServiceWorkerPreloadHealthCheck } from './extension-sw-verify.js'
 

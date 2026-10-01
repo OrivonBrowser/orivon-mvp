@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { injectExtensionAPIs } from './renderer'
+import { getExtraMainWorldApis } from './renderer/extras'
 
 // Orivon patch (UPSTREAM.md 30): inject only into a chrome-extension: page
 // or worker. A 'service-worker' preload runs in Electron's preload realm,
@@ -46,5 +47,6 @@ function isSandboxPage(): boolean {
 }
 
 if (contextUrl().startsWith('chrome-extension://') && !isSandboxPage()) {
-  injectExtensionAPIs()
+  // Orivon patch (UPSTREAM.md patch 45): Orivon's own namespaces ride along.
+  injectExtensionAPIs(getExtraMainWorldApis())
 }

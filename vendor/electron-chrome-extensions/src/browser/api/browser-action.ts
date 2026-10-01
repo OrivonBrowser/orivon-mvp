@@ -34,6 +34,24 @@ export function setTabCaptureInvocationRecorder(recorder: TabCaptureInvocationRe
   gTabCaptureInvocationRecorder = recorder
 }
 
+// Orivon patch (UPSTREAM.md patch 46): which extensions' actions the chrome
+// view's toolbar list shows (an unset check shows all of them), and a hook
+// run once a click is counted, before any popup opens: true means the
+// click was handled elsewhere (a side panel, an omnibox), so no popup and
+// no onClicked. Both are set once, before the first activation.
+let gActionVisibilityCheck: ((extensionId: string) => boolean) | undefined
+let gActionClickInterceptor: ((extensionId: string, tab: Electron.WebContents) => boolean) | undefined
+
+export function setActionVisibilityCheck(check: (extensionId: string) => boolean): void {
+  gActionVisibilityCheck = check
+}
+
+export function setActionClickInterceptor(
+  intercept: (extensionId: string, tab: Electron.WebContents) => boolean,
+): void {
+  gActionClickInterceptor = intercept
+}
+
 interface ExtensionAction {
   color?: string
   text?: string
@@ -402,9 +420,37 @@ export class BrowserActionAPI {
     }
   }
 
+  private visibleActions(): Array<[string, ExtensionActionStore]> {
+    const entries = Array.from(this.actionMap.entries())
+    return gActionVisibilityCheck ? entries.filter(([id]) => gActionVisibilityCheck!(id)) : entries
+  }
+
+  // Orivon patch (UPSTREAM.md patch 46): the toolbar list for Orivon's own
+  // chrome, without any icon data.
+  listActions(): Array<{ id: string; title: string; hasPopup: boolean }> {
+    return this.visibleActions().map(([id, details]) => ({
+      id,
+      title: details.title ?? '',
+      hasPopup: typeof details.popup === 'string' && details.popup !== '',
+    }))
+  }
+
+  // Orivon patch (UPSTREAM.md patch 46): a click on `extensionId`'s action
+  // for `tab`, started by Orivon's own trusted code (a menu entry, a
+  // shortcut): counted as an invocation exactly like a toolbar click.
+  activateFromMain(extensionId: string, tab: Electron.WebContents, anchor: Electron.Rectangle): void {
+    this.activateClick({ eventType: 'click', extensionId, tabId: tab.id, anchorRect: anchor }, true)
+  }
+
+  // Orivon patch (UPSTREAM.md patch 46): public onUpdate(), for state that
+  // changes the toolbar list without an extension call (visibility).
+  notifyChanged(): void {
+    this.onUpdate()
+  }
+
   private getState() {
     // Get state without icon data.
-    const actions = Array.from(this.actionMap.entries()).map(([id, details]) => {
+    const actions = this.visibleActions().map(([id, details]) => {
       const { icon, tabs, ...rest } = details
 
       const tabsInfo: { [key: string]: any } = {}
@@ -506,6 +552,9 @@ export class BrowserActionAPI {
     if (recordInvocation) {
       gTabCaptureInvocationRecorder?.(extensionId, tab)
     }
+
+    // Orivon patch (UPSTREAM.md patch 46): handled elsewhere, no popup.
+    if (gActionClickInterceptor?.(extensionId, tab)) return
 
     const popupUrl = this.getPopupUrl(extensionId, tab.id)
 

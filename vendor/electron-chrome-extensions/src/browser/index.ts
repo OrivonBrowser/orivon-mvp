@@ -267,6 +267,25 @@ export class ElectronChromeExtensions extends EventEmitter {
     this.api.browserAction.setBadgeTextFromMain(extensionId, tabId, text)
   }
 
+  /** Orivon patch (UPSTREAM.md patch 46): the toolbar's actions, without icons. */
+  listActions(): Array<{ id: string; title: string; hasPopup: boolean }> {
+    return this.api.browserAction.listActions()
+  }
+
+  /**
+   * Orivon patch (UPSTREAM.md patch 46): click `extensionId`'s action on
+   * `tab`, counted as an invocation. Orivon's own trusted code only: no
+   * extension message reaches it.
+   */
+  activateAction(extensionId: string, tab: Electron.WebContents, anchor: Electron.Rectangle): void {
+    this.api.browserAction.activateFromMain(extensionId, tab, anchor)
+  }
+
+  /** Orivon patch (UPSTREAM.md patch 46): tells the toolbar its list changed. */
+  notifyActionsChanged(): void {
+    this.api.browserAction.notifyChanged()
+  }
+
   /** Add webContents to be tracked as a tab. */
   addTab(tab: Electron.WebContents, window: Electron.BaseWindow) {
     this.checkWebContentsArgument(tab)
