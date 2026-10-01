@@ -23,10 +23,14 @@ export interface ExtensionRow {
   readonly enabled: boolean
   /** A `data:` URL, or undefined when the manifest names no icon `extensions-view-runner.ts` could read. */
   readonly iconDataUrl: string | undefined
+  /** What each feature adds for its own card badge, keyed by the feature (extensions-detail-parts.ts's `ROW_PARTS`). */
+  readonly parts: Readonly<Record<string, unknown>>
 }
 
 export interface ExtensionDetails {
   readonly id: string
+  /** The same fields the list shows, so the details page needs no second request for its title. */
+  readonly row: ExtensionRow
   readonly source: string
   readonly updates: string
   readonly siteAccess: string | undefined
@@ -42,7 +46,11 @@ export interface ExtensionDetails {
    * (registry.ts's `ExtensionUpdater.pendingUpdate`): the page offers
    * "Update" only then. */
   readonly updateAvailable: boolean
+  /** What each feature adds for its own details section, keyed by the feature (`DETAIL_PARTS`). */
+  readonly parts: Readonly<Record<string, unknown>>
 }
+
+export type DetailsPayload = ExtensionDetails
 
 /** What `extensions-view-runner.ts` read off disk for one entry: the
  * manifest facts (undefined if its manifest.json could not be read or
@@ -122,13 +130,15 @@ export function buildExtensionRow (entry: InstalledExtension, facts: ExtensionFa
     version: entry.version,
     description: facts.resolvedDescription ?? '',
     enabled: entry.enabled,
-    iconDataUrl: facts.iconDataUrl
+    iconDataUrl: facts.iconDataUrl,
+    parts: {}
   }
 }
 
 export function buildExtensionDetails (entry: InstalledExtension, facts: ExtensionFacts): ExtensionDetails {
   return {
     id: entry.id,
+    row: buildExtensionRow(entry, facts),
     source: describeSource(entry.source),
     updates: describeUpdater(entry),
     siteAccess: facts.manifestFacts === undefined ? undefined : describeHostAccess(facts.manifestFacts),
@@ -136,6 +146,7 @@ export function buildExtensionDetails (entry: InstalledExtension, facts: Extensi
     whereItRuns: WHERE_EXTENSIONS_RUN,
     reloadable: entry.source.kind === 'unpacked',
     isStoreManaged: entry.updater.kind === 'store',
-    updateAvailable: entry.updater.kind === 'store' && entry.updater.pendingUpdate !== undefined
+    updateAvailable: entry.updater.kind === 'store' && entry.updater.pendingUpdate !== undefined,
+    parts: {}
   }
 }

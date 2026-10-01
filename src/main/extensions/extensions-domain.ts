@@ -5,14 +5,25 @@
 // from a document, so every field is checked here; an id that names no
 // registry entry is refused exactly like a malformed request (ADR-0041).
 import type { InternalDomain } from '../pages/internal-ipc.js'
+import type { ElectronChromeExtensions } from 'orivon:crx-extensions'
+import type { ShellServices } from '../shell/shell-services.js'
 import { buildExtensionDetails, buildExtensionRow, findExtension } from './extensions-view.js'
 import type { ExtensionFacts } from './extensions-view.js'
+import { DETAIL_PARTS, mergeParts, ROW_PARTS } from './extensions-detail-parts.js'
+import { EXTENSION_PAGE_COMMANDS } from './extensions-page-commands.js'
+import type { ExtensionPrefsStore } from './extension-prefs.js'
 import type { ExtensionsApi } from './extensions-subsystem.js'
 import type { InstallOutcome } from './install-runner.js'
 import type { InstalledExtension } from './registry.js'
 
 export interface ExtensionsDomainDeps {
   readonly extensions: ExtensionsApi
+  readonly prefs: ExtensionPrefsStore
+  /** The extension library's host; undefined until the subsystem has built it. */
+  readonly host: () => ElectronChromeExtensions | undefined
+  readonly shell: ShellServices
+  /** A private or guest runtime: the page offers no install and says why. */
+  readonly isPrivate: boolean
   readonly readFacts: (entry: InstalledExtension) => Promise<ExtensionFacts>
   readonly developerModeEnabled: () => boolean
   readonly pickFolder: () => Promise<string | undefined>
@@ -22,6 +33,7 @@ export interface ExtensionsDomainDeps {
 }
 
 interface ExtensionsRequest {
+  readonly [field: string]: unknown
   readonly type?: unknown
   readonly id?: unknown
   readonly enabled?: unknown
@@ -43,14 +55,22 @@ export function extensionsDomain (deps: ExtensionsDomainDeps): InternalDomain {
     handle: async (command) => {
       const request = (typeof command === 'object' && command !== null ? command : {}) as ExtensionsRequest
       switch (request.type) {
+        case 'context':
+          return { isPrivate: deps.isPrivate }
         case 'list': {
-          const rows = await Promise.all(entries().map(async (entry) => buildExtensionRow(entry, await deps.readFacts(entry))))
+          const rows = await Promise.all(entries().map(async (entry) => {
+            const facts = await deps.readFacts(entry)
+            const row = buildExtensionRow(entry, facts)
+            return { ...row, parts: mergeParts(ROW_PARTS, entry, facts, deps) }
+          }))
           return { rows }
         }
         case 'details': {
           const entry = findExtension(entries(), request.id)
           if (entry === undefined) return undefined
-          return { details: buildExtensionDetails(entry, await deps.readFacts(entry)) }
+          const facts = await deps.readFacts(entry)
+          const details = buildExtensionDetails(entry, facts)
+          return { details: { ...details, row: { ...details.row, parts: mergeParts(ROW_PARTS, entry, facts, deps) }, parts: mergeParts(DETAIL_PARTS, entry, facts, deps) } }
         }
         case 'setEnabled': {
           const entry = findExtension(entries(), request.id)
@@ -91,8 +111,12 @@ export function extensionsDomain (deps: ExtensionsDomainDeps): InternalDomain {
           if (entry === undefined) return undefined
           return await install(deps.extensions.updateFromStore(entry.id))
         }
-        default:
-          return undefined
+        default: {
+          const command = typeof request.type === 'string' && Object.hasOwn(EXTENSION_PAGE_COMMANDS, request.type)
+            ? EXTENSION_PAGE_COMMANDS[request.type]
+            : undefined
+          return command === undefined ? undefined : await command(request, deps)
+        }
       }
     }
   }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { createHash, sign as signWithKey } from 'node:crypto'
 import AdmZip from 'adm-zip'
 import Pbf from 'pbf'
@@ -129,6 +129,27 @@ describe('installFromStoreCrx', () => {
       )
       expect(outcome).toEqual({ installed: false, reason: expect.stringMatching(/^needs your approval:/) })
       expect(readRegistry(userDataPath)).toEqual([])
+    })
+  })
+
+  it('compares an update with the installed manifest, not with the loaded copy the person\'s own choices narrowed', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const { session } = fakeSession()
+      const dev = makeRsaKeyPair()
+      const wide = { ...STORE_MANIFEST, host_permissions: ['https://a.example/*', 'https://b.example/*'] }
+      const first = buildStoreCrx(wide, dev)
+      const installed = await installFromStoreCrx({ userDataPath, session, prompt: ALWAYS_DENY }, first.bytes, first.id, JSON.stringify(wide), { skipPrompt: true, publisherKeyHash: first.publisherKeyHash })
+      expect(installed.installed).toBe(true)
+      if (!installed.installed) return
+      // The loaded copy carries a narrower reach than what was installed.
+      const loadedPath = join(installed.entry.path, 'manifest.json')
+      const narrowed = { ...JSON.parse(readFileSync(loadedPath, 'utf8')), host_permissions: ['https://a.example/*'] }
+      writeFileSync(loadedPath, JSON.stringify(narrowed))
+
+      const next = buildStoreCrx({ ...wide, version: '1.1.0' }, dev)
+      const outcome = await installFromStoreCrx({ userDataPath, session, prompt: ALWAYS_DENY }, next.bytes, first.id, JSON.stringify(narrowed), { skipPrompt: true, publisherKeyHash: next.publisherKeyHash })
+      expect(outcome.installed).toBe(true)
     })
   })
 

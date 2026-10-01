@@ -6,6 +6,7 @@ import { rmSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { withRegistryLock, writeRegistry } from './registry-runner.js'
 import { clearPersistedRuleState } from './dnr/dnr-runner.js'
+import { restoreBaseManifest } from './effective-manifest-runner.js'
 import type { InstallContext } from './install-runner.js'
 
 /** Runs entirely under `withRegistryLock` (registry-runner.ts's own doc):
@@ -23,6 +24,8 @@ export async function uninstall (ctx: InstallContext, id: string): Promise<void>
     // ruleset choice too. The slot's key.pub stays: a reinstall into the
     // same slot must resolve to the same id.
     clearPersistedRuleState(dirname(entry.path))
+    restoreBaseManifest(dirname(entry.path), undefined)
+    ctx.prefs?.forget(id)
     writeRegistry(ctx.userDataPath, registry.filter((candidate) => candidate.id !== id))
   })
 }

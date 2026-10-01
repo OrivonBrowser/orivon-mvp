@@ -86,8 +86,8 @@ same exception, reached only through the virtual specifiers above).
 
 | File | Layer |
 |---|---|
-| `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts`, `store-download-seam.ts` | The decision -- no `electron`, unit-tested under plain vitest |
-| `unpack-runner.ts`, `registry-runner.ts`, `install-runner.ts`, `install-store-runner.ts`, `install-lifecycle.ts`, `extensions-view-runner.ts`, `store-runner.ts` | The real I/O |
+| `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts`, `store-download-seam.ts`, `extension-prefs.ts`, `effective-manifest.ts`, `manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `extensions-detail-parts.ts`, `extensions-page-commands.ts` | The decision -- no `electron`, unit-tested under plain vitest |
+| `unpack-runner.ts`, `registry-runner.ts`, `install-runner.ts`, `install-store-runner.ts`, `install-lifecycle.ts`, `extensions-view-runner.ts`, `store-runner.ts`, `extension-prefs-runner.ts`, `effective-manifest-runner.ts`, `extension-page-open.ts` | The real I/O |
 | `extension-install-prompt.ts`, `extensions-picker-runner.ts` | The native dialogs (`dialog.showMessageBox`, `dialog.showOpenDialog`) |
 | `extension-host.ts`, `extension-host-impl.ts`, `extension-popup-policy.ts`, `extension-event-filter.ts` | The library wiring: construction and tab lifecycle, the shell callbacks, the popup and background-page window policy, the per-listener event filter |
 | `extensions-subsystem.ts` | Registers everything into the running app via `../registry.ts`, including the Chrome Web Store (`store-runner.ts`) |
@@ -95,6 +95,17 @@ same exception, reached only through the virtual specifiers above).
 | `extensions-domain.ts` | The `orivon://extensions` page's `InternalDomain` -- validates every request, wires the pieces above to what the page asks |
 
 ## Design notes
+
+**What the person chose is kept apart from what the extension shipped.** `extension-prefs-runner.ts`
+keeps one record per extension in `<userData>/extensions/prefs.json` (`ExtensionsApi.prefs`; memory
+only in a private runtime). The manifest the extension loads is the installed one with those choices
+applied: `finishInstall` writes the installed manifest as `<slot>/manifest.base.json`, and
+`effective-manifest-runner.ts` writes `effectiveManifest(base, prefs)` into the version folder's
+`manifest.json` and reloads (`ExtensionsApi.applyManifest`: `now`, or `quiet` once no page of the
+extension is open, and at the next launch when that never happens). A feature adds its stage to
+`MANIFEST_STAGES` (`manifest-stage-granted.ts`, `manifest-stage-site-access.ts`). A store update is
+judged against the base copy, so a choice that narrowed the loaded manifest never makes an update
+look like it asks for more.
 
 **`extension-sw-preload-recovery.ts` must import nothing beyond `electron`'s ambient types.**
 Its own exports (the two health-check channel constants, `extensionIdFromScope`) are imported by

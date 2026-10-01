@@ -53,6 +53,11 @@ export const EXTENSIONS_DEFAULT_PARTITION = 'orivon-extensions-default'
 let bridge: ShellBridge | undefined
 let hostExtensions: ElectronChromeExtensions | undefined
 
+/** The library's host; undefined until `createExtensionHost` has run. */
+export function extensionHost (): ElectronChromeExtensions | undefined {
+  return hostExtensions
+}
+
 /** Constructs the library, once, before any extension loads. `preloadPath`
  * is `extensions-subsystem.ts`'s bundle of `vendor/.../src/preload.ts` PLUS
  * Orivon's own service-worker-preload health check

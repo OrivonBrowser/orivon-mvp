@@ -2,12 +2,14 @@
 // checked for both proofs, held back when an update asks for more than the
 // person approved, then handed to `finishInstall` like every other install.
 
+import { join } from 'node:path'
 import {
   describeExtensionInstall, readExtensionManifest, updateRequiresConsent, type ExtensionManifestFacts
 } from '../../broker/policy/extension-manifest.js'
 import { verifyCrx3 } from './crx.js'
 import { peekManifest, unpackZip, writeManifestOver } from './unpack-runner.js'
 import { patchStoreUpdater, readRegistry } from './registry-runner.js'
+import { readBaseManifestText } from './effective-manifest-runner.js'
 import { finishInstall, type InstallContext, type InstallOutcome } from './install-runner.js'
 import { downloadCrxBytes } from '../../../vendor/electron-chrome-web-store/src/browser/installer.js'
 import { storeCrxDownloadUrl, storeTestPublisherKeyHash } from './store-download-seam.js'
@@ -83,7 +85,8 @@ export async function installFromStoreCrx (
     return { installed: false, reason: 'a store install arrived without the manifest the person approved' }
   }
   if (approvedManifest !== undefined) {
-    const approved = readExtensionManifest(JSON.parse(approvedManifest))
+    // What the person approved is the installed manifest, not the loaded copy their own choices (granted optional permissions, site access) changed.
+    const approved = readExtensionManifest(JSON.parse(readBaseManifestText(join(ctx.userDataPath, 'extensions', expectedId)) ?? approvedManifest))
     const next = readExtensionManifest(rawManifest)
     if (!approved.ok || !next.ok) return { installed: false, reason: 'the approved or downloaded manifest could not be read' }
     if (updateRequiresConsent(approved.facts, next.facts)) {

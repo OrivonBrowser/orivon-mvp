@@ -1,0 +1,22 @@
+.list-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.dev-mode-row { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--wink-dim); cursor: pointer; }
+.list-buttons { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.ext-list { display: grid; gap: 12px; }
+.ext-card { padding: 14px 16px; border: 1px solid var(--wborder); border-radius: var(--wradius); background: var(--wpanel); }
+.ext-card.off .ext-icon, .ext-card.off .ext-name { opacity: 0.6; }
+
+.ext-row { display: flex; align-items: flex-start; gap: 14px; }
+.ext-icon { width: 32px; height: 32px; border-radius: 7px; flex: none; object-fit: contain; }
+.ext-icon.placeholder { display: flex; align-items: center; justify-content: center; background: var(--wsurface); color: var(--wink-dim); }
+.ext-icon.placeholder .icon { width: 18px; height: 18px; }
+.ext-main { min-width: 0; flex: 1 1 auto; }
+.ext-name-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.ext-name { overflow-wrap: anywhere; }
+.ext-version { color: var(--wink-dim); font-size: 12.5px; }
+.ext-desc { margin: 2px 0 4px; color: var(--wink-dim); font-size: 13px; overflow-wrap: anywhere; }
+.ext-card .switch { margin-top: 3px; }
+.ext-card .btn.danger { margin-top: 0; }
+.ext-card .link-btn { margin-left: -6px; }
+
+.store-link { display: inline-block; margin: 16px 0 0 -6px; }

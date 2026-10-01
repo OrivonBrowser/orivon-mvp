@@ -97,7 +97,7 @@ describe('buildExtensionRow', () => {
   it('uses the resolved name and description, and the entry\'s own id/version/enabled', () => {
     const facts: ExtensionFacts = { resolvedName: 'Resolved', resolvedDescription: 'A description', iconDataUrl: 'data:image/png;base64,AA==', manifestFacts: undefined }
     expect(buildExtensionRow(BASE, facts)).toEqual({
-      id: BASE.id, name: 'Resolved', version: '1.0.0', description: 'A description', enabled: true, iconDataUrl: 'data:image/png;base64,AA=='
+      id: BASE.id, name: 'Resolved', version: '1.0.0', description: 'A description', enabled: true, iconDataUrl: 'data:image/png;base64,AA==', parts: {}
     })
   })
 
@@ -129,5 +129,14 @@ describe('buildExtensionDetails', () => {
       'Network blocking rules: Orivon does not run these yet',
       'Talking to programs on your computer: not available in Orivon'
     ])
+  })
+})
+
+describe('buildExtensionDetails carries the row', () => {
+  it('the same fields the list shows, so the details page needs no second request', () => {
+    const facts: ExtensionFacts = { resolvedName: 'Resolved', resolvedDescription: 'D', iconDataUrl: undefined, manifestFacts: undefined }
+    const details = buildExtensionDetails(BASE, facts)
+    expect(details.row).toEqual(buildExtensionRow(BASE, facts))
+    expect(details.parts).toEqual({})
   })
 })
