@@ -1,16 +1,16 @@
 // Which rows of a list are selected, and where the focus goes next. Pure functions over the ids in the order they
-// are on screen, shared by the pages that list things a person can select.
+// are on screen, shared by the pages that list things a person can select. An id is whatever the page keys its rows by.
 
 export type Step = 'up' | 'down' | 'first' | 'last'
 
-export function toggle (selected: ReadonlySet<number>, id: number): Set<number> {
+export function toggle<T> (selected: ReadonlySet<T>, id: T): Set<T> {
   const next = new Set(selected)
   if (!next.delete(id)) next.add(id)
   return next
 }
 
 /** Every row from `anchor` to `target`, both included; with no anchor, `target` alone. */
-export function range (ids: readonly number[], anchor: number | null, target: number): Set<number> {
+export function range<T> (ids: readonly T[], anchor: T | null, target: T): Set<T> {
   const from = anchor === null ? -1 : ids.indexOf(anchor)
   const to = ids.indexOf(target)
   if (to === -1) return new Set()
@@ -18,18 +18,18 @@ export function range (ids: readonly number[], anchor: number | null, target: nu
   return new Set(ids.slice(Math.min(from, to), Math.max(from, to) + 1))
 }
 
-export function all (ids: readonly number[]): Set<number> {
+export function all<T> (ids: readonly T[]): Set<T> {
   return new Set(ids)
 }
 
 /** What is still selected among the rows now shown. */
-export function keepShown (selected: ReadonlySet<number>, ids: readonly number[]): Set<number> {
+export function keepShown<T> (selected: ReadonlySet<T>, ids: readonly T[]): Set<T> {
   const shown = new Set(ids)
   return new Set([...selected].filter((id) => shown.has(id)))
 }
 
 /** The row a key moves the focus to; the first when none has it, and the ends hold. */
-export function step (ids: readonly number[], current: number | null, how: Step): number | null {
+export function step<T> (ids: readonly T[], current: T | null, how: Step): T | null {
   if (ids.length === 0) return null
   const at = current === null ? -1 : ids.indexOf(current)
   switch (how) {
@@ -41,7 +41,7 @@ export function step (ids: readonly number[], current: number | null, how: Step)
 }
 
 /** Where the focus goes once `removed` rows are gone: the next row below the one it was on, else the one above. */
-export function focusAfterRemoval (ids: readonly number[], removed: ReadonlySet<number>, from: number | null): number | null {
+export function focusAfterRemoval<T> (ids: readonly T[], removed: ReadonlySet<T>, from: T | null): T | null {
   const remaining = ids.filter((id) => !removed.has(id))
   if (remaining.length === 0) return null
   const at = from === null ? -1 : ids.indexOf(from)

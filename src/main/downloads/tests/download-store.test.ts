@@ -54,6 +54,17 @@ describe('the downloads file', () => {
   })
 })
 
+describe('a held download', () => {
+  it('is written and read back as held, and the flag is not invented for an ordinary entry', async () => {
+    const store = new JsonDownloadStore(file)
+    store.write([entry('h', { state: 'held', held: true, danger: true }), entry('p')])
+    await store.flush()
+    const [held, plain] = new JsonDownloadStore(file).read()
+    expect(held).toMatchObject({ id: 'h', state: 'held', held: true })
+    expect(plain).not.toHaveProperty('held')
+  })
+})
+
 describe('the memory store', () => {
   it('writes nothing to disk and reads nothing back', async () => {
     const store = new MemoryDownloadStore()

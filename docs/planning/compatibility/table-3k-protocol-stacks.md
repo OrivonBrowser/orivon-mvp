@@ -1,8 +1,8 @@
 # Table 3k: protocol stacks, by the primitive each needs
 
-One part of the [compatibility matrix](../compatibility-matrix.md), which holds the legend, the
-definition of every column and the index of all tables. This page says what works today and
-nothing else.
+One part of the [compatibility matrix](../compatibility-matrix.md). The matrix page has this
+table in readable form, one row per topic; this page lists every item one by one, for looking up a
+single name. It says what works today and nothing else.
 
 The universe is 58 network primitives (`P01` to `P58`, what a transport or service needs from the machine) and the 178 protocol stacks an app is built on (`S001` to `S178`, in seven families), each listed with the primitives it needs. A primitive's detail lives in [Table 1a](table-1-capabilities.md), [Table 1b](table-1-capabilities.md) and [Table 3d](table-3d-network.md), and the rows here only point to it. What a protocol needs (its ports, its upgrade steps, the usual npm package) is general knowledge of the protocol, not a claim about Orivon. Which hosts, ports and addresses a grant admits is the pattern grammar in [Table 1a](table-1-capabilities.md).
 

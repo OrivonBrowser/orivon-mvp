@@ -11,8 +11,9 @@ import { asRowsMessage, dispositionFor } from './rows.js'
 import type { RowsMessage } from './rows.js'
 import './omnibox.css'
 
-function highlighted (text: string, ranges: ReadonlyArray<readonly [number, number]>): Node[] {
-  return segments(text, ranges).map((piece) => piece.hit ? h('mark', null, piece.text) : document.createTextNode(piece.text))
+/** A search row's matched part is what was typed, which the suggestion only continues, so it is dimmed instead of marked. */
+function highlighted (text: string, ranges: ReadonlyArray<readonly [number, number]>, typed = false): Node[] {
+  return segments(text, ranges).map((piece) => piece.hit ? (typed ? h('span', { className: 'omni-typed' }, piece.text) : h('mark', null, piece.text)) : document.createTextNode(piece.text))
 }
 
 function iconFor (row: PageRow): HTMLElement {
@@ -44,7 +45,7 @@ export const omniboxPage: OverlayPage = {
       const sameAsTitle = row.address === row.title
       const parts: Array<Node | null> = [
         iconFor(row),
-        h('span', { className: 'item-title' }, ...highlighted(row.title, row.match)),
+        h('span', { className: 'item-title' }, ...highlighted(row.title, row.match, row.kind === 'search')),
         row.address === '' || sameAsTitle ? null : h('span', { className: 'omni-dash', ariaHidden: 'true' }, '—'),
         row.address === '' || sameAsTitle ? null : h('span', { className: 'item-sub' }, ...highlighted(row.address, row.addressMatch)),
         metaFor(row)

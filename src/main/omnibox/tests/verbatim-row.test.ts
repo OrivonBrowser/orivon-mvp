@@ -40,3 +40,27 @@ describe('verbatimRow', () => {
     expect(verbatimRow(text, deps())).toBeNull()
   })
 })
+
+describe('verbatimRow with a keyword', () => {
+  const withKeyword = {
+    ...deps('Test Search'),
+    keyword: (query: string) => query.startsWith('w ') ? { name: 'Wikipedia', terms: query.slice(2) } : null
+  }
+
+  it('shows what the engine is asked for and whose engine it is', () => {
+    expect(verbatimRow('w solar eclipse', withKeyword)).toMatchObject({ kind: 'search', title: 'solar eclipse', meta: 'Search Wikipedia', url: search('w solar eclipse') })
+  })
+
+  it('shows the whole text for a search with no keyword', () => {
+    expect(verbatimRow('weather rome', withKeyword)).toMatchObject({ title: 'weather rome', meta: 'Search Test Search' })
+  })
+
+  it('reads the keyword after a question mark too, as Enter does', () => {
+    expect(verbatimRow('? w cats', withKeyword)).toMatchObject({ title: 'cats', meta: 'Search Wikipedia' })
+  })
+
+  it('leaves an address alone', () => {
+    expect(verbatimRow('w.com', withKeyword)).toMatchObject({ kind: 'verbatim', meta: GO_TO_ADDRESS })
+  })
+})
+

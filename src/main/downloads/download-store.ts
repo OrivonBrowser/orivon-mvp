@@ -19,7 +19,7 @@ export interface DownloadStore {
   flush: () => Promise<void>
 }
 
-const STATES: readonly DownloadState[] = ['progressing', 'paused', 'completed', 'cancelled', 'interrupted']
+const STATES: readonly DownloadState[] = ['progressing', 'paused', 'held', 'completed', 'cancelled', 'interrupted']
 const REASONS: readonly DownloadReason[] = ['network', 'server', 'disk', 'closed', 'flood']
 
 const isString = (value: unknown): value is string => typeof value === 'string'
@@ -37,7 +37,8 @@ function parseEntry (raw: unknown): DownloadEntry | null {
     id, url, referrer, fileName, savePath, mime, total, received, startedAt, danger,
     state: state as DownloadState,
     ...(REASONS.includes(reason as DownloadReason) ? { reason: reason as DownloadReason } : {}),
-    ...(isCount(endedAt) ? { endedAt } : {})
+    ...(isCount(endedAt) ? { endedAt } : {}),
+    ...(entry['held'] === true ? { held: true } : {})
   }
 }
 

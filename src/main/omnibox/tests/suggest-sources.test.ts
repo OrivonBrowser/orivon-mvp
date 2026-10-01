@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Bookmark } from '../../browsing/bookmarks.js'
 import type { HistorySuggestion } from '../../history/history-store.js'
+import { engineSuggestions } from '../suggest-fetch.js'
 import { LATE_SOURCES, SUGGEST_SOURCES } from '../suggest-sources.js'
 import type { SuggestContext, SuggestTab } from '../suggest-sources.js'
 
@@ -71,7 +72,8 @@ describe('the suggestion sources', () => {
     expect(row?.addressMatch).toEqual([[0, 3]])
   })
 
-  it('has no source that waits: nothing typed leaves the process', () => {
-    expect(LATE_SOURCES).toEqual([])
+  it('has one source that waits, the engine suggestions, and it asks for nothing unless the window says so', async () => {
+    expect(LATE_SOURCES).toEqual([engineSuggestions])
+    expect(await engineSuggestions('cats', context({}), new AbortController().signal)).toEqual([])
   })
 })

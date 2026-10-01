@@ -1,8 +1,8 @@
 # Table 1: the capability surface (authority)
 
-One part of the [compatibility matrix](../compatibility-matrix.md), which holds the legend, the
-definition of every column and the index of all tables. This page says what works today and
-nothing else.
+One part of the [compatibility matrix](../compatibility-matrix.md). The matrix page has this
+table in readable form, one row per topic; this page lists every item one by one, for looking up a
+single name. It says what works today and nothing else.
 
 ## Table 1a: what orivon.* offers
 

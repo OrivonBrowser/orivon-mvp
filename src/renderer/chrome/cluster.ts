@@ -17,19 +17,6 @@ export function createCluster (): ChromeModule {
     profileChip.title = profile.isPrivate ? 'A private window: what it keeps, and what it does not' : `Profile: ${profile.name}`
   }
 
-  function wireStar (toggle: HTMLButtonElement, ctx: ChromeContext): void {
-    toggle.addEventListener('click', () => {
-      const state = ctx.state()
-      const active = ctx.activeTab()
-      if (state === null || !hasSite(active)) return
-      if (state.bookmarked) {
-        ctx.shell.removeBookmark(active.url)
-      } else {
-        ctx.shell.addBookmark(active.url, active.title.length > 0 ? active.title : active.url, active.id)
-      }
-    })
-  }
-
   function wireMenu (menuBtn: HTMLButtonElement, ctx: ChromeContext): void {
     menuBtn.addEventListener('click', () => { ctx.shell.openMenu(ctx.anchorFor(menuBtn)) })
     // Builds the menu's (kept-warm) view ahead of the click that usually follows a hover or a keyboard
@@ -60,7 +47,6 @@ export function createCluster (): ChromeModule {
       zoomChip = chip
       profileChip = profile
 
-      wireStar(toggle, ctx)
       // The all-sites popup: always the full list, scrolled to whichever app the CURRENT tab is when there is
       // one. A URL that belongs to no app is harmless -- settings/main.ts finds no card to scroll to and
       // renders the list unscrolled, which is the ordinary open.

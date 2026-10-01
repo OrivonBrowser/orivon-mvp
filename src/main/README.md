@@ -26,6 +26,7 @@ rather than editing here.
 | [`pages/`](pages/) | The shell's own pages at `orivon://`, in a session only they can load, and the one channel they speak on | which webContents are which page | `internal-session.ts`, `internal-ipc.ts` and `pages-subsystem.ts` only |
 | [`downloads/`](downloads/) | The files tabs download, saved without a dialog, tracked and managed from `orivon://downloads` | `downloads.json` on disk (memory only in a private session) | `install-downloads.ts`, `folder-runner.ts` and the `DownloadItem` type in `download-service.ts` |
 | [`history/`](history/) | The pages that were visited, kept on this computer and forgotten on request | `history.db` on disk | `attach-history.ts` and `install-history.ts` only |
+| [`import/`](import/) | Bookmarks and history read once from another browser's profile files, through a read-only copy, into Orivon's own stores | no | `import-host.ts` only |
 | [`privacy/`](privacy/) | Clearing history, site data, the cache and app storage; the network controls (request headers, cookie policy, HTTPS-only, secure DNS) | no | the installer and the runners only |
 | [`site-settings/`](site-settings/) | What a site may do: per-site permissions, content settings and the prompt that asks | no | the installers only |
 | [`passwords/`](passwords/) | The saved-login store, its Settings domain and the form watcher that feeds it | yes: `passwords.json` | the installer and the runner only |
@@ -43,13 +44,13 @@ rather than editing here.
 | [`shortcuts/`](shortcuts/) | Which key runs which command, the rules for changing one, and the listener that runs them | `shortcuts.json` on disk | `dispatcher.ts`, `install-shortcuts.ts` and `app-menu.ts` only |
 | [`session-restore/`](session-restore/) | The tabs and windows that were closed, for reopening, and the open windows kept in `session.json` | `session.json` on disk, the closed stack in memory | `session-hook.ts` only |
 | [`sad-tab/`](sad-tab/) | The card over a tab whose page crashed or stopped answering, with Reload and Close tab | no | no |
-| [`omnibox/`](omnibox/) | The address bar's suggestions: rows from history, bookmarks and open tabs, the text finished inline, and what choosing a row does | the rows and the selection of the last query, in memory | no (types only, but the overlay and the actions use the window) |
+| [`omnibox/`](omnibox/) | The address bar's suggestions: rows from history, bookmarks, open tabs and, if asked, the default engine's suggestions, the text finished inline, and what choosing a row does | the rows and the selection of the last query, in memory | no (types only, but the overlay and the actions use the window) |
 | [`tab-search/`](tab-search/) | The tab search list: open tabs of every window and recently closed ones, and what choosing a row does | which tab was in front last, in memory | no (types only) |
 | [`qr/`](qr/) | The page's address as a QR code, with copy and save as PNG | no | `qr-real.ts` only |
 | [`startup/`](startup/) | What a cold start opens (the new tab page, last session, chosen pages) and the offer to restore after a crash | no | `startup-overlays.ts` only |
 | [`settings/`](settings/) | What the person set, validated, persisted and told to whoever listens | `settings.json` on disk | no |
 | [`storage/`](storage/) | The debounced, single-flight disk write every small persisted file shares | no | no |
-| [`browsing/`](browsing/) | What the address bar and tab strip are made of | bookmarks on disk | `favicon.ts` only |
+| [`browsing/`](browsing/) | What the address bar and tab strip are made of | bookmarks and search engines on disk | `favicon.ts` only |
 | [`ipc/`](ipc/) | The chrome-to-main channels, one sender check each | no | yes |
 | [`consent/`](consent/) | Decide what to ask, say it in words, show the dialog | no | the `-prompt` files only |
 | [`permissions/`](permissions/) | The grant list a person can revoke from, and the per-site popover | no | the two `-panel` files and `popover-view.ts` |

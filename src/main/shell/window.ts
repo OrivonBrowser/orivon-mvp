@@ -33,7 +33,7 @@ import { recordViewBackground } from './view-background-test-hook.js'
 import { onThemeUpdated } from './theme-colors.js'
 import { dragModeFor } from './drag-mode.js'
 import type { ShellServices } from './shell-services.js'
-import { searchUrlFor } from '../browsing/search-engines.js'
+import { resolveCurrent } from '../browsing/search-current.js'
 import { bookmarksBarShown as barShown } from './bookmarks-bar/bar-visibility.js'
 import { SHELL_PARTITION } from './shell-session.js'
 
@@ -170,7 +170,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     window: win,
     htmlFullscreenChanged: (id, entered) => { fullscreen.changed(id, entered, tabs.getState().activeTabId) },
     fullscreenTabId: () => fullscreen.tabId,
-    searchUrl: (query) => searchUrlFor(services.settings.get('search.engine'), services.settings.get('search.customUrl'), query),
+    searchUrl: (query) => resolveCurrent(services, query).url,
     internalPages: services.internalPages,
     devtools: services.devtools,
     backdrop: splitFrame,

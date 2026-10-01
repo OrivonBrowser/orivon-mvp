@@ -217,7 +217,7 @@ describe('showContextMenu -- a tab\'s menu against a chrome menu', () => {
   it('leaves View Page Source out for a tab whose source cannot be shown', () => {
     buildFromTemplate.mockClear()
     showContextMenu(tabContents() as never, params({}), { window: {} as never, openInNewTab: vi.fn(), page: { bare: () => false, viewSource: () => false }, runCommand: vi.fn() })
-    expect(labels(lastTemplate())).toEqual(['Back', 'Forward', 'Reload', 'Save Page As…', 'Print…', 'Take a Screenshot'])
+    expect(labels(lastTemplate())).toEqual(['Back', 'Forward', 'Reload', 'Save Page As…', 'Print…', 'Take a Screenshot', 'Create QR Code for This Page'])
   })
 
   it('trims the page group to navigation on a bare page', () => {

@@ -1,8 +1,8 @@
 # Table 3a: globals and `process`
 
-One part of the [compatibility matrix](../compatibility-matrix.md), which holds the legend, the
-definition of every column and the index of all tables. This page says what works today and
-nothing else.
+One part of the [compatibility matrix](../compatibility-matrix.md). The matrix page has this
+table in readable form, one row per topic; this page lists every item one by one, for looking up a
+single name. It says what works today and nothing else.
 
 Node 24.11 has 135 own names on `globalThis` and 5 more behind flags, 5 module-scope names, and a `process` with 83 own names, 6 more `EventEmitter` methods, 11 documented events, 33 signal names on Linux and the sub-objects `versions` (27 keys), `release` (4), `features` (12), `report` (11) and `config` (2), and Electron 44's typings add 26 members, `versions.electron`, `versions.chrome` and a `'loaded'` event; every name is in a row below, and the module system is [Table 3b](table-3b-modules-and-delivery.md).
 

@@ -6,6 +6,7 @@ import type { ShellServices } from '../shell/shell-services.js'
 import { extensionsDomain } from '../extensions/extensions-domain.js'
 import { readExtensionFacts } from '../extensions/extensions-view-runner.js'
 import { pickExtensionFile, pickExtensionFolder } from '../extensions/extensions-picker-runner.js'
+import { searchEnginesDomain } from '../browsing/search-engines-domain.js'
 import { settingsDomain } from '../settings/settings-domain.js'
 import { startupDomain } from '../startup/startup-domain.js'
 import { shortcutsDomain } from '../shortcuts/shortcuts-domain.js'
@@ -23,6 +24,12 @@ import { updatesDomain } from '../self-update/updates-domain.js'
 import { onTelemetryChanged } from '../../telemetry/runner.js'
 import { profilesDomain } from '../launch/profiles-domain.js'
 import { historyDomain } from '../history/history-domain.js'
+import { bookmarksDomain } from '../browsing/bookmarks-domain.js'
+import { commandById } from '../shortcuts/commands.js'
+import { exportBookmarksToFile } from '../browsing/bookmarks-export-runner.js'
+import { openAll, openBookmark } from '../shell/bookmarks-bar/open-bookmark.js'
+import { importDomain } from '../import/import-domain.js'
+import { importHost } from '../import/import-host.js'
 import { throttleChanges } from '../downloads/change-throttle.js'
 import { downloadsDomain } from '../downloads/downloads-domain.js'
 import { downloadsHost } from '../downloads/folder-runner.js'
@@ -72,9 +79,21 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   }
   registerInternalIpc(services.internalPages, internalSession, {
     settings: settingsDomain(services.settings),
+    searchEngines: searchEnginesDomain(services.searchEngines, services.settings, { isPrivate: services.isPrivate }),
     shortcuts: shortcutsDomain(services.shortcuts),
     startup: startupDomain(services.windows),
+    bookmarks: bookmarksDomain(services.bookmarks, {
+      isPrivate: services.isPrivate,
+      windowOf: (contents) => services.windows.findTab(contents)?.window,
+      open: (window, id, disposition) => openBookmark({ window, services }, id, disposition),
+      openAll: (window, id) => openAll({ window, services }, id),
+      copyText: (text) => { clipboard.writeText(text) },
+      importAvailable: () => commandById('import.open')?.pending !== true,
+      runImport: (window) => { services.commands.run('import.open', window) },
+      exportFile: exportBookmarksToFile
+    }),
     history: historyDomain(services.history, { windows: services.windows, commands: services.commands, closedTabs: services.closedTabs, copyText: (text) => { clipboard.writeText(text) } }),
+    import: importDomain(importHost(services, (phase) => { services.internalPages.publish('import.progress', phase, ['import']) })),
     downloads: downloadsDomain(services.downloads, downloadsHost(services)),
     info: infoDomain({
       facts: () => readAboutFacts(services.settings, services.isPrivate),
@@ -133,6 +152,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   onVerifierChange(() => { services.internalPages.publish('web3.changed', verifierView(), ['settings']) })
   // Reaches 'extensions' too: it reads and writes 'extensions.developerMode' through this same domain.
   services.settings.onChange((change) => { services.internalPages.publish('settings.changed', change, ['settings', 'extensions']) })
+  services.searchEngines.onChange(() => { services.internalPages.publish('searchEngines.changed', undefined, ['settings']) })
   services.shortcuts.onChange(() => { services.internalPages.publish('shortcuts.changed', services.shortcuts.rows(), ['settings']) })
   // Every grant/revoke, from every surface (install, the site-info popover, a
   // dev-grant test seam, the Apps list's own revoke), lands through the
@@ -152,6 +172,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     services.internalPages.publish('history.changed', undefined, ['history'])
     if (change !== 'titled') services.internalPages.publish('privacy.changed', undefined, ['settings'])
   })
+  services.bookmarks.onChange(() => { services.internalPages.publish('bookmarks.changed', undefined, ['bookmarks']) })
   services.closedTabs.onChange(() => { services.internalPages.publish('history.closed', undefined, ['history']) })
   services.downloads.onChange(throttleChanges((change) => { services.internalPages.publish('downloads.changed', change, ['downloads']) }))
   services.zoomStore.onChange(() => { services.internalPages.publish('privacy.changed', undefined, ['settings']) })

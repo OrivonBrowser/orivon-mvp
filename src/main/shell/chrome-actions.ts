@@ -1,3 +1,4 @@
+import { bookmarkEdit } from './bookmark-bubble/edit-action.js'
 import { barFolder, barItems, barMenu, barMove, barOpen } from './bookmarks-bar/bar-actions.js'
 import { omniboxClose, omniboxPick, omniboxQuery, omniboxSelect } from '../omnibox/omnibox-actions.js'
 import { passwordsKey } from '../passwords/passwords-key-action.js'
@@ -14,6 +15,7 @@ export type ChromeAction = (payload: unknown, ctx: WindowContext) => unknown
 /** One entry per action, alphabetical by name. */
 export const CHROME_ACTIONS: Readonly<Record<string, ChromeAction>> = {
   'bookmarks.bar': barItems,
+  'bookmarks.edit': bookmarkEdit,
   'bookmarks.folder': barFolder,
   'bookmarks.menu': barMenu,
   'bookmarks.move': barMove,

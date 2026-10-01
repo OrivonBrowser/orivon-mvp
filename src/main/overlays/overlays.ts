@@ -4,12 +4,14 @@ import { authSheetOverlay } from '../auth/auth-sheet-real.js'
 import { certErrorOverlay } from '../auth/cert-error-overlay.js'
 import { certificateOverlay } from '../auth/certificate-real.js'
 import { chooserOverlay } from '../auth/chooser-overlay.js'
+import { downloadsOverlay, downloadsPeekOverlay } from '../downloads/downloads-overlay.js'
 import { findOverlay } from '../find/find-overlay.js'
 import { screenshotOverlay, toastOverlay } from '../page-tools/page-overlays.js'
 import { shortcutOverlay } from '../os/shortcut-real.js'
 import { httpsWarningOverlay } from '../privacy/https-warning-overlay.js'
 import { qrOverlay } from '../qr/qr-real.js'
 import { sadTabOverlay } from '../sad-tab/sad-tab-overlay.js'
+import { bookmarkAllTabsOverlay, bookmarkEditOverlay } from '../shell/bookmark-bubble/edit-overlay.js'
 import { bookmarkFolderOverlay } from '../shell/bookmarks-bar/folder-overlay.js'
 import { passwordFillOverlay, passwordSuggestOverlay } from '../passwords/chooser-overlays.js'
 import { passwordSaveOverlay } from '../passwords/password-overlays.js'
@@ -22,10 +24,14 @@ import type { OverlayDef } from './overlay-types.js'
 
 export const OVERLAYS: readonly OverlayDef[] = [
   authSheetOverlay,
+  bookmarkAllTabsOverlay,
+  bookmarkEditOverlay,
   bookmarkFolderOverlay,
   certErrorOverlay,
   certificateOverlay,
   chooserOverlay,
+  downloadsOverlay,
+  downloadsPeekOverlay,
   findOverlay,
   httpsWarningOverlay,
   menuOverlay,

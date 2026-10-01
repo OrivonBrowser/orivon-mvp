@@ -1,8 +1,8 @@
 # Table 3g: running code (processes, threads, `vm`, WebAssembly, native addons)
 
-One part of the [compatibility matrix](../compatibility-matrix.md), which holds the legend, the
-definition of every column and the index of all tables. This page says what works today and
-nothing else.
+One part of the [compatibility matrix](../compatibility-matrix.md). The matrix page has this
+table in readable form, one row per topic; this page lists every item one by one, for looking up a
+single name. It says what works today and nothing else.
 
 Node 24.11's `child_process` (9 exports, its options and the `ChildProcess` members), `worker_threads` (21), `cluster` (16), `vm` (10), `module` (30) and `wasi` (1); the 46 WASI preview1 functions; the 31 WASI 0.2 interfaces; the 158 Node-API functions; 31 WebAssembly engine features of Electron 44's Chromium 152; and the toolchains and runtimes that produce WebAssembly. Every child is JavaScript or WebAssembly in a Web Worker, never an OS process ([ADR-0040](../../decisions/ADR-0040-native-shaped-node-features-run-as-webassembly.md)). Serving rules are in [Table 3b](table-3b-modules-and-delivery.md) and the globals a Worker has are in [Table 3a](table-3a-globals-and-process.md).
 

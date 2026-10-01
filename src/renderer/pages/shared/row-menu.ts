@@ -1,11 +1,13 @@
 // The small menu a row opens: a popover inside the page, closed by Escape, a click elsewhere, or anything that would
 // leave it pointing at the wrong place. One is open at a time.
-import { h } from '../shared/dom.js'
+import { h } from './dom.js'
 
 export interface MenuItem {
   readonly label: string
   readonly run: () => void
   readonly danger?: boolean
+  /** A hairline between groups: `label` and `run` are ignored and the keys skip it. */
+  readonly separator?: boolean
 }
 
 export interface MenuPlace {
@@ -24,11 +26,14 @@ export function closeRowMenu (): void {
 }
 
 /** Opens `items` at `place`. `onClose` runs once it is gone, to put the focus back where it was. */
-export function openRowMenu (items: readonly MenuItem[], place: MenuPlace, onClose: () => void): void {
+export function openRowMenu (items: readonly MenuItem[], place: MenuPlace, onClose: () => void, label = 'Page actions'): void {
   closeRowMenu()
-  const buttons = items.map((item) => h('button', { className: item.danger === true ? 'row-menu-item danger' : 'row-menu-item', type: 'button', role: 'menuitem', textContent: item.label }))
-  const menu = h('div', { className: 'row-menu', role: 'menu' }, ...buttons)
-  menu.setAttribute('aria-label', 'Page actions')
+  const cells = items.map((item) => item.separator === true
+    ? h('div', { className: 'row-menu-sep', role: 'separator' })
+    : h('button', { className: item.danger === true ? 'row-menu-item danger' : 'row-menu-item', type: 'button', role: 'menuitem', textContent: item.label }))
+  const buttons = cells.filter((cell): cell is HTMLButtonElement => cell instanceof HTMLButtonElement)
+  const menu = h('div', { className: 'row-menu', role: 'menu' }, ...cells)
+  menu.setAttribute('aria-label', label)
   const listeners: Array<() => void> = []
   let closed = false
   const close = (): void => {
@@ -43,7 +48,7 @@ export function openRowMenu (items: readonly MenuItem[], place: MenuPlace, onClo
     target.addEventListener(type, handler, capture)
     listeners.push(() => { target.removeEventListener(type, handler, capture) })
   }
-  items.forEach((item, index) => {
+  items.filter((item) => item.separator !== true).forEach((item, index) => {
     (buttons[index] as HTMLElement).addEventListener('click', () => {
       // Closed first: that puts the focus back on the row, which an action that moves it (the next row, the search
       // box) must be able to override.

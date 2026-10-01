@@ -5,6 +5,7 @@
 import { contain } from './contain.js'
 import { bookmarkedStatePart } from './bookmarks-bar/bar-state.js'
 import { addressBarStatePart } from './state/address-bar.js'
+import { downloadsStatePart } from './state/downloads.js'
 import { homeStatePart } from './state/home.js'
 import { loginsStatePart } from '../passwords/logins-state.js'
 import { shortcutsStatePart } from './state/shortcuts.js'
@@ -24,6 +25,7 @@ export interface ShellStatePart {
 export const SHELL_STATE_PARTS: readonly ShellStatePart[] = [
   addressBarStatePart,
   bookmarkedStatePart,
+  downloadsStatePart,
   homeStatePart,
   loginsStatePart,
   shortcutsStatePart,

@@ -4,8 +4,10 @@ import type { ChromeContext, ChromeModule, TabDecorator } from './context.js'
 import { contained } from './contain.js'
 import { createAddressDisplay } from './address-display.js'
 import { createAddressSuggest } from './address-suggest.js'
+import { createBookmarkStar } from './bookmark-star.js'
 import { createBookmarksBar } from './bookmarks-bar.js'
 import { createCluster } from './cluster.js'
+import { createDownloadsButton } from './downloads-button.js'
 import { createHomeButton } from './home-button.js'
 import { createNavigation } from './navigation.js'
 import { createPasswordKey } from './password-key.js'
@@ -38,6 +40,8 @@ export const CHROME_MODULES: readonly ChromeModule[] = [
   createPasswordKey(),
   createPromptAnchor(),
   createCluster(),
+  createDownloadsButton(),
+  createBookmarkStar(),
   createBookmarksBar()
 ]
 

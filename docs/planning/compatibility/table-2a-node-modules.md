@@ -1,8 +1,8 @@
 # Table 2a: Node's standard library, module by module
 
-One part of the [compatibility matrix](../compatibility-matrix.md), which holds the legend, the
-definition of every column and the index of all tables. This page says what works today and
-nothing else.
+One part of the [compatibility matrix](../compatibility-matrix.md). The matrix page has this
+table in readable form, one row per topic; this page lists every item one by one, for looking up a
+single name. It says what works today and nothing else.
 
 Node 24's `require('module').builtinModules` lists 72 specifiers, four of them `node:`-only (`node:sea`, `node:sqlite`, `node:test`, `node:test/reporters`); this table has one row per specifier, except that the 14 underscore-prefixed legacy specifiers share two rows, so 60 rows name all 72. The shim maps 40 of them, `node:sqlite` under its `node:` name only. In a mapped row, "reads as a function" describes the default export: a member Node defines as data (a constant, an object) that the shim lacks is a function there, and it refuses by name when called. The named exports lack such a member, and a named import of a member the namespace lacks fails the build in Vite 7 and esbuild 0.25 (webpack is not measured). An unmapped specifier fails the build in esbuild and in webpack 5 unless the app sets `resolve.fallback` to `false` for it; Vite 7 gives an empty stub.
 

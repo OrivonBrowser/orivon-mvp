@@ -269,3 +269,9 @@ see in the PR itself.
 | The whole end-to-end suite in chunks, with the unit suite and every guard | The merged branch | One regression and one crash, both fixed with a test; the rest green, or held by ports another process owned |
 
 In all, 54 findings, 54 confirmed, none refuted.
+
+### `stream/compat-readable`: the compatibility matrix in readable form (2026-10-01)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| `/code-review` at medium effort | The pull request | Two findings, both fixed: the page had lost the legend the detail pages rely on (status symbols, the four ways a gap shows, the "Web platform:" rows, the app-scan counts), and Table 1's Broker column pointed at `index.ts` alone although the broker is split. Its spot checks of summary rows against the detail pages (crypto, zlib, `Buffer`, `events`, `util`, `assert`, `process`, the Electron and Node counts) all matched |
