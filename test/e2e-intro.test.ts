@@ -64,7 +64,9 @@ it('once, on a fresh profile: shows over the whole window, stays on top of a new
     })
     expect(topmost).toContain('/intro/index.html')
 
-    await intro.click('#enter')
+    // The screen takes the keyboard on its own: Enter alone leaves it, no Tab first.
+    expect(await waitFor(async () => (await intro.evaluate(() => document.activeElement?.id)) === 'enter')).toBe(true)
+    await intro.keyboard.press('Enter')
     expect(await waitFor(() => introPage(app) === undefined && windowCount(app) === 3)).toBe(true)
 
     const dashboard = dashboardPage(app)
