@@ -78,6 +78,7 @@
 .segmented > button:hover:not([disabled]) { background: var(--whover); color: var(--wink); }
 .segmented > button:active:not([disabled]) { background: color-mix(in srgb, var(--wink) 12%, transparent); }
 .segmented > button[aria-pressed="true"] { background: var(--waccent-wash); color: var(--waccent-text); font-weight: 600; }
+.segmented > button[aria-pressed="true"]:hover:not([disabled]) { background: color-mix(in srgb, var(--waccent-text) 22%, transparent); color: var(--waccent-text); }
 .segmented > button[disabled] { opacity: 0.5; cursor: default; }
 /* The container clips, so a ring drawn outside a segment would be cut off. */
 .segmented > button:focus-visible { outline-offset: -2px; }

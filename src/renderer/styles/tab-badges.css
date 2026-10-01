@@ -34,16 +34,22 @@
   .tab:not(.active).has-sound .title { padding-right: 16px; }
 }
 
-/* At the minimum width, icon only, as in other browsers: the tab in front shows its close button alone, where the
-   icon was, and the others show their icon (or their sound mark) centred. */
-@container (max-width: 35px) {
+/* Too narrow for a readable title, which would be one letter and an ellipsis: icon only, as in other browsers. */
+@container (max-width: 39px) {
   .tab .title { display: none; }
   .tab .fav { margin: 0 auto; }
+}
+
+/* At the minimum width every tab shows its icon (or its sound mark) centred. The tab in front keeps its icon too, and
+   its close button takes the icon's place while the pointer or the keyboard is on the tab. */
+@container (max-width: 35px) {
   .tab:not(.active) .close { display: none; }
   .tab:not(.active).has-sound .tab-audio { margin: 0 auto; }
-  .tab.active .fav,
   .tab.active .tab-audio { display: none; }
   .tab.active .close { right: auto; left: 50%; transform: translateX(-50%); }
+  .tab.active:not(:hover):not(:focus-within) .close { opacity: 0; }
+  .tab.active:hover .fav,
+  .tab.active:focus-within .fav { visibility: hidden; }
 }
 
 /* Pinned: the icon alone, in a fixed narrow tab. No title, no close button (Mod+W and a middle click still close it). */
