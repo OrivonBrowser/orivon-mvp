@@ -62,6 +62,11 @@ beforeAll(async () => {
     if (url.startsWith('/cancel')) { guarded(request, response, 'Cancel', 'Cancelled area'); return true }
     if (url.startsWith('/hold')) { guarded(request, response, 'Hold', 'Held area'); return true }
     if (url.startsWith('/long')) { guarded(request, response, `${'Very long realm '.repeat(8)}`, 'Long'); return true }
+    if (url.startsWith('/framed')) {
+      response.setHeader('content-type', 'text/html')
+      response.end(`<!doctype html><title>Framing page</title><h1>Framing</h1><iframe src="http://127.0.0.1:${String(images.port)}/protected.png" width="200" height="100"></iframe>`)
+      return true
+    }
     if (url.startsWith('/page')) {
       response.setHeader('content-type', 'text/html')
       response.end(`<!doctype html><title>Embedding page</title><h1>Embedding</h1><img src="http://127.0.0.1:${String(images.port)}/protected.png">`)
@@ -218,6 +223,23 @@ it('says when a request comes from a part of the page and not the page itself', 
     await shoot(app, chrome, sheet, 'auth-subresource')
     await safely(sheet.click('button:has-text("Cancel")'))
     expect((await waitForTab(chrome, { title: 'Embedding page' })).ok).toBe(true)
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('treats a frame that is a navigation as a part of the page too, with the warning and no saved name', async () => {
+  const { app, chrome } = await start()
+  try {
+    await go(chrome, `http://127.0.0.1:${String(site.port)}/framed`)
+    const sheet = await waitOverlay(app, 'auth-sheet')
+    await sheet.waitForSelector('#auth-username')
+    expect(await text(sheet, '.origin')).toBe(`http://127.0.0.1:${String(images.port)}`)
+    const warnings = await sheet.locator('.banner.warn').allInnerTexts()
+    expect(warnings).toContain(`This request comes from 127.0.0.1:${String(images.port)}, not from the page you are on.`)
+    expect(await sheet.locator('#auth-username').inputValue()).toBe('')
+    await safely(sheet.click('button:has-text("Cancel")'))
+    expect((await waitForTab(chrome, { title: 'Framing page' })).ok).toBe(true)
   } finally {
     await closeElectron(app)
   }
