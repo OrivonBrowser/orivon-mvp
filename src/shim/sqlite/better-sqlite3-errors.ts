@@ -12,7 +12,8 @@ export class SqliteError extends Error {
     this.code = code
   }
 }
-Object.defineProperty(SqliteError.prototype, 'name', { value: 'SqliteError', writable: true, configurable: true })
+// On the prototype and not enumerable, as Node's own error names are: an instance's own keys are `code` alone.
+Reflect.defineProperty(SqliteError.prototype, 'name', { value: 'SqliteError', writable: true, configurable: true })
 
 const NOT_OPEN = 'The database connection is not open'
 

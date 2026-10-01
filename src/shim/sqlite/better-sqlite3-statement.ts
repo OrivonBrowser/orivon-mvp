@@ -27,7 +27,7 @@ function toggleOf (toggle: unknown): boolean {
 
 /** A property that is always the row's own, even for a column named `__proto__`. */
 function setOwn (target: object, key: string, value: unknown): void {
-  Object.defineProperty(target, key, { value, enumerable: true, writable: true, configurable: true })
+  Object.defineProperties(target, { [key]: { value, enumerable: true, writable: true, configurable: true } })
 }
 
 export class Statement {
