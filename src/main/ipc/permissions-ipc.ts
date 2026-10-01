@@ -33,6 +33,8 @@ export type PermissionsCommand =
   | { type: 'resetSiteNotifications', origin: string }
   /** The Ethereum light client's state, read-only. Changes are pushed on LIGHT_CLIENT_STATUS_CHANNEL while the panel is open. */
   | { type: 'lightClient' }
+  /** The "All site settings" link: closes the panel and opens the Site settings page. No argument. */
+  | { type: 'openSiteSettings' }
 
 export interface LightClientSource {
   view: () => LightClientView
@@ -56,7 +58,8 @@ export function registerPermissionsIpc (
   permissions: PermissionsController,
   onContentHeight: (height: number) => void = () => {},
   sites?: SiteNotificationsController,
-  lightClient?: LightClientSource
+  lightClient?: LightClientSource,
+  openSiteSettings: () => void = () => {}
 ): () => void {
   const unsubscribe = lightClient?.subscribe(() => {
     if (!permissionsWebContents.isDestroyed()) permissionsWebContents.send(LIGHT_CLIENT_STATUS_CHANNEL, lightClient.view())
@@ -88,6 +91,9 @@ export function registerPermissionsIpc (
         return
       case 'lightClient':
         return lightClient?.view() ?? null
+      case 'openSiteSettings':
+        openSiteSettings()
+        return
     }
   })
   return () => { unsubscribe?.() }

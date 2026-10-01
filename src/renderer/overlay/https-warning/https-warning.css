@@ -1,0 +1,11 @@
+/* The sheet: a warning mark above the title, the host, a line of explanation, then the two answers. It is drawn the
+   same way as the certificate-error sheet, since the two say the same kind of thing. */
+
+body[data-overlay='https-warning'] .https-card { padding: 20px 22px 18px; }
+body[data-overlay='https-warning'] .https-icon { display: block; margin-bottom: 10px; color: var(--wwarn-mark); }
+body[data-overlay='https-warning'] .https-icon .icon { width: 32px; height: 32px; }
+body[data-overlay='https-warning'] .sheet-title { margin: 0; }
+body[data-overlay='https-warning'] .https-host { margin: 2px 0 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; word-break: normal; }
+body[data-overlay='https-warning'] .https-body { margin: 10px 0 0; color: var(--wink); font-size: 13px; }
+body[data-overlay='https-warning'] .btn-row { margin-top: 16px; }
+body[data-overlay='https-warning'] .https-continue { margin-right: auto; margin-left: -6px; }

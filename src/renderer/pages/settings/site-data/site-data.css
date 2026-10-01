@@ -1,0 +1,88 @@
+/* The "Sites that store data" rows: the search and sort, one row per site that opens onto its hosts and cookies,
+   and the delete-everything button. The kit's controls are used as they are; only the row shapes are here. */
+
+.sd { display: grid; gap: 10px; width: 100%; }
+.sd-head { display: flex; align-items: center; gap: 8px; }
+.sd-head .search { flex: 1 1 auto; max-width: none; }
+.sd-head .segmented { flex: none; }
+.sd-head .search[hidden], .sd-head .segmented[hidden] { display: none; }
+
+.sd-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  max-height: 440px;
+  overflow-y: auto;
+  border: 1px solid var(--wborder);
+  border-radius: 8px;
+  background: var(--wsurface);
+}
+.sd-list[aria-busy="true"] { min-height: 130px; }
+.sd-list .empty-state { padding: 28px 12px; }
+
+.sd-site { border-radius: 8px; }
+.sd-row { display: flex; align-items: center; gap: 4px; padding-right: 8px; border-radius: 8px; }
+.sd-toggle {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+.sd-toggle:hover { background: var(--whover); }
+.sd-toggle:focus-visible { outline-offset: -2px; }
+.sd-chevron { flex: none; width: 16px; height: 16px; margin-left: auto; color: var(--wink-dim); transition: transform 0.12s; }
+.sd-site.open .sd-chevron { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .sd-chevron { transition: none; } }
+.sd-mark { width: 28px; height: 28px; border-radius: 50%; font-size: 12px; flex: none; }
+.sd-text { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.sd-domain { color: var(--wink-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sd-line { color: var(--wink-dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sd-row .btn.small.danger { flex: none; white-space: nowrap; }
+
+.sd-hosts { display: grid; gap: 10px; margin: 2px 8px 8px 46px; }
+.sd-host-name {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--wink-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 4px 3px;
+}
+.sd-host .muted { margin: 0; padding: 0 4px; }
+.sd-skeleton { display: block; width: 50%; height: 14px; }
+
+.sd-skeleton-row { display: flex; align-items: center; gap: 12px; padding: 8px 12px; }
+.sd-skeleton-mark { width: 28px; height: 28px; border-radius: 50%; flex: none; }
+.sd-skeleton-line { width: 55%; }
+
+.sd-show-all { justify-self: start; }
+.sd-show-all[hidden] { display: none; }
+.sd-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sd-foot .problem { margin: 0; }
+
+.cookie-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.cookie-row { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 8px; border-radius: 6px; }
+.cookie-row:hover { background: var(--whover); }
+.cookie-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.cookie-name {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--wink-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cookie-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; color: var(--wink-dim); font-size: 11px; min-width: 0; }
+.cookie-where { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cookie-more { padding: 6px 8px; color: var(--wink-dim); font-size: 12px; }

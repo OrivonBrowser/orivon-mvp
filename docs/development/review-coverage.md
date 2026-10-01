@@ -286,6 +286,16 @@ In all, 54 findings, 54 confirmed, none refuted.
 
 In all, 56 findings, 56 confirmed, none refuted.
 
+### `stream/b3-sites-privacy`: per-site permissions, passwords, privacy controls, sign-in and certificates, site data and OS links (2026-10-01)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| Code review by area, by Opus agents, each finding then attacked by a second agent trying to refute it | The branch against `main`, split into permissions and the prompt, passwords and forms, privacy and network controls, and sign-in, certificates and OS links | 37 findings, all confirmed. 34 were fixed with tests, two in part (a confidential marker for a copied password, which Electron 44 cannot set (A327), and a duplicate rule in the form watcher), and one was accepted as a cost and written into the directory's README |
+| A designer's review of screenshots of every new surface, light and dark, at 1280 and 700 pixels wide | The prompt and chip, the password prompts and chooser, the Passwords page, the sign-in and certificate sheets, the HTTPS sheet, Settings, site info and the cookie lists | 24 findings, all confirmed on contrast, alignment, wording, overflow and lifetimes; 23 were fixed and one was answered with no change, since the rectangle was a native tooltip a screen grab had picked up |
+| The unit suite, every guard, smoke and 45 end-to-end files in chunks, after the merge and again after the fixes | The merged branch | Three regressions in test expectations (a search box count, a download rate window, the key button on an ordinary https page), each fixed to follow the product; the rest green, or held by ports another process owned |
+
+In all, 61 findings, 61 confirmed, none refuted.
+
 ### `stream/lounge-tls-errors`: Node's error for a refused certificate, and The Lounge over TLS (2026-10-01)
 
 | Mechanism | Scope | Outcome |

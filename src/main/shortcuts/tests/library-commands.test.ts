@@ -12,7 +12,7 @@ const ROWS: ReadonlyArray<[id: string, label: string, category: string, binding:
   ['bookmarks.toggleBar', 'Show bookmarks bar', 'navigation', 'Mod+Shift+B', false],
   ['bookmark.allTabs', 'Bookmark all tabs', 'navigation', 'Mod+Shift+D', false],
   ['nav.focusSearch', 'Search the web', 'navigation', 'Mod+K', true],
-  ['page.qr', 'Create QR code for this page', 'tools', undefined, false],
+  ['page.qr', 'Create QR code', 'tools', undefined, false],
   ['devtools.console', 'JavaScript console', 'navigation', 'Mod+Shift+J', false],
   ['tasks.open', 'Task manager', 'window', undefined, false],
   ['import.open', 'Import bookmarks and history', 'window', undefined, false],

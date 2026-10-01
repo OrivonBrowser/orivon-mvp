@@ -1,6 +1,6 @@
 # ADR-0028: A site shows notifications only after the person allows it, remembered per site
 
-- **Status:** accepted
+- **Status:** accepted; the question is drawn by the per-site prompt of [ADR-0049](ADR-0049-a-website-is-asked-once-per-site-for-each-powerful-permission.md) in place of the native dialog described below
 - **Date:** 2026-09-22
 - **Type:** security
 - **Decided by:** owner

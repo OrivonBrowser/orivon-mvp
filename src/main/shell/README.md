@@ -25,7 +25,7 @@ decides whether the empty tail of the strip is native OS drag content or JS-driv
 whichever window's strip it is dragged over. Split view: `split-model.ts` is the arithmetic and the groups
 of joined tabs, `split-controller.ts` plans which views show where, `pane-host.ts` puts them on screen in
 that order, `split-frame.ts` is the view behind two panes, and `split-drop.ts` says where a dragged tab
-would split the page. `intro-state.ts` and `intro-view.ts` are the welcome screen.
+would split the page. `intro-state.ts` and `intro-view.ts` are the welcome screen. `shell-installers.ts` runs each feature directory's installer at start, and `sheet-backdrop.ts` paints the shell's own surface colour behind a sheet that sits over a tab with no background of its own.
 `first-window.ts` decides what a cold start opens (the window's last place, the addresses on the command line, a kiosk's page) and `home.ts` is what Home opens.
 The rest answer what a page asks of its window: popups become tabs, HTML fullscreen, the
 few-second exclusive-access notices, the `beforeunload` Leave/Stay question, the external-link
@@ -172,7 +172,9 @@ cost is an `ADR-0018` residual (A230): until its opener closes, an open-web page
 way runs in the app's partition. The other direction is never allowed: a popup into an isolated
 app from any other session opens as an ordinary tab in the app's own session, the only place its
 pinned bundle is served (`ADR-0007`). A popup's app-tab flag follows its own URL, not its
-opener's.
+opener's. A window a page
+opens without the person's own click or key press is refused before any of this, by the pop-up blocker
+in [`../site-settings/`](../site-settings/) that `PopupHost.popupBlocked` asks.
 
 **`routePopup`'s `isApp` catches a gap `targetPartition === opener.partition` alone cannot see.**
 A held grant alone puts no origin in its own partition (`ADR-0044`), so a granted,

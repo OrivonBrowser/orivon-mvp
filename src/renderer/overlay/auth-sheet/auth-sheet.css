@@ -1,0 +1,14 @@
+/* The sign-in sheet: title, the server that asked, what it wants, any warnings, two fields and two buttons. */
+
+body[data-overlay='auth-sheet'] .auth { padding: 16px 18px; }
+body[data-overlay='auth-sheet'] .sheet-title { margin: 0; }
+body[data-overlay='auth-sheet'] .origin { margin: 2px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body[data-overlay='auth-sheet'] .auth-line { margin: 4px 0 0; color: var(--wink-dim); }
+body[data-overlay='auth-sheet'] .auth-realm { margin: 2px 0 0; overflow: hidden; color: var(--wink-dim); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+body[data-overlay='auth-sheet'] .banner { margin: 10px 0 0; }
+body[data-overlay='auth-sheet'] .problem { margin: 6px 0 0; color: var(--wdanger-text); font-size: 12.5px; }
+body[data-overlay='auth-sheet'] .sheet-body { margin: 14px 0 16px; }
+body[data-overlay='auth-sheet'] .field label { color: var(--wink-dim); font-size: 13px; font-weight: 500; }
+body[data-overlay='auth-sheet'] .auth-password { position: relative; }
+body[data-overlay='auth-sheet'] .auth-password .text { box-sizing: border-box; width: 100%; min-width: 0; padding-right: 40px; }
+body[data-overlay='auth-sheet'] .auth-password .btn.icon { position: absolute; top: 50%; right: 3px; transform: translateY(-50%); border-color: transparent; background: none; }

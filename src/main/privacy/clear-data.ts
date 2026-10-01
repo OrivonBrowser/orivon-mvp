@@ -20,6 +20,8 @@ export interface ClearRequest {
   readonly zoomLevels: boolean
   /** The browser storage of every app that holds permissions. */
   readonly appData: boolean
+  /** What each site was allowed or blocked from doing, notifications included. */
+  readonly siteSettings: boolean
 }
 
 export interface ClearResult {
@@ -31,6 +33,8 @@ export interface ClearResult {
 export interface ClearDeps {
   readonly history: Pick<HistoryService, 'removeRange' | 'clear'>
   readonly zoom: Pick<ZoomStore, 'clear'>
+  /** The answers given per site: what a site may use, and what it may show. */
+  readonly siteSettings: { readonly resetAll: () => void }
   /** The session ordinary websites run in. */
   readonly websites: Pick<Session, 'clearData'>
   /** The session of each app that holds permissions. */
@@ -44,10 +48,10 @@ const SITE_DATA = ['cookies', 'localStorage', 'indexedDB', 'serviceWorkers', 'we
 /** The request a page sent, or null when it is not one. */
 export function parseClearRequest (value: unknown): ClearRequest | null {
   if (typeof value !== 'object' || value === null) return null
-  const { history, siteData, cache, zoomLevels, appData } = value as Record<string, unknown>
+  const { history, siteData, cache, zoomLevels, appData, siteSettings } = value as Record<string, unknown>
   if (!(HISTORY_RANGES as readonly unknown[]).includes(history)) return null
-  if (![siteData, cache, zoomLevels, appData].every((flag) => typeof flag === 'boolean')) return null
-  return { history: history as HistoryRange, siteData: siteData as boolean, cache: cache as boolean, zoomLevels: zoomLevels as boolean, appData: appData as boolean }
+  if (![siteData, cache, zoomLevels, appData, siteSettings].every((flag) => typeof flag === 'boolean')) return null
+  return { history: history as HistoryRange, siteData: siteData as boolean, cache: cache as boolean, zoomLevels: zoomLevels as boolean, appData: appData as boolean, siteSettings: siteSettings as boolean }
 }
 
 export async function clearBrowsingData (request: ClearRequest, deps: ClearDeps): Promise<ClearResult> {
@@ -66,6 +70,7 @@ export async function clearBrowsingData (request: ClearRequest, deps: ClearDeps)
   if (request.siteData) await attempt('siteData', async () => { await deps.websites.clearData({ dataTypes: [...SITE_DATA] }) })
   if (request.cache) await attempt('cache', async () => { await deps.websites.clearData({ dataTypes: ['cache'] }) })
   if (request.zoomLevels) await attempt('zoomLevels', () => { deps.zoom.clear() })
+  if (request.siteSettings) await attempt('siteSettings', () => { deps.siteSettings.resetAll() })
   if (request.appData) {
     await attempt('appData', async () => {
       for (const session of await deps.appSessions()) await session.clearData()

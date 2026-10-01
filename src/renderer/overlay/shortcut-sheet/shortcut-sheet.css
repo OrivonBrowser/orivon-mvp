@@ -1,0 +1,7 @@
+/* A sheet in the overlay's own card: the site, one field, an optional tick, then the buttons. */
+
+body[data-overlay='shortcut-sheet'] .shortcut-sheet { padding: 16px 18px; }
+body[data-overlay='shortcut-sheet'] .sheet-title { margin: 0; }
+body[data-overlay='shortcut-sheet'] .origin { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body[data-overlay='shortcut-sheet'] .sheet-body { margin: 12px 0 16px; }
+body[data-overlay='shortcut-sheet'] .check[hidden] { display: none; }

@@ -2,7 +2,7 @@
 // would give each its own in-memory copy of one file, and the last to write
 // would win.
 import { join } from 'node:path'
-import { app, session } from 'electron'
+import { app, safeStorage, session } from 'electron'
 import { BookmarkStore } from '../browsing/bookmarks.js'
 import { SearchEngineStore } from '../browsing/search-engine-store.js'
 import { InternalPageRegistry } from '../pages/internal-registry.js'
@@ -16,6 +16,10 @@ import { HistoryService } from '../history/history-service.js'
 import { NullHistoryStore } from '../history/history-store.js'
 import { openHistory } from '../history/open-history.js'
 import { ProfilesService } from '../launch/profiles-service.js'
+import { devPasswordStorage } from '../passwords/dev-password-storage.js'
+import { openVault } from '../passwords/open-vault.js'
+import type { PasswordVault } from '../passwords/vault.js'
+import { SiteSettingsStore } from '../site-settings/site-settings-store.js'
 import type { Runtime } from '../launch/start-launch.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import { confirmOpenDevTools } from '../devtools/devtools-prompt.js'
@@ -53,12 +57,16 @@ export interface ShellServices {
   readonly isPrivate: boolean
   /** This process was started with --orivon-kiosk (window-state/kiosk.ts). Read once, at start. */
   readonly kiosk: boolean
+  /** The saved logins; this process's own memory until an encrypted store replaces it. */
+  readonly passwords: PasswordVault
   readonly profiles: ProfilesService
   /** The open windows, kept in `session.json`; a private session writes nothing. */
   /** The engines a keyword searches: the built-in ones and the person's own; a private session reads the list and never changes it. */
   readonly searchEngines: SearchEngineStore
   readonly session: SessionLog
   readonly settings: SettingsStore
+  /** What the person told each site it may do; a private session keeps it in memory. */
+  readonly siteSettings: SiteSettingsStore
   readonly shortcuts: ShortcutService
   readonly shortcutStore: ShortcutStore
   /** The floating preview a tab shows once dragged out of its strip, and the mark it leaves on whichever
@@ -114,10 +122,12 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     internalPages,
     isPrivate: runtime.isPrivate,
     kiosk,
+    passwords: openVault({ path: join(userDataPath, 'passwords.json'), isPrivate: runtime.isPrivate, storage: devPasswordStorage() ?? safeStorage }),
     profiles: new ProfilesService(runtime, undefined, kiosk),
     searchEngines: new SearchEngineStore(join(userDataPath, 'search-engines.json'), { readOnly: runtime.isPrivate }),
     session: runtime.isPrivate || kiosk ? new NullSessionStore() : new SessionStore(join(userDataPath, 'session.json')),
     settings,
+    siteSettings: new SiteSettingsStore(runtime.isPrivate ? null : join(userDataPath, 'site-settings.json')),
     shortcuts: new ShortcutService(shortcutStore, platform),
     shortcutStore,
     tearDrag: new TearDragController(() => windows.all()),

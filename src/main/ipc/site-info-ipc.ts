@@ -16,11 +16,17 @@ import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import type { SiteInfo } from '../permissions/site-info.js'
 import type { SiteInfoController } from '../permissions/site-info-controller.js'
 import type { SiteTrust } from '../browsing/site-trust.js'
-import { browserStorageEstimateFor, cookieCountFor, orivonStorageFor } from '../permissions/site-data-runner.js'
+import { browserStorageEstimateFor, orivonStorageFor } from '../permissions/site-data-runner.js'
+import { originFromUrl } from '../../broker/policy/origin.js'
+import type { CookieView } from '../privacy/cookie-list.js'
+import { cookieViewsFor, removeSiteCookie, removeSiteCookies } from '../privacy/cookie-runner.js'
 import type { BrowserStorageEstimate } from '../permissions/site-data-runner.js'
+import type { SitePermissionsAccess, SitePermissionsView } from '../site-settings/site-permissions-view.js'
 
 export interface SiteDataSnapshot {
   readonly cookieCount: number
+  /** The site's cookies by name and flags, never by value. */
+  readonly cookies: readonly CookieView[]
   readonly browserStorage: BrowserStorageEstimate | null
   readonly orivonFilesBytes: number
   readonly orivonFilesQuotaBytes: number | undefined
@@ -46,14 +52,23 @@ export type SiteInfoCommand =
    * displayed -- so a manifest that changed underneath a long-open popup
    * fails that one capability closed rather than granting a surprise. */
   | { type: 'apply'; changes: ReadonlyArray<{ capability: CapabilityKind; on: boolean; shownPatterns: readonly Pattern[] }> }
+  /** This site's per-site permissions, for the origin the popover was built for: null when it has none. */
+  | { type: 'sitePermissions' }
+  /** One answer for one kind: `value` is `default`, `allow` or `block`; main refuses a kind that is not offered. */
+  | { type: 'setSitePermission'; kind: string; value: string }
   | { type: 'revokePickedPath'; pickId: string }
   | { type: 'clearBrowserData' }
+  /** One cookie of this site, by the key the last `data` answer gave it. */
+  | { type: 'removeCookie'; key: string }
+  | { type: 'clearCookies' }
   | { type: 'reload' }
-  | { type: 'openAllSites' }
+  | { type: 'openSiteSettings' }
   /** The extensions disclosure's own "Manage" link (docs/planning/extensions-
-   * exploration.md): opens `orivon://extensions` the same way `openAllSites`
-   * opens the all-sites panel. */
+   * exploration.md): opens `orivon://extensions` the same way `openSiteSettings`
+   * opens the Site settings page. */
   | { type: 'openExtensions' }
+  /** The Certificate row: closes this popup and opens the certificate viewer for the active tab. */
+  | { type: 'certificate' }
   /** Same contract as ./permissions-ipc.ts's own `contentHeight`. */
   | { type: 'contentHeight'; height: number }
 
@@ -73,13 +88,14 @@ async function collectSiteData (
 ): Promise<SiteDataSnapshot> {
   const declaration = await controller.storageDeclarationFor(origin)
   const tab = activeWebContents()
-  const [orivon, cookieCount, browserStorage] = await Promise.all([
+  const [orivon, cookies, browserStorage] = await Promise.all([
     orivonStorageFor(userDataPath, origin, declaration?.filesQuotaBytes, declaration?.codeVersion),
-    tab === undefined ? 0 : cookieCountFor(tab.session, origin),
+    tab === undefined ? [] : cookieViewsFor(tab.session.cookies, new URL(origin).hostname),
     tab === undefined ? null : browserStorageEstimateFor(tab, origin)
   ])
   return {
-    cookieCount,
+    cookieCount: cookies.length,
+    cookies,
     browserStorage,
     orivonFilesBytes: orivon.filesBytes,
     orivonFilesQuotaBytes: orivon.filesQuotaBytes,
@@ -96,16 +112,18 @@ export function registerSiteInfoIpc (
   userDataPath: string,
   activeWebContents: () => WebContents | undefined,
   reloadActiveTab: () => void,
-  openAllSites: () => void,
+  openSiteSettings: () => void,
   openExtensions: () => void,
-  onContentHeight: (height: number) => void = () => {}
+  onContentHeight: (height: number) => void = () => {},
+  openCertificate: () => void = () => {},
+  sitePermissions: SitePermissionsAccess = { view: () => null, set: () => null }
 ): void {
   // On the popup's own webContents: the handler goes with it, and two windows
   // can each have one open.
   siteInfoWebContents.ipc.handle(SITE_INFO_COMMAND_CHANNEL, async (
     event: IpcMainInvokeEvent,
     command: SiteInfoCommand
-  ): Promise<void | SiteInfo | SiteTrust | null | SiteDataSnapshot | ApplyResult> => {
+  ): Promise<void | SiteInfo | SiteTrust | null | SiteDataSnapshot | ApplyResult | SitePermissionsView> => {
     if (!isFromSiteInfoWindow(event, siteInfoWebContents, popupUrl)) return
 
     switch (command.type) {
@@ -127,6 +145,10 @@ export function registerSiteInfoIpc (
         }
         return { info: await controller.siteInfoFor(origin), staleCapabilities }
       }
+      case 'sitePermissions':
+        return sitePermissions.view(origin)
+      case 'setSitePermission':
+        return typeof command.kind === 'string' && typeof command.value === 'string' ? sitePermissions.set(origin, command.kind, command.value) : null
       case 'revokePickedPath':
         await controller.revokePickedPath(origin, command.pickId)
         return await controller.siteInfoFor(origin)
@@ -140,14 +162,29 @@ export function registerSiteInfoIpc (
         }
         return
       }
+      case 'removeCookie': {
+        const tab = activeWebContents()
+        if (tab === undefined || originFromUrl(tab.getURL()) !== origin || typeof command.key !== 'string') return
+        await removeSiteCookie(tab.session.cookies, new URL(origin).hostname, command.key)
+        return
+      }
+      case 'clearCookies': {
+        const tab = activeWebContents()
+        if (tab === undefined || originFromUrl(tab.getURL()) !== origin) return
+        await removeSiteCookies(tab.session.cookies, new URL(origin).hostname)
+        return
+      }
       case 'reload':
         reloadActiveTab()
         return
-      case 'openAllSites':
-        openAllSites()
+      case 'openSiteSettings':
+        openSiteSettings()
         return
       case 'openExtensions':
         openExtensions()
+        return
+      case 'certificate':
+        openCertificate()
         return
       case 'contentHeight':
         if (Number.isFinite(command.height)) onContentHeight(command.height)

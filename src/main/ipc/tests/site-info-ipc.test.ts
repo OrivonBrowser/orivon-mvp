@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SiteInfoController } from '../../permissions/site-info-controller.js'
 import type { SiteInfo } from '../../permissions/site-info.js'
+import type { SitePermissionsAccess } from '../../site-settings/site-permissions-view.js'
 
 // The site-info popup's own channel -- get/trust/data/apply/
-// revokePickedPath/clearBrowserData/reload/openAllSites, and the sender-
+// revokePickedPath/clearBrowserData/reload/openSiteSettings, and the sender-
 // identity check every command here gets (mirrors permissions-ipc.ts's own
 // isFromPermissionsPanel, against this popup's webContents instead).
 // site-info-controller.test.ts already proves turnOn/turnOff reach a real
@@ -15,7 +16,6 @@ const handlers = new Map<string, (event: unknown, command: unknown) => unknown>(
 
 vi.mock('../../permissions/site-data-runner.js', () => ({
   orivonStorageFor: vi.fn(async () => ({ filesBytes: 10, filesQuotaBytes: 20, codeBytes: 30, codeVersion: '1.0.0' })),
-  cookieCountFor: vi.fn(async () => 2),
   browserStorageEstimateFor: vi.fn(async () => ({ usageBytes: 100, quotaBytes: 200 }))
 }))
 
@@ -27,7 +27,21 @@ const SITE_INFO_FRAME = { url: POPUP_URL }
 // The handler is registered on the popup's own webContents.
 const siteInfoWebContents = { mainFrame: SITE_INFO_FRAME, ipc: { handle: (channel: string, fn: (event: unknown, command: unknown) => unknown) => { handlers.set(channel, fn) } } } as unknown as import('electron').WebContents
 const OTHER_FRAME = { url: POPUP_URL }
+const OTHER_FRAME_URL = { url: 'https://evil.test/' }
 const ORIGIN = 'https://app.example'
+
+const COOKIES = [
+  { name: 'sid', domain: '.app.example', path: '/', secure: true, httpOnly: true, value: 'secret-1' },
+  { name: 'theme', domain: 'app.example', path: '/', value: 'secret-2' },
+  { name: 'other', domain: '.other.example', path: '/', value: 'secret-3' }
+]
+
+function tabWithCookies (url = `${ORIGIN}/`): { tab: import('electron').WebContents, remove: ReturnType<typeof vi.fn>, flushStore: ReturnType<typeof vi.fn> } {
+  const remove = vi.fn(async () => {})
+  const flushStore = vi.fn(async () => {})
+  const tab = { getURL: () => url, session: { cookies: { get: async () => COOKIES, remove, flushStore }, clearData: vi.fn(async () => {}) } } as unknown as import('electron').WebContents
+  return { tab, remove, flushStore }
+}
 
 const EMPTY_INFO: SiteInfo = { origin: ORIGIN, displayOrigin: ORIGIN, claimedName: undefined, asked: false, capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite: [] }
 
@@ -52,19 +66,19 @@ function dispatch (command: unknown, senderFrame: unknown = SITE_INFO_FRAME): un
 
 function register (
   controller: SiteInfoController,
-  overrides: Partial<{ activeWebContents: () => import('electron').WebContents | undefined, reloadActiveTab: () => void, openAllSites: () => void, openExtensions: () => void }> = {}
-): { reloadActiveTab: ReturnType<typeof vi.fn>, openAllSites: ReturnType<typeof vi.fn>, openExtensions: ReturnType<typeof vi.fn> } {
+  overrides: Partial<{ activeWebContents: () => import('electron').WebContents | undefined, reloadActiveTab: () => void, openSiteSettings: () => void, openExtensions: () => void }> = {}
+): { reloadActiveTab: ReturnType<typeof vi.fn>, openSiteSettings: ReturnType<typeof vi.fn>, openExtensions: ReturnType<typeof vi.fn> } {
   const reloadActiveTab = vi.fn()
-  const openAllSites = vi.fn()
+  const openSiteSettings = vi.fn()
   const openExtensions = vi.fn()
   registerSiteInfoIpc(
     siteInfoWebContents, POPUP_URL, controller, ORIGIN, '/tmp/orivon-test-userdata',
     overrides.activeWebContents ?? (() => undefined),
     overrides.reloadActiveTab ?? reloadActiveTab,
-    overrides.openAllSites ?? openAllSites,
+    overrides.openSiteSettings ?? openSiteSettings,
     overrides.openExtensions ?? openExtensions
   )
-  return { reloadActiveTab, openAllSites, openExtensions }
+  return { reloadActiveTab, openSiteSettings, openExtensions }
 }
 
 describe('registerSiteInfoIpc -- get / trust', () => {
@@ -151,7 +165,7 @@ describe('registerSiteInfoIpc -- apply', () => {
   })
 })
 
-describe('registerSiteInfoIpc -- revokePickedPath / reload / openAllSites', () => {
+describe('registerSiteInfoIpc -- revokePickedPath / reload / openSiteSettings', () => {
   it('revokePickedPath forwards the fixed origin and pickId, then returns the fresh info', async () => {
     const controller = fakeController()
     register(controller)
@@ -168,16 +182,63 @@ describe('registerSiteInfoIpc -- revokePickedPath / reload / openAllSites', () =
     expect(reloadActiveTab).toHaveBeenCalledOnce()
   })
 
-  it('openAllSites calls the injected callback', async () => {
-    const { openAllSites } = register(fakeController())
-    await dispatch({ type: 'openAllSites' })
-    expect(openAllSites).toHaveBeenCalledOnce()
+  it('openSiteSettings calls the injected callback', async () => {
+    const { openSiteSettings } = register(fakeController())
+    await dispatch({ type: 'openSiteSettings' })
+    expect(openSiteSettings).toHaveBeenCalledOnce()
+  })
+
+  it('certificate calls the injected callback, from the popup only', async () => {
+    const openCertificate = vi.fn()
+    registerSiteInfoIpc(siteInfoWebContents, POPUP_URL, fakeController(), ORIGIN, '/tmp/orivon-test-userdata', () => undefined, () => undefined, () => undefined, () => undefined, undefined, openCertificate)
+    await dispatch({ type: 'certificate' })
+    expect(openCertificate).toHaveBeenCalledOnce()
+    await dispatch({ type: 'certificate' }, { url: 'https://evil.test/' })
+    expect(openCertificate).toHaveBeenCalledOnce()
   })
 
   it('openExtensions calls the injected callback', async () => {
     const { openExtensions } = register(fakeController())
     await dispatch({ type: 'openExtensions' })
     expect(openExtensions).toHaveBeenCalledOnce()
+  })
+})
+
+describe('registerSiteInfoIpc -- sitePermissions / setSitePermission', () => {
+  const VIEW = { rows: [], shown: [], isPrivate: false }
+  function registerWith (access: SitePermissionsAccess): void {
+    registerSiteInfoIpc(siteInfoWebContents, POPUP_URL, fakeController(), ORIGIN, '/tmp/orivon-test-userdata', () => undefined, () => undefined, () => undefined, () => undefined, undefined, undefined, access)
+  }
+
+  it('reads the permissions of the FIXED origin', async () => {
+    const access = { view: vi.fn((_origin: string) => VIEW), set: vi.fn((_origin: string, _kind: unknown, _value: unknown) => VIEW) }
+    registerWith(access)
+    expect(await dispatch({ type: 'sitePermissions', origin: 'https://evil.test' })).toBe(VIEW)
+    expect(access.view).toHaveBeenCalledWith(ORIGIN)
+  })
+
+  it('sets one answer for the fixed origin, whatever origin the command carries', async () => {
+    const access = { view: vi.fn((_origin: string) => VIEW), set: vi.fn((_origin: string, _kind: unknown, _value: unknown) => VIEW) }
+    registerWith(access)
+    await dispatch({ type: 'setSitePermission', kind: 'camera', value: 'block', origin: 'https://evil.test' })
+    expect(access.set).toHaveBeenCalledWith(ORIGIN, 'camera', 'block')
+  })
+
+  it('refuses a kind or a value that is not a string, and answers nothing from another frame', async () => {
+    const access = { view: vi.fn((_origin: string) => VIEW), set: vi.fn((_origin: string, _kind: unknown, _value: unknown) => VIEW) }
+    registerWith(access)
+    expect(await dispatch({ type: 'setSitePermission', kind: 3, value: 'block' })).toBeNull()
+    expect(await dispatch({ type: 'setSitePermission', kind: 'camera', value: { toString: 1 } })).toBeNull()
+    await dispatch({ type: 'setSitePermission', kind: 'camera', value: 'block' }, OTHER_FRAME)
+    await dispatch({ type: 'sitePermissions' }, OTHER_FRAME)
+    expect(access.set).not.toHaveBeenCalled()
+    expect(access.view).not.toHaveBeenCalled()
+  })
+
+  it('answers null when nothing was wired', async () => {
+    register(fakeController())
+    expect(await dispatch({ type: 'sitePermissions' })).toBeNull()
+    expect(await dispatch({ type: 'setSitePermission', kind: 'camera', value: 'block' })).toBeNull()
   })
 })
 
@@ -211,7 +272,7 @@ describe('registerSiteInfoIpc -- clearBrowserData', () => {
 
 describe('registerSiteInfoIpc -- data', () => {
   it('combines Orivon storage, cookie count and the browser storage estimate for the active tab', async () => {
-    const fakeTab = { session: {} } as unknown as import('electron').WebContents
+    const { tab: fakeTab } = tabWithCookies()
     const controller = fakeController({ storageDeclarationFor: vi.fn(async () => ({ filesQuotaBytes: 20, codeVersion: '1.0.0' })) })
     register(controller, { activeWebContents: () => fakeTab })
 
@@ -219,6 +280,10 @@ describe('registerSiteInfoIpc -- data', () => {
 
     expect(result).toEqual({
       cookieCount: 2,
+      cookies: [
+        expect.objectContaining({ name: 'sid', domain: '.app.example', secure: true, httpOnly: true, session: true }),
+        expect.objectContaining({ name: 'theme', domain: 'app.example' })
+      ],
       browserStorage: { usageBytes: 100, quotaBytes: 200 },
       orivonFilesBytes: 10,
       orivonFilesQuotaBytes: 20,
@@ -234,6 +299,71 @@ describe('registerSiteInfoIpc -- data', () => {
     const result = await dispatch({ type: 'data' })
 
     expect(result).toMatchObject({ cookieCount: 0, browserStorage: null })
+  })
+})
+
+describe('registerSiteInfoIpc -- cookies', () => {
+  it('sends no cookie value, and none of another site\'s cookies', async () => {
+    const { tab } = tabWithCookies()
+    register(fakeController(), { activeWebContents: () => tab })
+
+    const result = await dispatch({ type: 'data' })
+
+    expect(JSON.stringify(result)).not.toContain('secret')
+    expect(JSON.stringify(result)).not.toContain('other.example')
+  })
+
+  it('removes the one cookie a key names, from the active tab\'s session', async () => {
+    const { tab, remove, flushStore } = tabWithCookies()
+    register(fakeController(), { activeWebContents: () => tab })
+    const data = await dispatch({ type: 'data' }) as { cookies: Array<{ key: string }> }
+
+    await dispatch({ type: 'removeCookie', key: data.cookies[1]?.key })
+
+    expect(remove).toHaveBeenCalledTimes(1)
+    expect(remove).toHaveBeenCalledWith('http://app.example/', 'theme')
+    expect(flushStore).toHaveBeenCalled()
+  })
+
+  it('ignores a key that names another site\'s cookie, a stale key and a key that is not text', async () => {
+    const { tab, remove } = tabWithCookies()
+    register(fakeController(), { activeWebContents: () => tab })
+
+    await dispatch({ type: 'removeCookie', key: 'ffffffffffffffff' })
+    await dispatch({ type: 'removeCookie', key: { toString: () => 'x' } })
+    await dispatch({ type: 'removeCookie' })
+
+    expect(remove).not.toHaveBeenCalled()
+  })
+
+  it('removes every cookie of the site and none of another with clearCookies', async () => {
+    const { tab, remove } = tabWithCookies()
+    register(fakeController(), { activeWebContents: () => tab })
+
+    await dispatch({ type: 'clearCookies' })
+
+    expect(remove.mock.calls.map((call) => call[1]).sort()).toEqual(['sid', 'theme'])
+  })
+
+  it('does nothing once the tab is on another origin, or with no tab', async () => {
+    const away = tabWithCookies('https://other.example/')
+    register(fakeController(), { activeWebContents: () => away.tab })
+    await dispatch({ type: 'clearCookies' })
+    await dispatch({ type: 'removeCookie', key: 'ffffffffffffffff' })
+    expect(away.remove).not.toHaveBeenCalled()
+
+    register(fakeController(), { activeWebContents: () => undefined })
+    await expect(dispatch({ type: 'clearCookies' })).resolves.toBeUndefined()
+  })
+
+  it('refuses both commands from a frame that is not the popup\'s own', async () => {
+    const { tab, remove } = tabWithCookies()
+    register(fakeController(), { activeWebContents: () => tab })
+
+    await dispatch({ type: 'clearCookies' }, OTHER_FRAME_URL)
+    await dispatch({ type: 'removeCookie', key: 'ffffffffffffffff' }, OTHER_FRAME_URL)
+
+    expect(remove).not.toHaveBeenCalled()
   })
 })
 

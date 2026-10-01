@@ -30,6 +30,9 @@
   --wdanger-text: #b91c1c;
   --wdanger-wash: color-mix(in srgb, var(--wdanger) 10%, transparent);
   --wok: #00a848;
+  /* Green and orange AS TEXT on their own wash (a status badge): the plain fills are under 4.5:1 there. */
+  --wok-text: #047857;
+  --wwarn-text: #9a3412;
   --wwarn: #f97316;
   /* The warning as a mark that must be seen: the plain orange is 2.2:1 on a light panel. */
   --wwarn-mark: #c2410c;
@@ -60,6 +63,8 @@
     --wdanger-text: #f87171;
     --wwarn-mark: #f97316;
     --wok: #00c950;
+    --wok-text: #4ade80;
+    --wwarn-text: #fb923c;
     --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a4a5af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   }
 }

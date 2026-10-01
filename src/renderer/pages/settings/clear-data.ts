@@ -27,6 +27,7 @@ const FAILED_WORDS: Readonly<Record<string, string>> = {
   siteData: 'cookies and site data',
   cache: 'cached files',
   zoomLevels: 'saved zoom levels',
+  siteSettings: 'site settings',
   appData: 'app data'
 }
 
@@ -36,10 +37,11 @@ interface Selection {
   siteData: boolean
   cache: boolean
   zoomLevels: boolean
+  siteSettings: boolean
   appData: boolean
 }
 
-const selection: Selection = { historyChecked: true, range: 'day', siteData: false, cache: false, zoomLevels: false, appData: false }
+const selection: Selection = { historyChecked: true, range: 'day', siteData: false, cache: false, zoomLevels: false, siteSettings: false, appData: false }
 
 function clearWords (outcome: ClearOutcome | null): string {
   if (outcome === null) return ''
@@ -67,6 +69,7 @@ export function renderClearData (state: SettingsState): HTMLElement {
   const siteData = option('Cookies and site data', 'Signs you out of websites and removes what they stored in this browser. Always for all time.', selection.siteData, (checked) => { selection.siteData = checked })
   const cache = option('Cached files', 'Pages and images kept to load sites faster. Always for all time.', selection.cache, (checked) => { selection.cache = checked })
   const zoom = option('Saved zoom levels', null, selection.zoomLevels, (checked) => { selection.zoomLevels = checked })
+  const siteSettings = option('Site settings and permissions', 'Forgets what you allowed or blocked for each site.', selection.siteSettings, (checked) => { selection.siteSettings = checked })
   const appData = option('App data', 'What apps that hold permissions keep in the browser, such as a signed-in session or a local database. It cannot be undone. Files an app saved in its own folder are not removed.', selection.appData, (checked) => { selection.appData = checked })
   appData.classList.add('danger-option')
   const result = h('p', { className: 'muted', role: 'status', textContent: clearWords(state.privacy.lastClear) })
@@ -88,11 +91,12 @@ export function renderClearData (state: SettingsState): HTMLElement {
     siteData: selection.siteData,
     cache: selection.cache,
     zoomLevels: selection.zoomLevels,
+    siteSettings: selection.siteSettings,
     appData: selection.appData
   })
   button.addEventListener('click', () => {
     const chosen = request()
-    if (chosen.history === 'none' && !chosen.siteData && !chosen.cache && !chosen.zoomLevels && !chosen.appData) {
+    if (chosen.history === 'none' && !chosen.siteData && !chosen.cache && !chosen.zoomLevels && !chosen.siteSettings && !chosen.appData) {
       state.privacy.nothingChosen()
       return
     }
@@ -108,6 +112,6 @@ export function renderClearData (state: SettingsState): HTMLElement {
 
   return h('div', { className: 'clear-data' },
     h('div', { className: 'clear-history' }, history, range),
-    siteData, cache, zoom, appData,
+    siteData, cache, zoom, siteSettings, appData,
     h('div', { className: 'clear-actions' }, button, result))
 }

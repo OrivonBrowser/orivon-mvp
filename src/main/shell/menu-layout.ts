@@ -5,6 +5,8 @@ import { originFromUrl } from '../../broker/policy/origin.js'
 import type { CommandId } from '../shortcuts/commands.js'
 import { commandById } from '../shortcuts/commands.js'
 import { bookmarksBarShown } from './bookmarks-bar/bar-visibility.js'
+import { certificateAvailable } from '../auth/certificate-open.js'
+import { createShortcutHint, shareHint } from '../os/menu-state.js'
 import { qrAvailable } from '../qr/qr-open.js'
 import { hintFor } from '../session-restore/reopen.js'
 import type { WindowContext } from './window-context.js'
@@ -22,7 +24,11 @@ export type MenuEntry = '-' | CommandId
 
 /** Commands that do nothing on some pages; the menu greys their row there. */
 const UNAVAILABLE: Partial<Record<CommandId, (ctx: WindowContext) => boolean>> = {
-  'page.qr': ({ window }) => !qrAvailable(window)
+  'page.qr': ({ window }) => !qrAvailable(window),
+  'share.copyLink': (ctx) => shareHint(ctx) !== null,
+  'share.email': (ctx) => shareHint(ctx) !== null,
+  'site.certificate': ({ window }) => !certificateAvailable(window),
+  'site.shortcut': (ctx) => createShortcutHint(ctx) !== null
 }
 
 export const MENU_LAYOUT: readonly MenuEntry[] = [
@@ -48,21 +54,29 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
   'page.print',
   'find.open',
   'page.save',
+  { submenu: 'Share', items: [
+    { item: 'share.copyLink', hint: shareHint },
+    { item: 'share.email', hint: shareHint },
+    'page.qr'
+  ] },
   { submenu: 'More tools', items: [
     'split.toggle',
     'tab.search',
     'page.screenshot',
     'page.pip',
     'page.pdf',
-    'page.qr',
     'page.viewSource',
+    { item: 'site.shortcut', hint: createShortcutHint },
+    'site.certificate',
     { check: 'window.alwaysOnTop', on: ({ window }) => window.window.isAlwaysOnTop() },
+    'privacy.clearData',
     'devtools.toggle',
     'devtools.console',
     'tasks.open'
   ] },
   '-',
   'extensions.open',
+  'passwords.open',
   'profiles.open',
   'settings.open',
   '-',

@@ -14,6 +14,7 @@
   --wink: rgba(0, 0, 0, 0.90);
   --wink-dim: rgba(0, 0, 0, 0.58);
   --waccent: #4f46e5;
+  --waccent-text: var(--waccent);
   --wdanger: #dc2626;
   --wwarn: #f97316;
   --wwarn-bg: color-mix(in srgb, var(--wwarn) 12%, transparent);
@@ -27,6 +28,7 @@
     --wborder: #3b3c42;
     --wink: #e6e7e8;
     --wink-dim: #a4a5af;
+    --waccent-text: #8b93f8;
   }
 }
 
@@ -80,6 +82,10 @@ button:focus-visible {
   font-size: 12px;
   line-height: 1.5;
 }
+
+.all-site-settings { margin: 10px 0 0; }
+.link-btn { padding: 2px 0; color: var(--waccent-text); font-size: 12px; font-weight: 500; }
+.link-btn:hover { text-decoration: underline; }
 
 .apps-list {
   display: flex;
