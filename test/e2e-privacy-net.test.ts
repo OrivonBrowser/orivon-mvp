@@ -2,10 +2,13 @@
 // receives, which cookies reach it and are stored, what HTTPS-only does to a mapped name and to the loopback
 // fixtures every other test uses, and the sheet that offers the way through. Screenshots go to the directory
 // named by ORIVON_PRIVACY_NET_SHOTS when it is set.
+import { execFileSync } from 'node:child_process'
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http'
+import { createServer as createTlsServer } from 'node:https'
 import type { AddressInfo } from 'node:net'
-import { mkdirSync, readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
@@ -22,6 +25,9 @@ const GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA
 let firstParty: Server
 let thirdParty: Server
 let plain: Server
+let tls: Server
+let tlsDir = ''
+let tlsPort = 0
 const firstSeen: Seen[] = []
 const thirdSeen: Seen[] = []
 const plainSeen: Seen[] = []
@@ -63,16 +69,27 @@ beforeAll(async () => {
     response.end(`<!doctype html><title>plain ${request.url ?? ''}</title><p>plain</p>`)
   })
   plainPort = await listen(plain)
+  // A server whose certificate nobody vouches for: an address upgraded to https that lands here fails on the certificate.
+  tlsDir = mkdtempSync(join(tmpdir(), 'orivon-privacy-tls-'))
+  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '30', '-subj', '/CN=selfsigned.test', '-addext', 'subjectAltName=DNS:selfsigned.test',
+    '-keyout', join(tlsDir, 'key.pem'), '-out', join(tlsDir, 'cert.pem')], { stdio: 'ignore' })
+  tls = createTlsServer({ key: readFileSync(join(tlsDir, 'key.pem')), cert: readFileSync(join(tlsDir, 'cert.pem')) }, (_request, response) => { response.end('tls') })
+  tlsPort = await listen(tls)
   if (SHOTS !== undefined) mkdirSync(SHOTS, { recursive: true })
 })
 
 afterAll(async () => {
-  for (const server of [firstParty, thirdParty, plain]) await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+  for (const server of [firstParty, thirdParty, plain, tls]) await new Promise<void>((resolve) => { server.close(() => { resolve() }); server.closeAllConnections?.() })
+  rmSync(tlsDir, { recursive: true, force: true })
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-/** Everything but loopback and localhost is unresolvable; `up.test` and `down.test` are mapped to this machine. */
-const RESOLVER = '--host-resolver-rules=MAP up.test 127.0.0.1, MAP down.test 127.0.0.1, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost'
+/**
+ * Everything but loopback and localhost is unresolvable; `up.test` and `down.test` are mapped to the plain fixture's
+ * port, so an address with no port reaches it over http, and the https address an upgrade makes reaches it too and
+ * fails the handshake. `selfsigned.test` is mapped to the server whose certificate nobody vouches for.
+ */
+const resolver = (): string => `--host-resolver-rules=MAP up.test 127.0.0.1:${String(plainPort)}, MAP down.test 127.0.0.1:${String(plainPort)}, MAP selfsigned.test 127.0.0.1:${String(tlsPort)}, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost`
 
 async function seed (dir: string, values: Record<string, string | boolean>): Promise<void> {
   await mkdir(dir, { recursive: true })
@@ -80,7 +97,7 @@ async function seed (dir: string, values: Record<string, string | boolean>): Pro
 }
 
 async function launched (values: Record<string, string | boolean>): Promise<{ app: ElectronApplication, chrome: Page }> {
-  const app = await launchElectron({ appPath: '.', args: [RESOLVER], seedProfile: async (dir) => { await seed(dir, values) } })
+  const app = await launchElectron({ appPath: '.', args: [resolver()], seedProfile: async (dir) => { await seed(dir, values) } })
   expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
   return { app, chrome: findChrome(app) }
 }
@@ -205,7 +222,8 @@ it('upgrades a named http address, offers the way through when that fails, and n
   const plainUrl = `http://127.0.0.1:${String(plainPort)}/ok`
   const sheet = async (): Promise<Page> => {
     expect(await waitFor(async () => await popoverShown(app, 'overlay=https-warning'))).toBe(true)
-    const page = app.windows().find((w) => w.url().includes('overlay=https-warning')) as Page
+    expect(await waitFor(() => app.windows().some((w) => w.url().includes('overlay=https-warning') && !w.isClosed()))).toBe(true)
+    const page = app.windows().filter((w) => w.url().includes('overlay=https-warning') && !w.isClosed()).at(-1) as Page
     await page.waitForSelector('.https-card button')
     return page
   }
@@ -217,7 +235,7 @@ it('upgrades a named http address, offers the way through when that fails, and n
     expect(await popoverShown(app, 'overlay=https-warning')).toBe(false)
 
     // A named host is sent to https, which nothing answers: the sheet appears over the tab.
-    await visit(chrome, `http://down.test:${String(plainPort)}/first`)
+    await visit(chrome, `http://down.test/first`)
     let warning = await sheet()
     expect(await warning.locator('.sheet-title').textContent()).toBe('This site does not support a secure connection')
     expect(await warning.locator('.origin').textContent()).toBe('down.test')
@@ -233,27 +251,56 @@ it('upgrades a named http address, offers the way through when that fails, and n
     expect(await waitFor(async () => !(await popoverShown(app, 'overlay=https-warning')))).toBe(true)
 
     // Escape is the same answer.
-    await visit(chrome, `http://down.test:${String(plainPort)}/second`)
+    await visit(chrome, `http://down.test/second`)
     warning = await sheet()
     // The sheet's view is destroyed by the answer, so the key press can lose its target: expected, not a failure.
     await warning.keyboard.press('Escape').catch((error: unknown) => { if (!/Target page, context or browser has been closed/.test(String(error))) throw error })
     expect((await waitForTab(chrome, { address: plainUrl })).ok).toBe(true)
 
     // Continue opens the http page, and the host is not asked about again.
-    await visit(chrome, `http://up.test:${String(plainPort)}/third`)
+    await visit(chrome, `http://up.test/third`)
     warning = await sheet()
     await warning.click('.https-continue').catch((error: unknown) => { if (!/Target page, context or browser has been closed/.test(String(error))) throw error })
     expect(await waitFor(() => hasSeen(plainSeen, '/third'))).toBe(true)
-    expect(seenWith(plainSeen, '/third')?.headers['host']).toBe(`up.test:${String(plainPort)}`)
+    expect(seenWith(plainSeen, '/third')?.headers['host']).toBe('up.test')
     expect((await waitForTab(chrome, { title: 'plain /third' })).ok).toBe(true)
-    await visit(chrome, `http://up.test:${String(plainPort)}/fourth`)
+    await visit(chrome, `http://up.test/fourth`)
     expect(await waitFor(() => hasSeen(plainSeen, '/fourth'))).toBe(true)
     expect(await popoverShown(app, 'overlay=https-warning')).toBe(false)
 
     // The other host is still not exempt.
-    await visit(chrome, `http://down.test:${String(plainPort)}/fifth`)
+    await visit(chrome, `http://down.test/fifth`)
     await sheet()
     expect(hasSeen(plainSeen, '/fifth')).toBe(false)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('leaves a named host with an explicit port alone, since port 443 is usually another service', async () => {
+  const { app, chrome } = await launched({ 'privacy.httpsOnly': true })
+  try {
+    await visit(chrome, `http://down.test:8080/kept`)
+    expect(await waitFor(() => hasSeen(plainSeen, '/kept'))).toBe(true)
+    expect((await waitForTab(chrome, { title: 'plain /kept' })).ok).toBe(true)
+    expect(await popoverShown(app, 'overlay=https-warning')).toBe(false)
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('explains an upgraded address that fails on its certificate with the HTTPS sheet and its way through, not the certificate sheet', async () => {
+  const { app, chrome } = await launched({ 'privacy.httpsOnly': true })
+  try {
+    await visit(chrome, 'http://selfsigned.test/page')
+    expect(await waitFor(async () => await popoverShown(app, 'overlay=https-warning'), 20_000)).toBe(true)
+    const warning = app.windows().find((w) => w.url().includes('overlay=https-warning')) as Page
+    await warning.waitForSelector('.https-continue')
+    expect(await warning.locator('.https-continue').textContent()).toBe('Continue to the HTTP site')
+    // The certificate sheet never took the place: one explanation, with the way through.
+    expect(await popoverShown(app, 'overlay=cert-error')).toBe(false)
+    await shoot(warning, 'https-warning-certificate')
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)

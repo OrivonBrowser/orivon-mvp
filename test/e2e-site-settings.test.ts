@@ -198,7 +198,7 @@ it('shows an answer in the popover, changes it there, lists it in Settings, forg
     popup = await openInfo(app, chrome)
     expect(await rowsOf(popup)).toEqual(['Camera'])
     expect(await popup.locator('.perm-select[data-kind="camera"]').inputValue()).toBe('allow')
-    expect(await optionsOf(popup, '.perm-select[data-kind="camera"]')).toEqual(['Ask (default)', 'Allow', 'Block'])
+    expect(await optionsOf(popup, '.perm-select[data-kind="camera"]')).toEqual(['Use default (Ask)', 'Allow', 'Block'])
     expect(await popup.locator('.reload-banner').count()).toBe(0)
     await shootBoth(app, 'popover-camera-allowed', popup)
 
@@ -214,7 +214,7 @@ it('shows an answer in the popover, changes it there, lists it in Settings, forg
     expect(await textOf(popup, '.reload-banner')).toEqual(['Reload the page to apply your changes.Reload'])
     expect(await popup.locator('.perm-select[data-kind="camera"]').inputValue()).toBe('block')
     await shootBoth(app, 'popover-camera-blocked', popup)
-    await popup.click('.reload-banner .btn-primary')
+    await popup.click('.reload-banner .btn-secondary')
     await view.waitForLoadState('load')
     expect(await waitFor(async () => { try { return (await view.evaluate(() => (window as unknown as { __r?: unknown }).__r)) !== undefined } catch { return false } })).toBe(true)
 
@@ -233,13 +233,13 @@ it('shows an answer in the popover, changes it there, lists it in Settings, forg
     expect(await textOf(settings, '#row-sites-list .site-badges .badge')).toEqual(['Camera blocked'])
     expect(await settings.locator('#row-sites-list .site-badges .badge.danger').count()).toBe(1)
     expect(await settings.locator('#row-sites-camera select').inputValue()).toBe('ask')
-    expect(await optionsOf(settings, '#row-sites-camera')).toEqual(['Ask first', 'Block'])
-    expect(await optionsOf(settings, '#row-sites-notifications')).toEqual(['Ask first', 'Block'])
+    expect(await optionsOf(settings, '#row-sites-camera')).toEqual(['Ask', 'Block'])
+    expect(await optionsOf(settings, '#row-sites-notifications')).toEqual(['Ask', 'Block'])
     expect(await textOf(settings, '.group-label')).toEqual(['Permissions', 'Content', 'Sites'])
     await shootBoth(app, 'settings-list', settings)
     await shootBoth(app, 'settings-sites-card', settings, '#row-sites-list')
 
-    // An opened row shows every kind with the site's choice, editable in place; "Ask (default)" forgets the answer.
+    // An opened row shows every kind with the site's choice, editable in place; "Use default (Ask)" forgets the answer.
     await settings.click('#row-sites-list .site-toggle')
     await settings.waitForSelector('#row-sites-list .site-kinds')
     expect(await settings.locator('#row-sites-list .site-select').first().inputValue()).toBe('block')
@@ -276,7 +276,7 @@ it('shows an answer in the popover, changes it there, lists it in Settings, forg
 
     // The row names the default and offers the one answer that overrides it.
     popup = await openInfo(app, chrome)
-    expect(await optionsOf(popup, '.perm-select[data-kind="camera"]')).toEqual(['Block (default)', 'Allow'])
+    expect(await optionsOf(popup, '.perm-select[data-kind="camera"]')).toEqual(['Use default (Block)', 'Allow'])
     await closeInfo(app, chrome)
     await activateTab(chrome, 1)
     await settings.selectOption('#row-sites-camera select', 'ask')

@@ -21,7 +21,7 @@ const FAKE_DEVICES = '--use-fake-device-for-media-stream'
 
 const PAGE = (frame: string | null): string => `<!doctype html><title>site asks</title><body style="font:16px sans-serif">
 <button id="cam">cam</button><button id="both">both</button><button id="geo">geo</button><button id="clip">clip</button>
-<button id="midi">midi</button><button id="idle">idle</button><button id="win">win</button><button id="notify">notify</button>
+<button id="midi">midi</button><button id="idle">idle</button><button id="win">win</button><button id="notify">notify</button><button id="push">push</button>
 ${frame === null ? '' : `<iframe id="frame" allow="camera; microphone; geolocation" src="${frame}" style="width:300px;height:80px"></iframe>`}
 <script>
 window.__r = {}
@@ -36,11 +36,13 @@ on('midi', () => done('midi', navigator.requestMIDIAccess({ sysex: true }).then(
 on('idle', () => done('idle', IdleDetector.requestPermission()))
 on('win', () => done('win', window.getScreenDetails().then((d) => 'screens:' + d.screens.length)))
 on('notify', () => done('notify', Notification.requestPermission()))
-window.addEventListener('message', (event) => { window.__r.frame = event.data })
+on('push', () => history.pushState({}, '', '/pushed'))
+window.addEventListener('message', (event) => { if (String(event.data).startsWith('labels:')) window.__r.labels = event.data; else window.__r.frame = event.data })
 </script></body>`
 
 const FRAME = `<!doctype html><title>frame</title><script>
 navigator.mediaDevices.getUserMedia({ video: true }).then(() => parent.postMessage('video:live', '*'), (e) => parent.postMessage('video:' + e.name, '*'))
+navigator.mediaDevices.enumerateDevices().then((devices) => parent.postMessage('labels:' + devices.filter((d) => d.label !== '').length, '*'))
 </script>`
 
 const servers: FixtureServer[] = []
@@ -265,11 +267,11 @@ it('says what each kind wants, asks for camera and microphone once, and decides 
     await answer(prompt, 'Allow')
     expect(await result(view, 'both')).toBe('live,live')
 
-    // Location: told before Allow what the person gets, and the page is told "unavailable" after it.
+    // Location: told before Allow what the person gets: the choice is kept and the page is still told no.
     await view.click('#geo')
     prompt = await waitPrompt(app)
     expect(await textOf(prompt, '.sp-text')).toEqual(['wants to know your location'])
-    expect(await textOf(prompt, '.banner')).toEqual(['Orivon has no location service yet. If you allow this, the site is told your position is unavailable.'])
+    expect(await textOf(prompt, '.banner')).toEqual(['Orivon has no location service yet. If you allow this, your choice is kept, but the site is still told it cannot have your position.'])
     await shootBoth(app, chrome, 'ask-location')
     // Escape decides nothing: the page is refused this time, and is not asked again on this load.
     // Escape closes the page under the key: the press may end with the page already gone.
@@ -289,7 +291,7 @@ it('says what each kind wants, asks for camera and microphone once, and decides 
     await view.click('#geo')
     prompt = await waitPrompt(app)
     await answer(prompt, 'Allow')
-    expect(await result(view, 'geo')).toBe('code2')
+    expect(await result(view, 'geo')).toBe('code1')
 
     // Closing the question with its own button decides nothing either, and a navigation closes it.
     await view.reload()
@@ -349,6 +351,8 @@ it('never lets a frame ask, keeps a question with its tab, and refuses a backgro
     expect(await result(first, 'cam')).toBe('live')
     await first.reload()
     expect(await result(first, 'frame')).toBe('video:NotAllowedError')
+    // The page's own allow is not the frame's: the frame learns no device names either.
+    expect(await result(first, 'labels')).toBe('labels:0')
     await expectNoPrompt(app)
 
     // A question waits with its tab: switching away hides it, coming back shows it, and answering works.
@@ -362,6 +366,33 @@ it('never lets a frame ask, keeps a question with its tab, and refuses a backgro
     await answer(back, 'Block')
     expect(await result(third, 'geo')).toBe('code1')
     expect(await dialogsAsked(app)).toEqual([])
+  } finally {
+    await closeElectron(app)
+  }
+}, E2E_TIMEOUT_MS)
+
+it('keeps a question open and answerable when the page only rewrites its address, and the chip opens and closes the bubble', async () => {
+  const { app, chrome } = await launchShell({ args: [FAKE_DEVICES] })
+  try {
+    await stubDialogs(app)
+    const view = await visit(app, chrome, `${origins.b}/`)
+    await view.click('#cam')
+    await waitPrompt(app)
+    // An app that updates its address while it waits is still the page that asked.
+    await view.evaluate(() => { document.getElementById('push')?.click() })
+    await delay(1_200)
+    expect(await promptShown(app)).toBe(true)
+    await answer(await waitPrompt(app), 'Allow')
+    expect(await result(view, 'cam')).toBe('live')
+
+    // The chip opens the bubble and a second press closes it: closing on blur and then reopening on the click is a flicker, not a toggle.
+    await waitChip(chrome, false)
+    await chrome.click('#site-access-chip')
+    await waitPrompt(app)
+    await chrome.click('#site-access-chip')
+    expect(await waitFor(async () => !(await promptShown(app)))).toBe(true)
+    await delay(800)
+    expect(await promptShown(app)).toBe(false)
   } finally {
     await closeElectron(app)
   }
