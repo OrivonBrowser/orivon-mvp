@@ -27,6 +27,11 @@ matcher, shared rather than reimplemented.** `matchesHostPattern`/`matchesAnyHos
 `createHostAccessChecker`, `declarativeNetRequest`'s own `redirect`/`modifyHeaders` host-access
 gate (code-guidelines Rule 3: one matcher, not two that can drift apart on the same grammar).
 
+**[`extension-permission-words.ts`](extension-permission-words.ts) is the one place the words for
+an extension's permissions live.** `PERMISSION_WORDS` and `hostWords` are read by
+`describeExtensionInstall`, the permission prompt and the details page, so the three never word
+one permission differently.
+
 **[`extension-manifest.ts`](extension-manifest.ts)'s `loadableManifest` strips `webRequest*`,
 `declarativeNetRequest*` and `nativeMessaging` from the manifest copy Orivon actually loads.**
 Why, and what loads the resulting copy: [`src/main/extensions/README.md`](../../main/extensions/README.md)'s Design notes.
