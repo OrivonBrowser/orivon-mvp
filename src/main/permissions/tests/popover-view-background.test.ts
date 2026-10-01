@@ -3,7 +3,7 @@
 // popup's own page has loaded its stylesheet. This proves createPopoverView
 // sets the popup's OWN theme colour before it is ever attached to the
 // screen, that it tracks nativeTheme rather than a value baked in once, and
-// (for a `warm` popup, ./menu-panel.ts's own case) that the colour stays
+// (for a `warm` popup) that the colour stays
 // correct across being kept open across shows instead of rebuilt on every
 // one.
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -151,7 +151,7 @@ describe('createPopoverView: background colour set before the view is ever shown
   })
 })
 
-describe('createPopoverView: a `warm` popup (menu-panel.ts\'s own case)', () => {
+describe('createPopoverView: a `warm` popup', () => {
   it('is NOT built at construction -- every window would otherwise carry a hidden renderer process', () => {
     createPopoverView(fakeWin() as never, fakeContentView() as never, {
       dirname: '/app', entryPath: '/menu/', fallbackHtml: '../renderer/menu/index.html',

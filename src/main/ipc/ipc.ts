@@ -16,9 +16,8 @@ import type { IpcMainInvokeEvent, WebContents } from 'electron'
 import type { BookmarkStore } from '../browsing/bookmarks.js'
 import { COMMAND_CHANNEL } from '../channels.js'
 import type { TabManager } from '../shell/tabs.js'
-import type { SiteInfoController, SiteSummary } from '../permissions/site-info-controller.js'
+import type { SiteInfoController } from '../permissions/site-info-controller.js'
 import { web3Score } from '../browsing/site-trust.js'
-import type { Web3Score } from '../browsing/site-trust.js'
 import type { PanelAnchor } from '../permissions/permissions-panel.js'
 import { isCommandId } from '../shortcuts/commands.js'
 import type { CommandId } from '../shortcuts/commands.js'
@@ -83,6 +82,9 @@ export type ShellCommand =
    * more than attaching an already-live view. Never fired at window
    * construction -- see popover-view.ts's own doc on why. */
   | { type: 'prewarmMenu' }
+  /** A call from the chrome that carries arguments, by name (../shell/chrome-actions.ts): the payload is
+   * the action's own to validate. */
+  | { type: 'act'; name: string; payload?: unknown }
   /** Puts a tab at a place in the strip. */
   | { type: 'moveTab'; id: string; index: number }
   /** A genuine tab drag has started (tab-drag.ts's `begin()`, the moment the pointer passes the press
@@ -134,6 +136,7 @@ export interface ShellActions {
   runCommand: (id: CommandId) => void
   openMenu: (anchor: PanelAnchor) => void
   prewarmMenu: () => void
+  act: (name: string, payload: unknown) => unknown
   beginTabDrag: (id: string) => void
   dragTab: (id: string, at: { x: number, y: number } | null) => void
   dropTab: (id: string, screen: { x: number, y: number }, client: { x: number, y: number }) => void
@@ -158,7 +161,7 @@ export function registerShellIpc (
   // ipcMain: a second window registers its own without colliding, and the
   // handler goes with the view. The frame check below stays: a webContents'
   // handlers hear every frame in it.
-  chromeWebContents.ipc.handle(COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: ShellCommand): void | Promise<void | SiteSummary | Web3Score | null> => {
+  chromeWebContents.ipc.handle(COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: ShellCommand): unknown => {
     if (!isFromChrome(event, chromeWebContents, chromeUrl)) {
       // Not the chrome view's top frame -- refuse silently rather than
       // throwing a message back that confirms the channel exists.
@@ -231,6 +234,8 @@ export function registerShellIpc (
       case 'prewarmMenu':
         actions.prewarmMenu()
         return
+      case 'act':
+        return actions.act(command.name, command.payload)
       case 'moveTab':
         if (typeof command.id === 'string' && Number.isFinite(command.index)) tabs.moveTab(command.id, command.index)
         return

@@ -21,11 +21,12 @@ function fakeMaximizedWindow (): { window: unknown, calls: string[] } {
 }
 
 function makeParts (window: unknown): WindowParts {
-  const entry = { window, chrome: {}, tabs: {}, shortcutsSuspended: () => false }
+  const entry = { window, chrome: {}, tabs: {}, overlays: {}, shortcutsSuspended: () => false }
   return {
     entry: entry as never,
     services: {} as never,
-    panels: { permissions: { close: vi.fn() }, siteInfo: { close: vi.fn() }, menu: { close: vi.fn() } } as never,
+    panels: { permissions: { close: vi.fn() }, siteInfo: { close: vi.fn() } } as never,
+    closeOverlays: vi.fn(),
     memory: { anchor: null, origin: undefined },
     openWindow: vi.fn(),
     topHeight: 0,
@@ -54,5 +55,19 @@ describe('shellActions windowMoveTo, restoring a maximized window on X11', () =>
     const [x, y] = (window as { setPosition: ReturnType<typeof vi.fn> }).setPosition.mock.calls[0] as [number, number]
     expect(x).toBe(Math.round(960 - 900 * 0.5))
     expect(y).toBe(0) // dy from the grab (20 - 0) subtracted back off the same y the release used
+  })
+})
+
+describe('shellActions openMenu', () => {
+  it('toggles the menu under a rectangle of numbers, and ignores any other anchor', () => {
+    const toggle = vi.fn()
+    const parts = makeParts({})
+    ;(parts.entry as unknown as { overlays: unknown }).overlays = { toggle }
+    const actions = shellActions(parts)
+    const anchor = { x: 900, y: 40, width: 30, height: 30 }
+    actions.openMenu(anchor)
+    expect(toggle).toHaveBeenCalledExactlyOnceWith('menu', anchor)
+    for (const bad of [undefined, null, 'x', { x: Number.NaN, y: 1, width: 2, height: 3 }, { x: 1, y: 1, width: 2 }]) actions.openMenu(bad as never)
+    expect(toggle).toHaveBeenCalledTimes(1)
   })
 })

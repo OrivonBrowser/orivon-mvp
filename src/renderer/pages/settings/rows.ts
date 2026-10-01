@@ -4,11 +4,14 @@
 import { h } from '../shared/dom.js'
 import { renderApps } from './apps-view.js'
 import { renderClearData } from './clear-data.js'
+import { renderPageList } from './controls/page-list.js'
 import { renderUsage } from './usage-view.js'
 import type { Control, Row } from './model.js'
 import type { SettingsState } from './state.js'
 
 let controlCount = 0
+
+const SEARCH_ADDRESS_PROBLEM = 'That is not an address this can search with. It must start with https:// and contain %s where the search goes.'
 
 function choiceOptions (control: Extract<Control, { type: 'choice' }>, state: SettingsState): Array<{ value: string, label: string }> {
   if (control.options !== undefined) return [...control.options]
@@ -21,7 +24,11 @@ function renderChoice (control: Extract<Control, { type: 'choice' }>, state: Set
   const select = h('select', { className: 'select', id })
   for (const option of choiceOptions(control, state)) select.append(h('option', { value: option.value, textContent: option.label }))
   select.value = String(state.value(control.key))
-  select.addEventListener('change', () => { void state.set(control.key, select.value) })
+  select.addEventListener('change', () => {
+    // A choice can change what the page shows (another row, this row's help): it is finished once chosen, though it keeps focus.
+    select.dataset['settled'] = 'true'
+    void state.set(control.key, select.value)
+  })
   return select
 }
 
@@ -40,7 +47,7 @@ function renderText (control: Extract<Control, { type: 'text' }>, state: Setting
   input.addEventListener('change', () => {
     void state.set(control.key, input.value.trim()).then((error) => {
       input.setAttribute('aria-invalid', error === null ? 'false' : 'true')
-      problem.textContent = error === null ? '' : 'That is not an address this can search with. It must start with https:// and contain %s where the search goes.'
+      problem.textContent = error === null ? '' : control.problem ?? SEARCH_ADDRESS_PROBLEM
     })
   })
   return h('div', { className: 'text-control' }, input, problem)
@@ -99,8 +106,18 @@ function renderShortcut (control: Extract<Control, { type: 'shortcut' }>, state:
       shortcut.keys === null ? h('span', { className: 'muted', textContent: 'Not set' }) : caps(shortcut.keys),
       shortcut.aliases.length === 0 ? null : h('span', { className: 'muted also' }, 'Also ', ...shortcut.aliases.map((alias) => caps(alias))),
       button('Change', () => { void shortcuts.record(control.id) }),
-      shortcut.keys === null ? null : button('Clear', () => { void shortcuts.clear(control.id) }),
+      clearButton(shortcut.keys === null, button('Clear', () => { void shortcuts.clear(control.id) })),
       shortcut.isDefault ? null : button('Reset', () => { void shortcuts.reset(control.id) })))
+}
+
+/** A shortcut with no keys has nothing to clear, but keeps the button's room so Change stays in one column down the list. */
+function clearButton (nothingToClear: boolean, button: HTMLElement): HTMLElement {
+  if (!nothingToClear) return button
+  button.setAttribute('disabled', '')
+  button.setAttribute('aria-hidden', 'true')
+  button.tabIndex = -1
+  button.style.visibility = 'hidden'
+  return button
 }
 
 export function renderRow (row: Row, state: SettingsState): HTMLElement {
@@ -112,6 +129,7 @@ export function renderRow (row: Row, state: SettingsState): HTMLElement {
     case 'choice': field = renderChoice(control, state, controlId); break
     case 'toggle': field = renderToggle(control, state, controlId); break
     case 'text': field = renderText(control, state, controlId); break
+    case 'pageList': field = renderPageList(control, state, controlId); break
     case 'action': field = renderAction(control, state); break
     case 'shortcut': field = renderShortcut(control, state); break
     case 'clearData': field = renderClearData(state); break
@@ -120,7 +138,9 @@ export function renderRow (row: Row, state: SettingsState): HTMLElement {
     case 'info': field = h('span', { className: 'value', textContent: control.text(state) }); break
   }
 
-  const changed = 'key' in control && state.isChanged(control.key)
+  const helpText = row.helpFor?.(state) ?? row.help ?? ''
+  // A list is emptied by its own remove buttons, so it carries no Changed pill or Reset of its own.
+  const changed = 'key' in control && control.type !== 'pageList' && state.isChanged(control.key)
   const reset = changed
     ? h('button', {
       className: 'link-btn',
@@ -130,17 +150,17 @@ export function renderRow (row: Row, state: SettingsState): HTMLElement {
       onclick: () => { void state.reset(control.key) }
     })
     : null
-  const labelsControl = control.type === 'choice' || control.type === 'toggle' || control.type === 'text'
+  const labelsControl = control.type === 'choice' || control.type === 'toggle' || control.type === 'text' || control.type === 'pageList'
   // A control that is more than one compact field (several checkboxes, a
   // list of apps, the usage-statistics block) stacks under its own label
   // full width, rather than squeezed beside it at the row's right edge.
-  const isWide = control.type === 'apps' || control.type === 'usage' || control.type === 'clearData'
+  const isWide = control.type === 'apps' || control.type === 'usage' || control.type === 'clearData' || control.type === 'pageList'
   return h('div', { className: isWide ? 'row wide' : 'row', id: `row-${row.id}` },
     h('div', { className: 'row-text' },
       labelsControl
         ? h('label', { className: 'row-label', htmlFor: controlId, textContent: row.label })
         : h('span', { className: 'row-label', textContent: row.label }),
       changed ? h('span', { className: 'changed', title: 'Changed from the default', textContent: 'Changed' }) : null,
-      row.help === undefined ? null : h('p', { className: 'row-help', textContent: row.help })),
+      helpText === '' ? null : h('p', { className: 'row-help', textContent: helpText })),
     h('div', { className: 'row-control' }, field, reset))
 }

@@ -19,6 +19,7 @@ function params (overrides: Partial<ContextMenuParams>): ContextMenuParams {
     x: 10,
     y: 20,
     linkURL: '',
+    linkText: '',
     srcURL: '',
     mediaType: 'none',
     hasImageContents: false,
@@ -63,7 +64,7 @@ describe('contextMenuTemplate -- what a right-click in a tab offers', () => {
   it('offers Copy for selected text outside a field', () => {
     const a = actions()
     const template = contextMenuTemplate(params({ selectionText: 'hello', editFlags: { ...NO_EDIT, canCopy: true, canSelectAll: true } }), a, false)
-    expect(labels(template)).toEqual(['Copy', 'Select All'])
+    expect(labels(template)).toEqual(['Copy'])
     click(template, 'Copy')
     expect(a.copy).toHaveBeenCalledTimes(1)
   })
@@ -165,5 +166,147 @@ describe('showContextMenu', () => {
     buildFromTemplate.mockClear()
     showContextMenu(fakeContents() as never, params({}), { window: {} as never, openInNewTab: vi.fn() })
     expect(buildFromTemplate).not.toHaveBeenCalled()
+  })
+})
+
+describe('showContextMenu -- a tab\'s menu against a chrome menu', () => {
+  function tabContents (): Record<string, unknown> {
+    const navigationHistory = { canGoBack: vi.fn(() => true), canGoForward: vi.fn(() => false), goBack: vi.fn(), goForward: vi.fn() }
+    const session = { addWordToSpellCheckerDictionary: vi.fn() }
+    return {
+      cut: vi.fn(), copy: vi.fn(), paste: vi.fn(), selectAll: vi.fn(), undo: vi.fn(), redo: vi.fn(), pasteAndMatchStyle: vi.fn(),
+      reload: vi.fn(), downloadURL: vi.fn(), replaceMisspelling: vi.fn(), copyImageAt: vi.fn(),
+      isDestroyed: vi.fn(() => false), navigationHistory, session
+    }
+  }
+  function settings (values: Record<string, unknown>): { get: ReturnType<typeof vi.fn>, set: ReturnType<typeof vi.fn> } {
+    return { get: vi.fn((key: string) => values[key]), set: vi.fn() }
+  }
+  const lastTemplate = (): MenuItemConstructorOptions[] => buildFromTemplate.mock.calls.at(-1)?.[0] as unknown as MenuItemConstructorOptions[]
+
+  it('gives a tab the page group, wired to the tab\'s history and reload', () => {
+    buildFromTemplate.mockClear()
+    const wc = tabContents()
+    const run = vi.fn()
+    showContextMenu(wc as never, params({}), { window: {} as never, openInNewTab: vi.fn(), page: { bare: () => false }, runCommand: run })
+    const template = lastTemplate()
+    expect(labels(template)).toEqual(['Back', 'Forward', 'Reload', 'Save Page As…', 'Print…', 'Take a Screenshot', 'View Page Source'])
+    expect(template.find((i) => i.label === 'Back')?.enabled).toBe(true)
+    expect(template.find((i) => i.label === 'Forward')?.enabled).toBe(false)
+    click(template, 'Back')
+    click(template, 'Reload')
+    click(template, 'Print…')
+    expect((wc['navigationHistory'] as { goBack: () => void }).goBack).toHaveBeenCalledTimes(1)
+    expect(wc['reload']).toHaveBeenCalledTimes(1)
+    expect(run).toHaveBeenCalledWith('page.print')
+  })
+
+  it('offers a kiosk no way to open another tab, window or private session, and keeps the copy items', () => {
+    buildFromTemplate.mockClear()
+    const open = vi.fn()
+    showContextMenu(tabContents() as never, params({ linkURL: 'https://example.com/', mediaType: 'image', srcURL: 'https://example.com/i.png', selectionText: 'words', editFlags: { ...NO_EDIT, canCopy: true } }), {
+      window: {} as never, kiosk: true, openInNewTab: open, openInWindow: open, openInPrivate: open, openInSplit: open, openInFront: open,
+      page: { bare: () => false }, services: { settings: settings({ 'search.engine': 'brave', 'search.customUrl': '', 'spellcheck.enabled': true }) } as never
+    })
+    const all = labels(lastTemplate())
+    expect(all.filter((label) => /Open |Search/.test(label))).toEqual([])
+    expect(all).toContain('Copy Link Address')
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  it('leaves View Page Source out for a tab whose source cannot be shown', () => {
+    buildFromTemplate.mockClear()
+    showContextMenu(tabContents() as never, params({}), { window: {} as never, openInNewTab: vi.fn(), page: { bare: () => false, viewSource: () => false }, runCommand: vi.fn() })
+    expect(labels(lastTemplate())).toEqual(['Back', 'Forward', 'Reload', 'Save Page As…', 'Print…', 'Take a Screenshot'])
+  })
+
+  it('trims the page group to navigation on a bare page', () => {
+    buildFromTemplate.mockClear()
+    showContextMenu(tabContents() as never, params({}), { window: {} as never, openInNewTab: vi.fn(), page: { bare: () => true } })
+    expect(labels(lastTemplate())).toEqual(['Back', 'Forward', 'Reload'])
+  })
+
+  it('saves a link through the tab\'s downloadURL', () => {
+    buildFromTemplate.mockClear()
+    const wc = tabContents()
+    showContextMenu(wc as never, params({ linkURL: 'https://example.com/f.zip' }), { window: {} as never, openInNewTab: vi.fn(), page: { bare: () => false } })
+    click(lastTemplate(), 'Save Link As…')
+    expect(wc['downloadURL']).toHaveBeenCalledWith('https://example.com/f.zip')
+  })
+
+  it('searches the selection with the chosen engine, in the tab put in front', () => {
+    buildFromTemplate.mockClear()
+    const inFront = vi.fn()
+    const background = vi.fn()
+    showContextMenu(tabContents() as never, params({ selectionText: 'a b', editFlags: { ...NO_EDIT, canCopy: true } }), {
+      window: {} as never,
+      openInNewTab: background,
+      openInFront: inFront,
+      page: { bare: () => false },
+      services: { settings: settings({ 'search.engine': 'brave', 'search.customUrl': '', 'spellcheck.enabled': true }) } as never
+    })
+    const template = lastTemplate()
+    expect(labels(template)).toEqual(['Copy', 'Search Brave Search for “a b”'])
+    click(template, 'Search Brave Search for “a b”')
+    expect(inFront).toHaveBeenCalledWith('https://search.brave.com/search?q=a+b')
+    expect(background).not.toHaveBeenCalled()
+  })
+
+  it('words a custom engine as "the Web"', () => {
+    buildFromTemplate.mockClear()
+    showContextMenu(tabContents() as never, params({ selectionText: 'q' }), {
+      window: {} as never, openInNewTab: vi.fn(), page: { bare: () => false },
+      services: { settings: settings({ 'search.engine': 'custom', 'search.customUrl': 'https://x.test/?q=%s', 'spellcheck.enabled': true }) } as never
+    })
+    expect(labels(lastTemplate())).toContain('Search the Web for “q”')
+  })
+
+  it('switches spell checking off from the editable menu, and hides suggestions while it is off', () => {
+    buildFromTemplate.mockClear()
+    const store = settings({ 'search.engine': 'duckduckgo', 'search.customUrl': '', 'spellcheck.enabled': true })
+    const wc = tabContents()
+    showContextMenu(wc as never, params({ isEditable: true, misspelledWord: 'helo', dictionarySuggestions: ['hello'] }), {
+      window: {} as never, openInNewTab: vi.fn(), page: { bare: () => false }, services: { settings: store } as never
+    })
+    const template = lastTemplate()
+    click(template, 'hello')
+    click(template, 'Add to Dictionary')
+    click(template, 'Check Spelling')
+    expect(wc['replaceMisspelling']).toHaveBeenCalledWith('hello')
+    expect((wc['session'] as { addWordToSpellCheckerDictionary: ReturnType<typeof vi.fn> }).addWordToSpellCheckerDictionary).toHaveBeenCalledWith('helo')
+    expect(store.set).toHaveBeenCalledWith('spellcheck.enabled', false)
+
+    buildFromTemplate.mockClear()
+    showContextMenu(wc as never, params({ isEditable: true, misspelledWord: 'helo', dictionarySuggestions: ['hello'] }), {
+      window: {} as never, openInNewTab: vi.fn(), page: { bare: () => false },
+      services: { settings: settings({ 'search.engine': 'duckduckgo', 'search.customUrl': '', 'spellcheck.enabled': false }) } as never
+    })
+    expect(labels(lastTemplate())).not.toContain('hello')
+    expect(lastTemplate().find((i) => i.label === 'Check Spelling')).toMatchObject({ checked: false })
+  })
+
+  it('gives the chrome only edit items and Paste and Go, never a page item', () => {
+    buildFromTemplate.mockClear()
+    const pasteAndGo = vi.fn()
+    showContextMenu(tabContents() as never, params({ isEditable: true, editFlags: { ...NO_EDIT, canPaste: true } }), { window: {} as never, openInNewTab: vi.fn(), pasteAndGo })
+    const template = lastTemplate()
+    expect(labels(template)).toEqual(['Undo', 'Redo', 'Cut', 'Copy', 'Paste', 'Paste and Go', 'Paste as Plain Text', 'Select All'])
+    click(template, 'Paste and Go')
+    expect(pasteAndGo).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the chrome nothing for a click on empty space', () => {
+    buildFromTemplate.mockClear()
+    showContextMenu(tabContents() as never, params({}), { window: {} as never, openInNewTab: vi.fn() })
+    expect(buildFromTemplate).not.toHaveBeenCalled()
+  })
+
+  it('does nothing when the tab is gone before the item is chosen', () => {
+    buildFromTemplate.mockClear()
+    const wc = tabContents()
+    showContextMenu(wc as never, params({ linkURL: 'https://example.com/f.zip' }), { window: {} as never, openInNewTab: vi.fn(), page: { bare: () => false } })
+    ;(wc['isDestroyed'] as ReturnType<typeof vi.fn>).mockReturnValue(true)
+    click(lastTemplate(), 'Save Link As…')
+    expect(wc['downloadURL']).not.toHaveBeenCalled()
   })
 })

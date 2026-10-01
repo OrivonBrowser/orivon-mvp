@@ -93,8 +93,14 @@ function renderNav (): void {
 
 function render (): void {
   const query = search.value.trim()
+  // A choice that was just made keeps the keyboard, so the row is found again in the new page.
+  const focusedChoice = document.activeElement instanceof HTMLSelectElement ? document.activeElement.closest('.row')?.id : undefined
+  // A control that keeps its nodes across redraws (`data-keep-focus`) takes the keyboard back by reference.
+  const kept = document.activeElement instanceof HTMLElement && document.activeElement.closest('[data-keep-focus]') !== null ? document.activeElement : null
   renderNav()
   replaceChildren(content, query === '' ? renderSectionBody(current) : renderSearchBody(query))
+  if (focusedChoice !== undefined) document.getElementById(focusedChoice)?.querySelector('select')?.focus()
+  if (kept?.isConnected === true) kept.focus()
   if (highlight !== null) {
     const row = document.getElementById(`row-${highlight}`)
     row?.scrollIntoView({ block: 'center' })
@@ -153,7 +159,8 @@ async function start (): Promise<void> {
   function midInteraction (): boolean {
     const active = document.activeElement
     if (!(content.contains(active))) return false
-    if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement) return true
+    // A control that has taken its value and needs the page drawn again says so; a half-typed one does not.
+    if ((active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement) && active.dataset['settled'] !== 'true') return true
     return content.querySelector('.armed') !== null
   }
   let renderPending = false

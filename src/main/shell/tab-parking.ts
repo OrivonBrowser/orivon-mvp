@@ -9,6 +9,7 @@
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { INTERNAL_PARTITION } from '../pages/internal-pages.js'
 import type { TabRecord } from './tab-types.js'
+import { applyTabSignals } from './tab-signals.js'
 import { appTabArgsFor, appTabOrigins, appTabViews, makeTabView, wireView } from './tab-view.js'
 import type { WebContentsView } from 'electron'
 
@@ -121,7 +122,10 @@ export function repartitionView (
   record.isDashboardTab = false
   record.internalPage = null
   if (parked === undefined) wireView(id, record)
-  else keepOnlyOwnEntriesOnReturn(record, parked, target)
+  else {
+    keepOnlyOwnEntriesOnReturn(record, parked, target)
+    applyTabSignals(id, record)
+  }
 
   // Same tab, fresh WebContents -- the lifecycle seam's one event tab-
   // view.ts raises directly (tab-lifecycle.ts's own doc says why).

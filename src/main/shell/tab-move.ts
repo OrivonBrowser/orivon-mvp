@@ -1,6 +1,7 @@
 // Moving a tab between windows. The tab is the same page throughout, with its
 // history, scroll and state: its view is taken out of one window and shown in
 // another. Never moves a tab out of a window where a page holds the screen.
+import { clampToRun } from './tab-order.js'
 import type { ShellWindow } from './window-registry.js'
 import type { Placement, ShellWindowOptions } from './window-options.js'
 
@@ -54,13 +55,17 @@ export function crossWindowTargetFor (
   from: ShellWindow,
   point: Point,
   windows: readonly ShellWindow[],
-  topHeight: number
+  topHeight: number,
+  pinned = false
 ): { window: ShellWindow, index: number } | null {
   // Nothing says which of overlapping windows is in front; the newest is the likeliest.
   const target = windows.filter((candidate) => candidate !== from && !candidate.window.isDestroyed() && inTop(candidate.window.getBounds(), point, topHeight)).at(-1)
   if (target === undefined) return null
   const bounds = target.window.getBounds()
-  return { window: target, index: Math.round(((point.x - bounds.x) / bounds.width) * target.tabs.tabCount) }
+  const tabs = target.tabs.getState().tabs
+  const wanted = Math.round(((point.x - bounds.x) / bounds.width) * tabs.length)
+  // A pinned tab lands in the pinned run, and any other outside it, as `giveTab` will place it.
+  return { window: target, index: clampToRun(wanted, pinned, tabs.filter((tab) => tab.pinned).length, tabs.length) }
 }
 
 /** A tab was let go outside its own strip, at `point` (screen coordinates): into another window's
@@ -73,7 +78,7 @@ export function dropTab (
   openWindow: (options: ShellWindowOptions) => void,
   topHeight: number
 ): void {
-  const target = crossWindowTargetFor(from, point, windows, topHeight)
+  const target = crossWindowTargetFor(from, point, windows, topHeight, from.tabs.record(id)?.pinned === true)
   if (target !== null) {
     moveToWindow(from, id, target.window, target.index)
     return

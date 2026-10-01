@@ -1691,3 +1691,42 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   app; accept the size.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
+
+### A317: Chromium did not report a hung page as unresponsive in this build **[RESEARCH]**
+
+- **Question:** A page spinning in `while (true) {}` was sent mouse, key and wheel input for 45 to 60 seconds in an
+  inactive window under xvfb; its title stopped changing and `webContents` never emitted `unresponsive`. Does it
+  fire on a real display, in an active window, or at all? Reload on a genuinely hung renderer is unmeasured too.
+- **Why it matters:** the "This page isn't responding" card and its Wait and Reload buttons are driven by that event.
+- **Options:** measure on a real display with a window manager (rec.); watch for a stalled page in main.
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A318: The older popovers close on blur the way the menu did when a resize crashed it **[RESEARCH]**
+
+- **Question:** Shrinking a window so that the open main menu lay wholly outside it killed the main process,
+  because Chromium blurred the view inside the native `setSize` call and the host removed the view re-entrantly.
+  The overlay host now delivers the blur afterwards. Do the permissions and site-info popovers
+  (`src/main/permissions/popover-view.ts`) close on blur in the same call, and can a resize reach them?
+- **Why it matters:** a crash with no log line, from an ordinary window resize.
+- **Options:** probe each popover with a resize to a width that leaves it outside the window (rec.); move both onto the overlay host.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A319: A kiosk still lets a page open a tab and shows the welcome screen **[AI-REC]**
+
+- **Question:** In a `--orivon-kiosk` window a page's own `window.open` or `target=_blank` opens a tab in front, with
+  no strip to reach the earlier one, and the first-run welcome screen still shows. The link menu is trimmed already.
+- **Why it matters:** a kiosk on a public screen should stay on the page it was given.
+- **Options:** navigate a kiosk's popup request in place and skip the welcome screen when `services.kiosk` (rec.); leave it.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A320: Spell checking downloads its dictionaries from Chromium's host **[OWNER]**
+
+- **Question:** With spell checking on (the default), Chromium fetches each language's dictionary once, from a host
+  the person never chose. The Settings row says so. Is that egress acceptable, or should Orivon host the files?
+- **Why it matters:** the project tells people what leaves the machine; this is a request to a third party with no consent step.
+- **Options:** keep it, named in Settings (current); off until the person turns it on; self-host the dictionaries.
+- **Who decides:** owner
+- **Blocks:** nothing

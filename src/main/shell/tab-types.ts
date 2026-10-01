@@ -11,6 +11,8 @@ import type { InternalPageId } from '../pages/internal-pages.js'
 import type { InternalPageRegistry } from '../pages/internal-registry.js'
 import type { DevToolsGate } from '../devtools/devtools-service.js'
 import type { TabLifecycle } from './tab-lifecycle.js'
+import type { ShellServices } from './shell-services.js'
+import type { CommandId } from '../shortcuts/commands.js'
 
 export interface TabState {
   id: string
@@ -47,6 +49,14 @@ export interface TabState {
   splitWith: string | null
   /** One of the shell's own pages (Settings, History, ...). It has no site: no shield, no permissions, nothing to bookmark. */
   isInternal: boolean
+  /** Kept at the strip's start, narrow, and not closed by accident. */
+  pinned: boolean
+  /** The page's sound is switched off. */
+  muted: boolean
+  /** The page is making sound now. */
+  audible: boolean
+  /** Why the page's renderer died (`render-process-gone`'s reason), or null while it lives. */
+  crashed: string | null
 }
 
 /** What TabManager itself knows. Bookmarks are a separate store
@@ -66,6 +76,10 @@ export interface ShellState extends TabsSnapshot {
   zoomPercent: number | null
   /** Which profile this window is, for the chip beside the menu. */
   profile: { name: string, color: string, isPrivate: boolean, shown: boolean }
+  /** Whether the toolbar shows the Home button (`toolbar.home`). */
+  homeButton: boolean
+  /** The key caps bound to the commands the chrome names in a tooltip, or null when one is cleared. */
+  shortcutKeys: { readonly 'nav.home': readonly string[] | null, readonly 'tab.search': readonly string[] | null }
 }
 
 export interface Bounds {
@@ -101,6 +115,10 @@ export interface TabShell {
    * every window the same way, from the same `services`). Absent in tests.
    * `loadOptions` -- see popups.ts's `loadOptionsFor`'s own doc. */
   openWindow?: (url: string, loadOptions?: LoadURLOptions) => WebContents
+  /** What every window of the process shares, for view-level code that needs a setting or a store (the context menu). Absent in tests. */
+  services?: ShellServices
+  /** Runs a command on this window, as a key or a menu row would. Absent in tests: nothing runs. */
+  runCommand?: (id: CommandId) => void
 }
 
 /** The view behind two panes: the divider, and an outline round the pane the person is in. */
@@ -162,6 +180,10 @@ export interface TabViewHost {
   /** The window is closing: nothing more is made or shown for it. */
   isClosing: () => boolean
   readonly devtools: DevToolsGate | undefined
+  /** `TabShell.services`: undefined in tests. */
+  readonly services: ShellServices | undefined
+  /** Runs a command on the window holding this tab; does nothing without a shell. */
+  runCommand: (id: CommandId) => void
 }
 
 /** One live tab, as TabManager and the per-view wiring in tab-view.ts both
@@ -210,4 +232,10 @@ export interface TabRecord {
    * emptied by tab-view.ts's repartitionView(); closing the tab closes
    * whatever is still here. */
   parkedViews: Map<string, WebContentsView>
+  /** Kept at the strip's start. Set by the pin feature; travels with the tab to another window. Absent reads as false: the factory sets it, a test's hand-made record need not. */
+  pinned?: boolean
+  /** The tab's sound is switched off; applied to whichever webContents the tab shows (tab-signals.ts's `apply`). Absent reads as false. */
+  muted?: boolean
+  /** Why the renderer died, or null. Set from `render-process-gone`, cleared on the next load. Absent reads as null. */
+  crashed?: string | null
 }

@@ -121,6 +121,19 @@ describe('the profiles service', () => {
     expect(existsSync(dir)).toBe(false)
   })
 
+  it('hands a private session an http or https address, and drops anything else', () => {
+    const { service: s, spawn, children } = service()
+    s.openPrivate('https://a.example/x?y=1')
+    s.openPrivate('file:///etc/passwd')
+    s.openPrivate('--inspect=9229')
+    const argsOf = (call: number): string[] => (spawn.mock.calls[call] as [unknown, string[]])[1]
+    expect(argsOf(0)).toHaveLength(3)
+    expect(argsOf(0)[2]).toBe('https://a.example/x?y=1')
+    expect(argsOf(1)).toHaveLength(2)
+    expect(argsOf(2)).toHaveLength(2)
+    for (const child of children) child.emit('exit')
+  })
+
   it('reports a profile it could not start instead of raising in the event that asked', () => {
     const made = service()
     const created = made.service.create('Work', 'green')
@@ -131,6 +144,16 @@ describe('the profiles service', () => {
 
     expect(s.open(created.profile.id)).toBe(false)
     complaint.mockRestore()
+  })
+
+  it('starts no other browser from a kiosk', () => {
+    const made = service()
+    const s = new ProfilesService({ launch: { kind: 'default', home, dir: home }, dir: home, profiles: made.store, source: { execPath: '/x', appPath: '/x', packaged: true, appImage: undefined, env: {} }, isPrivate: false, profileId: 'default', inherit: [] }, made.spawn as never, true)
+    const created = made.service.create('Work', 'green')
+    if (!created.ok) throw new Error('not created')
+    expect(s.openPrivate('https://a.example/')).toBe(false)
+    expect(s.open(created.profile.id)).toBe(false)
+    expect(made.spawn).not.toHaveBeenCalled()
   })
 
   it('says whether a private session was started', () => {

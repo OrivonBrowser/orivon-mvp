@@ -1,0 +1,32 @@
+/* One 40px line inside the overlay's card: a mark, the message, and what it names. */
+
+body[data-overlay='toast'] .toast {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  height: 40px;
+  padding: 0 14px;
+  gap: 10px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--wink);
+}
+
+body[data-overlay='toast'] .toast-mark { flex: none; display: inline-flex; color: var(--wink-dim); }
+body[data-overlay='toast'] .toast-mark svg { width: 16px; height: 16px; }
+body[data-overlay='toast'] .toast[data-tone='ok'] .toast-mark { color: var(--wok); }
+body[data-overlay='toast'] .toast[data-tone='error'] .toast-mark { color: var(--wdanger); }
+
+body[data-overlay='toast'] .toast-text,
+body[data-overlay='toast'] .toast-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body[data-overlay='toast'] .toast-text { flex: 0 1 auto; }
+body[data-overlay='toast'] .toast-name { flex: 1 1 0; font-weight: 500; color: var(--wink-strong); }
+/* The name belongs to the sentence it ends, so it sits a word's space from it, not a gap's. */
+body[data-overlay='toast'] .toast-text + .toast-name { margin-left: -6px; }
+
+/* The link belongs to the message, so it is tinted like the page's other links, not like the kit's inverse toast. */
+body[data-overlay='toast'] .toast .link-btn { flex: none; margin-left: auto; color: var(--waccent-text); text-decoration: none; }
+body[data-overlay='toast'] .toast .link-btn:hover { text-decoration: underline; }
+body[data-overlay='toast'] .toast .toast-dismiss { flex: none; width: 24px; height: 24px; margin-right: -6px; }
+body[data-overlay='toast'] .toast .toast-dismiss svg { width: 14px; height: 14px; }

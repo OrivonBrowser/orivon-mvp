@@ -1,0 +1,60 @@
+/* The pages-to-open list: rows of 36px on the surface tone inside one hairline box, the add field under it.
+   The remove button is drawn but see-through until the row is hovered or holds focus, so a row never shifts. */
+
+.row:has(.page-list) { gap: 12px; }
+.page-list { display: grid; gap: 10px; width: 100%; }
+
+.page-list-rows { display: grid; }
+.page-list-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--wborder);
+  border-radius: 8px;
+  background: var(--wsurface);
+  overflow: hidden;
+}
+
+.page-list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 4px 0 12px;
+  border-top: 1px solid var(--wborder);
+}
+.page-list-item:first-child { border-top: none; }
+.page-list-item:hover { background: var(--whover); }
+
+.page-list-mark { flex: none; display: inline-flex; color: var(--wink-dim); }
+.page-list-mark svg { width: 16px; height: 16px; }
+
+.page-list-address {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  user-select: text;
+}
+
+.page-list-remove { flex: none; opacity: 0; }
+.page-list-item:hover .page-list-remove,
+.page-list-item:focus-within .page-list-remove,
+.page-list-remove:focus-visible { opacity: 1; }
+
+.page-list-add { display: flex; align-items: center; gap: 8px; }
+.page-list-add .text { flex: 1 1 auto; min-width: 0; max-width: none; }
+.page-list-add .btn { height: 32px; flex: none; }
+/* The link's text lines up with the field's edge, not with its own padding. */
+.page-list .link-btn { justify-self: start; margin-left: -6px; }
+.page-list .link-btn[disabled] { opacity: 0.5; cursor: default; text-decoration: none; }
+
+.page-list .empty-state.compact {
+  padding: 16px 12px;
+  border: 1px dashed var(--wborder);
+  border-radius: 8px;
+}
+.page-list .empty-state p { margin: 0; font-size: 13px; }
