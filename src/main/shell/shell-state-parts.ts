@@ -4,10 +4,12 @@
 // each push and starts every part's watcher with the window.
 import { contain } from './contain.js'
 import { bookmarkedStatePart } from './bookmarks-bar/bar-state.js'
+import { contentBlockedStatePart } from './state/content-blocked.js'
 import { addressBarStatePart } from './state/address-bar.js'
 import { downloadsStatePart } from './state/downloads.js'
 import { homeStatePart } from './state/home.js'
 import { loginsStatePart } from '../passwords/logins-state.js'
+import { popupsBlockedStatePart } from './state/popups-blocked.js'
 import { shortcutsStatePart } from './state/shortcuts.js'
 import { siteAccessStatePart } from './state/site-access.js'
 import type { ShellState, TabsSnapshot } from './tab-types.js'
@@ -25,9 +27,11 @@ export interface ShellStatePart {
 export const SHELL_STATE_PARTS: readonly ShellStatePart[] = [
   addressBarStatePart,
   bookmarkedStatePart,
+  contentBlockedStatePart,
   downloadsStatePart,
   homeStatePart,
   loginsStatePart,
+  popupsBlockedStatePart,
   shortcutsStatePart,
   siteAccessStatePart
 ]

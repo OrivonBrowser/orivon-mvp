@@ -24,7 +24,7 @@ describe('SITE_KINDS', () => {
   })
 
   it('marks a kind available only once its feature enforces it', () => {
-    expect(SITE_KINDS.filter((kind) => kind.available).map((kind) => kind.id)).toEqual(['camera', 'microphone', 'location', 'clipboardRead', 'midi', 'idle', 'windowManagement', 'notifications'])
+    expect(SITE_KINDS.filter((kind) => kind.available).map((kind) => kind.id)).toEqual(['camera', 'microphone', 'location', 'clipboardRead', 'midi', 'idle', 'windowManagement', 'notifications', 'popups', 'javascript', 'images', 'sound', 'autoDownloads'])
   })
 
   it('finds a kind by id and answers undefined for anything else', () => {

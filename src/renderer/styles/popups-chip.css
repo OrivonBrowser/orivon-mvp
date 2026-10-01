@@ -1,0 +1,27 @@
+/* The address bar's mark for a page whose pop-ups were blocked. The plain pill button look comes from .pillbtn;
+   this only tints it and carries the count. */
+
+#popups-chip { position: relative; color: var(--wwarn-mark); }
+#popups-chip[hidden] { display: none; }
+#popups-chip:not(:disabled):hover { color: var(--wwarn-mark); }
+#popups-chip[aria-expanded='true'], #popups-chip:focus-visible { background: var(--whover-soft); }
+
+/* Ink on the tint in both themes: the chrome colour is light in one and dark in the other. */
+#popups-chip .popups-count {
+  position: absolute;
+  top: -3px;
+  right: -4px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  border-radius: 7px;
+  background: var(--wwarn-mark);
+  color: var(--wchrome);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 14px;
+  text-align: center;
+  pointer-events: none;
+}
+#popups-chip .popups-count[hidden] { display: none; }

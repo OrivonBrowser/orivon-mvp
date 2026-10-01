@@ -35,11 +35,11 @@ export const SITE_KINDS: readonly SiteKindDef[] = [
   { id: 'idle', label: 'Idle detection', group: 'permission', values: ['ask', 'block'], settingKey: 'sites.idle', available: true },
   { id: 'windowManagement', label: 'Window management', group: 'permission', values: ['ask', 'block'], settingKey: 'sites.windowManagement', available: true },
   { id: 'notifications', label: 'Notifications', group: 'permission', values: ['ask', 'block'], settingKey: 'sites.notifications', available: true },
-  { id: 'popups', label: 'Pop-ups and redirects', group: 'content', values: ['block', 'allow'], settingKey: 'sites.popups', available: false },
-  { id: 'javascript', label: 'JavaScript', group: 'content', values: ['allow', 'block'], settingKey: 'sites.javascript', available: false },
-  { id: 'images', label: 'Images', group: 'content', values: ['allow', 'block'], settingKey: 'sites.images', available: false },
-  { id: 'sound', label: 'Sound', group: 'content', values: ['allow', 'block'], settingKey: 'sites.sound', available: false },
-  { id: 'autoDownloads', label: 'Automatic downloads', group: 'content', values: ['ask', 'block'], settingKey: 'sites.autoDownloads', available: false },
+  { id: 'popups', label: 'Pop-ups and redirects', group: 'content', values: ['block', 'allow'], settingKey: 'sites.popups', available: true },
+  { id: 'javascript', label: 'JavaScript', group: 'content', values: ['allow', 'block'], settingKey: 'sites.javascript', available: true },
+  { id: 'images', label: 'Images', group: 'content', values: ['allow', 'block'], settingKey: 'sites.images', available: true },
+  { id: 'sound', label: 'Sound', group: 'content', values: ['allow', 'block'], settingKey: 'sites.sound', available: true },
+  { id: 'autoDownloads', label: 'Automatic downloads', group: 'content', values: ['ask', 'block'], settingKey: 'sites.autoDownloads', available: true },
   { id: 'devices', label: 'USB and HID devices', group: 'device', values: ['ask', 'block'], settingKey: 'sites.devices', available: false },
   { id: 'screenShare', label: 'Screen sharing', group: 'device', values: ['ask', 'block'], settingKey: 'sites.screenShare', available: false }
 ]

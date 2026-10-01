@@ -1,7 +1,7 @@
 # `src/main/shell/signals/`: what a tab's page reports about itself
 
-**What lives here.** One `TabSignal` per thing a tab's `webContents` tells the shell: `audio.ts` (sound and the
-person's mute), `crashed.ts` (a dead or unresponsive page), `find.ts` (the find bar's events and Escape in the
+**What lives here.** One `TabSignal` per thing a tab's `webContents` tells the shell: `audio.ts` (sound, the
+person's mute and the site's), `crashed.ts` (a dead or unresponsive page), `find.ts` (the find bar's events and Escape in the
 page) and `stop-key.ts` (Escape stops a load). Each is listed in `TAB_SIGNALS` in
 [`../tab-signals.ts`](../tab-signals.ts), which calls its `wire`, `apply` and `state` hooks for every tab.
 

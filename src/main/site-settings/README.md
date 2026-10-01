@@ -16,10 +16,17 @@
 | `site-permissions-view.ts` | pure: what the popup lists for its one site, and the two things it may do |
 | `sites-domain.ts` | the Settings page's `sites` domain: the defaults, the sites with an answer, one site's rows, a change, a reset |
 | `site-settings-runner.ts` | builds the controller over the services; one per process |
-| `install-site-permissions.ts`, `install-content-settings.ts` | the installers `../shell/shell-installers.ts` runs at start; the second is empty until content settings land |
+| `install-site-permissions.ts`, `install-content-settings.ts` | the installers `../shell/shell-installers.ts` runs at start: the permission asker, and the content settings below |
+| `popup-policy.ts`, `tab-interaction.ts`, `popup-blocks.ts`, `popup-blocker.ts`, `site-popups.ts` | the pop-up blocker: the rule (pure), when the person last clicked or pressed a key in each tab, what each page tried to open, the join of the three, and the process-wide instance `shell/tab-view.ts` asks from the window-open handler |
+| `popups-overlay.ts`, `popups-view.ts` | the `popups-blocked` overlay under the address bar's pop-up chip: the list of refused addresses, opening one on purpose, always allowing the site |
+| `content-rules.ts` | pure: which sites have JavaScript, images or sound switched off, and the response header that switches scripts off |
+| `site-content-blocks.ts` | `siteContentBlocks`, the rule and the change signal behind the mark on the address bar's key (`shell/state/content-blocked.ts`) |
+| `site-sound.ts` | `siteSound`, the rule `shell/signals/audio.ts` asks when it decides a tab's mute |
+| `auto-downloads.ts` | holds a second download a page starts without a click and asks about it as the `autoDownloads` kind |
 
-**What it depends on.** `electron` (types), [`../sessions/notification-decisions.ts`](../sessions/notification-decisions.ts) (through the runner), [`../shell/`](../shell/) (`ShellInstaller`, `ShellServices`, the
-window registry, the prompt anchor), [`../overlays/`](../overlays/) (`requestSlot`),
+**What it depends on.** `electron` (types), [`../shell/`](../shell/) (`ShellInstaller`, `ShellServices`, the
+window registry, the prompt anchor, `signals/audio.ts`'s `applyMuted`), [`../downloads/`](../downloads/) (`StartInfo`),
+[`../sessions/notification-decisions.ts`](../sessions/notification-decisions.ts) (through the runner), [`../sessions/web-request-owner.ts`](../sessions/web-request-owner.ts) (the one owner of the default session's request events), [`../overlays/`](../overlays/) (`requestSlot`),
 [`../sessions/site-asks.ts`](../sessions/site-asks.ts) (the registry the asker joins),
 [`../consent/grant-prompt-origin.ts`](../consent/grant-prompt-origin.ts) (how a site is written for the person),
 [`../../broker/policy/origin.ts`](../../broker/policy/origin.ts).
@@ -58,3 +65,26 @@ stored, so a select never lists two ways to say the same thing.
 
 **An app's origin has no row.** A registered app or one served from the cache is bounded by its grants; the controller lists
 no row for it and refuses to write one, so a stored answer for an origin that later became an app is never shown as if it counted.
+
+**A pop-up is blocked unless the person's own input opened it.** `HandlerDetails` reports no user gesture, so
+`popup-policy.ts` uses the person's input instead: a mouse press, touch or key press in the opener's tab within five
+seconds (Chromium's own transient-activation lifetime, so a sign-in popup opened after a short network call still
+opens) lets one window through; a second needs a new input. Input a script synthesises with `dispatchEvent` never
+reaches the browser process, so it counts for nothing. A registered app, a page that is not `http(s)` and an
+extension are outside the rule.
+
+**JavaScript is switched off with a response header, not a view setting.** `webPreferences.javascript` is fixed when a
+view is created and a tab outlives its site, so `install-content-settings.ts` adds a second `Content-Security-Policy:
+script-src 'none'` header to the page's document and to every frame in it (policies intersect, so it can only remove
+what a script may do, and the page's own policy is kept). It covers inline handlers and `javascript:` addresses; it
+applies to a response served from the HTTP cache too. A service worker already installed keeps serving, but the page's
+scripts do not run. Images are cancelled at the request. Both settings are the top-level site's and take effect on the
+next load, in the default session only: a tab in an app's own partition is never touched.
+
+**A site's sound is composed with the tab's mute, never replaced by it.** `mutedFor` in `signals/audio.ts` is the tab's
+mute or the site's setting; the tab menu and the speaker badge change the first only. The tab's badge reports a
+site-silenced tab as muted by site settings, and does nothing when pressed.
+
+**An automatic download waits by pausing it.** The download service has set the save path by the time `auto-downloads.ts`
+hears of a start, so the item is paused rather than deferred; a file small enough to finish before the pause takes
+hold is already on disk when the question is answered.

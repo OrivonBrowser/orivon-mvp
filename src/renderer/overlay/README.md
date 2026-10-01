@@ -3,7 +3,7 @@
 **What lives here.** The renderer side of [`../../main/overlays/`](../../main/overlays/): one HTML entry
 (`index.html`, `main.ts`) that every overlay view loads, told which overlay it is by its address, and one
 folder per overlay with that overlay's page (`auth-sheet/`, `cert-error/`, `certificate/`, `chooser/`, `find/`,
-`https-warning/`, `menu/`, `password-fill/` (also the page of `password-suggest`), `password-save/`, `restore/`,
+`https-warning/`, `menu/`, `password-fill/` (also the page of `password-suggest`), `password-save/`, `popups-blocked/`, `restore/`,
 `sad-tab/`, `screenshot/`, `shortcut-sheet/`, `site-prompt/`, `tab-search/`, `toast/`). `pages.ts` maps an overlay's
 name to its page, one line each, in name order.
 `kit.ts` is what a page is written against: `mount(root, overlay)`, the bridge's calls, and the parts that report
