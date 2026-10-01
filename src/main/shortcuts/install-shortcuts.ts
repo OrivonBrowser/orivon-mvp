@@ -2,7 +2,7 @@
 // application menu. One listener on `web-contents-created` reaches the chrome
 // view, every tab (repartitioned, adopted from a popup, or moved), the
 // popovers and the internal pages without any of them being wired one by one.
-import { Menu } from 'electron'
+import { ipcMain, Menu } from 'electron'
 import type { App, WebContents } from 'electron'
 import { INTERNAL_EVENT_CHANNEL } from '../channels.js'
 import { appTabViews } from '../shell/tab-partition.js'
@@ -12,6 +12,7 @@ import { attachShortcuts } from './dispatcher.js'
 import type { ExtensionKeys } from './dispatcher.js'
 import type { CommandBus } from './command-bus.js'
 import type { CommandId } from './commands.js'
+import { installPageKeyIpc } from './page-key-ipc.js'
 import type { ShortcutService } from './shortcut-service.js'
 
 /** Extensions' command keys, which start answering once the saved shortcuts are read: this is that moment. */
@@ -35,6 +36,15 @@ export function installShortcuts (app: Pick<App, 'on'>, service: ShortcutService
       if (!contents.isDestroyed()) contents.send(INTERNAL_EVENT_CHANNEL, { topic: 'shortcuts.recorded', payload: outcome })
     }
   }
+  installPageKeyIpc(ipcMain, {
+    tabOf: (contents) => {
+      const owner = windows.findOwner(contents)
+      if (owner === undefined) return null
+      const tabId = owner.tabs.findTabIdByWebContents(contents)
+      const view = tabId === null ? undefined : owner.tabs.record(tabId)?.view
+      return { active: owner.tabs.activeWebContents() === contents, isAppTab: view !== undefined && appTabViews.has(view), suspended: owner.shortcutsSuspended(), run: (id) => { commands.run(id, owner) } }
+    }
+  })
   app.on('web-contents-created', (_event, contents) => {
     // A page in the window; not DevTools, a webview's guest or a background page.
     if (contents.getType() === 'window') attachShortcuts(contents, service, host)
