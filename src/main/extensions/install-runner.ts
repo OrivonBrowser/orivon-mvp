@@ -24,6 +24,7 @@ import {
 import type { ExtensionSource, ExtensionUpdater, InstalledExtension } from './registry.js'
 import { clearPendingDnrInstall, registerPendingDnrInstall } from './extensions-dnr.js'
 import { effectiveManifest, manifestText } from './effective-manifest.js'
+import { reconcileGrants } from './granted-reconcile.js'
 import type { ExtensionPrefsStore } from './extension-prefs.js'
 import { readBaseManifestText, restoreBaseManifest, writeBaseManifest } from './effective-manifest-runner.js'
 import { refusePrivateInstall } from './install-private.js'
@@ -172,6 +173,7 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
   // The installed manifest, kept apart from the loaded copy (which carries the person's choices).
   const previousBase = readBaseManifestText(slotDir)
   const baseText = manifestText(manifest)
+  if (ctx.prefs !== undefined) reconcileGrants(ctx.prefs, id, manifest)
   const loadedText = ctx.prefs === undefined ? baseText : manifestText(effectiveManifest(manifest, ctx.prefs.get(id)))
 
   const asideDir = existsSync(targetDir) ? `${targetDir}.old-${randomBytes(6).toString('hex')}` : undefined

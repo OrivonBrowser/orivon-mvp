@@ -17,6 +17,7 @@
 
 import { matchesAnyHostPattern } from '../../broker/policy/extension-host-patterns.js'
 import { readExtensionManifest } from '../../broker/policy/extension-manifest.js'
+import { grantedHostRule } from './granted-host-rule.js'
 
 /** True when `manifest` (an extension's own loaded manifest.json) declares
  * the plain API permission `name` in its top-level `permissions` array --
@@ -60,7 +61,9 @@ export function hasApiOrHostAccess (manifest: unknown, apiPermission: string, ur
 export interface HostAccessQuestion { readonly extensionId: string, readonly url: string | undefined, readonly tabId?: number | undefined }
 export type HostAccessRule = (question: HostAccessQuestion) => boolean | undefined
 
-export const HOST_ACCESS_RULES: ReadonlyArray<HostAccessRule> = []
+export const HOST_ACCESS_RULES: ReadonlyArray<HostAccessRule> = [
+  grantedHostRule
+]
 
 /** What `hasHostAccess` answers, after the rules above have had their say.
  * Every host-gated API call and event goes through this one function, so a

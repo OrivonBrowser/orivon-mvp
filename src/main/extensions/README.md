@@ -86,9 +86,10 @@ same exception, reached only through the virtual specifiers above).
 
 | File | Layer |
 |---|---|
-| `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts`, `store-download-seam.ts`, `extension-prefs.ts`, `effective-manifest.ts`, `manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `extensions-detail-parts.ts`, `extensions-page-commands.ts`, `extension-permission-check.ts`, `install-private.ts` | The decision -- no `electron`, unit-tested under plain vitest |
+| `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts`, `store-download-seam.ts`, `extension-prefs.ts`, `effective-manifest.ts`, `manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `extensions-detail-parts.ts`, `extensions-page-commands.ts`, `extension-permission-check.ts`, `install-private.ts`, `optional-permissions.ts`, `permission-nag-limit.ts`, `granted-host-rule.ts`, `granted-reconcile.ts`, `details-optional.ts` | The decision -- no `electron`, unit-tested under plain vitest |
 | `unpack-runner.ts`, `registry-runner.ts`, `install-runner.ts`, `install-store-runner.ts`, `install-lifecycle.ts`, `extensions-view-runner.ts`, `store-runner.ts`, `extension-prefs-runner.ts`, `effective-manifest-runner.ts`, `extension-page-open.ts` | The real I/O |
 | `extension-install-prompt.ts`, `extensions-picker-runner.ts` | The native dialogs (`dialog.showMessageBox`, `dialog.showOpenDialog`) |
+| `permissions-api.ts`, `permission-prompt-overlay.ts` | `chrome.permissions` and the sheet it asks in (an `OverlayDef` queued through `requestSlot`) |
 | `extension-host.ts`, `extension-host-impl.ts`, `extension-popup-policy.ts`, `extension-event-filter.ts` | The library wiring: construction and tab lifecycle, the shell callbacks, the popup and background-page window policy, the per-listener event filter |
 | `api/` | Main-side handlers for the namespaces Orivon adds to `chrome.*`, and the one permission check (`api/README.md`) |
 | `extensions-subsystem.ts` | Registers everything into the running app via `../registry.ts`, including the Chrome Web Store (`store-runner.ts`) |
@@ -107,6 +108,15 @@ extension is open, and at the next launch when that never happens). A feature ad
 `MANIFEST_STAGES` (`manifest-stage-granted.ts`, `manifest-stage-site-access.ts`). A store update is
 judged against the base copy, so a choice that narrowed the loaded manifest never makes an update
 look like it asks for more.
+
+**A later permission request is asked, never granted unasked.** `permissions-api.ts` replaces the
+library's `permissions.*` handlers: `optional-permissions.ts` classifies a request against the
+manifest (held, never grantable, undeclared, or to ask), the sheet in `permission-prompt-overlay.ts`
+is the only way to a grant, and the answer lands in `prefs.granted`. Library checks follow at once
+(`extension-permission-check.ts` reads the grants, `granted-host-rule.ts` answers host questions);
+Chromium's own checks follow at the quiet reload, because `manifest-stage-granted.ts` merges the
+grants into the loaded manifest. Orivon never grants `nativeMessaging`, `webRequest*` or
+`declarativeNetRequest*`, which stay governed by the strip list.
 
 **`extension-sw-preload-recovery.ts` must import nothing beyond `electron`'s ambient types.**
 Its own exports (the two health-check channel constants, `extensionIdFromScope`) are imported by
