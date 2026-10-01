@@ -1,0 +1,11 @@
+{
+  "worker": {
+    "openOrClosedShadowRoot": "function"
+  },
+  "page": {
+    "openOrClosedShadowRoot": "function"
+  },
+  "content": {
+    "openOrClosedShadowRoot": "function"
+  }
+}

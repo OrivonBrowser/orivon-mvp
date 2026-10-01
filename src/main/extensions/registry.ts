@@ -28,10 +28,10 @@ export type ExtensionUpdater =
     /** Set when the last check found an update whose facts widen on what is
      * installed (T19's subset rule): the exact bytes the "Update" button
      * re-fetches, without another Omaha check, once the person reviews and
-     * approves it (install-runner.ts's `updateFromStore`). A successful
+     * approves it (install-store-runner.ts's `updateFromStore`). A successful
      * install into this slot replaces the whole registry entry, including
      * this field; a later check that finds no update does not clear it on
-     * its own (install-runner.ts's own doc on `updateFromStore`). */
+     * its own (install-store-runner.ts's own doc on `updateFromStore`). */
     readonly pendingUpdate?: { readonly url: string, readonly version: string }
   }
 

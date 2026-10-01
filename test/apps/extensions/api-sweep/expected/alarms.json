@@ -1,0 +1,18 @@
+{
+  "worker": {
+    "clear": "function",
+    "clearAll": "function",
+    "create": "function",
+    "get": "function",
+    "getAll": "function",
+    "onAlarm": "event"
+  },
+  "page": {
+    "clear": "function",
+    "clearAll": "function",
+    "create": "function",
+    "get": "function",
+    "getAll": "function",
+    "onAlarm": "event"
+  }
+}

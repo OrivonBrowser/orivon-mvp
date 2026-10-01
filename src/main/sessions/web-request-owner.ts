@@ -47,10 +47,25 @@ export type BeforeRequestHandler = OrderedHandler<OnBeforeRequestListenerDetails
 export type BeforeSendHeadersHandler = OrderedHandler<OnBeforeSendHeadersListenerDetails, RequestHeadersResult>['run']
 export type HeadersReceivedHandler = OrderedHandler<OnHeadersReceivedListenerDetails, ResponseHeadersResult>['run']
 
+/** Returned by each registration call, for a caller whose own need to see
+ * an event comes and goes (`../extensions/dnr-webrequest.ts`: dNR must see
+ * every URL while any loaded extension holds a `declarativeNetRequest*`
+ * permission, and nothing once none does). `remove()` takes this one
+ * handler back out and re-registers Electron's own listener from whatever
+ * remains -- with nothing left for an event, that means unregistering it
+ * from Electron entirely (`registerBeforeRequest` and its two siblings,
+ * below), not just an empty `{ urls: [] }` filter, which is not the same
+ * thing as "match nothing" in Electron's own webRequest filter grammar. A
+ * caller that never needs to stop seeing an event (the verifier's partition
+ * stamp, the granted-origin CSP) is free to ignore the return value. */
+export interface WebRequestHandlerHandle {
+  readonly remove: () => void
+}
+
 export interface WebRequestOwner {
-  readonly onBeforeRequest: (order: number, filter: WebRequestFilter, matches: (url: string) => boolean, run: BeforeRequestHandler) => void
-  readonly onBeforeSendHeaders: (order: number, filter: WebRequestFilter, matches: (url: string) => boolean, run: BeforeSendHeadersHandler) => void
-  readonly onHeadersReceived: (order: number, filter: WebRequestFilter, matches: (url: string) => boolean, run: HeadersReceivedHandler) => void
+  readonly onBeforeRequest: (order: number, filter: WebRequestFilter, matches: (url: string) => boolean, run: BeforeRequestHandler) => WebRequestHandlerHandle
+  readonly onBeforeSendHeaders: (order: number, filter: WebRequestFilter, matches: (url: string) => boolean, run: BeforeSendHeadersHandler) => WebRequestHandlerHandle
+  readonly onHeadersReceived: (order: number, filter: WebRequestFilter, matches: (url: string) => boolean, run: HeadersReceivedHandler) => WebRequestHandlerHandle
 }
 
 function logHandlerError (event: string, error: unknown, order: number): void {
@@ -84,12 +99,40 @@ interface Registered<Details, Result> extends OrderedHandler<Details, Result> {
   readonly filter: WebRequestFilter
 }
 
+/** Pushes `entry` onto `list`, re-registers Electron's own listener via
+ * `reRegister` (the new union may need a broader filter now), and returns
+ * the handle that later takes it back out -- the one add/remove shape all
+ * three events share (`onBeforeRequest`/`onBeforeSendHeaders`/
+ * `onHeadersReceived` below), so there is exactly one place this logic is
+ * written. */
+function addHandler<Details, Result> (
+  list: Array<Registered<Details, Result>>,
+  entry: Registered<Details, Result>,
+  reRegister: () => void
+): WebRequestHandlerHandle {
+  list.push(entry)
+  reRegister()
+  return {
+    remove () {
+      const index = list.indexOf(entry)
+      if (index !== -1) {
+        list.splice(index, 1)
+        reRegister()
+      }
+    }
+  }
+}
+
 function makeOwner (target: Session): WebRequestOwner {
   const beforeRequest: Array<Registered<OnBeforeRequestListenerDetails, CallbackResponse>> = []
   const beforeSendHeaders: Array<Registered<OnBeforeSendHeadersListenerDetails, RequestHeadersResult>> = []
   const headersReceived: Array<Registered<OnHeadersReceivedListenerDetails, ResponseHeadersResult>> = []
 
   function registerBeforeRequest (): void {
+    if (beforeRequest.length === 0) {
+      target.webRequest.onBeforeRequest(null)
+      return
+    }
     target.webRequest.onBeforeRequest(unionFilter(beforeRequest.map((h) => h.filter)), (details, callback) => {
       const seed: CallbackResponse = {}
       composeWebRequest(beforeRequest, details, details.url, seed, requestCancelledOrRedirected, (error, handlerOrder) => {
@@ -102,6 +145,10 @@ function makeOwner (target: Session): WebRequestOwner {
   }
 
   function registerBeforeSendHeaders (): void {
+    if (beforeSendHeaders.length === 0) {
+      target.webRequest.onBeforeSendHeaders(null)
+      return
+    }
     target.webRequest.onBeforeSendHeaders(unionFilter(beforeSendHeaders.map((h) => h.filter)), (details, callback) => {
       const seed: RequestHeadersResult = { requestHeaders: details.requestHeaders }
       composeWebRequest(beforeSendHeaders, details, details.url, seed, cancelled, (error, handlerOrder) => {
@@ -119,6 +166,10 @@ function makeOwner (target: Session): WebRequestOwner {
   }
 
   function registerHeadersReceived (): void {
+    if (headersReceived.length === 0) {
+      target.webRequest.onHeadersReceived(null)
+      return
+    }
     target.webRequest.onHeadersReceived(unionFilter(headersReceived.map((h) => h.filter)), (details, callback) => {
       const seed: ResponseHeadersResult = { responseHeaders: details.responseHeaders ?? {} }
       composeWebRequest(headersReceived, details, details.url, seed, cancelled, (error, handlerOrder) => {
@@ -136,16 +187,13 @@ function makeOwner (target: Session): WebRequestOwner {
 
   return {
     onBeforeRequest (order, filter, matches, run) {
-      beforeRequest.push({ order, matches, run, filter })
-      registerBeforeRequest()
+      return addHandler(beforeRequest, { order, matches, run, filter }, registerBeforeRequest)
     },
     onBeforeSendHeaders (order, filter, matches, run) {
-      beforeSendHeaders.push({ order, matches, run, filter })
-      registerBeforeSendHeaders()
+      return addHandler(beforeSendHeaders, { order, matches, run, filter }, registerBeforeSendHeaders)
     },
     onHeadersReceived (order, filter, matches, run) {
-      headersReceived.push({ order, matches, run, filter })
-      registerHeadersReceived()
+      return addHandler(headersReceived, { order, matches, run, filter }, registerHeadersReceived)
     }
   }
 }

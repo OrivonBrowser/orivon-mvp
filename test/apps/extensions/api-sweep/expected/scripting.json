@@ -1,0 +1,29 @@
+{
+  "worker": {
+    "ExecutionWorld": "object",
+    "StyleOrigin": "object",
+    "executeScript": "function",
+    "getRegisteredContentScripts": "function",
+    "insertCSS": "function",
+    "registerContentScripts": "function",
+    "removeCSS": "function",
+    "unregisterContentScripts": "function",
+    "updateContentScripts": "function"
+  },
+  "page": {
+    "ExecutionWorld": "object",
+    "StyleOrigin": "object",
+    "executeScript": "function",
+    "getRegisteredContentScripts": "function",
+    "insertCSS": "function",
+    "registerContentScripts": "function",
+    "removeCSS": "function",
+    "unregisterContentScripts": "function",
+    "updateContentScripts": "function"
+  },
+  "content": {
+    "ExecutionWorld": "object",
+    "StyleOrigin": "object",
+    "globalParams": "object"
+  }
+}

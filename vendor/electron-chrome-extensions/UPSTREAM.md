@@ -72,12 +72,10 @@
     `src/renderer/index.ts`'s `apiDefinitions`: added factories for all four, following the
     file's own existing pattern (a `webRequest.onHeadersReceived`-only stub was already there).
     Reason: entirely absent otherwise, so an extension whose startup code calls or feature-
-    detects any of them throws before it does anything else. `declarativeNetRequest`'s write
-    methods reject "not supported"; its read methods resolve empty; `onRuleMatchedDebug` is an
-    `ExtensionEvent` that never fires (nothing in this session ever calls its `sendEvent`).
-    `sidePanel` and `userScripts` resolve as no-ops. None of this enforces anything: no dynamic-
-    rule store, no real side panel, no real user script world -- a later package's own real
-    engine, per docs/planning/extensions-build-plan.md's measurement section.
+    detects any of them throws before it does anything else. `sidePanel` and `userScripts`
+    resolve as no-ops: no real side panel, no real user script world.
+    `declarativeNetRequest` is real, wired by patches 43 and 44 below to Orivon's own engine
+    (`src/main/extensions/dnr/`, `src/main/extensions/extensions-dnr.ts`).
 11. **Non-enumerable API properties.** `src/renderer/index.ts`'s per-API `Object.defineProperty
     (chrome, apiName, ...)`: `enumerable: false`, was `true`. Kept as a harmless extra guard;
     MEASURED not to fix MetaMask's LavaMoat "scuttling mode" crash by itself (patch 12 is what
@@ -677,6 +675,102 @@
     add; `onRemoveListener` deletes the matching token before falling through to the real
     `removeListener` call, and the deferred add checks its own token is still current before
     calling `addListener` at all.
+
+43. **`getRouter()` on `ElectronChromeExtensions`, and a permission-check override on the
+    router.** `src/browser/index.ts`: added a public `getRouter(): ExtensionRouter` returning the
+    private `ctx.router` this library's own API classes (`src/browser/api/*.ts`) already register
+    their handlers on. `src/browser/router.ts`: added `setPermissionCheck` (same module-level-
+    setter shape as patches 5/9's sender checks), which `onExtensionMessage` calls instead of
+    reading the loaded extension's own `manifest.permissions` when a handler's `permission` check
+    runs, if set. Reason: Orivon's own `declarativeNetRequest` API handlers
+    (`src/main/extensions/dnr-api.ts`) register on this same router, the same way this library's
+    own API classes do, so the renderer's `invokeExtension('declarativeNetRequest.<method>')`
+    calls (patch 10) reach real main-side code through the same `crx-msg` path every other API
+    uses; and Orivon strips every `declarativeNetRequest*` permission from the manifest copy it
+    loads (`src/main/extensions/README.md`), so gating those handlers on the loaded manifest's own
+    permissions would always refuse -- `setPermissionCheck`'s override answers from the ORIGINAL
+    permission record Orivon kept instead (`registry.ts`'s `StrippedRecord`).
+44. **`setBadgeText()` on `ElectronChromeExtensions`, set from main.** `src/browser/api/
+    browser-action.ts`: added a public `BrowserActionAPI.setBadgeTextFromMain(extensionId, tabId,
+    text)`, the same tab-scoped `action.tabs[tabId].text` write and `onUpdate()` broadcast
+    `setDetails`'s `browserAction.setBadgeText` IPC handler already does for an extension calling
+    the API on itself, minus the `ExtensionEvent`/default-value lookup that path needs and this
+    caller does not (it always passes an explicit string). `src/browser/index.ts`: added a public
+    `setBadgeText(extensionId, tabId, text)` delegating to it. Reason: Orivon's own
+    `declarativeNetRequest.setExtensionActionOptions({ displayActionCountAsBadgeText: true })`
+    wiring (`src/main/extensions/dnr-api.ts`) renders a per-tab matched-rule count driven by
+    `webRequest`, from main, never from the extension's own script -- there was no public way in
+    for a caller outside this library's own IPC handlers to set one tab's badge text.
+45. **The renderer seam: extras, `__crx`, strict calls, `devtools_page`.**
+    `src/renderer/index.ts`: `injectExtensionAPIs(extras = [])`. `mainWorldScript` no longer ends
+    by deleting `electron` and freezing `chrome`; that tail is a second self-contained function,
+    `finalizeScript`, which runs after every extra. The order is `mainWorldScript`, each extra
+    through `contextBridge.executeInMainWorld({ func })` (one at a time, so a throwing extra does
+    not stop the others or leave the page unlocked), then `finalizeScript`. Between them
+    `globalThis.__crx` (a configurable property, deleted by `finalizeScript`) carries what an extra
+    needs: `extensionId`, `manifest`, `context` (`'worker'` or `'page'`), `declares(permission)`
+    (the manifest lists it under `permissions` or `optional_permissions`), `call(name)` (an
+    `invokeExtension` with the new `strict` option), `event(name)` (an `ExtensionEvent`) and
+    `define(ns, build)` (the library's own `Object.defineProperty(chrome, ns, ...)`, with
+    Electron's native object of that name as `base`). `ExtensionMessageOptions.strict`: an IPC
+    error rethrows with the `Error invoking remote method 'crx-msg': Error: ` prefix removed, so a
+    handler's own message reaches the caller; with a trailing callback the error is logged and the
+    callback gets `undefined`, as before. Every library namespace keeps the old swallow-and-resolve
+    behaviour. `finalizeScript` leaves `chrome` unfrozen in the document of the manifest's own
+    `devtools_page`: Electron attaches `chrome.devtools` after this preload ran, and a frozen
+    `chrome` made that attach fail (measured: with the freeze skipped, `devtools.panels.create`
+    calls back). New `src/renderer/extras.ts` holds the list (`setExtraMainWorldApis`,
+    `getExtraMainWorldApis`); `src/preload.ts` passes it to `injectExtensionAPIs`. Reason: the
+    namespaces Orivon adds are written once, in `src/preload/extension-apis/`, instead of as more
+    blocks in this file.
+46. **Toolbar actions from main.** `src/browser/api/browser-action.ts`: public
+    `listActions()` (id, title, whether a popup is set), `activateFromMain(extensionId, tab, anchor)`
+    (the existing `activateClick` with `recordInvocation: true`, for Orivon's own trusted code: a
+    menu entry or a shortcut; no extension message reaches it) and `notifyChanged()` (the private
+    `onUpdate`). Module setters, set once before the first activation: `setActionVisibilityCheck`
+    filters the actions `getState` and `listActions` report (unset: all of them), and
+    `setActionClickInterceptor`, called in `activateClick` after the invocation is recorded and
+    before any popup opens; `true` means the click was handled elsewhere (a side panel, an
+    omnibox), so no popup and no `onClicked`. `src/browser/index.ts` exposes the three methods as
+    `listActions`, `activateAction` and `notifyActionsChanged`. Reason: Orivon's own toolbar menu
+    lists and clicks actions, and pinning hides some, none of which the chrome view's
+    `<browser-action-list>` channel can do on Orivon's behalf. `visibleActions` sorts by the
+    extension's name (`localeCompare`, base sensitivity) and `getState` adds `letter`, the first
+    letter of that name; `<browser-action-list>` re-appends its buttons in that order on every
+    update and the no-icon tile shows `letter`. Reason: the toolbar kept the order extensions
+    finished loading in, which the menu's order did not match, and the action's title is a poor
+    stand-in for the extension's name.
+47. **Host-access checks receive the extension id.** `src/browser/api/cookies.ts` and
+    `src/browser/api/tabs.ts`: `setCookieHostAccessCheck`, `setTabUrlAccessCheck` and
+    `setTabHostAccessCheck` now call `check(manifest, url, extensionId, tabId?)`; `tabId` is passed
+    where the answer is about one tab (`filterTabDetails` reads `details.id`, `insertCSS` the
+    tab's id). Reason: a host decision that depends on more than the manifest (a per-extension
+    site-access choice, a one-tab grant) needs to know which extension asks and about which tab.
+50. **The toolbar action's right-click menu is Orivon's.** `src/browser/api/browser-action.ts`:
+    module setter `setActionMenuBuilder(builder)`; `activateContextMenu` builds its template from
+    `builder(extensionId, extensionItems)` (the extension's own `contextMenus` entries for
+    `browser_action` are passed in for the builder to place) and pops it up at the same spot; with no
+    builder set the library's own menu is unchanged. Reason: the menu's labels, its pin entry and
+    what each item opens are Orivon's.
+51. **Every action, pinned or not.** `src/browser/api/browser-action.ts` and `src/browser/index.ts`:
+    `listAllActions(tabId?)` returns `{ id, title, hasPopup, badge }` for every extension that has an
+    action, whatever `setActionVisibilityCheck` says (`listActions` leaves the hidden ones out); the
+    title, popup and badge are the ones set for `tabId` when there are any, else the action's own.
+    Reason: Orivon's Extensions menu lists unpinned extensions too, shows their badge and runs them.
+56. **`requestPermissions` refuses when the host gives no prompt.** `src/browser/store.ts`:
+    `requestPermissions` returns `false`, was `true`, when `impl.requestPermissions` is not a
+    function. Reason: the default granted every `chrome.permissions.request` unasked, so a host that
+    never wired its own prompt silently widened every extension. Orivon's `permissions` module
+    replaces the handler and asks; this default is only the safe fallback.
+60. **`onCommand` from main.** `src/browser/api/commands.ts`: `CommandsAPI.send(extensionId,
+    name, tab)` fires `chrome.commands.onCommand(name, tab)` through the router (so a stopped
+    service worker starts), with the tab's details read through `TabsAPI.detailsFor` (new, public;
+    the cached details `chrome.tabs.get` answers) and passed through `filterTabDetails` for that
+    extension. `CommandsAPI`'s constructor takes that reader; `src/browser/index.ts` builds
+    `TabsAPI` first and exposes `ElectronChromeExtensions.sendCommand`. The library's own
+    `commandMap` and `getAll` stay in place and are unused by Orivon. Reason: the library
+    registered commands but never fired one, and Orivon's shortcut dispatcher is what notices the
+    key press.
 
 `partition.ts` is reached only through the virtual specifier `src/main/extensions/
 electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and

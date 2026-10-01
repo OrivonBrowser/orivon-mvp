@@ -1,0 +1,8 @@
+{
+  "worker": {
+    "resolve": "function"
+  },
+  "page": {
+    "resolve": "function"
+  }
+}

@@ -2,7 +2,7 @@
 // store) into Orivon: registers its store-page preload on the default
 // session, shows the install prompt from the store page's own manifest
 // before any download, and routes every install, update and uninstall it
-// drives through install-runner.ts's own functions -- Orivon writes every
+// drives through the install-runner.ts family's own functions -- Orivon writes every
 // loaded extension copy itself; the library never touches the filesystem or
 // calls `loadExtension` once the host below is installed (UPSTREAM.md
 // patch 4).
@@ -15,10 +15,9 @@ import {
 } from '../../broker/policy/extension-manifest.js'
 import { verifyCrx3 } from './crx.js'
 import { patchStoreUpdater, readRegistry } from './registry-runner.js'
-import {
-  installFromStore, installFromStoreCrx, updateFromStore, uninstall,
-  type InstallContext, type InstallOutcome
-} from './install-runner.js'
+import type { InstallContext, InstallOutcome } from './install-runner.js'
+import { installFromStore, installFromStoreCrx, updateFromStore } from './install-store-runner.js'
+import { uninstall } from './install-lifecycle.js'
 
 export interface StoreApi {
   readonly installFromStore: (id: string) => Promise<InstallOutcome>
@@ -39,7 +38,7 @@ const verifyCrx: VerifyCrx = (crx, expectedId) => {
 
 /**
  * The vendored library's own write path (`WebStoreHost`): every actual
- * install and uninstall still goes through install-runner.ts's own
+ * install and uninstall still goes through the install-runner.ts family's own
  * functions (this file's own header). `installCrx` throws when
  * `installFromStoreCrx` refuses the install (a download that asks for more
  * than what was approved, or no approved manifest at all) -- the library's

@@ -9,6 +9,8 @@ import { certErrorPage } from './cert-error/page.js'
 import { certificatePage } from './certificate/page.js'
 import { chooserPage } from './chooser/page.js'
 import { downloadsPage } from './downloads/page.js'
+import { extensionPermissionPage } from './extension-permission/page.js'
+import { extensionsMenuPage } from './extensions-menu/page.js'
 import { findPage } from './find/page.js'
 import { httpsWarningPage } from './https-warning/page.js'
 import { menuPage } from './menu/page.js'
@@ -38,6 +40,8 @@ export const OVERLAY_PAGES: Readonly<Record<string, OverlayPage>> = {
   chooser: chooserPage,
   downloads: downloadsPage,
   'downloads-peek': downloadsPage,
+  'extension-permission': extensionPermissionPage,
+  'extensions-menu': extensionsMenuPage,
   find: findPage,
   'https-warning': httpsWarningPage,
   menu: menuPage,

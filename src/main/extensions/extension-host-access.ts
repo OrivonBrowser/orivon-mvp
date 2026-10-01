@@ -17,6 +17,7 @@
 
 import { matchesAnyHostPattern } from '../../broker/policy/extension-host-patterns.js'
 import { readExtensionManifest } from '../../broker/policy/extension-manifest.js'
+import { grantedHostRule, revokedHostRule } from './granted-host-rule.js'
 
 /** True when `manifest` (an extension's own loaded manifest.json) declares
  * the plain API permission `name` in its top-level `permissions` array --
@@ -36,6 +37,9 @@ export function hasApiPermission (manifest: unknown, name: string): boolean {
  * cookie domain) carries nothing a host pattern could cover. */
 export function hasHostAccess (manifest: unknown, url: string | undefined): boolean {
   if (url === undefined) return false
+  // No extension ever gets file access, so file: is never covered here --
+  // README.md's "allowFileAccess is never true" entry has why.
+  if (url.startsWith('file:')) return false
   const result = readExtensionManifest(manifest)
   if (!result.ok) return false
   return matchesAnyHostPattern(result.facts.hostPermissions, url)
@@ -47,4 +51,33 @@ export function hasHostAccess (manifest: unknown, url: string | undefined): bool
  * in question -- either one, not both. */
 export function hasApiOrHostAccess (manifest: unknown, apiPermission: string, url: string | undefined): boolean {
   return hasApiPermission(manifest, apiPermission) || hasHostAccess(manifest, url)
+}
+
+/** One extra rule on top of the manifest's own host permissions: a question
+ * about `extensionId` reaching `url` (on tab `tabId`, when the question is
+ * about a tab), answered true, false, or undefined to leave it to the next
+ * rule. The first rule that answers wins, and a rule may only narrow or widen
+ * what the manifest says for the extension it names. */
+export interface HostAccessQuestion { readonly extensionId: string, readonly url: string | undefined, readonly tabId?: number | undefined }
+export type HostAccessRule = (question: HostAccessQuestion) => boolean | undefined
+
+export const HOST_ACCESS_RULES: ReadonlyArray<HostAccessRule> = [
+  grantedHostRule,
+  revokedHostRule
+]
+
+/** What `hasHostAccess` answers, after the rules above have had their say.
+ * Every host-gated API call and event goes through this one function, so a
+ * rule applies everywhere at once. */
+export function hostAccessFor (extensionId: string, manifest: unknown, url: string | undefined, tabId?: number): boolean {
+  for (const rule of HOST_ACCESS_RULES) {
+    const answer = rule({ extensionId, url, tabId })
+    if (answer !== undefined) return answer
+  }
+  return hasHostAccess(manifest, url)
+}
+
+/** `hasApiOrHostAccess` through `hostAccessFor`. */
+export function apiOrHostAccessFor (extensionId: string, manifest: unknown, apiPermission: string, url: string | undefined, tabId?: number): boolean {
+  return hasApiPermission(manifest, apiPermission) || hostAccessFor(extensionId, manifest, url, tabId)
 }

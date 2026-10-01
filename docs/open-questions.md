@@ -1527,12 +1527,13 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A298: A keyboard command or context-menu click does not count as invoking an extension **[AI-REC]**
+### A298: A context-menu click does not count as invoking an extension **[AI-REC]**
 
-- **Question:** Chrome grants activeTab, and so `chrome.tabCapture`, on a command or context-menu click as well as
-  the toolbar button; this build records only the toolbar button (`d-0204`). Record the other two?
-- **Why it matters:** an extension started by its keyboard shortcut is refused a capture Chrome would allow.
-- **Options:** record the invocation from `chrome.commands` and `contextMenus.onClicked` too (rec.); leave it.
+- **Question:** Chrome grants activeTab, and so `chrome.tabCapture`, on a context-menu click as well as on the toolbar
+  button and a command key; this build records the toolbar button, the Extensions menu row and a command key (`d-0204`).
+  Record a context-menu click too?
+- **Why it matters:** an extension started from its context-menu entry is refused a capture Chrome would allow.
+- **Options:** record the invocation from `contextMenus.onClicked` too (rec.); leave it.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
@@ -1800,15 +1801,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A339: The side panel lists a reading list that nothing can fill **[OWNER]**
-
-- **Question:** The reading list was taken out (no command, button or menu row saves to it), but the side panel still has a Reading list view
-  that reads the bookmark file's reading-list root. Should the view stay, or leave until the reading list is built?
-- **Why it matters:** the picker shows a view that is always empty, with a line saying pages you save for later appear there.
-- **Options:** remove the view and its row code now (rec.); keep it for when the reading list lands; hide it while the root is empty.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A330: Nothing marks a tab that uses a granted camera or microphone **[AI-REC]**
 
 - **Question:** The memory saver asks `mediaInUse`, but nothing sets it: the permission gate allowed only tab capture when the check was
@@ -1834,4 +1826,58 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Why it matters:** if native pointer capture is lost over the page, the edge sticks; a heavy page may stutter while the width changes.
 - **Options:** a manual pass on Linux, Windows and macOS (rec.); a cursor-position timer in main; apply the width on release with a guide.
 - **Who decides:** research first
+- **Blocks:** nothing
+
+### A334: `chrome.history` is exact only for the newest 200 pages **[AI-REC]**
+
+- **Question:** `onVisitRemoved` compares the newest 200 pages, `getVisits` is one visit per address and `typedCount` is 0.
+  Should the history service hand its removals and its visits to the extension API?
+- **Why it matters:** an extension that mirrors history misses the removal of an older page.
+- **Options:** give the history store an event with the removed addresses and a read of its `visits` table (rec.); keep.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A335: The macOS key names of extension commands are unit-tested only **[RESEARCH]**
+
+- **Question:** Do `Command`, `MacCtrl` and `Ctrl` in a manifest's `suggested_key` bind the chords Chrome binds, and does
+  a key pressed in an extension popup reach the dispatcher on macOS?
+- **Why it matters:** the extension shortcuts were run on Linux; a wrong mapping binds a key Orivon needs.
+- **Options:** run `e2e-extensions-shortcuts` on a macOS machine and fix the mapping (rec.).
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A336: The install prompt and the permission pages word `management` and `privacy` differently **[AI-REC]**
+
+- **Question:** The install prompt says what Chrome says; the details page and the permission sheet say "Manage your
+  extensions" and "Read your privacy settings". Use one wording for each permission?
+- **Why it matters:** a person sees two sentences for one permission and cannot tell they match.
+- **Options:** one table of words for every surface (rec.); keep Chrome's text at install.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A337: An update drops or revokes an extension's grant without telling the person **[AI-REC]**
+
+- **Question:** An update that makes a granted item required, or stops declaring it, changes the grant with no notice; a
+  grant also waits for the quiet reload, up to ten minutes. Say so in the details page or the update prompt?
+- **Why it matters:** a person who allowed something may find it gone, or not yet in force, with no word.
+- **Options:** list what changed in the update prompt and on the details page (rec.); keep it silent.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A338: A content blocker's blocking is run only with a fixture extension **[RESEARCH]**
+
+- **Question:** Does a real MV3 blocker (uBlock Origin Lite) block through Orivon's `declarativeNetRequest` engine? The
+  opt-in real-extension end-to-end file skips itself when no extracted extensions are configured.
+- **Why it matters:** the changelog and the scope row say content blockers work; only a fixture has shown it.
+- **Options:** run `e2e-extensions-real` with the four extensions extracted and record the result (rec.).
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A339: The side panel lists a reading list that nothing can fill **[OWNER]**
+
+- **Question:** The reading list was taken out (no command, button or menu row saves to it), but the side panel still has a Reading list view
+  that reads the bookmark file's reading-list root. Should the view stay, or leave until the reading list is built?
+- **Why it matters:** the picker shows a view that is always empty, with a line saying pages you save for later appear there.
+- **Options:** remove the view and its row code now (rec.); keep it for when the reading list lands; hide it while the root is empty.
+- **Who decides:** owner
 - **Blocks:** nothing

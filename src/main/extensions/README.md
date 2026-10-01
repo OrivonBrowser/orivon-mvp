@@ -31,11 +31,20 @@ extension's real loaded manifest -- UPSTREAM.md patch 37's own doc; and `extensi
 serves a manifest `sandbox.pages` document Chrome's own CSP `sandbox` directive, so it actually
 gets an opaque origin rather than only withholding `chrome.*` (UPSTREAM.md patch 40).
 
-**What it depends on.** `electron` (every file except `crx.ts`, `crx3-format.ts`,
-`electron-chrome-extensions-lib.d.ts`, `extension-host-access.ts`, `extension-known-permissions.ts`,
-`extension-sender-id-check.ts`, `extension-tab-details.ts`, `extension-tab-invocation.ts`,
-`extension-url-policy.ts`, `extensions-domain.ts`, `extensions-view-runner.ts`, `extensions-view.ts`,
-`registry-runner.ts`, `registry.ts`, `site-reach.ts`, `site-reach-runner.ts`, `store-download-seam.ts`,
+**What it depends on.** `electron` (every file except `action-pins-runner.ts`, `action-pins.ts`, `base-manifest-source.ts`, `crx.ts`, `crx3-format.ts`,
+`details-optional.ts`, `dnr-action-options.ts`, `dnr-api.ts`, `dnr-match-log.ts`,
+`effective-manifest.ts`, `electron-chrome-extensions-lib.d.ts`, `extension-commands.ts`,
+`extension-host-access.ts`, `extension-known-permissions.ts`, `extension-permission-check.ts`,
+`extension-prefs-runner.ts`, `extension-prefs.ts`, `extension-sender-id-check.ts`,
+`extension-tab-details.ts`, `extension-tab-invocation.ts`, `extension-url-policy.ts`,
+`extensions-detail-parts.ts`, `extensions-domain.ts`, `extensions-install-test-hook.ts`,
+`extensions-menu-command.ts`, `extensions-menu-model.ts`, `extensions-menu-names.ts`,
+`extensions-menu-overlay.ts`, `extensions-menu-points.ts`, `extensions-page-commands.ts`,
+`extensions-view-runner.ts`, `extensions-view.ts`, `granted-host-rule.ts`, `granted-reconcile.ts`,
+`install-lifecycle.ts`, `install-private.ts`, `install-store-runner.ts`,
+`manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `optional-permissions.ts`,
+`permission-nag-limit.ts`, `permission-prompt-overlay.ts`, `registry-runner.ts`, `registry.ts`,
+`shortcuts-page.ts`, `site-reach-runner.ts`, `site-reach.ts`, `store-download-seam.ts`,
 `store-runner.ts`, `store-test-hook.ts` and `unpack-runner.ts`), `node:crypto`, `node:fs`, `node:path`,
 `adm-zip`, `pbf`,
 [`../sessions/web-request-owner.ts`](../sessions/web-request-owner.ts)'s `webRequestOwnerFor`/
@@ -51,7 +60,7 @@ and chrome.tabs' own host-access checks, and `site-reach.ts` uses for a person's
 [`../../broker/policy/origin.ts`](../../broker/policy/origin.ts)'s `originFromUrl` (durable;
 `extension-tab-capture-invocation.ts`'s own recorder and `extension-host.ts`'s `chrome.tabCapture`
 app-refusal check both key on it),
-[`../../broker/grants/node-ledger-storage.ts`](../../broker/grants/node-ledger-storage.ts)'s
+[`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts)'s
 `writeFileAtomic`, [`../pages/internal-ipc.ts`](../pages/internal-ipc.ts)'s `InternalDomain`,
 [`../channels.ts`](../channels.ts)'s `EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL`,
 [`../sessions/tab-capture-grants.ts`](../sessions/tab-capture-grants.ts)'s `mintTabCaptureGrant`
@@ -86,14 +95,71 @@ same exception, reached only through the virtual specifiers above).
 
 | File | Layer |
 |---|---|
-| `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts`, `store-download-seam.ts` | The decision -- no `electron`, unit-tested under plain vitest |
-| `unpack-runner.ts`, `registry-runner.ts`, `install-runner.ts`, `extensions-view-runner.ts`, `store-runner.ts` | The real I/O |
+| `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts`, `store-download-seam.ts`, `extension-prefs.ts`, `effective-manifest.ts`, `manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `extensions-detail-parts.ts`, `extensions-page-commands.ts`, `extension-permission-check.ts`, `install-private.ts`, `optional-permissions.ts`, `permission-nag-limit.ts`, `granted-host-rule.ts`, `granted-reconcile.ts`, `details-optional.ts` | The decision -- no `electron`, unit-tested under plain vitest |
+| `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts`, `extension-commands.ts`, `extension-action-anchor.ts`, `store-download-seam.ts`, `extension-prefs.ts`, `effective-manifest.ts`, `manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `extensions-detail-parts.ts`, `extensions-page-commands.ts`, `extension-permission-check.ts`, `install-private.ts` | The decision -- no `electron`, unit-tested under plain vitest |
+| `unpack-runner.ts`, `registry-runner.ts`, `install-runner.ts`, `install-store-runner.ts`, `install-lifecycle.ts`, `extensions-view-runner.ts`, `store-runner.ts`, `extension-prefs-runner.ts`, `effective-manifest-runner.ts`, `extension-page-open.ts` | The real I/O |
+| `extension-commands-runner.ts`, `install-extension-commands.ts`, `shortcuts-page.ts` | The keys of extension commands: the table and what a key runs (fakes for everything it reaches), the real session, registry and shell behind it, and what the shortcuts page may ask |
 | `extension-install-prompt.ts`, `extensions-picker-runner.ts` | The native dialogs (`dialog.showMessageBox`, `dialog.showOpenDialog`) |
+| `action-pins.ts`, `action-context-menu.ts`, `extensions-menu-model.ts`, `extensions-menu-names.ts`, `extensions-menu-points.ts`, `extensions-menu-deps.ts` | The decision for the toolbar's pins and the Extensions menu -- which extensions sit on the toolbar, the menu's rows and requests, the right-click template, and the slots a feature adds to the menu through |
+| `action-pins-runner.ts`, `extensions-menu-overlay.ts`, `extensions-menu-command.ts`, `loaded-extensions.ts` | The pins acted on (the toolbar list, `chrome.action.getUserSettings`, `onUserSettingsChanged`, the right-click menu), the menu's `OverlayDef`, the `extensions.menu` command and the loaded-extension count the button follows |
+| `permissions-api.ts`, `permission-prompt-overlay.ts` | `chrome.permissions` and the sheet it asks in (an `OverlayDef` queued through `requestSlot`) |
+| `extension-host.ts`, `extension-host-impl.ts`, `extension-popup-policy.ts`, `extension-event-filter.ts` | The library wiring: construction and tab lifecycle, the shell callbacks, the popup and background-page window policy, the per-listener event filter |
+| `api/` | Main-side handlers for the namespaces Orivon adds to `chrome.*`, and the one permission check (`api/README.md`) |
+| `dnr/`, `dnr-api.ts`, `dnr-action-options.ts`, `dnr-match-log.ts`, `dnr-webrequest.ts`, `extensions-dnr.ts` | `declarativeNetRequest`, applied by Orivon rather than Electron ([`ADR-0051`](../../../docs/decisions/ADR-0051-orivon-applies-extensions-declarativenetrequest-rules-itself.md)): the Electron-free engine and its disk reads (`dnr/README.md`), the `chrome.declarativeNetRequest` handlers and badge counts, and the handlers registered on the session's one `webRequest` owner |
 | `extensions-subsystem.ts` | Registers everything into the running app via `../registry.ts`, including the Chrome Web Store (`store-runner.ts`) |
 | `store-test-hook.ts` | Test builds only -- exposes the store methods on `globalThis` for `test/e2e-extensions-store.test.ts` |
 | `extensions-domain.ts` | The `orivon://extensions` page's `InternalDomain` -- validates every request, wires the pieces above to what the page asks |
 
 ## Design notes
+
+**What the person chose is kept apart from what the extension shipped.** `extension-prefs-runner.ts`
+keeps one record per extension in `<userData>/extensions/prefs.json` (`ExtensionsApi.prefs`; memory
+only in a private runtime). The manifest the extension loads is the installed one with those choices
+applied: `finishInstall` writes the installed manifest as `<slot>/manifest.base.json`, and
+`effective-manifest-runner.ts` writes `effectiveManifest(base, prefs)` into the version folder's
+`manifest.json` and reloads (`ExtensionsApi.applyManifest`: `now`, or `quiet` once no page of the
+extension is open, and at the next launch when that never happens). A feature adds its stage to
+`MANIFEST_STAGES` (`manifest-stage-granted.ts`, `manifest-stage-site-access.ts`). A store update is
+judged against the base copy, so a choice that narrowed the loaded manifest never makes an update
+look like it asks for more.
+
+**A later permission request is asked, never granted unasked.** `permissions-api.ts` replaces the
+library's `permissions.*` handlers: `optional-permissions.ts` classifies a request against the
+manifest (held, never grantable, undeclared, or to ask), the sheet in `permission-prompt-overlay.ts`
+is the only way to a grant, and the answer lands in `prefs.granted`. Library checks follow at once
+(`extension-permission-check.ts` reads the grants, `granted-host-rule.ts` answers host questions);
+Chromium's own checks follow at the quiet reload, because `manifest-stage-granted.ts` merges the
+grants into the loaded manifest. Orivon never grants `nativeMessaging`, `webRequest*` or
+`declarativeNetRequest*`, which stay governed by the strip list.
+**An extension's commands are keys in Orivon's own dispatcher, never a second listener.**
+`extension-commands.ts` reads the manifest's `commands` and decides which key each one ends up
+with: the person's choice (`prefs.shortcuts`, `''` for one they cleared), else the suggested key
+when Orivon and every earlier-installed command leave it free. `extension-commands-runner.ts` keeps
+that table and answers `../shortcuts/dispatcher.ts`, which asks Orivon's own commands first, so an
+extension never takes a key Orivon binds and a bare key or an editing key is never offered. A key
+that runs a command is consumed; every other key still reaches the page. `_execute_action` opens
+the popup as a click on the icon does, under the icon or else the Extensions button
+(`extension-action-anchor.ts`); a named command reaches `chrome.commands.onCommand` through
+`ElectronChromeExtensions.sendCommand` with the active tab, and counts as an invocation of the
+extension on that tab. A tab no extension is told about (a registered app's, or an internal page)
+is passed as no tab. `commands.getAll` (`api/commands-api.ts`) answers with the live key. The
+table is empty until `installShortcuts` says the saved shortcuts are read, because a lookup before
+that would cache the defaults. The macOS reading of `Command` and `MacCtrl` is *provisional*: it
+is unit-tested and has not run on a Mac.
+
+**`extension-sw-preload-recovery.ts` must import nothing beyond `electron`'s ambient types.**
+Its own exports (the two health-check channel constants, `extensionIdFromScope`) are imported by
+`src/preload/extension-sw-verify.ts`, a PRELOAD script that runs in every extension service
+worker. A real import added to `extension-sw-preload-recovery.ts` -- even one nothing in that
+file ever calls -- bundles that whole dependency's module graph into that preload script too: a
+bundler's tree-shaking works per used export, not per file, and cannot prune an import with real
+side effects (disk I/O, a vendored library) just because the importing file's own exports never
+reach it. Measured directly: adding `extensions-dnr.ts` as an unused import there added several
+seconds to a single e2e run seeding four real extensions (dNR's own vendored rule engine and its
+`node:fs` I/O layer riding along into every service worker's preload). `watchForMissedServiceWorkerPreload`'s
+`onReloadBoundary` parameter is how a caller-side concern (dNR's own reload marking, wired from
+`extension-host.ts`'s call site instead) reaches this file's generic hook without this file ever
+importing that caller's module itself.
 
 **[`site-reach.ts`](site-reach.ts) returns none for an origin served from its pinned cache,
 without ever looking at the installed extensions.** ADR-0045 has extensions run on every page,
@@ -268,7 +334,11 @@ neither.
 
 **`allowFileAccess` is never `true`, anywhere in this directory.** An extension with file access
 could read `file://` pages, including a page-cache-served or dashboard `file://` URL the shell
-itself never grants an ordinary web page.
+itself never grants an ordinary web page. Because no extension ever gets it, a `file:` URL is
+never covered by an extension's host permission: `<all_urls>` leaves `file` out
+(`../../broker/policy/extension-host-patterns.ts`'s `ALL_URLS_SCHEMES`), and
+`dnr/host-permissions.ts`'s `createHostAccessChecker` and `extension-host-access.ts`'s
+`hasHostAccess` refuse a `file:` request, initiator or url whatever pattern would otherwise match.
 
 **The extensions page reads an entry's own loaded folder for what a list needs, never the
 registry alone.** A name or description can be a `__MSG_...` reference into `_locales/<default_locale>/messages.json`,
@@ -285,7 +355,7 @@ the first.
 `store-runner.ts` registers the library's store-page preload and its IPC handlers
 (`chrome.webstorePrivate` on chromewebstore.google.com's own top frame only -- vendor's
 `api.ts`/`chrome-web-store.preload.ts`), but every actual write goes through
-`install-runner.ts`'s `installFromStoreCrx`, the same `finishInstall` every other install uses:
+`install-store-runner.ts`'s `installFromStoreCrx`, the same `finishInstall` every other install uses:
 `verifyCrx3` with `requirePublisherProof: true`, the id checked against what was requested, and,
 for an update, `updateRequiresConsent` (`extension-manifest.ts`'s T19 subset rule) held back
 rather than installed silently if it widens what the person already granted -- `registry.ts`'s

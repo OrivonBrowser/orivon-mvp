@@ -6,7 +6,7 @@
 // view.
 import type { WebContents } from 'electron'
 import { chordFromInput } from './accelerator.js'
-import type { KeyInput } from './accelerator.js'
+import type { Chord, KeyInput } from './accelerator.js'
 import { commandById } from './commands.js'
 import type { CommandId } from './commands.js'
 import type { RecordOutcome, ShortcutService } from './shortcut-service.js'
@@ -18,11 +18,22 @@ export interface PressedKey extends KeyInput {
   readonly isComposing: boolean
 }
 
+/** The keys that extensions' commands hold. Orivon's own commands are asked first; these only get a chord none of them holds. */
+export interface ExtensionKeys {
+  /** A page is waiting to learn which key a person picks for one of an extension's commands. */
+  isRecording: (contents: WebContents) => boolean
+  record: (contents: WebContents, chord: Chord) => void
+  handles: (chord: Chord) => boolean
+  /** True when the chord ran a command, so the page never sees it. */
+  run: (chord: Chord, contents: WebContents) => boolean
+}
+
 export interface DispatcherHost {
   /** The window's commands are held while a page has the screen; `isAppTab`: the contents are a registered app's tab. Null: the contents are in no window. */
   windowFor: (contents: WebContents) => { suspended: boolean, isAppTab: boolean, run: (id: CommandId) => void } | null
   /** A recording finished, for the page that asked. */
   recorded: (contents: WebContents, outcome: RecordOutcome) => void
+  extensionKeys?: ExtensionKeys | undefined
 }
 
 export function attachShortcuts (contents: WebContents, service: ShortcutService, host: DispatcherHost): void {
@@ -31,6 +42,13 @@ export function attachShortcuts (contents: WebContents, service: ShortcutService
     const chord = chordFromInput(input)
 
     // While a page is recording, its next chord is the answer, not a command.
+    const keys = host.extensionKeys
+    if (keys?.isRecording(contents) === true) {
+      if (chord === null) return
+      event.preventDefault()
+      keys.record(contents, chord)
+      return
+    }
     if (service.isRecording(contents)) {
       if (chord === null) return
       event.preventDefault()
@@ -41,7 +59,14 @@ export function attachShortcuts (contents: WebContents, service: ShortcutService
 
     if (chord === null) return
     const id = service.commandFor(chord)
-    if (id === null) return
+    if (id === null) {
+      // A held-down key never repeats an extension's command, and a page in fullscreen keeps every key.
+      if (keys === undefined || input.isAutoRepeat || !keys.handles(chord)) return
+      const owner = host.windowFor(contents)
+      // A registered app keeps every key for itself, an extension's included.
+      if (owner !== null && !owner.suspended && !owner.isAppTab && keys.run(chord, contents)) event.preventDefault()
+      return
+    }
     const target = host.windowFor(contents)
     // A page in fullscreen keeps every key (Escape leaves it, in the browser process).
     if (target === null || target.suspended) return

@@ -1,0 +1,26 @@
+{
+  "worker": {
+    "AccessLevel": "object",
+    "local": "object",
+    "managed": "object",
+    "onChanged": "event",
+    "session": "object",
+    "sync": "object"
+  },
+  "page": {
+    "AccessLevel": "object",
+    "local": "object",
+    "managed": "object",
+    "onChanged": "event",
+    "session": "object",
+    "sync": "object"
+  },
+  "content": {
+    "AccessLevel": "object",
+    "local": "object",
+    "managed": "object",
+    "onChanged": "event",
+    "session": "object",
+    "sync": "object"
+  }
+}

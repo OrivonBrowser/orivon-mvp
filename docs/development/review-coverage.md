@@ -304,6 +304,16 @@ In all, 61 findings, 61 confirmed, none refuted.
 | The new TLS checks run against the bundle built before the fix | `test/e2e-the-lounge-real.test.ts` step j | The trusted-only check failed with the old text, as reported; the rest passed |
 | `/code-review` at medium effort | The Settings switch redraw fix | One finding, fixed: the control a redraw refocuses was unsettled, so it held later pushes; a new `e2e-settings-live` spec fails without the fix |
 
+### `stream/b5-extensions`: the Extensions menu and pinning, optional permissions, command keys, the library APIs, `declarativeNetRequest` (2026-10-01)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| Code review by area, by Opus agents, each finding then attacked by a second agent trying to refute it | The branch against `main`, split into optional permissions and the extension sheet, and command keys with the bookmarks, history, search and `declarativeNetRequest` APIs | 16 findings, all confirmed. All were fixed with tests, none declined or deferred |
+| A designer's review of screenshots of every new surface, light and dark | The Extensions button and menu, the toolbar badge and letter tiles, the permission sheet, the extensions list, the details page and the shortcuts page | 18 findings, all confirmed and fixed |
+| The unit suite, every guard, smoke and 19 end-to-end files in three chunks, after the merge and again after the fixes | The merged branch | All green; one end-to-end spec failed once in a batch and passed on its immediate rerun and in the final batch, its cause not captured |
+
+In all, 34 findings, 34 confirmed, none refuted.
+
 ### `stream/b4-layout-access`: tab groups, sleeping tabs, reader view, the side panel, keyboard access and caret browsing (2026-10-01)
 
 | Mechanism | Scope | Outcome |

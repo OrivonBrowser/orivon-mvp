@@ -34,6 +34,40 @@ export function setTabCaptureInvocationRecorder(recorder: TabCaptureInvocationRe
   gTabCaptureInvocationRecorder = recorder
 }
 
+// Orivon patch (UPSTREAM.md patch 46): which extensions' actions the chrome
+// view's toolbar list shows (an unset check shows all of them), and a hook
+// run once a click is counted, before any popup opens: true means the
+// click was handled elsewhere (a side panel, an omnibox), so no popup and
+// no onClicked. Both are set once, before the first activation.
+let gActionVisibilityCheck: ((extensionId: string) => boolean) | undefined
+let gActionClickInterceptor: ((extensionId: string, tab: Electron.WebContents) => boolean) | undefined
+
+export function setActionVisibilityCheck(check: (extensionId: string) => boolean): void {
+  gActionVisibilityCheck = check
+}
+
+export function setActionClickInterceptor(
+  intercept: (extensionId: string, tab: Electron.WebContents) => boolean,
+): void {
+  gActionClickInterceptor = intercept
+}
+
+// Orivon patch (UPSTREAM.md patch 50): the right-click menu of a toolbar
+// action is built by Orivon, so its labels, its pin entry and what each
+// item does are Orivon's. `extensionItems` is what the extension's own
+// contextMenus asked for under 'browser_action'; the builder places them.
+// Unset: the library's own menu.
+export type ActionMenuBuilder = (
+  extensionId: string,
+  extensionItems: Electron.MenuItem[],
+) => Array<Electron.MenuItemConstructorOptions | Electron.MenuItem>
+
+let gActionMenuBuilder: ActionMenuBuilder | undefined
+
+export function setActionMenuBuilder(builder: ActionMenuBuilder | undefined): void {
+  gActionMenuBuilder = builder
+}
+
 interface ExtensionAction {
   color?: string
   text?: string
@@ -324,6 +358,18 @@ export class BrowserActionAPI {
     return action
   }
 
+  // Orivon patch: same tab-scoped write and onUpdate() broadcast
+  // setDetails('BadgeText') makes for an extension calling
+  // chrome.action.setBadgeText on itself, for a caller (main-process code,
+  // not an extension) that already has the extensionId/tabId/text it wants
+  // set and skips the ExtensionEvent/default-value lookup that path needs.
+  setBadgeTextFromMain(extensionId: string, tabId: number, text: string): void {
+    const action = this.getAction(extensionId)
+    const tabAction = action.tabs[tabId] || (action.tabs[tabId] = {})
+    tabAction.text = text
+    this.onUpdate()
+  }
+
   // TODO: Make private for v4 major release.
   removeActions(extensionId: string) {
     if (this.actionMap.has(extensionId)) {
@@ -390,9 +436,69 @@ export class BrowserActionAPI {
     }
   }
 
+  private visibleActions(): Array<[string, ExtensionActionStore]> {
+    const entries = Array.from(this.actionMap.entries())
+    const shown = gActionVisibilityCheck ? entries.filter(([id]) => gActionVisibilityCheck!(id)) : entries
+    // Orivon patch (UPSTREAM.md patch 46): by extension name, so the toolbar keeps one order
+    // whatever order the extensions finished loading in.
+    const nameOf = (id: string): string => this.extensionNameOf(id)
+    return shown
+      .map((entry, index) => ({ entry, index, name: nameOf(entry[0]) }))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) || a.index - b.index)
+      .map(({ entry }) => entry)
+  }
+
+  private extensionNameOf(id: string): string {
+    const sessionExtensions = this.ctx.session.extensions || this.ctx.session
+    const name = sessionExtensions.getExtension?.(id)?.name
+    return typeof name === 'string' ? name : ''
+  }
+
+  // Orivon patch (UPSTREAM.md patch 46): the toolbar list for Orivon's own
+  // chrome, without any icon data.
+  listActions(): Array<{ id: string; title: string; hasPopup: boolean }> {
+    return this.visibleActions().map(([id, details]) => ({
+      id,
+      title: details.title ?? '',
+      hasPopup: typeof details.popup === 'string' && details.popup !== '',
+    }))
+  }
+
+  // Orivon patch (UPSTREAM.md patch 51): every extension that has an action,
+  // pinned or not (`listActions` leaves the hidden ones out), with the badge
+  // text it shows for `tabId` (the action's own when none is set for that
+  // tab) and the title for that tab. Orivon's Extensions menu lists these.
+  listAllActions(
+    tabId?: number,
+  ): Array<{ id: string; title: string; hasPopup: boolean; badge: string }> {
+    return Array.from(this.actionMap.entries()).map(([id, details]) => {
+      const forTab = tabId === undefined ? undefined : details.tabs[tabId]
+      const popup = forTab?.popup ?? details.popup
+      return {
+        id,
+        title: forTab?.title ?? details.title ?? '',
+        hasPopup: typeof popup === 'string' && popup !== '',
+        badge: forTab?.text ?? details.text ?? '',
+      }
+    })
+  }
+
+  // Orivon patch (UPSTREAM.md patch 46): a click on `extensionId`'s action
+  // for `tab`, started by Orivon's own trusted code (a menu entry, a
+  // shortcut): counted as an invocation exactly like a toolbar click.
+  activateFromMain(extensionId: string, tab: Electron.WebContents, anchor: Electron.Rectangle): void {
+    this.activateClick({ eventType: 'click', extensionId, tabId: tab.id, anchorRect: anchor }, true)
+  }
+
+  // Orivon patch (UPSTREAM.md patch 46): public onUpdate(), for state that
+  // changes the toolbar list without an extension call (visibility).
+  notifyChanged(): void {
+    this.onUpdate()
+  }
+
   private getState() {
     // Get state without icon data.
-    const actions = Array.from(this.actionMap.entries()).map(([id, details]) => {
+    const actions = this.visibleActions().map(([id, details]) => {
       const { icon, tabs, ...rest } = details
 
       const tabsInfo: { [key: string]: any } = {}
@@ -408,6 +514,9 @@ export class BrowserActionAPI {
       return {
         id,
         tabs: tabsInfo,
+        // Orivon patch (UPSTREAM.md patch 46): the first letter of the extension's name, the
+        // tile drawn when the action has no icon.
+        letter: Array.from(this.extensionNameOf(id).trim())[0]?.toUpperCase() ?? '',
         ...rest,
       }
     })
@@ -495,6 +604,9 @@ export class BrowserActionAPI {
       gTabCaptureInvocationRecorder?.(extensionId, tab)
     }
 
+    // Orivon patch (UPSTREAM.md patch 46): handled elsewhere, no popup.
+    if (gActionClickInterceptor?.(extensionId, tab)) return
+
     const popupUrl = this.getPopupUrl(extensionId, tab.id)
 
     if (popupUrl) {
@@ -534,6 +646,19 @@ export class BrowserActionAPI {
     }
 
     const manifest = getExtensionManifest(extension)
+
+    // Orivon patch (UPSTREAM.md patch 50): Orivon's own menu, when it set one.
+    if (gActionMenuBuilder) {
+      const own = Menu.buildFromTemplate(
+        gActionMenuBuilder(extensionId, this.ctx.store.buildMenuItems(extensionId, 'browser_action')),
+      )
+      own.popup({
+        x: Math.floor(anchorRect.x),
+        y: Math.floor(anchorRect.y + anchorRect.height),
+      })
+      return
+    }
+
     const menu = new Menu()
     const append = (opts: Electron.MenuItemConstructorOptions) => menu.append(new MenuItem(opts))
     const appendSeparator = () => menu.append(new MenuItem({ type: 'separator' }))

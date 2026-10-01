@@ -4,27 +4,31 @@
 // (`-runner.ts`, src/main/README.md's suffix rule) -- the prompt itself is
 // injected (`InstallPrompt`), so this file is testable with a fake one,
 // matching `src/main/install/app-install.ts`'s own split from its real
-// dialog.
+// dialog. Web Store installs and updates are install-store-runner.ts;
+// uninstall and enable/disable are install-lifecycle.ts.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
+import { existsSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { extname, join, resolve, sep } from 'node:path'
 import { createHash, randomBytes } from 'node:crypto'
 import type { Session } from 'electron'
 import {
-  describeExtensionInstall, loadableManifest, readExtensionManifest, updateRequiresConsent,
-  type ExtensionInstallDescription, type ExtensionInstallSource, type ExtensionManifestFacts
+  describeExtensionInstall, loadableManifest, readExtensionManifest,
+  type ExtensionInstallDescription, type ExtensionInstallSource
 } from '../../broker/policy/extension-manifest.js'
 import { isString, ownProperty } from '../../broker/policy/own-property.js'
 import { verifyCrx3 } from './crx.js'
 import { peekManifest, readManifestObject, unpackZip, writeFolderCopy, writeManifestOver } from './unpack-runner.js'
 import {
-  canonicalizeManifestKey, patchStoreUpdater, readRegistry, resolveInstallKey, slotOfFileEntry, withRegistryLock,
-  writeRegistry
+  canonicalizeManifestKey, readRegistry, resolveInstallKey, slotOfFileEntry, withRegistryLock, writeRegistry
 } from './registry-runner.js'
 import type { ExtensionSource, ExtensionUpdater, InstalledExtension } from './registry.js'
+import { clearPendingDnrInstall, registerPendingDnrInstall } from './extensions-dnr.js'
+import { effectiveManifest, manifestText } from './effective-manifest.js'
+import { reconcileGrants } from './granted-reconcile.js'
+import type { ExtensionPrefsStore } from './extension-prefs.js'
+import { readBaseManifestText, restoreBaseManifest, writeBaseManifest } from './effective-manifest-runner.js'
+import { refusePrivateInstall } from './install-private.js'
 import { generateId } from '../../../vendor/electron-chrome-web-store/src/browser/id.js'
-import { downloadCrxBytes } from '../../../vendor/electron-chrome-web-store/src/browser/installer.js'
-import { storeCrxDownloadUrl, storeTestPublisherKeyHash } from './store-download-seam.js'
 
 // resolveSlotKey moved to registry-runner.ts (key.pub is persisted
 // bookkeeping under <userData>/extensions/, the same concern registry.json
@@ -38,6 +42,10 @@ export interface InstallContext {
   readonly userDataPath: string
   readonly session: Session
   readonly prompt: InstallPrompt
+  /** What the person chose per extension; with it, a new version loads with those choices already applied. */
+  readonly prefs?: ExtensionPrefsStore
+  /** This runtime is private or a guest: every install route refuses (install-private.ts). */
+  readonly privateSession?: boolean
 }
 
 export type InstallOutcome =
@@ -80,7 +88,7 @@ function slotForZipUpdate (userDataPath: string, rawManifest: Record<string, unk
   return slotOfFileEntry(userDataPath, generateId(canonical))
 }
 
-interface PendingInstall {
+export interface PendingInstall {
   readonly rawManifest: Record<string, unknown>
   readonly source: ExtensionSource
   readonly updater: ExtensionUpdater
@@ -101,7 +109,9 @@ interface PendingInstall {
   readonly write: (targetDir: string, manifestJson: string) => void
 }
 
-async function finishInstall (ctx: InstallContext, pending: PendingInstall): Promise<InstallOutcome> {
+export async function finishInstall (ctx: InstallContext, pending: PendingInstall): Promise<InstallOutcome> {
+  const refused = refusePrivateInstall(ctx)
+  if (refused !== undefined) return refused
   const manifestResult = readExtensionManifest(pending.rawManifest)
   if (!manifestResult.ok) return { installed: false, reason: `manifest refused: ${manifestResult.reason}` }
   const { facts } = manifestResult
@@ -160,6 +170,12 @@ async function finishInstall (ctx: InstallContext, pending: PendingInstall): Pro
   // moved aside first, so `pending.write`'s own tmp-dir-then-rename never
   // lands on a non-empty targetDir (unpack-runner.ts's own doc: it "must not
   // already exist").
+  // The installed manifest, kept apart from the loaded copy (which carries the person's choices).
+  const previousBase = readBaseManifestText(slotDir)
+  const baseText = manifestText(manifest)
+  if (ctx.prefs !== undefined) reconcileGrants(ctx.prefs, id, manifest)
+  const loadedText = ctx.prefs === undefined ? baseText : manifestText(effectiveManifest(manifest, ctx.prefs.get(id)))
+
   const asideDir = existsSync(targetDir) ? `${targetDir}.old-${randomBytes(6).toString('hex')}` : undefined
   if (asideDir !== undefined) renameSync(targetDir, asideDir)
 
@@ -174,6 +190,7 @@ async function finishInstall (ctx: InstallContext, pending: PendingInstall): Pro
    * folder behind for the next boot to find, unregistered and never
    * cleaned up. */
   async function restoreAsideOnFailure (): Promise<void> {
+    restoreBaseManifest(slotDir, previousBase)
     if (asideDir === undefined) {
       rmSync(targetDir, { recursive: true, force: true })
       const previous = previousInSlot[0]
@@ -188,16 +205,41 @@ async function finishInstall (ctx: InstallContext, pending: PendingInstall): Pro
   }
 
   try {
-    pending.write(targetDir, JSON.stringify(manifest))
+    writeBaseManifest(slotDir, baseText)
+    pending.write(targetDir, loadedText)
   } catch (error) {
     await restoreAsideOnFailure()
     throw error
   }
 
+  const now = Date.now()
+  const entry: InstalledExtension = {
+    id,
+    name: facts.name,
+    version: facts.version,
+    enabled: true,
+    installedAt: now,
+    updatedAt: now,
+    source: pending.source,
+    updater: pending.updater,
+    path: targetDir,
+    stripped
+  }
+
+  // Handed to the declarativeNetRequest service BEFORE loadExtension: the
+  // registry write below only lands after the load resolves, so its own
+  // 'extension-loaded' listener would otherwise find no entry (a fresh
+  // install) or the previous one (an update). extensions-dnr.ts has the
+  // full account.
+  registerPendingDnrInstall(entry)
+
   let loaded: Awaited<ReturnType<Session['extensions']['loadExtension']>>
   try {
     loaded = await ctx.session.extensions.loadExtension(targetDir, { allowFileAccess: false })
   } catch (error) {
+    // Left in place, the pending entry would be taken for the previous
+    // version that restoreAsideOnFailure may reload under this same id.
+    clearPendingDnrInstall(id)
     await restoreAsideOnFailure()
     throw error
   }
@@ -210,6 +252,7 @@ async function finishInstall (ctx: InstallContext, pending: PendingInstall): Pro
   // slipped past canonicalization some other way must never be registered
   // under a name it does not actually run as.
   if (loaded.id !== id) {
+    clearPendingDnrInstall(id)
     ctx.session.extensions.removeExtension(loaded.id)
     // Loading under an installed extension's id replaced it in the session: load that one back.
     const displaced = readRegistry(ctx.userDataPath).find((existing) => existing.id === loaded.id && existing.enabled)
@@ -219,20 +262,6 @@ async function finishInstall (ctx: InstallContext, pending: PendingInstall): Pro
     }
     await restoreAsideOnFailure()
     return { installed: false, reason: 'install refused: the loaded extension\'s id does not match its resolved key' }
-  }
-
-  const now = Date.now()
-  const entry: InstalledExtension = {
-    id: loaded.id,
-    name: facts.name,
-    version: facts.version,
-    enabled: true,
-    installedAt: now,
-    updatedAt: now,
-    source: pending.source,
-    updater: pending.updater,
-    path: targetDir,
-    stripped
   }
 
   // Re-reads the registry inside the lock rather than reusing the `registry`
@@ -261,6 +290,8 @@ async function finishInstall (ctx: InstallContext, pending: PendingInstall): Pro
 
 /** Installs an unpacked extension from a folder the person picked. */
 export async function installFromFolder (ctx: InstallContext, dir: string): Promise<InstallOutcome> {
+  const refused = refusePrivateInstall(ctx)
+  if (refused !== undefined) return refused
   const rawManifest = readManifestObject(JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')), dir)
   return await finishInstall(ctx, {
     rawManifest,
@@ -279,6 +310,8 @@ export async function installFromFolder (ctx: InstallContext, dir: string): Prom
  * slot is derived from the file's own bytes, never from a claimed identity.
  */
 export async function installFromFile (ctx: InstallContext, filePath: string): Promise<InstallOutcome> {
+  const refused = refusePrivateInstall(ctx)
+  if (refused !== undefined) return refused
   const bytes = Buffer.from(readFileSync(filePath))
   const isCrx = extname(filePath).toLowerCase() === '.crx'
 
@@ -307,163 +340,3 @@ export async function installFromFile (ctx: InstallContext, filePath: string): P
   })
 }
 
-/** The lines `describeExtensionInstall(next, 'store').detail` has that
- * `describeExtensionInstall(previous, 'store').detail` does not -- reuses
- * the install prompt's own wording rather than inventing a second way to
- * describe a permission, so a held-back update's registered reason and a
- * store install's prompt never disagree about what a given permission
- * means. */
-function describeWhatIsNew (previous: ExtensionManifestFacts, next: ExtensionManifestFacts): string {
-  const before = new Set(describeExtensionInstall(previous, 'store').detail.split('\n'))
-  const added = describeExtensionInstall(next, 'store').detail.split('\n').filter((line) => line !== '' && !before.has(line))
-  return added.length > 0 ? added.join('; ') : 'more access'
-}
-
-export interface InstallFromStoreOptions {
-  /** Skip this function's own install prompt -- see PendingInstall's own doc
-   * on `preApproved` for who may set this and why. */
-  readonly skipPrompt?: boolean
-  /** The CRX's own download URL, recorded as `updater.pendingUpdate` when
-   * this call holds an update back for consent, so `updateFromStore` can
-   * re-fetch the exact bytes without another Omaha check. */
-  readonly downloadUrl?: string
-  /** Test-only seam, threaded straight to crx.ts's `verifyCrx3` -- see its
-   * own doc. Falls back to store-download-seam.ts's env-driven override
-   * (e2e builds only), then to crx.ts's real Chrome Web Store key hash. */
-  readonly publisherKeyHash?: Buffer
-}
-
-/**
- * Installs or updates a Chrome Web Store extension from already-downloaded
- * CRX bytes: `verifyCrx3` with `requirePublisherProof: true` (every store CRX
- * needs both the developer's proof and the store's own), refuses when the
- * CRX's own id differs from `expectedId`,
- * and -- when `approvedManifest` names what is currently installed -- holds
- * the update back instead of installing it if it asks for more than that
- * (T19's subset rule, `updateRequiresConsent`): nothing is written, and the
- * registry's `updater.lastResult` records why, in the person's own words,
- * so the extensions page can show it without a further check.
- *
- * `approvedManifest` is what tells this function whether it is being asked
- * for a FRESH install (undefined: nothing to compare against, so nothing
- * can need consent) or an UPDATE (the currently loaded manifest): a fresh
- * store install is always `options.skipPrompt: true` (the store page's own
- * `beforeInstall` hook already showed the prompt, from the same manifest,
- * before download -- showing this function's own prompt too would be a
- * second dialog for one decision) and a silent background update is too
- * (skipPrompt, AND held back rather than prompted, if it widens anything);
- * the "Update" button (`updateFromStore` below) is the one caller that
- * wants this function's own prompt: it passes no `approvedManifest` at all,
- * so nothing is held back, and no `skipPrompt`, so the ordinary store
- * install prompt -- built from the update's own, current permissions --
- * shows before it lands.
- */
-export async function installFromStoreCrx (
-  ctx: InstallContext,
-  crxBytes: Buffer,
-  expectedId: string,
-  approvedManifest?: string,
-  options: InstallFromStoreOptions = {}
-): Promise<InstallOutcome> {
-  const publisherKeyHash = options.publisherKeyHash ?? storeTestPublisherKeyHash()
-  const crx = verifyCrx3(crxBytes, { requirePublisherProof: true, ...(publisherKeyHash === undefined ? {} : { publisherKeyHash }) })
-  if (crx.id !== expectedId) {
-    throw new Error(`downloaded CRX id ${crx.id} does not match the requested extension ${expectedId}`)
-  }
-  const rawManifest = peekManifest(crx.archive)
-
-  // No prompt here means the person approved a manifest elsewhere (the store page, or the
-  // version already installed); without it, or with one that does not parse, refuse.
-  if (options.skipPrompt === true && approvedManifest === undefined) {
-    return { installed: false, reason: 'a store install arrived without the manifest the person approved' }
-  }
-  if (approvedManifest !== undefined) {
-    const approved = readExtensionManifest(JSON.parse(approvedManifest))
-    const next = readExtensionManifest(rawManifest)
-    if (!approved.ok || !next.ok) return { installed: false, reason: 'the approved or downloaded manifest could not be read' }
-    if (updateRequiresConsent(approved.facts, next.facts)) {
-      const reason = `needs your approval: ${describeWhatIsNew(approved.facts, next.facts)}`
-      await patchStoreUpdater(ctx.userDataPath, expectedId, {
-        lastCheckedAt: Date.now(),
-        lastResult: reason,
-        ...(options.downloadUrl === undefined ? {} : { pendingUpdate: { url: options.downloadUrl, version: next.facts.version } })
-      })
-      return { installed: false, reason }
-    }
-  }
-
-  return await finishInstall(ctx, {
-    rawManifest,
-    source: { kind: 'store', storeId: expectedId },
-    updater: { kind: 'store', lastCheckedAt: Date.now(), lastResult: approvedManifest === undefined ? 'installed' : 'updated' },
-    slot: expectedId,
-    developerPublicKey: crx.developerPublicKey,
-    preApproved: options.skipPrompt === true,
-    write: (targetDir, manifestJson) => { unpackZip(crx.archive, targetDir); writeManifestOver(targetDir, manifestJson) }
-  })
-}
-
-/**
- * The e2e-only entry point `test/e2e-extensions-store.test.ts` drives
- * (through `store-test-hook.ts`'s dev-only `globalThis` hook -- no
- * `chrome.webstorePrivate` page exists in that suite to trigger the real
- * flow from) and the seam that lets it point at a fixture server instead of
- * the real store: `storeCrxDownloadUrl` returns the real store's URL unless
- * store-download-seam.ts's env-driven override is compiled in and set.
- */
-export async function installFromStore (ctx: InstallContext, expectedId: string): Promise<InstallOutcome> {
-  const { bytes } = await downloadCrxBytes(storeCrxDownloadUrl(expectedId))
-  return await installFromStoreCrx(ctx, bytes, expectedId)
-}
-
-/**
- * The "Update" button's own action: re-downloads exactly the update a held-
- * back check found (`entry.updater.pendingUpdate`, set by
- * `installFromStoreCrx` above) and installs it with no `approvedManifest`,
- * so nothing is held back a second time -- the person clicking this button
- * IS the consent -- and no `skipPrompt`, so the ordinary store install
- * prompt still shows, built from the update's own permissions, before it
- * lands.
- */
-export async function updateFromStore (ctx: InstallContext, id: string): Promise<InstallOutcome> {
-  const entry = readRegistry(ctx.userDataPath).find((candidate) => candidate.id === id)
-  const pending = entry?.updater.kind === 'store' ? entry.updater.pendingUpdate : undefined
-  if (pending === undefined) return { installed: false, reason: 'no update is pending' }
-  const { bytes } = await downloadCrxBytes(pending.url)
-  return await installFromStoreCrx(ctx, bytes, id)
-}
-
-/** Runs entirely under `withRegistryLock` (registry-runner.ts's own doc):
- * an install landing on the same `userDataPath` while this is in flight
- * reads a registry that already reflects this removal, or this reads one
- * that already reflects that install -- never a copy read before the
- * other's own write. */
-export async function uninstall (ctx: InstallContext, id: string): Promise<void> {
-  await withRegistryLock(ctx.userDataPath, (registry) => {
-    const entry = registry.find((candidate) => candidate.id === id)
-    if (entry === undefined) return
-    ctx.session.extensions.removeExtension(id)
-    rmSync(entry.path, { recursive: true, force: true })
-    writeRegistry(ctx.userDataPath, registry.filter((candidate) => candidate.id !== id))
-  })
-}
-
-/**
- * Electron has no "disable" for a loaded extension, only load/unload
- * (../README.md's Design notes): disabling removes it from the session and
- * flips `enabled: false` in the registry, so extensions-subsystem.ts simply
- * skips it on the next boot; enabling loads it again right away. Runs
- * entirely under `withRegistryLock`, the same reason `uninstall` above does.
- */
-export async function setEnabled (ctx: InstallContext, id: string, enabled: boolean): Promise<void> {
-  await withRegistryLock(ctx.userDataPath, async (registry) => {
-    const entry = registry.find((candidate) => candidate.id === id)
-    if (entry === undefined || entry.enabled === enabled) return
-    if (enabled) {
-      await ctx.session.extensions.loadExtension(entry.path, { allowFileAccess: false })
-    } else {
-      ctx.session.extensions.removeExtension(id)
-    }
-    writeRegistry(ctx.userDataPath, registry.map((candidate) => candidate.id === id ? { ...candidate, enabled } : candidate))
-  })
-}

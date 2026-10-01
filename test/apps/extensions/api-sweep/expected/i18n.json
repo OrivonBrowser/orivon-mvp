@@ -1,0 +1,20 @@
+{
+  "worker": {
+    "detectLanguage": "function",
+    "getAcceptLanguages": "function",
+    "getMessage": "function",
+    "getUILanguage": "function"
+  },
+  "page": {
+    "detectLanguage": "function",
+    "getAcceptLanguages": "function",
+    "getMessage": "function",
+    "getUILanguage": "function"
+  },
+  "content": {
+    "detectLanguage": "function",
+    "getAcceptLanguages": "function",
+    "getMessage": "function",
+    "getUILanguage": "function"
+  }
+}

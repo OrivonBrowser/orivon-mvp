@@ -12,6 +12,7 @@ entirely.
 
 | Folder | Holds |
 |---|---|
+| [`extension-apis/`](extension-apis/) | The namespaces Orivon adds to `chrome.*`, injected by `extension-api.ts` |
 | [`surface/`](surface/) | `window.orivon`'s page surface and its main-world installer |
 | [`ports/`](ports/) | The isolated-world per-socket state machines that installer wraps |
 | [`routed/`](routed/) | ADR-0017's routed network path: the main-world `fetch`, `XMLHttpRequest`, `EventSource` and `WebSocket` |

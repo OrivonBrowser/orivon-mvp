@@ -7,6 +7,7 @@
 // extensions its own permissions yet.
 
 import { isArray, isString, ownProperty } from './own-property.js'
+import { PERMISSION_WORDS, friendlyHost, hostWords, isAllSitesPattern } from './extension-permission-words.js'
 
 export interface ExtensionManifestFacts {
   readonly manifestVersion: 2 | 3
@@ -33,6 +34,8 @@ export interface ExtensionManifestFacts {
   readonly apiPermissions: readonly string[]
   /** `optional_permissions`, same filter. */
   readonly optionalApiPermissions: readonly string[]
+  /** `optional_host_permissions` and MV2's host-pattern entries inside `optional_permissions`: what the extension may ask for later. */
+  readonly optionalHostPermissions: readonly string[]
   /** `js` paths from content_scripts entries declaring `"world": "MAIN"`. */
   readonly mainWorldScripts: readonly string[]
   readonly webAccessible: boolean
@@ -67,7 +70,7 @@ const MAX_SANDBOX_PAGES = 200
  * API permission name -- API permission names never contain `://` and Chrome
  * never names one `<all_urls>`, so this is an exact, not a heuristic, split
  * for MV2's habit of listing both kinds in one `permissions` array. */
-function isHostPatternLike (entry: string): boolean {
+export function isHostPatternLike (entry: string): boolean {
   return entry === '<all_urls>' || /^[a-zA-Z*][a-zA-Z0-9+.-]*:\/\//.test(entry)
 }
 
@@ -157,6 +160,10 @@ export function readExtensionManifest (raw: unknown): ExtensionManifestResult {
   ])
   const apiPermissions = sortedUnique(permissions.filter((entry) => !isHostPatternLike(entry)))
   const optionalApiPermissions = sortedUnique(optionalPermissions.filter((entry) => !isHostPatternLike(entry)))
+  const optionalHostPermissions = sortedUnique([
+    ...stringArray(ownProperty(raw, 'optional_host_permissions', isArray)),
+    ...optionalPermissions.filter(isHostPatternLike)
+  ])
   const mainWorldScripts = sortedUnique(
     contentScripts.filter((entry) => entry.world === 'MAIN').flatMap((entry) => entry.js)
   )
@@ -184,6 +191,7 @@ export function readExtensionManifest (raw: unknown): ExtensionManifestResult {
     hostPermissions: explicitHostPermissions,
     apiPermissions,
     optionalApiPermissions,
+    optionalHostPermissions,
     mainWorldScripts,
     webAccessible,
     usesScripting: apiPermissions.includes('scripting') || optionalApiPermissions.includes('scripting'),
@@ -253,13 +261,14 @@ export function loadableManifest (raw: Record<string, unknown>): LoadableManifes
  * `stripped` in plain words, for the extensions page's details view -- one
  * line per capability `loadableManifest` removed, never the raw permission
  * name. Order matches the order `isStrippedPermission` would find them in an
- * unstripped manifest: network rules before native messaging.
+ * unstripped manifest: network requests before native messaging. The
+ * declarative network rules are not listed: Orivon runs them itself.
  */
 export function describeStrippedPermissions (stripped: StrippedRecord): readonly string[] {
   const names = [...stripped.permissions, ...stripped.optionalPermissions]
   const lines: string[] = []
-  if (names.some((name) => name.startsWith('webRequest') || name.startsWith('declarativeNetRequest')) || stripped.declarativeNetRequest !== undefined) {
-    lines.push('Network blocking rules: Orivon does not run these yet')
+  if (names.some((name) => name.startsWith('webRequest'))) {
+    lines.push('Watching and changing network requests (webRequest)')
   }
   if (names.includes('nativeMessaging')) {
     lines.push('Talking to programs on your computer: not available in Orivon')
@@ -276,27 +285,6 @@ export interface ExtensionInstallDescription {
   readonly message: string
   readonly detail: string
   readonly warning: boolean
-}
-
-const ALL_SITES_PATTERNS = new Set(['<all_urls>', '*://*/*'])
-
-/** True for a pattern that, on its own, already covers every site: the two
- * members of ALL_SITES_PATTERNS above. A scheme-qualified equivalent
- * (matching http alone, say) is deliberately NOT treated as all-sites here,
- * since it still excludes https. (A literal "star colon slash slash star
- * slash star" is not spelled out in this comment -- it closes a block
- * comment early.) */
-function isAllSitesPattern (pattern: string): boolean {
-  return ALL_SITES_PATTERNS.has(pattern)
-}
-
-/** A pattern's host portion for display: everything between "://" and the
- * next "/". Falls back to the raw pattern when it does not parse in that
- * scheme-host-path shape -- display only, never used for a security
- * decision. */
-function friendlyHost (pattern: string): string {
-  const match = /^[a-zA-Z*][a-zA-Z0-9+.-]*:\/\/([^/]+)/.exec(pattern)
-  return match?.[1] ?? pattern
 }
 
 const MAX_LISTED_HOSTS = 5
@@ -344,6 +332,28 @@ const API_PERMISSION_LINES: ReadonlyArray<{ names: readonly string[], line: stri
   { names: ['debugger'], line: 'Access the page debugger backend' }
 ]
 
+/** Permissions API_PERMISSION_LINES already words: PERMISSION_WORDS adds a
+ * line only for the others, so no permission is listed twice. */
+const NAMED_ABOVE = new Set(API_PERMISSION_LINES.flatMap(({ names }) => names))
+
+/** The one line of words for an API permission, or undefined when it has none (`activeTab`, `storage`). */
+export function permissionLine (name: string): string | undefined {
+  const named = API_PERMISSION_LINES.find(({ names }) => names.includes(name))
+  return named?.line ?? PERMISSION_WORDS[name]
+}
+
+const MAX_LISTED_OPTIONAL = 6
+
+/** What the extension may ask for later, in the words the permission prompt will use. */
+export function describeOptionalAccess (facts: ExtensionManifestFacts): readonly string[] {
+  const lines = facts.optionalApiPermissions
+    .filter((name) => !isStrippedPermission(name))
+    .map(permissionLine)
+    .filter((line): line is string => line !== undefined)
+  const hosts = facts.optionalHostPermissions.map(hostWords)
+  return [...new Set([...lines, ...hosts])]
+}
+
 const TITLE_BY_SOURCE: Record<ExtensionInstallSource, (name: string) => string> = {
   unpacked: (name) => `Load "${name}"?`,
   file: (name) => `Install "${name}"?`,
@@ -372,6 +382,16 @@ export function describeExtensionInstall (facts: ExtensionManifestFacts, source:
   for (const { names, line } of API_PERMISSION_LINES) {
     if (names.some((name) => facts.apiPermissions.includes(name))) lines.push(line)
   }
+  for (const [name, line] of Object.entries(PERMISSION_WORDS)) {
+    if (!NAMED_ABOVE.has(name) && facts.apiPermissions.includes(name)) lines.push(line)
+  }
+
+  const optional = describeOptionalAccess(facts)
+  if (optional.length > 0) {
+    const shown = optional.slice(0, MAX_LISTED_OPTIONAL)
+    const rest = optional.length - shown.length
+    lines.push(...(lines.length > 0 ? [''] : []), 'It may later ask for:', ...shown.map((line) => `- ${line}`), ...(rest > 0 ? [`- and ${String(rest)} more`] : []))
+  }
 
   const detail = lines.join('\n')
   return {
@@ -398,9 +418,7 @@ function isSubsetOf (subset: readonly string[], superset: readonly string[]): bo
   return subset.every((pattern) => supersetSet.has(pattern))
 }
 
-const WARNING_API_PERMISSIONS = new Set(
-  API_PERMISSION_LINES.flatMap(({ names }) => names)
-)
+const WARNING_API_PERMISSIONS = new Set([...NAMED_ABOVE, ...Object.keys(PERMISSION_WORDS)])
 
 /**
  * True when an update from `previous` to `next` must re-prompt before the

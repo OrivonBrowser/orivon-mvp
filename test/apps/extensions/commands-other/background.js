@@ -1,0 +1,1 @@
+chrome.commands.onCommand.addListener(() => {})

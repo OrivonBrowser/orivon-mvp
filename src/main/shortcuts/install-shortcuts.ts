@@ -9,12 +9,20 @@ import { appTabViews } from '../shell/tab-partition.js'
 import type { WindowRegistry } from '../shell/window-registry.js'
 import { buildAppMenuTemplate } from './app-menu.js'
 import { attachShortcuts } from './dispatcher.js'
+import type { ExtensionKeys } from './dispatcher.js'
 import type { CommandBus } from './command-bus.js'
 import type { CommandId } from './commands.js'
 import type { ShortcutService } from './shortcut-service.js'
 
-export function installShortcuts (app: Pick<App, 'on'>, service: ShortcutService, windows: WindowRegistry, commands: CommandBus): void {
+/** Extensions' command keys, which start answering once the saved shortcuts are read: this is that moment. */
+export interface ExtensionKeysSource extends ExtensionKeys {
+  ready: (env: { shortcuts: ShortcutService, windows: WindowRegistry }) => void
+}
+
+export function installShortcuts (app: Pick<App, 'on'>, service: ShortcutService, windows: WindowRegistry, commands: CommandBus, extensionKeys?: ExtensionKeysSource): void {
+  extensionKeys?.ready({ shortcuts: service, windows })
   const host = {
+    extensionKeys,
     windowFor: (contents: WebContents) => {
       // A view in no window of ours (the verifier's, an offscreen context) has no shortcuts.
       const owner = windows.findOwner(contents) ?? windows.focused()

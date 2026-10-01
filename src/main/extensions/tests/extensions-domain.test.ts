@@ -2,9 +2,12 @@ import { describe, expect, it, vi } from 'vitest'
 import type { WebContents } from 'electron'
 import { extensionsDomain } from '../extensions-domain.js'
 import type { ExtensionsDomainDeps } from '../extensions-domain.js'
+import type { ShellServices } from '../../shell/shell-services.js'
+import { createExtensionPrefsStore } from '../extension-prefs-runner.js'
 import type { ExtensionFacts } from '../extensions-view.js'
 import type { InstalledExtension } from '../registry.js'
 import type { InstallOutcome } from '../install-runner.js'
+import { fakeCommandKeys } from './command-keys-fixtures.js'
 
 const UNPACKED: InstalledExtension = {
   id: 'abcdefghijklmnopabcdefghijklmnop',
@@ -36,8 +39,15 @@ function buildDeps (overrides: Partial<ExtensionsDomainDeps> = {}): { deps: Exte
       installFromFile: vi.fn(async (): Promise<InstallOutcome> => ({ installed: true, entry: UNPACKED })),
       installFromStore: vi.fn(async (): Promise<InstallOutcome> => ({ installed: true, entry: UNPACKED })),
       checkForUpdates: vi.fn(async () => {}),
-      updateFromStore: vi.fn(async (): Promise<InstallOutcome> => ({ installed: true, entry: UNPACKED }))
+      updateFromStore: vi.fn(async (): Promise<InstallOutcome> => ({ installed: true, entry: UNPACKED })),
+      prefs: createExtensionPrefsStore(null),
+      commandKeys: fakeCommandKeys(),
+      applyManifest: vi.fn(async () => 'unchanged' as const)
     },
+    prefs: createExtensionPrefsStore(null),
+    host: () => undefined,
+    shell: {} as ShellServices,
+    isPrivate: false,
     readFacts: async () => FACTS,
     developerModeEnabled: () => false,
     pickFolder: vi.fn(async () => undefined),
@@ -66,6 +76,19 @@ describe('extensionsDomain', () => {
     const { handle } = extensionsDomain(deps)
     const reply = await handle({ type: 'list' }, caller) as { rows: unknown[] }
     expect(reply.rows).toHaveLength(2)
+  })
+
+  it('says whether this is a private runtime', async () => {
+    expect(await extensionsDomain(buildDeps().deps).handle({ type: 'context' }, caller)).toEqual({ isPrivate: false })
+    expect(await extensionsDomain(buildDeps({ isPrivate: true }).deps).handle({ type: 'context' }, caller)).toEqual({ isPrivate: true })
+  })
+
+  it('carries the row and the empty parts a feature fills, in the details reply', async () => {
+    const { deps } = buildDeps()
+    const reply = await extensionsDomain(deps).handle({ type: 'details', id: UNPACKED.id }, caller) as { details: { row: { name: string, parts: object }, parts: object } }
+    expect(reply.details.row.name).toBe('Fixture')
+    expect(reply.details.row.parts).toEqual({})
+    expect(reply.details.parts).toEqual({})
   })
 
   it('refuses details for an id no entry has', async () => {
@@ -149,7 +172,10 @@ describe('extensionsDomain', () => {
         installFromFile: vi.fn(async (): Promise<InstallOutcome> => ({ installed: true, entry: UNPACKED })),
         installFromStore: vi.fn(async (): Promise<InstallOutcome> => ({ installed: true, entry: UNPACKED })),
         checkForUpdates: vi.fn(async () => {}),
-        updateFromStore: vi.fn(async (): Promise<InstallOutcome> => ({ installed: true, entry: UNPACKED }))
+        updateFromStore: vi.fn(async (): Promise<InstallOutcome> => ({ installed: true, entry: UNPACKED })),
+        prefs: createExtensionPrefsStore(null),
+        commandKeys: fakeCommandKeys(),
+      applyManifest: vi.fn(async () => 'unchanged' as const)
       }
     })
     const { handle } = extensionsDomain(deps)

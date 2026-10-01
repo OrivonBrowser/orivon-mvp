@@ -20,7 +20,14 @@ const d = debug('electron-chrome-extensions:tabs')
  * host permission matching the tab's URL). Set once, before the first tabs
  * call (extension-host.ts).
  */
-type TabUrlAccessCheck = (manifest: unknown, url: string | undefined) => boolean
+// Orivon patch (UPSTREAM.md patch 47): the extension's id and, when the
+// answer is about one tab, that tab's id follow the url.
+type TabUrlAccessCheck = (
+  manifest: unknown,
+  url: string | undefined,
+  extensionId: string,
+  tabId?: number,
+) => boolean
 let gTabUrlAccessCheck: TabUrlAccessCheck | undefined
 
 export function setTabUrlAccessCheck(check: TabUrlAccessCheck): void {
@@ -39,7 +46,7 @@ export function filterTabDetails(
   details: Partial<chrome.tabs.Tab> | undefined,
 ): Partial<chrome.tabs.Tab> | undefined {
   if (!details) return details
-  if (!gTabUrlAccessCheck || gTabUrlAccessCheck(event.extension.manifest, details.url)) return details
+  if (!gTabUrlAccessCheck || gTabUrlAccessCheck(event.extension.manifest, details.url, event.extension.id, details.id)) return details
   const filtered = { ...details }
   for (const field of SENSITIVE_TAB_FIELDS) delete (filtered as any)[field]
   return filtered
@@ -54,7 +61,12 @@ export function filterTabDetails(
  * regardless of permissions. Set once, before the first insertCSS call
  * (extension-host.ts).
  */
-type TabHostAccessCheck = (manifest: unknown, url: string | undefined) => boolean
+type TabHostAccessCheck = (
+  manifest: unknown,
+  url: string | undefined,
+  extensionId: string,
+  tabId?: number,
+) => boolean
 let gTabHostAccessCheck: TabHostAccessCheck | undefined
 
 export function setTabHostAccessCheck(check: TabHostAccessCheck): void {
@@ -187,6 +199,11 @@ export class TabsAPI {
     return details
   }
 
+  /** Orivon patch (UPSTREAM.md patch 60): the details `chrome.tabs.get` would answer for `tab`, unfiltered. */
+  detailsFor(tab: TabContents) {
+    return this.getTabDetails(tab)
+  }
+
   private getTabDetails(tab: TabContents) {
     if (this.ctx.store.tabDetailsCache.has(tab.id)) {
       return this.ctx.store.tabDetailsCache.get(tab.id)
@@ -238,7 +255,7 @@ export class TabsAPI {
     // Orivon patch: host access only -- the `tabs` permission alone (which
     // gTabUrlAccessCheck above also accepts) never authorizes an injection,
     // only visibility of url/title/favIconUrl (Chrome's own rule).
-    if (gTabHostAccessCheck && !gTabHostAccessCheck(event.extension.manifest, tab.getURL())) {
+    if (gTabHostAccessCheck && !gTabHostAccessCheck(event.extension.manifest, tab.getURL(), event.extension.id, tab.id)) {
       throw new Error('tabs.insertCSS requires host access to the tab\'s URL')
     }
 

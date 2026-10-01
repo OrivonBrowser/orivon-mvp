@@ -1,6 +1,7 @@
 // What each command does to the window it was pressed in. The shell already
 // has a method for nearly all of them; this maps a command to that method.
 import { SHELL_EVENT_CHANNEL } from '../channels.js'
+import { toggleExtensionsMenu } from '../extensions/extensions-menu-command.js'
 import { findStep, openFind } from '../find/find-commands.js'
 import { toggleCaret } from '../focus/caret-runner.js'
 import { cyclePane, goToChromePane } from '../focus/pane-cycle.js'
@@ -139,6 +140,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'siteSettings.open': tabs.openInternal('settings', '/sites'); return
     case 'about.open': tabs.openInternal('about'); return
     case 'extensions.open': tabs.openInternal('extensions'); return
+    case 'extensions.menu': toggleExtensionsMenu(target, services.isPrivate); return
     case 'import.open': tabs.openInternal('import'); return
     case 'app.quit': deps.quit(); return
     case 'page.print': void printCommand(target); return

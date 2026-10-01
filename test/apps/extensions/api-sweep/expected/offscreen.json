@@ -1,0 +1,14 @@
+{
+  "worker": {
+    "Reason": "object",
+    "closeDocument": "function",
+    "createDocument": "function",
+    "hasDocument": "function"
+  },
+  "page": {
+    "Reason": "object",
+    "closeDocument": "function",
+    "createDocument": "function",
+    "hasDocument": "function"
+  }
+}

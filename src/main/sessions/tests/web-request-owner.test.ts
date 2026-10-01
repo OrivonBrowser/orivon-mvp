@@ -204,4 +204,39 @@ describe('webRequestOwnerFor', () => {
     expect(later).not.toHaveBeenCalled()
     expect(callback).toHaveBeenCalledWith({ redirectURL: 'https://elsewhere.example/' })
   })
+
+  it('remove() re-registers with the union of what remains, dropped handler excluded', () => {
+    const { session, webRequest } = fakeSession()
+    const owner = webRequestOwnerFor(session)
+    owner.onHeadersReceived(1, FILTER_A, () => true, (_d, current) => current)
+    const handleB = owner.onHeadersReceived(2, FILTER_B, () => true, (_d, current) => current)
+    expect(webRequest.onHeadersReceived).toHaveBeenLastCalledWith(
+      { urls: ['https://*.a.example/*', 'https://*.b.example/*'] },
+      expect.any(Function)
+    )
+
+    handleB.remove()
+    expect(webRequest.onHeadersReceived).toHaveBeenLastCalledWith(FILTER_A, expect.any(Function))
+  })
+
+  it('remove()-ing the last handler for an event unregisters Electron\'s own listener with null, not an empty { urls: [] } filter', () => {
+    const { session, webRequest } = fakeSession()
+    const owner = webRequestOwnerFor(session)
+    const handle = owner.onBeforeRequest(1, FILTER_A, () => true, () => ({}))
+    expect(webRequest.onBeforeRequest).toHaveBeenCalledTimes(1)
+
+    handle.remove()
+    expect(webRequest.onBeforeRequest).toHaveBeenCalledTimes(2)
+    expect(webRequest.onBeforeRequest).toHaveBeenLastCalledWith(null)
+  })
+
+  it('a second onBeforeRequest handler keeps Electron\'s listener registered after the first is removed', () => {
+    const { session, webRequest } = fakeSession()
+    const owner = webRequestOwnerFor(session)
+    const handleA = owner.onBeforeRequest(1, FILTER_A, () => true, () => ({}))
+    owner.onBeforeRequest(2, FILTER_B, () => true, () => ({}))
+
+    handleA.remove()
+    expect(webRequest.onBeforeRequest).toHaveBeenLastCalledWith(FILTER_B, expect.any(Function))
+  })
 })

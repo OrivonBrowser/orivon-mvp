@@ -48,6 +48,12 @@ key, because Shift changes the character but not the position a person means.
 except the one that leaves it, which the browser handles itself; a shortcut that closed the tab
 would give the page no way to be seen leaving.
 
+**Extensions' commands are asked second.** `dispatcher.ts` takes an optional `extensionKeys` (the
+table `../extensions/extension-commands-runner.ts` keeps): while a page records a key for one, it
+takes the next chord first; and a chord no Orivon command holds goes to it unless the key is
+auto-repeating or the window holds the screen. Orivon's own commands therefore always win, and this
+directory imports nothing from `../extensions/`.
+
 **Recording happens in main.** Settings asks to record; the next chord pressed in that page is
 captured by the dispatcher, checked against the rules and the other commands, and sent back as an
 event. There is one normaliser, and the page never interprets a keystroke.

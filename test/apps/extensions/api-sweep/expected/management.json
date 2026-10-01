@@ -1,0 +1,20 @@
+{
+  "worker": {
+    "ExtensionDisabledReason": "object",
+    "ExtensionInstallType": "object",
+    "ExtensionType": "object",
+    "LaunchType": "object",
+    "getPermissionWarningsByManifest": "function",
+    "getSelf": "function",
+    "uninstallSelf": "function"
+  },
+  "page": {
+    "ExtensionDisabledReason": "object",
+    "ExtensionInstallType": "object",
+    "ExtensionType": "object",
+    "LaunchType": "object",
+    "getPermissionWarningsByManifest": "function",
+    "getSelf": "function",
+    "uninstallSelf": "function"
+  }
+}

@@ -179,7 +179,7 @@ function boot (runtime: Runtime): void {
     shell.profiles.startWatching()
     app.once('will-quit', () => { shell.profiles.stopWatching() })
     shell.commands.bind({ services: shell, openWindow: (options) => { createShellWindow(ctx, shell, options) }, displays: () => screen.getAllDisplays(), quit: () => { app.quit() } })
-    installShortcuts(app, shell.shortcuts, shell.windows, shell.commands)
+    installShortcuts(app, shell.shortcuts, shell.windows, shell.commands, ctx.extensions?.commandKeys)
     installZoom(app, shell.windows, shell.zoom)
     installShellStyle(app, shell.settings, { shellSession: session.fromPartition(SHELL_PARTITION), internalSession, dashboardUrl: resolveDashboardUrl() })
     installSpellcheck(app, shell.windows, shell.settings)
