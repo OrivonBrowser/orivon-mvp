@@ -16,13 +16,13 @@ import { privacy } from './privacy.js'
 import { profiles } from './profiles.js'
 import { search } from './search.js'
 import { shortcutsSection } from './shortcuts.js'
-import { sites } from './sites.js'
+import { sitesSection } from './sites.js'
 import { startup } from './startup.js'
 import { tabs } from './tabs.js'
 import { web3 } from './web3.js'
 
 /** After the state has loaded: some sections are built from what main reports. A section with no rows is not listed. */
 export function sectionsFor (state: SettingsState): readonly Section[] {
-  return [appearance, search, startup, content, accessibility, tabs, downloads, profiles, privacy, sites, passwords, addresses, apps, web3, performanceSection, shortcutsSection(state.shortcuts.rows), developer, about]
+  return [appearance, search, startup, content, accessibility, tabs, downloads, profiles, privacy, sitesSection(state), passwords, addresses, apps, web3, performanceSection, shortcutsSection(state.shortcuts.rows), developer, about]
     .filter((section) => section.rows.length > 0)
 }

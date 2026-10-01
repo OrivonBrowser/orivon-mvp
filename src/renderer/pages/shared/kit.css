@@ -75,10 +75,11 @@
   transition: background-color 0.12s, color 0.12s;
 }
 .segmented > button:first-child { border-left: none; }
-.segmented > button:hover:not([disabled]) { background: var(--whover); color: var(--wink); }
+.segmented > button:hover:not([disabled]):not([aria-pressed="true"]) { background: var(--whover); color: var(--wink); }
 .segmented > button:active:not([disabled]) { background: color-mix(in srgb, var(--wink) 12%, transparent); }
 .segmented > button[aria-pressed="true"] { background: var(--waccent-wash); color: var(--waccent-text); font-weight: 600; }
-.segmented > button[aria-pressed="true"]:hover:not([disabled]) { background: color-mix(in srgb, var(--waccent-text) 22%, transparent); color: var(--waccent-text); }
+/* The chosen segment stays chosen while the pointer is on it: hover only deepens the wash. */
+.segmented > button[aria-pressed="true"]:hover:not([disabled]) { background: color-mix(in srgb, var(--waccent-text) 20%, transparent); }
 .segmented > button[disabled] { opacity: 0.5; cursor: default; }
 /* The container clips, so a ring drawn outside a segment would be cut off. */
 .segmented > button:focus-visible { outline-offset: -2px; }
@@ -203,7 +204,9 @@
   font-weight: 500;
   white-space: nowrap;
 }
-.badge.ok, .badge.warn, .badge.danger { color: color-mix(in srgb, var(--tone) 65%, var(--wink)); }
+.badge.ok { color: var(--wok-text); }
+.badge.warn { color: var(--wwarn-text); }
+.badge.danger { color: var(--wdanger-text); }
 .badge.ok { --tone: var(--wok); background: var(--wok-wash); }
 .badge.warn { --tone: var(--wwarn); background: var(--wwarn-wash); }
 .badge.danger { --tone: var(--wdanger); background: color-mix(in srgb, var(--wdanger) 14%, transparent); }

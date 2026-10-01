@@ -2,11 +2,13 @@
 // themselves need no other wiring: a feature's overlay forwards its `closed`
 // to `slotClosed`.
 import type { ShellInstaller } from '../shell/shell-installers.js'
-import { tabSlotEvents } from './tab-slots.js'
+import { sheetBackdrop } from '../shell/sheet-backdrop.js'
+import { setSheetBackdrop, tabSlotEvents } from './tab-slots.js'
 
 export const installTabSlots: ShellInstaller = {
   name: 'tab-slots',
   install: (_app, services) => {
+    setSheetBackdrop(sheetBackdrop)
     services.tabLifecycle.subscribe({
       tabActivated: (contents) => {
         const found = services.windows.findTab(contents)

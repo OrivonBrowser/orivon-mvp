@@ -5,16 +5,16 @@ vi.mock('electron', () => ({ Menu: { buildFromTemplate: vi.fn() } }))
 
 const { tabMenuTemplate } = await import('../tab-menu.js')
 
-const actions = () => ({ newTabRight: vi.fn(), reload: vi.fn(), duplicate: vi.fn(), togglePin: vi.fn(), toggleMute: vi.fn(), newGroup: vi.fn(), ungroup: vi.fn(), sleep: vi.fn(), moveToNewWindow: vi.fn(), separate: vi.fn(), close: vi.fn(), closeOthers: vi.fn(), closeRight: vi.fn(), run: vi.fn() })
+const actions = () => ({ newTabRight: vi.fn(), reload: vi.fn(), duplicate: vi.fn(), togglePin: vi.fn(), toggleMute: vi.fn(), newGroup: vi.fn(), ungroup: vi.fn(), sleep: vi.fn(), copyLink: vi.fn(), emailLink: vi.fn(), moveToNewWindow: vi.fn(), separate: vi.fn(), close: vi.fn(), closeOthers: vi.fn(), closeRight: vi.fn(), run: vi.fn() })
 const model = (overrides: Partial<Parameters<typeof tabMenuTemplate>[0]> = {}): Parameters<typeof tabMenuTemplate>[0] => ({
-  canDuplicate: true, pinned: false, muted: false, canPin: true, othersClosable: true, rightClosable: true, tabCount: 3, inSplit: false, splitPartners: [], grouped: false, groups: [], otherWindows: [], ...overrides
+  canDuplicate: true, pinned: false, muted: false, canPin: true, canShare: true, othersClosable: true, rightClosable: true, tabCount: 3, inSplit: false, splitPartners: [], grouped: false, groups: [], otherWindows: [], ...overrides
 })
 const labels = (template: MenuItemConstructorOptions[]): string[] => template.filter((item) => item.type !== 'separator').map((item) => item.label ?? '')
 const find = (template: MenuItemConstructorOptions[], label: string): MenuItemConstructorOptions | undefined => template.find((item) => item.label === label)
 
 describe('a tab\'s menu', () => {
   it('offers what can be done to one tab, in order', () => {
-    expect(labels(tabMenuTemplate(model(), actions()))).toEqual(['New Tab to the Right', 'Reload', 'Duplicate', 'Pin Tab', 'Mute Tab', 'Put Tab to Sleep', 'Add Tab to New Group', 'Split with', 'Move Tab to New Window', 'Close Tab', 'Close Other Tabs', 'Close Tabs to the Right', 'Reopen Closed Tab', 'Bookmark All Tabs…'])
+    expect(labels(tabMenuTemplate(model(), actions()))).toEqual(['New Tab to the Right', 'Reload', 'Duplicate', 'Pin Tab', 'Mute Tab', 'Put Tab to Sleep', 'Add Tab to New Group', 'Share', 'Split with', 'Move Tab to New Window', 'Close Tab', 'Close Other Tabs', 'Close Tabs to the Right', 'Reopen Closed Tab', 'Bookmark All Tabs…'])
   })
 
   it('runs the action of the entry chosen', () => {
@@ -94,6 +94,21 @@ describe('a tab\'s menu', () => {
     expect(find(joined, 'Split with')).toBeUndefined()
     ;(find(joined, 'Separate Tabs')?.click as () => void)()
     expect(a.separate).toHaveBeenCalledTimes(1)
+  })
+
+  it('shares the tab it was opened on, through Copy Link and Email Link', () => {
+    const a = actions()
+    const share = find(tabMenuTemplate(model(), a), 'Share')
+    const items = share?.submenu as MenuItemConstructorOptions[]
+    expect(items.map((item) => item.label)).toEqual(['Copy Link', 'Email Link'])
+    ;(items[0]?.click as () => void)()
+    ;(items[1]?.click as () => void)()
+    expect(a.copyLink).toHaveBeenCalledTimes(1)
+    expect(a.emailLink).toHaveBeenCalledTimes(1)
+  })
+
+  it('greys Share for a tab with no address to share', () => {
+    expect(find(tabMenuTemplate(model({ canShare: false }), actions()), 'Share')?.enabled).toBe(false)
   })
 
   it('has no one to split with when it is the only tab', () => {

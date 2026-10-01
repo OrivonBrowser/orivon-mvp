@@ -6,13 +6,16 @@ import type { CommandDeps } from '../run-command.js'
 import type { ShellServices } from '../../shell/shell-services.js'
 import { ClosedStack } from '../../session-restore/closed-stack.js'
 import * as pageCommands from '../../page-tools/page-commands.js'
+import * as shareCommands from '../../os/share-commands.js'
 
 // The page tools have tests of their own; here only that a key reaches them.
 vi.mock('../../page-tools/page-commands.js', () => Object.fromEntries(['print', 'pdf', 'save', 'viewSource', 'screenshot', 'pip'].map((name) => [`${name}Command`, vi.fn(async () => {})])))
 vi.mock('../../page-tools/real-deps.js', () => ({ realDeps: { real: true } }))
+vi.mock('../../os/share-commands.js', () => ({ copyLinkCommand: vi.fn(), emailLinkCommand: vi.fn(async () => {}) }))
+vi.mock('../../os/share-runner.js', () => ({ realShareDeps: { realShare: true } }))
 
-interface Tab { id: string, url: string, title: string, isNewTab: boolean, isInternal: boolean, splitWith: string | null, pinned: boolean, muted: boolean }
-const tab = (id: string, extra: Partial<Tab> = {}): Tab => ({ id, url: `https://${id}.example/`, title: id, isNewTab: false, isInternal: false, splitWith: null, pinned: false, muted: false, ...extra })
+interface Tab { id: string, url: string, displayUrl: string, title: string, isNewTab: boolean, isInternal: boolean, splitWith: string | null, pinned: boolean, muted: boolean }
+const tab = (id: string, extra: Partial<Tab> = {}): Tab => ({ id, url: `https://${id}.example/`, displayUrl: `https://${id}.example/`, title: id, isNewTab: false, isInternal: false, splitWith: null, pinned: false, muted: false, ...extra })
 
 function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: boolean, homeUrl?: string } = {}): { target: ShellWindow, zoom: Record<'step' | 'reset', ReturnType<typeof vi.fn>>, devtools: Record<'toggle' | 'openConsole', ReturnType<typeof vi.fn>>, profiles: Record<'openPrivate', ReturnType<typeof vi.fn>>, calls: Record<string, ReturnType<typeof vi.fn>>, bookmarks: Record<string, ReturnType<typeof vi.fn>>, deps: CommandDeps & { openWindow: ReturnType<typeof vi.fn<() => void>>, quit: ReturnType<typeof vi.fn<() => void>> }, send: ReturnType<typeof vi.fn> } {
   const calls = Object.fromEntries(['createTab', 'navigate', 'closeTab', 'activateTab', 'back', 'forward', 'reload', 'openInternal', 'reloadIgnoringCache', 'stop', 'overlayShow', 'overlayToggle', 'moveTab', 'toggle', 'changed', 'setAudioMuted', 'focusOther', 'swap', 'rotate'].map((name) => [name, vi.fn()]))
@@ -93,6 +96,27 @@ describe('runCommand', () => {
       runCommand(id, target, deps)
       expect(pageCommands[name], id).toHaveBeenCalledWith(...(withDeps ? [target, { real: true }] : [target]))
     }
+  })
+
+  it('hands the share commands to the share code with the real dependencies', () => {
+    const { target, deps } = harness([tab('a')], 'a')
+    runCommand('share.copyLink', target, deps)
+    runCommand('share.email', target, deps)
+    expect(shareCommands.copyLinkCommand).toHaveBeenCalledWith(target, { realShare: true })
+    expect(shareCommands.emailLinkCommand).toHaveBeenCalledWith(target, { realShare: true })
+  })
+
+  it('opens the shortcut sheet for the page in front, where the system can make a shortcut', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+    runCommand('site.shortcut', target, deps)
+    if (process.platform === 'linux' || process.platform === 'win32') expect(calls['overlayShow']).toHaveBeenCalledWith('shortcut-sheet', undefined, { url: 'https://a.example/', title: 'a' })
+    else expect(calls['overlayShow']).not.toHaveBeenCalled()
+  })
+
+  it('shows no shortcut sheet for a shell page', () => {
+    const { target, calls, deps } = harness([tab('a', { isInternal: true, url: 'orivon://settings', displayUrl: 'orivon://settings' })], 'a')
+    runCommand('site.shortcut', target, deps)
+    expect(calls['overlayShow']).not.toHaveBeenCalled()
   })
 
   it('handles every command there is', () => {
@@ -383,6 +407,24 @@ describe('runCommand', () => {
     const { target, calls, deps } = harness([tab('a')], 'a')
     runCommand('downloads.open', target, deps)
     expect(calls['openInternal']).toHaveBeenCalledWith('downloads')
+  })
+
+  it('opens Settings at its Passwords section', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+    runCommand('passwords.open', target, deps)
+    expect(calls['openInternal']).toHaveBeenCalledWith('settings', '/passwords')
+  })
+
+  it('opens Settings at its Site settings section', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+    runCommand('siteSettings.open', target, deps)
+    expect(calls['openInternal']).toHaveBeenCalledWith('settings', '/sites')
+  })
+
+  it('opens Settings at the clear-data row of its Privacy section', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+    runCommand('privacy.clearData', target, deps)
+    expect(calls['openInternal']).toHaveBeenCalledWith('settings', '/privacy#clear-data')
   })
 
   it('opens the Bookmarks page', () => {

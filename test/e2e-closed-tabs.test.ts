@@ -61,6 +61,13 @@ async function waitTitles (chrome: Page, expected: string[]): Promise<void> {
   expect(ok).toBe(true)
 }
 
+/** A restored tab can show its address for a moment before its page title arrives, so the title is waited for. */
+async function waitActiveTitle (chrome: Page, expected: string): Promise<void> {
+  let seen: string | undefined
+  await waitFor(async () => { seen = (await strip(chrome)).find((tab) => tab.active)?.title; return seen === expected })
+  expect(seen).toBe(expected)
+}
+
 async function open (chrome: Page, name: string, expected: string[]): Promise<void> {
   await chrome.evaluate((url) => { (window as unknown as { orivonShell: { newTab: (u: string) => void } }).orivonShell.newTab(url) }, `${origin}/${name}`)
   await waitTitles(chrome, expected)
@@ -96,14 +103,14 @@ it('brings a closed tab back where it was, in front, and walks back through seve
     await waitTitles(chrome, ['New Tab', 'page a', 'page c'])
     await pressOnPage(app, `${origin}/c`, 'T', ['control', 'shift'])
     await waitTitles(chrome, ['New Tab', 'page a', 'page b', 'page c'])
-    expect((await strip(chrome)).find((tab) => tab.active)?.title).toBe('page b')
+    await waitActiveTitle(chrome, 'page b')
 
     await close(chrome, 'page c')
     await close(chrome, 'page a')
     await waitTitles(chrome, ['New Tab', 'page b'])
     await pressOnPage(app, `${origin}/b`, 'T', ['control', 'shift'])
     await waitTitles(chrome, ['New Tab', 'page a', 'page b'])
-    expect((await strip(chrome)).find((tab) => tab.active)?.title).toBe('page a')
+    await waitActiveTitle(chrome, 'page a')
     await pressOnPage(app, `${origin}/a`, 'T', ['control', 'shift'])
     await waitTitles(chrome, ['New Tab', 'page a', 'page b', 'page c'])
 
@@ -175,7 +182,7 @@ it('brings a closed window back with all its tabs, and reopens a tab in the wind
     expect(await waitFor(() => chromePages(app).length === 2)).toBe(true)
     const again = chromePages(app).find((page) => page !== chrome) as Page
     await waitTitles(again, ['page a', 'page b'])
-    expect((await strip(again)).find((tab) => tab.active)?.title).toBe('page b')
+    await waitActiveTitle(again, 'page b')
 
     // A tab closed in the second window returns there even when the key is pressed in the first.
     await close(again, 'page a')

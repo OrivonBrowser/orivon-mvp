@@ -11,10 +11,14 @@ import { createDownloadsButton } from './downloads-button.js'
 import { createHomeButton } from './home-button.js'
 import { createNavigation } from './navigation.js'
 import { createPanes } from './panes.js'
+import { createPasswordKey } from './password-key.js'
+import { createContentDot } from './content-dot.js'
+import { createPopupsChip } from './popups-chip.js'
 import { createPromptAnchor } from './prompt-anchor.js'
 import { createReaderButton } from './reader-button.js'
 import { createReloadStop } from './reload-stop.js'
 import { createSidePanelButton } from './side-panel-button.js'
+import { createSiteAccessChip } from './site-access-chip.js'
 import { createSiteBadges } from './site-badges.js'
 import { decorateTabBadges } from './tab-badges.js'
 import { decorateTabCrashed } from './tab-crashed.js'
@@ -45,6 +49,10 @@ export const CHROME_MODULES: readonly ChromeModule[] = [
   createReloadStop(),
   createHomeButton(),
   createSiteBadges(),
+  createSiteAccessChip(),
+  createPopupsChip(),
+  createContentDot(),
+  createPasswordKey(),
   createPromptAnchor(),
   createReaderButton(),
   createCluster(),

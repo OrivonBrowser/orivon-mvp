@@ -192,6 +192,21 @@ describe('createOverlayHost: closeOn', () => {
     expect(closed).toHaveBeenLastCalledWith('request')
   })
 
+  it('keeps the view and the open state of an overlay that its own closed hook showed again', () => {
+    let again = (): void => {}
+    const { host } = setup([def('a', {}, { closed: () => { again() } })])
+    again = () => { host.show('a', ANCHOR, { next: true }) }
+    host.show('a', ANCHOR)
+    views[0]?.spec.port.close('request')
+    expect(host.isOpen('a')).toBe(true)
+    expect(views).toHaveLength(1)
+    expect(views[0]?.destroyed).toBe(false)
+    again = () => {}
+    views[0]?.spec.port.close('request')
+    expect(host.isOpen('a')).toBe(false)
+    expect(views[0]?.destroyed).toBe(true)
+  })
+
   it('an overlay closes itself through its OverlayWindow', () => {
     let close = (): void => {}
     const { host } = setup([def('a', { attach: (win) => { close = win.close; return { request: () => undefined } } })])
@@ -444,6 +459,45 @@ describe('createOverlayHost: focus', () => {
     expect(address.focus).toHaveBeenCalledTimes(1)
   })
 
+  it('a never-focus overlay whose handler takes the keyboard keeps it, and hands it back on close', () => {
+    const address = tab(); address.id = 5
+    focus.current = address
+    let takeFocus: (() => void) | undefined
+    const { host } = setup([def('bar', { layer: 'bar', focus: 'never', closeOn: CLOSE_LIKE_BAR, attach: (win) => { takeFocus = win.takeFocus; return { request: () => undefined } } })])
+    host.show('bar')
+    expect(views[0]?.focusWanted).toBeNull()
+    takeFocus?.()
+    expect(views[0]?.focusWanted?.()).toBe(true)
+    views[0]?.spec.onFocus()
+    expect(address.focus).not.toHaveBeenCalled()
+    host.close('bar')
+    expect(address.focus).toHaveBeenCalledTimes(1)
+    // The next showing starts without the keyboard again.
+    host.show('bar')
+    views.at(-1)?.spec.onFocus()
+    expect(address.focus).toHaveBeenCalledTimes(2)
+  })
+
+  it('asking for the keyboard does nothing for a taking overlay, a closed one, or while another window is in use', () => {
+    let takeFocus: (() => void) | undefined
+    const attach = (win: { takeFocus?: () => void }): OverlayHandler => { takeFocus = win.takeFocus; return { request: () => undefined } }
+    const taking = setup([def('a', { attach: attach as never })])
+    taking.host.show('a', ANCHOR)
+    views[0]!.focusWanted = null
+    takeFocus?.()
+    expect(views[0]?.focusWanted).toBeNull()
+    taking.host.close('a')
+    const closed = setup([def('bar', { layer: 'bar', focus: 'never', closeOn: CLOSE_LIKE_BAR, attach: attach as never })])
+    closed.host.show('bar')
+    closed.host.close('bar')
+    takeFocus?.()
+    expect(views.at(-1)?.focusWanted).toBeNull()
+    const away = setup([def('bar2', { layer: 'bar', focus: 'never', closeOn: CLOSE_LIKE_BAR, attach: attach as never })], tab(), { focused: false, otherFocused: true })
+    away.host.show('bar2')
+    takeFocus?.()
+    expect(views.at(-1)?.focusWanted).toBeNull()
+  })
+
   it('a taking overlay ignores its own focus event', () => {
     const { host, active } = setup([def('a')])
     host.show('a', ANCHOR)
@@ -512,10 +566,13 @@ describe('createOverlayHost: keep and reopen', () => {
     expect(views[0]?.bounds).toMatchObject({ height: 300 })
   })
 
-  it('a toggle right after a blur close is that click\'s echo and does nothing', () => {
-    const { host } = setup([def('a')])
+  it.each([
+    ['the host closes it on blur', {}, () => { views[0]?.spec.onBlur() }],
+    ['the page closes itself on blur', { closeOn: { blur: false, tabSwitch: true, navigation: false, layout: false } }, () => { views[0]?.spec.port.close('blur') }]
+  ])('a toggle right after %s is that click\'s echo and does nothing', (_name, patch, closeOnBlur) => {
+    const { host } = setup([def('a', patch)])
     host.show('a', ANCHOR)
-    views[0]?.spec.onBlur()
+    closeOnBlur()
     vi.advanceTimersByTime(100)
     host.toggle('a', ANCHOR)
     expect(host.isOpen('a')).toBe(false)

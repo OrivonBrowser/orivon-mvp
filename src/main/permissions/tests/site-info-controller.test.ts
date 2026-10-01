@@ -69,6 +69,13 @@ describe('createSiteInfoController -- siteInfoFor / siteSummaryFor', () => {
     expect(info.capabilityRows).toEqual([])
   })
 
+  it('an ordinary website always shows the key, because its popover lists what it may do', async () => {
+    const controller = createSiteInfoController(ctxWith(createBroker(baseDeps())), NO_TRUST)
+
+    expect(await controller.siteSummaryFor(OTHER)).toEqual({ asked: true, warning: false })
+    expect(await controller.siteSummaryFor('http://127.0.0.1:8080/page')).toEqual({ asked: true, warning: false })
+  })
+
   it('a malformed url also reports nothing asked, rather than throwing', async () => {
     const controller = createSiteInfoController(ctxWith(createBroker(baseDeps())), NO_TRUST)
     const summary = await controller.siteSummaryFor('not a url at all')
@@ -96,9 +103,10 @@ describe('createSiteInfoController -- siteInfoFor / siteSummaryFor', () => {
     expect(summary.warning).toBe(true)
   })
 
-  it('with no broker published yet, reports nothing asked rather than throwing', async () => {
+  it('with no broker published yet, reports no warning rather than throwing', async () => {
     const controller = createSiteInfoController(ctxWith(undefined), NO_TRUST)
-    expect(await controller.siteSummaryFor(APP)).toEqual({ asked: false, warning: false })
+    expect(await controller.siteSummaryFor(APP)).toEqual({ asked: true, warning: false })
+    expect(await controller.siteSummaryFor('ipfs://bafy')).toEqual({ asked: false, warning: false })
   })
 })
 

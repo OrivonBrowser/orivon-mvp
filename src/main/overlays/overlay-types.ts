@@ -47,6 +47,8 @@ export interface OverlayWindow extends WindowContext {
   send: (event: unknown) => void
   /** Closes this overlay. */
   close: () => void
+  /** Makes a `never` overlay hold the keyboard from now until it closes, for one that shows a text box the person clicks into. Does nothing for one already taking focus. The host always supplies it; a test's fake window may leave it out. */
+  takeFocus?: () => void
 }
 
 export interface OverlayHandler {

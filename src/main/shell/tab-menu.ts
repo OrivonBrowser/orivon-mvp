@@ -19,6 +19,8 @@ export interface TabMenuModel {
   /** There is an unpinned tab to the right of this one to close. */
   readonly rightClosable: boolean
   readonly tabCount: number
+  /** The tab has an address worth sharing: not the new-tab page, a shell page or an extension's page. */
+  readonly canShare: boolean
   /** The tab is in a split. */
   readonly inSplit: boolean
   /** The tabs it could be split with, that are not in a split already. */
@@ -40,6 +42,8 @@ export interface TabMenuActions {
   newGroup: () => void
   ungroup: () => void
   sleep: () => void
+  copyLink: () => void
+  emailLink: () => void
   moveToNewWindow: () => void
   separate: () => void
   close: () => void
@@ -76,6 +80,11 @@ export function tabMenuTemplate (model: TabMenuModel, actions: TabMenuActions): 
     { type: 'separator' },
     ...group,
     { type: 'separator' },
+    {
+      label: 'Share',
+      enabled: model.canShare,
+      submenu: [{ label: 'Copy Link', click: actions.copyLink }, { label: 'Email Link', click: actions.emailLink }]
+    },
     ...split,
     { type: 'separator' },
     ...move,

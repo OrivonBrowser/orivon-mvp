@@ -1009,7 +1009,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 ### A243: `Notification.permission` reads `'denied'` for an undecided site **[OWNER]**
 
 - **Question:** The boolean check handler makes an undecided site read `'denied'`, not `'default'`,
-  from `Notification.permission` and the Permissions API. Override or accept?
+  from `Notification.permission` and the Permissions API, and so for every kind a site is asked about. Override or accept?
 - **Why it matters:** A page that checks first and gives up on `'denied'` never asks;
   `requestPermission()` still reaches the prompt.
 - **Options:** a main-world override reporting `'default'`, under ADR-0021; a documented divergence.
@@ -1748,6 +1748,43 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   not document. Should the list say so in the product, drop Startpage's, or ask each engine?
 - **Why it matters:** an engine that stops answering gives no rows, silently, while the switch stays on.
 - **Options:** keep the Settings help line that names the two (current); drop Startpage's; probe on every release.
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A325: Third-party cookie blocking misses a cross-site frame's `document.cookie` **[RESEARCH]**
+
+- **Question:** The setting removes `Cookie` and `Set-Cookie` headers of cross-site requests, but script in a cross-site
+  frame can still read and write `document.cookie`, and Chromium's phase-out switch has no effect in this build. Should
+  Orivon accept the gap, partition by session, or wait for an Electron cookie-policy API?
+- **Why it matters:** the Settings row says "block third-party cookies" and a tracker's frame still keeps state.
+- **Options:** keep the help line that names the gap (current); a profile-wide cookie rewrite; wait for Electron (rec.).
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A326: Should Orivon offer to become the default browser **[OWNER]**
+
+- **Question:** Settings > About registers Orivon for http and https from a button, on a packaged Linux install only.
+  Should a first launch, or a later one, also offer it?
+- **Why it matters:** links from other programs reach Orivon only once it is registered, and an offer costs trust.
+- **Options:** keep the button only (current); a one-time offer after the first week; an offer at first launch.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A327: A copied password has no confidential marker on the clipboard **[RESEARCH]**
+
+- **Question:** Electron 44's clipboard cannot mark text as excluded from clipboard history, so a password copied from
+  Settings is cleared after 60 seconds but may be kept by a clipboard manager. Is there a way, or should copy be removed?
+- **Why it matters:** the password store is the most valuable file the browser keeps after the identity seed.
+- **Options:** keep copy with the timed clear (current); drop copy and keep reveal; a native helper (refused by Rule 8).
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A328: The real keyring, a real client-certificate store and the Windows and macOS paths are tested with fakes **[RESEARCH]**
+
+- **Question:** The encrypted password store, the client-certificate chooser, the Windows shortcut link and the macOS and
+  Windows default-browser calls were run only against fakes; the packaged `Exec=` line and desktop file name are unobserved.
+- **Why it matters:** each is a place where a unit test passing says nothing about a real machine.
+- **Options:** a run on a machine with a keyring, an NSS store, Windows and macOS (rec.); a probe per path; leave it.
 - **Who decides:** research first
 - **Blocks:** nothing
 

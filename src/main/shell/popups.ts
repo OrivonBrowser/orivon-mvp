@@ -92,6 +92,8 @@ export interface PopupHost {
   webPreferencesFor: (url: string) => WebPreferences
   /** Whether `url`'s origin holds a grant or is cache-served -- `routePopup`'s own `isApp`. */
   isApp: (url: string) => boolean
+  /** True when the pop-up blocker refuses this open (site-settings/popup-blocker.ts). Absent in a test with no blocker: nothing is refused. */
+  popupBlocked?: (details: HandlerDetails, opener: PopupOpener) => boolean
 }
 
 /** The webContents Chromium already built for the open, if any -- present in the `options`
@@ -177,6 +179,7 @@ export function windowOpenHandler (
   return (details) => {
     if (host.atCapacity()) return { action: 'deny' }
     const from = opener()
+    if (host.popupBlocked?.(details, from) === true) return { action: 'deny' }
     // Every browser opens a middle click or a plain ctrl+click behind the current tab.
     const active = details.disposition !== 'background-tab'
     const loadOptions = loadOptionsFor(details)

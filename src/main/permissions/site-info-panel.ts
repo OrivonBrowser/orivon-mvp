@@ -12,6 +12,7 @@ import { registerSiteInfoIpc } from '../ipc/site-info-ipc.js'
 import { createPopoverView } from './popover-view.js'
 import type { PopoverAnchor } from './popover-view.js'
 import { PANEL_POPOVER_BACKGROUND } from '../shell/theme-colors.js'
+import type { SitePermissionsAccess } from '../site-settings/site-permissions-view.js'
 
 /** Which page the popup opens showing -- the connection row's own switches
  * (`'main'`) or the delivery-evidence page a shield click or the main
@@ -40,8 +41,10 @@ export function createSiteInfoPanel (
   userDataPath: string,
   activeWebContents: () => WebContents | undefined,
   reloadActiveTab: () => void,
-  openAllSites: () => void,
+  openSiteSettings: () => void,
   openExtensions: () => void,
+  openCertificate: () => void,
+  sitePermissions: SitePermissionsAccess,
   dirname: string
 ): SiteInfoPanel {
   // Read by the IPC registration closure below, set on every open BEFORE
@@ -59,7 +62,7 @@ export function createSiteInfoPanel (
     align: 'left',
     background: PANEL_POPOVER_BACKGROUND,
     registerIpc: (webContents, url, onContentHeight) => {
-      registerSiteInfoIpc(webContents, url, controller, openOrigin, userDataPath, activeWebContents, reloadActiveTab, openAllSites, openExtensions, onContentHeight)
+      registerSiteInfoIpc(webContents, url, controller, openOrigin, userDataPath, activeWebContents, reloadActiveTab, openSiteSettings, openExtensions, onContentHeight, openCertificate, sitePermissions)
       return () => {}
     }
   })

@@ -46,7 +46,10 @@ export const TOAST_TEXT = {
   caretOn: { text: 'Caret browsing is on', tone: 'info' },
   caretOff: { text: 'Caret browsing is off', tone: 'info' },
   sidePanelNarrow: { text: 'Make the window wider to open the side panel', tone: 'info' },
-  notReadable: { text: 'Reader view is not available for this page.', tone: 'info' }
+  notReadable: { text: 'Reader view is not available for this page.', tone: 'info' },
+  linkCopied: { text: 'Link copied', tone: 'ok' },
+  linkCopyFailed: { text: 'Could not copy the link', tone: 'error' },
+  noAddress: { text: 'This page has no address to share', tone: 'info' }
 } as const satisfies Record<string, ToastText>
 
 export type ToastCode = keyof typeof TOAST_TEXT

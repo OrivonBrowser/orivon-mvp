@@ -19,7 +19,7 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
     request: async (command: unknown): Promise<unknown> => await invoke({ type: 'request', command }),
     /** Tells main how tall the content is, so the view sizes to it. */
     size: (height: number): void => { void invoke({ type: 'size', height }) },
-    close: (reason: 'request' | 'escape'): void => { void invoke({ type: 'close', reason }) },
+    close: (reason: 'request' | 'escape' | 'blur'): void => { void invoke({ type: 'close', reason }) },
     /** Main's messages: `{ type: 'show', payload }` and `{ type: 'event', event }`. Returns the unsubscribe. */
     onEvent: (listener: (message: unknown) => void): (() => void) => {
       const handler = (_event: unknown, message: unknown): void => { listener(message) }

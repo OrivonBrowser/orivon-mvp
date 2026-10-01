@@ -23,8 +23,8 @@ describe('SITE_KINDS', () => {
     expect(new Set(keys).size).toBe(keys.length)
   })
 
-  it('marks no kind available until its feature enforces it', () => {
-    expect(SITE_KINDS.filter((kind) => kind.available)).toEqual([])
+  it('marks a kind available only once its feature enforces it', () => {
+    expect(SITE_KINDS.filter((kind) => kind.available).map((kind) => kind.id)).toEqual(['camera', 'microphone', 'location', 'clipboardRead', 'midi', 'idle', 'windowManagement', 'notifications', 'popups', 'javascript', 'images', 'sound', 'autoDownloads'])
   })
 
   it('finds a kind by id and answers undefined for anything else', () => {

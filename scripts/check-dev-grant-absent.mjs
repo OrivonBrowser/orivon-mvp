@@ -35,6 +35,7 @@ export const DEV_MARKERS = [
   '__orivonDevGrant', '__orivonDevRegisterServing', '__orivonDevRevoke', '__orivonDevEthFixtures',
   '__orivonDevStoreTestSeam', '__orivonDevExtensionsStore', '__orivonDevViewBackgrounds',
   '__orivonDevPopoverShown', '__orivonDevSidePanel', '__orivonDevSignInTestSeam', 'ORIVON_TEST_SIGN_IN_HOSTS', '__orivonSweepNow', '__orivonSleepIgnoreCapture',
+  '__orivonDevPasswordStorage', 'ORIVON_TEST_PASSWORD_KEYRING',
   'ORIVON_TEST_IMPORT_HOME', 'ORIVON_TEST_SUGGEST_URL'
 ]
 

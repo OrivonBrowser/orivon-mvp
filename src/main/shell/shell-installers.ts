@@ -10,7 +10,6 @@ import { installAutofill } from '../autofill/install-autofill.js'
 import { installChoosers } from '../devices/install-choosers.js'
 import { installFocus } from '../focus/install-focus.js'
 import { installMemorySaver } from '../memory-saver/install-memory-saver.js'
-import { installOsLinks } from '../os/install-os-links.js'
 import { installTabSlots } from '../overlays/install-tab-slots.js'
 import { installFormWatch } from '../passwords/install-form-watch.js'
 import { installPrivacyNet } from '../privacy/install-privacy-net.js'
@@ -34,7 +33,6 @@ export const SHELL_INSTALLERS: readonly ShellInstaller[] = [
   installFocus,
   installFormWatch,
   installMemorySaver,
-  installOsLinks,
   installPrivacyNet,
   installReader,
   installSidePanel,

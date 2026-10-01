@@ -37,6 +37,8 @@ export interface Row {
   readonly help?: string
   /** The help line when it depends on a value, in place of `help`. */
   readonly helpFor?: (state: SettingsState) => string
+  /** More under the help line, on the label's side of the row: a problem with the control and what to do about it. */
+  readonly below?: (state: SettingsState) => HTMLElement | null
   /** Words a person might search for that the label and help do not use. */
   readonly keywords?: readonly string[]
   readonly control: Control

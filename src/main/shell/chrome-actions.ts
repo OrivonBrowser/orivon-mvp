@@ -1,6 +1,7 @@
 import { bookmarkEdit } from './bookmark-bubble/edit-action.js'
 import { barFolder, barItems, barMenu, barMove, barOpen } from './bookmarks-bar/bar-actions.js'
 import { omniboxClose, omniboxPick, omniboxQuery, omniboxSelect } from '../omnibox/omnibox-actions.js'
+import { passwordsKey } from '../passwords/passwords-key-action.js'
 import { homeOpen } from './actions/home-open.js'
 import { groupMenu, groupMove, groupToggle } from './actions/tab-group.js'
 import { overlayClose, overlayToggle } from './actions/overlay.js'
@@ -32,6 +33,7 @@ export const CHROME_ACTIONS: Readonly<Record<string, ChromeAction>> = {
   'overlay.close': overlayClose,
   'overlay.toggle': overlayToggle,
   'pane.leave': paneLeave,
+  'passwords.key': passwordsKey,
   'prompt.anchor': promptAnchorReport,
   'tab.mute': tabMute
 }

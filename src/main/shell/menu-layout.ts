@@ -5,6 +5,8 @@ import { originFromUrl } from '../../broker/policy/origin.js'
 import type { CommandId } from '../shortcuts/commands.js'
 import { commandById } from '../shortcuts/commands.js'
 import { bookmarksBarShown } from './bookmarks-bar/bar-visibility.js'
+import { certificateAvailable } from '../auth/certificate-open.js'
+import { createShortcutHint, shareHint } from '../os/menu-state.js'
 import { qrAvailable } from '../qr/qr-open.js'
 import { hintFor } from '../session-restore/reopen.js'
 import { sidePanelFor } from '../side-panel/side-panel-host.js'
@@ -27,7 +29,11 @@ const UNAVAILABLE: Partial<Record<CommandId, (ctx: WindowContext) => boolean>> =
   'tab.ungroup': ({ window }) => {
     const { tabs, activeTabId } = window.tabs.getState()
     return (tabs.find((tab) => tab.id === activeTabId)?.group ?? null) === null
-  }
+  },
+  'share.copyLink': (ctx) => shareHint(ctx) !== null,
+  'share.email': (ctx) => shareHint(ctx) !== null,
+  'site.certificate': ({ window }) => !certificateAvailable(window),
+  'site.shortcut': (ctx) => createShortcutHint(ctx) !== null
 }
 
 export const MENU_LAYOUT: readonly MenuEntry[] = [
@@ -53,7 +59,11 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
   'page.print',
   'find.open',
   'page.save',
-  { submenu: 'Share', items: ['share.copyLink', 'share.email'] },
+  { submenu: 'Share', items: [
+    { item: 'share.copyLink', hint: shareHint },
+    { item: 'share.email', hint: shareHint },
+    'page.qr'
+  ] },
   { submenu: 'More tools', items: [
     'split.toggle',
     'tab.search',
@@ -62,9 +72,9 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
     'page.screenshot',
     'page.pip',
     'page.pdf',
-    'page.qr',
     'page.viewSource',
-    'site.shortcut',
+    { item: 'site.shortcut', hint: createShortcutHint },
+    'site.certificate',
     { check: 'window.alwaysOnTop', on: ({ window }) => window.window.isAlwaysOnTop() },
     'page.reader',
     { check: 'sidePanel.toggle', on: ({ window }) => sidePanelFor(window).isOpen() },

@@ -4,12 +4,16 @@
 // each push and starts every part's watcher with the window.
 import { contain } from './contain.js'
 import { bookmarkedStatePart } from './bookmarks-bar/bar-state.js'
+import { contentBlockedStatePart } from './state/content-blocked.js'
 import { addressBarStatePart } from './state/address-bar.js'
 import { groupsStatePart } from './state/groups.js'
 import { downloadsStatePart } from './state/downloads.js'
 import { homeStatePart } from './state/home.js'
+import { loginsStatePart } from '../passwords/logins-state.js'
+import { popupsBlockedStatePart } from './state/popups-blocked.js'
 import { shortcutsStatePart } from './state/shortcuts.js'
 import { sidePanelStatePart } from './state/side-panel.js'
+import { siteAccessStatePart } from './state/site-access.js'
 import type { ShellState, TabsSnapshot } from './tab-types.js'
 import type { WindowContext } from './window-context.js'
 
@@ -25,11 +29,15 @@ export interface ShellStatePart {
 export const SHELL_STATE_PARTS: readonly ShellStatePart[] = [
   addressBarStatePart,
   bookmarkedStatePart,
+  contentBlockedStatePart,
   downloadsStatePart,
   groupsStatePart,
   homeStatePart,
+  loginsStatePart,
+  popupsBlockedStatePart,
   shortcutsStatePart,
-  sidePanelStatePart
+  sidePanelStatePart,
+  siteAccessStatePart
 ]
 
 /** What every part adds to a push, merged. A part that throws adds nothing to that push. */

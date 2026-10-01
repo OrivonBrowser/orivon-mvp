@@ -35,7 +35,7 @@ export const about: Section = {
       label: 'Latest release',
       keywords: ['update', 'latest', 'version'],
       control: { type: 'info', text: (state) => state.updates.words() },
-      visible: (state) => state.updates.words() !== ''
+      visible: (state) => state.updates.words() !== '' && state.updates.available() === null
     },
     ...aboutSystemRows,
     {

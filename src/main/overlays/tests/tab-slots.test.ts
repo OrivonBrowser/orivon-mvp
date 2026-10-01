@@ -303,3 +303,42 @@ describe('hasAsk', () => {
     expect(slots.hasAsk(fake.window, 'b')).toBe(false)
   })
 })
+
+describe('the backdrop behind a sheet', () => {
+  function withBackdrop (): { slots: TabSlots, calls: string[] } {
+    const calls: string[] = []
+    const backdrop = { raise: (_w: ShellWindow, tabId: string) => { calls.push(`raise ${tabId}`) }, lower: (_w: ShellWindow, tabId: string) => { calls.push(`lower ${tabId}`) } }
+    return { slots: createTabSlots((run) => { run() }, () => backdrop), calls }
+  }
+
+  it('is raised while a sheet is shown over the tab and lowered when it ends', () => {
+    const { slots, calls } = withBackdrop()
+    const fake = fakeWindow()
+    slots.requestSlot(ask(fake, { slot: 'center', overlay: 'cert-error' }).ask)
+    expect(calls).toEqual(['raise a'])
+    slots.slotClosed(fake.window, 'cert-error', 'request')
+    expect(calls).toEqual(['raise a', 'lower a'])
+  })
+
+  it('is lowered between two queued sheets and raised again for the next, and not touched by a prompt', () => {
+    const { slots, calls } = withBackdrop()
+    const fake = fakeWindow()
+    slots.requestSlot(ask(fake, { slot: 'center', overlay: 'one' }).ask)
+    slots.requestSlot(ask(fake, { slot: 'center', overlay: 'two' }).ask)
+    slots.slotClosed(fake.window, 'one', 'request')
+    expect(calls).toEqual(['raise a', 'lower a', 'raise a'])
+    const prompts = withBackdrop()
+    prompts.slots.requestSlot(ask(fake, { slot: 'address' }).ask)
+    expect(prompts.calls).toEqual([])
+  })
+
+  it('is lowered when the tab goes to the background and raised when it comes back', () => {
+    const { slots, calls } = withBackdrop()
+    const fake = fakeWindow()
+    slots.requestSlot(ask(fake, { slot: 'center', overlay: 'cert-error' }).ask)
+    slots.slotClosed(fake.window, 'cert-error', 'tab-switch')
+    expect(calls).toEqual(['raise a', 'lower a'])
+    slots.tabActivated(fake.window, 'a')
+    expect(calls).toEqual(['raise a', 'lower a', 'raise a'])
+  })
+})

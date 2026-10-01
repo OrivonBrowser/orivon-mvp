@@ -12,7 +12,11 @@
 @import './styles/downloads-button.css';
 @import './styles/tabstrip.css';
 @import './styles/tab-badges.css';
+@import './styles/site-access.css';
+@import './styles/content-dot.css';
+@import './styles/popups-chip.css';
 @import './styles/tab-crashed.css';
+@import './styles/password-key.css';
 @import './styles/tab-groups.css';
 @import './styles/tab-sleeping.css';
 @import './styles/tab-search-button.css';
