@@ -98,7 +98,9 @@ describe('snapshotNode', () => {
 })
 
 describe('cost', () => {
-  it('compares 20,000 nodes in under 20 ms', () => {
+  // A budget for the algorithm, not the machine: a linear diff of 20,000 nodes takes tens of milliseconds even on
+  // a slow shared runner, while a quadratic one would take seconds.
+  it('compares 20,000 nodes in well under a quarter of a second', () => {
     const tree: Tree = { bar: [], other: [] }
     for (let folderAt = 0; folderAt < 100; folderAt++) {
       const id = `f${String(folderAt)}`
@@ -113,6 +115,6 @@ describe('cost', () => {
     const changes = diffSnapshots(before, after)
     const took = performance.now() - start
     expect(changes.map((change) => change.type)).toEqual(['removed', 'created'])
-    expect(took).toBeLessThan(20)
+    expect(took).toBeLessThan(250)
   })
 })
