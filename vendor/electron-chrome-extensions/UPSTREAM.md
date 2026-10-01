@@ -741,6 +741,17 @@
     where the answer is about one tab (`filterTabDetails` reads `details.id`, `insertCSS` the
     tab's id). Reason: a host decision that depends on more than the manifest (a per-extension
     site-access choice, a one-tab grant) needs to know which extension asks and about which tab.
+50. **The toolbar action's right-click menu is Orivon's.** `src/browser/api/browser-action.ts`:
+    module setter `setActionMenuBuilder(builder)`; `activateContextMenu` builds its template from
+    `builder(extensionId, extensionItems)` (the extension's own `contextMenus` entries for
+    `browser_action` are passed in for the builder to place) and pops it up at the same spot; with no
+    builder set the library's own menu is unchanged. Reason: the menu's labels, its pin entry and
+    what each item opens are Orivon's.
+51. **Every action, pinned or not.** `src/browser/api/browser-action.ts` and `src/browser/index.ts`:
+    `listAllActions(tabId?)` returns `{ id, title, hasPopup, badge }` for every extension that has an
+    action, whatever `setActionVisibilityCheck` says (`listActions` leaves the hidden ones out); the
+    title, popup and badge are the ones set for `tabId` when there are any, else the action's own.
+    Reason: Orivon's Extensions menu lists unpinned extensions too, shows their badge and runs them.
 
 `partition.ts` is reached only through the virtual specifier `src/main/extensions/
 electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and

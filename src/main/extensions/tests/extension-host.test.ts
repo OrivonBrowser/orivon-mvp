@@ -80,7 +80,8 @@ function buildShell (): { services: ShellServices, openTrusted: ReturnType<typeo
       all: () => [shellWindow],
       focused: () => shellWindow
     },
-    tabLifecycle: { subscribe: vi.fn() }
+    tabLifecycle: { subscribe: vi.fn() },
+    settings: { onChange: vi.fn() }
   } as unknown as ShellServices
   return { services, openTrusted }
 }

@@ -69,6 +69,9 @@ declare module 'orivon:crx-extensions' {
     /** UPSTREAM.md patch 46: the toolbar's actions, without icons (hidden
      * ones left out once `setActionVisibilityCheck` is set). */
     listActions (): Array<{ id: string, title: string, hasPopup: boolean }>
+    /** UPSTREAM.md patch 51: every action, pinned or not, with the badge text
+     * it shows for `tabId`. */
+    listAllActions (tabId?: number): Array<{ id: string, title: string, hasPopup: boolean, badge: string }>
     /** UPSTREAM.md patch 46: a click on `extensionId`'s action for `tab`, from
      * Orivon's own trusted code, counted as an invocation like a real click. */
     activateAction (extensionId: string, tab: Electron.WebContents, anchor: Electron.Rectangle): void
@@ -162,6 +165,11 @@ declare module 'orivon:crx-extensions-browser-action' {
   /** UPSTREAM.md patch 46: run once a click is counted, before any popup
    * opens; true means it was handled elsewhere (no popup, no onClicked). */
   export function setActionClickInterceptor (intercept: (extensionId: string, tab: Electron.WebContents) => boolean): void
+  /** UPSTREAM.md patch 50: builds the right-click menu of a toolbar action;
+   * `extensionItems` are the extension's own `contextMenus` entries for it. */
+  export function setActionMenuBuilder (
+    builder: ((extensionId: string, extensionItems: Electron.MenuItem[]) => Array<Electron.MenuItemConstructorOptions | Electron.MenuItem>) | undefined
+  ): void
 }
 
 declare module 'orivon:crx-extensions-tab-capture' {

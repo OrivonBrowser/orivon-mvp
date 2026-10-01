@@ -272,6 +272,13 @@ export class ElectronChromeExtensions extends EventEmitter {
     return this.api.browserAction.listActions()
   }
 
+  /** Orivon patch (UPSTREAM.md patch 51): every action, pinned or not, with its badge text. */
+  listAllActions(
+    tabId?: number,
+  ): Array<{ id: string; title: string; hasPopup: boolean; badge: string }> {
+    return this.api.browserAction.listAllActions(tabId)
+  }
+
   /**
    * Orivon patch (UPSTREAM.md patch 46): click `extensionId`'s action on
    * `tab`, counted as an invocation. Orivon's own trusted code only: no

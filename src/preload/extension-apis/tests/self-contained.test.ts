@@ -17,7 +17,7 @@ interface FakeCrx {
 function fakeCrx (defined: string[], declared: () => boolean): FakeCrx {
   return {
     extensionId: 'a'.repeat(32),
-    manifest: { permissions: [], optional_permissions: [] },
+    manifest: { manifest_version: 3, action: {}, permissions: [], optional_permissions: [] },
     context: 'page',
     declares: declared,
     call: () => async () => undefined,

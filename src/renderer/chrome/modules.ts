@@ -6,6 +6,7 @@ import { createAddressDisplay } from './address-display.js'
 import { createAddressSuggest } from './address-suggest.js'
 import { createBookmarksBar } from './bookmarks-bar.js'
 import { createCluster } from './cluster.js'
+import { createExtensionsButton } from './extensions-button.js'
 import { createHomeButton } from './home-button.js'
 import { createNavigation } from './navigation.js'
 import { createPromptAnchor } from './prompt-anchor.js'
@@ -34,6 +35,7 @@ export const CHROME_MODULES: readonly ChromeModule[] = [
   createSiteBadges(),
   createPromptAnchor(),
   createCluster(),
+  createExtensionsButton(),
   createBookmarksBar()
 ]
 
