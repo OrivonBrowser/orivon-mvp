@@ -286,7 +286,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
       const slot = slots.get(name)
       if (slot === undefined) return
       if (slot.open) { closeSlot(slot, 'request'); return }
-      if (slot.def.closeOn.blur && Date.now() - slot.lastBlurCloseAt < REOPEN_DEBOUNCE_MS) return
+      if (Date.now() - slot.lastBlurCloseAt < REOPEN_DEBOUNCE_MS) return
       show(name, anchor, payload)
     },
     close (name) {

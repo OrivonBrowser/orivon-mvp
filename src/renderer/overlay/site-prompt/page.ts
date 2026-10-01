@@ -27,7 +27,7 @@ export const sitePromptPage: OverlayPage = {
     let armTimer: ReturnType<typeof setTimeout> | undefined
 
     // The bubble closes when the person goes elsewhere; a question stays until it is answered.
-    window.addEventListener('blur', () => { if (reviewing) overlay.close() })
+    window.addEventListener('blur', () => { if (reviewing) overlay.closeOnBlur() })
 
     const armed = (): boolean => performance.now() - shownAt >= ARMING_MS
 

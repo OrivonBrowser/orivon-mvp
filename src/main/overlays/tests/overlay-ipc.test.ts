@@ -92,11 +92,12 @@ describe('registerOverlayIpc: what it accepts', () => {
     expect(t.port.size).not.toHaveBeenCalled()
   })
 
-  it('reads escape as escape and anything else as a request', async () => {
+  it('reads escape and blur as themselves and anything else as a request', async () => {
     await t.call({ type: 'close', reason: 'escape' })
     await t.call({ type: 'close', reason: 'blur' })
+    await t.call({ type: 'close', reason: 'layout' })
     await t.call({ type: 'close' })
-    expect(vi.mocked(t.port.close).mock.calls).toEqual([['escape'], ['request'], ['request']])
+    expect(vi.mocked(t.port.close).mock.calls).toEqual([['escape'], ['blur'], ['request'], ['request']])
   })
 
   it.each([null, undefined, 'ready', 5, [], {}, { type: 'nope' }, { type: 7 }])('ignores a malformed message %j', async (message) => {
