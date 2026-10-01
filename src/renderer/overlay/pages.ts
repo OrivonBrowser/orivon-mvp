@@ -14,6 +14,7 @@ import { menuPage } from './menu/page.js'
 import { omniboxPage } from './omnibox/page.js'
 import { passwordFillPage } from './password-fill/page.js'
 import { passwordSavePage } from './password-save/page.js'
+import { popupsBlockedPage } from './popups-blocked/page.js'
 import { qrPage } from './qr/page.js'
 import { restorePage } from './restore/page.js'
 import { sadTabPage } from './sad-tab/page.js'
@@ -40,6 +41,7 @@ export const OVERLAY_PAGES: Readonly<Record<string, OverlayPage>> = {
   'password-fill': passwordFillPage,
   'password-save': passwordSavePage,
   'password-suggest': passwordFillPage,
+  'popups-blocked': popupsBlockedPage,
   qr: qrPage,
   restore: restorePage,
   'sad-tab': sadTabPage,

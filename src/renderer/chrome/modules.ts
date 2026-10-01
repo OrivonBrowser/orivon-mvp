@@ -11,6 +11,7 @@ import { createDownloadsButton } from './downloads-button.js'
 import { createHomeButton } from './home-button.js'
 import { createNavigation } from './navigation.js'
 import { createPasswordKey } from './password-key.js'
+import { createPopupsChip } from './popups-chip.js'
 import { createPromptAnchor } from './prompt-anchor.js'
 import { createReloadStop } from './reload-stop.js'
 import { createSiteAccessChip } from './site-access-chip.js'
@@ -37,6 +38,7 @@ export const CHROME_MODULES: readonly ChromeModule[] = [
   createHomeButton(),
   createSiteBadges(),
   createSiteAccessChip(),
+  createPopupsChip(),
   createPasswordKey(),
   createPromptAnchor(),
   createCluster(),

@@ -17,6 +17,7 @@ import { recordViewBackground } from './view-background-test-hook.js'
 import { repartitionView } from './tab-parking.js'
 import { parseInternalUrl } from '../pages/internal-pages.js'
 import { canViewSource } from '../page-tools/view-source.js'
+import { sitePopups } from '../site-settings/site-popups.js'
 import { releaseOriginDocument, trackDocumentOrigin } from './tab-origin-liveness.js'
 import { wireSignInIdentity } from './sign-in-identity-tab.js'
 import { watchAppTab } from './app-tab-watch.js'
@@ -307,7 +308,8 @@ export function wireView (id: string, record: TabRecord): void {
     openWindow: (url, loadOptions) => record.host.openWindow(url, loadOptions),
     partitionFor: (url) => partitionForTarget(url),
     webPreferencesFor: (url) => tabWebPreferences(record.host.preloadPath, undefined, appTabArgsFor(url, record.host.broker)),
-    isApp: (url) => popupTargetIsApp(url, record.host.broker)
+    isApp: (url) => popupTargetIsApp(url, record.host.broker),
+    popupBlocked: (details, from) => sitePopups.check(wc, from.url, details.url)
   }, () => ({ url: wc.getURL(), partition: record.partition })))
   wireTabSignals(id, record)
 }

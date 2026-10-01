@@ -17,6 +17,7 @@ import { passwordFillOverlay, passwordSuggestOverlay } from '../passwords/choose
 import { passwordSaveOverlay } from '../passwords/password-overlays.js'
 import { menuOverlay } from '../shell/menu-overlay.js'
 import { omniboxOverlay } from '../omnibox/omnibox-overlay.js'
+import { popupsBlockedOverlay } from '../site-settings/popups-overlay.js'
 import { sitePromptOverlay } from '../site-settings/site-prompt-overlay.js'
 import { restoreOverlay } from '../startup/startup-overlays.js'
 import { tabSearchOverlay } from '../tab-search/tab-search-overlay.js'
@@ -39,6 +40,7 @@ export const OVERLAYS: readonly OverlayDef[] = [
   passwordFillOverlay,
   passwordSaveOverlay,
   passwordSuggestOverlay,
+  popupsBlockedOverlay,
   qrOverlay,
   restoreOverlay,
   sadTabOverlay,

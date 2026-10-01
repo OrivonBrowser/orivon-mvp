@@ -57,6 +57,8 @@ export interface TabState {
   pinned: boolean
   /** The page's sound is switched off. */
   muted: boolean
+  /** The page's site is set to be silent and the page is making sound: the mute is the site's, not the tab's. Absent when not. */
+  siteMuted?: boolean
   /** The page is making sound now. */
   audible: boolean
   /** Why the page's renderer died (`render-process-gone`'s reason), or null while it lives. */
@@ -93,6 +95,8 @@ export interface ShellState extends TabsSnapshot {
   zoomPercent: number | null
   /** What the active page was asked for and the answer it got, for the address bar's chip; empty when nothing was. */
   siteAccess: ReadonlyArray<{ readonly kind: SiteKind, readonly state: 'allowed' | 'blocked', readonly label: string }>
+  /** How many windows the active page tried to open and was refused, for the pop-up chip. */
+  popupsBlocked: number
   /** Which profile this window is, for the chip beside the menu. */
   profile: { name: string, color: string, isPrivate: boolean, shown: boolean }
   /** The downloads button: whether it shows, its ring and its dot (`toolbar.downloads`). */

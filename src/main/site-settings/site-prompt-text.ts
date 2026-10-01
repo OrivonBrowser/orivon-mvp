@@ -48,7 +48,8 @@ const WANTS: Readonly<Partial<Record<SiteKind, string>>> = {
   midi: 'wants to use your MIDI devices',
   idle: 'wants to know when you are away from this computer',
   windowManagement: 'wants to place windows across your screens',
-  notifications: 'wants to show notifications'
+  notifications: 'wants to show notifications',
+  autoDownloads: 'wants to download several files'
 }
 
 const MIDI_SYSEX = 'wants to control and reprogram your MIDI devices'

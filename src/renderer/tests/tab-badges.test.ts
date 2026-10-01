@@ -71,6 +71,7 @@ describe('a tab\'s accessible name', () => {
     expect(tabName(tab({ audible: true }))).toBe('Example, playing audio')
     expect(tabName(tab({ muted: true, audible: true }))).toBe('Example, muted')
     expect(tabName(tab({ title: '' }))).toBe('New tab')
+    expect(tabName(tab({ audible: true, siteMuted: true }))).toBe('Example, muted by site settings')
   })
 
   it('is set on every tab, not only a pinned one', () => {
@@ -117,6 +118,18 @@ describe('the speaker badge', () => {
     expect(el.children[0]?.children).toEqual(['speaker-off'])
     expect(el.children[0]?.attrs.get('aria-label')).toBe('Unmute tab')
     expect(muteLabel(tab({ muted: true }))).toBe('Unmute tab')
+  })
+
+  it('shows a tab its site silenced as muted, says so, and leaves the tab\'s own mute alone', () => {
+    const { el, act } = decorate({ audible: true, siteMuted: true })
+    const badge = el.children[0]
+    expect(badge?.children).toEqual(['speaker-off'])
+    expect(badge?.title).toBe('Muted by site settings')
+    expect(badge?.attrs.get('aria-label')).toBe('Muted by site settings')
+    expect(badge?.attrs.get('aria-disabled')).toBe('true')
+    expect(tabTooltip(tab({ audible: true, siteMuted: true }))).toBe('Example\nexample.com (muted by site settings)')
+    for (const listener of badge?.listeners.get('click') ?? []) listener({ stopPropagation: vi.fn() })
+    expect(act).not.toHaveBeenCalled()
   })
 
   it('toggles the mute on a click, without activating the tab, and is no tab stop', () => {
