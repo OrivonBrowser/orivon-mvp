@@ -4,6 +4,8 @@ import { createSwitch } from './switch.js'
 import { chevronIcon } from './icons.js'
 import { paintShield, web3Shield } from '../web3-shield.js'
 import { grantIcon } from '../grant-icons.js'
+import { renderSitePermissions } from './permissions-view.js'
+import type { PermissionsCallbacks, PermissionsModel } from './permissions-view.js'
 
 // The site-info popup's main page -- Chrome's own layout (a connection
 // row, then one switch per permission the site actually asked for), with
@@ -24,9 +26,10 @@ export interface MainPageCallbacks {
   readonly onOpenWeb3: () => void
   readonly onOpenData: () => void
   readonly onOpenCertificate: () => void
-  readonly onOpenAllSites: () => void
+  readonly onOpenSiteSettings: () => void
   readonly onManageExtensions: () => void
   readonly onReload: () => void
+  readonly permissions: PermissionsCallbacks
 }
 
 function connectionLabel (connection: SiteTrust['connection']): string {
@@ -70,6 +73,7 @@ export function renderMainPage (
   staged: ReadonlyMap<SiteCapabilityRow['capability'], boolean>,
   pendingStaleCapabilities: ReadonlySet<SiteCapabilityRow['capability']>,
   showReloadBanner: boolean,
+  permissions: PermissionsModel | null,
   callbacks: MainPageCallbacks
 ): void {
   container.replaceChildren()
@@ -128,7 +132,7 @@ export function renderMainPage (
 
   container.append(document.createElement('hr'))
 
-  if (info.capabilityRows.length === 0) {
+  if (info.capabilityRows.length === 0 && permissions === null) {
     const empty = document.createElement('p')
     empty.className = 'empty-state'
     empty.textContent = "This site hasn't asked for any permissions."
@@ -150,6 +154,8 @@ export function renderMainPage (
     }
     container.append(list)
   }
+
+  if (permissions !== null) container.append(renderSitePermissions(permissions, callbacks.permissions))
 
   if (staged.size > 0) {
     const anyOff = info.capabilityRows.some((r) => r.on && staged.get(r.capability) === false)
@@ -245,7 +251,7 @@ export function renderMainPage (
   allSitesRow.className = 'nav-row'
   const allSitesLabel = document.createElement('span')
   allSitesLabel.textContent = 'Site settings'
-  allSitesRow.append(allSitesLabel)
-  allSitesRow.addEventListener('click', callbacks.onOpenAllSites)
+  allSitesRow.append(allSitesLabel, chevronIcon())
+  allSitesRow.addEventListener('click', callbacks.onOpenSiteSettings)
   container.append(allSitesRow)
 }

@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SiteInfoController } from '../../permissions/site-info-controller.js'
 import type { SiteInfo } from '../../permissions/site-info.js'
+import type { SitePermissionsAccess } from '../../site-settings/site-permissions-view.js'
 
 // The site-info popup's own channel -- get/trust/data/apply/
-// revokePickedPath/clearBrowserData/reload/openAllSites, and the sender-
+// revokePickedPath/clearBrowserData/reload/openSiteSettings, and the sender-
 // identity check every command here gets (mirrors permissions-ipc.ts's own
 // isFromPermissionsPanel, against this popup's webContents instead).
 // site-info-controller.test.ts already proves turnOn/turnOff reach a real
@@ -52,19 +53,19 @@ function dispatch (command: unknown, senderFrame: unknown = SITE_INFO_FRAME): un
 
 function register (
   controller: SiteInfoController,
-  overrides: Partial<{ activeWebContents: () => import('electron').WebContents | undefined, reloadActiveTab: () => void, openAllSites: () => void, openExtensions: () => void }> = {}
-): { reloadActiveTab: ReturnType<typeof vi.fn>, openAllSites: ReturnType<typeof vi.fn>, openExtensions: ReturnType<typeof vi.fn> } {
+  overrides: Partial<{ activeWebContents: () => import('electron').WebContents | undefined, reloadActiveTab: () => void, openSiteSettings: () => void, openExtensions: () => void }> = {}
+): { reloadActiveTab: ReturnType<typeof vi.fn>, openSiteSettings: ReturnType<typeof vi.fn>, openExtensions: ReturnType<typeof vi.fn> } {
   const reloadActiveTab = vi.fn()
-  const openAllSites = vi.fn()
+  const openSiteSettings = vi.fn()
   const openExtensions = vi.fn()
   registerSiteInfoIpc(
     siteInfoWebContents, POPUP_URL, controller, ORIGIN, '/tmp/orivon-test-userdata',
     overrides.activeWebContents ?? (() => undefined),
     overrides.reloadActiveTab ?? reloadActiveTab,
-    overrides.openAllSites ?? openAllSites,
+    overrides.openSiteSettings ?? openSiteSettings,
     overrides.openExtensions ?? openExtensions
   )
-  return { reloadActiveTab, openAllSites, openExtensions }
+  return { reloadActiveTab, openSiteSettings, openExtensions }
 }
 
 describe('registerSiteInfoIpc -- get / trust', () => {
@@ -151,7 +152,7 @@ describe('registerSiteInfoIpc -- apply', () => {
   })
 })
 
-describe('registerSiteInfoIpc -- revokePickedPath / reload / openAllSites', () => {
+describe('registerSiteInfoIpc -- revokePickedPath / reload / openSiteSettings', () => {
   it('revokePickedPath forwards the fixed origin and pickId, then returns the fresh info', async () => {
     const controller = fakeController()
     register(controller)
@@ -168,10 +169,10 @@ describe('registerSiteInfoIpc -- revokePickedPath / reload / openAllSites', () =
     expect(reloadActiveTab).toHaveBeenCalledOnce()
   })
 
-  it('openAllSites calls the injected callback', async () => {
-    const { openAllSites } = register(fakeController())
-    await dispatch({ type: 'openAllSites' })
-    expect(openAllSites).toHaveBeenCalledOnce()
+  it('openSiteSettings calls the injected callback', async () => {
+    const { openSiteSettings } = register(fakeController())
+    await dispatch({ type: 'openSiteSettings' })
+    expect(openSiteSettings).toHaveBeenCalledOnce()
   })
 
   it('certificate calls the injected callback, from the popup only', async () => {
@@ -187,6 +188,44 @@ describe('registerSiteInfoIpc -- revokePickedPath / reload / openAllSites', () =
     const { openExtensions } = register(fakeController())
     await dispatch({ type: 'openExtensions' })
     expect(openExtensions).toHaveBeenCalledOnce()
+  })
+})
+
+describe('registerSiteInfoIpc -- sitePermissions / setSitePermission', () => {
+  const VIEW = { rows: [], shown: [], isPrivate: false }
+  function registerWith (access: SitePermissionsAccess): void {
+    registerSiteInfoIpc(siteInfoWebContents, POPUP_URL, fakeController(), ORIGIN, '/tmp/orivon-test-userdata', () => undefined, () => undefined, () => undefined, () => undefined, undefined, undefined, access)
+  }
+
+  it('reads the permissions of the FIXED origin', async () => {
+    const access = { view: vi.fn((_origin: string) => VIEW), set: vi.fn((_origin: string, _kind: unknown, _value: unknown) => VIEW) }
+    registerWith(access)
+    expect(await dispatch({ type: 'sitePermissions', origin: 'https://evil.test' })).toBe(VIEW)
+    expect(access.view).toHaveBeenCalledWith(ORIGIN)
+  })
+
+  it('sets one answer for the fixed origin, whatever origin the command carries', async () => {
+    const access = { view: vi.fn((_origin: string) => VIEW), set: vi.fn((_origin: string, _kind: unknown, _value: unknown) => VIEW) }
+    registerWith(access)
+    await dispatch({ type: 'setSitePermission', kind: 'camera', value: 'block', origin: 'https://evil.test' })
+    expect(access.set).toHaveBeenCalledWith(ORIGIN, 'camera', 'block')
+  })
+
+  it('refuses a kind or a value that is not a string, and answers nothing from another frame', async () => {
+    const access = { view: vi.fn((_origin: string) => VIEW), set: vi.fn((_origin: string, _kind: unknown, _value: unknown) => VIEW) }
+    registerWith(access)
+    expect(await dispatch({ type: 'setSitePermission', kind: 3, value: 'block' })).toBeNull()
+    expect(await dispatch({ type: 'setSitePermission', kind: 'camera', value: { toString: 1 } })).toBeNull()
+    await dispatch({ type: 'setSitePermission', kind: 'camera', value: 'block' }, OTHER_FRAME)
+    await dispatch({ type: 'sitePermissions' }, OTHER_FRAME)
+    expect(access.set).not.toHaveBeenCalled()
+    expect(access.view).not.toHaveBeenCalled()
+  })
+
+  it('answers null when nothing was wired', async () => {
+    register(fakeController())
+    expect(await dispatch({ type: 'sitePermissions' })).toBeNull()
+    expect(await dispatch({ type: 'setSitePermission', kind: 'camera', value: 'block' })).toBeNull()
   })
 })
 

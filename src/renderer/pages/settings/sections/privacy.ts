@@ -47,8 +47,8 @@ export const privacy: Section = {
     {
       id: 'clear-data',
       label: 'Clear browsing data',
-      help: 'Choose what to forget. Bookmarks, permissions you gave and the files apps saved are not touched.',
-      keywords: ['clear', 'delete', 'cookies', 'cache', 'site data', 'history', 'zoom', 'wipe', 'forget', 'erase'],
+      help: 'Choose what to forget. Bookmarks, the permissions you gave apps and the files apps saved are not touched.',
+      keywords: ['clear', 'delete', 'cookies', 'cache', 'site data', 'history', 'zoom', 'wipe', 'forget', 'erase', 'site settings', 'permissions'],
       control: { type: 'clearData' }
     }
   ]

@@ -174,7 +174,7 @@ describe('PrivacyState.clear', () => {
     } as unknown as OrivonInternal
     const privacy = new PrivacyState(bridge, () => { changes += 1 })
 
-    await privacy.clear({ history: 'all', siteData: false, cache: false, zoomLevels: false, appData: false })
+    await privacy.clear({ history: 'all', siteData: false, cache: false, zoomLevels: false, appData: false, siteSettings: false })
 
     expect(privacy.lastClear).toEqual({ kind: 'ok' })
     expect(privacy.status).toEqual(STATUS)
@@ -188,7 +188,7 @@ describe('PrivacyState.clear', () => {
     } as unknown as OrivonInternal
     const privacy = new PrivacyState(bridge, () => {})
 
-    await privacy.clear({ history: 'none', siteData: false, cache: true, zoomLevels: false, appData: false })
+    await privacy.clear({ history: 'none', siteData: false, cache: true, zoomLevels: false, appData: false, siteSettings: false })
 
     expect(privacy.lastClear).toEqual({ kind: 'failed', names: ['cache'] })
   })
@@ -197,7 +197,7 @@ describe('PrivacyState.clear', () => {
     const bridge = { request: async () => undefined } as unknown as OrivonInternal
     const privacy = new PrivacyState(bridge, () => {})
 
-    await privacy.clear({ history: 'none', siteData: false, cache: false, zoomLevels: false, appData: false })
+    await privacy.clear({ history: 'none', siteData: false, cache: false, zoomLevels: false, appData: false, siteSettings: false })
 
     expect(privacy.lastClear).toEqual({ kind: 'refused' })
   })

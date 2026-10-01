@@ -40,6 +40,8 @@ import { endProcess, focusTab, listTasks } from '../info/tasks-runner.js'
 import type { TasksEnv } from '../info/tasks-runner.js'
 import { passwordsDomainFor } from '../passwords/passwords-runner.js'
 import { privacyDomain } from '../privacy/privacy-domain.js'
+import { siteSettingsControllerFor } from '../site-settings/site-settings-runner.js'
+import { sitesDomain } from '../site-settings/sites-domain.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { nodeLoaderStorage } from '../../loader/cache/node-storage.js'
@@ -69,6 +71,7 @@ function aboutDomain (): InternalDomain {
 /** Once per process. */
 export function startInternalPages (services: ShellServices, ctx: SubsystemContext): void {
   const permissions = createPermissionsController(ctx)
+  const siteSettings = siteSettingsControllerFor(services, ctx)
   if (ctx.extensions === undefined) {
     throw new Error('startInternalPages requires ctx.extensions -- check extensionsSubsystem\'s position in subsystems.ts')
   }
@@ -114,6 +117,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     privacy: privacyDomain(services.history, services.zoomStore, {
       history: services.history,
       zoom: services.zoomStore,
+      siteSettings,
       websites: session.defaultSession,
       // Only a CACHE-SERVED app still has a partition of its own to clear:
       // a granted-without-install app shares session.defaultSession, which
@@ -126,6 +130,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
         .map((app) => session.fromPartition(partitionFor(app.origin))),
       now: Date.now
     }),
+    sites: sitesDomain(siteSettings, { isPrivate: services.isPrivate }),
     apps: appsDomain({ permissions, userDataPath: app.getPath('userData'), identity: identityKeyStorage }),
     web3: web3Domain({
       view: verifierView,
@@ -176,6 +181,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   services.closedTabs.onChange(() => { services.internalPages.publish('history.closed', undefined, ['history']) })
   services.downloads.onChange(throttleChanges((change) => { services.internalPages.publish('downloads.changed', change, ['downloads']) }))
   services.zoomStore.onChange(() => { services.internalPages.publish('privacy.changed', undefined, ['settings']) })
+  siteSettings.onChange(() => { services.internalPages.publish('sites.changed', undefined, ['settings']) })
   services.passwords.onChange(() => { services.internalPages.publish('passwords.changed', undefined, ['settings']) })
   services.profiles.onChange(() => { services.internalPages.publish('profiles.changed', undefined, ['settings', 'profiles']) })
   // Never fires in a private session: startTelemetry never runs there, and

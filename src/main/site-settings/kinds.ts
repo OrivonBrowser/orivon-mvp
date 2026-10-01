@@ -34,7 +34,7 @@ export const SITE_KINDS: readonly SiteKindDef[] = [
   { id: 'midi', label: 'MIDI devices', group: 'permission', values: ['ask', 'block'], settingKey: 'sites.midi', available: true },
   { id: 'idle', label: 'Idle detection', group: 'permission', values: ['ask', 'block'], settingKey: 'sites.idle', available: true },
   { id: 'windowManagement', label: 'Window management', group: 'permission', values: ['ask', 'block'], settingKey: 'sites.windowManagement', available: true },
-  { id: 'notifications', label: 'Notifications', group: 'permission', values: ['ask', 'block'], settingKey: 'sites.notifications', available: false },
+  { id: 'notifications', label: 'Notifications', group: 'permission', values: ['ask', 'block'], settingKey: 'sites.notifications', available: true },
   { id: 'popups', label: 'Pop-ups and redirects', group: 'content', values: ['block', 'allow'], settingKey: 'sites.popups', available: false },
   { id: 'javascript', label: 'JavaScript', group: 'content', values: ['allow', 'block'], settingKey: 'sites.javascript', available: false },
   { id: 'images', label: 'Images', group: 'content', values: ['allow', 'block'], settingKey: 'sites.images', available: false },

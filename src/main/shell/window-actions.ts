@@ -8,7 +8,6 @@ import { copyLinkCommand, emailLinkCommand } from '../os/share-commands.js'
 import { realShareDeps } from '../os/share-runner.js'
 import { shareAddressFor } from '../os/share.js'
 import type { PermissionsPanel } from '../permissions/permissions-panel.js'
-import type { PopoverAnchor } from '../permissions/popover-view.js'
 import type { SiteInfoPanel } from '../permissions/site-info-panel.js'
 import { isRect } from './actions/overlay.js'
 import { runChromeAction } from './chrome-actions.js'
@@ -29,19 +28,12 @@ import type { DragGrab } from './window-move.js'
  * rather than getting caught by a wide edge band on the way to open space. */
 const TAB_DRAG_SPLIT_SHARE = 0.12
 
-/** What the site-info popover last opened on, so its "Site settings" row can open the all-sites list beside it. */
-export interface SiteInfoMemory {
-  anchor: PopoverAnchor | null
-  origin: string | undefined
-}
-
 export interface WindowParts {
   readonly entry: ShellWindow
   readonly services: ShellServices
   /** Closes the overlay popups but not the two panels above, which a caller toggles itself. */
   readonly closeOverlays: () => void
   readonly panels: { readonly permissions: PermissionsPanel, readonly siteInfo: SiteInfoPanel }
-  readonly memory: SiteInfoMemory
   readonly openWindow: (options: ShellWindowOptions) => void
   /** How tall the top of the window (tab strip and toolbar) is: where another window's strip can be dropped on. */
   readonly topHeight: number
@@ -56,7 +48,7 @@ function windowLabel (other: ShellWindow, position: number): string {
 }
 
 export function shellActions (parts: WindowParts): ShellActions {
-  const { entry, services, panels, memory, closeOverlays, openWindow, topHeight, area } = parts
+  const { entry, services, panels, closeOverlays, openWindow, topHeight, area } = parts
   const { tabs, window } = entry
 
   /** Captured once at the start of a manual window move (drag-mode.ts), null between drags. */
@@ -109,8 +101,6 @@ export function shellActions (parts: WindowParts): ShellActions {
     openSiteInfo: (anchor, page, url) => {
       const origin = url === undefined ? undefined : originFromUrl(url) ?? undefined
       if (origin === undefined) return // no canonical origin -- nothing this popup can show
-      memory.anchor = anchor
-      memory.origin = origin
       panels.permissions.close()
       closeOverlays()
       panels.siteInfo.toggle(anchor, origin, page)

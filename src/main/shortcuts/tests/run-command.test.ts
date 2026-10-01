@@ -406,6 +406,12 @@ describe('runCommand', () => {
     expect(calls['openInternal']).toHaveBeenCalledWith('settings', '/passwords')
   })
 
+  it('opens Settings at its Site settings section', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+    runCommand('siteSettings.open', target, deps)
+    expect(calls['openInternal']).toHaveBeenCalledWith('settings', '/sites')
+  })
+
   it('opens the Bookmarks page', () => {
     const { target, calls, deps } = harness([tab('a')], 'a')
     runCommand('bookmarks.open', target, deps)

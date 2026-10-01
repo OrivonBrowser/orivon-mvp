@@ -32,7 +32,8 @@ export function createPermissionsPanel (
   contentView: View,
   permissions: PermissionsController,
   dirname: string,
-  sites: SiteNotificationsController
+  sites: SiteNotificationsController,
+  openSiteSettings: () => void
 ): PermissionsPanel {
   const popover = createPopoverView(win, contentView, {
     dirname,
@@ -43,7 +44,7 @@ export function createPermissionsPanel (
     align: 'right',
     background: PANEL_POPOVER_BACKGROUND,
     registerIpc: (webContents, url, onContentHeight) => {
-      return registerPermissionsIpc(webContents, url, permissions, onContentHeight, sites, { view: verifierView, subscribe: onVerifierChange })
+      return registerPermissionsIpc(webContents, url, permissions, onContentHeight, sites, { view: verifierView, subscribe: onVerifierChange }, openSiteSettings)
     }
   })
 
