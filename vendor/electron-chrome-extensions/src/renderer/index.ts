@@ -837,8 +837,8 @@ export const injectExtensionAPIs = (extras: ReadonlyArray<() => void> = []) => {
     const browserGlobal = (globalThis as any).browser
     if (browserGlobal && browserGlobal !== chrome) {
       for (const name of Object.getOwnPropertyNames(chrome)) {
-        if ((browserGlobal as any)[name] === (chrome as any)[name]) continue
         try {
+          if ((browserGlobal as any)[name] === (chrome as any)[name]) continue
           Object.defineProperty(browserGlobal, name, {
             value: (chrome as any)[name],
             enumerable: false,
@@ -846,7 +846,8 @@ export const injectExtensionAPIs = (extras: ReadonlyArray<() => void> = []) => {
             writable: true,
           })
         } catch {
-          // A property the page's own realm made non-configurable stays as it is.
+          // A property the page's own realm made non-configurable stays as it is, and a getter that
+          // throws is skipped: the chrome lock below must always run.
         }
       }
     }
