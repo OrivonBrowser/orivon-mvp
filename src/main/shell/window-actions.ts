@@ -13,7 +13,8 @@ import { isRect } from './actions/overlay.js'
 import { runChromeAction } from './chrome-actions.js'
 import type { ShellServices } from './shell-services.js'
 import { splitZoneFor } from './split-drop.js'
-import { dropTab, moveToNewWindow, moveToWindow } from './tab-move.js'
+import { refreshStripLayout, stripCentresFor } from './strip-centres.js'
+import { dropTab, inTop, moveToNewWindow, moveToWindow } from './tab-move.js'
 import { closeOthers, closeToRight, duplicateTab, newTabToRight, tabMenuFlags, toggleMute, togglePin } from './tab-commands.js'
 import { sleepBackgroundTab } from '../memory-saver/sleep-command.js'
 import { showTabMenu, tabMenuTemplate } from './tab-menu.js'
@@ -149,8 +150,17 @@ export function shellActions (parts: WindowParts): ShellActions {
       // toolbar), stays where it was, matching the floating preview parking there instead of following the
       // pointer (tear-drag.ts's own tick()); anywhere else -- this window's own page, or outside every
       // window -- opens a window of its own, the floating preview's own promise. `dropTab` (tab-move.ts)
-      // decides which, from `screenPoint` alone.
-      dropTab(entry, id, screenPoint, services.windows.all(), openWindow, topHeight)
+      // decides which, from `screenPoint` alone. A strip whose layout was not read yet (a drop with no
+      // hover over it) is read first: the slot is the one under the pointer, not a share of the width.
+      const windows = services.windows.all()
+      const unread = windows.filter((other) => other !== entry && !other.window.isDestroyed() && inTop(other.window.getBounds(), screenPoint, topHeight) && stripCentresFor(other) === null)
+      if (unread.length === 0) {
+        dropTab(entry, id, screenPoint, windows, openWindow, topHeight)
+        return
+      }
+      void Promise.all(unread.map(refreshStripLayout)).then(() => {
+        if (!window.isDestroyed()) dropTab(entry, id, screenPoint, services.windows.all(), openWindow, topHeight)
+      })
     },
     showTabMenu: showTabMenuFor,
     toggleMaximize: () => { if (window.isMaximized()) window.unmaximize(); else window.maximize() },

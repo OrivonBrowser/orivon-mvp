@@ -16,7 +16,7 @@ the `{ window, services }` pair a hook or an overlay handler receives.
 `tab-parking.ts` are the per-tab view. `tab-origin-liveness.ts` is `tab-view.ts`'s own per-origin
 live-document counter. `tab-order.ts` is where a tab sits in the strip, `tab-move.ts` moves one between windows keeping the
 same page (and is where a dragged tab's cross-window target -- which window's strip, and where in it -- is
-worked out, shared by the actual move and by `tear-drag.ts`'s own mark), `tab-menu.ts` is its right-click
+worked out from the tab centres `strip-centres.ts` reads off the target window's chrome page, shared by the actual move and by `tear-drag.ts`'s own mark), `tab-menu.ts` is its right-click
 menu (and `context-menu.ts` the menu a page gets: `context-menu-groups.ts` holds one function per group, `context-menu-text.ts` cleans what a page controls before it reaches a label, `paste-and-go.ts` is the address bar's clipboard submit), and `window-actions.ts` is what the chrome's buttons and menus ask of their window, and `chrome-actions.ts`
 (with `actions/`) is where a chrome module's own call to main lands. `drag-mode.ts`
 decides whether the empty tail of the strip is native OS drag content or JS-driven (Linux/X11 only);

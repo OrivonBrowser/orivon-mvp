@@ -166,6 +166,41 @@ it('moves a tab into another window when let go over its strip, and closes the w
   }
 }, TEST_TIMEOUT_MS)
 
+// Tabs sit packed at the left of the strip, so a slot is a place among the real tabs, not a share of the
+// window's width: the right half of the last tab is the end slot.
+it('lands a tab last when let go over the right half of the last tab of another window\'s strip', async () => {
+  const { app, chrome: first } = await launched()
+  try {
+    await openTabs(app, first, '/one', '/two')
+    await first.evaluate(() => { (window as unknown as { orivonShell: { newWindow: () => void } }).orivonShell.newWindow() })
+    expect(await waitFor(() => chromePages(app).length === 2)).toBe(true)
+    const second = chromePages(app).find((page) => page !== first) as Page
+    await clickAddressBarRetrying(second, `${origin}/travelling`)
+    expect((await waitForTab(second, { address: `${origin}/travelling` })).ok).toBe(true)
+    const travelling = (await tabIds(second))[0] as string
+    const before = await tabIds(first)
+    expect(before).toHaveLength(3)
+
+    const lastTab = await first.evaluate(() => {
+      const box = [...document.querySelectorAll('#tabrow .tab')].at(-1)?.getBoundingClientRect()
+      return box === undefined ? null : { left: box.left, width: box.width }
+    })
+    expect(lastTab).not.toBeNull()
+    const point = await app.evaluate(({ BaseWindow }, tab) => {
+      const [older] = [...BaseWindow.getAllWindows()].sort((a, b) => a.id - b.id)
+      const bounds = older?.getContentBounds() ?? { x: 0, y: 0 }
+      return { x: bounds.x + (tab?.left ?? 0) + (tab?.width ?? 0) * 0.75, y: bounds.y + 20 }
+    }, lastTab)
+    await second.evaluate(([id, x, y]) => { (window as unknown as { orivonShell: { dropTab: (id: string, x: number, y: number, cx: number, cy: number) => void } }).orivonShell.dropTab(id as string, x as number, y as number, -50, -50) }, [travelling, point.x, point.y] as const)
+
+    expect(await waitFor(async () => (await tabIds(first)).includes(travelling))).toBe(true)
+    expect((await tabIds(first)).at(-1)).toBe(travelling)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
 it('takes a tab out into a window of its own when it is dragged out of the window', async () => {
   const { app, chrome } = await launched()
   try {
