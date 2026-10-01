@@ -93,6 +93,8 @@ function build (part: SitesPart): HTMLElement {
     const focused = document.activeElement instanceof HTMLElement && root.contains(document.activeElement) ? document.activeElement.dataset['focusKey'] : undefined
     notice.hidden = !part.isPrivate
     search.disabled = !part.loaded
+    // Nothing to search until a site has settings of its own.
+    search.hidden = part.loaded && part.sites.length === 0
     const { shown, hidden, matching } = part.page()
     if (!part.loaded) {
       list.setAttribute('aria-busy', 'true')

@@ -7,6 +7,12 @@ const part = (state: SettingsState): PasswordsPart => state.part<PasswordsPart>(
 /** Saving and filling need a store that keeps passwords: not without a system keyring, not in a private window. */
 const cannotKeep = (state: SettingsState): boolean => part(state).vault === 'unavailable' || part(state).vault === 'private'
 
+/** What a switch that cannot be turned on says in place of what it would do. */
+const unavailableHelp = (state: SettingsState): string | undefined => {
+  if (part(state).vault === 'unavailable') return 'Needs a system keyring.'
+  return part(state).vault === 'private' ? 'Not available in a private window.' : undefined
+}
+
 export const passwords: Section = {
   id: 'passwords',
   title: 'Passwords',
@@ -21,14 +27,14 @@ export const passwords: Section = {
     {
       id: 'passwords-offer-to-save',
       label: 'Offer to save passwords',
-      help: 'Orivon asks after you sign in to a site. Passwords stay on this computer, encrypted with your system keyring.',
+      helpFor: (state) => unavailableHelp(state) ?? 'Orivon asks after you sign in to a site. Passwords stay on this computer, encrypted with your system keyring.',
       keywords: ['password', 'save', 'remember', 'sign in', 'login', 'credentials', 'prompt'],
       control: { type: 'toggle', key: 'passwords.offerToSave', disabled: cannotKeep }
     },
     {
       id: 'passwords-autofill',
       label: 'Offer saved passwords when signing in',
-      help: 'A password is filled only after you pick it.',
+      helpFor: (state) => unavailableHelp(state) ?? 'A password is filled only after you pick it.',
       keywords: ['password', 'autofill', 'fill', 'sign in', 'login', 'credentials'],
       control: { type: 'toggle', key: 'passwords.autofill', disabled: cannotKeep }
     },

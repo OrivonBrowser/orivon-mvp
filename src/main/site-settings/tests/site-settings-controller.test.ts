@@ -62,13 +62,13 @@ describe('rows for one site', () => {
   it('offers the default, Allow and Block for a kind that asks, naming the default', () => {
     const { controller } = setup()
     expect(rowOf(controller.rowsFor(SHOP), 'camera').options).toEqual([
-      { value: 'default', label: 'Ask (default)' }, { value: 'allow', label: 'Allow' }, { value: 'block', label: 'Block' }
+      { value: 'default', label: 'Use default (Ask)' }, { value: 'allow', label: 'Allow' }, { value: 'block', label: 'Block' }
     ])
   })
 
   it('names a blocking default and leaves out the choice that says the same thing', () => {
     const { controller } = setup({ defaults: { camera: 'block' } })
-    expect(rowOf(controller.rowsFor(SHOP), 'camera').options).toEqual([{ value: 'default', label: 'Block (default)' }, { value: 'allow', label: 'Allow' }])
+    expect(rowOf(controller.rowsFor(SHOP), 'camera').options).toEqual([{ value: 'default', label: 'Use default (Block)' }, { value: 'allow', label: 'Allow' }])
   })
 
   it('keeps a stored answer that equals the default offered, so the select can show it', () => {
@@ -79,9 +79,9 @@ describe('rows for one site', () => {
     expect(row.options.map((option) => option.value)).toEqual(['default', 'allow', 'block'])
   })
 
-  it('reads the content kinds the same way: Allow (default) and Block', () => {
+  it('reads the content kinds the same way: Use default (Allow) and Block', () => {
     const { controller } = setup({ kinds: WITH_CONTENT })
-    expect(rowOf(controller.rowsFor(SHOP), 'javascript')).toMatchObject({ group: 'content', defaultValue: 'allow', options: [{ value: 'default', label: 'Allow (default)' }, { value: 'block', label: 'Block' }] })
+    expect(rowOf(controller.rowsFor(SHOP), 'javascript')).toMatchObject({ group: 'content', defaultValue: 'allow', options: [{ value: 'default', label: 'Use default (Allow)' }, { value: 'block', label: 'Block' }] })
   })
 
   it('holds a default the kind does not offer to the kind\'s first choice', () => {
@@ -215,8 +215,8 @@ describe('the defaults', () => {
     const defaults = controller.defaults()
     expect(defaults.map((row) => row.kind)).toContain('javascript')
     expect(defaults.map((row) => row.kind)).not.toContain('devices')
-    expect(defaults.find((row) => row.kind === 'camera')).toMatchObject({ settingKey: 'sites.camera', group: 'permission', options: [{ value: 'ask', label: 'Ask first' }, { value: 'block', label: 'Block' }] })
-    expect(defaults.find((row) => row.kind === 'javascript')).toMatchObject({ options: [{ value: 'allow', label: 'Allowed' }, { value: 'block', label: 'Blocked' }] })
+    expect(defaults.find((row) => row.kind === 'camera')).toMatchObject({ settingKey: 'sites.camera', group: 'permission', options: [{ value: 'ask', label: 'Ask' }, { value: 'block', label: 'Block' }] })
+    expect(defaults.find((row) => row.kind === 'javascript')).toMatchObject({ options: [{ value: 'allow', label: 'Allow' }, { value: 'block', label: 'Block' }] })
   })
 })
 

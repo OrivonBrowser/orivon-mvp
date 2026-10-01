@@ -219,7 +219,7 @@ it('asks once per site, remembers the answer across a page load, and the chip ch
     await shootBoth(app, chrome, 'review')
     await bubble.click('.segmented button[data-value="allow"]')
     await bubble.waitForSelector('.sp-reload')
-    expect(await textOf(bubble, '.sp-reload')).toEqual(['Reload the page to apply.Reload'])
+    expect(await textOf(bubble, '.sp-reload')).toEqual(['Reload the page to apply your changes.Reload'])
     await shootBoth(app, chrome, 'review-changed')
     await waitChip(chrome, false, 'Camera allowed on this page')
     await bubble.click('.sp-reload .btn')

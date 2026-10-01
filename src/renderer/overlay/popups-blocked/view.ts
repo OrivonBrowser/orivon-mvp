@@ -12,6 +12,11 @@ export function isPopupsView (value: unknown): value is PopupsView {
   return Array.isArray(rows) && rows.length > 0 && rows.every((row) => isRecord(row) && typeof row['host'] === 'string' && typeof row['url'] === 'string')
 }
 
+/** The address as one short line: the host and what follows it, without the scheme. The whole address stays in the row's title. */
+export function withoutScheme (url: string): string {
+  return url.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')
+}
+
 export function moreText (more: number): string {
   return `and ${String(more)} more`
 }

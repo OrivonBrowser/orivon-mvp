@@ -42,6 +42,14 @@ export interface DataPageCallbacks {
   readonly onRevokePickedPath: (pickId: string) => void
 }
 
+/** A line of explanation under the control it is about. */
+function help (text: string): HTMLElement {
+  const el = document.createElement('p')
+  el.className = 'data-help'
+  el.textContent = text
+  return el
+}
+
 function note (text: string): HTMLElement {
   const el = document.createElement('p')
   el.className = 'empty-state'
@@ -67,10 +75,10 @@ function reloadBanner (onReload: () => void): HTMLElement {
   banner.className = 'reload-banner'
   banner.setAttribute('role', 'status')
   const text = document.createElement('span')
-  text.textContent = 'Reload to see the change.'
+  text.textContent = 'Reload the page to apply your changes.'
   const reload = document.createElement('button')
   reload.type = 'button'
-  reload.className = 'btn-primary'
+  reload.className = 'btn-secondary'
   reload.textContent = 'Reload'
   reload.addEventListener('click', onReload)
   banner.append(text, reload)
@@ -163,19 +171,20 @@ export function renderDataPage (
 
   if (data.cookies.length === 0) {
     container.append(note('This site has not stored any cookies.'))
-  } else {
-    if (view.cookiesOpen) {
-      const list = document.createElement('ul')
-      list.className = 'cookie-list'
-      list.id = 'cookie-list'
-      list.append(...cookieRows(data.cookies, callbacks.onRemoveCookie))
-      container.append(list)
-    }
-    container.append(destructive('Delete all cookies for this site', view.armed === 'cookies', callbacks.onClearCookies, 'clear-cookies'))
+  } else if (view.cookiesOpen) {
+    const list = document.createElement('ul')
+    list.className = 'cookie-list'
+    list.id = 'cookie-list'
+    list.append(...cookieRows(data.cookies, callbacks.onRemoveCookie))
+    container.append(list)
   }
-  container.append(note('Cookies from other sites embedded here are listed under those sites in Settings.'))
+  container.append(help('Cookies from other sites embedded here are listed under those sites in Settings.'))
 
-  container.append(destructive('Delete all data for this site', view.armed === 'site', callbacks.onClearBrowserData, 'clear-site', 'You may be signed out of this site'))
+  const actions = document.createElement('div')
+  actions.className = 'data-actions'
+  if (data.cookies.length > 0) actions.append(destructive('Delete all cookies for this site', view.armed === 'cookies', callbacks.onClearCookies, 'clear-cookies'))
+  actions.append(destructive('Delete all data for this site', view.armed === 'site', callbacks.onClearBrowserData, 'clear-site', 'You may be signed out of this site'))
+  container.append(actions)
 
   container.append(document.createElement('hr'))
 

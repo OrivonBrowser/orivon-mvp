@@ -16,23 +16,38 @@ export function renderDefaultBrowser (state: SettingsState): HTMLElement {
       return h('span', { className: 'default-browser is-default' }, checkIcon(), h('span', { textContent: 'Orivon is your default browser.' }))
     case 'unavailable':
       return h('span', { className: 'muted', textContent: 'Available when Orivon is installed from the .deb package.' })
-    case 'can-set': {
-      const button = h('button', {
+    case 'can-set':
+      return h('button', {
         className: 'btn',
         type: 'button',
         textContent: part.busy ? 'Making default…' : 'Make default',
         disabled: part.busy,
         onclick: () => { void part.makeDefault() }
       })
-      if (!part.declined) return button
-      const linux = state.about?.platform === 'linux'
-      return h('div', { className: 'default-browser-declined' },
-        button,
-        h('p', { className: 'problem', role: 'alert' },
-          'Your system did not accept the change. Set the default browser in your system settings.',
-          linux ? h('code', { textContent: LINUX_COMMAND }) : null))
-    }
   }
+}
+
+const COPIED_MS = 2000
+
+/** Under the row's help once the system declined: what happened, and on Linux the command that does it by hand. */
+export function renderDefaultBrowserProblem (state: SettingsState): HTMLElement | null {
+  const part = state.part<OsPart>('os')
+  if (part.view !== 'can-set' || !part.declined) return null
+  const problem = h('p', { className: 'problem', role: 'alert' }, 'Your system did not accept the change.')
+  if (state.about?.platform !== 'linux') return problem
+  const copy = h('button', { className: 'btn small', type: 'button', textContent: 'Copy' })
+  let reset: ReturnType<typeof setTimeout> | undefined
+  copy.addEventListener('click', () => {
+    void navigator.clipboard.writeText(LINUX_COMMAND).then(() => 'Copied', () => 'Could not copy').then((text) => {
+      copy.textContent = text
+      if (reset !== undefined) clearTimeout(reset)
+      reset = setTimeout(() => { copy.textContent = 'Copy' }, COPIED_MS)
+    })
+  })
+  return h('div', { className: 'default-browser-problem' },
+    problem,
+    h('p', { className: 'row-help' }, 'To set it yourself, run this in a terminal:'),
+    h('div', { className: 'command-line' }, h('code', { textContent: LINUX_COMMAND }), copy))
 }
 
 /** A newer release exists: say which, and offer its page. Nothing is downloaded or installed. */

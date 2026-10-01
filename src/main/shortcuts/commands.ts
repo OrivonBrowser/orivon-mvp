@@ -85,7 +85,7 @@ export const COMMANDS = [
   { id: 'site.certificate', label: 'View certificate', category: 'tools' },
   { id: 'site.shortcut', label: 'Create shortcut', category: 'tools' },
   { id: 'page.screenshot', label: 'Take a screenshot', category: 'tools', default: 'Mod+Shift+S', yieldToApp: true },
-  { id: 'page.qr', label: 'Create QR code for this page', category: 'tools' },
+  { id: 'page.qr', label: 'Create QR code', category: 'tools' },
   { id: 'page.pip', label: 'Picture in picture', category: 'tools' },
   { id: 'window.new', label: 'New window', category: 'window', default: 'Mod+N' },
   { id: 'window.newPrivate', label: 'New private window', category: 'window', default: 'Mod+Shift+N' },

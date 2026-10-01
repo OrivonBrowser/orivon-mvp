@@ -75,8 +75,8 @@ function renderEntry (entry: ListEntry, part: PasswordsPart): HTMLElement {
 
 const skeletonRow = (): HTMLElement => h('li', { className: 'pw-skeleton' }, h('span', { className: 'skeleton pw-skeleton-mark' }), h('span', { className: 'skeleton pw-skeleton-line' }))
 
-function emptyState (text: string): HTMLElement {
-  return h('div', { className: 'empty-state compact' }, keyIcon(), h('p', { textContent: text }))
+function emptyState (text: string, action?: HTMLElement): HTMLElement {
+  return h('div', { className: 'empty-state compact' }, keyIcon(), h('p', { textContent: text }), action ?? null)
 }
 
 function build (part: PasswordsPart): HTMLElement {
@@ -109,6 +109,8 @@ function build (part: PasswordsPart): HTMLElement {
     const ready = part.vault === 'ready'
     const focused = document.activeElement instanceof HTMLElement && list.contains(document.activeElement) ? document.activeElement.dataset['focusKey'] : undefined
     search.disabled = !ready
+    // Nothing to search until something is saved.
+    search.hidden = !ready || part.logins.length === 0
     more.disabled = !ready
     more.setAttribute('aria-expanded', String(part.toolsOpen && ready))
     tools.hidden = !(part.toolsOpen && ready)
@@ -128,7 +130,8 @@ function build (part: PasswordsPart): HTMLElement {
     } else {
       list.removeAttribute('aria-busy')
       if (!ready || part.logins.length === 0) {
-        replaceChildren(list, emptyState(ready ? 'No saved passwords yet. Orivon offers to save one after you sign in to a site.' : 'No saved passwords.'))
+        const importFromFile = h('button', { className: 'btn', type: 'button', textContent: 'Import passwords…', onclick: () => { void part.importFile() } })
+        replaceChildren(list, emptyState(ready ? 'No saved passwords yet. Orivon offers to save one after you sign in to a site.' : 'No saved passwords.', ready ? importFromFile : undefined))
       } else if (matching === 0) {
         replaceChildren(list, emptyState(`No passwords match "${part.query.trim()}".`))
       } else {

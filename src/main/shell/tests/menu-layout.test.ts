@@ -198,7 +198,7 @@ describe('the Share rows', () => {
     const { ctx } = await setup()
     const rows = share(menuItems(ctx))
     expect(rows.flatMap((item) => item.kind === 'command' ? [item.id] : [])).toEqual(['share.copyLink', 'share.email', 'page.qr'])
-    expect(find(rows, 'page.qr')).toMatchObject({ label: 'Create QR code for this page' })
+    expect(find(rows, 'page.qr')).toMatchObject({ label: 'Create QR code' })
     expect(find(more(menuItems(ctx)), 'page.qr')).toBeUndefined()
     for (const id of ['share.copyLink', 'share.email', 'page.qr']) {
       expect(find(rows, id), id).not.toHaveProperty('disabled')

@@ -5,7 +5,7 @@ import type { PopupsView } from '../../../main/site-settings/popups-view.js'
 import { h, replaceChildren } from '../../pages/shared/dom.js'
 import { step } from '../../pages/shared/list-selection.js'
 import type { Overlay, OverlayPage } from '../kit.js'
-import { isPopupsView, moreText } from './view.js'
+import { isPopupsView, moreText, withoutScheme } from './view.js'
 import './popups-blocked.css'
 
 export const popupsBlockedPage: OverlayPage = {
@@ -19,8 +19,7 @@ export const popupsBlockedPage: OverlayPage = {
       const indexes = view.rows.map((_, index) => index)
       const rows = view.rows.map((row, index) => {
         const item = h('li', { className: 'listbox-item', role: 'option', id: `pb-row-${String(index)}`, title: row.url },
-          h('span', { className: 'item-title' }, row.host),
-          h('span', { className: 'item-sub' }, row.url))
+          h('span', { className: 'item-title' }, withoutScheme(row.url)))
         item.addEventListener('click', () => { select(index); open() })
         return item
       })

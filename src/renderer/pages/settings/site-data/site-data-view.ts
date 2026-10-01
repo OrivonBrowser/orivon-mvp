@@ -2,7 +2,7 @@
 // never asks main itself. The control is one element kept across page redraws, so what is typed in its search
 // box and where the keyboard is survive a change made elsewhere.
 import { h, replaceChildren } from '../../shared/dom.js'
-import { chevronRightIcon, trashIcon } from '../../shared/icons.js'
+import { chevronRightIcon, databaseIcon, trashIcon } from '../../shared/icons.js'
 import { cookieRows } from '../../shared/cookie-row.js'
 import { markColor, markLetter } from '../passwords/passwords-model.js'
 import type { SiteRow } from '../../../../main/privacy/site-data-domain.js'
@@ -46,21 +46,26 @@ function renderSite (site: SiteRow, part: SiteDataPart): HTMLElement {
   const mark = h('span', { className: 'mark sd-mark', textContent: markLetter(site.domain) })
   mark.dataset['color'] = markColor(site.domain)
   mark.setAttribute('aria-hidden', 'true')
-  const toggle = iconButton('toggle', site.domain, `${open ? 'Hide' : 'Show'} what ${site.domain} stores`, chevronRightIcon(), () => { void part.toggle(site.domain) })
+  const chevron = chevronRightIcon()
+  chevron.classList.add('sd-chevron')
+  // The whole row opens it, as in the list of sites with their own settings; only the delete button sits outside.
+  const toggle = h('button', { className: 'sd-toggle', type: 'button', onclick: () => { void part.toggle(site.domain) } },
+    mark,
+    h('span', { className: 'sd-text' },
+      h('span', { className: 'sd-domain', textContent: site.domain, title: site.hosts.join(', ') }),
+      h('span', { className: 'sd-line', textContent: siteLine(site) })),
+    chevron)
   toggle.setAttribute('aria-expanded', String(open))
-  toggle.classList.add('sd-toggle')
-  const item = h('li', { className: 'sd-site' },
-    h('div', { className: 'sd-row' },
-      toggle,
-      mark,
-      h('span', { className: 'sd-text' },
-        h('span', { className: 'sd-domain', textContent: site.domain, title: site.hosts.join(', ') }),
-        h('span', { className: 'sd-line', textContent: siteLine(site) })),
-      deleteButton(site, part)),
+  toggle.setAttribute('aria-label', `${open ? 'Hide' : 'Show'} what ${site.domain} stores`)
+  toggle.dataset['focusKey'] = `${site.domain}:toggle`
+  const item = h('li', { className: open ? 'sd-site open' : 'sd-site' },
+    h('div', { className: 'sd-row' }, toggle, deleteButton(site, part)),
     open ? hostsBlock(site, part) : null)
   item.dataset['domain'] = site.domain
   return item
 }
+
+const emptyState = (text: string): HTMLElement => h('li', { className: 'empty-state compact' }, databaseIcon(), h('p', { textContent: text }))
 
 const skeletonRow = (): HTMLElement => h('li', { className: 'sd-skeleton-row' }, h('span', { className: 'skeleton sd-skeleton-mark' }), h('span', { className: 'skeleton sd-skeleton-line' }))
 
@@ -96,6 +101,10 @@ function build (part: SiteDataPart): HTMLElement {
     deleteAll.className = armedAll ? 'btn danger armed' : 'btn danger'
     deleteAll.textContent = armedAll ? 'Click again to delete all site data' : 'Delete all site data'
     deleteAll.disabled = part.sites !== null && part.sites.length === 0
+    // Nothing to search or sort until a site has stored data.
+    const none = part.sites !== null && part.sites.length === 0
+    search.hidden = none
+    sorter.hidden = none
     notice.textContent = part.failed ? 'Some of that could not be deleted.' : ''
     const { shown, hidden, matching } = part.rows()
     if (part.sites === null) {
@@ -103,8 +112,8 @@ function build (part: SiteDataPart): HTMLElement {
       replaceChildren(list, skeletonRow(), skeletonRow(), skeletonRow())
     } else {
       list.removeAttribute('aria-busy')
-      if (part.sites.length === 0) replaceChildren(list, h('li', { className: 'empty-state compact' }, h('p', { textContent: 'No site has stored data.' })))
-      else if (matching === 0) replaceChildren(list, h('li', { className: 'empty-state compact' }, h('p', { textContent: 'No sites match.' })))
+      if (part.sites.length === 0) replaceChildren(list, emptyState('No site has stored data.'))
+      else if (matching === 0) replaceChildren(list, emptyState(`No sites match "${part.query.trim()}".`))
       else replaceChildren(list, ...shown.map((site) => renderSite(site, part)))
     }
     showAll.hidden = hidden === 0

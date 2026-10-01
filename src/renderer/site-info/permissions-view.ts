@@ -61,8 +61,8 @@ export function renderSitePermissions (model: PermissionsModel, callbacks: Permi
   }
   if (model.changed) {
     section.append(h('div', { className: 'reload-banner', role: 'status' },
-      h('span', { textContent: 'Reload to apply your changes.' }),
-      h('button', { type: 'button', className: 'btn-primary', textContent: 'Reload', onclick: callbacks.onReload })))
+      h('span', { textContent: 'Reload the page to apply your changes.' }),
+      h('button', { type: 'button', className: 'btn-secondary', textContent: 'Reload', onclick: callbacks.onReload })))
   }
   if (model.view.isPrivate) section.append(h('p', { className: 'empty-state', textContent: 'Forgotten when this private window closes.' }))
   return section

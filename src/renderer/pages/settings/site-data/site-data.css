@@ -5,6 +5,7 @@
 .sd-head { display: flex; align-items: center; gap: 8px; }
 .sd-head .search { flex: 1 1 auto; max-width: none; }
 .sd-head .segmented { flex: none; }
+.sd-head .search[hidden], .sd-head .segmented[hidden] { display: none; }
 
 .sd-list {
   list-style: none;
@@ -20,11 +21,28 @@
 .sd-list .empty-state { padding: 28px 12px; }
 
 .sd-site { border-radius: 8px; }
-.sd-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 4px; border-radius: 8px; }
-.sd-site:hover > .sd-row { background: var(--whover); }
-.sd-toggle svg { transition: transform 0.12s; }
-.sd-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
-@media (prefers-reduced-motion: reduce) { .sd-toggle svg { transition: none; } }
+.sd-row { display: flex; align-items: center; gap: 4px; padding-right: 8px; border-radius: 8px; }
+.sd-toggle {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+.sd-toggle:hover { background: var(--whover); }
+.sd-toggle:focus-visible { outline-offset: -2px; }
+.sd-chevron { flex: none; width: 16px; height: 16px; margin-left: auto; color: var(--wink-dim); transition: transform 0.12s; }
+.sd-site.open .sd-chevron { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .sd-chevron { transition: none; } }
 .sd-mark { width: 28px; height: 28px; border-radius: 50%; font-size: 12px; flex: none; }
 .sd-text { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
 .sd-domain { color: var(--wink-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

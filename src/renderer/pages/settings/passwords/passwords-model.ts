@@ -119,7 +119,7 @@ export function transferNotice (outcome: TransferOutcome): Notice | null {
 }
 
 export const BANNER_TEXT: Readonly<Record<'unavailable' | 'private', string>> = {
-  unavailable: 'Orivon cannot reach a system keyring (GNOME Keyring or KWallet), so it will not save passwords on this computer. Saving them unencrypted would let any program read them.',
+  unavailable: 'Orivon cannot reach a system keyring, so it does not save passwords. Install or unlock GNOME Keyring or KWallet, then restart Orivon.',
   private: 'Passwords are not saved or filled in a private window.'
 }
 

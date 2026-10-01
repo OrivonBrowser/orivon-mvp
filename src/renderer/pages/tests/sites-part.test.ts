@@ -5,7 +5,7 @@ import type { SiteKindRow, SiteSummary } from '../settings/sites/sites-model.js'
 
 const SHOP: SiteSummary = { origin: 'https://shop.example', kinds: [{ kind: 'camera', label: 'Camera', value: 'block' }] }
 const BLOG: SiteSummary = { origin: 'https://blog.example', kinds: [{ kind: 'location', label: 'Location', value: 'allow' }] }
-const ROWS: SiteKindRow[] = [{ kind: 'camera', label: 'Camera', group: 'permission', value: 'block', defaultValue: 'ask', options: [{ value: 'default', label: 'Ask (default)' }, { value: 'allow', label: 'Allow' }, { value: 'block', label: 'Block' }] }]
+const ROWS: SiteKindRow[] = [{ kind: 'camera', label: 'Camera', group: 'permission', value: 'block', defaultValue: 'ask', options: [{ value: 'default', label: 'Use default (Ask)' }, { value: 'allow', label: 'Allow' }, { value: 'block', label: 'Block' }] }]
 
 beforeEach(() => { vi.useFakeTimers() })
 afterEach(() => { vi.useRealTimers() })

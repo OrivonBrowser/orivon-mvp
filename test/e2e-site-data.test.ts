@@ -148,7 +148,7 @@ it('lists a site\'s cookies by name, deletes one, then all, and leaves the other
   await window.click('button[aria-label="Delete cookie b"]')
   expect(await waitFor(async () => (await cookieNames('127.0.0.1')).join() === 'a,c')).toBe(true)
   await window.waitForSelector('.reload-banner')
-  expect(await window.locator('.reload-banner').textContent()).toContain('Reload to see the change.')
+  expect(await window.locator('.reload-banner').textContent()).toContain('Reload the page to apply your changes.')
   expect(await window.locator('.cookie-name').allTextContents()).toEqual(['a', 'c'])
   await shoot(app, chrome, window, 'popover-deleted')
 
@@ -192,7 +192,7 @@ it('lists both sites in Settings, searches, and deletes a cookie, a site and eve
   await window.fill('#site-data input[type="search"]', 'local')
   expect(await domains()).toEqual(['localhost'])
   await window.fill('#site-data input[type="search"]', 'nothing')
-  await window.waitForSelector('#site-data .empty-state:has-text("No sites match.")')
+  await window.waitForSelector('#site-data .empty-state:has-text(\'No sites match "nothing".\')')
   await shoot(app, chrome, window, 'settings-site-no-match')
   await window.fill('#site-data input[type="search"]', '')
 

@@ -1,5 +1,5 @@
 import type { Row } from '../model.js'
-import { renderDefaultBrowser, renderRelease } from './default-browser-row.js'
+import { renderDefaultBrowser, renderDefaultBrowserProblem, renderRelease } from './default-browser-row.js'
 
 /** Rows spread into the section they belong to, so a feature adds its rows here and edits no other file. */
 export const aboutSystemRows: readonly Row[] = [
@@ -15,6 +15,7 @@ export const aboutSystemRows: readonly Row[] = [
     label: 'Default browser',
     help: 'Links you click in other programs open in Orivon.',
     keywords: ['default', 'browser', 'links', 'open links', 'http', 'https', 'web', 'system', 'make default', 'set default'],
+    below: renderDefaultBrowserProblem,
     control: { type: 'custom', render: renderDefaultBrowser },
     visible: (state) => state.profiles?.isPrivate !== true
   }

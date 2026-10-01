@@ -79,8 +79,16 @@ button:focus-visible {
 .page {
   height: 100%;
   overflow-y: auto;
+  /* The bar appears and disappears with the content: the text must not reflow when it does. */
+  scrollbar-gutter: stable;
   padding: 12px 14px 16px;
 }
+
+/* The same thin themed bar as every Settings page, not the platform's arrows-and-track one. */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--wborder); border-radius: 4px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-button { display: none; }
 
 /* [hidden] must win over the flex display below, or the browser's own
    default `[hidden] { display: none }` UA rule loses to this class
@@ -327,8 +335,6 @@ hr {
   list-style: none;
   margin: 0;
   padding: 4px;
-  max-height: 220px;
-  overflow-y: auto;
   border: 1px solid var(--wborder);
   border-radius: 8px;
   background: var(--wsurface);
@@ -375,3 +381,8 @@ hr {
   background: color-mix(in srgb, var(--wdanger) 10%, transparent);
 }
 #clear-cookies, #clear-site { align-self: flex-start; }
+.data-help { margin: 0; color: var(--wink-dim); font-size: 12px; }
+/* Both deletions side by side and drawn as the danger variant they are, like Settings' own. */
+.data-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.data-actions .btn-secondary { border-color: var(--wdanger); color: var(--wdanger); }
+.data-actions .btn-secondary:hover { background: color-mix(in srgb, var(--wdanger) 10%, transparent); }

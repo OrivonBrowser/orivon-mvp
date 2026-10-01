@@ -83,12 +83,8 @@ export interface SiteSettingsController {
   onChange: (listener: SiteSettingsListener) => () => void
 }
 
+/** One word for each state wherever it is chosen: a default, a site's own answer, the review bubble. A badge says it in the past tense instead. */
 const VALUE_WORD: Readonly<Record<SiteValue, string>> = { ask: 'Ask', allow: 'Allow', block: 'Block' }
-/** A default reads as a state ("Blocked") for a kind a site is allowed or blocked from, and as a rule ("Ask first") for one it asks about. */
-const DEFAULT_WORD: Readonly<Record<'state' | 'rule', Readonly<Record<SiteValue, string>>>> = {
-  state: { ask: 'Ask first', allow: 'Allowed', block: 'Blocked' },
-  rule: { ask: 'Ask first', allow: 'Allow', block: 'Block' }
-}
 const CHOICES: readonly SiteChoice[] = ['default', 'allow', 'block']
 const collator = new Intl.Collator('en', { sensitivity: 'base', numeric: true })
 
@@ -114,7 +110,7 @@ export function createSiteSettingsController (deps: SiteSettingsControllerDeps):
     kind === 'notifications' ? notifications.get(origin) : store.get(origin, kind)
 
   function optionsFor (current: SiteChoice, defaultValue: SiteValue): ChoiceOption[] {
-    const options: ChoiceOption[] = [{ value: 'default', label: `${VALUE_WORD[defaultValue]} (default)` }]
+    const options: ChoiceOption[] = [{ value: 'default', label: `Use default (${VALUE_WORD[defaultValue]})` }]
     for (const decision of ['allow', 'block'] as const) {
       // A choice that says what "default" already says is offered only while it is what is stored.
       if (decision !== defaultValue || current === decision) options.push({ value: decision, label: VALUE_WORD[decision] })
@@ -182,7 +178,7 @@ export function createSiteSettingsController (deps: SiteSettingsControllerDeps):
       label: kind.label,
       group: kind.group,
       settingKey: kind.settingKey,
-      options: kind.values.map((value) => ({ value, label: DEFAULT_WORD[kind.values.includes('allow') ? 'state' : 'rule'][value] }))
+      options: kind.values.map((value) => ({ value, label: VALUE_WORD[value] }))
     })),
 
     onChange (listener) {

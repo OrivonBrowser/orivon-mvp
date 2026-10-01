@@ -211,7 +211,7 @@ it('shows an answer in the popover, changes it there, lists it in Settings, forg
     // Changing it applies at once and offers the reload.
     await popup.selectOption('.perm-select[data-kind="camera"]', 'block')
     await popup.waitForSelector('.reload-banner')
-    expect(await textOf(popup, '.reload-banner')).toEqual(['Reload to apply your changes.Reload'])
+    expect(await textOf(popup, '.reload-banner')).toEqual(['Reload the page to apply your changes.Reload'])
     expect(await popup.locator('.perm-select[data-kind="camera"]').inputValue()).toBe('block')
     await shootBoth(app, 'popover-camera-blocked', popup)
     await popup.click('.reload-banner .btn-primary')

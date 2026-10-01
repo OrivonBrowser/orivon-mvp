@@ -5,6 +5,7 @@
 
 .sites-list { display: grid; gap: 10px; width: 100%; }
 .sites-head .text { max-width: none; }
+.sites-head .text[hidden] { display: none; }
 .sites-list .banner { font-size: 13px; }
 .sites-foot { justify-content: flex-start; }
 
@@ -17,8 +18,6 @@
   border: 1px solid var(--wborder);
   border-radius: 8px;
   background: var(--wsurface);
-  max-height: 480px;
-  overflow-y: auto;
 }
 .sites-ul[aria-busy="true"] { min-height: 92px; }
 .sites-ul .empty-state { padding: 28px 12px; }

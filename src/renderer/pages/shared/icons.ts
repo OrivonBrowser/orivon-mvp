@@ -207,6 +207,11 @@ export function slidersIcon (): SVGSVGElement {
   return icon((el) => { el.append(line(4, 7, 20, 7), line(4, 12, 20, 12), line(4, 17, 20, 17), circle(9, 7, 2), circle(15, 12, 2), circle(8, 17, 2)) })
 }
 
+/** A stack of data, for the section of what sites keep. */
+export function databaseIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3z', '2'), path('M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6', '2'), path('M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3', '2')) })
+}
+
 /** A map pin, for the section of saved addresses. */
 export function mapPinIcon (): SVGSVGElement {
   return icon((el) => { el.append(path('M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z', '2'), circle(12, 10, 3)) })

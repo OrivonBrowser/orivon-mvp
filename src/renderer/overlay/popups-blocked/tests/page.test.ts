@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isPopupsView, moreText } from '../view.js'
+import { isPopupsView, moreText, withoutScheme } from '../view.js'
 
 const row = { host: 'ads.example', url: 'https://ads.example/' }
 const view = { origin: 'https://news.example', rows: [row], more: 0, allowed: false, settingsLink: true }
@@ -22,5 +22,12 @@ describe('isPopupsView', () => {
 describe('moreText', () => {
   it('counts the addresses past the listed ones', () => {
     expect(moreText(4)).toBe('and 4 more')
+  })
+})
+
+describe('withoutScheme', () => {
+  it('shows the host and what follows it on one line', () => {
+    expect(withoutScheme('http://127.0.0.1:35425/target?b')).toBe('127.0.0.1:35425/target?b')
+    expect(withoutScheme('https://ads.example/')).toBe('ads.example/')
   })
 })

@@ -51,8 +51,8 @@ export const sitePromptPage: OverlayPage = {
         h('p', { className: 'origin', id: 'sp-origin' }, view.origin),
         h('div', { className: 'sp-asks', id: 'sp-asks' }, ...lines),
         view.locationNote !== null && h('div', { className: 'banner info', role: 'note' }, view.locationNote),
-        h('div', { className: 'btn-row' }, block, allow),
         view.privateNote !== null && h('p', { className: 'sp-note' }, view.privateNote),
+        h('div', { className: 'btn-row' }, block, allow),
         close
       )
       clearTimeout(armTimer)
@@ -63,7 +63,7 @@ export const sitePromptPage: OverlayPage = {
       const rows = view.rows.map((row) => reviewRow(row))
       const footer: Array<HTMLElement | false> = [
         changed && h('div', { className: 'banner info sp-reload', role: 'status' },
-          h('span', null, 'Reload the page to apply.'),
+          h('span', null, 'Reload the page to apply your changes.'),
           h('button', { type: 'button', className: 'btn small', onclick: () => { void overlay.request({ type: 'reload' }) } }, 'Reload')),
         view.settingsLink && h('div', { className: 'sp-foot' },
           h('button', { type: 'button', className: 'link-btn', onclick: () => { void overlay.request({ type: 'settings' }) } }, 'Site settings'))

@@ -18,7 +18,7 @@ body[data-overlay='site-prompt'] .sp-close { position: absolute; top: 8px; right
 /* The first half second: the buttons are visibly not ready, so a press that does nothing is not a surprise. */
 body[data-overlay='site-prompt'] .arming .btn-row .btn { opacity: 0.6; }
 body[data-overlay='site-prompt'] .btn-row .btn { transition: opacity 0.12s, background-color 0.12s, border-color 0.12s; }
-body[data-overlay='site-prompt'] .sp-note { margin: 10px 0 0; color: var(--wink-dim); font-size: 12px; text-align: right; }
+body[data-overlay='site-prompt'] .sp-note { margin: -6px 0 12px; color: var(--wink-dim); font-size: 12px; text-align: left; }
 
 body[data-overlay='site-prompt'] .sp-rows { display: grid; gap: 8px; margin: 12px 0 4px; padding: 0; list-style: none; }
 body[data-overlay='site-prompt'] .sp-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

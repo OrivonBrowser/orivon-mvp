@@ -350,7 +350,7 @@ it('lists Copy link, Email link and the QR code under Share, greyed with the rea
     await visit(chrome, `${origin}/menu`)
     const share = await menuSubmenu(app, chrome, 'Share')
     const rows = share.locator('.menu-row:not(.menu-back)')
-    expect(await rows.allInnerTexts().then((texts) => texts.map((text) => text.split('\n')[0]))).toEqual(['Copy link', 'Email link', 'Create QR code for this page'])
+    expect(await rows.allInnerTexts().then((texts) => texts.map((text) => text.split('\n')[0]))).toEqual(['Copy link', 'Email link', 'Create QR code'])
     expect(await rows.evaluateAll((els) => els.map((el) => el.getAttribute('aria-disabled')))).toEqual([null, null, null])
     await shoot(app, share, 'menu-share')
     await share.getByRole('menuitem', { name: /^Copy link/ }).click()

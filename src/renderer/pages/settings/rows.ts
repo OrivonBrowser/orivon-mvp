@@ -172,6 +172,7 @@ export function renderRow (row: Row, state: SettingsState): HTMLElement {
         ? h('label', { className: 'row-label', htmlFor: controlId, textContent: row.label })
         : h('span', { className: 'row-label', textContent: row.label }),
       changed ? h('span', { className: 'changed', title: 'Changed from the default', textContent: 'Changed' }) : null,
-      helpText === '' ? null : h('p', { className: 'row-help', textContent: helpText })),
+      helpText === '' ? null : h('p', { className: 'row-help', textContent: helpText }),
+      row.below?.(state) ?? null),
     h('div', { className: 'row-control' }, field, reset))
 }

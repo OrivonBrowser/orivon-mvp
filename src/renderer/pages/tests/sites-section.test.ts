@@ -5,11 +5,11 @@ import type { DefaultRow } from '../settings/sites/sites-model.js'
 import type { SettingsState } from '../settings/state.js'
 import { searchRows } from '../settings/search.js'
 
-const ASK = [{ value: 'ask', label: 'Ask first' }, { value: 'block', label: 'Block' }] as const
+const ASK = [{ value: 'ask', label: 'Ask' }, { value: 'block', label: 'Block' }] as const
 const DEFAULTS: DefaultRow[] = [
   { kind: 'camera', label: 'Camera', group: 'permission', settingKey: 'sites.camera', options: ASK },
   { kind: 'idle', label: 'Idle detection', group: 'permission', settingKey: 'sites.idle', options: ASK },
-  { kind: 'javascript', label: 'JavaScript', group: 'content', settingKey: 'sites.javascript', options: [{ value: 'allow', label: 'Allowed' }, { value: 'block', label: 'Blocked' }] },
+  { kind: 'javascript', label: 'JavaScript', group: 'content', settingKey: 'sites.javascript', options: [{ value: 'allow', label: 'Allow' }, { value: 'block', label: 'Block' }] },
   { kind: 'teleport' as never, label: 'Teleport', group: 'device', settingKey: 'sites.devices', options: ASK }
 ]
 
@@ -30,7 +30,7 @@ describe('the Site settings section', () => {
     const camera = section.rows.find((row) => row.id === 'sites-camera')
     expect(camera?.control).toEqual({ type: 'choice', key: 'sites.camera', options: ASK })
     const javascript = section.rows.find((row) => row.id === 'sites-javascript')
-    expect(javascript?.control).toMatchObject({ options: [{ label: 'Allowed' }, { label: 'Blocked' }] })
+    expect(javascript?.control).toMatchObject({ options: [{ label: 'Allow' }, { label: 'Block' }] })
   })
 
   it('is found by what a person would type, for a kind it has no copy for too', () => {

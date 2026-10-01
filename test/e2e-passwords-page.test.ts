@@ -274,7 +274,7 @@ it('says nothing is kept, disables the toggles and writes no file when there is 
     const page = await openPasswords(app, chrome)
     const banner = page.locator('#row-password-storage .banner.warn')
     await banner.waitFor()
-    expect(await banner.textContent()).toBe('Orivon cannot reach a system keyring (GNOME Keyring or KWallet), so it will not save passwords on this computer. Saving them unencrypted would let any program read them.')
+    expect(await banner.textContent()).toBe('Orivon cannot reach a system keyring, so it does not save passwords. Install or unlock GNOME Keyring or KWallet, then restart Orivon.')
     expect(await page.locator('#row-passwords-offer-to-save input').isDisabled()).toBe(true)
     expect(await page.locator('#row-passwords-autofill input').isDisabled()).toBe(true)
     expect(await page.getByRole('searchbox', { name: 'Search passwords' }).isDisabled()).toBe(true)
