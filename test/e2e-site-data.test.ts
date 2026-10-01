@@ -48,7 +48,8 @@ async function site (host: string, cookies: string[]): Promise<Fixture> {
     // The tab's own favicon request would set the cookies again, at whatever moment it happens to land.
     if (request.url === '/favicon.ico') { response.statusCode = 404; response.end(); return }
     response.setHeader('content-type', 'text/html')
-    response.setHeader('set-cookie', cookies)
+    // `/check` only reads: setting the cookies again there would bring back a site the test just deleted.
+    if (request.url !== '/check') response.setHeader('set-cookie', cookies)
     response.end(page(request.url !== '/check'))
   })
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
