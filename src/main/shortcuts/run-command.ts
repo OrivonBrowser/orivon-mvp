@@ -87,7 +87,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'find.next': dismissRestoreOffer(target); findStep(target, true); return
     case 'find.previous': dismissRestoreOffer(target); findStep(target, false); return
     case 'history.open': tabs.openInternal('history'); return
-    case 'privacy.clearData': return
+    case 'privacy.clearData': tabs.openInternal('settings', '/privacy#clear-data'); return
     case 'bookmarks.open': tabs.openInternal('bookmarks'); return
     case 'devtools.toggle': services.devtools.toggle(tabs.activeWebContents(), window); return
     case 'devtools.console': services.devtools.openConsole(tabs.activeWebContents(), window); return

@@ -1,6 +1,7 @@
 import type { SiteDataSnapshot } from '../../main/ipc/site-info-ipc.js'
 import type { PickedPathRow } from '../../main/permissions/permissions.js'
-import { backIcon } from './icons.js'
+import { backIcon, chevronIcon } from './icons.js'
+import { cookieRows } from '../pages/shared/cookie-row.js'
 import { grantIcon } from '../grant-icons.js'
 
 // The Cookies and site data page -- two sections, kept visibly separate
@@ -22,10 +23,82 @@ function formatBytes (bytes: number): string {
   return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unitIndex]}`
 }
 
+/** What the page remembers between draws: the popover redraws the whole page on every change. */
+export interface DataPageView {
+  readonly cookiesOpen: boolean
+  /** The button that has had its first click, waiting for its second. */
+  readonly armed: 'cookies' | 'site' | null
+  /** Something was deleted since the page opened, so the tab still shows what it had. */
+  readonly deleted: boolean
+}
+
 export interface DataPageCallbacks {
   readonly onBack: () => void
   readonly onClearBrowserData: () => void
+  readonly onToggleCookies: () => void
+  readonly onRemoveCookie: (key: string) => void
+  readonly onClearCookies: () => void
+  readonly onReload: () => void
   readonly onRevokePickedPath: (pickId: string) => void
+}
+
+function note (text: string): HTMLElement {
+  const el = document.createElement('p')
+  el.className = 'empty-state'
+  el.textContent = text
+  return el
+}
+
+/** A button that deletes, and asks twice: the first press arms it and the second does it. */
+function destructive (label: string, armed: boolean, onPress: () => void, id: string, title?: string): HTMLElement {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.id = id
+  button.className = armed ? 'btn-secondary armed' : 'btn-secondary'
+  button.textContent = armed ? 'Click again to delete' : label
+  button.setAttribute('aria-label', armed ? `Click again: ${label}` : label)
+  if (title !== undefined && !armed) button.title = title
+  button.addEventListener('click', onPress)
+  return button
+}
+
+function reloadBanner (onReload: () => void): HTMLElement {
+  const banner = document.createElement('div')
+  banner.className = 'reload-banner'
+  banner.setAttribute('role', 'status')
+  const text = document.createElement('span')
+  text.textContent = 'Reload to see the change.'
+  const reload = document.createElement('button')
+  reload.type = 'button'
+  reload.className = 'btn-primary'
+  reload.textContent = 'Reload'
+  reload.addEventListener('click', onReload)
+  banner.append(text, reload)
+  return banner
+}
+
+/** The cookie count; a count above nothing opens the list. */
+function cookiesRow (data: SiteDataSnapshot, view: DataPageView, callbacks: DataPageCallbacks): HTMLElement {
+  if (data.cookies.length === 0) return statRow('Cookies', '0')
+  const li = document.createElement('li')
+  li.className = 'stat-row'
+  const toggle = document.createElement('button')
+  toggle.type = 'button'
+  toggle.className = 'expander'
+  toggle.id = 'cookies-toggle'
+  toggle.setAttribute('aria-expanded', String(view.cookiesOpen))
+  toggle.setAttribute('aria-controls', 'cookie-list')
+  toggle.append(chevronIcon())
+  const label = document.createElement('span')
+  label.className = 'stat-label'
+  label.textContent = 'Cookies'
+  toggle.append(label)
+  toggle.addEventListener('click', callbacks.onToggleCookies)
+  const value = document.createElement('span')
+  value.className = 'stat-value'
+  value.textContent = String(data.cookies.length)
+  li.append(toggle, value)
+  return li
 }
 
 function statRow (label: string, value: string): HTMLElement {
@@ -45,6 +118,7 @@ export function renderDataPage (
   container: HTMLElement,
   data: SiteDataSnapshot | null,
   pickedPathRows: readonly PickedPathRow[],
+  view: DataPageView,
   callbacks: DataPageCallbacks
 ): void {
   container.replaceChildren()
@@ -61,8 +135,12 @@ export function renderDataPage (
 
   if (data === null) {
     const loading = document.createElement('p')
-    loading.className = 'empty-state'
-    loading.textContent = 'Loading…'
+    loading.className = 'empty-state loading'
+    const spinner = document.createElement('span')
+    spinner.className = 'spinner'
+    spinner.setAttribute('role', 'status')
+    spinner.setAttribute('aria-label', 'Loading')
+    loading.append(spinner, 'Loading…')
     container.append(loading)
     return
   }
@@ -72,22 +150,32 @@ export function renderDataPage (
   browserHeading.textContent = 'Browser storage'
   container.append(browserHeading)
 
+  if (view.deleted) container.append(reloadBanner(callbacks.onReload))
+
   const browserStats = document.createElement('ul')
   browserStats.className = 'stat-list'
-  browserStats.append(statRow('Cookies', String(data.cookieCount)))
+  browserStats.append(cookiesRow(data, view, callbacks))
   browserStats.append(statRow(
     'Local storage, IndexedDB, cache',
     data.browserStorage === null ? 'Not available' : `Approximately ${formatBytes(data.browserStorage.usageBytes)}`
   ))
   container.append(browserStats)
 
-  const clear = document.createElement('button')
-  clear.type = 'button'
-  clear.className = 'btn-secondary'
-  clear.textContent = 'Clear browser data'
-  clear.title = 'You may be signed out of this site'
-  clear.addEventListener('click', callbacks.onClearBrowserData)
-  container.append(clear)
+  if (data.cookies.length === 0) {
+    container.append(note('This site has not stored any cookies.'))
+  } else {
+    if (view.cookiesOpen) {
+      const list = document.createElement('ul')
+      list.className = 'cookie-list'
+      list.id = 'cookie-list'
+      list.append(...cookieRows(data.cookies, callbacks.onRemoveCookie))
+      container.append(list)
+    }
+    container.append(destructive('Delete all cookies for this site', view.armed === 'cookies', callbacks.onClearCookies, 'clear-cookies'))
+  }
+  container.append(note('Cookies from other sites embedded here are listed under those sites in Settings.'))
+
+  container.append(destructive('Delete all data for this site', view.armed === 'site', callbacks.onClearBrowserData, 'clear-site', 'You may be signed out of this site'))
 
   container.append(document.createElement('hr'))
 

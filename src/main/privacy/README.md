@@ -13,6 +13,12 @@ is followed by `https-fallback.ts` (the per-tab record), `https-fallback-runner.
 Secure DNS choice to the resolver's options, and `storage-access.ts` answers the two storage-access permissions
 from the cookie choice. `install-privacy-net.ts` is the installer `../shell/shell-installers.ts` runs at start.
 
+Showing what sites keep: `cookie-list.ts` is the pure side (which cookies belong to a site, a cookie's view without
+its value, the key a page names it by), `cookie-runner.ts` reads and removes them through a session's cookie jar,
+`site-data-inventory.ts` finds which sites keep data in a session, and `site-data-domain.ts` is what the Settings
+page may ask about it. The site-info popover uses the first two through
+[`../ipc/site-info-ipc.ts`](../ipc/site-info-ipc.ts).
+
 **What it depends on.** `electron` (types: the sessions cleared; the installer and the runner use it directly);
 [`../sessions/`](../sessions/) (the web-request owner and the site-asker registry), [`../overlays/`](../overlays/)
 (`tab-slots.ts`, the overlay types), [`../../protocols/`](../../protocols/) (which names the verifier routes) and [`../dev/eth-resolver.ts`](../dev/eth-resolver.ts)
@@ -85,3 +91,29 @@ and sets the mode (and the provider, for the two named ones). Names that `--host
 allowed while every cookie is allowed, refused while third-party cookies are blocked. Chromium does not route a
 `requestStorageAccess()` call through the permission handlers in this build, so this decides only what the
 handlers are asked.
+
+**A page names a cookie by a key main minted, never by a URL.** `cookieKey` hashes a cookie's domain, path and name,
+and a delete finds the cookie again among the ones that site may see. A stale key matches nothing, and a key for
+another site's cookie is not among the site's own, so neither does anything. No cookie value is sent to any page:
+`CookieView` has no such field, and the name and domain a website chose are cut to 200 characters and have
+control and text-direction characters replaced with `?`.
+
+**A site's cookies are its own host's and its parent domains', inside one registrable domain.** A sibling
+subdomain's cookies are not listed for it, and a cookie set by an embedded frame of another site is listed under that
+site, not the page's. Removing a cookie goes by the cookie's own scheme (from Secure), host and path, which
+Electron resolves by name for that address, so a second cookie of the same name that the same address reaches can go
+with it.
+
+**The all-sites list is approximate.** Electron has no per-origin usage API, so `site-data-inventory.ts` builds the list from
+the cookie jar and the per-origin IndexedDB folders under the session's storage path (`<scheme>_<host>_<port>`).
+Local storage and service workers share databases that are not split by origin, and Cache Storage folder names are
+hashes that do not map back to an origin, so a site that keeps only those is not listed and their size is not
+counted. Folders are measured within two seconds, after which sizes read as unknown. A private runtime has no storage
+path and lists its cookies only.
+
+**Deleting a site names origins it has not been seen at.** A clear takes every host under the domain at both schemes
+and the origins found on disk with their ports. A site that kept only local storage at a port no folder or cookie
+shows is out of reach of the all-sites list; the site-info popover clears the exact origin it was opened for.
+
+**The domain refuses what it did not list.** `removeSite` and `cookies` act only on a domain its last `list` returned,
+and re-read what that site keeps at the moment of the call.

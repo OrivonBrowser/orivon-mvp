@@ -19,6 +19,7 @@ const ROWS: ReadonlyArray<[id: string, label: string, category: string, binding:
 // Rows whose feature has landed: they run something now, so they carry no pending flag. One id a line.
 const LANDED: readonly string[] = [
   'passwords.open',
+  'privacy.clearData',
   'share.copyLink',
   'share.email',
   'site.certificate',

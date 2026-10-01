@@ -40,6 +40,7 @@ import { endProcess, focusTab, listTasks } from '../info/tasks-runner.js'
 import type { TasksEnv } from '../info/tasks-runner.js'
 import { passwordsDomainFor } from '../passwords/passwords-runner.js'
 import { privacyDomain } from '../privacy/privacy-domain.js'
+import { siteDataDomain } from '../privacy/site-data-domain.js'
 import { siteSettingsControllerFor } from '../site-settings/site-settings-runner.js'
 import { sitesDomain } from '../site-settings/sites-domain.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
@@ -131,6 +132,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       now: Date.now
     }),
     sites: sitesDomain(siteSettings, { isPrivate: services.isPrivate }),
+    siteData: siteDataDomain(() => session.defaultSession),
     apps: appsDomain({ permissions, userDataPath: app.getPath('userData'), identity: identityKeyStorage }),
     web3: web3Domain({
       view: verifierView,
