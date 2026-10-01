@@ -164,12 +164,24 @@ independent features registering directly on the same session would fight over w
 handler with an `order`, a `WebRequestFilter` and a URL predicate, and `web-request-compose.ts`'s
 pure logic runs them in order, threading each one's result to the next. Used for
 `session.defaultSession` today: the verifier's partition stamp (`../verifier/verifier-
-subsystem.ts`), the granted-origin CSP (`../install/granted-origin-csp.ts`) and the Firefox
-request headers on Google's sign-in hosts (`../shell/sign-in-identity-headers.ts`). The embed session
+subsystem.ts`), the granted-origin CSP (`../install/granted-origin-csp.ts`), the Firefox
+request headers on Google's sign-in hosts (`../shell/sign-in-identity-headers.ts`) and the three
+`declarativeNetRequest` handlers (`../extensions/dnr-webrequest.ts`). The embed session
 ([`../embed/embed-host.ts`](../embed/embed-host.ts)), the internal-pages session
 ([`../pages/internal-session.ts`](../pages/internal-session.ts)) and an isolated `WebContext`
 session (`web-context-host.ts`, above) register directly instead: each is the only thing that
 ever touches its own session's `webRequest`, so there is nothing there for an owner to arbitrate.
+
+**Each registration returns a handle whose `remove()` takes that one handler back out.** Most
+callers never need it (the verifier's partition stamp and the granted-origin CSP watch every
+request for the process's whole life), so most ignore the return value; `dnr-webrequest.ts` is
+the one that does not -- a person with no `declarativeNetRequest` extension loaded should not pay
+for a webRequest round trip that always has nothing to do. `remove()` re-registers Electron's own
+listener from whatever handlers remain, the same `unionFilter` recomputation adding one already
+triggers; with nothing left for an event, that means calling Electron's `onXxx(null)` to actually
+unregister the listener, not registering it again with an empty `{ urls: [] }` filter -- Electron
+does not read an empty pattern list as "match nothing," so only `null` actually stops the round
+trip.
 
 **Every handler declares its own `WebRequestFilter`; the owner never leaves Electron's own
 listener unfiltered.** Registering with no `{ urls }` filter at all means every single request on

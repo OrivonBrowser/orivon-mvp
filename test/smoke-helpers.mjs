@@ -157,12 +157,15 @@ export function findViewShowing (app, chrome, url) {
  * only in a dev-grant-enabled build (`npm run test:e2e`'s own build step).
  */
 export async function popoverShown (app, urlPart) {
-  return await app.evaluate(({ webContents }, part) => {
+  const shown = await app.evaluate(({ webContents }, part) => {
     const target = webContents.getAllWebContents().find((wc) => wc.getURL().includes(part))
     if (target === undefined) return false
     const shown = globalThis.__orivonDevPopoverShown
     return shown !== undefined && shown.has(target.id)
   }, urlPart)
+  // Shown is not yet reachable: Playwright attaches the page a moment later, and callers read
+  // `app.windows()` right after this answers true.
+  return shown && app.windows().some((page) => page.url().includes(urlPart))
 }
 
 /** ONE read of a tab view's own location and title. Deliberately not a poll --

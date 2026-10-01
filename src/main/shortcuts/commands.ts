@@ -97,6 +97,7 @@ export const COMMANDS = [
   { id: 'passwords.open', label: 'Passwords', category: 'window' },
   { id: 'siteSettings.open', label: 'Site settings', category: 'window' },
   { id: 'extensions.open', label: 'Extensions', category: 'window' },
+  { id: 'extensions.menu', label: 'Extensions menu', category: 'window' },
   { id: 'import.open', label: 'Import bookmarks and history', category: 'window' },
   { id: 'about.open', label: 'About Orivon', category: 'window' },
   // Shift+Escape is an alias, not the default: a binding needs Ctrl, Alt or Cmd, and this one is fixed to match the key other browsers use.

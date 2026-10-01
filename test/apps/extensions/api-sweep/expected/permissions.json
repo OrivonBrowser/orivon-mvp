@@ -1,0 +1,22 @@
+{
+  "worker": {
+    "addHostAccessRequest": "function",
+    "contains": "function",
+    "getAll": "function",
+    "onAdded": "event",
+    "onRemoved": "event",
+    "remove": "function",
+    "removeHostAccessRequest": "function",
+    "request": "function"
+  },
+  "page": {
+    "addHostAccessRequest": "function",
+    "contains": "function",
+    "getAll": "function",
+    "onAdded": "event",
+    "onRemoved": "event",
+    "remove": "function",
+    "removeHostAccessRequest": "function",
+    "request": "function"
+  }
+}

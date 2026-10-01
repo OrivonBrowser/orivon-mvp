@@ -1,0 +1,16 @@
+{
+  "worker": {
+    "create": "function",
+    "onClicked": "event",
+    "remove": "function",
+    "removeAll": "function",
+    "update": "function"
+  },
+  "page": {
+    "create": "function",
+    "onClicked": "event",
+    "remove": "function",
+    "removeAll": "function",
+    "update": "function"
+  }
+}

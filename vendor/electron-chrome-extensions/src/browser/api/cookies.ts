@@ -39,7 +39,9 @@ const cookieUrl = (cookie: chrome.cookies.Cookie): string => {
  * once, before the first cookies call (extension-host.ts); `manifest` is
  * `event.extension.manifest`, the loaded extension's own manifest.
  */
-type CookieHostAccessCheck = (manifest: unknown, url: string) => boolean
+// Orivon patch (UPSTREAM.md patch 47): the third argument is the calling
+// extension's id, so a host decision can use more than its manifest.
+type CookieHostAccessCheck = (manifest: unknown, url: string, extensionId: string) => boolean
 let gCookieHostAccessCheck: CookieHostAccessCheck | undefined
 
 export function setCookieHostAccessCheck(check: CookieHostAccessCheck): void {
@@ -47,7 +49,7 @@ export function setCookieHostAccessCheck(check: CookieHostAccessCheck): void {
 }
 
 function hasHostAccess(event: ExtensionEvent, url: string): boolean {
-  return !gCookieHostAccessCheck || gCookieHostAccessCheck(event.extension.manifest, url)
+  return !gCookieHostAccessCheck || gCookieHostAccessCheck(event.extension.manifest, url, event.extension.id)
 }
 
 export class CookiesAPI {

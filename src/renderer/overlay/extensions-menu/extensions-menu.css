@@ -1,0 +1,97 @@
+/* The Extensions menu: a heading, one row per extension (its own action to the left, then pin and more),
+   and a way to the extensions page. Rows are the kit's listbox row, with the extension's action as one
+   button and the two small ones beside it. */
+
+body[data-overlay='extensions-menu'] .em { padding: 8px; }
+
+body[data-overlay='extensions-menu'] .em-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 8px 8px;
+}
+body[data-overlay='extensions-menu'] .em-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--wink-strong); }
+body[data-overlay='extensions-menu'] .em-site { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+body[data-overlay='extensions-menu'] .em-row { display: flex; align-items: center; min-width: 0; min-height: 40px; padding: 0 4px 0 0; cursor: default; }
+body[data-overlay='extensions-menu'] .em-row:focus-within { background: var(--whover); }
+
+body[data-overlay='extensions-menu'] .em-main {
+  flex: 1 1 auto;
+  align-self: stretch;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 0 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+body[data-overlay='extensions-menu'] .em-main[aria-disabled='true'] { cursor: default; }
+body[data-overlay='extensions-menu'] .em-main .item-title { flex: 1 1 auto; }
+body[data-overlay='extensions-menu'] .item-title.muted { color: var(--wink-dim); }
+body[data-overlay='extensions-menu'] .em-badge { flex: none; margin-right: 8px; }
+
+body[data-overlay='extensions-menu'] .em-icon img { width: 16px; height: 16px; object-fit: contain; }
+body[data-overlay='extensions-menu'] .em-initial { width: 16px; height: 16px; border-radius: 4px; font-size: 11px; }
+
+body[data-overlay='extensions-menu'] .em-actions { display: flex; align-items: center; flex: none; gap: 2px; }
+body[data-overlay='extensions-menu'] .em-pin[aria-checked='true'] { background: var(--waccent-wash); color: var(--waccent-text); }
+body[data-overlay='extensions-menu'] .em-pin[aria-checked='true'] svg { fill: currentColor; }
+body[data-overlay='extensions-menu'] .em-pin[aria-checked='true']:hover:not([disabled]) { background: color-mix(in srgb, var(--waccent-text) 22%, transparent); }
+
+body[data-overlay='extensions-menu'] .em-main:focus-visible,
+body[data-overlay='extensions-menu'] .em-actions .btn.icon:focus-visible,
+body[data-overlay='extensions-menu'] .em-manage:focus-visible,
+body[data-overlay='extensions-menu'] .em-back:focus-visible,
+body[data-overlay='extensions-menu'] .em-more-item:focus-visible,
+body[data-overlay='extensions-menu'] .link-btn:focus-visible {
+  outline: 2px solid var(--waccent-text);
+  outline-offset: -2px;
+}
+
+body[data-overlay='extensions-menu'] .em-rule { height: 0; margin: 6px 4px; border: none; border-top: 1px solid var(--wborder); }
+
+/* The footer line, the way back and each "more" line are full-width buttons in the row's look. */
+body[data-overlay='extensions-menu'] .em-manage,
+body[data-overlay='extensions-menu'] .em-back,
+body[data-overlay='extensions-menu'] .em-more-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 36px;
+  box-sizing: border-box;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+body[data-overlay='extensions-menu'] .em-manage:hover,
+body[data-overlay='extensions-menu'] .em-back:hover,
+body[data-overlay='extensions-menu'] .em-more-item:hover { background: var(--whover); }
+body[data-overlay='extensions-menu'] .em-manage .item-title,
+body[data-overlay='extensions-menu'] .em-back .item-title,
+body[data-overlay='extensions-menu'] .em-more-item .item-title { flex: 1 1 auto; }
+body[data-overlay='extensions-menu'] .em-back .item-title { font-weight: 600; }
+body[data-overlay='extensions-menu'] .em-back-arrow { display: inline-flex; flex: none; color: var(--wink-dim); transform: scaleX(-1); }
+body[data-overlay='extensions-menu'] .em-back-arrow svg { width: 16px; height: 16px; }
+/* The item text lines up under the back row's title: padding 12, arrow 16, gap 12. */
+body[data-overlay='extensions-menu'] .em-more-item { padding-left: 40px; }
+body[data-overlay='extensions-menu'] .em-manage > .item-icon { margin: 0; }
+body[data-overlay='extensions-menu'] .em-manage .item-icon svg { width: 16px; height: 16px; }
+
+/* Remove: quiet until aimed at, solid once the first click has armed it. */
+body[data-overlay='extensions-menu'] .em-more-item.danger .item-title { color: var(--wdanger-text); }
+body[data-overlay='extensions-menu'] .em-more-item.danger:hover { background: var(--wdanger-wash); }
+body[data-overlay='extensions-menu'] .em-more-item.danger.armed { background: var(--wdanger); }
+body[data-overlay='extensions-menu'] .em-more-item.danger.armed .item-title { color: #fff; }
+
+body[data-overlay='extensions-menu'] .empty-state.compact { padding: 20px 8px 12px; }

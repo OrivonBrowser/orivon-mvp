@@ -80,7 +80,8 @@ function buildShell (): {
       focused: () => shellWindow,
       findTab
     },
-    tabLifecycle: { subscribe: (cbs: any) => { subscribed = cbs } }
+    tabLifecycle: { subscribe: (cbs: any) => { subscribed = cbs } },
+    settings: { onChange: () => () => {} }
   } as unknown as ShellServices
   attachExtensionShell({} as unknown as SubsystemContext, services, {} as any)
   return { services, subscribed, findTab, shellWindow }

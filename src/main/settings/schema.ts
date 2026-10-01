@@ -86,10 +86,14 @@ const SPECS = {
   'toolbar.home': { kind: 'bool', default: false },
   // 'auto' shows the button while a download is under way or was recent.
   'toolbar.downloads': { kind: 'enum', options: ['auto', 'always', 'never'], default: 'auto' },
+  // 'auto' shows the Extensions button while at least one extension is installed.
+  'toolbar.extensions': { kind: 'enum', options: ['auto', 'always', 'never'], default: 'auto' },
   'spellcheck.enabled': { kind: 'bool', default: true },
   'tabs.lastTabClosed': { kind: 'enum', options: ['closeWindow', 'newTab'], default: 'closeWindow' },
   // Load unpacked, Reload for an unpacked extension: off until the person turns it on.
-  'extensions.developerMode': { kind: 'bool', default: false }
+  'extensions.developerMode': { kind: 'bool', default: false },
+  // Whether an extension installed from now on gets a place on the toolbar.
+  'extensions.pinNew': { kind: 'bool', default: true }
 } as const satisfies Record<string, SettingSpec>
 
 export type SettingKey = keyof typeof SPECS

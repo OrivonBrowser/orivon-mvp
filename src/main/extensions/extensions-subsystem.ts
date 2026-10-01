@@ -7,17 +7,31 @@
 // listener sees every extension (extension-host.ts's own header).
 
 import { join } from 'node:path'
-import { session } from 'electron'
+import { session, webContents } from 'electron'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { publishExtensions } from '../registry.js'
 import { readRegistry } from './registry-runner.js'
-import { installFromFile, installFromFolder, setEnabled, uninstall, type InstallContext, type InstallOutcome } from './install-runner.js'
+import { installFromFile, installFromFolder, type InstallContext, type InstallOutcome } from './install-runner.js'
+import { setEnabled, uninstall } from './install-lifecycle.js'
 import { createExtensionInstallPrompt } from './extension-install-prompt.js'
 import { createExtensionHost } from './extension-host.js'
 import { installExtensionPermissionWarningFilter } from './extension-known-permissions.js'
-import { startWebStore } from './store-runner.js'
+import { startWebStore, type StoreApi } from './store-runner.js'
+import { PRIVATE_INSTALL_REASON } from './install-private.js'
 import { installStoreTestHook } from './store-test-hook.js'
+import { installExtensionsInstallTestHook } from './extensions-install-test-hook.js'
 import type { InstalledExtension } from './registry.js'
+import type { ExtensionPrefsStore } from './extension-prefs.js'
+import { createExtensionPrefsStore, prefsFilePath } from './extension-prefs-runner.js'
+import { createManifestApplier, type ApplyMode, type ApplyResult } from './effective-manifest-runner.js'
+import { extensionPageOpen } from './extension-page-open.js'
+import { attachExtensionsDnr, getDnrEngine } from './extensions-dnr.js'
+import { registerDnrApiHandlers } from './dnr-api.js'
+import { installApis } from './api/install-apis.js'
+import { provideCommandKeys } from './api/commands-api.js'
+import { installExtensionCommands } from './install-extension-commands.js'
+import type { ExtensionCommandKeys } from './extension-commands-runner.js'
+import { installDnrWebRequestHandlers } from './dnr-webrequest.js'
 
 export interface ExtensionsApi {
   readonly installFromFolder: (dir: string) => Promise<InstallOutcome>
@@ -39,6 +53,13 @@ export interface ExtensionsApi {
   /** Installs an update a check held back for consent (registry.ts's
    * `ExtensionUpdater.pendingUpdate`), prompting first. */
   readonly updateFromStore: (id: string) => Promise<InstallOutcome>
+  /** What the person chose per extension (pins, grants, site access, shortcuts, overrides). */
+  readonly prefs: ExtensionPrefsStore
+  /** The keys of the commands extensions declare: what the shortcut dispatcher runs and the shortcuts page lists. */
+  readonly commandKeys: ExtensionCommandKeys
+  /** Rewrites the extension's loaded manifest from its base and `prefs`, then reloads it:
+   * at once for 'now', once no page of it is open for 'quiet'. */
+  readonly applyManifest: (id: string, mode: ApplyMode) => Promise<ApplyResult>
 }
 
 /**
@@ -62,6 +83,12 @@ async function loadEnabledExtensions (userDataPath: string): Promise<void> {
   }
 }
 
+const refusingStore: StoreApi = {
+  installFromStore: async () => ({ installed: false, reason: PRIVATE_INSTALL_REASON }),
+  checkForUpdates: async () => {},
+  updateFromStore: async () => ({ installed: false, reason: PRIVATE_INSTALL_REASON })
+}
+
 export const extensionsSubsystem: Subsystem = {
   name: 'extensions',
   afterReady: async (ctx: SubsystemContext) => {
@@ -74,16 +101,37 @@ export const extensionsSubsystem: Subsystem = {
     // every file's code regardless of its original src/ nesting -- the same
     // reason tabs.ts's own join(import.meta.dirname, '../preload/app.js')
     // has one, not the two its src/main/shell/ nesting might suggest.
-    createExtensionHost(join(import.meta.dirname, '../preload/extension-api.js'))
+    const hostExtensions = createExtensionHost(join(import.meta.dirname, '../preload/extension-api.js'))
 
     const userDataPath = ctx.app.getPath('userData')
-    await loadEnabledExtensions(userDataPath)
 
-    const install: InstallContext = { userDataPath, session: session.defaultSession, prompt: createExtensionInstallPrompt() }
+    // Must attach before loadEnabledExtensions() below fires its first
+    // 'extension-loaded' (extensions-dnr.ts's own header says why), and the
+    // router/webRequest wiring may as well go right alongside it: nothing
+    // reaches either before the first extension loads regardless.
+    attachExtensionsDnr(session.defaultSession, userDataPath)
+    const { onRuleMatched, onTabNavigated } = registerDnrApiHandlers(hostExtensions.getRouter(), hostExtensions, userDataPath, {
+      exists: (tabId) => { const tab = webContents.fromId(tabId); return tab != null && !tab.isDestroyed() },
+      whenClosed: (tabId, run) => { webContents.fromId(tabId)?.once('destroyed', run) }
+    })
+    installDnrWebRequestHandlers(session.defaultSession, getDnrEngine, onRuleMatched, onTabNavigated)
+
+    const prefs = createExtensionPrefsStore(ctx.privateSession ? null : prefsFilePath(userDataPath))
+    const manifests = createManifestApplier({ userDataPath, session: session.defaultSession, prefs, isOpen: extensionPageOpen })
+    if (!ctx.privateSession) manifests.applyAtBoot()
+    installApis({ host: hostExtensions, session: session.defaultSession, userDataPath, ctx, prefs })
+    const commandKeys = installExtensionCommands({ ctx, prefs, userDataPath })
+    provideCommandKeys(commandKeys)
+
+    // A private or guest runtime runs no extension: nothing loads, and no
+    // install route (the store page's included) is started.
+    if (!ctx.privateSession) await loadEnabledExtensions(userDataPath)
+
+    const install: InstallContext = { userDataPath, session: session.defaultSession, prompt: createExtensionInstallPrompt(), prefs, privateSession: ctx.privateSession }
     const preloadPath = join(import.meta.dirname, '../preload/web-store.js')
-    const store = await startWebStore(install, preloadPath)
+    const store = ctx.privateSession ? refusingStore : await startWebStore(install, preloadPath)
     installStoreTestHook(store)
-    publishExtensions(ctx, {
+    const extensionsApi: ExtensionsApi = {
       installFromFolder: async (dir) => await installFromFolder(install, dir),
       installFromFile: async (filePath) => await installFromFile(install, filePath),
       uninstall: async (id) => { await uninstall(install, id) },
@@ -91,7 +139,12 @@ export const extensionsSubsystem: Subsystem = {
       list: () => readRegistry(userDataPath),
       installFromStore: store.installFromStore,
       checkForUpdates: store.checkForUpdates,
-      updateFromStore: store.updateFromStore
-    })
+      updateFromStore: store.updateFromStore,
+      prefs,
+      commandKeys,
+      applyManifest: manifests.applyManifest
+    }
+    installExtensionsInstallTestHook(extensionsApi)
+    publishExtensions(ctx, extensionsApi)
   }
 }

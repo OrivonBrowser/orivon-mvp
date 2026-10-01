@@ -424,3 +424,33 @@ describe('runCommand', () => {
     expect(calls['openInternal']).toHaveBeenCalledWith('bookmarks')
   })
 })
+
+describe('the Extensions menu command', () => {
+  const extensionsEvent = { type: 'module', module: 'extensions-button', payload: { type: 'open' } }
+
+  it('asks the chrome to open the menu under its button', () => {
+    const { target, deps, send } = harness([tab('a')], 'a')
+    runCommand('extensions.menu', target, deps)
+    expect(send).toHaveBeenCalledWith(expect.any(String), extensionsEvent)
+  })
+
+  it('closes the menu when it is already open, and asks for nothing', () => {
+    const { target, deps, send } = harness([tab('a')], 'a')
+    const close = vi.fn()
+    Object.assign(target.overlays, { isOpen: (name: string) => name === 'extensions-menu', close })
+    runCommand('extensions.menu', target, deps)
+    expect(close).toHaveBeenCalledWith('extensions-menu')
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('does nothing in a private window, which runs no extension', () => {
+    const { target, deps, send } = harness([tab('a')], 'a')
+    Object.assign(deps.services, { isPrivate: true })
+    runCommand('extensions.menu', target, deps)
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('is a command with no key of its own, listed with the window commands', () => {
+    expect(COMMANDS.find((command) => command.id === 'extensions.menu')).toEqual({ id: 'extensions.menu', label: 'Extensions menu', category: 'window' })
+  })
+})

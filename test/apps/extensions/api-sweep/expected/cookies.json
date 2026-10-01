@@ -1,0 +1,18 @@
+{
+  "worker": {
+    "get": "function",
+    "getAll": "function",
+    "getAllCookieStores": "function",
+    "onChanged": "event",
+    "remove": "function",
+    "set": "function"
+  },
+  "page": {
+    "get": "function",
+    "getAll": "function",
+    "getAllCookieStores": "function",
+    "onChanged": "event",
+    "remove": "function",
+    "set": "function"
+  }
+}

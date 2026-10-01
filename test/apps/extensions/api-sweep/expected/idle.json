@@ -1,0 +1,14 @@
+{
+  "worker": {
+    "IdleState": "object",
+    "onStateChanged": "event",
+    "queryState": "function",
+    "setDetectionInterval": "function"
+  },
+  "page": {
+    "IdleState": "object",
+    "onStateChanged": "event",
+    "queryState": "function",
+    "setDetectionInterval": "function"
+  }
+}

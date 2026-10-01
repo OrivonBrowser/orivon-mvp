@@ -175,15 +175,17 @@ export class ElectronChromeExtensions extends EventEmitter {
     // OFFSCREEN_DOCUMENT contexts and capture consumer respectively.
     const offscreen = new OffscreenAPI(this.ctx)
     const browserAction = new BrowserActionAPI(this.ctx)
+    // Orivon patch (UPSTREAM.md patch 60): built before `commands`, which reads tab details from it.
+    const tabs = new TabsAPI(this.ctx)
     this.api = {
       browserAction,
       contextMenus: new ContextMenusAPI(this.ctx),
-      commands: new CommandsAPI(this.ctx),
+      commands: new CommandsAPI(this.ctx, (tab) => tabs.detailsFor(tab)),
       cookies: new CookiesAPI(this.ctx),
       notifications: new NotificationsAPI(this.ctx),
       permissions: new PermissionsAPI(this.ctx),
       runtime: new RuntimeAPI(this.ctx, offscreen, browserAction),
-      tabs: new TabsAPI(this.ctx),
+      tabs,
       webNavigation: new WebNavigationAPI(this.ctx),
       windows: new WindowsAPI(this.ctx),
       offscreen,
@@ -238,6 +240,67 @@ export class ElectronChromeExtensions extends EventEmitter {
         'Invalid WebContents argument. Its session must match the session provided to ElectronChromeExtensions constructor options.',
       )
     }
+  }
+
+  /**
+   * Orivon patch: exposes this session's `ExtensionRouter` so a caller
+   * outside this library's own API classes (`src/browser/api/*.ts`) can
+   * register additional main-side handlers on the SAME router real
+   * extension messages (`crx-msg`) are dispatched through -- e.g. Orivon's
+   * own `declarativeNetRequest` API, whose renderer-side calls
+   * (`src/renderer/index.ts`) already go through `invokeExtension`/`crx-msg`
+   * like every other API here.
+   */
+  getRouter(): ExtensionRouter {
+    return this.ctx.router
+  }
+
+  /**
+   * Orivon patch: sets `extensionId`'s badge text for `tabId` directly from
+   * main, bypassing the `crx-msg`/`ExtensionEvent` path a real
+   * `chrome.action.setBadgeText` call takes. Reason: Orivon's own
+   * `declarativeNetRequest.setExtensionActionOptions({
+   * displayActionCountAsBadgeText: true })` wiring
+   * (`src/main/extensions/dnr-api.ts`) renders a per-tab matched-rule count
+   * driven by `webRequest`, from main, never from the extension's own
+   * script.
+   */
+  setBadgeText(extensionId: string, tabId: number, text: string): void {
+    this.api.browserAction.setBadgeTextFromMain(extensionId, tabId, text)
+  }
+
+  /** Orivon patch (UPSTREAM.md patch 46): the toolbar's actions, without icons. */
+  listActions(): Array<{ id: string; title: string; hasPopup: boolean }> {
+    return this.api.browserAction.listActions()
+  }
+
+  /** Orivon patch (UPSTREAM.md patch 51): every action, pinned or not, with its badge text. */
+  listAllActions(
+    tabId?: number,
+  ): Array<{ id: string; title: string; hasPopup: boolean; badge: string }> {
+    return this.api.browserAction.listAllActions(tabId)
+  }
+
+  /**
+   * Orivon patch (UPSTREAM.md patch 46): click `extensionId`'s action on
+   * `tab`, counted as an invocation. Orivon's own trusted code only: no
+   * extension message reaches it.
+   */
+  activateAction(extensionId: string, tab: Electron.WebContents, anchor: Electron.Rectangle): void {
+    this.api.browserAction.activateFromMain(extensionId, tab, anchor)
+  }
+
+  /** Orivon patch (UPSTREAM.md patch 46): tells the toolbar its list changed. */
+  notifyActionsChanged(): void {
+    this.api.browserAction.notifyChanged()
+  }
+
+  /**
+   * Orivon patch (UPSTREAM.md patch 60): fires `chrome.commands.onCommand` in `extensionId` for the
+   * command `name`, with `tab` when there is one. Orivon's own trusted code only.
+   */
+  sendCommand(extensionId: string, name: string, tab: Electron.WebContents | undefined): void {
+    this.api.commands.send(extensionId, name, tab)
   }
 
   /** Add webContents to be tracked as a tab. */

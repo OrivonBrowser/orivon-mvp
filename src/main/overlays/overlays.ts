@@ -5,6 +5,8 @@ import { certErrorOverlay } from '../auth/cert-error-overlay.js'
 import { certificateOverlay } from '../auth/certificate-real.js'
 import { chooserOverlay } from '../auth/chooser-overlay.js'
 import { downloadsOverlay, downloadsPeekOverlay } from '../downloads/downloads-overlay.js'
+import { extensionsMenuOverlay } from '../extensions/extensions-menu-overlay.js'
+import { permissionOverlay } from '../extensions/permission-prompt-overlay.js'
 import { findOverlay } from '../find/find-overlay.js'
 import { screenshotOverlay, toastOverlay } from '../page-tools/page-overlays.js'
 import { shortcutOverlay } from '../os/shortcut-real.js'
@@ -33,6 +35,7 @@ export const OVERLAYS: readonly OverlayDef[] = [
   chooserOverlay,
   downloadsOverlay,
   downloadsPeekOverlay,
+  extensionsMenuOverlay,
   findOverlay,
   httpsWarningOverlay,
   menuOverlay,
@@ -40,6 +43,7 @@ export const OVERLAYS: readonly OverlayDef[] = [
   passwordFillOverlay,
   passwordSaveOverlay,
   passwordSuggestOverlay,
+  permissionOverlay,
   popupsBlockedOverlay,
   qrOverlay,
   restoreOverlay,

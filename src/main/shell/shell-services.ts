@@ -35,6 +35,8 @@ import { ClosedStack } from '../session-restore/closed-stack.js'
 import { watchClosedTabs } from '../session-restore/closed-tabs.js'
 import { NullSessionStore, SessionStore } from '../session-restore/session-store.js'
 import type { SessionLog } from '../session-restore/session-store.js'
+import { createLoadedExtensions } from '../extensions/loaded-extensions.js'
+import type { LoadedExtensions } from '../extensions/loaded-extensions.js'
 import { TearDragController } from './tear-drag.js'
 import { WindowRegistry } from './window-registry.js'
 import type { SubsystemContext } from '../registry.js'
@@ -51,6 +53,8 @@ export interface ShellServices {
   readonly devtools: DevToolsService
   /** The files tabs have downloaded and the ones in progress; a private session keeps the list in memory only. */
   readonly downloads: DownloadService
+  /** The extensions loaded in the session pages run in, and when that changes. */
+  readonly extensionsLoaded: LoadedExtensions
   readonly history: HistoryService
   readonly internalPages: InternalPageRegistry
   /** This process is a private session: it never writes a store file of its own. */
@@ -118,6 +122,7 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
       confirm: confirmOpenDevTools
     }),
     downloads: createDownloadService(userDataPath, runtime.isPrivate, settings),
+    extensionsLoaded: createLoadedExtensions(session.defaultSession),
     history: new HistoryService(openedHistory.store, settings, openedHistory.problem),
     internalPages,
     isPrivate: runtime.isPrivate,

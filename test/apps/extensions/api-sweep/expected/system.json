@@ -1,0 +1,14 @@
+{
+  "worker": {
+    "cpu": "object",
+    "display": "object",
+    "memory": "object",
+    "storage": "object"
+  },
+  "page": {
+    "cpu": "object",
+    "display": "object",
+    "memory": "object",
+    "storage": "object"
+  }
+}

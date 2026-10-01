@@ -101,6 +101,8 @@ export interface ShellState extends TabsSnapshot {
   contentBlocked: boolean
   /** Which profile this window is, for the chip beside the menu. */
   profile: { name: string, color: string, isPrivate: boolean, shown: boolean }
+  /** The extensions loaded now, and whether the toolbar shows the Extensions button (`toolbar.extensions`). */
+  extensions: { enabled: number, shown: boolean }
   /** The downloads button: whether it shows, its ring and its dot (`toolbar.downloads`). */
   downloads: DownloadsButtonState
   /** Whether the toolbar shows the Home button (`toolbar.home`). */

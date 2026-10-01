@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Orivon E2E API Sweep",
+  "version": "1.0.0",
+  "description": "Fixture extension for test/e2e-extensions-sweep.test.ts: asks for every API permission Orivon serves and reports which chrome.* members each context sees.",
+  "permissions": [
+    "activeTab", "alarms", "browsingData", "clipboardRead", "clipboardWrite", "contextMenus", "cookies",
+    "declarativeNetRequest", "dns", "downloads", "downloads.open", "identity", "idle", "management",
+    "notifications", "offscreen", "pageCapture", "power", "privacy", "proxy", "readingList", "scripting",
+    "search", "sessions", "sidePanel", "storage", "system.cpu", "system.display", "system.memory",
+    "system.storage", "tabCapture", "tabGroups", "tabs", "topSites", "userScripts", "webNavigation", "webRequest"
+  ],
+  "optional_permissions": ["bookmarks", "history"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "API sweep" },
+  "devtools_page": "devtools.html",
+  "content_scripts": [
+    { "matches": ["http://127.0.0.1/*"], "js": ["sweep.js", "content.js"], "run_at": "document_idle" }
+  ]
+}

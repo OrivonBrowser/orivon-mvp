@@ -624,8 +624,10 @@ scripts (isolated and MAIN world, MV2 and MV3), run with the Chromium sandbox on
 | Reload (Developer mode) | ✅ | |
 | File access (`--allow-file-access`) | 🚫 | Never granted to any extension |
 | Incognito access | ➖ | Moot: no private window runs any extension (Table 7d) |
-| An extension's own errors/crash log page | ❌ | No `orivon://extensions?errors=` equivalent |
-| Load warning for a permission this build actually provides (`contextMenus`, `cookies`, `webNavigation`, `notifications`, others in 7c) | ✅ | No longer logs "Permission '\<name\>' is unknown" for one this build honours; a genuinely absent permission still logs it (`vendor/electron-chrome-extensions`) |
+| An extension's own errors/crash log page | ❌ | No error log; the extensions page has no errors view |
+| Load warning for a permission this build actually provides (`bookmarks`, `contextMenus`, `cookies`, `history`, `notifications`, `search`, `topSites`, `webNavigation`, others in 7c) | ✅ | Loads without the "Permission '\<name\>' is unknown" line; a permission this build does not provide still logs it (`extension-known-permissions.ts`) |
+| Install prompt: what an extension may later ask for | ✅ | Lists up to six optional permissions and sites under "It may later ask for" (`src/broker/policy/extension-manifest.ts`) |
+| Install in a private or guest window | ❌ | Every install route refuses and nothing loads there (`install-private.ts`) |
 
 ### Table 7b: Manifest keys
 
@@ -640,22 +642,22 @@ scripts (isolated and MAIN world, MV2 and MV3), run with the Chromium sandbox on
 | `content_scripts`: `run_at` | ✅ | `document_idle` measured |
 | `background.service_worker`, `"type": "module"` | ✅ | The worker's first start after a fresh load is reloaded once to receive events it raced (Table 7d) |
 | `background.scripts` (MV2 persistent page) | ✅ | Loads (a deprecation warning only, does not block); reachable with the same full extension-page API surface as MV3's service worker |
-| `action` (MV3) / `browser_action` (MV2): `default_popup`, `default_icon`, `default_title` | ✅ | Toolbar button, badge and popup |
+| `action` (MV3) / `browser_action` (MV2): `default_popup`, `default_icon`, `default_title` | ✅ | Toolbar button when pinned, badge and popup; an unpinned extension runs from the Extensions menu |
 | `options_page` | ✅ | Opens in a tab |
 | `options_ui` | ⚠️ | Opens in a tab, same as `options_page`; the embedded (`open_in_new_tab: false`) mode is not implemented |
-| `chrome_url_overrides` (`newtab`, `history`, `bookmarks`) | ❌ | Never honoured; a new tab always shows Orivon's own dashboard |
-| `devtools_page` | ⚠️ | Electron supports `chrome.devtools.*` natively; not separately measured loading a `devtools_page` |
+| `chrome_url_overrides` (`newtab`, `history`, `bookmarks`) | ❌ | Not honoured: a new tab shows Orivon's own dashboard, History and Bookmarks their own pages; an extension's page can still be opened as a tab with `chrome.tabs.create` |
+| `devtools_page` | ✅ | Runs in the DevTools frame and `chrome.devtools.panels.create` calls back (`vendor/electron-chrome-extensions/UPSTREAM.md`, `test/e2e-extensions-sweep.test.ts`) |
 | `web_accessible_resources` | ✅ | Tracked for the install prompt; Chromium enforces the resource list itself |
-| `externally_connectable` | ❌ | No wiring for `runtime.onMessageExternal`/`onConnectExternal` |
-| `commands` | ⚠️ | `getAll` lists each declared command with an empty shortcut; no key is ever registered, so `onCommand` never fires; no page to view or rebind a combination |
+| `externally_connectable` | ✅ | Chromium's own: a page whose address matches gets `chrome.runtime.sendMessage` and `connect`, and the extension's `onMessageExternal` and `onConnectExternal` fire; no Orivon code; the sender's `tab` carries `windowId` 0 |
+| `commands` | ✅ | Suggested keys are bound when free; `_execute_action` activates the extension; rebinding at `orivon://extensions/shortcuts`; Orivon's own shortcuts win; macOS key names are not run on a Mac (`extension-commands.ts`, `extension-commands-runner.ts`) |
 | `omnibox` | ❌ | Orivon's own address bar is unrelated code |
 | `side_panel` | ❌ | `chrome.sidePanel` is a no-op stub (Table 7c); the key drives no real panel surface |
-| `host_permissions` | ✅ | Gates `chrome.cookies`/`chrome.tabs`/`insertCSS`/`webNavigation` API access |
-| `optional_permissions` / `optional_host_permissions` | ⚠️ | `request`/`contains`/`getAll` work; `remove` always reports success without removing anything; a granted optional permission is not persisted across a reload |
+| `host_permissions` | ✅ | Gates `chrome.cookies`/`chrome.tabs`/`insertCSS`/`webNavigation` API access; an optional site the person allowed counts at once (`granted-host-rule.ts`) |
+| `optional_permissions` / `optional_host_permissions` | ✅ | Asked in an Orivon sheet, only for what the manifest declares (`permissions-api.ts`); kept in `prefs.json` across restarts; `remove` takes it back; Orivon's own checks follow at once, Chromium's own at the extension's next quiet reload (`manifest-stage-granted.ts`) |
 | `incognito` (`spanning`/`split`/`not_allowed`) | ➖ | Moot: no private window runs any extension |
 | `storage.managed_schema` | ❌ | No enterprise policy delivery in this build |
-| `declarative_net_request` (ruleset key) | ⚠️ | Read and recorded, not applied; the API it would drive is a stub (Table 7c) |
-| `content_security_policy` | ⚠️ | Chromium enforces an extension's own declared CSP; not separately measured |
+| `declarative_net_request` (ruleset key) | ✅ | Each `rule_resources` ruleset is read and applied by Orivon, enabled or not as the manifest says (`dnr/dnr-runner.ts`, `extensions-dnr.ts`) |
+| `content_security_policy` | ✅ | Chromium enforces an `extension_pages` policy (measured: inline script, `eval` and remote scripts blocked); a policy with `'unsafe-eval'` makes the load fail |
 | `sandbox` (sandboxed pages) | ⚠️ | No `chrome.*` from the library and Chrome's own CSP `sandbox`, an opaque origin (`d-0208`); a doubled-slash spelling of the page still answers `chrome.tabs.query` (A303) |
 | `file_browser_handlers`, `file_handlers` | ➖ | ChromeOS / native file-handler surfaces with no equivalent here |
 | `default_locale`, `_locales/*/messages.json` (`__MSG_...`) | ✅ | The extensions page resolves a name/description/icon reference the same way Chrome does |
@@ -680,46 +682,49 @@ is not the same as it doing anything: read the note, not just the symbol.
 
 | API | Works | Note |
 |---|---|---|
-| `action` (MV3) / `browserAction` (MV2) | ✅ | Toolbar button, badge, title, icon, popup and `getUserSettings`, which always answers `isOnToolbar: true` |
+| `action` (MV3) / `browserAction` (MV2) | ✅ | Toolbar button, badge, title, icon, popup, and `getUserSettings` answering the real pin state with `onUserSettingsChanged` firing; `enable` and `disable` are no-ops (`action-pins-runner.ts`, `preload/extension-apis/action-settings.ts`) |
 | `alarms` | ✅ | `create` + `onAlarm` measured firing |
-| `commands` | ⚠️ | `getAll` returns each command the manifest declares with an empty shortcut, and no key is registered, so `onCommand` never fires (measured; `vendor/electron-chrome-extensions/src/browser/api/commands.ts`) |
-| `contextMenus` | ✅ | `create`/`remove`/`removeAll`/`onClicked` work; `update` is a no-op |
+| `bookmarks` | ✅ | The tree as Chrome shapes it (bar `1`, other `2`), search, create, update, move, remove and the four change events derived from the store; writes count against Chrome's quota; the reading root is never visible; `javascript:` and `data:` addresses are refused; `onChildrenReordered`, `onImportBegan` and `onImportEnded` never fire (`api/bookmarks-api.ts`) |
+| `commands` | ✅ | `getAll` with the live shortcut, `onCommand` and `onChanged` through the shortcut dispatcher; a command key counts as an invocation on that tab (`extension-commands-runner.ts`, `api/commands-api.ts`) |
+| `contextMenus` | ✅ | `create`/`remove`/`removeAll`/`onClicked` work; `update` is a no-op (`vendor/electron-chrome-extensions/src/renderer/index.ts`) |
 | `cookies` | ✅ | `get`/`getAll`/`set`/`remove`/`getAllCookieStores`/`onChanged`, gated on the `cookies` permission and per-URL host access |
 | `devtools.inspectedWindow`, `devtools.network`, `devtools.panels` | ✅ | Native to Electron |
 | `dns` | ⚠️ | `chrome.dns.resolve` exists as a real function, not exercised in measurement; dev-channel-only in real Chrome too |
 | `downloads` | ⚠️ | Every method and event is a declared no-op stub; nothing downloads, cancels or reports |
 | `extension` | ⚠️ | `isAllowedFileSchemeAccess`/`isAllowedIncognitoAccess` always answer `false`; `getViews` always `[]` |
-| `i18n` | ⚠️ | `getMessage` resolves the real `_locales` string and `getUILanguage` returns the real UI language (measured: `en-GB`); `getAcceptLanguages` is not measured |
+| `history` | ✅ | `search` (24 hours by default), `addUrl`, `deleteUrl`, `deleteRange`, `deleteAll`, `onVisited` and `onVisitRemoved` over Orivon's history; `getVisits` returns one visit per address; `onVisitRemoved` covers the newest 200 pages; a registered app's pages are never listed or deleted (`api/history-api.ts`) |
+| `i18n` | ✅ | `getMessage` resolves the real `_locales` string; `getUILanguage` and `getAcceptLanguages` answer from the system locale (measured: `en-GB`) |
 | `idle` | ✅ | `queryState()` measured returning `"active"` |
 | `management` | ⚠️ | Only `getPermissionWarningsByManifest`/`getSelf`/`uninstallSelf` are real; `getAll` is not a function |
-| `notifications` | ⚠️ | `clear`/`getAll`/`update`/its three events present; `create`'s live effect is untested by policy (nothing here reaches a real OS notification) |
+| `notifications` | ⚠️ | `create` builds an OS notification (measured with a stand-in class: `priority` and `requireInteraction` map to urgency and timeout, `buttons` are ignored); `clear`/`getAll`/`update` and three events present; `onPermissionLevelChanged` and `onShowSettings` are missing |
 | `offscreen` | ✅ | `createDocument`/`closeDocument`/`hasDocument`; one document per extension, in no window, with no `window.open` and no navigation off the extension |
-| `permissions` | ⚠️ | `contains`/`getAll`/`request` work against the manifest's declared set; `remove` always reports success without removing anything |
+| `permissions` | ✅ | `contains`/`getAll`/`request`/`remove`, `addHostAccessRequest`/`removeHostAccessRequest` and `onAdded`/`onRemoved`; a request is asked in a sheet and `remove` takes a grant back (`permissions-api.ts`, `preload/extension-apis/permissions.ts`) |
 | `power` | ✅ | `requestKeepAwake`/`releaseKeepAwake` callable; not independently verified to keep the OS awake |
 | `printerProvider` | ⚠️ | Exists as an object; no working members measured |
 | `privacy` | ⚠️ | Inert `ChromeSetting` placeholders; a `get` call triggers a native "Unknown Extension API" log |
 | `proxy` | ⚠️ | Exists as a namespace; `settings.get` explicitly rejects `"Access to extension API denied."` |
-| `runtime` | ⚠️ | `id`/`getManifest`/`getURL`/`connect`/`sendMessage`/lifecycle events/`openOptionsPage` work; `getContexts` lists the worker, popup, tab pages and offscreen document; `connectNative`/`disconnectNative`/`sendNativeMessage` throw by design (below) |
-| `scripting` | ✅ | `executeScript` measured running a real function in a tab and returning its result |
+| `runtime` | ⚠️ | `id`/`getManifest`/`getURL`/`connect`/`sendMessage`/lifecycle events/`openOptionsPage` work; `onMessageExternal` and `onConnectExternal` fire for a matching page (Table 7b); `getContexts` lists the worker, popup, tab pages and offscreen document; `connectNative`/`disconnectNative`/`sendNativeMessage` throw by design (below) |
+| `scripting` | ✅ | `executeScript` measured running a real function in a tab and returning its result; it needs host access, and `activeTab` alone is refused (Table 7d) |
+| `search` | ✅ | `query` opens the default engine's results in the current tab, a new tab or a new window (`api/search-api.ts`) |
 | `sidePanel` | ⚠️ | Every method resolves as a no-op; no panel surface opens |
 | `storage.local` | ✅ | Native to Electron |
 | `storage.sync`, `storage.managed` | ⚠️ | Alias `local`; no real multi-device sync or policy delivery |
 | `storage.session` | ✅ | Measured round-tripping in a service worker/popup/options/tab; present as a real function in an MV3 isolated content script, absent in MV2's |
 | `system.cpu`, `system.display`, `system.memory`, `system.storage` | ✅ | `system.cpu.getInfo()` measured returning real hardware data (actual CPU model, core count, per-core usage) |
-| `tabCapture` | ✅ | `getMediaStreamId`/`getCapturedTabs`/`onStatusChanged`; needs a click on the extension's toolbar button on that tab; only an http(s) tab of no app holding grants; the tab is muted locally while captured |
-| `tabs` | ⚠️ | A rich working set, filtered by permission/host access; `pinned` comes from the tab's record and `audible` and `mutedInfo` from its page, but `update({ pinned, muted })` changes neither; `captureVisibleTab` specifically is not a function |
-| `topSites` | ⚠️ | `get()` resolves an empty stub |
+| `tabCapture` | ✅ | `getMediaStreamId`/`getCapturedTabs`/`onStatusChanged`; needs the extension invoked on that tab, by its toolbar icon, its row in the Extensions menu or its command key; only an http(s) tab of no app holding grants; the tab is muted locally while captured |
+| `tabs` | ⚠️ | A rich working set, filtered by permission/host access; `pinned` comes from the tab's record; `update({ muted })` mutes the tab and `update({ pinned })` is ignored; `mutedInfo` can lag a mute made from Orivon's own strip; `captureVisibleTab`, `duplicate`, `move`, `highlight`, `discard` and `group` are not functions |
+| `topSites` | ✅ | The most visited web addresses from history, up to ten, one per site (`api/history-api.ts`) |
 | `userScripts` | ⚠️ | Every method resolves as a no-op; no user-script world runs |
 | `webNavigation` | ✅ | `getFrame`/`getAllFrames` and the full event set work |
-| `webRequest` | ⚠️ | Every event object exists so feature-detection does not throw, but none of it ever fires -- Orivon owns the session's one `webRequest` listener |
-| `declarativeNetRequest` | ⚠️ | Write methods reject "not supported"; read methods resolve empty; the ruleset key is read and recorded, never enforced |
+| `webRequest` | ⚠️ | Every event object exists so feature-detection does not throw, but no extension listener is ever called (measured); the permission is removed from the loaded copy (`ADR-0043`) and Orivon owns the session's `webRequest` handlers; `declarativeNetRequest` is the way to block |
+| `declarativeNetRequest` | ✅ | Static, dynamic and session rules, applied by Orivon (`ADR-0051`); `responseHeaders` conditions are refused; websites' worker requests are not matched |
 | `windows` | ⚠️ | A rich working set, filtered the same as `tabs` |
 
 **Not there** (`typeof === 'undefined'` in every context measured, including the most privileged):
 
 | API | Works |
 |---|:--:|
-| `bookmarks`, `browsingData`, `contentSettings`, `debugger`, `declarativeContent`, `desktopCapture`, `dom`, `fontSettings`, `gcm`, `history`, `identity`, `instanceID`, `mimeHandler`, `omnibox`, `pageCapture`, `processes` (dev-channel-only in Chrome itself too), `publicSuffix`, `readingList`, `search`, `sessions`, `tabGroups`, `tts`, `ttsEngine`, `types`, `webAuthenticationProxy` | ❌ |
+| `browsingData`, `contentSettings`, `debugger`, `declarativeContent`, `desktopCapture`, `dom`, `fontSettings`, `gcm`, `identity`, `instanceID`, `mimeHandler`, `omnibox`, `pageCapture`, `processes` (dev-channel-only in Chrome itself too), `publicSuffix`, `readingList`, `sessions`, `tabGroups`, `tts`, `ttsEngine`, `types`, `webAuthenticationProxy` | ❌ |
 
 **Excluded by design:**
 
@@ -741,7 +746,7 @@ policy source this build has no equivalent of.
 | Behaviour | Works | Note |
 |---|---|---|
 | Extension pages: popup | ✅ | A child `BrowserWindow` |
-| Extension pages: options tab | ✅ | Both `options_page` and `options_ui` open a tab |
+| Extension pages: options tab | ✅ | Both `options_page` and `options_ui` open a tab; the embedded mode of `options_ui` is not implemented |
 | Extension pages: an extension's own full page opened as a tab | ✅ | Same URL policy as any extension-initiated navigation |
 | Extension pages: offscreen documents | ✅ | `chrome.offscreen`; one per extension, never shown (Table 7c) |
 | Extension popup: closes on focus loss elsewhere in Orivon, on tab switch and navigation | ✅ | |
@@ -752,24 +757,26 @@ policy source this build has no equivalent of.
 | Service worker: first-start race | ⚠️ | A fresh load's first worker can miss its own preload registration on the first attempt; Orivon detects the miss and reloads once, which recovers every measured case |
 | Messaging: `runtime.sendMessage`/`connect` (same extension) | ✅ | Sender-id checked against the caller's own `chrome-extension://<id>/` origin, so one extension cannot read or trigger another's handlers by claiming its id |
 | Messaging: `tabs.sendMessage` | ✅ | |
-| Messaging: `externally_connectable` (web-page-initiated) | ❌ | Not wired |
+| Messaging: `externally_connectable` (web-page-initiated) | ✅ | Chromium's own (Table 7b) |
 | Messaging: native messaging | 🚫 | Refused (Table 7c) |
 | Storage: `local` | ✅ | Native to Electron |
 | Storage: `sync`/`managed` | ⚠️ | Alias `local`, not real sync or policy delivery (Table 7c) |
 | Storage: `session` | ✅ | Confirmed round-tripping (Table 7c) |
-| Storage: quotas | ⚠️ | Whatever Electron's own `storage.local` implementation enforces; not measured separately |
+| Storage: quotas | ✅ | `local` holds 10 MiB (`QUOTA_BYTES` 10485760) and a write past it rejects with Chrome's quota error; `session` rejects past its own quota; `sync` and `managed` report the same limit |
 | i18n / `_locales` | ✅ | Name/description/icon resolution on the extensions page; `chrome.i18n` answers from Electron's own implementation (Table 7c) |
-| Toolbar: pin/unpin, badge, icon, title | ⚠️ | Badge, icon and title work. There is no pin or unpin: `getUserSettings` always answers `isOnToolbar: true` and no pin control exists (measured) |
-| Toolbar: enable/disable a button per tab | ✅ | `getState`/`activate` |
-| Site access controls: "on click" / "on specific sites" / "on all sites" picker | ❌ | Not modelled; host access is all-or-nothing per the manifest's own declared patterns, decided once at install/update |
-| Site access controls: `activeTab` (temporary grant on click) | ❌ | Treated like any other declared permission, not as a one-click temporary host grant |
-| Incognito / private windows | ❌ | A private session loads no extensions at all; the `incognito` manifest key drives nothing |
+| Toolbar: pin/unpin, badge, icon, title | ✅ | Pinned per extension from the Extensions menu or the icon's right-click menu; a new extension is pinned by default (`extensions.pinNew`); an unpinned extension runs from the menu and its badge shows on its row (`action-pins-runner.ts`, `extensions-menu-overlay.ts`) |
+| Toolbar: the Extensions button and its menu | ✅ | Lists every extension with its badge, pin and a More list (options, pin, manage, remove); shown when an extension is loaded, always or never as chosen in Appearance; never in a private window (`extensions-button.ts`, `extensions-menu-overlay.ts`) |
+| Toolbar: enable/disable a button per tab | ❌ | `action.enable` and `action.disable` do nothing, so a button is never greyed out for a tab (`vendor/electron-chrome-extensions/src/renderer/index.ts`) |
+| Site access controls: "on click" / "on specific sites" / "on all sites" picker | ❌ | Not modelled; host access is the manifest's declared patterns, decided at install or update, plus the sites the person allows an extension to ask for (Table 7b) |
+| Site access controls: `activeTab` (temporary grant on click) | ❌ | Refused: `scripting.executeScript` with only `activeTab` is rejected with "Cannot access contents of the page", before and after a toolbar click, and `tabs.query` keeps hiding the tab's address; only `tabCapture` honours an invocation (Table 7c) |
+| Incognito / private windows | ❌ | A private or guest session loads no extensions and every install route refuses; the `incognito` manifest key drives nothing; the extensions page says so (`install-private.ts`) |
 | Updates from the Web Store | ✅ | Table 7a |
 | Install from CRX/zip/unpacked | ✅ | Table 7a |
 | Enabling/disabling/uninstalling | ✅ | Table 7a |
 | Errors page | ❌ | Table 7a |
-| Keyboard shortcuts page | ❌ | `chrome.commands.getAll` lists commands with empty shortcuts (Table 7c); no page to view or rebind a combination |
-| Extension devtools/inspect views | ⚠️ | `chrome.devtools.*` is native to Electron; no test exercises it end to end |
+| Details page | ✅ | `orivon://extensions/details?id=` shows the id, source, who updates it, site access, where it runs, the permissions Orivon does not provide, and the optional access the person allowed, each removable (`views/details-about.ts`, `details-optional.ts`) |
+| Keyboard shortcuts page | ✅ | `orivon://extensions/shortcuts` lists, records, clears and moves the keys of extension commands; a details section links to it (`views/shortcuts.ts`, `shortcuts-page.ts`) |
+| Extension devtools/inspect views | ⚠️ | `chrome.devtools.*` and a manifest's `devtools_page` work; nothing lists an extension's worker and pages to inspect |
 | Running without the Chromium sandbox | ❌ | The service-worker preload that injects most `chrome.*` APIs is silently never invoked for any worker when Electron launches `--no-sandbox`; every automated launch here runs sandboxed instead (`A289`) |
 | Apps a person has granted permissions to | ✅ | One instance, in the default session (`ADR-0044`); extension code is refused at `window.orivon`, a filter rather than a session split (`ADR-0045`). An app served from its pinned copy keeps its own partition and runs none |
 
@@ -1112,12 +1119,15 @@ the reference set, and whether this build has it.
 | Install/update from the Chrome Web Store | ✅ | Table 7a |
 | Content scripts (isolated + `"world": "MAIN"`, in frames/subframes) | ✅ | Table 7b |
 | Service worker with core `chrome.*` APIs | ✅ | Table 7c |
-| Toolbar button, badge, popup | ✅ | Table 7d |
-| Options page | ✅ | Table 7b |
+| Toolbar button, badge, popup | ✅ | Extensions button and menu; pinned icons; the popup anchors under the button; a new extension is pinned by default (Table 7d) |
+| Options page | ✅ | Opens in a tab, also from the menu and the icon's right-click menu (Table 7b) |
 | Extension popup stays open, and closes only on focus loss, tab switch or navigation | ✅ | Table 7d |
 | `chrome.offscreen`, `chrome.tabCapture`, `chrome.runtime.getContexts` | ✅ | Table 7c/7d; Volume Master captures a tab it was invoked on |
-| `declarativeNetRequest` | ⚠️ | Present so extensions start; rules are not applied (Table 7c) |
-| `webRequest` | ⚠️ | Present, never fires (Table 7c) |
+| `declarativeNetRequest` | ✅ | Static, dynamic and session rules are applied (Table 7c) |
+| Extension shortcuts | ✅ | An extension's command keys bind when free, rebind at `orivon://extensions/shortcuts`, and never take a key Orivon uses (Table 7b) |
+| Asking for more access later | ✅ | `chrome.permissions.request` asks in a sheet and the person can take a grant back from the details page (Table 7b) |
+| Bookmarks, history, top sites and search for extensions | ✅ | Over Orivon's own stores; history and top sites never list an app's pages (Table 7c) |
+| `webRequest` | ⚠️ | Present, no extension listener is ever called (Table 7c) |
 | `sidePanel`, `userScripts` | ⚠️ | Present as no-ops (Table 7c) |
 | Native messaging | 🚫 | Off by design: it would start desktop programs outside the broker |
 | Extensions inside apps a person has granted permissions to | ✅ | Table 7d |

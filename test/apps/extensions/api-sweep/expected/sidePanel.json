@@ -1,0 +1,16 @@
+{
+  "worker": {
+    "getOptions": "function",
+    "getPanelBehavior": "function",
+    "open": "function",
+    "setOptions": "function",
+    "setPanelBehavior": "function"
+  },
+  "page": {
+    "getOptions": "function",
+    "getPanelBehavior": "function",
+    "open": "function",
+    "setOptions": "function",
+    "setPanelBehavior": "function"
+  }
+}

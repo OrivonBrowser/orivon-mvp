@@ -428,15 +428,16 @@ describe('describeStrippedPermissions', () => {
     expect(describeStrippedPermissions(EMPTY)).toEqual([])
   })
 
-  it('names network blocking rules for a webRequest or declarativeNetRequest permission, from either list', () => {
-    expect(describeStrippedPermissions({ ...EMPTY, permissions: ['webRequest'] })).toEqual(['Network blocking rules: Orivon does not run these yet'])
-    expect(describeStrippedPermissions({ ...EMPTY, optionalPermissions: ['declarativeNetRequestWithHostAccess'] }))
-      .toEqual(['Network blocking rules: Orivon does not run these yet'])
+  it('names webRequest, from either list', () => {
+    expect(describeStrippedPermissions({ ...EMPTY, permissions: ['webRequest'] })).toEqual(['Watching and changing network requests (webRequest)'])
+    expect(describeStrippedPermissions({ ...EMPTY, optionalPermissions: ['webRequestBlocking'] }))
+      .toEqual(['Watching and changing network requests (webRequest)'])
   })
 
-  it('names network blocking rules when only the declarative_net_request key was stripped', () => {
-    expect(describeStrippedPermissions({ ...EMPTY, declarativeNetRequest: { rule_resources: [] } }))
-      .toEqual(['Network blocking rules: Orivon does not run these yet'])
+  it('does not list declarativeNetRequest, which Orivon runs', () => {
+    expect(describeStrippedPermissions({ ...EMPTY, permissions: ['declarativeNetRequest'] })).toEqual([])
+    expect(describeStrippedPermissions({ ...EMPTY, optionalPermissions: ['declarativeNetRequestWithHostAccess'] })).toEqual([])
+    expect(describeStrippedPermissions({ ...EMPTY, declarativeNetRequest: { rule_resources: [] } })).toEqual([])
   })
 
   it('names native messaging for a stripped nativeMessaging permission', () => {
@@ -446,7 +447,7 @@ describe('describeStrippedPermissions', () => {
 
   it('names both, in order, when both were stripped', () => {
     expect(describeStrippedPermissions({ ...EMPTY, permissions: ['webRequest', 'nativeMessaging'] })).toEqual([
-      'Network blocking rules: Orivon does not run these yet',
+      'Watching and changing network requests (webRequest)',
       'Talking to programs on your computer: not available in Orivon'
     ])
   })

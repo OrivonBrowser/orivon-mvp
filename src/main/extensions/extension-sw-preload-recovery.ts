@@ -5,8 +5,7 @@
 // electron-chrome-extensions'. docs/open-questions.md A289 has the full
 // account. Two distinct causes: under `--no-sandbox`, NO
 // 'service-worker'-type session preload ever runs, for any worker,
-// reproduced 100% -- the reload below never recovers this one, since
-// reloading changes nothing about running under `--no-sandbox` (A289).
+// reproduced 100% -- the reload below cannot recover this one (A289).
 // Sandboxed, the preload does run, but a freshly loaded extension's first
 // worker still races its registration and misses every time (measured:
 // 20/20 cold starts of a fixture extension, 4/4 of four real ones) -- this
@@ -22,6 +21,8 @@
 // injection this check exists to verify: under `--no-sandbox`, where that
 // injection never runs at all, the worker's own report would never arrive
 // either, for the same root cause.
+// Its exports reach a PRELOAD script (src/preload/extension-sw-verify.ts):
+// README.md's Design notes say why it imports only `electron`'s types.
 import type { Session, ServiceWorkerMain } from 'electron'
 import { EXTENSION_SW_HEALTH_CHECK_CHANNEL, EXTENSION_SW_HEALTH_REPLY_CHANNEL } from '../channels.js'
 
@@ -44,6 +45,16 @@ export interface PreloadRecoveryDeps {
   readonly removeExtension: (id: string) => void
   readonly loadExtension: (path: string) => Promise<unknown>
   readonly onRecovered?: (id: string) => void
+  /** Called immediately before `removeExtension` ('start'), and again, in a
+   * `finally`, once `loadExtension` has settled ('end') -- lets a caller
+   * tell this remove-then-load apart from a real unload/load pair, so state
+   * keyed to a real unload (e.g. extensions-dnr.ts's session rules, badge
+   * mode and webRequest registration) is not dropped for an extension that
+   * never actually left. Optional so a caller with nothing to protect
+   * across the reload (or a test) can leave it out; deliberately generic
+   * (this file's own header says why it never names or imports that
+   * caller's module itself). */
+  readonly onReloadBoundary?: (id: string, phase: 'start' | 'end') => void
 }
 
 export interface PreloadRecovery {
@@ -62,9 +73,14 @@ export function createPreloadRecovery (deps: PreloadRecoveryDeps): PreloadRecove
       retried.add(id)
       const path = deps.getExtensionPath(id)
       if (path === undefined) return
-      deps.removeExtension(id)
-      await deps.loadExtension(path)
-      deps.onRecovered?.(id)
+      deps.onReloadBoundary?.(id, 'start')
+      try {
+        deps.removeExtension(id)
+        await deps.loadExtension(path)
+        deps.onRecovered?.(id)
+      } finally {
+        deps.onReloadBoundary?.(id, 'end')
+      }
     }
   }
 }
@@ -72,8 +88,14 @@ export function createPreloadRecovery (deps: PreloadRecoveryDeps): PreloadRecove
 /** Wires createPreloadRecovery to a real session: asks each extension
  * service worker, once it first reaches 'running', whether the library's
  * chrome.tabs actually arrived, and reloads it once if not (or if it never
- * answers). */
-export function watchForMissedServiceWorkerPreload (ses: Session): void {
+ * answers). `onReloadBoundary` is forwarded to `createPreloadRecovery`
+ * as-is -- extension-host.ts's own call site is what actually supplies
+ * extensions-dnr.ts's `beginDnrReload`/`endDnrReload` here, since this file
+ * itself must not import that module (its own header says why). */
+export function watchForMissedServiceWorkerPreload (
+  ses: Session,
+  onReloadBoundary?: PreloadRecoveryDeps['onReloadBoundary']
+): void {
   const recovery = createPreloadRecovery({
     getExtensionPath: (id) => ses.extensions.getExtension(id)?.path,
     removeExtension: (id) => { ses.extensions.removeExtension(id) },
@@ -82,7 +104,8 @@ export function watchForMissedServiceWorkerPreload (ses: Session): void {
     loadExtension: async (path) => await ses.extensions.loadExtension(path, { allowFileAccess: false }),
     onRecovered: (id) => {
       console.error(`[extensions] ${id}'s service worker started before the library's preload took effect; reloaded it once to recover`)
-    }
+    },
+    ...(onReloadBoundary === undefined ? {} : { onReloadBoundary })
   })
 
   const checked = new Set<number>()

@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Orivon E2E Other Commands",
+  "version": "1.0.0",
+  "description": "Second fixture for test/e2e-extensions-shortcuts.test.ts: a command whose suggested key the first fixture already holds, and one with no key.",
+  "icons": { "48": "icon.png" },
+  "background": { "service_worker": "background.js" },
+  "commands": {
+    "toggle": {
+      "suggested_key": { "default": "Alt+Shift+K" },
+      "description": "Toggle the sidebar"
+    },
+    "quiet": { "description": "Do nothing, quietly" }
+  }
+}

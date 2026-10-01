@@ -1,0 +1,12 @@
+{
+  "worker": {
+    "network": "object",
+    "services": "object",
+    "websites": "object"
+  },
+  "page": {
+    "network": "object",
+    "services": "object",
+    "websites": "object"
+  }
+}

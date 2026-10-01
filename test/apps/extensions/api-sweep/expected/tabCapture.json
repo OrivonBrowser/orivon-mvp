@@ -1,0 +1,12 @@
+{
+  "worker": {
+    "getCapturedTabs": "function",
+    "getMediaStreamId": "function",
+    "onStatusChanged": "event"
+  },
+  "page": {
+    "getCapturedTabs": "function",
+    "getMediaStreamId": "function",
+    "onStatusChanged": "event"
+  }
+}

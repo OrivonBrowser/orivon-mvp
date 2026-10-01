@@ -1,0 +1,12 @@
+{
+  "worker": {
+    "Level": "object",
+    "releaseKeepAwake": "function",
+    "requestKeepAwake": "function"
+  },
+  "page": {
+    "Level": "object",
+    "releaseKeepAwake": "function",
+    "requestKeepAwake": "function"
+  }
+}

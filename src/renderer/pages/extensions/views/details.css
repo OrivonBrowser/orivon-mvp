@@ -1,0 +1,32 @@
+.back { display: inline-flex; align-items: center; gap: 2px; margin: 0 0 14px -6px; }
+.back .icon { width: 16px; height: 16px; }
+.icon.flip { transform: scaleX(-1); }
+
+.d-head { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
+.d-icon { width: 48px; height: 48px; flex: none; border-radius: 10px; object-fit: contain; }
+.d-icon.letter-tile { font-size: 20px; }
+.d-title { min-width: 0; flex: 1 1 auto; }
+.d-title h1 { font-size: 20px; font-weight: 600; overflow-wrap: anywhere; }
+.d-version { color: var(--wink-dim); font-size: 13px; }
+.d-desc { margin-top: 4px; color: var(--wink-dim); font-size: 13px; overflow-wrap: anywhere; }
+.d-actions { display: flex; align-items: center; gap: 12px; flex: none; }
+
+.d-sections { display: grid; gap: 14px; }
+.card { border: 1px solid var(--wborder); border-radius: var(--wradius); background: var(--wpanel); overflow: hidden; }
+.card > h2 { padding: 12px 18px; border-bottom: 1px solid var(--wborder); font-size: 13px; font-weight: 600; color: var(--wink-dim); }
+
+.ext-details { display: grid; }
+.detail-row { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 24px; padding: 12px 18px; border-top: 1px solid var(--wborder); }
+.detail-row:first-child { border-top: none; }
+.detail-label { flex: none; color: var(--wink-dim); font-size: 13px; font-weight: 500; }
+.detail-value { min-width: 0; text-align: left; overflow-wrap: break-word; font-size: 13px; user-select: text; }
+.detail-value.mono { font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace; font-size: 12.5px; overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .detail-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}
+.detail-block { display: grid; gap: 6px; padding: 12px 18px; border-top: 1px solid var(--wborder); }
+.stripped-list { margin: 0; padding-left: 18px; font-size: 13px; }
+.stripped-list li { margin: 2px 0; }
+.detail-actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 18px; border-top: 1px solid var(--wborder); }
+
+.d-loading { display: block; }

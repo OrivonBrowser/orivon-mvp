@@ -1,0 +1,40 @@
+{
+  "worker": {
+    "acceptDanger": "function",
+    "cancel": "function",
+    "download": "function",
+    "erase": "function",
+    "getFileIcon": "function",
+    "onChanged": "event",
+    "onCreated": "event",
+    "onDeterminingFilename": "event",
+    "onErased": "event",
+    "open": "function",
+    "pause": "function",
+    "removeFile": "function",
+    "resume": "function",
+    "search": "function",
+    "setUiOptions": "function",
+    "show": "function",
+    "showDefaultFolder": "function"
+  },
+  "page": {
+    "acceptDanger": "function",
+    "cancel": "function",
+    "download": "function",
+    "erase": "function",
+    "getFileIcon": "function",
+    "onChanged": "event",
+    "onCreated": "event",
+    "onDeterminingFilename": "event",
+    "onErased": "event",
+    "open": "function",
+    "pause": "function",
+    "removeFile": "function",
+    "resume": "function",
+    "search": "function",
+    "setUiOptions": "function",
+    "show": "function",
+    "showDefaultFolder": "function"
+  }
+}

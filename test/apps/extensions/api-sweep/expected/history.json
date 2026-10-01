@@ -1,0 +1,22 @@
+{
+  "worker": {
+    "search": "function",
+    "getVisits": "function",
+    "addUrl": "function",
+    "deleteUrl": "function",
+    "deleteRange": "function",
+    "deleteAll": "function",
+    "onVisited": "event",
+    "onVisitRemoved": "event"
+  },
+  "page": {
+    "search": "function",
+    "getVisits": "function",
+    "addUrl": "function",
+    "deleteUrl": "function",
+    "deleteRange": "function",
+    "deleteAll": "function",
+    "onVisited": "event",
+    "onVisitRemoved": "event"
+  }
+}

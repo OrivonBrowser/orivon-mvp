@@ -9,6 +9,7 @@
    change one, change both, then re-run `npm run smoke`. */
 
 @import './styles/address-display.css';
+@import './styles/extensions-button.css';
 @import './styles/downloads-button.css';
 @import './styles/tabstrip.css';
 @import './styles/tab-badges.css';
