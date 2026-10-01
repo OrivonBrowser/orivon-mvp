@@ -95,20 +95,21 @@ describe('decideGrantRequest', () => {
 })
 
 // R2-01, Half 2: a REQUEST must never be able to carry a host:port pattern
-// shape a MANIFEST could never have declared in the first place. Before
-// this fix, `widensAuthority`'s subset check used the runtime's own looser
-// matching grammar (connect-patterns.ts's `covers`), under which a
-// manifest declaring "*:*" appears to "cover" a request for "*:443" -- a
-// shape `declarableConnectHostRejection` (connect-patterns.ts) refuses
-// outright, because the only host-wildcard a manifest may declare directly
-// is the exact literal "*:*". Half 1 (grant-prompt-render.test.ts) is what
-// this would have looked like to a person approving it, had it reached a
-// prompt at all; this suite is the half that keeps it from reaching one.
+// shape a MANIFEST could never have declared in the first place. A wildcard
+// host with a port is declarable for tcp.connect and https.connect, and
+// `udp.send` accepts the wildcard host only as the exact literal "*:*"
+// (`declarableConnectHostRejection`, connect-patterns.ts), so a udp.send
+// request for "*:53" is refused however the subset check reads it.
 describe('decideGrantRequest -- a request may never declare a shape the manifest grammar itself would refuse', () => {
-  it('refuses "*:443" under a "*:*" manifest -- a shape no manifest could ever declare directly', () => {
+  it('allows "*:443" under a "*:*" manifest for https.connect -- a narrowing of the wildcard', () => {
     const manifest = manifestWith({ net: { https: { connect: ['*:*'] } } })
     const decision = decideGrantRequest(manifest, 'https.connect', ['*:443'])
-    expect(decision).toEqual({ allowed: false, patterns: [] })
+    expect(decision).toEqual({ allowed: true, patterns: ['*:443'] })
+  })
+
+  it('refuses "*:6697" under a "*:*" manifest -- a reserved port is new reach, not a narrowing', () => {
+    const manifest = manifestWith({ net: { tcp: { connect: ['*:*'] } } })
+    expect(decideGrantRequest(manifest, 'tcp.connect', ['*:6697'])).toEqual({ allowed: false, patterns: [] })
   })
 
   it('still allows a genuinely narrower named-host request under the same "*:*" manifest -- narrowing is the feature, not over-corrected away', () => {
@@ -123,9 +124,10 @@ describe('decideGrantRequest -- a request may never declare a shape the manifest
     expect(decision).toEqual({ allowed: true, patterns: ['*:*'] })
   })
 
-  it('applies the same refusal to tcp.connect and udp.send, not only https.connect', () => {
+  it('keeps udp.send at "*:*" only: a wildcard host with a port is refused there', () => {
     const manifest = manifestWith({ net: { tcp: { connect: ['*:*'] }, udp: { send: ['*:*'] } } })
-    expect(decideGrantRequest(manifest, 'tcp.connect', ['*:22'])).toEqual({ allowed: false, patterns: [] })
+    expect(decideGrantRequest(manifest, 'tcp.connect', ['*:22'])).toEqual({ allowed: true, patterns: ['*:22'] })
+    expect(decideGrantRequest(manifest, 'udp.send', ['*:5353'])).toEqual({ allowed: false, patterns: [] })
     expect(decideGrantRequest(manifest, 'udp.send', ['*:53'])).toEqual({ allowed: false, patterns: [] })
   })
 

@@ -13,6 +13,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **A wildcard host pairs with a port in `tcp.connect` and `https.connect`**: `*:6697` and `*:6660-6699` are declarable, so an
+  app that dials a server the person types reaches a reserved port by naming it. `*:*` and ranges still skip reserved ports, and
+  the prompt names the ports a wildcard pattern opens and what each is for, and every named pattern the wildcard does not cover; a
+  granted `*` covers public hosts only, so naming a local address under it asks again; `udp.send` keeps `*:*` only.
 - **Tabs can be pinned, muted and duplicated**, and show when a page is playing sound; Close other tabs and Close tabs
   to the right keep pinned ones. A long strip scrolls and keeps the tab in front in view.
 - **A closed tab or window comes back with Ctrl+Shift+T**, in its place and with its history; the main menu names what

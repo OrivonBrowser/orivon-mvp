@@ -186,8 +186,14 @@ describe('tcp.connect / udp.send -- host:port patterns', () => {
     expect(reason(parseManifest(netWith(['*.example.com:443'])))).toMatch(/sub-glob/)
   })
 
-  it('rejects a bare "*" host paired with a concrete port -- only "*:*" is documented', () => {
-    expect(reason(parseManifest(netWith(['*:443'])))).toMatch(/\*:\*/)
+  it('accepts a bare "*" host paired with a port or a port range, for tcp.connect', () => {
+    expect(parseManifest(netWith(['*:443'])).ok).toBe(true)
+    expect(parseManifest(netWith(['*:6660-6699'])).ok).toBe(true)
+  })
+
+  it('still rejects a wildcard host with a malformed port', () => {
+    expect(reason(parseManifest(netWith(['*:0'])))).toMatch(/malformed port/)
+    expect(reason(parseManifest(netWith(['*:70000'])))).toMatch(/malformed port/)
   })
 
   it('rejects a decimal-encoded IPv4 literal -- non-canonical, matches nothing', () => {
