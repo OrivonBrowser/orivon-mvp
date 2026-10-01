@@ -90,11 +90,11 @@ async function shootWindow (app: ElectronApplication, chrome: Page, name: string
   for (const page of app.windows()) await page.emulateMedia({ colorScheme: null }).catch(() => {})
 }
 
-const pressFocused = async (app: ElectronApplication, keyCode: string): Promise<void> => {
-  await app.evaluate(({ webContents }, code) => {
+const pressFocused = async (app: ElectronApplication, keyCode: string, modifiers: Array<'shift'> = []): Promise<void> => {
+  await app.evaluate(({ webContents }, [code, held]) => {
     const target = webContents.getFocusedWebContents() ?? webContents.getAllWebContents().find((contents) => contents.getURL().endsWith('/renderer/index.html'))
-    for (const type of ['keyDown', 'keyUp'] as const) target?.sendInputEvent({ type, keyCode: code })
-  }, keyCode)
+    for (const type of ['keyDown', 'keyUp'] as const) target?.sendInputEvent({ type, keyCode: code as string, modifiers: held as Array<'shift'> })
+  }, [keyCode, modifiers])
 }
 
 const focusedUrl = async (app: ElectronApplication): Promise<string> =>
@@ -143,6 +143,15 @@ it('keeps groups, sleep, the side panel, the reader and the F6 order working tog
       if ((await focusedUrl(app)).includes('overlay=side-panel')) { await shootWindow(app, chrome, 'f6-side-panel'); break }
     }
     expect(seen.some((url) => url.includes('overlay=side-panel')), seen.join(' | ')).toBe(true)
+
+    // On from the panel to the page, and back: Shift+F6 from the page lands in the panel, and the next one in the chrome's last pane.
+    await pressFocused(app, 'F6')
+    expect(await waitFor(async () => (await focusedUrl(app)).startsWith(origin)), await focusedUrl(app)).toBe(true)
+    await pressFocused(app, 'F6', ['shift'])
+    expect(await waitFor(async () => (await focusedUrl(app)).includes('overlay=side-panel')), await focusedUrl(app)).toBe(true)
+    await pressFocused(app, 'F6', ['shift'])
+    expect(await waitFor(async () => await chrome.evaluate(() => document.activeElement?.classList.contains('tab') === true))).toBe(true)
+    expect(await focusedUrl(app)).toContain('/renderer/index.html')
 
     // The reader tab opens inside the article's group.
     await activate(chrome, article)
