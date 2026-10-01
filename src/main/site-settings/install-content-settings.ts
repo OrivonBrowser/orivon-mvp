@@ -43,14 +43,16 @@ export const installContentSettings: ShellInstaller = {
     })
 
     const owner = webRequestOwnerFor(session.defaultSession)
+    // The owner matches a handler by address alone, so each one checks the kind of request it is about.
     owner.onHeadersReceived(CONTENT_ORDER, { urls: WEB, types: ['mainFrame', 'subFrame'] }, WEB_ADDRESS, (details, current) => {
+      if (details.resourceType !== 'mainFrame' && details.resourceType !== 'subFrame') return current
       // A main frame's own address is the page; a frame's page is the top document it sits in.
       const page = details.resourceType === 'mainFrame' ? details.url : topUrlOf(details)
       if (!rules.scriptsBlocked(page) || isPdf(current.responseHeaders)) return current
       return { ...current, responseHeaders: withScriptBlock(current.responseHeaders) }
     })
     owner.onBeforeRequest(CONTENT_ORDER, { urls: WEB, types: ['image'] }, WEB_ADDRESS, (details, current) => {
-      return rules.imagesBlocked(topUrlOf(details)) ? { cancel: true } : current
+      return details.resourceType === 'image' && rules.imagesBlocked(topUrlOf(details)) ? { cancel: true } : current
     })
 
     siteSound.bind((pageUrl) => rules.soundBlocked(pageUrl))

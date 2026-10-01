@@ -3,6 +3,7 @@
 import type { WebContents } from 'electron'
 import type { TabSignal } from '../tab-signals.js'
 import { siteSound } from '../../site-settings/site-sound.js'
+import { contain } from '../contain.js'
 import type { TabRecord } from '../tab-types.js'
 
 /** Whether this tab's page is to be silent: the person muted the tab, or its site is told to be silent. The one place a rule for muting is decided. */
@@ -24,9 +25,11 @@ export const audioSignal: TabSignal = {
     wc.on('audio-state-changed', () => { if (shown()) record.host.emitState() })
     // A navigation can land on a site with a different sound setting, in the same view.
     wc.on('did-navigate', () => {
-      if (wc.isDestroyed()) return
-      wc.setAudioMuted(mutedFor(record, wc))
-      if (shown()) record.host.emitState()
+      contain('tab signal audio did-navigate', undefined, () => {
+        if (wc.isDestroyed()) return
+        wc.setAudioMuted(mutedFor(record, wc))
+        if (shown()) record.host.emitState()
+      })
     })
   },
   apply: ({ wc, record }) => { wc.setAudioMuted(mutedFor(record, wc)) },

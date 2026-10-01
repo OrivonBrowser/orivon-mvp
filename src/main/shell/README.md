@@ -172,7 +172,9 @@ cost is an `ADR-0018` residual (A230): until its opener closes, an open-web page
 way runs in the app's partition. The other direction is never allowed: a popup into an isolated
 app from any other session opens as an ordinary tab in the app's own session, the only place its
 pinned bundle is served (`ADR-0007`). A popup's app-tab flag follows its own URL, not its
-opener's.
+opener's. A window a page
+opens without the person's own click or key press is refused before any of this, by the pop-up blocker
+in [`../site-settings/`](../site-settings/) that `PopupHost.popupBlocked` asks.
 
 **`routePopup`'s `isApp` catches a gap `targetPartition === opener.partition` alone cannot see.**
 A held grant alone puts no origin in its own partition (`ADR-0044`), so a granted,

@@ -82,6 +82,15 @@ describe('the content-settings installer', () => {
       expect(headersHandler()(other, current)).toBe(current)
     })
 
+    it('leaves a response that is not a document alone, however the page is set', () => {
+      const { store } = rig()
+      store.set(SITE, 'javascript', 'block')
+      const current = { responseHeaders: {} }
+      for (const resourceType of ['image', 'script', 'xhr', 'stylesheet']) {
+        expect(headersHandler()({ resourceType, url: `${SITE}/a`, frame: { top: { url: `${SITE}/` } } }, current)).toBe(current)
+      }
+    })
+
     it('follows a changed default on the next response', () => {
       const values: Record<string, string> = {}
       rig(values)
@@ -99,6 +108,15 @@ describe('the content-settings installer', () => {
       const current = {}
       expect(requestHandler()({ resourceType: 'image', url: 'https://cdn.example/a.png', frame: { top: { url: `${SITE}/` } } }, current)).toEqual({ cancel: true })
       expect(requestHandler()({ resourceType: 'image', url: 'https://cdn.example/a.png', frame: { top: { url: 'https://other.example/' } } }, current)).toBe(current)
+    })
+
+    it('never cancels a navigation or any other request that is not an image, whatever page the tab shows', () => {
+      const { store } = rig()
+      store.set(SITE, 'images', 'block')
+      const current = {}
+      for (const resourceType of ['mainFrame', 'subFrame', 'script', 'xhr']) {
+        expect(requestHandler()({ resourceType, url: 'https://elsewhere.example/', webContents: { getURL: () => `${SITE}/` } }, current)).toBe(current)
+      }
     })
 
     it('falls back to the tab\'s address when the request has no frame', () => {
