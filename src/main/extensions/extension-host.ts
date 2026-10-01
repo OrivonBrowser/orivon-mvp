@@ -34,6 +34,7 @@ import { appOrigin } from '../shell/devtools-app-origin.js'
 import { eventListenerFilter } from './extension-event-filter.js'
 import { closeCurrentPopup, installPopupPolicy } from './extension-popup-policy.js'
 import { buildHostImpl, isExtensionActivatingTab, isLoadedExtension, shellInitiated, type ShellBridge } from './extension-host-impl.js'
+import { watchPinSetting } from './action-pins-runner.js'
 import { watchForMissedServiceWorkerPreload } from './extension-sw-preload-recovery.js'
 import { beginDnrReload, endDnrReload } from './extensions-dnr.js'
 import { senderMatchesClaimedExtensionId } from './extension-sender-id-check.js'
@@ -173,6 +174,7 @@ function notifyShell (wc: WebContents, run: (wc: WebContents) => void): void {
  * makes the toolbar's crx: icons load in the chrome session. */
 export function attachExtensionShell (ctx: SubsystemContext, services: ShellServices, shellSession: Session): void {
   bridge = { ctx, services }
+  watchPinSetting(services)
 
   setRemoteMessageSenderCheck((event) => event.type === 'frame' && isFromChromeView(event.sender))
   // ADR-0044 moved a granted, network-served app's tab into this SAME

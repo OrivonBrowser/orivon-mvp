@@ -52,6 +52,22 @@ export function setActionClickInterceptor(
   gActionClickInterceptor = intercept
 }
 
+// Orivon patch (UPSTREAM.md patch 50): the right-click menu of a toolbar
+// action is built by Orivon, so its labels, its pin entry and what each
+// item does are Orivon's. `extensionItems` is what the extension's own
+// contextMenus asked for under 'browser_action'; the builder places them.
+// Unset: the library's own menu.
+export type ActionMenuBuilder = (
+  extensionId: string,
+  extensionItems: Electron.MenuItem[],
+) => Array<Electron.MenuItemConstructorOptions | Electron.MenuItem>
+
+let gActionMenuBuilder: ActionMenuBuilder | undefined
+
+export function setActionMenuBuilder(builder: ActionMenuBuilder | undefined): void {
+  gActionMenuBuilder = builder
+}
+
 interface ExtensionAction {
   color?: string
   text?: string
@@ -435,6 +451,25 @@ export class BrowserActionAPI {
     }))
   }
 
+  // Orivon patch (UPSTREAM.md patch 51): every extension that has an action,
+  // pinned or not (`listActions` leaves the hidden ones out), with the badge
+  // text it shows for `tabId` (the action's own when none is set for that
+  // tab) and the title for that tab. Orivon's Extensions menu lists these.
+  listAllActions(
+    tabId?: number,
+  ): Array<{ id: string; title: string; hasPopup: boolean; badge: string }> {
+    return Array.from(this.actionMap.entries()).map(([id, details]) => {
+      const forTab = tabId === undefined ? undefined : details.tabs[tabId]
+      const popup = forTab?.popup ?? details.popup
+      return {
+        id,
+        title: forTab?.title ?? details.title ?? '',
+        hasPopup: typeof popup === 'string' && popup !== '',
+        badge: forTab?.text ?? details.text ?? '',
+      }
+    })
+  }
+
   // Orivon patch (UPSTREAM.md patch 46): a click on `extensionId`'s action
   // for `tab`, started by Orivon's own trusted code (a menu entry, a
   // shortcut): counted as an invocation exactly like a toolbar click.
@@ -595,6 +630,19 @@ export class BrowserActionAPI {
     }
 
     const manifest = getExtensionManifest(extension)
+
+    // Orivon patch (UPSTREAM.md patch 50): Orivon's own menu, when it set one.
+    if (gActionMenuBuilder) {
+      const own = Menu.buildFromTemplate(
+        gActionMenuBuilder(extensionId, this.ctx.store.buildMenuItems(extensionId, 'browser_action')),
+      )
+      own.popup({
+        x: Math.floor(anchorRect.x),
+        y: Math.floor(anchorRect.y + anchorRect.height),
+      })
+      return
+    }
+
     const menu = new Menu()
     const append = (opts: Electron.MenuItemConstructorOptions) => menu.append(new MenuItem(opts))
     const appendSeparator = () => menu.append(new MenuItem({ type: 'separator' }))

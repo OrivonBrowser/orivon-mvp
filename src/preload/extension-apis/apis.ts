@@ -1,3 +1,5 @@
+import { actionSettingsApi } from './action-settings.js'
+
 // The namespaces Orivon adds to `chrome.*` in an extension's own main world,
 // one per line, alphabetical. Each entry is ONE function with no import and
 // no identifier from outside its own body: the library runs it with
@@ -15,4 +17,6 @@
 //       onVisited: crx.event('history.onVisited')
 //     }))
 //   }
-export const EXTENSION_MAIN_WORLD_APIS: ReadonlyArray<() => void> = []
+export const EXTENSION_MAIN_WORLD_APIS: ReadonlyArray<() => void> = [
+  actionSettingsApi
+]

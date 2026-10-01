@@ -1,0 +1,5 @@
+/* The Extensions button keeps its hover look while its menu is open. */
+#extensions-menu-btn[aria-expanded='true'] {
+  color: var(--wink);
+  background: var(--whover-strong);
+}

@@ -79,6 +79,8 @@ export interface ShellState extends TabsSnapshot {
   zoomPercent: number | null
   /** Which profile this window is, for the chip beside the menu. */
   profile: { name: string, color: string, isPrivate: boolean, shown: boolean }
+  /** The extensions loaded now, and whether the toolbar shows the Extensions button (`toolbar.extensions`). */
+  extensions: { enabled: number, shown: boolean }
   /** Whether the toolbar shows the Home button (`toolbar.home`). */
   homeButton: boolean
   /** Whether the address bar shows the literal address when it is not being edited (`addressBar.showFullUrl`). */
