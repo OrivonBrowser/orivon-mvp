@@ -16,11 +16,18 @@ describe('chrome.webRequest constants', () => {
     expect(defined().onBeforeRequest).toBe('event')
   })
 
-  it('lists the resource types a blocker builds its listener filter from, without the frame-less kinds it skips', () => {
-    const types = Object.values(defined().ResourceType as Record<string, string>)
-    expect(types).toContain('main_frame')
-    expect(types).toContain('xmlhttprequest')
-    expect(types.filter((type) => type !== 'main_frame' && type !== 'sub_frame')).toHaveLength(types.length - 2)
+  it('lists exactly the resource types Chrome names', () => {
+    expect(Object.values(defined().ResourceType as Record<string, string>)).toEqual([
+      'main_frame', 'sub_frame', 'stylesheet', 'script', 'image', 'font', 'object', 'xmlhttprequest',
+      'ping', 'csp_report', 'media', 'websocket', 'webbundle', 'other'
+    ])
+  })
+
+  it('lists BLOCKING on the four enums Chrome gives it', () => {
+    const api = defined()
+    for (const name of ['OnBeforeRequestOptions', 'OnBeforeSendHeadersOptions', 'OnHeadersReceivedOptions', 'OnAuthRequiredOptions']) {
+      expect((api[name] as Record<string, string>).BLOCKING).toBe('blocking')
+    }
   })
 
   it('names the option values an extension passes as extraInfoSpec', () => {

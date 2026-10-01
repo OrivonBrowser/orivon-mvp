@@ -32,8 +32,8 @@ export function webRequestApi (): void {
         WEBBUNDLE: 'webbundle',
         OTHER: 'other'
       }),
-      OnBeforeRequestOptions: frozen({ REQUEST_BODY: 'requestBody', EXTRA_HEADERS: 'extraHeaders' }),
-      OnBeforeSendHeadersOptions: frozen({ REQUEST_HEADERS: 'requestHeaders', EXTRA_HEADERS: 'extraHeaders' }),
+      OnBeforeRequestOptions: frozen({ BLOCKING: 'blocking', REQUEST_BODY: 'requestBody', EXTRA_HEADERS: 'extraHeaders' }),
+      OnBeforeSendHeadersOptions: frozen({ BLOCKING: 'blocking', REQUEST_HEADERS: 'requestHeaders', EXTRA_HEADERS: 'extraHeaders' }),
       OnSendHeadersOptions: frozen({ REQUEST_HEADERS: 'requestHeaders', EXTRA_HEADERS: 'extraHeaders' }),
       OnHeadersReceivedOptions: frozen({ BLOCKING: 'blocking', RESPONSE_HEADERS: 'responseHeaders', EXTRA_HEADERS: 'extraHeaders' }),
       OnAuthRequiredOptions: frozen({ RESPONSE_HEADERS: 'responseHeaders', BLOCKING: 'blocking', ASYNC_BLOCKING: 'asyncBlocking', EXTRA_HEADERS: 'extraHeaders' }),
