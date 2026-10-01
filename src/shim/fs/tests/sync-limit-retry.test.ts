@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { SYNCHRONOUS } from '../../worker/sync-channel.js'
-import { guardedSync, tryStatSync } from '../sync-orivon.js'
+import { guardedSync, retriedSync, tryStatSync } from '../sync-orivon.js'
 
 describe('guardedSync and a rate-limited call', () => {
   it('asks again, with a growing pause, until the call is admitted', () => {
@@ -50,5 +50,16 @@ describe('existsSync\'s probe and a rate-limited call', () => {
   it('answers false for a file that is missing', () => {
     withStat(() => { throw Object.assign(new Error('missing'), { code: 'not-found' }) })
     expect(tryStatSync('/orivon/app/absent')).toBe(false)
+  })
+})
+
+describe('retriedSync and a thread that may not block', () => {
+  it('lets the refusal through when the pause cannot be made', () => {
+    expect(() => guardedSync(() => { throw Object.assign(new Error('too frequently'), { code: 'limit' }) }, () => false)).toThrow()
+  })
+
+  it('returns the value once a refused call is admitted', () => {
+    let refused = 1
+    expect(retriedSync(() => { if (refused-- > 0) throw Object.assign(new Error('too frequently'), { code: 'limit' }); return 7 })).toBe(7)
   })
 })
