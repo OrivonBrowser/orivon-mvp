@@ -201,6 +201,49 @@ it('lands a tab last when let go over the right half of the last tab of another 
   }
 }, TEST_TIMEOUT_MS)
 
+// A collapsed group takes no room in the strip: a drop past the tab before it lands after the whole group,
+// the place the strip's own drag gives and the place the mark is drawn.
+it('lands a tab after a collapsed group when let go over the right half of the tab before it', async () => {
+  const { app, chrome: first } = await launched()
+  try {
+    const [dashboard, one, two] = await openTabs(app, first, '/one', '/two') as [string, string, string]
+    await first.evaluate((id) => { (window as unknown as { orivonShell: { activateTab: (id: string) => void } }).orivonShell.activateTab(id) }, one)
+    await runCommand(first, 'tab.group')
+    expect(await waitFor(async () => await first.locator('.tab-group-chip').count() === 1)).toBe(true)
+    const bubble = (): Page | undefined => app.windows().find((w) => w.url().includes('overlay=tab-group'))
+    expect(await waitFor(() => bubble() !== undefined)).toBe(true)
+    await (bubble() as Page).keyboard.press('Escape').catch(() => {})
+    await first.locator('.tab-group-chip').click()
+    expect(await waitFor(async () => (await first.locator(`.tab[data-id="${one}"]`).evaluate((el) => (el as HTMLElement).hidden)))).toBe(true)
+
+    await first.evaluate(() => { (window as unknown as { orivonShell: { newWindow: () => void } }).orivonShell.newWindow() })
+    expect(await waitFor(() => chromePages(app).length === 2)).toBe(true)
+    const second = chromePages(app).find((page) => page !== first) as Page
+    await clickAddressBarRetrying(second, `${origin}/travelling`)
+    expect((await waitForTab(second, { address: `${origin}/travelling` })).ok).toBe(true)
+    const travelling = (await tabIds(second))[0] as string
+
+    const firstTab = await first.evaluate((id) => {
+      const box = document.querySelector(`#tabrow .tab[data-id="${id}"]`)?.getBoundingClientRect()
+      return box === undefined ? null : { left: box.left, width: box.width }
+    }, dashboard)
+    expect(firstTab).not.toBeNull()
+    const point = await app.evaluate(({ BaseWindow }, tab) => {
+      const [older] = [...BaseWindow.getAllWindows()].sort((a, b) => a.id - b.id)
+      const bounds = older?.getContentBounds() ?? { x: 0, y: 0 }
+      return { x: bounds.x + (tab?.left ?? 0) + (tab?.width ?? 0) * 0.75, y: bounds.y + 20 }
+    }, firstTab)
+    await second.evaluate(([id, x, y]) => { (window as unknown as { orivonShell: { dropTab: (id: string, x: number, y: number, cx: number, cy: number) => void } }).orivonShell.dropTab(id as string, x as number, y as number, -50, -50) }, [travelling, point.x, point.y] as const)
+
+    expect(await waitFor(async () => (await tabIds(first)).includes(travelling))).toBe(true)
+    // Past the first tab's centre, the group's hidden tab is behind the tab let go, not in front of it.
+    expect(await tabIds(first)).toEqual([dashboard, one, travelling, two])
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
 it('takes a tab out into a window of its own when it is dragged out of the window', async () => {
   const { app, chrome } = await launched()
   try {

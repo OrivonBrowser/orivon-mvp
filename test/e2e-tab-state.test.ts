@@ -172,6 +172,37 @@ it('pins and unpins a plain, a grouped and a moved tab again and again with no c
   }
 }, TEST_TIMEOUT_MS)
 
+// A sleeping tab is a record with a placeholder in place of its page; pinning it from the tab's menu does not wake it.
+it('pins and unpins a sleeping tab from its menu again and again with no crash and no listener warning', async () => {
+  const { app, chrome } = await launched()
+  try {
+    // A page under the test driver counts as captured, which keeps it awake: the seam the memory-saver spec uses.
+    await app.evaluate(() => { (globalThis as unknown as { __orivonSleepIgnoreCapture: boolean }).__orivonSleepIgnoreCapture = true })
+    await app.evaluate(({ Menu }) => { (Menu.prototype as unknown as { popup: () => void }).popup = function (this: unknown) { (globalThis as unknown as { __menu?: unknown }).__menu = this } })
+    const [, asleep] = await openTabs(chrome, '/asleep', '/other') as [string, string, string]
+    await activate(chrome, asleep)
+    await runCommand(chrome, 'tab.sleep')
+    expect(await waitFor(async () => await chrome.locator(`.tab.sleeping[data-id="${asleep}"]`).count() === 1)).toBe(true)
+    const labels = async (): Promise<string[]> => await app.evaluate(() => ((globalThis as unknown as { __menu?: { items: Array<{ label: string, type: string }> } }).__menu?.items ?? []).filter((item) => item.type !== 'separator').map((item) => item.label))
+    const choose = async (label: string): Promise<void> => { await app.evaluate((_, l) => { ((globalThis as unknown as { __menu: { items: Array<{ label: string, click: () => void }> } }).__menu.items.find((item) => item.label === l))?.click() }, label) }
+
+    for (let n = 0; n < 6; n += 1) {
+      const label = n % 2 === 0 ? 'Pin Tab' : 'Unpin Tab'
+      await app.evaluate(() => { (globalThis as unknown as { __menu?: unknown }).__menu = undefined })
+      await chrome.click(`.tab[data-id="${asleep}"]`, { button: 'right' })
+      expect(await waitFor(async () => (await labels()).includes(label)), `menu ${String(n)} offers ${label}`).toBe(true)
+      await choose(label)
+      expect(await waitFor(async () => (await pinnedIds(chrome)).includes(asleep) === (n % 2 === 0)), `pin toggle ${String(n)}`).toBe(true)
+    }
+
+    const output = mainOutput(app)
+    expect(output).not.toContain('uncaught exception')
+    expect(output).not.toContain('MaxListenersExceededWarning')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
 it('closes the others, or those to the right, but never a pinned tab, and copies a tab beside it', async () => {
   const { app, chrome } = await launched()
   try {

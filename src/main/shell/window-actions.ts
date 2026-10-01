@@ -13,7 +13,7 @@ import { isRect } from './actions/overlay.js'
 import { runChromeAction } from './chrome-actions.js'
 import type { ShellServices } from './shell-services.js'
 import { splitZoneFor } from './split-drop.js'
-import { refreshStripLayout, stripCentresFor } from './strip-centres.js'
+import { refreshStripLayouts, stripCentresFor } from './strip-centres.js'
 import { dropTab, inTop, moveToNewWindow, moveToWindow } from './tab-move.js'
 import { closeOthers, closeToRight, duplicateTab, newTabToRight, tabMenuFlags, toggleMute, togglePin } from './tab-commands.js'
 import { sleepBackgroundTab } from '../memory-saver/sleep-command.js'
@@ -32,6 +32,8 @@ import type { DragGrab } from './window-move.js'
  * than `zoneAt`'s own default share (split-model.ts), used for a plain drop, so a tab is easy to tear off
  * rather than getting caught by a wide edge band on the way to open space. */
 const TAB_DRAG_SPLIT_SHARE = 0.12
+/** How long a drop waits for the strip of the window it lands in to report where its tabs are. */
+const STRIP_READ_MS = 150
 
 export interface WindowParts {
   readonly entry: ShellWindow
@@ -158,7 +160,7 @@ export function shellActions (parts: WindowParts): ShellActions {
         dropTab(entry, id, screenPoint, windows, openWindow, topHeight)
         return
       }
-      void Promise.all(unread.map(refreshStripLayout)).then(() => {
+      void refreshStripLayouts(unread, STRIP_READ_MS).then(() => {
         if (!window.isDestroyed()) dropTab(entry, id, screenPoint, services.windows.all(), openWindow, topHeight)
       })
     },

@@ -11,25 +11,52 @@ export interface StripLayout {
   readonly centres: readonly number[]
 }
 
-/** A tab hidden in a collapsed group takes no room: it stands at the left edge of the next tab shown, or the
- * right edge of the last one, so the centres stay in order. */
+/** One tab's box in the chrome page, as the page reports it: a tab hidden in a collapsed group has none. */
+export interface StripBox {
+  readonly hidden: boolean
+  readonly left: number
+  readonly width: number
+}
+
 export const STRIP_LAYOUT_SCRIPT = `(() => {
   const tabs = [...document.querySelectorAll('#tabrow .tab')]
-  const centres = new Array(tabs.length)
-  let edge = null
-  for (let i = tabs.length - 1; i >= 0; i--) {
-    if (tabs[i].hidden) { centres[i] = edge; continue }
-    const box = tabs[i].getBoundingClientRect()
-    centres[i] = box.left + box.width / 2
-    edge = box.left
+  return {
+    ids: tabs.map((tab) => tab.dataset.id),
+    boxes: tabs.map((tab) => {
+      if (tab.hidden) return { hidden: true, left: 0, width: 0 }
+      const box = tab.getBoundingClientRect()
+      return { hidden: false, left: box.left, width: box.width }
+    })
   }
-  const last = tabs.filter((tab) => !tab.hidden).at(-1)
-  const end = last === undefined ? 0 : last.getBoundingClientRect().right
-  return { ids: tabs.map((tab) => tab.dataset.id), centres: centres.map((centre) => centre === null ? end : centre) }
 })()`
 
+/** The centre of each tab. A tab hidden in a collapsed group takes no room and stands at the centre of the shown
+ * tab before it (0 when none is), so a pointer past that tab's centre counts the hidden run and drops after it:
+ * the place the strip's own drag gives (`placeAmongAll`), and the one the drop mark is drawn at. */
+export function centresOf (boxes: readonly StripBox[]): number[] {
+  let previous = 0
+  return boxes.map((box) => {
+    if (box.hidden) return previous
+    previous = box.left + box.width / 2
+    return previous
+  })
+}
+
 const layouts = new WeakMap<ShellWindow, StripLayout>()
-const reading = new WeakSet<ShellWindow>()
+const reading = new WeakMap<ShellWindow, Promise<void>>()
+
+/** The layout the page reported, or null when it is not one: every id a string, every box of finite numbers. */
+export function parseStripBoxes (value: unknown): StripLayout | null {
+  if (typeof value !== 'object' || value === null) return null
+  const { ids, boxes } = value as Record<string, unknown>
+  if (!Array.isArray(ids) || !Array.isArray(boxes) || ids.length !== boxes.length) return null
+  const sound = boxes.every((box: unknown) => {
+    if (typeof box !== 'object' || box === null) return false
+    const { hidden, left, width } = box as Record<string, unknown>
+    return typeof hidden === 'boolean' && typeof left === 'number' && Number.isFinite(left) && typeof width === 'number' && Number.isFinite(width)
+  })
+  return sound ? parseStripLayout({ ids, centres: centresOf(boxes as StripBox[]) }) : null
+}
 
 /** The layout, or null when `value` is not one: every id a string, every centre a finite number, as many of
  * each, none before the one ahead of it. */
@@ -59,16 +86,34 @@ export function stripCentresFor (window: ShellWindow): readonly number[] | null 
   return ids.length === layout.ids.length && ids.every((id, at) => id === layout.ids[at]) ? layout.centres : null
 }
 
-/** Reads the strip's layout off the window's chrome page. At most one read per window at a time; a page that
- * is reloading or gone leaves what was known. */
-export async function refreshStripLayout (window: ShellWindow): Promise<void> {
-  if (reading.has(window) || window.window.isDestroyed() || window.chrome.webContents.isDestroyed()) return
-  reading.add(window)
+/** Reads the strip's layout off the window's chrome page. One read per window at a time: a call during a read
+ * waits for that read. A page that is reloading or gone leaves what was known. */
+export function refreshStripLayout (window: ShellWindow): Promise<void> {
+  const running = reading.get(window)
+  if (running !== undefined) return running
+  if (window.window.isDestroyed() || window.chrome.webContents.isDestroyed()) return Promise.resolve()
+  const read = (async () => {
+    try {
+      const layout = parseStripBoxes(await window.chrome.webContents.executeJavaScript(STRIP_LAYOUT_SCRIPT))
+      if (layout !== null) layouts.set(window, layout)
+    } catch {
+      // The chrome page is reloading: the next read finds it.
+    } finally {
+      reading.delete(window)
+    }
+  })()
+  reading.set(window, read)
+  return read
+}
+
+/** Reads the layouts of `windows`, giving up after `ms` so a busy or still loading chrome page never holds back
+ * what the caller does with whatever is known. */
+export async function refreshStripLayouts (windows: readonly ShellWindow[], ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<void>((resolve) => { timer = setTimeout(resolve, ms) })
   try {
-    rememberStripLayout(window, await window.chrome.webContents.executeJavaScript(STRIP_LAYOUT_SCRIPT))
-  } catch {
-    // The chrome page is reloading: the next read finds it.
+    await Promise.race([Promise.all(windows.map(refreshStripLayout)), late])
   } finally {
-    reading.delete(window)
+    clearTimeout(timer)
   }
 }

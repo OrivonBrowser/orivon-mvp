@@ -109,11 +109,11 @@ app.on('before-quit', (event) => {
 /** A private directory a crash left is removed a while after start, when nothing else needs the disk. */
 const SWEEP_DELAY_MS = 20_000
 
+/** `web-contents-created` takes a listener from each installer; past Node's default of ten it warns of a leak that is not one. */
 const APP_LISTENER_ROOM = 24
 
 /** Starts the browser this process is. */
 function boot (runtime: Runtime): void {
-  // More than ten installers each watch every webContents created; Node's warning at the eleventh is of a leak that is not one.
   app.setMaxListeners(Math.max(app.getMaxListeners(), APP_LISTENER_ROOM))
   const beforeReadyFailures = runBeforeReady(subsystems)
   report(beforeReadyFailures)

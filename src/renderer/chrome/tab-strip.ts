@@ -55,7 +55,9 @@ export function createTabStrip (decorators: readonly TabDecorator[], finishers: 
     if (scroller === undefined || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
     const room = scroller.scrollWidth - scroller.clientWidth
     if (room <= 0) return
-    const step = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? event.deltaY * WHEEL_LINE_PX : event.deltaY
+    const step = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+      ? event.deltaY * WHEEL_LINE_PX
+      : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? event.deltaY * scroller.clientWidth : event.deltaY
     const next = Math.min(Math.max(scroller.scrollLeft + step, 0), room)
     if (next === scroller.scrollLeft) return
     event.preventDefault()

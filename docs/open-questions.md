@@ -1884,7 +1884,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 ### A342: Pinning a tab ended the browser, and the cause is not found **[OWNER]**
 
-- **Question:** Pinning a tab was reported to end the browser after a leak warning. No code path that throws was found in pinning, moving, grouping, sleeping or the session recorder, and repeated pins of a plain, a grouped and a moved tab end cleanly. Which tab was it, and what did the terminal print around it?
+- **Question:** Pinning a tab was reported to end the browser after a leak warning. No code path that throws was found in pinning, moving, grouping, sleeping or the session recorder, and repeated pins of a plain, a grouped, a moved and a sleeping tab (from its menu) end cleanly. Which tab was it, and what did the terminal print around it?
 - **Why it matters:** the warning was a false leak (now silenced), but a crash that left no JavaScript line would be a native crash no test here has shown.
 - **Options:** the owner pastes the lines around the event (an `[orivon] uncaught exception` line, or none) and says whether the tab was just moved, grouped, split or asleep, and whether "pin" was the tab menu or the extension's Pin to Toolbar (rec.); close it as not reproduced.
 - **Who decides:** owner
