@@ -18,7 +18,7 @@ README's "What it must never import".
 
 ## Design notes
 
-**An asynchronous call the limiter refuses is asked again** (`paths.ts`'s `guarded`: pauses from 10 ms to 800 ms, thirteen retries, about five seconds)
+**An asynchronous call the limiter refuses is asked again** (`../limit-retry.ts`, used by `paths.ts`'s `guarded`: pauses from 10 ms to 800 ms, thirteen retries, about five seconds)
 the same way, for the same reason.
 
 **A synchronous call the broker's per-origin limiter refuses is asked again** (`sync-orivon.ts`'s

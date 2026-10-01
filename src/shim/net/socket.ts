@@ -22,6 +22,7 @@ import type { TcpSocket } from '../../contracts/handles.js'
 import { abortError, codedError, systemError, toNodeError } from '../node-errors.js'
 import { toBytes } from '../stream-bytes.js'
 import { refuseShim } from '../errors.js'
+import { retryLimited } from '../limit-retry.js'
 import { getOrivon } from '../orivon-global.js'
 import { isIP } from './isip.js'
 import { connectPort, normalizeConnectArgs, type ConnectTarget } from './args.js'
@@ -80,7 +81,7 @@ export class Socket extends Duplex {
       throw refuseShim('net.Socket({ fd })', 'not-applicable',
         'wrapping an existing file descriptor is not available: a renderer holds no OS descriptors, only orivon.net handles.')
     }
-    this.dial = options[kDial] ?? ((opts) => getOrivon().net.connect(opts))
+    this.dial = options[kDial] ?? (async (opts) => await retryLimited(async () => await getOrivon().net.connect(opts)))
     if (options.noDelay === true) this.setNoDelay(true)
     if (options.keepAlive === true) this.setKeepAlive(true, options.keepAliveInitialDelay)
     const signal = options.signal
