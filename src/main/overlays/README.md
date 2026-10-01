@@ -10,7 +10,7 @@ an `OverlayDef` to [`overlays.ts`](overlays.ts) and a page to
 | File | Job |
 |---|---|
 | `overlay-types.ts` | `OverlayDef`, `OverlayHost`, placements and close reasons: the contract a feature writes against |
-| `overlay-bounds.ts` | Pure geometry: where an overlay sits, and how tall it may be |
+| `overlay-bounds.ts` | Pure geometry: where an overlay sits, and how tall it may be; `dockBounds` for the strip beside the page |
 | `overlay-ipc.ts` | The one channel a page speaks on, with its sender check |
 | `overlay-view.ts` | One `WebContentsView`: construction, background, navigation lock, focus |
 | `overlay-host.ts` | Per window: when a view exists, where it sits, when it closes, where focus goes |
@@ -30,6 +30,12 @@ the geometry are the part that survives a change of shell.
 **Owner stream.** `shell`.
 
 ## Design notes
+
+**A dock is sized by the window, never by its content.** `{ kind: 'dock' }` takes the strip of the window the
+page area leaves free (`dockBounds`: the page area's x says which side), full height. The host ignores the page's
+height reports for it and repositions it on every layout instead of closing it (`closeOn.layout: false`); the
+handler's optional `moved` runs after each reposition, so a feature that lays something over the dock follows it.
+A dock has square corners. The side panel is the one dock.
 
 **Beside the overlays, the host closes two legacy panels.** The permissions and site-info popovers
 stay on `../permissions/popover-view.ts` and are handed to the host with `adopt`, so a tab switch, a

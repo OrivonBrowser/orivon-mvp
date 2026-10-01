@@ -296,3 +296,8 @@ browser-action-list {
 }
 .toolbar-slot:not(:has(> :not([hidden]))) { display: none; }
 .toolbar-slot > [hidden] { display: none; }
+
+/* A toggle in the cluster that stays tinted while what it opens is open. */
+.iconbtn[aria-pressed='true'] { color: var(--waccent); background: color-mix(in srgb, var(--waccent) 14%, transparent); }
+.iconbtn[aria-pressed='true']:not(:disabled):hover { background: color-mix(in srgb, var(--waccent) 22%, transparent); }
+.iconbtn:disabled[aria-pressed] { opacity: 0.4; cursor: default; }

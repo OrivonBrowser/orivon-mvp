@@ -20,8 +20,8 @@ describe('the shortcuts state part', () => {
 
   it('reads the keys bound to the commands the chrome names in a tooltip', () => {
     const tabs = { tabs: [], activeTabId: null }
-    const { ctx } = context({ 'nav.home': ['Alt', 'Home'], 'tab.search': null })
-    expect(shortcutsStatePart.read(ctx, tabs)).toEqual({ shortcutKeys: { 'nav.home': ['Alt', 'Home'], 'tab.search': null } })
+    const { ctx } = context({ 'nav.home': ['Alt', 'Home'], 'sidePanel.toggle': ['Ctrl', 'Alt', 'B'], 'tab.search': null })
+    expect(shortcutsStatePart.read(ctx, tabs)).toEqual({ shortcutKeys: { 'nav.home': ['Alt', 'Home'], 'sidePanel.toggle': ['Ctrl', 'Alt', 'B'], 'tab.search': null } })
   })
 
   it('pushes when a binding changes, and stops with the window', () => {

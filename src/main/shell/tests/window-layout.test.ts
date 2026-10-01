@@ -62,3 +62,27 @@ describe('createWindowLayout', () => {
     expect(layout.tabBounds()).toEqual({ x: 0, y: 0, width: 0, height: 0 })
   })
 })
+
+describe('createWindowLayout: page insets', () => {
+  function insetSetup (insets: { left: number, right: number }, fullscreen: string | null = null): ReturnType<typeof createWindowLayout> {
+    const win = { isDestroyed: () => false, getContentBounds: () => ({ x: 0, y: 0, width: 1000, height: 700 }) }
+    const chrome = { setVisible: vi.fn(), setBounds: vi.fn() }
+    return createWindowLayout({ win: win as never, chrome: chrome as never, fullscreenTabId: () => fullscreen, bookmarksBarShown: () => false, pageInsets: () => insets })
+  }
+
+  it('narrows the page area by what a panel takes on the right, leaving its x alone', () => {
+    expect(insetSetup({ left: 0, right: 360 }).tabBounds()).toEqual({ x: 0, y: CHROME_TOP_ROWS, width: 640, height: 700 - CHROME_TOP_ROWS })
+  })
+
+  it('moves the page area right by what a panel takes on the left', () => {
+    expect(insetSetup({ left: 300, right: 0 }).tabBounds()).toEqual({ x: 300, y: CHROME_TOP_ROWS, width: 700, height: 700 - CHROME_TOP_ROWS })
+  })
+
+  it('gives a page in HTML fullscreen the whole window whatever the panel says', () => {
+    expect(insetSetup({ left: 0, right: 360 }, 'tab-1').tabBounds()).toEqual({ x: 0, y: 0, width: 1000, height: 700 })
+  })
+
+  it('never goes negative in a window narrower than its insets', () => {
+    expect(insetSetup({ left: 700, right: 700 }).tabBounds().width).toBe(0)
+  })
+})

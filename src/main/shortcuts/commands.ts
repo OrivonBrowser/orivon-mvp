@@ -105,7 +105,7 @@ export const COMMANDS = [
   { id: 'window.close', label: 'Close window', category: 'window', default: 'Mod+Shift+W' },
   { id: 'window.fullscreen', label: 'Full screen', category: 'window', default: 'F11', macDefault: 'Ctrl+Meta+F' },
   { id: 'window.alwaysOnTop', label: 'Keep window on top', category: 'window' },
-  { id: 'sidePanel.toggle', label: 'Side panel', category: 'window', default: 'Mod+Alt+B', pending: true },
+  { id: 'sidePanel.toggle', label: 'Side panel', category: 'window', default: 'Mod+Alt+B' },
   { id: 'settings.open', label: 'Open Settings', category: 'window', default: 'Mod+,' },
   { id: 'passwords.open', label: 'Passwords', category: 'window', pending: true },
   { id: 'siteSettings.open', label: 'Site settings', category: 'window', pending: true },

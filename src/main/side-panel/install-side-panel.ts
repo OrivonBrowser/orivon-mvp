@@ -1,8 +1,23 @@
-// Reserved: this feature's wiring lands here. Registered in
-// `../shell/shell-installers.ts`, so filling the body needs no other edit.
+// Starts what the side panel needs once per process: the file its width and last view are kept in.
+import { join } from 'node:path'
 import type { ShellInstaller } from '../shell/shell-installers.js'
+import { onGuestChosen, setGuestEntries, sidePanelFor } from './side-panel-host.js'
+import { FileSidePanelStore, MemorySidePanelStore } from './side-panel-store.js'
+import { registerStore } from './side-panel-stores.js'
+import { exposeSidePanelForTests } from './side-panel-test-hook.js'
 
 export const installSidePanel: ShellInstaller = {
   name: 'side-panel',
-  install: () => {}
+  install: (app, services) => {
+    // A private session keeps nothing: the panel remembers its width in memory only.
+    registerStore(services, services.isPrivate ? new MemorySidePanelStore() : new FileSidePanelStore(join(app.getPath('userData'), 'side-panel.json')))
+    const chosen: string[] = []
+    onGuestChosen((_window, id) => { chosen.push(id) })
+    exposeSidePanelForTests({
+      host: (index) => { const entry = services.windows.all()[index]; return entry === undefined ? undefined : sidePanelFor(entry) },
+      setGuestEntries: (entries) => { setGuestEntries(entries as Parameters<typeof setGuestEntries>[0]) },
+      setSetting: (key, value) => { services.settings.set(key as never, value as never) },
+      chosen
+    })
+  }
 }

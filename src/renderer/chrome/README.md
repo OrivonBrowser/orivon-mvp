@@ -19,6 +19,7 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 | `home-button.ts` | the Home button, shown while `toolbar.home` is on |
 | `prompt-anchor.ts` | reports the address pill's rectangle to main (`prompt.anchor`), so a prompt can open under it |
 | `site-badges.ts` | the Web3 Score shield and mark, the permissions key |
+| `side-panel-button.ts` | the cluster's side panel button: pressed while open, disabled in a window too narrow for a panel |
 | `cluster.ts` | the bookmark star, the zoom chip, the all-sites button, the profile chip, the menu button |
 | `bookmarks-bar.ts` | the row under the toolbar: the bar's items, folder menus, the overflow button, the right-click menu |
 | `bar-overflow.ts` | pure: which items fit, where an arrow key goes, what an event from main is worth |
