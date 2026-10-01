@@ -34,7 +34,11 @@ describe('normalizeOpenFlags', () => {
     ['O_EXCL without O_CREAT', C.O_WRONLY | C.O_EXCL],
     ['O_APPEND without O_CREAT', C.O_WRONLY | C.O_APPEND],
     ['O_TRUNC without O_CREAT', C.O_WRONLY | C.O_TRUNC],
-    ['create without truncate or append', C.O_WRONLY | C.O_CREAT]
+    ['create without truncate or append', C.O_WRONLY | C.O_CREAT],
+    ['O_APPEND with O_TRUNC', C.O_WRONLY | C.O_CREAT | C.O_APPEND | C.O_TRUNC],
+    ['NaN', Number.NaN],
+    ['a fraction', 1.5],
+    ['a negative number', -1]
   ])('refuses %s with EINVAL', (_name, flags) => {
     expect(() => normalizeOpenFlags(flags)).toThrow(expect.objectContaining({ code: 'EINVAL' }))
   })

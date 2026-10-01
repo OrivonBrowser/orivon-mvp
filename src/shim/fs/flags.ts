@@ -19,6 +19,7 @@ function refuse (why: string): never {
 export function normalizeOpenFlags (flags: string | number | null | undefined): string {
   if (flags === null || flags === undefined) return 'r'
   if (typeof flags === 'string') return flags
+  if (!Number.isInteger(flags) || flags < 0) refuse('flags must be a non-negative integer')
   if ((flags & ~KNOWN_BITS) !== 0) refuse(`flag bits ${flags & ~KNOWN_BITS} are not supported`)
   const access = flags & 3
   if (access === 3) refuse('O_WRONLY | O_RDWR')
@@ -34,6 +35,7 @@ export function normalizeOpenFlags (flags: string | number | null | undefined): 
   if (exclusive && !create) refuse('O_EXCL without O_CREAT')
   if (append) {
     if (!create) refuse('O_APPEND without O_CREAT')
+    if (truncate) refuse('O_APPEND with O_TRUNC')
     return `${exclusive ? 'ax' : 'a'}${plus}`
   }
   if (truncate) {
