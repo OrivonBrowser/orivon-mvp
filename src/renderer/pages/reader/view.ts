@@ -13,7 +13,8 @@ export interface VNode {
 }
 
 export const SIZES = [14, 16, 18, 20, 24, 28] as const
-export const WIDTHS = { narrow: 560, medium: 680, wide: 820 } as const
+/** The column's width in ems of the reading size, so the line length holds as the text grows. */
+export const WIDTHS = { narrow: 30, medium: 36, wide: 44 } as const
 export const WORDS_PER_MINUTE = 220
 
 /** The next size up or down the list, staying at its ends. An unknown size steps from the nearest one. */

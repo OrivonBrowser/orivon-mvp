@@ -32,7 +32,7 @@ describe('size steps', () => {
   })
 
   it('has the three widths', () => {
-    expect(WIDTHS).toEqual({ narrow: 560, medium: 680, wide: 820 })
+    expect(WIDTHS).toEqual({ narrow: 30, medium: 36, wide: 44 })
   })
 })
 

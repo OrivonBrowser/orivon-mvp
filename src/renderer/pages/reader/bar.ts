@@ -105,7 +105,9 @@ export function createBar (state: ReaderState): Bar {
     closeBubble: () => close(true),
     setReadAloud: (mode, onClick) => {
       aloudClick = onClick
-      aloud.disabled = mode === 'unknown' || mode === 'none'
+      aloud.disabled = mode === 'unknown'
+      // A feature the machine cannot run is not offered.
+      aloud.hidden = mode === 'none'
       aloud.title = mode === 'none' ? NO_VOICE_TITLE : 'Read aloud'
       aloud.setAttribute('aria-pressed', String(mode === 'on'))
       aloud.classList.toggle('on', mode === 'on')

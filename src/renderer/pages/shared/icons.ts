@@ -301,6 +301,14 @@ export function bookOpenIcon (): SVGSVGElement {
   })
 }
 
+/** A page with three lines of text: reader view, which the open book of the reading list must not be mistaken for. */
+export function readerIcon (): SVGSVGElement {
+  return icon((el) => {
+    el.append(path('M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z', '2'))
+    el.append(path('M9 8h6', '2'), path('M9 12h6', '2'), path('M9 16h4', '2'))
+  })
+}
+
 /** A dial, for the section about how much the browser uses. */
 export function gaugeIcon (): SVGSVGElement {
   return icon((el) => { el.append(path('M12 14l4-4', '2'), path('M3.34 19a10 10 0 1 1 17.32 0', '2')) })

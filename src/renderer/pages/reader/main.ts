@@ -2,7 +2,7 @@
 // draws what main handed over, as text, and asks main for everything else.
 import { internalBridge } from '../shared/bridge.js'
 import { h } from '../shared/dom.js'
-import { bookOpenIcon } from '../shared/icons.js'
+import { readerIcon } from '../shared/icons.js'
 import { createBar } from './bar.js'
 import type { Bar } from './bar.js'
 import { renderNode } from './render.js'
@@ -46,12 +46,12 @@ function applyPrefs (): void {
   root.dataset['font'] = state.prefs.font
   root.dataset['theme'] = state.prefs.theme
   root.style.setProperty('--reader-size', `${state.prefs.size}px`)
-  root.style.setProperty('--reader-width', `${String(WIDTHS[state.prefs.width as keyof typeof WIDTHS] ?? WIDTHS.medium)}px`)
+  root.style.setProperty('--reader-width', `${String(WIDTHS[state.prefs.width as keyof typeof WIDTHS] ?? WIDTHS.medium)}em`)
   bar.refresh()
 }
 
 function message (text: string, withBack: boolean): HTMLElement {
-  return h('div', { className: 'empty-state' }, bookOpenIcon(), h('p', { textContent: text }),
+  return h('div', { className: 'empty-state' }, readerIcon(), h('p', { textContent: text }),
     withBack ? h('button', { className: 'link-btn', type: 'button', textContent: 'Back to page', onclick: () => { state.back() } }) : null)
 }
 

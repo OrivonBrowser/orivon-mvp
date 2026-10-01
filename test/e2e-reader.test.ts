@@ -164,9 +164,9 @@ it('offers reader view on an article only, opens it beside the article from a sa
     await shoot(page, 'blocks')
     await page.evaluate(() => { window.scrollTo(0, 0) })
 
-    // Read aloud: no system voice here, so it is disabled and says why.
+    // Read aloud: no system voice here, so the button is not offered.
     expect(await waitFor(async () => await page.locator('button[aria-label="Read aloud"]').getAttribute('title') === 'Read aloud needs a system voice. None is installed.', 6_000)).toBe(true)
-    expect(await page.locator('button[aria-label="Read aloud"]').isDisabled()).toBe(true)
+    expect(await page.locator('button[aria-label="Read aloud"]').isHidden()).toBe(true)
 
     // Text and layout.
     await page.locator('button[aria-label="Text and layout"]').click()
