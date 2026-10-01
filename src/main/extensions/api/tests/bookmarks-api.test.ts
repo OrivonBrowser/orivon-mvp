@@ -270,6 +270,7 @@ describe('events from the store\'s changes', () => {
     const second = new BookmarkStore(join(dir, 'old.json'))
     const fake = fakeContext({ bookmarks: second })
     installBookmarks(fake.ctx)
+    await second.load()
     await settled()
     second.addUrl({ url: 'https://new.test/', title: 'New', parent: 'bar' })
     await settled()
