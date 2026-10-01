@@ -13,6 +13,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **Downloads have a page, a toolbar button and a bubble** (Ctrl+J): files save into the Downloads folder or the one
+  you choose, or ask each time; pause, resume, cancel and retry; a ring shows progress and a new download peeks.
+- **A file that runs code waits for your answer**: it sits as `Unconfirmed ... .download` until you press Keep or Discard,
+  and Orivon never opens it for you.
+- **Bookmarks have folders**, a bar with a menu for each and drag to reorder, a manager (Ctrl+Shift+O), an edit bubble
+  on the star, Bookmark all tabs (Ctrl+Shift+D) and HTML import and export; an older flat file is carried over.
+- **The address bar suggests as you type** from history, bookmarks and open tabs, finishes the text inline, searches
+  after a `?` or a site keyword (`w cats`), hides `https://` and `www.`, marks insecure pages, and makes a QR code.
+- **The search engine's own suggestions are available, off by default** (Settings > Search); a private window never
+  asks for them.
+- **History shows site icons**, groups by day or by session, sorts by recency, visits or name, selects many rows, and
+  lists the recently closed tabs.
+- **Import bookmarks and history from Chrome, Chromium, Edge, Brave or Firefox**, or bookmarks from an HTML file, at
+  `orivon://import`; passwords are not imported.
+- **About and a task manager** (`orivon://about`, `orivon://tasks`, Shift+Esc), `about:` and `chrome://` names typed in
+  the bar, typed `view-source:`, and a JavaScript console shortcut (Ctrl+Shift+J).
 - **Tabs can be pinned, muted and duplicated**, and show when a page is playing sound; Close other tabs and Close tabs
   to the right keep pinned ones. A long strip scrolls and keeps the tab in front in view.
 - **A closed tab or window comes back with Ctrl+Shift+T**, in its place and with its history; the main menu names what
