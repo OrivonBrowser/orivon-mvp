@@ -128,7 +128,7 @@ describe('deleting', () => {
     await part.toggle('shop.example')
     request.mockClear()
     await part.removeCookie('shop.example', '0000000000000001')
-    expect(request.mock.calls[0]).toEqual(['siteData', { type: 'removeCookie', key: '0000000000000001' }])
+    expect(request.mock.calls[0]).toEqual(['siteData', { type: 'removeCookie', domain: 'shop.example', key: '0000000000000001' }])
     expect(request.mock.calls.some(([, command]) => (command as { type: string }).type === 'list')).toBe(true)
     expect(part.failed).toBe(false)
   })

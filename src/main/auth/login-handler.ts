@@ -75,7 +75,7 @@ export function handleLogin (
     else callback(answer.username, answer.password)
   }, () => { showPending(null); slot?.cancel() })
   if (challenge === null) return
-  showPending(mainFrame ? details.url : null)
+  if (mainFrame) showPending(details.url)
   const slot = deps.ask({
     window: found.window,
     tabId: found.tabId,
