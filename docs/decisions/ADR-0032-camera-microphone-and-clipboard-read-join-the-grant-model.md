@@ -1,6 +1,6 @@
 # ADR-0032: Camera, microphone and clipboard read join the grant model; a website gets the traditional per-site prompt instead
 
-- **Status:** proposed
+- **Status:** accepted for the website door, built as [ADR-0049](ADR-0049-a-website-is-asked-once-per-site-for-each-powerful-permission.md); proposed for the app door, unbuilt
 - **Date:** 2026-09-24
 - **Type:** security
 - **Decided by:** owner

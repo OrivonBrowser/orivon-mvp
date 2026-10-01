@@ -15,6 +15,7 @@ an `OverlayDef` to [`overlays.ts`](overlays.ts) and a page to
 | `overlay-view.ts` | One `WebContentsView`: construction, background, navigation lock, focus |
 | `overlay-host.ts` | Per window: when a view exists, where it sits, when it closes, where focus goes |
 | `overlays.ts` | `OVERLAYS`, the registry of every feature's `OverlayDef` |
+| `tab-slots.ts`, `install-tab-slots.ts` | `requestSlot`: which surface a tab shows in its two places, a sheet over the page and a prompt under the address pill, so two never stack and a question waits for its tab |
 
 **Tied to Electron.** `overlay-view.ts` and `overlay-host.ts` import `electron` values;
 `overlay-types.ts`, `overlay-bounds.ts` and `overlay-ipc.ts` need only its types. The types and

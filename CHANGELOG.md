@@ -13,6 +13,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **A website asks once for the camera, microphone, location, clipboard, MIDI, idle detection, window placement and
+  notifications**, in a prompt under the address bar; the answer is remembered and changes from the address bar chip,
+  the site's popover or Settings > Site settings. Location is asked, but no position is ever delivered.
+- **Pop-ups are blocked unless you clicked**, with a chip that lists them; JavaScript, images and sound can be switched
+  off per site or for every site, and a second download a page starts on its own waits for your answer.
+- **Orivon keeps your passwords** (Settings > Passwords): it offers to save after a sign-in that worked, fills the account
+  you pick, makes a strong password for sign-up forms, and imports and exports CSV. It needs the system keyring.
+- **Privacy settings**: block third-party cookies, send Do Not Track and Global Privacy Control, always use secure
+  connections (a sheet when the upgrade fails), and secure DNS with Cloudflare or Quad9.
+- **Sign-in sheets, a certificate viewer and a client-certificate chooser**: a site's HTTP sign-in asks in a sheet over
+  the page, a certificate opens from site info, and a page that fails on its certificate shows why, with only Go back.
+- **See and delete a site's cookies** (names, never values) from site info or Settings > Privacy, which also lists every
+  site that stores data; Ctrl+Shift+Delete opens Clear browsing data, which can include site settings.
+- **Orivon can be your default browser** from a packaged install (Settings > About), opens links other programs hand it
+  on macOS, shares a page by link, email or QR code, creates a desktop shortcut for a site, and links to a new release.
 - **Downloads have a page, a toolbar button and a bubble** (Ctrl+J): files save into the Downloads folder or the one
   you choose, or ask each time; pause, resume, cancel and retry; a ring shows progress and a new download peeks.
 - **A file that runs code waits for your answer**: it sits as `Unconfirmed ... .download` until you press Keep or Discard,
