@@ -18,17 +18,49 @@ function memoryDecisions (initial: Record<string, NotificationDecision> = {}) {
 
 function setup (answer: NotificationAnswer = 'allow', initial: Record<string, NotificationDecision> = {}) {
   const decisions = memoryDecisions(initial)
-  const ask = vi.fn(async (_window: typeof WINDOW, _origin: string): Promise<NotificationAnswer> => answer)
+  const ask = vi.fn(async (_window: typeof WINDOW, _origin: string, _tab: object): Promise<NotificationAnswer> => answer)
   const windowShowing = vi.fn((): typeof WINDOW | undefined => WINDOW)
   return { notifications: createSiteNotifications({ decisions, ask, windowShowing }), decisions, ask, windowShowing }
 }
+
+describe('site notifications: a registered app', () => {
+  it('is refused without a question, and nothing is stored for it', async () => {
+    const decisions = memoryDecisions()
+    const ask = vi.fn(async (): Promise<NotificationAnswer> => 'allow')
+    const notifications = createSiteNotifications({ decisions, ask, windowShowing: () => WINDOW, isApp: (origin) => origin === SITE })
+    expect(await notifications.request(fakeTab(PAGE), { requestingUrl: PAGE, isMainFrame: true })).toBe(false)
+    expect(ask).not.toHaveBeenCalled()
+    expect(decisions.set).not.toHaveBeenCalled()
+  })
+})
 
 describe('site notifications: the request (Notification.requestPermission)', () => {
   it('asks the person in the window showing the tab, naming the site, and remembers an allow', async () => {
     const { notifications, decisions, ask } = setup('allow')
     expect(await notifications.request(fakeTab(PAGE), { requestingUrl: PAGE, isMainFrame: true })).toBe(true)
-    expect(ask).toHaveBeenCalledWith(WINDOW, SITE)
+    expect(ask).toHaveBeenCalledWith(WINDOW, SITE, expect.objectContaining({ getURL: expect.any(Function) }))
     expect(decisions.set).toHaveBeenCalledWith(SITE, 'allow')
+  })
+
+  it('refuses a site with no answer of its own, without asking, while notifications are blocked by default', async () => {
+    const decisions = memoryDecisions({ 'https://known.example': 'allow' })
+    const ask = vi.fn(async (): Promise<NotificationAnswer> => 'allow')
+    const notifications = createSiteNotifications({ decisions, ask, windowShowing: () => WINDOW, blockedByDefault: () => true })
+    expect(await notifications.request(fakeTab(PAGE), { requestingUrl: PAGE, isMainFrame: true })).toBe(false)
+    expect(ask).not.toHaveBeenCalled()
+    expect(decisions.set).not.toHaveBeenCalled()
+    expect(await notifications.request(fakeTab('https://known.example/'), { requestingUrl: 'https://known.example/', isMainFrame: true })).toBe(true)
+  })
+
+  it('decides nothing when the page was loaded again while the question was open', async () => {
+    const { notifications, decisions, ask } = setup('dismiss')
+    const tab = fakeTab(PAGE)
+    ask.mockImplementation(async () => { tab.navigate(); return 'allow' })
+    expect(await notifications.request(tab, { requestingUrl: PAGE, isMainFrame: true })).toBe(false)
+    expect(decisions.set).not.toHaveBeenCalled()
+    // The new page is not treated as having said "not now".
+    ask.mockImplementation(async () => 'allow')
+    expect(await notifications.request(tab, { requestingUrl: PAGE, isMainFrame: true })).toBe(true)
   })
 
   it('remembers a block, and refuses', async () => {

@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest'
 import http from 'node:http'
 import { launchElectron, closeElectron } from './launch-electron.mjs'
-import { findChrome, waitFor } from './smoke-helpers.mjs'
+import { evaluateRetrying, findChrome, waitFor } from './smoke-helpers.mjs'
 
 /** Waits up to 10 s for the shell window: launchElectron() can resolve before
  * the chrome view's target is attached, so the first look may find none. */
@@ -48,7 +48,7 @@ async function navigateTo (app: import('playwright').ElectronApplication, chrome
 }
 
 async function pageReport (tab: any): Promise<{ userAgent: string, hasUserAgentData: boolean, brands: number }> {
-  return await tab.evaluate(() => ({
+  return await evaluateRetrying(tab, () => ({
     userAgent: navigator.userAgent,
     hasUserAgentData: 'userAgentData' in navigator,
     brands: (navigator as any).userAgentData?.brands?.length ?? 0

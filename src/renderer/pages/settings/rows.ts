@@ -34,7 +34,9 @@ function renderChoice (control: Extract<Control, { type: 'choice' }>, state: Set
 }
 
 function renderToggle (control: Extract<Control, { type: 'toggle' }>, state: SettingsState, id: string): HTMLElement {
-  const input = h('input', { type: 'checkbox', id, checked: state.value(control.key) === true, disabled: control.disabled?.(state) === true })
+  // A switch that cannot act shows what is really happening: off.
+  const disabled = control.disabled?.(state) === true
+  const input = h('input', { type: 'checkbox', id, checked: !disabled && state.value(control.key) === true, disabled })
   input.addEventListener('change', () => { void state.set(control.key, input.checked) })
   return h('span', { className: 'switch' }, input, h('span', { className: 'track' }))
 }
@@ -143,6 +145,7 @@ export function renderRow (row: Row, state: SettingsState): HTMLElement {
     case 'apps': field = renderApps(state); break
     case 'engines': field = renderEngines(state); break
     case 'usage': field = renderUsage(state); break
+    case 'custom': field = control.render(state); break
     case 'info': field = h('span', { className: 'value', textContent: control.text(state) }); break
   }
 
@@ -162,13 +165,14 @@ export function renderRow (row: Row, state: SettingsState): HTMLElement {
   // A control that is more than one compact field (several checkboxes, a
   // list of apps, the usage-statistics block) stacks under its own label
   // full width, rather than squeezed beside it at the row's right edge.
-  const isWide = control.type === 'apps' || control.type === 'engines' || control.type === 'usage' || control.type === 'clearData' || control.type === 'pageList'
+  const isWide = control.type === 'apps' || control.type === 'engines' || control.type === 'usage' || control.type === 'clearData' || control.type === 'pageList' || (control.type === 'custom' && control.wide === true)
   return h('div', { className: isWide ? 'row wide' : 'row', id: `row-${row.id}` },
     h('div', { className: 'row-text' },
       labelsControl
         ? h('label', { className: 'row-label', htmlFor: controlId, textContent: row.label })
         : h('span', { className: 'row-label', textContent: row.label }),
       changed ? h('span', { className: 'changed', title: 'Changed from the default', textContent: 'Changed' }) : null,
-      helpText === '' ? null : h('p', { className: 'row-help', textContent: helpText })),
+      helpText === '' ? null : h('p', { className: 'row-help', textContent: helpText }),
+      row.below?.(state) ?? null),
     h('div', { className: 'row-control' }, field, reset))
 }

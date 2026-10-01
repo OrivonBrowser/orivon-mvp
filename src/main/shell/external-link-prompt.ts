@@ -32,8 +32,10 @@ export async function confirmExternalLink (window: BaseWindow, question: Externa
     defaultId: CANCEL,
     cancelId: CANCEL,
     noLink: true,
-    message: `Open ${question.scheme} link with your system's default app?`,
-    detail: `${formatOriginForDisplay(question.origin)} wants to open:\n${displayableUrl(question.url)}`
+    message: question.initiator === 'person' ? 'Open your mail program with this page\'s link?' : `Open ${question.scheme} link with your system's default app?`,
+    detail: question.initiator === 'person'
+      ? displayableUrl(question.url)
+      : `${formatOriginForDisplay(question.origin)} wants to open:\n${displayableUrl(question.url)}`
   })
   return response === ALLOW
 }

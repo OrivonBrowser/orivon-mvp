@@ -189,22 +189,61 @@ describe('the bookmarks bar check', () => {
   })
 })
 
-describe('the QR code row', () => {
-  const more = (items: readonly MenuItemView[]): readonly MenuItemView[] => (items.find((item) => item.kind === 'submenu' && item.label === 'More tools') as Extract<MenuItemView, { kind: 'submenu' }>).items
+const submenu = (items: readonly MenuItemView[], label: string): readonly MenuItemView[] => (items.find((item) => item.kind === 'submenu' && item.label === label) as Extract<MenuItemView, { kind: 'submenu' }>).items
+const more = (items: readonly MenuItemView[]): readonly MenuItemView[] => submenu(items, 'More tools')
+const share = (items: readonly MenuItemView[]): readonly MenuItemView[] => submenu(items, 'Share')
 
-  it('is offered on a page, after Save as PDF', async () => {
+describe('the Share rows', () => {
+  it('list Copy link, Email link and the QR code, in that order', async () => {
     const { ctx } = await setup()
-    const tools = more(menuItems(ctx))
-    expect(find(tools, 'page.qr')).toMatchObject({ label: 'Create QR code for this page' })
-    expect(find(tools, 'page.qr')).not.toHaveProperty('disabled')
-    expect(runnableIds(menuItems(ctx)).has('page.qr')).toBe(true)
-    const ids = tools.flatMap((item) => item.kind === 'command' ? [item.id] : [])
-    expect(ids.indexOf('page.qr')).toBe(ids.indexOf('page.pdf') + 1)
+    const rows = share(menuItems(ctx))
+    expect(rows.flatMap((item) => item.kind === 'command' ? [item.id] : [])).toEqual(['share.copyLink', 'share.email', 'page.qr'])
+    expect(find(rows, 'page.qr')).toMatchObject({ label: 'Create QR code' })
+    expect(find(more(menuItems(ctx)), 'page.qr')).toBeUndefined()
+    for (const id of ['share.copyLink', 'share.email', 'page.qr']) {
+      expect(find(rows, id), id).not.toHaveProperty('disabled')
+      expect(runnableIds(menuItems(ctx)).has(id as never), id).toBe(true)
+    }
   })
 
+  it('are greyed, with the reason under them, on the new-tab page and a shell page', async () => {
+    for (const url of ['orivon://newtab/', 'orivon://settings/']) {
+      const { ctx } = await setup(url)
+      const rows = share(menuItems(ctx))
+      expect(find(rows, 'share.copyLink'), url).toMatchObject({ disabled: true, hint: 'No address' })
+      expect(find(rows, 'share.email'), url).toMatchObject({ disabled: true, hint: 'No address' })
+      const ids = runnableIds(menuItems(ctx))
+      expect(ids.has('share.copyLink'), url).toBe(false)
+      expect(ids.has('share.email'), url).toBe(false)
+    }
+  })
+})
+
+describe('the Create shortcut row', () => {
+  const row = async (url: string, isPrivate = false): Promise<MenuItemView | undefined> => {
+    const { ctx } = await setup(url)
+    const services = { ...(ctx.services as object), isPrivate } as unknown as WindowContext['services']
+    return find(more(menuItems({ ...ctx, services })), 'site.shortcut')
+  }
+
+  it('is offered for a web page, when this system can make one', async () => {
+    const platform = process.platform
+    const shown = await row('https://a.example/')
+    if (platform === 'linux' || platform === 'win32') expect(shown).toMatchObject({ label: 'Create shortcut', hint: null })
+    else expect(shown).toMatchObject({ disabled: true, hint: 'Not available on macOS' })
+  })
+
+  it('is greyed in a private window and on a page with no address', async () => {
+    if (process.platform !== 'linux' && process.platform !== 'win32') return
+    expect(await row('https://a.example/', true)).toMatchObject({ disabled: true, hint: 'Not available in a private window' })
+    expect(await row('orivon://newtab/')).toMatchObject({ disabled: true, hint: 'No address' })
+  })
+})
+
+describe('the QR code row', () => {
   it('is greyed, and not runnable, on the new-tab page', async () => {
     const { ctx } = await setup('orivon://newtab/')
-    expect(find(more(menuItems(ctx)), 'page.qr')).toMatchObject({ disabled: true })
+    expect(find(share(menuItems(ctx)), 'page.qr')).toMatchObject({ disabled: true })
     expect(runnableIds(menuItems(ctx)).has('page.qr')).toBe(false)
   })
 })

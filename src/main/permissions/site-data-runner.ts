@@ -1,6 +1,5 @@
 // The site-info popover's "Cookies and site data" page -- I/O, unlike
-// ./site-info.js/./site-switches.js: real directory sizes, a real
-// session's cookie jar, and (best-effort) a real page's own
+// ./site-info.js/./site-switches.js: real directory sizes and (best-effort) a real page's own
 // `navigator.storage.estimate()`. Split from those two by the
 // code-guidelines.md naming convention (`-runner.ts` does I/O).
 //
@@ -13,7 +12,7 @@
 
 import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { Session, WebContents } from 'electron'
+import type { WebContents } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { appDataRoot } from '../../broker/grants/origin-hash.js'
 import { appRootDirectoryName } from '../../loader/index.js'
@@ -87,15 +86,6 @@ export async function orivonStorageFor (
     directorySizeBytes(join(appRoot, 'code'))
   ])
   return { filesBytes: filesBytes + oldFilesBytes, filesQuotaBytes, codeBytes, codeVersion }
-}
-
-/** 0 on any failure -- an unreadable cookie jar reads as "nothing to show", not an error the popover surfaces. */
-export async function cookieCountFor (session: Session, origin: string): Promise<number> {
-  try {
-    return (await session.cookies.get({ url: origin })).length
-  } catch {
-    return 0
-  }
 }
 
 export interface BrowserStorageEstimate {

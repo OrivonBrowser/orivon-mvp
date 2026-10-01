@@ -19,7 +19,7 @@ imports `electron`; the rest are `<name>.ts` decisions ([`../README.md`](../READ
 [`../../broker/`](../../broker/) (`grants/node-ledger-storage.ts`'s atomic write,
 `policy/pin.ts`), [`../../loader/fetch/`](../../loader/fetch/) (`verifier-origin.ts`,
 `content-root.ts`), [`../../trust/website-level.ts`](../../trust/website-level.ts),
-[`../sessions/web-request-owner.ts`](../sessions/web-request-owner.ts), the top-level
+[`../sessions/web-request-owner.ts`](../sessions/web-request-owner.ts), [`../auth/note-certificate.ts`](../auth/note-certificate.ts) (told which certificate each connection presented, from the verify proc), the top-level
 `registry.ts`, `node:fs`, `node:fs/promises`, `node:net`, `node:path`, and `multiformats` (`cid`,
 `bases/base36`) for the same IPNS-key shape check `ipfs/ipns.ts` applies, never that file itself
 (this directory's own boundary, below).

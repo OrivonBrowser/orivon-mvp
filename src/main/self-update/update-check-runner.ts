@@ -18,14 +18,12 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Subsystem } from '../registry.js'
 import { checkForUpdate, type ReleaseInfo } from './update-check.js'
+import { GITHUB_OWNER, GITHUB_REPO, releaseUrl } from './release-url.js'
 
-// package.json's repository field, spelled out as constants rather than
-// parsed from it at runtime: this is the one place they are needed, and a
-// runtime parse of a free-text git URL would add a failure mode (a
-// reformatted field silently breaking the update check) for no benefit over
-// two constants next to the fetch that uses them.
-const GITHUB_OWNER = 'OrivonBrowser'
-const GITHUB_REPO = 'orivon-mvp'
+// The repository is spelled out as constants (./release-url.ts) rather than
+// parsed from package.json at runtime: a runtime parse of a free-text git URL
+// would add a failure mode (a reformatted field silently breaking the update
+// check) for no benefit.
 const RELEASES_API = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`
 const FETCH_TIMEOUT_MS = 10_000
 
@@ -115,7 +113,7 @@ async function fetchLatestGithubRelease (): Promise<ReleaseInfo | null> {
     // shell.openExternal; constructing the URL ourselves from a tag that
     // decideUpdateNotice has already confirmed is version-shaped removes
     // that trust requirement rather than adding a check for it.
-    url: `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tag/${encodeURIComponent(tagName)}`
+    url: releaseUrl(tagName)
   }
 }
 

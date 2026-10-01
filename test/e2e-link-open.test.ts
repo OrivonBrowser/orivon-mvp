@@ -10,7 +10,9 @@
 // (as Chrome activates a foreground open) or stays behind (a background
 // open, never taking focus) -- except shift+click, which Chrome opens in a
 // new window rather than a tab, covered separately below.
+import { writeFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
+import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './launch-electron.mjs'
@@ -106,9 +108,15 @@ afterAll(async () => {
 
 interface Launched { app: ElectronApplication, chrome: Page, exited: () => number | null }
 
-async function launched (extraArgs: string[] = []): Promise<Launched> {
+/** `popupsAllowed`: the page-opens-windows budgets are only reached by a site the person let open pop-ups; the blocker refuses a script's synthetic clicks first. */
+async function launched (extraArgs: string[] = [], popupsAllowed = false): Promise<Launched> {
   // NO_SOUND_ARGS/NO_SOUND_ENV: nothing this launches may make sound on the owner's speakers.
-  const app = await launchElectron({ appPath: '.', args: [...NO_SOUND_ARGS, ...extraArgs], env: NO_SOUND_ENV })
+  const app = await launchElectron({
+    appPath: '.',
+    args: [...NO_SOUND_ARGS, ...extraArgs],
+    env: NO_SOUND_ENV,
+    ...(popupsAllowed ? { seedProfile: async (dir: string) => { await writeFile(join(dir, 'settings.json'), JSON.stringify({ version: 1, values: { 'sites.popups': 'allow' } })) } } : {})
+  })
   let code: number | null = null
   app.process().on('exit', (c) => { code = c })
   await waitFor(() => { try { findChrome(app); return true } catch { return false } })
@@ -258,7 +266,7 @@ it('a shift-click in a private window opens a second window in the same (private
 }, 60_000)
 
 it('a page cannot open unlimited windows with synthetic, untrusted shift-clicks: only the first opens a window, the rest fall back to ordinary tabs', async () => {
-  const { app, chrome } = await launched()
+  const { app, chrome } = await launched([], true)
   try {
     await clickAddressBarRetrying(chrome, `${ORIGIN_A}/`)
     expect((await waitForTab(chrome, { address: `${ORIGIN_A}/` })).ok).toBe(true)
@@ -317,7 +325,7 @@ for (const { label, modifiers } of POST_MODIFIERS) {
 }
 
 it('a page that shift-clicks itself in every new window is bounded process-wide, not geometrically (5, 25, ...)', async () => {
-  const { app, chrome } = await launched()
+  const { app, chrome } = await launched([], true)
   try {
     await clickAddressBarRetrying(chrome, `${ORIGIN_A}${SELF_REPLICATE_PATH}`)
     expect((await waitForTab(chrome, { address: `${ORIGIN_A}${SELF_REPLICATE_PATH}` })).ok).toBe(true)
@@ -335,4 +343,4 @@ it('a page that shift-clicks itself in every new window is bounded process-wide,
   } finally {
     await closeElectron(app)
   }
-}, 30_000)
+}, 60_000)

@@ -5,6 +5,9 @@ import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import { renderMainPage } from './main-view.js'
 import { renderWeb3Page } from './web3-view.js'
 import { renderDataPage } from './data-view.js'
+import type { SitePermissionsView } from '../../main/site-settings/site-permissions-view.js'
+import type { SiteKind } from '../../main/site-settings/kinds.js'
+import type { DataPageView } from './data-view.js'
 
 // The site-info popup's whole job: fetch this ONE origin's info, render
 // whichever of the three pages is current, and stage capability switches
@@ -18,11 +21,16 @@ interface OrivonSiteInfo {
   trust: () => Promise<SiteTrust | null>
   data: () => Promise<SiteDataSnapshot | null>
   apply: (changes: ReadonlyArray<{ capability: CapabilityKind, on: boolean, shownPatterns: readonly Pattern[] }>) => Promise<ApplyResult | null>
+  sitePermissions: () => Promise<SitePermissionsView | null>
+  setSitePermission: (kind: string, value: string) => Promise<SitePermissionsView | null>
   revokePickedPath: (pickId: string) => Promise<SiteInfo | null>
   clearBrowserData: () => Promise<void>
+  removeCookie: (key: string) => Promise<void>
+  clearCookies: () => Promise<void>
   reload: () => Promise<void>
-  openAllSites: () => Promise<void>
+  openSiteSettings: () => Promise<void>
   openExtensions: () => Promise<void>
+  openCertificate: () => Promise<void>
   reportHeight: (height: number) => void
   initialPage: 'main' | 'web3'
   origin: string | null
@@ -61,6 +69,16 @@ let data: SiteDataSnapshot | null = null
 const staged = new Map<CapabilityKind, boolean>()
 let pendingStaleCapabilities = new Set<CapabilityKind>()
 let showReloadBanner = false
+/** Null for a site with no per-site settings: an app, which its capability rows already cover. */
+let sitePermissions: SitePermissionsView | null = null
+/** Kinds the person set in this visit stay listed even when put back to their default. */
+const touchedKinds = new Set<SiteKind>()
+let permissionsMoreOpen = false
+let permissionsChanged = false
+let dataView: DataPageView = { cookiesOpen: false, armed: null, deleted: false }
+let disarmTimer: ReturnType<typeof setTimeout> | undefined
+/** A second press within this long confirms a delete. */
+const ARM_MS = 4000
 
 /** Measured from where the content actually ENDS, matching
  * ../settings/main.ts's own reportContentHeight exactly -- see that
@@ -83,7 +101,8 @@ function renderCurrent (): void {
   dataSection.hidden = page !== 'data'
 
   if (page === 'main' && info !== null) {
-    renderMainPage(mainSection, info, trust, staged, pendingStaleCapabilities, showReloadBanner, {
+    const permissions = sitePermissions === null ? null : { view: sitePermissions, touched: touchedKinds, moreOpen: permissionsMoreOpen, changed: permissionsChanged }
+    renderMainPage(mainSection, info, trust, staged, pendingStaleCapabilities, showReloadBanner, permissions, {
       onToggle: (capability, next) => {
         pendingStaleCapabilities.delete(capability)
         const originalRow = info?.capabilityRows.find((r) => r.capability === capability)
@@ -96,16 +115,26 @@ function renderCurrent (): void {
       onCancel: () => { staged.clear(); pendingStaleCapabilities = new Set(); renderCurrent() },
       onOpenWeb3: () => { void openWeb3() },
       onOpenData: () => { void openData() },
-      onOpenAllSites: () => { void bridge.openAllSites() },
+      onOpenCertificate: () => { void bridge.openCertificate() },
+      onOpenSiteSettings: () => { void bridge.openSiteSettings() },
+      permissions: {
+        onChoose: (kind, value) => { void chooseSitePermission(kind, value) },
+        onToggleMore: () => { permissionsMoreOpen = !permissionsMoreOpen; renderCurrent() },
+        onReload: () => { void bridge.reload() }
+      },
       onManageExtensions: () => { void bridge.openExtensions() },
       onReload: () => { void bridge.reload() }
     })
   } else if (page === 'web3') {
     renderWeb3Page(web3Section, trust, () => { page = 'main'; renderCurrent() })
   } else if (page === 'data' && info !== null) {
-    renderDataPage(dataSection, data, info.pickedPathRows, {
+    renderDataPage(dataSection, data, info.pickedPathRows, dataView, {
       onBack: () => { page = 'main'; renderCurrent() },
-      onClearBrowserData: () => { void clearBrowserData() },
+      onClearBrowserData: () => { press('site', clearBrowserData) },
+      onToggleCookies: () => { dataView = { ...dataView, cookiesOpen: !dataView.cookiesOpen }; renderCurrent() },
+      onRemoveCookie: (key) => { void removeCookie(key) },
+      onClearCookies: () => { press('cookies', clearCookies) },
+      onReload: () => { void bridge.reload() },
       onRevokePickedPath: (pickId) => { void revokePickedPathAndRefresh(pickId) }
     })
   }
@@ -147,20 +176,67 @@ async function confirmStaged (): Promise<void> {
   renderCurrent()
 }
 
+async function chooseSitePermission (kind: SiteKind, value: string): Promise<void> {
+  const next = await bridge.setSitePermission(kind, value)
+  // A refusal changed nothing: draw again so the select goes back to what is stored.
+  if (next === null) { renderCurrent(); return }
+  touchedKinds.add(kind)
+  sitePermissions = next
+  permissionsChanged = true
+  renderCurrent()
+}
+
 async function revokePickedPathAndRefresh (pickId: string): Promise<void> {
   const result = await bridge.revokePickedPath(pickId)
   if (result !== null) info = result
   renderCurrent()
 }
 
-async function clearBrowserData (): Promise<void> {
-  await bridge.clearBrowserData()
+/** First press arms a deleting button, the second (within `ARM_MS`) does it. */
+function press (target: 'cookies' | 'site', run: () => Promise<void>): void {
+  if (disarmTimer !== undefined) clearTimeout(disarmTimer)
+  disarmTimer = undefined
+  if (dataView.armed === target) {
+    dataView = { ...dataView, armed: null }
+    renderCurrent()
+    void run()
+    return
+  }
+  dataView = { ...dataView, armed: target }
+  disarmTimer = setTimeout(() => { dataView = { ...dataView, armed: null }; renderCurrent() }, ARM_MS)
+  renderCurrent()
+  document.getElementById(target === 'cookies' ? 'clear-cookies' : 'clear-site')?.focus()
+}
+
+/** Whatever was deleted, the page reads again and the tab is asked to reload to show it. */
+async function afterDelete (): Promise<void> {
+  dataView = { ...dataView, deleted: true }
+  showReloadBanner = true
   data = await bridge.data()
   renderCurrent()
 }
 
+async function clearBrowserData (): Promise<void> {
+  await bridge.clearBrowserData()
+  await afterDelete()
+}
+
+async function clearCookies (): Promise<void> {
+  await bridge.clearCookies()
+  await afterDelete()
+}
+
+async function removeCookie (key: string): Promise<void> {
+  await bridge.removeCookie(key)
+  await afterDelete()
+  // The row that held the keyboard is gone: it goes to the next delete button, or the list's toggle.
+  document.querySelector<HTMLElement>('.cookie-row .icon-btn, #cookies-toggle')?.focus()
+}
+
 async function init (): Promise<void> {
-  info = await bridge.get()
+  const [loaded, permissions] = await Promise.all([bridge.get(), bridge.sitePermissions()])
+  info = loaded
+  sitePermissions = permissions
   renderCurrent()
   // Always fetched, not only when opening the Web3 page: the main page's
   // own connection row needs the real secure/insecure/cached state too,

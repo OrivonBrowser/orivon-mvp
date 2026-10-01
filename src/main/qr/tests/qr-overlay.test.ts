@@ -17,7 +17,7 @@ describe('the QR overlay', () => {
   it('is a sheet at the top right that goes with the tab or the navigation', () => {
     const def = qrOverlayFor({ writeClipboard: vi.fn(), downloadsDir: () => '', exists: () => false, writeFile: vi.fn() })
     expect(def).toMatchObject({ name: 'qr', placement: { kind: 'area', at: 'top-right', width: 300 }, focus: 'take', keep: 'fresh' })
-    expect(def.closeOn).toEqual({ ...CLOSE_LIKE_POPUP, navigation: true })
+    expect(def.closeOn).toEqual({ ...CLOSE_LIKE_POPUP, navigation: true, layout: false })
   })
 
   it('hands the page the address main gave it, and only that', () => {

@@ -32,6 +32,18 @@ export class UpdatesState {
     this.changed()
   }
 
+  /** The version of a newer release the last check found, without a leading `v`; null when there is none. */
+  available (): string | null {
+    const answer = this.answer
+    if (answer === null || answer === 'checking' || answer === 'refused' || !answer.newer || answer.latest === null) return null
+    return answer.latest.replace(/^v/i, '')
+  }
+
+  /** Opens the release page in a tab of this window. Main builds the address from the answer it kept. */
+  async openRelease (): Promise<void> {
+    await this.bridge.request('updates', { type: 'openRelease' })
+  }
+
   /** What was found, or '' before anything was asked. */
   words (): string {
     const answer = this.answer

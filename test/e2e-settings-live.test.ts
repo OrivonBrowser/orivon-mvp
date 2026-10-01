@@ -194,7 +194,7 @@ it('holds a redraw while a <select> has focus, and catches up once it loses it',
 
     // Moves focus to the search box: the held-back redraw catches up on
     // the resulting focusout, without needing another push.
-    await page.locator('input.search').focus()
+    await page.getByRole('searchbox', { name: 'Search settings' }).focus()
 
     expect(await waitFor(async () => await retention.getAttribute('data-marker') === null)).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')

@@ -13,6 +13,7 @@ import { UpdatesState } from './updates-state.js'
 import { UsageState } from './usage-state.js'
 import { Web3State } from './web3-state.js'
 import { coalesce } from '../shared/coalesce.js'
+import { SETTINGS_PARTS, type SettingsPart, type SettingsPartDef } from './settings-parts.js'
 
 export interface AboutInfo {
   readonly version: string
@@ -46,9 +47,10 @@ export class SettingsState {
   /** This profile and the others, and whether this window is private. */
   profiles: { readonly profiles: ReadonlyArray<{ readonly id: string, readonly name: string, readonly current: boolean }>, readonly isPrivate: boolean } | null = null
   private readonly listeners = new Set<() => void>()
+  private readonly parts = new Map<string, SettingsPart>()
   private readonly reloadProfilesCoalesced: () => void
 
-  constructor (private readonly bridge: OrivonInternal = internalBridge()) {
+  constructor (private readonly bridge: OrivonInternal = internalBridge(), partDefs: readonly SettingsPartDef[] = SETTINGS_PARTS) {
     this.shortcuts = new ShortcutsState(bridge, () => { this.notify() })
     this.privacy = new PrivacyState(bridge, () => { this.notify() })
     this.apps = new AppsState(bridge, () => { this.notify() })
@@ -57,6 +59,7 @@ export class SettingsState {
     this.usage = new UsageState(bridge, () => { this.notify() })
     this.updates = new UpdatesState(bridge, () => { this.notify() })
     this.web3 = new Web3State(bridge)
+    for (const def of partDefs) this.parts.set(def.name, def.create(bridge, () => { this.notify() }))
     // A rename made close together with a colour change, or several profile
     // windows starting at once, can each fire `profiles.changed` -- coalesced
     // the same way `apps.changed`/`privacy.changed` already are.
@@ -73,6 +76,7 @@ export class SettingsState {
     await this.web3.load()
     await this.downloads.load()
     await this.engines.load()
+    for (const part of this.parts.values()) await part.load?.()
     this.profiles = await this.bridge.request('profiles', { type: 'list' }) as SettingsState['profiles']
     this.bridge.onEvent((topic, payload) => {
       if (this.shortcuts.handle(topic, payload)) return
@@ -83,6 +87,7 @@ export class SettingsState {
       if (this.privacy.handle(topic)) return
       if (this.usage.handle(topic)) return
       if (this.updates.handle(topic, payload)) return
+      for (const part of this.parts.values()) if (part.handle?.(topic, payload) === true) return
       if (topic === 'profiles.changed') { this.reloadProfilesCoalesced(); return }
       if (topic !== 'settings.changed') return
       const change = payload as { key: string, value: unknown }
@@ -94,6 +99,18 @@ export class SettingsState {
   private async reloadProfiles (): Promise<void> {
     this.profiles = await this.bridge.request('profiles', { type: 'list' }) as SettingsState['profiles']
     this.notify()
+  }
+
+  /** Asks main's domain for this page (a feature's own commands) and returns its answer. */
+  async request (domain: string, command: object): Promise<unknown> {
+    return await this.bridge.request(domain, command)
+  }
+
+  /** A feature's own state, registered in `settings-parts.ts`. */
+  part<P extends SettingsPart = SettingsPart> (name: string): P {
+    const part = this.parts.get(name)
+    if (part === undefined) throw new Error(`no Settings part is registered as ${name}`)
+    return part as P
   }
 
   value (key: string): unknown {
