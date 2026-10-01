@@ -6,8 +6,13 @@
 // widensAuthority below, and README.md's Design notes for why.
 
 import type { CapabilityKind, Grant, Pattern } from '../../contracts/index.js'
-import { canonicalAddress, classifyAddress } from './address.js'
+import { canonicalAddress, classifyAddress, isPublicUnicast } from './address.js'
+import { normalizeHost } from './canonical-host.js'
+import { hostSpecKind, parsePattern as parseConnectPattern, parsePortSpec } from './connect-patterns.js'
+import type { ParsedPattern as ConnectPattern } from './connect-patterns.js'
+import { isLocalhostName } from './origin.js'
 import { isArray, ownProperty } from './own-property.js'
+import { isReservedPort, patternNamesPortExactly } from './reserved-ports.js'
 import { compareVersions } from './version-order.js'
 
 export { compareVersions } from './version-order.js'
@@ -285,8 +290,8 @@ interface PortRange {
 }
 
 type ParsedPattern =
-  | { readonly shape: 'host-port'; readonly host: string; readonly ports: PortRange }
-  | { readonly shape: 'ports'; readonly ports: PortRange }
+  | { readonly shape: 'host-port', readonly pattern: ConnectPattern, readonly ports: PortRange }
+  | { readonly shape: 'ports', readonly ports: PortRange }
 
 /**
  * True if everything `requested` authorises is already authorised by
@@ -303,7 +308,7 @@ type ParsedPattern =
  * answers "is this pattern set contained in that pattern set" and touches no
  * network at all. Do not merge them.
  */
-function covers (granted: Pattern, requested: Pattern): boolean {
+export function covers (granted: Pattern, requested: Pattern): boolean {
   // web.context's own patterns (ADR-0019; manifest.ts's own doc: "compared
   // exactly") are whole `https://host[:port]` origin strings -- a shape
   // this file's host:port/port-range grammar was never built for, and
@@ -320,86 +325,75 @@ function covers (granted: Pattern, requested: Pattern): boolean {
   // with none of host:port's own subset structure.
   if (granted.startsWith('https://') || requested.startsWith('https://')) return granted === requested
 
-  const from = parsePattern(granted)
-  const to = parsePattern(requested)
+  const from = parseForCoverage(granted)
+  const to = parseForCoverage(requested)
   if (from === null || to === null) return false
 
   if (from.shape === 'host-port') {
     if (to.shape !== 'host-port') return false
-    if (!hostCovers(from.host, to.host)) return false
+    if (!hostCovers(from.pattern.host, to.pattern.host)) return false
   } else if (to.shape !== 'ports') {
     return false
   }
 
-  return from.ports.lo <= to.ports.lo && to.ports.hi <= from.ports.hi
+  if (from.ports.lo > to.ports.lo || to.ports.hi > from.ports.hi) return false
+
+  // A port the broker keeps closed to broad grants is reached only by a
+  // pattern that names it as a single port (`reserved-ports.ts`), so a
+  // requested pattern naming one is not covered by a granted pattern that
+  // merely spans it: `*:*` -> `*:6697` adds reach although every port of the
+  // second lies inside the first. Only a host:port pattern has this rule;
+  // a bare port range is a listen pattern.
+  const namesReservedPort = to.shape === 'host-port' && to.ports.lo === to.ports.hi && isReservedPort(to.ports.lo)
+  return !namesReservedPort || (from.shape === 'host-port' && patternNamesPortExactly(from.pattern, to.ports.lo))
 }
 
 /**
  * `host:port` (`*:*`, `api.example.com:443`, `[::1]:443`) or a bare port range
- * (`6881-6889`, `6881`, `*`) -- the two forms in contracts/manifest.ts.
+ * (`6881-6889`, `6881`, `*`) -- the two forms in contracts/manifest.ts. The
+ * host:port split and the port grammar are connect-patterns.ts's own
+ * (`parsePattern`, `parsePortSpec`), so this file cannot read a pattern
+ * differently from the matcher that enforces it (docs/open-questions.md A27).
  */
-function parsePattern (raw: string): ParsedPattern | null {
-  const text = raw.trim().toLowerCase()
+function parseForCoverage (raw: string): ParsedPattern | null {
+  const text = raw.trim()
   if (text.length === 0) return null
 
-  // Split at the LAST colon so a bracketed IPv6 literal keeps its own colons.
-  const at = text.lastIndexOf(':')
-  if (at === -1) {
-    const ports = parsePorts(text)
-    return ports === null ? null : { shape: 'ports', ports }
+  const pattern = parseConnectPattern(text)
+  if (pattern !== null) {
+    const ports = portRange(pattern.port)
+    return ports === null ? null : { shape: 'host-port', pattern, ports }
   }
 
-  const host = text.slice(0, at)
-  const ports = parsePorts(text.slice(at + 1))
-  if (host.length === 0 || ports === null) return null
-  return { shape: 'host-port', host, ports }
+  const ports = portRange(text)
+  return ports === null ? null : { shape: 'ports', ports }
 }
 
-function parsePorts (text: string): PortRange | null {
-  if (text === '*') return { lo: 0, hi: 65535 }
-
-  const at = text.indexOf('-')
-  if (at === -1) {
-    const port = parsePort(text)
-    return port === null ? null : { lo: port, hi: port }
-  }
-
-  const lo = parsePort(text.slice(0, at))
-  const hi = parsePort(text.slice(at + 1))
-  if (lo === null || hi === null || lo > hi) return null
-  return { lo, hi }
-}
-
-// Leading zeros rejected: `0443` reads as octal in some parsers and decimal
-// in others, and a pattern whose meaning depends on the reader is not a
-// pattern. Port 0 is rejected by the `[1-9]` lead -- it means "any free port"
-// to bind() and nothing at all to connect(). Aligned with the identical
-// reasoning in ./connect.ts's portMatches (2026-08-27) -- the two grammars
-// had drifted, so a manifest could declare a port pattern this subset check
-// accepted but the runtime connect matcher could never honour.
-function parsePort (text: string): number | null {
-  if (!/^[1-9][0-9]{0,4}$/.test(text)) return null
-  const value = Number(text)
-  return value <= 65535 ? value : null
+function portRange (text: string): PortRange | null {
+  const spec = parsePortSpec(text)
+  if (spec === null) return null
+  return spec === 'any' ? { lo: 0, hi: 65535 } : spec
 }
 
 /**
  * True if `granted` already authorises every host `requested` would.
  *
- * NO SUFFIX-WILDCARD BRANCH, deliberately. This file used to treat a leading
- * `*.` as a real suffix wildcard here -- `*.example.com` covering
- * `api.example.com` -- while `connect-patterns.ts`'s `hostSpecKind` already
- * treats ANY host containing `*` beyond a bare `*` as authorising NOTHING at
- * connect time (docs/open-questions.md A27: the two files disagreed about
- * this). A granted `*.example.com` therefore authorises no host at all, so
- * any REAL host `requested` names is WIDER than that, not narrower --
- * treating it as a real suffix match here silently skipped re-consent for an
- * app moving from an inert pattern to one that actually works. An unchanged
- * `*.example.com` pattern still reads as covered, via the exact-string check
- * below; only a pattern that would actually widen falls through to a prompt.
+ * NO SUFFIX-WILDCARD BRANCH, deliberately. `connect-patterns.ts`'s
+ * `hostSpecKind` treats ANY host containing `*` beyond a bare `*` as
+ * authorising NOTHING at connect time (docs/open-questions.md A27 is the
+ * record of this file once disagreeing). A granted `*.example.com` therefore
+ * authorises no host at all, so any REAL host `requested` names is WIDER than
+ * that, not narrower -- treating it as a real suffix match here would skip
+ * re-consent for an app moving from an inert pattern to one that actually
+ * works. An unchanged `*.example.com` pattern still reads as covered, via the
+ * exact-string check below; only a pattern that would actually widen falls
+ * through to a prompt.
  */
 function hostCovers (granted: string, requested: string): boolean {
-  if (granted === '*') return true
+  if (hostSpecKind(granted) === 'any-public-unicast') return wildcardReaches(requested)
+
+  const grantedHost = normalizeHost(granted)
+  const requestedHost = normalizeHost(requested)
 
   // Both sides an address literal: compare canonically, so two spellings of
   // ONE address (`127.0.0.1` / `2130706433`) read as identical authority
@@ -407,11 +401,31 @@ function hostCovers (granted: string, requested: string): boolean {
   // changed (docs/open-questions.md A20). Never applies across an
   // address/hostname mismatch -- a hostname is never treated as if it might
   // secretly be the same as some address literal.
-  if (classifyAddress(granted) !== 'unparseable' && classifyAddress(requested) !== 'unparseable') {
-    return canonicalAddress(granted) === canonicalAddress(requested)
+  if (classifyAddress(grantedHost) !== 'unparseable' && classifyAddress(requestedHost) !== 'unparseable') {
+    return canonicalAddress(grantedHost) === canonicalAddress(requestedHost)
   }
 
-  return granted === requested
+  return grantedHost === requestedHost
+}
+
+/**
+ * Whether a granted `*` host authorises everything `requested` does. `*` is
+ * PUBLIC UNICAST ONLY at run time (`hostSpecKind`), so it covers only what
+ * that reaches: the wildcard itself, an ordinary hostname, and a public
+ * address literal. A private, loopback, link-local or metadata literal, and
+ * any `localhost` name, are reached only by naming them, so requesting one
+ * under a granted `*` is a widening. A host that authorises nothing adds no
+ * reach, but it is not positively understood either, so it reads as not
+ * covered.
+ */
+function wildcardReaches (requested: string): boolean {
+  const host = normalizeHost(requested)
+  switch (hostSpecKind(requested)) {
+    case 'any-public-unicast': return true
+    case 'hostname': return !isLocalhostName(host)
+    case 'address-literal': return isPublicUnicast(host)
+    case 'authorises-nothing': return false
+  }
 }
 
 // --- bundle pin --------------------------------------------------------------
