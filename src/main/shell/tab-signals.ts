@@ -8,6 +8,7 @@ import { audioSignal } from './signals/audio.js'
 import { connectionSignal } from './signals/connection.js'
 import { crashedSignal } from './signals/crashed.js'
 import { findSignal } from './signals/find.js'
+import { readerSignal } from '../reader/reader-signal.js'
 import { stopKeySignal } from './signals/stop-key.js'
 import type { TabRecord, TabState } from './tab-types.js'
 import { restoredTitle } from '../session-restore/restored-title.js'
@@ -37,6 +38,7 @@ export const TAB_SIGNALS: readonly TabSignal[] = [
   connectionSignal,
   crashedSignal,
   findSignal,
+  readerSignal,
   restoredTitle,
   stopKeySignal
 ]

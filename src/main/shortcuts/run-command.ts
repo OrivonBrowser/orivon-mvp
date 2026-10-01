@@ -21,6 +21,7 @@ import { kioskAllows } from '../window-state/kiosk.js'
 import type { CommandId } from './commands.js'
 import { pdfCommand, pipCommand, printCommand, saveCommand, screenshotCommand, viewSourceCommand } from '../page-tools/page-commands.js'
 import { realDeps } from '../page-tools/real-deps.js'
+import { readerCommand } from '../reader/reader-command.js'
 
 /** A new dependency of a command is a `ShellServices` member, never a field here. */
 export interface CommandDeps {
@@ -144,7 +145,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'page.pdf': void pdfCommand(target, realDeps); return
     case 'page.save': void saveCommand(target, realDeps); return
     case 'page.viewSource': void viewSourceCommand(target); return
-    case 'page.reader': return
+    case 'page.reader': readerCommand(target, services); return
     case 'page.forceDark': return
     case 'caret.toggle': return
     case 'share.copyLink': return

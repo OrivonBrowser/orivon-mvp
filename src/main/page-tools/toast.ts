@@ -35,7 +35,8 @@ export const TOAST_TEXT = {
   shotFailed: { text: 'Could not take the screenshot', tone: 'error' },
   longPage: { text: 'Saved the first part of a very long page', tone: 'ok' },
   noVideo: { text: 'No video to pop out on this page', tone: 'info' },
-  noSource: { text: 'The source of this page cannot be shown', tone: 'info' }
+  noSource: { text: 'The source of this page cannot be shown', tone: 'info' },
+  notReadable: { text: 'Reader view is not available for this page.', tone: 'info' }
 } as const satisfies Record<string, ToastText>
 
 export type ToastCode = keyof typeof TOAST_TEXT

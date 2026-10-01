@@ -30,6 +30,8 @@ import { tasksDomain } from '../info/tasks-domain.js'
 import { endProcess, focusTab, listTasks } from '../info/tasks-runner.js'
 import type { TasksEnv } from '../info/tasks-runner.js'
 import { privacyDomain } from '../privacy/privacy-domain.js'
+import { readerDomain } from '../reader/reader-domain.js'
+import { readerArticles } from '../reader/reader-store.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { nodeLoaderStorage } from '../../loader/cache/node-storage.js'
@@ -79,6 +81,14 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       copy: copyToClipboard
     }),
     profiles: profilesDomain(services.profiles),
+    reader: readerDomain({
+      articles: readerArticles,
+      settings: services.settings,
+      ownerOf: (contents) => {
+        const found = services.windows.findTab(contents)
+        return found === null ? undefined : { key: found.window.tabs, tabs: found.window.tabs, tabId: found.tabId, print: () => { services.commands.run('page.print', found.window) } }
+      }
+    }),
     pages: pagesDomain(services.windows),
     extensions: extensionsDomain({
       extensions,
