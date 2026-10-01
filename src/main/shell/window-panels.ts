@@ -65,7 +65,9 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, dirnam
   const siteInfo = createSiteInfoPanel(
     win, win.contentView, siteInfoController, app.getPath('userData'),
     () => tabs.activeWebContents(),
+    // The card closes with the reload it asked for, so it cannot go on telling the person to reload the page that just did.
     () => {
+      siteInfo.close()
       const { activeTabId } = tabs.getState()
       if (activeTabId !== null) tabs.reload(activeTabId)
     },

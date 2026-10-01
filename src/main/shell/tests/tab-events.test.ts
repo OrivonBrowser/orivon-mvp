@@ -46,7 +46,7 @@ interface FakeContents extends EventEmitter {
   close: ReturnType<typeof vi.fn>
   getURL: () => string
   isDestroyed: () => boolean
-  navigationHistory: { canGoBack: () => boolean, canGoForward: () => boolean, goBack: () => void, goForward: () => void }
+  navigationHistory: { canGoBack: () => boolean, canGoForward: () => boolean, goBack: () => void, goForward: () => void, getAllEntries: () => never[], getActiveIndex: () => number }
 }
 
 function fakeContents (url = 'https://news.example/'): FakeContents {
@@ -57,7 +57,7 @@ function fakeContents (url = 'https://news.example/'): FakeContents {
   wc.close = vi.fn()
   wc.getURL = () => url
   wc.isDestroyed = () => false
-  wc.navigationHistory = { canGoBack: () => false, canGoForward: () => false, goBack: vi.fn(), goForward: vi.fn() }
+  wc.navigationHistory = { canGoBack: () => false, canGoForward: () => false, goBack: vi.fn(), goForward: vi.fn(), getAllEntries: () => [], getActiveIndex: () => -1 }
   return wc
 }
 

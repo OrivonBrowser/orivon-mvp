@@ -34,6 +34,7 @@ import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs
 import { findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from './smoke-helpers.mjs'
 import { APP_CLOSE_RACE_MS, asPage, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
 import { seedExtensions } from './extensions-fixtures.js'
+import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from './question-support.js'
 import type { ElectronApplication, Page } from 'playwright'
 
 afterAll(async () => {
@@ -177,6 +178,116 @@ it(
     })
   },
   60_000 + APP_CLOSE_RACE_MS
+)
+
+it(
+  'a switched-on capability grants for real and asks again only after it was off; the card\'s Reload closes it and the tab keeps its history',
+  async () => {
+    await runPhase('site-info-turn-on', async (check) => {
+      const { server, url, setAsPageScript } = await startFixtureServer()
+      let app: ElectronApplication | undefined
+      try {
+        app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
+        const running = app
+        await stubNativeDialogs(running)
+        const chrome = await waitForChrome(running)
+        await waitForAddressBarStable(chrome)
+        await clickAddressBarRetrying(chrome, url)
+        await waitForTab(chrome, { address: url, title: 'fixture-a' })
+
+        const origin = new URL(url).origin
+        const installed = await grantFs(running, origin)
+        check('the developer-only grant hook is installed in this build', installed)
+        if (!installed) throw new Error('dev-grant hook missing -- was this built via npm run test:e2e?')
+        await reloadAndSettle(chrome, url)
+        await waitFor(async () => (await chrome.getAttribute('#site-permissions-btn', 'hidden')) === null, 8_000)
+
+        const tabView = (): Page => {
+          const found = running.windows().find((w) => w.url() === url)
+          if (found === undefined) throw new Error('fixture tab view not found')
+          return found
+        }
+        const readFsAttempt = async (): Promise<string> => await asPage(tabView(), setAsPageScript, `${url}__as-page-script.js`, async () => {
+          const orivon = (globalThis as unknown as { orivon: { fs: { writeFile: (path: string, data: Uint8Array) => Promise<void> } } }).orivon
+          try {
+            await orivon.fs.writeFile('h2.txt', new TextEncoder().encode('x'))
+            return 'wrote'
+          } catch (error) {
+            return `refused: ${error instanceof Error ? error.message : String(error)}`
+          }
+        })
+        const history = async (): Promise<{ canGoBack: boolean } | undefined> => await running.evaluate(({ webContents }, start) => {
+          const wc = webContents.getAllWebContents().find((c) => c.getURL() === start)
+          return wc === undefined ? undefined : { canGoBack: wc.navigationHistory.canGoBack() }
+        }, url)
+        check('the tab that became an app by the grant kept the page it came from behind it', (await history())?.canGoBack === true)
+
+        // ---- off, through the card ---------------------------------------
+        await chrome.click('#site-permissions-btn')
+        await waitFor(() => findPopup(running, '/site-info/') !== undefined, 5_000)
+        let popup = findPopup(running, '/site-info/')
+        if (popup === undefined) throw new Error('site-info popup did not open')
+        await waitFor(async () => (await popup?.$$('.switch.on'))?.length === 1, 5_000)
+        await popup.click('.switch.on')
+        await popup.click('button.btn-primary:has-text("Confirm")')
+        await waitFor(async () => (await popup?.$$('.switch.on'))?.length === 0, 5_000)
+
+        const whileOff = await readFsAttempt()
+        check(`with fs off, the page's own fs call is refused (${whileOff})`, whileOff.startsWith('refused'))
+        const askedWhileOff = await asPage(tabView(), setAsPageScript, `${url}__as-page-script.js`, async () => {
+          const orivon = (globalThis as unknown as { orivon: { app: { requestGrant: (r: { capability: string }) => Promise<boolean> } } }).orivon
+          return await orivon.app.requestGrant({ capability: 'fs' })
+        })
+        check('a request for the capability it was switched off for resolves false with no question', askedWhileOff === false && await questionGone(running))
+
+        // ---- on, through the card ----------------------------------------
+        popup = findPopup(running, '/site-info/')
+        if (popup === undefined) throw new Error('site-info popup closed')
+        await waitFor(async () => (await popup?.$$('.switch:not(.on)'))?.length === 1, 5_000)
+        await popup.click('.switch:not(.on)')
+        await popup.click('button.btn-primary:has-text("Confirm")')
+        const banner = await waitFor(async () => (await popup?.$$('text=Reload this page to apply updated settings'))?.length === 1, 5_000)
+        check('the reload banner appears after switching a capability on', banner)
+        check('the row now renders on', (await popup.$$('.switch.on')).length === 1)
+
+        const grants = await asPage(tabView(), setAsPageScript, `${url}__as-page-script.js`, async () => {
+          const orivon = (globalThis as unknown as { orivon: { app: { grants: () => Promise<Array<{ capability: string }>> } } }).orivon
+          return (await orivon.app.grants()).map((g) => g.capability)
+        })
+        check(`the real broker holds fs again: ${JSON.stringify(grants)}`, grants.includes('fs'))
+
+        // ---- the card's Reload closes the card, the tab keeps its history -----
+        await tabView().evaluate(() => { (window as unknown as Record<string, unknown>)['__beforeReload'] = true })
+        await popup.click('button:has-text("Reload")')
+        const cardGone = await waitFor(() => findPopup(running, '/site-info/') === undefined, 8_000)
+        check('the card closes with the reload it asked for', cardGone)
+        const reloaded = await waitFor(async () => {
+          try { return !(await tabView().evaluate(() => (window as unknown as Record<string, unknown>)['__beforeReload'] === true)) } catch { return false }
+        }, 15_000)
+        check('the page reloaded', reloaded)
+        await waitForTab(chrome, { address: url, title: 'fixture-a' })
+        check('the reloaded tab still has the page it came from behind it', (await history())?.canGoBack === true)
+
+        const afterReload = await readFsAttempt()
+        check(`after the reload the page's own fs call succeeds (${afterReload})`, afterReload === 'wrote')
+
+        // The decline was retired by the switch: asking again reaches the person.
+        const answered = asPage(tabView(), setAsPageScript, `${url}__as-page-script.js`, async () => {
+          const orivon = (globalThis as unknown as { orivon: { app: { requestGrant: (r: { capability: string }) => Promise<boolean> } } }).orivon
+          return await orivon.app.requestGrant({ capability: 'fs' })
+        })
+        const question = await readQuestion(await waitQuestion(running))
+        check(`asking for it again reaches the person, in the panel (${JSON.stringify(question.buttons)})`, question.buttons.includes('Allow') && question.buttons.includes('Deny'))
+        await answerQuestion(running, 'Deny')
+        check('and a Deny resolves false', (await answered) === false)
+        check('no native message box was opened', (await noNativeDialogs(running)).length === 0)
+      } finally {
+        if (app !== undefined) await closeElectronApp(app)
+        await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+      }
+    })
+  },
+  90_000 + APP_CLOSE_RACE_MS
 )
 
 it(
