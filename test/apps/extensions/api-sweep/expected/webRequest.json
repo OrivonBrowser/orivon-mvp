@@ -1,0 +1,24 @@
+{
+  "worker": {
+    "onAuthRequired": "event",
+    "onBeforeRedirect": "event",
+    "onBeforeRequest": "event",
+    "onBeforeSendHeaders": "event",
+    "onCompleted": "event",
+    "onErrorOccurred": "event",
+    "onHeadersReceived": "event",
+    "onResponseStarted": "event",
+    "onSendHeaders": "event"
+  },
+  "page": {
+    "onAuthRequired": "event",
+    "onBeforeRedirect": "event",
+    "onBeforeRequest": "event",
+    "onBeforeSendHeaders": "event",
+    "onCompleted": "event",
+    "onErrorOccurred": "event",
+    "onHeadersReceived": "event",
+    "onResponseStarted": "event",
+    "onSendHeaders": "event"
+  }
+}

@@ -12,6 +12,7 @@ import { patchStoreUpdater, readRegistry } from './registry-runner.js'
 import { readBaseManifestText } from './effective-manifest-runner.js'
 import { finishInstall, type InstallContext, type InstallOutcome } from './install-runner.js'
 import { downloadCrxBytes } from '../../../vendor/electron-chrome-web-store/src/browser/installer.js'
+import { refusePrivateInstall } from './install-private.js'
 import { storeCrxDownloadUrl, storeTestPublisherKeyHash } from './store-download-seam.js'
 
 /** The lines `describeExtensionInstall(next, 'store').detail` has that
@@ -72,6 +73,8 @@ export async function installFromStoreCrx (
   approvedManifest?: string,
   options: InstallFromStoreOptions = {}
 ): Promise<InstallOutcome> {
+  const refused = refusePrivateInstall(ctx)
+  if (refused !== undefined) return refused
   const publisherKeyHash = options.publisherKeyHash ?? storeTestPublisherKeyHash()
   const crx = verifyCrx3(crxBytes, { requirePublisherProof: true, ...(publisherKeyHash === undefined ? {} : { publisherKeyHash }) })
   if (crx.id !== expectedId) {
@@ -120,6 +123,8 @@ export async function installFromStoreCrx (
  * store-download-seam.ts's env-driven override is compiled in and set.
  */
 export async function installFromStore (ctx: InstallContext, expectedId: string): Promise<InstallOutcome> {
+  const refused = refusePrivateInstall(ctx)
+  if (refused !== undefined) return refused
   const { bytes } = await downloadCrxBytes(storeCrxDownloadUrl(expectedId))
   return await installFromStoreCrx(ctx, bytes, expectedId)
 }
@@ -134,6 +139,8 @@ export async function installFromStore (ctx: InstallContext, expectedId: string)
  * lands.
  */
 export async function updateFromStore (ctx: InstallContext, id: string): Promise<InstallOutcome> {
+  const refused = refusePrivateInstall(ctx)
+  if (refused !== undefined) return refused
   const entry = readRegistry(ctx.userDataPath).find((candidate) => candidate.id === id)
   const pending = entry?.updater.kind === 'store' ? entry.updater.pendingUpdate : undefined
   if (pending === undefined) return { installed: false, reason: 'no update is pending' }

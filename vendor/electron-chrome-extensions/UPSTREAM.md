@@ -701,6 +701,46 @@
     wiring (`src/main/extensions/dnr-api.ts`) renders a per-tab matched-rule count driven by
     `webRequest`, from main, never from the extension's own script -- there was no public way in
     for a caller outside this library's own IPC handlers to set one tab's badge text.
+45. **The renderer seam: extras, `__crx`, strict calls, `devtools_page`.**
+    `src/renderer/index.ts`: `injectExtensionAPIs(extras = [])`. `mainWorldScript` no longer ends
+    by deleting `electron` and freezing `chrome`; that tail is a second self-contained function,
+    `finalizeScript`, which runs after every extra. The order is `mainWorldScript`, each extra
+    through `contextBridge.executeInMainWorld({ func })` (one at a time, so a throwing extra does
+    not stop the others or leave the page unlocked), then `finalizeScript`. Between them
+    `globalThis.__crx` (a configurable property, deleted by `finalizeScript`) carries what an extra
+    needs: `extensionId`, `manifest`, `context` (`'worker'` or `'page'`), `declares(permission)`
+    (the manifest lists it under `permissions` or `optional_permissions`), `call(name)` (an
+    `invokeExtension` with the new `strict` option), `event(name)` (an `ExtensionEvent`) and
+    `define(ns, build)` (the library's own `Object.defineProperty(chrome, ns, ...)`, with
+    Electron's native object of that name as `base`). `ExtensionMessageOptions.strict`: an IPC
+    error rethrows with the `Error invoking remote method 'crx-msg': Error: ` prefix removed, so a
+    handler's own message reaches the caller; with a trailing callback the error is logged and the
+    callback gets `undefined`, as before. Every library namespace keeps the old swallow-and-resolve
+    behaviour. `finalizeScript` leaves `chrome` unfrozen in the document of the manifest's own
+    `devtools_page`: Electron attaches `chrome.devtools` after this preload ran, and a frozen
+    `chrome` made that attach fail (measured: with the freeze skipped, `devtools.panels.create`
+    calls back). New `src/renderer/extras.ts` holds the list (`setExtraMainWorldApis`,
+    `getExtraMainWorldApis`); `src/preload.ts` passes it to `injectExtensionAPIs`. Reason: the
+    namespaces Orivon adds are written once, in `src/preload/extension-apis/`, instead of as more
+    blocks in this file.
+46. **Toolbar actions from main.** `src/browser/api/browser-action.ts`: public
+    `listActions()` (id, title, whether a popup is set), `activateFromMain(extensionId, tab, anchor)`
+    (the existing `activateClick` with `recordInvocation: true`, for Orivon's own trusted code: a
+    menu entry or a shortcut; no extension message reaches it) and `notifyChanged()` (the private
+    `onUpdate`). Module setters, set once before the first activation: `setActionVisibilityCheck`
+    filters the actions `getState` and `listActions` report (unset: all of them), and
+    `setActionClickInterceptor`, called in `activateClick` after the invocation is recorded and
+    before any popup opens; `true` means the click was handled elsewhere (a side panel, an
+    omnibox), so no popup and no `onClicked`. `src/browser/index.ts` exposes the three methods as
+    `listActions`, `activateAction` and `notifyActionsChanged`. Reason: Orivon's own toolbar menu
+    lists and clicks actions, and pinning hides some, none of which the chrome view's
+    `<browser-action-list>` channel can do on Orivon's behalf.
+47. **Host-access checks receive the extension id.** `src/browser/api/cookies.ts` and
+    `src/browser/api/tabs.ts`: `setCookieHostAccessCheck`, `setTabUrlAccessCheck` and
+    `setTabHostAccessCheck` now call `check(manifest, url, extensionId, tabId?)`; `tabId` is passed
+    where the answer is about one tab (`filterTabDetails` reads `details.id`, `insertCSS` the
+    tab's id). Reason: a host decision that depends on more than the manifest (a per-extension
+    site-access choice, a one-tab grant) needs to know which extension asks and about which tab.
 
 `partition.ts` is reached only through the virtual specifier `src/main/extensions/
 electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and

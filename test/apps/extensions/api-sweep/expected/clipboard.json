@@ -1,0 +1,14 @@
+{
+  "worker": {
+    "DataItemType": "object",
+    "ImageType": "object",
+    "onClipboardDataChanged": "event",
+    "setImageData": "function"
+  },
+  "page": {
+    "DataItemType": "object",
+    "ImageType": "object",
+    "onClipboardDataChanged": "event",
+    "setImageData": "function"
+  }
+}

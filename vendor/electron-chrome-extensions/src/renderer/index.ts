@@ -1,11 +1,19 @@
 import { ipcRenderer, contextBridge, webFrame } from 'electron'
 import { addExtensionListener, removeExtensionListener } from './event'
 
-export const injectExtensionAPIs = () => {
+// Orivon patch (UPSTREAM.md patch 45): `extras` run in the main world after
+// the library's own namespaces and before the lock below, so an Orivon
+// namespace can use `globalThis.__crx` (see the Crx interface) without a
+// second preload or a second copy of the event plumbing.
+export const injectExtensionAPIs = (extras: ReadonlyArray<() => void> = []) => {
   interface ExtensionMessageOptions {
     noop?: boolean
     defaultResponse?: any
     serialize?: (...args: any[]) => any[]
+    // Orivon patch (UPSTREAM.md patch 45): a failing call rejects, or with a
+    // trailing callback logs and calls back `undefined`, instead of
+    // resolving `undefined` silently.
+    strict?: boolean
   }
 
   const invokeExtension = async function (
@@ -36,6 +44,10 @@ export const injectExtensionAPIs = () => {
       result = await ipcRenderer.invoke('crx-msg', extensionId, fnName, ...args)
     } catch (e) {
       // TODO: Set chrome.runtime.lastError?
+      if (options.strict && !callback) {
+        const message = e instanceof Error ? e.message : String(e)
+        throw new Error(message.replace(/^Error invoking remote method 'crx-msg': (Error: )?/, ''))
+      }
       console.error(e)
       result = undefined
     }
@@ -775,7 +787,45 @@ export const injectExtensionAPIs = () => {
       })
     })
 
+    // Orivon patch (UPSTREAM.md patch 45): what an extra main-world function
+    // may use, removed again by finalizeScript.
+    const declares = (permission: string) =>
+      [manifest.permissions, manifest.optional_permissions].some(
+        (list) => Array.isArray(list) && (list as unknown[]).includes(permission),
+      )
+    Object.defineProperty(globalThis, '__crx', {
+      configurable: true,
+      enumerable: false,
+      writable: true,
+      value: {
+        extensionId,
+        manifest,
+        context: typeof document === 'undefined' ? 'worker' : 'page',
+        declares,
+        call: (name: string) => invokeExtension(name, { strict: true }),
+        event: (name: string) => new ExtensionEvent<any>(name),
+        define: (ns: string, build: (base: any) => object) => {
+          Object.defineProperty(chrome, ns, {
+            value: build((chrome as any)[ns]),
+            enumerable: false,
+            configurable: true,
+          })
+        },
+      },
+    })
+
+    void 0 // no return
+  }
+
+  // Orivon patch (UPSTREAM.md patch 45): the lock that used to end
+  // mainWorldScript, run after the extras. IMPORTANT: self-contained.
+  function finalizeScript() {
+    const crx = (globalThis as any).__crx
+    const manifest: any = crx?.manifest || {}
+    const chrome = globalThis.chrome
+
     // Remove access to internals
+    delete (globalThis as any).__crx
     delete (globalThis as any).electron
 
     // Orivon patch (UPSTREAM.md patch 12): lock the top-level `chrome`
@@ -800,7 +850,12 @@ export const injectExtensionAPIs = () => {
       Object.defineProperty(globalThis, 'chrome', { value: chrome, writable: false, configurable: false })
     }
 
-    Object.freeze(chrome)
+    // Orivon patch (UPSTREAM.md patch 45): a manifest.devtools_page document
+    // stays unfrozen; Electron attaches chrome.devtools after this preload
+    // ran, and a frozen chrome makes that attach fail.
+    const isDevtoolsPage =
+      typeof manifest.devtools_page === 'string' && location.pathname.endsWith(manifest.devtools_page)
+    if (!isDevtoolsPage) Object.freeze(chrome)
 
     void 0 // no return
   }
@@ -808,6 +863,8 @@ export const injectExtensionAPIs = () => {
   if (!process.contextIsolated) {
     console.warn(`injectExtensionAPIs: context isolation disabled in ${location.href}`)
     mainWorldScript()
+    extras.forEach((extra) => extra())
+    finalizeScript()
     return
   }
 
@@ -820,9 +877,24 @@ export const injectExtensionAPIs = () => {
       ;(contextBridge as any).executeInMainWorld({
         func: mainWorldScript,
       })
+      // One failing extra must not leave the page unlocked or without the
+      // others, so each runs on its own and finalizeScript always follows.
+      for (const extra of extras) {
+        try {
+          ;(contextBridge as any).executeInMainWorld({ func: extra })
+        } catch (error) {
+          console.error(`injectExtensionAPIs extra failed (${location.href})`)
+          console.error(error)
+        }
+      }
+      ;(contextBridge as any).executeInMainWorld({
+        func: finalizeScript,
+      })
     } else {
       // TODO(mv3): remove webFrame usage
       webFrame.executeJavaScript(`(${mainWorldScript}());`)
+      for (const extra of extras) webFrame.executeJavaScript(`(${extra}());`)
+      webFrame.executeJavaScript(`(${finalizeScript}());`)
     }
   } catch (error) {
     console.error(`injectExtensionAPIs error (${location.href})`)

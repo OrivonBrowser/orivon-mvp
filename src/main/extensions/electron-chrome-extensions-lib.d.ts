@@ -66,13 +66,23 @@ declare module 'orivon:crx-extensions' {
      * directly from main, bypassing the `crx-msg` path a real
      * `chrome.action.setBadgeText` call takes. */
     setBadgeText (extensionId: string, tabId: number, text: string): void
+    /** UPSTREAM.md patch 46: the toolbar's actions, without icons (hidden
+     * ones left out once `setActionVisibilityCheck` is set). */
+    listActions (): Array<{ id: string, title: string, hasPopup: boolean }>
+    /** UPSTREAM.md patch 46: a click on `extensionId`'s action for `tab`, from
+     * Orivon's own trusted code, counted as an invocation like a real click. */
+    activateAction (extensionId: string, tab: Electron.WebContents, anchor: Electron.Rectangle): void
+    /** UPSTREAM.md patch 46: the toolbar list changed (public `onUpdate`). */
+    notifyActionsChanged (): void
   }
 
   /** The subset of `src/browser/router.ts`'s `ExtensionRouter` a caller
    * outside this library needs: registering a handler and sending an event
    * to a listening extension. */
   export interface ExtensionRouterApiEvent {
-    readonly extension: { readonly id: string }
+    readonly type: 'frame' | 'service-worker'
+    readonly sender: Electron.WebContents | Electron.ServiceWorkerMain | undefined
+    readonly extension: { readonly id: string, readonly manifest: Record<string, unknown> }
   }
   export interface ExtensionRouterHandlerOptions {
     extensionContext?: boolean
@@ -128,15 +138,15 @@ declare module 'orivon:crx-extensions-cookies' {
    * declaration needs no @types/chrome dependency of its own -- the real
    * check (src/main/extensions/extension-host-access.ts) parses it with
    * readExtensionManifest, the same as an install-time manifest. */
-  export function setCookieHostAccessCheck (check: (manifest: unknown, url: string) => boolean): void
+  export function setCookieHostAccessCheck (check: (manifest: unknown, url: string, extensionId: string) => boolean): void
 }
 
 declare module 'orivon:crx-extensions-tabs' {
-  export function setTabUrlAccessCheck (check: (manifest: unknown, url: string | undefined) => boolean): void
+  export function setTabUrlAccessCheck (check: (manifest: unknown, url: string | undefined, extensionId: string, tabId?: number) => boolean): void
   /** Gates chrome.tabs.insertCSS: host access only, never satisfied by the
    * `tabs` permission alone (that one only ever governs url/title/
    * favIconUrl visibility). */
-  export function setTabHostAccessCheck (check: (manifest: unknown, url: string | undefined) => boolean): void
+  export function setTabHostAccessCheck (check: (manifest: unknown, url: string | undefined, extensionId: string, tabId?: number) => boolean): void
 }
 
 declare module 'orivon:crx-extensions-browser-action' {
@@ -146,6 +156,12 @@ declare module 'orivon:crx-extensions-browser-action' {
    * real WebContents, not just its id: extension-host.ts's own wiring
    * attaches the navigation/destroy listeners that clear the grant. */
   export function setTabCaptureInvocationRecorder (recorder: (extensionId: string, tab: Electron.WebContents) => void): void
+  /** UPSTREAM.md patch 46: which extensions' actions the toolbar list shows
+   * (unset: all of them). */
+  export function setActionVisibilityCheck (check: (extensionId: string) => boolean): void
+  /** UPSTREAM.md patch 46: run once a click is counted, before any popup
+   * opens; true means it was handled elsewhere (no popup, no onClicked). */
+  export function setActionClickInterceptor (intercept: (extensionId: string, tab: Electron.WebContents) => boolean): void
 }
 
 declare module 'orivon:crx-extensions-tab-capture' {

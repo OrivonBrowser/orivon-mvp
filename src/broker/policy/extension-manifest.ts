@@ -7,6 +7,7 @@
 // extensions its own permissions yet.
 
 import { isArray, isString, ownProperty } from './own-property.js'
+import { PERMISSION_WORDS, friendlyHost, isAllSitesPattern } from './extension-permission-words.js'
 
 export interface ExtensionManifestFacts {
   readonly manifestVersion: 2 | 3
@@ -278,27 +279,6 @@ export interface ExtensionInstallDescription {
   readonly warning: boolean
 }
 
-const ALL_SITES_PATTERNS = new Set(['<all_urls>', '*://*/*'])
-
-/** True for a pattern that, on its own, already covers every site: the two
- * members of ALL_SITES_PATTERNS above. A scheme-qualified equivalent
- * (matching http alone, say) is deliberately NOT treated as all-sites here,
- * since it still excludes https. (A literal "star colon slash slash star
- * slash star" is not spelled out in this comment -- it closes a block
- * comment early.) */
-function isAllSitesPattern (pattern: string): boolean {
-  return ALL_SITES_PATTERNS.has(pattern)
-}
-
-/** A pattern's host portion for display: everything between "://" and the
- * next "/". Falls back to the raw pattern when it does not parse in that
- * scheme-host-path shape -- display only, never used for a security
- * decision. */
-function friendlyHost (pattern: string): string {
-  const match = /^[a-zA-Z*][a-zA-Z0-9+.-]*:\/\/([^/]+)/.exec(pattern)
-  return match?.[1] ?? pattern
-}
-
 const MAX_LISTED_HOSTS = 5
 
 /**
@@ -344,6 +324,10 @@ const API_PERMISSION_LINES: ReadonlyArray<{ names: readonly string[], line: stri
   { names: ['debugger'], line: 'Access the page debugger backend' }
 ]
 
+/** Permissions API_PERMISSION_LINES already words: PERMISSION_WORDS adds a
+ * line only for the others, so no permission is listed twice. */
+const NAMED_ABOVE = new Set(API_PERMISSION_LINES.flatMap(({ names }) => names))
+
 const TITLE_BY_SOURCE: Record<ExtensionInstallSource, (name: string) => string> = {
   unpacked: (name) => `Load "${name}"?`,
   file: (name) => `Install "${name}"?`,
@@ -372,6 +356,9 @@ export function describeExtensionInstall (facts: ExtensionManifestFacts, source:
   for (const { names, line } of API_PERMISSION_LINES) {
     if (names.some((name) => facts.apiPermissions.includes(name))) lines.push(line)
   }
+  for (const [name, line] of Object.entries(PERMISSION_WORDS)) {
+    if (!NAMED_ABOVE.has(name) && facts.apiPermissions.includes(name)) lines.push(line)
+  }
 
   const detail = lines.join('\n')
   return {
@@ -398,9 +385,7 @@ function isSubsetOf (subset: readonly string[], superset: readonly string[]): bo
   return subset.every((pattern) => supersetSet.has(pattern))
 }
 
-const WARNING_API_PERMISSIONS = new Set(
-  API_PERMISSION_LINES.flatMap(({ names }) => names)
-)
+const WARNING_API_PERMISSIONS = new Set([...NAMED_ABOVE, ...Object.keys(PERMISSION_WORDS)])
 
 /**
  * True when an update from `previous` to `next` must re-prompt before the

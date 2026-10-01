@@ -1,0 +1,14 @@
+{
+  "worker": {
+    "Mode": "object",
+    "Scheme": "object",
+    "onProxyError": "event",
+    "settings": "object"
+  },
+  "page": {
+    "Mode": "object",
+    "Scheme": "object",
+    "onProxyError": "event",
+    "settings": "object"
+  }
+}

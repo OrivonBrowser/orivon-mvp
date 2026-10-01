@@ -1,0 +1,8 @@
+{
+  "worker": {
+    "get": "function"
+  },
+  "page": {
+    "get": "function"
+  }
+}

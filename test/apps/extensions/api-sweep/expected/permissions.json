@@ -1,0 +1,18 @@
+{
+  "worker": {
+    "contains": "function",
+    "getAll": "function",
+    "onAdded": "event",
+    "onRemoved": "event",
+    "remove": "function",
+    "request": "function"
+  },
+  "page": {
+    "contains": "function",
+    "getAll": "function",
+    "onAdded": "event",
+    "onRemoved": "event",
+    "remove": "function",
+    "request": "function"
+  }
+}

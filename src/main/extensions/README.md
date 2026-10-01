@@ -86,10 +86,11 @@ same exception, reached only through the virtual specifiers above).
 
 | File | Layer |
 |---|---|
-| `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts`, `store-download-seam.ts`, `extension-prefs.ts`, `effective-manifest.ts`, `manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `extensions-detail-parts.ts`, `extensions-page-commands.ts` | The decision -- no `electron`, unit-tested under plain vitest |
+| `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts`, `store-download-seam.ts`, `extension-prefs.ts`, `effective-manifest.ts`, `manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `extensions-detail-parts.ts`, `extensions-page-commands.ts`, `extension-permission-check.ts`, `install-private.ts` | The decision -- no `electron`, unit-tested under plain vitest |
 | `unpack-runner.ts`, `registry-runner.ts`, `install-runner.ts`, `install-store-runner.ts`, `install-lifecycle.ts`, `extensions-view-runner.ts`, `store-runner.ts`, `extension-prefs-runner.ts`, `effective-manifest-runner.ts`, `extension-page-open.ts` | The real I/O |
 | `extension-install-prompt.ts`, `extensions-picker-runner.ts` | The native dialogs (`dialog.showMessageBox`, `dialog.showOpenDialog`) |
 | `extension-host.ts`, `extension-host-impl.ts`, `extension-popup-policy.ts`, `extension-event-filter.ts` | The library wiring: construction and tab lifecycle, the shell callbacks, the popup and background-page window policy, the per-listener event filter |
+| `api/` | Main-side handlers for the namespaces Orivon adds to `chrome.*`, and the one permission check (`api/README.md`) |
 | `extensions-subsystem.ts` | Registers everything into the running app via `../registry.ts`, including the Chrome Web Store (`store-runner.ts`) |
 | `store-test-hook.ts` | Test builds only -- exposes the store methods on `globalThis` for `test/e2e-extensions-store.test.ts` |
 | `extensions-domain.ts` | The `orivon://extensions` page's `InternalDomain` -- validates every request, wires the pieces above to what the page asks |

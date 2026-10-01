@@ -1,0 +1,40 @@
+{
+  "worker": {
+    "disable": "function",
+    "enable": "function",
+    "getBadgeBackgroundColor": "function",
+    "getBadgeText": "function",
+    "getBadgeTextColor": "function",
+    "getPopup": "function",
+    "getTitle": "function",
+    "getUserSettings": "function",
+    "isEnabled": "function",
+    "onClicked": "event",
+    "openPopup": "function",
+    "setBadgeBackgroundColor": "function",
+    "setBadgeText": "function",
+    "setBadgeTextColor": "function",
+    "setIcon": "function",
+    "setPopup": "function",
+    "setTitle": "function"
+  },
+  "page": {
+    "disable": "function",
+    "enable": "function",
+    "getBadgeBackgroundColor": "function",
+    "getBadgeText": "function",
+    "getBadgeTextColor": "function",
+    "getPopup": "function",
+    "getTitle": "function",
+    "getUserSettings": "function",
+    "isEnabled": "function",
+    "onClicked": "event",
+    "openPopup": "function",
+    "setBadgeBackgroundColor": "function",
+    "setBadgeText": "function",
+    "setBadgeTextColor": "function",
+    "setIcon": "function",
+    "setPopup": "function",
+    "setTitle": "function"
+  }
+}

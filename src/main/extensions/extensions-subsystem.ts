@@ -16,7 +16,8 @@ import { setEnabled, uninstall } from './install-lifecycle.js'
 import { createExtensionInstallPrompt } from './extension-install-prompt.js'
 import { createExtensionHost } from './extension-host.js'
 import { installExtensionPermissionWarningFilter } from './extension-known-permissions.js'
-import { startWebStore } from './store-runner.js'
+import { startWebStore, type StoreApi } from './store-runner.js'
+import { PRIVATE_INSTALL_REASON } from './install-private.js'
 import { installStoreTestHook } from './store-test-hook.js'
 import { installExtensionsInstallTestHook } from './extensions-install-test-hook.js'
 import type { InstalledExtension } from './registry.js'
@@ -25,7 +26,8 @@ import { createExtensionPrefsStore, prefsFilePath } from './extension-prefs-runn
 import { createManifestApplier, type ApplyMode, type ApplyResult } from './effective-manifest-runner.js'
 import { extensionPageOpen } from './extension-page-open.js'
 import { attachExtensionsDnr, getDnrEngine } from './extensions-dnr.js'
-import { installDnrPermissionCheck, registerDnrApiHandlers } from './dnr-api.js'
+import { registerDnrApiHandlers } from './dnr-api.js'
+import { installApis } from './api/install-apis.js'
 import { installDnrWebRequestHandlers } from './dnr-webrequest.js'
 
 export interface ExtensionsApi {
@@ -76,6 +78,12 @@ async function loadEnabledExtensions (userDataPath: string): Promise<void> {
   }
 }
 
+const refusingStore: StoreApi = {
+  installFromStore: async () => ({ installed: false, reason: PRIVATE_INSTALL_REASON }),
+  checkForUpdates: async () => {},
+  updateFromStore: async () => ({ installed: false, reason: PRIVATE_INSTALL_REASON })
+}
+
 export const extensionsSubsystem: Subsystem = {
   name: 'extensions',
   afterReady: async (ctx: SubsystemContext) => {
@@ -97,19 +105,21 @@ export const extensionsSubsystem: Subsystem = {
     // router/webRequest wiring may as well go right alongside it: nothing
     // reaches either before the first extension loads regardless.
     attachExtensionsDnr(session.defaultSession, userDataPath)
-    installDnrPermissionCheck(session.defaultSession)
     const { onRuleMatched, onTabNavigated } = registerDnrApiHandlers(hostExtensions.getRouter(), hostExtensions, userDataPath)
     installDnrWebRequestHandlers(session.defaultSession, getDnrEngine, onRuleMatched, onTabNavigated)
 
     const prefs = createExtensionPrefsStore(ctx.privateSession ? null : prefsFilePath(userDataPath))
     const manifests = createManifestApplier({ userDataPath, session: session.defaultSession, prefs, isOpen: extensionPageOpen })
-    manifests.applyAtBoot()
+    if (!ctx.privateSession) manifests.applyAtBoot()
+    installApis({ host: hostExtensions, session: session.defaultSession, userDataPath, ctx, prefs })
 
-    await loadEnabledExtensions(userDataPath)
+    // A private or guest runtime runs no extension: nothing loads, and no
+    // install route (the store page's included) is started.
+    if (!ctx.privateSession) await loadEnabledExtensions(userDataPath)
 
-    const install: InstallContext = { userDataPath, session: session.defaultSession, prompt: createExtensionInstallPrompt(), prefs }
+    const install: InstallContext = { userDataPath, session: session.defaultSession, prompt: createExtensionInstallPrompt(), prefs, privateSession: ctx.privateSession }
     const preloadPath = join(import.meta.dirname, '../preload/web-store.js')
-    const store = await startWebStore(install, preloadPath)
+    const store = ctx.privateSession ? refusingStore : await startWebStore(install, preloadPath)
     installStoreTestHook(store)
     const extensionsApi: ExtensionsApi = {
       installFromFolder: async (dir) => await installFromFolder(install, dir),

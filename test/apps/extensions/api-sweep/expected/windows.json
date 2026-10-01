@@ -1,0 +1,32 @@
+{
+  "worker": {
+    "WINDOW_ID_CURRENT": "number",
+    "WINDOW_ID_NONE": "number",
+    "create": "function",
+    "get": "function",
+    "getAll": "function",
+    "getCurrent": "function",
+    "getLastFocused": "function",
+    "onBoundsChanged": "event",
+    "onCreated": "event",
+    "onFocusChanged": "event",
+    "onRemoved": "event",
+    "remove": "function",
+    "update": "function"
+  },
+  "page": {
+    "WINDOW_ID_CURRENT": "number",
+    "WINDOW_ID_NONE": "number",
+    "create": "function",
+    "get": "function",
+    "getAll": "function",
+    "getCurrent": "function",
+    "getLastFocused": "function",
+    "onBoundsChanged": "event",
+    "onCreated": "event",
+    "onFocusChanged": "event",
+    "onRemoved": "event",
+    "remove": "function",
+    "update": "function"
+  }
+}
