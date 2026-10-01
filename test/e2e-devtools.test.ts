@@ -74,7 +74,7 @@ it('opens and closes on F12 and Ctrl+Shift+I, and closes when they are turned of
     expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://settings')))).toBe(true)
     const settings = app.windows().find((w) => w.url().startsWith('orivon://settings')) as Page
     await settings.waitForSelector('#row-developer-tools')
-    await settings.locator('#row-developer-tools input[type=checkbox]').evaluate((input) => { (input as HTMLInputElement).click() })
+    await settings.locator('#row-developer-tools input[type=checkbox]').click()
     expect(await waitFor(async () => await toolsOpenAt(app, address) === false)).toBe(true)
     await settings.waitForSelector('#row-developer-dock', { state: 'detached' })
     expect(mainOutput(app)).not.toContain('uncaught exception')

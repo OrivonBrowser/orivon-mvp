@@ -85,11 +85,11 @@ it('says how the light client is, switches it, and offers a restart only while t
 
     const toggle = page.locator('#row-web3-light-client input[type=checkbox]')
     expect(await toggle.isChecked()).toBe(true)
-    await toggle.evaluate((input) => { (input as HTMLInputElement).click() })
+    await toggle.click()
     await page.waitForSelector('#row-web3-restart')
     expect(await waitFor(() => { try { return (JSON.parse(readFileSync(join(userData, 'settings.json'), 'utf8')) as { values: Record<string, unknown> }).values['web3.lightClient'] === false } catch { return false } })).toBe(true)
 
-    await page.locator('#row-web3-light-client input[type=checkbox]').evaluate((input) => { (input as HTMLInputElement).click() })
+    await toggle.click()
     expect(await waitFor(async () => (await page.locator('#row-web3-restart').count()) === 0)).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
@@ -135,7 +135,7 @@ it('keeps looking for updates off until it is turned on', async () => {
     expect(await toggle.isChecked()).toBe(false)
     expect(await page.locator('#row-updates-result').count()).toBe(0)
 
-    await toggle.evaluate((input) => { (input as HTMLInputElement).click() })
+    await toggle.click()
     expect(await waitFor(() => { try { return (JSON.parse(readFileSync(join(userData, 'settings.json'), 'utf8')) as { values: Record<string, unknown> }).values['updates.check'] === true } catch { return false } })).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {

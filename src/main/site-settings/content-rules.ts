@@ -43,7 +43,7 @@ export function createContentRules (deps: ContentRulesDeps): ContentRules {
 
 /** What Electron's request details offer, described structurally so a test needs no Electron. */
 export interface RequestPageFacts {
-  readonly frame?: { readonly top?: { readonly url: string } | null } | null
+  readonly frame?: { readonly parent?: unknown, readonly top?: { readonly url: string } | null } | null
   readonly referrer?: string
   readonly webContents?: { readonly getURL: () => string } | undefined
 }
@@ -52,9 +52,13 @@ export interface RequestPageFacts {
  * The page a request belongs to: the top frame's address, else the address that sent the request, else the
  * tab's. The first that is a website wins, because the tab's own address can still be the page it is leaving
  * while a navigation is under way. Every read can throw (a frame that navigated or died): that answer is "unknown".
+ *
+ * A request the top document sent is the exception: its referrer names that document, while the frame's
+ * address can still be the page it is leaving for the first requests of a navigation.
  */
 export function requestPage (details: RequestPageFacts): string | undefined {
   const reads: Array<() => string | undefined> = [
+    () => details.frame?.parent === null ? details.referrer : undefined,
     () => details.frame?.top?.url,
     () => details.referrer,
     () => details.webContents?.getURL()

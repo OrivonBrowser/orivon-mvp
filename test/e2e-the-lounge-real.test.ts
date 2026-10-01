@@ -1,13 +1,13 @@
 // The Lounge, upstream's own Node server, running as an Orivon app: the launcher forks the bundled
 // server into a Worker through the Node shim, the server listens on 127.0.0.1:9000, and the page it
 // serves shows in a <webview> under web.embed's local pattern. Real consent prompt, real broker, real
-// sockets; the IRC server is ours (irc-fake-server.mjs), and the only network anything touches is
-// loopback.
+// sockets; the IRC servers are ours (irc-fake-server.mjs, one plain and one TLS with a self-signed
+// certificate), and the only network anything touches is loopback.
 //
 // THE APP LIVES IN THE SIBLING REPOSITORY (`orivon-ports`), which owns the build. Skipped when that
 // checkout or its prepared build is absent, and on the e2e build (this file needs the ordinary one).
-// Fixed ports, because the manifest fixes two of them: 9000 (the server's listener) and 6667 (the one
-// loopback IRC address it may dial).
+// Fixed ports, because the manifest fixes them: 9000 (the server's listener), and 6667 and 6697 (the
+// loopback IRC addresses it may dial).
 //
 // RUN THIS WITH:
 //   cd ../orivon-ports && ORIVON_MVP_ROOT=<this checkout> node src/cli.ts build the-lounge --rebuild
@@ -22,8 +22,9 @@ import { HERMETIC_RESOLVER, findChrome, tabIds, waitFor } from './smoke-helpers.
 import { APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, killChild, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
 import { startOwnServer } from './freetube-fixture.js'
 import { startFakeIrc } from './irc-fake-server.mjs'
+import { generateSelfSignedFixture } from '../src/broker/adapters/tests/tls-adapter.test-helpers.js'
 import {
-  ACCOUNT, BUILT, CHANNEL, IRC_PORT, LOUNGE_URL, NICK, ORIGIN, PORTS_ROOT, SERVE_PORT, STATIC_ROOT,
+  ACCOUNT, BUILT, CHANNEL, IRC_PORT, IRC_TLS_PORT, LOUNGE_URL, NICK, ORIGIN, PORTS_ROOT, SERVE_PORT, STATIC_ROOT,
   answerConsent, collectPageLogs, typeInto, filesEnding, launcherView, launcherViews, logOf, loungePage, promptsSeen, statusOf, within
 } from './the-lounge-support.js'
 import type { Launched } from './the-lounge-support.js'
@@ -96,12 +97,14 @@ it.skipIf(!ORDINARY_BUILD || !BUILT)(
       let app: Launched | undefined
       let server: ChildProcess | undefined
       let irc: Awaited<ReturnType<typeof startFakeIrc>> | undefined
+      let ircTls: Awaited<ReturnType<typeof startFakeIrc>> | undefined
       const t0 = Date.now()
       const since = (): string => `${String(Math.round((Date.now() - t0) / 100) / 10)}s`
       const mark = (name: string): void => { console.log(`[lounge-e2e] ${since()} ${name}`) }
       let logs: string[] = []
       try {
         irc = await startFakeIrc(IRC_PORT)
+        ircTls = await startFakeIrc(IRC_TLS_PORT, '127.0.0.1', { tls: generateSelfSignedFixture() })
         server = await startOwnServer('the-lounge-serve', join(PORTS_ROOT, 'src', 'cli.ts'), ['serve', 'the-lounge', '--port', String(SERVE_PORT)])
         check(`a plain static server serves the prepared build (${STATIC_ROOT})`, true)
 
@@ -166,6 +169,31 @@ it.skipIf(!ORDINARY_BUILD || !BUILT)(
         const sent = await waitFor(() => irc !== undefined && irc.privmsgs().some((line) => line === `PRIVMSG ${CHANNEL} :hello from the account`), 15_000)
         check('e) a message typed in The Lounge reaches the IRC server', sent, irc.privmsgs().join(' | '))
         check('e) and shows in the channel as the account\'s own', await chatHas(lounge, 'hello from the account', 10_000))
+
+        // j) TLS to a server whose certificate is self-signed, as some public networks' is. "Only allow trusted
+        // certificates" (upstream's default) refuses it and the lobby says why in Node's words; unticked, it connects.
+        const tlsFake = ircTls
+        const connectTls = async (name: string, trustedOnly: boolean): Promise<void> => {
+          await lounge.click('#footer button.connect')
+          await lounge.waitForSelector('#connect', { timeout: 15_000 })
+          await lounge.check('#connect input[name=tls]')
+          await typeInto(lounge, '#connect input[name=name]', name)
+          await typeInto(lounge, '#connect input[name=host]', 'localhost')
+          await typeInto(lounge, '#connect input[name=port]', String(IRC_TLS_PORT))
+          await typeInto(lounge, '#connect input[name=nick]', NICK)
+          await typeInto(lounge, '#connect input[name=join]', '')
+          await lounge.setChecked('#connect input[name=rejectUnauthorized]', trustedOnly)
+          await lounge.click('#connect button[type=submit]')
+        }
+        await connectTls('Self-signed, trusted only', true)
+        const refused = await chatHas(lounge, 'Error: self-signed certificate', 30_000)
+        check('j) with trusted certificates only, the lobby shows Node\'s "self-signed certificate" and nothing was sent', refused && !tlsFake.lines.some((line) => line.startsWith('NICK ')),
+          `${(await chatText(lounge)).slice(-400)} ## ${tlsFake.lines.join(' | ')}`)
+        await connectTls('Self-signed, any certificate', false)
+        const registered = await waitFor(() => tlsFake.lines.includes(`NICK ${NICK}`) && tlsFake.lines.some((line) => line.startsWith('USER ')), 30_000)
+        check('j) with "Only allow trusted certificates" unticked, The Lounge registers over TLS', registered && await chatHas(lounge, 'Connected to the network.', 15_000),
+          `${tlsFake.lines.join(' | ')} ## ${(await chatText(lounge)).slice(-400)}`)
+        await lounge.click(`#sidebar .channel-list-item[data-name="${CHANNEL}"]`)
 
         // g) a link opens a tab of its own and leaves the shown page where it was.
         const tabsBefore = await tabIds(chrome)
@@ -235,6 +263,7 @@ it.skipIf(!ORDINARY_BUILD || !BUILT)(
         if (app !== undefined) await closeElectronApp(app)
         if (server !== undefined) await killChild(server)
         if (irc !== undefined) await irc.close()
+        if (ircTls !== undefined) await ircTls.close()
         if (logs.length > 0) console.log(`[lounge-e2e] last page logs: ${JSON.stringify(logs.filter(noise).slice(-25))}`)
       }
     })
