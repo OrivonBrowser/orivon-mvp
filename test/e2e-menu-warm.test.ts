@@ -12,6 +12,8 @@
 // view-background-test-hook.ts.
 import { expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron } from './launch-electron.mjs'
+import { pressKey } from './e2e-helpers.js'
+import { distinctColours } from './qa-visual.js'
 import { ABSENCE_SETTLE_MS, findChrome, HERMETIC_RESOLVER, popoverShown, waitFor } from './smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 45_000
@@ -137,3 +139,59 @@ it('a brand-new tab is painted the app\'s own dark wash before its page ever loa
     expect(await assertNoElectronSurvivors()).toEqual([])
   }
 }, TEST_TIMEOUT_MS)
+
+/** What a reopened menu must be: the topmost child of its window, with a real size, painting more than one colour. */
+async function expectMenuOnScreen (app: Awaited<ReturnType<typeof launchElectron>>, path: string): Promise<void> {
+  const top = await app.evaluate(({ BaseWindow }) => {
+    const win = BaseWindow.getAllWindows()[0]
+    const view = win?.contentView.children.at(-1) as { webContents?: { getURL: () => string }, getBounds: () => { width: number, height: number } } | undefined
+    return view === undefined ? null : { url: view.webContents?.getURL() ?? '', bounds: view.getBounds() }
+  })
+  expect({ path, topmost: top?.url.includes('overlay=menu') }).toEqual({ path, topmost: true })
+  expect(top?.bounds.width ?? 0).toBeGreaterThan(100)
+  expect(top?.bounds.height ?? 0).toBeGreaterThan(100)
+  const page = menuPage(app)
+  expect(page).toBeDefined()
+  await page?.waitForSelector('.menu-row')
+  expect({ path, colours: distinctColours(await (page as NonNullable<typeof page>).screenshot()) > 3 }).toEqual({ path, colours: true })
+}
+
+it('reopens on screen after every way it can have been closed', async () => {
+  const app = await launchElectron({ appPath: '.', ...SILENT })
+  try {
+    const chrome = await readyChrome(app)
+    const shown = async (): Promise<boolean> => await popoverShown(app, 'overlay=menu')
+    const open = async (): Promise<void> => {
+      // Past REOPEN_DEBOUNCE_MS: a toggle just after a close that was a blur reads as that close's echo.
+      await new Promise((resolve) => { setTimeout(resolve, 450) })
+      await chrome.click('#menu')
+      expect(await waitFor(shown)).toBe(true)
+    }
+    const closedBy: Record<string, () => Promise<void>> = {
+      'the button again': async () => { await chrome.click('#menu') },
+      'a click into the page': async () => {
+        await app.evaluate(({ webContents }) => { webContents.getAllWebContents().find((wc) => wc.getType() === 'window' && /\/newtab\//.test(wc.getURL()))?.focus() })
+      },
+      Escape: async () => { await pressKey(app, 'overlay=menu', 'Escape') },
+      'choosing a row': async () => {
+        await menuPage(app)?.locator('.menu-row', { hasText: 'Settings' }).first().click()
+      },
+      'the window losing focus': async () => {
+        await app.evaluate(({ BaseWindow }) => { BaseWindow.getAllWindows()[0]?.blur() })
+        await app.evaluate(({ webContents }) => { webContents.getAllWebContents().find((wc) => wc.getURL().endsWith('/renderer/index.html'))?.focus() })
+      }
+    }
+
+    await open()
+    await expectMenuOnScreen(app, 'first open')
+    for (const [path, close] of Object.entries(closedBy)) {
+      await close()
+      expect({ path, closed: await waitFor(async () => !(await shown())) }).toEqual({ path, closed: true })
+      await open()
+      await expectMenuOnScreen(app, path)
+    }
+  } finally {
+    await closeElectron(app)
+    expect(await assertNoElectronSurvivors()).toEqual([])
+  }
+}, 90_000)

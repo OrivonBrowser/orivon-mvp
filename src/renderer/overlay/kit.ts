@@ -83,8 +83,10 @@ export function shownPayload (message: unknown, type: 'show' | 'ready'): { paylo
 
 /**
  * Mounts `page` into `root` so that a page that throws, while mounting or on
- * a later show, leaves a small error state and never a blank overlay. After a
- * failure later shows are ignored: the page's own nodes are gone.
+ * a later show, leaves a small error state and never a blank overlay. The
+ * error state replaces the page's nodes, so the next show clears the root and
+ * builds the page again rather than staying broken for the rest of the
+ * view's life (a menu view is kept warm across many opens).
  */
 export function mountPage (
   page: OverlayPage | undefined,
@@ -92,9 +94,7 @@ export function mountPage (
   overlay: Overlay,
   showError: (root: HTMLElement) => void
 ): { shown: (payload: unknown) => void } {
-  let failed = false
   const fail = (error: unknown): void => {
-    failed = true
     console.error(`[overlay] page "${overlay.name}" failed`, error)
     try { showError(root) } catch (again) { console.error('[overlay] the error state failed too', again) }
   }
@@ -102,17 +102,27 @@ export function mountPage (
     fail(new Error('no page is registered for this overlay'))
     return { shown: () => {} }
   }
-  let mounted: { shown: (payload: unknown) => void }
-  try {
-    mounted = page.mount(root, overlay)
-  } catch (error) {
-    fail(error)
-    return { shown: () => {} }
+  let mounted: { shown: (payload: unknown) => void } | undefined
+  const build = (): void => {
+    try {
+      mounted = page.mount(root, overlay)
+    } catch (error) {
+      mounted = undefined
+      fail(error)
+    }
   }
+  build()
   return {
     shown (payload) {
-      if (failed) return
-      try { mounted.shown(payload) } catch (error) { fail(error) }
+      if (mounted === undefined) {
+        root.replaceChildren()
+        build()
+        if (mounted === undefined) return
+      }
+      try { mounted.shown(payload) } catch (error) {
+        mounted = undefined
+        fail(error)
+      }
     }
   }
 }

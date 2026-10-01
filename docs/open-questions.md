@@ -1881,3 +1881,13 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** remove the view and its row code now (rec.); keep it for when the reading list lands; hide it while the root is empty.
 - **Who decides:** owner
 - **Blocks:** nothing
+
+### A344: The main menu that opens once and then no longer opens is not reproduced **[RESEARCH]**
+
+- **Question:** The owner saw the menu open once and then never again. A strict reopen check (topmost child, size, painted
+  pixels) after each close path (the button, a click in the page, Escape, a row, the window losing focus) passes. Which
+  button was it (the hamburger, or the tune icon beside it), how was the first one closed, and was it a dev or a built run?
+- **Why it matters:** the failure may sit in a path the check does not drive, and a menu that cannot reopen blocks the window.
+- **Options:** ask the owner for the three details (rec.); extend the check to a dev-server run; close the entry with the hardening alone.
+- **Who decides:** research first
+- **Blocks:** nothing
