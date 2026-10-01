@@ -118,12 +118,19 @@ describe('permissions.request', () => {
     })
   })
 
-  it('cuts a long name at forty characters', async () => {
-    const { call, ask } = setup({ identity: async () => ({ name: 'N'.repeat(80), icon: undefined }) })
+  it('cuts a very long name at a hundred and twenty characters', async () => {
+    const { call, ask } = setup({ identity: async () => ({ name: 'N'.repeat(200), icon: undefined }) })
     await call('permissions.request', { permissions: ['history'] }, true)
     const shown = (ask.mock.calls[0] as unknown as [unknown, unknown, { name: string }])[2].name
-    expect(shown).toHaveLength(40)
+    expect(shown).toHaveLength(120)
     expect(shown.endsWith('…')).toBe(true)
+  })
+
+  it('strips bidi controls, zero-width marks and line breaks from the name', async () => {
+    const { call, ask } = setup({ identity: async () => ({ name: 'Ori\u202Evon\u200B\n  Tabs\u2066', icon: undefined }) })
+    await call('permissions.request', { permissions: ['history'] }, true)
+    const shown = (ask.mock.calls[0] as unknown as [unknown, unknown, { name: string }])[2].name
+    expect(shown).toBe('Ori von Tabs')
   })
 
   it('on Allow stores the grant, emits onAdded and applies the manifest quietly', async () => {

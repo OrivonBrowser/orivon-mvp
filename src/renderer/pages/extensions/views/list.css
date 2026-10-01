@@ -7,9 +7,8 @@
 .ext-card.off .ext-icon, .ext-card.off .ext-name { opacity: 0.6; }
 
 .ext-row { display: flex; align-items: flex-start; gap: 14px; }
-.ext-icon { width: 32px; height: 32px; border-radius: 7px; flex: none; object-fit: contain; }
-.ext-icon.placeholder { display: flex; align-items: center; justify-content: center; background: var(--wsurface); color: var(--wink-dim); }
-.ext-icon.placeholder .icon { width: 18px; height: 18px; }
+.ext-icon { width: 32px; height: 32px; border-radius: 8px; flex: none; object-fit: contain; }
+.ext-icon.letter-tile { font-size: 15px; }
 .ext-main { min-width: 0; flex: 1 1 auto; }
 .ext-name-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .ext-name { overflow-wrap: anywhere; }

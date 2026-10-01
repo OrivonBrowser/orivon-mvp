@@ -126,7 +126,7 @@ describe('buildExtensionDetails', () => {
   it('lists the stripped permissions in plain words', () => {
     const entry: InstalledExtension = { ...BASE, stripped: { permissions: ['webRequest', 'nativeMessaging'], optionalPermissions: [], declarativeNetRequest: undefined } }
     expect(buildExtensionDetails(entry, NO_FACTS).stripped).toEqual([
-      'Network blocking rules: Orivon does not run these yet',
+      'Watching and changing network requests (webRequest)',
       'Talking to programs on your computer: not available in Orivon'
     ])
   })

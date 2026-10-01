@@ -230,8 +230,10 @@ export const injectBrowserAction = () => {
         img.onerror = () => {
           if (this.isConnected) {
             this.classList.toggle('no-icon', true)
-            if (this.title) {
-              this.dataset.letter = this.title.charAt(0)
+            // Orivon patch (UPSTREAM.md patch 46): the extension's name, not the action's title.
+            const letter = typeof info.letter === 'string' && info.letter !== '' ? info.letter : this.title.charAt(0)
+            if (letter) {
+              this.dataset.letter = letter
             }
             this.pendingIcon = undefined
           }
@@ -451,6 +453,13 @@ export const injectBrowserAction = () => {
           if (this.partition) browserActionNode.partition = this.partition
           if (this.alignment) browserActionNode.alignment = this.alignment
           browserActionNode.tab = tabId
+        }
+
+        // Orivon patch (UPSTREAM.md patch 46): appendChild moves a node already there, so the
+        // buttons follow the order of state.actions.
+        for (const action of state.actions) {
+          const node = this.shadowRoot?.querySelector(`[id=${action.id}]`)
+          if (node) this.shadowRoot?.appendChild(node)
         }
 
         // Remove any actions no longer in use

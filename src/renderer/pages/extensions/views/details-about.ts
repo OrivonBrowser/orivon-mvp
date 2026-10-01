@@ -5,10 +5,10 @@ import type { DetailSection } from '../types.js'
 import type { DetailsPayload, InstallReply } from '../state.js'
 import type { PageContext } from '../types.js'
 
-function detailRow (label: string, value: string): HTMLElement {
+function detailRow (label: string, value: string, mono = false): HTMLElement {
   return h('div', { className: 'detail-row' },
     h('span', { className: 'detail-label', textContent: label }),
-    h('span', { className: 'detail-value', textContent: value }))
+    h('span', { className: mono ? 'detail-value mono' : 'detail-value', textContent: value }))
 }
 
 function actions (details: DetailsPayload, ctx: PageContext): HTMLElement | null {
@@ -33,10 +33,10 @@ export const aboutSection: DetailSection = {
   order: 10,
   render: (details, ctx) => {
     const strippedBlock = details.stripped.length === 0 ? null : h('div', { className: 'detail-block' },
-      h('span', { className: 'detail-label', textContent: 'What this extension asked for that Orivon does not run yet' }),
+      h('span', { className: 'detail-label', textContent: 'Not available in Orivon yet' }),
       h('ul', { className: 'stripped-list' }, ...details.stripped.map((line) => h('li', { textContent: line }))))
     return h('div', { className: 'ext-details' },
-      detailRow('Id', details.id),
+      detailRow('ID', details.id, true),
       detailRow('Source', details.source),
       detailRow('Updates', details.updates),
       details.siteAccess === undefined ? null : detailRow('Site access', details.siteAccess),

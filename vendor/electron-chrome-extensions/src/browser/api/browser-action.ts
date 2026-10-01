@@ -438,7 +438,20 @@ export class BrowserActionAPI {
 
   private visibleActions(): Array<[string, ExtensionActionStore]> {
     const entries = Array.from(this.actionMap.entries())
-    return gActionVisibilityCheck ? entries.filter(([id]) => gActionVisibilityCheck!(id)) : entries
+    const shown = gActionVisibilityCheck ? entries.filter(([id]) => gActionVisibilityCheck!(id)) : entries
+    // Orivon patch (UPSTREAM.md patch 46): by extension name, so the toolbar keeps one order
+    // whatever order the extensions finished loading in.
+    const nameOf = (id: string): string => this.extensionNameOf(id)
+    return shown
+      .map((entry, index) => ({ entry, index, name: nameOf(entry[0]) }))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) || a.index - b.index)
+      .map(({ entry }) => entry)
+  }
+
+  private extensionNameOf(id: string): string {
+    const sessionExtensions = this.ctx.session.extensions || this.ctx.session
+    const name = sessionExtensions.getExtension(id)?.name
+    return typeof name === 'string' ? name : ''
   }
 
   // Orivon patch (UPSTREAM.md patch 46): the toolbar list for Orivon's own
@@ -501,6 +514,9 @@ export class BrowserActionAPI {
       return {
         id,
         tabs: tabsInfo,
+        // Orivon patch (UPSTREAM.md patch 46): the first letter of the extension's name, the
+        // tile drawn when the action has no icon.
+        letter: Array.from(this.extensionNameOf(id).trim())[0]?.toUpperCase() ?? '',
         ...rest,
       }
     })

@@ -261,13 +261,14 @@ export function loadableManifest (raw: Record<string, unknown>): LoadableManifes
  * `stripped` in plain words, for the extensions page's details view -- one
  * line per capability `loadableManifest` removed, never the raw permission
  * name. Order matches the order `isStrippedPermission` would find them in an
- * unstripped manifest: network rules before native messaging.
+ * unstripped manifest: network requests before native messaging. The
+ * declarative network rules are not listed: Orivon runs them itself.
  */
 export function describeStrippedPermissions (stripped: StrippedRecord): readonly string[] {
   const names = [...stripped.permissions, ...stripped.optionalPermissions]
   const lines: string[] = []
-  if (names.some((name) => name.startsWith('webRequest') || name.startsWith('declarativeNetRequest')) || stripped.declarativeNetRequest !== undefined) {
-    lines.push('Network blocking rules: Orivon does not run these yet')
+  if (names.some((name) => name.startsWith('webRequest'))) {
+    lines.push('Watching and changing network requests (webRequest)')
   }
   if (names.includes('nativeMessaging')) {
     lines.push('Talking to programs on your computer: not available in Orivon')

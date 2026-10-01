@@ -2,6 +2,7 @@
 // card per registered section (registry.ts) in order.
 import { h, replaceChildren } from '../../shared/dom.js'
 import { chevronRightIcon, puzzleIcon } from '../../shared/icons.js'
+import { letterTile } from '../../shared/letter-tile.js'
 import type { DetailsPayload } from '../state.js'
 import type { DetailSection, ExtensionView, PageContext } from '../types.js'
 import { pathFor } from '../router.js'
@@ -22,7 +23,7 @@ function backLink (ctx: PageContext): HTMLElement {
 function head (details: DetailsPayload, ctx: PageContext): HTMLElement {
   const { row } = details
   const icon = row.iconDataUrl === undefined
-    ? h('div', { className: 'd-icon placeholder' }, puzzleIcon())
+    ? letterTile(row.name, 'd-icon', 'div')
     : h('img', { className: 'd-icon', src: row.iconDataUrl, alt: '' })
   return h('header', { className: 'd-head' },
     icon,

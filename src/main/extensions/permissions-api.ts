@@ -25,7 +25,7 @@ const NO_WINDOW_ERROR = 'There is no window to ask in.'
 
 const MAX_ITEMS = 50
 const MAX_ITEM_LENGTH = 300
-const MAX_NAME_LENGTH = 40
+const MAX_NAME_LENGTH = 120
 
 function listOf (value: unknown): string[] {
   if (value === undefined) return []
@@ -53,7 +53,9 @@ export interface PermissionsApiDeps {
   readonly nag: NagLimit
 }
 
-function clip (name: string): string {
+/** Control and format characters (bidi overrides, zero-width marks) could reorder or hide words of the question, so they never reach the sheet. */
+function clip (raw: string): string {
+  const name = raw.replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim()
   return name.length > MAX_NAME_LENGTH ? `${name.slice(0, MAX_NAME_LENGTH - 1).trimEnd()}…` : name
 }
 

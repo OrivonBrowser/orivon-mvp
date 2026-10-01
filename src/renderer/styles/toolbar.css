@@ -244,11 +244,52 @@
 /* electron-chrome-extensions' own element (ADR-0043): a flex row of 28px
    action buttons in its shadow DOM already, so only alignment in the
    cluster and its hover colour need setting here. Empty (no extension has
-   an action) collapses to zero width -- no gap either side to reserve. */
+   an action) collapses to zero width -- no gap either side to reserve. The
+   buttons sit in its shadow root, so the box, the focus ring, the letter tile
+   and the badge are set through the parts it exposes. */
 browser-action-list {
   display: flex;
   align-items: center;
+  gap: 4px;
   --browser-action-hover-bg: var(--whover-strong);
+}
+browser-action-list::part(action) {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background-size: 18px 18px;
+}
+browser-action-list::part(action):focus-visible {
+  outline: 2px solid var(--waccent);
+  outline-offset: -2px;
+}
+/* The tile for an extension without an icon: the first letter of its name. */
+browser-action-list::part(action)::after {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background-color: color-mix(in srgb, var(--waccent-text) 16%, transparent);
+  color: var(--waccent-text);
+  font-size: 11px;
+  font-weight: 600;
+}
+/* The badge is an indigo pill unless the extension chose a colour (which is set inline and wins). */
+browser-action-list::part(badge) {
+  z-index: 1;
+  bottom: 0;
+  right: -2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1.5px var(--wchrome);
+  background-color: var(--waccent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+  text-align: center;
+  box-sizing: border-box;
 }
 .iconbtn {
   width: 32px;

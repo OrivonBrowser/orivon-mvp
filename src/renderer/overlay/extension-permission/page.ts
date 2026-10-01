@@ -3,11 +3,9 @@
 // guard's length so a key or click meant for the page has nowhere to land.
 import type { PermissionPromptView } from '../../../main/extensions/permission-prompt-overlay.js'
 import { h } from '../../pages/shared/dom.js'
-import { puzzleIcon } from '../../pages/shared/icons.js'
+import { letterTile } from '../../pages/shared/letter-tile.js'
 import type { Overlay, OverlayPage } from '../kit.js'
 import './extension-permission.css'
-
-const ID_SHOWN = 12
 
 function isLine (line: unknown): boolean {
   if (typeof line !== 'object' || line === null) return false
@@ -34,7 +32,7 @@ export const extensionPermissionPage: OverlayPage = {
         if (!isView(payload)) { overlay.close(); return }
         if (guardTimer !== undefined) clearTimeout(guardTimer)
         const icon = payload.icon === undefined
-          ? h('span', { className: 'perm-icon placeholder' }, puzzleIcon())
+          ? letterTile(payload.name, 'perm-icon')
           : h('img', { className: 'perm-icon', src: payload.icon, alt: '' })
         const list = h('ul', { className: 'perm-lines', id: 'perm-lines' },
           ...payload.lines.map((line) => h('li', null, 'words' in line ? line.words : h('code', { textContent: line.name }))))
@@ -46,12 +44,13 @@ export const extensionPermissionPage: OverlayPage = {
           h('div', { className: 'perm-head' },
             icon,
             h('div', { className: 'perm-who' },
-              h('h1', { className: 'sheet-title', id: 'perm-title', textContent: `Allow the extension "${payload.name}" to do more?` }),
-              h('p', { className: 'origin perm-id', title: payload.id, textContent: `Extension ID ${payload.id.slice(0, ID_SHOWN)}…` }))),
+              h('h1', { className: 'sheet-title', id: 'perm-title' },
+                'Allow the extension "', h('bdi', { className: 'perm-name', title: payload.name, textContent: payload.name }), '" to do more?'),
+              h('p', { className: 'origin perm-id', textContent: `Extension ID ${payload.id}` }))),
           h('div', { className: 'sheet-body' },
             h('p', { textContent: 'It is asking to:' }),
             list,
-            h('p', { className: 'perm-note', textContent: 'You can take this back on the extension\'s details page.' })),
+            h('p', { className: 'perm-note', textContent: 'You can turn this off on the extension\'s details page.' })),
           h('div', { className: 'btn-row' }, deny, allow))
         deny.focus()
         if (payload.guardMs > 0) guardTimer = setTimeout(() => { allow.disabled = false }, payload.guardMs)

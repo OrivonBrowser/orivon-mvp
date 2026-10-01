@@ -209,10 +209,22 @@
 
 /* ---- Lists ------------------------------------------------------------ */
 
+.letter-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  background: color-mix(in srgb, var(--waccent-text) 16%, transparent);
+  color: var(--waccent-text);
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+}
+
 .item-icon { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 20px; height: 20px; color: var(--wink-dim); }
 .item-icon svg, .item-icon img { width: 16px; height: 16px; }
 
-.listbox { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.listbox { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
 .listbox-item {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;

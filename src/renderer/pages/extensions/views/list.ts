@@ -3,6 +3,7 @@
 import { internalBridge } from '../../shared/bridge.js'
 import { h, replaceChildren } from '../../shared/dom.js'
 import { puzzleIcon } from '../../shared/icons.js'
+import { letterTile } from '../../shared/letter-tile.js'
 import type { ExtensionRow, InstallReply } from '../state.js'
 import type { CardBadge, ExtensionView, PageContext } from '../types.js'
 import { pathFor } from '../router.js'
@@ -14,7 +15,7 @@ let message: string | null = null
 
 function card (ext: ExtensionRow, ctx: PageContext, badges: readonly CardBadge[]): HTMLElement {
   const icon = ext.iconDataUrl === undefined
-    ? h('div', { className: 'ext-icon placeholder' }, puzzleIcon())
+    ? letterTile(ext.name, 'ext-icon', 'div')
     : h('img', { className: 'ext-icon', src: ext.iconDataUrl, alt: '' })
   const href = pathFor('details', ext.id)
   const details = h('a', {

@@ -734,7 +734,12 @@
     omnibox), so no popup and no `onClicked`. `src/browser/index.ts` exposes the three methods as
     `listActions`, `activateAction` and `notifyActionsChanged`. Reason: Orivon's own toolbar menu
     lists and clicks actions, and pinning hides some, none of which the chrome view's
-    `<browser-action-list>` channel can do on Orivon's behalf.
+    `<browser-action-list>` channel can do on Orivon's behalf. `visibleActions` sorts by the
+    extension's name (`localeCompare`, base sensitivity) and `getState` adds `letter`, the first
+    letter of that name; `<browser-action-list>` re-appends its buttons in that order on every
+    update and the no-icon tile shows `letter`. Reason: the toolbar kept the order extensions
+    finished loading in, which the menu's order did not match, and the action's title is a poor
+    stand-in for the extension's name.
 47. **Host-access checks receive the extension id.** `src/browser/api/cookies.ts` and
     `src/browser/api/tabs.ts`: `setCookieHostAccessCheck`, `setTabUrlAccessCheck` and
     `setTabHostAccessCheck` now call `check(manifest, url, extensionId, tabId?)`; `tabId` is passed

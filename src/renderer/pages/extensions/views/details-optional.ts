@@ -1,5 +1,5 @@
 // The "Extra access you allowed" card: each item the person granted with a
-// Remove that takes it back at once, and, below, what the extension may still
+// Turn off that takes it back at once, and, below, what the extension may still
 // ask for. Main sends the words; the page never builds them.
 import { h } from '../../shared/dom.js'
 import type { DetailsPayload } from '../state.js'
@@ -20,8 +20,8 @@ function grantRow (item: GrantedItem, details: DetailsPayload, ctx: PageContext)
   const remove = h('button', {
     type: 'button',
     className: 'btn small',
-    textContent: 'Remove',
-    ariaLabel: `Remove access: ${item.words}`,
+    textContent: 'Turn off',
+    ariaLabel: `Turn off: ${item.words}`,
     onclick: () => {
       remove.disabled = true
       void ctx.request(command, { id: details.id, [item.kind]: item.value }).then(ctx.refresh)

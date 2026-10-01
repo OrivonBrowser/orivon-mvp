@@ -5,6 +5,7 @@
 import { internalBridge } from '../../shared/bridge.js'
 import { h, replaceChildren } from '../../shared/dom.js'
 import { closeIcon, keyboardIcon, pencilIcon, puzzleIcon } from '../../shared/icons.js'
+import { letterTile } from '../../shared/letter-tile.js'
 import type { ExtensionView, PageContext } from '../types.js'
 import { describeCommand, noticeFor, rowKey } from './shortcuts-model.js'
 import type { CommandRow, ExtensionGroup, Notice, Recorded, ShortcutsReply } from './shortcuts-model.js'
@@ -69,7 +70,7 @@ function control (group: ExtensionGroup, command: CommandRow, ctx: PageContext):
       className: 'btn icon sc-remove',
       type: 'button',
       onclick: () => { focusRow = key; void ctx.request('shortcuts.clear', { id: group.id, name: command.name }).then(ctx.refresh) }
-    }, closeIcon()), 'Remove shortcut')
+    }, closeIcon()), `Remove shortcut for ${what}`)
   return h('div', { className: 'sc-control' },
     command.keys === null ? h('span', { className: 'muted', textContent: 'Not set' }) : caps(command.keys),
     change,
@@ -119,7 +120,7 @@ function row (group: ExtensionGroup, command: CommandRow, ctx: PageContext): HTM
 
 function card (group: ExtensionGroup, ctx: PageContext): HTMLElement {
   const icon = group.iconDataUrl === undefined
-    ? h('span', { className: 'sc-icon placeholder' }, puzzleIcon())
+    ? letterTile(group.name, 'sc-icon')
     : h('img', { className: 'sc-icon', src: group.iconDataUrl, alt: '' })
   return h('section', { className: 'card sc-card', id: `sc-${group.id}` },
     h('h2', { className: 'sc-head' }, icon, h('span', { className: 'sc-name', textContent: group.name })),

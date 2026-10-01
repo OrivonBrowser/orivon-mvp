@@ -1,7 +1,7 @@
 // Optional permissions end to end. An extension page in a real tab asks with a
 // real click: the sheet names the extension and the access in words, Escape
 // refuses, Allow (after its guard) grants, the grant shows on the details page
-// and survives a relaunch, Remove takes it back, and an undeclared permission is
+// and survives a relaunch, Turn off takes it back, and an undeclared permission is
 // refused with no sheet at all. Set ORIVON_SHOTS_DIR to also write screenshots
 // of each surface in both colour schemes.
 //
@@ -186,10 +186,10 @@ it('asks, refuses on Escape, grants on Allow, shows it on the details page, take
     expect(await waitFor(() => grantedOf(userData)?.permissions.includes('history') === true)).toBe(true)
     expect(await waitFor(async () => !(await sheetShown(app)))).toBe(true)
 
-    // The details page lists it, and Remove takes it back.
+    // The details page lists it, and Turn off takes it back.
     const page = await openDetails(app)
     expect(await page.locator('#section-optional h2').textContent()).toBe('Extra access you allowed')
-    expect(await page.locator('#section-optional .grant-row').allTextContents()).toEqual(['Read and change your browsing historyRemove'])
+    expect(await page.locator('#section-optional .grant-row').allTextContents()).toEqual(['Read and change your browsing historyTurn off'])
     expect(await page.locator('#section-optional .stripped-list li').allTextContents()).toEqual(['Read and change your bookmarks'])
     await page.mouse.move(2, 2)
     await shootPage(page, 'details-granted', '#section-optional')

@@ -10,20 +10,21 @@ import type { NavKey } from '../menu/keys.js'
 import { MORE_ITEMS } from './more-items.js'
 import { asPayload, jumpTo, rowLabel, siteLine, stepControl } from './model.js'
 import type { MenuPayload, MenuRow } from './model.js'
+import { letterTile } from '../../pages/shared/letter-tile.js'
 import './extensions-menu.css'
 
 const NAV_KEYS: readonly string[] = ['ArrowDown', 'ArrowUp', 'Home', 'End']
 
-/** The extension's own icon when main sent one, else a quiet square with its initial. */
+/** The extension's own icon when main sent one, else a tile with its initial. */
 function iconFor (row: MenuRow): HTMLElement {
   const box = h('span', { className: 'item-icon em-icon' })
   if (row.icon !== null && row.icon.startsWith('data:image/')) {
     const img = h('img', { alt: '', decoding: 'async', referrerPolicy: 'no-referrer' })
-    img.addEventListener('error', () => { img.replaceWith(h('span', { className: 'em-initial' }, row.name.slice(0, 1).toUpperCase())) }, { once: true })
+    img.addEventListener('error', () => { img.replaceWith(letterTile(row.name, 'em-initial')) }, { once: true })
     img.src = row.icon
     box.append(img)
   } else {
-    box.append(h('span', { className: 'em-initial' }, row.name.slice(0, 1).toUpperCase()))
+    box.append(letterTile(row.name, 'em-initial'))
   }
   return box
 }
@@ -56,13 +57,13 @@ export const extensionsMenuPage: OverlayPage = {
     }
 
     function rowElement (row: MenuRow): { li: HTMLElement, controls: HTMLElement[] } {
-      const dim = !row.hasAction || !payload.activatable
+      const dim = row.hasAction && !payload.activatable
       const main = control(`main:${row.id}`, 'main', h('button', {
         type: 'button',
         className: 'em-main',
         role: 'menuitem',
         ariaLabel: rowLabel(row),
-        title: row.hasAction && !payload.activatable ? `${row.name} cannot run on this page` : row.name,
+        title: !row.hasAction ? `${row.name} has no toolbar button` : !payload.activatable ? `${row.name} cannot run on this page` : row.name,
         onclick: () => { void send({ type: 'activate', id: row.id }) }
       },
       iconFor(row),

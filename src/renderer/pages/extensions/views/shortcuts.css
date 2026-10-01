@@ -1,8 +1,7 @@
 .sc-list { display: grid; gap: 14px; }
 .sc-head { display: flex; align-items: center; gap: 10px; }
 .sc-icon { width: 20px; height: 20px; flex: none; border-radius: 4px; object-fit: contain; }
-.sc-icon.placeholder { display: inline-flex; align-items: center; justify-content: center; background: var(--wsurface); color: var(--wink-dim); }
-.sc-icon.placeholder svg { width: 14px; height: 14px; }
+.sc-icon.letter-tile { font-size: 12px; }
 .sc-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .sc-rows { list-style: none; margin: 0; padding: 0; }
@@ -17,7 +16,7 @@
 }
 .sc-row:first-child { border-top: none; }
 .sc-main { display: grid; gap: 2px; min-width: 0; }
-.sc-desc { overflow-wrap: anywhere; font-size: 13.5px; }
+.sc-desc { overflow-wrap: anywhere; font-size: 14px; font-weight: 500; }
 .sc-main code { justify-self: start; font-size: 12.5px; }
 .sc-hint { font-size: 12.5px; }
 
