@@ -101,7 +101,7 @@ describe('watching a tab for a certificate failure', () => {
     expect(s.asks).toHaveLength(0)
     fail(s.contents, -202, 'https://typed.example/')
     expect(s.asks).toHaveLength(1)
-    expect(claimed).toHaveBeenCalledWith(expect.anything(), 'https://upgraded.example/', -202)
+    expect(claimed.mock.calls.map(([, url, code]) => [url, code])).toEqual([['https://upgraded.example/', -202], ['https://typed.example/', -202]])
   })
 
   it('ignores other failures, a sub frame, an address that is not https and a web contents that is not a tab', () => {
