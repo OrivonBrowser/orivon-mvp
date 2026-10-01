@@ -33,6 +33,7 @@ const LANDED: readonly string[] = [
   'caret.toggle',
   'focus.nextPane',
   'focus.previousPane',
+  'page.reader',
   'sidePanel.toggle',
   'tab.group',
   'tab.sleep',

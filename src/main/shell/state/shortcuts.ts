@@ -6,6 +6,7 @@ export const shortcutsStatePart: ShellStatePart = {
   read: ({ services }) => ({
     shortcutKeys: {
       'nav.home': services.shortcuts.keysOf('nav.home'),
+      'page.reader': services.shortcuts.keysOf('page.reader'),
       'sidePanel.toggle': services.shortcuts.keysOf('sidePanel.toggle'),
       'tab.search': services.shortcuts.keysOf('tab.search')
     }

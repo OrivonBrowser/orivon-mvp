@@ -91,7 +91,7 @@ export interface ShellState extends TabsSnapshot {
   /** Whether the address bar shows the literal address when it is not being edited (`addressBar.showFullUrl`). */
   showFullUrl: boolean
   /** The key caps bound to the commands the chrome names in a tooltip, or null when one is cleared. */
-  shortcutKeys: { readonly 'nav.home': readonly string[] | null, readonly 'sidePanel.toggle': readonly string[] | null, readonly 'tab.search': readonly string[] | null }
+  shortcutKeys: { readonly 'nav.home': readonly string[] | null, readonly 'page.reader': readonly string[] | null, readonly 'sidePanel.toggle': readonly string[] | null, readonly 'tab.search': readonly string[] | null }
   /** The tab groups of this window, in strip order. Absent reads as none. */
   groups?: TabGroupState[]
   /** Whether the side panel is open, and on which side. Absent reads as closed. */

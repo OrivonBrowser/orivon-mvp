@@ -299,6 +299,7 @@ export default defineConfig({
           'page-history': resolve(root, 'src/renderer/pages/history/index.html'),
           'page-profiles': resolve(root, 'src/renderer/pages/profiles/index.html'),
           'page-private': resolve(root, 'src/renderer/pages/private/index.html'),
+          'page-reader': resolve(root, 'src/renderer/pages/reader/index.html'),
           'page-extensions': resolve(root, 'src/renderer/pages/extensions/index.html'),
           'page-tasks': resolve(root, 'src/renderer/pages/tasks/index.html'),
           'site-info': resolve(root, 'src/renderer/site-info/index.html'),

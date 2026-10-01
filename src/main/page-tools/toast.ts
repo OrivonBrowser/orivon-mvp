@@ -44,7 +44,8 @@ export const TOAST_TEXT = {
   sleepKept: { text: 'This site is set to stay awake.', tone: 'info' },
   sleepOther: { text: 'This tab cannot be put to sleep.', tone: 'info' },
   caretOn: { text: 'Caret browsing is on', tone: 'info' },
-  caretOff: { text: 'Caret browsing is off', tone: 'info' }
+  caretOff: { text: 'Caret browsing is off', tone: 'info' },
+  notReadable: { text: 'Reader view is not available for this page.', tone: 'info' }
 } as const satisfies Record<string, ToastText>
 
 export type ToastCode = keyof typeof TOAST_TEXT

@@ -13,6 +13,7 @@ export const INTERNAL_PAGES = [
   'history',
   'private',
   'profiles',
+  'reader',
   'settings',
   'tasks'
 ] as const

@@ -89,7 +89,7 @@ export const COMMANDS = [
   { id: 'page.pdf', label: 'Save as PDF', category: 'tools' },
   { id: 'page.save', label: 'Save page as', category: 'tools', default: 'Mod+S', yieldToApp: true },
   { id: 'page.viewSource', label: 'View page source', category: 'tools', default: 'Mod+U', yieldToApp: true },
-  { id: 'page.reader', label: 'Reader view', category: 'tools', default: 'F9', pending: true },
+  { id: 'page.reader', label: 'Reader view', category: 'tools', default: 'F9' },
   { id: 'page.forceDark', label: 'Dark mode for this site', category: 'tools', pending: true },
   { id: 'caret.toggle', label: 'Caret browsing', category: 'tools', default: 'F7', yieldToApp: true },
   { id: 'share.copyLink', label: 'Copy link', category: 'tools', pending: true },

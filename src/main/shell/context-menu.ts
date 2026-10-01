@@ -61,7 +61,7 @@ export interface ContextMenuHost {
   /** Opens an address in a tab put in front: what a search of the selection does. */
   openInFront?: (url: string) => void
   /** Present for a tab's menu and absent for the chrome's, whose menu holds only edit items. `bare`: an internal page or the new-tab page. */
-  readonly page?: { readonly bare: () => boolean, readonly viewSource?: () => boolean }
+  readonly page?: { readonly bare: () => boolean, readonly viewSource?: () => boolean, readonly readable?: () => boolean }
   /** What the menu reads: the search engine and the spelling switch. Absent in tests. */
   readonly services?: Pick<ShellServices, 'settings'>
   /** Runs a command on the window: Save, Print, Screenshot, View Source, Picture in Picture. */
@@ -124,6 +124,7 @@ export function showContextMenu (wc: WebContents, params: ContextMenuParams, hos
     }
     context.bare = host.page.bare()
     context.viewSource = host.page.viewSource?.() ?? true
+    context.readable = host.page.readable?.() ?? false
     if (settings !== undefined) {
       context.spellcheckOn = settings.get('spellcheck.enabled')
       context.engineLabel = engineLabelFor(settings.get('search.engine'))
