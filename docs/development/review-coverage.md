@@ -302,3 +302,4 @@ In all, 61 findings, 61 confirmed, none refuted.
 |---|---|---|
 | `/code-review` at medium effort | The branch against `main` | No findings |
 | The new TLS checks run against the bundle built before the fix | `test/e2e-the-lounge-real.test.ts` step j | The trusted-only check failed with the old text, as reported; the rest passed |
+| `/code-review` at medium effort | The Settings switch redraw fix | One finding, fixed: the control a redraw refocuses was unsettled, so it held later pushes; a new `e2e-settings-live` spec fails without the fix |
