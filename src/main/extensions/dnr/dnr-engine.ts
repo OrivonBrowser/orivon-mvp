@@ -70,6 +70,8 @@ interface StaticState {
   /** In manifest ("rule_resources") order. */
   order: string[]
   byId: Map<string, StaticRulesetEntry>
+  /** Enabled by the manifest but not loaded for want of quota: not reported as enabled, still kept as enabled when the choice is saved. */
+  skipped: Set<string>
 }
 
 /** A deferred ruleset read runs once, however many times the ruleset is enabled and disabled. */
@@ -243,6 +245,7 @@ export function createDnrEngine(options: DnrEngineOptions = {}) {
         if (!skipWhatDoesNotFit) throw new Error(`${what} if ruleset "${id}" were to be enabled.`)
         console.warn(`[dnr] ${extensionId}: ruleset "${id}" not loaded: ${what}.`)
         state.byId.set(id, { ...entry, enabled: false })
+        state.skipped.add(id)
         continue
       }
       total += rules.length
@@ -278,6 +281,7 @@ export function createDnrEngine(options: DnrEngineOptions = {}) {
       const state: StaticState = {
         order: rulesets.map(r => r.id),
         byId: new Map(rulesets.map(r => [r.id, { enabled: r.enabled, rules: memoizedRules(r.rules) }])),
+        skipped: new Set(),
       }
       staticState.set(extensionId, state)
       applyEnabledStaticRulesets(extensionId, state, enabledIdsInOrder(state), true)
@@ -287,8 +291,9 @@ export function createDnrEngine(options: DnrEngineOptions = {}) {
      * Validates the PROPOSED enabled set (every id, the enabled-count limit
      * and each newly-enabled ruleset's own quota) against a copy of
      * `state.byId`'s flags before touching the real ones: a rejected call
-     * (an unknown id, too many rulesets enabled, or a ruleset that blows the
-     * GUARANTEED_MINIMUM_STATIC_RULES quota once actually validated) must
+     * (an unknown id, too many rulesets enabled, or a set that passes the
+     * global static rule limit -- the guarantee plus the shared pool -- or
+     * MAX_NUMBER_OF_REGEX_RULES once actually validated) must
      * change nothing at all, not leave some ids flipped and others not.
      * Applying the flags to a scratch Map first, computing the proposed
      * enabled-id list from THAT, and only committing it onto `state.byId`
@@ -318,6 +323,7 @@ export function createDnrEngine(options: DnrEngineOptions = {}) {
       applyEnabledStaticRulesets(extensionId, state, proposedEnabledIds, false)
       // Only reached once the proposed set validated and applied cleanly.
       state.byId = proposedFlags
+      for (const id of [...enableIds, ...disableIds]) state.skipped.delete(id)
     },
 
     updateDynamicRules(extensionId: string, options: DnrUpdateRuleOptions): void {
@@ -366,6 +372,14 @@ export function createDnrEngine(options: DnrEngineOptions = {}) {
     getEnabledRulesets(extensionId: string): string[] {
       const ruleManager = registry.getRuleManager(extensionId, false)
       return ruleManager ? [...ruleManager.enabledStaticRulesetIds] : []
+    },
+
+    /** What to save as the enabled choice: the enabled rulesets plus any the manifest enabled that did not fit the pool, so a later boot tries them again. */
+    getEnabledRulesetsToPersist(extensionId: string): string[] {
+      const enabled = [...(registry.getRuleManager(extensionId, false)?.enabledStaticRulesetIds ?? [])]
+      const state = staticState.get(extensionId)
+      if (state === undefined || state.skipped.size === 0) return enabled
+      return state.order.filter((id) => enabled.includes(id) || state.skipped.has(id))
     },
 
     /** `chrome.declarativeNetRequest.getAvailableStaticRuleCount`. */

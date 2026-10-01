@@ -75,6 +75,64 @@ describe('the global static rule pool', () => {
   })
 })
 
+describe('the cap on regex rules across enabled static rulesets', () => {
+  const regexRules = (tag: string, count: number, firstId: number): DnrRule[] =>
+    Array.from({ length: count }, (_, i) => blockRule(firstId + i, { regexFilter: `^https://${tag}-${String(i)}\\.test/` }))
+
+  it('skips, at load, the ruleset that would pass it and warns', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const engine = createDnrEngine()
+    engine.setStaticRulesets('ext', [
+      { id: 'one', enabled: true, rules: regexRules('a', 600, 1) },
+      { id: 'two', enabled: true, rules: regexRules('b', 600, 1000) },
+    ])
+    expect(engine.getEnabledRulesets('ext')).toEqual(['one'])
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/"two" not loaded.*MAX_NUMBER_OF_REGEX_RULES/))
+    warn.mockRestore()
+  })
+
+  it('refuses, at a runtime enable, a set that would pass it, and changes nothing', () => {
+    const engine = createDnrEngine()
+    engine.setStaticRulesets('ext', [
+      { id: 'one', enabled: true, rules: regexRules('a', 600, 1) },
+      { id: 'two', enabled: false, rules: regexRules('b', 600, 1000) },
+    ])
+    expect(() => engine.updateEnabledRulesets('ext', { enableRulesetIds: ['two'] })).toThrow(/MAX_NUMBER_OF_REGEX_RULES/)
+    expect(engine.getEnabledRulesets('ext')).toEqual(['one'])
+  })
+})
+
+describe('a ruleset skipped at load for want of quota', () => {
+  const setup = () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const engine = createDnrEngine({ globalStaticRulePool: 10 })
+    engine.setStaticRulesets('ext', [
+      { id: 'fits', enabled: true, rules: rules('a', 30_005) },
+      { id: 'skipped', enabled: true, rules: rules('b', 30, 40_000) },
+      { id: 'off', enabled: false, rules: rules('c', 3, 90_000) },
+    ])
+    return engine
+  }
+
+  it('is not reported as enabled but is kept as enabled when the choice is saved', () => {
+    const engine = setup()
+    expect(engine.getEnabledRulesets('ext')).toEqual(['fits'])
+    expect(engine.getEnabledRulesetsToPersist('ext')).toEqual(['fits', 'skipped'])
+  })
+
+  it('is dropped from the saved choice once the extension disables it', () => {
+    const engine = setup()
+    engine.updateEnabledRulesets('ext', { disableRulesetIds: ['skipped'] })
+    expect(engine.getEnabledRulesetsToPersist('ext')).toEqual(['fits'])
+  })
+
+  it('stays in the saved choice when the extension changes another ruleset', () => {
+    const engine = setup()
+    engine.updateEnabledRulesets('ext', { enableRulesetIds: ['off'] })
+    expect(engine.getEnabledRulesetsToPersist('ext')).toEqual(['fits', 'skipped', 'off'])
+  })
+})
+
 describe('lazily read static rulesets', () => {
   it('reads a ruleset the engine is told is disabled only when it is first enabled', () => {
     const read = vi.fn(() => rules('x', 3))
