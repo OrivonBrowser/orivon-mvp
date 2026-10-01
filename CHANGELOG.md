@@ -13,6 +13,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **`better-sqlite3` runs on the Node shim**: an adapter over `node:sqlite` with `Database`, `Statement` (`run`, `get`, `all`, `iterate`,
+  `pluck`, `raw`, `expand`, `bind`, `safeIntegers`), `pragma`, `transaction` with its variants and `SqliteError`; the esbuild plugin
+  points the package name at it. `function`, `aggregate`, `table`, `backup`, `serialize` and `loadExtension` refuse by name.
+- **A program that starts with a burst of file calls no longer fails on the first one past the limit**: a synchronous `fs` call
+  that the per-origin limiter refuses is asked again with a growing pause, and a WebAssembly program's file call is retried for
+  about five seconds before it sees `EMFILE`.
+- **A spawned program is given the app's files under their own path as well as `/`**, so a path the app holds
+  (`/orivon/app/...`) means the same file to the program.
 - **A wildcard host pairs with a port in `tcp.connect` and `https.connect`**: `*:6697` and `*:6660-6699` are declarable, so an
   app that dials a server the person types reaches a reserved port by naming it. `*:*` and ranges still skip reserved ports, and
   the prompt names the ports a wildcard pattern opens and what each is for, and every named pattern the wildcard does not cover; a
