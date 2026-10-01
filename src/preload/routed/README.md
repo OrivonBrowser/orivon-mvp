@@ -101,7 +101,10 @@ written down, since a silent divergence in a web platform API is a trap.
   them; `fetch(url, { headers })` keeps them.
 - **Response shape.** `response.type` is `'default'`; `redirect: 'manual'` gives an
   `'opaqueredirect'`, status 0. A network failure is `TypeError('Failed to fetch')`, the message
-  retry libraries match, with the detail on `cause`.
+  retry libraries match, with the detail on `cause`. Each failed request, from `fetch`, XHR or
+  `EventSource`, also writes one `console.error` line (`GET https://host/path failed: <reason>`,
+  query string left out), as Chromium prints a line for a native one: an app that shows only the
+  error would otherwise never show the reason.
 - **XMLHttpRequest.** A synchronous `open(..., false)` goes native. `xhr.upload instanceof
   XMLHttpRequestUpload` is false. A `'document'` response is parsed with `DOMParser`.
 - **WebSocket.** No extension, so `extensions` is `''`. The upgrade carries the page's origin as

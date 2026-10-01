@@ -27,6 +27,7 @@
 //   ORIVON_ORDINARY_BUILD=1 npx vitest run --config test/vitest.e2e.config.ts test/e2e-freetube-real.test.ts
 import { afterAll, expect, it } from 'vitest'
 import type { ChildProcess } from 'node:child_process'
+import type { Page } from 'playwright'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
@@ -122,6 +123,21 @@ it.skipIf(!ORDINARY_BUILD || !BUILT)(
         check(`a plain static server is serving the prepared upstream build (${ROOT})`, true)
 
         app = await launchElectron({ appPath: '.' })
+        // Every page and frame from launch, so a refusal logged while a document loads is kept, and
+        // each line whole enough to name its cause: a console error is the only place a blocked
+        // inline script, a failed routed request or a token-minting failure shows up.
+        const consoleLines: string[] = []
+        const collect = (page: Page): void => {
+          page.on('console', (message) => {
+            if (message.type() === 'error' || message.type() === 'warning') consoleLines.push(`${message.type()}: ${message.text().slice(0, 600)}`)
+          })
+          // The STACK, not just the message: an uncaught TypeError's message names no code, and this build is unminified precisely so the frames are readable.
+          page.on('pageerror', (error) => {
+            consoleLines.push(`pageerror: ${error.message} :: ${(error.stack ?? '(no stack)').slice(0, 900)}`)
+          })
+        }
+        for (const page of app.windows()) collect(page)
+        app.on('window', collect)
         await app.evaluate(({ dialog }) => {
           dialog.showMessageBox = (async () => ({ response: 0, checkboxChecked: false })) as unknown as typeof dialog.showMessageBox
         })
@@ -163,6 +179,31 @@ it.skipIf(!ORDINARY_BUILD || !BUILT)(
         })
         check(`what upstream FreeTube rendered: ${JSON.stringify(report)}`, report.appChildren > 0)
 
+        // The decipher helper: upstream posts code to `iframe#sigFrame` and waits for the answer, with no
+        // timeout, so a helper that never starts hangs every video silently. No YouTube needed to ask it
+        // for 1 + 1. The post is repeated until it answers, because the frame may still be loading.
+        const sigFrame = await view.evaluate(async () => {
+          const frame = document.getElementById('sigFrame') as HTMLIFrameElement | null
+          if (frame === null) return 'there is no sigFrame element'
+          return await new Promise<string>((resolve) => {
+            const finish = (outcome: string): void => { clearInterval(timer); clearTimeout(giveUp); window.removeEventListener('message', onMessage); resolve(outcome) }
+            const onMessage = (event: MessageEvent): void => {
+              if (event.source !== frame.contentWindow || typeof event.data !== 'string') return
+              try {
+                const answer = JSON.parse(event.data) as { id?: string, result?: number }
+                if (answer.id === 'probe') finish(answer.result === 2 ? 'answered 2' : `answered ${event.data.slice(0, 100)}`)
+              } catch { /* not the helper's answer */ }
+            }
+            const ask = (): void => { frame.contentWindow?.postMessage(JSON.stringify({ id: 'probe', code: 'return 1+1' }), '*') }
+            const timer = setInterval(ask, 500)
+            const giveUp = setTimeout(() => { finish('no answer within 5 s') }, 5_000)
+            window.addEventListener('message', onMessage)
+            ask()
+          })
+        })
+        const refusedInline = consoleLines.filter((line) => /(Refused to execute|Executing) inline script/.test(line))
+        check(`the decipher helper in sigFrame runs its script and answers (${sigFrame}; ${JSON.stringify(refusedInline.slice(0, 2))})`, sigFrame === 'answered 2' && refusedInline.length === 0)
+
         // Opening a video: does FreeTube's own Local API reach YouTube through
         // the routed fetch and populate the watch page?
         //
@@ -170,17 +211,6 @@ it.skipIf(!ORDINARY_BUILD || !BUILT)(
         // a same-origin route in an app tab that already holds its grants, so
         // it needs no repartition -- and driving the omnibox for it only adds
         // a view swap to race against.
-        const consoleErrors: string[] = []
-        view.on('console', (message: { type: () => string, text: () => string }) => {
-          if (message.type() === 'error') consoleErrors.push(message.text().slice(0, 200))
-        })
-        // The STACK, not just the message: an uncaught TypeError's message
-        // names no code, and this build is unminified precisely so the frames
-        // are readable.
-        view.on('pageerror', (error: Error) => {
-          consoleErrors.push(`pageerror: ${error.message} :: ${(error.stack ?? '(no stack)').slice(0, 900)}`)
-        })
-
         // FreeTube's router is createWebHashHistory() and its route is
         // `/watch/:id`, so the video URL is a HASH route. A path like
         // `/watch?id=...` is not a route at all: the static server's SPA
@@ -213,8 +243,14 @@ it.skipIf(!ORDINARY_BUILD || !BUILT)(
         check(
           'FreeTube populated the watch page with real video details',
           populated,
-          populated ? undefined : JSON.stringify({ watch, consoleErrors: consoleErrors.slice(0, 6) })
+          populated ? undefined : JSON.stringify({ watch, console: consoleLines.slice(0, 20) })
         )
+
+        // App.vue asks api.github.com for the latest release shortly after the data is ready; a failure logs
+        // 'errored while checking for updates'. (The banner itself shows only when upstream publishes a
+        // release newer than the pinned build, so it cannot be asserted.)
+        const updateCheckErrors = consoleLines.filter((line) => /errored while checking for updates/.test(line))
+        check('the update check reached GitHub and parsed its answer', updateCheckErrors.length === 0, JSON.stringify(updateCheckErrors.slice(0, 2)))
 
         if (REQUIRE_PLAYBACK) {
           // readyState/a mounted <video> is not enough: a manifest with no
