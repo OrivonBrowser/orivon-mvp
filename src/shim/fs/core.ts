@@ -109,6 +109,7 @@ export async function doReaddir (path: PathLike, options: ReaddirOptions | strin
   return encodingOf(options) === 'buffer' ? names.map((name) => Buffer.from(name)) : names
 }
 
+/** `lstat` and `stat` never differ here: orivon.fs resolves a symlink that stays inside the root transparently and denies one that would not, so no entry is ever reported as a link (`doLstatSync`'s own reasoning). */
 export async function doStat (path: PathLike): Promise<NodeStats> {
   const confined = await confine(path, 'stat')
   if (isRootPath(confined)) return toNodeStats(rootStat(), confined)
