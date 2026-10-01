@@ -4,6 +4,7 @@
 // file changes by one line per feature.
 import type { WebContents, WebContentsView } from 'electron'
 import { contain } from './contain.js'
+import { caretSignal } from '../focus/caret-signal.js'
 import { audioSignal } from './signals/audio.js'
 import { connectionSignal } from './signals/connection.js'
 import { crashedSignal } from './signals/crashed.js'
@@ -34,6 +35,7 @@ export interface TabSignal {
 /** One line per feature, alphabetical by name. */
 export const TAB_SIGNALS: readonly TabSignal[] = [
   audioSignal,
+  caretSignal,
   connectionSignal,
   crashedSignal,
   findSignal,

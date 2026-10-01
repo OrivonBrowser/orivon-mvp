@@ -1,5 +1,6 @@
 // Every overlay the shell can show. A feature adds its OverlayDef here, one
 // per line in name order, and its page to src/renderer/overlay/pages.ts.
+import { caretConfirmOverlay } from '../focus/caret-confirm-overlay.js'
 import { findOverlay } from '../find/find-overlay.js'
 import { screenshotOverlay, toastOverlay } from '../page-tools/page-overlays.js'
 import { qrOverlay } from '../qr/qr-real.js'
@@ -13,6 +14,7 @@ import type { OverlayDef } from './overlay-types.js'
 
 export const OVERLAYS: readonly OverlayDef[] = [
   bookmarkFolderOverlay,
+  caretConfirmOverlay,
   findOverlay,
   menuOverlay,
   omniboxOverlay,

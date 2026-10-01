@@ -65,6 +65,7 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
     'page.reader',
     { check: 'sidePanel.toggle', on: () => false },
     { check: 'page.forceDark', on: () => false },
+    { check: 'caret.toggle', on: ({ services }) => services.settings.get('accessibility.caretBrowsing') },
     'tab.sleep',
     'privacy.clearData',
     'devtools.toggle',

@@ -20,7 +20,7 @@ function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: bo
   const window = { close: vi.fn(), setFullScreen: vi.fn(), isFullScreen: vi.fn(() => false), isAlwaysOnTop: vi.fn(() => false), setAlwaysOnTop: vi.fn(), getBounds: vi.fn(() => ({ x: 10, y: 20, width: 800, height: 600 })) }
   const target = {
     window,
-    chrome: { webContents: { focus: vi.fn(), send, isDestroyed: () => false } },
+    chrome: { webContents: { focus: vi.fn(), send, isDestroyed: () => false, isFocused: () => false } },
     tabs: {
       getState: () => ({ tabs, activeTabId }),
       tabCount: tabs.length,
@@ -30,7 +30,7 @@ function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: bo
       hasRoom: () => true,
       liveWebContents: () => undefined,
       faviconFor: () => 'data:icon',
-      activeWebContents: () => ({ reloadIgnoringCache: calls['reloadIgnoringCache'], stop: calls['stop'] }),
+      activeWebContents: () => ({ reloadIgnoringCache: calls['reloadIgnoringCache'], stop: calls['stop'], focus: vi.fn() }),
       ...calls
     },
     overlays: { show: calls['overlayShow'], toggle: calls['overlayToggle'], isOpen: () => false, close: vi.fn(), send: vi.fn() },

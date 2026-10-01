@@ -29,7 +29,11 @@ const ROWS: ReadonlyArray<[id: string, label: string, category: string, binding:
 ]
 
 // Rows whose feature has landed: they run something now, so they carry no pending flag. One id a line.
-const LANDED: readonly string[] = []
+const LANDED: readonly string[] = [
+  'caret.toggle',
+  'focus.nextPane',
+  'focus.previousPane'
+]
 
 const commandsIn = (entries: readonly MenuEntry[]): string[] => entries.flatMap((entry): string[] => {
   if (entry === '-') return []
@@ -67,15 +71,20 @@ describe('the layout, reading and accessibility command rows', () => {
     expect(holders).toEqual(['focus.nextPane'])
   })
 
+  it('gives the toolbar a key of its own that no other command holds', () => {
+    expect(commandById('focus.toolbar')).toMatchObject({ label: 'Go to the toolbar', category: 'navigation', default: 'Alt+Shift+T' })
+    expect((commandById('focus.toolbar') as CommandDef).pending).toBeUndefined()
+  })
+
   it('gives no default key to two commands', () => {
     const keys = COMMANDS.flatMap((def) => [(def as CommandDef).default, ...((def as CommandDef).aliases ?? [])]).filter((key): key is string => key !== undefined)
     expect(keys.filter((key, at) => keys.indexOf(key) !== at)).toEqual([])
   })
 
-  it('lists the guest window, and in More tools the reader, the side panel, the dark-mode tick and sleep, in the layout', () => {
+  it('lists the guest window, and in More tools the reader, the side panel, the dark-mode tick, sleep and the caret tick, in the layout', () => {
     const inMenu = commandsIn(MENU_LAYOUT)
-    for (const id of ['window.newGuest', 'page.reader', 'sidePanel.toggle', 'page.forceDark', 'tab.sleep']) expect(inMenu, id).toContain(id)
-    for (const id of ['focus.nextPane', 'focus.previousPane', 'caret.toggle', 'tab.group', 'tab.ungroup']) expect(inMenu, id).not.toContain(id)
+    for (const id of ['window.newGuest', 'page.reader', 'sidePanel.toggle', 'page.forceDark', 'tab.sleep', 'caret.toggle']) expect(inMenu, id).toContain(id)
+    for (const id of ['focus.nextPane', 'focus.previousPane', 'tab.group', 'tab.ungroup']) expect(inMenu, id).not.toContain(id)
   })
 })
 
@@ -97,6 +106,7 @@ describe('the main menu while those commands are pending', () => {
 
     const ids = runnableIds(menuItems(ctx))
 
-    for (const [id] of ROWS) expect(ids.has(id as never), id).toBe(LANDED.includes(id))
+    // A landed command with no menu entry (the pane keys) is never listed.
+    for (const [id] of ROWS) expect(ids.has(id as never), id).toBe(LANDED.includes(id) && commandsIn(MENU_LAYOUT).includes(id))
   })
 })
