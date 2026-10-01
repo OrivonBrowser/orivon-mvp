@@ -69,7 +69,7 @@ describe('the sites domain', () => {
     expect(ask({ type: 'set', origin: { toString: 1 }, kind: 'camera', value: 'allow' })).toBeUndefined()
     expect(ask({ type: 'resetSite', origin: ['a'] })).toBeUndefined()
     expect(ask({ type: 'set', origin: SHOP, kind: 'camera', value: 'ask' })).toMatchObject({ ok: false })
-    expect(ask({ type: 'set', origin: SHOP, kind: 'popups', value: 'allow' })).toMatchObject({ ok: false })
+    expect(ask({ type: 'set', origin: SHOP, kind: 'devices', value: 'block' })).toMatchObject({ ok: false })
     expect(ask({ type: 'set', origin: 'https://app.example', kind: 'camera', value: 'allow' })).toMatchObject({ ok: false, rows: [] })
     expect(store.entries()).toEqual([])
   })

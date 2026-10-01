@@ -51,7 +51,7 @@ describe('the popover\'s permissions', () => {
 
   it('refuses a change it should and answers the unchanged view', () => {
     const { access, store } = setup()
-    expect(access.set(SHOP, 'popups', 'allow')?.shown).toEqual([])
+    expect(access.set(SHOP, 'devices', 'block')?.shown).toEqual([])
     expect(access.set('https://app.example', 'camera', 'allow')).toBeNull()
     expect(store.entries()).toEqual([])
   })

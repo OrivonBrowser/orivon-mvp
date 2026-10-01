@@ -54,7 +54,7 @@ describe('rows for one site', () => {
     const { controller } = setup()
     const rows = controller.rowsFor(SHOP)
     expect(rows.map((row) => row.kind)).toEqual(SITE_KINDS.filter((kind) => kind.available).map((kind) => kind.id))
-    expect(rows.map((row) => row.kind)).not.toContain('popups')
+    expect(rows.map((row) => row.kind)).not.toContain('devices')
     expect(rows.every((row) => row.value === 'default')).toBe(true)
     expect(rowOf(rows, 'camera')).toMatchObject({ label: 'Camera', defaultValue: 'ask' })
   })
@@ -128,7 +128,7 @@ describe('changing an answer', () => {
   })
 
   it.each([
-    ['a kind that is not available', SHOP, 'popups', 'allow'],
+    ['a kind that is not available', SHOP, 'devices', 'block'],
     ['an unknown kind', SHOP, 'teleport', 'allow'],
     ['a kind that is not text', SHOP, 3, 'allow'],
     ['a prototype key', SHOP, 'toString', 'allow'],
@@ -193,7 +193,7 @@ describe('the sites with answers of their own', () => {
 
   it('hides a kind that is not available, an app, and anything stored that is not a website', () => {
     const { controller, store, notifications } = setup()
-    store.set(SHOP, 'popups', 'allow')
+    store.set(SHOP, 'devices', 'block')
     store.set(APP, 'camera', 'allow')
     notifications.map.set(APP, 'allow')
     notifications.map.set('ipfs://bafy', 'allow')
@@ -214,7 +214,7 @@ describe('the defaults', () => {
     const { controller } = setup({ kinds: WITH_CONTENT })
     const defaults = controller.defaults()
     expect(defaults.map((row) => row.kind)).toContain('javascript')
-    expect(defaults.map((row) => row.kind)).not.toContain('popups')
+    expect(defaults.map((row) => row.kind)).not.toContain('devices')
     expect(defaults.find((row) => row.kind === 'camera')).toMatchObject({ settingKey: 'sites.camera', group: 'permission', options: [{ value: 'ask', label: 'Ask first' }, { value: 'block', label: 'Block' }] })
     expect(defaults.find((row) => row.kind === 'javascript')).toMatchObject({ options: [{ value: 'allow', label: 'Allowed' }, { value: 'block', label: 'Blocked' }] })
   })
