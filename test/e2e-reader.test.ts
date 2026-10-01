@@ -23,7 +23,7 @@ const PARAGRAPH = 'The quick brown fox jumps over the lazy dog while the afterno
 
 function article (): string {
   const paragraphs = Array.from({ length: 8 }, (_, i) => `<p>${PARAGRAPH} Paragraph ${String(i + 1)} ends here.</p>`)
-  return `<!doctype html><html lang="en"><head><title>A Long Walk Home - Example Times</title><meta name="author" content="Ada Writer"></head><body>
+  return `<!doctype html><html lang="en"><head><title>A Long Walk Home - Example Times</title><meta name="author" content="Ada Writer"><meta property="og:site_name" content="Example Times"></head><body>
 <nav><a href="/menu">Menu</a></nav>
 <article>
 <h1>A Long Walk Home</h1>
@@ -130,8 +130,10 @@ it('offers reader view on an article only, opens it beside the article from a sa
     await runCommand(chrome, 'page.reader')
     const page = await openedReader(app)
     await page.waitForSelector('h1')
-    expect(await page.locator('h1').innerText()).toContain('A Long Walk Home')
+    // The heading is the article's title without the site's name, and the byline is said once, in the meta line.
+    expect(await page.locator('h1').innerText()).toBe('A Long Walk Home')
     expect(await page.title()).toContain('A Long Walk Home')
+    expect(await page.locator('.body').innerText()).not.toContain('By Ada Writer')
     expect(await page.locator('.meta').innerText()).toMatch(/Ada Writer\s+127\.0\.0\.1\s+\d+ min read/)
 
     // The reader tab sits right of the article's, and the article's tab is still there.
@@ -183,7 +185,7 @@ it('offers reader view on an article only, opens it beside the article from a sa
     await bubble.getByRole('button', { name: 'Sepia' }).click()
     expect(await waitFor(async () => await page.evaluate(() => getComputedStyle(document.body).backgroundColor) === 'rgb(244, 236, 216)')).toBe(true)
     expect(await page.evaluate(() => getComputedStyle(document.querySelector('.body') as Element).fontFamily)).toContain('Georgia')
-    expect(await page.evaluate(() => Math.round((document.querySelector('.column') as HTMLElement).getBoundingClientRect().width))).toBe(820)
+    expect(await page.evaluate(() => Math.round((document.querySelector('.column') as HTMLElement).getBoundingClientRect().width))).toBe(880)
     expect(await waitFor(async () => {
       try {
         const values = (JSON.parse(await readFile(join(userData, 'settings.json'), 'utf8')) as { values: Record<string, string> }).values

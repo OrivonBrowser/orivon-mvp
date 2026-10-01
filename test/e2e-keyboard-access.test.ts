@@ -354,7 +354,7 @@ it('turns caret browsing on with no question when the setting says not to ask, a
     const settings = app.windows().find((w) => w.url().startsWith('orivon://settings')) as Page
     await settings.waitForSelector('#row-caret-browsing')
     expect(await settings.locator('#row-caret-browsing .row-label').textContent()).toBe('Navigate pages with a text cursor')
-    expect(await settings.locator('#row-caret-browsing .row-help').textContent()).toBe('Caret browsing. Press F7 to switch it on or off.')
+    expect(await settings.locator('#row-caret-browsing .row-help').textContent()).toBe('Also called caret browsing. Press F7 to turn it on or off.')
     expect(await settings.locator('#row-caret-ask .row-label').textContent()).toBe('Ask before turning on caret browsing with F7')
     expect(await settings.locator('#row-caret-ask input').isChecked()).toBe(false)
     expect(await settings.locator('#row-pane-keys .value').textContent()).toBe('F6')

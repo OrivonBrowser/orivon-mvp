@@ -270,6 +270,12 @@ it('shows the Performance settings, with the list empty and filled, on and off',
     expect(hidden).toBe(true)
     await themed(page, 'settings-performance-off')
 
+    // With both savers off nothing sleeps, so the list of sites that never do is not shown; with the memory saver on again it is.
+    expect(await page.locator('#row-keep-awake').count()).toBe(0)
+    await page.locator('#row-memory-saver .switch').click()
+    await page.mouse.click(1200, 690)
+    expect(await waitFor(async () => (await page.locator('#row-keep-awake').count()) === 1)).toBe(true)
+
     // The list, emptied by its own remove buttons.
     for (let left = 2; left > 0; left--) await page.locator('.host-list-remove').first().click()
     expect(await waitFor(async () => (await page.locator('.host-list .empty-state').count()) === 1)).toBe(true)

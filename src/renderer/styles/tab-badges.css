@@ -41,15 +41,15 @@
 }
 
 /* At the minimum width every tab shows its icon (or its sound mark) centred. The tab in front keeps its icon too, and
-   its close button takes the icon's place while the pointer or the keyboard is on the tab. */
+   its close button takes the icon's place while the pointer is over the tab or the keyboard is on it. */
 @container (max-width: 35px) {
   .tab:not(.active) .close { display: none; }
   .tab:not(.active).has-sound .tab-audio { margin: 0 auto; }
   .tab.active .tab-audio { display: none; }
   .tab.active .close { right: auto; left: 50%; transform: translateX(-50%); }
-  .tab.active:not(:hover):not(:focus-within) .close { opacity: 0; }
+  .tab.active:not(:hover):not(:focus-visible) .close { opacity: 0; }
   .tab.active:hover .fav,
-  .tab.active:focus-within .fav { visibility: hidden; }
+  .tab.active:focus-visible .fav { visibility: hidden; }
 }
 
 /* Pinned: the icon alone, in a fixed narrow tab. No title, no close button (Mod+W and a middle click still close it). */
