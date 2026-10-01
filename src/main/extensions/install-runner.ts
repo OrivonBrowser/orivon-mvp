@@ -23,6 +23,7 @@ import {
 } from './registry-runner.js'
 import type { ExtensionSource, ExtensionUpdater, InstalledExtension } from './registry.js'
 import { clearPendingDnrInstall, registerPendingDnrInstall } from './extensions-dnr.js'
+import { clearPendingInstalled, registerPendingInstalled } from './runtime-installed.js'
 import { effectiveManifest, manifestText } from './effective-manifest.js'
 import { reconcileGrants } from './granted-reconcile.js'
 import type { ExtensionPrefsStore } from './extension-prefs.js'
@@ -232,6 +233,9 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
   // install) or the previous one (an update). extensions-dnr.ts has the
   // full account.
   registerPendingDnrInstall(entry)
+  // Parked before the load because the extension's worker starts during it and asks once.
+  const replaced = previousInSlot.find((existing) => existing.id === id)
+  registerPendingInstalled(id, replaced === undefined ? { reason: 'install' } : { reason: 'update', previousVersion: replaced.version })
 
   let loaded: Awaited<ReturnType<Session['extensions']['loadExtension']>>
   try {
@@ -240,6 +244,7 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
     // Left in place, the pending entry would be taken for the previous
     // version that restoreAsideOnFailure may reload under this same id.
     clearPendingDnrInstall(id)
+    clearPendingInstalled(id)
     await restoreAsideOnFailure()
     throw error
   }
@@ -253,6 +258,7 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
   // under a name it does not actually run as.
   if (loaded.id !== id) {
     clearPendingDnrInstall(id)
+    clearPendingInstalled(id)
     ctx.session.extensions.removeExtension(loaded.id)
     // Loading under an installed extension's id replaced it in the session: load that one back.
     const displaced = readRegistry(ctx.userDataPath).find((existing) => existing.id === loaded.id && existing.enabled)

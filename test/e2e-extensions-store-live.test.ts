@@ -86,9 +86,15 @@ it('installs a service-worker extension from the store into a running browser, a
 
       const welcome = await liveApp.evaluate(({ webContents }, id: string) =>
         webContents.getAllWebContents().some((wc) => !wc.isDestroyed() && wc.getURL() === `chrome-extension://${id}/welcome.html`), crx.id)
-      check('the welcome tab the worker opens at start is open', welcome)
+      check('the welcome tab the worker opens from onInstalled is open', welcome)
+
+      const offscreen = await liveApp.evaluate(({ webContents }, id: string) =>
+        webContents.getAllWebContents().some((wc) => !wc.isDestroyed() && wc.getURL() === `chrome-extension://${id}/offscreen.html`), crx.id)
+      check('the offscreen document the worker creates is open', offscreen)
 
       const log = await liveApp.evaluate(() => (globalThis as unknown as { __swLog: string[] }).__swLog)
+      check('onInstalled reached the worker once, as an install', log.filter((line) => line.includes('installed:{"reason":"install"}')).length === 1, log.join(' | '))
+      check('getManifest still lists the static rulesets the extension shipped', log.some((line) => line.includes('rulesets:static')), log.join(' | '))
       check('the service worker raised no uncaught error', !log.some((line) => line.includes('Uncaught')), log.join(' | '))
 
       const userData = await liveApp.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))

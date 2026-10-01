@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   describeExtensionInstall, describeHostAccess, describeStrippedPermissions, loadableManifest,
-  GRANTED_APPS_CLAUSE, readExtensionManifest, updateRequiresConsent,
+  GRANTED_APPS_CLAUSE, LOADED_DNR_KEY, readExtensionManifest, updateRequiresConsent,
   type ExtensionManifestFacts, type StrippedRecord
 } from '../extension-manifest.js'
 
@@ -316,6 +316,13 @@ describe('loadableManifest', () => {
     expect(stripped.permissions).toEqual(['webRequest', 'declarativeNetRequestWithHostAccess', 'nativeMessaging'])
     expect(stripped.optionalPermissions).toEqual(['webRequestBlocking'])
     expect(stripped.declarativeNetRequest).toEqual({ rule_resources: [] })
+  })
+
+  it('keeps the removed declarative_net_request under its own key, and never one an extension supplied', () => {
+    const withRules = loadableManifest({ manifest_version: 3, name: 'x', version: '1.0.0', declarative_net_request: { rule_resources: [{ id: 'a' }] } })
+    expect(withRules.manifest[LOADED_DNR_KEY]).toEqual({ rule_resources: [{ id: 'a' }] })
+    const spoofed = loadableManifest({ manifest_version: 3, name: 'x', version: '1.0.0', [LOADED_DNR_KEY]: { rule_resources: [{ id: 'spoof' }] } })
+    expect(Object.hasOwn(spoofed.manifest, LOADED_DNR_KEY)).toBe(false)
   })
 
   it('leaves a manifest with none of the stripped permissions unchanged, recording nothing removed', () => {
