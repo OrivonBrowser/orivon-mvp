@@ -19,6 +19,8 @@ export const LOUNGE_PORT = 9000
 export const LOUNGE_URL = `http://lounge.localhost:${String(LOUNGE_PORT)}/`
 /** The fake IRC server's port: a loopback port the port's orivon.json names exactly, since the broker reserves 6667 from any range. */
 export const IRC_PORT = 6667
+/** The TLS fake's port: The Lounge's form moves to 6697 with TLS on, and orivon.json names `localhost:6697` exactly. */
+export const IRC_TLS_PORT = 6697
 
 export const ACCOUNT = { name: 'orivon-tester', password: 'correct horse battery staple' }
 export const CHANNEL = '#orivon'

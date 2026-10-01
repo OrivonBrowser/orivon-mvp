@@ -15,6 +15,7 @@ import { refuseShim, type OrivonShimError } from '../errors.js'
 import { refusingProxy } from '../unimplemented.js'
 import { checkServerIdentity } from './tls-identity.js'
 import { nodePeerCertificate, planTls, verdictFor, type TlsPlan, type TlsVerdict } from './tls-options.js'
+import { isVerificationCode, verificationError } from './tls-verify-errors.js'
 import type { SecureConnectOptions } from '../../contracts/capability-api.js'
 import type { SecureHandshake, TcpSocket } from '../../contracts/handles.js'
 
@@ -103,7 +104,11 @@ export class TLSSocket extends Socket {
 
   protected override connectFailure (error: unknown, host: string, port: number): Error {
     if (error !== undefined && error === this.state.failure) return this.state.failure
-    return super.connectFailure(error, host, port)
+    const mapped = super.connectFailure(error, host, port)
+    const { code, orivonCode } = mapped as { code?: unknown, orivonCode?: unknown }
+    if (!isVerificationCode(code)) return mapped
+    // The broker's message is fixed and its name is OrivonError; an app prints Node's text instead.
+    return Object.assign(verificationError(code), { orivonCode })
   }
 
   /**

@@ -52,6 +52,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Tabs pin, mute and reopen; start-up restores or offers the last session; find, print, save, screenshots and page menus landed; 54 review findings fixed.
 - The Lounge runs its real, unmodified Node server in a forked Worker: accounts, IRC, SQLite scrollback, all driven end to end headless.
 - Downloads, bookmark folders and manager, address-bar suggestions, History by session, import, About and a task manager landed; 56 review findings fixed.
+- The Lounge reaches self-signed IRC networks like irchighway once "trusted only" is unticked; a refused certificate now reads in Node's words.
 - Sites ask once for camera, location and more; passwords save and fill; privacy controls, sign-in sheets and certificate viewer landed; 61 review findings fixed.
 
 ### In my head

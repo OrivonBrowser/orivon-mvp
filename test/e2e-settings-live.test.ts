@@ -202,3 +202,28 @@ it('holds a redraw while a <select> has focus, and catches up once it loses it',
     await closeElectron(app)
   }
 }, TEST_TIMEOUT_MS)
+
+it('redraws as soon as a switch is clicked, keeps the keyboard on it, and still redraws for a later push', async () => {
+  const { app, chrome } = await launched()
+  try {
+    const page = await openInternal(app, chrome, 'settings', '/privacy')
+    await page.waitForSelector('#row-do-not-track')
+    const toggle = page.locator('#row-do-not-track input[type=checkbox]')
+    const marked = async (): Promise<boolean> => await page.locator('#row-do-not-track[data-marker]').count() === 1
+    await page.locator('#row-do-not-track').evaluate((el) => { el.dataset['marker'] = 'kept' })
+
+    // A real click leaves the switch focused; the page must not wait for focus to move before redrawing.
+    await toggle.click()
+    expect(await waitFor(async () => !(await marked()))).toBe(true)
+    expect(await toggle.isChecked()).toBe(true)
+    expect(await page.evaluate(() => document.activeElement?.closest('.row')?.id)).toBe('row-do-not-track')
+
+    // The switch the redraw rebuilt and refocused is as finished as the clicked one: a later push redraws too.
+    await page.locator('#row-do-not-track').evaluate((el) => { el.dataset['marker'] = 'kept' })
+    await devGrant(app, { origin: 'http://127.0.0.1:47503', manifest: fixtureManifest(), capability: 'tcp.connect', patterns: ['127.0.0.1:9'] })
+    expect(await waitFor(async () => !(await marked()))).toBe(true)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
