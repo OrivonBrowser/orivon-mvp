@@ -67,7 +67,7 @@ describe('the words of a row and of the total', () => {
 
   it('says it is calculating until the total is known', () => {
     expect(totalText(null)).toBe('Calculating…')
-    expect(totalText(214 * 1024 * 1024)).toBe('About 214.0 MB on this computer')
+    expect(totalText(214 * 1024 * 1024)).toBe('About 214 MB on this computer')
   })
 })
 
