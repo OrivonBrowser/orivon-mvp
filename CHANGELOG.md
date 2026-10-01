@@ -205,6 +205,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **An app that shows pages it serves itself is granted `web.embed` again**: a local pattern (`http://*.localhost:<port>`) or an exact
+  `http://` origin was read as a `host:port` pattern, which it is not, so no manifest declaring one was ever allowed to grant it. The
+  subset check now compares any whole-origin pattern exactly.
+
 - **Page zoom scales the page in every tab**: a tab's zoom now resizes what is drawn, where before only the percentage
   changed.
 - **Shrinking a window with the main menu open no longer ends the browser.**
