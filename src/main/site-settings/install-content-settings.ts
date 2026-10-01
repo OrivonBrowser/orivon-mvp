@@ -16,6 +16,7 @@ import { createContentRules, isPdf, requestPage, withScriptBlock } from './conte
 import type { ContentKind } from './content-rules.js'
 import { pageAccess } from './page-access.js'
 import { createPopupBlocker } from './popup-blocker.js'
+import { siteContentBlocks } from './site-content-blocks.js'
 import { popupBlocks, sitePopups, tabInteraction } from './site-popups.js'
 import { siteSound } from './site-sound.js'
 
@@ -65,7 +66,12 @@ export const installContentSettings: ShellInstaller = {
       }
     }
     siteSettings.onChange(applySound)
-    settings.onChange(({ key }) => { if (key === 'sites.sound') applySound() })
+    siteContentBlocks.bind((pageUrl) => rules.scriptsBlocked(pageUrl) || rules.imagesBlocked(pageUrl) || rules.soundBlocked(pageUrl))
+    siteSettings.onChange(() => { siteContentBlocks.changed() })
+    settings.onChange(({ key }) => {
+      if (key === 'sites.sound') applySound()
+      if (key === 'sites.javascript' || key === 'sites.images' || key === 'sites.sound') siteContentBlocks.changed()
+    })
 
     services.downloads.onStart(createAutoDownloads({
       store: siteSettings,

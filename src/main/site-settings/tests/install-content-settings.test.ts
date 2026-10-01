@@ -10,6 +10,7 @@ const { installContentSettings } = await import('../install-content-settings.js'
 const { webRequestOwnerFor } = await import('../../sessions/web-request-owner.js')
 const { SiteSettingsStore } = await import('../site-settings-store.js')
 const { siteSound } = await import('../site-sound.js')
+const { siteContentBlocks } = await import('../site-content-blocks.js')
 const { sitePopups } = await import('../site-popups.js')
 const { SCRIPT_BLOCK_POLICY } = await import('../content-rules.js')
 
@@ -129,6 +130,23 @@ describe('the content-settings installer', () => {
       rig({ 'sites.images': 'block' })
       const current = {}
       expect(requestHandler()({ resourceType: 'image', url: 'https://cdn.example/a.png' }, current)).toBe(current)
+    })
+  })
+
+  describe('the key\'s mark', () => {
+    it('is on for a site with any of the three switched off, and announces each change to a setting', () => {
+      const { store, changeSetting } = rig()
+      const changed = vi.fn()
+      siteContentBlocks.onChange(changed)
+      expect(siteContentBlocks.blocked(`${SITE}/`)).toBe(false)
+      store.set(SITE, 'images', 'block')
+      expect(siteContentBlocks.blocked(`${SITE}/`)).toBe(true)
+      expect(siteContentBlocks.blocked('https://other.example/')).toBe(false)
+      expect(changed).toHaveBeenCalledTimes(1)
+      changeSetting('sites.javascript')
+      expect(changed).toHaveBeenCalledTimes(2)
+      changeSetting('privacy.cookies')
+      expect(changed).toHaveBeenCalledTimes(2)
     })
   })
 

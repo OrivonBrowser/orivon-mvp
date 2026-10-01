@@ -109,6 +109,8 @@ it('runs no script for a site told to block JavaScript, and runs every other sit
     await view.click('#jsurl')
     await delay(300)
     expect(await titleOf(view)).toBe('static')
+    // The address bar's key carries the mark while the page in front is on a site with a content block.
+    await chrome.waitForSelector('#site-permissions-btn[data-content-blocked]', { state: 'attached' })
 
     // It adds a policy beside the page's own, never in place of it.
     view = await visit(app, chrome, `${x.origin}/js-csp`)
@@ -117,6 +119,7 @@ it('runs no script for a site told to block JavaScript, and runs every other sit
     // Another site is untouched, and a frame follows the page it sits in, in both directions.
     view = await visit(app, chrome, `${y.origin}/js`)
     expect(await titleOf(view)).toBe('script ran')
+    await chrome.waitForSelector('#site-permissions-btn:not([data-content-blocked])', { state: 'attached' })
     view = await visit(app, chrome, `${y.origin}/outer?src=${encodeURIComponent(`${x.origin}/frame`)}`)
     expect(await frameText(view, `${x.origin}/frame`)).toBe('frame script ran')
     view = await visit(app, chrome, `${x.origin}/outer?src=${encodeURIComponent(`${y.origin}/frame`)}`)

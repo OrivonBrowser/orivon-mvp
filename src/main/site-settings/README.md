@@ -16,6 +16,7 @@
 | `popup-policy.ts`, `tab-interaction.ts`, `popup-blocks.ts`, `popup-blocker.ts`, `site-popups.ts` | the pop-up blocker: the rule (pure), when the person last clicked or pressed a key in each tab, what each page tried to open, the join of the three, and the process-wide instance `shell/tab-view.ts` asks from the window-open handler |
 | `popups-overlay.ts`, `popups-view.ts` | the `popups-blocked` overlay under the address bar's pop-up chip: the list of refused addresses, opening one on purpose, always allowing the site |
 | `content-rules.ts` | pure: which sites have JavaScript, images or sound switched off, and the response header that switches scripts off |
+| `site-content-blocks.ts` | `siteContentBlocks`, the rule and the change signal behind the mark on the address bar's key (`shell/state/content-blocked.ts`) |
 | `site-sound.ts` | `siteSound`, the rule `shell/signals/audio.ts` asks when it decides a tab's mute |
 | `auto-downloads.ts` | holds a second download a page starts without a click and asks about it as the `autoDownloads` kind |
 

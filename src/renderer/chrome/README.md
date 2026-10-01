@@ -22,6 +22,7 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 | `prompt-anchor.ts` | reports the address pill's rectangle to main (`prompt.anchor`), so a prompt can open under it |
 | `site-badges.ts` | the Web3 Score shield and mark, the permissions key |
 | `site-access-chip.ts` | the mark in the address bar for a page that asked for the camera, a location or another permission; it opens the review bubble |
+| `content-dot.ts` | a mark on the address bar's key for a site with JavaScript, images or sound switched off: an attribute on `site-badges`'s button, drawn by `styles/content-dot.css` |
 | `popups-chip.ts` | the mark in the address bar for a page whose pop-ups were blocked, with a count from two; it opens the `popups-blocked` bubble |
 | `cluster.ts` | the bookmark star, the zoom chip, the all-sites button, the profile chip, the menu button |
 | `bookmark-star.ts` | the star: opens the bookmark bubble under itself, and answers Mod+D with its rectangle |

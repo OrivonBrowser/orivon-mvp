@@ -97,6 +97,8 @@ export interface ShellState extends TabsSnapshot {
   siteAccess: ReadonlyArray<{ readonly kind: SiteKind, readonly state: 'allowed' | 'blocked', readonly label: string }>
   /** How many windows the active page tried to open and was refused, for the pop-up chip. */
   popupsBlocked: number
+  /** Whether the active page's site has JavaScript, images or sound switched off, for the mark on the address bar's key. */
+  contentBlocked: boolean
   /** Which profile this window is, for the chip beside the menu. */
   profile: { name: string, color: string, isPrivate: boolean, shown: boolean }
   /** The downloads button: whether it shows, its ring and its dot (`toolbar.downloads`). */
