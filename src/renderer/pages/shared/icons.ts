@@ -260,6 +260,10 @@ export function arrowUpIcon (): SVGSVGElement {
   return icon((el) => { el.append(path('M5 12l7-7 7 7', '2'), path('M12 19V5', '2')) })
 }
 
+export function arrowLeftIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M19 12H5', '2'), path('M12 19l-7-7 7-7', '2')) })
+}
+
 export function arrowDownIcon (): SVGSVGElement {
   return icon((el) => { el.append(path('M12 5v14', '2'), path('M19 12l-7 7-7-7', '2')) })
 }

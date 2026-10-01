@@ -17,6 +17,7 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 | `address-display.ts` | the unfocused address over the input: the connection mark and the address in two tones (`address-format.ts` splits it) |
 | `reload-stop.ts` | Reload becomes Stop after 150 ms of loading |
 | `home-button.ts` | the Home button, shown while `toolbar.home` is on |
+| `reader-button.ts` | the book in the address pill while the page in front looks like an article; opens reader view |
 | `prompt-anchor.ts` | reports the address pill's rectangle to main (`prompt.anchor`), so a prompt can open under it |
 | `site-badges.ts` | the Web3 Score shield and mark, the permissions key |
 | `cluster.ts` | the bookmark star, the zoom chip, the all-sites button, the profile chip, the menu button |

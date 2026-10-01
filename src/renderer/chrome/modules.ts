@@ -9,6 +9,7 @@ import { createCluster } from './cluster.js'
 import { createHomeButton } from './home-button.js'
 import { createNavigation } from './navigation.js'
 import { createPromptAnchor } from './prompt-anchor.js'
+import { createReaderButton } from './reader-button.js'
 import { createReloadStop } from './reload-stop.js'
 import { createSiteBadges } from './site-badges.js'
 import { decorateTabBadges } from './tab-badges.js'
@@ -33,6 +34,7 @@ export const CHROME_MODULES: readonly ChromeModule[] = [
   createHomeButton(),
   createSiteBadges(),
   createPromptAnchor(),
+  createReaderButton(),
   createCluster(),
   createBookmarksBar()
 ]
