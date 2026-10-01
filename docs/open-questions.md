@@ -1789,16 +1789,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A333: A Settings row and an error-log view are shown and drive nothing **[AI-REC]**
-
-- **Question:** "Let extensions replace the new tab, History and Bookmarks pages" (`extensions.pageOverrides`) changes a
-  value no code reads, and `orivon://extensions/errors` shows a placeholder no link reaches. Hide both until the
-  features exist, or keep them?
-- **Why it matters:** a switch that does nothing tells a person Orivon honours a choice it does not.
-- **Options:** remove the row and the route until page overrides and an error log are built (rec.); keep them.
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
 ### A334: `chrome.history` is exact only for the newest 200 pages **[AI-REC]**
 
 - **Question:** `onVisitRemoved` compares the newest 200 pages, `getVisits` is one visit per address and `typedCount` is 0.

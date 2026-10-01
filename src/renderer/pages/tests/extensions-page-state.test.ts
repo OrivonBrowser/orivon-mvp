@@ -55,7 +55,7 @@ describe('PageState', () => {
 
 describe('the registry', () => {
   it('has a view for every place', () => {
-    expect(Object.keys(EXTENSION_VIEWS).sort()).toEqual(['details', 'errors', 'list', 'shortcuts'])
+    expect(Object.keys(EXTENSION_VIEWS).sort()).toEqual(['details', 'list', 'shortcuts'])
   })
 
   it('starts the details view with the about section at order 10, with unique ids', () => {

@@ -1,7 +1,7 @@
 # `src/renderer/pages/extensions/`: the `orivon://extensions` page
 
 **What lives here.** The page's renderer side: `main.ts` draws the header and the current view, `router.ts` turns an
-address (`/`, `/details?id=`, `/shortcuts`, `/errors`) into a place and back, `state.ts` holds what main last sent,
+address (`/`, `/details?id=`, `/shortcuts`) into a place and back, `state.ts` holds what main last sent,
 and `types.ts` says what a view, a details section and a card badge are. `registry.ts` lists them, one line each:
 `EXTENSION_VIEWS`, `DETAIL_SECTIONS` and `CARD_BADGES`. `views/` holds a view per route (the list, the details,
 the shortcuts page) with its own stylesheet, and `sections/` the details sections that are not part of a view's file.

@@ -21,14 +21,6 @@ export const apps: Section = {
       control: { type: 'toggle', key: 'extensions.pinNew' }
     },
     {
-      id: 'apps-extensions-page-overrides',
-      label: 'Let extensions replace the new tab, History and Bookmarks pages',
-      help: 'Turn this off to keep Orivon\'s own pages even when an extension offers one.',
-      keywords: ['extensions', 'addons', 'plugins', 'new tab', 'newtab', 'history', 'bookmarks', 'override', 'replace', 'homepage'],
-      group: 'Extensions',
-      control: { type: 'toggle', key: 'extensions.pageOverrides' }
-    },
-    {
       id: 'apps-list',
       label: 'Permissions and files',
       group: 'Apps',

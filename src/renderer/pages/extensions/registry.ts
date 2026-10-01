@@ -9,7 +9,6 @@ import { detailsView } from './views/details.js'
 import { optionalSection } from './views/details-optional.js'
 import { listView } from './views/list.js'
 import { shortcutsView } from './views/shortcuts.js'
-import { stubView } from './views/stub.js'
 
 export type { CardBadge, DetailSection, ExtensionView, PageContext } from './types.js'
 
@@ -27,7 +26,6 @@ const sortedSections = [...DETAIL_SECTIONS].sort((a, b) => a.order - b.order)
 
 export const EXTENSION_VIEWS: Readonly<Record<ViewName, ExtensionView>> = {
   details: detailsView(sortedSections),
-  errors: stubView('Error log', 'The log of what went wrong in this extension will appear here.'),
   list: listView(CARD_BADGES),
   shortcuts: shortcutsView
 }

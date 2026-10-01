@@ -93,9 +93,7 @@ const SPECS = {
   // Load unpacked, Reload for an unpacked extension: off until the person turns it on.
   'extensions.developerMode': { kind: 'bool', default: false },
   // Whether an extension installed from now on gets a place on the toolbar.
-  'extensions.pinNew': { kind: 'bool', default: true },
-  // Whether an extension may replace the new tab, History and Bookmarks pages.
-  'extensions.pageOverrides': { kind: 'bool', default: true }
+  'extensions.pinNew': { kind: 'bool', default: true }
 } as const satisfies Record<string, SettingSpec>
 
 export type SettingKey = keyof typeof SPECS
