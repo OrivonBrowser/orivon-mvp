@@ -37,13 +37,30 @@ export function fsError (code: string, description: string, syscall: string, pat
  * Wrap the orivon.fs call only: an error already Node-shaped (from this
  * file, or fs/root.ts) would come out of toNodeError as 'internal'.
  */
-export async function guarded<T> (run: () => Promise<T>): Promise<T> {
-  try {
-    return await run()
-  } catch (error) {
-    throw toNodeError(error)
+export async function guarded<T> (run: () => Promise<T>, pause: (ms: number) => Promise<void> = delay): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await run()
+    } catch (error) {
+      const wait = LIMIT_RETRY_DELAYS_MS[attempt]
+      if (wait === undefined || !isLimit(error)) throw toNodeError(error)
+      await pause(wait)
+    }
   }
 }
+
+/**
+ * The per-origin limiter refuses a call before it runs, so asking again cannot repeat an effect. A program that starts
+ * with a burst of file calls (loading its data files beside another one doing the same) would otherwise fail the first
+ * call past the bucket; the pauses total about five seconds, then the refusal is the call's error.
+ */
+const LIMIT_RETRY_DELAYS_MS = [10, 25, 50, 100, 200, 200, 200, 400, 400, 400, 800, 800, 800] as const
+
+function isLimit (error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'limit'
+}
+
+const delay = async (ms: number): Promise<void> => { await new Promise((resolve) => setTimeout(resolve, ms)) }
 
 function invalidPath (path: unknown): TypeError & { code: string } {
   return Object.assign(
