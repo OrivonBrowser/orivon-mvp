@@ -6,6 +6,7 @@ import type { DownloadEntry } from '../../../main/downloads/download-types.js'
 import { h } from '../../pages/shared/dom.js'
 import { closeIcon, downloadIcon, externalLinkIcon } from '../../pages/shared/icons.js'
 import type { Overlay, OverlayPage } from '../kit.js'
+import { ClickGuard } from './click-guard.js'
 import { isRemovable, primaryAction } from './line.js'
 import type { BubbleActionId } from './line.js'
 import { BubbleRow } from './row.js'
@@ -29,7 +30,7 @@ export const downloadsPage: OverlayPage = {
     const empty = h('div', { className: 'empty-state compact', hidden: true }, downloadIcon(), h('p', { textContent: 'No downloads yet.' }))
     const openPage = (): void => { void overlay.request({ type: 'openPage' }) }
     const pageButton = h('button', { className: 'btn icon', type: 'button', title: 'Open downloads page', ariaLabel: 'Open downloads page', onclick: openPage }, externalLinkIcon())
-    const dismiss = h('button', { className: 'btn icon', type: 'button', title: 'Dismiss', ariaLabel: 'Dismiss', hidden: !peek, onclick: () => { overlay.close() } }, closeIcon())
+    const dismiss = h('button', { className: 'btn icon', type: 'button', title: 'Close', ariaLabel: 'Close', onclick: () => { overlay.close() } }, closeIcon())
     content.append(
       h('div', { className: 'dlb-head' }, h('h2', { textContent: 'Downloads' }), h('div', { className: 'dlb-head-actions' }, dismiss, pageButton)),
       list,
@@ -45,7 +46,11 @@ export const downloadsPage: OverlayPage = {
       for (const row of ordered()) row.element.tabIndex = row.entry.id === current ? 0 : -1
     }
 
+    const guard = new ClickGuard(() => performance.now(), peek)
+    guard.shown()
+
     function act (action: BubbleActionId | 'open', entry: DownloadEntry): void {
+      if (!guard.allows(action, entry.id)) return
       void overlay.request({ type: action, id: entry.id })
     }
 
@@ -78,6 +83,7 @@ export const downloadsPage: OverlayPage = {
       }
       entries.forEach((entry, index) => {
         const known = rows.get(entry.id)
+        if (entry.state === 'held' && known?.entry.state !== 'held') guard.heldNow(entry.id)
         const row = known ?? build(entry)
         if (known === undefined) rows.set(entry.id, row)
         else known.update(entry)

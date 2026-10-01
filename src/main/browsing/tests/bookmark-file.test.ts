@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { parseBookmarksFile, serializeBookmarksFile } from '../bookmark-file.js'
-import { childrenOf, flattenUrls } from '../bookmark-tree.js'
+import { folderFromPath } from '../../../renderer/pages/bookmarks/router.js'
+import { ID_PATTERN, childrenOf, flattenUrls } from '../bookmark-tree.js'
 import type { IdSource } from '../bookmark-tree.js'
 
 const counter = (): IdSource => { let n = 0; return () => `id${String(n++)}` }
@@ -73,6 +74,27 @@ describe('format 2', () => {
     expect(new Set(ids).size).toBe(4)
     expect(ids[0]).toBe('same')
     expect(ids).not.toContain('other')
+  })
+
+  it('gives an id the manager page could not name a new one, so every row can be opened, edited and moved', () => {
+    const raw = JSON.stringify({ version: 2, roots: {
+      bar: [
+        { id: 'a/b', kind: 'url', title: 'slash', url: 'https://one.example/', added: 1 },
+        { id: 'x'.repeat(40), kind: 'url', title: 'long', url: 'https://two.example/', added: 1 },
+        { id: 'sp ace', kind: 'folder', title: 'space', added: 1, children: [] },
+        { id: 'fine_id-1', kind: 'url', title: 'fine', url: 'https://three.example/', added: 1 }
+      ], other: [], reading: []
+    } })
+    const ids = childrenOf(parseBookmarksFile(raw, opts()).tree, 'bar').map((node) => node.id)
+    expect(ids[3]).toBe('fine_id-1')
+    for (const id of ids) expect(ID_PATTERN.test(id)).toBe(true)
+    expect(new Set(ids).size).toBe(4)
+  })
+
+  it('keeps the same pattern as the page that names a folder in its address', () => {
+    for (const id of ['bar', 'n0', 'a1_-B', 'x'.repeat(32), 'x'.repeat(33), 'a/b', '', 'a b', 'é']) {
+      expect(folderFromPath(`/folder/${id}`) !== null).toBe(ID_PATTERN.test(id))
+    }
   })
 
   it('drops malformed nodes and addresses that must never open, and keeps the rest', () => {

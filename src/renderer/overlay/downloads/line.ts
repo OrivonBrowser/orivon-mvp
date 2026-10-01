@@ -1,6 +1,6 @@
 // What a row of the downloads bubble says and offers in each state. Pure, so the table is tested without a document.
 import type { DownloadEntry, DownloadReason } from '../../../main/downloads/download-types.js'
-import { formatBytes, sourceLabel, statusLine } from '../../pages/shared/format-bytes.js'
+import { compactProgressLine, formatBytes, sourceLabel, statusLine } from '../../pages/shared/format-bytes.js'
 
 export type BubbleActionId = 'pause' | 'resume' | 'cancel' | 'retry' | 'remove' | 'showInFolder' | 'keep' | 'discard'
 
@@ -61,6 +61,7 @@ export function lineFor (entry: DownloadEntry): string {
   switch (entry.state) {
     case 'completed': return entry.missing === true ? 'Moved or deleted' : [formatBytes(entry.total > 0 ? entry.total : entry.received), sourceLabel(entry.url)].join(' · ')
     case 'interrupted': return `Failed: ${SHORT_REASONS[entry.reason ?? 'network']}`
+    case 'progressing': return compactProgressLine(entry)
     default: return statusLine(entry)
   }
 }

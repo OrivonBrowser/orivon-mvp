@@ -4,6 +4,7 @@ import { mkdirSync, readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 import { DebouncedWriter } from '../storage/debounced-writer.js'
+import { boundedText, storedAddress } from './download-model.js'
 import type { DownloadEntry, DownloadReason, DownloadState } from './download-types.js'
 
 const FILE_VERSION = 1
@@ -34,7 +35,7 @@ function parseEntry (raw: unknown): DownloadEntry | null {
   if (!isCount(total) || !isCount(received) || !isCount(startedAt) || typeof danger !== 'boolean') return null
   if (!STATES.includes(state as DownloadState)) return null
   return {
-    id, url, referrer, fileName, savePath, mime, total, received, startedAt, danger,
+    id, url: storedAddress(url), referrer: storedAddress(referrer), fileName, savePath, mime: boundedText(mime), total, received, startedAt, danger,
     state: state as DownloadState,
     ...(REASONS.includes(reason as DownloadReason) ? { reason: reason as DownloadReason } : {}),
     ...(isCount(endedAt) ? { endedAt } : {}),

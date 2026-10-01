@@ -22,7 +22,8 @@ export interface PageRow {
 }
 
 /** What the page is told: the rows and which one Enter would choose. */
-export interface Snapshot { seq: number, rows: PageRow[], selected: number }
+/** `rev` changes whenever rows are placed among those already shown (late suggestions), which shifts the rows after them: a click names the revision it saw. */
+export interface Snapshot { seq: number, rev: number, rows: PageRow[], selected: number }
 
 /** What a choice asks the window to do. `target` is the text a tab's own navigation takes for `current`, and
  * an address for a new tab. `markTyped` is a page that exists, to count as typed. */
@@ -65,6 +66,7 @@ export function pageRow (row: SuggestionRow): PageRow {
 
 export class OmniboxService {
   private seq = 0
+  private rev = 0
   private text = ''
   private completion: string | null = null
   private rows: SuggestionRow[] = []
@@ -118,23 +120,32 @@ export class OmniboxService {
       source(text, ctx, controller.signal).then((rows) => {
         if (controller.signal.aborted || seq !== this.seq || rows.length === 0) return
         this.rows = placeLate(this.rows, rows, this.selected)
+        this.rev += 1
         this.deps.onLate(this.snapshot())
       }, () => {})
     }
   }
 
   snapshot (): Snapshot {
-    return { seq: this.seq, rows: this.rows.map(pageRow), selected: this.selected }
+    return { seq: this.seq, rev: this.rev, rows: this.rows.map(pageRow), selected: this.selected }
   }
 
   /** Moves the selection one row, wrapping. `fill` is what the address bar shows for it: null for the first
    * row, where the typed text comes back. */
-  select (step: 1 | -1, seq: number | undefined): { selected: number, fill: string | null } | undefined {
+  select (step: 1 | -1, seq: number | undefined): { selected: number, fill: string | null, announce: string } | undefined {
     if (seq !== undefined && seq !== this.seq) return undefined
     const count = this.rows.length
     if (count === 0) return undefined
     this.selected = (this.selected + step + count) % count
-    return { selected: this.selected, fill: this.selected === 0 ? null : this.fillFor(this.selected) }
+    return { selected: this.selected, fill: this.selected === 0 ? null : this.fillFor(this.selected), announce: this.announceFor(this.selected) }
+  }
+
+  /** What a screen reader says for the selected row: the dropdown is drawn in another view, so the field cannot point at it. */
+  private announceFor (index: number): string {
+    const row = this.rows[index]
+    if (row === undefined) return ''
+    const parts = [row.title, row.address === row.title ? '' : row.address, row.meta ?? '', `${String(index + 1)} of ${String(this.rows.length)}`]
+    return parts.filter((part) => part !== '').join(', ')
   }
 
   private fillFor (index: number): string | null {
@@ -144,9 +155,12 @@ export class OmniboxService {
     return row.url ?? row.address
   }
 
-  /** What choosing row `index` does, or undefined for a stale or impossible choice. */
-  pick (index: number, disposition: Disposition, seq: number | undefined): Outcome | undefined {
+  /** What choosing row `index` does, or undefined for a stale or impossible choice. A click carries the revision of the rows it
+   * was drawn from: rows placed since have moved the one it pointed at. The keys carry none, since the selected row and those
+   * above it never move. */
+  pick (index: number, disposition: Disposition, seq: number | undefined, rev?: number): Outcome | undefined {
     if (seq !== undefined && seq !== this.seq) return undefined
+    if (rev !== undefined && rev !== this.rev) return undefined
     const row = this.rows[index]
     if (row === undefined) return undefined
     if (row.kind === 'tab') return row.tabId === undefined ? undefined : { type: 'switch', tabId: row.tabId }
@@ -162,6 +176,7 @@ export class OmniboxService {
     this.late?.abort()
     this.late = null
     this.seq += 1
+    this.rev += 1
     this.rows = []
     this.selected = 0
     this.completion = null

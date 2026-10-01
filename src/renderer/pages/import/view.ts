@@ -1,7 +1,7 @@
 // The Import page's document. It is built again from the state on every change; the key that was focused is
 // found again afterwards, so a tick or an arrow key never drops the focus.
 import { h, replaceChildren } from '../shared/dom.js'
-import { downloadIcon, fileIcon, privateIcon } from '../shared/icons.js'
+import { fileIcon, importIcon, privateIcon } from '../shared/icons.js'
 import { details, errorText, headline, progressText } from './copy.js'
 import type { ImportState, SourceRow } from './state.js'
 
@@ -14,7 +14,7 @@ const SKELETON_DELAY_MS = 150
 export class ImportView {
   private readonly body = h('div', { className: 'body' })
   private readonly header = h('header', { className: 'head' },
-    h('h1', null, downloadIcon(), 'Import bookmarks and history'),
+    h('h1', null, importIcon(), 'Import bookmarks and history'),
     h('p', { className: 'intro', textContent: 'Orivon reads your bookmarks and history from another browser once and changes nothing there.' }))
   private skeleton = false
 
@@ -71,7 +71,7 @@ export class ImportView {
       parts.push(h('div', { className: 'banner info', role: 'status', textContent: 'No other browser was found on this computer. You can still import a bookmarks file.' }))
     }
     parts.push(this.sourceCard(running))
-    if (!state.isFile) parts.push(this.whatCard(running))
+    parts.push(this.whatCard(running))
     parts.push(this.footer(running))
     return h('div', { className: 'steps' }, ...parts)
   }
@@ -112,6 +112,12 @@ export class ImportView {
       input.dataset['focus'] = what
       input.addEventListener('change', () => { state.tick(what, input.checked) })
       return h('div', { className: 'what-row' }, h('label', { className: 'check' }, input, h('span', { textContent: label })), help === undefined ? null : h('p', { className: 'what-help', textContent: help }))
+    }
+    // A bookmarks file is bookmarks only: the card stays so the page does not jump, with its choices fixed.
+    if (state.isFile) {
+      return h('section', { className: 'card' }, h('h2', { textContent: 'What to import' }),
+        box('bookmarks', 'Bookmarks', true, true),
+        box('history', 'Browsing history', false, true, 'A bookmarks file holds no history.'))
     }
     return h('section', { className: 'card' }, h('h2', { textContent: 'What to import' }),
       box('bookmarks', 'Bookmarks', state.bookmarks, false),

@@ -95,6 +95,8 @@
 .row-help { margin-top: 2px; color: var(--wink-dim); font-size: 13px; max-width: 520px; }
 .row-control { display: flex; align-items: center; gap: 12px; flex: none; max-width: 55%; }
 .row-control .value { color: var(--wink-dim); user-select: text; overflow-wrap: anywhere; text-align: right; white-space: pre-line; }
+.action-value { display: inline-flex; align-items: center; gap: 12px; min-width: 0; }
+.row-control .action-value .value { flex: 1 1 auto; min-width: 0; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; font-size: 13px; }
 .text-control { display: grid; gap: 6px; width: 340px; }
 .problem { color: var(--wdanger-text); font-size: 12.5px; }
 .problem:empty { display: none; }

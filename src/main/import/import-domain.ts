@@ -1,7 +1,9 @@
 // What the Import page may ask: which profiles of other browsers there are, to import one, to import a
-// bookmarks file the person picks, and to open the bookmark manager. A profile is named by its place in the
-// last answer to `detect` and a file is never named at all: no path crosses this boundary in either
+// bookmarks file the person picks, and to open the bookmark manager. A profile is named by an id made from the
+// profile itself and a secret of this run, so a second Import page detecting again never changes what an id
+// from the first one means, and a file is never named at all: no path crosses this boundary in either
 // direction. A private window reads nothing and answers every request the same way.
+import { createHmac, randomBytes } from 'node:crypto'
 import type { WebContents } from 'electron'
 import type { InternalDomain } from '../pages/internal-ipc.js'
 import { BROWSER_NAMES } from './import-types.js'
@@ -37,7 +39,10 @@ export interface ListedSource {
 }
 
 export function importDomain (host: ImportHost): InternalDomain {
-  let sources: readonly ImportSource[] = []
+  /** Every profile any `detect` has listed, by id. A page asking again adds to it and never renumbers it. */
+  const known = new Map<string, ImportSource>()
+  const secret = randomBytes(16)
+  const idOf = (source: ImportSource): string => createHmac('sha256', secret).update(`${source.browser}\0${source.dir}`).digest('hex').slice(0, 16)
   let running = false
   return {
     pages: ['import'],
@@ -46,12 +51,13 @@ export function importDomain (host: ImportHost): InternalDomain {
       const request = (typeof command === 'object' && command !== null ? command : {}) as ImportRequest
       switch (request.type) {
         case 'detect': {
-          sources = await host.detect()
-          const listed: ListedSource[] = sources.map((source, index) => ({ id: String(index), key: source.browser, browser: BROWSER_NAMES[source.browser], profile: source.profile }))
+          const sources = await host.detect()
+          for (const source of sources) known.set(idOf(source), source)
+          const listed: ListedSource[] = sources.map((source) => ({ id: idOf(source), key: source.browser, browser: BROWSER_NAMES[source.browser], profile: source.profile }))
           return { private: false, sources: listed, historyOn: host.historyOn(), manager: host.managerAvailable() }
         }
         case 'run': {
-          const source = typeof request.id === 'string' && /^\d{1,4}$/.test(request.id) ? sources[Number(request.id)] : undefined
+          const source = typeof request.id === 'string' && /^[0-9a-f]{16}$/.test(request.id) ? known.get(request.id) : undefined
           if (source === undefined || typeof request.bookmarks !== 'boolean' || typeof request.history !== 'boolean') return undefined
           const what = { bookmarks: request.bookmarks, history: request.history && host.historyOn() }
           if (!what.bookmarks && !what.history) return undefined

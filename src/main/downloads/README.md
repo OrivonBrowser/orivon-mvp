@@ -37,12 +37,17 @@ the person has answered; an item that ends cancelled with no path was a dismisse
 
 **A page never names a path.** Every request from a page carries an id, and the path is read from the list kept
 here. A name a server suggests goes through `safeFileName` (no directory part, no separators, no control or
-bidirectional-override characters, no reserved Windows names, 200 characters at most) and is joined to a folder the
+bidirectional-override characters, no reserved Windows names, 200 bytes at most) and is joined to a folder the
 service chose. Only the Settings page may choose the folder.
 
 **A dangerous type is never opened from Orivon.** A completed file whose last extension runs code, or whose content
 type is an executable one, is listed with "Open it from the folder": the operating system's file manager is the
 place to decide.
+
+**A page cannot flood the list.** A tab may run ten downloads at once, and a download the page started without a
+click or key press counts against three in any ten seconds; a refused one is cancelled and recorded once as
+"Too many downloads from this site". A download the person asked for (a retry, a click) is exempt. An address is
+stored whole only up to 2,048 characters, and a `data:` address as its scheme alone.
 
 **Which sessions.** The default session is handled at start; any other session the first time a tab is created in
 it, so an app's own partition is covered without this code ever asking for a session by name. The embed, child and

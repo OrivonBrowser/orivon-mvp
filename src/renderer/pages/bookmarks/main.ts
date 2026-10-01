@@ -2,7 +2,7 @@
 // folders by dialog or drag, delete with undo, and the bookmarks saved as the HTML file other browsers read.
 import { coalesce } from '../shared/coalesce.js'
 import { h, replaceChildren } from '../shared/dom.js'
-import { moreIcon, plusIcon, starIcon } from '../shared/icons.js'
+import { bookmarkIcon, moreIcon, plusIcon } from '../shared/icons.js'
 import * as selection from '../shared/list-selection.js'
 import { closeRowMenu, openRowMenu } from '../shared/row-menu.js'
 import { createActions } from './actions.js'
@@ -290,7 +290,7 @@ window.addEventListener('blur', () => { closeRowMenu() })
 document.getElementById('app')?.append(
   h('main', { className: 'page' },
     h('header', { className: 'head' },
-      h('h1', null, starIcon(), 'Bookmarks'),
+      h('h1', null, bookmarkIcon(), 'Bookmarks'),
       h('div', { className: 'head-tools' }, search, newFolderButton, moreButton)),
     banner,
     h('div', { className: 'panes' }, treeHost, h('section', { className: 'list-pane' }, crumbsHost, pane))),

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { describeCapabilityGrant } from '../grant-prompt-render.js'
+import { describeCapabilityGrant, describeInstallConsent } from '../grant-prompt-render.js'
+import { manifestWith } from '../../../broker/tests/index.test-helpers.js'
 import type { Pattern } from '../../../contracts/index.js'
+import { RESERVED_PORTS } from '../../../broker/policy/reserved-ports.js'
 
 // Split out of grant-prompt-render.test.ts (Rule 2, line budget) along the
 // same seam grant-prompt-connect.ts itself was split on: everything about
@@ -43,7 +45,9 @@ describe('describeCapabilityGrant -- a wildcard host is unlimited whatever its p
     expect(summary.warning).toBe(true)
     expect(summary.message).toContain('Unlimited')
     expect(summary.message).not.toContain('internal.example')
-    expect(summary.explanation ?? '').not.toContain('internal.example')
+    // The named host is on a port the wildcard does not reach, so it is said.
+    expect(summary.explanation).toContain('It can also reach internal.example on port 8080.')
+    expect(summary.explanation).not.toContain('*')
   })
 
   it('renders a genuinely narrow, wildcard-free list with no warning at all', () => {
@@ -264,5 +268,134 @@ describe('describeCapabilityGrant -- A198: blank-line padding does not survive i
     const summary = describeCapabilityGrant('https.connect', ['\n\n\n\n\n\n\n\n', 'real.example:443'])
 
     expect(summary.message).toBe('Connect to real.example')
+  })
+})
+
+// A wildcard host reaches a port Orivon keeps closed to broad grants (A82)
+// only when its own pattern names that port exactly, so the prompt must say
+// so, and say what the port is for: "Limited to port 6697" alone reads as a
+// narrowing, and for a reserved port it is an exception a person should see.
+const ANY_COMPUTER = 'This app can connect to any computer on the internet, not just specific ones.'
+
+describe('describeCapabilityGrant -- a wildcard pattern that names a reserved port', () => {
+  it('says so, by purpose, for a mixed grant naming two reserved ports, at the unlimited level', () => {
+    const summary = describeCapabilityGrant('tcp.connect', ['*:*', '*:6667', '*:6697'])
+
+    expect(summary.warning).toBe(true)
+    expect(summary.message).toBe('⚠ Unlimited network access')
+    expect(summary.explanation).toBe(
+      `${ANY_COMPUTER} It can also reach ports Orivon keeps closed to broad grants: IRC chat (6667 and 6697).`
+    )
+  })
+
+  it('names what each reserved port is for, grouped by purpose', () => {
+    const ports = ['23', '25', '465', '587', '53', '139', '445', '3389', '6667', '6697']
+    const summary = describeCapabilityGrant('tcp.connect', ['*:*', ...ports.map((port) => `*:${port}`)])
+
+    expect(summary.explanation).toContain(
+      'telnet (23), mail (25, 465 and 587), DNS (53), Windows file sharing (139 and 445), remote desktop (3389) and IRC chat (6667 and 6697)'
+    )
+  })
+
+  it('has a purpose for every reserved port, so a new one cannot render as a bare number', () => {
+    for (const port of RESERVED_PORTS) {
+      const summary = describeCapabilityGrant('tcp.connect', ['*:*', `*:${String(port)}`])
+      expect(summary.explanation, `port ${String(port)}`).toMatch(/keeps closed to broad grants: [A-Za-z][^(]* \(/)
+      expect(summary.explanation, `port ${String(port)}`).toContain(String(port))
+    }
+  })
+
+  it('drops "also" when the wildcard\'s only ports are the reserved ones it names', () => {
+    const summary = describeCapabilityGrant('tcp.connect', ['*:6697'])
+
+    expect(summary.warning).toBe(true)
+    expect(summary.explanation).toBe(
+      `${ANY_COMPUTER} Its reach to any computer is limited to port 6697. ` +
+      'It can reach a port Orivon keeps closed to broad grants: IRC chat (6697).'
+    )
+  })
+
+  it('keeps "also" when the wildcard has ordinary ports beside the reserved one', () => {
+    const summary = describeCapabilityGrant('tcp.connect', ['*:443', '*:6697'])
+
+    expect(summary.explanation).toBe(
+      `${ANY_COMPUTER} Its reach to any computer is limited to ports 443, 6697. ` +
+      'It can also reach a port Orivon keeps closed to broad grants: IRC chat (6697).'
+    )
+  })
+
+  it('says nothing about closed ports for "*:*", an ordinary port, or a range that merely contains one', () => {
+    for (const patterns of [['*:*'], ['*:443'], ['*:6660-6699']]) {
+      expect(describeCapabilityGrant('tcp.connect', patterns).explanation).not.toContain('keeps closed')
+    }
+  })
+
+  it('says each limit names what it limits, per kind', () => {
+    expect(describeCapabilityGrant('tcp.connect', ['*:443']).explanation).toContain('Its reach to any computer is limited to port 443.')
+    expect(describeCapabilityGrant('https.connect', ['*:443']).explanation).toContain('Its reach to any site is limited to port 443.')
+  })
+
+  it('writes a port once however the pattern spelt it', () => {
+    const summary = describeCapabilityGrant('tcp.connect', ['*:6697-6697', '*:443', '*:443-443'])
+
+    expect(summary.explanation).toContain('limited to ports 6697, 443.')
+    expect(summary.explanation).not.toContain('6697-6697')
+  })
+})
+
+describe('describeCapabilityGrant -- named patterns beside a wildcard host', () => {
+  it('says what a named pattern adds that the bounded wildcard does not reach', () => {
+    const summary = describeCapabilityGrant('tcp.connect', ['*:443', '192.168.1.1:22', 'irc.example.org:6697'])
+
+    expect(summary.warning).toBe(true)
+    expect(summary.explanation).toBe(
+      `${ANY_COMPUTER} Its reach to any computer is limited to port 443. ` +
+      'It can also reach 192.168.1.1 on port 22 (a computer on your local network) and irc.example.org on port 6697 (IRC chat).'
+    )
+  })
+
+  it('says it beside a fully open wildcard too: "*:*" never reaches a local address', () => {
+    const summary = describeCapabilityGrant('tcp.connect', ['*:*', '192.168.1.1:22'])
+
+    expect(summary.explanation).toBe(
+      `${ANY_COMPUTER} It can also reach 192.168.1.1 on port 22 (a computer on your local network).`
+    )
+  })
+
+  it('says nothing about a named host the wildcard already covers', () => {
+    const summary = describeCapabilityGrant('tcp.connect', ['*:*', 'api.example.org:443'])
+
+    expect(summary.explanation).toBe(ANY_COMPUTER)
+  })
+
+  it('caps a long list of extras with an "and N more" count', () => {
+    const extras = Array.from({ length: 25 }, (_, index) => `10.0.0.${String(index + 1)}:22`)
+    const summary = describeCapabilityGrant('tcp.connect', ['*:443', ...extras])
+
+    expect(summary.explanation).toContain('and 5 more')
+  })
+})
+
+describe('a dialog listing several wildcard rows', () => {
+  const ORIGIN = 'https://app.example'
+
+  it('a merged row keeps each limit tied to the capability it limits', () => {
+    const manifest = manifestWith({ net: { tcp: { connect: ['*:*'] }, https: { connect: ['*:6697'] } } })
+    const content = describeInstallConsent(ORIGIN, manifest, ['tcp.connect', 'https.connect'])
+
+    expect(content.detail).toContain('This app can connect to any computer on the internet, not just specific ones. ')
+    expect(content.detail).toContain('Its reach to any site is limited to port 6697.')
+    expect(content.detail).not.toContain('any computer is limited')
+  })
+
+  it('keeps the reach beyond the wildcard visible at level 4, where the warning is gone', () => {
+    const manifest = manifestWith({ net: { tcp: { connect: ['*:*', '*:6697', '192.168.1.1:22'] } } })
+    const content = describeInstallConsent(ORIGIN, manifest, ['tcp.connect'], [], 4)
+
+    expect(content.warning).toBe(false)
+    expect(content.detail).not.toContain('⚠')
+    expect(content.detail).toContain('Unlimited network access')
+    expect(content.detail).toContain('Orivon keeps closed to broad grants: IRC chat (6697)')
+    expect(content.detail).toContain('192.168.1.1 on port 22 (a computer on your local network)')
   })
 })

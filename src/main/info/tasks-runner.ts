@@ -104,9 +104,12 @@ export function listTasks (env: TasksEnv): { rows: TaskRow[], totals: TaskTotals
 export function endProcess (env: TasksEnv, pid: unknown): boolean {
   const { metrics, entries } = gather(env)
   if (!canEnd(buildTasks(metrics, entries), pid) || typeof pid !== 'number') return false
+  // Through the page that main found in that process, never a signal to the number: a process id the system has
+  // already given to something else is then never touched.
+  const hosted = entries.find((entry) => entry.pid === pid && entry.contents !== undefined && !entry.contents.isDestroyed())?.contents
+  if (hosted === undefined) return false
   try {
-    // A signal rather than `forcefullyCrashRenderer()`: the same "killed" report reaches the tab either way.
-    process.kill(pid, 'SIGKILL')
+    hosted.forcefullyCrashRenderer()
     return true
   } catch {
     return false

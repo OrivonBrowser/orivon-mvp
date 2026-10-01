@@ -1,10 +1,10 @@
 import { readdirSync, statSync } from 'node:fs'
-import { chmod, copyFile, mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readdir, rm, stat, truncate, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ImportError } from '../import-types.js'
-import { withDatabaseCopy } from '../sqlite-copy.js'
+import { MAX_DATABASE_BYTES, withDatabaseCopy } from '../sqlite-copy.js'
 import { makeChromeHistory } from './databases.js'
 
 let dir = ''
@@ -77,6 +77,35 @@ describe('withDatabaseCopy', () => {
     const path = join(dir, 'History')
     makeChromeHistory(path, [], { wal: false }).close()
     await expect(withDatabaseCopy(path, (db) => db.prepare('SELECT nothing FROM urls').all(), temp)).rejects.toThrowError(expect.objectContaining({ reason: 'unreadable' }))
+  })
+
+  it('makes the folder it copies into when that does not exist yet, private to its owner', async () => {
+    const path = join(dir, 'History')
+    makeChromeHistory(path, [], { wal: false }).close()
+    const nested = join(temp, 'import-tmp')
+    await withDatabaseCopy(path, count, nested)
+    expect(await readdir(nested)).toEqual([])
+    if (process.platform !== 'win32') expect((await stat(nested)).mode & 0o777).toBe(0o700)
+  })
+
+  it('refuses a database larger than the limit, without copying any of it', async () => {
+    const path = join(dir, 'History')
+    await writeFile(path, '')
+    await truncate(path, MAX_DATABASE_BYTES + 1)
+    await expect(withDatabaseCopy(path, count, temp)).rejects.toThrowError(expect.objectContaining({ reason: 'unreadable' }))
+    expect(await readdir(temp)).toEqual([])
+  })
+
+  it('reads again from a fresh copy when the first read fails, as it can across the other browser\'s checkpoint', async () => {
+    const path = join(dir, 'History')
+    makeChromeHistory(path, [], { wal: false }).close()
+    let attempts = 0
+    const rows = await withDatabaseCopy(path, (db) => { attempts += 1; if (attempts === 1) throw new Error('out of step'); return count(db) }, temp)
+    expect(rows).toBe(0)
+    expect(attempts).toBe(2)
+    attempts = 0
+    await expect(withDatabaseCopy(path, () => { attempts += 1; throw new Error('always') }, temp)).rejects.toThrowError(expect.objectContaining({ reason: 'unreadable' }))
+    expect(attempts).toBe(2)
   })
 
   it('maps a file that cannot be opened because something holds it to locked', async () => {

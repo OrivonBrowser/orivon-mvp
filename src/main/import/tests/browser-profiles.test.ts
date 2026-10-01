@@ -59,7 +59,7 @@ describe('detectSources, Firefox', () => {
 
   it('reads profiles.ini and keeps the profiles that have places.sqlite', async () => {
     const fs = fakeFs({ '/h/.mozilla/firefox/profiles.ini': ini, '/h/.mozilla/firefox/abc.default-release/places.sqlite': '', '/h/.mozilla/firefox/def.old/prefs.js': '' })
-    expect(await detectSources(fs, [firefox])).toEqual([{ browser: 'firefox', family: 'firefox', profile: 'default-release', dir: '/h/.mozilla/firefox/abc.default-release' }])
+    expect(await detectSources(fs, [firefox])).toEqual([{ browser: 'firefox', family: 'firefox', profile: 'Default profile', dir: '/h/.mozilla/firefox/abc.default-release' }])
   })
 
   it('refuses an absolute path outside the root and a relative path that climbs out', async () => {

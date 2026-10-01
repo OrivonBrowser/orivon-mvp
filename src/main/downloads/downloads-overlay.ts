@@ -39,7 +39,7 @@ export function createDownloadsBubble (win: OverlayWindow, peek: boolean): Overl
     win.send({ type: 'rows', rows: bubbleRows(downloads.list()) })
     if (!peek) markSeen()
   }, ROWS_INTERVAL_MS)
-  const stop = (): void => { unsubscribe?.(); unsubscribe = undefined }
+  const stop = (): void => { unsubscribe?.(); unsubscribe = undefined; sendRows.cancel() }
 
   return {
     show: () => {

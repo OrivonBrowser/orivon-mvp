@@ -31,9 +31,9 @@ from a file the other browser wrote, so it is used only when it resolves, links 
 root: a crafted `Local State` or `profiles.ini` cannot point the reader elsewhere.
 
 **A database is read from a copy, never in place.** `sqlite-copy.ts` copies the file and its write-ahead log into a
-private temporary directory and opens the copy read-only, so a running browser is never written to, locked or
-left with a stray file, and the rows it has not yet folded into the file are still seen. The directory is deleted
-afterwards. A file that cannot be copied because something holds it is `locked`.
+temporary directory of Orivon's own under its data folder (readable by its owner only) and opens the copy
+read-only, so a running browser is never written to, locked or left with a stray file, and the rows it has not
+yet folded into the file are still seen. A database over 1 GB is not copied. The directory is deleted afterwards. A file that cannot be copied because something holds it is `locked`.
 
 **Passwords are not imported.** Their stores are encrypted with the operating system's keystore, which needs
 native code to open; Orivon's own dependencies take none (Rule 8).

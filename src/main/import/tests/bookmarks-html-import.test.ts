@@ -49,6 +49,21 @@ describe('parseBookmarksHtml', () => {
     expect(other.map((node) => node.url)).toEqual(['https://x.test/', 'https://y.test/'])
   })
 
+  it('does not let a page with no closing tag swallow the page after it', () => {
+    const { other } = parseBookmarksHtml(`${HEAD}<DL><p><DT><A HREF="https://x.test/">One\n<DT><A HREF="https://y.test/">Two</A>\n<DT><A HREF="https://z.test/">Three</A></DL>`)
+    expect(other.map((node) => [node.title, node.url])).toEqual([['One', 'https://x.test/'], ['Two', 'https://y.test/'], ['Three', 'https://z.test/']])
+  })
+
+  it('does not let a folder heading with no closing tag swallow the entries after it', () => {
+    const { other } = parseBookmarksHtml(`${HEAD}<DL><p><DT><H3>Folder\n<DL><DT><A HREF="https://x.test/">In</A></DL></DL>`)
+    expect(other).toMatchObject([{ kind: 'folder', title: 'Folder', children: [{ title: 'In', url: 'https://x.test/' }] }])
+  })
+
+  it('takes a closing tag only if it is the link\'s own, not one that merely starts with the same letters', () => {
+    const { other } = parseBookmarksHtml(`${HEAD}<DL><p><DT><A HREF="https://x.test/">Big <abbr>ABC</abbr> and <address>x</address> name</A></DL>`)
+    expect(other[0]?.title).toBe('Big ABC and x name')
+  })
+
   it('keeps a page whose address the store will refuse, so it is counted as skipped there', () => {
     const { other } = parseBookmarksHtml(`${HEAD}<DL><p><DT><A HREF="javascript:alert(1)">bad</A></DL>`)
     expect(other[0]?.url).toBe('javascript:alert(1)')

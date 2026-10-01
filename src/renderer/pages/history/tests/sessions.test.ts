@@ -45,15 +45,15 @@ describe('sessionLabel', () => {
   const now = at(28, 16)
   const session = (start: number, end: number) => ({ key: 1, start, end, entries: [entry(1, end)] })
 
-  it('names the day and both times of a session', () => {
-    expect(sessionLabel(session(at(28, 14, 5), at(28, 15, 40)), now, 'en-US')).toBe('Today, 2:05 PM to 3:40 PM')
+  it('names both times of a session, not its day', () => {
+    expect(sessionLabel(session(at(28, 14, 5), at(28, 15, 40)), now, 'en-US')).toBe('2:05 PM to 3:40 PM')
   })
 
   it('names one time for a session of a single moment', () => {
-    expect(sessionLabel(session(at(27, 9), at(27, 9)), now, 'en-US')).toBe('Yesterday, 9:00 AM')
+    expect(sessionLabel(session(at(27, 9), at(27, 9)), now, 'en-US')).toBe('9:00 AM')
   })
 
-  it('names both days when it crosses midnight', () => {
-    expect(sessionLabel(session(at(27, 23, 50), at(28, 0, 20)), now, 'en-US')).toBe('Yesterday, 11:50 PM to Today, 12:20 AM')
+  it('names the earlier day when it crosses midnight', () => {
+    expect(sessionLabel(session(at(27, 23, 50), at(28, 0, 20)), now, 'en-US')).toBe('Yesterday, 11:50 PM to 12:20 AM')
   })
 })

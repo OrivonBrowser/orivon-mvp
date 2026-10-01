@@ -9,8 +9,9 @@ import type { HistoryEntry } from './history-store.js'
 export const MAX_FAVICON_HOSTS = 2000
 /** The most hosts one listing looks up. */
 const MAX_LOOKUP_HOSTS = 500
-/** A larger icon is not kept: the file holds one per site, and a site's own tab still shows it. */
-const MAX_HISTORY_FAVICON_CHARS = 48_000
+/** A larger icon is not kept: the file holds one per site (at most about 16 MB of icons in all), a listing sends them to
+ * a page, and a site's own tab still shows its full icon. */
+export const MAX_HISTORY_FAVICON_CHARS = 8192
 
 interface Statements {
   upsert: StatementSync
@@ -37,10 +38,11 @@ export function prepareFaviconStatements (db: DatabaseSync): Statements {
   let found = prepared.get(db)
   if (found === undefined) {
     found = {
-      // The WHERE makes an unchanged icon a no-op the database answers itself.
+      // Every offer refreshes `updated`, so what is trimmed is the icon of the site visited longest ago, not the one
+      // changed longest ago: a site seen every day keeps its icon. The store offers a host once per run.
       upsert: db.prepare(`
         INSERT INTO favicons (host, data, updated) VALUES (?, ?, ?)
-        ON CONFLICT (host) DO UPDATE SET data = excluded.data, updated = excluded.updated WHERE data <> excluded.data`),
+        ON CONFLICT (host) DO UPDATE SET data = excluded.data, updated = excluded.updated`),
       trim: db.prepare(`
         DELETE FROM favicons WHERE host IN (
           SELECT host FROM favicons ORDER BY updated ASC, host ASC LIMIT MAX(0, (SELECT COUNT(*) FROM favicons) - ?))`),
@@ -53,13 +55,15 @@ export function prepareFaviconStatements (db: DatabaseSync): Statements {
   return found
 }
 
-/** Keeps `dataUrl` as the icon of `host`, replacing the one it had. Anything that is not an image is refused. */
+/** Keeps `dataUrl` as the icon of `host`, replacing the one it had, and notes that the site was seen now. Anything that is
+ * not an image is refused. */
 export function setHostFavicon (db: DatabaseSync, host: string, dataUrl: string, now: () => number = Date.now): void {
   if (host === '' || dataUrl.length > MAX_HISTORY_FAVICON_CHARS) return
   const safe = sanitizeStoredFavicon(dataUrl)
   if (safe === null) return
   const { upsert, trim } = prepareFaviconStatements(db)
-  if (Number(upsert.run(host, safe, now()).changes) > 0) trim.run(MAX_FAVICON_HOSTS)
+  upsert.run(host, safe, now())
+  trim.run(MAX_FAVICON_HOSTS)
 }
 
 /** The icon of each of `hosts` that has one. */

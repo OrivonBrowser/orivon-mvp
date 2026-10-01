@@ -151,18 +151,22 @@ describe('BookmarkStore', () => {
       expect(store.getAll()[0]?.favicon).toBeNull()
     })
 
-    // The one behaviour window.ts's pushState depends on: it calls this from
-    // INSIDE a state push, so a listener notification here would push state
-    // from within a state push.
-    it('does not notify onChange listeners, but does persist', async () => {
+    // window-state.ts calls this from INSIDE a state push, so a notification during the call would push state from
+    // within a state push; the listeners hear of it just after, once however many icons were filled.
+    it('tells the onChange listeners after the call, once, and persists', async () => {
       const store = new BookmarkStore(filePath)
       store.add({ url: 'https://a.example/', title: 'A' })
       await store.flushPendingWrite()
 
       const listener = vi.fn()
       store.onChange(listener)
+      store.add({ url: 'https://b.example/', title: 'B' })
+      listener.mockClear()
       expect(store.fillMissingFavicon('https://a.example/', tiny)).toBe(true)
+      expect(store.fillMissingFavicon('https://b.example/', tiny)).toBe(true)
       expect(listener).not.toHaveBeenCalled()
+      await Promise.resolve()
+      expect(listener).toHaveBeenCalledTimes(1)
 
       await store.flushPendingWrite()
       const onDisk = pagesOnDisk(await readFile(filePath, 'utf8'))

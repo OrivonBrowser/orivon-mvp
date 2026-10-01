@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -203,6 +203,18 @@ describe('BookmarkStore as a tree', () => {
       await s.flushPendingWrite()
 
       expect(await readdir(dir)).toEqual([])
+    })
+
+    it('does not write over a file it could not read when it cannot keep a copy of it', async () => {
+      await mkdir(file, { recursive: true })
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const s = store()
+      await s.load()
+      s.addUrl({ url: 'https://a.example/', title: 'A' })
+      await expect(s.flushPendingWrite()).rejects.toThrow()
+      expect((await stat(file)).isDirectory()).toBe(true)
+      expect(await readdir(dir)).toEqual(['bookmarks.json'])
+      error.mockRestore()
     })
 
     it('starts empty from a corrupt file and keeps the damaged text as .bak once it writes', async () => {

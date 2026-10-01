@@ -4,7 +4,7 @@
 import { join, sep } from 'node:path'
 import { parseProfilesIni } from './firefox-places.js'
 import type { ImportFs } from './import-fs.js'
-import { BROWSER_NAMES, MAX_IMPORT_BYTES } from './import-types.js'
+import { MAX_IMPORT_BYTES } from './import-types.js'
 import type { BrowserRoot, ImportSource } from './import-types.js'
 
 const CHROMIUM_PROFILE_DIR = /^(Default|Profile \d{1,4})$/
@@ -44,13 +44,18 @@ async function chromiumSources (fs: ImportFs, { browser, family, root }: Browser
   return found
 }
 
+/** Firefox names its main profile after its internal folder ("default-release"); the person is shown a plain name. */
+function firefoxProfileName (name: string): string {
+  return name === '' || /^default(-release|-esr|-nightly)?$/i.test(name) ? 'Default profile' : name
+}
+
 async function firefoxSources (fs: ImportFs, { browser, family, root }: BrowserRoot, realRoot: string): Promise<ImportSource[]> {
   const profiles = parseProfilesIni(await fs.readText(join(root, 'profiles.ini'), MAX_IMPORT_BYTES) ?? '')
   const found: ImportSource[] = []
   for (const profile of profiles) {
     const real = await fs.realPath(profile.isRelative ? join(root, profile.path) : profile.path)
     if (real === undefined || !isInside(realRoot, real) || !await fs.isFile(join(real, 'places.sqlite'))) continue
-    found.push({ browser, family, profile: profile.name === '' ? BROWSER_NAMES[browser] : profile.name, dir: real })
+    found.push({ browser, family, profile: firefoxProfileName(profile.name), dir: real })
   }
   return found
 }

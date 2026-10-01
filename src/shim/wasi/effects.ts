@@ -20,8 +20,13 @@ export type Effect =
 
 export type Op<T> = Generator<Effect, T, unknown>
 
-/** In-flight and rate limits clear on their own; a program has no code path for EAGAIN on a file. */
-const LIMIT_RETRY_DELAYS_MS = [5, 20, 80] as const
+/**
+ * In-flight and rate limits clear on their own; a program has no code path for EAGAIN on a file. The origin's
+ * call bucket refills at 100 a second, so a program that starts beside another one that is opening many
+ * files and sockets can wait for seconds: the delays total about 5 s, then the limit surfaces as the
+ * program's own EMFILE.
+ */
+const LIMIT_RETRY_DELAYS_MS = [5, 20, 80, 200, 400, 800, 1000, 1000, 1000, 1000] as const
 
 function isBareLimit (error: unknown): boolean {
   const { code, platformCode } = typeof error === 'object' && error !== null ? error as { code?: unknown, platformCode?: unknown } : {}

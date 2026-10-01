@@ -16,6 +16,8 @@ export interface ConnectionInput {
   readonly internal: boolean
   /** The host is one a protocol gateway serves: the TLS under it is the gateway's, not the content's. */
   readonly served?: boolean
+  /** The page is the error page of a load that failed: it carries the address that failed, and nothing was secured. */
+  readonly failed?: boolean
 }
 
 function parse (value: string): URL | undefined {
@@ -34,7 +36,7 @@ export function isLoopbackHost (hostname: string): boolean {
 }
 
 export function connectionOf (input: ConnectionInput): Connection {
-  if (input.internal || input.appTab || input.served === true) return 'none'
+  if (input.internal || input.appTab || input.served === true || input.failed === true) return 'none'
   const real = parse(input.url)
   const shown = parse(input.displayUrl)
   if (real === undefined || shown === undefined) return 'none'

@@ -50,7 +50,7 @@ it('saves a linked file to the chosen folder without a dialog, lists it, and num
     const page = await openInternalPage(app, chrome, 'downloads')
     await page.waitForSelector('.download.is-completed')
     expect(await row(page, 'file.bin').locator('.dl-name-link').textContent()).toBe('file.bin')
-    expect(await statusOf(page, 'file.bin')).toBe('200.0 KB')
+    expect(await statusOf(page, 'file.bin')).toBe('200 KB')
     expect(await row(page, 'file.bin').locator('.dl-source').textContent()).toBe('127.0.0.1')
     expect(await page.locator('.folder-line').textContent()).toBe(`Saved to ${dir}`)
 
@@ -82,7 +82,7 @@ it('pauses, resumes, cancels and retries a slow download', async () => {
     await row(page, 'slow.bin').locator('[data-action="pause"]').click()
     await page.waitForSelector('.download.is-paused')
     const frozen = await statusOf(page, 'slow.bin')
-    expect(frozen).toMatch(/^Paused, /)
+    expect(frozen).toMatch(/^Paused · /)
     await delay(900)
     expect(await statusOf(page, 'slow.bin')).toBe(frozen)
     expect(await page.locator('.download.is-paused .progress.is-paused').count()).toBe(1)

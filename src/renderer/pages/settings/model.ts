@@ -28,8 +28,8 @@ export type Control =
   | { readonly type: 'custom', readonly wide?: boolean, readonly render: (state: SettingsState) => HTMLElement }
   /** A value shown, not changed. */
   | { readonly type: 'info', readonly text: (state: SettingsState) => string }
-  /** A button. With `confirm`, the first click arms it and the second does it. */
-  | { readonly type: 'action', readonly label: string, readonly confirm?: string, readonly danger?: boolean, readonly run: (state: SettingsState) => Promise<void> }
+  /** A button. With `confirm`, the first click arms it and the second does it. With `shows`, a value is shown before it. */
+  | { readonly type: 'action', readonly label: string, readonly confirm?: string, readonly danger?: boolean, readonly shows?: (state: SettingsState) => string, readonly run: (state: SettingsState) => Promise<void> }
 
 export interface Row {
   readonly id: string

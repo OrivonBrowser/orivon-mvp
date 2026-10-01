@@ -22,7 +22,7 @@ export interface AboutFacts {
 export interface AboutRow {
   readonly label: string
   readonly value: string
-  /** A path: shown in a monospace face. */
+  /** A path, a command or another long unbroken value: shown in a monospace face. */
   readonly mono: boolean
 }
 
@@ -32,6 +32,12 @@ const OS_NAMES: Readonly<Record<string, string>> = { linux: 'Linux', win32: 'Win
 
 export function osName (platform: string): string {
   return OS_NAMES[platform] ?? platform
+}
+
+/** A private window's launch flags name its temporary profile folder, which the Profile folder row hides. A value runs
+ * to the next flag, since a folder name may hold spaces. */
+export function withoutPrivateDirectory (commandLine: string): string {
+  return commandLine.replace(/(--(?:orivon-private-dir|user-data-dir)=).*?(?=\s--|$)/g, '$1<private>')
 }
 
 export function aboutRows (facts: AboutFacts): AboutRow[] {
@@ -45,8 +51,8 @@ export function aboutRows (facts: AboutFacts): AboutRow[] {
     row('V8', facts.v8),
     row('Operating system', `${system} (${facts.arch})`),
     row('Language', facts.language),
-    row('User agent', facts.userAgent),
-    row('Command line', facts.commandLine, true),
+    row('User agent', facts.userAgent, true),
+    row('Command line', facts.isPrivate ? withoutPrivateDirectory(facts.commandLine) : facts.commandLine, true),
     row('Program location', facts.programPath, true),
     row('Profile folder', facts.isPrivate ? PRIVATE_PROFILE_TEXT : facts.profilePath, !facts.isPrivate),
     row('Downloads folder', facts.downloadsPath, true)
@@ -104,11 +110,14 @@ const FEATURE_LABELS: Readonly<Record<string, string>> = {
 }
 
 /** A status string Chromium reports for a feature, as a badge. The software case is tested first:
- * `disabled_software` means the feature runs, just not on the graphics card. */
+ * `disabled_software` means the feature runs, just not on the graphics card. Software rendering and a feature that is
+ * simply off are expected on a computer without a graphics card, so neither is coloured as a fault; only a feature
+ * that is blocklisted or unavailable is. */
 export function featureTone (status: string): { text: string, tone: FeatureTone } {
-  if (status.includes('software')) return { text: 'Software only', tone: 'warn' }
+  if (status.includes('software')) return { text: 'Software only', tone: 'neutral' }
   if (status.startsWith('enabled')) return { text: 'Hardware accelerated', tone: 'ok' }
-  if (status.startsWith('disabled') || status === 'unavailable_off' || status === 'unavailable_off_ok') return { text: 'Disabled', tone: 'danger' }
+  if (status.includes('blocklisted') || (status.startsWith('unavailable') && !status.endsWith('_ok'))) return { text: 'Disabled', tone: 'danger' }
+  if (status.startsWith('disabled') || status.startsWith('unavailable')) return { text: 'Disabled', tone: 'neutral' }
   return { text: status === '' ? 'Unknown' : status, tone: 'neutral' }
 }
 

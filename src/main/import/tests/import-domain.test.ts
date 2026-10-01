@@ -10,6 +10,13 @@ const SOURCES: ImportSource[] = [
 ]
 const RESULT: ImportResult = { bookmarks: 2, pages: 3, skipped: 0, known: 0, target: 'bar' }
 
+type Call = (command: unknown) => Promise<unknown>
+
+/** The ids a `detect` hands out, in the order the profiles were found. */
+async function detected (call: Call): Promise<string[]> {
+  return ((await call({ type: 'detect' })) as { sources: Array<{ id: string }> }).sources.map((source) => source.id)
+}
+
 function setup (overrides: Partial<ImportHost> = {}) {
   const host: ImportHost = {
     isPrivate: false,
@@ -36,26 +43,45 @@ describe('the import domain', () => {
     const reply = await call({ type: 'detect' })
     expect(reply).toEqual({
       private: false,
-      sources: [{ id: '0', key: 'chrome', browser: 'Chrome', profile: 'Person 1' }, { id: '1', key: 'firefox', browser: 'Firefox', profile: 'default' }],
+      sources: [{ id: expect.stringMatching(/^[0-9a-f]{16}$/), key: 'chrome', browser: 'Chrome', profile: 'Person 1' }, { id: expect.stringMatching(/^[0-9a-f]{16}$/), key: 'firefox', browser: 'Firefox', profile: 'default' }],
       historyOn: true,
       manager: true
     })
+    expect(JSON.stringify(reply)).not.toContain('Default')
     expect(JSON.stringify(reply)).not.toContain('/secret')
   })
 
   it('runs the profile the id names, with what was ticked', async () => {
     const { call, host } = setup()
-    await call({ type: 'detect' })
-    expect(await call({ type: 'run', id: '1', bookmarks: true, history: false })).toEqual({ result: RESULT })
+    const [, second] = await detected(call)
+    expect(await call({ type: 'run', id: second, bookmarks: true, history: false })).toEqual({ result: RESULT })
     expect(host.run).toHaveBeenCalledWith(SOURCES[1], { bookmarks: true, history: false })
+  })
+
+  it('keeps an id meaning the same profile when another page detects again and the list changes', async () => {
+    let found = SOURCES
+    const { call, host } = setup({ detect: vi.fn(async () => found) })
+    const [, firefox] = await detected(call)
+    // A second Import page detects when the Chrome profile is gone: the list is shorter and would renumber by position.
+    found = [SOURCES[1] as ImportSource]
+    const [again] = await detected(call)
+    expect(again).toBe(firefox)
+    await call({ type: 'run', id: firefox, bookmarks: true, history: false })
+    expect(host.run).toHaveBeenCalledWith(SOURCES[1], { bookmarks: true, history: false })
+  })
+
+  it('gives different ids to each run of the browser, so one cannot be guessed from another', async () => {
+    const first = await detected(setup().call)
+    const second = await detected(setup().call)
+    expect(first[0]).not.toBe(second[0])
   })
 
   it('does not import history while it is off, whatever the page asks', async () => {
     const { call, host } = setup({ historyOn: () => false })
-    await call({ type: 'detect' })
-    await call({ type: 'run', id: '0', bookmarks: true, history: true })
+    const [first] = await detected(call)
+    await call({ type: 'run', id: first, bookmarks: true, history: true })
     expect(host.run).toHaveBeenCalledWith(SOURCES[0], { bookmarks: true, history: false })
-    expect(await call({ type: 'run', id: '0', bookmarks: false, history: true })).toBeUndefined()
+    expect(await call({ type: 'run', id: first, bookmarks: false, history: true })).toBeUndefined()
   })
 
   it.each([
@@ -66,7 +92,7 @@ describe('the import domain', () => {
     { type: 'open' }, { type: 'open', target: 'history' }
   ])('refuses a request of the wrong shape: %j', async (command) => {
     const { call, host } = setup()
-    await call({ type: 'detect' })
+    await detected(call)
     expect(await call(command)).toBeUndefined()
     expect(host.run).not.toHaveBeenCalled()
     expect(host.openManager).not.toHaveBeenCalled()
@@ -74,7 +100,7 @@ describe('the import domain', () => {
 
   it('refuses a run before any detection', async () => {
     const { call, host } = setup()
-    expect(await call({ type: 'run', id: '0', bookmarks: true, history: true })).toBeUndefined()
+    expect(await call({ type: 'run', id: '0123456789abcdef', bookmarks: true, history: true })).toBeUndefined()
     expect(host.run).not.toHaveBeenCalled()
   })
 
@@ -82,13 +108,13 @@ describe('the import domain', () => {
     let finish: (result: ImportResult) => void = () => {}
     let started = 0
     const { call } = setup({ run: () => { started += 1; return started === 1 ? new Promise((resolve) => { finish = resolve }) : Promise.resolve(RESULT) } })
-    await call({ type: 'detect' })
-    const first = call({ type: 'run', id: '0', bookmarks: true, history: true })
-    expect(await call({ type: 'run', id: '1', bookmarks: true, history: true })).toEqual({ busy: true })
+    const [one, two] = await detected(call)
+    const first = call({ type: 'run', id: one, bookmarks: true, history: true })
+    expect(await call({ type: 'run', id: two, bookmarks: true, history: true })).toEqual({ busy: true })
     expect(await call({ type: 'runHtml' })).toEqual({ busy: true })
     finish(RESULT)
     expect(await first).toEqual({ result: RESULT })
-    expect(await call({ type: 'run', id: '0', bookmarks: true, history: true })).toBeDefined()
+    expect(await call({ type: 'run', id: one, bookmarks: true, history: true })).toBeDefined()
   })
 
   it('imports a file through the dialog, and answers a cancelled dialog as such', async () => {

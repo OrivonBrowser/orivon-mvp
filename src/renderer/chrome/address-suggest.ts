@@ -2,6 +2,7 @@
 // there are and what to finish the text with, and the keys that move or choose a row go back to it. The rows
 // themselves are drawn by an overlay (src/renderer/overlay/omnibox/) and the field keeps focus throughout.
 import type { ChromeContext, ChromeModule } from './context.js'
+import { h } from '../pages/shared/dom.js'
 import { must } from './context.js'
 import { isPrintableKey, keyIntent, wasTyped } from './address-suggest-model.js'
 
@@ -46,14 +47,15 @@ export function createAddressSuggest (): ChromeModule {
       input.setAttribute('role', 'combobox')
       input.setAttribute('aria-autocomplete', 'both')
       input.setAttribute('aria-haspopup', 'listbox')
-      input.setAttribute('aria-controls', 'omnibox-list')
       input.setAttribute('aria-expanded', 'false')
+      // The rows are in another view, which the field cannot point at, so the selected one is said through this instead.
+      const live = h('div', { className: 'address-live', role: 'status', ariaLive: 'polite' })
+      form.append(live)
 
       function setOpen (on: boolean): void {
         open = on
         input.setAttribute('aria-expanded', String(on))
-        if (on) input.setAttribute('aria-activedescendant', `omnibox-option-${String(selected)}`)
-        else input.removeAttribute('aria-activedescendant')
+        if (!on) live.textContent = ''
       }
 
       /** Leaves the typing: the dropdown is gone here, and, unless `tellMain` is false, in main. */
@@ -79,6 +81,8 @@ export function createAddressSuggest (): ChromeModule {
         edited = true
         completion = ''
         selected = 0
+        // The rows on screen are for the text before this edit: no choice may name them until the new reply is in.
+        seq = undefined
         if (value.trim() === '') {
           settle(true)
           return
@@ -112,6 +116,7 @@ export function createAddressSuggest (): ChromeModule {
           }
           selected = answer['selected']
           setOpen(true)
+          if (typeof answer['announce'] === 'string') live.textContent = answer['announce']
           const fill = answer['fill']
           // Back on the first row the typed text returns, with what it was finished with.
           if (typeof fill === 'string') showText(fill)
@@ -122,8 +127,9 @@ export function createAddressSuggest (): ChromeModule {
       function onPick (disposition: 'current' | 'tab'): void {
         const index = selected
         const chosen = seq
+        if (chosen === undefined) return
         settle(false)
-        void ctx.shell.act('omnibox.pick', { index, disposition, seq: chosen }).then(() => { input.blur() })
+        void ctx.shell.act('omnibox.pick', { index, disposition, seq: chosen }).then((done) => { if (done === true) input.blur() })
       }
 
       function onEscape (): void {
@@ -167,6 +173,8 @@ export function createAddressSuggest (): ChromeModule {
       form.addEventListener('submit', () => { settle(true, edited ? input.value : undefined) }, true)
 
       fromMain = (payload) => {
+        // Main closed the dropdown on its own (a tab switch, a navigation, a resize): the field stays as it is, typed in.
+        if (payload['type'] === 'closed') settle(false)
         // A choice was made with the mouse: the field stops being typed in and shows the page it leads to.
         if (payload['type'] === 'done') {
           settle(false)

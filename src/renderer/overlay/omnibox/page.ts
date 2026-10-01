@@ -3,7 +3,7 @@
 // blurs to this view on the press, and the chrome closes the list on that blur.
 import { faviconElement, globeIcon } from '../../icons.js'
 import { h } from '../../pages/shared/dom.js'
-import { searchGlassIcon, starIcon } from '../../pages/shared/icons.js'
+import { bookmarkIcon, searchGlassIcon } from '../../pages/shared/icons.js'
 import type { PageRow } from '../../../main/omnibox/omnibox-service.js'
 import type { Overlay, OverlayPage } from '../kit.js'
 import { segments } from '../tab-search/fuzzy.js'
@@ -26,7 +26,7 @@ function iconFor (row: PageRow): HTMLElement {
 
 function metaFor (row: PageRow): HTMLElement | null {
   if (row.kind === 'bookmark') {
-    const star = h('span', { className: 'item-meta omni-star', title: 'Bookmarked' }, starIcon())
+    const star = h('span', { className: 'item-meta omni-star', title: 'Bookmarked' }, bookmarkIcon())
     star.setAttribute('role', 'img')
     star.setAttribute('aria-label', 'Bookmarked')
     return star
@@ -38,6 +38,7 @@ function metaFor (row: PageRow): HTMLElement | null {
 export const omniboxPage: OverlayPage = {
   mount (content, overlay: Overlay) {
     let seq = 0
+    let rev = 0
     const list = h('ul', { className: 'listbox', id: 'omnibox-list', role: 'listbox', ariaLabel: 'Suggestions' })
     content.append(list)
 
@@ -59,13 +60,14 @@ export const omniboxPage: OverlayPage = {
         // No focus change and no middle-press autoscroll: the field stays where the person is typing.
         event.preventDefault()
         if (disposition === null) return
-        void overlay.request({ type: 'pick', index, disposition, seq })
+        void overlay.request({ type: 'pick', index, disposition, seq, rev })
       })
       return el
     }
 
     function render (message: RowsMessage): void {
       seq = message.seq
+      rev = message.rev
       list.replaceChildren(...message.rows.map((row, index) => rowElement(row, index, index === message.selected)))
     }
 

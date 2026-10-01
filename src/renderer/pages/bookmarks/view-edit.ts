@@ -17,7 +17,8 @@ export function renderEdit (row: Row, callbacks: EditCallbacks): HTMLElement {
   address?.setAttribute('aria-label', 'Address')
   const problem = h('p', { className: 'problem', role: 'alert' })
   const fields = h('div', { className: 'bm-fields' }, name, address)
-  const form = h('form', { className: 'bm-edit' }, fields, problem)
+  const hint = h('p', { className: 'edit-hint', textContent: 'Enter to save, Esc to cancel' })
+  const form = h('form', { className: 'bm-edit' }, fields, problem, hint)
   const el = h('div', { className: 'bm-row editing' }, rowIcon(row), form)
   el.dataset['id'] = row.id
   /** Set once the form has done its work: taking it off the page can itself fire a blur, which must not save it again. */

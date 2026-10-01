@@ -115,6 +115,9 @@ function createView (): EnginesView {
         className: 'btn icon engine-edit', type: 'button', title: 'Edit', ariaLabel: `Edit ${engine.name}`,
         onclick: () => { open({ kind: 'edit', id: engine.id }, draftOf(engine)) }
       }, pencilIcon()), removeButton(engine, current))
+    } else {
+      // The two button slots stay reserved, so "Make default" lines up in every row.
+      actions.append(h('span', { className: 'engine-slot', ariaHidden: 'true' }), h('span', { className: 'engine-slot', ariaHidden: 'true' }))
     }
     const item = h('li', { className: 'engine-item' },
       mark,

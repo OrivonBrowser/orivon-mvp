@@ -273,7 +273,7 @@ it('searches both roots with the match marked, says when nothing matches, and sa
     expect(await waitFor(async () => (await titlesIn(page)).join() === 'Other page')).toBe(true)
     await page.locator('input[type=search]').fill('zzzz')
     expect(await waitFor(async () => (await page.locator('.empty-state').count()) === 1)).toBe(true)
-    expect(await page.locator('.empty-state').innerText()).toContain('No bookmark matches "zzzz".')
+    expect(await page.locator('.empty-state').innerText()).toContain('No bookmarks match "zzzz".')
     await shoot(page, 'no-match')
     await page.locator('input[type=search]').press('Escape')
     expect(await waitFor(async () => (await titlesIn(page)).length === 4)).toBe(true)
@@ -301,7 +301,7 @@ it('says a new profile has no bookmarks and points at the star and at import', a
   try {
     const page = await openWithShortcut(app)
     expect(await page.locator('.empty-state').innerText()).toContain('This folder is empty.')
-    expect(await page.locator('.empty-state').innerText()).toContain('Bookmark a page with the star in the address bar, or import bookmarks from another browser.')
+    expect(await page.locator('.empty-state').innerText()).toContain('Bookmark a page with the bookmark button next to the address bar (Ctrl+D), or import bookmarks from another browser.')
     expect(await page.locator('.tree-label').allInnerTexts()).toEqual(['Bookmarks bar', 'Other bookmarks'])
     await shoot(page, 'empty')
     expect(mainOutput(app)).not.toContain('uncaught exception')

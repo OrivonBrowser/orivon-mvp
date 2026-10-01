@@ -130,6 +130,9 @@ export class ImportState {
       this.step = 'private'
     } else if (reply?.cancelled === true) {
       this.step = 'choosing'
+    } else if (reply?.busy === true) {
+      this.fail('busy', this.from)
+      return
     } else if (reply?.result === undefined) {
       this.fail('unreadable', this.from)
       return

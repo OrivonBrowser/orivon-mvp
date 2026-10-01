@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { holdPath, keepPath, released, restoreEntries, shouldHold } from '../danger-hold.js'
+import { holdPath, isHoldPath, keepPath, released, restoreEntries, shouldHold } from '../danger-hold.js'
 import type { DownloadEntry } from '../download-types.js'
 
 const DIR = join('/', 'dl')
@@ -35,6 +35,16 @@ describe('holdPath and keepPath', () => {
     expect(keepPath(entry(), () => false)).toBe(join(DIR, 'setup.exe'))
     const taken = new Set([join(DIR, 'setup.exe'), join(DIR, 'setup (1).exe')])
     expect(keepPath(entry(), (path) => taken.has(path))).toBe(join(DIR, 'setup (2).exe'))
+  })
+})
+
+describe('isHoldPath', () => {
+  it('accepts what holdPath makes and nothing else', () => {
+    expect(isHoldPath(holdPath(DIR, '0123456789abcdef'))).toBe(true)
+    expect(isHoldPath(holdPath(DIR, 'id1'))).toBe(true)
+    for (const path of ['/etc/passwd', join(DIR, 'setup.exe'), join(DIR, 'Unconfirmed .download'), join(DIR, 'Unconfirmed a b.download'), join(DIR, 'Unconfirmed a.download.exe'), join('rel', 'Unconfirmed a.download'), '']) {
+      expect(isHoldPath(path)).toBe(false)
+    }
   })
 })
 

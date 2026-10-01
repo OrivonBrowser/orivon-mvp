@@ -67,7 +67,7 @@ Every member, limit and error code is in [Table 1](compatibility/table-1-capabil
 |---|:--:|:--:|:--:|:--:|---|
 | `app.manifest()`, `app.grants()`, `window.orivon` itself | ✅ | ✅ | ✅ | ➖ | `window.orivon` is a frozen object in the top document of every ordinary tab. An iframe, a `web.context` document and a `<webview>` page have none. A frame with no authenticated origin, or a caller whose stack shows extension code, gets `denied`. `manifest()` backs Electron's `app.getVersion` |
 | `net.connect` (TCP out) | ✅ | ✅ | ✅ | ⚠️ | Both stream halves work, matched against `tcp.connect` patterns after resolution, and verified in a real launch. The Node shim's `connect()` reads `host` and `port` only: `localAddress`, `family`, `lookup` and `hints` are ignored without an error, and `path` throws a clear "not supported" error. Node shape in [`net/socket.ts`](../../src/shim/net/socket.ts) |
-| Outbound patterns (`tcp.connect`, `udp.send`, `https.connect`) | ✅ | ✅ | ✅ | ➖ | `host:port`, at most 256 per grant. `*:*` means every public address; `localhost` means both loopbacks. A private or LAN address is reachable only when the manifest writes it as a literal. Ports 23, 25, 53, 139, 445, 465, 587, 3389, 6667 and 6697 need a pattern that spells that exact port. Every denial is the same `denied` error |
+| Outbound patterns (`tcp.connect`, `udp.send`, `https.connect`) | ✅ | ✅ | ✅ | ➖ | `host:port`, at most 256 per grant. `*:*` means every public address and `*:6697` every public address on that port (`tcp.connect` and `https.connect`; `udp.send` takes `*` only as `*:*`); `localhost` means both loopbacks. A private or LAN address is reachable only when the manifest writes it as a literal. Ports 23, 25, 53, 139, 445, 465, 587, 3389, 6667 and 6697 need a pattern that spells that exact port, which `*:6697` does. Every denial is the same `denied` error |
 | `net.connectSecure` (TLS out) | ✅ | ✅ | ✅ | ⚠️ | TLS ends on the trusted side ([ADR-0017](../decisions/ADR-0017-orivon-owns-the-app-http-path.md)), matched by hostname against `https.connect`. It takes `ca`, `cert`, `key`, `rejectUnauthorized`, `servername` and ALPN, and reports the handshake on the socket. The Node shim drops `minVersion`, `ciphers` and `session` without an error, and `tls.connect({ socket })` (STARTTLS) throws a clear "not supported" error (A226) |
 | `net.listen` (TCP in) | ✅ | ✅ | ✅ | ⚠️ | IPv4 only, ports 1024 and up inside a declared range, each accepted socket a real handle. Node's `http.createServer` and `ws` ride it, verified in a real launch. The Node shim's `net.Server` throws a clear "not supported" error on `listen(path)`, and a single non-loopback address is refused. Node shape in [`net/server.ts`](../../src/shim/net/server.ts) |
 | `scope` on `listen` and `udpBind` (`tcp.listen.local`, `tcp.listen.network`, `udp.bind.*`) | ✅ | ✅ | ✅ | ⚠️ | `'local'`, the default, binds `127.0.0.1` and needs the `.local` grant or the `.network` one. `'network'` binds every interface and needs the `.network` grant alone ([ADR-0034](../decisions/ADR-0034-listening-is-local-unless-the-app-declares-the-network.md)). Bind patterns are bare port ranges of 1024 or more; port 0 picks a random port inside them. The Node shim asks for `'network'` when no host is given, then retries as `'local'` |
@@ -105,7 +105,7 @@ shell's permission gate, not by `orivon.*`.
 
 | Authority | Spec'd | Broker | Page | Node shim | Note |
 |---|:--:|:--:|:--:|:--:|---|
-| Reach a LAN peer, or a reserved-port server, chosen at run time | ❌ | ❌ | ❌ | ❌ | A private, link-local or CGNAT address is reachable only when the manifest spells it as a literal, and a user-configured IRC, SMTP or SMB server on a reserved port is unreachable while a fixed one works. A new pattern kind or a policy decision in the contract would settle it |
+| Reach a LAN peer chosen at run time | ❌ | ❌ | ❌ | ❌ | A private, link-local or CGNAT address is reachable only when the manifest spells it as a literal. A server on a reserved port the person types in is reachable over `tcp.connect` or `https.connect` when the manifest declares `*:<port>` for that port (`*:6697`); over `udp.send` it is not (A304) |
 | STARTTLS, TLS protocol settings, socket options | ❌ | ❌ | ❌ | ⚠️ | `connectSecure` is TLS from the first byte, so PostgreSQL, SMTP and IMAP upgrades throw a clear "not supported" error (A226). The shim accepts `minVersion`, `ciphers`, `localPort` and `reuseAddr` and ignores them, so a TLS 1.3 pin is not enforced. A new operation on `TcpSocket` or a wider `SecureConnectOptions` would settle it |
 | UDP multicast, broadcast, and sending without a listener | ❌ | ❌ | ❌ | ❌ | mDNS, SSDP, Wake-on-LAN and LAN discovery cannot work: a multicast or `255.255.255.255` destination is refused and no group can be joined. Every UDP send needs a bound socket, hence the heavier network bind. A new contract member with a scope would settle it |
 | Unix sockets, named pipes, raw sockets, ICMP | ❌ | ❌ | ❌ | ❌ | `net.connect({ path })` throws a clear "not supported" error, so Docker, `ssh-agent` and local database sockets are out of reach. Raw sockets and packet capture are listed as deliberately not in v0. A new capability would be needed |
@@ -455,7 +455,7 @@ Member lists: [`table-3i-windows-and-lifecycle.md`](compatibility/table-3i-windo
 | Keys the browser takes before the page | `outside` | apps with their own `Ctrl+T`, `Ctrl+W`, `Ctrl+L`, `F5`, `F11` or `Ctrl+1` to `Ctrl+9`: terminals, editors, remote desktops | ⚠️ partial | The browser sees each key first and swallows a matched chord, so the page never gets its `keydown` (35 default chords; a person can rebind them). Editing keys (`Ctrl+C`, `Ctrl+V`, `Ctrl+Z`) and `Ctrl+F`, `Ctrl+S`, `Ctrl+K` always reach the page. In fullscreen the page keeps every key ([`commands.ts`](../../src/main/shortcuts/commands.ts)) |
 | The right-click menu | `outside` | copy, paste, open a link | ✅ built | In tabs and the address bar ([`context-menu.ts`](../../src/main/shell/context-menu.ts)): open a link in a new tab, copy a link or image, cut, copy, paste, select all, Inspect. A page that cancels `contextmenu` opens no menu. No spelling suggestions, Back or Save image |
 | `prompt()`, and `alert()` and `confirm()` | `outside` | apps that ask for text or a yes this way | ❌ missing | `prompt()` returns `null` at once: Electron draws no prompt dialog and offers no hook to supply one (A232). `alert()` and `confirm()` open a native message box, and a page that loops `alert` cannot be dismissed with a checkbox |
-| Drag and drop, downloads, printing, zoom, find in page, spell check | `outside` | importers and file managers (46 of 80 read a dropped file's path); export buttons; invoice apps | ⚠️ partial | A dropped file reads normally but `File.path` is missing (a folder drop is refused). A download the page starts uses Electron's default save dialog, and the page hears no result. There is no print command and no find bar. Zoom per origin works from the keyboard; `webFrame.setZoomFactor` refuses. Media autoplays without a gesture, and `F12` opens developer tools |
+| Drag and drop, downloads, printing, zoom, find in page, spell check | `outside` | importers and file managers (46 of 80 read a dropped file's path); export buttons; invoice apps | ⚠️ partial | A dropped file reads normally but `File.path` is missing (a folder drop is refused). A download the page starts is saved by the shell into the Downloads folder and listed at `orivon://downloads`, and the page hears no result. There is no print command and no find bar. Zoom per origin works from the keyboard; `webFrame.setZoomFactor` refuses. Media autoplays without a gesture, and `F12` opens developer tools |
 | The desktop shell: tray, application menu, dock, badges, autostart, protocol handlers, file types, global shortcuts, power events | `outside` | tray-resident apps (50 of 80 build a `Tray`), wallet and torrent links (38 of 80 register a URL scheme), chat badges | ❌ missing | `Tray` and `Menu` throw a clear "not supported" error; `globalShortcut`, `powerMonitor` and `nativeTheme` refuse; `app.dock`, `setAsDefaultProtocolClient`, `setBadgeCount` and `setLoginItemSettings` are missing. The manifest's `protocols` is checked and registers nothing. A second launch opens `http` and `https` URLs only ([`desktop-shell.ts`](../../src/shim-electron/desktop-shell.ts)) |
 | What the packager and the running executable provide: `process.execPath`, `app.relaunch`, `autoUpdater`, `crashReporter`, command-line switches, `webPreferences` | `outside` | `process.execPath` in 51 of 80, `app.relaunch` in 52, `electron-updater` in 41, `appendSwitch` in 55 | ❌ missing | There is no executable and no installer. `process.execPath` is missing, `app.relaunch` and `app.commandLine` read `undefined`, `crashReporter` refuses, and no app can change a tab's `webPreferences` (the shell fixes `sandbox` and `contextIsolation`). Updates happen through the loader, with no event for the app. Bundled files are `assets` fetched from the app's origin |
 | A sign-in that sends the tab away and back (OIDC, OAuth redirects) | `outside` | Matrix clients and any app behind an OIDC provider | ⚠️ partial | The tab gets the app's own view back on return, with its `sessionStorage` and back history ([`tab-parking.ts`](../../src/main/shell/tab-parking.ts)). A form `POST` back across the app boundary arrives as a `GET` (A233). A provider that accepts only a loopback redirect needs a loopback origin. Google's sign-in hosts are shown a Firefox identity; not confirmed against a real account |
@@ -492,7 +492,7 @@ Member lists, and the 58 network primitives each protocol is built from: [`table
 | Peer-to-peer and file sharing: BitTorrent, libp2p, IPFS, Hyperswarm, Syncthing, Nostr, Matrix, ActivityPub | `needs T1` | webtorrent, IPFS and libp2p apps, Syncthing-style sync, chat and social clients | ⚠️ partial | Of 34 protocols, 14 run and 10 run with a named condition. Work: HTTP and WebSocket trackers, WebRTC, libp2p over WebSockets, the Matrix and Nostr clients. Missing: finding peers on the LAN (multicast), uTP and Hyperswarm (native packages), and a home server reachable from the internet (no inbound TLS, no port mapping) |
 | Blockchains and wallets: Bitcoin, Electrum, Lightning, Ethereum, Monero, Solana, WalletConnect, hardware wallets | `needs T1` | wallets, dapps, light clients; AirGap Vault, ASGARDEX | ⚠️ partial | Of 34, 20 run: every JSON-RPC and WebSocket chain API, Electrum (with a self-signed certificate), the Helios and smoldot light clients, WalletConnect, gRPC-web. Missing: gRPC over HTTP/2 (LND, Core Lightning, Zcash lightwalletd), Core Lightning's Unix socket, and Bitcoin ZMQ. Hardware wallets over USB, HID, serial and Bluetooth are excluded |
 | Anonymity networks: Tor, I2P, Nym, VPNs | `outside` | privacy apps, Monero and Bitcoin over Tor | ⚠️ partial | Of 13, 1 runs plainly. A hand-written SOCKS5 handshake to a Tor daemon the person runs on `localhost:9050` should work, but `socks-proxy-agent` has no effect and nothing starts a native daemon. Tor in WebAssembly (Arti) is possible in principle. Lokinet, Yggdrasil and system-wide VPNs need a TUN device, which no capability offers |
-| Messaging and mail: IRC, XMPP, SMTP, IMAP, Signal, Telegram, Discord, Slack, SIP, MQTT, Kafka | `needs T1` | chat and mail clients, call apps, IoT dashboards | ⚠️ partial | Of 31, 15 run: IMAP and IMAPS, JMAP, Telegram, Discord, Slack, Mattermost, XMPP over WebSocket, MQTT over WebSocket, AMQP and everything on WebRTC. Missing: anything that starts plain and upgrades to TLS on the same socket (SMTP on 587, IMAP on 143, XMPP STARTTLS), and IRC, SMTP over TLS and SMB, whose ports are reserved, so a server the person types in cannot be reached |
+| Messaging and mail: IRC, XMPP, SMTP, IMAP, Signal, Telegram, Discord, Slack, SIP, MQTT, Kafka | `needs T1` | chat and mail clients, call apps, IoT dashboards | ⚠️ partial | Of 31, 15 run: IMAP and IMAPS, JMAP, Telegram, Discord, Slack, Mattermost, XMPP over WebSocket, MQTT over WebSocket, AMQP and everything on WebRTC. Missing: anything that starts plain and upgrades to TLS on the same socket (SMTP on 587, IMAP on 143, XMPP STARTTLS), and a mail or chat server on a reserved port: SMTP over TLS, SMB and IRC are reached for a server the person types in only when the manifest declares the wildcard host at that exact port (`*:465`, `*:445`, `*:6697`) |
 | Databases and services an app dials: PostgreSQL, MySQL, Redis, MongoDB, LDAP, SSH, FTP, S3, WebDAV, Docker, Kubernetes, gRPC, DNS | `needs T1` | database clients, admin and developer tools, backup tools | ⚠️ partial | Of 40, 16 run: plain PostgreSQL and MySQL, Redis, MongoDB with TLS, Memcached, WebDAV, Git over HTTPS, Docker over TCP, gRPC-web, DNS over HTTPS. Missing: TLS that upgrades an open socket (PostgreSQL `sslmode=require`, MySQL TLS), Unix sockets (Docker, local PostgreSQL), `mongodb+srv`, and gRPC over HTTP/2 |
 | Home, media and device protocols: mDNS, SSDP, HomeKit, Matter, Chromecast, AirPlay, printers, NTP, SNMP, RTSP | `needs T1` | smart-home and media apps, network tools | ⚠️ partial | Of 17, none run without a condition. Talking to a device whose address is given works over `net` or `dgram` (9 do, in part). Discovery does not: mDNS, SSDP, broadcast and multicast are missing, so HomeKit, Matter, DLNA, AirPlay and Wake-on-LAN do not work. Zigbee and Z-Wave serial coordinators are excluded |
 | Sign-in and web integration: OAuth, OpenID Connect, SAML, webhooks, push | `dup` | any app behind an identity provider | ⚠️ partial | Of 9, 3 run: OAuth in a popup or redirect, the device-code flow and OpenID Connect (the Element port uses it). SAML and the loopback OAuth redirect run with a condition. Webhooks from the internet and receiving web push are missing |
@@ -544,7 +544,7 @@ say for runtime-chosen hosts) and per-syscall IPC cost on a chatty workload.
 
 | Library | Why an app wants it | Renderer answer that exists today | Verdict |
 |---|---|---|---|
-| `better-sqlite3`, `sqlite3` | A local relational database (7 of 80 apps use `better-sqlite3`, 3 use `sqlite3`) | `node:sqlite` over SQLite as WebAssembly, with a database file in a forked child of a cross-origin isolated app; on a page, `sql.js` or `wa-sqlite` | ⚠️ The API changes shape, and a database file needs a Worker of an isolated app. A page keeps its data in IndexedDB or exports it by hand |
+| `better-sqlite3`, `sqlite3` | A local relational database (7 of 80 apps use `better-sqlite3`, 3 use `sqlite3`) | `node:sqlite` over SQLite as WebAssembly, with a database file in a forked child of a cross-origin isolated app; `better-sqlite3`'s API is an adapter over it, which the bundler plugin selects; on a page, `sql.js` or `wa-sqlite` | ⚠️ `better-sqlite3` runs unchanged and `sqlite3` changes shape; a database file needs a Worker of an isolated app. A page keeps its data in IndexedDB or exports it by hand |
 | `leveldown`, `classic-level` | An embedded key-value store: IPFS and Ethereum datastores, wallets | `browser-level` (IndexedDB) or `memory-level`; the Level API is asynchronous already, so the swap changes little | ⚠️ The data lives in IndexedDB, which the browser may evict |
 | `secp256k1`, `tiny-secp256k1` | Bitcoin and Ethereum signatures | `@noble/secp256k1` and `@noble/curves`, pure JavaScript; version 2 of `tiny-secp256k1` loads its own WebAssembly | ✅ Needs nothing from Orivon. `orivon.id.sign` signs P-256 only, so it cannot stand in |
 | `bcrypt`, `argon2` | Password hashing | `bcryptjs`, `hash-wasm` or `argon2-browser`; `@node-rs/argon2` runs as its own WebAssembly build in an app that sets `crossOriginIsolated: true` | ✅ Hash in a Worker, because pure JavaScript takes tens of milliseconds |
@@ -785,20 +785,20 @@ the reference set, and whether this build has it.
 | Back / forward | ✅ | `webContents.goBack/goForward` (`src/main/shell/tabs.ts`), `Alt+Left`/`Alt+Right` |
 | Reload / stop | ✅ | `nav.reload`/`nav.hardReload`; the reload button becomes Stop while a tab loads (`nav.stop`, `src/renderer/chrome/reload-stop.ts`), and Escape in the page stops a load (`src/main/shell/signals/stop-key.ts`) |
 | Home button | ✅ | A toolbar button (`toolbar.home`, off by default; `src/renderer/chrome/home-button.ts`) and `nav.home` (`Alt+Home`) open the home page in the current tab; a middle or Ctrl click opens a background tab |
-| Omnibox: address-or-search classification | ✅ | `src/main/browsing/omnibox.ts`, refuses `javascript:`/`data:`/`file:`/`about:` typed in the bar |
-| Search suggestions (live dropdown) | ❌ | No suggestion/autocomplete code for the address bar |
-| History/bookmark autocomplete in the bar | ❌ | Omnibox is pure classification only |
-| Default search engine choice | ✅ | Eight built-in engines (DuckDuckGo default), `search-engines.ts` |
-| Custom search engines / keywords | ⚠️ | One custom template URL; no per-keyword multiple engines, no bang syntax |
-| URL display / eliding | ⚠️ | Orivon's own plain `<input>`, not a Chromium omnibox; shows the literal full URL, only rewriting an internal `https://<name>.ipfs.orivon` address back to `ipfs://<name>` |
-| Security indicator / padlock | ⚠️ | No padlock; a broader "Website Level" trust indicator (`src/trust/`) replaces it |
+| Omnibox: address-or-search classification | ✅ | `src/main/browsing/omnibox.ts` classifies typed text as an address, a search or a refusal: `javascript:`, `data:`, `file:` and `about:` are refused, except `about:<name>` and `chrome://<name>`, which open the Orivon page of the same purpose (`src/main/pages/internal-aliases.ts`); a leading `?` always searches |
+| Search suggestions (live dropdown) | ✅ | Off by default: Settings > Search turns on the default engine's own suggestions under the typed text, for DuckDuckGo, Startpage, Ecosia, Qwant, Bing and Google (Brave Search, Mojeek and a custom engine give none); never in a private window, requested without cookies or a referrer, and only for text that would be searched as typed (`src/main/omnibox/suggest-fetch.ts`) |
+| History/bookmark autocomplete in the bar | ✅ | Typing lists matching history, bookmarks and open tabs under the bar (`src/main/omnibox/`, overlay `omnibox`) and finishes the typed text inline from a page that is bookmarked, was typed in full or was visited twice; Settings > Search turns the finishing off |
+| Default search engine choice | ✅ | Eight built-in engines (DuckDuckGo default), each with a keyword (`src/main/browsing/search-engines.ts`) |
+| Custom search engines / keywords | ✅ | Settings > Search lists the built-in engines and the site engines (Wikipedia, YouTube, GitHub, OpenStreetMap), adds, edits and removes the person's own, and a keyword and a space before the text searches that engine (`src/main/browsing/search-engine-store.ts`, `search-resolve.ts`, `src/renderer/pages/settings/engines.ts`) |
+| URL display / eliding | ✅ | The unfocused address bar shows the site name at full strength and the rest dim, hides `https://`, `http://` and `www.`, shows an `ipfs://<name>` address as itself, and keeps the real value in the input; Settings > Search shows full addresses (`src/renderer/chrome/address-format.ts`, `address-display.ts`) |
+| Security indicator / padlock | ✅ | A lock marks live https and a "Not secure" warning marks plain http to a public host; localhost, protocol addresses, cache-served apps, shell pages and a failed load get no mark; the Website Level trust indicator (`src/trust/`) is separate (`src/main/browsing/connection.ts`, `src/main/shell/signals/connection.ts`) |
 | Site info panel | ✅ | `src/main/permissions/site-info.ts`, `popover-view.ts`, `site-info-panel.ts` |
 | Copy URL | ✅ | Native input field behaviour |
 | Paste-and-go | ✅ | The address bar's context menu has Paste and Go: main reads the clipboard and the address form submits it as typed (`src/main/shell/paste-and-go.ts`, `chrome-context-menu.ts`) |
-| QR code share of current page | ❌ | Not found |
-| `view-source:` | ⚠️ | `page.viewSource` (`Ctrl+U`) and the page menu open `view-source:<address>` in a tab beside the page, for an http(s) page in an ordinary tab (`src/main/page-tools/view-source.ts`); typing it in the address bar is not recognised as an address |
-| `data:` / `file:` typed in the address bar | 🚫 | `DANGEROUS_SCHEMES` refuses `javascript:`, `data:`, `file:`, `about:` typed or pasted |
-| `file://` browsing (via a link, not typed) | ⚠️ | Treated as internal (loads directly); directory-listing behaviour is Chromium's own default, unverified without a launch |
+| QR code share of current page | ✅ | More tools > Create QR code for this page, or the page menu, opens a sheet with the code, Copy link and Download as PNG (`src/main/qr/`, `src/renderer/overlay/qr/`) |
+| `view-source:` | ✅ | `page.viewSource` (`Ctrl+U`) and the page menu open `view-source:<address>` in a tab beside the page, for an http(s) page in an ordinary tab (`src/main/page-tools/view-source.ts`); typing `view-source:` and an http(s) address in the bar does the same, and anything else after it is searched (`src/main/pages/internal-aliases.ts`, `src/main/shell/tab-navigation.ts`) |
+| `data:` / `file:` typed in the address bar | 🚫 | `DANGEROUS_SCHEMES` refuses `javascript:`, `data:`, `file:` and `about:` typed or pasted; `about:<name>` for a page Orivon has is the one exception |
+| `file://` browsing (via a link, not typed) | ⚠️ | A `file:` link on a web page loads nothing and a typed `file:` address is refused, leaving a blank tab; the behaviour is Chromium's (measured in `test/e2e-address-bar.test.ts`) |
 
 ### Tabs
 
@@ -863,40 +863,40 @@ the reference set, and whether this build has it.
 
 | Feature | Orivon | Note |
 |---|---|---|
-| Bookmarks bar | ✅ | `appearance.bookmarksBar` (`auto`/`always`/`never`) |
-| Bookmark manager page | ❌ | No `orivon://bookmarks` |
-| Folders | ❌ | A flat `{url, title, favicon}` record |
-| Import/export as HTML | ❌ | Storage is a private JSON file, no HTML import/export |
-| Bookmark all open tabs | ❌ | Not found |
-| Reading list | ❌ | Not found |
-| Star/unstar current page | ✅ | `bookmark.toggle` (`Mod+D`) |
+| Bookmarks bar | ✅ | Nested folders open as drop-down menus with Open all, an overflow chevron, a right-click menu (open in tab, window or private window, edit, rename, add folder, copy link, delete) and drag to reorder or into a folder; `appearance.bookmarksBar` (`auto`/`always`/`never`) and `bookmarks.toggleBar` (`Mod+Shift+B`) show or hide it (`src/renderer/chrome/bookmarks-bar.ts`, `src/main/shell/bookmarks-bar/`) |
+| Bookmark manager page | ✅ | `orivon://bookmarks` (`Mod+Shift+O`): folder tree, list, search, inline edit, move by dialog or drag, delete with undo (`src/renderer/pages/bookmarks/`, `src/main/browsing/bookmarks-domain.ts`) |
+| Folders | ✅ | Nested folders in `bookmarks.json` (stable ids, roots `bar`, `other` and `reading`, at most 20,000 nodes and 12 levels); the bar, the manager and the edit bubble file into them (`src/main/browsing/bookmark-tree.ts`, `bookmark-file.ts`) |
+| Import/export as HTML | ✅ | Export writes the Netscape bookmark file from the manager through the save dialog (`src/main/browsing/bookmarks-html-export.ts`); import reads one at `orivon://import` (`src/main/import/bookmarks-html-import.ts`) |
+| Bookmark all open tabs | ✅ | `Mod+Shift+D`, the Bookmarks menu and the tab menu open a sheet that saves a dated folder with one bookmark per tab that has a site, in strip order (`src/main/shell/bookmark-bubble/`) |
+| Reading list | ❌ | Not built: no page, button or command; the bookmark file keeps a root for it that nothing fills (`src/main/browsing/bookmark-tree.ts`) |
+| Star/unstar current page | ✅ | The star and `bookmark.toggle` (`Mod+D`) save the page and open an edit bubble (name, folder, new folder, Remove); on a saved page they only open it, and Remove is the bubble's button (`src/main/shell/bookmark-bubble/`, `src/renderer/chrome/bookmark-star.ts`) |
 
 ### History
 
 | Feature | Orivon | Note |
 |---|---|---|
-| History page | ✅ | `orivon://history` |
-| Search history | ✅ | `history-domain.ts` |
-| Delete individual entries | ✅ | `history-domain.ts` |
+| History page | ✅ | `orivon://history`: by day or by session (pages visited within 30 minutes of each other), sorted by most recent, most visited or name, a site icon on each row, multi-select with open and delete, and a Recently closed card (`src/renderer/pages/history/`) |
+| Search history | ✅ | A search box over titles and addresses (`src/main/history/history-domain.ts`, `history-list.ts`) |
+| Delete individual entries | ✅ | One row, or every selected row (up to 500 a request), with a second press for several (`history-domain.ts`, `history-ids.ts`) |
 | Clear by range (hour/day/week/all) | ✅ | `clear-data.ts`'s `HISTORY_RANGES` |
 | Retention setting | ✅ | 7/30/90/forever, on/off toggle |
-| "Journeys" / grouped browsing sessions | ❌ | History is a flat, searchable list |
-| Favicons shown in history / sortable columns | ❌ | Open item (`docs/open-questions.md` A294) |
+| "Journeys" / grouped browsing sessions | ⚠️ | History can be grouped by session (pages visited within 30 minutes of each other, `src/renderer/pages/history/sessions.ts`); there are no navigation chains |
+| Favicons shown in history / sortable columns | ✅ | History rows show the site's icon, kept per host in `history.db` and cleared with history (`src/main/history/history-favicons.ts`), and the list sorts by most recent, most visited or name (`history-order.ts`) |
 | Updates live when history changes | ✅ | `services.history.onChange` pushes `history.changed`/`privacy.changed` to the open page (`start-internal-pages.ts`) |
 
 ### Downloads
 
 | Feature | Orivon | Note |
 |---|---|---|
-| Download manager UI | ❌ | No `orivon://downloads` page or download-tracking store |
-| Download progress | ❌ | Not found |
-| Pause / resume / cancel | ❌ | Not found |
-| Open containing folder | ❌ | Not found |
-| Ask where to save each file | ❌ | Not found |
-| Default download folder setting | ❌ | Not found |
-| Dangerous-file warnings | ❌ | Not found |
-| Safe Browsing check on downloads | ❌ | Not found |
-| Downloads from ordinary browsing tabs | ➖ | No `will-download` handler on the default session; Electron's own default applies |
+| Download manager UI | ✅ | `orivon://downloads` (`Mod+J`, main menu): list by day, every state, live rows, Clear list; a toolbar button with a progress ring and a bubble with the six latest, which peeks when a download starts (`downloads.showBubble`) (`src/renderer/pages/downloads/`, `src/renderer/overlay/downloads/`, `src/main/downloads/`) |
+| Download progress | ✅ | Bytes, speed and time left with a progress bar on the page, and a ring on the toolbar button with a turning arc when the size is unknown (`src/renderer/pages/downloads/row.ts`, `src/renderer/chrome/downloads-button.ts`) |
+| Pause / resume / cancel | ✅ | Through the download item by id, plus Retry, which resumes an interrupted item and otherwise asks for the address again (`src/main/downloads/download-service.ts`) |
+| Open containing folder | ✅ | Show in folder for each file and Open downloads folder, through the system file manager (`download-service.ts`, `folder-runner.ts`) |
+| Ask where to save each file | ✅ | Settings > Downloads "Ask where to save each file" uses Electron's own save dialog; not tested end to end, since the dialog is native (`download-service.ts`) |
+| Default download folder setting | ✅ | Settings > Downloads "Change..." and "Use the default folder" (`downloads.folder`, empty means the operating system's Downloads folder) (`folder-runner.ts`, `src/renderer/pages/settings/sections/downloads.ts`) |
+| Dangerous-file warnings | ✅ | A file whose name or content type runs code is written as `Unconfirmed <id>.download` and held until Keep (renamed) or Discard (deleted), in the bubble and on the page, and Orivon never opens it (`danger-hold.ts`, `dangerous-file.ts`, `download-service.ts`) |
+| Safe Browsing check on downloads | ❌ | No reputation service; only the name and content type decide whether a file is held |
+| Downloads from ordinary browsing tabs | ✅ | Every tab's session is handled, the default session at start and each other the first time a tab is created in it; the file goes to the Downloads folder with no dialog unless "Ask where" is on; app tabs are covered by unit tests, not an end-to-end test (`src/main/downloads/install-downloads.ts`) |
 
 ### Passwords and identity
 
@@ -936,7 +936,7 @@ the reference set, and whether this build has it.
 
 | Feature | Orivon | Note |
 |---|---|---|
-| Import bookmarks/history/passwords from Chrome/Firefox/etc. | ❌ | No importer code |
+| Import bookmarks/history/passwords from Chrome/Firefox/etc. | ⚠️ | Bookmarks and history import from Chrome, Chromium, Edge, Brave and Firefox profiles in their default places, and bookmarks from an HTML file, at `orivon://import` (`src/main/import/`, `src/renderer/pages/import/`); passwords are not imported |
 
 ### Privacy and security
 
@@ -1045,11 +1045,11 @@ the reference set, and whether this build has it.
 | Link: open in new window | ✅ | Open Link in New Window opens a real window (`context-menu-groups.ts`) |
 | Link: open in private window | ✅ | Starts a private session on the address; hidden inside a private window and in a kiosk (`context-menu-groups.ts`, `ProfilesService.openPrivate`) |
 | Link: copy link address | ✅ | |
-| Link: save link as | ✅ | `webContents.downloadURL` through Electron's own save dialog (`context-menu-groups.ts`) |
+| Link: save link as | ✅ | `webContents.downloadURL` through the downloads service: the Downloads folder with no dialog, or Electron's save dialog when "Ask where" is on (`context-menu-groups.ts`, `src/main/downloads/`) |
 | Link: open in split view | ✅ | Orivon-specific addition |
 | Link: copy link text | ✅ | `context-menu-groups.ts` |
 | Image: open image in new tab | ✅ | Shown for http(s) images; opens in a background tab |
-| Image: save image as | ✅ | `webContents.downloadURL` through Electron's own save dialog; not offered for `data:` or `blob:` images |
+| Image: save image as | ✅ | `webContents.downloadURL` through the downloads service as a link is; not offered for `data:` or `blob:` images |
 | Image: copy image | ✅ | |
 | Image: copy image address | ✅ | Shown for http(s) images |
 | Image: search image | ❌ | Not found |
@@ -1097,10 +1097,10 @@ the reference set, and whether this build has it.
 | Feature | Orivon | Note |
 |---|---|---|
 | DevTools (console, elements, network, etc.) | ✅ | F12; asks once before opening on an app holding permissions |
-| Console panel | ➖ | Part of Chromium's stock DevTools |
+| Console panel | ➖ | Part of Chromium's stock DevTools; JavaScript console (`Mod+Shift+J`, `Mod+Alt+J` on macOS, More tools) opens developer tools on it (`src/main/devtools/open-console.ts`) |
 | Network panel | ➖ | Part of Chromium's stock DevTools |
-| Task manager (Shift+Esc equivalent) | ❌ | No Orivon-specific task manager UI |
-| `about:`/internal informational pages (version, gpu, net-internals, flags) | ❌ | Only `settings, history, profiles, private, extensions` exist |
+| Task manager (Shift+Esc equivalent) | ✅ | `orivon://tasks` (`Shift+Escape`, More tools) lists Orivon's processes with memory and processor use, sorts them, goes to a tab, and ends a tab or app process (`src/main/info/`, `src/renderer/pages/tasks/`) |
+| `about:`/internal informational pages (version, gpu, net-internals, flags) | ⚠️ | `orivon://about` shows version and graphics, and `about:<name>` and `chrome://<name>` typed in the bar open the Orivon page of the same purpose (`src/main/pages/internal-aliases.ts`); no net-internals, no flags |
 | DevTools dock position setting | ✅ | Right/bottom/undocked |
 | Per-tab DevTools toggle | ✅ | Browser-wide setting |
 

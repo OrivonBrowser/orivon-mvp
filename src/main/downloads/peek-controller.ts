@@ -26,9 +26,12 @@ export interface PeekDeps<W extends object> {
 }
 
 export class PeekController<W extends object> {
-  private readonly lastAsked = new Map<W, number>()
-  private readonly timers = new Map<W, unknown>()
-  private readonly pointerOver = new Set<W>()
+  // Keyed weakly: a window that closes is not kept alive, with its tabs and overlays, by what was remembered about it.
+  private readonly lastAsked = new WeakMap<W, number>()
+  private readonly timers = new WeakMap<W, unknown>()
+  private readonly pointerOver = new WeakSet<W>()
+  /** Windows whose peek was asked for and has not closed. Walked on every change, so a window that never opened its peek
+   * is dropped there rather than kept. */
   private readonly asked = new Set<W>()
 
   constructor (private readonly deps: PeekDeps<W>) {}
@@ -38,6 +41,7 @@ export class PeekController<W extends object> {
     if (!deps.showBubble() || !deps.buttonAllowed()) return
     const window = deps.windowOf(info)
     if (window === undefined) return
+    for (const other of [...this.asked]) if (!deps.peekOpen(other)) this.asked.delete(other)
     this.stopTimer(window)
     if (deps.peekOpen(window) || deps.popupOpen(window)) return
     const now = deps.now()

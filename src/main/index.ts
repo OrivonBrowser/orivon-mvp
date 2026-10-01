@@ -182,7 +182,7 @@ function boot (runtime: Runtime): void {
     installSpellcheck(app, shell.windows, shell.settings)
     installHistory(app, shell.windows, shell.internalPages, shell.history)
     runShellInstallers(app, shell, ctx, runtime)
-    installDownloads(app, { windows: shell.windows, downloads: shell.downloads, defaultSession: session.defaultSession })
+    installDownloads(app, { windows: shell.windows, downloads: shell.downloads, defaultSession: session.defaultSession, discardHeldAtQuit: runtime.isPrivate })
     installDownloadsPeek(shell)
     registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks)
     // Looks for a newer release once a day when the person has said it may; installs nothing.

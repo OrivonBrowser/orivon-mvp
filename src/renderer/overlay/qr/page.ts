@@ -2,7 +2,7 @@
 // actions. The address comes from main at each show; nothing here can change what is encoded or copied.
 import { h } from '../../pages/shared/dom.js'
 import type { Overlay, OverlayPage } from '../kit.js'
-import { matrixFor, MAX_QR_CHARACTERS, qrPng, qrSvg } from './qr-svg.js'
+import { matrixFor, qrPng, qrSvg } from './qr-svg.js'
 import type { QrMatrix } from './qr-svg.js'
 import './qr.css'
 
@@ -64,7 +64,7 @@ export const qrPage: OverlayPage = {
         address.title = text
         tile.replaceChildren(...(matrix === null ? [] : [qrSvg(matrix)]))
         tile.hidden = matrix === null
-        problem.textContent = matrix === null && text.length > MAX_QR_CHARACTERS ? TOO_LONG : ''
+        problem.textContent = matrix === null && text !== '' ? TOO_LONG : ''
         download.disabled = matrix === null
         copy.focus()
       }

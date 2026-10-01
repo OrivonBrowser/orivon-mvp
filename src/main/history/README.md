@@ -49,7 +49,7 @@ recorded waits up to a minute for it, since the visit is written after the page 
 **Icons live in a table of their own, by host.** An icon is shared by every page of its site, and it is forgotten
 in the same transaction that forgets the site's last page (`remove`, `removeMany`, `removeRange`, `clear` each prune),
 so clearing history leaves no list of sites behind. An icon passes the same image check as a bookmark's, is kept only
-up to 48,000 characters, and at most 2,000 sites keep one (the ones refreshed longest ago go). The prune asks, for
+up to 8,192 characters, and at most 2,000 sites keep one (the ones refreshed longest ago go). The prune asks, for
 each icon, whether any page address starts with `scheme://host/` or `scheme://host:` through the `url` index, so its
 cost follows the number of icons and not the number of pages (2 ms for 1,500 icons over 100,000 pages). Tabs offer
 their icon on every state push, so `HistoryService` remembers what it last offered per host and forgets that

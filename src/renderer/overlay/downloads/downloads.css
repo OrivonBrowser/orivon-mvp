@@ -19,8 +19,6 @@ body[data-overlay^='downloads'] .dlb-list {
   list-style: none;
   max-height: 372px;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--wborder) transparent;
 }
 body[data-overlay^='downloads'] .dlb-list[hidden],
 body[data-overlay^='downloads'] .empty-state[hidden] { display: none; }
@@ -68,7 +66,7 @@ body[data-overlay^='downloads'] .dlb-line-text {
   color: var(--wink-dim);
   font-variant-numeric: tabular-nums;
 }
-body[data-overlay^='downloads'] .is-interrupted .dlb-line-text { color: var(--wdanger); }
+body[data-overlay^='downloads'] .is-interrupted .dlb-line-text { color: var(--wdanger-text); }
 body[data-overlay^='downloads'] .dlb-line .badge { flex: none; }
 body[data-overlay^='downloads'] .dlb-line .badge[hidden] { display: none; }
 body[data-overlay^='downloads'] .dlb-main .progress { height: 3px; margin-top: 3px; }

@@ -33,6 +33,11 @@ describe('connectionOf', () => {
     expect(connectionOf(page('https://vitalik.eth/', { served: true }))).toBe('none')
   })
 
+  it('gives no lock and no warning to the error page of a load that failed, which carries the address that failed', () => {
+    expect(connectionOf(page('https://expired.example/', { failed: true }))).toBe('none')
+    expect(connectionOf(page('http://down.example/', { failed: true }))).toBe('none')
+  })
+
   it('gives no lock to a cache-served app tab', () => {
     expect(connectionOf(page('https://app.example/', { appTab: true }))).toBe('none')
     expect(connectionOf(page('http://app.example/', { appTab: true }))).toBe('none')

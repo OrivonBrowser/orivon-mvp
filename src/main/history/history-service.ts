@@ -81,9 +81,15 @@ export class HistoryService {
   /** Tabs report their icon on every state push, so an icon already kept is not offered to the store again. */
   setFavicon (host: string, dataUrl: string): void {
     if (!this.remembering || this.offeredIcons.get(host) === dataUrl) return
+    // Called from inside a state push: a store that fails must not end it, and an icon it did not take is offered again.
+    try {
+      this.store.setFavicon(host, dataUrl)
+    } catch (error) {
+      console.error('[orivon] history could not be written:', error)
+      return
+    }
     if (this.offeredIcons.size >= MAX_OFFERED_ICONS) this.offeredIcons.clear()
     this.offeredIcons.set(host, dataUrl)
-    this.store.setFavicon(host, dataUrl)
   }
 
   faviconsFor (hosts: readonly string[]): Record<string, string> {

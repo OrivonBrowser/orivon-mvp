@@ -13,7 +13,7 @@ entirely.
 | [`intro/`](intro/) | The welcome screen, a full-window view over the shell (`src/main/shell/intro-view.ts`) |
 | [`overlay/`](overlay/) | The one page every overlay shows: the main menu, and a page per feature that shows Orivon HTML above the page (`src/main/overlays/`) |
 | [`split-frame/`](split-frame/) | The view behind the two panes of a split: the divider, the ring round the pane in use, and where a dragged tab would go |
-| [`pages/`](pages/) | The shell's own pages, each a tab (`orivon://settings`, `history`, `bookmarks`, `profiles`, `private`, `extensions`), on the tokens and controls in `pages/shared/` |
+| [`pages/`](pages/) | The shell's own pages, each a tab (`orivon://settings`, `history`, `downloads`, `bookmarks`, `import`, `about`, `tasks`, `profiles`, `private`, `extensions`), on the tokens and controls in `pages/shared/` |
 
 **What it depends on.** The chrome view on `src/preload/shell.ts`'s commands, typed by that file's
 `OrivonShell` so a dropped command fails the typecheck, and `newtab/` on
@@ -52,8 +52,10 @@ non-empty, and hiding it is half the fix: main must shrink the view too (`window
 (`bookmarksBarMatches`), since either alone passes while the feature is visibly broken.
 
 **Bookmarks are a real feature** (`docs/scope.md`, ADR-0003): `src/main/browsing/bookmarks.ts`
-holds and persists the list, and this directory renders what it is sent and asks main to add,
-remove or open, as the tab strip does for tabs.
+holds and persists the tree of folders and pages, and this directory renders the bar items main sends
+(when they change) and asks main to open, move, edit or remove, as the tab strip does for tabs.
+The star, the folder menu, the edit bubble, the address suggestions and the downloads bubble are
+overlays in [`overlay/`](overlay/), not chrome rows.
 
 **Favicons arrive as `data:` URLs.** `src/main/browsing/favicon.ts` fetches, caps and re-encodes
 them, so this view's CSP stays `img-src 'self' data:`; the renderer never fetches one itself.

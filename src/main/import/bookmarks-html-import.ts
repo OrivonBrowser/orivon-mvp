@@ -38,6 +38,23 @@ function addedOf (attributes: Map<string, string>): number | undefined {
 
 const textOf = (html: string): string => clipTitle(decodeEntities(html.replace(/<[^>]*>/g, '').trim()))
 
+const NAMED_TAG = /<(\/?)([a-z][a-z0-9]*)(?=[\s>/])/g
+/** Tags that start the next entry or end the list: a title is never read past one. */
+const ENTRY_TAGS: ReadonlySet<string> = new Set(['a', 'h3', 'dt', 'dl'])
+
+/** Where a title ends. `end` is the start of its own closing tag (`</a>` or `</h3>`), or -1 when the entry is never closed;
+ * the title is the text up to `stop`, which is that tag or, for an entry left open, the start of whatever follows it, so
+ * the next entry is never swallowed into this one. Inline markup inside a title is passed over. */
+function titleEnd (lower: string, from: number, name: 'a' | 'h3'): { end: number, stop: number } {
+  NAMED_TAG.lastIndex = from
+  for (let found = NAMED_TAG.exec(lower); found !== null; found = NAMED_TAG.exec(lower)) {
+    const tag = found[2] ?? ''
+    if (found[1] === '/' ? tag === name : ENTRY_TAGS.has(tag)) return found[1] === '/' ? { end: found.index, stop: found.index } : { end: -1, stop: found.index }
+    if (found[1] === '/' && tag === 'dl') return { end: -1, stop: found.index }
+  }
+  return { end: -1, stop: lower.length }
+}
+
 type Role = 'plain' | 'bar' | 'unfiled' | 'folder'
 
 interface Frame {
@@ -60,9 +77,6 @@ export function parseBookmarksHtml (text: string): SourceBookmarks {
   const stack: Frame[] = [{ role: 'plain', title: '', added: undefined, items: other, built: false }]
   let pending: { title: string, role: Role, added: number | undefined } | null = null
   let pages = 0
-  // Once a closing tag is not found, none is found further on either: searching again would make a file of unclosed tags quadratic.
-  let headingsClose = true
-  let linksClose = true
 
   const top = (): Frame => stack[stack.length - 1] as Frame
 
@@ -95,22 +109,20 @@ export function parseBookmarksHtml (text: string): SourceBookmarks {
     } else if (name === 'dt' && !closing) {
       pending = null
     } else if (name === 'h3' && !closing) {
-      const end = headingsClose ? lower.indexOf('</h3', after) : -1
-      if (end === -1) headingsClose = false
+      const { end, stop } = titleEnd(lower, after, 'h3')
       const attributes = attributesOf(match[3] ?? '')
       const role: Role = attributes.get('PERSONAL_TOOLBAR_FOLDER') === 'true' ? 'bar' : attributes.get('UNFILED_BOOKMARKS_FOLDER') === 'true' ? 'unfiled' : 'folder'
-      pending = { title: textOf(text.slice(after, end === -1 ? after : end)), role, added: addedOf(attributes) }
+      pending = { title: textOf(text.slice(after, stop)), role, added: addedOf(attributes) }
       if (end !== -1) TAG.lastIndex = end
     } else if (name === 'a' && !closing) {
-      const end = linksClose ? lower.indexOf('</a', after) : -1
-      if (end === -1) linksClose = false
+      const { end, stop } = titleEnd(lower, after, 'a')
       const attributes = attributesOf(match[3] ?? '')
       const href = attributes.get('HREF')
       if (href !== undefined) {
         pages += 1
         if (budget.take()) {
           const added = addedOf(attributes)
-          top().items.push({ kind: 'url', title: textOf(text.slice(after, end === -1 ? after : end)), url: href, ...(added === undefined ? {} : { added }) })
+          top().items.push({ kind: 'url', title: textOf(text.slice(after, stop)), url: href, ...(added === undefined ? {} : { added }) })
         }
       }
       if (end !== -1) TAG.lastIndex = end
