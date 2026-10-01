@@ -189,9 +189,9 @@ it('lists installed extensions with their updater sentence, toggles one off, rem
     expect(await settings.locator('#row-apps-extensions-pin-new input[type="checkbox"]').isChecked()).toBe(true)
     await shoot(settings, 'settings-apps')
     await settings.fill('input.search', 'addons')
-    await waitFor(async () => (await settings.locator('.hit').count()) === 4)
-    // The three Apps rows, and the Extensions button's row in Appearance.
-    expect(await settings.locator('.hit').count()).toBe(4)
+    await waitFor(async () => (await settings.locator('.hit').count()) === 3)
+    // The two Apps rows, and the Extensions button's row in Appearance.
+    expect(await settings.locator('.hit').count()).toBe(3)
     await settings.fill('input.search', '')
   } finally {
     await closeElectronApp(app)
