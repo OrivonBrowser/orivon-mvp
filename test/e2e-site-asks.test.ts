@@ -161,6 +161,16 @@ it('asks once per site, remembers the answer across a page load, and the chip ch
     expect(await promptShown(app)).toBe(false)
     await view.click('#cam')
     let prompt = await waitPrompt(app)
+    // A press in the first half second does nothing. The page's own look-ready class is cleared first, so what refuses it is
+    // main's guard, which counts from the page drawing the question and so is still running however slowly the page loaded.
+    await prompt.evaluate(() => {
+      document.querySelector('.site-prompt')?.classList.remove('arming')
+      document.querySelector<HTMLButtonElement>('.btn-row .btn.primary')?.click()
+    })
+    await delay(100)
+    expect(await promptShown(app)).toBe(true)
+    // The page's class is gone, so the page no longer says when main's guard has run out: wait it out before a real answer.
+    await delay(500)
     expect(await textOf(prompt, '.origin')).toEqual([origins.a])
     expect(await textOf(prompt, '.sp-text')).toEqual(['wants to use your camera'])
     expect(await textOf(prompt, '.btn-row .btn')).toEqual(['Block', 'Allow'])
@@ -170,11 +180,6 @@ it('asks once per site, remembers the answer across a page load, and the chip ch
     expect(await prompt.evaluate(() => document.activeElement?.classList.contains('site-prompt'))).toBe(true)
     expect(await prompt.evaluate(() => Array.from(document.querySelectorAll('button')).map((b) => b.getAttribute('aria-label') ?? b.textContent))).toEqual(['Block', 'Allow', 'Not now'])
 
-    // Buttons ignore a press for half a second; a press that lands early does nothing.
-    if (await prompt.evaluate(() => document.querySelector('.site-prompt')?.classList.contains('arming') === true)) {
-      await prompt.evaluate(() => { document.querySelector<HTMLButtonElement>('.btn-row .btn.primary')?.click() })
-      expect(await promptShown(app)).toBe(true)
-    }
     await shootBoth(app, chrome, 'ask-camera')
     await prompt.waitForSelector('.site-prompt:not(.arming)')
     await prompt.keyboard.press('Enter')

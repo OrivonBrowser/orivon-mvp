@@ -48,9 +48,10 @@ function rig (options: { isPrivate?: boolean, defaults?: Record<string, string> 
 }
 
 type Rig = ReturnType<typeof rig>
-/** Shows the question and lets the guard pass, as a person who read it would. */
+/** Shows the question, has the page report it drawn and lets the guard pass, as a person who read it would. */
 const askView = (r: Rig): Record<string, unknown> => {
   const view = r.handler.show?.(r.shows[0]?.payload) as Record<string, unknown>
+  r.handler.request({ type: 'drawn', id: view['id'] })
   r.clock.now += ANSWER_GUARD_MS
   return view
 }
@@ -93,12 +94,35 @@ describe('the site-prompt overlay', () => {
       const answer = r.ask(['camera'], r.contents)
       const view = r.handler.show?.(r.shows[0]?.payload) as Record<string, unknown>
       expect(view['guardMs']).toBe(ANSWER_GUARD_MS)
+      r.handler.request({ type: 'drawn', id: view['id'] })
       r.clock.now += ANSWER_GUARD_MS - 1
       r.handler.request({ type: 'answer', id: view['id'], answer: 'allow' })
       expect(r.close).not.toHaveBeenCalled()
       r.clock.now += 1
       r.handler.request({ type: 'answer', id: view['id'], answer: 'allow' })
       expect(await answer).toBe('allow')
+    })
+
+    it('does not start the guard until the page reports the question drawn, however long since the show', () => {
+      const r = rig()
+      const answer = r.ask(['camera'], r.contents)
+      const view = r.handler.show?.(r.shows[0]?.payload) as Record<string, unknown>
+      r.clock.now += ANSWER_GUARD_MS * 10
+      r.handler.request({ type: 'answer', id: view['id'], answer: 'allow' })
+      expect(r.close).not.toHaveBeenCalled()
+      r.handler.request({ type: 'drawn', id: 'wrong' })
+      r.handler.request({ type: 'drawn', id: view['id'], extra: 1 })
+      r.clock.now += ANSWER_GUARD_MS
+      r.handler.request({ type: 'answer', id: view['id'], answer: 'allow' })
+      expect(r.close).not.toHaveBeenCalled()
+      r.handler.request({ type: 'drawn', id: view['id'] })
+      r.clock.now += ANSWER_GUARD_MS - 1
+      r.handler.request({ type: 'answer', id: view['id'], answer: 'allow' })
+      expect(r.close).not.toHaveBeenCalled()
+      r.clock.now += 1
+      r.handler.request({ type: 'answer', id: view['id'], answer: 'allow' })
+      expect(r.close).toHaveBeenCalledTimes(1)
+      void answer
     })
 
     it('starts the guard over when the overlay is moved, and tells the page', () => {

@@ -17,7 +17,7 @@ export function createExtensionInstallPrompt (): InstallPrompt {
     const { response } = await askQuestion({ contents: where?.contents }, {
       kind: 'consent',
       warning: description.warning,
-      buttons: ['Add extension', 'Cancel'],
+      buttons: [description.accept ?? 'Add extension', 'Cancel'],
       cancelId: 1,
       guarded: [0],
       focus: 'dialog',

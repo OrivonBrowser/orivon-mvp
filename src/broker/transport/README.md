@@ -68,7 +68,7 @@ sender's frame (T3) and cannot be spoofed the way a manifest's `name` can, so it
 appears; `appName`, when present, is added alongside it, never in its place.
 
 **`createPickPath`'s dialog is parented to the window the person is using** (the focused
-`BaseWindow`, else the newest; every shell window is a `BaseWindow`, which `BrowserWindow.getFocusedWindow()`
+`BaseWindow`, else the newest visible one; every shell window is a `BaseWindow`, which `BrowserWindow.getFocusedWindow()`
 never returns), not the real sender's own window: `ControlEvent` carries only `senderFrame`, structural-typed for testability
 (`ipc.ts`'s own header). A page can only reach this call with a fresh user activation (checked in
 the isolated-world preload before the IPC is even sent), so the focused window is, in practice,

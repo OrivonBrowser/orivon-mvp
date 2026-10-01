@@ -156,7 +156,7 @@ describe('extensionsDomain', () => {
     const { handle } = extensionsDomain(deps)
     const reply = await handle({ type: 'loadUnpacked' }, caller)
     expect(reply).toEqual({ installed: true, entry: UNPACKED })
-    expect(deps.extensions.installFromFolder).toHaveBeenCalledWith('/picked/folder')
+    expect(deps.extensions.installFromFolder).toHaveBeenCalledWith('/picked/folder', { contents: caller.contents })
     expect(deps.notify).toHaveBeenCalledTimes(1)
   })
 
@@ -167,6 +167,15 @@ describe('extensionsDomain', () => {
     await handle({ type: 'installFromFile' }, caller)
     expect(deps.pickFolder).toHaveBeenCalledExactlyOnceWith(caller.contents)
     expect(deps.pickFile).toHaveBeenCalledExactlyOnceWith(caller.contents)
+  })
+
+  it('asks the install question in the extensions page\'s own tab, for a folder and for a file', async () => {
+    const { deps } = buildDeps({ developerModeEnabled: () => true, pickFolder: vi.fn(async () => '/picked/folder'), pickFile: vi.fn(async () => '/picked/x.crx') })
+    const { handle } = extensionsDomain(deps)
+    await handle({ type: 'loadUnpacked' }, caller)
+    await handle({ type: 'installFromFile' }, caller)
+    expect(deps.extensions.installFromFolder).toHaveBeenCalledWith('/picked/folder', { contents: caller.contents })
+    expect(deps.extensions.installFromFile).toHaveBeenCalledWith('/picked/x.crx', { contents: caller.contents })
   })
 
   it('loadUnpacked does not notify when the install itself is refused', async () => {
@@ -209,7 +218,7 @@ describe('extensionsDomain', () => {
     const { deps } = buildDeps({ developerModeEnabled: () => true })
     const { handle } = extensionsDomain(deps)
     await handle({ type: 'reload', id: UNPACKED.id }, caller)
-    expect(deps.extensions.installFromFolder).toHaveBeenCalledWith('/home/person/my-extension')
+    expect(deps.extensions.installFromFolder).toHaveBeenCalledWith('/home/person/my-extension', { contents: caller.contents })
     expect(deps.notify).toHaveBeenCalledTimes(1)
   })
 
@@ -225,7 +234,7 @@ describe('extensionsDomain', () => {
     const { handle } = extensionsDomain(deps)
     const reply = await handle({ type: 'installFromFile' }, caller)
     expect(reply).toEqual({ installed: true, entry: UNPACKED })
-    expect(deps.extensions.installFromFile).toHaveBeenCalledWith('/picked/file.zip')
+    expect(deps.extensions.installFromFile).toHaveBeenCalledWith('/picked/file.zip', { contents: caller.contents })
     expect(deps.notify).toHaveBeenCalledTimes(1)
   })
 

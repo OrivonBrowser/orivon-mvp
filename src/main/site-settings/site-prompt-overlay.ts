@@ -21,6 +21,7 @@ type Current = { mode: 'none' } | { mode: 'ask', id: string } | { mode: 'review'
 
 type Command =
   | { type: 'answer', id: string, answer: 'allow' | 'block' }
+  | { type: 'drawn', id: string }
   | { type: 'set', kind: SiteKind, value: SiteValue }
   | { type: 'reload' }
   | { type: 'settings' }
@@ -33,6 +34,7 @@ function asCommand (command: unknown): Command | undefined {
   const { type, ...rest } = command
   const keys = Object.keys(rest).sort().join(',')
   if ((type === 'reload' || type === 'settings') && keys === '') return { type }
+  if (type === 'drawn' && keys === 'id') return typeof rest['id'] === 'string' ? { type, id: rest['id'] } : undefined
   if (type === 'answer' && keys === 'answer,id') {
     const { id, answer } = rest
     return typeof id === 'string' && (answer === 'allow' || answer === 'block') ? { type, id, answer } : undefined
@@ -54,7 +56,8 @@ function asShown (payload: unknown): { mode: 'ask', id: string } | { mode: 'revi
 
 export function createSitePrompt ({ window, services, close, send }: OverlayWindow, access: PageAccess<Electron.WebContents> = pageAccess, now: () => number = Date.now): OverlayHandler {
   let current: Current = { mode: 'none' }
-  let shownAt = 0
+  // The guard counts from the page drawing the question, never from the show: the page loads cold, so the show can come long before anything is on screen.
+  let shownAt: number | null = null
   let stopWatching: (() => void) | undefined
 
   /** A new document ends the review; a page that only rewrites its own address does not. */
@@ -89,7 +92,7 @@ export function createSitePrompt ({ window, services, close, send }: OverlayWind
       current = { mode: 'none' }
       stopWatching?.()
       stopWatching = undefined
-      shownAt = now()
+      shownAt = null
       const shown = asShown(payload)
       if (shown?.mode === 'ask') {
         const ask = pendingAsk(shown.id)
@@ -113,10 +116,14 @@ export function createSitePrompt ({ window, services, close, send }: OverlayWind
     request: (command) => {
       const asked = asCommand(command)
       if (asked === undefined) return undefined
+      if (asked.type === 'drawn') {
+        if (current.mode === 'ask' && current.id === asked.id && shownAt === null) shownAt = now()
+        return true
+      }
       if (asked.type === 'answer') {
         if (current.mode !== 'ask' || current.id !== asked.id) return undefined
         const ask = pendingAsk(asked.id)
-        if (ask === undefined || now() - shownAt < ANSWER_GUARD_MS) return undefined
+        if (ask === undefined || shownAt === null || now() - shownAt < ANSWER_GUARD_MS) return undefined
         // The answer first, then the close: closing alone would settle the ask as "not now".
         ask.settle(asked.answer)
         close()
@@ -147,7 +154,7 @@ export function createSitePrompt ({ window, services, close, send }: OverlayWind
 
     // A resize moves the question under the person's pointer: the guard starts over.
     moved: () => {
-      if (current.mode !== 'ask') return
+      if (current.mode !== 'ask' || shownAt === null) return
       shownAt = now()
       send({ type: 'arm' })
     },

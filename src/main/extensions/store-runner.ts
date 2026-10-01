@@ -85,7 +85,8 @@ export function buildWebStoreHost (ctx: InstallContext): WebStoreHost {
         title: 'Remove extension',
         message: `Remove ${entry.name}?`,
         detail: '',
-        warning: false
+        warning: false,
+        accept: 'Remove'
       }
       const confirmed = await ctx.prompt(description)
       if (!confirmed) return

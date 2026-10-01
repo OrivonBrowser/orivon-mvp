@@ -77,6 +77,12 @@ export function createAskQuestion (deps: AskQuestionDeps): AskQuestion {
     return focused === undefined || tabId === null || tabId === undefined ? undefined : { window: focused, tabId }
   }
 
+  /** The tab's window was closed, or the tab was: nothing is left to draw the question in, and a tab slot would hold it for a tab that never comes back. */
+  function placeGone (place: { window: ShellWindow, tabId: string }): boolean {
+    if (place.window.window.isDestroyed()) return true
+    return !place.window.tabs.getState().tabs.some((tab) => tab.id === place.tabId)
+  }
+
   /** The chrome has reported where the address pill is and shows it; a page holding the whole screen is asked to let go first. Resolves false at the timeout, or when the question was ended meanwhile. */
   async function toolbarInView (window: ShellWindow, tabId: string, ended: () => boolean): Promise<boolean> {
     const inView = (): boolean => promptAnchor(window) !== undefined && window.chrome.getVisible()
@@ -121,6 +127,7 @@ export function createAskQuestion (deps: AskQuestionDeps): AskQuestion {
       const kiosk = deps.kiosk
       const show = (): void => {
         if (settled) return
+        if (placeGone(place)) { settle(cancel); return }
         id = holdQuestion(place.window, spec, settle)
         handle = requestSlot({
           window: place.window,
@@ -133,7 +140,7 @@ export function createAskQuestion (deps: AskQuestionDeps): AskQuestion {
         })
       }
       if (kiosk || !needsToolbar(spec)) { show(); return }
-      void toolbarInView(place.window, place.tabId, () => settled).then((ready) => {
+      void toolbarInView(place.window, place.tabId, () => settled || placeGone(place)).then((ready) => {
         if (ready) show()
         else settle(cancel)
       })

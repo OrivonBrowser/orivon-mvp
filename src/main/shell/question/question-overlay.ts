@@ -57,6 +57,14 @@ function asAnswer (command: unknown): Answer | undefined {
   return { id, button, text, checkbox }
 }
 
+/** The page's report that the question is in its document: `{ type: 'drawn', id }` and nothing else. */
+function drawnId (command: unknown): string | undefined {
+  if (typeof command !== 'object' || command === null) return undefined
+  const record = command as Record<string, unknown>
+  if (record['type'] !== 'drawn' || Object.keys(record).length !== 2) return undefined
+  return typeof record['id'] === 'string' ? record['id'] : undefined
+}
+
 function idOf (payload: unknown): string | undefined {
   if (typeof payload !== 'object' || payload === null) return undefined
   const { id } = payload as { id?: unknown }
@@ -66,23 +74,29 @@ function idOf (payload: unknown): string | undefined {
 export function createQuestionPanel (name: string, now: () => number = Date.now): (win: OverlayWindow) => OverlayHandler {
   return ({ window, close, send }) => {
     let shownId: string | null = null
-    let shownAt = 0
+    // The guard counts from the page drawing the question, never from the show: the page loads cold, so the show can come long before anything is on screen.
+    let shownAt: number | null = null
     return {
       show: (payload): QuestionView | undefined => {
         const entry = heldQuestion(idOf(payload))
         if (entry === undefined || entry.window !== window) { shownId = null; return undefined }
         shownId = entry.id
-        shownAt = now()
+        shownAt = null
         return viewOf(entry.id, entry.spec)
       },
 
       request: (command) => {
+        const drawn = drawnId(command)
+        if (drawn !== undefined) {
+          if (drawn === shownId && shownAt === null) shownAt = now()
+          return true
+        }
         const answer = asAnswer(command)
         const entry = answer === undefined || answer.id !== shownId ? undefined : heldQuestion(answer.id)
         if (answer === undefined || entry === undefined) return undefined
         const { spec } = entry
         if (answer.button < 0 || answer.button >= spec.buttons.length) return undefined
-        if (spec.guarded?.includes(answer.button) === true && now() - shownAt < GUARD_MS) return undefined
+        if (spec.guarded?.includes(answer.button) === true && (shownAt === null || now() - shownAt < GUARD_MS)) return undefined
         if (answer.text !== undefined && spec.input === undefined) return undefined
         if (answer.checkbox !== undefined && spec.checkboxLabel === undefined) return undefined
         entry.settle({
@@ -96,7 +110,7 @@ export function createQuestionPanel (name: string, now: () => number = Date.now)
 
       // A resize or a layout change moves the panel under the person's pointer: the guard starts over.
       moved: () => {
-        if (shownId === null) return
+        if (shownId === null || shownAt === null) return
         shownAt = now()
         send({ type: 'arm' })
       },

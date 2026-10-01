@@ -1,5 +1,6 @@
 // The panel every question is drawn in. Main sends the whole question on each
-// show and enforces the guard itself; the page only names a button. A
+// show and enforces the guard itself, counting from the page's report that the
+// question is drawn; the page only names a button. A
 // consent question starts focus on the panel, never a button, so Enter
 // accepts nothing; a guarded button looks disabled for the guard's length.
 import { h, replaceChildren } from '../../pages/shared/dom.js'
@@ -15,12 +16,23 @@ export const questionPage: OverlayPage = {
     content.append(root)
     let armTimer: ReturnType<typeof setTimeout> | undefined
     let guardMs = 0
+    let drawing = 0
 
+    /** Buttons look not ready, and a guarded one is not sent, for the guard's length from now. */
     function arm (): void {
       clearTimeout(armTimer)
       if (guardMs <= 0) return
       root.classList.add('arming')
       armTimer = setTimeout(() => { root.classList.remove('arming') }, guardMs)
+    }
+
+    /** Main starts its clock when it takes this report, so the page's own look-ready timer starts from the reply, never before it. */
+    function reportDrawn (id: string): void {
+      clearTimeout(armTimer)
+      if (guardMs <= 0) return
+      root.classList.add('arming')
+      const mine = ++drawing
+      void overlay.request({ type: 'drawn', id }).then(() => { if (mine === drawing) arm() }, () => { if (mine === drawing) arm() })
     }
 
     overlay.onEvent((event) => {
@@ -32,6 +44,7 @@ export const questionPage: OverlayPage = {
       let text: HTMLInputElement | undefined
       let tick: HTMLInputElement | undefined
       const answer = (button: number): void => {
+        if (view.guarded.includes(button) && root.classList.contains('arming')) return
         void overlay.request({
           id: view.id,
           button,
@@ -72,7 +85,7 @@ export const questionPage: OverlayPage = {
         h('div', { className: 'btn-row' }, ...buttons))
       if (!page && view.origin === undefined) root.querySelector('.q-origin')?.remove()
       guardMs = view.guarded.length > 0 ? view.guardMs : 0
-      arm()
+      reportDrawn(view.id)
       if (view.focus === 'dialog') root.focus()
       else if (text !== undefined) { text.focus(); text.select() }
       else root.querySelector<HTMLElement>(`[data-button="${view.focus}"]`)?.focus()

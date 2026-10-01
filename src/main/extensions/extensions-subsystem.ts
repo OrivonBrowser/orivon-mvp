@@ -11,7 +11,7 @@ import { session, webContents } from 'electron'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { publishExtensions } from '../registry.js'
 import { readRegistry } from './registry-runner.js'
-import { installFromFile, installFromFolder, type InstallContext, type InstallOutcome } from './install-runner.js'
+import { installFromFile, installFromFolder, type InstallContext, type InstallOutcome, type InstallWhere } from './install-runner.js'
 import { setEnabled, uninstall } from './install-lifecycle.js'
 import { createExtensionInstallPrompt } from './extension-install-prompt.js'
 import { createExtensionHost } from './extension-host.js'
@@ -34,8 +34,8 @@ import type { ExtensionCommandKeys } from './extension-commands-runner.js'
 import { installDnrWebRequestHandlers } from './dnr-webrequest.js'
 
 export interface ExtensionsApi {
-  readonly installFromFolder: (dir: string) => Promise<InstallOutcome>
-  readonly installFromFile: (filePath: string) => Promise<InstallOutcome>
+  readonly installFromFolder: (dir: string, where?: InstallWhere) => Promise<InstallOutcome>
+  readonly installFromFile: (filePath: string, where?: InstallWhere) => Promise<InstallOutcome>
   readonly uninstall: (id: string) => Promise<void>
   readonly setEnabled: (id: string, enabled: boolean) => Promise<void>
   readonly list: () => readonly InstalledExtension[]
@@ -132,8 +132,8 @@ export const extensionsSubsystem: Subsystem = {
     const store = ctx.privateSession ? refusingStore : await startWebStore(install, preloadPath)
     installStoreTestHook(store)
     const extensionsApi: ExtensionsApi = {
-      installFromFolder: async (dir) => await installFromFolder(install, dir),
-      installFromFile: async (filePath) => await installFromFile(install, filePath),
+      installFromFolder: async (dir, where) => await installFromFolder(install, dir, where),
+      installFromFile: async (filePath, where) => await installFromFile(install, filePath, where),
       uninstall: async (id) => { await uninstall(install, id) },
       setEnabled: async (id, enabled) => { await setEnabled(install, id, enabled) },
       list: () => readRegistry(userDataPath),

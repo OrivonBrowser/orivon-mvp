@@ -25,10 +25,13 @@ function rig (options: { active?: string, kiosk?: boolean, chromeVisible?: boole
   const shown: Shown[] = []
   const closes: string[] = []
   const handlers = new Map<string, OverlayHandler>()
-  const tabs = { getState: () => ({ activeTabId: active }), exitHtmlFullscreen: vi.fn() }
+  const openTabs = new Set(['t1', 'other'])
+  let windowGone = false
+  const tabs = { getState: () => ({ activeTabId: active, tabs: [...openTabs].map((id) => ({ id })) }), exitHtmlFullscreen: vi.fn() }
   const chrome = { getVisible: () => chromeVisible }
   let chromeVisible = options.chromeVisible ?? true
   const window = {
+    window: { isDestroyed: () => windowGone },
     tabs,
     chrome,
     overlays: {
@@ -61,9 +64,12 @@ function rig (options: { active?: string, kiosk?: boolean, chromeVisible?: boole
   const ask = createAskQuestion({ windows: registry, kiosk: options.kiosk === true, native })
   const idShown = (): string => shown.at(-1)?.view?.['id'] as string
   const press = (button: number, id = idShown()): void => { handlers.get(shown.at(-1)?.overlay ?? '')?.request({ id, button }) }
+  const drawn = (id = idShown()): void => { handlers.get(shown.at(-1)?.overlay ?? '')?.request({ type: 'drawn', id }) }
   return {
-    window, contents, ask, shown, closes, native, tabs, press, idShown,
+    window, contents, ask, shown, closes, native, tabs, press, idShown, drawn,
     activate: (id: string) => { active = id },
+    closeTab: (id: string) => { openTabs.delete(id) },
+    closeWindow: () => { windowGone = true },
     setChromeVisible: (visible: boolean) => { chromeVisible = visible },
     report: () => { promptAnchorReport(PILL, { window } as never) }
   }
@@ -80,6 +86,7 @@ describe('askQuestion', () => {
     expect(r.shown).toHaveLength(1)
     expect(r.shown[0]).toMatchObject({ overlay: QUESTION_OVERLAY, anchor: { x: PILL.x, y: PILL.y, width: PILL.width, height: PILL.height - 14 } })
     expect(r.shown[0]?.view).toMatchObject({ kind: 'consent', message: 'Allow?', guarded: [0] })
+    r.drawn()
     await vi.advanceTimersByTimeAsync(GUARD_MS)
     r.press(0)
     expect(await answer).toEqual({ response: 0, checkboxChecked: false })
@@ -151,6 +158,42 @@ describe('askQuestion', () => {
     await vi.advanceTimersByTimeAsync(0)
     tabSlotEvents.tabClosed(r.window, 't1')
     expect(await answer).toEqual({ response: 1, checkboxChecked: false })
+  })
+
+  it('resolves a cancel when the tab closes while the question waits for the toolbar, and never shows it', async () => {
+    const r = rig({ chromeVisible: false })
+    const answer = r.ask({ contents: r.contents }, CONSENT)
+    await vi.advanceTimersByTimeAsync(100)
+    r.closeTab('t1')
+    tabSlotEvents.tabClosed(r.window, 't1')
+    await vi.advanceTimersByTimeAsync(100)
+    expect(await answer).toEqual({ response: 1, checkboxChecked: false })
+    r.setChromeVisible(true)
+    await vi.advanceTimersByTimeAsync(200)
+    expect(r.shown).toHaveLength(0)
+  })
+
+  it('resolves a cancel when the window closes while the question waits for the toolbar, and never shows it', async () => {
+    const r = rig({ chromeVisible: false })
+    const answer = r.ask({ contents: r.contents }, CONSENT)
+    await vi.advanceTimersByTimeAsync(100)
+    r.closeWindow()
+    await vi.advanceTimersByTimeAsync(100)
+    expect(await answer).toEqual({ response: 1, checkboxChecked: false })
+    r.setChromeVisible(true)
+    await vi.advanceTimersByTimeAsync(200)
+    expect(r.shown).toHaveLength(0)
+  })
+
+  it('resolves a cancel, shows nothing, when the tab is gone by the time the toolbar is in view', async () => {
+    const r = rig({ reported: false })
+    const answer = r.ask({ contents: r.contents }, CONSENT)
+    await vi.advanceTimersByTimeAsync(60)
+    r.closeTab('t1')
+    r.report()
+    await vi.advanceTimersByTimeAsync(100)
+    expect(await answer).toEqual({ response: 1, checkboxChecked: false })
+    expect(r.shown).toHaveLength(0)
   })
 
   it('resolves a cancel when aborted, shown or still waiting, and never shows an aborted one', async () => {
@@ -263,6 +306,9 @@ describe('askQuestion', () => {
     let settled = false
     void r.ask({ contents: r.contents }, CONSENT).then(() => { settled = true })
     await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(GUARD_MS * 4)
+    r.press(0)
+    r.drawn()
     await vi.advanceTimersByTimeAsync(GUARD_MS - 1)
     r.press(0)
     await vi.advanceTimersByTimeAsync(0)

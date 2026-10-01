@@ -47,6 +47,11 @@ describe('createExtensionInstallPrompt', () => {
     expect(spec.kind).toBe('consent')
   })
 
+  it('labels the agreeing button with the description\'s own word, so a removal does not say Add extension', async () => {
+    await createExtensionInstallPrompt()({ ...DESCRIPTION, accept: 'Remove' })
+    expect(specOf().buttons).toEqual(['Remove', 'Cancel'])
+  })
+
   it('draws a warning panel when the description warns, and a plain one otherwise', async () => {
     await createExtensionInstallPrompt()(DESCRIPTION)
     expect(specOf().warning).toBe(true)

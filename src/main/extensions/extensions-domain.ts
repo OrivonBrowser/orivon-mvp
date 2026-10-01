@@ -91,17 +91,17 @@ export function extensionsDomain (deps: ExtensionsDomainDeps): InternalDomain {
         case 'loadUnpacked': {
           if (!deps.developerModeEnabled()) return undefined
           const dir = await deps.pickFolder(caller.contents)
-          return dir === undefined ? CANCELLED : await install(deps.extensions.installFromFolder(dir))
+          return dir === undefined ? CANCELLED : await install(deps.extensions.installFromFolder(dir, { contents: caller.contents }))
         }
         case 'reload': {
           if (!deps.developerModeEnabled()) return undefined
           const entry = findExtension(entries(), request.id)
           if (entry === undefined || entry.source.kind !== 'unpacked') return undefined
-          return await install(deps.extensions.installFromFolder(entry.source.from))
+          return await install(deps.extensions.installFromFolder(entry.source.from, { contents: caller.contents }))
         }
         case 'installFromFile': {
           const file = await deps.pickFile(caller.contents)
-          return file === undefined ? CANCELLED : await install(deps.extensions.installFromFile(file))
+          return file === undefined ? CANCELLED : await install(deps.extensions.installFromFile(file, { contents: caller.contents }))
         }
         case 'checkForUpdates': {
           await deps.extensions.checkForUpdates()

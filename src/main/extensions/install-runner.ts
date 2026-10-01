@@ -37,7 +37,8 @@ import { generateId } from '../../../vendor/electron-chrome-web-store/src/browse
 export { resolveSlotKey } from './registry-runner.js'
 
 /** `where.contents` is the page the person asked from, when one did: the question is drawn in its tab. Without it the question goes to the tab in front. */
-export type InstallPrompt = (description: ExtensionInstallDescription, where?: { readonly contents?: object | undefined }) => Promise<boolean>
+export type InstallWhere = { readonly contents?: object | undefined }
+export type InstallPrompt = (description: ExtensionInstallDescription, where?: InstallWhere) => Promise<boolean>
 
 export interface InstallContext {
   readonly userDataPath: string
@@ -110,7 +111,7 @@ export interface PendingInstall {
   readonly write: (targetDir: string, manifestJson: string) => void
 }
 
-export async function finishInstall (ctx: InstallContext, pending: PendingInstall): Promise<InstallOutcome> {
+export async function finishInstall (ctx: InstallContext, pending: PendingInstall, where?: InstallWhere): Promise<InstallOutcome> {
   const refused = refusePrivateInstall(ctx)
   if (refused !== undefined) return refused
   const manifestResult = readExtensionManifest(pending.rawManifest)
@@ -118,7 +119,7 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
   const { facts } = manifestResult
 
   const description = describeExtensionInstall(facts, pending.source.kind as ExtensionInstallSource)
-  const allowed = pending.preApproved === true || await ctx.prompt(description)
+  const allowed = pending.preApproved === true || await ctx.prompt(description, where)
   if (!allowed) return { installed: false, reason: 'declined by the person' }
 
   const { manifest, stripped } = loadableManifest(pending.rawManifest)
@@ -290,7 +291,7 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
 }
 
 /** Installs an unpacked extension from a folder the person picked. */
-export async function installFromFolder (ctx: InstallContext, dir: string): Promise<InstallOutcome> {
+export async function installFromFolder (ctx: InstallContext, dir: string, where?: InstallWhere): Promise<InstallOutcome> {
   const refused = refusePrivateInstall(ctx)
   if (refused !== undefined) return refused
   const rawManifest = readManifestObject(JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')), dir)
@@ -300,7 +301,7 @@ export async function installFromFolder (ctx: InstallContext, dir: string): Prom
     updater: { kind: 'none', reason: 'unpacked extensions have no update mechanism' },
     slot: slotHash(Buffer.from(dir)),
     write: (targetDir, manifestJson) => { writeFolderCopy(dir, targetDir, manifestJson) }
-  })
+  }, where)
 }
 
 /**
@@ -310,7 +311,7 @@ export async function installFromFolder (ctx: InstallContext, dir: string): Prom
  * (crx.ts's own doc) is required. A `.zip` carries no signature at all: its
  * slot is derived from the file's own bytes, never from a claimed identity.
  */
-export async function installFromFile (ctx: InstallContext, filePath: string): Promise<InstallOutcome> {
+export async function installFromFile (ctx: InstallContext, filePath: string, where?: InstallWhere): Promise<InstallOutcome> {
   const refused = refusePrivateInstall(ctx)
   if (refused !== undefined) return refused
   const bytes = Buffer.from(readFileSync(filePath))
@@ -338,6 +339,6 @@ export async function installFromFile (ctx: InstallContext, filePath: string): P
       unpackZip(archive, targetDir)
       writeManifestOver(targetDir, manifestJson)
     }
-  })
+  }, where)
 }
 

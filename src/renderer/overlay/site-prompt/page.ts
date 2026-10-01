@@ -28,12 +28,20 @@ export const sitePromptPage: OverlayPage = {
     // The bubble closes when the person goes elsewhere; a question stays until it is answered.
     window.addEventListener('blur', () => { if (reviewing) overlay.closeOnBlur() })
 
-    // Main refuses an answer inside the guard; the buttons only look not ready for as long.
+    // Main refuses an answer inside the guard, counting from the report that the question is drawn; the page holds its
+    // own buttons back for as long too, and starts that timer from main's reply so it never ends before main's does.
     let guardMs = 0
+    let drawing = 0
     function arm (): void {
       clearTimeout(armTimer)
       root.classList.add('arming')
       armTimer = setTimeout(() => { root.classList.remove('arming') }, guardMs)
+    }
+    function reportDrawn (id: string): void {
+      clearTimeout(armTimer)
+      root.classList.add('arming')
+      const mine = ++drawing
+      void overlay.request({ type: 'drawn', id }).then(() => { if (mine === drawing) arm() }, () => { if (mine === drawing) arm() })
     }
     overlay.onEvent((event) => {
       if (reviewing || typeof event !== 'object' || event === null || (event as { type?: unknown }).type !== 'arm') return
@@ -41,7 +49,10 @@ export const sitePromptPage: OverlayPage = {
     })
 
     function drawAsk (view: AskView): void {
-      const answer = (value: 'allow' | 'block'): void => { void overlay.request({ type: 'answer', id: view.id, answer: value }) }
+      const answer = (value: 'allow' | 'block'): void => {
+        if (root.classList.contains('arming')) return
+        void overlay.request({ type: 'answer', id: view.id, answer: value })
+      }
       const block = h('button', { type: 'button', className: 'btn', onclick: () => { answer('block') } }, 'Block')
       const allow = h('button', { type: 'button', className: 'btn primary', onclick: () => { answer('allow') } }, 'Allow')
       const close = h('button', { type: 'button', className: 'btn icon sp-close', onclick: () => { overlay.close() } }, closeIcon())
@@ -62,7 +73,7 @@ export const sitePromptPage: OverlayPage = {
         close
       )
       guardMs = view.guardMs
-      arm()
+      reportDrawn(view.id)
     }
 
     function drawReview (view: ReviewView, changed: boolean): void {
@@ -75,6 +86,8 @@ export const sitePromptPage: OverlayPage = {
           h('button', { type: 'button', className: 'link-btn', onclick: () => { void overlay.request({ type: 'settings' }) } }, 'Site settings'))
       ]
       root.classList.add('review')
+      drawing++
+      clearTimeout(armTimer)
       root.classList.remove('arming')
       root.setAttribute('aria-labelledby', 'sp-title')
       root.removeAttribute('aria-describedby')

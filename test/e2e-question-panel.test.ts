@@ -64,6 +64,17 @@ it('opens in the window across the toolbar line, ignores a rushed click and a ke
 
     await runCommand(chrome, 'share.email')
     const panel = await waitQuestion(app)
+    // A press in the first half second. The page's own look-ready class is cleared first, so what refuses it is main's guard,
+    // which counts from the page drawing the question and so is still running however slowly the page loaded.
+    await panel.evaluate(() => {
+      document.querySelector('.q')?.classList.remove('arming')
+      document.querySelector<HTMLButtonElement>('.q .btn.primary')?.click()
+    })
+    await delay(100)
+    expect(await questionGone(app)).toBe(false)
+    expect(await opened(app)).toEqual([])
+    // The page's class is gone, so the page no longer says when main's guard has run out: wait it out before a real answer.
+    await delay(500)
     const said = await readQuestion(panel)
     expect(said.message).toBe('Open your mail program with this page\'s link?')
     expect(said.buttons).toEqual(['Cancel', 'Allow'])
@@ -78,11 +89,6 @@ it('opens in the window across the toolbar line, ignores a rushed click and a ke
 
     // Focus is on the panel, never a button; a key typed at the page answers nothing.
     expect(await panel.evaluate(() => document.activeElement?.classList.contains('q'))).toBe(true)
-    if (await panel.evaluate(() => document.querySelector('.q')?.classList.contains('arming') === true)) {
-      await panel.evaluate(() => { document.querySelector<HTMLButtonElement>('.q .btn.primary')?.click() })
-      await delay(100)
-      expect(await questionGone(app)).toBe(false)
-    }
     await view.keyboard.press('Enter')
     await view.keyboard.press('Space')
     await delay(300)

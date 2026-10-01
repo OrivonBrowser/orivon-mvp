@@ -130,9 +130,11 @@ describe('buildWebStoreHost().uninstall', () => {
   it('removes a store entry once the person confirms', async () => {
     readRegistry.mockReturnValueOnce([STORE_ENTRY])
     let seenMessage: string | undefined
-    const host = buildWebStoreHost(ctxWith(async (description) => { seenMessage = description.message; return true }))
+    let seenAccept: string | undefined
+    const host = buildWebStoreHost(ctxWith(async (description) => { seenMessage = description.message; seenAccept = description.accept; return true }))
     await host.uninstall(STORE_ENTRY.id)
     expect(seenMessage).toBe(`Remove ${STORE_ENTRY.name}?`)
+    expect(seenAccept).toBe('Remove')
     expect(uninstallMock).toHaveBeenCalledWith(expect.anything(), STORE_ENTRY.id)
   })
 })

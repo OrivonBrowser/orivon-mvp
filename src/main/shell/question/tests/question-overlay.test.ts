@@ -17,6 +17,9 @@ function rig (spec: QuestionSpec = SPEC) {
   return { clock, window, close, send, handler, results, id }
 }
 
+/** The page reports that it has drawn what it was shown. */
+const draw = (r: ReturnType<typeof rig>, id: string = r.id): unknown => r.handler.request({ type: 'drawn', id })
+
 describe('the question overlays', () => {
   it('are bar panels that take focus, hide on a tab switch and never close on blur', () => {
     for (const def of [questionOverlay, questionSheetOverlay]) {
@@ -45,9 +48,10 @@ describe('the question handler', () => {
     expect(other.show?.({ id: r.id })).toBeUndefined()
   })
 
-  it('ignores a guarded button until the guard has passed', () => {
+  it('ignores a guarded button until the guard has passed, counted from the page drawing', () => {
     const r = rig()
     r.handler.show?.({ id: r.id })
+    draw(r)
     r.clock.now += GUARD_MS - 1
     r.handler.request({ id: r.id, button: 0 })
     expect(r.results).toEqual([])
@@ -56,6 +60,41 @@ describe('the question handler', () => {
     r.handler.request({ id: r.id, button: 0 })
     expect(r.results).toEqual([{ response: 0, checkboxChecked: false }])
     expect(r.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores a guarded button until the page has drawn, however long since the show', () => {
+    const r = rig()
+    r.handler.show?.({ id: r.id })
+    r.clock.now += GUARD_MS * 10
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.results).toEqual([])
+    draw(r)
+    r.clock.now += GUARD_MS - 1
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.results).toEqual([])
+    r.clock.now += 1
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.results).toEqual([{ response: 0, checkboxChecked: false }])
+  })
+
+  it('takes a report of drawing only for the question on screen, once', () => {
+    const r = rig()
+    draw(r)
+    r.clock.now += GUARD_MS
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.results).toEqual([])
+    r.handler.show?.({ id: r.id })
+    draw(r, 'someone-else')
+    r.handler.request({ type: 'drawn', id: r.id, extra: 1 })
+    r.clock.now += GUARD_MS
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.results).toEqual([])
+    draw(r)
+    r.clock.now += GUARD_MS - 1
+    draw(r)
+    r.clock.now += 1
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.results).toEqual([{ response: 0, checkboxChecked: false }])
   })
 
   it('takes an unguarded button at once', () => {
@@ -68,8 +107,10 @@ describe('the question handler', () => {
   it('starts the guard over on every show, so a tab switch back does not leave a ready button', () => {
     const r = rig()
     r.handler.show?.({ id: r.id })
+    draw(r)
     r.clock.now += GUARD_MS * 4
     r.handler.show?.({ id: r.id })
+    draw(r)
     r.handler.request({ id: r.id, button: 0 })
     expect(r.results).toEqual([])
   })
@@ -77,6 +118,7 @@ describe('the question handler', () => {
   it('starts the guard over when moved, and tells the page', () => {
     const r = rig()
     r.handler.show?.({ id: r.id })
+    draw(r)
     r.clock.now += GUARD_MS
     r.handler.moved?.()
     expect(r.send).toHaveBeenCalledWith({ type: 'arm' })
@@ -92,6 +134,7 @@ describe('the question handler', () => {
   ])('ignores %s', (_name, command) => {
     const r = rig()
     r.handler.show?.({ id: r.id })
+    draw(r)
     r.clock.now += GUARD_MS
     const bound = typeof command === 'object' && !('id' in command) ? { id: r.id, ...command } : command
     r.handler.request(bound)
@@ -104,6 +147,7 @@ describe('the question handler', () => {
     const second: QuestionResult[] = []
     const otherId = holdQuestion(r.window, SPEC, (result) => { second.push(result) })
     r.handler.show?.({ id: r.id })
+    draw(r)
     r.clock.now += GUARD_MS
     r.handler.request({ id: otherId, button: 1 })
     expect(second).toEqual([])
