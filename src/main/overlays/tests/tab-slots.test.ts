@@ -282,3 +282,24 @@ describe('a failing overlay', () => {
     }
   })
 })
+
+describe('hasAsk', () => {
+  it('is true for a tab with an ask shown or waiting, and false once it has ended', () => {
+    const { slots, flush } = slotsWithQueue()
+    const fake = fakeWindow('a')
+    expect(slots.hasAsk(fake.window, 'b')).toBe(false)
+
+    const waiting = slots.requestSlot(ask(fake, { tabId: 'b' }).ask)
+    expect(slots.hasAsk(fake.window, 'b')).toBe(true)
+    expect(slots.hasAsk(fake.window, 'a')).toBe(false)
+
+    const shown = slots.requestSlot(ask(fake).ask)
+    expect(slots.hasAsk(fake.window, 'a')).toBe(true)
+
+    waiting.cancel()
+    shown.cancel()
+    flush()
+    expect(slots.hasAsk(fake.window, 'a')).toBe(false)
+    expect(slots.hasAsk(fake.window, 'b')).toBe(false)
+  })
+})
