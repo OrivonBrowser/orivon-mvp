@@ -23,17 +23,17 @@ function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: bo
   const window = { close: vi.fn(), setFullScreen: vi.fn(), isFullScreen: vi.fn(() => false), isAlwaysOnTop: vi.fn(() => false), setAlwaysOnTop: vi.fn(), getBounds: vi.fn(() => ({ x: 10, y: 20, width: 800, height: 600 })) }
   const target = {
     window,
-    chrome: { webContents: { focus: vi.fn(), send, isDestroyed: () => false } },
+    chrome: { webContents: { focus: vi.fn(), send, isDestroyed: () => false, isFocused: () => false } },
     tabs: {
       getState: () => ({ tabs, activeTabId }),
       tabCount: tabs.length,
-      splits: { toggle: calls['toggle'], focusOther: calls['focusOther'], swap: calls['swap'], rotate: calls['rotate'], groups: { partnerOf: () => null } },
+      splits: { toggle: calls['toggle'], focusOther: calls['focusOther'], swap: calls['swap'], rotate: calls['rotate'], groups: { partnerOf: (id: string) => tabs.find((t) => t.id === id)?.splitWith ?? null, pairs: () => [] } },
       record: (id: string) => ({ pinned: tabs.find((t) => t.id === id)?.pinned, muted: tabs.find((t) => t.id === id)?.muted, view: { webContents: { isDestroyed: () => false, setAudioMuted: calls['setAudioMuted'] } } }),
       ids: () => tabs.map((t) => t.id),
       hasRoom: () => true,
       liveWebContents: () => undefined,
       faviconFor: () => 'data:icon',
-      activeWebContents: () => ({ reloadIgnoringCache: calls['reloadIgnoringCache'], stop: calls['stop'] }),
+      activeWebContents: () => ({ reloadIgnoringCache: calls['reloadIgnoringCache'], stop: calls['stop'], focus: vi.fn() }),
       ...calls
     },
     overlays: { show: calls['overlayShow'], toggle: calls['overlayToggle'], isOpen: () => false, close: vi.fn(), send: vi.fn() },
@@ -371,6 +371,15 @@ describe('runCommand', () => {
       runCommand('tab.moveRight', target, deps)
       expect(calls['moveTab']?.mock.calls, active).toEqual([[active, 0], [active, 2]])
     }
+  })
+
+  it('starts a group round the tab in front and asks the chrome to open its bubble, and ungroups only a tab in a group', () => {
+    const { target, send, deps, calls } = harness([tab('a'), tab('b')], 'b')
+    runCommand('tab.group', target, deps)
+    expect(send).toHaveBeenCalledWith(expect.any(String), { type: 'module', module: 'tab-groups', payload: { type: 'menu', id: expect.stringMatching(/^g-\d+$/) } })
+    calls['moveTab']?.mockClear()
+    runCommand('tab.ungroup', target, deps)
+    expect(calls['moveTab']).not.toHaveBeenCalled()
   })
 
   it('works the split of the active tab', () => {

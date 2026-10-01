@@ -1801,6 +1801,33 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
+### A330: Nothing marks a tab that uses a granted camera or microphone **[AI-REC]**
+
+- **Question:** The memory saver asks `mediaInUse`, but nothing sets it: the permission gate allowed only tab capture when the check was
+  written. A site that is granted a camera or microphone can sit in a call with no sound and no capture, and be put to sleep.
+- **Why it matters:** sleeping a tab in a call ends the call. The memory saver is on by default.
+- **Options:** the grant path calls `markMediaInUse` and clears it when the stream ends (rec.); treat any tab holding the grant as awake.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** the camera and microphone per-site asks, once they are on
+
+### A331: A sleeping tab does not ask a page's own "leave this page" question **[RESEARCH]**
+
+- **Question:** A page cannot be asked about `beforeunload` from an isolated world, and the swapped-out view's reply is answered quietly,
+  so a tab holding unsaved work in a canvas, a frame or a shadow tree can sleep without its page being asked. Is there a way to ask?
+- **Why it matters:** the one-second check for typed-in fields misses those pages, and the loss is silent.
+- **Options:** keep the field check only (current); probe a main-world listener count without running page code; sleep only pages seen in front for under an hour.
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A332: The side panel's edge and its relayout cost are measured under a driver only **[RESEARCH]**
+
+- **Question:** Dragging the panel's edge with a real pointer over the page's view, and the cost of resizing a heavy page live, were
+  checked with Playwright's synthetic pointer on the panel's own page, and F6 into the panel only under xvfb. Do they hold on a desktop?
+- **Why it matters:** if native pointer capture is lost over the page, the edge sticks; a heavy page may stutter while the width changes.
+- **Options:** a manual pass on Linux, Windows and macOS (rec.); a cursor-position timer in main; apply the width on release with a guide.
+- **Who decides:** research first
+- **Blocks:** nothing
+
 ### A334: `chrome.history` is exact only for the newest 200 pages **[AI-REC]**
 
 - **Question:** `onVisitRemoved` compares the newest 200 pages, `getVisits` is one visit per address and `typedCount` is 0.
@@ -1844,4 +1871,13 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Why it matters:** the changelog and the scope row say content blockers work; only a fixture has shown it.
 - **Options:** run `e2e-extensions-real` with the four extensions extracted and record the result (rec.).
 - **Who decides:** research first
+- **Blocks:** nothing
+
+### A339: The side panel lists a reading list that nothing can fill **[OWNER]**
+
+- **Question:** The reading list was taken out (no command, button or menu row saves to it), but the side panel still has a Reading list view
+  that reads the bookmark file's reading-list root. Should the view stay, or leave until the reading list is built?
+- **Why it matters:** the picker shows a view that is always empty, with a line saying pages you save for later appear there.
+- **Options:** remove the view and its row code now (rec.); keep it for when the reading list lands; hide it while the root is empty.
+- **Who decides:** owner
 - **Blocks:** nothing

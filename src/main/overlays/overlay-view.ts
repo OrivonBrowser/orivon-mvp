@@ -44,6 +44,8 @@ export interface OverlayViewSpec {
   /** The caller's own `import.meta.dirname`, as `rendererEntryUrl` takes it. */
   readonly dirname: string
   readonly def: Pick<OverlayDef, 'name' | 'surface'>
+  /** No rounded corners: a view that sits flush against the window's edge. */
+  readonly square?: boolean
   readonly port: OverlayPort
   readonly onBlur: () => void
   readonly onFocus: () => void
@@ -82,7 +84,7 @@ export function createOverlayView (spec: OverlayViewSpec): OverlayViewHandle {
   recordViewBackground(contents.id, color)
   // The preload is privileged: a view holding it must never end up on a document other than `url`.
   lockNavigation(contents, url)
-  view.setBorderRadius(CORNER_RADIUS)
+  view.setBorderRadius(spec.square === true ? 0 : CORNER_RADIUS)
   registerOverlayIpc(contents, url, spec.port)
   // Not from inside the native call that raised it: a window shrunk under an open popup blurs the popup while the resize is still running, and taking the view out of the window there kills the process.
   contents.on('blur', () => { setImmediate(spec.onBlur) })

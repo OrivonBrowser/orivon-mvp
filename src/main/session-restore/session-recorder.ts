@@ -2,8 +2,9 @@
 // It builds nothing until the store asks: the windows change far faster than the file is written.
 import type { ShellWindow } from '../shell/window-registry.js'
 import type { ClosedStack } from './closed-stack.js'
+import { groupsFor } from '../tab-groups/groups-model.js'
 import { MAX_SESSION_WINDOWS, MAX_WINDOW_TABS, cleanBounds } from './session-types.js'
-import type { SavedWindow } from './session-types.js'
+import type { SavedGroup, SavedWindow } from './session-types.js'
 import type { SessionLog } from './session-store.js'
 import { snapshotOf } from './tab-snapshot.js'
 import type { TabSnapshot } from './tab-snapshot.js'
@@ -19,15 +20,44 @@ export function snapshotWindow (shell: ShellWindow, snapshot: typeof snapshotOf 
   if (window.isDestroyed()) return null
   const activeId = tabs.getState().activeTabId
   const saved: TabSnapshot[] = []
+  const groups = groupsFor(tabs)
+  const savedGroups: SavedGroup[] = []
+  const savedGroupIds: string[] = []
   // Where the tab in front would sit among the saved ones, so a front tab that is not saved (the new-tab page) leaves a neighbour in front.
   let active = 0
+  let activeKept = false
   for (const id of tabs.ids()) {
     if (id === activeId) active = saved.length
     const record = tabs.record(id)
     const tab = record === undefined ? null : snapshot(record, record.view.webContents)
-    if (tab !== null && saved.length < MAX_WINDOW_TABS) saved.push(tab)
+    if (tab === null || saved.length >= MAX_WINDOW_TABS) continue
+    if (id === activeId) activeKept = true
+    const group = record?.groupId == null ? undefined : groups.get(record.groupId)
+    if (group === undefined || record?.pinned === true) {
+      saved.push(tab)
+      continue
+    }
+    let at = savedGroupIds.indexOf(group.id)
+    if (at === -1) {
+      at = savedGroupIds.push(group.id) - 1
+      savedGroups.push({ title: group.title, color: group.color, collapsed: group.collapsed })
+    }
+    saved.push({ ...tab, group: at })
   }
-  return { bounds: cleanBounds(window.getNormalBounds()), maximized: window.isMaximized(), active: Math.min(active, Math.max(0, saved.length - 1)), tabs: saved }
+  active = Math.min(active, Math.max(0, saved.length - 1))
+  if (!activeKept) active = nearestShown(saved, savedGroups, active)
+  return { bounds: cleanBounds(window.getNormalBounds()), maximized: window.isMaximized(), active, tabs: saved, ...(savedGroups.length === 0 ? {} : { groups: savedGroups }) }
+}
+
+/** The place nearest `at` whose tab is not in a collapsed group: a neighbour put in front for a tab that is not saved should not be one the strip hides. */
+function nearestShown (saved: readonly TabSnapshot[], groups: readonly SavedGroup[], at: number): number {
+  const hidden = (place: number): boolean => { const group = saved[place]?.group; return group !== undefined && groups[group]?.collapsed === true }
+  if (!hidden(at)) return at
+  for (let distance = 1; distance < saved.length; distance += 1) {
+    if (at - distance >= 0 && !hidden(at - distance)) return at - distance
+    if (at + distance < saved.length && !hidden(at + distance)) return at + distance
+  }
+  return at
 }
 
 export class SessionRecorder {
@@ -54,7 +84,7 @@ export class SessionRecorder {
     let last = ''
     shell.tabs.onStateChange(({ tabs, activeTabId }) => {
       // Loading progress and favicons push state too, and none of it is in the file.
-      const seen = JSON.stringify([activeTabId, tabs.map((tab) => [tab.url, tab.title, tab.pinned])])
+      const seen = JSON.stringify([activeTabId, tabs.map((tab) => [tab.url, tab.title, tab.pinned, tab.group ?? null]), groupsFor(shell.tabs).list()])
       if (seen === last) return
       last = seen
       changed()

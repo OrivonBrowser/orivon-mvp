@@ -4,7 +4,8 @@ import { makeStripDraggable } from '../strip-drag.js'
 import { isDraggingTab, makeTabDraggable } from '../tab-drag.js'
 import type { ChromeContext, ChromeModule, TabDecorator } from './context.js'
 import { must } from './context.js'
-import { runDecorators } from './contain.js'
+import { contained, runDecorators } from './contain.js'
+import { placeAmongAll } from './tab-groups.js'
 
 function renderFavicon (tab: TabState): HTMLSpanElement {
   const fav = document.createElement('span')
@@ -20,9 +21,12 @@ function renderFavicon (tab: TabState): HTMLSpanElement {
   return fav
 }
 
+/** What a feature does to the strip's tab run once every tab is in it. */
+export type StripFinisher = (scroller: HTMLElement, state: ShellState, ctx: ChromeContext) => void
+
 /** The tab strip, the new-tab button, the empty tail after it, and the insertion line shown while a tab
  * dragged from another window is over this strip. */
-export function createTabStrip (decorators: readonly TabDecorator[]): ChromeModule {
+export function createTabStrip (decorators: readonly TabDecorator[], finishers: readonly StripFinisher[] = []): ChromeModule {
   let tabrow: HTMLDivElement | undefined
   let tabScroll: HTMLDivElement | undefined
   let newTabBtn: HTMLButtonElement | undefined
@@ -92,11 +96,12 @@ export function createTabStrip (decorators: readonly TabDecorator[]): ChromeModu
         shell.showTabMenu(tab.id)
       })
       makeTabDraggable(el, tab.id, {
-        tabs: () => [...row.querySelectorAll<HTMLElement>('.tab')],
+        // A collapsed group's tabs take no room, so they are not places to drop on.
+        tabs: () => [...row.querySelectorAll<HTMLElement>('.tab')].filter((tabEl) => !tabEl.hidden),
         isPinned: (tabEl) => tabEl.classList.contains('pinned'),
         partnerOf: () => tab.splitWith === null ? null : row.querySelector<HTMLElement>(`.tab[data-id="${tab.splitWith}"]`),
         stripHeight: () => row.getBoundingClientRect().height,
-        moveTab: (id, index) => { shell.moveTab(id, index) },
+        moveTab: (id, index) => { shell.moveTab(id, placeAmongAll(row, [id, tab.splitWith], index)) },
         dragStarted: (id) => { shell.beginTabDrag(id) },
         hover: (id, x, y) => { shell.dragTab(id, x, y) },
         dropTab: (id, x, y, clientX, clientY) => { shell.dropTab(id, x, y, clientX, clientY) },
@@ -123,6 +128,7 @@ export function createTabStrip (decorators: readonly TabDecorator[]): ChromeModu
       else scroller.append(el)
     }
     scroller.style.setProperty('--tab-count', String(Math.max(1, scroller.childElementCount)))
+    for (const finish of finishers) contained('tab strip finisher', () => { finish(scroller, state, ctx) })
     const active = scroller.querySelector<HTMLElement>('.tab.active')
     if (state.activeTabId !== shownActiveId && active !== null && typeof active.scrollIntoView === 'function') {
       active.scrollIntoView({ inline: 'nearest', block: 'nearest' })

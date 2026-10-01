@@ -29,7 +29,7 @@
          no-drag marking is conditional on main's own drag-mode decision
          (styles/tabstrip.css's [data-drag-mode="manual"] rule), not static
          here. -->
-    <div id="tabrow" class="tabrow drag" role="tablist">
+    <div id="tabrow" class="tabrow drag" role="tablist" aria-label="Tabs">
       <!-- The run of unpinned tabs: the only part of the strip that scrolls. Pinned tabs sit in front of it and
            the buttons after it, so neither scrolls away (chrome/tab-strip.ts). -->
       <div id="tab-scroll" class="tabscroll"></div>
@@ -46,7 +46,7 @@
       <div id="tab-strip-tail" class="tabstrip-tail" role="presentation"></div>
     </div>
 
-    <div id="toolbar" class="toolbar">
+    <div id="toolbar" class="toolbar" role="toolbar" aria-label="Toolbar">
       <div class="navgroup">
         <button id="back" class="navbtn" type="button" aria-label="Back" disabled>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

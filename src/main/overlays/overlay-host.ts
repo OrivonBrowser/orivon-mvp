@@ -140,6 +140,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     mine = createOverlayView({
       dirname: deps.dirname,
       def: slot.def,
+      square: slot.def.placement.kind === 'dock',
       port: {
         ready: () => {
           if (!current()) return { shown: false }
@@ -159,7 +160,8 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
         },
         request: (command) => current() ? slot.handler?.request(command) : undefined,
         size: (height) => {
-          if (!current() || !slot.open) return
+          // A dock's height is the window's, never its content's.
+          if (!current() || !slot.open || slot.def.placement.kind === 'dock') return
           slot.height = height
           slot.view?.setBounds(boundsFor(slot))
         },
@@ -310,7 +312,10 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     relayout () {
       for (const slot of openSlots()) {
         if (slot.def.closeOn.layout) closeSlot(slot, 'layout')
-        else slot.view?.setBounds(boundsFor(slot))
+        else {
+          slot.view?.setBounds(boundsFor(slot))
+          try { slot.handler?.moved?.() } catch (error) { console.error('[overlay] moved hook failed', error) }
+        }
       }
       for (const panel of adopted) panel.close()
     },

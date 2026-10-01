@@ -4,6 +4,7 @@ import type { ShellWindow } from '../shell/window-registry.js'
 import type { ClosedEntry, ClosedStack } from './closed-stack.js'
 import { optionsFor } from './restore.js'
 import { openSnapshot } from './open-snapshot.js'
+import { rejoinGroup } from '../tab-groups/groups-runner.js'
 
 /** `full`: the window has no room for another tab, and the entry stays. `unusable`: it could not be opened, and is dropped. */
 export type ReopenResult = 'opened' | 'unusable' | 'full'
@@ -30,6 +31,7 @@ export function reopenEntry (entry: ClosedEntry, target: ShellWindow, deps: Comm
   const id = openSnapshot(home.tabs, entry.tab, true)
   if (id === undefined) return 'unusable'
   home.tabs.moveTab(id, Math.min(entry.index, home.tabs.tabCount - 1))
+  if (entry.groupId !== undefined) rejoinGroup(home.tabs, id, entry.groupId)
   home.tabs.changed()
   // The person pressed the key in another window than the one the tab returned to: bring that one forward.
   if (home !== target) { home.window.show(); home.window.focus() }

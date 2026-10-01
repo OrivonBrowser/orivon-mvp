@@ -3,6 +3,7 @@
 // this, so the page cannot offer a value the store would refuse and a file
 // edited by hand cannot make one up.
 import { isAddressList, isEmptyOrAddress, MAX_LISTED_ADDRESSES } from './address-checks.js'
+import { isHostList, MAX_LISTED_HOSTS } from './list-checks.js'
 import { isEmptyOrAbsolutePath } from './path-checks.js'
 import { CUSTOM_SEARCH_ENGINE, DEFAULT_SEARCH_ENGINE, SEARCH_ENGINES, isValidSearchTemplate } from '../browsing/search-engines.js'
 
@@ -12,6 +13,9 @@ export type SettingSpec =
   | { readonly kind: 'bool', readonly default: boolean }
   | { readonly kind: 'int', readonly default: number, readonly min: number, readonly max: number }
   | { readonly kind: 'text', readonly default: string, readonly maxLength: number, readonly check?: (value: string) => boolean }
+
+/** Room for the most entries at their longest, plus the separators between them. */
+const HOST_LIST_LENGTH = MAX_LISTED_HOSTS * 254
 
 const SPECS = {
   'appearance.theme': { kind: 'enum', options: ['system', 'light', 'dark'], default: 'system' },
@@ -24,6 +28,7 @@ const SPECS = {
     default: '100',
     labels: { 75: '75%', 80: '80%', 90: '90%', 100: '100%', 110: '110%', 125: '125%', 150: '150%', 175: '175%', 200: '200%' }
   },
+  'sidePanel.side': { kind: 'enum', options: ['right', 'left'], default: 'right' },
   'search.engine': {
     kind: 'enum',
     options: [...SEARCH_ENGINES.map((engine) => engine.id), CUSTOM_SEARCH_ENGINE],
@@ -89,7 +94,21 @@ const SPECS = {
   // 'auto' shows the Extensions button while at least one extension is installed.
   'toolbar.extensions': { kind: 'enum', options: ['auto', 'always', 'never'], default: 'auto' },
   'spellcheck.enabled': { kind: 'bool', default: true },
+  // The reader view's own text settings; the size is in pixels, as text.
+  'reader.font': { kind: 'enum', options: ['sans', 'serif'], default: 'sans' },
+  'reader.size': { kind: 'enum', options: ['14', '16', '18', '20', '24', '28'], default: '18' },
+  'reader.width': { kind: 'enum', options: ['narrow', 'medium', 'wide'], default: 'medium' },
+  'reader.theme': { kind: 'enum', options: ['auto', 'light', 'sepia', 'dark'], default: 'auto' },
+  // Caret browsing is off until asked for, and asks before it turns on.
+  'accessibility.caretBrowsing': { kind: 'bool', default: false },
+  'accessibility.caretAsk': { kind: 'bool', default: true },
   'tabs.lastTabClosed': { kind: 'enum', options: ['closeWindow', 'newTab'], default: 'closeWindow' },
+  // Tabs that have not been used for a while go to sleep and wake when opened. 2 hours is provisional: what a person expects a browser to do with an idle tab is not yet measured.
+  'performance.memorySaver': { kind: 'bool', default: true },
+  'performance.sleepAfter': { kind: 'enum', options: ['15m', '30m', '1h', '2h', '4h'], default: '2h', labels: { '15m': '15 minutes', '30m': '30 minutes', '1h': '1 hour', '2h': '2 hours', '4h': '4 hours' } },
+  // Sites that never go to sleep, one per line.
+  'performance.keepAwake': { kind: 'text', default: '', maxLength: HOST_LIST_LENGTH, check: isHostList },
+  'performance.energySaver': { kind: 'enum', options: ['off', 'battery'], default: 'off' },
   // Load unpacked, Reload for an unpacked extension: off until the person turns it on.
   'extensions.developerMode': { kind: 'bool', default: false },
   // Whether an extension installed from now on gets a place on the toolbar.

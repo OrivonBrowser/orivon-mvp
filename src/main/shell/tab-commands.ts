@@ -79,6 +79,9 @@ export function openBeside (tabs: TabManager, id: string, url?: string): string 
   if (!tabs.hasRoom()) return undefined
   const at = endOf(tabs.getState(), id) + 1
   const created = tabs.createTab(url)
+  // Beside a tab of a group, it is in that group too.
+  const fresh = tabs.record(created)
+  if (fresh !== undefined && created !== id) fresh.groupId = tabs.record(id)?.groupId ?? null
   tabs.moveTab(created, at)
   return created
 }

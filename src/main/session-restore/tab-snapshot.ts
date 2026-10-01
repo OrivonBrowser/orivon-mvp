@@ -12,6 +12,8 @@ export const MAX_URL_LENGTH = 8192
 export const MAX_INTERNAL_PATH_LENGTH = 2048
 /** Back and forward entries kept per tab: the ones nearest the page shown. */
 export const MAX_HISTORY_ENTRIES = 50
+/** Groups kept per window. */
+export const MAX_SAVED_GROUPS = 50
 
 export interface HistoryEntry {
   readonly url: string
@@ -27,6 +29,8 @@ export interface TabSnapshot {
   /** The tab's back and forward list, `index` being the entry shown. Absent for a tab with no history. */
   readonly entries?: readonly HistoryEntry[]
   readonly index?: number
+  /** Where in the window's `groups` the tab's group is. Absent for a tab in none. */
+  readonly group?: number
 }
 
 function asObject (value: unknown): Record<string, unknown> | null {
@@ -57,6 +61,10 @@ function cleanHistory (rawEntries: unknown, rawIndex: unknown, shown: string): {
   return index !== -1 && entries[index]?.url === shown && entries.length > 1 ? { entries, index } : null
 }
 
+function cleanGroupIndex (value: unknown): { group?: number } {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < MAX_SAVED_GROUPS ? { group: value } : {}
+}
+
 /** A snapshot as the rules allow it, or null. Reads what the file says as data: an address a tab could not have opened, a page that does not exist or an oversize value is refused. */
 export function sanitizeSnapshot (raw: unknown): TabSnapshot | null {
   const candidate = asObject(raw)
@@ -69,12 +77,12 @@ export function sanitizeSnapshot (raw: unknown): TabSnapshot | null {
     if (!isInternalPageId(page) || page === 'private' || typeof path !== 'string' || path.length > MAX_INTERNAL_PATH_LENGTH || !path.startsWith('/')) return null
     const address = parseInternalUrl(internalUrl(page, path))
     if (address?.page !== page) return null
-    return { url: internalUrl(address.page, address.path), title, pinned, internal: address }
+    return { url: internalUrl(address.page, address.path), title, pinned, internal: address, ...cleanGroupIndex(candidate['group']) }
   }
   const url = cleanUrl(candidate['url'])
   if (url === null) return null
   const history = cleanHistory(candidate['entries'], candidate['index'], url)
-  return { url, title, pinned, ...(history === null ? {} : history) }
+  return { url, title, pinned, ...(history === null ? {} : history), ...cleanGroupIndex(candidate['group']) }
 }
 
 /** The window of at most `MAX_HISTORY_ENTRIES` entries around the one shown. */
@@ -108,9 +116,15 @@ export function rememberOpenedFrom (record: TabRecord, snapshot: TabSnapshot): v
  * page that is gone, and any address a tab would refuse to open (`view-source:`, a blob, `about:blank`).
  */
 export function snapshotOf (record: TabRecord, wc: WebContents): TabSnapshot | null {
+  const pinned = record.pinned === true
+  // A sleeping tab's view is blank, so what the page was comes from what sleeping kept.
+  if (record.sleeping != null) {
+    const { url, title, entries, index } = record.sleeping
+    // Address and title only: `pageState` holds what was typed into forms.
+    return sanitizeSnapshot({ url, title, pinned, ...boundHistory(entries.map((entry) => ({ url: entry.url, title: entry.title })), index) })
+  }
   if (record.isDashboardTab || wc.isDestroyed()) return null
   const title = wc.getTitle()
-  const pinned = record.pinned === true
   if (record.internalPage !== null) {
     const address = parseInternalUrl(wc.getURL()) ?? openedFrom.get(record)?.internal ?? { page: record.internalPage, path: '/' }
     return sanitizeSnapshot({ url: internalUrl(address.page, address.path), title, pinned, internal: address })

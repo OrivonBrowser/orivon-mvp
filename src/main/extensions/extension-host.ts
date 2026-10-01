@@ -245,7 +245,11 @@ export function attachExtensionShell (ctx: SubsystemContext, services: ShellServ
       }
       if (win === undefined || newWc.session !== session.defaultSession) return
       trackedTabs.add(newWc)
-      hostExtensions?.addTab(newWc, win)
+      // The library takes a tab it is handed to be the one in front. A view replaced behind the person's back (a tab
+      // put to sleep) must not pull the window to it, and the library's own idea of the front tab goes back.
+      notifyShell(newWc, (t) => hostExtensions?.addTab(t, win))
+      const front = bridge?.services.windows.findTab(newWc)?.window.tabs.activeWebContents()
+      if (front !== undefined && front !== newWc && trackedTabs.has(front)) notifyShell(front, (t) => hostExtensions?.selectTab(t))
     }
   })
 

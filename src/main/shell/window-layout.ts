@@ -10,12 +10,16 @@ export const BOOKMARKS_BAR_HEIGHT = 28
 /** The chrome's height while the bookmarks bar shows. */
 export const CHROME_HEIGHT = CHROME_TOP_ROWS + BOOKMARKS_BAR_HEIGHT
 
+export interface PageInsets { left: number, right: number }
+
 export interface WindowLayoutDeps {
   readonly win: BaseWindow
   readonly chrome: WebContentsView
   /** The tab holding the whole window, if a page is in HTML fullscreen. */
   readonly fullscreenTabId: () => string | null
   readonly bookmarksBarShown: () => boolean
+  /** What a docked panel takes from each side of the page area; zero while none shows. */
+  readonly pageInsets?: () => PageInsets
   /** A kiosk window has no chrome: the page takes the whole window. */
   readonly kiosk?: boolean
 }
@@ -26,7 +30,7 @@ export interface WindowLayout {
   tabBounds: () => Bounds
 }
 
-export function createWindowLayout ({ win, chrome, fullscreenTabId, bookmarksBarShown, kiosk = false }: WindowLayoutDeps): WindowLayout {
+export function createWindowLayout ({ win, chrome, fullscreenTabId, bookmarksBarShown, pageInsets, kiosk = false }: WindowLayoutDeps): WindowLayout {
   function chromeHeight (): number {
     if (kiosk) return 0
     return bookmarksBarShown() ? CHROME_HEIGHT : CHROME_TOP_ROWS
@@ -44,8 +48,11 @@ export function createWindowLayout ({ win, chrome, fullscreenTabId, bookmarksBar
   function tabBounds (): Bounds {
     if (win.isDestroyed()) return { x: 0, y: 0, width: 0, height: 0 }
     const bounds = win.getContentBounds()
-    const top = fullscreenTabId() === null ? chromeHeight() : 0
-    return { x: 0, y: top, width: bounds.width, height: bounds.height - top }
+    const fullscreen = fullscreenTabId() !== null
+    const top = fullscreen ? 0 : chromeHeight()
+    // A page in HTML fullscreen holds the whole window.
+    const { left, right } = fullscreen || pageInsets === undefined ? { left: 0, right: 0 } : pageInsets()
+    return { x: left, y: top, width: Math.max(0, bounds.width - left - right), height: bounds.height - top }
   }
 
   return { chromeHeight, layoutChrome, tabBounds }

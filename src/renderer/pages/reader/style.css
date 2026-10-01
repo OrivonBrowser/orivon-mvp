@@ -1,0 +1,135 @@
+@import '../shared/tokens.css';
+@import '../shared/controls.css';
+
+/* The reader's own colours. Automatic follows the shell's tokens; the three others replace them whole, so a
+   light article can sit in a dark browser and the other way round. Sepia is one fixed pair, used here only. */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --wbg: #f4f4f8; --wbg-2: #e7e7f1; --wpanel: #ffffff; --wsurface: #ebebf1; --wborder: #d7d7e0;
+  --wink: rgba(0, 0, 0, 0.90); --wink-strong: rgba(0, 0, 0, 0.96); --wink-dim: rgba(0, 0, 0, 0.58); --wink-off: rgba(0, 0, 0, 0.38);
+  --whover: rgba(0, 0, 0, 0.06); --waccent: #4f46e5; --waccent-text: #4338ca; --wdanger-text: #dc2626;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --wbg: #17181c; --wbg-2: #202129; --wpanel: #1e1f24; --wsurface: #2b2c31; --wborder: #3b3c42;
+  --wink: #e6e7e8; --wink-strong: #f5f6f7; --wink-dim: #a4a5af; --wink-off: #6b7280;
+  --whover: rgba(255, 255, 255, 0.07); --waccent: #4f46e5; --waccent-text: #8b93f8; --wdanger-text: #f87171;
+}
+:root[data-theme='sepia'] {
+  color-scheme: light;
+  --wbg: #f4ecd8; --wbg-2: #f4ecd8; --wpanel: #efe5cc; --wsurface: #e7dcc0; --wborder: #d6c8a6;
+  --wink: #3b2f1e; --wink-strong: #2a2114; --wink-dim: #6a5a42; --wink-off: #8f7f66;
+  --whover: rgba(59, 47, 30, 0.08); --waccent: #8a4b14; --waccent-text: #8a4b14; --waccent-ink: #ffffff; --wdanger-text: #a32a1c;
+}
+
+:root { --reader-size: 18px; --reader-width: 36em; --bar-height: 44px; }
+
+html, body { background: var(--wbg); }
+html[data-bar='hidden'] { --bar-offset: 0px; }
+
+.reader { min-height: 100vh; }
+
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--bar-height);
+  padding: 0 16px;
+  background: var(--wpanel);
+  border-bottom: 1px solid var(--wborder);
+  transition: transform 0.16s ease;
+}
+html[data-bar='hidden'] .bar { transform: translateY(-100%); }
+html[data-bar='hidden'] .bar:focus-within { transform: none; }
+.bar .spacer { flex: 1 1 auto; }
+.bar .back { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; font-weight: 600; }
+.bar .back .icon { width: 16px; height: 16px; }
+.bar .btn.icon.on { color: var(--waccent-text); }
+
+.bubble-anchor { position: relative; display: flex; }
+.bubble {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 8;
+  display: grid;
+  gap: 12px;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  padding: 14px 16px;
+  background: var(--wpanel);
+  border: 1px solid var(--wborder);
+  border-radius: var(--wradius);
+}
+.bubble[hidden], .bar .btn[hidden] { display: none; }
+.bubble-row { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 10px; }
+.bubble-label { color: var(--wink-dim); font-size: 13px; }
+.bubble .segmented { width: 100%; }
+.bubble .segmented > button { flex: 1 1 0; padding: 5px 4px; }
+.size-stepper { display: flex; align-items: center; gap: 10px; }
+.size-stepper .btn.small { width: 36px; padding: 3px 0; font-size: 16px; line-height: 1.2; }
+.size-value { min-width: 28px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+.speech {
+  position: sticky;
+  top: var(--bar-offset, var(--bar-height));
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 16px;
+  background: var(--wpanel);
+  border-bottom: 1px solid var(--wborder);
+  transition: top 0.16s ease;
+}
+.speech[hidden] { display: none; }
+.speech .select { padding: 3px 24px 3px 8px; font-size: 13px; }
+.speech .select.voice { flex: 1 1 auto; min-width: 0; max-width: 260px; margin-left: auto; text-overflow: ellipsis; }
+.speech .btn.icon:last-child { margin-left: 4px; }
+
+.column { width: min(var(--reader-width), 100% - 48px); margin: 0 auto; padding: 40px 0 120px; outline: none; font-size: var(--reader-size); }
+html[data-font='serif'] .column { font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'Times New Roman', serif; }
+
+.column h1 { font-size: calc(var(--reader-size) * 1.55); font-weight: 700; line-height: 1.22; color: var(--wink-strong); overflow-wrap: anywhere; }
+.meta { display: flex; flex-wrap: wrap; margin: 10px 0 28px; color: var(--wink-dim); font-size: max(13px, calc(var(--reader-size) * 0.8)); }
+.meta span + span::before { content: '\00b7'; margin: 0 0.6em; }
+
+.body { line-height: 1.6; overflow-wrap: break-word; }
+.body > * + * { margin-top: 1em; }
+.body h2 { margin-top: 1.6em; font-size: 1.35em; line-height: 1.3; font-weight: 700; color: var(--wink-strong); }
+.body h3 { margin-top: 1.4em; font-size: 1.15em; line-height: 1.3; font-weight: 700; color: var(--wink-strong); }
+.body p, .body li, .body blockquote { color: var(--wink); }
+.body ul, .body ol { padding-left: 1.5em; }
+.body li + li { margin-top: 0.35em; }
+.body blockquote { margin-left: 0; padding: 0.1em 0 0.1em 1em; border-left: 3px solid var(--waccent); color: var(--wink-dim); font-style: italic; }
+.body a { color: var(--waccent-text); text-decoration: underline; text-underline-offset: 0.15em; cursor: pointer; border-radius: 3px; }
+.body a:hover { text-decoration-thickness: 2px; }
+.body code { padding: 0.08em 0.3em; border-radius: 4px; background: var(--wsurface); font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 0.88em; }
+.body pre { padding: 12px 14px; border-radius: 8px; background: var(--wsurface); overflow-x: auto; line-height: 1.5; }
+.body pre code { padding: 0; background: none; font-size: 0.85em; white-space: pre; }
+.body figure { margin: 1.5em 0; }
+.body figure img { display: block; max-width: 100%; height: auto; margin: 0 auto; border-radius: 8px; }
+.body figcaption { margin-top: 0.5em; color: var(--wink-dim); font-size: 0.85em; text-align: center; }
+.body hr { border: none; border-top: 1px solid var(--wborder); margin: 2em 0; }
+.table-wrap { overflow-x: auto; border-radius: 6px; }
+.table-wrap table { border-collapse: collapse; min-width: 100%; font-size: 0.92em; }
+.table-wrap td { padding: 6px 10px; border: 1px solid var(--wborder); vertical-align: top; }
+.reading { background: var(--waccent-wash); border-radius: 6px; box-shadow: 0 0 0 6px var(--waccent-wash); }
+
+.loading { display: grid; gap: 14px; }
+.loading .skeleton { height: 16px; }
+.loading .title-line { width: 70%; height: 30px; margin-bottom: 18px; }
+
+.empty-state { padding-top: 96px; }
+.empty-state p { max-width: 420px; line-height: 1.5; }
+
+@media print {
+  .bar, .speech { display: none; }
+  html, body { background: #fff; color: #000; }
+  .column { width: 100%; padding: 0; }
+  .body a { color: inherit; }
+}

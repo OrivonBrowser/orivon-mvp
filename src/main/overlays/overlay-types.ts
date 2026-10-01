@@ -10,6 +10,8 @@ export type OverlayPlacement =
   | { kind: 'anchor-width' }
   /** Inside the tab area (a find bar, tab search, a sheet). */
   | { kind: 'area', at: 'top-right' | 'top-center' | 'center', width: number }
+  /** Beside the page, taking the strip of the window the page area leaves free (see `dockBounds`): full height, and the content never decides its size. */
+  | { kind: 'dock' }
 
 /** A chrome rectangle in the chrome view's client pixels, which are window-content pixels too. */
 export interface OverlayAnchor { x: number, y: number, width: number, height: number }
@@ -55,6 +57,8 @@ export interface OverlayHandler {
   /** Untrusted: the page sends anything, so validate every field and run only listed commands. */
   request: (command: unknown) => unknown
   closed?: (reason: OverlayCloseReason) => void
+  /** Runs after the host has repositioned this open overlay: a window resize, a chrome height change or HTML fullscreen that did not close it. */
+  moved?: () => void
   /** Runs once when the window is gone, whether or not the overlay was open: the place to drop a subscription to anything that outlives the window. */
   disposed?: () => void
 }

@@ -11,6 +11,8 @@ import { startInternalPages } from './pages/start-internal-pages.js'
 import { installShortcuts } from './shortcuts/install-shortcuts.js'
 import { installSpellcheck } from './spellcheck/install-spellcheck.js'
 import { installZoom } from './zoom/install-zoom.js'
+import { installShellStyle } from './appearance/shell-style-runner.js'
+import { internalSession } from './pages/internal-session.js'
 import { installHistory } from './history/install-history.js'
 import { installDownloads } from './downloads/install-downloads.js'
 import { installDownloadsPeek } from './downloads/auto-open.js'
@@ -179,6 +181,7 @@ function boot (runtime: Runtime): void {
     shell.commands.bind({ services: shell, openWindow: (options) => { createShellWindow(ctx, shell, options) }, displays: () => screen.getAllDisplays(), quit: () => { app.quit() } })
     installShortcuts(app, shell.shortcuts, shell.windows, shell.commands, ctx.extensions?.commandKeys)
     installZoom(app, shell.windows, shell.zoom)
+    installShellStyle(app, shell.settings, { shellSession: session.fromPartition(SHELL_PARTITION), internalSession, dashboardUrl: resolveDashboardUrl() })
     installSpellcheck(app, shell.windows, shell.settings)
     installHistory(app, shell.windows, shell.internalPages, shell.history)
     runShellInstallers(app, shell, ctx, runtime)

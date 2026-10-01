@@ -53,12 +53,14 @@ export interface ContextMenuContext {
   bare: boolean
   /** The page's source can be shown: a web page, not an app's own tab. */
   viewSource: boolean
+  /** The page looks like an article: reader view is offered. */
+  readable: boolean
   spellcheckOn: boolean
   /** `addressBar.showFullUrl`, for the tick on the address bar's menu. */
   fullAddresses: boolean
 }
 
-export const DEFAULT_CONTEXT: ContextMenuContext = { engineLabel: 'the Web', bare: false, viewSource: true, spellcheckOn: true, fullAddresses: false }
+export const DEFAULT_CONTEXT: ContextMenuContext = { engineLabel: 'the Web', bare: false, viewSource: true, readable: false, spellcheckOn: true, fullAddresses: false }
 
 const MAX_SUGGESTIONS = 5
 const SEPARATOR: MenuItemConstructorOptions = { type: 'separator' }
@@ -185,6 +187,7 @@ export function pageGroup (actions: ContextMenuActions, context: ContextMenuCont
     { label: 'Take a Screenshot', click: () => { run('page.screenshot') } },
     SEPARATOR
   )
+  if (context.readable) items.push({ label: 'Open in Reader View', click: () => { run('page.reader') } })
   if (context.viewSource) items.push({ label: 'View Page Source', click: () => { run('page.viewSource') } })
   items.push({ label: 'Create QR Code for This Page', click: () => { run('page.qr') } })
   return items

@@ -13,6 +13,7 @@ import { registerShellIpc } from '../ipc/ipc.js'
 import { shellActions } from './window-actions.js'
 import { SplitFrame } from './split-frame.js'
 import { CHROME_TOP_ROWS, createWindowLayout } from './window-layout.js'
+import { sidePanelInsets, wireSidePanel } from '../side-panel/side-panel-host.js'
 import { createOverlayHost } from '../overlays/overlay-host.js'
 import { OVERLAYS } from '../overlays/overlays.js'
 import { createWindowPanels } from './window-panels.js'
@@ -129,7 +130,9 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     hideNotice: () => { notice.hide() }
   })
 
-  const { chromeHeight, layoutChrome, tabBounds } = createWindowLayout({ win, chrome, fullscreenTabId: () => fullscreen.tabId, bookmarksBarShown, kiosk })
+  const { chromeHeight, layoutChrome, tabBounds } = createWindowLayout({
+    win, chrome, fullscreenTabId: () => fullscreen.tabId, bookmarksBarShown, kiosk, pageInsets: () => sidePanelInsets(win)
+  })
 
   function layoutAll (): void {
     layoutChrome()
@@ -192,7 +195,8 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     win, contentView: win.contentView, dirname: import.meta.dirname, defs: OVERLAYS,
     context: () => context, area: tabBounds, activeContents: () => tabs.activeWebContents()
   })
-  const entry: ShellWindow = { window: win, chrome, tabs, overlays, shortcutsSuspended: () => fullscreen.tabId !== null }
+  wireSidePanel(win, { adopt: overlays.adopt, area: tabBounds })
+  const entry: ShellWindow = { window: win, chrome, tabs, overlays, shortcutsSuspended: () => fullscreen.tabId !== null, relayout: layoutAll }
 
   const context: WindowContext = { window: entry, services }
   const panels = createWindowPanels({ ctx, win, services, tabs, overlays, dirname: import.meta.dirname })

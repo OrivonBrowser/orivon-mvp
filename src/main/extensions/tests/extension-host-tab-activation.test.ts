@@ -157,6 +157,37 @@ describe('extension-host: viewReplaced adds the new tab before removing the old 
   })
 })
 
+describe('extension-host: viewReplaced for a tab behind the one in front (a tab put to sleep)', () => {
+  beforeEach(() => {
+    capturedOptions = undefined
+    lastInstance = undefined
+    getExtension.mockReset()
+  })
+
+  it('does not bring the replaced tab to the front, and tells the library which tab still is', () => {
+    getExtension.mockReturnValue(null)
+    createExtensionHost('preload.js')
+    const { subscribed, findTab } = buildShell()
+    const defaultSession = mockedSession.defaultSession
+    const wc = (): WebContents => ({ session: defaultSession, isDestroyed: () => false }) as unknown as WebContents
+    const front = wc()
+    const oldWc = wc()
+    const newWc = wc()
+    const activateTab = vi.fn()
+    findTab.mockImplementation((contents: WebContents) => ({ window: { tabs: { activeWebContents: () => front, activateTab } }, tabId: contents === newWc ? 'replaced' : 'other' }))
+    const win = { id: 1 } as unknown as BaseWindow
+    subscribed.tabCreated(front, win)
+    subscribed.tabCreated(oldWc, win)
+    // The library calls the shell back as it takes the tab in, as it does when a tab is added.
+    lastInstance.addTab.mockImplementation((added: WebContents) => { capturedOptions.selectTab(added) })
+
+    subscribed.viewReplaced(oldWc, newWc, win)
+
+    expect(activateTab).not.toHaveBeenCalled()
+    expect(lastInstance.selectTab).toHaveBeenCalledWith(front)
+  })
+})
+
 describe('extension-host: window-open policy for popups and MV2 background pages', () => {
   beforeEach(() => {
     capturedOptions = undefined

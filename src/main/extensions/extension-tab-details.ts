@@ -6,6 +6,16 @@
 export interface OrivonTabDetails {
   pinned: boolean
   favIconUrl?: string
+  discarded?: boolean
+  url?: string
+  title?: string
+}
+
+/** What a sleeping tab kept: its blank view has no address, title or icon of its own. */
+export interface SleepingDetails {
+  readonly url: string
+  readonly title: string
+  readonly favicon: string | null
 }
 
 /** `details` (the library's own base, built from the real WebContents --
@@ -15,7 +25,13 @@ export interface OrivonTabDetails {
  * `null` for a tab this host cannot find (not yet tracked, or none
  * captured) -- left alone rather than cleared, so a value the library's own
  * default already set survives; the same tab reads as unpinned. */
-export function applyOrivonTabDetails (details: OrivonTabDetails, favicon: string | null, pinned: boolean): void {
+export function applyOrivonTabDetails (details: OrivonTabDetails, favicon: string | null, pinned: boolean, sleeping?: SleepingDetails | null): void {
   details.pinned = pinned
   if (favicon !== null) details.favIconUrl = favicon
+  if (sleeping == null) return
+  // `discarded`, the extension API's word for a tab whose page was dropped; the address and title are the ones it will wake to.
+  details.discarded = true
+  details.url = sleeping.url
+  details.title = sleeping.title
+  if (sleeping.favicon !== null) details.favIconUrl = sleeping.favicon
 }

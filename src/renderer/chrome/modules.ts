@@ -11,28 +11,39 @@ import { createExtensionsButton } from './extensions-button.js'
 import { createDownloadsButton } from './downloads-button.js'
 import { createHomeButton } from './home-button.js'
 import { createNavigation } from './navigation.js'
+import { createPanes } from './panes.js'
 import { createPasswordKey } from './password-key.js'
 import { createContentDot } from './content-dot.js'
 import { createPopupsChip } from './popups-chip.js'
 import { createPromptAnchor } from './prompt-anchor.js'
+import { createReaderButton } from './reader-button.js'
 import { createReloadStop } from './reload-stop.js'
+import { createSidePanelButton } from './side-panel-button.js'
 import { createSiteAccessChip } from './site-access-chip.js'
 import { createSiteBadges } from './site-badges.js'
 import { decorateTabBadges } from './tab-badges.js'
 import { decorateTabCrashed } from './tab-crashed.js'
+import { createTabGroups, decorateTabGroup, placeGroupChips } from './tab-groups.js'
+import { decorateTabSleeping } from './tab-sleeping.js'
 import { createTabSearchButton } from './tab-search-button.js'
 import { createTabStrip } from './tab-strip.js'
 
-/** Adds to a tab's element after the strip built it; one entry per feature, alphabetical by the file that draws it. */
+const panes = createPanes()
+
+/** Adds to a tab's element after the strip built it; one entry per feature, alphabetical by the file that draws it. The pane stops come last: they set the keyboard stop of what the others added. */
 export const TAB_DECORATORS: readonly TabDecorator[] = [
   decorateTabBadges,
-  decorateTabCrashed
+  decorateTabCrashed,
+  decorateTabGroup,
+  decorateTabSleeping,
+  panes.decorator
 ]
 
 /** The chrome's features, initialised and rendered in this order; one entry per feature. */
 export const CHROME_MODULES: readonly ChromeModule[] = [
-  createTabStrip(TAB_DECORATORS),
+  createTabStrip(TAB_DECORATORS, [placeGroupChips]),
   createTabSearchButton(),
+  createTabGroups(),
   createNavigation(),
   createAddressDisplay(),
   createAddressSuggest(),
@@ -44,11 +55,14 @@ export const CHROME_MODULES: readonly ChromeModule[] = [
   createContentDot(),
   createPasswordKey(),
   createPromptAnchor(),
+  createReaderButton(),
   createCluster(),
   createExtensionsButton(),
   createDownloadsButton(),
+  createSidePanelButton(),
   createBookmarkStar(),
-  createBookmarksBar()
+  createBookmarksBar(),
+  panes.module
 ]
 
 /** Every module's `init`, once. A module that throws is logged by name and the rest still start. */

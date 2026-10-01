@@ -4,6 +4,7 @@ import { authSheetOverlay } from '../auth/auth-sheet-real.js'
 import { certErrorOverlay } from '../auth/cert-error-overlay.js'
 import { certificateOverlay } from '../auth/certificate-real.js'
 import { chooserOverlay } from '../auth/chooser-overlay.js'
+import { caretConfirmOverlay } from '../focus/caret-confirm-overlay.js'
 import { downloadsOverlay, downloadsPeekOverlay } from '../downloads/downloads-overlay.js'
 import { extensionsMenuOverlay } from '../extensions/extensions-menu-overlay.js'
 import { permissionOverlay } from '../extensions/permission-prompt-overlay.js'
@@ -22,6 +23,8 @@ import { omniboxOverlay } from '../omnibox/omnibox-overlay.js'
 import { popupsBlockedOverlay } from '../site-settings/popups-overlay.js'
 import { sitePromptOverlay } from '../site-settings/site-prompt-overlay.js'
 import { restoreOverlay } from '../startup/startup-overlays.js'
+import { sidePanelOverlay } from '../side-panel/side-panel-overlay.js'
+import { tabGroupOverlay } from '../tab-groups/tab-group-overlay.js'
 import { tabSearchOverlay } from '../tab-search/tab-search-overlay.js'
 import type { OverlayDef } from './overlay-types.js'
 
@@ -30,6 +33,7 @@ export const OVERLAYS: readonly OverlayDef[] = [
   bookmarkAllTabsOverlay,
   bookmarkEditOverlay,
   bookmarkFolderOverlay,
+  caretConfirmOverlay,
   certErrorOverlay,
   certificateOverlay,
   chooserOverlay,
@@ -50,7 +54,9 @@ export const OVERLAYS: readonly OverlayDef[] = [
   sadTabOverlay,
   screenshotOverlay,
   shortcutOverlay,
+  sidePanelOverlay,
   sitePromptOverlay,
+  tabGroupOverlay,
   tabSearchOverlay,
   toastOverlay
 ]

@@ -7,7 +7,10 @@ describe('SHELL_INSTALLERS', () => {
   it('names each installer once', () => {
     const names = SHELL_INSTALLERS.map((installer) => installer.name)
     expect(new Set(names).size).toBe(names.length)
-    expect(names).toEqual(['auth', 'autofill', 'choosers', 'content-settings', 'form-watch', 'privacy-net', 'site-permissions', 'tab-slots'])
+    expect(names).toEqual([
+      'auth', 'autofill', 'choosers', 'content-settings', 'focus', 'form-watch', 'memory-saver',
+      'privacy-net', 'reader', 'side-panel', 'site-permissions', 'tab-groups', 'tab-slots'
+    ])
   })
 
   it('runs every reserved installer without touching the app, the services or the context', () => {

@@ -712,7 +712,7 @@ is not the same as it doing anything: read the note, not just the symbol.
 | `storage.session` | ✅ | Measured round-tripping in a service worker/popup/options/tab; present as a real function in an MV3 isolated content script, absent in MV2's |
 | `system.cpu`, `system.display`, `system.memory`, `system.storage` | ✅ | `system.cpu.getInfo()` measured returning real hardware data (actual CPU model, core count, per-core usage) |
 | `tabCapture` | ✅ | `getMediaStreamId`/`getCapturedTabs`/`onStatusChanged`; needs the extension invoked on that tab, by its toolbar icon, its row in the Extensions menu or its command key; only an http(s) tab of no app holding grants; the tab is muted locally while captured |
-| `tabs` | ⚠️ | A rich working set, filtered by permission/host access; `pinned` comes from the tab's record; `update({ muted })` mutes the tab and `update({ pinned })` is ignored; `mutedInfo` can lag a mute made from Orivon's own strip; `captureVisibleTab`, `duplicate`, `move`, `highlight`, `discard` and `group` are not functions |
+| `tabs` | ⚠️ | A rich working set, filtered by permission/host access; `pinned` comes from the tab's record; `update({ muted })` mutes the tab and `update({ pinned })` is ignored; `mutedInfo` can lag a mute made from Orivon's own strip; `captureVisibleTab`, `duplicate`, `move`, `highlight`, `discard` and `group` are not functions; a sleeping tab reads `discarded: true` with the address and title it wakes to, and `groupId` is always -1 (`src/main/extensions/extension-tab-details.ts`) |
 | `topSites` | ✅ | The most visited web addresses from history, up to ten, one per site (`api/history-api.ts`) |
 | `userScripts` | ⚠️ | Every method resolves as a no-op; no user-script world runs |
 | `webNavigation` | ✅ | `getFrame`/`getAllFrames` and the full event set work |
@@ -822,11 +822,11 @@ the reference set, and whether this build has it.
 | Drag to reorder | ✅ | `tab-drag.ts`, `tab-order.ts`; a pinned tab stays in the leading run, and a split refuses a pinned tab |
 | Tear off into a new window | ✅ | `tear-drag.ts` |
 | Move tab to another open window | ✅ | `tab-menu.ts`, `tab-move.ts` |
-| Tab groups (named/coloured) | ❌ | No grouping concept |
+| Tab groups (named/coloured) | ✅ | `tab.group` and the tab menu add a tab to a new or an existing group; a chip heads each group and opens a bubble to name, colour, collapse, move or close it; groups are per window and are kept in `session.json`, never in a private window (`src/main/tab-groups/`, `src/renderer/chrome/tab-groups.ts`) |
 | Vertical tabs | ❌ | Tab strip is horizontal only |
 | Tab search (Ctrl+Shift+A style) | ✅ | `tab.search` (`Ctrl+Shift+A`), More tools and the strip's button list every open tab of every window and the recently closed ones, filtered by title and address as you type (`src/main/tab-search/`, overlay `tab-search`) |
 | Hover preview / thumbnail | ❌ | Not found |
-| Tab discarding / memory saver | ❌ | No discard/suspend logic |
+| Tab discarding / memory saver | ✅ | A tab out of front for 15 minutes to 4 hours (2 hours by default, `performance.sleepAfter`) closes its page and keeps its address, title, icon and history, and wakes where it was, scroll included, when opened; a pinned, audible, captured, typed-into, prompt-waiting, app, other-session or kept-site tab stays awake, and a restored session brings its unpinned background tabs back asleep (`src/main/memory-saver/`, `tab.sleep`) |
 | Split view (two tabs side by side) | ✅ | `split-controller.ts`, `split-model.ts`, `split-frame.ts` |
 | Close other tabs | ✅ | `tab.closeOthers` and the tab menu close every unpinned tab but the one chosen (`src/main/shell/tab-commands.ts`) |
 | Close tabs to the right | ✅ | `tab.closeRight` and the tab menu close the unpinned tabs right of a tab, or of its split pair (`src/main/shell/tab-commands.ts`) |
@@ -1023,7 +1023,7 @@ the reference set, and whether this build has it.
 | Print / print preview | ⚠️ | `page.print` (`Ctrl+P`, menu, More tools) opens the system print dialog with backgrounds on, and with no printer offers Save as PDF instead; no in-browser preview (`src/main/page-tools/print.ts`) |
 | Save page as | ✅ | `page.save` (`Ctrl+S`) saves complete HTML, a single-file `.mhtml` by extension, and downloads an image, PDF or text page as it is; `page.pdf` saves the page as PDF (`src/main/page-tools/save-page.ts`, `save-pdf.ts`) |
 | View source | ✅ | `page.viewSource` (`Ctrl+U`) opens `view-source:` beside the page for an http(s) page that is not an app's tab (`src/main/page-tools/view-source.ts`) |
-| Reader mode | ❌ | Not found |
+| Reader mode | ✅ | `page.reader` (`F9`), the address bar's book button, More tools and the page menu open an article in `orivon://reader`, a tab beside it, drawn from a validated block model taken in an isolated world with `@mozilla/readability`; font, size, width and colours are set in the page's bubble (`src/main/reader/`, `src/renderer/pages/reader/`) |
 | Translate | ❌ | Not found |
 | Spellcheck | ⚠️ | `spellcheck.enabled` (on by default) checks text in every tab; the menu offers up to five suggestions, Add to Dictionary and a Check Spelling switch; no language picker, and Chromium downloads each dictionary once (`src/main/spellcheck/`) |
 | Dictionary / look up word | ❌ | Not found |
@@ -1033,7 +1033,7 @@ the reference set, and whether this build has it.
 | Media controls / global media hub | ❌ | Not found |
 | Casting (Chromecast/AirPlay) | ❌ | Not found |
 | Screenshots / page capture | ✅ | `page.screenshot` (`Ctrl+Shift+S`): the visible area or the whole page, to the clipboard or a PNG file; a page longer than 16,384 device pixels is cut there (`src/main/page-tools/screenshot.ts`, overlay `screenshot`) |
-| Text-to-speech / read aloud | ❌ | No "read aloud" UI; the page's own `speechSynthesis` call is ungated |
+| Text-to-speech / read aloud | ⚠️ | The reader page reads the article with the system's voices (`speechSynthesis`) with play, pause, paragraph steps, speed and voice; the button is hidden where no voice is installed, and the page's own `speechSynthesis` call is ungated (`src/renderer/pages/reader/speech.ts`) |
 | Forced dark mode for light-only sites | ⚠️ | `appearance.theme` flips OS-level `prefers-color-scheme`; no forced repaint of a site with no dark styles |
 | Page fonts / minimum font size | ❌ | Not found |
 | Text encoding override | ❌ | Not found |
@@ -1066,6 +1066,7 @@ the reference set, and whether this build has it.
 | Page: back/forward/reload in menu | ✅ | Back, Forward and Reload when nothing more specific was clicked; Back and Forward follow the tab's history |
 | Page: save page as, print, screenshot, view source | ✅ | In the same group, for a web page; an internal page shows only Back, Forward and Reload |
 | Page: inspect element | ✅ | Opens DevTools at the clicked element |
+| Page: open in reader view | ✅ | Shown on a page that looks like an article, for the same address the book button in the address bar shows (`context-menu-groups.ts`, `src/main/reader/reader-signal.ts`) |
 | Cut/copy/paste/select all (editable fields) | ✅ | Undo, Redo, Cut, Copy, Paste, Paste as Plain Text, Select All and Check Spelling, each enabled from the field's state; a misspelt word adds suggestions and Add to Dictionary; plus the chrome's own edit menu |
 | Video/audio: open, save, copy address, picture in picture | ✅ | Open Video in New Tab, Save Video As, Copy Video Address and a Picture in Picture check (`context-menu-groups.ts`) |
 
@@ -1139,12 +1140,12 @@ the reference set, and whether this build has it.
 
 | Feature | Orivon | Note |
 |---|---|---|
-| Screen reader support | ➖ | Manual, partial ARIA labelling on several controls, not a dedicated subsystem |
-| Caret browsing | ❌ | Not found |
+| Screen reader support | ➖ | Manual ARIA labelling, not a dedicated subsystem and not tested with a screen reader: the toolbar and the tab strip carry a role and a name, a group chip has `aria-expanded`, and a live region announces the pane entered and the tab reached (`src/renderer/chrome/panes.ts`) |
+| Caret browsing | ✅ | `caret.toggle` (`F7`) or Settings > Accessibility turns it on for every tab of the profile, asking first by default; F7 goes to an app's own tab instead (`src/main/focus/caret-runner.ts`, overlay `caret-confirm`) |
 | High contrast mode | ❌ | Beyond the system light/dark theme choice |
 | Live captions | ❌ | Not found |
 | UI zoom (browser chrome zoom, not page zoom) | ❌ | `zoom.*` shortcuts affect page zoom only |
-| Keyboard navigation of the chrome (Tab order, F6 pane-cycle) | ⚠️ | Tab elements carry `role="tab"`; no F6-style pane-cycling shortcut |
+| Keyboard navigation of the chrome (Tab order, F6 pane-cycle) | ✅ | `F6` and `Shift+F6` step through the address bar, toolbar, tab strip, bookmarks bar, the side panel when open, and the page; the toolbar and the strip are one Tab stop each, with arrow keys, Home, End, Enter and Delete, and every control shows a focus ring (`src/main/focus/pane-cycle.ts`, `src/renderer/chrome/roving.ts`) |
 | Emoji picker (OS-level, e.g. Win+.) | ➖ | An OS-level input-method feature |
 
 ### Customisation
@@ -1157,7 +1158,7 @@ the reference set, and whether this build has it.
 | Toolbar customisation | ❌ | Not found |
 | Keyboard shortcuts, remappable | ✅ | Full remapping UI |
 | Gestures (mouse/trackpad) | ❌ | Not found |
-| Side panel | ❌ | Not found (also absent for extensions) |
+| Side panel | ✅ | Docked beside the page on the right or the left (`sidePanel.side`), 280 to 640 px wide, from `Mod+Alt+B`, the toolbar button or More tools, with Bookmarks, History, a Reading list that stays empty while nothing saves to it, Downloads, and one slot for an extension's view that no extension fills yet; the page narrows rather than being covered, and the panel is hidden below 760 px, in HTML fullscreen and in a kiosk (`src/main/side-panel/`, `src/renderer/overlay/side-panel/`) |
 | Settings, History and Profiles update live, without a restart | ✅ | Confirmed across Apps, Privacy, Usage, Updates and Profiles settings, History and the Profiles page, including across separate profile processes (`grant-events.ts`, `start-internal-pages.ts`) |
 
 ### Updates, crash reporting, OS integration and misc
@@ -1171,7 +1172,7 @@ the reference set, and whether this build has it.
 | Open links from other apps (OS-level URL handling) | ✅ | A link handed to the running app opens as a tab: a second launch on Linux and Windows, an `open-url` event on macOS; only http(s) addresses are taken, at most eight; a cold start is `shell/first-window.ts` (`src/main/os/open-url.ts`, `src/main/launch/launch-context.ts`) |
 | "Create shortcut" for a site/app | ⚠️ | A sheet writes a desktop entry (Linux) or a desktop link (Windows) that opens the site in an ordinary Orivon window; not offered on macOS, in a private window or for a page that is not http(s); the Windows link is untested on Windows (`src/main/os/site-shortcut.ts`, `shortcut-overlay.ts`) |
 | OS integration: handoff / share sheet | ⚠️ | Share in the main menu and the tab menu copies the link, starts an email after a confirmation, or opens the QR code; there is no operating-system share sheet (`src/main/os/share-commands.ts`) |
-| Energy saver / performance mode | ❌ | Tab discarding is also absent |
+| Energy saver / performance mode | ⚠️ | With `performance.energySaver` set to "battery", an idle tab sleeps after 5 minutes on battery, also with the memory saver off; no frame-rate or background-work limit beyond Chromium's own (`src/main/memory-saver/sleep-rules.ts`) |
 | Telemetry, with opt-out and disclosure | ✅ | First-run disclosure and a "what was sent" page (`src/telemetry/`) |
 | Languages / UI locale switcher | ❌ | No i18n/locale-switching code; UI strings are hard-coded English |
 | Enterprise policy support | ❌ | Not found |

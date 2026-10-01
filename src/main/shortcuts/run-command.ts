@@ -3,6 +3,8 @@
 import { SHELL_EVENT_CHANNEL } from '../channels.js'
 import { toggleExtensionsMenu } from '../extensions/extensions-menu-command.js'
 import { findStep, openFind } from '../find/find-commands.js'
+import { toggleCaret } from '../focus/caret-runner.js'
+import { cyclePane, goToChromePane } from '../focus/pane-cycle.js'
 import type { ShellWindow } from '../shell/window-registry.js'
 import { closeOthers, closeToRight, duplicateTab, toggleMute, togglePin } from '../shell/tab-commands.js'
 import { openBookmarkAllTabs, starCommand } from '../shell/bookmark-bubble/open-edit.js'
@@ -15,18 +17,22 @@ import { cascadeFrom } from '../shell/window-options.js'
 import type { ShellWindowOptions } from '../shell/window-options.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { ShellServices } from '../shell/shell-services.js'
+import { sleepFrontTab } from '../memory-saver/sleep-command.js'
 import { reopenClosed } from '../session-restore/reopen.js'
 import { openCertificate } from '../auth/certificate-open.js'
+import { groupTabNew, shownNeighbour, stepTab, ungroupTab } from '../tab-groups/groups-runner.js'
 import { openQr } from '../qr/qr-open.js'
 import { copyLinkCommand, emailLinkCommand } from '../os/share-commands.js'
 import { realShareDeps } from '../os/share-runner.js'
 import { openShortcutSheet } from '../os/shortcut-open.js'
+import { sidePanelFor } from '../side-panel/side-panel-host.js'
 import { TAB_SEARCH_OVERLAY } from '../tab-search/tab-search-overlay.js'
 import { dismissRestoreOffer } from '../startup/restore-offer.js'
 import { kioskAllows } from '../window-state/kiosk.js'
 import type { CommandId } from './commands.js'
 import { pdfCommand, pipCommand, printCommand, saveCommand, screenshotCommand, viewSourceCommand } from '../page-tools/page-commands.js'
 import { realDeps } from '../page-tools/real-deps.js'
+import { readerCommand } from '../reader/reader-command.js'
 
 /** A new dependency of a command is a `ShellServices` member, never a field here. */
 export interface CommandDeps {
@@ -52,8 +58,11 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
   switch (id) {
     case 'tab.new': tabs.createTab(); return
     case 'tab.close': if (active !== undefined) tabs.closeTab(active.id); return
-    case 'tab.next': if (order.length > 0) goTo((activeIndex + 1) % order.length); return
-    case 'tab.previous': if (order.length > 0) goTo((activeIndex - 1 + order.length) % order.length); return
+    case 'tab.next': case 'tab.previous': {
+      const next = shownNeighbour(tabs, activeTabId, id === 'tab.next' ? 1 : -1)
+      if (next !== undefined) tabs.activateTab(next)
+      return
+    }
     case 'tab.goto1': goTo(0); return
     case 'tab.goto2': goTo(1); return
     case 'tab.goto3': goTo(2); return
@@ -69,6 +78,9 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'nav.hardReload': tabs.activeWebContents()?.reloadIgnoringCache(); return
     case 'nav.home': goHome(tabs, services.settings, { newTab: false }); return
     case 'nav.stop': tabs.activeWebContents()?.stop(); return
+    case 'focus.nextPane': cyclePane({ window: target, services }, 1); return
+    case 'focus.previousPane': cyclePane({ window: target, services }, -1); return
+    case 'focus.toolbar': goToChromePane({ window: target, services }, 'toolbar'); return
     case 'nav.focusAddress':
       chrome.webContents.focus()
       chrome.webContents.send(SHELL_EVENT_CHANNEL, { type: 'focusAddress' })
@@ -97,14 +109,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'bookmark.toggle': starCommand({ window: target, services }); return
     case 'bookmark.allTabs': openBookmarkAllTabs({ window: target, services }); return
     case 'window.new': deps.openWindow({ place: cascadeFrom(window.getBounds()) }); return
-    case 'tab.moveLeft': case 'tab.moveRight': {
-      if (active === undefined) return
-      // A joined pair moves as one, from where it begins.
-      const partnerAt = active.splitWith === null ? -1 : order.findIndex((tab) => tab.id === active.splitWith)
-      const begins = partnerAt === -1 ? activeIndex : Math.min(activeIndex, partnerAt)
-      tabs.moveTab(active.id, begins + (id === 'tab.moveRight' ? 1 : -1))
-      return
-    }
+    case 'tab.moveLeft': case 'tab.moveRight': if (active !== undefined) stepTab(tabs, active.id, id === 'tab.moveRight' ? 1 : -1); return
     case 'split.toggle': if (active !== undefined) tabs.splits.toggle(active.id); return
     case 'split.focusOther': if (active !== undefined) tabs.splits.focusOther(active.id); return
     case 'split.swap': if (active !== undefined) tabs.splits.swap(active.id); return
@@ -118,6 +123,9 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'tab.mute': if (active !== undefined) toggleMute(tabs, active.id); return
     case 'tab.closeOthers': if (active !== undefined) closeOthers(tabs, active.id); return
     case 'tab.closeRight': if (active !== undefined) closeToRight(tabs, active.id); return
+    case 'tab.group': if (active !== undefined) groupTabNew({ window: target, services }, active.id); return
+    case 'tab.ungroup': if (active !== undefined) ungroupTab({ window: target, services }, active.id); return
+    case 'tab.sleep': if (active !== undefined) void sleepFrontTab(target, active.id); return
     case 'tab.search': target.overlays.toggle(TAB_SEARCH_OVERLAY); return
     case 'window.newPrivate': services.profiles.openPrivate(); return
     case 'profiles.open': tabs.openInternal('profiles'); return
@@ -126,6 +134,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'window.fullscreen': window.setFullScreen(!window.isFullScreen()); return
     case 'bookmarks.toggleBar': toggleBookmarksBar(services); return
     case 'window.alwaysOnTop': window.setAlwaysOnTop(!window.isAlwaysOnTop()); return
+    case 'sidePanel.toggle': sidePanelFor(target).toggle(); return
     case 'settings.open': tabs.openInternal('settings'); return
     case 'passwords.open': tabs.openInternal('settings', '/passwords'); return
     case 'siteSettings.open': tabs.openInternal('settings', '/sites'); return
@@ -138,6 +147,8 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'page.pdf': void pdfCommand(target, realDeps); return
     case 'page.save': void saveCommand(target, realDeps); return
     case 'page.viewSource': void viewSourceCommand(target); return
+    case 'page.reader': readerCommand(target, services); return
+    case 'caret.toggle': toggleCaret({ window: target, services }); return
     case 'share.copyLink': copyLinkCommand(target, realShareDeps); return
     case 'share.email': void emailLinkCommand(target, realShareDeps); return
     case 'site.certificate': openCertificate(target); return

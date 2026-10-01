@@ -2,11 +2,13 @@
 
 **What lives here.** One `ShellStatePart` per field a feature adds to `ShellState`, the object main pushes to the
 chrome view: `home.ts` (whether the toolbar shows the Home button, live with its setting) and `shortcuts.ts` (the
-bindings the chrome names in tooltips, live with the Shortcuts settings), `site-access.ts` (what the page in front was
-asked for and answered, for the address bar's chip), `popups-blocked.ts` (how many windows the page in front tried to
-open and was refused, for the pop-up chip), `content-blocked.ts` (whether the page in front is on a site with
-JavaScript, images or sound switched off, for the mark on the address bar's key) and `extensions.ts` (how many
-extensions are loaded and whether the Extensions button shows, live with its setting and with extensions loading). Each is listed in
+bindings the chrome names in tooltips, live with the Shortcuts settings), `groups.ts` (each window's tab groups),
+`side-panel.ts` (whether the panel is open, on which side, and the narrowest window that has one),
+`site-access.ts` (what the page in front was asked for and answered, for the address bar's chip),
+`popups-blocked.ts` (how many windows the page in front tried to open and was refused, for the pop-up chip),
+`content-blocked.ts` (whether the page in front is on a site with JavaScript, images or sound switched off, for the
+mark on the address bar's key) and `extensions.ts` (how many extensions are loaded and whether the Extensions button
+shows, live with its setting and with extensions loading). Each is listed in
 [`../shell-state-parts.ts`](../shell-state-parts.ts), which reads every part on each push and unsubscribes its
 watchers when the window closes.
 

@@ -14,6 +14,8 @@ export interface ShellWindow {
   readonly overlays: OverlayHost
   /** A page in this window holds the screen (HTML fullscreen), so the browser's keys wait. */
   readonly shortcutsSuspended: () => boolean
+  /** Lays the chrome, the tabs and the overlays out again: what a feature that changes the page area calls. */
+  readonly relayout: () => void
 }
 
 export class WindowRegistry {

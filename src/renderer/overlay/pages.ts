@@ -4,6 +4,7 @@ import type { OverlayPage } from './kit.js'
 import { authSheetPage } from './auth-sheet/page.js'
 import { bookmarkEditPage } from './bookmark-edit/page.js'
 import { bookmarkFolderPage } from './bookmark-folder/page.js'
+import { caretConfirmPage } from './caret-confirm/page.js'
 import { certErrorPage } from './cert-error/page.js'
 import { certificatePage } from './certificate/page.js'
 import { chooserPage } from './chooser/page.js'
@@ -22,7 +23,9 @@ import { restorePage } from './restore/page.js'
 import { sadTabPage } from './sad-tab/page.js'
 import { screenshotPage } from './screenshot/page.js'
 import { shortcutSheetPage } from './shortcut-sheet/page.js'
+import { sidePanelPage } from './side-panel/page.js'
 import { sitePromptPage } from './site-prompt/page.js'
+import { tabGroupPage } from './tab-group/page.js'
 import { tabSearchPage } from './tab-search/page.js'
 import { toastPage } from './toast/page.js'
 
@@ -31,6 +34,7 @@ export const OVERLAY_PAGES: Readonly<Record<string, OverlayPage>> = {
   'bookmark-all-tabs': bookmarkEditPage,
   'bookmark-edit': bookmarkEditPage,
   'bookmark-folder': bookmarkFolderPage,
+  'caret-confirm': caretConfirmPage,
   'cert-error': certErrorPage,
   certificate: certificatePage,
   chooser: chooserPage,
@@ -51,7 +55,9 @@ export const OVERLAY_PAGES: Readonly<Record<string, OverlayPage>> = {
   'sad-tab': sadTabPage,
   screenshot: screenshotPage,
   'shortcut-sheet': shortcutSheetPage,
+  'side-panel': sidePanelPage,
   'site-prompt': sitePromptPage,
+  'tab-group': tabGroupPage,
   'tab-search': tabSearchPage,
   toast: toastPage
 }

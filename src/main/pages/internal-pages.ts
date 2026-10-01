@@ -15,6 +15,7 @@ export const INTERNAL_PAGES = [
   'import',
   'private',
   'profiles',
+  'reader',
   'settings',
   'tasks'
 ] as const

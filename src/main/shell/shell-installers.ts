@@ -8,11 +8,16 @@ import type { SubsystemContext } from '../registry.js'
 import { installAuth } from '../auth/install-auth.js'
 import { installAutofill } from '../autofill/install-autofill.js'
 import { installChoosers } from '../devices/install-choosers.js'
+import { installFocus } from '../focus/install-focus.js'
+import { installMemorySaver } from '../memory-saver/install-memory-saver.js'
 import { installTabSlots } from '../overlays/install-tab-slots.js'
 import { installFormWatch } from '../passwords/install-form-watch.js'
 import { installPrivacyNet } from '../privacy/install-privacy-net.js'
+import { installReader } from '../reader/install-reader.js'
+import { installSidePanel } from '../side-panel/install-side-panel.js'
 import { installContentSettings } from '../site-settings/install-content-settings.js'
 import { installSitePermissions } from '../site-settings/install-site-permissions.js'
+import { installTabGroups } from '../tab-groups/install-tab-groups.js'
 import type { ShellServices } from './shell-services.js'
 
 export interface ShellInstaller {
@@ -25,9 +30,14 @@ export const SHELL_INSTALLERS: readonly ShellInstaller[] = [
   installAutofill,
   installChoosers,
   installContentSettings,
+  installFocus,
   installFormWatch,
+  installMemorySaver,
   installPrivacyNet,
+  installReader,
+  installSidePanel,
   installSitePermissions,
+  installTabGroups,
   installTabSlots
 ]
 

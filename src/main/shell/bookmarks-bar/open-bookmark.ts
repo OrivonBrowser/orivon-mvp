@@ -31,7 +31,11 @@ export function openableIn ({ services }: WindowContext, folder: string): string
 
 export function openBookmark (ctx: WindowContext, id: string, disposition: Disposition): boolean {
   const url = addressOf(ctx, id)
-  if (url === null) return false
+  return url !== null && openAddress(ctx, url, disposition)
+}
+
+/** Opens an address the caller has already read from a store and passed through `sanitizeDirectUrl`. */
+export function openAddress (ctx: WindowContext, url: string, disposition: Disposition): boolean {
   const { tabs } = ctx.window
   const { services } = ctx
   switch (disposition) {

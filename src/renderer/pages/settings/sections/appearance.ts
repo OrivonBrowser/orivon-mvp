@@ -1,4 +1,6 @@
 import type { Section } from '../model.js'
+import { sidePanelRows } from './rows/side-panel.js'
+import { toolbarRows } from './rows/toolbar.js'
 
 export const appearance: Section = {
   id: 'appearance',
@@ -71,6 +73,8 @@ export const appearance: Section = {
           { value: 'never', label: 'Never' }
         ]
       }
-    }
+    },
+    ...sidePanelRows,
+    ...toolbarRows
   ]
 }

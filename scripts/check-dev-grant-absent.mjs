@@ -34,8 +34,9 @@ import { isInvokedDirectly, relativeToRoot } from './cli.mjs'
 export const DEV_MARKERS = [
   '__orivonDevGrant', '__orivonDevRegisterServing', '__orivonDevRevoke', '__orivonDevEthFixtures',
   '__orivonDevStoreTestSeam', '__orivonDevExtensionsStore', '__orivonDevExtensionsInstall',
-  '__orivonDevViewBackgrounds', '__orivonDevPopoverShown', '__orivonDevSignInTestSeam',
-  'ORIVON_TEST_SIGN_IN_HOSTS', '__orivonDevPasswordStorage', 'ORIVON_TEST_PASSWORD_KEYRING',
+  '__orivonDevViewBackgrounds', '__orivonDevPopoverShown', '__orivonDevSidePanel', '__orivonDevSignInTestSeam',
+  'ORIVON_TEST_SIGN_IN_HOSTS', '__orivonSweepNow', '__orivonSleepIgnoreCapture',
+  '__orivonDevPasswordStorage', 'ORIVON_TEST_PASSWORD_KEYRING',
   'ORIVON_TEST_IMPORT_HOME', 'ORIVON_TEST_SUGGEST_URL'
 ]
 

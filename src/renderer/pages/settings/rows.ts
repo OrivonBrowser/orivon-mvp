@@ -150,7 +150,7 @@ export function renderRow (row: Row, state: SettingsState): HTMLElement {
     case 'engines': field = renderEngines(state); break
     case 'usage': field = renderUsage(state); break
     case 'custom': field = control.render(state); break
-    case 'info': field = h('span', { className: 'value', textContent: control.text(state) }); break
+    case 'info': field = h(control.keys === true ? 'kbd' : 'span', { className: 'value', textContent: control.text(state) }); break
   }
 
   const helpText = row.helpFor?.(state) ?? row.help ?? ''

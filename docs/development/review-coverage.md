@@ -313,3 +313,13 @@ In all, 61 findings, 61 confirmed, none refuted.
 | The unit suite, every guard, smoke and 19 end-to-end files in three chunks, after the merge and again after the fixes | The merged branch | All green; one end-to-end spec failed once in a batch and passed on its immediate rerun and in the final batch, its cause not captured |
 
 In all, 34 findings, 34 confirmed, none refuted.
+
+### `stream/b4-layout-access`: tab groups, sleeping tabs, reader view, the side panel, keyboard access and caret browsing (2026-10-01)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| Code review by area, by Opus agents, each finding then attacked by a second agent trying to refute it | The branch against `main`, split into the side panel and tab groups, sleeping tabs, reader view, and keyboard access | 16 findings, all confirmed and fixed with tests, one in part: nothing yet marks a tab that uses a granted camera or microphone, so the memory saver cannot see it (A330) |
+| A designer's review of screenshots of every new surface, light and dark, at 1280 and 700 pixels wide | The strip with groups and sleeping tabs, the group bubble, the side panel on both sides, reader view, the focus rings and the Settings rows | 20 findings, all confirmed and fixed, two in part: a heading role the panel's list does not allow was refused, and the power-source row stays apart from the energy saver's help line |
+| The unit suite, every guard, smoke and 19 end-to-end files in three chunks, after the merge of `main` and again after the fixes | The merged branch | Two compile errors that the merge caused, fixed; the rest green |
+
+In all, 36 findings, 36 confirmed, none refuted.

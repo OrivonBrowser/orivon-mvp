@@ -9,6 +9,7 @@ import { certificateAvailable } from '../auth/certificate-open.js'
 import { createShortcutHint, shareHint } from '../os/menu-state.js'
 import { qrAvailable } from '../qr/qr-open.js'
 import { hintFor } from '../session-restore/reopen.js'
+import { sidePanelFor } from '../side-panel/side-panel-host.js'
 import type { WindowContext } from './window-context.js'
 
 /** One line of the layout. A feature adds its entry beside the entries it belongs with. */
@@ -25,6 +26,10 @@ export type MenuEntry = '-' | CommandId
 /** Commands that do nothing on some pages; the menu greys their row there. */
 const UNAVAILABLE: Partial<Record<CommandId, (ctx: WindowContext) => boolean>> = {
   'page.qr': ({ window }) => !qrAvailable(window),
+  'tab.ungroup': ({ window }) => {
+    const { tabs, activeTabId } = window.tabs.getState()
+    return (tabs.find((tab) => tab.id === activeTabId)?.group ?? null) === null
+  },
   'share.copyLink': (ctx) => shareHint(ctx) !== null,
   'share.email': (ctx) => shareHint(ctx) !== null,
   'site.certificate': ({ window }) => !certificateAvailable(window),
@@ -62,6 +67,8 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
   { submenu: 'More tools', items: [
     'split.toggle',
     'tab.search',
+    'tab.group',
+    'tab.ungroup',
     'page.screenshot',
     'page.pip',
     'page.pdf',
@@ -69,6 +76,10 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
     { item: 'site.shortcut', hint: createShortcutHint },
     'site.certificate',
     { check: 'window.alwaysOnTop', on: ({ window }) => window.window.isAlwaysOnTop() },
+    'page.reader',
+    { check: 'sidePanel.toggle', on: ({ window }) => sidePanelFor(window).isOpen() },
+    { check: 'caret.toggle', on: ({ services }) => services.settings.get('accessibility.caretBrowsing') },
+    'tab.sleep',
     'privacy.clearData',
     'devtools.toggle',
     'devtools.console',

@@ -343,3 +343,7 @@ browser-action-list::part(badge) {
 }
 .toolbar-slot:not(:has(> :not([hidden]))) { display: none; }
 .toolbar-slot > [hidden] { display: none; }
+
+/* A toggle in the cluster that stays tinted while what it opens is open. */
+.iconbtn[aria-pressed='true'] { color: var(--wfocus); background: color-mix(in srgb, var(--wfocus) 16%, transparent); }
+.iconbtn[aria-pressed='true']:not(:disabled):hover { background: color-mix(in srgb, var(--wfocus) 24%, transparent); }

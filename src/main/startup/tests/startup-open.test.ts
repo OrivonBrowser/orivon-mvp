@@ -3,6 +3,7 @@ import { fakeTabs } from '../../session-restore/tests/tabs-fake.js'
 import type { SavedWindow } from '../../session-restore/session-types.js'
 import { ClosedStack } from '../../session-restore/closed-stack.js'
 import { optionsFor } from '../../session-restore/restore.js'
+import { groupsFor } from '../../tab-groups/groups-model.js'
 import { fillFirst, restoreWindows, takeOffStack } from '../startup-open.js'
 
 const tab = (url: string, pinned = false) => ({ url, title: '', pinned })
@@ -16,6 +17,25 @@ describe('fillFirst', () => {
     expect(fake.calls).toEqual(['create https://a.example/ back', 'create https://b.example/ back', 'create https://c.example/ back', 'activate t3'])
     expect(fake.records.get('t1')?.pinned).toBe(true)
     expect(fake.records.get('t2')?.pinned).toBe(false)
+  })
+
+  it('makes the saved groups again, collapsed unless one holds the tab in front, also behind a command-line address', () => {
+    const grouped = (url: string, group: number) => ({ ...tab(url), group })
+    const saved: SavedWindow = {
+      bounds: { x: 0, y: 0, width: 800, height: 600 }, maximized: false, active: 0,
+      tabs: [tab('https://a.example/'), grouped('https://b.example/', 0), grouped('https://c.example/', 0)],
+      groups: [{ title: 'Work', color: 'blue', collapsed: true }]
+    }
+    const fake = fakeTabs()
+    Object.assign(fake.tabs, { splits: { groups: { pairs: () => [], partnerOf: () => null } } })
+    fillFirst({ tabs: saved.tabs, urls: [], saved })(fake.tabs)
+    expect(groupsFor(fake.tabs).list()).toEqual([{ id: expect.any(String), title: 'Work', color: 'blue', collapsed: true }])
+    expect(fake.records.get('t2')?.groupId).toBe(groupsFor(fake.tabs).list()[0]?.id)
+
+    const behind = fakeTabs()
+    Object.assign(behind.tabs, { splits: { groups: { pairs: () => [], partnerOf: () => null } } })
+    fillFirst({ tabs: saved.tabs, urls: ['https://x.example/'], saved })(behind.tabs)
+    expect(groupsFor(behind.tabs).list()[0]?.collapsed).toBe(true)
   })
 
   it('opens the new tab page when nothing could be opened', () => {

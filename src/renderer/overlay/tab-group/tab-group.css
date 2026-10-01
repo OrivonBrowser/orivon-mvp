@@ -1,0 +1,84 @@
+/* The group bubble: a name field and the eight colours over a short list of actions. The colours are literal copies
+   of the chrome's group palette (each renderer entry carries its own tokens). */
+
+body[data-overlay='tab-group'] {
+  --tg-gray: #6b7280;
+  --tg-blue: #2563eb;
+  --tg-red: #dc2626;
+  --tg-orange: #ea580c;
+  --tg-green: #16a34a;
+  --tg-pink: #db2777;
+  --tg-purple: #9333ea;
+  --tg-teal: #0d9488;
+}
+@media (prefers-color-scheme: dark) {
+  body[data-overlay='tab-group'] {
+    --tg-gray: #9ca3af;
+    --tg-blue: #60a5fa;
+    --tg-red: #f87171;
+    --tg-orange: #fb923c;
+    --tg-green: #4ade80;
+    --tg-pink: #f472b6;
+    --tg-purple: #c084fc;
+    --tg-teal: #2dd4bf;
+  }
+}
+
+body[data-overlay='tab-group'] .tg-head { display: grid; gap: 12px; padding: 12px 12px 8px; }
+
+body[data-overlay='tab-group'] .tg-name {
+  width: 100%;
+  max-width: none;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  color: var(--wink);
+}
+body[data-overlay='tab-group'] .tg-name::placeholder { color: var(--wink-off); }
+body[data-overlay='tab-group'] .tg-name:focus-visible { outline: 2px solid var(--waccent-text); outline-offset: -2px; }
+
+body[data-overlay='tab-group'] .tg-swatches { display: flex; justify-content: space-between; padding: 0 4px; }
+
+body[data-overlay='tab-group'] .tg-swatch {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: var(--tg);
+  background-clip: padding-box;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--wink) 14%, transparent);
+  cursor: pointer;
+  transition: transform 0.12s;
+}
+body[data-overlay='tab-group'] .tg-swatch[data-color='gray'] { --tg: var(--tg-gray); }
+body[data-overlay='tab-group'] .tg-swatch[data-color='blue'] { --tg: var(--tg-blue); }
+body[data-overlay='tab-group'] .tg-swatch[data-color='red'] { --tg: var(--tg-red); }
+body[data-overlay='tab-group'] .tg-swatch[data-color='orange'] { --tg: var(--tg-orange); }
+body[data-overlay='tab-group'] .tg-swatch[data-color='green'] { --tg: var(--tg-green); }
+body[data-overlay='tab-group'] .tg-swatch[data-color='pink'] { --tg: var(--tg-pink); }
+body[data-overlay='tab-group'] .tg-swatch[data-color='purple'] { --tg: var(--tg-purple); }
+body[data-overlay='tab-group'] .tg-swatch[data-color='teal'] { --tg: var(--tg-teal); }
+body[data-overlay='tab-group'] .tg-swatch:hover { transform: scale(1.12); }
+/* The chosen colour is ringed in the text colour, with a gap, so it is told by shape and not by hue alone. */
+body[data-overlay='tab-group'] .tg-swatch[aria-checked='true'] { border-color: var(--wbg); box-shadow: 0 0 0 2px var(--wink); }
+body[data-overlay='tab-group'] .tg-swatch:focus-visible { outline: 2px solid var(--waccent-text); outline-offset: 3px; }
+
+body[data-overlay='tab-group'] .tg-actions { padding: 4px 8px 8px; }
+body[data-overlay='tab-group'] .listbox-item { box-sizing: border-box; min-height: 32px; padding: 4px 10px; }
+body[data-overlay='tab-group'] .listbox-item > .item-icon { grid-row: 1; }
+body[data-overlay='tab-group'] .listbox-item:focus-visible { background: var(--whover); outline: 2px solid var(--waccent-text); }
+
+body[data-overlay='tab-group'] .tg-danger .item-title,
+body[data-overlay='tab-group'] .tg-danger .item-icon { color: var(--wdanger-text); }
+body[data-overlay='tab-group'] .tg-danger:hover { background: var(--wdanger-wash); }
+/* Armed: the second click is the one that closes, so the row turns solid. */
+body[data-overlay='tab-group'] .tg-danger.armed { background: var(--wdanger); }
+body[data-overlay='tab-group'] .tg-danger.armed .item-title,
+body[data-overlay='tab-group'] .tg-danger.armed .item-icon { color: #fff; }
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-overlay='tab-group'] .tg-swatch { transition: none; }
+  body[data-overlay='tab-group'] .tg-swatch:hover { transform: none; }
+}

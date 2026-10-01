@@ -5,16 +5,16 @@ vi.mock('electron', () => ({ Menu: { buildFromTemplate: vi.fn() } }))
 
 const { tabMenuTemplate } = await import('../tab-menu.js')
 
-const actions = () => ({ newTabRight: vi.fn(), reload: vi.fn(), duplicate: vi.fn(), togglePin: vi.fn(), toggleMute: vi.fn(), copyLink: vi.fn(), emailLink: vi.fn(), moveToNewWindow: vi.fn(), separate: vi.fn(), close: vi.fn(), closeOthers: vi.fn(), closeRight: vi.fn(), run: vi.fn() })
+const actions = () => ({ newTabRight: vi.fn(), reload: vi.fn(), duplicate: vi.fn(), togglePin: vi.fn(), toggleMute: vi.fn(), newGroup: vi.fn(), ungroup: vi.fn(), sleep: vi.fn(), copyLink: vi.fn(), emailLink: vi.fn(), moveToNewWindow: vi.fn(), separate: vi.fn(), close: vi.fn(), closeOthers: vi.fn(), closeRight: vi.fn(), run: vi.fn() })
 const model = (overrides: Partial<Parameters<typeof tabMenuTemplate>[0]> = {}): Parameters<typeof tabMenuTemplate>[0] => ({
-  canDuplicate: true, pinned: false, muted: false, canPin: true, canShare: true, othersClosable: true, rightClosable: true, tabCount: 3, inSplit: false, splitPartners: [], otherWindows: [], ...overrides
+  canDuplicate: true, pinned: false, muted: false, canPin: true, canShare: true, othersClosable: true, rightClosable: true, tabCount: 3, inSplit: false, splitPartners: [], grouped: false, groups: [], otherWindows: [], ...overrides
 })
 const labels = (template: MenuItemConstructorOptions[]): string[] => template.filter((item) => item.type !== 'separator').map((item) => item.label ?? '')
 const find = (template: MenuItemConstructorOptions[], label: string): MenuItemConstructorOptions | undefined => template.find((item) => item.label === label)
 
 describe('a tab\'s menu', () => {
   it('offers what can be done to one tab, in order', () => {
-    expect(labels(tabMenuTemplate(model(), actions()))).toEqual(['New Tab to the Right', 'Reload', 'Duplicate', 'Pin Tab', 'Mute Tab', 'Share', 'Split with', 'Move Tab to New Window', 'Close Tab', 'Close Other Tabs', 'Close Tabs to the Right', 'Reopen Closed Tab', 'Bookmark All Tabs…'])
+    expect(labels(tabMenuTemplate(model(), actions()))).toEqual(['New Tab to the Right', 'Reload', 'Duplicate', 'Pin Tab', 'Mute Tab', 'Put Tab to Sleep', 'Add Tab to New Group', 'Share', 'Split with', 'Move Tab to New Window', 'Close Tab', 'Close Other Tabs', 'Close Tabs to the Right', 'Reopen Closed Tab', 'Bookmark All Tabs…'])
   })
 
   it('runs the action of the entry chosen', () => {
@@ -31,6 +31,15 @@ describe('a tab\'s menu', () => {
     expect(a.moveToNewWindow).toHaveBeenCalledTimes(1)
     expect(a.close).toHaveBeenCalledTimes(1)
     expect(a.closeOthers).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers sleep for a tab behind the one in front, and not for the one in front', () => {
+    const a = actions()
+    const behind = tabMenuTemplate(model({ canSleep: true }), a)
+    expect(find(behind, 'Put Tab to Sleep')?.enabled).toBe(true)
+    ;(find(behind, 'Put Tab to Sleep')?.click as () => void)()
+    expect(a.sleep).toHaveBeenCalledTimes(1)
+    expect(find(tabMenuTemplate(model({ canSleep: false }), actions()), 'Put Tab to Sleep')?.enabled).toBe(false)
   })
 
   it('leaves a window\'s only tab where it is', () => {
@@ -112,5 +121,28 @@ describe('a tab\'s menu', () => {
       expect(template.at(-1)?.type).not.toBe('separator')
       template.forEach((item, at) => { if (item.type === 'separator') expect(template[at - 1]?.type).not.toBe('separator') })
     }
+  })
+})
+
+describe('a tab\'s menu: groups', () => {
+  it('starts a new group, and offers Remove from Group only to a member', () => {
+    const a = actions()
+    const alone = tabMenuTemplate(model(), a)
+    ;(find(alone, 'Add Tab to New Group')?.click as () => void)()
+    expect(a.newGroup).toHaveBeenCalledTimes(1)
+    expect(find(alone, 'Remove from Group')).toBeUndefined()
+    expect(find(alone, 'Add Tab to Group')).toBeUndefined()
+    const member = tabMenuTemplate(model({ grouped: true }), a)
+    ;(find(member, 'Remove from Group')?.click as () => void)()
+    expect(a.ungroup).toHaveBeenCalledTimes(1)
+  })
+
+  it('lists the groups it could join, each running its own join', () => {
+    const join = vi.fn()
+    const template = tabMenuTemplate(model({ groups: [{ label: 'Work', join }, { label: 'Untitled Group (Green)', join: vi.fn() }] }), actions())
+    const submenu = find(template, 'Add Tab to Group')?.submenu as MenuItemConstructorOptions[]
+    expect(submenu.map((item) => item.label)).toEqual(['Work', 'Untitled Group (Green)'])
+    ;(submenu[0]?.click as () => void)()
+    expect(join).toHaveBeenCalledTimes(1)
   })
 })

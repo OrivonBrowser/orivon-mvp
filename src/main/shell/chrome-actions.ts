@@ -3,7 +3,9 @@ import { barFolder, barItems, barMenu, barMove, barOpen } from './bookmarks-bar/
 import { omniboxClose, omniboxPick, omniboxQuery, omniboxSelect } from '../omnibox/omnibox-actions.js'
 import { passwordsKey } from '../passwords/passwords-key-action.js'
 import { homeOpen } from './actions/home-open.js'
+import { groupMenu, groupMove, groupToggle } from './actions/tab-group.js'
 import { overlayClose, overlayToggle } from './actions/overlay.js'
+import { paneLeave } from './actions/pane-leave.js'
 import { promptAnchorReport } from './actions/prompt-anchor.js'
 import { tabMute } from './actions/tab-mute.js'
 import type { WindowContext } from './window-context.js'
@@ -20,6 +22,9 @@ export const CHROME_ACTIONS: Readonly<Record<string, ChromeAction>> = {
   'bookmarks.menu': barMenu,
   'bookmarks.move': barMove,
   'bookmarks.open': barOpen,
+  'group.menu': groupMenu,
+  'group.move': groupMove,
+  'group.toggle': groupToggle,
   'home.open': homeOpen,
   'omnibox.close': omniboxClose,
   'omnibox.pick': omniboxPick,
@@ -27,6 +32,7 @@ export const CHROME_ACTIONS: Readonly<Record<string, ChromeAction>> = {
   'omnibox.select': omniboxSelect,
   'overlay.close': overlayClose,
   'overlay.toggle': overlayToggle,
+  'pane.leave': paneLeave,
   'passwords.key': passwordsKey,
   'prompt.anchor': promptAnchorReport,
   'tab.mute': tabMute

@@ -4,12 +4,16 @@
 // file changes by one line per feature.
 import type { WebContents, WebContentsView } from 'electron'
 import { contain } from './contain.js'
+import { caretSignal } from '../focus/caret-signal.js'
 import { audioSignal } from './signals/audio.js'
 import { connectionSignal } from './signals/connection.js'
 import { crashedSignal } from './signals/crashed.js'
 import { findSignal } from './signals/find.js'
+import { groupSignal } from '../tab-groups/group-signal.js'
 import { pendingAddressSignal } from './signals/pending-address.js'
+import { readerSignal } from '../reader/reader-signal.js'
 import { stopKeySignal } from './signals/stop-key.js'
+import { sleepSignal } from '../memory-saver/sleep-signal.js'
 import type { TabRecord, TabState } from './tab-types.js'
 import { restoredTitle } from '../session-restore/restored-title.js'
 
@@ -35,11 +39,15 @@ export interface TabSignal {
 /** One line per feature, alphabetical by name. */
 export const TAB_SIGNALS: readonly TabSignal[] = [
   audioSignal,
+  caretSignal,
   connectionSignal,
   crashedSignal,
   findSignal,
+  groupSignal,
   pendingAddressSignal,
+  readerSignal,
   restoredTitle,
+  sleepSignal,
   stopKeySignal
 ]
 

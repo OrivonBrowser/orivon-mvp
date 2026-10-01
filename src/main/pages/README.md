@@ -9,7 +9,7 @@ in-memory session that serves the scheme, and registers it before the app is rea
 records which webContents the shell opened as which page, `internal-tab.ts` keeps such a tab on its page,
 and `internal-ipc.ts` is the single channel pages speak on, checked per call, `pages-domain.ts` lets one page take the person to another,
 `app-domain.ts` starts the browser again for a setting read at start, and `telemetry-domain.ts` is the usage statistics choice. The other
-domains live beside what they serve (`../settings/`, `../history/`, `../browsing/` (bookmarks), `../import/`, `../downloads/`, `../info/`, `../launch/`, `../permissions/`, `../verifier/`, `../self-update/`, `../privacy/`, `../shortcuts/`, `../extensions/`). `pages-subsystem.ts` and
+domains live beside what they serve (`../settings/`, `../history/`, `../browsing/` (bookmarks), `../import/`, `../downloads/`, `../info/`, `../launch/`, `../permissions/`, `../verifier/`, `../self-update/`, `../privacy/`, `../reader/`, `../shortcuts/`, `../extensions/`). `pages-subsystem.ts` and
 `start-internal-pages.ts` bring it up.
 
 **What it depends on.** `electron`; [`../settings/`](../settings/) (the settings domain);

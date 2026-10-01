@@ -5,6 +5,8 @@ import type { Displays } from '../session-restore/restore.js'
 import type { ClosedStack } from '../session-restore/closed-stack.js'
 import type { SavedWindow } from '../session-restore/session-types.js'
 import type { TabManager } from '../shell/tabs.js'
+import { restoreAsleepTabs } from '../memory-saver/restore-asleep.js'
+import { restoreGroups } from '../tab-groups/restore-groups.js'
 import type { ShellWindowOptions } from '../shell/window-options.js'
 import type { StartupPlan } from './startup-plan.js'
 
@@ -19,9 +21,12 @@ export function fillFirst (first: StartupPlan['first']): (tabs: TabManager) => v
     first.urls.forEach((url, index) => { tabs.createTab(url, index === 0) })
     const wanted = opened[first.saved?.active ?? 0]
     const front = wanted !== undefined && wanted !== '' ? wanted : opened.find((id) => id !== '')
-    if (first.urls.length > 0) return
-    if (front === undefined) tabs.createTab()
-    else tabs.activateTab(front)
+    if (first.urls.length === 0) {
+      if (front === undefined) tabs.createTab()
+      else tabs.activateTab(front)
+    }
+    if (first.saved !== undefined) restoreGroups(tabs, first.saved, opened, first.urls.length > 0 ? undefined : front)
+    if (first.saved !== undefined) restoreAsleepTabs(tabs, first.tabs, opened)
   }
 }
 

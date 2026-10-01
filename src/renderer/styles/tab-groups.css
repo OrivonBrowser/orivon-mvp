@@ -1,0 +1,102 @@
+/* Tab groups: a chip before a group's first tab, and a coloured line on its tabs. The eight colours are the only
+   ones outside the chrome's own palette; each is a little deeper in the light chrome and lighter in the dark one so
+   the line and the chip's tint read in both. */
+
+:root {
+  --tg-gray: #6b7280;
+  --tg-blue: #2563eb;
+  --tg-red: #dc2626;
+  --tg-orange: #ea580c;
+  --tg-green: #16a34a;
+  --tg-pink: #db2777;
+  --tg-purple: #9333ea;
+  --tg-teal: #0d9488;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tg-gray: #9ca3af;
+    --tg-blue: #60a5fa;
+    --tg-red: #f87171;
+    --tg-orange: #fb923c;
+    --tg-green: #4ade80;
+    --tg-pink: #f472b6;
+    --tg-purple: #c084fc;
+    --tg-teal: #2dd4bf;
+  }
+}
+
+:is(.tab, .tab-group-chip)[data-color='gray'] { --tg: var(--tg-gray); }
+:is(.tab, .tab-group-chip)[data-color='blue'] { --tg: var(--tg-blue); }
+:is(.tab, .tab-group-chip)[data-color='red'] { --tg: var(--tg-red); }
+:is(.tab, .tab-group-chip)[data-color='orange'] { --tg: var(--tg-orange); }
+:is(.tab, .tab-group-chip)[data-color='green'] { --tg: var(--tg-green); }
+:is(.tab, .tab-group-chip)[data-color='pink'] { --tg: var(--tg-pink); }
+:is(.tab, .tab-group-chip)[data-color='purple'] { --tg: var(--tg-purple); }
+:is(.tab, .tab-group-chip)[data-color='teal'] { --tg: var(--tg-teal); }
+
+/* A tab in a collapsed group takes no room, whatever display the tab sets for itself. */
+.tab[hidden] { display: none; }
+
+.tab[data-group]::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--tg);
+  opacity: 0.6;
+  pointer-events: none;
+}
+.tab.active[data-group]::before { opacity: 1; }
+
+.tab-group-chip {
+  flex: none;
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  max-width: 160px;
+  margin: 0 3px 5px 4px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--tg) 22%, var(--wchrome));
+  color: var(--wink);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 20px;
+  cursor: default;
+  user-select: none;
+  transition: background-color 0.12s;
+}
+.tab-group-chip:hover { background: color-mix(in srgb, var(--tg) 34%, var(--wchrome)); }
+.tab-group-chip:active { background: color-mix(in srgb, var(--tg) 42%, var(--wchrome)); }
+.tab-group-chip:focus-visible { outline: 2px solid var(--waccent); outline-offset: 1px; }
+.tab-group-chip[hidden] { display: none; }
+.tab-group-chip .tg-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The count is small text on a tinted chip, so it takes the full ink; the rule beside it keeps it apart from the name. */
+.tab-group-chip .tg-count {
+  flex: none;
+  padding-left: 6px;
+  border-left: 1px solid color-mix(in srgb, var(--wink) 20%, transparent);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--wink);
+}
+.tab-group-chip.untitled .tg-count { padding-left: 0; border-left: none; }
+
+/* A group with no name is a dot; once collapsed it has a count to carry, and takes its tint. */
+.tab-group-chip .tg-dot { display: none; flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--tg); }
+.tab-group-chip.untitled .tg-dot { display: block; }
+.tab-group-chip.untitled { padding: 0 5px; gap: 5px; }
+.tab-group-chip.untitled:not(.collapsed) { background: transparent; }
+.tab-group-chip.untitled:not(.collapsed):hover { background: color-mix(in srgb, var(--tg) 22%, var(--wchrome)); }
+
+/* The chip held by the pointer, while the group is dragged. */
+.tab-group-chip.dragging { position: relative; z-index: 2; opacity: 0.92; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); transition: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tab-group-chip { transition: none; }
+}

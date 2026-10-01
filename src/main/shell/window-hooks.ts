@@ -5,6 +5,8 @@ import type { WindowContext } from './window-context.js'
 import type { ShellWindowOptions } from './window-options.js'
 import { restoreOffer } from '../startup/restore-offer.js'
 import { sessionRecorder } from '../session-restore/session-hook.js'
+import { sidePanelHook } from '../side-panel/side-panel-hook.js'
+import { tabGroupsHook } from '../tab-groups/groups-hook.js'
 
 export interface WindowHook {
   readonly name: string
@@ -17,6 +19,8 @@ export interface WindowHook {
 export const WINDOW_HOOKS: readonly WindowHook[] = [
   restoreOffer,
   sessionRecorder,
+  sidePanelHook,
+  tabGroupsHook,
   windowStateRecorder
 ]
 
