@@ -3,7 +3,8 @@
 // (setEventListenerFilter). Reads the loaded manifest, never a shell
 // service, so it holds no state of its own.
 import { session } from 'electron'
-import { hasApiOrHostAccess, hasApiPermission, hasHostAccess } from './extension-host-access.js'
+import { apiOrHostAccessFor, hasApiPermission, hostAccessFor } from './extension-host-access.js'
+import { permissionHeld } from './extension-permission-check.js'
 
 /** The four chrome.tabs fields Chrome itself only returns to an extension
  * holding `tabs` or a matching host permission -- the same set
@@ -32,6 +33,21 @@ export function cookieChangeUrl (cookie: { domain?: unknown, path?: unknown, sec
   return `${cookie.secure === true ? 'https' : 'http'}://${domain}${cookie.path}`
 }
 
+/** What an event needs on top of its namespace's permission: given the
+ * listener's extension and the event's own arguments, the arguments to
+ * deliver, or undefined to deliver nothing. Keyed by the full event name,
+ * one per line, alphabetical. */
+export type EventGate = (query: { extensionId: string, manifest: unknown, args: readonly unknown[] }) => readonly unknown[] | undefined
+export const EVENT_GATES: Readonly<Record<string, EventGate>> = {}
+
+const NAMESPACE_PERMISSIONS = new Map<string, string>()
+
+/** `install-apis.ts` registers each module's namespace with its permission:
+ * an event named `<namespace>.<x>` then reaches only a listener holding it. */
+export function registerEventPermission (namespace: string, permission: string): void {
+  NAMESPACE_PERMISSIONS.set(namespace, permission)
+}
+
 /**
  * Installed with setEventListenerFilter (router.ts's own doc): per
  * listener, decides whether a broadcast event reaches `extensionId` at all,
@@ -41,7 +57,7 @@ export function cookieChangeUrl (cookie: { domain?: unknown, path?: unknown, sec
  * its own handlers apply); tabs.onCreated/onUpdated strip the four
  * sensitive fields (stripSensitiveTabFields above) unless the listener
  * holds `tabs` OR host access to the tab's URL (Chrome's own either/or
- * rule, `hasApiOrHostAccess`'s own doc); every other tabs.* event and every
+ * rule, `apiOrHostAccessFor`'s own doc); every other tabs.* event and every
  * webNavigation.* event either carries no such field (tabs.onActivated/
  * onRemoved) or requires the `webNavigation` permission outright.
  */
@@ -51,19 +67,19 @@ export function eventListenerFilter (extensionId: string, eventName: string, arg
   if (eventName === 'cookies.onChanged') {
     const changeInfo = args[0] as { cookie?: { domain?: unknown, path?: unknown, secure?: unknown } } | undefined
     const url = changeInfo?.cookie === undefined ? undefined : cookieChangeUrl(changeInfo.cookie)
-    if (!hasApiPermission(manifest, 'cookies') || !hasHostAccess(manifest, url)) return undefined
+    if (!hasApiPermission(manifest, 'cookies') || !hostAccessFor(extensionId, manifest, url)) return undefined
     return args
   }
 
   if (eventName === 'tabs.onCreated') {
     const details = args[0] as { url?: string } | undefined
-    if (hasApiOrHostAccess(manifest, 'tabs', details?.url)) return args
+    if (apiOrHostAccessFor(extensionId, manifest, 'tabs', details?.url)) return args
     return [stripSensitiveTabFields(details)]
   }
 
   if (eventName === 'tabs.onUpdated') {
     const [tabId, changeInfo, tab] = args as [unknown, unknown, { url?: string } | undefined]
-    if (hasApiOrHostAccess(manifest, 'tabs', tab?.url)) return args
+    if (apiOrHostAccessFor(extensionId, manifest, 'tabs', tab?.url)) return args
     return [tabId, stripSensitiveTabFields(changeInfo), stripSensitiveTabFields(tab)]
   }
 
@@ -71,7 +87,7 @@ export function eventListenerFilter (extensionId: string, eventName: string, arg
     const details = args[0] as { tabs?: Array<{ url?: string }> } | undefined
     if (details?.tabs === undefined) return args
     const tabs = details.tabs.map((tab) =>
-      hasApiOrHostAccess(manifest, 'tabs', tab?.url) ? tab : stripSensitiveTabFields(tab)
+      apiOrHostAccessFor(extensionId, manifest, 'tabs', tab?.url) ? tab : stripSensitiveTabFields(tab)
     )
     return [{ ...details, tabs }]
   }
@@ -80,5 +96,9 @@ export function eventListenerFilter (extensionId: string, eventName: string, arg
     return hasApiPermission(manifest, 'webNavigation') ? args : undefined
   }
 
-  return args
+  const dot = eventName.indexOf('.')
+  const required = dot < 0 ? undefined : NAMESPACE_PERMISSIONS.get(eventName.slice(0, dot))
+  if (required !== undefined && !permissionHeld(extensionId, required)) return undefined
+  const gate = EVENT_GATES[eventName]
+  return gate === undefined ? args : gate({ extensionId, manifest, args })
 }

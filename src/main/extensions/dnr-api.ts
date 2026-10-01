@@ -2,14 +2,12 @@
 // same ExtensionRouter the library's own APIs use (UPSTREAM.md patch 43's
 // `getRouter()`), reached from the renderer's real `invokeExtension`
 // calls (`vendor/electron-chrome-extensions/src/renderer/index.ts`, patch 10's
-// `declarativeNetRequest` factory). `setPermissionCheck` (patch 43)
-// is what lets `{ permission: 'declarativeNetRequest' }` below gate on the
-// ORIGINAL permission Orivon recorded in `registry.ts`'s `StrippedRecord`,
-// since the loaded manifest no longer has it.
+// `declarativeNetRequest` factory). `extension-permission-check.ts` is what
+// lets `{ permission: 'declarativeNetRequest' }` below gate on the ORIGINAL
+// permission Orivon recorded in `registry.ts`'s `StrippedRecord`, since the
+// loaded manifest no longer has it.
 
 import type { ExtensionRouterHandle } from 'orivon:crx-extensions'
-import { setPermissionCheck } from 'orivon:crx-extensions-router'
-import type { Session } from 'electron'
 import { getCachedStrippedPermissions, getDnrEngine, slotDirForLoadedExtension } from './extensions-dnr.js'
 import { writeDynamicRules, writeEnabledRulesetOverride } from './dnr/dnr-runner.js'
 import {
@@ -28,7 +26,6 @@ import type {
 import type { DnrRequest, DnrResourceType, DnrRule, DnrUpdateRuleOptions, DnrUpdateRulesetOptions } from './dnr/types.js'
 
 const DNR_PERMISSION = 'declarativeNetRequest'
-const DNR_HOST_ACCESS_PERMISSION = 'declarativeNetRequestWithHostAccess'
 
 /** The one method `registerDnrApiHandlers`'s badge wiring needs from
  * `ElectronChromeExtensions` (`setBadgeText`, UPSTREAM.md patch 44) --
@@ -38,15 +35,7 @@ export interface BadgeHost {
   readonly setBadgeText: (extensionId: string, tabId: number, text: string) => void
 }
 
-/** A permission `loadableManifest` strips from the loaded copy (native
- * messaging and every `webRequest*`/`declarativeNetRequest*` name,
- * `src/main/extensions/README.md`'s Design notes): checked against the
- * ORIGINAL record instead of the loaded manifest. Every other permission
- * name is unaffected by stripping, so the loaded manifest's own
- * `manifest.permissions` still answers those correctly. */
-export function isStrippedPermissionName(permission: string): boolean {
-  return permission === 'nativeMessaging' || permission.startsWith('declarativeNetRequest') || permission.startsWith('webRequest')
-}
+export { isStrippedPermissionName } from './extension-permission-check.js'
 
 /** `extensionId`'s ORIGINAL (pre-strip) permission list -- `extensions-dnr.ts`'s
  * own load-time cache, not a fresh `registry.json` read: this is called once
@@ -56,36 +45,6 @@ export function isStrippedPermissionName(permission: string): boolean {
  * or unloads. */
 function strippedPermissionsFor(extensionId: string): readonly string[] {
   return getCachedStrippedPermissions(extensionId)
-}
-
-/**
- * Installed once, before any extension's `crx-msg` traffic: overrides the
- * router's default manifest-permission check globally (there is one router
- * per session, and Orivon runs extensions in exactly one), falling back to
- * the loaded manifest's own permissions for a name that was never stripped.
- * Chrome unlocks `chrome.declarativeNetRequest` for either
- * `declarativeNetRequest` or `declarativeNetRequestWithHostAccess`
- * (`extensions-dnr.ts`'s own `hasDnrPermission` doc has the citation this
- * package's runtime gating agrees with); every handler below gates on the
- * plain `declarativeNetRequest` string (`DNR_PERMISSION`, `gated`), so this
- * is the one place that string is treated as "either permission" rather
- * than a literal match. `declarativeNetRequestFeedback` is never accepted
- * here as a substitute -- `getMatchedRules`'s own handler checks it
- * separately, as Chrome requires.
- */
-export function installDnrPermissionCheck(defaultSession: Session): void {
-  setPermissionCheck((extensionId, permission) => {
-    if (permission === DNR_PERMISSION) {
-      const stripped = strippedPermissionsFor(extensionId)
-      return stripped.includes(DNR_PERMISSION) || stripped.includes(DNR_HOST_ACCESS_PERMISSION)
-    }
-    if (isStrippedPermissionName(permission)) {
-      return strippedPermissionsFor(extensionId).includes(permission)
-    }
-    const extension = defaultSession.extensions.getExtension(extensionId)
-    const manifest = extension?.manifest as { permissions?: string[] } | undefined
-    return manifest?.permissions?.includes(permission) ?? false
-  })
 }
 
 function asArray<T>(value: unknown): T[] | undefined {

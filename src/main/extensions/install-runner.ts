@@ -23,6 +23,7 @@ import {
 } from './registry-runner.js'
 import type { ExtensionSource, ExtensionUpdater, InstalledExtension } from './registry.js'
 import { clearPendingDnrInstall, registerPendingDnrInstall } from './extensions-dnr.js'
+import { refusePrivateInstall } from './install-private.js'
 import { generateId } from '../../../vendor/electron-chrome-web-store/src/browser/id.js'
 
 // resolveSlotKey moved to registry-runner.ts (key.pub is persisted
@@ -37,6 +38,8 @@ export interface InstallContext {
   readonly userDataPath: string
   readonly session: Session
   readonly prompt: InstallPrompt
+  /** This runtime is private or a guest: every install route refuses (install-private.ts). */
+  readonly privateSession?: boolean
 }
 
 export type InstallOutcome =
@@ -101,6 +104,8 @@ export interface PendingInstall {
 }
 
 export async function finishInstall (ctx: InstallContext, pending: PendingInstall): Promise<InstallOutcome> {
+  const refused = refusePrivateInstall(ctx)
+  if (refused !== undefined) return refused
   const manifestResult = readExtensionManifest(pending.rawManifest)
   if (!manifestResult.ok) return { installed: false, reason: `manifest refused: ${manifestResult.reason}` }
   const { facts } = manifestResult
@@ -271,6 +276,8 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
 
 /** Installs an unpacked extension from a folder the person picked. */
 export async function installFromFolder (ctx: InstallContext, dir: string): Promise<InstallOutcome> {
+  const refused = refusePrivateInstall(ctx)
+  if (refused !== undefined) return refused
   const rawManifest = readManifestObject(JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')), dir)
   return await finishInstall(ctx, {
     rawManifest,
@@ -289,6 +296,8 @@ export async function installFromFolder (ctx: InstallContext, dir: string): Prom
  * slot is derived from the file's own bytes, never from a claimed identity.
  */
 export async function installFromFile (ctx: InstallContext, filePath: string): Promise<InstallOutcome> {
+  const refused = refusePrivateInstall(ctx)
+  if (refused !== undefined) return refused
   const bytes = Buffer.from(readFileSync(filePath))
   const isCrx = extname(filePath).toLowerCase() === '.crx'
 

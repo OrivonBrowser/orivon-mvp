@@ -38,7 +38,7 @@ import { watchForMissedServiceWorkerPreload } from './extension-sw-preload-recov
 import { beginDnrReload, endDnrReload } from './extensions-dnr.js'
 import { senderMatchesClaimedExtensionId } from './extension-sender-id-check.js'
 import { registerSandboxPageQuery } from './extension-sandbox-page-query.js'
-import { hasApiOrHostAccess, hasHostAccess } from './extension-host-access.js'
+import { apiOrHostAccessFor, hostAccessFor } from './extension-host-access.js'
 import { clearInvocationsForExtension, hasRecentInvocation } from './extension-tab-invocation.js'
 import { recordTabCaptureInvocation } from './extension-tab-capture-invocation.js'
 
@@ -52,6 +52,11 @@ export const EXTENSIONS_DEFAULT_PARTITION = 'orivon-extensions-default'
 
 let bridge: ShellBridge | undefined
 let hostExtensions: ElectronChromeExtensions | undefined
+
+/** The shell's services once the first window exists, undefined before. */
+export function shellServices (): ShellServices | undefined {
+  return bridge?.services
+}
 
 /** Constructs the library, once, before any extension loads. `preloadPath`
  * is `extensions-subsystem.ts`'s bundle of `vendor/.../src/preload.ts` PLUS
@@ -71,9 +76,9 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
     partition === EXTENSIONS_DEFAULT_PARTITION ? session.defaultSession : session.fromPartition(partition))
   setMessageSenderIdCheck(senderMatchesClaimedExtensionId)
   setEventListenerFilter(eventListenerFilter)
-  setCookieHostAccessCheck(hasHostAccess)
-  setTabUrlAccessCheck((manifest, url) => hasApiOrHostAccess(manifest, 'tabs', url))
-  setTabHostAccessCheck(hasHostAccess)
+  setCookieHostAccessCheck((manifest, url, extensionId) => hostAccessFor(extensionId, manifest, url))
+  setTabUrlAccessCheck((manifest, url, extensionId, tabId) => apiOrHostAccessFor(extensionId, manifest, 'tabs', url, tabId))
+  setTabHostAccessCheck((manifest, url, extensionId, tabId) => hostAccessFor(extensionId, manifest, url, tabId))
   setTabCaptureInvocationRecorder(recordTabCaptureInvocation)
   setTabCaptureInvocationCheck(hasRecentInvocation)
   setTabCaptureGrantRecorder((extensionId, targetTabId) => { mintTabCaptureGrant(extensionId, targetTabId, Date.now()) })

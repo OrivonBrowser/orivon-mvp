@@ -51,3 +51,29 @@ export function hasHostAccess (manifest: unknown, url: string | undefined): bool
 export function hasApiOrHostAccess (manifest: unknown, apiPermission: string, url: string | undefined): boolean {
   return hasApiPermission(manifest, apiPermission) || hasHostAccess(manifest, url)
 }
+
+/** One extra rule on top of the manifest's own host permissions: a question
+ * about `extensionId` reaching `url` (on tab `tabId`, when the question is
+ * about a tab), answered true, false, or undefined to leave it to the next
+ * rule. The first rule that answers wins, and a rule may only narrow or widen
+ * what the manifest says for the extension it names. */
+export interface HostAccessQuestion { readonly extensionId: string, readonly url: string | undefined, readonly tabId?: number | undefined }
+export type HostAccessRule = (question: HostAccessQuestion) => boolean | undefined
+
+export const HOST_ACCESS_RULES: ReadonlyArray<HostAccessRule> = []
+
+/** What `hasHostAccess` answers, after the rules above have had their say.
+ * Every host-gated API call and event goes through this one function, so a
+ * rule applies everywhere at once. */
+export function hostAccessFor (extensionId: string, manifest: unknown, url: string | undefined, tabId?: number): boolean {
+  for (const rule of HOST_ACCESS_RULES) {
+    const answer = rule({ extensionId, url, tabId })
+    if (answer !== undefined) return answer
+  }
+  return hasHostAccess(manifest, url)
+}
+
+/** `hasApiOrHostAccess` through `hostAccessFor`. */
+export function apiOrHostAccessFor (extensionId: string, manifest: unknown, apiPermission: string, url: string | undefined, tabId?: number): boolean {
+  return hasApiPermission(manifest, apiPermission) || hostAccessFor(extensionId, manifest, url, tabId)
+}
