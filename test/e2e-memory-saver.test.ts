@@ -299,3 +299,28 @@ it('does not add a renderer for each sleeping tab', async () => {
     await closeElectron(app)
   }
 }, TEST_TIMEOUT_MS)
+
+it('offers Put Tab to Sleep in the menu of a tab behind the one in front, and not for the tab in front', async () => {
+  const { app, chrome } = await launched()
+  try {
+    await app.evaluate(({ Menu }) => { (Menu.prototype as unknown as { popup: () => void }).popup = function (this: unknown) { (globalThis as unknown as { __menu: unknown }).__menu = this } })
+    const enabled = async (): Promise<boolean | undefined> => await app.evaluate(() => ((globalThis as unknown as { __menu?: { items: Array<{ label: string, enabled: boolean }> } }).__menu?.items ?? []).find((item) => item.label === 'Put Tab to Sleep')?.enabled)
+    const choose = async (): Promise<void> => { await app.evaluate(() => { ((globalThis as unknown as { __menu: { items: Array<{ label: string, click: () => void }> } }).__menu.items.find((item) => item.label === 'Put Tab to Sleep'))?.click() }) }
+    const behind = await openTab(chrome, '/p/behind')
+    const front = await openTab(chrome, '/p/front')
+
+    await chrome.click(`.tab[data-id="${front}"]`, { button: 'right' })
+    expect(await waitFor(async () => (await enabled()) !== undefined)).toBe(true)
+    expect(await enabled()).toBe(false)
+
+    await chrome.click(`.tab[data-id="${behind}"]`, { button: 'right' })
+    expect(await waitFor(async () => (await enabled()) === true)).toBe(true)
+    await choose()
+    expect(await waitFor(async () => await isSleeping(chrome, behind))).toBe(true)
+    // Choosing it did not move the person off the tab they were in.
+    expect(await activeId(chrome)).toBe(front)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
