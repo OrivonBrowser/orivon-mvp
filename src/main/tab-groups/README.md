@@ -40,8 +40,8 @@ pinning included, is covered without knowing groups exist. Its own moves run wit
 **Collapsing never hides the tab in front.** `toggleCollapsed` goes to the nearest tab still shown, or opens a new
 one, before it hides anything; a later activation of a hidden tab (a search, a key) shows the group again.
 
-**A page opens a tab inside the opener's group.** `TabManager.afterOpen` is called with the tab that was in front;
-a popup or a blob tab Chromium made itself is not covered.
+**A page opens a tab inside the opener's group.** `TabManager.afterOpen` is called with the tab that was in front,
+including one Chromium made itself for a popup.
 
 **Groups are per window.** A tab that moves to another window leaves its group (`install-tab-groups.ts`), unless it
 lands between two tabs of one there.

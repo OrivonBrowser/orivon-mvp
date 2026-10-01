@@ -108,3 +108,20 @@ describe('bringing the groups back', () => {
     expect(groupsFor(fake.tabs).list()).toEqual([])
   })
 })
+
+describe('the tab that is in front when it is not kept', () => {
+  it('puts a neighbour in front that a collapsed group does not hide', () => {
+    const records = new Map<string, Partial<TabRecord>>()
+    const order = ['new', 'a', 'b', 'c']
+    const tabs = { getState: () => ({ activeTabId: 'new' }), ids: () => order, record: (id: string) => records.get(id) } as unknown as ShellWindow['tabs']
+    const group = groupsFor(tabs).create('blue', 'W')
+    groupsFor(tabs).update(group, { collapsed: true })
+    const view = { webContents: { id: 0 } } as never
+    for (const id of order) records.set(id, { view, groupId: id === 'a' || id === 'b' ? group : null })
+    const window = { isDestroyed: () => false, getNormalBounds: () => ({ x: 0, y: 0, width: 800, height: 600 }), isMaximized: () => false }
+    let call = 0
+    const saved = snapshotWindow({ window, tabs } as unknown as ShellWindow, ((_record: TabRecord) => (call++ === 0 ? null : { url: `https://t${String(call)}.example/`, title: '', pinned: false })) as never)
+    expect(saved?.tabs).toHaveLength(3)
+    expect(saved?.active).toBe(2)
+  })
+})
