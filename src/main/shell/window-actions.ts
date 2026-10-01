@@ -14,6 +14,9 @@ import { splitZoneFor } from './split-drop.js'
 import { dropTab, moveToNewWindow, moveToWindow } from './tab-move.js'
 import { closeOthers, closeToRight, duplicateTab, newTabToRight, tabMenuFlags, toggleMute, togglePin } from './tab-commands.js'
 import { showTabMenu, tabMenuTemplate } from './tab-menu.js'
+import { groupLabel } from '../tab-groups/group-label.js'
+import { groupsFor } from '../tab-groups/groups-model.js'
+import { groupTab, groupTabNew, ungroupTab } from '../tab-groups/groups-runner.js'
 import { cascadeFrom } from './window-options.js'
 import type { ShellWindowOptions } from './window-options.js'
 import type { Bounds } from './tab-types.js'
@@ -67,8 +70,11 @@ export function shellActions (parts: WindowParts): ShellActions {
     const others = services.windows.all().filter((other) => other !== entry && !other.window.isDestroyed())
     // A pinned tab is never in a split, on either side of it.
     const partners = tab.pinned ? [] : all.filter((other) => other.id !== id && other.splitWith === null && !other.pinned)
+    const ctx = { window: entry, services }
     showTabMenu(window, tabMenuTemplate({
       ...flags,
+      grouped: (tab.group ?? null) !== null,
+      groups: groupsFor(tabs).list().filter((group) => group.id !== tab.group).map((group) => ({ label: groupLabel(group), join: () => { groupTab(ctx, id, group.id) } })),
       tabCount: all.length,
       inSplit: tab.splitWith !== null,
       splitPartners: partners.map((other) => ({ label: other.title === '' ? 'New Tab' : other.title, split: () => { tabs.splits.split(id, other.id, 'right') } })),
@@ -79,6 +85,8 @@ export function shellActions (parts: WindowParts): ShellActions {
       duplicate: () => { duplicateTab(tabs, id) },
       togglePin: () => { togglePin(tabs, id) },
       toggleMute: () => { toggleMute(tabs, id) },
+      newGroup: () => { groupTabNew(ctx, id) },
+      ungroup: () => { ungroupTab(ctx, id) },
       moveToNewWindow: () => { moveToNewWindow(entry, id, openWindow, cascadeFrom(window.getBounds())) },
       separate: () => { tabs.splits.separate(id) },
       close: () => { tabs.closeTab(id) },

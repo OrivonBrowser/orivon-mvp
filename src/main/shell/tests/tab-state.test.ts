@@ -264,6 +264,43 @@ describe('opening a tab beside another', () => {
     expect(ids.indexOf(c)).toBe(3)
   })
 
+  it('opens in the group of the tab it opens beside', () => {
+    const manager = newManager()
+    const [a, b] = strip(manager, 2) as [string, string]
+    const record = manager.record(a)
+    if (record !== undefined) record.groupId = 'g-1'
+
+    newTabToRight(manager, a)
+
+    const copy = order(manager)[1] ?? ''
+    expect(manager.record(copy)?.groupId).toBe('g-1')
+    expect(manager.record(b)?.groupId ?? null).toBeNull()
+  })
+
+  it('leaves its group when it is pinned', () => {
+    const manager = newManager()
+    const [a] = strip(manager, 2) as [string, string]
+    const record = manager.record(a)
+    if (record !== undefined) record.groupId = 'g-1'
+
+    setPinned(manager, a, true)
+
+    expect(manager.record(a)?.groupId).toBeNull()
+  })
+
+  it('tells the move hook after a tab moves, and not when nothing moved', () => {
+    const manager = newManager()
+    const [a, b] = strip(manager, 2) as [string, string]
+    const moved: string[] = []
+    manager.afterMove = (id) => { moved.push(id) }
+
+    manager.moveTab(b, 0)
+    manager.moveTab(b, 0)
+
+    expect(moved).toEqual([b])
+    expect(order(manager)).toEqual([b, a])
+  })
+
   it('opens beside a pinned tab at the start of the tabs that are not', () => {
     const manager = newManager()
     const [a, b, c] = strip(manager, 3) as [string, string, string]

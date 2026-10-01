@@ -10,6 +10,7 @@ import { restorePage } from './restore/page.js'
 import { sadTabPage } from './sad-tab/page.js'
 import { screenshotPage } from './screenshot/page.js'
 import { sidePanelPage } from './side-panel/page.js'
+import { tabGroupPage } from './tab-group/page.js'
 import { tabSearchPage } from './tab-search/page.js'
 import { toastPage } from './toast/page.js'
 
@@ -23,6 +24,7 @@ export const OVERLAY_PAGES: Readonly<Record<string, OverlayPage>> = {
   'sad-tab': sadTabPage,
   screenshot: screenshotPage,
   'side-panel': sidePanelPage,
+  'tab-group': tabGroupPage,
   'tab-search': tabSearchPage,
   toast: toastPage
 }

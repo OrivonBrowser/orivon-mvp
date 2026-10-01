@@ -11,6 +11,8 @@ export interface ClosedTabEntry {
   readonly index: number
   /** `BaseWindow.id` of the window it was closed in. */
   readonly windowKey: number
+  /** The group it was in, which it rejoins if that group still exists. */
+  readonly groupId?: string
 }
 
 export interface ClosedWindowEntry {

@@ -9,6 +9,7 @@ import { menuOverlay } from '../shell/menu-overlay.js'
 import { omniboxOverlay } from '../omnibox/omnibox-overlay.js'
 import { restoreOverlay } from '../startup/startup-overlays.js'
 import { sidePanelOverlay } from '../side-panel/side-panel-overlay.js'
+import { tabGroupOverlay } from '../tab-groups/tab-group-overlay.js'
 import { tabSearchOverlay } from '../tab-search/tab-search-overlay.js'
 import type { OverlayDef } from './overlay-types.js'
 
@@ -22,6 +23,7 @@ export const OVERLAYS: readonly OverlayDef[] = [
   sadTabOverlay,
   screenshotOverlay,
   sidePanelOverlay,
+  tabGroupOverlay,
   tabSearchOverlay,
   toastOverlay
 ]

@@ -49,3 +49,17 @@ describe('watchClosedTabs', () => {
     expect(stack.size).toBe(0)
   })
 })
+
+describe('watchClosedTabs and groups', () => {
+  it('keeps the group a closed tab was in, and none for a tab that was in no group', () => {
+    const lifecycle = new TabLifecycle()
+    const stack = new ClosedStack()
+    watchClosedTabs(lifecycle, stack, () => ({ url: 'https://a.example/', title: 'A', pinned: false }))
+    lifecycle.tabClosing({ id: 'tab-1', index: 0, record: { view: { webContents: {} }, groupId: 'g-4' } as unknown as TabRecord, reason: 'closed', window: undefined })
+    lifecycle.tabClosing({ id: 'tab-2', index: 0, record: { view: { webContents: {} }, groupId: null } as unknown as TabRecord, reason: 'closed', window: undefined })
+    const [none, grouped] = stack.list()
+    expect(grouped).toMatchObject({ groupId: 'g-4' })
+    expect(none).not.toHaveProperty('groupId')
+  })
+})
+

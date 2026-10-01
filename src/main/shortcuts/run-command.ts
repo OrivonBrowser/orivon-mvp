@@ -14,6 +14,7 @@ import type { ShellWindowOptions } from '../shell/window-options.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import { reopenClosed } from '../session-restore/reopen.js'
+import { groupTabNew, shownNeighbour, stepTab, ungroupTab } from '../tab-groups/groups-runner.js'
 import { openQr } from '../qr/qr-open.js'
 import { sidePanelFor } from '../side-panel/side-panel-host.js'
 import { TAB_SEARCH_OVERLAY } from '../tab-search/tab-search-overlay.js'
@@ -47,8 +48,11 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
   switch (id) {
     case 'tab.new': tabs.createTab(); return
     case 'tab.close': if (active !== undefined) tabs.closeTab(active.id); return
-    case 'tab.next': if (order.length > 0) goTo((activeIndex + 1) % order.length); return
-    case 'tab.previous': if (order.length > 0) goTo((activeIndex - 1 + order.length) % order.length); return
+    case 'tab.next': case 'tab.previous': {
+      const next = shownNeighbour(tabs, activeTabId, id === 'tab.next' ? 1 : -1)
+      if (next !== undefined) tabs.activateTab(next)
+      return
+    }
     case 'tab.goto1': goTo(0); return
     case 'tab.goto2': goTo(1); return
     case 'tab.goto3': goTo(2); return
@@ -100,14 +104,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'window.new': deps.openWindow({ place: cascadeFrom(window.getBounds()) }); return
     case 'readingList.add': return
     case 'readingList.open': return
-    case 'tab.moveLeft': case 'tab.moveRight': {
-      if (active === undefined) return
-      // A joined pair moves as one, from where it begins.
-      const partnerAt = active.splitWith === null ? -1 : order.findIndex((tab) => tab.id === active.splitWith)
-      const begins = partnerAt === -1 ? activeIndex : Math.min(activeIndex, partnerAt)
-      tabs.moveTab(active.id, begins + (id === 'tab.moveRight' ? 1 : -1))
-      return
-    }
+    case 'tab.moveLeft': case 'tab.moveRight': if (active !== undefined) stepTab(tabs, active.id, id === 'tab.moveRight' ? 1 : -1); return
     case 'split.toggle': if (active !== undefined) tabs.splits.toggle(active.id); return
     case 'split.focusOther': if (active !== undefined) tabs.splits.focusOther(active.id); return
     case 'split.swap': if (active !== undefined) tabs.splits.swap(active.id); return
@@ -121,8 +118,8 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'tab.mute': if (active !== undefined) toggleMute(tabs, active.id); return
     case 'tab.closeOthers': if (active !== undefined) closeOthers(tabs, active.id); return
     case 'tab.closeRight': if (active !== undefined) closeToRight(tabs, active.id); return
-    case 'tab.group': return
-    case 'tab.ungroup': return
+    case 'tab.group': if (active !== undefined) groupTabNew({ window: target, services }, active.id); return
+    case 'tab.ungroup': if (active !== undefined) ungroupTab({ window: target, services }, active.id); return
     case 'tab.sleep': return
     case 'tab.search': target.overlays.toggle(TAB_SEARCH_OVERLAY); return
     case 'window.newPrivate': services.profiles.openPrivate(); return

@@ -52,6 +52,10 @@ export class TabManager {
   private readonly stateEnv: TabStateEnv
   /** The tabs shown two at a time. Public: split commands and the tab menu work it directly. */
   readonly splits: SplitController
+  /** Set by a feature that places tabs by something besides the strip's own rules (tab groups): called once a tab, or a joined pair, has been moved to a new place or has arrived from another window. */
+  afterMove?: (id: string) => void
+  /** Called when a page opened a tab (a link, a popup, "Open in new tab"); `opener` is the tab that was in front. */
+  afterOpen?: (id: string, opener: string | null) => void
 
   constructor (
     contentView: View,
@@ -90,9 +94,15 @@ export class TabManager {
         await captureFaviconInto(record, favicons, () => record.view.webContents.getURL(), () => this.tabs.get(id) === record, () => { this.changed() })
       },
       forgetTab: (id) => { this.forgetTab(id, false) },
-      openTab: (url, active, loadOptions) => this.liveWebContents(this.createTab(url, active, loadOptions)),
-      adoptPopup: (view, partition, active) => { this.opener.adoptPopup(view, partition, active) },
-      openBlobTab: (url, partition, active, loadOptions) => this.liveWebContents(this.opener.openBlobTab(url, partition, active, loadOptions)),
+      openTab: (url, active, loadOptions) => this.liveWebContents(this.openedByPage(() => this.createTab(url, active, loadOptions))),
+      adoptPopup: (view, partition, active) => {
+        const before = this.order.length
+        const opener = this.activeId
+        this.opener.adoptPopup(view, partition, active)
+        const id = this.order.at(-1)
+        if (id !== undefined && this.order.length > before) this.afterOpen?.(id, opener)
+      },
+      openBlobTab: (url, partition, active, loadOptions) => this.liveWebContents(this.openedByPage(() => this.opener.openBlobTab(url, partition, active, loadOptions))),
       openWindow: (url, loadOptions) => shell?.openWindow?.(url, loadOptions),
       atCapacity: () => this.atCapacity(),
       htmlFullscreenChanged: (id, entered) => { shell?.htmlFullscreenChanged(id, entered) },
@@ -188,6 +198,14 @@ export class TabManager {
   /** Shows one of the shell's own pages, in the tab that has it or a new one. */
   openInternal (page: InternalPageId, path = '/'): void { this.opener.openInternal(page, path) }
 
+  /** Runs a way of opening a tab a page asked for, and tells `afterOpen` which tab was in front when it did. */
+  private openedByPage (open: () => string): string {
+    const opener = this.activeId
+    const id = open()
+    this.afterOpen?.(id, opener)
+    return id
+  }
+
   private atCapacity (): boolean {
     return this.disposed || this.order.length >= MAX_TABS
   }
@@ -201,7 +219,10 @@ export class TabManager {
 
   /** Puts a tab at `index` in the strip, kept within the pinned run or outside it, as the tab is pinned or not. */
   moveTab (id: string, index: number): void {
-    if (this.splits.move(id, index) || moveInOrder(this.order, id, index, this.splits.groups.pairs(), (other) => this.isPinned(other))) this.changed()
+    if (this.splits.move(id, index) || moveInOrder(this.order, id, index, this.splits.groups.pairs(), (other) => this.isPinned(other))) {
+      this.afterMove?.(id)
+      this.changed()
+    }
   }
 
   private isPinned (id: string): boolean {
@@ -235,6 +256,7 @@ export class TabManager {
     this.tabs.set(id, record)
     const wanted = clampToRun(Math.min(Math.max(0, index ?? this.order.length), this.order.length), record.pinned === true, pinnedCount(this.order, (other) => this.isPinned(other)), this.order.length)
     this.order.splice(clearOfPairs(this.order, wanted, this.splits.groups.pairs(), -1), 0, id)
+    this.afterMove?.(id)
     // takeTab()'s forgetTab() already said this tab closed; this says it is back.
     this.shell?.tabLifecycle?.tabCreated(record.view.webContents, this.viewHost.window)
     this.activateTab(id)
