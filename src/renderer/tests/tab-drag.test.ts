@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { TEAR_DISTANCE_PX, dropIndex, isTornOut } from '../tab-drag.js'
+import { TEAR_DISTANCE_PX, clampToRun, dropIndex, isTornOut } from '../tab-drag.js'
 import type { TabDragHost } from '../tab-drag.js'
 
 describe('dropIndex', () => {
@@ -13,6 +13,19 @@ describe('dropIndex', () => {
 
   it('is zero when there are no other tabs', () => {
     expect(dropIndex([], 500)).toBe(0)
+  })
+})
+
+describe('clampToRun', () => {
+  it.each([
+    [0, true, 2, 5, 0],
+    [5, true, 2, 5, 2],
+    [0, false, 2, 5, 2],
+    [3, false, 2, 5, 3],
+    [9, false, 2, 5, 5],
+    [0, false, 0, 4, 0]
+  ])('a place %i for a pinned=%s tab, with %i pinned among %i others, is %i', (index, pinned, count, length, place) => {
+    expect(clampToRun(index, pinned, count, length)).toBe(place)
   })
 })
 
@@ -152,5 +165,27 @@ describe('a tab held by the pointer', () => {
     tab.fire('pointerdown')
     tab.fire('pointerup')
     expect(dragEnded).not.toHaveBeenCalled()
+  })
+
+  it('keeps a tab in the run it belongs to: unpinned ones do not enter the pinned run, pinned ones do not leave it', async () => {
+    vi.stubGlobal('window', { addEventListener: vi.fn(), innerWidth: 800 })
+    const { makeTabDraggable } = await import('../tab-drag.js')
+    const at = (left: number) => () => ({ left, right: left + 100, width: 100 })
+    const [p1, p2, plain, other] = [fakeTab(), fakeTab(), fakeTab(), fakeTab()]
+    ;[p1, p2, plain, other].forEach((tab, place) => { (tab.el as unknown as { getBoundingClientRect: unknown }).getBoundingClientRect = at(place * 100) })
+    const pinned = new Set<HTMLElement>([p1.el, p2.el])
+    const strip = [p1.el, p2.el, plain.el, other.el]
+    const moveTab = vi.fn()
+    const drag = (tab: ReturnType<typeof fakeTab>, id: string, to: number): void => {
+      makeTabDraggable(tab.el, id, { ...host(vi.fn()), tabs: () => strip, isPinned: (el) => pinned.has(el), moveTab })
+      tab.fire('pointerdown', { clientX: 50 })
+      tab.fire('pointermove', { clientX: to })
+      tab.fire('pointerup', { clientX: to, clientY: 10 })
+    }
+
+    drag(other, 'other', 0) // far left: the place in front of everything, which is the pinned run's
+    expect(moveTab).toHaveBeenLastCalledWith('other', 2)
+    drag(p1, 'p1', 399) // far right: past every unpinned tab
+    expect(moveTab).toHaveBeenLastCalledWith('p1', 1)
   })
 })

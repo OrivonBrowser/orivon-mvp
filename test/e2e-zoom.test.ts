@@ -9,7 +9,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './launch-electron.mjs'
 import { clickAddressBarRetrying, pressKey } from './e2e-helpers.js'
-import { evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
 
 const servers: Server[] = []
 let siteOrigin = ''
@@ -45,6 +45,12 @@ async function launched (seed?: (dir: string) => Promise<void>): Promise<{ app: 
 
 const factorAt = async (app: ElectronApplication, urlPart: string): Promise<number | null> =>
   await app.evaluate(({ webContents }, part) => webContents.getAllWebContents().find((contents) => contents.getURL().includes(part))?.getZoomFactor() ?? null, urlPart)
+
+// What the page itself sees: a zoomed page has a narrower viewport in CSS pixels, which a stored factor alone does not prove.
+async function viewportWidthAt (app: ElectronApplication, urlPart: string): Promise<number | null> {
+  const page = app.windows().find((candidate) => candidate.url().includes(urlPart))
+  return page === undefined ? null : await evaluateRetrying(page, () => window.innerWidth)
+}
 
 const chip = async (chrome: Page): Promise<string | null> =>
   await evaluateRetrying(chrome, () => { const el = document.querySelector<HTMLElement>('#zoom-chip'); return el === null || el.hidden ? null : el.textContent })
@@ -106,6 +112,7 @@ it('steps a site with Ctrl and the mouse wheel', async () => {
     await clickAddressBarRetrying(chrome, `${siteOrigin}/wheel`)
     expect((await waitForTab(chrome, { address: `${siteOrigin}/wheel` })).ok).toBe(true)
 
+    const full = await viewportWidthAt(app, `${siteOrigin}/wheel`)
     // A wheel event sent before the page has painted is dropped, so it is sent again until one is heard. One that
     // was heard but is slow shows the chip before the second is sent.
     for (let attempt = 0; attempt < 4 && await chip(chrome) === null; attempt += 1) {
@@ -117,6 +124,12 @@ it('steps a site with Ctrl and the mouse wheel', async () => {
     }
 
     expect(await waitFor(async () => await chip(chrome) === '110%')).toBe(true)
+    // One turn is one step for the page as well: the native wheel zoom stacks nothing on top of it.
+    const narrowed = await viewportWidthAt(app, `${siteOrigin}/wheel`)
+    await delay(400)
+    expect(await viewportWidthAt(app, `${siteOrigin}/wheel`)).toBe(narrowed)
+    expect(Math.abs((narrowed ?? 0) - (full ?? 0) / 1.1)).toBeLessThanOrEqual(1)
+    expect(Math.abs((await factorAt(app, `${siteOrigin}/wheel`) ?? 0) - 1.1)).toBeLessThan(0.001)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
@@ -144,6 +157,38 @@ it('opens a site at the level saved for it, others at the default, and the new-t
     expect((await waitForTab(chrome, { address: `${otherOrigin}/default` })).ok).toBe(true)
     expect(await waitFor(async () => Math.abs((await factorAt(app, `${otherOrigin}/default`) ?? 0) - 1.25) < 0.001)).toBe(true)
     expect(await chip(chrome)).toBeNull()
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('scales the pixels of the page, not only the stored factor, and keeps the level per site', async () => {
+  const { app, chrome } = await launched()
+  try {
+    await clickAddressBarRetrying(chrome, `${siteOrigin}/pixels`)
+    expect((await waitForTab(chrome, { address: `${siteOrigin}/pixels` })).ok).toBe(true)
+    const full = await viewportWidthAt(app, `${siteOrigin}/pixels`)
+    expect(full).toBeGreaterThan(400)
+
+    await pressKey(app, `${siteOrigin}/pixels`, '=', ['control'])
+    await pressKey(app, `${siteOrigin}/pixels`, '=', ['control'])
+    expect(await waitFor(async () => await chip(chrome) === '125%')).toBe(true)
+    expect(await waitFor(async () => Math.abs((await viewportWidthAt(app, `${siteOrigin}/pixels`) ?? 0) - (full ?? 0) / 1.25) <= 1)).toBe(true)
+
+    // The level is the site's own: a second page of it opens narrowed, another site opens at full width.
+    await clickAddressBarRetrying(chrome, `${siteOrigin}/pixels-again`)
+    expect((await waitForTab(chrome, { address: `${siteOrigin}/pixels-again` })).ok).toBe(true)
+    expect(await waitFor(async () => Math.abs((await viewportWidthAt(app, `${siteOrigin}/pixels-again`) ?? 0) - (full ?? 0) / 1.25) <= 1)).toBe(true)
+    await clickAddressBarRetrying(chrome, `${otherOrigin}/pixels`)
+    expect((await waitForTab(chrome, { address: `${otherOrigin}/pixels` })).ok).toBe(true)
+    expect(await waitFor(async () => await viewportWidthAt(app, `${otherOrigin}/pixels`) === full)).toBe(true)
+
+    // Actual size gives the page its full width back.
+    await clickAddressBarRetrying(chrome, `${siteOrigin}/pixels`)
+    expect((await waitForTab(chrome, { address: `${siteOrigin}/pixels` })).ok).toBe(true)
+    await pressKey(app, `${siteOrigin}/pixels`, '0', ['control'])
+    expect(await waitFor(async () => await viewportWidthAt(app, `${siteOrigin}/pixels`) === full)).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)

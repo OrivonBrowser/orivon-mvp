@@ -1,5 +1,6 @@
 @import '../shared/tokens.css';
 @import '../shared/controls.css';
+@import './controls/page-list.css';
 
 .layout { display: flex; height: 100vh; }
 
@@ -91,7 +92,7 @@
 .row-control { display: flex; align-items: center; gap: 12px; flex: none; max-width: 55%; }
 .row-control .value { color: var(--wink-dim); user-select: text; overflow-wrap: anywhere; text-align: right; white-space: pre-line; }
 .text-control { display: grid; gap: 6px; width: 340px; }
-.problem { color: var(--wdanger); font-size: 12.5px; }
+.problem { color: var(--wdanger-text); font-size: 12.5px; }
 .problem:empty { display: none; }
 
 .changed {
@@ -103,15 +104,6 @@
   color: var(--waccent-text);
   vertical-align: 1px;
 }
-.link-btn {
-  padding: 2px 6px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  color: var(--waccent-text);
-  cursor: pointer;
-}
-.link-btn:hover { text-decoration: underline; }
 
 .hit {
   display: flex;
@@ -168,7 +160,6 @@ details > summary { cursor: pointer; }
 .perm { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .perm.warning .perm-text { color: var(--wwarn); }
 .perm-text { overflow-wrap: anywhere; }
-.btn.small { padding: 3px 10px; font-size: 12.5px; flex: none; }
 .app-stored { margin: 6px 0 0; font-size: 12.5px; }
 
 .clear-data { display: grid; gap: 10px; width: 100%; max-width: 480px; }

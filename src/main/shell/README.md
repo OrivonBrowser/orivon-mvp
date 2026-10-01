@@ -4,12 +4,21 @@
 active tab's `WebContentsView` below, or the two panes of a split. A process holds any number of these
 windows: `shell-services.ts` is what they share, and `window-registry.ts` is how a page's IPC finds the
 window holding it. `window-frame.ts` is the native window itself and `window-options.ts` says how a new one
-opens. `tabs.ts` owns the tab collection, with `tab-view.ts`, `tab-types.ts`, `tab-factory.ts` and
-`tab-parking.ts` as its parts, and `tab-origin-liveness.ts` as `tab-view.ts`'s own per-origin
+opens. `window.ts` is the composition; its parts are `window-layout.ts` (where the chrome and the page
+area sit: the one place a page area is computed), `window-state.ts` (the `ShellState` push, and which
+overlays a tab switch or a navigation dismisses), `window-panels.ts` (the permissions and site-info
+popovers) and `shell-state-parts.ts` (the `ShellState` fields a feature adds). `window-context.ts` is
+the `{ window, services }` pair a hook or an overlay handler receives.
+`tabs.ts` owns the tab collection, with `tab-state.ts` (the state a tab reports, plus what each
+`TAB_SIGNALS` entry adds), `tab-navigation.ts`, `tab-open.ts` (every way a tab is created) and
+`tab-panes.ts` (which views show where) as its parts; `tab-view.ts`, `tab-partition.ts`,
+`app-tab-watch.ts`, `tab-signals.ts`, `tab-types.ts`, `tab-factory.ts`, `tab-lifecycle.ts` and
+`tab-parking.ts` are the per-tab view. `tab-origin-liveness.ts` is `tab-view.ts`'s own per-origin
 live-document counter. `tab-order.ts` is where a tab sits in the strip, `tab-move.ts` moves one between windows keeping the
 same page (and is where a dragged tab's cross-window target -- which window's strip, and where in it -- is
 worked out, shared by the actual move and by `tear-drag.ts`'s own mark), `tab-menu.ts` is its right-click
-menu, and `window-actions.ts` is what the chrome's buttons and menus ask of their window. `drag-mode.ts`
+menu (and `context-menu.ts` the menu a page gets: `context-menu-groups.ts` holds one function per group, `context-menu-text.ts` cleans what a page controls before it reaches a label, `paste-and-go.ts` is the address bar's clipboard submit), and `window-actions.ts` is what the chrome's buttons and menus ask of their window, and `chrome-actions.ts`
+(with `actions/`) is where a chrome module's own call to main lands. `drag-mode.ts`
 decides whether the empty tail of the strip is native OS drag content or JS-driven (Linux/X11 only);
 `window-move.ts` is the arithmetic a manual window move and its Aero-snap-style edge release use.
 `tear-drag.ts` is the floating preview a tab shows once torn out of its strip, and the mark it leaves on
@@ -17,6 +26,7 @@ whichever window's strip it is dragged over. Split view: `split-model.ts` is the
 of joined tabs, `split-controller.ts` plans which views show where, `pane-host.ts` puts them on screen in
 that order, `split-frame.ts` is the view behind two panes, and `split-drop.ts` says where a dragged tab
 would split the page. `intro-state.ts` and `intro-view.ts` are the welcome screen.
+`first-window.ts` decides what a cold start opens (the window's last place, the addresses on the command line, a kiosk's page) and `home.ts` is what Home opens.
 The rest answer what a page asks of its window: popups become tabs, HTML fullscreen, the
 few-second exclusive-access notices, the `beforeunload` Leave/Stay question, the external-link
 and notification questions the permission gate asks, the right-click menu for tabs and the
@@ -29,19 +39,19 @@ Electron session every view that shows Orivon's own UI runs in, never a tab's.
 
 **Views on the shell's own session, never a tab's.** The chrome view (`window.ts`), the intro
 screen (`intro-view.ts`), the fullscreen/pointer-lock notice (`window-notice.ts`), the split
-view's frame (`split-frame.ts`) and every popover built by
-[`../permissions/popover-view.ts`](../permissions/popover-view.ts) (permissions, site info, the
-menu) set `webPreferences.partition` to `shell-session.ts`'s `SHELL_PARTITION`. Internal pages
+view's frame (`split-frame.ts`) every popover built by
+[`../permissions/popover-view.ts`](../permissions/popover-view.ts) (permissions, site info) and
+every overlay view ([`../overlays/`](../overlays/)) set `webPreferences.partition` to `shell-session.ts`'s `SHELL_PARTITION`. Internal pages
 have their own session (ADR-0041). An ordinary tab, and the
 new-tab dashboard (a tab that happens to navigate to `file://`), stay on
 `session.defaultSession`; the Design notes below say why.
 
-The main menu under the toolbar's menu button: `menu-layout.ts` lists which commands it shows (the
-names and keys come from [`../shortcuts/`](../shortcuts/), so the menu cannot show a key that does
-not work), and `menu-panel.ts` is the popover that shows it, built on
-[`../permissions/popover-view.ts`](../permissions/popover-view.ts) like the two other toolbar
-popups -- the one caller that passes `warm: true`, since it takes no per-open argument the other
-two do. `theme-colors.ts` is the pre-paint background colour every view here that is attached
+The main menu under the toolbar's menu button: `menu-layout.ts` lists which commands it shows and in
+what shape (the names and keys come from [`../shortcuts/`](../shortcuts/), so the menu cannot show a
+key that does not work), and `menu-overlay.ts` is its `OverlayDef`, shown by the overlay host in
+[`../overlays/`](../overlays/). A feature adds its entry to `MENU_LAYOUT` beside the entries it belongs
+with; an entry is a command, a tick (`check`), a command with a note (`item`), the zoom row, or a
+`submenu`. `theme-colors.ts` is the pre-paint background colour every view here that is attached
 ahead of its own first paint needs (a fact more than one of them shares); `view-background-
 test-hook.ts` is the e2e-only record of what each was actually set to.
 
@@ -61,8 +71,9 @@ permission dialog shows), [`../sessions/`](../sessions/) (the two questions' typ
 
 **What it must never import.** [`../../renderer/`](../../renderer/) code (the repo-wide rule).
 Locally: [`tab-view.ts`](tab-view.ts), [`tab-types.ts`](tab-types.ts) and
-[`tab-parking.ts`](tab-parking.ts) must never import [`tabs.ts`](tabs.ts); they were split out of
-it so the pure parts have no `TabManager` state to depend on.
+[`tab-parking.ts`](tab-parking.ts), [`tab-partition.ts`](tab-partition.ts) and
+[`tab-signals.ts`](tab-signals.ts) must never import [`tabs.ts`](tabs.ts): they are the per-tab view,
+with no `TabManager` state to depend on.
 
 **Durable or tied to Electron.** Tied to Electron throughout: every file here exists to drive
 `BaseWindow`, `WebContentsView` or `dialog`.
@@ -70,6 +81,18 @@ it so the pure parts have no `TabManager` state to depend on.
 **Owner stream.** `shell`, build step 1, **done**. Maintenance only.
 
 ## Design notes
+
+**`tab-view.ts`, `tab-partition.ts` and `tab-parking.ts` import each other.** Nothing in them runs
+at module load across that cycle, so the order Node loads them in does not matter; keep it so, and
+never use one of their exports at the top level of another.
+
+**A tab's own state is a record and a list of signals, not a method on `TabManager`.** A feature that
+needs per-tab state adds a field to `TabRecord` and `TabState`, and a `TabSignal` in
+`tab-signals.ts` for what to watch on the `WebContents`; `tabClosing` in `tab-lifecycle.ts` tells it
+when the tab ends and why. Each signal is a file under `signals/` (sound: `signals/audio.ts`); the
+strip's order rules (pinned run first, a pair never split) live in `tab-order.ts`, and the things
+done to one tab or to those around it in `tab-commands.ts`. `TabViewHost.services` and `runCommand` give code that runs on a view
+(the context menu) the shared stores and the command bus.
 
 **[`shell-session.ts`](shell-session.ts): the shell's own views never share a session with a
 tab.** Chrome extensions load into `session.defaultSession`, the session every ordinary tab and

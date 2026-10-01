@@ -5,6 +5,7 @@
 import { Menu } from 'electron'
 import type { App, WebContents } from 'electron'
 import { INTERNAL_EVENT_CHANNEL } from '../channels.js'
+import { appTabViews } from '../shell/tab-partition.js'
 import type { WindowRegistry } from '../shell/window-registry.js'
 import { buildAppMenuTemplate } from './app-menu.js'
 import { attachShortcuts } from './dispatcher.js'
@@ -17,7 +18,10 @@ export function installShortcuts (app: Pick<App, 'on'>, service: ShortcutService
     windowFor: (contents: WebContents) => {
       // A view in no window of ours (the verifier's, an offscreen context) has no shortcuts.
       const owner = windows.findOwner(contents) ?? windows.focused()
-      return owner === undefined ? null : { suspended: owner.shortcutsSuspended(), run: (id: CommandId) => { commands.run(id, owner) } }
+      if (owner === undefined) return null
+      const tabId = owner.tabs.findTabIdByWebContents(contents)
+      const view = tabId === null ? undefined : owner.tabs.record(tabId)?.view
+      return { suspended: owner.shortcutsSuspended(), isAppTab: view !== undefined && appTabViews.has(view), run: (id: CommandId) => { commands.run(id, owner) } }
     },
     recorded: (contents: WebContents, outcome: unknown) => {
       if (!contents.isDestroyed()) contents.send(INTERNAL_EVENT_CHANNEL, { topic: 'shortcuts.recorded', payload: outcome })

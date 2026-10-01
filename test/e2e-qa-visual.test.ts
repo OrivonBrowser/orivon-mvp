@@ -69,13 +69,13 @@ it('the shell looks right in each state it can be in', async () => {
       await chrome.press('#address', 'Escape')
 
       await chrome.click('#menu')
-      expect(await waitFor(async () => await popoverShown(app, '/menu/'))).toBe(true)
+      expect(await waitFor(async () => await popoverShown(app, 'overlay=menu'))).toBe(true)
       await state(check, app, 'menu-popup', {
         expected: 'The main menu is open as a popup under the menu button at the top right: a list of labelled entries, none cut off or overlapping, inside the window.',
         action: 'Clicked the menu button and waited for the popup to be shown.'
       })
       await chrome.click('#menu')
-      expect(await waitFor(async () => !(await popoverShown(app, '/menu/')))).toBe(true)
+      expect(await waitFor(async () => !(await popoverShown(app, 'overlay=menu')))).toBe(true)
 
       await openInternal(app, chrome, 'settings')
       await state(check, app, 'settings-page', {

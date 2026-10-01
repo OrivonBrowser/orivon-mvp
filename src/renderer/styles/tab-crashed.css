@@ -1,0 +1,3 @@
+/* A crashed tab: its icon is the warning mark, in the chrome's warning tone. */
+.tab.crashed .fav { color: var(--wwarn-mark); }
+.tab.crashed .fav svg { width: 14px; height: 14px; }

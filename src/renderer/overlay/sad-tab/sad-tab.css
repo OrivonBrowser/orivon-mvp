@@ -1,0 +1,9 @@
+/* The card: an icon, a title, a line of explanation, the page's address and two buttons, left aligned like a sheet. */
+
+body[data-overlay='sad-tab'] .sad { padding: 20px 22px 18px; }
+body[data-overlay='sad-tab'] .sad-icon { display: block; margin-bottom: 10px; color: var(--wwarn-mark); }
+body[data-overlay='sad-tab'] .sad-icon .icon { width: 32px; height: 32px; }
+body[data-overlay='sad-tab'] .sheet-title { margin: 0; }
+body[data-overlay='sad-tab'] .sad-body { margin: 6px 0 0; color: var(--wink-dim); font-size: 13px; }
+body[data-overlay='sad-tab'] .sad-address { margin: 12px 0 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; word-break: normal; font-weight: 500; }
+body[data-overlay='sad-tab'] .btn-row { margin-top: 16px; }

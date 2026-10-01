@@ -1,4 +1,4 @@
-import { app, BaseWindow, dialog, nativeTheme, session } from 'electron'
+import { app, BaseWindow, dialog, nativeTheme, screen, session } from 'electron'
 import { createShellWindow, resolveDashboardUrl } from './shell/window.js'
 import { openUrlsOnSecondLaunch } from './shell/opener.js'
 import { createShellServices } from './shell/shell-services.js'
@@ -8,6 +8,7 @@ import { registerNewTabIpc } from './ipc/newtab-ipc.js'
 import { applyThemeSetting } from './settings/settings-appliers.js'
 import { startInternalPages } from './pages/start-internal-pages.js'
 import { installShortcuts } from './shortcuts/install-shortcuts.js'
+import { installSpellcheck } from './spellcheck/install-spellcheck.js'
 import { installZoom } from './zoom/install-zoom.js'
 import { installHistory } from './history/install-history.js'
 import { createSubsystemContext, criticalFailureMessage, publishWindowForSender, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
@@ -16,6 +17,8 @@ import { DebouncedWriter } from './storage/debounced-writer.js'
 import { devOnlySwitches } from './shell/dev-switches.js'
 import { chromeUserAgent } from './shell/user-agent.js'
 import { planIntro } from './shell/intro-state.js'
+import { firstWindowOptions } from './shell/first-window.js'
+import { seedClosedStack } from './session-restore/restore.js'
 import { urlsFromArgv } from './launch/launch-context.js'
 import { sweepPrivateDirs } from './launch/private-session.js'
 import { startLaunch } from './launch/start-launch.js'
@@ -154,7 +157,8 @@ function boot (runtime: Runtime): void {
     publishWindowForSender(ctx, (sender) => shell.windows.findTab(sender)?.window.window)
     // Before the first window, so it opens in the chosen theme with the chosen
     // bookmarks bar rather than changing after it is on screen.
-    await Promise.all([shell.settings.load(), shell.shortcutStore.load(), shell.zoomStore.load()])
+    await Promise.all([shell.settings.load(), shell.shortcutStore.load(), shell.windowState.load(), shell.zoomStore.load(), shell.session.load()])
+    seedClosedStack(shell.closedTabs, shell.session.previous())
     applyThemeSetting(shell.settings, nativeTheme)
     // The light client starts after the first page loads, by which time the settings have been read: the person's choice reaches it.
     configureVerifier({ lightClientEnabled: () => shell.settings.get('web3.lightClient') })
@@ -165,9 +169,10 @@ function boot (runtime: Runtime): void {
     // filesystem itself has to announce.
     shell.profiles.startWatching()
     app.once('will-quit', () => { shell.profiles.stopWatching() })
-    shell.commands.bind({ bookmarks: shell.bookmarks, zoom: shell.zoom, devtools: shell.devtools, profiles: shell.profiles, openWindow: (options) => { createShellWindow(ctx, shell, options) }, quit: () => { app.quit() } })
+    shell.commands.bind({ services: shell, openWindow: (options) => { createShellWindow(ctx, shell, options) }, displays: () => screen.getAllDisplays(), quit: () => { app.quit() } })
     installShortcuts(app, shell.shortcuts, shell.windows, shell.commands)
     installZoom(app, shell.windows, shell.zoom)
+    installSpellcheck(app, shell.windows, shell.settings)
     installHistory(app, shell.windows, shell.internalPages, shell.history)
     registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks)
     // Looks for a newer release once a day when the person has said it may; installs nothing.
@@ -193,18 +198,25 @@ function boot (runtime: Runtime): void {
         // A private session begins with the page that says what it does, and has no welcome screen: it is the person's own second browser.
         // firstOfLaunch: true -- the ONLY createShellWindow call ORIVON_WINDOW_NO_FOCUS=1 may leave
         // unfocused (window-options.ts's own doc); every other window this process opens always takes focus.
-        createShellWindow(ctx, shell, { first: (tabs) => { tabs.openInternal('private') }, firstOfLaunch: true })
+        const plan = firstWindowOptions({ services: shell, isPrivate: true, argv: process.argv })
+        createShellWindow(ctx, shell, { ...plan, first: plan.first ?? ((tabs) => { tabs.openInternal('private') }), firstOfLaunch: true })
       } finally {
         markStarted()
       }
     } else {
+      let afterFirst: (() => void) | undefined
       try {
         // Only this first window can open on the welcome screen: the macOS
         // 'activate' below recreates a window in a process that has already shown it.
-        createShellWindow(ctx, shell, { intro: await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')), firstOfLaunch: true })
+        const plan = firstWindowOptions({ services: shell, isPrivate: false, argv: process.argv, displays: screen.getAllDisplays(), openWindow: (options) => { createShellWindow(ctx, shell, options) } })
+        const firstWindow = createShellWindow(ctx, shell, { ...plan, intro: plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')), firstOfLaunch: true })
+        const after = plan.after
+        afterFirst = after === undefined ? undefined : () => { after(firstWindow) }
       } finally {
         markStarted()
       }
+      // The rest of a restored session, once the first window exists and a second launch may be answered.
+      try { afterFirst?.() } catch (error) { console.error('[orivon] restoring the other windows failed:', error) }
       app.on('activate', () => {
         if (BaseWindow.getAllWindows().length === 0) createShellWindow(ctx, shell)
       })

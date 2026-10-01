@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- No network of its own: everything an overlay shows comes over IPC.
+         img-src allows data: for the icons main hands over, never a URL. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'none'; img-src 'self' data:"
+    />
+    <title>Overlay</title>
+    <link rel="stylesheet" href="./style.css" />
+    <script type="module" src="./main.ts"></script>
+  </head>
+  <body>
+    <div id="scroll"><div id="content"></div></div>
+  </body>
+</html>

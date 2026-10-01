@@ -3,12 +3,15 @@
 // process-wide channel and has to reach the manager of whichever window holds
 // the sending tab.
 import type { BaseWindow, WebContents, WebContentsView } from 'electron'
+import type { OverlayHost } from '../overlays/overlay-types.js'
 import type { TabManager } from './tabs.js'
 
 export interface ShellWindow {
   readonly window: BaseWindow
   readonly chrome: WebContentsView
   readonly tabs: TabManager
+  /** Orivon HTML shown above the page: the main menu and every feature's overlay. */
+  readonly overlays: OverlayHost
   /** A page in this window holds the screen (HTML fullscreen), so the browser's keys wait. */
   readonly shortcutsSuspended: () => boolean
 }

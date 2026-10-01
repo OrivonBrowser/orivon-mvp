@@ -1,0 +1,7 @@
+/* A sheet in the overlay's own card: a title, the choice across the full width, then the two buttons. */
+
+body[data-overlay='screenshot'] .shot { padding: 16px 18px; }
+body[data-overlay='screenshot'] .sheet-title { margin: 0; }
+body[data-overlay='screenshot'] .sheet-body { margin: 12px 0 16px; }
+body[data-overlay='screenshot'] .segmented { display: flex; }
+body[data-overlay='screenshot'] .segmented > button { flex: 1 1 0; }

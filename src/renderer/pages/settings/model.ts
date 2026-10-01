@@ -8,8 +8,11 @@ import type { SettingsState } from './state.js'
 export type Control =
   /** A choice among a setting's options. Options default to the schema's own, with its labels. */
   | { readonly type: 'choice', readonly key: SettingKey, readonly options?: ReadonlyArray<{ readonly value: string, readonly label: string }> }
-  | { readonly type: 'text', readonly key: SettingKey, readonly placeholder: string }
+  /** `problem` is what the row says when main refuses the value; without it, the search address's own message. */
+  | { readonly type: 'text', readonly key: SettingKey, readonly placeholder: string, readonly problem?: string }
   | { readonly type: 'toggle', readonly key: SettingKey }
+  /** A list of web addresses kept as the newline-separated text of a setting, with a way to add, remove and take the open pages. */
+  | { readonly type: 'pageList', readonly key: SettingKey }
   /** A keyboard shortcut: its keys, and the buttons that change it. */
   | { readonly type: 'shortcut', readonly id: string }
   /** Usage statistics: the choice, the exact text that would be sent, and what has been. */
@@ -27,6 +30,8 @@ export interface Row {
   readonly id: string
   readonly label: string
   readonly help?: string
+  /** The help line when it depends on a value, in place of `help`. */
+  readonly helpFor?: (state: SettingsState) => string
   /** Words a person might search for that the label and help do not use. */
   readonly keywords?: readonly string[]
   readonly control: Control

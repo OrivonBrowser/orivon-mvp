@@ -174,14 +174,13 @@ it('closes an open browserAction popup the way Chrome does, and keeps window.clo
       check('window.close() from inside the popup closes it', await popupClosed())
 
       // ---- focus moving to the page closes it ----
-      // Excludes the main menu's own warm, kept-alive-while-hidden popover
-      // (shell/popover-view.ts's `warm`, test/e2e-menu-warm.test.ts) in
-      // addition to the chrome view and the popup itself -- it lingers in
+      // Excludes the main menu's own warm, kept-alive-while-hidden overlay
+      // (test/e2e-menu-warm.test.ts) in addition to the chrome view and the popup itself -- it lingers in
       // app.windows() long after it last showed, and is not the page a
       // person's click would actually focus.
       await openPopup()
       const view = liveApp.windows().find((w) =>
-        w !== chrome && !w.url().endsWith('/menu/index.html') && findPopup(liveApp.windows(), extensionId) !== w)
+        w !== chrome && !w.url().includes('/overlay/') && findPopup(liveApp.windows(), extensionId) !== w)
       if (view !== undefined) await focusWebContents(liveApp, view.url())
       check('focus moving to the page closes the popup', await popupClosed())
 

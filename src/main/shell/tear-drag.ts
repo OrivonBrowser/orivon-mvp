@@ -217,7 +217,7 @@ export class TearDragController {
     }
     if (!win.isVisible()) win.showInactive()
 
-    const target = crossWindowTargetFor(source, point, this.windows(), this.topHeight)
+    const target = crossWindowTargetFor(source, point, this.windows(), this.topHeight, source.tabs.record(this.tabId)?.pinned === true)
     if (target === null) {
       this.clearMark()
     } else if (target.window !== this.markedWindow) {

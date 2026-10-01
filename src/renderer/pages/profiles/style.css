@@ -7,7 +7,7 @@
 .top-title .icon { width: 22px; height: 22px; color: var(--waccent-text); }
 .top h1 { font-size: 22px; font-weight: 600; }
 
-.problem { min-height: 0; margin-bottom: 12px; color: var(--wdanger); }
+.problem { min-height: 0; margin-bottom: 12px; color: var(--wdanger-text); }
 .problem:empty { display: none; }
 
 .list { display: grid; gap: 12px; margin-bottom: 18px; }

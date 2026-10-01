@@ -13,13 +13,26 @@ export function clearOfPairs (rest: readonly string[], index: number, pairs: rea
   return index
 }
 
-/** Moves `id` to `index` (clamped to the strip) in `order`, in place, past a joined pair rather than into it.
- * False when nothing changed. */
-export function moveInOrder (order: string[], id: string, index: number, pairs: readonly JoinedPair[] = []): boolean {
+/** How many tabs of `order` are pinned: the length of the pinned run, which leads the strip. */
+export function pinnedCount (order: readonly string[], isPinned: (id: string) => boolean): number {
+  return order.filter(isPinned).length
+}
+
+/** Keeps a place inside the run its tab belongs to. `count` is the pinned run's length and `length` the strip's,
+ * both without the mover: a pinned tab takes a place from 0 to `count`, any other from `count` to `length`. */
+export function clampToRun (index: number, pinned: boolean, count: number, length: number): number {
+  const [low, high] = pinned ? [0, count] : [count, length]
+  return Math.min(Math.max(index, low), high)
+}
+
+/** Moves `id` to `index` (clamped to the strip and to the run of its kind) in `order`, in place, past a joined pair
+ * rather than into it. False when nothing changed. */
+export function moveInOrder (order: string[], id: string, index: number, pairs: readonly JoinedPair[] = [], isPinned: (id: string) => boolean = () => false): boolean {
   const from = order.indexOf(id)
   if (from === -1 || !Number.isFinite(index)) return false
-  const wanted = Math.min(Math.max(0, Math.trunc(index)), order.length - 1)
-  const to = clearOfPairs(order.filter((other) => other !== id), wanted, pairs, from)
+  const rest = order.filter((other) => other !== id)
+  const wanted = clampToRun(Math.min(Math.max(0, Math.trunc(index)), rest.length), isPinned(id), pinnedCount(rest, isPinned), rest.length)
+  const to = clearOfPairs(rest, wanted, pairs, from)
   if (to === from) return false
   order.splice(from, 1)
   order.splice(to, 0, id)

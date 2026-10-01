@@ -7,10 +7,12 @@ import type { ShellActions } from '../ipc/ipc.js'
 import type { PermissionsPanel } from '../permissions/permissions-panel.js'
 import type { PopoverAnchor } from '../permissions/popover-view.js'
 import type { SiteInfoPanel } from '../permissions/site-info-panel.js'
-import type { MenuPanel } from './menu-panel.js'
+import { isRect } from './actions/overlay.js'
+import { runChromeAction } from './chrome-actions.js'
 import type { ShellServices } from './shell-services.js'
 import { splitZoneFor } from './split-drop.js'
 import { dropTab, moveToNewWindow, moveToWindow } from './tab-move.js'
+import { closeOthers, closeToRight, duplicateTab, newTabToRight, tabMenuFlags, toggleMute, togglePin } from './tab-commands.js'
 import { showTabMenu, tabMenuTemplate } from './tab-menu.js'
 import { cascadeFrom } from './window-options.js'
 import type { ShellWindowOptions } from './window-options.js'
@@ -33,7 +35,9 @@ export interface SiteInfoMemory {
 export interface WindowParts {
   readonly entry: ShellWindow
   readonly services: ShellServices
-  readonly panels: { readonly permissions: PermissionsPanel, readonly siteInfo: SiteInfoPanel, readonly menu: MenuPanel }
+  /** Closes the overlay popups but not the two panels above, which a caller toggles itself. */
+  readonly closeOverlays: () => void
+  readonly panels: { readonly permissions: PermissionsPanel, readonly siteInfo: SiteInfoPanel }
   readonly memory: SiteInfoMemory
   readonly openWindow: (options: ShellWindowOptions) => void
   /** How tall the top of the window (tab strip and toolbar) is: where another window's strip can be dropped on. */
@@ -49,7 +53,7 @@ function windowLabel (other: ShellWindow, position: number): string {
 }
 
 export function shellActions (parts: WindowParts): ShellActions {
-  const { entry, services, panels, memory, openWindow, topHeight, area } = parts
+  const { entry, services, panels, memory, closeOverlays, openWindow, topHeight, area } = parts
   const { tabs, window } = entry
 
   /** Captured once at the start of a manual window move (drag-mode.ts), null between drags. */
@@ -58,21 +62,29 @@ export function shellActions (parts: WindowParts): ShellActions {
   const showTabMenuFor = (id: string): void => {
     const { tabs: all } = tabs.getState()
     const tab = all.find((candidate) => candidate.id === id)
-    if (tab === undefined) return
+    const flags = tabMenuFlags({ tabs: all }, id)
+    if (tab === undefined || flags === undefined) return
     const others = services.windows.all().filter((other) => other !== entry && !other.window.isDestroyed())
+    // A pinned tab is never in a split, on either side of it.
+    const partners = tab.pinned ? [] : all.filter((other) => other.id !== id && other.splitWith === null && !other.pinned)
     showTabMenu(window, tabMenuTemplate({
-      canDuplicate: !tab.isInternal,
+      ...flags,
       tabCount: all.length,
       inSplit: tab.splitWith !== null,
-      splitPartners: all.filter((other) => other.id !== id && other.splitWith === null).map((other) => ({ label: other.title === '' ? 'New Tab' : other.title, split: () => { tabs.splits.split(id, other.id, 'right') } })),
+      splitPartners: partners.map((other) => ({ label: other.title === '' ? 'New Tab' : other.title, split: () => { tabs.splits.split(id, other.id, 'right') } })),
       otherWindows: others.map((other, position) => ({ label: windowLabel(other, position), move: () => { moveToWindow(entry, id, other) } }))
     }, {
+      newTabRight: () => { newTabToRight(tabs, id) },
       reload: () => { tabs.reload(id) },
-      duplicate: () => { tabs.createTab(tab.isNewTab ? undefined : tab.url) },
+      duplicate: () => { duplicateTab(tabs, id) },
+      togglePin: () => { togglePin(tabs, id) },
+      toggleMute: () => { toggleMute(tabs, id) },
       moveToNewWindow: () => { moveToNewWindow(entry, id, openWindow, cascadeFrom(window.getBounds())) },
       separate: () => { tabs.splits.separate(id) },
       close: () => { tabs.closeTab(id) },
-      closeOthers: () => { for (const other of all) if (other.id !== id) tabs.closeTab(other.id) }
+      closeOthers: () => { closeOthers(tabs, id) },
+      closeRight: () => { closeToRight(tabs, id) },
+      run: (command) => { services.commands.run(command, entry) }
     }))
   }
 
@@ -85,7 +97,7 @@ export function shellActions (parts: WindowParts): ShellActions {
       // an error.
       const focusOrigin = url === undefined ? undefined : originFromUrl(url) ?? undefined
       panels.siteInfo.close() // only one popup open at a time
-      panels.menu.close()
+      closeOverlays()
       panels.permissions.toggle(anchor, focusOrigin)
     },
     openSiteInfo: (anchor, page, url) => {
@@ -94,16 +106,14 @@ export function shellActions (parts: WindowParts): ShellActions {
       memory.anchor = anchor
       memory.origin = origin
       panels.permissions.close()
-      panels.menu.close()
+      closeOverlays()
       panels.siteInfo.toggle(anchor, origin, page)
     },
     runCommand: (id) => { services.commands.run(id, entry) },
-    openMenu: (anchor) => {
-      panels.permissions.close()
-      panels.siteInfo.close()
-      panels.menu.toggle(anchor)
-    },
-    prewarmMenu: () => { panels.menu.prewarm() },
+    act: (name, payload) => runChromeAction(name, payload, { window: entry, services }),
+    // The anchor comes from the chrome page: only a rectangle of numbers places a view.
+    openMenu: (anchor) => { if (isRect(anchor)) entry.overlays.toggle('menu', anchor) },
+    prewarmMenu: () => { entry.overlays.prewarm('menu') },
     dragTab: (id, point) => {
       const zone = point === null ? null : splitZoneFor(tabs.getState().activeTabId, id, area(), point, TAB_DRAG_SPLIT_SHARE)
       tabs.splits.setPreview(zone)

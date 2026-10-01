@@ -38,4 +38,16 @@ describe('chromeContextMenuHost -- Inspect on the chrome\'s own right-click menu
     expect(host.window).toBe(window)
     expect(host.openInNewTab).toBe(openInNewTab)
   })
+
+  it('carries Paste and Go through when the window supplies one, and has none otherwise', () => {
+    const go = vi.fn()
+    expect(chromeContextMenuHost(undefined, {} as never, {} as never, vi.fn(), go).pasteAndGo).toBe(go)
+    expect(chromeContextMenuHost(undefined, {} as never, {} as never, vi.fn()).pasteAndGo).toBeUndefined()
+  })
+
+  it('offers no page items: no tab navigation, no page tools', () => {
+    const host = chromeContextMenuHost(undefined, {} as never, {} as never, vi.fn())
+    expect(host.page).toBeUndefined()
+    expect(host.runCommand).toBeUndefined()
+  })
 })

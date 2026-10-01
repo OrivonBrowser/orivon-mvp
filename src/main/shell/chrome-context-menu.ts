@@ -1,6 +1,7 @@
 // What the chrome's own right-click menu (window.ts) offers: the same edit
 // commands every page gets, plus Inspect Element where DevToolsGate.allowed()
-// says developer tools may open on the chrome's own webContents.
+// says developer tools may open on the chrome's own webContents, and Paste and
+// Go for the address bar.
 // shell-ui-page.ts's isShellUiPage() (wired in shell-services.ts) is what
 // keeps that refused outside developer mode.
 import type { BaseWindow, WebContents } from 'electron'
@@ -11,12 +12,14 @@ export function chromeContextMenuHost (
   devtools: DevToolsGate | undefined,
   chromeContents: WebContents,
   window: BaseWindow,
-  openInNewTab: (url: string) => void
+  openInNewTab: (url: string) => void,
+  pasteAndGo?: () => void
 ): ContextMenuHost {
   const canInspect = devtools?.allowed(chromeContents) === true
   return {
     window,
     openInNewTab,
+    ...(pasteAndGo === undefined ? {} : { pasteAndGo }),
     ...(canInspect ? { inspect: (x: number, y: number) => { devtools?.inspect(chromeContents, window, x, y) } } : {})
   }
 }

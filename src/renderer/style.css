@@ -9,6 +9,9 @@
    change one, change both, then re-run `npm run smoke`. */
 
 @import './styles/tabstrip.css';
+@import './styles/tab-badges.css';
+@import './styles/tab-crashed.css';
+@import './styles/tab-search-button.css';
 @import './styles/toolbar.css';
 @import './styles/bookmarks.css';
 /* Same-entry import, unlike site-info/style.css's copy of these same
@@ -32,7 +35,7 @@
   --wsurface: #f2f2f7;
   --wborder: color-mix(in srgb, var(--wchrome) 85%, black);
   --wink: rgba(0, 0, 0, 0.90);
-  --wink-dim: rgba(0, 0, 0, 0.50);
+  --wink-dim: rgba(0, 0, 0, 0.58);
   --wink-off: rgba(0, 0, 0, 0.35);
   --whover-strong: rgba(0, 0, 0, 0.08);
   --whover-soft: rgba(0, 0, 0, 0.05);
@@ -55,7 +58,7 @@
     --wsurface: #2b2c31;
     --wborder: #3b3c42;
     --wink: #e6e7e8;
-    --wink-dim: #9a9ba5;
+    --wink-dim: #a4a5af;
     --wink-off: #6b7280;
     --whover-strong: rgba(255, 255, 255, 0.08);
     --whover-soft: rgba(255, 255, 255, 0.05);
@@ -73,6 +76,12 @@
    .address-dot.insecure). Theme-invariant in the reference, same as
    --waccent/--wmark/--wok above, so it isn't in the light/dark table. */
 :root { --winsecure: #f97316; }
+/* The warning colour as a mark that must be seen on the chrome (a crashed tab's icon): the plain orange is 2.2:1 on
+   the light chrome, so light takes a darker one. */
+:root { --wwarn-mark: #c2410c; }
+@media (prefers-color-scheme: dark) {
+  :root { --wwarn-mark: #f97316; }
+}
 
 * { box-sizing: border-box; }
 

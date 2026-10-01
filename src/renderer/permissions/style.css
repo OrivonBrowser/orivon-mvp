@@ -12,7 +12,7 @@
   --wsurface: #f2f2f7;
   --wborder: color-mix(in srgb, var(--wbg) 85%, black);
   --wink: rgba(0, 0, 0, 0.90);
-  --wink-dim: rgba(0, 0, 0, 0.50);
+  --wink-dim: rgba(0, 0, 0, 0.58);
   --waccent: #4f46e5;
   --wdanger: #dc2626;
   --wwarn: #f97316;
@@ -26,7 +26,7 @@
     --wsurface: #2b2c31;
     --wborder: #3b3c42;
     --wink: #e6e7e8;
-    --wink-dim: #9a9ba5;
+    --wink-dim: #a4a5af;
   }
 }
 

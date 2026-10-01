@@ -5,22 +5,27 @@ vi.mock('electron', () => ({ Menu: { buildFromTemplate: vi.fn() } }))
 
 const { tabMenuTemplate } = await import('../tab-menu.js')
 
-const actions = () => ({ reload: vi.fn(), duplicate: vi.fn(), moveToNewWindow: vi.fn(), separate: vi.fn(), close: vi.fn(), closeOthers: vi.fn() })
+const actions = () => ({ newTabRight: vi.fn(), reload: vi.fn(), duplicate: vi.fn(), togglePin: vi.fn(), toggleMute: vi.fn(), moveToNewWindow: vi.fn(), separate: vi.fn(), close: vi.fn(), closeOthers: vi.fn(), closeRight: vi.fn(), run: vi.fn() })
 const model = (overrides: Partial<Parameters<typeof tabMenuTemplate>[0]> = {}): Parameters<typeof tabMenuTemplate>[0] => ({
-  canDuplicate: true, tabCount: 3, inSplit: false, splitPartners: [], otherWindows: [], ...overrides
+  canDuplicate: true, pinned: false, muted: false, canPin: true, othersClosable: true, rightClosable: true, tabCount: 3, inSplit: false, splitPartners: [], otherWindows: [], ...overrides
 })
 const labels = (template: MenuItemConstructorOptions[]): string[] => template.filter((item) => item.type !== 'separator').map((item) => item.label ?? '')
 const find = (template: MenuItemConstructorOptions[], label: string): MenuItemConstructorOptions | undefined => template.find((item) => item.label === label)
 
 describe('a tab\'s menu', () => {
   it('offers what can be done to one tab, in order', () => {
-    expect(labels(tabMenuTemplate(model(), actions()))).toEqual(['Reload', 'Duplicate', 'Split with', 'Move Tab to New Window', 'Close Tab', 'Close Other Tabs'])
+    expect(labels(tabMenuTemplate(model(), actions()))).toEqual(['New Tab to the Right', 'Reload', 'Duplicate', 'Pin Tab', 'Mute Tab', 'Split with', 'Move Tab to New Window', 'Close Tab', 'Close Other Tabs', 'Close Tabs to the Right', 'Reopen Closed Tab'])
   })
 
   it('runs the action of the entry chosen', () => {
     const a = actions()
     const template = tabMenuTemplate(model(), a)
-    for (const label of ['Reload', 'Duplicate', 'Move Tab to New Window', 'Close Tab', 'Close Other Tabs']) (find(template, label)?.click as () => void)()
+    for (const label of ['New Tab to the Right', 'Reload', 'Duplicate', 'Pin Tab', 'Mute Tab', 'Move Tab to New Window', 'Close Tab', 'Close Other Tabs', 'Close Tabs to the Right', 'Reopen Closed Tab']) (find(template, label)?.click as () => void)()
+    expect(a.newTabRight).toHaveBeenCalledTimes(1)
+    expect(a.togglePin).toHaveBeenCalledTimes(1)
+    expect(a.toggleMute).toHaveBeenCalledTimes(1)
+    expect(a.closeRight).toHaveBeenCalledTimes(1)
+    expect(a.run).toHaveBeenCalledWith('tab.reopen')
     expect(a.reload).toHaveBeenCalledTimes(1)
     expect(a.duplicate).toHaveBeenCalledTimes(1)
     expect(a.moveToNewWindow).toHaveBeenCalledTimes(1)
@@ -28,10 +33,28 @@ describe('a tab\'s menu', () => {
     expect(a.closeOthers).toHaveBeenCalledTimes(1)
   })
 
-  it('leaves a window\'s only tab where it is, and has nothing to close beside it', () => {
-    const template = tabMenuTemplate(model({ tabCount: 1 }), actions())
-    expect(find(template, 'Move Tab to New Window')?.enabled).toBe(false)
+  it('leaves a window\'s only tab where it is', () => {
+    expect(find(tabMenuTemplate(model({ tabCount: 1 }), actions()), 'Move Tab to New Window')?.enabled).toBe(false)
+  })
+
+  it('has nothing to close beside a tab when no unpinned one is left, or to its right', () => {
+    const template = tabMenuTemplate(model({ othersClosable: false, rightClosable: false }), actions())
     expect(find(template, 'Close Other Tabs')?.enabled).toBe(false)
+    expect(find(template, 'Close Tabs to the Right')?.enabled).toBe(false)
+  })
+
+  it('offers the opposite of what a tab is: Unpin and Unmute for a pinned, muted tab', () => {
+    const template = tabMenuTemplate(model({ pinned: true, muted: true }), actions())
+    expect(find(template, 'Unpin Tab')?.enabled).toBe(true)
+    expect(find(template, 'Unmute Tab')?.enabled).not.toBe(false)
+    expect(find(template, 'Pin Tab')).toBeUndefined()
+    expect(find(template, 'Mute Tab')).toBeUndefined()
+  })
+
+  it('does not pin a tab that is in a split, and always offers Reopen Closed Tab', () => {
+    const template = tabMenuTemplate(model({ canPin: false, inSplit: true, tabCount: 1, othersClosable: false }), actions())
+    expect(find(template, 'Pin Tab')?.enabled).toBe(false)
+    expect(find(template, 'Reopen Closed Tab')?.enabled).not.toBe(false)
   })
 
   it('does not copy a page that is one of the shell\'s own', () => {

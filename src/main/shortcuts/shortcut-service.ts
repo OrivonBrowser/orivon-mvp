@@ -81,6 +81,12 @@ export class ShortcutService {
     return commandById(id)?.repeatable === true
   }
 
+  /** The key caps of a command's own binding, or null when it is cleared. */
+  keysOf (id: CommandId): readonly string[] | null {
+    const own = this.primary(id)
+    return own === null ? null : displayKeys(own, this.platform)
+  }
+
   /** Every command as the Shortcuts section lists it. */
   rows (): ShortcutRow[] {
     return COMMANDS.map((def) => {

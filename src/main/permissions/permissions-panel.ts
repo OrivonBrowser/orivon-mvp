@@ -24,6 +24,7 @@ export interface PermissionsPanel {
   toggle: (anchor: PopoverAnchor, focusOrigin: string | undefined) => void
   close: () => void
   isOpen: () => boolean
+  restack: () => void
 }
 
 export function createPermissionsPanel (
@@ -51,6 +52,7 @@ export function createPermissionsPanel (
       popover.toggle(anchor, focusOrigin !== undefined ? [`--orivon-focus-origin=${focusOrigin}`] : [])
     },
     close: popover.close,
-    isOpen: popover.isOpen
+    isOpen: popover.isOpen,
+    restack: popover.restack
   }
 }

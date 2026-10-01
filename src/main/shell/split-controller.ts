@@ -4,6 +4,7 @@
 // knows nothing of views.
 import { MARGIN, SplitGroups, isFirstPane, orientationOf, paneRects, ratioAt, zoneHalf } from './split-model.js'
 import type { Orientation, PaneRects, Zone } from './split-model.js'
+import { clampToRun, pinnedCount } from './tab-order.js'
 import type { Bounds } from './tab-types.js'
 
 /** What the backdrop behind two panes draws. */
@@ -37,6 +38,8 @@ export interface SplitHost {
   openTab: () => string | undefined
   /** The area the panes share. */
   area: () => Bounds
+  /** A pinned tab stays out of a split: a pair must sit side by side, and the pinned run leads the strip. Absent reads as none pinned. */
+  isPinned?: (id: string) => boolean
 }
 
 const inset = (bounds: Bounds): Bounds => ({ x: bounds.x + MARGIN, y: bounds.y + MARGIN, width: bounds.width - 2 * MARGIN, height: bounds.height - 2 * MARGIN })
@@ -85,7 +88,7 @@ export class SplitController {
   /** Puts `dropped` in the pane `zone` names beside `existing`, and goes to it. False when the two cannot be joined. */
   split (existing: string, dropped: string, zone: Zone): boolean {
     const order = this.host.order
-    if (existing === dropped || !order.includes(existing) || !order.includes(dropped)) return false
+    if (existing === dropped || !order.includes(existing) || !order.includes(dropped) || this.pinned(existing) || this.pinned(dropped)) return false
     this.preview = null
     this.groups.separate(existing)
     this.groups.separate(dropped)
@@ -102,9 +105,11 @@ export class SplitController {
       this.separate(id)
       return
     }
+    if (this.pinned(id)) return
     const order = this.host.order
-    const after = order.slice(order.indexOf(id) + 1).find((other) => this.groups.groupOf(other) === undefined)
-    const before = order.slice(0, order.indexOf(id)).reverse().find((other) => this.groups.groupOf(other) === undefined)
+    const free = (other: string): boolean => this.groups.groupOf(other) === undefined && !this.pinned(other)
+    const after = order.slice(order.indexOf(id) + 1).find(free)
+    const before = order.slice(0, order.indexOf(id)).reverse().find(free)
     const existing = after ?? before
     const partner = existing ?? this.host.openTab()
     if (partner === undefined) return
@@ -163,10 +168,14 @@ export class SplitController {
     if (group === undefined || !Number.isFinite(index)) return false
     const order = this.host.order
     const rest = order.filter((other) => other !== group.a && other !== group.b)
-    const at = Math.min(Math.max(0, Math.trunc(index)), rest.length)
+    const at = clampToRun(Math.min(Math.max(0, Math.trunc(index)), rest.length), false, pinnedCount(rest, (other) => this.pinned(other)), rest.length)
     order.splice(0, order.length, ...rest.slice(0, at), group.a, group.b, ...rest.slice(at))
     this.host.changed()
     return true
+  }
+
+  private pinned (id: string): boolean {
+    return this.host.isPinned?.(id) === true
   }
 
   /** Makes `a` and `b` neighbours, `a` first, where the earlier of the two was. */

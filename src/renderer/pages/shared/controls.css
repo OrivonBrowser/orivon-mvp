@@ -1,3 +1,5 @@
+@import './kit.css';
+
 /* Buttons, choices and text boxes shared by the shell's own pages. */
 
 .btn {
@@ -14,7 +16,7 @@
 /* Outline until the action is the confirming click of an armed pair: every
    destructive button starts this way, and only the rare one-way action (a
    wipe, a delete) ever turns solid, when its own confirm arms it. */
-.btn.danger { color: var(--wdanger); border-color: color-mix(in srgb, var(--wdanger) 50%, var(--wborder)); }
+.btn.danger { color: var(--wdanger-text); border-color: color-mix(in srgb, var(--wdanger) 50%, var(--wborder)); }
 .btn.danger:hover { background: var(--wdanger-wash); border-color: var(--wdanger); }
 .btn.danger.armed { background: var(--wdanger); border-color: var(--wdanger); color: #fff; }
 .btn.danger.armed:hover { filter: brightness(1.08); }
@@ -41,6 +43,8 @@
 }
 .text { width: 100%; max-width: 420px; }
 .text[aria-invalid="true"] { border-color: var(--wdanger); }
+/* One ring, not two: an invalid field that has focus shows the focus ring in the error colour. */
+.text[aria-invalid="true"]:focus-visible { outline-color: var(--wdanger-text); }
 
 .switch {
   position: relative;

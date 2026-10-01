@@ -7,6 +7,7 @@
 import type { WebContents } from 'electron'
 import { chordFromInput } from './accelerator.js'
 import type { KeyInput } from './accelerator.js'
+import { commandById } from './commands.js'
 import type { CommandId } from './commands.js'
 import type { RecordOutcome, ShortcutService } from './shortcut-service.js'
 
@@ -18,8 +19,8 @@ export interface PressedKey extends KeyInput {
 }
 
 export interface DispatcherHost {
-  /** The window's commands are held while a page has the screen. Null: the contents are in no window. */
-  windowFor: (contents: WebContents) => { suspended: boolean, run: (id: CommandId) => void } | null
+  /** The window's commands are held while a page has the screen; `isAppTab`: the contents are a registered app's tab. Null: the contents are in no window. */
+  windowFor: (contents: WebContents) => { suspended: boolean, isAppTab: boolean, run: (id: CommandId) => void } | null
   /** A recording finished, for the page that asked. */
   recorded: (contents: WebContents, outcome: RecordOutcome) => void
 }
@@ -44,6 +45,11 @@ export function attachShortcuts (contents: WebContents, service: ShortcutService
     const target = host.windowFor(contents)
     // A page in fullscreen keeps every key (Escape leaves it, in the browser process).
     if (target === null || target.suspended) return
+    // The app has its own version of this key (find, print, save): it gets it, and the browser's stays unused there.
+    const def = commandById(id)
+    if (target.isAppTab && def?.yieldToApp === true) return
+    // A reserved command has nothing to run, so taking its chord would only stop the page's own handler for it.
+    if (def?.pending === true) return
     event.preventDefault()
     if (input.isAutoRepeat && !service.isRepeatable(id)) return
     target.run(id)

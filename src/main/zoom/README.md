@@ -33,9 +33,11 @@ and its own.
 changes; choosing the default level again removes the entry. The file holds at most 2000 sites, the
 oldest choice dropped first.
 
-**Tabs use manual zoom.** With Electron's default mode a mouse-wheel gesture reports a step and
-nothing more, and other modes apply their own change on top of ours. In manual mode the report is
-the only effect, so one step in the wheel is one step in the list.
+**A tab zooms in isolated mode, everything else in manual.** Manual mode reports the factor and a mouse-wheel
+step but does not scale the page, so it is what the chrome and the popovers keep. A tab is switched to isolated
+mode at its first commit, when it is known to be a tab: the page then really changes size, and the browser's
+per-site memory never shares a level between tabs. The wheel also zooms an isolated page on its own, so each
+wheel event is followed by putting the page back to the level the service holds.
 
 **One turn of the wheel is one step.** Electron reports a turn as two `zoom-changed` events a fraction of a
 millisecond apart (measured), so two in the same direction within 12 ms are taken as one; a wheel cannot turn
