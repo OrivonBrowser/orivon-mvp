@@ -133,8 +133,8 @@ it('blocks what a page opens by itself, lists it under a chip, and opens one on 
     let bubble = await waitBubble(app)
     expect(await bubble.locator('.sheet-title').textContent()).toBe('Pop-ups blocked')
     expect(await bubble.locator('.origin').textContent()).toBe(a.origin)
-    expect(await bubble.locator('.listbox-item .item-title').allTextContents()).toEqual([new URL(a.origin).host, new URL(a.origin).host])
-    expect(await bubble.locator('.listbox-item .item-sub').allTextContents()).toEqual([`${a.origin}/target?b`, `${a.origin}/target?a`])
+    const host = new URL(a.origin).host
+    expect(await bubble.locator('.listbox-item .item-title').allTextContents()).toEqual([`${host}/target?b`, `${host}/target?a`])
     expect(await bubble.locator('.listbox-item').first().getAttribute('title')).toBe(`${a.origin}/target?b`)
     expect(await bubble.locator('input[type=radio]:checked').getAttribute('value')).toBe('block')
     expect(await bubble.evaluate(() => document.activeElement?.getAttribute('role'))).toBe('listbox')
@@ -142,7 +142,7 @@ it('blocks what a page opens by itself, lists it under a chip, and opens one on 
 
     // The keyboard moves through the list; Enter opens the selected address in a new tab.
     await bubble.keyboard.press('ArrowDown')
-    expect(await bubble.locator('.listbox-item[aria-selected=true] .item-sub').textContent()).toBe(`${a.origin}/target?a`)
+    expect(await bubble.locator('.listbox-item[aria-selected=true] .item-title').textContent()).toBe(`${new URL(a.origin).host}/target?a`)
     await bubble.keyboard.press('ArrowUp')
     await bubble.keyboard.press('ArrowDown')
     try { await bubble.keyboard.press('Enter') } catch (error) { if (!/closed|destroyed/.test(String(error))) throw error }

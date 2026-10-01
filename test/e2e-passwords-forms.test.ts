@@ -223,6 +223,8 @@ it('offers a sign-in for keeping only once it worked, then saves, fills, updates
     await view.click('#user')
     suggest = await waitShown(app, 'password-suggest')
     await suggest.waitForSelector('.listbox-item')
+    // A click this soon after the list appears is not a choice: a page can open the list under the cursor.
+    await delay(700)
     await closing(suggest.click('.listbox-item'))
     expect(await waitFor(async () => (await view.inputValue('#pass')) === 'pw-one')).toBe(true)
     expect(await waitFor(async () => !(await shown(app, 'password-suggest')))).toBe(true)

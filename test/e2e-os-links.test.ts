@@ -254,8 +254,10 @@ it('registers for both web protocols when the build is packaged, and says plainl
     await again.click()
     const problem = page.locator('#row-default-browser .problem')
     await problem.waitFor({ timeout: 10_000 })
-    expect(await problem.textContent()).toContain('Your system did not accept the change. Set the default browser in your system settings.')
-    expect(await problem.locator('code').textContent()).toBe('xdg-settings set default-web-browser orivon.desktop')
+    expect(await problem.textContent()).toBe('Your system did not accept the change.')
+    // The command to do it by hand sits on the label's side of the row, with a button that copies it.
+    expect(await page.locator('#row-default-browser .command-line code').textContent()).toBe('xdg-settings set default-web-browser orivon.desktop')
+    expect(await page.locator('#row-default-browser .command-line button').textContent()).toBe('Copy')
     expect(await page.locator('#row-default-browser').getByRole('button', { name: 'Make default' }).isEnabled()).toBe(true)
     await shoot(app, page, 'about-default-declined')
     expect(mainOutput(app)).not.toContain('uncaught exception')
@@ -326,7 +328,7 @@ it('starts an email about the page only after the person agrees, with the title 
     await runCommand(chrome, 'share.email')
     expect(await waitFor(async () => (await recorded(app)).asked.length === 1)).toBe(true)
     const question = (await recorded(app)).asked[0]
-    expect(question?.message).toBe('Open mailto link with your system\'s default app?')
+    expect(question?.message).toBe('Open your mail program with this page\'s link?')
     expect(question?.detail).toContain('127.0.0.1')
     expect(question?.detail).toContain('mailto:?subject=')
     await delay(ABSENCE_SETTLE_MS)

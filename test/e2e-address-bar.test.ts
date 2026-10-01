@@ -210,11 +210,11 @@ it('marks plain http to a public name as not secure, live https with a lock, and
 
     await clickAddressBarRetrying(chrome, `${httpsOrigin}/secure`)
     await waitDisplay(chrome, `${httpsOrigin.replace('https://', '')}/secure`)
-    expect(await markText(chrome)).toBe('')
-    expect(await markTitle(chrome)).toBe('Connection is secure')
-    expect(await chrome.locator('#address-display .address-mark.secure svg').count()).toBe(1)
-    // The permissions key shows only for a site that has asked for something, and this one has not.
-    expect(await chrome.locator('#site-permissions-btn').isVisible()).toBe(false)
+    // A secure connection draws no glyph of its own beside the shield and the key: the key's title says it.
+    expect(await chrome.locator('#address-display .address-mark').count()).toBe(0)
+    // The key shows on every web page, since the site's permissions are listed behind it.
+    expect(await chrome.locator('#site-permissions-btn').isVisible()).toBe(true)
+    expect(await waitFor(async () => (await chrome.getAttribute('#site-permissions-btn', 'aria-label')) === 'Permissions. Connection is secure')).toBe(true)
     await shoot(app, chrome, 'https')
 
     // A load that fails commits Chromium's error page under the address that failed: it has no lock either.

@@ -234,11 +234,13 @@ it('shows an empty list when nothing is saved, with the toggles live', async () 
   try {
     const dir = await userData(app)
     const page = await openPasswords(app, chrome)
-    await expect(page.locator('.pw-list .empty-state').textContent()).resolves.toBe('No saved passwords yet. Orivon offers to save one after you sign in to a site.')
+    await expect(page.locator('.pw-list .empty-state p').textContent()).resolves.toBe('No saved passwords yet. Orivon offers to save one after you sign in to a site.')
     expect(await page.locator('#row-passwords-never').count()).toBe(0)
     expect(await page.locator('#row-password-storage').count()).toBe(0)
     expect(await page.locator('#row-passwords-offer-to-save input').isDisabled()).toBe(false)
-    expect(await page.getByRole('searchbox', { name: 'Search passwords' }).isDisabled()).toBe(false)
+    // With nothing saved there is nothing to search; importing is offered where the list would be.
+    expect(await page.getByRole('searchbox', { name: 'Search passwords' }).count()).toBe(0)
+    expect(await page.locator('.pw-list .empty-state .btn').textContent()).toBe('Import passwords…')
     await shoot(page, 'passwords-empty')
     // Looking at an empty store creates no file.
     expect(existsSync(join(dir, 'passwords.json'))).toBe(false)
@@ -277,9 +279,10 @@ it('says nothing is kept, disables the toggles and writes no file when there is 
     expect(await banner.textContent()).toBe('Orivon cannot reach a system keyring, so it does not save passwords. Install or unlock GNOME Keyring or KWallet, then restart Orivon.')
     expect(await page.locator('#row-passwords-offer-to-save input').isDisabled()).toBe(true)
     expect(await page.locator('#row-passwords-autofill input').isDisabled()).toBe(true)
-    expect(await page.getByRole('searchbox', { name: 'Search passwords' }).isDisabled()).toBe(true)
+    // Nothing to search, so the box is not drawn at all.
+    expect(await page.getByRole('searchbox', { name: 'Search passwords' }).count()).toBe(0)
     expect(await page.getByRole('button', { name: 'Import or export passwords' }).isDisabled()).toBe(true)
-    await expect(page.locator('.pw-list .empty-state').textContent()).resolves.toBe('No saved passwords.')
+    await expect(page.locator('.pw-list .empty-state p').textContent()).resolves.toBe('No saved passwords.')
     expect(await page.locator('#row-passwords-offer-to-save input').isChecked()).toBe(false)
     await shoot(page, 'passwords-no-keyring')
     await delay(500)
