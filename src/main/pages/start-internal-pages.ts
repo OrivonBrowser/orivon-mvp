@@ -40,6 +40,7 @@ import { endProcess, focusTab, listTasks } from '../info/tasks-runner.js'
 import type { TasksEnv } from '../info/tasks-runner.js'
 import { passwordsDomainFor } from '../passwords/passwords-runner.js'
 import { privacyDomain } from '../privacy/privacy-domain.js'
+import { siteDataDomain } from '../privacy/site-data-domain.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { nodeLoaderStorage } from '../../loader/cache/node-storage.js'
@@ -126,6 +127,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
         .map((app) => session.fromPartition(partitionFor(app.origin))),
       now: Date.now
     }),
+    siteData: siteDataDomain(() => session.defaultSession),
     apps: appsDomain({ permissions, userDataPath: app.getPath('userData'), identity: identityKeyStorage }),
     web3: web3Domain({
       view: verifierView,

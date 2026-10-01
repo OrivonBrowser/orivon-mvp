@@ -16,11 +16,16 @@ import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import type { SiteInfo } from '../permissions/site-info.js'
 import type { SiteInfoController } from '../permissions/site-info-controller.js'
 import type { SiteTrust } from '../browsing/site-trust.js'
-import { browserStorageEstimateFor, cookieCountFor, orivonStorageFor } from '../permissions/site-data-runner.js'
+import { browserStorageEstimateFor, orivonStorageFor } from '../permissions/site-data-runner.js'
+import { originFromUrl } from '../../broker/policy/origin.js'
+import type { CookieView } from '../privacy/cookie-list.js'
+import { cookieViewsFor, removeSiteCookie, removeSiteCookies } from '../privacy/cookie-runner.js'
 import type { BrowserStorageEstimate } from '../permissions/site-data-runner.js'
 
 export interface SiteDataSnapshot {
   readonly cookieCount: number
+  /** The site's cookies by name and flags, never by value. */
+  readonly cookies: readonly CookieView[]
   readonly browserStorage: BrowserStorageEstimate | null
   readonly orivonFilesBytes: number
   readonly orivonFilesQuotaBytes: number | undefined
@@ -48,6 +53,9 @@ export type SiteInfoCommand =
   | { type: 'apply'; changes: ReadonlyArray<{ capability: CapabilityKind; on: boolean; shownPatterns: readonly Pattern[] }> }
   | { type: 'revokePickedPath'; pickId: string }
   | { type: 'clearBrowserData' }
+  /** One cookie of this site, by the key the last `data` answer gave it. */
+  | { type: 'removeCookie'; key: string }
+  | { type: 'clearCookies' }
   | { type: 'reload' }
   | { type: 'openAllSites' }
   /** The extensions disclosure's own "Manage" link (docs/planning/extensions-
@@ -75,13 +83,14 @@ async function collectSiteData (
 ): Promise<SiteDataSnapshot> {
   const declaration = await controller.storageDeclarationFor(origin)
   const tab = activeWebContents()
-  const [orivon, cookieCount, browserStorage] = await Promise.all([
+  const [orivon, cookies, browserStorage] = await Promise.all([
     orivonStorageFor(userDataPath, origin, declaration?.filesQuotaBytes, declaration?.codeVersion),
-    tab === undefined ? 0 : cookieCountFor(tab.session, origin),
+    tab === undefined ? [] : cookieViewsFor(tab.session.cookies, new URL(origin).hostname),
     tab === undefined ? null : browserStorageEstimateFor(tab, origin)
   ])
   return {
-    cookieCount,
+    cookieCount: cookies.length,
+    cookies,
     browserStorage,
     orivonFilesBytes: orivon.filesBytes,
     orivonFilesQuotaBytes: orivon.filesQuotaBytes,
@@ -141,6 +150,18 @@ export function registerSiteInfoIpc (
         } catch (error) {
           console.error('[site-info] clearData failed', origin, error)
         }
+        return
+      }
+      case 'removeCookie': {
+        const tab = activeWebContents()
+        if (tab === undefined || originFromUrl(tab.getURL()) !== origin || typeof command.key !== 'string') return
+        await removeSiteCookie(tab.session.cookies, new URL(origin).hostname, command.key)
+        return
+      }
+      case 'clearCookies': {
+        const tab = activeWebContents()
+        if (tab === undefined || originFromUrl(tab.getURL()) !== origin) return
+        await removeSiteCookies(tab.session.cookies, new URL(origin).hostname)
         return
       }
       case 'reload':

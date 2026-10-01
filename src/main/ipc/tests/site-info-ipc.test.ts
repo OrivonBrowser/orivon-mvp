@@ -15,7 +15,6 @@ const handlers = new Map<string, (event: unknown, command: unknown) => unknown>(
 
 vi.mock('../../permissions/site-data-runner.js', () => ({
   orivonStorageFor: vi.fn(async () => ({ filesBytes: 10, filesQuotaBytes: 20, codeBytes: 30, codeVersion: '1.0.0' })),
-  cookieCountFor: vi.fn(async () => 2),
   browserStorageEstimateFor: vi.fn(async () => ({ usageBytes: 100, quotaBytes: 200 }))
 }))
 
@@ -27,7 +26,21 @@ const SITE_INFO_FRAME = { url: POPUP_URL }
 // The handler is registered on the popup's own webContents.
 const siteInfoWebContents = { mainFrame: SITE_INFO_FRAME, ipc: { handle: (channel: string, fn: (event: unknown, command: unknown) => unknown) => { handlers.set(channel, fn) } } } as unknown as import('electron').WebContents
 const OTHER_FRAME = { url: POPUP_URL }
+const OTHER_FRAME_URL = { url: 'https://evil.test/' }
 const ORIGIN = 'https://app.example'
+
+const COOKIES = [
+  { name: 'sid', domain: '.app.example', path: '/', secure: true, httpOnly: true, value: 'secret-1' },
+  { name: 'theme', domain: 'app.example', path: '/', value: 'secret-2' },
+  { name: 'other', domain: '.other.example', path: '/', value: 'secret-3' }
+]
+
+function tabWithCookies (url = `${ORIGIN}/`): { tab: import('electron').WebContents, remove: ReturnType<typeof vi.fn>, flushStore: ReturnType<typeof vi.fn> } {
+  const remove = vi.fn(async () => {})
+  const flushStore = vi.fn(async () => {})
+  const tab = { getURL: () => url, session: { cookies: { get: async () => COOKIES, remove, flushStore }, clearData: vi.fn(async () => {}) } } as unknown as import('electron').WebContents
+  return { tab, remove, flushStore }
+}
 
 const EMPTY_INFO: SiteInfo = { origin: ORIGIN, displayOrigin: ORIGIN, claimedName: undefined, asked: false, capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite: [] }
 
@@ -220,7 +233,7 @@ describe('registerSiteInfoIpc -- clearBrowserData', () => {
 
 describe('registerSiteInfoIpc -- data', () => {
   it('combines Orivon storage, cookie count and the browser storage estimate for the active tab', async () => {
-    const fakeTab = { session: {} } as unknown as import('electron').WebContents
+    const { tab: fakeTab } = tabWithCookies()
     const controller = fakeController({ storageDeclarationFor: vi.fn(async () => ({ filesQuotaBytes: 20, codeVersion: '1.0.0' })) })
     register(controller, { activeWebContents: () => fakeTab })
 
@@ -228,6 +241,10 @@ describe('registerSiteInfoIpc -- data', () => {
 
     expect(result).toEqual({
       cookieCount: 2,
+      cookies: [
+        expect.objectContaining({ name: 'sid', domain: '.app.example', secure: true, httpOnly: true, session: true }),
+        expect.objectContaining({ name: 'theme', domain: 'app.example' })
+      ],
       browserStorage: { usageBytes: 100, quotaBytes: 200 },
       orivonFilesBytes: 10,
       orivonFilesQuotaBytes: 20,
@@ -243,6 +260,71 @@ describe('registerSiteInfoIpc -- data', () => {
     const result = await dispatch({ type: 'data' })
 
     expect(result).toMatchObject({ cookieCount: 0, browserStorage: null })
+  })
+})
+
+describe('registerSiteInfoIpc -- cookies', () => {
+  it('sends no cookie value, and none of another site\'s cookies', async () => {
+    const { tab } = tabWithCookies()
+    register(fakeController(), { activeWebContents: () => tab })
+
+    const result = await dispatch({ type: 'data' })
+
+    expect(JSON.stringify(result)).not.toContain('secret')
+    expect(JSON.stringify(result)).not.toContain('other.example')
+  })
+
+  it('removes the one cookie a key names, from the active tab\'s session', async () => {
+    const { tab, remove, flushStore } = tabWithCookies()
+    register(fakeController(), { activeWebContents: () => tab })
+    const data = await dispatch({ type: 'data' }) as { cookies: Array<{ key: string }> }
+
+    await dispatch({ type: 'removeCookie', key: data.cookies[1]?.key })
+
+    expect(remove).toHaveBeenCalledTimes(1)
+    expect(remove).toHaveBeenCalledWith('http://app.example/', 'theme')
+    expect(flushStore).toHaveBeenCalled()
+  })
+
+  it('ignores a key that names another site\'s cookie, a stale key and a key that is not text', async () => {
+    const { tab, remove } = tabWithCookies()
+    register(fakeController(), { activeWebContents: () => tab })
+
+    await dispatch({ type: 'removeCookie', key: 'ffffffffffffffff' })
+    await dispatch({ type: 'removeCookie', key: { toString: () => 'x' } })
+    await dispatch({ type: 'removeCookie' })
+
+    expect(remove).not.toHaveBeenCalled()
+  })
+
+  it('removes every cookie of the site and none of another with clearCookies', async () => {
+    const { tab, remove } = tabWithCookies()
+    register(fakeController(), { activeWebContents: () => tab })
+
+    await dispatch({ type: 'clearCookies' })
+
+    expect(remove.mock.calls.map((call) => call[1]).sort()).toEqual(['sid', 'theme'])
+  })
+
+  it('does nothing once the tab is on another origin, or with no tab', async () => {
+    const away = tabWithCookies('https://other.example/')
+    register(fakeController(), { activeWebContents: () => away.tab })
+    await dispatch({ type: 'clearCookies' })
+    await dispatch({ type: 'removeCookie', key: 'ffffffffffffffff' })
+    expect(away.remove).not.toHaveBeenCalled()
+
+    register(fakeController(), { activeWebContents: () => undefined })
+    await expect(dispatch({ type: 'clearCookies' })).resolves.toBeUndefined()
+  })
+
+  it('refuses both commands from a frame that is not the popup\'s own', async () => {
+    const { tab, remove } = tabWithCookies()
+    register(fakeController(), { activeWebContents: () => tab })
+
+    await dispatch({ type: 'clearCookies' }, OTHER_FRAME_URL)
+    await dispatch({ type: 'removeCookie', key: 'ffffffffffffffff' }, OTHER_FRAME_URL)
+
+    expect(remove).not.toHaveBeenCalled()
   })
 })
 

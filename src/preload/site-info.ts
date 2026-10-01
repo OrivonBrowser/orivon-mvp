@@ -44,6 +44,12 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
     clearBrowserData: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'clearBrowserData' } satisfies SiteInfoCommand)
     },
+    removeCookie: async (key: string): Promise<void> => {
+      await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'removeCookie', key } satisfies SiteInfoCommand)
+    },
+    clearCookies: async (): Promise<void> => {
+      await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'clearCookies' } satisfies SiteInfoCommand)
+    },
     reload: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'reload' } satisfies SiteInfoCommand)
     },

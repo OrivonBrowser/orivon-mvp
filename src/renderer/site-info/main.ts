@@ -5,6 +5,7 @@ import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import { renderMainPage } from './main-view.js'
 import { renderWeb3Page } from './web3-view.js'
 import { renderDataPage } from './data-view.js'
+import type { DataPageView } from './data-view.js'
 
 // The site-info popup's whole job: fetch this ONE origin's info, render
 // whichever of the three pages is current, and stage capability switches
@@ -20,6 +21,8 @@ interface OrivonSiteInfo {
   apply: (changes: ReadonlyArray<{ capability: CapabilityKind, on: boolean, shownPatterns: readonly Pattern[] }>) => Promise<ApplyResult | null>
   revokePickedPath: (pickId: string) => Promise<SiteInfo | null>
   clearBrowserData: () => Promise<void>
+  removeCookie: (key: string) => Promise<void>
+  clearCookies: () => Promise<void>
   reload: () => Promise<void>
   openAllSites: () => Promise<void>
   openExtensions: () => Promise<void>
@@ -62,6 +65,10 @@ let data: SiteDataSnapshot | null = null
 const staged = new Map<CapabilityKind, boolean>()
 let pendingStaleCapabilities = new Set<CapabilityKind>()
 let showReloadBanner = false
+let dataView: DataPageView = { cookiesOpen: false, armed: null, deleted: false }
+let disarmTimer: ReturnType<typeof setTimeout> | undefined
+/** A second press within this long confirms a delete. */
+const ARM_MS = 4000
 
 /** Measured from where the content actually ENDS, matching
  * ../settings/main.ts's own reportContentHeight exactly -- see that
@@ -105,9 +112,13 @@ function renderCurrent (): void {
   } else if (page === 'web3') {
     renderWeb3Page(web3Section, trust, () => { page = 'main'; renderCurrent() })
   } else if (page === 'data' && info !== null) {
-    renderDataPage(dataSection, data, info.pickedPathRows, {
+    renderDataPage(dataSection, data, info.pickedPathRows, dataView, {
       onBack: () => { page = 'main'; renderCurrent() },
-      onClearBrowserData: () => { void clearBrowserData() },
+      onClearBrowserData: () => { press('site', clearBrowserData) },
+      onToggleCookies: () => { dataView = { ...dataView, cookiesOpen: !dataView.cookiesOpen }; renderCurrent() },
+      onRemoveCookie: (key) => { void removeCookie(key) },
+      onClearCookies: () => { press('cookies', clearCookies) },
+      onReload: () => { void bridge.reload() },
       onRevokePickedPath: (pickId) => { void revokePickedPathAndRefresh(pickId) }
     })
   }
@@ -155,10 +166,45 @@ async function revokePickedPathAndRefresh (pickId: string): Promise<void> {
   renderCurrent()
 }
 
-async function clearBrowserData (): Promise<void> {
-  await bridge.clearBrowserData()
+/** First press arms a deleting button, the second (within `ARM_MS`) does it. */
+function press (target: 'cookies' | 'site', run: () => Promise<void>): void {
+  if (disarmTimer !== undefined) clearTimeout(disarmTimer)
+  disarmTimer = undefined
+  if (dataView.armed === target) {
+    dataView = { ...dataView, armed: null }
+    renderCurrent()
+    void run()
+    return
+  }
+  dataView = { ...dataView, armed: target }
+  disarmTimer = setTimeout(() => { dataView = { ...dataView, armed: null }; renderCurrent() }, ARM_MS)
+  renderCurrent()
+  document.getElementById(target === 'cookies' ? 'clear-cookies' : 'clear-site')?.focus()
+}
+
+/** Whatever was deleted, the page reads again and the tab is asked to reload to show it. */
+async function afterDelete (): Promise<void> {
+  dataView = { ...dataView, deleted: true }
+  showReloadBanner = true
   data = await bridge.data()
   renderCurrent()
+}
+
+async function clearBrowserData (): Promise<void> {
+  await bridge.clearBrowserData()
+  await afterDelete()
+}
+
+async function clearCookies (): Promise<void> {
+  await bridge.clearCookies()
+  await afterDelete()
+}
+
+async function removeCookie (key: string): Promise<void> {
+  await bridge.removeCookie(key)
+  await afterDelete()
+  // The row that held the keyboard is gone: it goes to the next delete button, or the list's toggle.
+  document.querySelector<HTMLElement>('.cookie-row .icon-btn, #cookies-toggle')?.focus()
 }
 
 async function init (): Promise<void> {
