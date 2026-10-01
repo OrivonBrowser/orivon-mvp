@@ -4,10 +4,17 @@
 import { actionUserSettingsApi } from '../action-pins-runner.js'
 import { permissionsApi } from '../permissions-api.js'
 import type { ExtensionApiModule } from './api-types.js'
+import { bookmarksApi } from './bookmarks-api.js'
 import { commandsApi } from './commands-api.js'
+import { historyApi, topSitesApi } from './history-api.js'
+import { searchApi } from './search-api.js'
 
 export const EXTENSION_APIS: readonly ExtensionApiModule[] = [
   actionUserSettingsApi,
+  bookmarksApi,
   commandsApi,
-  permissionsApi
+  historyApi,
+  permissionsApi,
+  searchApi,
+  topSitesApi
 ]

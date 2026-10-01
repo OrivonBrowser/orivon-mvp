@@ -16,6 +16,8 @@ export interface ExtensionApiDeps {
   readonly session: Session
   readonly userDataPath: string
   readonly shell: () => ShellServices | undefined
+  /** Defaults to running `run` only when the shell already exists. */
+  readonly onShell?: (run: (shell: ShellServices) => void) => void
   readonly extensions: () => ExtensionsApi | undefined
   readonly prefs: ExtensionPrefsStore
   readonly held: (extensionId: string, permission: string) => boolean
@@ -46,6 +48,10 @@ export function createApiContext (deps: ExtensionApiDeps, module: ExtensionApiMo
     session: deps.session,
     userDataPath: deps.userDataPath,
     shell: deps.shell,
+    onShell: deps.onShell ?? ((run) => {
+      const shell = deps.shell()
+      if (shell !== undefined) run(shell)
+    }),
     extensions: deps.extensions,
     prefs: deps.prefs,
     held: deps.held,
