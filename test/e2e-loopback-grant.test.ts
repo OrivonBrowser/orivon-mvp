@@ -8,12 +8,10 @@
 // installed: no bundle fetch, no hash pin, no cached serving. The page keeps
 // being served by the plain static server that hosts it.
 //
-// THE ONE THING THIS SUBSTITUTES is the click. `install-consent-prompt.ts`
-// raises a real native `dialog.showMessageBox`, which no driver here can
-// press, so the test replaces that one method in the main process with one
-// that answers "allow" -- the same privilege level Playwright's `evaluate`
-// already has, and nothing the shell itself would ever do. Every other step
-// is the shipped code path.
+// Nothing is substituted. `install-consent-prompt.ts` asks in the question
+// panel of the tab, and the test presses its real accepting button after the
+// guard, the way a person does. The native dialog methods are replaced with
+// recorders only to prove none was opened.
 //
 // Hermetic: everything it touches is loopback.
 //
@@ -34,6 +32,7 @@ import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } 
 import { HERMETIC_RESOLVER, evaluateRetrying, findChrome, findViewShowing, waitFor } from './smoke-helpers.mjs'
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, killChild, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
 import { PORT_APP_FREETUBE, startOwnServer } from './freetube-fixture.js'
+import { answerAccepting, noNativeDialogs, stubNativeDialogs } from './question-support.js'
 
 const ORDINARY_BUILD = process.env['ORIVON_ORDINARY_BUILD'] === '1'
 
@@ -69,22 +68,16 @@ it.skipIf(!ORDINARY_BUILD)(
         })
         check('ORDINARY BUILD: neither dev-only test hook exists in this process', hooksAbsent)
 
-        // Answer the real consent dialog "allow". Everything upstream and
-        // downstream of this one method is the shipped path.
-        const prompted = { count: 0 }
-        await app.evaluate(({ dialog }) => {
-          const globals = globalThis as unknown as { __promptCount?: number }
-          globals.__promptCount = 0
-          dialog.showMessageBox = (async () => {
-            globals.__promptCount = (globals.__promptCount ?? 0) + 1
-            return { response: 0, checkboxChecked: false }
-          }) as unknown as typeof dialog.showMessageBox
-        })
+        await stubNativeDialogs(app)
 
         await waitFor(() => (app as NonNullable<typeof app>).windows().length === 2)
         const chrome = findChrome(app)
         await waitForAddressBarStable(chrome)
         await clickAddressBarRetrying(chrome, `${ORIGIN}/`)
+
+        // The question is drawn in the tab's own panel, and accepting it is
+        // the last thing a person has to do.
+        const asked = await answerAccepting(app)
 
         // ONE navigation, one prompt, no second address-bar entry: accepting
         // the prompt must be the last thing a person has to do.
@@ -115,8 +108,8 @@ it.skipIf(!ORDINARY_BUILD)(
             banner: document.querySelector('.notice strong')?.textContent ?? '(no banner)'
           }))
 
-        prompted.count = await app.evaluate(() => (globalThis as unknown as { __promptCount?: number }).__promptCount ?? 0)
-        check(`the real consent dialog was raised (${String(prompted.count)} prompt(s))`, prompted.count > 0)
+        check(`the consent question was asked in the panel, naming the app's origin: ${JSON.stringify(asked.origin)}`, asked.buttons.some((label) => label.startsWith('Allow')) && asked.origin.includes(`127.0.0.1:${String(PORT)}`))
+        check('no native message box was opened for it', (await noNativeDialogs(app)).length === 0, JSON.stringify(await noNativeDialogs(app)))
         check(
           'ACCEPTING THE PROMPT MAKES THE TAB AN APP TAB: window.fetch is not the platform\'s own, so the routed fetch is installed, from a plain http loopback URL, with nothing installed to disk',
           becameAppTab,

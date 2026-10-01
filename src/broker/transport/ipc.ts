@@ -102,7 +102,8 @@ async function dispatch (
       return await dispatchApp(broker, origin, method, payload, requestGrantCtx, {
         window: () => windowForSender?.(event.sender),
         stillOn: (checkedOrigin) => !event.sender.isDestroyed() && originFromSenderFrame(event.sender.mainFrame) === checkedOrigin,
-        id: event.sender
+        id: event.sender,
+        contents: () => event.sender
       }, abandoned)
     case 'fs.readFile':
     case 'fs.writeFile':

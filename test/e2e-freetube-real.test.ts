@@ -33,6 +33,7 @@ import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } 
 import { findChrome, tabViews, waitFor } from './smoke-helpers.mjs'
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, killChild, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
 import { PORT_APP_FREETUBE_REAL, startOwnServer } from './freetube-fixture.js'
+import { answerEveryQuestion, stubNativeDialogs } from './question-support.js'
 
 const ORDINARY_BUILD = process.env['ORIVON_ORDINARY_BUILD'] === '1'
 
@@ -122,9 +123,8 @@ it.skipIf(!ORDINARY_BUILD || !BUILT)(
         check(`a plain static server is serving the prepared upstream build (${ROOT})`, true)
 
         app = await launchElectron({ appPath: '.' })
-        await app.evaluate(({ dialog }) => {
-          dialog.showMessageBox = (async () => ({ response: 0, checkboxChecked: false })) as unknown as typeof dialog.showMessageBox
-        })
+        await stubNativeDialogs(app)
+        answerEveryQuestion(app)
 
         await waitFor(() => (app as NonNullable<typeof app>).windows().length === 2)
         const chrome = findChrome(app)

@@ -316,16 +316,17 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A109: Entering or leaving an app swaps the view and loses history **[AI-REC]**
+### A109: Entering or leaving an app across partitions swaps the view and loses history **[AI-REC]**
 
-- **Question:** Should a view swap into or out of an app keep back/forward history, and should a
-  cross-origin navigation be caught before it commits?
+- **Question:** Should a view swap across partitions (into or out of an app that has a partition of its
+  own) keep back/forward history, and should a cross-origin navigation be caught before it commits?
 - **Why it matters:** The swapped-in view starts with empty history. `did-navigate` swaps after
   commit, so the new origin's first render can read the old partition.
-- **Options:** carry history over with `NavigationHistory.restore()` (rec., flicker unmeasured);
-  intercept with `will-navigate`/`will-redirect`, a fresh view per cross-origin click; accept
-  both, as `src/main/shell/README.md` discloses.
-- **Who decides:** owner, before the restore path is built
+- **Options:** carry history over with `NavigationHistory.restore()` as a swap within one session already
+  does (rec.; entries from another origin would load inside the app's session); intercept with
+  `will-navigate`/`will-redirect`, a fresh view per cross-origin click; accept both, as
+  `src/main/shell/README.md` discloses.
+- **Who decides:** owner, before a restore across partitions is built
 - **Blocks:** nothing
 
 ### A111: `window.nostr` cannot reach a page until `id.requestIdentity` exists **[AI-REC]**

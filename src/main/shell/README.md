@@ -57,6 +57,10 @@ The question panel: every question the browser puts to the person is asked throu
 `question/install-questions.ts` binds the ask to this process's windows. The panel is drawn in the window of the tab
 the question belongs to, under the address pill with its top edge inside the toolbar; a background tab's question waits
 for its tab, a kiosk draws it centred, and only a question asked when no shell window exists opens a native box.
+`navigation-hold.ts` holds a tab's page where it is while a question about it is open (`holdNavigation`, nesting and
+released once): `tab-view.ts` drops a main-frame navigation, a redirect and a `window.open` the page starts meanwhile, so
+an answer cannot be given to a page that is no longer the one asked about. A change of address inside the document is
+not a navigation and still works.
 The main menu under the toolbar's menu button: `menu-layout.ts` lists which commands it shows and in
 what shape (the names and keys come from [`../shortcuts/`](../shortcuts/), so the menu cannot show a
 key that does not work), and `menu-overlay.ts` is its `OverlayDef`, shown by the overlay host in
@@ -128,7 +132,9 @@ read as an origin change; the handler excludes the dashboard explicitly.
 
 **Residual: `did-navigate` fires after commit**, so the new origin's page has rendered once in
 the old partition and may already have read from it. Intercepting before commit would cost a
-fresh view and a lost history entry on every cross-origin link; it is open as A109.
+fresh view and a lost history entry on every cross-origin link; it is open as A109. A swap within one
+session (an origin newly registered as an app, an opener being cut) carries the back and forward list
+over with `NavigationHistory.restore` and loses nothing; only a swap across partitions starts a new list.
 
 **One process, several windows: what is per window and what is shared.** Per window: the chrome view, the
 `TabManager`, the popovers, the fullscreen and notice state, and the IPC handlers on the chrome view and the

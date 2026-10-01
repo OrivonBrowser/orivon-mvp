@@ -28,6 +28,7 @@ import type { GrantedWithoutInstall } from './grant-without-install.js'
 import { createTokenBucketLimiter } from '../../broker/transport/token-bucket.js'
 import type { RateLimiter } from '../../broker/transport/token-bucket.js'
 import type { DialogCaller } from '../consent/request-grant.js'
+import { holdNavigation } from '../shell/navigation-hold.js'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 
 /** The one shape this file needs from an ipcMain.on event -- structural, matching origin.ts's own SenderFrameLike so a test never needs a real Electron event. */
@@ -102,6 +103,8 @@ export function createManifestHintListener (
     // resolves a window and never reads as still on `origin`.
     const caller: DialogCaller = {
       window: () => event.sender === undefined ? undefined : windowForSender?.(event.sender),
+      contents: () => event.sender,
+      hold: () => holdNavigation(event.sender),
       stillOn: (checkedOrigin) => event.sender !== undefined && !event.sender.isDestroyed() && originFromSenderFrame(event.sender.mainFrame) === checkedOrigin
     }
 

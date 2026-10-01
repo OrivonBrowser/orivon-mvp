@@ -78,7 +78,7 @@ decision and its dialog share a folder.
 | Suffix | Meaning |
 |---|---|
 | `<name>.ts` | The decision. No `electron` import, unit-tested under plain vitest |
-| `<name>-prompt.ts` | The question that shows it, asked through `askQuestion` into the panel of the tab it belongs to ([`shell/question/`](shell/question/)). The grant, install and update questions of `consent/` and Leave this page open a native box for now; `npm run check:native-dialogs` lists them |
+| `<name>-prompt.ts` | The question that shows it, asked through `askQuestion` into the panel of the tab it belongs to ([`shell/question/`](shell/question/)). Leave this page opens a native box for now; `npm run check:native-dialogs` lists it |
 | `<name>-subsystem.ts` | Registers it into the running app via `registry.ts` |
 | `<name>-runner.ts` | The real I/O around it |
 

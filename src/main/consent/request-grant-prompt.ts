@@ -1,22 +1,17 @@
-// The real ConsentPrompt (./request-grant.ts) for item 4.2 (docs/planning/
-// unattended-build-queue.md) -- replaces #79-#82's plain dialog.
-// showMessageBox placeholder wholesale, per that file's own header ("meant
-// to be replaced wholesale, not refined"). Still a native message box: no
-// new dependency, no custom window (Rule 8; "no UI framework" for this
-// lane) -- but the CONTENT is now a real, rendered manifest
-// (grant-prompt-render.ts), not a raw capability identifier, and
-// `type: 'warning'` swaps the OS's own icon for an unlimited grant, a
-// second, non-text signal alongside the literal marker in the message.
+// The real ConsentPrompt (./request-grant.ts): "may this app hold this
+// capability?", asked in the panel of the tab whose page asked, with the
+// manifest rendered by grant-prompt-render.ts instead of a raw capability
+// name. An unlimited grant is drawn in the warning style, a second signal
+// beside the marker in the message.
 //
-// Fetches the manifest itself rather than widening ConsentPrompt's own
-// signature: request-grant.ts's header says its logic should not need to
-// change for this file's replacement, and it already fetched this same
-// manifest once, for decideGrantRequest, before ever calling consent().
+// It fetches the manifest itself rather than widening ConsentPrompt's
+// signature: request-grant.ts already read the same manifest once, for
+// decideGrantRequest, before calling consent().
 
-import { dialog } from 'electron'
-import type { BaseWindow, MessageBoxOptions } from 'electron'
 import { describeGrantRequest } from './grant-prompt-render.js'
+import { formatOriginForDisplay } from './grant-prompt-origin.js'
 import type { Broker } from '../../broker/broker-contracts.js'
+import { askCaller, holdCaller } from './ask-caller.js'
 import type { ConsentPrompt } from './request-grant.js'
 import type { ScoreLevel } from '../../trust/website-level.js'
 
@@ -40,7 +35,7 @@ export function createGrantPrompt (
   levelOverrideFor: (origin: string) => ScoreLevel | undefined = () => undefined,
   extensionsOnSite: (origin: string) => Promise<readonly string[]> = async () => []
 ): ConsentPrompt {
-  return async (origin, capability, patterns, caller) => {
+  return async (origin, capability, patterns, caller, abandoned) => {
     let manifest
     try {
       manifest = await broker.app.manifest(origin)
@@ -56,20 +51,25 @@ export function createGrantPrompt (
     if (caller !== undefined && !caller.stillOn(origin)) return false
 
     const content = describeGrantRequest(origin, manifest, capability, patterns, levelOverrideFor(origin), names)
-    const options: MessageBoxOptions = {
-      type: content.warning ? 'warning' : 'question',
-      buttons: ['Allow', 'Deny'],
-      defaultId: 1,
-      cancelId: 1,
-      title: content.title,
-      message: content.message,
-      detail: content.detail
+    // The tab stays where it is until the person has answered: an answer
+    // given to a page that has become another page would grant that page.
+    const release = holdCaller(caller)
+    try {
+      const { response } = await askCaller(caller, {
+        kind: 'consent',
+        origin: formatOriginForDisplay(origin),
+        warning: content.warning,
+        title: content.title,
+        message: content.message,
+        detail: content.detail,
+        buttons: ['Allow', 'Deny'],
+        cancelId: 1,
+        guarded: [0],
+        focus: 'dialog'
+      }, abandoned)
+      return response === 0
+    } finally {
+      release()
     }
-    // Parented to the tab's own window when one can be found, so the dialog
-    // reads as belonging to that tab rather than floating free of every
-    // window on screen.
-    const parent = caller?.window() as BaseWindow | undefined
-    const { response } = parent === undefined ? await dialog.showMessageBox(options) : await dialog.showMessageBox(parent, options)
-    return response === 0
   }
 }

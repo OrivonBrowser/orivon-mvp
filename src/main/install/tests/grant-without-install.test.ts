@@ -165,4 +165,42 @@ describe('grantWithoutInstall', () => {
     expect(registerApp).toHaveBeenCalledOnce()
     expect(consent).toHaveBeenCalledOnce()
   })
+
+  describe('the tab is held while its question is open', () => {
+    const caller = (events: string[]) => ({
+      window: () => undefined,
+      stillOn: () => true,
+      hold: () => { events.push('hold'); return () => { events.push('release') } }
+    })
+
+    it('takes the hold before the origin is registered and keeps it until the question is answered', async () => {
+      const events: string[] = []
+      const { broker, registerApp } = fakeBroker()
+      registerApp.mockImplementation(async () => { events.push('register') })
+      const consent = vi.fn(async () => { events.push('ask'); return true })
+
+      await grantWithoutInstall({ broker, fetchManifest: okFetch(JSON.stringify(MANIFEST)), consent }, 'http://127.0.0.1:8874', caller(events))
+
+      expect(events).toEqual(['hold', 'register', 'ask', 'release'])
+    })
+
+    it('releases the hold when registering the origin fails', async () => {
+      const events: string[] = []
+      const { broker, registerApp } = fakeBroker()
+      registerApp.mockRejectedValueOnce(new Error('no room'))
+
+      await expect(grantWithoutInstall({ broker, fetchManifest: okFetch(JSON.stringify(MANIFEST)), consent: async () => true }, 'http://127.0.0.1:8874', caller(events))).rejects.toThrow('no room')
+
+      expect(events).toEqual(['hold', 'release'])
+    })
+
+    it('holds nothing for a manifest that is refused: there is no question to wait for', async () => {
+      const events: string[] = []
+      const { broker } = fakeBroker()
+
+      await grantWithoutInstall({ broker, fetchManifest: okFetch('<!doctype html>'), consent: async () => true }, 'http://127.0.0.1:8874', caller(events))
+
+      expect(events).toEqual([])
+    })
+  })
 })

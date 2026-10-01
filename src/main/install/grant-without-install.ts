@@ -186,7 +186,15 @@ export async function grantWithoutInstall (deps: GrantWithoutInstallDeps, origin
       }
     }
   }
-  await deps.broker.registerApp(origin, result.manifest)
-  await requestInstallConsent(deps.broker, deps.consent, origin, result.manifest, deps.perCapabilityConsent, caller)
+  // From the moment the origin is registered the tab counts as the app's, so a
+  // page that moved on while the question was open would be rebuilt as the
+  // app before the person had answered, and the answer would go nowhere.
+  const release = caller?.hold?.()
+  try {
+    await deps.broker.registerApp(origin, result.manifest)
+    await requestInstallConsent(deps.broker, deps.consent, origin, result.manifest, deps.perCapabilityConsent, caller)
+  } finally {
+    release?.()
+  }
   return { outcome: 'granted-without-install', canonicalOrigin: origin, newlyRegistered: !alreadyRegistered }
 }

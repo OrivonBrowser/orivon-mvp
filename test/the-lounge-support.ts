@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import type { ElectronApplication } from 'playwright'
 import { launchElectron } from './launch-electron.mjs'
 import { findChrome, findViewShowing, tabViews, waitFor } from './smoke-helpers.mjs'
+import { answerEveryQuestion, stubNativeDialogs, type QuestionText } from './question-support.js'
 
 export const PORTS_ROOT = process.env['ORIVON_PORTS_ROOT'] ?? join(process.cwd(), '..', 'orivon-ports')
 export const STATIC_ROOT = process.env['ORIVON_THE_LOUNGE_ROOT'] ?? join(PORTS_ROOT, 'out', 'the-lounge', 'static')
@@ -127,20 +128,17 @@ export function loungePage (app: ElectronApplication): Page | undefined {
   return app.windows().find((page) => page.url().startsWith(`http://lounge.localhost:${String(LOUNGE_PORT)}/`))
 }
 
-/** What the consent prompt was given, for each time it was raised since `answerConsent`. */
+const questionsSeen = new WeakMap<ElectronApplication, QuestionText[]>()
+
+/** Lets every consent question the app raises through, pressing its first button, and records what each said. */
 export async function answerConsent (app: ElectronApplication): Promise<void> {
-  await app.evaluate(({ dialog }) => {
-    const globals = globalThis as unknown as { __prompts?: Array<Record<string, unknown>> }
-    globals.__prompts = []
-    dialog.showMessageBox = (async (...args: unknown[]) => {
-      globals.__prompts?.push(args[args.length - 1] as Record<string, unknown>)
-      return { response: 0, checkboxChecked: false }
-    }) as unknown as typeof dialog.showMessageBox
-  })
+  await stubNativeDialogs(app)
+  questionsSeen.set(app, answerEveryQuestion(app).seen)
 }
 
+/** What each question said, for every question answered since `answerConsent`. */
 export async function promptsSeen (app: ElectronApplication): Promise<Array<Record<string, unknown>>> {
-  return await app.evaluate(() => (globalThis as unknown as { __prompts: Array<Record<string, unknown>> }).__prompts)
+  return (questionsSeen.get(app) ?? []).map((said) => ({ ...said }))
 }
 
 export type Launched = Awaited<ReturnType<typeof launchElectron>>

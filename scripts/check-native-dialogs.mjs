@@ -27,10 +27,7 @@ import { isInvokedDirectly, trackedFiles } from './cli.mjs'
 export const ALLOWED_FILES = new Map([
   ['src/main/shell/question/ask-question.ts', 'the question panel\'s fallback, for a question asked when no shell window exists'],
   ['src/main/index.ts', 'the start-up failure box: it runs before any window exists'],
-  // Provisional: these four ask in a native box today. Each leaves this list when its question moves into the panel.
-  ['src/main/consent/request-grant-prompt.ts', 'the capability grant question'],
-  ['src/main/consent/install-consent-prompt.ts', 'the app install question'],
-  ['src/main/consent/update-outcomes-prompt.ts', 'the app update questions'],
+  // Provisional: it asks in a native box today and leaves this list when its question moves into the panel.
   ['src/main/shell/leave-page-prompt.ts', 'the Leave this page question']
 ])
 

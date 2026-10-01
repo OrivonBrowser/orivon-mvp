@@ -28,7 +28,7 @@ stayed put.
 
 Within a directory, the filename suffix carries a second axis ADR-0015's decomposition did not
 need: `<name>.ts` is the decision (no `electron` import, unit-tested under plain vitest),
-`<name>-prompt.ts` is the native dialog that shows it, `<name>-subsystem.ts` registers it into
+`<name>-prompt.ts` is the file that puts it to the person as a question in the panel (`ADR-0052`), `<name>-subsystem.ts` registers it into
 the running app, `<name>-runner.ts` is the real I/O around it. This vocabulary already existed
 across six files before this change gave it a name; grouping by job rather than by this axis is
 deliberate — see Alternatives.

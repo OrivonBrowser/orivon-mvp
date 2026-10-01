@@ -148,6 +148,8 @@ export interface RequestGrantCaller {
   readonly stillOn: (origin: string) => boolean
   /** An opaque per-tab identity -- `../../main/consent/request-grant.js`'s `DialogCaller.id`, same doc, same reason. */
   readonly id?: unknown
+  /** The calling tab's `WebContents`, opaque here: `../../main/consent/request-grant.js`'s `DialogCaller.contents`. */
+  readonly contents?: () => unknown
 }
 
 /**

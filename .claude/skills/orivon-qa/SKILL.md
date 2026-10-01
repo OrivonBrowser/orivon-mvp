@@ -131,8 +131,9 @@ until shown otherwise.
 
 ## Known limits
 
-- Native consent dialogs (`dialog.showMessageBox`) are not web views: specs replace them and assert
-  the text, and the screenshots cannot show them.
+- A question is the question panel, an overlay page: drive it with `test/question-support.ts` (read the
+  text, press the real button after the guard) and assert `noNativeDialogs`. Leave this page is still
+  a native `dialog.showMessageBoxSync`: specs replace it and the screenshots cannot show it.
 - `capturePage()` fails under this machine's GPU-less xvfb; screenshots go through Playwright's own
   capture of each view, which works, and the window composite pairs views to pages by URL then size.
 - An uncaught exception in the main process raises a blocking error dialog, so no spec provokes one.

@@ -41,11 +41,17 @@ export async function noNativeDialogs (app: App): Promise<string[]> {
 
 const questionPages = (app: App): Page[] => app.windows().filter((page) => page.url().includes('overlay=question') && !page.isClosed())
 
+/** Whether the panel is on screen. A build without the e2e popover hook (the ordinary build) has none to ask: its question page lives only while its question is open, so the page existing is the answer. */
+async function questionShown (app: App): Promise<boolean> {
+  const hooked = await app.evaluate(() => (globalThis as unknown as { __orivonDevPopoverShown?: unknown }).__orivonDevPopoverShown !== undefined)
+  return hooked ? await popoverShown(app, 'overlay=question') : questionPages(app).length > 0
+}
+
 /** The question panel that is on screen and has drawn. */
 export async function waitQuestion (app: App, timeoutMs = 20_000): Promise<Page> {
   let found: Page | undefined
   const ok = await waitFor(async () => {
-    if (!(await popoverShown(app, 'overlay=question'))) return false
+    if (!(await questionShown(app))) return false
     const candidate = questionPages(app).at(-1)
     if (candidate === undefined) return false
     try {
@@ -62,10 +68,10 @@ export async function waitQuestion (app: App, timeoutMs = 20_000): Promise<Page>
 
 /** Whether no question panel is on screen. */
 export async function questionGone (app: App): Promise<boolean> {
-  return !(await popoverShown(app, 'overlay=question'))
+  return !(await questionShown(app))
 }
 
-export interface QuestionText { origin: string, title: string, message: string, detail: string, buttons: string[] }
+export interface QuestionText { origin: string, title: string, message: string, detail: string, buttons: string[], warning: boolean }
 
 /** What the panel says, as the person reads it. */
 export async function readQuestion (page: Page): Promise<QuestionText> {
@@ -76,7 +82,8 @@ export async function readQuestion (page: Page): Promise<QuestionText> {
       title: text('.q-title'),
       message: text('.q-message'),
       detail: text('.q-detail'),
-      buttons: Array.from(document.querySelectorAll('.q .btn-row .btn')).map((button) => button.textContent ?? '')
+      buttons: Array.from(document.querySelectorAll('.q .btn-row .btn')).map((button) => button.textContent ?? ''),
+      warning: document.querySelector('.q.q-warning') !== null
     }
   })
 }
@@ -100,6 +107,19 @@ export async function answerAndRead (app: App, label: string): Promise<QuestionT
   return said
 }
 
+/** Waits for the panel and presses its first listed button, the accepting one in every consent question (`Allow`, or `Allow all` where the app asked per capability), returning what it said first. */
+export async function answerAccepting (app: App): Promise<QuestionText> {
+  const page = await waitQuestion(app)
+  const said = await readQuestion(page)
+  await page.waitForSelector('.q:not(.arming)')
+  try {
+    await page.click('.q .btn-row .btn[data-button="0"]')
+  } catch (error) {
+    if (!/closed|destroyed/.test(String(error))) throw error
+  }
+  return said
+}
+
 /**
  * Runs `work` (typically a call that blocks until a person has answered) and answers every question the panel raises
  * meanwhile with the button labelled `label`, returning what `work` returns. For installs driven through a test hook
@@ -110,7 +130,7 @@ export async function answeringWith<T> (app: App, label: string, work: Promise<T
   const result = work.finally(() => { done = true })
   const answers = (async () => {
     while (!done) {
-      if (!(await popoverShown(app, 'overlay=question').catch(() => false))) { await delay(100); continue }
+      if (!(await questionShown(app).catch(() => false))) { await delay(100); continue }
       const page = questionPages(app).at(-1)
       if (page === undefined) { await delay(100); continue }
       try {
@@ -125,4 +145,32 @@ export async function answeringWith<T> (app: App, label: string, work: Promise<T
   const value = await result
   await answers
   return value
+}
+
+/**
+ * Answers every question the panel raises from now on with its first listed button (the accepting one, in every consent
+ * question) until `stop` is called or the app closes, and records what each one said. For a spec whose subject is
+ * not the question: it only has to be let through.
+ */
+export function answerEveryQuestion (app: App): { seen: QuestionText[], stop: () => void } {
+  const seen: QuestionText[] = []
+  let stopped = false
+  app.on('close', () => { stopped = true })
+  void (async () => {
+    while (!stopped) {
+      await delay(150)
+      try {
+        if (!(await questionShown(app))) continue
+        const page = questionPages(app).at(-1)
+        if (page === undefined) continue
+        await page.waitForSelector('.q:not(.arming) .btn-row .btn', { timeout: 3_000 })
+        const said = await readQuestion(page)
+        await page.click('.q .btn-row .btn[data-button="0"]', { timeout: 3_000 })
+        seen.push(said)
+      } catch {
+        // The panel closed under the click, or the app is closing: the loop's own check decides whether to go on.
+      }
+    }
+  })()
+  return { seen, stop: () => { stopped = true } }
 }

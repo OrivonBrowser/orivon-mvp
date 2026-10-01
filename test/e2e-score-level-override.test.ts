@@ -1,17 +1,14 @@
 // ADR-0037: an L4 site's grants carry no warnings, on every consent surface
 // a grant summary reaches -- proven here against the REAL install-consent
-// dialog (`createInstallConsentPrompt`), the REAL site-info popup and the
-// REAL all-sites panel, driven through a real loopback grant-without-install
-// flow (grantableWithoutInstall always allows loopback, dev mode or not),
-// with the developer-only Website/Delivery level override
-// (`src/main/dev/score-levels.ts`) forcing one origin to Level 4 and leaving
-// a second, identical origin as a control at Level 1. THE ONE THING THIS
-// SUBSTITUTES is the click: a native `dialog.showMessageBox` cannot be
-// pressed by a driver, so it is replaced with one that records what it was
-// shown and always answers "Allow" -- the same substitution
-// e2e-loopback-grant.test.ts makes, for the identical reason. Everything
-// else -- the manifest hint, the grant, the shield, the popup, the panel --
-// is the shipped code path.
+// consent question (`createInstallConsentPrompt`, drawn in the tab's panel),
+// the REAL site-info popup and the REAL all-sites panel, driven through a
+// real loopback grant-without-install flow (grantableWithoutInstall always
+// allows loopback, dev mode or not), with the developer-only Website/Delivery
+// level override (`src/main/dev/score-levels.ts`) forcing one origin to
+// Level 4 and leaving a second, identical origin as a control at Level 1.
+// The test reads the question the panel draws and presses its real "Allow".
+// Everything else -- the manifest hint, the grant, the shield, the popup, the
+// panel -- is the shipped code path.
 //
 // Hermetic: everything it touches is loopback.
 //
@@ -26,6 +23,7 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { findChrome, HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
+import { answerAndRead, noNativeDialogs, stubNativeDialogs, type QuestionText } from './question-support.js'
 import { APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, readShield, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
 
 afterAll(async () => {
@@ -65,8 +63,6 @@ function findPopup (app: ElectronApplication, path: string): Page | undefined {
   return app.windows().find((w) => w.url().includes(path))
 }
 
-interface DialogCall { type: string, message: string, detail: string }
-
 it(
   'an L4-overridden origin\'s dialog, shield, popup and settings row all read without warning; an identical, un-overridden origin still warns throughout',
   async () => {
@@ -87,19 +83,7 @@ it(
         })
         const running = app
 
-        // Answer the real consent dialog "Allow", recording every call --
-        // everything upstream and downstream of this one method is the
-        // shipped path (e2e-loopback-grant.test.ts's own header).
-        await running.evaluate(({ dialog }) => {
-          const globals = globalThis as unknown as { __dialogCalls?: unknown[] }
-          globals.__dialogCalls = []
-          // A dialog may be parented to its tab's window, so the options are the last argument.
-          dialog.showMessageBox = (async (...args: unknown[]) => {
-            const options = args.at(-1) as { type?: string, message?: string, detail?: string }
-            globals.__dialogCalls!.push({ type: options.type, message: options.message, detail: options.detail })
-            return { response: 0, checkboxChecked: false }
-          }) as unknown as typeof dialog.showMessageBox
-        })
+        await stubNativeDialogs(running)
 
         await waitFor(() => running.windows().length === 2)
         const chrome = findChrome(running)
@@ -107,14 +91,13 @@ it(
 
         // --- Origin A: overridden to Website Level 4 ----------------------
         await clickAddressBarRetrying(chrome, a.url)
+        const dialogA: QuestionText = await answerAndRead(running, 'Allow')
         const keyAppearedA = await waitFor(async () => (await chrome.getAttribute('#site-permissions-btn', 'hidden')) === null, 15_000)
         check('origin A: the key appeared once the loopback grant-without-install flow granted it', keyAppearedA)
         await chrome.waitForTimeout(500) // past the repartition, same margin e2e-site-info.test.ts's reloadAndSettle uses
 
-        const callsAfterA = await running.evaluate(() => (globalThis as unknown as { __dialogCalls: DialogCall[] }).__dialogCalls)
-        const dialogA = callsAfterA[0]
-        check(`origin A's dialog is "question", not "warning" (${JSON.stringify(dialogA)})`, dialogA?.type === 'question')
-        check('origin A\'s dialog carries the plain "Unlimited network access" line, no ⚠', dialogA?.detail?.includes('Unlimited network access') === true && !(dialogA?.detail?.includes('⚠') ?? true))
+        check(`origin A's question is drawn plain, not in the warning style (${JSON.stringify(dialogA)})`, !dialogA.warning)
+        check('origin A\'s question carries the plain "Unlimited network access" line, no ⚠', dialogA.detail.includes('Unlimited network access') && !dialogA.detail.includes('⚠'))
 
         const shieldA = await readShield(chrome)
         check(`origin A's shield paints Level 4, marked "Web3" (${JSON.stringify(shieldA)})`, shieldA.level === '4' && shieldA.mark === 'Web3')
@@ -155,13 +138,13 @@ it(
 
         // --- Origin B: the control, no override at all ---------------------
         await clickAddressBarRetrying(chrome, b.url)
+        const dialogB: QuestionText = await answerAndRead(running, 'Allow')
         const keyAppearedB = await waitFor(async () => (await chrome.getAttribute('#site-permissions-btn', 'hidden')) === null, 15_000)
         check('origin B: the key appeared once its own loopback grant landed', keyAppearedB)
         await chrome.waitForTimeout(500)
 
-        const callsAfterB = await running.evaluate(() => (globalThis as unknown as { __dialogCalls: DialogCall[] }).__dialogCalls)
-        const dialogB = callsAfterB[1]
-        check(`origin B's dialog is still "warning", with ⚠ (${JSON.stringify(dialogB)})`, dialogB?.type === 'warning' && (dialogB?.detail?.includes('⚠') ?? false))
+        check(`origin B's question is still drawn in the warning style, with ⚠ (${JSON.stringify(dialogB)})`, dialogB.warning && dialogB.detail.includes('⚠'))
+        check('no native message box was opened for either question', (await noNativeDialogs(running)).length === 0)
 
         const shieldB = await readShield(chrome)
         check(`origin B's shield paints Level 1, marked "Web2" -- an un-overridden loopback origin that serves no hash tree observes DDOC not-checked (${JSON.stringify(shieldB)})`, shieldB.level === '1' && shieldB.mark === 'Web2')

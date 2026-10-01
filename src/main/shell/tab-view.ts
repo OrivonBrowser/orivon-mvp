@@ -19,6 +19,7 @@ import { repartitionView } from './tab-parking.js'
 import { parseInternalUrl } from '../pages/internal-pages.js'
 import { canViewSource } from '../page-tools/view-source.js'
 import { sitePopups } from '../site-settings/site-popups.js'
+import { isNavigationHeld, refuseHeldNavigation } from './navigation-hold.js'
 import { releaseOriginDocument, trackDocumentOrigin } from './tab-origin-liveness.js'
 import { watchLoadFailure } from './load-failure.js'
 import { wireSignInIdentity } from './sign-in-identity-tab.js'
@@ -269,6 +270,9 @@ export function wireView (id: string, record: TabRecord): void {
     const { window } = record.host
     if (window !== undefined && confirmLeavePage(window)) event.preventDefault()
   })
+  // Registered before the handler below, which loads a URL that a prevented
+  // event could not undo.
+  refuseHeldNavigation(wc)
   // Chromium knows no `ipfs:` scheme and would offer a link to one to the
   // OS; it loads here instead, from the URL its protocol serves it at.
   wc.on('will-navigate', (event) => {
@@ -315,7 +319,7 @@ export function wireView (id: string, record: TabRecord): void {
     partitionFor: (url) => partitionForTarget(url),
     webPreferencesFor: (url) => tabWebPreferences(record.host.preloadPath, undefined, appTabArgsFor(url, record.host.broker)),
     isApp: (url) => popupTargetIsApp(url, record.host.broker),
-    popupBlocked: (details, from) => sitePopups.check(wc, from.url, details.url)
+    popupBlocked: (details, from) => isNavigationHeld(wc) || sitePopups.check(wc, from.url, details.url)
   }, () => ({ url: wc.getURL(), partition: record.partition })))
   wireTabSignals(id, record)
 }

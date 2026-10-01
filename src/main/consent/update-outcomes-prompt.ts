@@ -1,27 +1,44 @@
 // The real ReconsentPrompt/CapabilityPromptPrompt/RollbackChoicePrompt
-// (./update-outcomes.ts) for S4-5's three pending outcomes -- three plain
-// dialog.showMessageBox calls, no new dependency (Rule 8), matching
-// install-consent-prompt.ts's own split: this file only shows the words
-// ./grant-prompt-render.ts composes, never composes them itself.
+// (./update-outcomes.ts) for the three pending outcomes of an update: each
+// asks in the panel of the tab that triggered it (the tab in front when
+// none did), matching install-consent-prompt.ts's split: this file only
+// shows the words ./grant-prompt-render.ts composes, never composes them.
 
-import { dialog } from 'electron'
-import type { BaseWindow, MessageBoxOptions } from 'electron'
 import { describeCapabilityPrompt, describeReconsent, describeRollbackChoice } from './grant-prompt-render.js'
 import type { CapabilityPromptPrompt, ReconsentPrompt, RollbackChoicePrompt } from './update-outcomes.js'
 import type { ScoreLevel } from '../../trust/website-level.js'
+import { askCaller, holdCaller } from './ask-caller.js'
+import { formatOriginForDisplay } from './grant-prompt-origin.js'
+import type { QuestionSpec } from '../shell/question/question-spec.js'
 import type { DialogCaller } from './request-grant.js'
 
-/** The window to parent a dialog to, given a `DialogCaller`, or undefined for neither -- see install-consent-prompt.ts's own copy of this cast for why it exists at all. */
-function parentWindowOf (caller?: DialogCaller): BaseWindow | undefined {
-  return caller?.window() as BaseWindow | undefined
-}
-
-/** `defaultId`/`cancelId` both point at "keep the current version" -- an
- * update is never the safer default to fall into on a dismissed or
- * Escape-closed dialog; the previously pinned bundle is what stays running
- * either way (this file's own three functions never call anything on a
- * `false` return). */
+/** Cancelling points at "keep the current version" -- an update is never the
+ * safer outcome of a dismissed or Escape-closed question; the previously
+ * pinned bundle is what stays running either way (this file's own three
+ * functions never call anything on a `false` return). */
 const KEEP_CURRENT_BUTTON_INDEX = 1
+
+/** True only when the person pressed the first button, "use the update". */
+async function accepted (caller: DialogCaller | undefined, origin: string, content: { title: string, message: string, detail: string }, buttons: readonly [string, string], warning: boolean): Promise<boolean> {
+  const spec: QuestionSpec = {
+    kind: 'consent',
+    origin: formatOriginForDisplay(origin),
+    warning,
+    title: content.title,
+    message: content.message,
+    detail: content.detail,
+    buttons,
+    cancelId: KEEP_CURRENT_BUTTON_INDEX,
+    guarded: [0],
+    focus: 'dialog'
+  }
+  const release = holdCaller(caller)
+  try {
+    return (await askCaller(caller, spec)).response === 0
+  } finally {
+    release()
+  }
+}
 
 /** Builds the real ReconsentPrompt ./app-install-subsystem.ts wires in. */
 export function createReconsentPrompt (): ReconsentPrompt {
@@ -29,18 +46,7 @@ export function createReconsentPrompt (): ReconsentPrompt {
     if (caller !== undefined && !caller.stillOn(origin)) return false
 
     const content = describeReconsent(origin, manifest)
-    const options: MessageBoxOptions = {
-      type: 'question',
-      buttons: ['Use the update', 'Keep the current version'],
-      defaultId: KEEP_CURRENT_BUTTON_INDEX,
-      cancelId: KEEP_CURRENT_BUTTON_INDEX,
-      title: content.title,
-      message: content.message,
-      detail: content.detail
-    }
-    const parent = parentWindowOf(caller)
-    const { response } = parent === undefined ? await dialog.showMessageBox(options) : await dialog.showMessageBox(parent, options)
-    return response === 0
+    return await accepted(caller, origin, content, ['Use the update', 'Keep the current version'], false)
   }
 }
 
@@ -54,18 +60,7 @@ export function createCapabilityPrompt (levelOverrideFor: (origin: string) => Sc
     if (caller !== undefined && !caller.stillOn(origin)) return false
 
     const content = describeCapabilityPrompt(origin, manifest, requestedPatterns, levelOverrideFor(origin))
-    const options: MessageBoxOptions = {
-      type: content.warning ? 'warning' : 'question',
-      buttons: ['Allow', 'Keep the current version'],
-      defaultId: KEEP_CURRENT_BUTTON_INDEX,
-      cancelId: KEEP_CURRENT_BUTTON_INDEX,
-      title: content.title,
-      message: content.message,
-      detail: content.detail
-    }
-    const parent = parentWindowOf(caller)
-    const { response } = parent === undefined ? await dialog.showMessageBox(options) : await dialog.showMessageBox(parent, options)
-    return response === 0
+    return await accepted(caller, origin, content, ['Allow', 'Keep the current version'], content.warning)
   }
 }
 
@@ -75,17 +70,6 @@ export function createRollbackChoicePrompt (): RollbackChoicePrompt {
     if (caller !== undefined && !caller.stillOn(origin)) return false
 
     const content = describeRollbackChoice(origin, manifest, versionFloor)
-    const options: MessageBoxOptions = {
-      type: 'warning',
-      buttons: ['Use this version', 'Keep the current version'],
-      defaultId: KEEP_CURRENT_BUTTON_INDEX,
-      cancelId: KEEP_CURRENT_BUTTON_INDEX,
-      title: content.title,
-      message: content.message,
-      detail: content.detail
-    }
-    const parent = parentWindowOf(caller)
-    const { response } = parent === undefined ? await dialog.showMessageBox(options) : await dialog.showMessageBox(parent, options)
-    return response === 0
+    return await accepted(caller, origin, content, ['Use this version', 'Keep the current version'], true)
   }
 }
