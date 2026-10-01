@@ -1788,7 +1788,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A329: The side panel lists a reading list that nothing can fill **[OWNER]**
+### A339: The side panel lists a reading list that nothing can fill **[OWNER]**
 
 - **Question:** The reading list was taken out (no command, button or menu row saves to it), but the side panel still has a Reading list view
   that reads the bookmark file's reading-list root. Should the view stay, or leave until the reading list is built?
