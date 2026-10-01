@@ -164,10 +164,14 @@ export async function launchChild (
   child.attach(worker, server)
 }
 
-function preopensFor (cwd: string | undefined): Record<string, string> {
+/**
+ * The app's files are the program's `/`, and also `VIRTUAL_ROOT` itself: a program is handed paths in the
+ * form the app's own code holds (`/orivon/app/...`), and the runtime picks the longest matching preopen.
+ */
+export function preopensFor (cwd: string | undefined): Record<string, string> {
   const dir = cwd ?? VIRTUAL_ROOT
   toConfinedPath(dir, 'spawn')
-  return { '/': VIRTUAL_ROOT, '.': dir }
+  return { '/': VIRTUAL_ROOT, [VIRTUAL_ROOT]: VIRTUAL_ROOT, '.': dir }
 }
 
 async function start (child: ChildProcess, command: string, args: readonly string[], options: SpawnOptions): Promise<void> {

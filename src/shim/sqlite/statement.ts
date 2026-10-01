@@ -67,6 +67,15 @@ function live (state: StatementState): StatementState {
   return state
 }
 
+/** What an adapter over `StatementSync` needs and Node's API does not say: SQLite's read-only verdict, and the declared name of each parameter (`null` for a bare `?`; `?NNN` and `@name` as written). */
+export function statementTraits (statement: StatementSync): { readonly readOnly: boolean, readonly parameterNames: readonly (string | null)[] } {
+  const state = live(stateOf(statement))
+  const { capi } = state.database.sqlite3
+  const parameterNames: (string | null)[] = []
+  for (let i = 1, count = capi.sqlite3_bind_parameter_count(state.pointer); i <= count; i++) parameterNames.push(capi.sqlite3_bind_parameter_name(state.pointer, i))
+  return { readOnly: capi.sqlite3_stmt_readonly(state.pointer) !== 0, parameterNames }
+}
+
 function flag (value: unknown, name: string): boolean {
   if (typeof value !== 'boolean') throw invalidArgType(`The "${name}" argument must be a boolean.`)
   return value

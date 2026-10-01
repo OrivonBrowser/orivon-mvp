@@ -37,6 +37,11 @@ const SHIM_SUBPATHS: Readonly<Record<string, string>> = {
   'orivon-node-shim/sqlite-ready': join(SHIM_DIR, 'sqlite', 'ready.ts')
 }
 
+/** npm packages whose API the shim provides in a module of its own, so code written for the package runs unchanged. */
+const PACKAGE_REPLACEMENTS: Readonly<Record<string, string>> = {
+  'better-sqlite3': join(SHIM_DIR, 'sqlite', 'better-sqlite3.ts')
+}
+
 /** Files a port copies next to its bundle: the engine fetches `sqlite3.wasm` relative to the module that holds its code. */
 export function shimAssets (): readonly { readonly name: string, readonly path: string }[] {
   return [{ name: 'sqlite3.wasm', path: SQLITE_WASM }]
@@ -255,6 +260,11 @@ export function orivonShimPlugin (): Plugin {
       build.onResolve({ filter: /^(orivon-node-shim\/sqlite-ready|@sqlite\.org\/sqlite-wasm)$/ }, (args) => {
         const shimPath = SHIM_SUBPATHS[args.path]
         return { path: shimPath ?? SQLITE_ENGINE }
+      })
+      build.onResolve({ filter: /^better-sqlite3$/ }, (args) => {
+        const path = PACKAGE_REPLACEMENTS[args.path] as string
+        // The package is `module.exports = Database`: a require() gets the default export, not a namespace copy.
+        return args.kind === 'require-call' ? { path, namespace: REQUIRE_NAMESPACE } : { path }
       })
       build.onResolve({ filter: /.*/ }, async (args) => {
         if (args.pluginData === PACKAGE_RESOLVE_MARK || !isShimTree(args.importer)) return undefined
