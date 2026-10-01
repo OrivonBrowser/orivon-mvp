@@ -46,6 +46,11 @@ it('makes, renames, recolours and deletes a profile, and shows the chip only whi
     const page = await openPage(app, chrome, 'profiles')
     await page.waitForSelector('.profile')
     expect(await page.locator('.profile').count()).toBe(1)
+    // The create row keeps its button on one line, and the field is as tall as the button.
+    const height = async (selector: string): Promise<number> => await page.locator(selector).evaluate((el) => el.getBoundingClientRect().height)
+    const oneLine = await height('.top .btn')
+    expect(await height('.create .btn')).toBe(oneLine)
+    expect(await height('.create .text')).toBe(oneLine)
     expect((await chip(chrome)).hidden).toBe(true)
     expect(await page.locator('.profile .status').textContent()).toBe('This window')
     // The default profile cannot be deleted, and this window's cannot either.
