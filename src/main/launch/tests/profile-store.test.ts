@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MAX_NAME_LENGTH, PROFILE_COLORS, ProfileStore, cleanName } from '../profile-store.js'
 
@@ -225,9 +225,11 @@ describe('the running marker', () => {
 
   it('is not written for an id that is not a profile', () => {
     const s = store(() => true)
-    s.markRunning('../x', 7)
-    expect(s.isRunning('../x')).toBe(false)
-    expect(existsSync(join(home, '..', 'x'))).toBe(false)
+    // A name of this run's own beside the home, so a stray file in the shared temp directory cannot fail it.
+    const escaping = `../${basename(home)}-escaped`
+    s.markRunning(escaping, 7)
+    expect(s.isRunning(escaping)).toBe(false)
+    expect(existsSync(join(home, escaping))).toBe(false)
   })
 
   it('is not running after a reboot, even if the OS has already reused the pid (process.kill(pid, 0) alone cannot tell)', () => {

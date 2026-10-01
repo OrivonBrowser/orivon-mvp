@@ -27,6 +27,10 @@ import { WARNING_MARK } from './grant-prompt-connect.js'
  * when nothing changes, so a caller comparing rows by reference (this file's
  * own `describeCapabilitySet`'s row-merge, for one) is never confused into
  * thinking a plain pass-through is a new row.
+ *
+ * A `reach` sentence survives, appended to the message: the warning is gone,
+ * but "this grant also reaches a LAN address or a port Orivon keeps closed to
+ * broad grants" is a fact about the grant, not an alarm about its size.
  */
 export function summaryAtLevel (summary: CapabilityGrantSummary, level: ScoreLevel | undefined): CapabilityGrantSummary {
   if (level !== 4 || !summary.warning) return summary
@@ -34,5 +38,5 @@ export function summaryAtLevel (summary: CapabilityGrantSummary, level: ScoreLev
     .split('\n')
     .map((line) => line.startsWith(WARNING_MARK) ? line.slice(WARNING_MARK.length) : line)
     .join('\n')
-  return { warning: false, message }
+  return { warning: false, message: summary.reach === undefined ? message : `${message}. ${summary.reach}` }
 }

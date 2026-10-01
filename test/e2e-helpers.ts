@@ -104,7 +104,8 @@ export const STABLE_READS_REQUIRED = 3
  * waitFor -- the exact composition smoke-helpers.mjs's waitForTab already
  * uses for a different condition, not a new waiting mechanism -- gives
  * that settling somewhere to happen before the click is attempted, so the
- * click's own ten seconds are spent on the click.
+ * click's own ten seconds are spent on the click. Each read waits for an
+ * animation frame, so "stable" also means the page is painting.
  */
 export async function waitForAddressBarStable (
   page: ReturnType<typeof findChrome>,
@@ -113,12 +114,21 @@ export async function waitForAddressBarStable (
   let previous: string | null = null
   let streak = 0
   return waitFor(async () => {
-    const rect = await evaluateRetrying(page, () => {
+    // Read inside an animation frame. Playwright's own "stable" check counts
+    // animation frames, so a window that has not painted one yet (a cold first
+    // launch, a view not yet shown) passes every bounding-box read and still
+    // leaves `.click()` waiting its whole ten seconds for a frame. A read
+    // that gets no frame within half a second counts as not stable.
+    const rect = await evaluateRetrying(page, () => new Promise<string | null>((resolve) => {
       const el = document.querySelector('#address')
-      if (el === null) return null
-      const r = el.getBoundingClientRect()
-      return `${r.x},${r.y},${r.width},${r.height}`
-    })
+      if (el === null) { resolve(null); return }
+      const noFrame = setTimeout(() => { resolve(null) }, 500)
+      requestAnimationFrame(() => {
+        clearTimeout(noFrame)
+        const r = el.getBoundingClientRect()
+        resolve(`${r.x},${r.y},${r.width},${r.height}`)
+      })
+    }))
     streak = (rect !== null && rect === previous) ? streak + 1 : 0
     previous = rect
     return streak >= STABLE_READS_REQUIRED - 1

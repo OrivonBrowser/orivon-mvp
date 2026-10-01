@@ -121,7 +121,7 @@ field is ignored, and the loader logs a warning naming it. An unknown field anyw
   "capabilities": {
     "net": {
       "tcp": {
-        "connect": ["*:*"],                       // host:port patterns, "*" wildcard
+        "connect": ["*:*"],                       // host:port patterns, "*" wildcard (any port or range; "*:6697")
         "listen":  { "network": ["6881-6889"] }    // port ranges, split by who may reach them
                                                     // (ADR-0034): "local" (this device only) or
                                                     // "network" (the local network, and the
@@ -239,9 +239,16 @@ unrestricted network access, and the grant prompt must say so in plain words
 (*"connect to any computer on the internet"*), not hide it behind a pattern string. This is a
 real property of P2P software, and understating it would be the kind of dishonesty the trust
 indicator exists to prevent. A wildcard never reaches a reserved port (A82: DNS, mail, SMB, RDP,
-IRC and the like), and a wildcard host is declarable only as `*:*`: a P2P program that resolves
-names itself names its resolver, as in `udp.send: ["*:*", "1.1.1.1:53"]`, and a refused datagram
-is dropped without an error (A87, A304).
+IRC and the like) through `*:*` or a range. `tcp.connect` and `https.connect` accept the wildcard
+host paired with a port or a port range (`*:6697`, `*:8000-8999`), and `*:6697` reaches that one
+reserved port because the pattern names it; `*:6660-6699` still skips 6667 and 6697. The wildcard
+host still never reaches a private, loopback or link-local address, whatever the port: for
+`tcp.connect` every resolved address is checked, and for `https.connect` the check covers an
+address written as a literal, since it never resolves, so a public name that resolves to a local
+address is not caught (A245). `udp.send`
+accepts the wildcard host only as `*:*`, so a P2P program that resolves names itself names its
+resolver, as in `udp.send: ["*:*", "1.1.1.1:53"]`, and a refused datagram is dropped without an
+error (A87, A304).
 
 ## v0 surface
 
