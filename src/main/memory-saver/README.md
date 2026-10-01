@@ -7,7 +7,7 @@
 | `sleep-rules.ts` | Pure: `canSleep` over the facts, `hostKept`, `delayFor` (memory saver, wait, energy saver), `dueToSleep` |
 | `sleep-facts.ts` | Gathers the facts from a live tab; `SleepEnv` is what a test stands in |
 | `unsaved-input.ts` | The one question asked of the page, in an isolated world with a timeout |
-| `media-in-use.ts` | Which pages use a camera, microphone, screen share or chosen device; the permission code marks them |
+| `media-in-use.ts` | Which pages use a camera, microphone, screen share or chosen device; provisional, nothing marks a page until a camera, microphone or device grant exists |
 | `sleep-tab.ts` | `sleepTab`, `sleepTabWhy`, `wakeTab`, `putToSleep`: the view swap |
 | `sleep-signal.ts` | The tab signal that reads a sleeping tab's state from its record |
 | `sleep-command.ts` | `tab.sleep` and the tab menu's item: the hop to a neighbour and the refusal toasts |
@@ -18,7 +18,8 @@
 
 **What it depends on.** `electron` (`install-memory-saver.ts` and the view swap), [`../shell/`](../shell/) (the tab collection, the view
 constructor and wiring, the signal registry), [`../overlays/tab-slots.ts`](../overlays/tab-slots.ts) (`hasAsk`),
-[`../page-tools/toast.ts`](../page-tools/toast.ts) and [`../session-restore/`](../session-restore/) (a restored title and the snapshot type).
+[`../page-tools/toast.ts`](../page-tools/toast.ts) and [`../session-restore/`](../session-restore/) (a restored title, the snapshot type and what a tab was before its page commits) and
+[`../history/favicon-host.ts`](../history/favicon-host.ts) (the key a stored icon is found under).
 
 **What it must never import.** The renderer, or a value from [`../shell/tabs.ts`](../shell/tabs.ts): the shell lists this
 feature, not the other way round.

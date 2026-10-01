@@ -1,6 +1,7 @@
 // Putting one tab to sleep and waking it. The page is closed and the tab keeps a blank view in its place; its
 // history, with each entry's page state, stays in memory on the record and is handed back to the view on waking.
 import { showTitleUntilLoaded } from '../session-restore/restored-title.js'
+import { boundHistory, rememberOpenedFrom } from '../session-restore/tab-snapshot.js'
 import { closeParkedViews } from '../shell/tab-parking.js'
 import type { SleepingTab } from '../shell/tab-extra-types.js'
 import type { TabRecord } from '../shell/tab-types.js'
@@ -78,9 +79,14 @@ export function wakeTab (tabs: TabManager, id: string): void {
   if (record === undefined || wc === undefined || kept == null) return
   record.sleeping = null
   showTitleUntilLoaded(record, kept.title)
+  // The view has no address until its first commit, so the session file and the closed-tab stack read what the tab was.
+  rememberOpenedFrom(record, { url: kept.url, title: kept.title, pinned: record.pinned === true, ...boundHistory(kept.entries.map(({ url, title }) => ({ url, title })), kept.index) })
   const load = (): void => { void wc.loadURL(kept.url).catch(() => {}) }
   try {
-    wc.navigationHistory.restore({ entries: kept.entries, index: kept.index }).catch(() => {})
+    // A restore that is refused after it started (a download, a cancelled navigation) leaves the view blank: load the address instead.
+    wc.navigationHistory.restore({ entries: kept.entries, index: kept.index }).catch(() => {
+      if (!wc.isDestroyed() && wc.getURL() === '') load()
+    })
   } catch {
     // A list the page no longer accepts still leaves the tab on its address.
     load()

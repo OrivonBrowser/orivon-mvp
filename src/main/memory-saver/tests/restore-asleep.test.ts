@@ -13,11 +13,11 @@ const { restoreAsleep, restoreAsleepTabs } = await import('../restore-asleep.js'
 beforeEach(() => { makeTabView.mockReset().mockReturnValue(blank); wireView.mockReset() })
 
 // A tab just made from a snapshot has no address yet: its page is still loading.
-function setup (saver: unknown = true) {
+function setup (saver: unknown = true, icons: Record<string, string> = {}) {
   const fake = fakeTabs({ a: page('', { loading: true }), b: page('https://b.example/') })
   fake.setActive('b')
   const record = fake.records.get('a')
-  if (record !== undefined) record.host = { ...record.host, services: { settings: { get: () => saver } } as never }
+  if (record !== undefined) record.host = { ...record.host, services: { settings: { get: () => saver }, history: { faviconsFor: () => icons } } as never }
   return fake
 }
 
@@ -30,6 +30,15 @@ describe('restoreAsleep', () => {
     expect(restoreAsleep(tabs, 'a', snapshot, env())).toBe(true)
     expect(records.get('a')?.sleeping).toEqual({ url: SNAPSHOT.url, title: 'A page', favicon: null, at: 5000, index: 1, entries: snapshot.entries })
     expect(records.get('a')?.view).toBe(blank)
+  })
+
+  it('gives a tab asleep from the start the icon history keeps for its site, and none when there is none', () => {
+    const known = setup(true, { 'a.example': 'data:image/png;base64,AAAA' })
+    restoreAsleep(known.tabs, 'a', SNAPSHOT, env())
+    expect(known.records.get('a')?.sleeping?.favicon).toBe('data:image/png;base64,AAAA')
+    const none = setup()
+    restoreAsleep(none.tabs, 'a', SNAPSHOT, env())
+    expect(none.records.get('a')?.sleeping?.favicon).toBeNull()
   })
 
   it('keeps a single address as a one-entry history', () => {

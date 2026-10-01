@@ -13,6 +13,7 @@ vi.mock('../../shell/tab-partition.js', () => ({ appTabViews: new WeakSet() }))
 vi.mock('../../overlays/tab-slots.js', () => ({ hasAsk: () => false }))
 
 const { sleepTab, sleepTabWhy, wakeTab } = await import('../sleep-tab.js')
+const { snapshotOf } = await import('../../session-restore/tab-snapshot.js')
 
 beforeEach(() => {
   makeTabView.mockReset().mockReturnValue(blank)
@@ -174,6 +175,41 @@ describe('wakeTab', () => {
     expect(wc.navigationHistory.restore).toHaveBeenCalledWith({ entries: kept?.entries, index: 1 })
     expect(record?.sleeping).toBeNull()
     expect(changed).toHaveBeenCalled()
+  })
+
+  it('keeps what the tab was for the session file until the page commits', async () => {
+    const { tabs, records } = setup()
+    await sleepTab(tabs, 'a', env())
+    const wc = { isDestroyed: () => false, getURL: () => '', getTitle: () => '', loadURL: vi.fn(), navigationHistory: { restore: vi.fn(async () => {}) } }
+    const record = records.get('a')
+    if (record !== undefined) record.view = { webContents: wc } as never
+
+    wakeTab(tabs, 'a')
+
+    expect(record === undefined ? null : snapshotOf(record, wc as never)).toEqual({
+      url: 'https://a.example/page', title: 'A page', pinned: false,
+      entries: [{ url: 'https://a.example/first', title: 'First' }, { url: 'https://a.example/page', title: 'A page' }], index: 1
+    })
+  })
+
+  it('loads the address when a restore that started is refused and the view is still blank', async () => {
+    const { tabs, records } = setup()
+    await sleepTab(tabs, 'a', env())
+    const wc = { isDestroyed: () => false, getURL: () => '', loadURL: vi.fn(async () => {}), navigationHistory: { restore: vi.fn(async () => { throw new Error('ERR_ABORTED') }) } }
+    const record = records.get('a')
+    if (record !== undefined) record.view = { webContents: wc } as never
+    wakeTab(tabs, 'a')
+    await vi.waitFor(() => { expect(wc.loadURL).toHaveBeenCalledWith('https://a.example/page') })
+
+    const committed = { isDestroyed: () => false, getURL: () => 'https://a.example/page', loadURL: vi.fn(async () => {}), navigationHistory: { restore: vi.fn(async () => { throw new Error('ERR_ABORTED') }) } }
+    const second = setup()
+    await sleepTab(second.tabs, 'a', env())
+    const other = second.records.get('a')
+    if (other !== undefined) other.view = { webContents: committed } as never
+    wakeTab(second.tabs, 'a')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(committed.loadURL).not.toHaveBeenCalled()
   })
 
   it('loads the address when the history cannot be restored', async () => {
