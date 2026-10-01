@@ -11,6 +11,7 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 | `tab-badges.ts` | a tab's pinned look, tooltip, accessible name and speaker badge; a `TabDecorator` |
 | `tab-crashed.ts` | a crashed tab's mark; a `TabDecorator` |
 | `contain.ts` | `contained` and `runDecorators`: one feature's throw is logged and the rest run |
+| `tab-groups.ts`, `tab-group-drag.ts` | a group's chip before its first tab, the group's colour on its tabs, hiding a collapsed group's tabs, and dragging a chip to move the group |
 | `tab-search-button.ts` | the button at the strip's right end that opens tab search |
 | `navigation.ts` | back, forward, reload, the address bar |
 | `address-suggest.ts` | the address field's dropdown from the field's side: what is typed, the arrows, Enter and Escape (the rules are in `address-suggest-model.ts`) |

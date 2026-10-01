@@ -67,11 +67,18 @@ let pressed = false
 /** Ends the drag under way, for Escape; one listener serves every tab. */
 let cancelDrag: (() => void) | null = null
 let listeningForEscape = false
+/** Something other than a tab (a group's chip) is being dragged in the strip. */
+let stripHeld = false
+
+/** Keeps the strip from being redrawn under a pointer that holds something else in it. */
+export function holdStrip (on: boolean): void {
+  stripHeld = on
+}
 
 /** Whether a tab is held: the strip is not redrawn under a pointer that has hold of one of its tabs, or the click that
  * follows would go to an element that is no longer there. */
 export function isDraggingTab (): boolean {
-  return dragging || pressed
+  return dragging || pressed || stripHeld
 }
 
 function listenForEscape (): void {
