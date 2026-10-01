@@ -1,0 +1,8 @@
+{
+  "worker": {
+    "query": "function"
+  },
+  "page": {
+    "query": "function"
+  }
+}

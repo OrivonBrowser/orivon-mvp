@@ -64,6 +64,14 @@ export function shellServices (): ShellServices | undefined {
   return bridge?.services
 }
 
+const shellWaiters: Array<(services: ShellServices) => void> = []
+
+/** Runs `run` with the shell's services: now when they exist, else once the first window attaches. */
+export function whenShellServices (run: (services: ShellServices) => void): void {
+  if (bridge !== undefined) run(bridge.services)
+  else shellWaiters.push(run)
+}
+
 /** Constructs the library, once, before any extension loads. `preloadPath`
  * is `extensions-subsystem.ts`'s bundle of `vendor/.../src/preload.ts` PLUS
  * Orivon's own service-worker-preload health check
@@ -174,6 +182,7 @@ function notifyShell (wc: WebContents, run: (wc: WebContents) => void): void {
  * makes the toolbar's crx: icons load in the chrome session. */
 export function attachExtensionShell (ctx: SubsystemContext, services: ShellServices, shellSession: Session): void {
   bridge = { ctx, services }
+  for (const run of shellWaiters.splice(0)) run(services)
   watchPinSetting(services)
 
   setRemoteMessageSenderCheck((event) => event.type === 'frame' && isFromChromeView(event.sender))

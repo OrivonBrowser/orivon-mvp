@@ -36,6 +36,8 @@ export interface ExtensionApiContext {
   readonly userDataPath: string
   /** Undefined until the first window exists. */
   readonly shell: () => ShellServices | undefined
+  /** Runs `run` with the shell's services: at once when they exist, else when the first window attaches. For a module that watches a store. */
+  readonly onShell: (run: (shell: ShellServices) => void) => void
   readonly extensions: () => ExtensionsApi | undefined
   readonly prefs: ExtensionPrefsStore
   readonly held: (extensionId: string, permission: string) => boolean

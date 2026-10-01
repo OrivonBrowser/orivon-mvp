@@ -147,3 +147,21 @@ describe('installExtensionApis', () => {
     expect(eventListenerFilter(ID, 'gated.onX', [1])).toEqual([1])
   })
 })
+
+describe('createApiContext: onShell', () => {
+  it('runs at once with the shell when it exists, and not at all before', () => {
+    const run = vi.fn()
+    createApiContext(fakeDeps().deps, MODULE).onShell(run)
+    expect(run).not.toHaveBeenCalled()
+    const shell = { name: 'shell' }
+    createApiContext(fakeDeps({ shell: () => shell as never }).deps, MODULE).onShell(run)
+    expect(run).toHaveBeenCalledWith(shell)
+  })
+
+  it('hands the wait to the host\'s own registration when one is given', () => {
+    const onShell = vi.fn()
+    const run = vi.fn()
+    createApiContext(fakeDeps({ onShell }).deps, MODULE).onShell(run)
+    expect(onShell).toHaveBeenCalledWith(run)
+  })
+})

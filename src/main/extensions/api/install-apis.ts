@@ -8,7 +8,7 @@ import type { ElectronChromeExtensions } from 'orivon:crx-extensions'
 import { setPermissionCheck } from 'orivon:crx-extensions-router'
 import { originFromUrl } from '../../../broker/policy/origin.js'
 import type { SubsystemContext } from '../../registry.js'
-import { shellServices } from '../extension-host.js'
+import { shellServices, whenShellServices } from '../extension-host.js'
 import { getCachedStrippedPermissions } from '../extensions-dnr.js'
 import { installPermissionCheck, type PermissionHeld } from '../extension-permission-check.js'
 import type { ExtensionPrefsStore } from '../extension-prefs.js'
@@ -35,6 +35,7 @@ export function installApis (options: InstallApisOptions): PermissionHeld {
     session,
     userDataPath,
     shell: shellServices,
+    onShell: whenShellServices,
     extensions: () => ctx.extensions,
     prefs,
     held,

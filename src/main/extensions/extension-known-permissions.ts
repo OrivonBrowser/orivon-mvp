@@ -11,11 +11,15 @@
 // name one of these. One array, so a permission this app newly implements
 // stops warning the moment its name is added here, in one place.
 export const IMPLEMENTED_EXTENSION_PERMISSIONS: readonly string[] = [
+  'bookmarks',
   'contextMenus',
   'cookies',
+  'history',
   'notifications',
   'offscreen',
+  'search',
   'tabCapture',
+  'topSites',
   'webNavigation',
 ]
 

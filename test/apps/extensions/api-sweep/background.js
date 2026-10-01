@@ -1,1 +1,1 @@
-importScripts('sweep.js', 'rpc.js')
+importScripts('sweep.js', 'rpc.js', 'library-events.js')
