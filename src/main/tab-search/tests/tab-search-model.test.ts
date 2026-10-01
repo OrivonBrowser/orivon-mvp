@@ -6,7 +6,7 @@ import type { SearchTabRow, SearchWindow } from '../tab-search-model.js'
 
 const tab = (id: string, extra: Partial<TabState> = {}): TabState => ({
   id, url: `https://${id}.example/`, displayUrl: `https://${id}.example/page`, title: `Title ${id}`, canGoBack: false, canGoForward: false, loading: false,
-  favicon: null, isNewTab: false, splitWith: null, isInternal: false, pinned: false, muted: false, audible: false, crashed: null, ...extra
+  favicon: null, isNewTab: false, splitWith: null, isInternal: false, pinned: false, muted: false, audible: false, crashed: null, connection: 'none', ...extra
 })
 const win = (key: number, current: boolean, tabs: TabState[], activeTabId: string | null = tabs[0]?.id ?? null): SearchWindow => ({ key, current, tabs, activeTabId })
 const closedTab = (id: number, title: string, url = 'https://gone.example/'): ClosedEntry => ({ kind: 'tab', id, at: 1000 + id, index: 0, windowKey: 1, tab: { url, title, pinned: false } })

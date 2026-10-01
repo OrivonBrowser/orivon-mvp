@@ -3,9 +3,11 @@
 // holds what happened; this decides whether to write it down and how long to
 // keep it.
 import type { SettingsStore } from '../settings/settings-store.js'
-import type { HistoryEntry, HistoryQuery, HistoryStore } from './history-store.js'
+import { MAX_IMPORTED_PAGES, selectImportRows } from './history-import.js'
+import type { HistoryEntry, HistoryImportRow, HistoryQuery, HistoryStore, HistorySuggestion } from './history-store.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
+const MAX_OFFERED_ICONS = 500
 
 export interface HistoryStatus {
   /** Whether new visits are being remembered. */
@@ -25,6 +27,8 @@ export type HistoryChange = 'titled' | 'entries'
 
 export class HistoryService {
   private readonly listeners = new Set<(change: HistoryChange) => void>()
+  /** The last icon offered per host. Anything that forgets pages forgets this too, so a site visited again gets its icon back. */
+  private readonly offeredIcons = new Map<string, string>()
 
   constructor (
     private readonly store: HistoryStore,
@@ -59,18 +63,79 @@ export class HistoryService {
     return this.store.list(query)
   }
 
+  /** Like `list`, in `query.order` from `query.offset`, each entry with its `favicon`. */
+  listOrdered (query?: HistoryQuery): HistoryEntry[] {
+    return this.store.listOrdered(query)
+  }
+
+  suggest (text: string, limit: number): HistorySuggestion[] {
+    return this.store.suggest(text, limit)
+  }
+
+  /** Nothing is written down while history is off, a typed address included. */
+  markTyped (url: string): void {
+    if (!this.remembering) return
+    this.store.markTyped(url)
+  }
+
+  /** Tabs report their icon on every state push, so an icon already kept is not offered to the store again. */
+  setFavicon (host: string, dataUrl: string): void {
+    if (!this.remembering || this.offeredIcons.get(host) === dataUrl) return
+    // Called from inside a state push: a store that fails must not end it, and an icon it did not take is offered again.
+    try {
+      this.store.setFavicon(host, dataUrl)
+    } catch (error) {
+      console.error('[orivon] history could not be written:', error)
+      return
+    }
+    if (this.offeredIcons.size >= MAX_OFFERED_ICONS) this.offeredIcons.clear()
+    this.offeredIcons.set(host, dataUrl)
+  }
+
+  faviconsFor (hosts: readonly string[]): Record<string, string> {
+    return this.store.faviconsFor(hosts)
+  }
+
+  pruneFavicons (): void {
+    this.store.pruneFavicons()
+    this.offeredIcons.clear()
+  }
+
+  pagesByIds (ids: readonly number[]): HistoryEntry[] {
+    return this.store.pagesByIds(ids)
+  }
+
+  /** Pages the person chose to bring in, kept newest first within the retention; nothing while history is off. */
+  importPages (rows: readonly HistoryImportRow[]): number {
+    if (!this.remembering) return 0
+    const days = this.settings.get('history.retentionDays')
+    const kept = selectImportRows(rows, { now: this.now(), retentionDays: days === 'forever' ? null : Number(days), limit: MAX_IMPORTED_PAGES })
+    const added = this.store.importPages(kept)
+    if (added > 0) this.notify('entries')
+    return added
+  }
+
   remove (id: number): void {
     this.store.remove(id)
+    this.offeredIcons.clear()
+    this.notify('entries')
+  }
+
+  removeMany (ids: readonly number[]): void {
+    this.store.removeMany(ids)
+    this.offeredIcons.clear()
     this.notify('entries')
   }
 
   removeRange (from: number, to: number): void {
     this.store.removeRange(from, to)
+    this.offeredIcons.clear()
     this.notify('entries')
   }
 
   clear (): void {
     this.store.clear()
+    this.offeredIcons.clear()
     this.notify('entries')
   }
 
@@ -81,6 +146,7 @@ export class HistoryService {
     // Run at start, where a failure would end the browser on every start and leave no way into Settings to clear it.
     try {
       this.store.removeRange(0, this.now() - Number(days) * DAY_MS)
+      this.offeredIcons.clear()
       this.notify('entries')
     } catch (error) {
       console.error('[orivon] history could not be pruned:', error)

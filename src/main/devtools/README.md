@@ -3,6 +3,7 @@
 **What lives here.** `devtools-service.ts` decides whether developer tools may open on a page and
 opens them, for every way in: the key, the main menu, and "Inspect" in a page's own menu.
 `devtools-prompt.ts` is the one question asked before they open on an app that holds permissions.
+`open-console.ts` moves tools that are open or opening to the Console panel.
 
 **What it depends on.** `electron` (the prompt, and the `WebContents` it acts on);
 [`../settings/`](../settings/) (whether developer tools are allowed, and where they open).

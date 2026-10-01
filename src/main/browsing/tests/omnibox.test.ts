@@ -5,6 +5,25 @@ import { parseOmniboxInput, sanitizeDirectUrl } from '../omnibox.js'
 // are what stop the address bar from being a script-injection or local-file
 // disclosure vector. Everything else is ordinary usability.
 describe('parseOmniboxInput', () => {
+  describe('a leading question mark', () => {
+    const search = (query: string): string => `https://search.test/?q=${encodeURIComponent(query)}`
+    const parse = (text: string): ReturnType<typeof parseOmniboxInput> => parseOmniboxInput(text, () => false, search)
+
+    it.each([['? cats', 'cats'], ['?cats', 'cats'], ['  ?  two words ', 'two words'], ['? example.com', 'example.com'], ['?javascript:alert(1)', 'javascript:alert(1)']])(
+      'always searches for what follows: %j', (text, query) => {
+        expect(parse(text)).toEqual({ kind: 'search', url: search(query) })
+      }
+    )
+
+    it.each(['?', '?   ', ' ? '])('has nothing to search for in %j', (text) => {
+      expect(parse(text)).toEqual({ kind: 'reject', reason: 'empty' })
+    })
+
+    it('leaves a question mark inside the text to the ordinary rules', () => {
+      expect(parse('example.com/?q=1')).toEqual({ kind: 'url', url: 'https://example.com/?q=1' })
+    })
+  })
+
   it('a typed ipfs:// or ipns:// address loads from its scheme endpoint, whatever its case', () => {
     expect(parseOmniboxInput('  IPFS://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi  ')).toEqual({ kind: 'url', url: 'https://ipfs.orivon/bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/' })
     expect(parseOmniboxInput('ipns://k51qzi5uqu5dipklqpo2uq7advlajxx5wxob0mwyqbxb5zu4htblc4bjipy834/docs#top')).toEqual({ kind: 'url', url: 'https://ipns.orivon/k51qzi5uqu5dipklqpo2uq7advlajxx5wxob0mwyqbxb5zu4htblc4bjipy834/docs#top' })

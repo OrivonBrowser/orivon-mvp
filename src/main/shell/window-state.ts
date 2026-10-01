@@ -1,13 +1,16 @@
-// What one window tells its chrome view: the tab collection, the bookmarks, the
-// zoom chip and the profile look, folded into one ShellState and pushed on
+// What one window tells its chrome view: the tab collection, whether the page is
+// bookmarked, the zoom chip and the profile look, folded into one ShellState and pushed on
 // every change. It also decides which dismissals a push implies (a tab switch,
 // a navigation, the site-info origin changing) and starts the sources whose
 // changes cause a push, and the stop that ends them with the window.
 import type { BaseWindow, WebContentsView } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { STATE_CHANNEL } from '../channels.js'
+import { faviconHost } from '../history/favicon-host.js'
 import type { OverlayHostHandle } from '../overlays/overlay-host.js'
+import { barItemsOf } from './bookmarks-bar/bar-items.js'
 import type { HtmlFullscreen } from './fullscreen.js'
+import { sendChromeEvent } from './shell-events.js'
 import { readStateParts, watchStateParts } from './shell-state-parts.js'
 import type { ShellServices } from './shell-services.js'
 import type { TabManager } from './tabs.js'
@@ -36,7 +39,13 @@ export interface WindowState {
 
 export function createWindowState (deps: WindowStateDeps): WindowState {
   const { win, chrome, tabs, services, context, fullscreen, layout, bookmarksBarShown, overlays, closeSiteInfo } = deps
-  const { bookmarks } = services
+  const { bookmarks, history } = services
+
+  /** The icon of the site a tab shows, kept with its pages so the History page can draw it. */
+  function rememberIcon (address: string, icon: string): void {
+    const host = faviconHost(address)
+    if (host !== null) history.setFavicon(host, icon)
+  }
 
   /** Previous push's active tab, so pushState() can tell a genuine tab
    * SWITCH from the many other reasons state is pushed (a title, a favicon,
@@ -80,10 +89,11 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
     // pushes state -- this is where that late icon reaches the bookmark it
     // belongs to. fillMissingFavicon never overwrites an icon already
     // stored, and deliberately does not notify listeners, so this cannot
-    // push state from inside a state push; the list read below already
-    // reflects it.
+    // push state from inside a state push.
+    let iconFilled = false
     for (const tab of state.tabs) {
-      if (tab.favicon !== null) bookmarks.fillMissingFavicon(tab.url, tab.favicon)
+      if (tab.favicon !== null && bookmarks.fillMissingFavicon(tab.url, tab.favicon)) iconFilled = true
+      if (tab.favicon !== null) rememberIcon(tab.displayUrl, tab.favicon)
     }
     const switched = state.activeTabId !== lastActiveTabId
     if (switched) {
@@ -109,12 +119,17 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
     chrome.webContents.send(STATE_CHANNEL, {
       ...readStateParts(context, state),
       ...state,
-      bookmarks: bookmarks.getAll(),
       bookmarksBar: bookmarksBarShown(),
       zoomPercent: zoomChip(activeTab?.url),
       profile: profileLook
     })
+    // The bar's items travel only when they change, so an icon that arrived late is sent here.
+    if (iconFilled) sendBarItems()
     afterPush()
+  }
+
+  function sendBarItems (): void {
+    sendChromeEvent(context.window, 'bookmarks-bar', barItemsOf(bookmarks))
   }
 
   // Only the first and last bookmark change the chrome's height, so the
@@ -133,6 +148,7 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
       // either is now off by the row's height.
       overlays.relayout()
     }
+    sendBarItems()
     pushState()
   }
 

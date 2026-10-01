@@ -4,9 +4,8 @@ import { grantIcon } from '../grant-icons.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 
 // Renders the settings window's whole list of app cards -- one card per
-// `AppPermissions`, one row per `PermissionRow`. Mirrors bookmarks-view.ts's
-// shape (a factory closing over the container elements, a single `render`
-// call rebuilding the list on every fresh fetch) rather than diffing: the
+// `AppPermissions`, one row per `PermissionRow`. A factory closing over the container elements, a single `render`
+// call rebuilding the list on every fresh fetch, rather than diffing: the
 // list here is at most a handful of apps, so a rebuild is not observable as
 // jank, and it is what keeps this module simple enough to trust at a
 // glance.

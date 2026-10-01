@@ -8,6 +8,7 @@ import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
+import { removeThroughBubble } from './bookmark-bubble-helpers.js'
 import { runPhase } from './e2e-helpers.js'
 import { assertNoElectronSurvivors, closeElectron, profileDirOf } from './launch-electron.mjs'
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './qa-helpers.js'
@@ -55,7 +56,7 @@ it('a bookmark starred through the toolbar is on disk, survives a restart, and u
         await visit(second.app, second.chrome, url())
       }
 
-      await second.chrome.click('#bookmark-toggle')
+      await removeThroughBubble(second.app, second.chrome)
       check('unstarring marks the page as not bookmarked', (await waitForTab(second.chrome, { bookmarked: false })).ok)
       check('the main process removed it from bookmarks.json', await waitFor(async () => !(await onDisk()).includes(url())), (await onDisk()).slice(0, 200))
       await closeElectron(second.app, { keepProfile: true })

@@ -27,7 +27,7 @@
   --waccent-wash: color-mix(in srgb, var(--waccent-text) 14%, transparent);
   --wdanger: #dc2626;
   /* Red AS TEXT: lighter in the dark theme, where #dc2626 on the panel is under 4.5:1. */
-  --wdanger-text: var(--wdanger);
+  --wdanger-text: #b91c1c;
   --wdanger-wash: color-mix(in srgb, var(--wdanger) 10%, transparent);
   --wok: #00a848;
   --wwarn: #f97316;
@@ -74,12 +74,17 @@ html, body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;
   line-height: 1.45;
-  /* Inherited, so every scrolling box on a page (the sidebar's own scroll,
-     the content column, the page itself) gets the same thin, themed bar
-     rather than the platform's default arrows-and-track one. */
-  scrollbar-width: thin;
-  scrollbar-color: var(--wborder) transparent;
 }
+
+/* Every scrolling box on a page (the sidebar's own scroll, the content column, the page itself) gets the same thin,
+   themed bar rather than the platform's arrows-and-track one. Chromium ignores these rules while `scrollbar-width` or
+   `scrollbar-color` is set, so neither is used. The page's own bar has a solid track: it sits over the tab view's
+   backing colour, which is not always the page's. */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--wborder); border-radius: 4px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+html::-webkit-scrollbar-track { background: var(--wbg); }
+::-webkit-scrollbar-button { display: none; }
 
 h1, h2, h3, p { margin: 0; }
 

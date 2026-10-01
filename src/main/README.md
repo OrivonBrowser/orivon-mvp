@@ -24,9 +24,12 @@ rather than editing here.
 | [`shell/`](shell/) | The window and the views inside it | the tab collection | yes |
 | [`overlays/`](overlays/) | Orivon HTML above the page: where an overlay sits, when it closes, where focus goes; every bar, sheet and popup below shares it | no | `overlay-host.ts` and `overlay-view.ts` |
 | [`pages/`](pages/) | The shell's own pages at `orivon://`, in a session only they can load, and the one channel they speak on | which webContents are which page | `internal-session.ts`, `internal-ipc.ts` and `pages-subsystem.ts` only |
+| [`downloads/`](downloads/) | The files tabs download, saved without a dialog, tracked and managed from `orivon://downloads` | `downloads.json` on disk (memory only in a private session) | `install-downloads.ts`, `folder-runner.ts` and the `DownloadItem` type in `download-service.ts` |
 | [`history/`](history/) | The pages that were visited, kept on this computer and forgotten on request | `history.db` on disk | `attach-history.ts` and `install-history.ts` only |
+| [`import/`](import/) | Bookmarks and history read once from another browser's profile files, through a read-only copy, into Orivon's own stores | no | `import-host.ts` only |
 | [`privacy/`](privacy/) | Clearing history, site data, the cache and app storage | no | no |
 | [`devtools/`](devtools/) | When developer tools may open on a page, and the question before they open on an app | which tools are open | `devtools-prompt.ts` only |
+| [`info/`](info/) | The About page and the task manager: the version and graphics facts, the process list, ending a process | when the last processor reading was taken | `about-runner.ts` and `tasks-runner.ts` only |
 | [`page-tools/`](page-tools/) | Print, save as PDF, save the page, view source, screenshots and picture in picture, and the toast that reports them | no | `real-deps.ts` and the files that type a `webContents`, as types |
 | [`zoom/`](zoom/) | How large each site is shown, chosen per site and remembered | `zoom.json` on disk | `attach-zoom.ts` and `install-zoom.ts` only |
 | [`find/`](find/) | Find in page: the bar, the search it runs in the tab in front, and its commands | the query, per window, in memory | no (types only) |
@@ -35,11 +38,13 @@ rather than editing here.
 | [`shortcuts/`](shortcuts/) | Which key runs which command, the rules for changing one, and the listener that runs them | `shortcuts.json` on disk | `dispatcher.ts`, `install-shortcuts.ts` and `app-menu.ts` only |
 | [`session-restore/`](session-restore/) | The tabs and windows that were closed, for reopening, and the open windows kept in `session.json` | `session.json` on disk, the closed stack in memory | `session-hook.ts` only |
 | [`sad-tab/`](sad-tab/) | The card over a tab whose page crashed or stopped answering, with Reload and Close tab | no | no |
+| [`omnibox/`](omnibox/) | The address bar's suggestions: rows from history, bookmarks, open tabs and, if asked, the default engine's suggestions, the text finished inline, and what choosing a row does | the rows and the selection of the last query, in memory | no (types only, but the overlay and the actions use the window) |
 | [`tab-search/`](tab-search/) | The tab search list: open tabs of every window and recently closed ones, and what choosing a row does | which tab was in front last, in memory | no (types only) |
+| [`qr/`](qr/) | The page's address as a QR code, with copy and save as PNG | no | `qr-real.ts` only |
 | [`startup/`](startup/) | What a cold start opens (the new tab page, last session, chosen pages) and the offer to restore after a crash | no | `startup-overlays.ts` only |
 | [`settings/`](settings/) | What the person set, validated, persisted and told to whoever listens | `settings.json` on disk | no |
 | [`storage/`](storage/) | The debounced, single-flight disk write every small persisted file shares | no | no |
-| [`browsing/`](browsing/) | What the address bar and tab strip are made of | bookmarks on disk | `favicon.ts` only |
+| [`browsing/`](browsing/) | What the address bar and tab strip are made of | bookmarks and search engines on disk | `favicon.ts` only |
 | [`ipc/`](ipc/) | The chrome-to-main channels, one sender check each | no | yes |
 | [`consent/`](consent/) | Decide what to ask, say it in words, show the dialog | no | the `-prompt` files only |
 | [`permissions/`](permissions/) | The grant list a person can revoke from, and the per-site popover | no | the two `-panel` files and `popover-view.ts` |

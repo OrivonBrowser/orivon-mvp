@@ -11,6 +11,8 @@ import { installShortcuts } from './shortcuts/install-shortcuts.js'
 import { installSpellcheck } from './spellcheck/install-spellcheck.js'
 import { installZoom } from './zoom/install-zoom.js'
 import { installHistory } from './history/install-history.js'
+import { installDownloads } from './downloads/install-downloads.js'
+import { installDownloadsPeek } from './downloads/auto-open.js'
 import { createSubsystemContext, criticalFailureMessage, publishWindowForSender, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
 import { subsystems } from './subsystems.js'
 import { DebouncedWriter } from './storage/debounced-writer.js'
@@ -157,7 +159,7 @@ function boot (runtime: Runtime): void {
     publishWindowForSender(ctx, (sender) => shell.windows.findTab(sender)?.window.window)
     // Before the first window, so it opens in the chosen theme with the chosen
     // bookmarks bar rather than changing after it is on screen.
-    await Promise.all([shell.settings.load(), shell.shortcutStore.load(), shell.windowState.load(), shell.zoomStore.load(), shell.session.load()])
+    await Promise.all([shell.settings.load(), shell.searchEngines.load(), shell.shortcutStore.load(), shell.windowState.load(), shell.zoomStore.load(), shell.session.load()])
     seedClosedStack(shell.closedTabs, shell.session.previous())
     applyThemeSetting(shell.settings, nativeTheme)
     // The light client starts after the first page loads, by which time the settings have been read: the person's choice reaches it.
@@ -174,6 +176,8 @@ function boot (runtime: Runtime): void {
     installZoom(app, shell.windows, shell.zoom)
     installSpellcheck(app, shell.windows, shell.settings)
     installHistory(app, shell.windows, shell.internalPages, shell.history)
+    installDownloads(app, { windows: shell.windows, downloads: shell.downloads, defaultSession: session.defaultSession, discardHeldAtQuit: runtime.isPrivate })
+    installDownloadsPeek(shell)
     registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks)
     // Looks for a newer release once a day when the person has said it may; installs nothing.
     if (!runtime.isPrivate && shell.settings.get('updates.check')) {

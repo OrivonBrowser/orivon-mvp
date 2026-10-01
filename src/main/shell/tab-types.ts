@@ -6,10 +6,11 @@
 import type { BaseWindow, LoadURLOptions, View, WebContents, WebContentsView } from 'electron'
 import type { FrameState } from './split-controller.js'
 import type { Broker } from '../../broker/broker-contracts.js'
-import type { Bookmark } from '../browsing/bookmarks.js'
+import type { Connection } from '../browsing/connection.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
 import type { InternalPageRegistry } from '../pages/internal-registry.js'
 import type { DevToolsGate } from '../devtools/devtools-service.js'
+import type { Attention } from '../downloads/download-attention.js'
 import type { TabLifecycle } from './tab-lifecycle.js'
 import type { ShellServices } from './shell-services.js'
 import type { CommandId } from '../shortcuts/commands.js'
@@ -49,6 +50,8 @@ export interface TabState {
   splitWith: string | null
   /** One of the shell's own pages (Settings, History, ...). It has no site: no shield, no permissions, nothing to bookmark. */
   isInternal: boolean
+  /** What the address bar may say about the connection: a lock, a warning, or nothing (browsing/connection.ts). */
+  connection: Connection
   /** Kept at the strip's start, narrow, and not closed by accident. */
   pinned: boolean
   /** The page's sound is switched off. */
@@ -68,16 +71,33 @@ export interface TabsSnapshot {
   activeTabId: string | null
 }
 
+/** What the toolbar's downloads button draws: whether it shows, the ring, and the dot. */
+export interface DownloadsButtonState {
+  readonly shown: boolean
+  /** Downloads running or paused. */
+  readonly active: number
+  /** Share done across those that know their size; null when none does. */
+  readonly fraction: number | null
+  /** Everything running is paused. */
+  readonly paused: boolean
+  readonly attention: Attention
+}
+
 export interface ShellState extends TabsSnapshot {
-  bookmarks: Bookmark[]
+  /** The active tab's address is in the bar or in Other bookmarks: the star shows it. */
+  bookmarked: boolean
   /** Whether the bookmarks bar is shown: main decides (it sizes the chrome view to match) and the page follows. */
   bookmarksBar: boolean
   /** The active page's zoom, when it differs from what a site gets by default; otherwise null. */
   zoomPercent: number | null
   /** Which profile this window is, for the chip beside the menu. */
   profile: { name: string, color: string, isPrivate: boolean, shown: boolean }
+  /** The downloads button: whether it shows, its ring and its dot (`toolbar.downloads`). */
+  downloads: DownloadsButtonState
   /** Whether the toolbar shows the Home button (`toolbar.home`). */
   homeButton: boolean
+  /** Whether the address bar shows the literal address when it is not being edited (`addressBar.showFullUrl`). */
+  showFullUrl: boolean
   /** The key caps bound to the commands the chrome names in a tooltip, or null when one is cleared. */
   shortcutKeys: { readonly 'nav.home': readonly string[] | null, readonly 'tab.search': readonly string[] | null }
 }

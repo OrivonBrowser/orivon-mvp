@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { canViewSource, openViewSource } from '../view-source.js'
+import { canViewSource, openTypedViewSource, openViewSource } from '../view-source.js'
 import type { SourceTabs } from '../view-source.js'
 
 function tabs (record: Record<string, unknown> | null = { partition: undefined, internalPage: null, isDashboardTab: false }, active: string | null = 'b'): SourceTabs & { openTrusted: ReturnType<typeof vi.fn>, moveTab: ReturnType<typeof vi.fn> } {
@@ -41,6 +41,33 @@ describe('openViewSource', () => {
     manager.openTrusted.mockReturnValue(undefined)
     expect(openViewSource(manager, 'https://a.example/')).toBe(false)
     expect(manager.moveTab).not.toHaveBeenCalled()
+  })
+})
+
+describe('openTypedViewSource', () => {
+  it('opens the source of a typed address from the new-tab page, a shell page or an app, which are not the page asked about', () => {
+    for (const record of [{ partition: undefined, internalPage: null, isDashboardTab: true }, { partition: undefined, internalPage: 'history', isDashboardTab: false }, { partition: 'persist:app', internalPage: null, isDashboardTab: false }, null]) {
+      const manager = tabs(record)
+      expect(openTypedViewSource(manager, 'https://a.example/x'), JSON.stringify(record)).toBe(true)
+      expect(manager.openTrusted).toHaveBeenCalledWith('view-source:https://a.example/x')
+      expect(manager.moveTab).toHaveBeenCalledWith('n', 2)
+    }
+  })
+
+  it('opens a tab even in a window with no active one, and still only for a web address', () => {
+    const manager = tabs(null, null)
+    expect(openTypedViewSource(manager, 'https://a.example/')).toBe(true)
+    expect(manager.moveTab).not.toHaveBeenCalled()
+    for (const url of ['orivon://settings/', 'file:///etc/passwd', 'view-source:https://a.example/', 'javascript:alert(1)', '']) {
+      expect(openTypedViewSource(manager, url), url).toBe(false)
+    }
+    expect(manager.openTrusted).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports a window that has no room for another tab', () => {
+    const manager = tabs()
+    manager.openTrusted.mockReturnValue(undefined)
+    expect(openTypedViewSource(manager, 'https://a.example/')).toBe(false)
   })
 })
 

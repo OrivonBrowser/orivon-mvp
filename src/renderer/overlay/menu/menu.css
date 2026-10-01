@@ -20,7 +20,9 @@ body[data-overlay='menu'] .menu-row {
   transition: background-color 0.12s;
 }
 body[data-overlay='menu'] .menu-row:hover { background: var(--whover); }
-body[data-overlay='menu'] .menu-row:active { background: color-mix(in srgb, var(--wink) 12%, transparent); }
+body[data-overlay='menu'] .menu-row[aria-disabled='true'] { color: var(--wink-off); cursor: default; }
+body[data-overlay='menu'] .menu-row[aria-disabled='true']:hover { background: none; }
+body[data-overlay='menu'] .menu-row:active:not([aria-disabled='true']) { background: color-mix(in srgb, var(--wink) 12%, transparent); }
 body[data-overlay='menu'] .menu-row:focus-visible,
 body[data-overlay='menu'] .zoom-btn:focus-visible {
   background: var(--whover);

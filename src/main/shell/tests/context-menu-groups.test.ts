@@ -211,17 +211,37 @@ describe('spelling group', () => {
   })
 })
 
+describe('the address bar\'s menu', () => {
+  it('ends with a tick for Always Show Full Addresses, wired to the switch', () => {
+    const a = { ...full(), toggleFullAddresses: vi.fn() }
+    const on = contextMenuTemplate(params({ isEditable: true, editFlags: { ...NO_EDIT, canPaste: true } }), a as never, false, { ...DEFAULT_CONTEXT, fullAddresses: true })
+    expect(labels(on).at(-1)).toBe('Always Show Full Addresses')
+    expect(on.at(-1)).toMatchObject({ type: 'checkbox', checked: true })
+    click(on, 'Always Show Full Addresses')
+    expect(a.toggleFullAddresses).toHaveBeenCalledTimes(1)
+    const off = contextMenuTemplate(params({ isEditable: true }), a as never, false, DEFAULT_CONTEXT)
+    expect(off.at(-1)).toMatchObject({ checked: false })
+  })
+
+  it('is absent from every other editable field', () => {
+    const template = contextMenuTemplate(params({ isEditable: true }), full(), false, ctx)
+    expect(labels(template)).not.toContain('Always Show Full Addresses')
+  })
+})
+
 describe('page group', () => {
   it('shows navigation, the page tools and view source on a plain page', () => {
     const a = full()
     const template = contextMenuTemplate(params({}), a, false, ctx)
-    expect(labels(template)).toEqual(['Back', 'Forward', 'Reload', '|', 'Save Page As…', 'Print…', 'Take a Screenshot', '|', 'View Page Source'])
+    expect(labels(template)).toEqual(['Back', 'Forward', 'Reload', '|', 'Save Page As…', 'Print…', 'Take a Screenshot', '|', 'View Page Source', 'Create QR Code for This Page'])
     expect(template.find((i) => i.label === 'Back')?.enabled).toBe(false)
     expect(template.find((i) => i.label === 'Forward')?.enabled).toBe(true)
     click(template, 'Print…')
     click(template, 'View Page Source')
     click(template, 'Save Page As…')
     click(template, 'Take a Screenshot')
+    click(template, 'Create QR Code for This Page')
+    expect(a.run).toHaveBeenCalledWith('page.qr')
     expect(a.run).toHaveBeenCalledWith('page.print')
     expect(a.run).toHaveBeenCalledWith('page.viewSource')
     expect(a.run).toHaveBeenCalledWith('page.save')

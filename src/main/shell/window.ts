@@ -33,7 +33,8 @@ import { recordViewBackground } from './view-background-test-hook.js'
 import { onThemeUpdated } from './theme-colors.js'
 import { dragModeFor } from './drag-mode.js'
 import type { ShellServices } from './shell-services.js'
-import { searchUrlFor } from '../browsing/search-engines.js'
+import { resolveCurrent } from '../browsing/search-current.js'
+import { bookmarksBarShown as barShown } from './bookmarks-bar/bar-visibility.js'
 import { SHELL_PARTITION } from './shell-session.js'
 
 /** The new-tab page's own URL: the dev server's nested path, or the built file. */
@@ -105,23 +106,14 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   const dashboardUrl = resolveDashboardUrl()
 
   // Bookmarks (scope.md, ADR-0003) are a store of their own, shared by every
-  // window of this process and not folded into TabManager -- tabs and
-  // bookmarks change independently and neither needs to know the other
-  // exists; window.ts is what composes both into the one ShellState snapshot
-  // the chrome view receives.
-  const bookmarks = services.bookmarks
-
-  // The bookmarks bar is rendered only when there is something in it: it
-  // holds the real list and nothing else, so an empty one is an empty row.
-  // Main has to own this, not just CSS: the
-  // tab view starts where the chrome view ends, so a row the renderer
-  // hides without main shrinking these bounds leaves a 28px band of empty
-  // chrome above the page instead of giving it back to the page.
-  // Set by the person: 'auto' is the rule above, the others ignore whether the
-  // list is empty.
+  // window of this process and not folded into TabManager: tabs and bookmarks
+  // change independently and neither needs to know the other exists.
+  // The bookmarks bar is rendered only when it is asked for or has an item in
+  // it. Main has to own this, not just CSS: the tab view starts where the
+  // chrome view ends, so a row the renderer hides without main shrinking these
+  // bounds leaves a 28px band of empty chrome above the page.
   function bookmarksBarShown (): boolean {
-    const mode = services.settings.get('appearance.bookmarksBar')
-    return mode === 'always' || (mode === 'auto' && bookmarks.getAll().length > 0)
+    return barShown(services)
   }
 
   // A page in HTML fullscreen gets the whole window and the chrome is hidden;
@@ -178,7 +170,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     window: win,
     htmlFullscreenChanged: (id, entered) => { fullscreen.changed(id, entered, tabs.getState().activeTabId) },
     fullscreenTabId: () => fullscreen.tabId,
-    searchUrl: (query) => searchUrlFor(services.settings.get('search.engine'), services.settings.get('search.customUrl'), query),
+    searchUrl: (query) => resolveCurrent(services, query).url,
     internalPages: services.internalPages,
     devtools: services.devtools,
     backdrop: splitFrame,
@@ -233,6 +225,9 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   chrome.webContents.on('context-menu', (_event, params) => {
     showContextMenu(chrome.webContents, params, chromeContextMenuHost(services.devtools, chrome.webContents, win, (url) => { tabs.createTab(url) }, () => {
       void pasteAndGo(() => clipboard.readText(), (text) => { sendChromeEvent(entry, 'navigation', { type: 'pasteAndGo', text }) })
+    }, {
+      on: () => services.settings.get('addressBar.showFullUrl'),
+      toggle: () => { services.settings.set('addressBar.showFullUrl', !services.settings.get('addressBar.showFullUrl')) }
     }))
   })
 

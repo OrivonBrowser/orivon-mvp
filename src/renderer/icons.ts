@@ -58,7 +58,7 @@ export function faviconElement (dataUrl: string | null): HTMLImageElement | SVGS
   return img
 }
 
-/** The tab strip's close (x) button, shared with the bookmarks bar's remove button. */
+/** The tab strip's close (x) button. */
 export function closeIcon (): SVGSVGElement {
   const el = svg('0 0 24 24')
   el.append(path('M18 6 6 18', '2.5'), path('m6 6 12 12', '2.5'))

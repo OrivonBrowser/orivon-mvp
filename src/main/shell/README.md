@@ -46,6 +46,10 @@ have their own session (ADR-0041). An ordinary tab, and the
 new-tab dashboard (a tab that happens to navigate to `file://`), stay on
 `session.defaultSession`; the Design notes below say why.
 
+The bookmarks bar's main side is [`bookmarks-bar/`](bookmarks-bar/) (its own README): what the bar shows, the
+folder menu, the right-click menu and what opens a bookmark. The bubble under the star, which names and files a
+bookmark, and the sheet for "Bookmark all tabs", are [`bookmark-bubble/`](bookmark-bubble/) (its own README).
+
 The main menu under the toolbar's menu button: `menu-layout.ts` lists which commands it shows and in
 what shape (the names and keys come from [`../shortcuts/`](../shortcuts/), so the menu cannot show a
 key that does not work), and `menu-overlay.ts` is its `OverlayDef`, shown by the overlay host in

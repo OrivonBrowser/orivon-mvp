@@ -19,6 +19,9 @@ import type { Bookmark, BookmarkStore } from '../browsing/bookmarks.js'
 import { NEWTAB_COMMAND_CHANNEL } from '../channels.js'
 import type { WindowRegistry } from '../shell/window-registry.js'
 
+/** The dashboard's grid holds no more than this many tiles. */
+const DASHBOARD_TILES = 24
+
 export type NewTabCommand =
   | { type: 'getBookmarks' }
   | { type: 'navigate'; input: string }
@@ -33,7 +36,7 @@ function isFromDashboard (event: IpcMainInvokeEvent, dashboardUrl: string): bool
 export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry, bookmarks: BookmarkStore): void {
   ipcMain.handle(
     NEWTAB_COMMAND_CHANNEL,
-    (event: IpcMainInvokeEvent, command: NewTabCommand): Bookmark[] | undefined => {
+    async (event: IpcMainInvokeEvent, command: NewTabCommand): Promise<Bookmark[] | undefined> => {
       if (!isFromDashboard(event, dashboardUrl)) {
         // Not the dashboard's own frame -- refuse silently, same
         // non-committal response ipc.ts's isFromChrome() gives, rather
@@ -43,7 +46,9 @@ export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry
 
       switch (command.type) {
         case 'getBookmarks':
-          return bookmarks.getAll()
+          // The first tab of a launch asks before the file is read.
+          await bookmarks.load()
+          return bookmarks.getAll().slice(0, DASHBOARD_TILES)
         case 'navigate': {
           // Resolved from the event's OWN sender, in whichever window holds
           // it, never a tab id the page could simply claim -- a dashboard

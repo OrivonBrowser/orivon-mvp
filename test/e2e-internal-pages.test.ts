@@ -57,7 +57,21 @@ it('opens Settings at its first section, applies a change at once and keeps it, 
     expect(await page.title()).toBe('Settings')
     expect(await page.evaluate(() => (window as unknown as { orivonInternal: { page: string } }).orivonInternal.page)).toBe('settings')
     expect((await waitForTab(chrome, { address: 'orivon://settings/appearance', title: 'Settings' })).ok).toBe(true)
-    expect(await page.locator('.nav-item').allTextContents()).toEqual(['Appearance', 'Search', 'On start-up', 'Page content', 'Tabs and windows', 'Profiles', 'Privacy and data', 'Apps', 'Web3', 'Keyboard shortcuts', 'Developer', 'About'])
+    expect(await page.locator('.nav-item').allTextContents()).toEqual([
+      'Appearance',
+      'Search',
+      'On start-up',
+      'Page content',
+      'Tabs and windows',
+      'Downloads',
+      'Profiles',
+      'Privacy and data',
+      'Apps',
+      'Web3',
+      'Keyboard shortcuts',
+      'Developer',
+      'About'
+    ])
 
     // A change takes effect in the browser at once, and is written to disk.
     await page.locator('select').first().selectOption('dark')
@@ -145,7 +159,7 @@ it('cannot be loaded, framed, fetched or opened by a website', async () => {
     // A bad address in window.open() lands on a blank page, as it always has;
     // it is an ordinary tab, not the page asked for.
     expect((await tabIds(chrome)).length).toBeLessThanOrEqual(tabsBefore + 1)
-    expect(app.windows().filter((w) => w !== chrome && w !== site).map((w) => w.url())).toSatisfy((urls: string[]) => urls.every((url) => url === 'about:blank' || url.includes('/newtab/')))
+    expect(app.windows().filter((w) => w !== chrome && w !== site && !w.url().includes('/overlay/')).map((w) => w.url())).toSatisfy((urls: string[]) => urls.every((url) => url === 'about:blank' || url.includes('/newtab/')))
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)

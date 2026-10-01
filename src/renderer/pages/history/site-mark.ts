@@ -1,9 +1,8 @@
-// The small mark at the left of a History row. The store keeps no favicon
-// today (src/main/history/history-store.ts's HistoryEntry has none), so every
-// row falls back to a mark this page can draw on its own: a badge naming the
-// protocol for a dweb address a hostname alone would not explain, or a
-// letter coloured by the site's host otherwise. One function decides this, so
-// a row's mark and its accessible label are never worked out twice.
+// The small mark at the left of a row: the site's own icon when one is kept, else
+// one this page draws on its own: a badge naming the protocol for a dweb address a
+// hostname alone would not explain, or a letter coloured by the site's host. One
+// function decides this, so a row's mark and its accessible label are never worked
+// out twice.
 import { h } from '../shared/dom.js'
 
 const PROTOCOL_BADGES: Readonly<Record<string, { readonly text: string, readonly color: string }>> = {
@@ -28,7 +27,13 @@ function hostOf (url: string): string {
   }
 }
 
-export function siteMark (url: string): HTMLElement {
+/** `icon` is a data URL the store vouched for; anything else draws the fallback. It is only ever an `<img>`'s source. */
+export function siteMark (url: string, icon?: string | null): HTMLElement {
+  if (typeof icon === 'string' && icon.startsWith('data:image/')) {
+    const image = h('img', { src: icon, alt: '', draggable: false })
+    image.setAttribute('aria-hidden', 'true')
+    return h('span', { className: 'mark site-mark icon' }, image)
+  }
   let protocol = ''
   try {
     protocol = new URL(url).protocol

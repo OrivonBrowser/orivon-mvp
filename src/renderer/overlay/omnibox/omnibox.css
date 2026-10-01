@@ -1,0 +1,38 @@
+/* The address bar's dropdown: the kit's listbox row on one line. The title, a dim dash and the address share the
+   row's width, the title keeping what it needs and the address taking what is left; the meta stays at the right. */
+
+body[data-overlay='omnibox'] #content { padding: 6px; }
+
+body[data-overlay='omnibox'] .listbox-item {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 10px;
+  gap: 8px;
+}
+body[data-overlay='omnibox'] .listbox-item > .item-icon { margin-right: 0; }
+
+body[data-overlay='omnibox'] .item-title { flex: 0 1 auto; font-size: 13px; }
+body[data-overlay='omnibox'] .omni-dash { flex: none; color: var(--wink-off); }
+body[data-overlay='omnibox'] .item-sub { flex: 1 1 0; }
+
+body[data-overlay='omnibox'] .listbox-item > .item-meta {
+  flex: none;
+  margin: 0 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  overflow: visible;
+}
+/* A row with no address (the first row) gives the title the room; otherwise a long title leaves the address some. */
+body[data-overlay='omnibox'] .listbox-item.no-sub > .item-title { flex: 1 1 auto; }
+body[data-overlay='omnibox'] .listbox-item:not(.no-sub) > .item-title { max-width: 60%; }
+
+body[data-overlay='omnibox'] .omni-star svg { width: 12px; height: 12px; fill: currentColor; }
+body[data-overlay='omnibox'] .listbox-item[aria-selected='true'] .omni-star { color: var(--waccent-text); }
+body[data-overlay='omnibox'] .omni-meta { color: var(--wink-dim); }
+body[data-overlay='omnibox'] .omni-typed { color: var(--wink-dim); }
+
+/* The kit's chip is a button look; here it only labels, so it neither shows a hand nor reacts to the pointer. */
+body[data-overlay='omnibox'] .chip { cursor: inherit; pointer-events: none; padding: 1px 8px; font-size: 12px; }
+body[data-overlay='omnibox'] .listbox-item[aria-selected='true'] .chip { border-color: color-mix(in srgb, var(--waccent-text) 40%, var(--wborder)); color: var(--waccent-text); }

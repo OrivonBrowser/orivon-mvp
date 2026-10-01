@@ -36,6 +36,8 @@ export interface ContextMenuActions {
   redo?: () => void
   pasteAndMatchStyle?: () => void
   pasteAndGo?: () => void
+  /** The address bar's "Always Show Full Addresses". */
+  toggleFullAddresses?: () => void
   copyImageAt: (x: number, y: number) => void
   inspectAt: (x: number, y: number) => void
 }
@@ -52,9 +54,11 @@ export interface ContextMenuContext {
   /** The page's source can be shown: a web page, not an app's own tab. */
   viewSource: boolean
   spellcheckOn: boolean
+  /** `addressBar.showFullUrl`, for the tick on the address bar's menu. */
+  fullAddresses: boolean
 }
 
-export const DEFAULT_CONTEXT: ContextMenuContext = { engineLabel: 'the Web', bare: false, viewSource: true, spellcheckOn: true }
+export const DEFAULT_CONTEXT: ContextMenuContext = { engineLabel: 'the Web', bare: false, viewSource: true, spellcheckOn: true, fullAddresses: false }
 
 const MAX_SUGGESTIONS = 5
 const SEPARATOR: MenuItemConstructorOptions = { type: 'separator' }
@@ -147,7 +151,7 @@ export function editableGroup (params: MenuParams, actions: ContextMenuActions, 
   if (!params.isEditable) return []
   const flags = params.editFlags
   const items: MenuItemConstructorOptions[] = []
-  const { undo, redo, pasteAndMatchStyle, pasteAndGo, toggleSpellcheck } = actions
+  const { undo, redo, pasteAndMatchStyle, pasteAndGo, toggleSpellcheck, toggleFullAddresses } = actions
   if (undo !== undefined) items.push({ label: 'Undo', enabled: flags.canUndo, click: undo })
   if (redo !== undefined) items.push({ label: 'Redo', enabled: flags.canRedo, click: redo })
   if (items.length > 0) items.push(SEPARATOR)
@@ -160,6 +164,7 @@ export function editableGroup (params: MenuParams, actions: ContextMenuActions, 
   if (pasteAndMatchStyle !== undefined) items.push({ label: 'Paste as Plain Text', enabled: flags.canPaste, click: pasteAndMatchStyle })
   items.push(SEPARATOR, { label: 'Select All', enabled: flags.canSelectAll, click: actions.selectAll })
   if (toggleSpellcheck !== undefined) items.push(SEPARATOR, { label: 'Check Spelling', type: 'checkbox', checked: context.spellcheckOn, click: toggleSpellcheck })
+  if (toggleFullAddresses !== undefined) items.push(SEPARATOR, { label: 'Always Show Full Addresses', type: 'checkbox', checked: context.fullAddresses, click: toggleFullAddresses })
   return items
 }
 
@@ -177,8 +182,10 @@ export function pageGroup (actions: ContextMenuActions, context: ContextMenuCont
     SEPARATOR,
     { label: 'Save Page As…', click: () => { run('page.save') } },
     { label: 'Print…', click: () => { run('page.print') } },
-    { label: 'Take a Screenshot', click: () => { run('page.screenshot') } }
+    { label: 'Take a Screenshot', click: () => { run('page.screenshot') } },
+    SEPARATOR
   )
-  if (context.viewSource) items.push(SEPARATOR, { label: 'View Page Source', click: () => { run('page.viewSource') } })
+  if (context.viewSource) items.push({ label: 'View Page Source', click: () => { run('page.viewSource') } })
+  items.push({ label: 'Create QR Code for This Page', click: () => { run('page.qr') } })
   return items
 }

@@ -4,6 +4,7 @@
 import { join } from 'node:path'
 import { app, session } from 'electron'
 import { BookmarkStore } from '../browsing/bookmarks.js'
+import { SearchEngineStore } from '../browsing/search-engine-store.js'
 import { InternalPageRegistry } from '../pages/internal-registry.js'
 import { SettingsStore } from '../settings/settings-store.js'
 import { SHELL_PARTITION } from './shell-session.js'
@@ -19,6 +20,8 @@ import type { Runtime } from '../launch/start-launch.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import { confirmOpenDevTools } from '../devtools/devtools-prompt.js'
 import { DevToolsService } from '../devtools/devtools-service.js'
+import { createDownloadService } from '../downloads/create-download-service.js'
+import type { DownloadService } from '../downloads/download-service.js'
 import { CommandBus } from '../shortcuts/command-bus.js'
 import { ShortcutService } from '../shortcuts/shortcut-service.js'
 import { ShortcutStore } from '../shortcuts/shortcut-store.js'
@@ -42,6 +45,8 @@ export interface ShellServices {
   readonly closedTabs: ClosedStack
   readonly commands: CommandBus
   readonly devtools: DevToolsService
+  /** The files tabs have downloaded and the ones in progress; a private session keeps the list in memory only. */
+  readonly downloads: DownloadService
   readonly history: HistoryService
   readonly internalPages: InternalPageRegistry
   /** This process is a private session: it never writes a store file of its own. */
@@ -50,6 +55,8 @@ export interface ShellServices {
   readonly kiosk: boolean
   readonly profiles: ProfilesService
   /** The open windows, kept in `session.json`; a private session writes nothing. */
+  /** The engines a keyword searches: the built-in ones and the person's own; a private session reads the list and never changes it. */
+  readonly searchEngines: SearchEngineStore
   readonly session: SessionLog
   readonly settings: SettingsStore
   readonly shortcuts: ShortcutService
@@ -102,11 +109,13 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
       developerMode: devModeEnabled,
       confirm: confirmOpenDevTools
     }),
+    downloads: createDownloadService(userDataPath, runtime.isPrivate, settings),
     history: new HistoryService(openedHistory.store, settings, openedHistory.problem),
     internalPages,
     isPrivate: runtime.isPrivate,
     kiosk,
     profiles: new ProfilesService(runtime, undefined, kiosk),
+    searchEngines: new SearchEngineStore(join(userDataPath, 'search-engines.json'), { readOnly: runtime.isPrivate }),
     session: runtime.isPrivate || kiosk ? new NullSessionStore() : new SessionStore(join(userDataPath, 'session.json')),
     settings,
     shortcuts: new ShortcutService(shortcutStore, platform),

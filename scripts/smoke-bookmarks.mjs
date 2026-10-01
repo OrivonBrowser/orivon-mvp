@@ -34,7 +34,7 @@ export async function runBookmarksJourney (ctx) {
   // ---- Bookmarks bar: star, appear, open, unstar ------------------------
   // Owner override, 2026-08-28 (scope.md, ADR-0003) -- not in the
   // original scope pass. Exercises the real path -- click -> IPC ->
-  // BookmarkStore -> pushed ShellState -> bookmarks-view.ts -- the same
+  // BookmarkStore -> pushed ShellState -> the chrome's bookmarks bar module -- the same
   // shape every other check in this file already holds tab commands to,
   // rather than calling window.orivonShell.addBookmark() directly.
   const parkedForBookmark = await navigateTo(urlFor('/a'), wantA)
@@ -74,7 +74,16 @@ export async function runBookmarksJourney (ctx) {
     bookmarkClicked ? await waitForTab(chrome, wantA) : { ok: false, info: undefined }
   )
 
-  await clickChecked(chrome, '#bookmark-toggle', 'the bookmark toggle is clickable to unstar')
+  // The star on a starred page opens the bookmark bubble; its Remove is what unstars.
+  await clickChecked(chrome, '#bookmark-toggle', 'the bookmark toggle is clickable to open the bubble')
+  const bubble = await waitFor(() => app.windows().some((w) => w.url().includes('overlay=bookmark-edit') && !w.isClosed()))
+    && app.windows().find((w) => w.url().includes('overlay=bookmark-edit'))
+  check('the star on a starred page opens the bookmark bubble', bubble !== undefined && bubble !== false)
+  if (bubble) {
+    await bubble.waitForSelector('.btn.remove')
+    // The page is closed by the very click that presses Remove, which Playwright reports as an error.
+    await bubble.click('.btn.remove').catch((error) => { if (!/closed/i.test(String(error))) throw error })
+  }
   checkTab(
     'unstarring the page clears the toggle',
     { bookmarked: false },
@@ -93,11 +102,8 @@ export async function runBookmarksJourney (ctx) {
     await waitFor(() => bookmarksBarMatches(chrome, false))
   )
 
-  // ---- Bookmarks bar: remove directly from the bar, not just the toolbar
-  // Chrome bugfix round, 2026-08-28: the toolbar toggle was the only way
-  // to unstar a page (only reachable by returning to that exact page).
-  // bookmarks-view.ts now renders a remove button per item -- covers the
-  // path the star/open/unstar scenario above never touched.
+  // ---- Bookmarks bar: remove directly from the bar, not just the toolbar.
+  // Covers the path the star/open/unstar scenario above never touches.
   await clickChecked(chrome, '#bookmark-toggle', 'the bookmark toggle is clickable to re-star for the removal check')
   check(
     'the page is starred again, ready for the bar-side removal check',
@@ -144,13 +150,16 @@ export async function runBookmarksJourney (ctx) {
     // whatever tabs exist at that point, however many there are.
   }
 
-  const removeClicked = await clickChecked(
-    chrome,
-    `#bookmarks-list .bmitem[title="${urlFor('/a')}"] .remove`,
-    "the bookmarked item's remove button is clickable"
-  )
+  // The item's own right-click menu is the way to remove it from the bar: the native menu is held rather than shown.
+  await app.evaluate(({ Menu }) => { Menu.prototype.popup = function () { globalThis.__barMenu = this } })
+  await chrome.click(`#bookmarks-list .bmitem[title="${urlFor('/a')}"]`, { button: 'right' })
   check(
-    'clicking the remove button removes it from the bar without visiting the page',
-    removeClicked && await waitFor(async () => !(await bookmarkUrls(chrome)).includes(urlFor('/a')))
+    "the bookmarked item's right-click menu offers Delete",
+    await waitFor(() => app.evaluate(() => globalThis.__barMenu?.items.some((item) => item.label === 'Delete') === true))
+  )
+  await app.evaluate(() => { globalThis.__barMenu?.items.find((item) => item.label === 'Delete')?.click() })
+  check(
+    'choosing Delete removes it from the bar without visiting the page',
+    await waitFor(async () => !(await bookmarkUrls(chrome)).includes(urlFor('/a')))
   )
 }
