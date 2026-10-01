@@ -18,7 +18,6 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 | `address-suggest.ts` | the address field's dropdown from the field's side: what is typed, the arrows, Enter and Escape (the rules are in `address-suggest-model.ts`) |
 | `address-display.ts` | the unfocused address over the input: the connection mark and the address in two tones (`address-format.ts` splits it) |
 | `downloads-button.ts` | the downloads button in the cluster: a progress ring, a dot for what wants a look, the bubble on a click; `downloads-ring.ts` is its pure part |
-| `reload-stop.ts` | Reload becomes Stop after 150 ms of loading |
 | `home-button.ts` | the Home button, shown while `toolbar.home` is on |
 | `reader-button.ts` | the book in the address pill while the page in front looks like an article; opens reader view |
 | `password-key.ts` | the password button in the address pill: saved logins for this site, or an offer to keep the last sign-in |
