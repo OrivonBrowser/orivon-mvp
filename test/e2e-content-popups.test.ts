@@ -20,6 +20,7 @@ const TARGET = (query: string): string => `<!doctype html><title>target ${query}
 const PAGES: Record<string, string> = {
   '/one': `<!doctype html><title>one</title><script>window.open('/target?one')</script>`,
   '/load': `<!doctype html><title>load</title><script>window.open('/target?a'); setTimeout(() => window.open('/target?b'), 150)</script>`,
+  '/start': `<!doctype html><title>start</title><body style="font:16px sans-serif"><a id="go" href="/one">go</a>`,
   '/click': `<!doctype html><title>click</title><body style="font:16px sans-serif">
 <button id="open">open</button> <button id="five">five</button> <button id="fetch">fetch</button> <button id="key">key</button>
 <a id="s" target="_blank" href="/target?synthetic">synthetic</a>
@@ -235,6 +236,21 @@ it('lets the person\'s own click open a window, once per click, and ignores a sc
     await view.focus('#open')
     await view.keyboard.press('Enter')
     expect(await waitTabs(chrome, tabs + 1)).toBe(true)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, E2E_TIMEOUT_MS)
+
+it('does not let the click that led to a page pay for a pop-up that page opens as it loads', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    const view = await visit(app, chrome, `${a.origin}/start`)
+    // A real click on a link: the person's input belongs to the page they clicked on, not to the one that arrives.
+    await view.click('#go')
+    await waitChip(chrome, false, 'Pop-ups blocked on this page')
+    await delay(600)
+    expect(await tabCount(chrome)).toBe(1)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
