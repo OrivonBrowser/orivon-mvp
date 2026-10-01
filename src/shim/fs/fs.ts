@@ -240,6 +240,12 @@ export function stat (path: PathLike, ...args: readonly unknown[]): void {
   doStat(path).then((result) => callback(null, result), (error) => callback(error as Error))
 }
 
+export function lstat (path: PathLike, callback: NodeCallback<NodeStats>): void
+export function lstat (path: PathLike, ...args: readonly unknown[]): void {
+  const { callback } = splitTail<unknown>(args)
+  doStat(path).then((result) => callback(null, result), (error) => callback(error as Error))
+}
+
 export function rm (path: PathLike, callback: NodeCallback<void>): void
 export function rm (path: PathLike, options: RmOptions, callback: NodeCallback<void>): void
 export function rm (path: PathLike, ...args: readonly unknown[]): void {
@@ -320,7 +326,7 @@ export * from './generated/fs.js'
 
 export default refusingProxy({
   readFile, readFileSync, writeFile, writeFileSync, appendFile, unlink, access,
-  mkdir, readdir, stat, rm, rmdir, rename, realpath, open, close, read, write, fstat, ftruncate, fsync, promises,
+  mkdir, readdir, stat, lstat, rm, rmdir, rename, realpath, open, close, read, write, fstat, ftruncate, fsync, promises,
   createReadStream, createWriteStream,
   statSync, lstatSync, mkdirSync, readdirSync, rmSync, rmdirSync, renameSync, existsSync, accessSync,
   appendFileSync, unlinkSync, copyFileSync, mkdtempSync, realpathSync, openSync, closeSync, readSync, writeSync, fstatSync,
