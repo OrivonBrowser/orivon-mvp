@@ -3,6 +3,7 @@ import { createShellWindow, resolveDashboardUrl } from './shell/window.js'
 import { openUrlsOnSecondLaunch } from './shell/opener.js'
 import { createShellServices } from './shell/shell-services.js'
 import { runShellInstallers } from './shell/shell-installers.js'
+import { askQuestion } from './shell/question/ask-question.js'
 import { SHELL_PARTITION } from './shell/shell-session.js'
 import { attachExtensionShell } from './extensions/extension-host.js'
 import { registerNewTabIpc } from './ipc/newtab-ipc.js'
@@ -16,7 +17,7 @@ import { internalSession } from './pages/internal-session.js'
 import { installHistory } from './history/install-history.js'
 import { installDownloads } from './downloads/install-downloads.js'
 import { installDownloadsPeek } from './downloads/auto-open.js'
-import { createSubsystemContext, criticalFailureMessage, publishWindowForSender, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
+import { createSubsystemContext, criticalFailureMessage, publishShowNotice, publishWindowForSender, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
 import { subsystems } from './subsystems.js'
 import { DebouncedWriter } from './storage/debounced-writer.js'
 import { devOnlySwitches } from './shell/dev-switches.js'
@@ -164,6 +165,8 @@ function boot (runtime: Runtime): void {
     // for the thunks that read ctx.windowForSender only when a real dialog
     // is about to show one.
     publishWindowForSender(ctx, (sender) => shell.windows.findTab(sender)?.window.window)
+    // A refusal the person should read, drawn in the window they are using.
+    publishShowNotice(ctx, ({ title, message }) => { void askQuestion({}, { kind: 'notice', title, message, buttons: ['OK'], cancelId: 0 }) })
     // Before the first window, so it opens in the chosen theme with the chosen
     // bookmarks bar rather than changing after it is on screen.
     await Promise.all([shell.settings.load(), shell.searchEngines.load(), shell.shortcutStore.load(), shell.windowState.load(), shell.zoomStore.load(), shell.session.load()])

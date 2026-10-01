@@ -101,8 +101,8 @@ export function askableScheme (url: string): string | null {
 export interface ExternalLinkDeps<W> {
   /** The window the tab is on screen in, or undefined for a background tab. */
   windowShowing: (tab: PromptingTab) => W | undefined
-  /** True only if the person chose to open it. */
-  confirm: (window: W, question: ExternalLinkQuestion) => Promise<boolean>
+  /** True only if the person chose to open it. Gets the tab, so the question is drawn in it. */
+  confirm: (window: W, question: ExternalLinkQuestion, tab: PromptingTab) => Promise<boolean>
 }
 
 /** The `openExternal` request handler's decision: true launches the URL. */
@@ -125,7 +125,7 @@ export function createExternalLinks<W> (deps: ExternalLinkDeps<W>) {
     state.prompting = true
     state.touched = false
     try {
-      return await deps.confirm(window, { scheme, url, origin })
+      return await deps.confirm(window, { scheme, url, origin }, tab)
     } catch {
       return false
     } finally {

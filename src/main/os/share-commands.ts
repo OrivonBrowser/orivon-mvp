@@ -1,9 +1,9 @@
 // The `share.*` commands: copy the address of a tab, or start an email about it. `tabId` names the tab the tab's own
 // menu was opened on; a command from a key or the main menu acts on the tab in front.
-import type { BaseWindow } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { showToast } from '../page-tools/toast.js'
 import type { ExternalLinkQuestion } from '../sessions/external-links.js'
+import type { QuestionTarget } from '../shell/question/ask-question.js'
 import type { TabState } from '../shell/tab-types.js'
 import type { ShellWindow } from '../shell/window-registry.js'
 import { mailtoFor, shareAddressFor } from './share.js'
@@ -11,7 +11,7 @@ import { mailtoFor, shareAddressFor } from './share.js'
 export interface ShareDeps {
   writeClipboard: (text: string) => void
   /** The question the page-opened external links ask: true only when the person chose to go on. */
-  confirm: (window: BaseWindow, question: ExternalLinkQuestion) => Promise<boolean>
+  confirm: (where: QuestionTarget, question: ExternalLinkQuestion) => Promise<boolean>
   openExternal: (url: string) => Promise<void>
 }
 
@@ -41,7 +41,7 @@ export async function emailLinkCommand (target: ShellWindow, deps: ShareDeps, ta
   const url = mailtoFor(tab.title, address)
   try {
     const origin = originFromUrl(tab.url) ?? address
-    if (!await deps.confirm(target.window, { scheme: 'mailto', url, origin, initiator: 'person' })) return
+    if (!await deps.confirm({ window: target, tabId: tab.id }, { scheme: 'mailto', url, origin, initiator: 'person' })) return
     await deps.openExternal(url)
   } catch (error) {
     console.error('[os] could not open the mail program', error)

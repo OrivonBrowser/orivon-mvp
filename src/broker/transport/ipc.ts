@@ -407,7 +407,7 @@ export const brokerIpcSubsystem: Subsystem = {
       // The picker guard's real inputs -- `./picker-guard-wiring.ts`'s own header.
       additionalProtectedRoots: () => additionalProtectedRoots(ctx.app),
       privateSessionGuard,
-      notifyPickRefused
+      notifyPickRefused: (info) => { notifyPickRefused(info, ctx.showNotice) }
     }
     const transport: PortTransport = { createPortPair: realPortPair, registry: createPortRegistry() }
     // fs.open's own per-origin lookup (A184) -- the same generic

@@ -102,8 +102,8 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'history.open': tabs.openInternal('history'); return
     case 'privacy.clearData': tabs.openInternal('settings', '/privacy#clear-data'); return
     case 'bookmarks.open': tabs.openInternal('bookmarks'); return
-    case 'devtools.toggle': services.devtools.toggle(tabs.activeWebContents(), window); return
-    case 'devtools.console': services.devtools.openConsole(tabs.activeWebContents(), window); return
+    case 'devtools.toggle': void services.devtools.toggle(tabs.activeWebContents()); return
+    case 'devtools.console': void services.devtools.openConsole(tabs.activeWebContents()); return
     case 'tasks.open': tabs.openInternal('tasks'); return
     // Saves a page that is new and opens the bubble; on a saved page it only opens it, so the key never removes one.
     case 'bookmark.toggle': starCommand({ window: target, services }); return

@@ -1,10 +1,10 @@
 // "Open mailto link with your system's default app?", asked each time a
-// page opens a link another app on the computer handles. Attached to the
-// window showing the page, and asynchronous: the main process keeps serving
+// page opens a link another app on the computer handles. Drawn in the panel
+// of the tab it is about, and asynchronous: the main process keeps serving
 // every other tab while it is open.
-import { dialog, type BaseWindow } from 'electron'
 import { formatOriginForDisplay } from '../consent/grant-prompt-origin.js'
 import type { ExternalLinkQuestion } from '../sessions/external-links.js'
+import { askQuestion, type QuestionTarget } from './question/ask-question.js'
 
 const ALLOW = 0
 const CANCEL = 1
@@ -23,19 +23,18 @@ export function displayableUrl (url: string): string {
   return escaped.slice(0, MAX_DISPLAYED_URL - ELISION_MARKER.length) + ELISION_MARKER
 }
 
-/** True only when the person chose Allow. Enter and Escape both cancel. */
-export async function confirmExternalLink (window: BaseWindow, question: ExternalLinkQuestion): Promise<boolean> {
-  if (window.isDestroyed()) return false
-  const { response } = await dialog.showMessageBox(window, {
-    type: 'question',
+/** True only when the person chose Allow. Escape, a closed tab and a new page in the tab all cancel. */
+export async function confirmExternalLink (where: QuestionTarget, question: ExternalLinkQuestion): Promise<boolean> {
+  const { response } = await askQuestion(where, {
+    kind: 'consent',
     buttons: ['Allow', 'Cancel'],
-    defaultId: CANCEL,
     cancelId: CANCEL,
-    noLink: true,
+    guarded: [ALLOW],
+    focus: 'dialog',
     message: question.initiator === 'person' ? 'Open your mail program with this page\'s link?' : `Open ${question.scheme} link with your system's default app?`,
     detail: question.initiator === 'person'
       ? displayableUrl(question.url)
       : `${formatOriginForDisplay(question.origin)} wants to open:\n${displayableUrl(question.url)}`
-  })
+  }, { endOnNavigation: true })
   return response === ALLOW
 }

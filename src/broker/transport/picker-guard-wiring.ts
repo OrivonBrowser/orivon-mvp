@@ -10,7 +10,6 @@
 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { BrowserWindow, dialog } from 'electron'
 import type { App } from 'electron'
 import { isPrivateDirName } from '../../main/launch/private-session.js'
 
@@ -49,23 +48,24 @@ export function privateSessionGuard (): { readonly tempDir: string, readonly isP
   return { tempDir: tmpdir(), isPrivateDirName }
 }
 
+/** A message for the person, drawn by whatever the shell publishes (`ctx.showNotice`). */
+export interface Notice { readonly title: string, readonly message: string }
+
 /**
  * §Contracts' "the picker says why" -- shown to the PERSON, never to the
  * app: by the time this runs, `fs.userSelected` has already resolved the
  * app's own call as a plain cancellation (`null` or `[]`), indistinguishable
- * from one the person chose themselves. `void`, not awaited -- nothing
- * downstream of a refused pick is waiting on this box being dismissed.
- * Parented the same best-effort way the picker dialog itself is
- * (`./ipc.ts`'s own `pickPath` doc explains why the true sender's window
- * is not available at this seam yet).
+ * from one the person chose themselves. Nothing downstream of a refused pick
+ * waits on the notice being dismissed. The notice is drawn by `show`, which
+ * the shell supplies: this layer may not import the shell's panel code, and
+ * a refusal with nothing to show it on only reaches the log.
  */
-export function notifyPickRefused (info: { readonly origin: string, readonly appName: string | undefined, readonly reason: string }): void {
+export function notifyPickRefused (info: { readonly origin: string, readonly appName: string | undefined, readonly reason: string }, show: ((notice: Notice) => void) | undefined): void {
   const requester = info.appName === undefined ? info.origin : `"${info.appName}" (${info.origin})`
-  const options = {
-    type: 'warning' as const,
+  const notice = {
     title: 'Folder or file not allowed',
     message: `${requester} asked to use a folder or file Orivon will not hand over: ${info.reason}.`
   }
-  const parent = BrowserWindow.getFocusedWindow()
-  void (parent === null ? dialog.showMessageBox(options) : dialog.showMessageBox(parent, options))
+  if (show === undefined) console.error(`[picker] ${notice.message}`)
+  else show(notice)
 }

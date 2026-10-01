@@ -350,13 +350,13 @@ in the main process raises a blocking error dialog, so no spec provokes one. Mal
 
 ## Guards
 
-Twelve checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
+Thirteen checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
 and CI's `check` job runs all of them; [`../../scripts/README.md`](../../scripts/README.md) says
 what each one enforces.
 
 `check:natives` · `check:contracts` · `check:secrets` · `check:vectors` · `check:comments` ·
 `check:size` · `check:questions` · `check:manifest-parity` · `check:page-globals` ·
-`check:dev-grant-absent` · `check:advisories` · `check:devlog`
+`check:dev-grant-absent` · `check:advisories` · `check:devlog` · `check:native-dialogs`
 
 Every one is an exported pure function over a root directory, unit tested in
 `scripts/tests/` against temp fixtures, with a CLI block guarded by `isInvokedDirectly` so the

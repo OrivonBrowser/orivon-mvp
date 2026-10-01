@@ -1,14 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ExtensionInstallDescription } from '../../../broker/policy/extension-manifest.js'
+import type { QuestionResult, QuestionSpec } from '../../shell/question/question-spec.js'
 
-// createExtensionInstallPrompt imports 'electron' at module scope -- mocked
-// first, same reasoning as ../../consent/tests/install-consent-prompt.test.ts's
-// own header. This suite confirms the plumbing (the right dialog options
-// reach dialog.showMessageBox, the right button maps to true/false, the
-// type tracks `warning`) -- wording is extension-manifest.test.ts's job.
-
-const showMessageBox = vi.fn()
-vi.mock('electron', () => ({ dialog: { showMessageBox } }))
+// The install question is asked through the shell's question panel. `askQuestion` is replaced so nothing is
+// shown and the spec it receives can be read back; this suite confirms the plumbing (the right spec, the
+// right button maps to true/false, the panel is told the tab the person asked from). Wording is
+// extension-manifest.test.ts's job.
+const askQuestion = vi.hoisted(() => vi.fn(async (_target: unknown, _spec: QuestionSpec): Promise<QuestionResult> => ({ response: 1, checkboxChecked: false })))
+vi.mock('../../shell/question/ask-question.js', () => ({ askQuestion }))
 
 const { createExtensionInstallPrompt } = await import('../extension-install-prompt.js')
 
@@ -19,46 +18,58 @@ const DESCRIPTION: ExtensionInstallDescription = {
   warning: true
 }
 
+const specOf = (): QuestionSpec => {
+  const spec = askQuestion.mock.calls[0]?.[1]
+  if (spec === undefined) throw new Error('no question was asked')
+  return spec
+}
+
 describe('createExtensionInstallPrompt', () => {
-  beforeEach(() => { showMessageBox.mockReset() })
+  beforeEach(() => { askQuestion.mockClear() })
 
   it('resolves true when the person picks the first (Add extension) button', async () => {
-    showMessageBox.mockResolvedValueOnce({ response: 0 })
-    const prompt = createExtensionInstallPrompt()
-    expect(await prompt(DESCRIPTION)).toBe(true)
+    askQuestion.mockResolvedValueOnce({ response: 0, checkboxChecked: false })
+    expect(await createExtensionInstallPrompt()(DESCRIPTION)).toBe(true)
   })
 
   it('resolves false when the person picks the second (Cancel) button', async () => {
-    showMessageBox.mockResolvedValueOnce({ response: 1 })
-    const prompt = createExtensionInstallPrompt()
-    expect(await prompt(DESCRIPTION)).toBe(false)
+    askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+    expect(await createExtensionInstallPrompt()(DESCRIPTION)).toBe(false)
   })
 
-  it('defaults to and cancels on Cancel -- dismissing the dialog must never install', async () => {
-    showMessageBox.mockResolvedValueOnce({ response: 1 })
+  it('cancels by default, guards Add extension and starts on the panel: dismissing must never install', async () => {
     await createExtensionInstallPrompt()(DESCRIPTION)
-    const options = showMessageBox.mock.calls[0]?.[0]
-    expect(options.defaultId).toBe(1)
-    expect(options.cancelId).toBe(1)
-    expect(options.buttons).toEqual(['Add extension', 'Cancel'])
+    const spec = specOf()
+    expect(spec.buttons).toEqual(['Add extension', 'Cancel'])
+    expect(spec.cancelId).toBe(1)
+    expect(spec.guarded).toEqual([0])
+    expect(spec.focus).toBe('dialog')
+    expect(spec.kind).toBe('consent')
   })
 
-  it('shows a warning dialog when the description warns, and a question otherwise', async () => {
-    showMessageBox.mockResolvedValue({ response: 1 })
+  it('draws a warning panel when the description warns, and a plain one otherwise', async () => {
     await createExtensionInstallPrompt()(DESCRIPTION)
-    expect(showMessageBox.mock.calls[0]?.[0].type).toBe('warning')
-
-    showMessageBox.mockClear()
+    expect(specOf().warning).toBe(true)
+    askQuestion.mockClear()
     await createExtensionInstallPrompt()({ ...DESCRIPTION, warning: false })
-    expect(showMessageBox.mock.calls[0]?.[0].type).toBe('question')
+    expect(specOf().warning).toBe(false)
   })
 
-  it('passes the description\'s title/message/detail straight through', async () => {
-    showMessageBox.mockResolvedValueOnce({ response: 1 })
+  it('passes the description\'s title/message/detail straight through, and names no page', async () => {
     await createExtensionInstallPrompt()(DESCRIPTION)
-    const options = showMessageBox.mock.calls[0]?.[0]
-    expect(options.title).toBe(DESCRIPTION.title)
-    expect(options.message).toBe(DESCRIPTION.message)
-    expect(options.detail).toBe(DESCRIPTION.detail)
+    const spec = specOf()
+    expect(spec.title).toBe(DESCRIPTION.title)
+    expect(spec.message).toBe(DESCRIPTION.message)
+    expect(spec.detail).toBe(DESCRIPTION.detail)
+    expect(spec.origin).toBeUndefined()
+  })
+
+  it('asks in the tab of the page the person installed from, or the tab in front when no page asked', async () => {
+    const contents = {}
+    await createExtensionInstallPrompt()(DESCRIPTION, { contents })
+    expect(askQuestion.mock.calls[0]?.[0]).toEqual({ contents })
+    askQuestion.mockClear()
+    await createExtensionInstallPrompt()(DESCRIPTION)
+    expect(askQuestion.mock.calls[0]?.[0]).toEqual({ contents: undefined })
   })
 })

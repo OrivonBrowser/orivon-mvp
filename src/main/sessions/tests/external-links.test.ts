@@ -89,12 +89,12 @@ function setup (confirm = vi.fn(async (_window: unknown, _question: ExternalLink
 }
 
 describe('createExternalLinks', () => {
-  it('asks, in the window showing the tab, naming the scheme, the whole URL and the requesting origin', async () => {
+  it('asks in the tab that showed it, in the window showing it, naming the scheme, the whole URL and the requesting origin', async () => {
     const { request, confirm } = setup()
     const tab = fakeTab()
 
     expect(await request(tab, { externalURL: 'mailto:someone@example.com', requestingUrl: PAGE })).toBe(true)
-    expect(confirm).toHaveBeenCalledWith(WINDOW, { scheme: 'mailto', url: 'mailto:someone@example.com', origin: 'https://shop.example' })
+    expect(confirm).toHaveBeenCalledWith(WINDOW, { scheme: 'mailto', url: 'mailto:someone@example.com', origin: 'https://shop.example' }, tab)
   })
 
   it('opens nothing the person cancels', async () => {

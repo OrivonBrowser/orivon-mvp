@@ -4,6 +4,7 @@
 // only -- load unpacked or reload an unpacked install. Every request is data
 // from a document, so every field is checked here; an id that names no
 // registry entry is refused exactly like a malformed request (ADR-0041).
+import type { WebContents } from 'electron'
 import type { InternalDomain } from '../pages/internal-ipc.js'
 import type { ElectronChromeExtensions } from 'orivon:crx-extensions'
 import type { ShellServices } from '../shell/shell-services.js'
@@ -26,8 +27,9 @@ export interface ExtensionsDomainDeps {
   readonly isPrivate: boolean
   readonly readFacts: (entry: InstalledExtension) => Promise<ExtensionFacts>
   readonly developerModeEnabled: () => boolean
-  readonly pickFolder: () => Promise<string | undefined>
-  readonly pickFile: () => Promise<string | undefined>
+  /** The pickers get the extensions page that asked, so each opens over its own window. */
+  readonly pickFolder: (page: WebContents) => Promise<string | undefined>
+  readonly pickFile: (page: WebContents) => Promise<string | undefined>
   /** Called once a command actually changed the registry: installed, removed, enabled or disabled. */
   readonly notify: () => void
 }
@@ -88,7 +90,7 @@ export function extensionsDomain (deps: ExtensionsDomainDeps): InternalDomain {
         }
         case 'loadUnpacked': {
           if (!deps.developerModeEnabled()) return undefined
-          const dir = await deps.pickFolder()
+          const dir = await deps.pickFolder(caller.contents)
           return dir === undefined ? CANCELLED : await install(deps.extensions.installFromFolder(dir))
         }
         case 'reload': {
@@ -98,7 +100,7 @@ export function extensionsDomain (deps: ExtensionsDomainDeps): InternalDomain {
           return await install(deps.extensions.installFromFolder(entry.source.from))
         }
         case 'installFromFile': {
-          const file = await deps.pickFile()
+          const file = await deps.pickFile(caller.contents)
           return file === undefined ? CANCELLED : await install(deps.extensions.installFromFile(file))
         }
         case 'checkForUpdates': {

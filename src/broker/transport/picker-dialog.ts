@@ -3,7 +3,7 @@
 // (code-guidelines.md Rule 2) once wiring this pushed that file past its
 // line budget.
 
-import { BrowserWindow, dialog } from 'electron'
+import { BaseWindow, dialog } from 'electron'
 import type { PickPath } from '../broker-contracts.js'
 
 /**
@@ -45,8 +45,10 @@ export function describePickerDialog (opts: { directory: boolean, multiple: bool
 /**
  * The real `PickPath` `../index.ts`'s `CreateBrokerOptions` wants: Electron's
  * own picker, worded by `describePickerDialog` above. Parented to the
- * focused window, not the real sender's own -- see README.md's Design notes
- * for why that is what "parented" means here.
+ * window the person is using (the focused one, else the newest), not the real
+ * sender's own -- see README.md's Design notes for why that is what "parented"
+ * means here. `BaseWindow`, because every shell window is one and
+ * `BrowserWindow.getFocusedWindow()` never returns one.
  */
 export function createPickPath (): PickPath {
   return async ({ directory, multiple, appName, origin }) => {
@@ -54,7 +56,7 @@ export function createPickPath (): PickPath {
       ? ['openDirectory']
       : (multiple ? ['openFile', 'multiSelections'] : ['openFile'])
     const { title, buttonLabel, message } = describePickerDialog({ directory, multiple, appName, origin })
-    const parent = BrowserWindow.getFocusedWindow()
+    const parent = BaseWindow.getFocusedWindow() ?? BaseWindow.getAllWindows().find((window) => !window.isDestroyed()) ?? null
     const result = parent === null
       ? await dialog.showOpenDialog({ properties, title, buttonLabel, message })
       : await dialog.showOpenDialog(parent, { properties, title, buttonLabel, message })

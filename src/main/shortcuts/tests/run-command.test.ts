@@ -299,13 +299,13 @@ describe('runCommand', () => {
   it('toggles developer tools on the active tab\'s page', () => {
     const { target, deps, devtools } = harness([tab('a')], 'a')
     runCommand('devtools.toggle', target, deps)
-    expect(devtools.toggle).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ reloadIgnoringCache: expect.anything() }), target.window)
+    expect(devtools.toggle).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ reloadIgnoringCache: expect.anything() }))
   })
 
   it('opens developer tools on the active tab\'s Console panel', () => {
     const { target, deps, devtools } = harness([tab('a')], 'a')
     runCommand('devtools.console', target, deps)
-    expect(devtools.openConsole).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ reloadIgnoringCache: expect.anything() }), target.window)
+    expect(devtools.openConsole).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ reloadIgnoringCache: expect.anything() }))
   })
 
   it('opens the About page and the task manager as shell pages', () => {

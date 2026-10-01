@@ -160,6 +160,15 @@ describe('extensionsDomain', () => {
     expect(deps.notify).toHaveBeenCalledTimes(1)
   })
 
+  it('opens each picker over the extensions page that asked', async () => {
+    const { deps } = buildDeps({ developerModeEnabled: () => true })
+    const { handle } = extensionsDomain(deps)
+    await handle({ type: 'loadUnpacked' }, caller)
+    await handle({ type: 'installFromFile' }, caller)
+    expect(deps.pickFolder).toHaveBeenCalledExactlyOnceWith(caller.contents)
+    expect(deps.pickFile).toHaveBeenCalledExactlyOnceWith(caller.contents)
+  })
+
   it('loadUnpacked does not notify when the install itself is refused', async () => {
     const { deps } = buildDeps({
       developerModeEnabled: () => true,

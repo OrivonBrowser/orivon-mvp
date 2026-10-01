@@ -295,7 +295,7 @@ export function wireView (id: string, record: TabRecord): void {
       page: { bare: () => record.internalPage !== null || record.isDashboardTab, viewSource: () => canViewSource(record, wc.getURL()), readable: () => readableNow(wc) },
       ...(services === undefined ? {} : { services }),
       runCommand,
-      ...(devtools?.allowed(wc) === true ? { inspect: (x: number, y: number) => { devtools.inspect(wc, window, x, y) } } : {})
+      ...(devtools?.allowed(wc) === true ? { inspect: (x: number, y: number) => { void devtools.inspect(wc, x, y) } } : {})
     })
   })
 

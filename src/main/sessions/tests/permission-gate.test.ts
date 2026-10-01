@@ -301,13 +301,14 @@ describe('permissionGateSubsystem', () => {
     expect(handlers.request('pointerLock')).toBe(true)
   })
 
-  it('opens an external link only when the person allows it, asked in the window showing the tab', async () => {
+  it('opens an external link only when the person allows it, asked in the tab that showed it', async () => {
     const handlers = defaultSessionHandlers()
     const details = { externalURL: 'mailto:someone@example.com', requestingUrl: 'https://shop.example/', isMainFrame: true }
 
     shell.confirmExternalLink.mockResolvedValueOnce(true)
-    expect(await handlers.ask(fakeTab(), 'openExternal', details)).toBe(true)
-    expect(shell.confirmExternalLink).toHaveBeenLastCalledWith(WINDOW, { scheme: 'mailto', url: 'mailto:someone@example.com', origin: 'https://shop.example' })
+    const tab = fakeTab()
+    expect(await handlers.ask(tab, 'openExternal', details)).toBe(true)
+    expect(shell.confirmExternalLink).toHaveBeenLastCalledWith({ contents: tab }, { scheme: 'mailto', url: 'mailto:someone@example.com', origin: 'https://shop.example' })
 
     shell.confirmExternalLink.mockResolvedValueOnce(false)
     expect(await handlers.ask(fakeTab(), 'openExternal', details)).toBe(false)

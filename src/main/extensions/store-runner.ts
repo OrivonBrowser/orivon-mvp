@@ -6,6 +6,7 @@
 // loaded extension copy itself; the library never touches the filesystem or
 // calls `loadExtension` once the host below is installed (UPSTREAM.md
 // patch 4).
+import { webContents } from 'electron'
 import {
   installChromeWebStore, updateExtensions
 } from '../../../vendor/electron-chrome-web-store/src/browser/index.js'
@@ -113,10 +114,11 @@ export async function startWebStore (ctx: InstallContext, preloadPath: string): 
     autoUpdate: true,
     preloadPath,
     verifyCrx,
-    beforeInstall: async ({ manifest }) => {
+    beforeInstall: async ({ manifest, frame }) => {
       const parsed = readExtensionManifest(manifest)
       if (!parsed.ok) return { action: 'deny' }
-      const allowed = await ctx.prompt(describeExtensionInstall(parsed.facts, 'store'))
+      // The store page's own tab shows the question; a frame that is already gone leaves the tab in front.
+      const allowed = await ctx.prompt(describeExtensionInstall(parsed.facts, 'store'), { contents: webContents.fromFrame(frame) })
       return { action: allowed ? 'allow' : 'deny' }
     },
     onUpdateCheck,

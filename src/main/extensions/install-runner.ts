@@ -36,7 +36,8 @@ import { generateId } from '../../../vendor/electron-chrome-web-store/src/browse
 // extensions-fixtures.ts import it from this file's own public surface.
 export { resolveSlotKey } from './registry-runner.js'
 
-export type InstallPrompt = (description: ExtensionInstallDescription) => Promise<boolean>
+/** `where.contents` is the page the person asked from, when one did: the question is drawn in its tab. Without it the question goes to the tab in front. */
+export type InstallPrompt = (description: ExtensionInstallDescription, where?: { readonly contents?: object | undefined }) => Promise<boolean>
 
 export interface InstallContext {
   readonly userDataPath: string
