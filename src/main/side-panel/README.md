@@ -11,6 +11,7 @@ the page area shrinks by the panel's width, in `tabBounds()` of [`../shell/windo
 | `side-panel-store.ts`, `side-panel-stores.ts` | `<userData>/side-panel.json` (width, last view); memory for a private session |
 | `panel-types.ts`, `panel-views.ts`, `views/` | A view is a function from a query to rows; one file per view |
 | `panel-requests.ts` | The few requests the page may send, each field checked |
+| `row-menu.ts`, `row-menu-runner.ts` | A row's native menu (open in a tab or window, copy the link, delete) and the two Electron calls it needs |
 | `side-panel-overlay.ts` | The overlay's definition and its handler |
 | `side-panel-host.ts`, `side-panel-guests.ts` | One panel per window and the guest slot; entries and choice listeners for the whole process |
 | `side-panel-hook.ts`, `install-side-panel.ts` | Gives a window its panel; makes the file store |

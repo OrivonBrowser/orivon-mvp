@@ -7,6 +7,7 @@ export type PanelRequest =
   | { type: 'rows', view: string, query: string, open: string[] }
   | { type: 'open', view: string, id: string, how: OpenHow }
   | { type: 'remove', view: string, id: string }
+  | { type: 'menu', view: string, id: string }
   | { type: 'view', view: string }
   | { type: 'page', view: string }
   | { type: 'resize', width: number }
@@ -32,7 +33,7 @@ export function asRequest (command: unknown): PanelRequest | undefined {
     case 'open':
       if (!text(view, MAX_VIEW) || !text(id, MAX_ID) || (how !== 'current' && how !== 'background' && how !== 'window')) return undefined
       return { type, view, id, how }
-    case 'remove':
+    case 'remove': case 'menu':
       return text(view, MAX_VIEW) && text(id, MAX_ID) ? { type, view, id } : undefined
     case 'view': case 'page':
       return text(view, MAX_VIEW) ? { type, view } : undefined

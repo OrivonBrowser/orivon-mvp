@@ -11,6 +11,9 @@ import { registerStore } from '../side-panel-stores.js'
 
 const openAddress = vi.hoisted(() => vi.fn(() => true))
 vi.mock('../../shell/bookmarks-bar/open-bookmark.js', () => ({ openAddress }))
+const popup = vi.hoisted(() => vi.fn())
+const copyLink = vi.hoisted(() => vi.fn())
+vi.mock('../row-menu-runner.js', () => ({ popupRowMenu: popup, copyLink }))
 
 interface Watch { changed: () => void, stop: ReturnType<typeof vi.fn> }
 
@@ -39,6 +42,8 @@ beforeEach(() => {
   vi.useFakeTimers()
   seed()
   openAddress.mockClear()
+  popup.mockClear()
+  copyLink.mockClear()
   store.remove.mockClear()
   store.update.mockClear()
   store.onChange.mockClear()
@@ -164,6 +169,31 @@ describe('requests', () => {
   it('ignores anything it does not list, and a malformed request', () => {
     for (const bad of [undefined, 'close', { type: 'setGuest' }, { type: 'rows', view: 'bookmarks' }, { type: 'resize', width: 'wide' }]) expect(ask(bad)).toBeUndefined()
     expect(openAddress).not.toHaveBeenCalled()
+  })
+})
+
+describe('the row menu', () => {
+  const items = (): Array<{ label?: string, click?: () => void }> => (popup.mock.calls[0] as unknown[])[1] as never
+
+  it('pops a menu for a row that opens an address, with what each item does', () => {
+    ask({ type: 'menu', view: 'bookmarks', id: 'a' })
+    expect(items().map((item) => item.label)).toEqual(['Open in New Tab', 'Open in New Window', undefined, 'Copy Link', 'Delete'])
+    items()[0]?.click?.()
+    items()[1]?.click?.()
+    items()[3]?.click?.()
+    items()[4]?.click?.()
+    expect(openAddress).toHaveBeenNthCalledWith(1, expect.anything(), 'https://alpha.example/', 'background')
+    expect(openAddress).toHaveBeenNthCalledWith(2, expect.anything(), 'https://alpha.example/', 'window')
+    expect(copyLink).toHaveBeenCalledWith('https://alpha.example/')
+    expect(store.remove).toHaveBeenCalledWith(['a'])
+  })
+
+  it('pops nothing for a folder, an unknown id, a view that opens no address, or an unknown view', () => {
+    ask({ type: 'menu', view: 'bookmarks', id: 'f' })
+    ask({ type: 'menu', view: 'bookmarks', id: 'missing' })
+    ask({ type: 'menu', view: 'downloads', id: 'd1' })
+    ask({ type: 'menu', view: 'imaginary', id: 'a' })
+    expect(popup).not.toHaveBeenCalled()
   })
 })
 

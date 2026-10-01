@@ -6,6 +6,8 @@ import type { OverlayDef, OverlayHandler, OverlayWindow } from '../overlays/over
 import { PANEL_VIEWS, viewById } from './panel-views.js'
 import type { PanelRow } from './panel-views.js'
 import { asRequest } from './panel-requests.js'
+import { rowMenuTemplate } from './row-menu.js'
+import { copyLink, popupRowMenu } from './row-menu-runner.js'
 import { panelOf, SIDE_PANEL_OVERLAY, guestEntries } from './side-panel-host.js'
 
 /** Folders the tree opens expanded the first time it is shown. */
@@ -73,6 +75,19 @@ export function createSidePanelHandler (win: OverlayWindow): OverlayHandler {
     if (how === 'current') panelOf(window)?.focusPage()
   }
 
+  /** The native menu of a row that opens an address: where it opens, the link, and Delete in a view that deletes. */
+  function menu (viewId: string, id: string): void {
+    const view = viewById(viewId)
+    const url = view?.resolve?.(win, id) ?? null
+    if (view === undefined || url === null) return
+    popupRowMenu(window, rowMenuTemplate({
+      openInTab: () => { openAddress(win, url, 'background') },
+      openInWindow: () => { openAddress(win, url, 'window') },
+      copyLink: () => { copyLink(url) },
+      remove: view.remove === undefined ? undefined : () => { view.remove?.(win, id) }
+    }))
+  }
+
   return {
     show: () => {
       stop()
@@ -94,6 +109,7 @@ export function createSidePanelHandler (win: OverlayWindow): OverlayHandler {
         case 'rows': return { view: asked.view, rows: rowsOf(asked.view, asked.query, new Set(asked.open)) }
         case 'open': open(asked.view, asked.id, asked.how); return undefined
         case 'remove': viewById(asked.view)?.remove?.(win, asked.id); return undefined
+        case 'menu': menu(asked.view, asked.id); return undefined
         case 'view': host.choose(asked.view); return undefined
         case 'page': {
           const page = viewById(asked.view)?.page

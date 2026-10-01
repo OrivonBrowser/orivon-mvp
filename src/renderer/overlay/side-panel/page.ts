@@ -222,6 +222,9 @@ export const sidePanelPage: OverlayPage = {
       } else if (event.key === 'Enter' && selected !== null) {
         event.preventDefault()
         activate(selected, event.ctrlKey || event.metaKey ? 'background' : event.shiftKey ? 'window' : 'current')
+      } else if ((event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) && selected !== null && rowById(selected)?.kind === 'item') {
+        event.preventDefault()
+        send({ type: 'menu', view, id: selected })
       } else if (event.key === 'Delete' && plain) {
         event.preventDefault()
         removeSelected()
@@ -244,6 +247,13 @@ export const sidePanelPage: OverlayPage = {
         return
       }
       activate(id, howOpens(event))
+    })
+    list.addEventListener('contextmenu', (event) => {
+      const id = rowOf(event)?.dataset['id']
+      if (id === undefined || rowById(id)?.kind !== 'item') return
+      event.preventDefault()
+      setSelected(id, false)
+      send({ type: 'menu', view, id })
     })
     list.addEventListener('auxclick', (event) => {
       const id = rowOf(event)?.dataset['id']

@@ -6,6 +6,7 @@ describe('asRequest', () => {
     expect(asRequest({ type: 'rows', view: 'bookmarks', query: 'a', open: ['bar'] })).toEqual({ type: 'rows', view: 'bookmarks', query: 'a', open: ['bar'] })
     expect(asRequest({ type: 'open', view: 'history', id: '4', how: 'window' })).toEqual({ type: 'open', view: 'history', id: '4', how: 'window' })
     expect(asRequest({ type: 'remove', view: 'history', id: '4' })).toEqual({ type: 'remove', view: 'history', id: '4' })
+    expect(asRequest({ type: 'menu', view: 'history', id: '4' })).toEqual({ type: 'menu', view: 'history', id: '4' })
     expect(asRequest({ type: 'view', view: 'ext:abc' })).toEqual({ type: 'view', view: 'ext:abc' })
     expect(asRequest({ type: 'page', view: 'history' })).toEqual({ type: 'page', view: 'history' })
     expect(asRequest({ type: 'resize', width: 400 })).toEqual({ type: 'resize', width: 400 })
