@@ -17,6 +17,8 @@ import { delay, popoverShown, waitFor } from './smoke-helpers.mjs'
 const SHOTS_DIR = process.env.ORIVON_UI_SHOTS_DIR
 const E2E_TIMEOUT_MS = 240_000
 const SIZE = 20_000
+/** The window in which a tab's unasked downloads are counted (src/main/downloads/download-service.ts). */
+const AUTOMATIC_WINDOW_MS = 10_000
 /** The second file arrives slowly (3 s), so the question is open while it is still on its way. */
 const SLOW = SIZE * 20
 
@@ -138,6 +140,9 @@ it('holds a second download a page starts by itself, and keeps the person\'s ans
     await delay(1500)
     expect(await popoverShown(app, 'overlay=site-prompt')).toBe(false)
     expect(await sizeOf('f2.bin')).not.toBe(SLOW)
+
+    // A tab may start only so many downloads unasked in a short window: waits for the earlier ones to leave it.
+    await delay(AUTOMATIC_WINDOW_MS)
 
     // Allowed: the held download finishes, and the answer is stored.
     await visit(app, chrome, `${allow.origin}/auto`)
