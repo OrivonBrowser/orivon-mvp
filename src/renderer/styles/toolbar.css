@@ -252,6 +252,11 @@ browser-action-list {
   align-items: center;
   gap: 4px;
   --browser-action-hover-bg: var(--whover-strong);
+  /* The accent as text, the same two values the pages' tokens give it. */
+  --waccent-text: #4338ca;
+}
+@media (prefers-color-scheme: dark) {
+  browser-action-list { --waccent-text: #8b93f8; }
 }
 browser-action-list::part(action) {
   width: 32px;

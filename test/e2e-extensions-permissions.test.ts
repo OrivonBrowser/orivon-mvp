@@ -23,6 +23,7 @@ const SWEEP_NAME = 'Orivon E2E API Sweep'
 
 interface ChromePermissions {
   request: (request: object) => Promise<boolean>
+  remove: (request: object) => Promise<boolean>
   contains: (request: object) => Promise<boolean>
   getAll: () => Promise<{ permissions: string[], origins: string[] }>
 }
@@ -162,7 +163,7 @@ it('asks, refuses on Escape, grants on Allow, shows it on the details page, take
     await ask(view, { permissions: ['history'] })
     let sheet = await openSheet(app)
     expect(await sheet.locator('.sheet-title').textContent()).toBe(`Allow the extension "${SWEEP_NAME}" to do more?`)
-    expect(await sheet.locator('.perm-id').textContent()).toContain(id.slice(0, 12))
+    expect(await sheet.locator('.perm-id').textContent()).toBe(`Extension ID ${id}`)
     expect(await sheet.locator('.perm-lines li').allTextContents()).toEqual(['Read and change your browsing history'])
     expect(await sheet.evaluate(() => document.activeElement?.textContent)).toBe('Deny')
     expect(await sheet.locator('.btn.primary').isDisabled()).toBe(true)
@@ -222,6 +223,15 @@ it('asks, refuses on Escape, grants on Allow, shows it on the details page, take
     const again = await navigateToFixture(app, fixtureUrl, 'permissions-fixture')
     await again.goto(extensionUrl)
     expect(await contains(again, { permissions: ['history'] })).toBe(true)
+
+    // The relaunch loaded the grant into the manifest. Taking it back counts at once, before the reload that drops it.
+    const taken = await again.evaluate(async () => {
+      const { chrome } = window as unknown as ExtensionPage
+      const removed = await chrome.permissions.remove({ permissions: ['history'] })
+      return { removed, held: await chrome.permissions.contains({ permissions: ['history'] }) }
+    })
+    expect(taken).toEqual({ removed: true, held: false })
+    expect(await waitFor(() => grantedOf(userData)?.permissions.includes('history') !== true)).toBe(true)
   } finally {
     await closeElectron(app)
     if (relaunched) rmSync(userData, { recursive: true, force: true })
@@ -241,7 +251,8 @@ it('shows a long list and a long name in the sheet, and the empty section before
     })
     const sheet = await openSheet(app)
     const title = (await sheet.locator('.sheet-title').textContent()) ?? ''
-    expect(title).toBe('Allow the extension "Orivon E2E Optional Permissions With A…" to do more?')
+    expect(title).toBe('Allow the extension "Orivon E2E Optional Permissions With A Name Long Enough To Be Cut" to do more?')
+    expect(await sheet.locator('.perm-id').textContent()).toMatch(/^Extension ID [a-p]{32}$/)
     expect(await sheet.locator('.perm-lines li').count()).toBe(9)
     expect(await sheet.locator('.perm-lines').evaluate((el) => el.scrollHeight > el.clientHeight && el.clientHeight <= 160)).toBe(true)
     await delay(700)
