@@ -13,7 +13,7 @@ describe('what the overlay pages accept from main', () => {
   })
 
   it('takes a chooser question with rows that have an id and a title', () => {
-    const view = { id: 'q', title: 'T', origin: null, line: null, confirm: 'Go', empty: 'None', items: [{ id: 'a', title: 'A' }] }
+    const view = { id: 'q', title: 'T', origin: null, line: null, warning: null, preselect: true, confirm: 'Go', empty: 'None', items: [{ id: 'a', title: 'A' }] }
     expect(isChooserView(view)).toBe(true)
     expect(isChooserView({ ...view, items: [] })).toBe(true)
     for (const bad of [undefined, {}, { ...view, items: [{ id: 'a' }] }, { ...view, items: 'a' }, { ...view, confirm: 1 }]) expect(isChooserView(bad)).toBe(false)

@@ -20,6 +20,18 @@ function setup (): { store: ChooserStore, handler: OverlayHandler, window: objec
 }
 
 describe('ChooserStore', () => {
+  it('carries a warning, whether a lone row starts selected and which rows are expired', () => {
+    const store = new ChooserStore(() => 'q')
+    store.add({}, 't', SPEC)
+    expect(store.get('q')?.view).toMatchObject({ warning: null, preselect: true })
+    const again = new ChooserStore(() => 'q')
+    again.add({}, 't', { ...SPEC, warning: 'w'.repeat(500), preselect: false, items: [{ id: 'a', title: 'A', expired: true }, { id: 'b', title: 'B', expired: false }] })
+    const view = again.get('q')?.view as ChooserView
+    expect(view.warning).toHaveLength(200)
+    expect(view.preselect).toBe(false)
+    expect(view.items).toEqual([{ id: 'a', title: 'A', expired: true }, { id: 'b', title: 'B' }])
+  })
+
   it('cuts what a caller hands in down to what a row can show', () => {
     const store = new ChooserStore(() => 'q')
     const items = [{ id: 'a', title: 't'.repeat(500), sub: '' }, { id: 'a', title: 'dup' }, { id: '', title: 'no id' }, ...Array.from({ length: 300 }, (_, i) => ({ id: `n${String(i)}`, title: 'x' }))]

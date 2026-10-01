@@ -56,11 +56,13 @@ describe('the logins state part', () => {
     const push = vi.fn()
     const stop = loginsStatePart.watch?.({ window: r.window, services: r.services }, push)
     await r.vault.save({ origin: 'https://site.example', username: 'a', password: 'b' })
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
     expect(push).toHaveBeenCalledTimes(1)
     for (const listener of r.settingListeners) { listener({ key: 'passwords.autofill' }); listener({ key: 'appearance.theme' }) }
     expect(push).toHaveBeenCalledTimes(2)
     stop?.()
     await r.vault.save({ origin: 'https://site.example', username: 'c', password: 'd' })
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
     expect(push).toHaveBeenCalledTimes(2)
     expect(r.settingListeners.size).toBe(0)
   })

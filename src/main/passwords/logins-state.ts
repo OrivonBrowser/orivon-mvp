@@ -7,9 +7,12 @@ export const loginsStatePart: ShellStatePart = {
   name: 'logins',
   read: ({ window, services }, tabs) => ({ logins: formsFor(window, services).loginState(tabs.activeTabId) }),
   watch: ({ window, services }, push) => {
+    // An import saves a row at a time: the button hears of the whole import once.
+    const vaultChanged = oncePerTurn(push)
     const stops = [
       formsFor(window, services).onChange(push),
-      services.passwords.onChange(oncePerTurn(push)),
+      services.passwords.onChange(vaultChanged),
+      vaultChanged.cancel,
       services.settings.onChange(({ key }) => { if (key.startsWith('passwords.')) push() })
     ]
     return () => { for (const stop of stops) stop() }

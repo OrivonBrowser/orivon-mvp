@@ -452,8 +452,9 @@ describe('the password button and the chooser', () => {
     expect(r.pushes()).toBeGreaterThan(before)
   })
 
-  it('opens the chooser by itself until Escape, and again after the page loads anew', () => {
+  it('opens the chooser by itself until Escape, and again after the page loads anew', async () => {
     const r = rig()
+    await r.vault.save({ origin: ORIGIN, username: 'ada', password: 'pw' })
     r.forms.hello(r.sender())
     expect(r.forms.chooserWanted('t1')).toBe(true)
     r.forms.dismissChooser('t1')

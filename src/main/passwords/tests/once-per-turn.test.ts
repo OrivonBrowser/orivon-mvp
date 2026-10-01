@@ -13,4 +13,13 @@ describe('oncePerTurn', () => {
     await new Promise<void>((resolve) => { setImmediate(resolve) })
     expect(run).toHaveBeenCalledTimes(2)
   })
+
+  it('drops a call that is waiting when it is cancelled', async () => {
+    const run = vi.fn()
+    const notify = oncePerTurn(run)
+    notify()
+    notify.cancel()
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    expect(run).not.toHaveBeenCalled()
+  })
 })
