@@ -1,0 +1,10 @@
+/* A sleeping tab: the icon is dimmed and ringed with a dashed line, so it reads as waiting rather than gone. The ring
+   is on the icon's box, not its image, so dimming the picture leaves it at full strength. */
+.tab.sleeping .fav {
+  outline: 1px dashed var(--wink-off);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+.tab.sleeping .fav img,
+.tab.sleeping .fav svg { opacity: 0.45; }
+.tab.sleeping .title { color: var(--wink-dim); }

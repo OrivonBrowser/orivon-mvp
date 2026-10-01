@@ -35,6 +35,8 @@ interface TabAsks { center: Entry[], address: Entry[], shown: Entry | null }
 
 export interface TabSlots {
   requestSlot: (ask: SlotAsk) => { cancel: () => void }
+  /** The tab has an ask on screen or waiting: closing the tab's page would drop the person's answer. */
+  hasAsk: (window: ShellWindow, tabId: string) => boolean
   slotClosed: (window: ShellWindow, overlay: string, reason: OverlayCloseReason) => void
   /** The tab came to the front: its waiting asks may show (after the window's own tab-switch close has run). */
   tabActivated: (window: ShellWindow, tabId: string) => void
@@ -131,6 +133,11 @@ export function createTabSlots (defer: (run: () => void) => void = queueMicrotas
       }
     },
 
+    hasAsk (window, tabId) {
+      const tab = tabsOf(window).get(tabId)
+      return tab !== undefined && (tab.shown !== null || tab.center.length > 0 || tab.address.length > 0)
+    },
+
     slotClosed (window, overlay, reason) {
       for (const [tabId, tab] of tabsOf(window)) {
         const entry = tab.shown
@@ -167,6 +174,9 @@ const slots = createTabSlots()
 
 /** Asks to show `overlay` in a slot of a tab; `cancel` withdraws the ask. */
 export const requestSlot = slots.requestSlot
+
+/** Whether a tab has an ask shown or queued. */
+export const hasAsk = slots.hasAsk
 
 /** A def's `closed` hook forwards here so the slot knows its surface is gone. */
 export const slotClosed = slots.slotClosed

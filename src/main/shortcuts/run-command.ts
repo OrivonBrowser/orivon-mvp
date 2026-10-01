@@ -13,6 +13,7 @@ import { cascadeFrom } from '../shell/window-options.js'
 import type { ShellWindowOptions } from '../shell/window-options.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { ShellServices } from '../shell/shell-services.js'
+import { sleepFrontTab } from '../memory-saver/sleep-command.js'
 import { reopenClosed } from '../session-restore/reopen.js'
 import { groupTabNew, shownNeighbour, stepTab, ungroupTab } from '../tab-groups/groups-runner.js'
 import { openQr } from '../qr/qr-open.js'
@@ -120,7 +121,9 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'tab.closeRight': if (active !== undefined) closeToRight(tabs, active.id); return
     case 'tab.group': if (active !== undefined) groupTabNew({ window: target, services }, active.id); return
     case 'tab.ungroup': if (active !== undefined) ungroupTab({ window: target, services }, active.id); return
-    case 'tab.sleep': return
+    case 'tab.group': return
+    case 'tab.ungroup': return
+    case 'tab.sleep': if (active !== undefined) void sleepFrontTab(target, active.id); return
     case 'tab.search': target.overlays.toggle(TAB_SEARCH_OVERLAY); return
     case 'window.newPrivate': services.profiles.openPrivate(); return
     case 'window.newGuest': return

@@ -68,6 +68,7 @@ it('opens Settings at its first section, applies a change at once and keeps it, 
       'Privacy and data',
       'Apps',
       'Web3',
+      'Performance',
       'Keyboard shortcuts',
       'Developer',
       'About'

@@ -10,6 +10,7 @@ import { crashedSignal } from './signals/crashed.js'
 import { findSignal } from './signals/find.js'
 import { groupSignal } from '../tab-groups/group-signal.js'
 import { stopKeySignal } from './signals/stop-key.js'
+import { sleepSignal } from '../memory-saver/sleep-signal.js'
 import type { TabRecord, TabState } from './tab-types.js'
 import { restoredTitle } from '../session-restore/restored-title.js'
 
@@ -40,6 +41,7 @@ export const TAB_SIGNALS: readonly TabSignal[] = [
   findSignal,
   groupSignal,
   restoredTitle,
+  sleepSignal,
   stopKeySignal
 ]
 

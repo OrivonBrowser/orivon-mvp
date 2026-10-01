@@ -13,6 +13,7 @@ import type { ShellServices } from './shell-services.js'
 import { splitZoneFor } from './split-drop.js'
 import { dropTab, moveToNewWindow, moveToWindow } from './tab-move.js'
 import { closeOthers, closeToRight, duplicateTab, newTabToRight, tabMenuFlags, toggleMute, togglePin } from './tab-commands.js'
+import { sleepBackgroundTab } from '../memory-saver/sleep-command.js'
 import { showTabMenu, tabMenuTemplate } from './tab-menu.js'
 import { groupLabel } from '../tab-groups/group-label.js'
 import { groupsFor } from '../tab-groups/groups-model.js'
@@ -75,6 +76,7 @@ export function shellActions (parts: WindowParts): ShellActions {
       ...flags,
       grouped: (tab.group ?? null) !== null,
       groups: groupsFor(tabs).list().filter((group) => group.id !== tab.group).map((group) => ({ label: groupLabel(group), join: () => { groupTab(ctx, id, group.id) } })),
+      canSleep: id !== tabs.getState().activeTabId && tab.sleeping !== true,
       tabCount: all.length,
       inSplit: tab.splitWith !== null,
       splitPartners: partners.map((other) => ({ label: other.title === '' ? 'New Tab' : other.title, split: () => { tabs.splits.split(id, other.id, 'right') } })),
@@ -87,6 +89,7 @@ export function shellActions (parts: WindowParts): ShellActions {
       toggleMute: () => { toggleMute(tabs, id) },
       newGroup: () => { groupTabNew(ctx, id) },
       ungroup: () => { ungroupTab(ctx, id) },
+      sleep: () => { void sleepBackgroundTab(entry, id) },
       moveToNewWindow: () => { moveToNewWindow(entry, id, openWindow, cascadeFrom(window.getBounds())) },
       separate: () => { tabs.splits.separate(id) },
       close: () => { tabs.closeTab(id) },

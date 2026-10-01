@@ -52,7 +52,7 @@ export const COMMANDS = [
   { id: 'tab.closeRight', label: 'Close tabs to the right', category: 'tabs' },
   { id: 'tab.group', label: 'Add tab to new group', category: 'tabs' },
   { id: 'tab.ungroup', label: 'Remove tab from group', category: 'tabs' },
-  { id: 'tab.sleep', label: 'Put tab to sleep', category: 'tabs', pending: true },
+  { id: 'tab.sleep', label: 'Put tab to sleep', category: 'tabs' },
   { id: 'tab.search', label: 'Search tabs', category: 'tabs', default: 'Mod+Shift+A' },
   ...GO_TO_TAB,
   { id: 'tab.gotoLast', label: 'Go to the last tab', category: 'tabs', default: 'Mod+9' },

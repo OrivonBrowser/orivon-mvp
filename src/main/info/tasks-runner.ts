@@ -63,12 +63,12 @@ function gatherContents (env: TasksEnv): Gathered['entries'] {
       const contents = shell.tabs.liveWebContents(id)
       if (record === undefined || contents === undefined) continue
       seen.add(contents)
-      const title = contents.getTitle()
+      const title = record.sleeping?.title ?? contents.getTitle()
       const isApp = appTabViews.has(record.view)
       entries.push({
         pid: processIdOf(contents),
         kind: record.internalPage !== null ? 'internal' : isApp ? 'app' : 'tab',
-        name: record.internalPage !== null ? (title !== '' ? title : record.internalPage) : isApp ? hostOf(contents.getURL()) : (title !== '' ? title : hostOf(contents.getURL())),
+        name: record.internalPage !== null ? (title !== '' ? title : record.internalPage) : isApp ? hostOf(contents.getURL()) : (title !== '' ? title : hostOf(record.sleeping?.url ?? contents.getURL())),
         tabId: id,
         favicon: record.favicon,
         contents

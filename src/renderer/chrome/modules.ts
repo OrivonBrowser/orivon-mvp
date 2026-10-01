@@ -15,6 +15,7 @@ import { createSiteBadges } from './site-badges.js'
 import { decorateTabBadges } from './tab-badges.js'
 import { decorateTabCrashed } from './tab-crashed.js'
 import { createTabGroups, decorateTabGroup, placeGroupChips } from './tab-groups.js'
+import { decorateTabSleeping } from './tab-sleeping.js'
 import { createTabSearchButton } from './tab-search-button.js'
 import { createTabStrip } from './tab-strip.js'
 
@@ -22,7 +23,8 @@ import { createTabStrip } from './tab-strip.js'
 export const TAB_DECORATORS: readonly TabDecorator[] = [
   decorateTabBadges,
   decorateTabCrashed,
-  decorateTabGroup
+  decorateTabGroup,
+  decorateTabSleeping
 ]
 
 /** The chrome's features, initialised and rendered in this order; one entry per feature. */

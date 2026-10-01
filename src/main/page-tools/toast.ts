@@ -35,7 +35,14 @@ export const TOAST_TEXT = {
   shotFailed: { text: 'Could not take the screenshot', tone: 'error' },
   longPage: { text: 'Saved the first part of a very long page', tone: 'ok' },
   noVideo: { text: 'No video to pop out on this page', tone: 'info' },
-  noSource: { text: 'The source of this page cannot be shown', tone: 'info' }
+  noSource: { text: 'The source of this page cannot be shown', tone: 'info' },
+  sleepSound: { text: 'This tab is playing sound, so it stays awake.', tone: 'info' },
+  sleepUnsaved: { text: 'This tab has unsaved changes, so it stays awake.', tone: 'info' },
+  sleepPinned: { text: 'Pinned tabs stay awake.', tone: 'info' },
+  sleepAsk: { text: 'This tab is waiting for your answer, so it stays awake.', tone: 'info' },
+  sleepMedia: { text: 'This tab is using your camera, microphone or screen, so it stays awake.', tone: 'info' },
+  sleepKept: { text: 'This site is set to stay awake.', tone: 'info' },
+  sleepOther: { text: 'This tab cannot be put to sleep.', tone: 'info' }
 } as const satisfies Record<string, ToastText>
 
 export type ToastCode = keyof typeof TOAST_TEXT

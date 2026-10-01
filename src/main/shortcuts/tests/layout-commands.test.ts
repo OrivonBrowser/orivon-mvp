@@ -32,6 +32,7 @@ const ROWS: ReadonlyArray<[id: string, label: string, category: string, binding:
 const LANDED: readonly string[] = [
   'sidePanel.toggle',
   'tab.group',
+  'tab.sleep',
   'tab.ungroup'
 ]
 

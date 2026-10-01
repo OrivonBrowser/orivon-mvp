@@ -10,6 +10,8 @@ export interface TabMenuModel {
   readonly canDuplicate: boolean
   readonly pinned: boolean
   readonly muted: boolean
+  /** The tab is behind the one the person is in and is awake. Absent reads as false. */
+  readonly canSleep?: boolean
   /** A tab in a split is not pinned: the pair stays side by side. */
   readonly canPin: boolean
   /** There is an unpinned tab besides this one to close. */
@@ -37,6 +39,7 @@ export interface TabMenuActions {
   toggleMute: () => void
   newGroup: () => void
   ungroup: () => void
+  sleep: () => void
   moveToNewWindow: () => void
   separate: () => void
   close: () => void
@@ -69,6 +72,7 @@ export function tabMenuTemplate (model: TabMenuModel, actions: TabMenuActions): 
     { label: 'Duplicate', enabled: model.canDuplicate, click: actions.duplicate },
     { label: model.pinned ? 'Unpin Tab' : 'Pin Tab', enabled: model.pinned || model.canPin, click: actions.togglePin },
     { label: model.muted ? 'Unmute Tab' : 'Mute Tab', click: actions.toggleMute },
+    { label: 'Put Tab to Sleep', enabled: model.canSleep === true, click: actions.sleep },
     { type: 'separator' },
     ...group,
     { type: 'separator' },

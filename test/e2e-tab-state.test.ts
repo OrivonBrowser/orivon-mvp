@@ -281,7 +281,7 @@ it('offers what can be done to a tab in its menu, and does it', async () => {
 
     await chrome.click(`.tab[data-id="${a}"]`, { button: 'right' })
     expect(await waitFor(async () => (await labels()).length > 5)).toBe(true)
-    expect(await labels()).toEqual(['New Tab to the Right', 'Reload', 'Duplicate', 'Pin Tab', 'Mute Tab', 'Add Tab to New Group', 'Split with', 'Move Tab to New Window', 'Close Tab', 'Close Other Tabs', 'Close Tabs to the Right', 'Reopen Closed Tab'])
+    expect(await labels()).toEqual(['New Tab to the Right', 'Reload', 'Duplicate', 'Pin Tab', 'Mute Tab', 'Put Tab to Sleep', 'Add Tab to New Group', 'Split with', 'Move Tab to New Window', 'Close Tab', 'Close Other Tabs', 'Close Tabs to the Right', 'Reopen Closed Tab'])
     expect(await enabled('Duplicate')).toBe(true)
 
     await choose('Pin Tab')

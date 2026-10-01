@@ -2,7 +2,8 @@
 
 **What lives here.** The Settings controls that a plain text, switch or choice row cannot be. Today one:
 `page-list.ts` is the "Pages to open" list (each address removable, a field that adds one, a button that takes the
-pages open now), with `page-list-model.ts` holding its decisions and `page-list.css` its look.
+pages open now), with `page-list-model.ts` holding its decisions and `page-list.css` its look. `host-list.ts` is the same
+shape for sites, and `power-badge.ts` is the badge that says whether the computer is on battery.
 
 **Tied to Electron, entirely.** A sandboxed page; it reaches main only through the internal bridge.
 
