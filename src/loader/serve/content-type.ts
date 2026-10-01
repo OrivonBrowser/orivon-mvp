@@ -9,6 +9,11 @@
 // than being served as script. That is the direction ADR-0007's brief asks
 // for: "be conservative for anything unknown rather than guessing something
 // executable."
+//
+// The one type that is not from a name: an IPFS root that is itself a single
+// file has no extension, so the verifier's file reader (protocols/ipfs)
+// sniffs that root's first bytes for an HTML document. No path is ever
+// typed from its bytes here.
 
 /** Never returned for anything but a genuinely unrecognised extension -- the browser will not execute this as script or a stylesheet. */
 export const DEFAULT_CONTENT_TYPE = 'application/octet-stream'

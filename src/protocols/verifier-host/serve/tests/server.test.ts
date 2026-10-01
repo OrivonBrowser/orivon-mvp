@@ -64,6 +64,13 @@ function streamed (signal: AbortSignal | undefined): GatheredFile {
   }
 }
 
+/** A site whose root is one file: served at `/`, with the type its bytes gave. */
+const FILE_ROOT = Buffer.from('<!doctype html><title>x</title>')
+function fileRoot (range: { start: number, end: number } | undefined): GatheredFile {
+  const bytes = range === undefined ? FILE_ROOT : FILE_ROOT.subarray(range.start, range.end + 1)
+  return { servedPath: '/', size: FILE_ROOT.length, contentType: 'text/html; charset=utf-8', body: (async function * () { yield bytes })() }
+}
+
 const opened: string[] = []
 const partitions: string[] = []
 const site: MountedSite = {
@@ -72,6 +79,7 @@ const site: MountedSite = {
   pointers: [],
   open: async (p, r, signal) => {
     opened.push(p)
+    if (p === '/file-root') return fileRoot(r)
     return p === '/stream.bin' ? streamed(signal) : open(p, r)
   },
   ddoc: () => ({ status: 'met', refusals: [] })
@@ -130,6 +138,18 @@ describe('the .eth loopback server', () => {
     expect(reply.headers['cache-control']).toBe('no-cache')
     expect(reply.headers['x-content-type-options']).toBe('nosniff')
     expect(reply.headers['content-security-policy']).toBe("treat-as-public-address; frame-ancestors 'self'")
+  })
+
+  it('serves a file-valued root with the type it was given, keeping nosniff, whole and by range', async () => {
+    const whole = await get('/file-root')
+    expect(whole.status).toBe(200)
+    expect(whole.headers['content-type']).toBe('text/html; charset=utf-8')
+    expect(whole.headers['x-content-type-options']).toBe('nosniff')
+    expect(whole.body.toString()).toBe(FILE_ROOT.toString())
+    const part = await get('/file-root', { headers: { range: 'bytes=0-4' } })
+    expect(part.status).toBe(206)
+    expect(part.headers['content-type']).toBe('text/html; charset=utf-8')
+    expect(part.body.toString()).toBe('<!doc')
   })
 
   it('answers a matching validator with 304 before opening anything, carrying the same CSP a full reply would', async () => {

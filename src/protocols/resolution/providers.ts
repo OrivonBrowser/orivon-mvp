@@ -36,6 +36,8 @@ export interface GatheredFile {
   readonly servedPath: string
   /** The whole file's size, whatever range was asked for. */
   readonly size: number
+  /** Set when the path carries no extension to derive a type from: the site's root is itself a file. */
+  readonly contentType?: string
   /** Only bytes that were checked against their hash before being yielded. */
   readonly body: AsyncIterable<Uint8Array>
 }
