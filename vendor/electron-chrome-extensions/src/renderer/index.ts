@@ -828,6 +828,29 @@ export const injectExtensionAPIs = (extras: ReadonlyArray<() => void> = []) => {
     delete (globalThis as any).__crx
     delete (globalThis as any).electron
 
+    // Orivon patch (UPSTREAM.md patch 61): Chromium gives an extension context
+    // a `browser` global beside `chrome`, a separate object that carries only
+    // Electron's native namespaces. Extensions written for both browsers take
+    // `self.browser || self.chrome`, so they got a `browser` without this
+    // library's namespaces and failed at load on the first one they touched.
+    // Every namespace of `chrome` is copied onto it, as the same object.
+    const browserGlobal = (globalThis as any).browser
+    if (browserGlobal && browserGlobal !== chrome) {
+      for (const name of Object.getOwnPropertyNames(chrome)) {
+        if ((browserGlobal as any)[name] === (chrome as any)[name]) continue
+        try {
+          Object.defineProperty(browserGlobal, name, {
+            value: (chrome as any)[name],
+            enumerable: false,
+            configurable: true,
+            writable: true,
+          })
+        } catch {
+          // A property the page's own realm made non-configurable stays as it is.
+        }
+      }
+    }
+
     // Orivon patch (UPSTREAM.md patch 12): lock the top-level `chrome`
     // global itself to non-configurable/non-writable. MetaMask's own
     // LavaMoat "scuttling mode" walks every CONFIGURABLE own property name

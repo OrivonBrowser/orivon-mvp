@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Orivon E2E Scripting World",
+  "version": "1.0.0",
+  "description": "Fixture extension for test/e2e-extensions-scripting-world.test.ts: content scripts registered at run time with chrome.scripting, one in the page's own world and one isolated.",
+  "permissions": ["scripting"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
