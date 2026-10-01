@@ -64,7 +64,6 @@ export const authSheetPage: OverlayPage = {
       }
 
       const banners = [
-        view.retry ? h('p', { className: 'banner error', role: 'alert' }, RETRY_TEXT) : null,
         view.mismatch === null ? null : h('p', { className: 'banner warn', role: 'alert' }, view.mismatch),
         view.insecure === null ? null : h('p', { className: 'banner warn', role: 'alert' }, view.insecure)
       ]
@@ -74,11 +73,12 @@ export const authSheetPage: OverlayPage = {
         h('h1', { className: 'sheet-title', id: 'auth-title' }, view.title),
         h('p', { className: 'origin', title: view.origin }, view.origin),
         h('p', { className: 'auth-line', id: 'auth-line' }, view.line),
-        view.realm === null ? null : h('p', { className: 'auth-realm', title: view.realm }, `Realm: "${view.realm}"`),
+        view.realm === null ? null : h('p', { className: 'auth-realm', title: view.realm }, `The site calls this area "${view.realm}".`),
         ...banners,
         h('div', { className: 'sheet-body' },
           h('div', { className: 'field' }, h('label', { htmlFor: 'auth-username' }, 'Username'), username),
-          h('div', { className: 'field' }, h('label', { htmlFor: 'auth-password' }, 'Password'), h('div', { className: 'auth-password' }, password, reveal)),
+          h('div', { className: 'field' }, h('label', { htmlFor: 'auth-password' }, 'Password'), h('div', { className: 'auth-password' }, password, reveal),
+            view.retry ? h('p', { className: 'problem', role: 'alert' }, RETRY_TEXT) : null),
           remember === null ? null : h('label', { className: 'check' }, remember, h('span', null, 'Remember this password'))
         ),
         h('div', { className: 'btn-row' }, cancel, submit)

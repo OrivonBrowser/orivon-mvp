@@ -10,7 +10,7 @@ function setup (over: { isPrivate?: boolean, profiles?: Array<{ id: string, name
   const files = new Map<string, string>()
   const host: ShortcutHost = {
     platform: 'linux', isPackaged: true, appPath: '/a', execPath: '/opt/orivon', env: () => ({ XDG_DATA_HOME: '/d' }), home: () => '/h', desktop: () => '/desk',
-    makeDirectory: async () => {}, writeFile: async (path, text) => { files.set(path, text) }, writeLink: () => true
+    makeDirectory: async () => {}, writeFile: async (path, text) => { files.set(path, text) }, writeLink: () => true, exists: () => false
   }
   const services = { isPrivate: over.isPrivate ?? false, profiles: { list: () => over.profiles ?? [{ id: 'default', name: 'Default', current: true }] } }
   const handler = shortcutOverlayFor(host).attach({ window: {}, services, send: vi.fn(), close: vi.fn() } as unknown as OverlayWindow)

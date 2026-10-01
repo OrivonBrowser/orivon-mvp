@@ -12,6 +12,8 @@ export interface LoginDeps {
   /** Changes when the tab starts a new main-frame navigation. */
   readonly loadOf: (contents: WebContents) => number
   readonly ask: typeof requestSlot
+  /** Shows the address a page is waiting on in the tab, or null to stop: the sheet names its server, the tab names the page. */
+  readonly pending?: (contents: WebContents, url: string | null) => void
 }
 
 /** `isMainFrame` is reported but not typed. A build that does not report it leaves every request to be judged by the page the tab is on: a frame's navigation is a navigation request too. */
@@ -55,6 +57,7 @@ export function handleLogin (
     callback()
     return
   }
+  const showPending = (url: string | null): void => { deps.pending?.(contents, url) }
   const server: AuthServer = { scheme: url.protocol.replace(/:$/, ''), host: info.host, port: info.port, isProxy: info.isProxy, realm: info.realm }
   const mainFrame = details.isMainFrame === true
   const challenge = deps.challenges.add({
@@ -67,10 +70,12 @@ export function handleLogin (
     // A main-frame request is the page the person asked for; anything else is a part of some page.
     mismatch: !info.isProxy && !mainFrame && !isPageOfServer(contents.getURL(), server)
   }, (answer) => {
+    showPending(null)
     if (answer === null) callback()
     else callback(answer.username, answer.password)
-  }, () => { slot?.cancel() })
+  }, () => { showPending(null); slot?.cancel() })
   if (challenge === null) return
+  showPending(mainFrame ? details.url : null)
   const slot = deps.ask({
     window: found.window,
     tabId: found.tabId,

@@ -13,6 +13,7 @@ import { windowOpenHandler } from './popups.js'
 import { keepsOpenerSession, openerCutNeeded, popupTargetIsApp } from './popup-opener.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { DEFAULT_BACKGROUND } from './theme-colors.js'
+import { sheetBackdropOf } from './sheet-backdrop.js'
 import { recordViewBackground } from './view-background-test-hook.js'
 import { repartitionView } from './tab-parking.js'
 import { parseInternalUrl } from '../pages/internal-pages.js'
@@ -103,8 +104,10 @@ export function makeTabView (preload: string, partition: string | undefined, add
  * otherwise, since Electron never repaints a view's background on its own
  * past the first `setBackgroundColor` call. */
 function resetViewBackground (view: WebContentsView): void {
-  view.setBackgroundColor(DEFAULT_BACKGROUND)
-  recordViewBackground(view.webContents.id, DEFAULT_BACKGROUND)
+  // A sheet over this view keeps its own surface colour until the sheet goes.
+  const color = sheetBackdropOf(view) ?? DEFAULT_BACKGROUND
+  view.setBackgroundColor(color)
+  recordViewBackground(view.webContents.id, color)
 }
 
 /** Every event a tab's WebContentsView needs wired -- shared by createTab(),

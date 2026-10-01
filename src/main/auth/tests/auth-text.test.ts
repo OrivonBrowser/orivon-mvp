@@ -16,7 +16,7 @@ describe('the sign-in sheet text', () => {
     const proxy = site({ isProxy: true, host: 'proxy.lan', port: 3128 })
     expect(originOf(proxy)).toBe('proxy.lan:3128')
     expect(titleOf(proxy)).toBe('Sign in to the proxy')
-    expect(lineOf(proxy)).toBe('The proxy proxy.lan:3128 needs a username and password.')
+    expect(lineOf(proxy)).toBe('This proxy needs a username and password.')
     expect(titleOf(site())).toBe('Sign in')
     expect(lineOf(site())).toBe('This site is asking for a username and password.')
   })

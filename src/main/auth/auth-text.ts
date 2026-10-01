@@ -51,7 +51,7 @@ export function titleOf (server: Pick<AuthServer, 'isProxy'>): string {
 }
 
 export function lineOf (server: AuthServer): string {
-  return server.isProxy ? `The proxy ${hostPart(server.host)}:${String(server.port)} needs a username and password.` : 'This site is asking for a username and password.'
+  return server.isProxy ? 'This proxy needs a username and password.' : 'This site is asking for a username and password.'
 }
 
 export const INSECURE_TEXT = 'Your password will be sent without encryption.'

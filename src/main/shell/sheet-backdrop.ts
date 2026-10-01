@@ -1,0 +1,55 @@
+// What a tab's view paints behind a sheet that sits over it. A failed load leaves an error page with no
+// background of its own, so the sheet would float on whatever the view last held: Electron's white, or the
+// new-tab picture's dark wash. While a sheet is up the view carries the shell's own surface colour for the
+// current theme; when the sheet goes the view gets back what it had. Tied to Electron: a view's colour.
+import type { WebContentsView } from 'electron'
+import type { SheetBackdrop } from '../overlays/tab-slots.js'
+import type { TabRecord } from './tab-types.js'
+import { APP_DARK_WASH, DEFAULT_BACKGROUND, INTERNAL_PAGE_BACKGROUND, onThemeUpdated, resolveThemeColor } from './theme-colors.js'
+import { recordViewBackground } from './view-background-test-hook.js'
+
+/** Views that carry the sheet colour now. */
+const raised = new Set<WebContentsView>()
+let followingTheme = false
+
+const sheetColor = (): string => resolveThemeColor(INTERNAL_PAGE_BACKGROUND)
+
+/** The colour a view must keep while a sheet is over it, or undefined: a reset made by a navigation asks first. */
+export function sheetBackdropOf (view: WebContentsView): string | undefined {
+  return raised.has(view) ? sheetColor() : undefined
+}
+
+function paint (view: WebContentsView, color: string): void {
+  if (view.webContents.isDestroyed()) return
+  view.setBackgroundColor(color)
+  recordViewBackground(view.webContents.id, color)
+}
+
+/** What the view holds when no sheet is over it: the dashboard's wash, an internal page's surface, or the default. */
+function restingColor (record: TabRecord): string {
+  if (record.isDashboardTab) return APP_DARK_WASH
+  return record.internalPage !== null ? sheetColor() : DEFAULT_BACKGROUND
+}
+
+/** One listener for the process: a light sheet must not sit on a dark backdrop after the theme changes. */
+function followTheme (): void {
+  if (followingTheme) return
+  followingTheme = true
+  onThemeUpdated(() => { for (const view of raised) paint(view, sheetColor()) })
+}
+
+export const sheetBackdrop: SheetBackdrop = {
+  raise (window, tabId) {
+    const view = window.tabs.record(tabId)?.view
+    if (view === undefined) return
+    if (!raised.has(view)) view.webContents.once('destroyed', () => { raised.delete(view) })
+    raised.add(view)
+    followTheme()
+    paint(view, sheetColor())
+  },
+  lower (window, tabId) {
+    const record = window.tabs.record(tabId)
+    if (record === undefined || !raised.delete(record.view)) return
+    paint(record.view, restingColor(record))
+  }
+}

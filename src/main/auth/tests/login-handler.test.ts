@@ -15,20 +15,23 @@ function setup (over: { tab?: boolean, pageUrl?: string } = {}): {
   asks: SlotAsk[]
   cancel: ReturnType<typeof vi.fn>
   contents: WebContents
+  pending: Array<string | null>
 } {
   let n = 0
   const challenges = new AuthChallenges({ schedule: () => () => undefined, newId: () => `c${String(++n)}` })
   const asks: SlotAsk[] = []
   const cancel = vi.fn()
+  const pending: Array<string | null> = []
   const contents = { getURL: () => over.pageUrl ?? PAGE } as unknown as WebContents
   return {
     deps: {
       challenges,
       findTab: (candidate) => candidate === contents && over.tab !== false ? { window: WINDOW, tabId: 't1' } : null,
       loadOf: () => 1,
-      ask: (ask) => { asks.push(ask); return { cancel } }
+      ask: (ask) => { asks.push(ask); return { cancel } },
+      pending: (_contents, url) => { pending.push(url) }
     },
-    challenges, asks, cancel, contents
+    challenges, asks, cancel, contents, pending
   }
 }
 
@@ -52,6 +55,20 @@ describe('handleLogin', () => {
     expect(s.asks).toHaveLength(1)
     expect(s.asks[0]).toMatchObject({ window: WINDOW, tabId: 't1', slot: 'center', overlay: 'auth-sheet', payload: { id: 'c1' } })
     expect(s.challenges.get('c1')).toMatchObject({ first: true, insecure: true, mismatch: false, server: { scheme: 'http', host: '127.0.0.1', port: 8080, realm: 'Staging' } })
+  })
+
+  it('shows the page a main-frame request is for in the tab while the sheet waits, and stops when it is answered', () => {
+    const s = setup({ pageUrl: 'orivon://newtab/' })
+    run(s)
+    expect(s.pending).toEqual(['http://127.0.0.1:8080/secret'])
+    s.challenges.answer('c1', { username: 'u', password: 'p' })
+    expect(s.pending).toEqual(['http://127.0.0.1:8080/secret', null])
+  })
+
+  it('shows no address for a part of the page, which is not the page the tab is loading', () => {
+    const s = setup()
+    run(s, details({ isMainFrame: false, isRequestForNavigation: false }))
+    expect(s.pending).toEqual([])
   })
 
   it('leaves anything that is not a tab to Electron, which cancels it', () => {

@@ -26,9 +26,8 @@ export const httpsWarningPage: OverlayPage = {
         if (!isView(payload)) { overlay.close(); return }
         const back = h('button', { type: 'button', className: 'btn primary', onclick: () => { ask('back') } }, backLabel(payload.canGoBack))
         card.replaceChildren(
-          h('div', { className: 'https-head' },
-            h('span', { className: 'https-icon' }, warningIcon()),
-            h('h1', { className: 'sheet-title', id: 'https-title' }, TITLE)),
+          h('span', { className: 'https-icon' }, warningIcon()),
+          h('h1', { className: 'sheet-title', id: 'https-title' }, TITLE),
           h('p', { className: 'origin https-host', title: payload.host }, payload.host),
           h('p', { className: 'https-body', id: 'https-body' }, BODY),
           h('div', { className: 'btn-row' },

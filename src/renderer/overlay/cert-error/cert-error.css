@@ -5,6 +5,6 @@ body[data-overlay='cert-error'] .cert-error-icon { display: block; margin-bottom
 body[data-overlay='cert-error'] .cert-error-icon .icon { width: 32px; height: 32px; }
 body[data-overlay='cert-error'] .sheet-title { margin: 0; }
 body[data-overlay='cert-error'] .origin { margin: 2px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-body[data-overlay='cert-error'] .cert-error-text { margin: 10px 0 0; }
+body[data-overlay='cert-error'] .cert-error-text { margin: 10px 0 0; color: var(--wink); font-size: 13px; }
 body[data-overlay='cert-error'] .cert-error-note { margin: 6px 0 0; color: var(--wink-dim); font-size: 12px; }
 body[data-overlay='cert-error'] .btn-row { margin-top: 16px; }
