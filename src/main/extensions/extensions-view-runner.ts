@@ -27,7 +27,7 @@ async function readInside (root: string, relativePath: string): Promise<Buffer |
   }
 }
 
-async function readLocaleCatalog (root: string, defaultLocale: string | undefined): Promise<Map<string, string> | undefined> {
+export async function readLocaleCatalog (root: string, defaultLocale: string | undefined): Promise<Map<string, string> | undefined> {
   if (defaultLocale === undefined) return undefined
   const bytes = await readInside(root, `_locales/${defaultLocale}/messages.json`)
   if (bytes === null) return undefined

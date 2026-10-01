@@ -1,0 +1,58 @@
+.sc-list { display: grid; gap: 14px; }
+.sc-head { display: flex; align-items: center; gap: 10px; }
+.sc-icon { width: 20px; height: 20px; flex: none; border-radius: 4px; object-fit: contain; }
+.sc-icon.placeholder { display: inline-flex; align-items: center; justify-content: center; background: var(--wsurface); color: var(--wink-dim); }
+.sc-icon.placeholder svg { width: 14px; height: 14px; }
+.sc-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.sc-rows { list-style: none; margin: 0; padding: 0; }
+.sc-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 16px;
+  row-gap: 8px;
+  padding: 10px 18px;
+  border-top: 1px solid var(--wborder);
+}
+.sc-row:first-child { border-top: none; }
+.sc-main { display: grid; gap: 2px; min-width: 0; }
+.sc-desc { overflow-wrap: anywhere; font-size: 13.5px; }
+.sc-main code { justify-self: start; font-size: 12.5px; }
+.sc-hint { font-size: 12.5px; }
+
+.sc-control { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.sc-keys { display: inline-flex; gap: 4px; margin-right: 4px; }
+.sc-keys kbd {
+  padding: 2px 7px;
+  border: 1px solid var(--wborder);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--wsurface);
+  font: inherit;
+  font-size: 12px;
+}
+.sc-control .muted { margin-right: 4px; }
+.sc-slot { width: 28px; height: 28px; flex: none; }
+
+.sc-field {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1.5px solid var(--waccent-text);
+  border-radius: 6px;
+  background: var(--waccent-wash);
+  color: var(--waccent-text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.sc-row .sc-notice { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 0; font-size: 13px; }
+.sc-notice .link-btn { margin-right: -6px; }
+
+.sc-card.target { outline: 2px solid var(--waccent-text); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) {
+  .sc-card { transition: outline-color 0.4s ease; outline: 2px solid transparent; outline-offset: 2px; }
+  .sc-card.target { outline-color: var(--waccent-text); }
+}

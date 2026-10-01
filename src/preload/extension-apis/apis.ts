@@ -15,4 +15,8 @@
 //       onVisited: crx.event('history.onVisited')
 //     }))
 //   }
-export const EXTENSION_MAIN_WORLD_APIS: ReadonlyArray<() => void> = []
+import { commandsApi } from './commands.js'
+
+export const EXTENSION_MAIN_WORLD_APIS: ReadonlyArray<() => void> = [
+  commandsApi
+]

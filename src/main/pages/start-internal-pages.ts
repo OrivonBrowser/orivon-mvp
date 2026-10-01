@@ -130,6 +130,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     about: aboutDomain()
   })
   extensions.prefs.onChange(() => { services.internalPages.publish('extensions.changed', undefined, ['extensions']) })
+  extensions.commandKeys.onChange(() => { services.internalPages.publish('extensions.changed', undefined, ['extensions']) })
   onVerifierChange(() => { services.internalPages.publish('web3.changed', verifierView(), ['settings']) })
   // Reaches 'extensions' too: it reads and writes 'extensions.developerMode' through this same domain.
   services.settings.onChange((change) => { services.internalPages.publish('settings.changed', change, ['settings', 'extensions']) })

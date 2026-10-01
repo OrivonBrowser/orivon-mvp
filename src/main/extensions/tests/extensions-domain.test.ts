@@ -7,6 +7,7 @@ import { createExtensionPrefsStore } from '../extension-prefs-runner.js'
 import type { ExtensionFacts } from '../extensions-view.js'
 import type { InstalledExtension } from '../registry.js'
 import type { InstallOutcome } from '../install-runner.js'
+import { fakeCommandKeys } from './command-keys-fixtures.js'
 
 const UNPACKED: InstalledExtension = {
   id: 'abcdefghijklmnopabcdefghijklmnop',
@@ -40,6 +41,7 @@ function buildDeps (overrides: Partial<ExtensionsDomainDeps> = {}): { deps: Exte
       checkForUpdates: vi.fn(async () => {}),
       updateFromStore: vi.fn(async (): Promise<InstallOutcome> => ({ installed: true, entry: UNPACKED })),
       prefs: createExtensionPrefsStore(null),
+      commandKeys: fakeCommandKeys(),
       applyManifest: vi.fn(async () => 'unchanged' as const)
     },
     prefs: createExtensionPrefsStore(null),
@@ -172,7 +174,8 @@ describe('extensionsDomain', () => {
         checkForUpdates: vi.fn(async () => {}),
         updateFromStore: vi.fn(async (): Promise<InstallOutcome> => ({ installed: true, entry: UNPACKED })),
         prefs: createExtensionPrefsStore(null),
-        applyManifest: vi.fn(async () => 'unchanged' as const)
+        commandKeys: fakeCommandKeys(),
+      applyManifest: vi.fn(async () => 'unchanged' as const)
       }
     })
     const { handle } = extensionsDomain(deps)

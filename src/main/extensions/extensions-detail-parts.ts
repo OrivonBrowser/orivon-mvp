@@ -5,11 +5,14 @@
 import type { ExtensionFacts } from './extensions-view.js'
 import type { ExtensionsDomainDeps } from './extensions-domain.js'
 import type { InstalledExtension } from './registry.js'
+import { shortcutsPart } from './shortcuts-page.js'
 
 export type ExtensionPart = (entry: InstalledExtension, facts: ExtensionFacts, deps: ExtensionsDomainDeps) => Record<string, unknown>
 
 /** Merged into `ExtensionDetails.parts` of the details reply. One per line, alphabetical. */
-export const DETAIL_PARTS: ReadonlyArray<ExtensionPart> = []
+export const DETAIL_PARTS: ReadonlyArray<ExtensionPart> = [
+  shortcutsPart
+]
 
 /** Merged into `ExtensionRow.parts` of every list row. One per line, alphabetical. */
 export const ROW_PARTS: ReadonlyArray<ExtensionPart> = []

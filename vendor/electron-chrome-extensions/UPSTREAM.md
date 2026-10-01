@@ -741,6 +741,15 @@
     where the answer is about one tab (`filterTabDetails` reads `details.id`, `insertCSS` the
     tab's id). Reason: a host decision that depends on more than the manifest (a per-extension
     site-access choice, a one-tab grant) needs to know which extension asks and about which tab.
+60. **`onCommand` from main.** `src/browser/api/commands.ts`: `CommandsAPI.send(extensionId,
+    name, tab)` fires `chrome.commands.onCommand(name, tab)` through the router (so a stopped
+    service worker starts), with the tab's details read through `TabsAPI.detailsFor` (new, public;
+    the cached details `chrome.tabs.get` answers) and passed through `filterTabDetails` for that
+    extension. `CommandsAPI`'s constructor takes that reader; `src/browser/index.ts` builds
+    `TabsAPI` first and exposes `ElectronChromeExtensions.sendCommand`. The library's own
+    `commandMap` and `getAll` stay in place and are unused by Orivon. Reason: the library
+    registered commands but never fired one, and Orivon's shortcut dispatcher is what notices the
+    key press.
 
 `partition.ts` is reached only through the virtual specifier `src/main/extensions/
 electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and

@@ -3,16 +3,19 @@
 // Add a line to the list that fits, in order; no other file changes.
 import type { CardBadge, DetailSection, ExtensionView } from './types.js'
 import type { ViewName } from './router.js'
+import { shortcutsLinkSection } from './sections/shortcuts-link.js'
 import { aboutSection } from './views/details-about.js'
 import { detailsView } from './views/details.js'
 import { listView } from './views/list.js'
+import { shortcutsView } from './views/shortcuts.js'
 import { stubView } from './views/stub.js'
 
 export type { CardBadge, DetailSection, ExtensionView, PageContext } from './types.js'
 
 /** One per line; shown sorted by `order`. */
 export const DETAIL_SECTIONS: readonly DetailSection[] = [
-  aboutSection
+  aboutSection,
+  shortcutsLinkSection
 ]
 
 /** One per line. */
@@ -24,5 +27,5 @@ export const EXTENSION_VIEWS: Readonly<Record<ViewName, ExtensionView>> = {
   details: detailsView(sortedSections),
   errors: stubView('Error log', 'The log of what went wrong in this extension will appear here.'),
   list: listView(CARD_BADGES),
-  shortcuts: stubView('Keyboard shortcuts', 'Shortcuts that extensions offer will appear here.')
+  shortcuts: shortcutsView
 }

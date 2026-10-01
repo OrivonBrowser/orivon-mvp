@@ -28,6 +28,9 @@ import { extensionPageOpen } from './extension-page-open.js'
 import { attachExtensionsDnr, getDnrEngine } from './extensions-dnr.js'
 import { registerDnrApiHandlers } from './dnr-api.js'
 import { installApis } from './api/install-apis.js'
+import { provideCommandKeys } from './api/commands-api.js'
+import { installExtensionCommands } from './install-extension-commands.js'
+import type { ExtensionCommandKeys } from './extension-commands-runner.js'
 import { installDnrWebRequestHandlers } from './dnr-webrequest.js'
 
 export interface ExtensionsApi {
@@ -52,6 +55,8 @@ export interface ExtensionsApi {
   readonly updateFromStore: (id: string) => Promise<InstallOutcome>
   /** What the person chose per extension (pins, grants, site access, shortcuts, overrides). */
   readonly prefs: ExtensionPrefsStore
+  /** The keys of the commands extensions declare: what the shortcut dispatcher runs and the shortcuts page lists. */
+  readonly commandKeys: ExtensionCommandKeys
   /** Rewrites the extension's loaded manifest from its base and `prefs`, then reloads it:
    * at once for 'now', once no page of it is open for 'quiet'. */
   readonly applyManifest: (id: string, mode: ApplyMode) => Promise<ApplyResult>
@@ -112,6 +117,8 @@ export const extensionsSubsystem: Subsystem = {
     const manifests = createManifestApplier({ userDataPath, session: session.defaultSession, prefs, isOpen: extensionPageOpen })
     if (!ctx.privateSession) manifests.applyAtBoot()
     installApis({ host: hostExtensions, session: session.defaultSession, userDataPath, ctx, prefs })
+    const commandKeys = installExtensionCommands({ ctx, prefs, userDataPath })
+    provideCommandKeys(commandKeys)
 
     // A private or guest runtime runs no extension: nothing loads, and no
     // install route (the store page's included) is started.
@@ -131,6 +138,7 @@ export const extensionsSubsystem: Subsystem = {
       checkForUpdates: store.checkForUpdates,
       updateFromStore: store.updateFromStore,
       prefs,
+      commandKeys,
       applyManifest: manifests.applyManifest
     }
     installExtensionsInstallTestHook(extensionsApi)

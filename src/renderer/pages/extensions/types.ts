@@ -15,6 +15,8 @@ export interface PageContext {
 export interface ExtensionView {
   /** Fills `root`; called again on the same `root` for a refresh. */
   render: (root: HTMLElement, ctx: PageContext) => void
+  /** Called when the page moves to another view. */
+  leave?: () => void
 }
 
 export interface DetailSection {

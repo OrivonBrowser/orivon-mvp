@@ -74,6 +74,9 @@ declare module 'orivon:crx-extensions' {
     activateAction (extensionId: string, tab: Electron.WebContents, anchor: Electron.Rectangle): void
     /** UPSTREAM.md patch 46: the toolbar list changed (public `onUpdate`). */
     notifyActionsChanged (): void
+    /** UPSTREAM.md patch 60: fires `chrome.commands.onCommand(name, tab)` in one extension (its worker
+     * starts if stopped); `tab` is read through the library's own URL and title filter. */
+    sendCommand (extensionId: string, name: string, tab: Electron.WebContents | undefined): void
   }
 
   /** The subset of `src/browser/router.ts`'s `ExtensionRouter` a caller

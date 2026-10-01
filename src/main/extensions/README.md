@@ -86,8 +86,9 @@ same exception, reached only through the virtual specifiers above).
 
 | File | Layer |
 |---|---|
-| `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts`, `store-download-seam.ts`, `extension-prefs.ts`, `effective-manifest.ts`, `manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `extensions-detail-parts.ts`, `extensions-page-commands.ts`, `extension-permission-check.ts`, `install-private.ts` | The decision -- no `electron`, unit-tested under plain vitest |
+| `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts`, `extension-commands.ts`, `extension-action-anchor.ts`, `store-download-seam.ts`, `extension-prefs.ts`, `effective-manifest.ts`, `manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `extensions-detail-parts.ts`, `extensions-page-commands.ts`, `extension-permission-check.ts`, `install-private.ts` | The decision -- no `electron`, unit-tested under plain vitest |
 | `unpack-runner.ts`, `registry-runner.ts`, `install-runner.ts`, `install-store-runner.ts`, `install-lifecycle.ts`, `extensions-view-runner.ts`, `store-runner.ts`, `extension-prefs-runner.ts`, `effective-manifest-runner.ts`, `extension-page-open.ts` | The real I/O |
+| `extension-commands-runner.ts`, `install-extension-commands.ts`, `shortcuts-page.ts` | The keys of extension commands: the table and what a key runs (fakes for everything it reaches), the real session, registry and shell behind it, and what the shortcuts page may ask |
 | `extension-install-prompt.ts`, `extensions-picker-runner.ts` | The native dialogs (`dialog.showMessageBox`, `dialog.showOpenDialog`) |
 | `extension-host.ts`, `extension-host-impl.ts`, `extension-popup-policy.ts`, `extension-event-filter.ts` | The library wiring: construction and tab lifecycle, the shell callbacks, the popup and background-page window policy, the per-listener event filter |
 | `api/` | Main-side handlers for the namespaces Orivon adds to `chrome.*`, and the one permission check (`api/README.md`) |
@@ -107,6 +108,22 @@ extension is open, and at the next launch when that never happens). A feature ad
 `MANIFEST_STAGES` (`manifest-stage-granted.ts`, `manifest-stage-site-access.ts`). A store update is
 judged against the base copy, so a choice that narrowed the loaded manifest never makes an update
 look like it asks for more.
+
+**An extension's commands are keys in Orivon's own dispatcher, never a second listener.**
+`extension-commands.ts` reads the manifest's `commands` and decides which key each one ends up
+with: the person's choice (`prefs.shortcuts`, `''` for one they cleared), else the suggested key
+when Orivon and every earlier-installed command leave it free. `extension-commands-runner.ts` keeps
+that table and answers `../shortcuts/dispatcher.ts`, which asks Orivon's own commands first, so an
+extension never takes a key Orivon binds and a bare key or an editing key is never offered. A key
+that runs a command is consumed; every other key still reaches the page. `_execute_action` opens
+the popup as a click on the icon does, under the icon or else the Extensions button
+(`extension-action-anchor.ts`); a named command reaches `chrome.commands.onCommand` through
+`ElectronChromeExtensions.sendCommand` with the active tab, and counts as an invocation of the
+extension on that tab. A tab no extension is told about (a registered app's, or an internal page)
+is passed as no tab. `commands.getAll` (`api/commands-api.ts`) answers with the live key. The
+table is empty until `installShortcuts` says the saved shortcuts are read, because a lookup before
+that would cache the defaults. The macOS reading of `Command` and `MacCtrl` is *provisional*: it
+is unit-tested and has not run on a Mac.
 
 **`extension-sw-preload-recovery.ts` must import nothing beyond `electron`'s ambient types.**
 Its own exports (the two health-check channel constants, `extensionIdFromScope`) are imported by

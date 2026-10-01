@@ -175,15 +175,17 @@ export class ElectronChromeExtensions extends EventEmitter {
     // OFFSCREEN_DOCUMENT contexts and capture consumer respectively.
     const offscreen = new OffscreenAPI(this.ctx)
     const browserAction = new BrowserActionAPI(this.ctx)
+    // Orivon patch (UPSTREAM.md patch 60): built before `commands`, which reads tab details from it.
+    const tabs = new TabsAPI(this.ctx)
     this.api = {
       browserAction,
       contextMenus: new ContextMenusAPI(this.ctx),
-      commands: new CommandsAPI(this.ctx),
+      commands: new CommandsAPI(this.ctx, (tab) => tabs.detailsFor(tab)),
       cookies: new CookiesAPI(this.ctx),
       notifications: new NotificationsAPI(this.ctx),
       permissions: new PermissionsAPI(this.ctx),
       runtime: new RuntimeAPI(this.ctx, offscreen, browserAction),
-      tabs: new TabsAPI(this.ctx),
+      tabs,
       webNavigation: new WebNavigationAPI(this.ctx),
       windows: new WindowsAPI(this.ctx),
       offscreen,
@@ -284,6 +286,14 @@ export class ElectronChromeExtensions extends EventEmitter {
   /** Orivon patch (UPSTREAM.md patch 46): tells the toolbar its list changed. */
   notifyActionsChanged(): void {
     this.api.browserAction.notifyChanged()
+  }
+
+  /**
+   * Orivon patch (UPSTREAM.md patch 60): fires `chrome.commands.onCommand` in `extensionId` for the
+   * command `name`, with `tab` when there is one. Orivon's own trusted code only.
+   */
+  sendCommand(extensionId: string, name: string, tab: Electron.WebContents | undefined): void {
+    this.api.commands.send(extensionId, name, tab)
   }
 
   /** Add webContents to be tracked as a tab. */

@@ -199,6 +199,11 @@ export class TabsAPI {
     return details
   }
 
+  /** Orivon patch (UPSTREAM.md patch 60): the details `chrome.tabs.get` would answer for `tab`, unfiltered. */
+  detailsFor(tab: TabContents) {
+    return this.getTabDetails(tab)
+  }
+
   private getTabDetails(tab: TabContents) {
     if (this.ctx.store.tabDetailsCache.has(tab.id)) {
       return this.ctx.store.tabDetailsCache.get(tab.id)
