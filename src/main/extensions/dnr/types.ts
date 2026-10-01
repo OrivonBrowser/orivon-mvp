@@ -122,7 +122,8 @@ export interface DnrRule {
 export interface DnrStaticRuleset {
   id: string
   enabled: boolean
-  rules: DnrRule[]
+  /** A function defers reading a disabled ruleset's rules until it is first enabled. */
+  rules: DnrRule[] | (() => DnrRule[])
 }
 
 export interface DnrUpdateRuleOptions {

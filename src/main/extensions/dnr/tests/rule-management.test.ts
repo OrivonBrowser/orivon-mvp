@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createDnrEngine } from '../dnr-engine.js'
 import { makeRequest, blockRule } from './engine.test-helpers.js'
 
@@ -200,12 +200,14 @@ describe('setStaticRulesets / updateEnabledRulesets', () => {
     ).toThrow(/Duplicate static ruleset id/)
   })
 
-  it('rejects the static rule count across enabled rulesets exceeding GUARANTEED_MINIMUM_STATIC_RULES', () => {
-    const engine = createDnrEngine()
+  it('does not load a ruleset past the guaranteed minimum when the global pool is empty', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const engine = createDnrEngine({ globalStaticRulePool: 0 })
     const rules = Array.from({ length: 30001 }, (_, i) => blockRule(i + 1, { urlFilter: `x${i}` }))
-    expect(() => engine.setStaticRulesets('ext', [{ id: 'r', enabled: true, rules }])).toThrow(
-      /GUARANTEED_MINIMUM_STATIC_RULES/
-    )
+    engine.setStaticRulesets('ext', [{ id: 'r', enabled: true, rules }])
+    expect(engine.getEnabledRulesets('ext')).toEqual([])
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('GUARANTEED_MINIMUM_STATIC_RULES'))
+    warn.mockRestore()
   })
 })
 
