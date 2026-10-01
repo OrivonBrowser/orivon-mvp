@@ -121,11 +121,14 @@ export interface PopoverSpec {
    * position, keyboard focus) on each open, the way a fresh popup's own
    * first load already does simply by starting over. */
   readonly onShow?: (webContents: WebContents) => void
+  /** The tab in front. A popup that closes while it holds the keyboard hands it back here, so the next key press (Ctrl+F) reaches a view that handles it. Never read from `getFocusedWebContents()`, which can touch a torn-down view. */
+  readonly activeContents?: () => WebContents | undefined
 }
 
 export interface PopoverView {
-  /** `extraArgs` are appended after the url argument verbatim, e.g. `--orivon-focus-origin=...` or `--orivon-site-info-page=web3`. Ignored by a `warm` popup, which takes no per-open argument. */
-  toggle: (anchor: PopoverAnchor, extraArgs: readonly string[]) => void
+  /** `extraArgs` are appended after the url argument verbatim, e.g. `--orivon-focus-origin=...` or `--orivon-site-info-page=web3`. Ignored by a `warm` popup, which takes no per-open argument.
+   * `key` names the toolbar icon asking: while the popup shows, another key swaps to that icon's content; just after a blur close, only the key that was showing is read as an echo. */
+  toggle: (anchor: PopoverAnchor, extraArgs: readonly string[], key?: string) => void
   close: () => void
   isOpen: () => boolean
   /** Builds a `warm` popup's view now, if it is not already built -- a no-op
@@ -170,6 +173,9 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
   let currentAnchor: PopoverAnchor | null = null
   let removeIpc: (() => void) | null = null
   let lastClosedAt = 0
+  /** Which icon the showing popup was opened by, and which one the last close was of. */
+  let shownKey = ''
+  let lastClosedKey = ''
 
   function currentBackground (): string {
     return resolveThemeColor(spec.background)
@@ -228,10 +234,11 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
     return warmView
   }
 
-  function show (anchor: PopoverAnchor, extraArgs: readonly string[]): void {
+  function show (anchor: PopoverAnchor, extraArgs: readonly string[], key: string): void {
     const popup = spec.warm === true ? ensureWarmView() : construct(extraArgs)
     currentAnchor = anchor
     shown = popup
+    shownKey = key
     // Added last, so it renders above the active tab's view. Tab switches
     // and clicks into the page both blur this webContents, which hides the
     // popup below -- so it can never be left stranded under a view that was
@@ -258,17 +265,25 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
   function hide (): void {
     if (shown === null) return
     const popup = shown
+    // Read before the view leaves: a blur close finds it already false, and focus then stays where the person put it.
+    const hadFocus = !popup.webContents.isDestroyed() && popup.webContents.isFocused()
     contentView.removeChildView(popup)
     recordPopoverShown(popup.webContents.id, false)
     shown = null
     currentAnchor = null
     lastClosedAt = Date.now()
+    lastClosedKey = shownKey
     // A `warm` popup's view survives being hidden -- only the window closing
     // (below) ever destroys it.
-    if (spec.warm === true) return
-    removeIpc?.()
-    removeIpc = null
-    if (!popup.webContents.isDestroyed()) popup.webContents.close()
+    if (spec.warm !== true) {
+      removeIpc?.()
+      removeIpc = null
+      if (!popup.webContents.isDestroyed()) popup.webContents.close()
+    }
+    if (hadFocus) {
+      const tab = spec.activeContents?.()
+      if (tab !== undefined && !tab.isDestroyed()) tab.focus()
+    }
   }
 
   if (spec.warm === true) {
@@ -294,12 +309,18 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
   }
 
   return {
-    toggle (anchor, extraArgs) {
-      if (shown !== null) { hide(); return }
+    toggle (anchor, extraArgs, key = '') {
+      if (shown !== null) {
+        const sameIcon = shownKey === key
+        hide()
+        if (!sameIcon) show(anchor, extraArgs, key)
+        return
+      }
       // See REOPEN_DEBOUNCE_MS's own doc: a toggle arriving just after our
-      // own blur-triggered hide is that hide's echo, not fresh intent.
-      if (Date.now() - lastClosedAt < REOPEN_DEBOUNCE_MS) return
-      show(anchor, extraArgs)
+      // own blur-triggered hide is that hide's echo, not fresh intent -- when
+      // it is the same icon. Another icon's click is fresh intent.
+      if (key === lastClosedKey && Date.now() - lastClosedAt < REOPEN_DEBOUNCE_MS) return
+      show(anchor, extraArgs, key)
     },
     close: hide,
     isOpen: () => shown !== null,
