@@ -16,6 +16,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - **`better-sqlite3` runs on the Node shim**: an adapter over `node:sqlite` with `Database`, `Statement` (`run`, `get`, `all`, `iterate`,
   `pluck`, `raw`, `expand`, `bind`, `safeIntegers`), `pragma`, `transaction` with its variants and `SqliteError`; the esbuild plugin
   points the package name at it. `function`, `aggregate`, `table`, `backup`, `serialize` and `loadExtension` refuse by name.
+- **A program that starts with a burst of file calls no longer fails on the first one past the limit**: a synchronous `fs` call
+  that the per-origin limiter refuses is asked again with a growing pause, and a WebAssembly program's file call is retried for
+  about five seconds before it sees `EMFILE`.
+- **A spawned program is given the app's files under their own path as well as `/`**, so a path the app holds
+  (`/orivon/app/...`) means the same file to the program.
 - **Tabs can be pinned, muted and duplicated**, and show when a page is playing sound; Close other tabs and Close tabs
   to the right keep pinned ones. A long strip scrolls and keeps the tab in front in view.
 - **A closed tab or window comes back with Ctrl+Shift+T**, in its place and with its history; the main menu names what
