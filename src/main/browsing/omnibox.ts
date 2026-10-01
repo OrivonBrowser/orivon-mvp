@@ -74,6 +74,13 @@ export function parseOmniboxInput (
     return { kind: 'reject', reason: 'empty' }
   }
 
+  // A leading `?` asks for a search whatever the rest looks like: `? example.com` searches for the address
+  // instead of going to it. It comes before the scheme check because a search never navigates to that scheme.
+  if (trimmed.startsWith('?')) {
+    const query = trimmed.slice(1).trim()
+    return query === '' ? { kind: 'reject', reason: 'empty' } : { kind: 'search', url: searchUrl(query) }
+  }
+
   if (hasDangerousScheme(trimmed)) {
     return { kind: 'reject', reason: 'dangerous-scheme' }
   }

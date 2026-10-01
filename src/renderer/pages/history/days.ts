@@ -8,7 +8,7 @@ export interface DayGroup {
   readonly entries: readonly HistoryEntry[]
 }
 
-const startOfDay = (time: number): number => {
+export const startOfDay = (time: number): number => {
   const date = new Date(time)
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
 }
@@ -38,4 +38,12 @@ export function groupByDay (entries: readonly HistoryEntry[], now: number, local
 
 export function timeLabel (time: number, locale?: string): string {
   return new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit' }).format(time)
+}
+
+/** A time with its day, for a list that has no day headings: "Today, 9:05 PM", "Sep 28, 3:00 AM". */
+export function dateTimeLabel (time: number, now: number, locale?: string): string {
+  const day = dayLabel(time, now, locale)
+  if (day === 'Today' || day === 'Yesterday') return `${day}, ${timeLabel(time, locale)}`
+  const sameYear = new Date(time).getFullYear() === new Date(now).getFullYear()
+  return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }), hour: 'numeric', minute: '2-digit' }).format(time)
 }

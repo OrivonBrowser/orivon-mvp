@@ -1,0 +1,36 @@
+/* The QR sheet: the code on a white tile that stays white in both themes (a scanner needs the contrast), the
+   address under it, then the two buttons. The tile is 264px wide: 16px of quiet zone round a 232px code. */
+
+body[data-overlay='qr'] .qr { padding: 16px 18px; }
+body[data-overlay='qr'] .sheet-title { margin: 0; }
+body[data-overlay='qr'] .sheet-body { margin: 12px 0 16px; gap: 10px; }
+
+body[data-overlay='qr'] .qr-tile {
+  box-sizing: border-box;
+  width: 264px;
+  height: 264px;
+  padding: 16px;
+  border-radius: var(--wradius);
+  background: #fff;
+}
+body[data-overlay='qr'] .qr-tile[hidden] { display: none; }
+body[data-overlay='qr'] .qr-tile svg { display: block; width: 232px; height: 232px; }
+
+body[data-overlay='qr'] .qr-address {
+  margin: 0;
+  overflow: hidden;
+  color: var(--wink-dim);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Read by a screen reader, never drawn: the buttons' own labels carry the sight of it. */
+body[data-overlay='qr'] .qr-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+}

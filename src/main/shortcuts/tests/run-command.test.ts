@@ -14,13 +14,13 @@ vi.mock('../../page-tools/real-deps.js', () => ({ realDeps: { real: true } }))
 interface Tab { id: string, url: string, title: string, isNewTab: boolean, isInternal: boolean, splitWith: string | null, pinned: boolean, muted: boolean }
 const tab = (id: string, extra: Partial<Tab> = {}): Tab => ({ id, url: `https://${id}.example/`, title: id, isNewTab: false, isInternal: false, splitWith: null, pinned: false, muted: false, ...extra })
 
-function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: boolean, homeUrl?: string } = {}): { target: ShellWindow, zoom: Record<'step' | 'reset', ReturnType<typeof vi.fn>>, devtools: Record<'toggle', ReturnType<typeof vi.fn>>, profiles: Record<'openPrivate', ReturnType<typeof vi.fn>>, calls: Record<string, ReturnType<typeof vi.fn>>, bookmarks: Record<string, ReturnType<typeof vi.fn>>, deps: CommandDeps & { openWindow: ReturnType<typeof vi.fn<() => void>>, quit: ReturnType<typeof vi.fn<() => void>> }, send: ReturnType<typeof vi.fn> } {
+function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: boolean, homeUrl?: string } = {}): { target: ShellWindow, zoom: Record<'step' | 'reset', ReturnType<typeof vi.fn>>, devtools: Record<'toggle' | 'openConsole', ReturnType<typeof vi.fn>>, profiles: Record<'openPrivate', ReturnType<typeof vi.fn>>, calls: Record<string, ReturnType<typeof vi.fn>>, bookmarks: Record<string, ReturnType<typeof vi.fn>>, deps: CommandDeps & { openWindow: ReturnType<typeof vi.fn<() => void>>, quit: ReturnType<typeof vi.fn<() => void>> }, send: ReturnType<typeof vi.fn> } {
   const calls = Object.fromEntries(['createTab', 'navigate', 'closeTab', 'activateTab', 'back', 'forward', 'reload', 'openInternal', 'reloadIgnoringCache', 'stop', 'overlayShow', 'overlayToggle', 'moveTab', 'toggle', 'changed', 'setAudioMuted', 'focusOther', 'swap', 'rotate'].map((name) => [name, vi.fn()]))
   const send = vi.fn()
   const window = { close: vi.fn(), setFullScreen: vi.fn(), isFullScreen: vi.fn(() => false), isAlwaysOnTop: vi.fn(() => false), setAlwaysOnTop: vi.fn(), getBounds: vi.fn(() => ({ x: 10, y: 20, width: 800, height: 600 })) }
   const target = {
     window,
-    chrome: { webContents: { focus: vi.fn(), send } },
+    chrome: { webContents: { focus: vi.fn(), send, isDestroyed: () => false } },
     tabs: {
       getState: () => ({ tabs, activeTabId }),
       tabCount: tabs.length,
@@ -36,11 +36,11 @@ function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: bo
     overlays: { show: calls['overlayShow'], toggle: calls['overlayToggle'], isOpen: () => false, close: vi.fn(), send: vi.fn() },
     shortcutsSuspended: () => false
   } as unknown as ShellWindow
-  const bookmarks = { has: vi.fn(() => false), add: vi.fn(), remove: vi.fn() }
+  const bookmarks = { has: vi.fn(() => false), add: vi.fn(), remove: vi.fn(), children: vi.fn(() => []), findByUrl: vi.fn((): Array<{ id: string, added: number }> => []), addUrl: vi.fn(() => ({ id: 'made', added: 1 })) }
   const zoom = { step: vi.fn(), reset: vi.fn() }
-  const devtools = { toggle: vi.fn() }
+  const devtools = { toggle: vi.fn(), openConsole: vi.fn() }
   const profiles = { openPrivate: vi.fn() }
-  return { target, zoom, devtools, profiles, calls: { ...calls, close: window.close as never, setFullScreen: window.setFullScreen as never, setAlwaysOnTop: window.setAlwaysOnTop as never }, bookmarks, deps: { services: { bookmarks, zoom, devtools, profiles, closedTabs: new ClosedStack(), kiosk: options.kiosk === true, settings: { get: () => options.homeUrl ?? '' } } as unknown as ShellServices, openWindow: vi.fn<() => void>(), displays: () => [], quit: vi.fn<() => void>() }, send }
+  return { target, zoom, devtools, profiles, calls: { ...calls, close: window.close as never, setFullScreen: window.setFullScreen as never, setAlwaysOnTop: window.setAlwaysOnTop as never }, bookmarks, deps: { services: { bookmarks, zoom, devtools, profiles, closedTabs: new ClosedStack(), kiosk: options.kiosk === true, settings: { get: () => options.homeUrl ?? '', set: vi.fn() } } as unknown as ShellServices, openWindow: vi.fn<() => void>(), displays: () => [], quit: vi.fn<() => void>() }, send }
 }
 
 describe('the tab-state commands', () => {
@@ -164,23 +164,45 @@ describe('runCommand', () => {
     expect(send).toHaveBeenCalledWith('orivon-shell:event', { type: 'focusAddress' })
   })
 
-  it('bookmarks a page and removes the bookmark on the second press, with its icon', () => {
-    const first = harness([tab('a')], 'a')
-    runCommand('bookmark.toggle', first.target, first.deps)
-    expect(first.bookmarks['add']).toHaveBeenCalledWith({ url: 'https://a.example/', title: 'a', favicon: 'data:icon' })
+  it('asks the address bar module for a search, so the field is ready for the words of one', () => {
+    const { target, send, deps } = harness([tab('a')], 'a')
 
-    const second = harness([tab('a')], 'a')
-    second.bookmarks['has']?.mockReturnValue(true)
-    runCommand('bookmark.toggle', second.target, second.deps)
-    expect(second.bookmarks['remove']).toHaveBeenCalledWith('https://a.example/')
+    runCommand('nav.focusSearch', target, deps)
+
+    expect(send).toHaveBeenCalledWith('orivon-shell:event', { type: 'module', module: 'address-suggest', payload: { type: 'focusSearch' } })
   })
 
-  it('bookmarks nothing on the new-tab page or one of the shell\'s own pages', () => {
+  it('saves a page on the first press and opens the bubble; on a saved page it only opens the bubble, and never removes', () => {
+    const asked = { type: 'module', module: 'bookmark-star', payload: { open: true } }
+    const first = harness([tab('a')], 'a')
+    runCommand('bookmark.toggle', first.target, first.deps)
+    expect(first.bookmarks['addUrl']).toHaveBeenCalledWith({ url: 'https://a.example/', title: 'a', favicon: 'data:icon', parent: 'bar' })
+    expect(first.send).toHaveBeenCalledWith(expect.any(String), asked)
+
+    const second = harness([tab('a')], 'a')
+    second.bookmarks['findByUrl']?.mockReturnValue([{ id: 'old', added: 1 }])
+    runCommand('bookmark.toggle', second.target, second.deps)
+    expect(second.bookmarks['addUrl']).not.toHaveBeenCalled()
+    expect(second.bookmarks['remove']).not.toHaveBeenCalled()
+    expect(second.send).toHaveBeenCalledWith(expect.any(String), asked)
+  })
+
+  it('bookmarks nothing, and opens no bubble, on the new-tab page or one of the shell\'s own pages', () => {
     for (const extra of [{ isNewTab: true }, { isInternal: true }]) {
-      const { target, bookmarks, deps } = harness([tab('a', extra)], 'a')
+      const { target, bookmarks, deps, send } = harness([tab('a', extra)], 'a')
       runCommand('bookmark.toggle', target, deps)
-      expect(bookmarks['add']).not.toHaveBeenCalled()
+      expect(bookmarks['addUrl']).not.toHaveBeenCalled()
+      expect(send).not.toHaveBeenCalled()
     }
+  })
+
+  it('opens the Bookmark all tabs sheet when some tab has a site, and does nothing when none has', () => {
+    const some = harness([tab('a'), tab('b', { isNewTab: true })], 'a')
+    runCommand('bookmark.allTabs', some.target, some.deps)
+    expect(some.calls['overlayShow']).toHaveBeenCalledWith('bookmark-all-tabs')
+    const none = harness([tab('a', { isNewTab: true }), tab('b', { isInternal: true })], 'a')
+    runCommand('bookmark.allTabs', none.target, none.deps)
+    expect(none.calls['overlayShow']).not.toHaveBeenCalled()
   })
 
   it('opens windows, closes the window, toggles full screen and opens Settings', () => {
@@ -256,6 +278,25 @@ describe('runCommand', () => {
     expect(devtools.toggle).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ reloadIgnoringCache: expect.anything() }), target.window)
   })
 
+  it('opens developer tools on the active tab\'s Console panel', () => {
+    const { target, deps, devtools } = harness([tab('a')], 'a')
+    runCommand('devtools.console', target, deps)
+    expect(devtools.openConsole).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ reloadIgnoringCache: expect.anything() }), target.window)
+  })
+
+  it('opens the About page and the task manager as shell pages', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+    runCommand('about.open', target, deps)
+    runCommand('tasks.open', target, deps)
+    expect(calls['openInternal']!.mock.calls).toEqual([['about'], ['tasks']])
+  })
+
+  it('opens the Import page', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+    runCommand('import.open', target, deps)
+    expect(calls['openInternal']).toHaveBeenCalledWith('import')
+  })
+
   it('stops the active tab\'s load', () => {
     const { target, calls, deps } = harness([tab('a')], 'a')
 
@@ -327,5 +368,17 @@ describe('runCommand', () => {
     runCommand('profiles.open', target, deps)
     expect(profiles.openPrivate).toHaveBeenCalledTimes(1)
     expect(calls['openInternal']).toHaveBeenCalledWith('profiles')
+  })
+
+  it('opens the Downloads page', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+    runCommand('downloads.open', target, deps)
+    expect(calls['openInternal']).toHaveBeenCalledWith('downloads')
+  })
+
+  it('opens the Bookmarks page', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+    runCommand('bookmarks.open', target, deps)
+    expect(calls['openInternal']).toHaveBeenCalledWith('bookmarks')
   })
 })

@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { commandById } from '../../shortcuts/commands.js'
 import { ShortcutService } from '../../shortcuts/shortcut-service.js'
 import { ShortcutStore } from '../../shortcuts/shortcut-store.js'
@@ -14,21 +14,22 @@ let dir: string
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'orivon-menu-layout-')) })
 afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
 
-interface Setup { shortcuts: ShortcutService, ctx: WindowContext, closedTabs: ClosedStack }
+interface Setup { shortcuts: ShortcutService, ctx: WindowContext, closedTabs: ClosedStack, bar: { mode: string, items: number } }
 
 async function setup (url = 'https://a.example/', zoomPercent = 100, onTop = false): Promise<Setup> {
   const store = new ShortcutStore(join(dir, 'shortcuts.json'), 'linux')
   await store.load()
   const shortcuts = new ShortcutService(store, 'linux')
   const closedTabs = new ClosedStack()
+  const bar = { mode: 'auto', items: 0 }
   const ctx = {
     window: {
       window: { isAlwaysOnTop: () => onTop },
-      tabs: { getState: () => ({ tabs: [{ id: 'a', url }], activeTabId: 'a' }) }
+      tabs: { getState: () => ({ tabs: [{ id: 'a', url, displayUrl: url, isNewTab: url === 'orivon://newtab/', isInternal: false }], activeTabId: 'a' }) }
     },
-    services: { shortcuts, closedTabs, zoom: { percentFor: (origin: string | null) => origin === null ? 100 : zoomPercent } }
+    services: { shortcuts, closedTabs, settings: { get: () => bar.mode }, bookmarks: { children: () => new Array(bar.items).fill({}) }, zoom: { percentFor: (origin: string | null) => origin === null ? 100 : zoomPercent } }
   } as unknown as WindowContext
-  return { shortcuts, ctx, closedTabs }
+  return { shortcuts, ctx, closedTabs, bar }
 }
 
 const commandsIn = (entries: readonly MenuEntry[]): string[] => entries.flatMap((entry): string[] => {
@@ -64,7 +65,7 @@ describe('the main menu layout', () => {
     const { ctx } = await setup()
     const items = menuItems(ctx)
     expect(items.map((item) => item.kind)).toContain('zoom')
-    expect(items.find((item) => item.kind === 'submenu')).toMatchObject({ label: 'More tools' })
+    expect(items.find((item) => item.kind === 'submenu' && item.label === 'More tools')).toBeDefined()
   })
 
   it('lists Find in page with its key, between Print and Save page as', async () => {
@@ -78,7 +79,7 @@ describe('the main menu layout', () => {
 
   it('lists Search tabs with its key in More tools, right after Split view', async () => {
     const { ctx } = await setup()
-    const more = menuItems(ctx).find((item) => item.kind === 'submenu')
+    const more = menuItems(ctx).find((item) => item.kind === 'submenu' && item.label === 'More tools')
     const rows = more?.kind === 'submenu' ? more.items : []
     const at = rows.findIndex((item) => item.kind === 'command' && item.id === 'tab.search')
     expect(rows[at]).toMatchObject({ label: 'Search tabs', keys: ['Ctrl', 'Shift', 'A'] })
@@ -139,13 +140,88 @@ describe('menuItems', () => {
     const { ctx } = await setup()
     expect(menuItems(ctx, ['tab.new', 'no.such' as never])).toHaveLength(1)
   })
+
+  it('leaves out a command whose feature is still pending, and never reads its tick or its hint', async () => {
+    const { ctx } = await setup()
+    const on = vi.fn(() => true)
+    const hint = vi.fn(() => 'note')
+    // No row is pending on this branch, so two real rows are flagged for the length of the assertion.
+    const flagged = ['bookmarks.open', 'bookmark.allTabs'].map((id) => commandById(id) as { pending?: true })
+    for (const row of flagged) row.pending = true
+    let items: MenuItemView[]
+    try {
+      items = menuItems(ctx, ['tab.new', 'bookmarks.open', { check: 'bookmark.allTabs', on }, { item: 'bookmarks.open', hint }])
+    } finally {
+      for (const row of flagged) delete row.pending
+    }
+    expect(items).toEqual([expect.objectContaining({ id: 'tab.new' })])
+    expect(on).not.toHaveBeenCalled()
+    expect(hint).not.toHaveBeenCalled()
+  })
+
+  it('lists the Bookmarks submenu with the bookmark commands and Import, and nothing for a reading list', async () => {
+    const { ctx } = await setup()
+    const items = menuItems(ctx)
+    const submenu = items.find((item) => item.kind === 'submenu' && item.label === 'Bookmarks')
+    expect(submenu).toMatchObject({ items: [expect.objectContaining({ id: 'bookmark.allTabs' }), expect.anything(), expect.objectContaining({ id: 'bookmarks.toggleBar' }), expect.objectContaining({ id: 'bookmarks.open', label: 'Bookmark manager' }), expect.anything(), expect.objectContaining({ id: 'import.open' })] })
+    const ids = runnableIds(items)
+    for (const id of ['bookmarks.open', 'bookmark.allTabs', 'import.open']) expect(ids.has(id as never), id).toBe(true)
+  })
+})
+
+describe('the bookmarks bar check', () => {
+  const tick = (items: readonly MenuItemView[]): boolean | null | undefined => {
+    const submenu = items.find((item) => item.kind === 'submenu' && item.label === 'Bookmarks') as Extract<MenuItemView, { kind: 'submenu' }>
+    return (find(submenu.items, 'bookmarks.toggleBar') as Extract<MenuItemView, { kind: 'command' }> | undefined)?.checked
+  }
+
+  it('is on when the bar is shown by the setting or by an item in it, and off otherwise', async () => {
+    const { ctx, bar } = await setup()
+
+    expect(tick(menuItems(ctx))).toBe(false)
+    bar.items = 2
+    expect(tick(menuItems(ctx))).toBe(true)
+    bar.mode = 'never'
+    expect(tick(menuItems(ctx))).toBe(false)
+    bar.mode = 'always'
+    bar.items = 0
+    expect(tick(menuItems(ctx))).toBe(true)
+  })
+})
+
+describe('the QR code row', () => {
+  const more = (items: readonly MenuItemView[]): readonly MenuItemView[] => (items.find((item) => item.kind === 'submenu' && item.label === 'More tools') as Extract<MenuItemView, { kind: 'submenu' }>).items
+
+  it('is offered on a page, after Save as PDF', async () => {
+    const { ctx } = await setup()
+    const tools = more(menuItems(ctx))
+    expect(find(tools, 'page.qr')).toMatchObject({ label: 'Create QR code for this page' })
+    expect(find(tools, 'page.qr')).not.toHaveProperty('disabled')
+    expect(runnableIds(menuItems(ctx)).has('page.qr')).toBe(true)
+    const ids = tools.flatMap((item) => item.kind === 'command' ? [item.id] : [])
+    expect(ids.indexOf('page.qr')).toBe(ids.indexOf('page.pdf') + 1)
+  })
+
+  it('is greyed, and not runnable, on the new-tab page', async () => {
+    const { ctx } = await setup('orivon://newtab/')
+    expect(find(more(menuItems(ctx)), 'page.qr')).toMatchObject({ disabled: true })
+    expect(runnableIds(menuItems(ctx)).has('page.qr')).toBe(false)
+  })
+})
+
+describe('the about and task manager entries', () => {
+  it('list About Orivon, the JavaScript console and the Task manager', async () => {
+    const { ctx } = await setup()
+    const ids = runnableIds(menuItems(ctx))
+    for (const id of ['about.open', 'devtools.console', 'tasks.open']) expect(ids.has(id as never), id).toBe(true)
+  })
 })
 
 describe('runnableIds', () => {
   it('holds every listed command at every depth, and the zoom row\'s four', async () => {
     const { ctx } = await setup()
     const ids = runnableIds(menuItems(ctx))
-    for (const id of ['tab.new', 'split.toggle', 'tab.search', 'page.print', 'page.save', 'page.screenshot', 'page.pip', 'page.pdf', 'page.viewSource', 'window.alwaysOnTop', 'zoom.in', 'zoom.out', 'zoom.reset', 'window.fullscreen']) expect(ids.has(id as never), id).toBe(true)
+    for (const id of ['tab.new', 'split.toggle', 'tab.search', 'page.print', 'page.save', 'page.screenshot', 'page.pip', 'page.pdf', 'page.qr', 'page.viewSource', 'window.alwaysOnTop', 'zoom.in', 'zoom.out', 'zoom.reset', 'window.fullscreen']) expect(ids.has(id as never), id).toBe(true)
     expect(ids.has('tab.close')).toBe(false)
   })
 

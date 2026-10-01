@@ -2,10 +2,6 @@ import type { ShellState } from '../../main/shell/tabs.js'
 import type { ChromeContext, ChromeModule } from './context.js'
 import { hasSite, must } from './context.js'
 
-function isBookmarked (state: ShellState, url: string): boolean {
-  return state.bookmarks.some((b) => b.url === url)
-}
-
 /** The bookmark star, the zoom chip, and the toolbar's right end: the all-sites permissions button, the
  * profile chip and the menu button. */
 export function createCluster (): ChromeModule {
@@ -19,19 +15,6 @@ export function createCluster (): ChromeModule {
     profileChip.dataset['color'] = profile.color
     profileChip.textContent = profile.name
     profileChip.title = profile.isPrivate ? 'A private window: what it keeps, and what it does not' : `Profile: ${profile.name}`
-  }
-
-  function wireStar (toggle: HTMLButtonElement, ctx: ChromeContext): void {
-    toggle.addEventListener('click', () => {
-      const state = ctx.state()
-      const active = ctx.activeTab()
-      if (state === null || !hasSite(active)) return
-      if (isBookmarked(state, active.url)) {
-        ctx.shell.removeBookmark(active.url)
-      } else {
-        ctx.shell.addBookmark(active.url, active.title.length > 0 ? active.title : active.url, active.id)
-      }
-    })
   }
 
   function wireMenu (menuBtn: HTMLButtonElement, ctx: ChromeContext): void {
@@ -64,7 +47,6 @@ export function createCluster (): ChromeModule {
       zoomChip = chip
       profileChip = profile
 
-      wireStar(toggle, ctx)
       // The all-sites popup: always the full list, scrolled to whichever app the CURRENT tab is when there is
       // one. A URL that belongs to no app is harmless -- settings/main.ts finds no card to scroll to and
       // renders the list unscrolled, which is the ordinary open.
@@ -78,7 +60,7 @@ export function createCluster (): ChromeModule {
     },
     render: (state, ctx) => {
       const active = ctx.activeTab()
-      const bookmarked = active !== undefined && isBookmarked(state, active.url)
+      const bookmarked = active !== undefined && state.bookmarked
       bookmarkToggle?.classList.toggle('active', bookmarked)
       bookmarkToggle?.setAttribute('aria-pressed', String(bookmarked))
 

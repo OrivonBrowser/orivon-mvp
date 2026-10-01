@@ -113,6 +113,7 @@ input:focus-visible {
   font-size: 15px;
 }
 .search-input::placeholder { color: var(--wink-dim); }
+:root[data-away] .search-input:focus-visible { outline: none; caret-color: transparent; }
 
 .tile-section {
   width: 100%;

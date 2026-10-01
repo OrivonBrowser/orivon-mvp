@@ -4,8 +4,12 @@
 export interface SearchEngine {
   readonly id: string
   readonly label: string
+  /** Typed first in the address bar, before a space, to search this engine alone. Fixed: a person cannot change it. */
+  readonly keyword: string
   /** `%s` marks where the query goes. */
   readonly template: string
+  /** The https address the engine answers a typed prefix at, `%s` in place of it; absent when it has no public one. */
+  readonly suggestUrl?: string
 }
 
 export const DEFAULT_SEARCH_ENGINE = 'duckduckgo'
@@ -13,14 +17,14 @@ export const DEFAULT_SEARCH_ENGINE = 'duckduckgo'
 export const CUSTOM_SEARCH_ENGINE = 'custom'
 
 export const SEARCH_ENGINES: readonly SearchEngine[] = [
-  { id: 'duckduckgo', label: 'DuckDuckGo', template: 'https://duckduckgo.com/?q=%s' },
-  { id: 'startpage', label: 'Startpage', template: 'https://www.startpage.com/do/search?q=%s' },
-  { id: 'brave', label: 'Brave Search', template: 'https://search.brave.com/search?q=%s' },
-  { id: 'ecosia', label: 'Ecosia', template: 'https://www.ecosia.org/search?q=%s' },
-  { id: 'qwant', label: 'Qwant', template: 'https://www.qwant.com/?q=%s' },
-  { id: 'mojeek', label: 'Mojeek', template: 'https://www.mojeek.com/search?q=%s' },
-  { id: 'bing', label: 'Bing', template: 'https://www.bing.com/search?q=%s' },
-  { id: 'google', label: 'Google', template: 'https://www.google.com/search?q=%s' }
+  { id: 'duckduckgo', label: 'DuckDuckGo', keyword: 'ddg', template: 'https://duckduckgo.com/?q=%s', suggestUrl: 'https://duckduckgo.com/ac/?q=%s&type=list' },
+  { id: 'startpage', label: 'Startpage', keyword: 'sp', template: 'https://www.startpage.com/do/search?q=%s', suggestUrl: 'https://www.startpage.com/osuggestions?q=%s' },
+  { id: 'brave', label: 'Brave Search', keyword: 'brave', template: 'https://search.brave.com/search?q=%s' },
+  { id: 'ecosia', label: 'Ecosia', keyword: 'eco', template: 'https://www.ecosia.org/search?q=%s', suggestUrl: 'https://ac.ecosia.org/autocomplete?q=%s&type=list' },
+  { id: 'qwant', label: 'Qwant', keyword: 'qw', template: 'https://www.qwant.com/?q=%s', suggestUrl: 'https://api.qwant.com/v3/suggest?q=%s' },
+  { id: 'mojeek', label: 'Mojeek', keyword: 'mj', template: 'https://www.mojeek.com/search?q=%s' },
+  { id: 'bing', label: 'Bing', keyword: 'bing', template: 'https://www.bing.com/search?q=%s', suggestUrl: 'https://api.bing.com/osjson.aspx?query=%s' },
+  { id: 'google', label: 'Google', keyword: 'g', template: 'https://www.google.com/search?q=%s', suggestUrl: 'https://suggestqueries.google.com/complete/search?client=firefox&q=%s' }
 ]
 
 const MAX_TEMPLATE_LENGTH = 2048
@@ -55,11 +59,20 @@ function encodeQuery (query: string): string {
   return new URLSearchParams({ q: query }).toString().slice(2)
 }
 
-/** The URL that searches for `query`. An unknown engine, or `custom` with no
- * usable template, falls back to the default rather than to nothing. */
-export function searchUrlFor (engineId: string, customTemplate: string, query: string): string {
+/** `template` with `query` in place of `%s`. */
+export function fillTemplate (template: string, query: string): string {
+  return template.split('%s').join(encodeQuery(query))
+}
+
+/** The template the default choice stands for. An unknown engine, or `custom` with no usable template, falls
+ * back to the first engine rather than to nothing. */
+export function defaultTemplate (engineId: string, customTemplate: string): string {
   let template = SEARCH_ENGINES.find((engine) => engine.id === engineId)?.template
   if (engineId === CUSTOM_SEARCH_ENGINE && isValidSearchTemplate(customTemplate)) template = customTemplate
-  const chosen = template ?? (SEARCH_ENGINES[0] as SearchEngine).template
-  return chosen.split('%s').join(encodeQuery(query))
+  return template ?? (SEARCH_ENGINES[0] as SearchEngine).template
+}
+
+/** The URL that searches for `query` with the default choice. */
+export function searchUrlFor (engineId: string, customTemplate: string, query: string): string {
+  return fillTemplate(defaultTemplate(engineId, customTemplate), query)
 }

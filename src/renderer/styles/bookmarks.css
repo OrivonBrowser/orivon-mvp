@@ -1,55 +1,59 @@
-/* Bookmarks bar -- owner override, 2026-08-28 (scope.md, ADR-0003),
-   not in the original scope pass. v2's bar (visual reference only,
-   ADR-0002) was static decoration with no data model; this one holds
-   nothing but the real list. */
-
-/* Hidden outright when the list is empty -- owner, 2026-09-15.
-   src/main/window.ts shrinks the chrome view to match; see style.css. */
+/* The bookmarks bar: one 28px row under the toolbar. It is hidden outright when main has no room reserved for it
+   (style.css shrinks the chrome to match, from the same state push). */
 html[data-bookmarks="none"] .bookmarksbar { display: none; }
 
 .bookmarksbar {
+  position: relative;
   height: 28px;
   display: flex;
   align-items: center;
-  padding: 0 12px;
-  gap: 12px;
+  padding: 0 8px;
   background: var(--wbookmarks);
 }
 
+/* Items that do not fit are hidden by the module, never scrolled: the overflow button lists them. */
 .bmlist {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 4px;
   flex: 1;
   min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
+  overflow: hidden;
 }
-.bmlist::-webkit-scrollbar { display: none; }
 
-.bmitem {
+.bmitem,
+.bmmore {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 6px 2px 8px;
+  flex: none;
+  height: 22px;
   border-radius: 4px;
   color: var(--wink-dim);
   cursor: default;
-  flex: none;
-  max-width: 160px;
 }
-.bmitem:hover {
+.bmitem[hidden], .bmmore[hidden] { display: none; }
+.bmitem {
+  gap: 6px;
+  padding: 0 8px;
+  max-width: 160px;
+  min-width: 0;
+}
+.bmitem.icon-only { padding: 0 6px; }
+.bmitem:hover, .bmmore:hover, .bmitem.drop-into {
   background: var(--whover-soft);
   color: var(--wink);
 }
-/* svg OR img: a bookmark shows the site's real favicon when one was
-   captured at star time, and the globe when it was not (icons.ts's
-   faviconElement). Both have to occupy the same 14px box or the row's
-   text shifts depending on which one a given bookmark got. */
+.bmitem:active, .bmmore:active { background: var(--whover-strong); }
+.bmitem.dragging { opacity: 0.6; }
+.bmitem.drop-into { outline: 2px solid var(--waccent); outline-offset: -2px; }
+
+/* svg OR img: a bookmark shows the site's real favicon when one was captured at star time, and the globe when it
+   was not. Both occupy the same 14px box or the row's text shifts depending on which one an item got. */
 .bmitem > svg,
 .bmitem > img { width: 14px; height: 14px; flex: none; }
 .bmitem > img { border-radius: 2px; object-fit: contain; }
-.bmitem span {
+.bmitem > svg { stroke-width: 2; }
+.bmtitle {
   font-size: 12px;
   font-weight: 500;
   overflow: hidden;
@@ -57,22 +61,28 @@ html[data-bookmarks="none"] .bookmarksbar { display: none; }
   white-space: nowrap;
 }
 
-/* Remove button -- hover-reveal, same pattern as .tab .close
-   (tabstrip.css). Hidden until the item itself is hovered so the bar
-   doesn't look cluttered with X's at rest. */
-.bmitem .remove {
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  flex: none;
-  display: flex;
-  align-items: center;
+.bmmore {
   justify-content: center;
-  opacity: 0;
+  width: 24px;
+  margin-left: auto;
 }
-.bmitem:hover .remove { opacity: 0.7; }
-.bmitem .remove:hover {
-  background: color-mix(in srgb, var(--wink) 14%, transparent);
-  opacity: 1;
+.bmmore svg { width: 14px; height: 14px; }
+
+.bmempty {
+  padding: 0 8px;
+  font-size: 12px;
+  color: var(--wink-off);
+  white-space: nowrap;
 }
-.bmitem .remove svg { width: 10px; height: 10px; }
+
+/* Where a dragged item will land: a 2px line between items. */
+.bmdropmark {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--waccent);
+  pointer-events: none;
+}
+.bmdropmark[hidden] { display: none; }

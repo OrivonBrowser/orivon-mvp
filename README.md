@@ -182,6 +182,8 @@ Stated here rather than discovered later. All of these are real and none is a bu
 - **Local peer discovery is unavailable.** The manifest grammar has no multicast bind.
 - **Text typed in the address bar that isn't an address goes to DuckDuckGo.** Your search text
   leaves your machine. A privacy-branded browser should say that out loud rather than bury it.
+  Suggestions from the search engine as you type are off by default (Settings > Search); turned on,
+  each pause in typing sends the text to the engine, and a private window never sends it.
 - **Every launch contacts Ethereum servers, and `.eth` lookups tell servers what you open.** The
   light client that proves `.eth` names starts at launch and follows the chain through
   `ethereum-beacon-api.publicnode.com` and one of three RPCs (`eth.drpc.org`, `rpc.mevblocker.io`,

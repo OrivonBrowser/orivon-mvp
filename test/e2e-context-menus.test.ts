@@ -191,7 +191,7 @@ it('offers the page set on empty space, and Reload loads the page again', async 
     const page = await visit(app, chrome, '/')
     const items = await rightClick(app, page, '#empty')
     expect(labelsOf(items)).toEqual([
-      'Back', 'Forward', 'Reload', '|', 'Save Page As…', 'Print…', 'Take a Screenshot', '|', 'View Page Source'
+      'Back', 'Forward', 'Reload', '|', 'Save Page As…', 'Print…', 'Take a Screenshot', '|', 'View Page Source', 'Create QR Code for This Page'
     ])
     const canGoBack = await app.evaluate(({ webContents }, url) =>
       webContents.getAllWebContents().find((contents) => contents.getURL() === url)?.navigationHistory.canGoBack(), `${origin}/`)
@@ -246,7 +246,7 @@ it('gives the address bar Paste and Go, which submits the clipboard text as type
     // The real clipboard can hang under a virtual display: the reader is replaced.
     await app.evaluate(({ clipboard }, url) => { clipboard.readText = async () => url }, target)
     const items = await rightClick(app, chrome, '#address')
-    expect(labelsOf(items)).toEqual(['Undo', 'Redo', '|', 'Cut', 'Copy', 'Paste', 'Paste and Go', 'Paste as Plain Text', '|', 'Select All'])
+    expect(labelsOf(items)).toEqual(['Undo', 'Redo', '|', 'Cut', 'Copy', 'Paste', 'Paste and Go', 'Paste as Plain Text', '|', 'Select All', '|', 'Always Show Full Addresses'])
     await choose(app, 'Paste and Go')
     expect(await waitFor(async () => (await tabUrls(app)).includes(target))).toBe(true)
     expect((await waitForTab(chrome, { address: target })).ok).toBe(true)

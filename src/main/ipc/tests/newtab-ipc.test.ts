@@ -29,19 +29,21 @@ function dispatch (frameUrl: string, isTopFrame: boolean): unknown {
 }
 
 describe('registerNewTabIpc -- isFromDashboard', () => {
-  const bookmarks = { getAll: vi.fn(() => [BOOKMARK]) } as unknown as BookmarkStore
+  const load = vi.fn(async () => {})
+  const bookmarks = { getAll: vi.fn(() => [BOOKMARK]), load } as unknown as BookmarkStore
   const windows = {} as WindowRegistry
   registerNewTabIpc(DASHBOARD_URL, windows, bookmarks)
 
-  it('answers the dashboard\'s own top frame', () => {
-    expect(dispatch(DASHBOARD_URL, true)).toEqual([BOOKMARK])
+  it('answers the dashboard\'s own top frame, once the bookmark file has been read', async () => {
+    expect(await dispatch(DASHBOARD_URL, true)).toEqual([BOOKMARK])
+    expect(load).toHaveBeenCalled()
   })
 
-  it('refuses a subframe at the dashboard\'s own address', () => {
-    expect(dispatch(DASHBOARD_URL, false)).toBeUndefined()
+  it('refuses a subframe at the dashboard\'s own address', async () => {
+    expect(await dispatch(DASHBOARD_URL, false)).toBeUndefined()
   })
 
-  it('refuses the top frame once it has navigated away', () => {
-    expect(dispatch('https://elsewhere.example/', true)).toBeUndefined()
+  it('refuses the top frame once it has navigated away', async () => {
+    expect(await dispatch('https://elsewhere.example/', true)).toBeUndefined()
   })
 })

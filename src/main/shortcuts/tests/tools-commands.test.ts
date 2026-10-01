@@ -61,7 +61,8 @@ describe('the page-tools command rows', () => {
   })
 
   it('marks every row without a feature behind it pending, and no other row', () => {
-    const pending = COMMANDS.filter((def) => (def as CommandDef).pending === true).map((def) => def.id)
+    const listed = new Set(ROWS.map(([id]) => id))
+    const pending = COMMANDS.filter((def) => (def as CommandDef).pending === true && listed.has(def.id)).map((def) => def.id)
 
     expect(pending).toEqual(ROWS.map(([id]) => id).filter((id) => !LANDED.includes(id)))
   })

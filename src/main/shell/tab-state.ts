@@ -29,6 +29,7 @@ export function buildTabState (id: string, record: TabRecord | undefined, wc: We
     isNewTab: url === BLANK_URL || (record?.isDashboardTab === true && url === env.dashboardUrl),
     splitWith: env.partnerOf(id),
     isInternal: record?.internalPage != null,
+    connection: 'none',
     pinned: record?.pinned ?? false,
     muted: record?.muted ?? false,
     audible: false,

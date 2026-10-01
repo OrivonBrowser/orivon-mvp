@@ -3,18 +3,23 @@
 // pages visited outside it. Writes wait a moment and go in one transaction, so
 // a page that redirects three times is one write, not three. Every statement
 // this runs more than once is prepared once, in the constructor or on first
-// use, and reused -- never re-prepared per call. A search of three characters
-// or more probes how many rows a trigram FTS5 index would return for it: a
-// sparse term is read through that index, a dense one (a common substring
-// like "https://") through the LIKE scan instead, which walks the last-visit
-// index and can stop at one page rather than gathering every match first.
+// use, and reused -- never re-prepared per call. The file's shape and its
+// migrations are `history-schema.ts` and the listing is `history-list.ts`;
+// what the address bar, the History page and the importer add is a file each.
 import { DatabaseSync } from 'node:sqlite'
 import type { StatementSync } from 'node:sqlite'
 import { DebouncedWriter } from '../storage/debounced-writer.js'
-import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MAX_TITLE_LENGTH, MAX_URL_LENGTH } from './history-store.js'
-import type { HistoryEntry, HistoryQuery, HistoryStore } from './history-store.js'
+import { MAX_TITLE_LENGTH, MAX_URL_LENGTH } from './history-store.js'
+import type { HistoryEntry, HistoryImportRow, HistoryQuery, HistoryStore, HistorySuggestion } from './history-store.js'
+import { dropFtsIndex, migrate, rebuildFtsIndex, rollback } from './history-schema.js'
+import { MAX_HISTORY_FAVICON_CHARS, faviconsForHosts, prepareFaviconStatements, pruneHostFavicons, setHostFavicon, withFavicons } from './history-favicons.js'
+import { deletePagesByIds, MAX_IDS, pagesByIds, prepareIdStatements } from './history-ids.js'
+import { importHistoryRows } from './history-import.js'
+import { FTS_DENSITY_LIMIT, listPages, prepareListStatements } from './history-list.js'
+import type { ListStatements } from './history-list.js'
+import { listPagesOrdered, prepareOrderStatements } from './history-order.js'
+import { markPageTyped, suggestPages } from './history-suggest.js'
 
-const SCHEMA_VERSION = 2
 const WRITE_DELAY_MS = 500
 /** The most changes held while waiting to write; past it the oldest is written at once. */
 const MAX_QUEUED = 500
@@ -23,60 +28,21 @@ const MAX_QUEUED = 500
 const MAX_PAGES = 100_000
 /** How many new pages are written between looks at whether there are too many. */
 const TRIM_CHECK_EVERY = 1000
-/** Below this, the trigram index cannot resolve a match, so `list` keeps the plain `LIKE` scan. */
-const FTS_MIN_SEARCH_LENGTH = 3
-/** A term this common or more (probed before every FTS search) reads through `LIKE` instead: MATCH would
- * gather most of the table before ORDER BY/LIMIT could cut it off, where LIKE walks the last-visit index
- * and stops at one page. */
-const FTS_DENSITY_LIMIT = 500
 /** Above this many rows to delete per row left afterward, dropping the FTS5 index for the delete and
  * rebuilding it once from what remains beats deleting through the per-row secure-delete trigger: measured
  * at roughly 0.33ms/row deleted that way against roughly 0.019ms per row a rebuild has to index, a ~17:1
  * cost ratio the delete side crosses well before 16:1. */
 const BULK_DELETE_ROW_RATIO = 16
 
+/** How long an address typed before its page is recorded waits for the page: a slow load is still the page that was typed. */
+const TYPED_WAIT_MS = 60_000
+const MAX_TYPED_WAITING = 64
+
 type Change =
   | { readonly type: 'visit', readonly url: string, readonly title: string, readonly at: number }
   | { readonly type: 'title', readonly url: string, readonly title: string }
-
-interface Row { id: number, url: string, title: string, last_visit: number, visit_count: number }
-
-const toEntry = (row: Row): HistoryEntry => ({ id: row.id, url: row.url, title: row.title, lastVisit: row.last_visit, visitCount: row.visit_count })
-
-/** Escapes what LIKE would read as a pattern. */
-const likePattern = (text: string): string => `%${text.replace(/[\\%_]/g, (character) => `\\${character}`)}%`
-
-/** Escapes what FTS5's query syntax would read as a phrase delimiter, so `search` is matched
- * as the literal text it is -- never as MATCH syntax (AND, OR, NOT, column filters, `*`). */
-const ftsPhrase = (text: string): string => `"${text.replace(/"/g, '""')}"`
-
-const LIST_COLUMNS = 'id, url, title, last_visit, visit_count'
-const LIST_ORDER = 'ORDER BY last_visit DESC, id DESC LIMIT ?'
-const AFTER_CONDITION = '(last_visit < ? OR (last_visit = ? AND id < ?))'
-const LIKE_CONDITION = "(title LIKE ? ESCAPE '\\' OR url LIKE ? ESCAPE '\\')"
-/** Same as `LIKE_CONDITION`, aliased for the FTS join: MATCH only narrows candidates fast (and folds case
- * for Unicode, where LIKE folds only ASCII), so LIKE stays the one definition of "matches" either way. */
-const LIKE_CONDITION_P = "(p.title LIKE ? ESCAPE '\\' OR p.url LIKE ? ESCAPE '\\')"
-
-/** The trigram FTS5 index over `pages(title, url)` and the triggers that keep it in step with every insert,
- * update and delete on `pages` -- including a bulk UPDATE/DELETE, since SQLite fires the same row-level
- * triggers for those. `content=` makes it an external-content table: the text is never duplicated, only
- * indexed. One definition, used both by the v1-to-v2 migration and by `rebuildFtsIndex` after a bulk
- * delete has dropped it -- CREATE, not re-CREATE, either way, since both start from it not existing. */
-const FTS_INDEX_DDL = `
-  CREATE VIRTUAL TABLE pages_fts USING fts5(title, url, content='pages', content_rowid='id', tokenize='trigram');
-  INSERT INTO pages_fts(pages_fts, rank) VALUES ('secure-delete', 1);
-  CREATE TRIGGER pages_fts_ai AFTER INSERT ON pages BEGIN
-    INSERT INTO pages_fts(rowid, title, url) VALUES (new.id, new.title, new.url);
-  END;
-  CREATE TRIGGER pages_fts_ad AFTER DELETE ON pages BEGIN
-    INSERT INTO pages_fts(pages_fts, rowid, title, url) VALUES ('delete', old.id, old.title, old.url);
-  END;
-  CREATE TRIGGER pages_fts_au AFTER UPDATE ON pages WHEN old.title IS NOT new.title OR old.url IS NOT new.url BEGIN
-    INSERT INTO pages_fts(pages_fts, rowid, title, url) VALUES ('delete', old.id, old.title, old.url);
-    INSERT INTO pages_fts(rowid, title, url) VALUES (new.id, new.title, new.url);
-  END;
-`
+  | { readonly type: 'typed', readonly url: string, readonly at: number }
+  | { readonly type: 'favicon', readonly host: string, readonly data: string, readonly at: number }
 
 export class SqliteHistoryStore implements HistoryStore {
   readonly kind = 'sqlite'
@@ -84,6 +50,8 @@ export class SqliteHistoryStore implements HistoryStore {
   private closed = false
   private newPagesSinceCheck = 0
   private readonly queue: Change[] = []
+  /** Addresses typed whose page was not in the history yet, with when they were typed: counted when it is. */
+  private readonly typedWaiting = new Map<string, number>()
   private readonly writer = new DebouncedWriter(async () => { this.drain() }, WRITE_DELAY_MS)
   private readonly statements: {
     findPage: StatementSync
@@ -97,21 +65,10 @@ export class SqliteHistoryStore implements HistoryStore {
     removeRangeDeleteVisits: StatementSync
     removeRangeUpdatePages: StatementSync
     removeRangeDeleteEmptyPages: StatementSync
-    /** How many rows (up to `searchDensityLimit`) a trigram search would return: what `list` checks to choose
-     * the FTS path or the LIKE fallback. */
-    searchDensityProbe: StatementSync
     /** How many pages would end up with no visits left in [from, to] -- what `removeRange` checks against
      * how many would remain, to choose the bulk or per-row delete path. */
     removeRangeCountToDelete: StatementSync
-    /** One per WHERE shape `list` can need: with or without `after`, and none/LIKE/FTS for `search`. */
-    list: {
-      plain: StatementSync
-      after: StatementSync
-      like: StatementSync
-      likeAfter: StatementSync
-      fts: StatementSync
-      ftsAfter: StatementSync
-    }
+    list: ListStatements
   }
 
   private readonly limits: {
@@ -141,7 +98,10 @@ export class SqliteHistoryStore implements HistoryStore {
       this.db.exec('PRAGMA foreign_keys = ON')
       // Forgotten addresses are overwritten, not only unlisted: what a person clears should not sit readable in the file.
       this.db.exec('PRAGMA secure_delete = ON')
-      this.migrate()
+      migrate(this.db)
+      prepareFaviconStatements(this.db)
+      prepareOrderStatements(this.db)
+      prepareIdStatements(this.db)
       this.statements = {
         findPage: this.db.prepare('SELECT id FROM pages WHERE url = ?'),
         insertPage: this.db.prepare('INSERT INTO pages (url, title, last_visit, visit_count) VALUES (?, ?, ?, 1)'),
@@ -166,89 +126,12 @@ export class SqliteHistoryStore implements HistoryStore {
           SELECT COUNT(*) AS n FROM (SELECT DISTINCT page_id FROM visits WHERE at >= ? AND at <= ?) AS v
           WHERE NOT EXISTS (SELECT 1 FROM visits v2 WHERE v2.page_id = v.page_id AND (v2.at < ? OR v2.at > ?))
         `),
-        searchDensityProbe: this.db.prepare(
-          `SELECT COUNT(*) AS n FROM (SELECT rowid FROM pages_fts WHERE pages_fts MATCH ? LIMIT ${String(this.limits.searchDensityLimit)})`
-        ),
-        list: {
-          plain: this.db.prepare(`SELECT ${LIST_COLUMNS} FROM pages ${LIST_ORDER}`),
-          after: this.db.prepare(`SELECT ${LIST_COLUMNS} FROM pages WHERE ${AFTER_CONDITION} ${LIST_ORDER}`),
-          like: this.db.prepare(`SELECT ${LIST_COLUMNS} FROM pages WHERE ${LIKE_CONDITION} ${LIST_ORDER}`),
-          likeAfter: this.db.prepare(`SELECT ${LIST_COLUMNS} FROM pages WHERE ${AFTER_CONDITION} AND ${LIKE_CONDITION} ${LIST_ORDER}`),
-          fts: this.db.prepare(`
-            SELECT p.id, p.url, p.title, p.last_visit, p.visit_count FROM pages p
-            JOIN pages_fts f ON f.rowid = p.id WHERE pages_fts MATCH ? AND ${LIKE_CONDITION_P}
-            ORDER BY p.last_visit DESC, p.id DESC LIMIT ?
-          `),
-          ftsAfter: this.db.prepare(`
-            SELECT p.id, p.url, p.title, p.last_visit, p.visit_count FROM pages p
-            JOIN pages_fts f ON f.rowid = p.id
-            WHERE (p.last_visit < ? OR (p.last_visit = ? AND p.id < ?)) AND pages_fts MATCH ? AND ${LIKE_CONDITION_P}
-            ORDER BY p.last_visit DESC, p.id DESC LIMIT ?
-          `)
-        }
+        list: prepareListStatements(this.db, this.limits.searchDensityLimit)
       }
     } catch (error) {
       this.db.close()
       throw error
     }
-  }
-
-  private migrate (): void {
-    const row = this.db.prepare('PRAGMA user_version').get() as { user_version: number } | undefined
-    let version = row?.user_version ?? 0
-    if (version > SCHEMA_VERSION) throw new Error(`the history file is from a newer version (${String(version)})`)
-    if (version < 1) {
-      this.db.exec(`
-        CREATE TABLE pages (
-          id INTEGER PRIMARY KEY,
-          url TEXT NOT NULL UNIQUE,
-          title TEXT NOT NULL DEFAULT '',
-          last_visit INTEGER NOT NULL,
-          visit_count INTEGER NOT NULL DEFAULT 0
-        );
-        CREATE TABLE visits (
-          id INTEGER PRIMARY KEY,
-          page_id INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
-          at INTEGER NOT NULL
-        );
-        CREATE INDEX visits_at ON visits (at);
-        CREATE INDEX visits_page ON visits (page_id);
-        CREATE INDEX pages_last_visit ON pages (last_visit DESC);
-        PRAGMA user_version = 1;
-      `)
-      version = 1
-    }
-    if (version < 2) this.migrateToSearchIndex()
-  }
-
-  /** Adds the trigram FTS5 index (`FTS_INDEX_DDL`) and rebuilds it from every row already in `pages`.
-   * `secure-delete`, part of that DDL, stays set across every later reopen: without it, FTS5's own delete
-   * only tombstones a posting, leaving it in already-allocated pages that `secure_delete`/VACUUM on `pages`
-   * itself cannot reach (see the test file's "what forgetting a page leaves" describe). */
-  private migrateToSearchIndex (): void {
-    this.db.exec('BEGIN')
-    try {
-      this.rebuildFtsIndex()
-      this.db.exec('PRAGMA user_version = 2')
-      this.db.exec('COMMIT')
-    } catch (error) {
-      this.rollback()
-      throw error
-    }
-  }
-
-  /** Drops the FTS5 index and the triggers that feed it -- triggers are schema objects of their own, defined
-   * `ON pages`, and are not dropped along with the virtual table they reference. Used only inside `deleteRows`'s
-   * bulk path, always paired with `rebuildFtsIndex` in the same transaction: the store is never left with a
-   * caller able to observe `pages` without a matching index. */
-  private dropFtsIndex (): void {
-    this.db.exec('DROP TRIGGER pages_fts_ai; DROP TRIGGER pages_fts_ad; DROP TRIGGER pages_fts_au; DROP TABLE pages_fts;')
-  }
-
-  /** Recreates the FTS5 index from `FTS_INDEX_DDL` and rebuilds it from every row currently in `pages`. */
-  private rebuildFtsIndex (): void {
-    this.db.exec(FTS_INDEX_DDL)
-    this.db.exec("INSERT INTO pages_fts(pages_fts) VALUES ('rebuild')")
   }
 
   /** Deletes rows through `mutate`, inside one transaction, choosing between two paths that leave the same
@@ -261,12 +144,12 @@ export class SqliteHistoryStore implements HistoryStore {
     const bulk = toDelete * this.limits.bulkDeleteRowRatio > remaining
     this.db.exec('BEGIN')
     try {
-      if (bulk) this.dropFtsIndex()
+      if (bulk) dropFtsIndex(this.db)
       mutate()
-      if (bulk) this.rebuildFtsIndex()
+      if (bulk) rebuildFtsIndex(this.db)
       this.db.exec('COMMIT')
     } catch (error) {
-      this.rollback()
+      rollback(this.db)
       throw error
     }
   }
@@ -300,6 +183,14 @@ export class SqliteHistoryStore implements HistoryStore {
           setTitle.run(change.title, change.url, change.title)
           continue
         }
+        if (change.type === 'favicon') {
+          setHostFavicon(this.db, change.host, change.data, () => change.at)
+          continue
+        }
+        if (change.type === 'typed') {
+          if (!markPageTyped(this.db, change.url)) this.waitForPage(change.url, change.at)
+          continue
+        }
         const found = findPage.get(change.url) as { id: number } | undefined
         let id: number
         if (found === undefined) {
@@ -311,20 +202,13 @@ export class SqliteHistoryStore implements HistoryStore {
           if (change.title !== '') setTitle.run(change.title, change.url, change.title)
         }
         insertVisit.run(id, change.at)
+        this.countWaitingTyped(change.url, change.at)
       }
       this.db.exec('COMMIT')
       if (this.newPagesSinceCheck >= this.limits.checkEvery) this.trim()
     } catch (error) {
-      this.rollback()
+      rollback(this.db)
       console.error('[orivon] history could not be written:', error)
-    }
-  }
-
-  private rollback (): void {
-    try {
-      this.db.exec('ROLLBACK')
-    } catch {
-      // No transaction was open: the failure was before BEGIN.
     }
   }
 
@@ -348,56 +232,66 @@ export class SqliteHistoryStore implements HistoryStore {
       this.db.exec("INSERT INTO pages_fts(pages_fts, rank) VALUES ('secure-delete', 1)")
       this.db.exec('COMMIT')
     } catch (error) {
-      this.rollback()
+      rollback(this.db)
       throw error
     }
   }
 
   list (query: HistoryQuery = {}): HistoryEntry[] {
     this.drain()
-    const limit = Math.min(Math.max(1, Math.trunc(query.limit ?? DEFAULT_PAGE_SIZE)), MAX_PAGE_SIZE)
-    const after = query.after
-    const search = query.search?.trim() ?? ''
-    let rows: Row[]
-    // The trigram tokenizer needs three actual characters; [...search].length counts those (Unicode code
-    // points), where search.length counts UTF-16 code units and over-counts any character outside the
-    // Basic Multilingual Plane (a surrogate pair, such as most emoji, counts as two).
-    if ([...search].length >= FTS_MIN_SEARCH_LENGTH) {
-      const term = ftsPhrase(search)
-      const pattern = likePattern(search)
-      rows = this.isDense(term) ? this.queryLike(pattern, after, limit) : this.queryFts(term, pattern, after, limit)
-    } else if (search !== '') {
-      rows = this.queryLike(likePattern(search), after, limit)
-    } else {
-      const { list } = this.statements
-      rows = (after === undefined
-        ? list.plain.all(limit)
-        : list.after.all(after.lastVisit, after.lastVisit, after.id, limit)) as unknown as Row[]
-    }
-    return rows.map(toEntry)
+    return withFavicons(this.db, listPages(this.statements.list, this.limits.searchDensityLimit, query))
   }
 
-  /** Whether `term` (an already-escaped FTS phrase) would return `searchDensityLimit` rows or more: too many
-   * for MATCH's join to sort and cut off with LIMIT as cheaply as the LIKE scan, which stops at one page.
-   * Ignores `after`: it estimates how common the term is, not how many pages of it remain. */
-  private isDense (term: string): boolean {
-    return (this.statements.searchDensityProbe.get(term) as { n: number }).n >= this.limits.searchDensityLimit
+  suggest (text: string, limit: number): HistorySuggestion[] {
+    this.drain()
+    return suggestPages(this.db, text, limit)
   }
 
-  private queryLike (pattern: string, after: HistoryQuery['after'], limit: number): Row[] {
-    const { list } = this.statements
-    return (after === undefined
-      ? list.like.all(pattern, pattern, limit)
-      : list.likeAfter.all(after.lastVisit, after.lastVisit, after.id, pattern, pattern, limit)) as unknown as Row[]
+  markTyped (url: string): void {
+    if (url.length > MAX_URL_LENGTH) return
+    // Queued behind the visit it belongs to, which is recorded once the page has loaded and so may come after.
+    this.enqueue({ type: 'typed', url, at: Date.now() })
   }
 
-  /** `pattern` is bound after the MATCH term: MATCH narrows fast, LIKE (ASCII-only case fold) is the actual
-   * definition of "matches" it must also satisfy, so a search agrees with `queryLike` however dense it is. */
-  private queryFts (term: string, pattern: string, after: HistoryQuery['after'], limit: number): Row[] {
-    const { list } = this.statements
-    return (after === undefined
-      ? list.fts.all(term, pattern, pattern, limit)
-      : list.ftsAfter.all(after.lastVisit, after.lastVisit, after.id, term, pattern, pattern, limit)) as unknown as Row[]
+  private waitForPage (url: string, at: number): void {
+    if (this.typedWaiting.size >= MAX_TYPED_WAITING) this.typedWaiting.delete(this.typedWaiting.keys().next().value as string)
+    this.typedWaiting.set(url, at)
+  }
+
+  private countWaitingTyped (url: string, visitedAt: number): void {
+    const typedAt = this.typedWaiting.get(url)
+    if (typedAt === undefined) return
+    this.typedWaiting.delete(url)
+    if (visitedAt - typedAt <= TYPED_WAIT_MS) markPageTyped(this.db, url)
+  }
+
+  /** Queued with the visits, so an icon is one more row in their transaction and never a write of its own. */
+  setFavicon (host: string, dataUrl: string): void {
+    if (host === '' || dataUrl.length > MAX_HISTORY_FAVICON_CHARS) return
+    this.enqueue({ type: 'favicon', host, data: dataUrl, at: Date.now() })
+  }
+
+  faviconsFor (hosts: readonly string[]): Record<string, string> {
+    this.drain()
+    return faviconsForHosts(this.db, hosts)
+  }
+
+  pruneFavicons (): void { pruneHostFavicons(this.db) }
+
+  listOrdered (query: HistoryQuery = {}): HistoryEntry[] {
+    this.drain()
+    return listPagesOrdered(this.db, query)
+  }
+
+  pagesByIds (ids: readonly number[]): HistoryEntry[] {
+    this.drain()
+    return pagesByIds(this.db, ids)
+  }
+
+  importPages (rows: readonly HistoryImportRow[]): number {
+    this.drain()
+    const kept = (this.statements.count.get() as { n: number }).n
+    return importHistoryRows(this.db, rows, Math.max(this.limits.maxPages - kept, 0))
   }
 
   count (): number {
@@ -408,7 +302,21 @@ export class SqliteHistoryStore implements HistoryStore {
   remove (id: number): void {
     this.drain()
     const total = (this.statements.count.get() as { n: number }).n
-    this.deleteRows(1, Math.max(total - 1, 0), () => { this.statements.remove.run(id) })
+    this.deleteRows(1, Math.max(total - 1, 0), () => {
+      this.statements.remove.run(id)
+      pruneHostFavicons(this.db)
+    })
+    this.dropLog()
+  }
+
+  removeMany (ids: readonly number[]): void {
+    this.drain()
+    const wanted = Math.min(ids.length, MAX_IDS)
+    const total = (this.statements.count.get() as { n: number }).n
+    this.deleteRows(wanted, Math.max(total - wanted, 0), () => {
+      deletePagesByIds(this.db, ids)
+      pruneHostFavicons(this.db)
+    })
     this.dropLog()
   }
 
@@ -420,15 +328,20 @@ export class SqliteHistoryStore implements HistoryStore {
       this.statements.removeRangeDeleteVisits.run(from, to)
       this.statements.removeRangeUpdatePages.run()
       this.statements.removeRangeDeleteEmptyPages.run()
+      pruneHostFavicons(this.db)
     })
     this.dropLog()
   }
 
   clear (): void {
     this.queue.length = 0
+    this.typedWaiting.clear()
     const total = (this.statements.count.get() as { n: number }).n
     // Always the bulk path (remaining is 0), unless there was nothing to delete in the first place.
-    this.deleteRows(total, 0, () => { this.db.exec('DELETE FROM visits; DELETE FROM pages;') })
+    this.deleteRows(total, 0, () => {
+      this.db.exec('DELETE FROM visits; DELETE FROM pages;')
+      pruneHostFavicons(this.db)
+    })
     this.dropLog()
     // Rewrites the file so the space the addresses were in is not left behind.
     this.db.exec('VACUUM')

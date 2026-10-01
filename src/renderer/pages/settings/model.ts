@@ -10,9 +10,12 @@ export type Control =
   | { readonly type: 'choice', readonly key: SettingKey, readonly options?: ReadonlyArray<{ readonly value: string, readonly label: string }> }
   /** `problem` is what the row says when main refuses the value; without it, the search address's own message. */
   | { readonly type: 'text', readonly key: SettingKey, readonly placeholder: string, readonly problem?: string }
-  | { readonly type: 'toggle', readonly key: SettingKey }
+  /** `disabled` greys the switch out when the setting cannot take effect, and the row's help says why. */
+  | { readonly type: 'toggle', readonly key: SettingKey, readonly disabled?: (state: SettingsState) => boolean }
   /** A list of web addresses kept as the newline-separated text of a setting, with a way to add, remove and take the open pages. */
   | { readonly type: 'pageList', readonly key: SettingKey }
+  /** The search engines with their keywords, and the form that adds, edits and removes the person's own. */
+  | { readonly type: 'engines' }
   /** A keyboard shortcut: its keys, and the buttons that change it. */
   | { readonly type: 'shortcut', readonly id: string }
   /** Usage statistics: the choice, the exact text that would be sent, and what has been. */
@@ -23,8 +26,8 @@ export type Control =
   | { readonly type: 'clearData' }
   /** A value shown, not changed. */
   | { readonly type: 'info', readonly text: (state: SettingsState) => string }
-  /** A button. With `confirm`, the first click arms it and the second does it. */
-  | { readonly type: 'action', readonly label: string, readonly confirm?: string, readonly danger?: boolean, readonly run: (state: SettingsState) => Promise<void> }
+  /** A button. With `confirm`, the first click arms it and the second does it. With `shows`, a value is shown before it. */
+  | { readonly type: 'action', readonly label: string, readonly confirm?: string, readonly danger?: boolean, readonly shows?: (state: SettingsState) => string, readonly run: (state: SettingsState) => Promise<void> }
 
 export interface Row {
   readonly id: string

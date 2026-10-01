@@ -32,6 +32,9 @@ const bookmarksGrid = document.querySelector<HTMLDivElement>('#bookmarks-grid')
 
 if (shell !== undefined) {
   searchInput?.focus()
+  // While the address bar has the keyboard, this page's field is not the one being typed in, so it stops looking focused.
+  window.addEventListener('blur', () => { document.documentElement.dataset['away'] = '1' })
+  window.addEventListener('focus', () => { delete document.documentElement.dataset['away'] })
 
   searchForm?.addEventListener('submit', (e) => {
     e.preventDefault()

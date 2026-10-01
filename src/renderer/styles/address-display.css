@@ -1,0 +1,66 @@
+/* The unfocused address: a display laid over the input, sharing its box. The input keeps the real value and
+   stays under it at zero opacity (still focusable, still the target of a click); focusing it swaps the two in
+   the same frame, so the full address never flashes in. */
+
+.address-field {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+.address-field .addressbar { width: 100%; }
+/* Heard, not seen. */
+.address-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.address-field[data-elided='true']:not(:focus-within) .addressbar { opacity: 0; }
+
+.address-display {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 12px 0 4px;
+  overflow: hidden;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.address-field:focus-within .address-display,
+.address-field[data-elided='false'] .address-display { visibility: hidden; }
+
+.address-text {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+/* Each part shortens on its own, with an ellipsis. The site's own name does not shorten at all: a long subdomain before
+   it loses its left end, and a long path after it loses its right end, so the name is always in view. */
+.address-text > span {
+  flex: 0 3 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.address-host { color: var(--wink); }
+.address-host.fixed { flex: none; overflow: visible; }
+.address-rest { color: var(--wink-dim); }
+/* Read from its right end: the ellipsis falls on the left, and the text inside is set back to left-to-right. */
+.address-rest.lead { flex-shrink: 1; direction: rtl; text-align: left; }
+
+/* The mark has a tooltip, so it is the one part that takes the pointer; pressing it is pressing the bar. */
+.address-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  pointer-events: auto;
+  cursor: default;
+  color: var(--wink-dim);
+}
+.address-mark .icon { width: 14px; height: 14px; }
+.address-mark.insecure { color: var(--winsecure); }
+.address-mark-label { font-size: 12px; font-weight: 600; }
