@@ -752,6 +752,11 @@
     action, whatever `setActionVisibilityCheck` says (`listActions` leaves the hidden ones out); the
     title, popup and badge are the ones set for `tabId` when there are any, else the action's own.
     Reason: Orivon's Extensions menu lists unpinned extensions too, shows their badge and runs them.
+56. **`requestPermissions` refuses when the host gives no prompt.** `src/browser/store.ts`:
+    `requestPermissions` returns `false`, was `true`, when `impl.requestPermissions` is not a
+    function. Reason: the default granted every `chrome.permissions.request` unasked, so a host that
+    never wired its own prompt silently widened every extension. Orivon's `permissions` module
+    replaces the handler and asks; this default is only the safe fallback.
 
 `partition.ts` is reached only through the virtual specifier `src/main/extensions/
 electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and

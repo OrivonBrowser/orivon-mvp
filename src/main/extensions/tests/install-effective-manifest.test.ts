@@ -29,6 +29,23 @@ describe('finishInstall and the base manifest', () => {
     })
   })
 
+  it('revokes a grant the new version no longer declares', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const { session } = fakeSession()
+      const prefs = createExtensionPrefsStore(null)
+      const source = writeFixtureFolder(root, { ...FIXTURE_MANIFEST, optional_permissions: ['history'] })
+      const first = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW, prefs }, source)
+      if (!first.installed) throw new Error('install failed')
+      prefs.update(first.entry.id, { granted: { permissions: ['history'], origins: [] } })
+      writeFileSync(join(source, 'manifest.json'), JSON.stringify({ ...FIXTURE_MANIFEST, version: '1.1.0' }))
+      const second = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW, prefs }, source)
+      if (!second.installed) throw new Error('update failed')
+      expect(prefs.get(first.entry.id).granted.permissions).toEqual([])
+      expect(read(join(second.entry.path, 'manifest.json')).permissions).toEqual(['storage'])
+    })
+  })
+
   it('writes the base without the choices and loads a copy with them, for an extension the person already configured', async () => {
     await withTempDir(async (root) => {
       const userDataPath = join(root, 'userData')
@@ -40,7 +57,7 @@ describe('finishInstall and the base manifest', () => {
       prefs.update(first.entry.id, { granted: { permissions: ['history'], origins: [] } })
 
       // A new version of the same install (the same source folder, bumped).
-      writeFileSync(join(source, 'manifest.json'), JSON.stringify({ ...FIXTURE_MANIFEST, version: '1.1.0' }))
+      writeFileSync(join(source, 'manifest.json'), JSON.stringify({ ...FIXTURE_MANIFEST, version: '1.1.0', optional_permissions: ['history'] }))
       const second = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW, prefs }, source)
       if (!second.installed) throw new Error('update failed')
       expect(second.entry.id).toBe(first.entry.id)

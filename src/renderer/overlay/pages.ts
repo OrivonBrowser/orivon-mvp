@@ -2,6 +2,7 @@
 // One line per page, in name order.
 import type { OverlayPage } from './kit.js'
 import { bookmarkFolderPage } from './bookmark-folder/page.js'
+import { extensionPermissionPage } from './extension-permission/page.js'
 import { extensionsMenuPage } from './extensions-menu/page.js'
 import { findPage } from './find/page.js'
 import { menuPage } from './menu/page.js'
@@ -15,6 +16,7 @@ import { toastPage } from './toast/page.js'
 
 export const OVERLAY_PAGES: Readonly<Record<string, OverlayPage>> = {
   'bookmark-folder': bookmarkFolderPage,
+  'extension-permission': extensionPermissionPage,
   'extensions-menu': extensionsMenuPage,
   find: findPage,
   menu: menuPage,

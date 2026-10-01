@@ -1,0 +1,8 @@
+/* The extra-access card: one row per granted item with its Remove, an empty line, and the "may also ask" list. */
+.grant-list { margin: 0; padding: 0; list-style: none; }
+.grant-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 18px; border-top: 1px solid var(--wborder); font-size: 13px; }
+.grant-row:first-child { border-top: none; }
+.grant-words { min-width: 0; overflow-wrap: anywhere; }
+.grant-row .btn { flex: none; }
+.grant-empty { padding: 12px 18px; color: var(--wink-dim); font-size: 13px; }
+.grants > .detail-block { border-top: 1px solid var(--wborder); }

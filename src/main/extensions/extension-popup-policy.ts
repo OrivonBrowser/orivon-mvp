@@ -2,7 +2,7 @@
 // browserAction popup and an MV2 background page. Both otherwise get
 // Electron's default for `window.open()`, a raw, unpoliced BrowserWindow.
 import { app, session } from 'electron'
-import type { WebContents } from 'electron'
+import type { BaseWindow, WebContents } from 'electron'
 import type { ElectronChromeExtensions } from 'orivon:crx-extensions'
 import type { ShellServices } from '../shell/shell-services.js'
 import { extensionOpenedUrl, type IsLoadedExtension } from './extension-url-policy.js'
@@ -16,7 +16,18 @@ export interface PopupPolicyDeps {
 /** The one open browserAction popup, if any -- browser-action.ts's own
  * activateClick destroys a previous popup before ever creating a second
  * one, so there is never more than one to track. */
-let currentPopup: { isDestroyed: () => boolean, destroy: () => void } | undefined
+let currentPopup: {
+  isDestroyed: () => boolean
+  destroy: () => void
+  readonly parent?: BaseWindow | undefined
+  readonly browserWindow?: { readonly webContents: WebContents } | undefined
+} | undefined
+
+/** The shell window the open popup was opened over, when `contents` is that popup's page. */
+export function parentOf (contents: WebContents): BaseWindow | undefined {
+  if (currentPopup === undefined || currentPopup.isDestroyed()) return undefined
+  return currentPopup.browserWindow?.webContents === contents ? currentPopup.parent : undefined
+}
 
 /** Chrome closes an open popup the moment the PERSON switches tabs; the
  * caller decides whether a given switch is theirs. */

@@ -4,8 +4,12 @@
 // extensions page; a command checks its own arguments, since every field is
 // data from a document.
 import type { ExtensionsDomainDeps } from './extensions-domain.js'
+import { revokeOrigin, revokePermission } from './details-optional.js'
 
 export type ExtensionPageCommand = (body: Readonly<Record<string, unknown>>, deps: ExtensionsDomainDeps) => unknown
 
 /** One per line, alphabetical. */
-export const EXTENSION_PAGE_COMMANDS: Readonly<Record<string, ExtensionPageCommand>> = {}
+export const EXTENSION_PAGE_COMMANDS: Readonly<Record<string, ExtensionPageCommand>> = {
+  revokeOrigin,
+  revokePermission
+}

@@ -71,12 +71,12 @@ describe('hostAccessFor', () => {
   const ID = 'a'.repeat(32)
   const withRules = <T>(rules: HostAccessRule[], run: () => T): T => {
     const live = HOST_ACCESS_RULES as HostAccessRule[]
-    live.push(...rules)
-    try { return run() } finally { live.splice(0, live.length) }
+    const original = [...live]
+    live.splice(0, live.length, ...rules, ...original)
+    try { return run() } finally { live.splice(0, live.length, ...original) }
   }
 
-  it('has no rules of its own, so it answers exactly as hasHostAccess does', () => {
-    expect(HOST_ACCESS_RULES).toHaveLength(0)
+  it('answers exactly as hasHostAccess does while no rule has anything to say', () => {
     for (const url of ['https://a.example/path', 'https://b.example/path', undefined, 'file:///etc/passwd']) {
       expect(hostAccessFor(ID, MANIFEST_WITH_HOST, url, 3)).toBe(hasHostAccess(MANIFEST_WITH_HOST, url))
     }
