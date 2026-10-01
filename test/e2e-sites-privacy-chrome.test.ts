@@ -1,7 +1,7 @@
 // The sites-and-privacy packet's lanes meet on one toolbar and one main menu: a page that has been refused the
 // camera and also has a sign-in form wears the site-access chip, the password key, the zoom chip and the Web3
 // mark in the address bar at once, and none may overlap or push the address out. The main menu lists the
-// commands whose lane landed (Share, Passwords) and leaves out the ones still pending (Clear browsing data).
+// commands whose lane landed (Share, Passwords, and Clear browsing data under More tools).
 // Set ORIVON_UI_SHOTS_DIR to also write screenshots of the toolbar and menu in both colour schemes.
 import { mkdirSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
@@ -127,7 +127,7 @@ it('wears the permission chip, the password key, the zoom chip and the Web3 mark
     expect(x('password-key')).toBeGreaterThan(x('site-access-chip'))
     await shootBoth(app, chrome, 'chrome-all-marks', chrome)
 
-    // The menu: what landed is listed, what is still pending is not.
+    // The menu: what landed is listed; Clear browsing data sits under More tools, not at the top.
     const menu = await openMenu(app, chrome)
     const rows = (await menu.locator('.menu-row').allInnerTexts()).map((text) => text.replace(/\s+/g, ' ').trim())
     expect(rows.some((text) => text.startsWith('Passwords'))).toBe(true)
@@ -139,7 +139,7 @@ it('wears the permission chip, the password key, the zoom chip and the Web3 mark
     const more = (await menu.locator('.menu-row').allInnerTexts()).map((text) => text.replace(/\s+/g, ' ').trim())
     expect(more.some((text) => text.startsWith('Create shortcut'))).toBe(true)
     expect(more.some((text) => text.startsWith('View certificate'))).toBe(true)
-    expect(more.some((text) => text.startsWith('Clear browsing data'))).toBe(false)
+    expect(more.some((text) => text.startsWith('Clear browsing data'))).toBe(true)
     await shootBoth(app, chrome, 'menu-more-tools', menu)
   } finally {
     await closeElectron(app)

@@ -104,7 +104,7 @@ describe('the sections a feature fills', () => {
     }
   })
 
-  it('has row lists that add nothing to the sections they join', () => {
-    expect(privacySiteDataRows).toEqual([])
+  it('has the two site-data rows for the Privacy section', () => {
+    expect(privacySiteDataRows.map((row) => row.id)).toEqual(['site-data-total', 'site-data'])
   })
 })

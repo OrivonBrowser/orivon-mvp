@@ -406,6 +406,12 @@ describe('runCommand', () => {
     expect(calls['openInternal']).toHaveBeenCalledWith('settings', '/passwords')
   })
 
+  it('opens Settings at the clear-data row of its Privacy section', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+    runCommand('privacy.clearData', target, deps)
+    expect(calls['openInternal']).toHaveBeenCalledWith('settings', '/privacy#clear-data')
+  })
+
   it('opens the Bookmarks page', () => {
     const { target, calls, deps } = harness([tab('a')], 'a')
     runCommand('bookmarks.open', target, deps)
