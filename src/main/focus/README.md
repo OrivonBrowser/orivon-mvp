@@ -16,7 +16,8 @@ beside the page (`external-panes.ts`) and the page; and caret browsing.
 
 **What it depends on.** `electron` and [`../shell/`](../shell/) (types, `sendChromeEvent`, the tab-signal type and
 the installer type), [`../overlays/`](../overlays/) (the slot queue and the overlay type) and
-[`../page-tools/toast.ts`](../page-tools/toast.ts) (the toast codes).
+[`../page-tools/toast.ts`](../page-tools/toast.ts) (the toast codes). `external-panes.ts` lists the panes other
+directories offer, such as [`../side-panel/side-panel-pane.ts`](../side-panel/side-panel-pane.ts).
 
 **What it must never import.** The renderer, or a value from [`../shell/tabs.ts`](../shell/tabs.ts): the shell
 lists this feature, not the other way round.

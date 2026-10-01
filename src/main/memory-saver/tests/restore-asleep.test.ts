@@ -8,7 +8,7 @@ vi.mock('../../shell/tab-parking.js', () => ({ closeParkedViews: vi.fn() }))
 vi.mock('../../shell/tab-partition.js', () => ({ appTabViews: new WeakSet() }))
 vi.mock('../../overlays/tab-slots.js', () => ({ hasAsk: () => false }))
 
-const { restoreAsleep } = await import('../restore-asleep.js')
+const { restoreAsleep, restoreAsleepTabs } = await import('../restore-asleep.js')
 
 beforeEach(() => { makeTabView.mockReset().mockReturnValue(blank); wireView.mockReset() })
 
@@ -66,5 +66,14 @@ describe('restoreAsleep', () => {
     expect(restoreAsleep(tabs, 'nope', SNAPSHOT, env())).toBe(false)
     expect(restoreAsleep(tabs, 'a', SNAPSHOT, env())).toBe(true)
     expect(restoreAsleep(tabs, 'a', SNAPSHOT, env())).toBe(false)
+  })
+})
+
+describe('restoreAsleepTabs', () => {
+  it('puts each opened tab to sleep from its own snapshot and skips a tab that did not open', () => {
+    const { tabs, records } = setup()
+    restoreAsleepTabs(tabs, [SNAPSHOT, { ...SNAPSHOT, url: 'https://gone.example/' }, { ...SNAPSHOT, url: 'https://b.example/' }], ['a', '', 'b'], env())
+    expect(records.get('a')?.sleeping?.url).toBe(SNAPSHOT.url)
+    expect(records.get('b')?.sleeping ?? null).toBeNull()
   })
 })

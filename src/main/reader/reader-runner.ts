@@ -70,7 +70,8 @@ export async function toggleReader (tabs: ReaderTabs, window: object, deps: Read
   const readerId = readerTabId(tabs)
   if (readerId === undefined) return
   const record = tabs.record(readerId)
-  if (record !== undefined) record.reader = { source: activeId }
+  // Beside an article that is in a group, the reader tab is in that group too, as a tab opened to its right is.
+  if (record !== undefined) { record.reader = { source: activeId }; record.groupId = tabs.record(activeId)?.groupId ?? null }
   placeBeside(tabs, readerId, activeId)
   if (existing !== undefined) deps.publish('reader.changed', undefined)
   const alive = (): boolean => deps.articles.get(window)?.token === entry.token && tabs.ids().includes(readerId)

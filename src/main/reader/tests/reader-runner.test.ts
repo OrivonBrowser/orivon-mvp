@@ -4,7 +4,7 @@ import { closeReader, placeBeside, readerTabId, toggleReader } from '../reader-r
 import type { ReaderDeps, ReaderTabs } from '../reader-runner.js'
 import { ReaderArticles } from '../reader-store.js'
 
-interface FakeTab { id: string, url: string, internal?: string, splitWith?: string | null, isNewTab?: boolean, reader?: { source: string } | null }
+interface FakeTab { id: string, url: string, internal?: string, splitWith?: string | null, isNewTab?: boolean, reader?: { source: string } | null, groupId?: string | null }
 
 const ARTICLE: Article = { title: 'T', byline: '', site: '', url: 'https://example.com/a', lang: 'en', words: 3, blocks: [{ t: 'p', c: ['one two three'] }] }
 
@@ -12,7 +12,7 @@ function strip (initial: FakeTab[], active: string) {
   const tabs = initial.map((tab) => ({ ...tab }))
   let activeId: string | null = active
   const events: string[] = []
-  const records = new Map(tabs.map((tab) => [tab.id, { internalPage: tab.internal ?? null, reader: tab.reader ?? null }]))
+  const records = new Map(tabs.map((tab) => [tab.id, { internalPage: tab.internal ?? null, reader: tab.reader ?? null, groupId: tab.groupId ?? null }]))
   const api = {
     getState: () => ({
       activeTabId: activeId,
@@ -37,7 +37,7 @@ function strip (initial: FakeTab[], active: string) {
       const existing = tabs.find((tab) => tab.internal === page)
       if (existing !== undefined) { activeId = existing.id; return }
       tabs.push({ id: page, url: `orivon://${page}/`, internal: page })
-      records.set(page, { internalPage: page, reader: null })
+      records.set(page, { internalPage: page, reader: null, groupId: null })
       activeId = page
       events.push(`open ${page}`)
     }
@@ -72,6 +72,15 @@ describe('toggleReader', () => {
     expect(s.records.get('reader')?.reader).toEqual({ source: 'b' })
     expect(d.articles.get(WINDOW)?.source).toBe('b')
     expect(d.articles.get(WINDOW)?.article).toBe(ARTICLE)
+  })
+
+  it('puts the reader tab in the group of the article it was made from', async () => {
+    const s = strip([web('a'), web('b', { groupId: 'g-1' }), web('c')], 'b')
+    await toggleReader(s.tabs, WINDOW, deps())
+    expect(s.records.get('reader')?.groupId).toBe('g-1')
+    const plain = strip([web('a'), web('b')], 'b')
+    await toggleReader(plain.tabs, WINDOW, deps())
+    expect(plain.records.get('reader')?.groupId).toBeNull()
   })
 
   it('closes the reader tab and goes back to the article on the next press', async () => {

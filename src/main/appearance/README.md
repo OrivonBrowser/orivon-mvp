@@ -5,7 +5,6 @@
 page's own `:root`, and `isShellSurface`, which tells those surfaces from a site's tab. `shell-style-runner.ts`'s `installShellStyle`
 inserts the stylesheet into each live surface and again after a setting changes; `index.ts` calls it beside `installZoom`, since it
 needs the shell's session and the new-tab page's address.
-`install-customise.ts` is the installer for the toolbar, accent and mouse settings, empty until they land.
 
 **What it depends on.** `electron` (types); [`../settings/`](../settings/) (the settings a part reads);
 [`../shell/`](../shell/) (`contain.ts`, and the `ShellInstaller` type).

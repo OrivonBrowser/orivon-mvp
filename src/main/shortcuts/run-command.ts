@@ -125,12 +125,9 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'tab.closeRight': if (active !== undefined) closeToRight(tabs, active.id); return
     case 'tab.group': if (active !== undefined) groupTabNew({ window: target, services }, active.id); return
     case 'tab.ungroup': if (active !== undefined) ungroupTab({ window: target, services }, active.id); return
-    case 'tab.group': return
-    case 'tab.ungroup': return
     case 'tab.sleep': if (active !== undefined) void sleepFrontTab(target, active.id); return
     case 'tab.search': target.overlays.toggle(TAB_SEARCH_OVERLAY); return
     case 'window.newPrivate': services.profiles.openPrivate(); return
-    case 'window.newGuest': return
     case 'profiles.open': tabs.openInternal('profiles'); return
     case 'downloads.open': tabs.openInternal('downloads'); return
     case 'window.close': window.close(); return
@@ -150,7 +147,6 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'page.save': void saveCommand(target, realDeps); return
     case 'page.viewSource': void viewSourceCommand(target); return
     case 'page.reader': readerCommand(target, services); return
-    case 'page.forceDark': return
     case 'caret.toggle': toggleCaret({ window: target, services }); return
     case 'share.copyLink': return
     case 'share.email': return

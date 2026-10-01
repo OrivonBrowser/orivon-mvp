@@ -14,6 +14,7 @@ the page area shrinks by the panel's width, in `tabBounds()` of [`../shell/windo
 | `row-menu.ts`, `row-menu-runner.ts` | A row's native menu (open in a tab or window, copy the link, delete) and the two Electron calls it needs |
 | `side-panel-overlay.ts` | The overlay's definition and its handler |
 | `side-panel-host.ts`, `side-panel-guests.ts` | One panel per window and the guest slot; entries and choice listeners for the whole process |
+| `side-panel-pane.ts` | The panel as a stop of the F6 order (`EXTERNAL_PANES`) |
 | `side-panel-hook.ts`, `install-side-panel.ts` | Gives a window its panel; makes the file store |
 
 **What other code uses.** `sidePanelFor(window)` answers `isOpen`, `open`, `close`, `toggle`, `view`, `width`,

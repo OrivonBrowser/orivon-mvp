@@ -1,6 +1,7 @@
 // What the next start and a reopened window do with saved windows: the calls the start-up choice makes.
 import type { ShellWindowOptions } from '../shell/window-options.js'
 import type { TabManager } from '../shell/tabs.js'
+import { restoreAsleepTabs } from '../memory-saver/restore-asleep.js'
 import { restoreGroups } from '../tab-groups/restore-groups.js'
 import { placementFor } from '../window-state/placement.js'
 import type { Rect } from '../window-state/placement.js'
@@ -28,6 +29,7 @@ export function fillTabs (saved: SavedWindow): (tabs: TabManager) => void {
     if (front === undefined) tabs.createTab()
     else tabs.activateTab(front)
     restoreGroups(tabs, saved, opened, front)
+    restoreAsleepTabs(tabs, saved.tabs, opened)
   }
 }
 

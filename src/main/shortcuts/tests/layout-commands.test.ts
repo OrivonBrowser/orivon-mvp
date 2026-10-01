@@ -21,11 +21,9 @@ const ROWS: ReadonlyArray<[id: string, label: string, category: string, binding:
   ['tab.ungroup', 'Remove tab from group', 'tabs', undefined, false],
   ['tab.sleep', 'Put tab to sleep', 'tabs', undefined, false],
   ['page.reader', 'Reader view', 'tools', 'F9', false],
-  ['page.forceDark', 'Dark mode for this site', 'tools', undefined, false],
   ['caret.toggle', 'Caret browsing', 'tools', 'F7', true],
   ['focus.nextPane', 'Next pane', 'navigation', 'F6', false],
-  ['focus.previousPane', 'Previous pane', 'navigation', 'Shift+F6', false],
-  ['window.newGuest', 'New guest window', 'window', undefined, false]
+  ['focus.previousPane', 'Previous pane', 'navigation', 'Shift+F6', false]
 ]
 
 // Rows whose feature has landed: they run something now, so they carry no pending flag. One id a line.
@@ -86,9 +84,9 @@ describe('the layout, reading and accessibility command rows', () => {
     expect(keys.filter((key, at) => keys.indexOf(key) !== at)).toEqual([])
   })
 
-  it('lists the guest window, and in More tools the reader, the side panel, the dark-mode tick, sleep and the caret tick, in the layout', () => {
+  it('lists, in More tools, the reader, the side panel, sleep, the group commands and the caret tick, in the layout', () => {
     const inMenu = commandsIn(MENU_LAYOUT)
-    for (const id of ['window.newGuest', 'page.reader', 'sidePanel.toggle', 'page.forceDark', 'tab.sleep', 'tab.group', 'tab.ungroup', 'caret.toggle']) expect(inMenu, id).toContain(id)
+    for (const id of ['page.reader', 'sidePanel.toggle', 'tab.sleep', 'tab.group', 'tab.ungroup', 'caret.toggle']) expect(inMenu, id).toContain(id)
     for (const id of ['focus.nextPane', 'focus.previousPane']) expect(inMenu, id).not.toContain(id)
   })
 })

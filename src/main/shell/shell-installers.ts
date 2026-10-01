@@ -5,26 +5,20 @@
 import type { App } from 'electron'
 import type { Runtime } from '../launch/start-launch.js'
 import type { SubsystemContext } from '../registry.js'
-import { installCustomise } from '../appearance/install-customise.js'
-import { installA11y } from '../accessibility/install-a11y.js'
 import { installAuth } from '../auth/install-auth.js'
 import { installAutofill } from '../autofill/install-autofill.js'
 import { installChoosers } from '../devices/install-choosers.js'
 import { installFocus } from '../focus/install-focus.js'
-import { installHoverCard } from '../hover-card/install-hover-card.js'
-import { installLanguages } from '../languages/install-languages.js'
 import { installMemorySaver } from '../memory-saver/install-memory-saver.js'
 import { installOsLinks } from '../os/install-os-links.js'
 import { installTabSlots } from '../overlays/install-tab-slots.js'
 import { installFormWatch } from '../passwords/install-form-watch.js'
-import { installPageLook } from '../page-look/install-page-look.js'
 import { installPrivacyNet } from '../privacy/install-privacy-net.js'
 import { installReader } from '../reader/install-reader.js'
 import { installSidePanel } from '../side-panel/install-side-panel.js'
 import { installContentSettings } from '../site-settings/install-content-settings.js'
 import { installSitePermissions } from '../site-settings/install-site-permissions.js'
 import { installTabGroups } from '../tab-groups/install-tab-groups.js'
-import { installUiScale } from '../ui-scale/install-ui-scale.js'
 import type { ShellServices } from './shell-services.js'
 
 export interface ShellInstaller {
@@ -33,26 +27,20 @@ export interface ShellInstaller {
 }
 
 export const SHELL_INSTALLERS: readonly ShellInstaller[] = [
-  installA11y,
   installAuth,
   installAutofill,
   installChoosers,
   installContentSettings,
-  installCustomise,
   installFocus,
   installFormWatch,
-  installHoverCard,
-  installLanguages,
   installMemorySaver,
   installOsLinks,
-  installPageLook,
   installPrivacyNet,
   installReader,
   installSidePanel,
   installSitePermissions,
   installTabGroups,
-  installTabSlots,
-  installUiScale
+  installTabSlots
 ]
 
 /** An installer that throws is logged and skipped: one feature failing to wire must not stop the others or the first window. */

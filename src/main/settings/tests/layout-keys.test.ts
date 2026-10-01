@@ -7,13 +7,7 @@ const KEYS = [
   'sidePanel.side',
   'performance.memorySaver', 'performance.sleepAfter', 'performance.keepAwake', 'performance.energySaver',
   'reader.font', 'reader.size', 'reader.width', 'reader.theme',
-  'content.fontSize', 'content.minimumFontSize', 'content.fontStandard', 'content.fontSerif', 'content.fontSansSerif', 'content.fontMonospace',
-  'content.forceDark', 'content.forceDarkExcept',
-  'accessibility.contrast', 'accessibility.reduceMotion', 'accessibility.caretBrowsing', 'accessibility.caretAsk',
-  'tabs.hoverCard',
-  'appearance.uiScale', 'appearance.accent',
-  'toolbar.bookmarkStar', 'toolbar.sidePanel', 'toolbar.tabSearch', 'toolbar.profile',
-  'languages.content', 'spellcheck.languages'
+  'accessibility.caretBrowsing', 'accessibility.caretAsk'
 ]
 
 describe('the layout, reading and accessibility settings', () => {
@@ -30,26 +24,20 @@ describe('the layout, reading and accessibility settings', () => {
   it.each([
     ['sidePanel.side', 'right'], ['performance.memorySaver', true], ['performance.sleepAfter', '2h'], ['performance.keepAwake', ''],
     ['performance.energySaver', 'off'], ['reader.size', '18'], ['reader.width', 'medium'], ['reader.theme', 'auto'],
-    ['content.fontSize', '16'], ['content.minimumFontSize', '0'], ['content.forceDark', false], ['accessibility.contrast', 'system'],
-    ['accessibility.reduceMotion', 'system'], ['accessibility.caretBrowsing', false], ['accessibility.caretAsk', true],
-    ['tabs.hoverCard', 'preview'], ['appearance.uiScale', '100'], ['appearance.accent', 'indigo'], ['toolbar.profile', true]
+    ['accessibility.caretBrowsing', false], ['accessibility.caretAsk', true]
   ])('%s starts as %s', (key, expected) => {
     expect(SETTINGS[key as keyof typeof SETTINGS].default).toBe(expected)
   })
 
   it('refuses a value outside an enum', () => {
-    for (const [key, bad] of [['sidePanel.side', 'top'], ['performance.sleepAfter', '5m'], ['reader.size', '17'], ['appearance.uiScale', '95'], ['appearance.accent', 'red'], ['tabs.hoverCard', 'on']]) {
+    for (const [key, bad] of [['sidePanel.side', 'top'], ['performance.sleepAfter', '5m'], ['reader.size', '17']]) {
       expect(validateSetting(SETTINGS[key as keyof typeof SETTINGS], bad), `${String(key)}=${String(bad)}`).toBeUndefined()
     }
   })
 
-  it('keeps each text setting to its check', () => {
+  it('keeps the site list setting to its check', () => {
     expect(validateSetting(SETTINGS['performance.keepAwake'], 'a.example\nb.example')).toBe('a.example\nb.example')
     expect(validateSetting(SETTINGS['performance.keepAwake'], 'A.example')).toBeUndefined()
-    expect(validateSetting(SETTINGS['content.fontSerif'], 'DejaVu Serif')).toBe('DejaVu Serif')
-    expect(validateSetting(SETTINGS['content.fontSerif'], 'a;b')).toBeUndefined()
-    expect(validateSetting(SETTINGS['languages.content'], 'en-US,it')).toBe('en-US,it')
-    expect(validateSetting(SETTINGS['spellcheck.languages'], 'en_US')).toBeUndefined()
   })
 })
 

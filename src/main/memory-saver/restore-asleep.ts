@@ -23,3 +23,12 @@ export function restoreAsleep (tabs: TabManager, id: string, snapshot: TabSnapsh
     : snapshot.entries.map(({ url, title }) => ({ url, title }))
   return putToSleep(tabs, id, record, { url: snapshot.url, title: snapshot.title, favicon: null, entries, index: snapshot.index ?? 0, at: env.now() })
 }
+
+/** After a window's tabs are open and the one in front is chosen: every other restored tab starts asleep when it may.
+ * `opened[i]` is the id made from `saved[i]`, or '' when that one did not open. */
+export function restoreAsleepTabs (tabs: TabManager, saved: readonly TabSnapshot[], opened: readonly string[], env: SleepEnv = realEnv): void {
+  saved.forEach((snapshot, at) => {
+    const id = opened[at]
+    if (id !== undefined && id !== '') restoreAsleep(tabs, id, snapshot, env)
+  })
+}

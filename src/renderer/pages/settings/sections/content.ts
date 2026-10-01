@@ -1,6 +1,4 @@
 import type { Section } from '../model.js'
-import { darkPageRows } from './rows/dark-pages.js'
-import { fontRows } from './rows/fonts.js'
 import { readerRows } from './rows/reader.js'
 
 export const content: Section = {
@@ -14,8 +12,6 @@ export const content: Section = {
       keywords: ['spell', 'spelling', 'dictionary', 'typo', 'autocorrect', 'red underline'],
       control: { type: 'toggle', key: 'spellcheck.enabled' }
     },
-    ...fontRows,
-    ...darkPageRows,
     ...readerRows
   ]
 }

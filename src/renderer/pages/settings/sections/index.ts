@@ -10,7 +10,6 @@ import { appearance } from './appearance.js'
 import { content } from './content.js'
 import { developer } from './developer.js'
 import { downloads } from './downloads.js'
-import { languages } from './languages.js'
 import { performanceSection } from './performance.js'
 import { passwords } from './passwords.js'
 import { privacy } from './privacy.js'
@@ -24,6 +23,6 @@ import { web3 } from './web3.js'
 
 /** After the state has loaded: some sections are built from what main reports. A section with no rows is not listed. */
 export function sectionsFor (state: SettingsState): readonly Section[] {
-  return [appearance, search, startup, content, accessibility, languages, tabs, downloads, profiles, privacy, sites, passwords, addresses, apps, web3, performanceSection, shortcutsSection(state.shortcuts.rows), developer, about]
+  return [appearance, search, startup, content, accessibility, tabs, downloads, profiles, privacy, sites, passwords, addresses, apps, web3, performanceSection, shortcutsSection(state.shortcuts.rows), developer, about]
     .filter((section) => section.rows.length > 0)
 }

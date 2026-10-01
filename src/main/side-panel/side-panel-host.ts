@@ -1,7 +1,7 @@
 // One panel per window: whether it is open, which view it shows, how wide it is and which side it sits on, plus
 // the slot for a view Orivon does not draw (an extension's page). The panel's own page is the `side-panel`
 // overlay (./side-panel-overlay.ts); this is what the rest of the shell and other code talk to.
-import type { BaseWindow, WebContentsView } from 'electron'
+import type { BaseWindow, WebContents, WebContentsView } from 'electron'
 import { dockBounds } from '../overlays/overlay-bounds.js'
 import type { OverlayHostHandle } from '../overlays/overlay-host.js'
 import { contain } from '../shell/contain.js'
@@ -277,6 +277,31 @@ export class PanelHost implements SidePanelHost {
   focusPage (): void {
     const contents = this.window.tabs.activeWebContents()
     if (contents !== undefined && !contents.isDestroyed()) contents.focus()
+  }
+
+  /** On screen now: open, with room, and not hidden by a fullscreen page. The pane order skips a panel that is not. */
+  onScreen (): boolean { return this.visible() }
+
+  /** The panel's own page, found among the window's views by its address. */
+  private ownPage (): WebContents | undefined {
+    for (const child of this.window.window.contentView.children) {
+      const contents = (child as Partial<WebContentsView>).webContents
+      if (contents !== undefined && !contents.isDestroyed() && contents.getURL().includes(`overlay=${SIDE_PANEL_OVERLAY}`)) return contents
+    }
+    return undefined
+  }
+
+  /** Keyboard focus is inside the panel: its page, or the view standing in for a guest. */
+  holdsFocus (): boolean {
+    const guest = this.guest?.view.webContents
+    return (guest !== undefined && !guest.isDestroyed() && guest.isFocused()) || this.ownPage()?.isFocused() === true
+  }
+
+  /** Hands the keyboard to the guest's view when one is shown, else to the panel's page. */
+  focusIn (): void {
+    const guest = this.guest?.view.webContents
+    const target = guest !== undefined && !guest.isDestroyed() ? guest : this.ownPage()
+    target?.focus()
   }
 
   /** Called by the overlay host on every restack: the guest sits directly above the panel and under the popups. */
