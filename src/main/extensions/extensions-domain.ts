@@ -52,7 +52,7 @@ export function extensionsDomain (deps: ExtensionsDomainDeps): InternalDomain {
 
   return {
     pages: ['extensions'],
-    handle: async (command) => {
+    handle: async (command, caller) => {
       const request = (typeof command === 'object' && command !== null ? command : {}) as ExtensionsRequest
       switch (request.type) {
         case 'context':
@@ -115,7 +115,7 @@ export function extensionsDomain (deps: ExtensionsDomainDeps): InternalDomain {
           const command = typeof request.type === 'string' && Object.hasOwn(EXTENSION_PAGE_COMMANDS, request.type)
             ? EXTENSION_PAGE_COMMANDS[request.type]
             : undefined
-          return command === undefined ? undefined : await command(request, deps)
+          return command === undefined ? undefined : await command(request, deps, caller)
         }
       }
     }

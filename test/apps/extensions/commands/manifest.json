@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Orivon E2E Commands",
+  "version": "1.0.0",
+  "description": "Fixture extension for test/e2e-extensions-shortcuts.test.ts: a browser action with a popup, three commands and a service worker that logs each onCommand it receives.",
+  "icons": { "48": "icon.png" },
+  "action": { "default_popup": "popup.html", "default_icon": "icon.png" },
+  "background": { "service_worker": "background.js" },
+  "permissions": ["storage"],
+  "commands": {
+    "_execute_action": {
+      "suggested_key": { "default": "Ctrl+Shift+Y", "mac": "Command+Shift+Y" }
+    },
+    "mark": {
+      "suggested_key": { "default": "Alt+Shift+K" },
+      "description": "Mark the current tab"
+    },
+    "clash": {
+      "suggested_key": { "default": "Ctrl+T", "mac": "Command+T" },
+      "description": "Take the new-tab key"
+    }
+  }
+}

@@ -28,6 +28,7 @@ tabs.setAttribute('aria-label', 'Extensions')
 const content = h('div', { className: 'view' })
 
 let place: Place = placeFor(location.pathname, location.search)
+let shown: ViewName | null = null
 
 function context (): PageContext {
   return {
@@ -51,13 +52,15 @@ function markTabs (): void {
 /** `fresh` empties the view first, for a new place; a refresh keeps what is on screen until the new data arrives. */
 function show (fresh: boolean): void {
   markTabs()
+  if (fresh && shown !== null && shown !== place.view) EXTENSION_VIEWS[shown].leave?.()
+  shown = place.view
   if (fresh) replaceChildren(content)
   EXTENSION_VIEWS[place.view].render(content, context())
 }
 
 function navigate (path: string): void {
   const url = new URL(path, location.href)
-  history.pushState(null, '', `${url.pathname}${url.search}`)
+  history.pushState(null, '', `${url.pathname}${url.search}${url.hash}`)
   place = placeFor(url.pathname, url.search)
   show(true)
   window.scrollTo(0, 0)

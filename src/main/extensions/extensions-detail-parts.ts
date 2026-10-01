@@ -6,12 +6,14 @@ import type { ExtensionFacts } from './extensions-view.js'
 import type { ExtensionsDomainDeps } from './extensions-domain.js'
 import type { InstalledExtension } from './registry.js'
 import { optionalPart } from './details-optional.js'
+import { shortcutsPart } from './shortcuts-page.js'
 
 export type ExtensionPart = (entry: InstalledExtension, facts: ExtensionFacts, deps: ExtensionsDomainDeps) => Record<string, unknown>
 
 /** Merged into `ExtensionDetails.parts` of the details reply. One per line, alphabetical. */
 export const DETAIL_PARTS: ReadonlyArray<ExtensionPart> = [
-  optionalPart
+  optionalPart,
+  shortcutsPart
 ]
 
 /** Merged into `ExtensionRow.parts` of every list row. One per line, alphabetical. */

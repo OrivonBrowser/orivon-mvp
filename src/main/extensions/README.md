@@ -87,7 +87,9 @@ same exception, reached only through the virtual specifiers above).
 | File | Layer |
 |---|---|
 | `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts`, `store-download-seam.ts`, `extension-prefs.ts`, `effective-manifest.ts`, `manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `extensions-detail-parts.ts`, `extensions-page-commands.ts`, `extension-permission-check.ts`, `install-private.ts`, `optional-permissions.ts`, `permission-nag-limit.ts`, `granted-host-rule.ts`, `granted-reconcile.ts`, `details-optional.ts` | The decision -- no `electron`, unit-tested under plain vitest |
+| `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts`, `extension-commands.ts`, `extension-action-anchor.ts`, `store-download-seam.ts`, `extension-prefs.ts`, `effective-manifest.ts`, `manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `extensions-detail-parts.ts`, `extensions-page-commands.ts`, `extension-permission-check.ts`, `install-private.ts` | The decision -- no `electron`, unit-tested under plain vitest |
 | `unpack-runner.ts`, `registry-runner.ts`, `install-runner.ts`, `install-store-runner.ts`, `install-lifecycle.ts`, `extensions-view-runner.ts`, `store-runner.ts`, `extension-prefs-runner.ts`, `effective-manifest-runner.ts`, `extension-page-open.ts` | The real I/O |
+| `extension-commands-runner.ts`, `install-extension-commands.ts`, `shortcuts-page.ts` | The keys of extension commands: the table and what a key runs (fakes for everything it reaches), the real session, registry and shell behind it, and what the shortcuts page may ask |
 | `extension-install-prompt.ts`, `extensions-picker-runner.ts` | The native dialogs (`dialog.showMessageBox`, `dialog.showOpenDialog`) |
 | `action-pins.ts`, `action-context-menu.ts`, `extensions-menu-model.ts`, `extensions-menu-names.ts`, `extensions-menu-points.ts`, `extensions-menu-deps.ts` | The decision for the toolbar's pins and the Extensions menu -- which extensions sit on the toolbar, the menu's rows and requests, the right-click template, and the slots a feature adds to the menu through |
 | `action-pins-runner.ts`, `extensions-menu-overlay.ts`, `extensions-menu-command.ts`, `loaded-extensions.ts` | The pins acted on (the toolbar list, `chrome.action.getUserSettings`, `onUserSettingsChanged`, the right-click menu), the menu's `OverlayDef`, the `extensions.menu` command and the loaded-extension count the button follows |
@@ -119,6 +121,21 @@ is the only way to a grant, and the answer lands in `prefs.granted`. Library che
 Chromium's own checks follow at the quiet reload, because `manifest-stage-granted.ts` merges the
 grants into the loaded manifest. Orivon never grants `nativeMessaging`, `webRequest*` or
 `declarativeNetRequest*`, which stay governed by the strip list.
+**An extension's commands are keys in Orivon's own dispatcher, never a second listener.**
+`extension-commands.ts` reads the manifest's `commands` and decides which key each one ends up
+with: the person's choice (`prefs.shortcuts`, `''` for one they cleared), else the suggested key
+when Orivon and every earlier-installed command leave it free. `extension-commands-runner.ts` keeps
+that table and answers `../shortcuts/dispatcher.ts`, which asks Orivon's own commands first, so an
+extension never takes a key Orivon binds and a bare key or an editing key is never offered. A key
+that runs a command is consumed; every other key still reaches the page. `_execute_action` opens
+the popup as a click on the icon does, under the icon or else the Extensions button
+(`extension-action-anchor.ts`); a named command reaches `chrome.commands.onCommand` through
+`ElectronChromeExtensions.sendCommand` with the active tab, and counts as an invocation of the
+extension on that tab. A tab no extension is told about (a registered app's, or an internal page)
+is passed as no tab. `commands.getAll` (`api/commands-api.ts`) answers with the live key. The
+table is empty until `installShortcuts` says the saved shortcuts are read, because a lookup before
+that would cache the defaults. The macOS reading of `Command` and `MacCtrl` is *provisional*: it
+is unit-tested and has not run on a Mac.
 
 **`extension-sw-preload-recovery.ts` must import nothing beyond `electron`'s ambient types.**
 Its own exports (the two health-check channel constants, `extensionIdFromScope`) are imported by

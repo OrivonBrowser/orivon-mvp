@@ -22,6 +22,13 @@ export function shortcutsSection (shortcuts: readonly ShortcutRow[]): Section {
     rows: [
       ...shortcuts.map(rowFor),
       {
+        id: 'shortcuts-extensions',
+        label: 'Shortcuts of extensions',
+        help: 'Keys that extensions ask for are set on the Extensions page.',
+        keywords: ['shortcut', 'shortcuts', 'keyboard', 'extension', 'extensions', 'commands'],
+        control: { type: 'action', label: 'Open extension shortcuts', run: async (state) => { await state.openPage('extensions', '/shortcuts') } }
+      },
+      {
         id: 'shortcuts-reset',
         label: 'Restore the default shortcuts',
         keywords: ['shortcut', 'keyboard', 'reset', 'defaults'],

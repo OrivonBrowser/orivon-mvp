@@ -20,6 +20,7 @@ vi.mock('../store-runner.js', () => ({ startWebStore }))
 vi.mock('../store-test-hook.js', () => ({ installStoreTestHook: vi.fn() }))
 vi.mock('../extensions-install-test-hook.js', () => ({ installExtensionsInstallTestHook: vi.fn() }))
 vi.mock('../api/install-apis.js', () => ({ installApis }))
+vi.mock('../install-extension-commands.js', () => ({ installExtensionCommands: () => ({ whenReady: async () => {}, getAll: () => [] }) }))
 vi.mock('../registry-runner.js', () => ({ readRegistry: () => [{ id: 'a'.repeat(32), name: 'x', enabled: true, path: '/slot/1' }] }))
 vi.mock('../../registry.js', () => ({ publishExtensions: (_ctx: unknown, api: unknown) => { published = api } }))
 

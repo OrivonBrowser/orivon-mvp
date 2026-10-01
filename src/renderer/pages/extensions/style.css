@@ -3,6 +3,7 @@
 @import './views/list.css';
 @import './views/details.css';
 @import './views/details-optional.css';
+@import './views/shortcuts.css';
 
 .page { max-width: 860px; margin: 0 auto; padding: 28px 24px 64px; }
 
