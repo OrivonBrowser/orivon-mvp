@@ -3,6 +3,7 @@
 // has no `host_permissions`, so its origins join `permissions`.
 import type { ExtensionPrefs } from './extension-prefs.js'
 import type { ExtensionManifest } from './effective-manifest.js'
+import { reconcileGranted } from './optional-permissions.js'
 
 function listOf (value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
@@ -13,7 +14,8 @@ function withAll (current: string[], extra: readonly string[]): string[] {
 }
 
 export function applyGrantedStage (manifest: ExtensionManifest, prefs: ExtensionPrefs): ExtensionManifest {
-  const { permissions, origins } = prefs.granted
+  // Only what this manifest still lets the extension ask for: a stray grant never reaches the loaded copy.
+  const { permissions, origins } = reconcileGranted(manifest, prefs.granted)
   if (permissions.length === 0 && origins.length === 0) return manifest
   if (manifest['manifest_version'] === 2) {
     return { ...manifest, permissions: withAll(listOf(manifest['permissions']), [...permissions, ...origins]) }

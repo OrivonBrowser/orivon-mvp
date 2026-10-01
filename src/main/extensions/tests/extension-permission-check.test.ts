@@ -39,7 +39,7 @@ describe('permissionHeld', () => {
     expect(createPermissionHeld(deps({ stripped: ['declarativeNetRequestFeedback'] }))(ID, 'declarativeNetRequestFeedback')).toBe(true)
   })
 
-  it('answers any other name from the loaded manifest', () => {
+  it('answers any other name from the manifest list it is given', () => {
     const held = createPermissionHeld(deps({ manifest: ['tabs'] }))
     expect(held(ID, 'tabs')).toBe(true)
     expect(held(ID, 'history')).toBe(false)

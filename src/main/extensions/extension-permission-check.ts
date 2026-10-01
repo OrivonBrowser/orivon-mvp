@@ -1,8 +1,10 @@
 // The one answer to "does this extension hold this permission right now",
 // installed as the router's permission check (`api/install-apis.ts` makes
 // the one setPermissionCheck call, so this file stays free of the library). Three sources, in order: the original record of a permission
-// `loadableManifest` strips from the loaded copy; the loaded manifest's own
-// `permissions`; then the optional permissions the person granted at runtime.
+// `loadableManifest` strips from the loaded copy; the manifest's own
+// `permissions` as installed (the base manifest, not the loaded copy a grant
+// is merged into only at the next reload, so a grant taken back stops
+// counting at once); then the optional permissions the person granted.
 // Every handler registered with a `permission`, and every event gate built on
 // `held`, reads this and nothing else.
 import type { ExtensionPrefsStore } from './extension-prefs.js'
@@ -21,7 +23,7 @@ export function isStrippedPermissionName (permission: string): boolean {
 export interface PermissionCheckDeps {
   /** The extension's pre-strip permission list, `[]` when it is not loaded. */
   readonly stripped: (extensionId: string) => readonly string[]
-  /** The loaded manifest's own `permissions`, undefined when not loaded. */
+  /** The manifest's own `permissions` as installed, without the person's grants; undefined when not loaded. */
   readonly manifestPermissions: (extensionId: string) => readonly string[] | undefined
   readonly prefs: ExtensionPrefsStore
 }

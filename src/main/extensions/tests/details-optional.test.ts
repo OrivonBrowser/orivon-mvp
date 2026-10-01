@@ -45,10 +45,23 @@ describe('optionalPart', () => {
     })
   })
 
-  it('does not list a grant the manifest no longer declares', () => {
+  it('lists a grant the manifest no longer declares, so it can still be taken back', () => {
     const { deps: value, prefs } = deps()
     prefs.update(ID, { granted: { permissions: ['downloads'], origins: [] } })
-    expect(optionalPart(entry, facts(['history'], []), value)).toEqual({ optional: { granted: [], mayAsk: ['Read and change your browsing history'] } })
+    expect(optionalPart(entry, facts(['history'], []), value)).toEqual({
+      optional: { granted: [{ kind: 'permission', value: 'downloads', words: 'Manage your downloads' }], mayAsk: ['Read and change your browsing history'] }
+    })
+  })
+
+  it('shows an origin granted through a narrower pattern than the declared one, which may still be asked for in full', () => {
+    const { deps: value, prefs } = deps()
+    prefs.update(ID, { granted: { permissions: [], origins: ['https://a.example.com/*'] } })
+    expect(optionalPart(entry, facts([], ['*://*.example.com/*', 'https://other.test/*']), value)).toEqual({
+      optional: {
+        granted: [{ kind: 'origin', value: 'https://a.example.com/*', words: 'Read and change your data on a.example.com' }],
+        mayAsk: ['Read and change your data on example.com and its subdomains', 'Read and change your data on other.test']
+      }
+    })
   })
 })
 
@@ -59,7 +72,14 @@ describe('the revoke commands', () => {
     expect(await revokePermission({ id: ID, permission: 'history' }, value)).toEqual({ ok: true })
     expect(prefs.get(ID).granted.permissions).toEqual(['bookmarks'])
     expect(sendEvent).toHaveBeenCalledWith(ID, 'permissions.onRemoved', { permissions: ['history'], origins: [] })
-    expect(applyManifest).toHaveBeenCalledWith(ID, 'quiet')
+    expect(applyManifest).toHaveBeenCalledWith(ID, 'now')
+  })
+
+  it('answer before the reload finishes', async () => {
+    const { deps: value, prefs, applyManifest } = deps()
+    applyManifest.mockImplementation(async () => await new Promise<string>(() => {}))
+    prefs.update(ID, { granted: { permissions: ['history'], origins: [] } })
+    expect(await revokePermission({ id: ID, permission: 'history' }, value)).toEqual({ ok: true })
   })
 
   it('take back one granted origin', async () => {

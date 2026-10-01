@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ApiEvent, ExtensionApiContext } from '../api/api-types.js'
 import { createExtensionPrefsStore } from '../extension-prefs-runner.js'
 import { setGrantedHostSource } from '../granted-host-rule.js'
+import { setBaseManifestSource } from '../base-manifest-source.js'
 import { createNagLimit } from '../permission-nag-limit.js'
 import {
   BUSY_ERROR, GESTURE_ERROR, installPermissions, NAGGING_ERROR, NEVER_ERROR, parseRequest, UNDECLARED_ERROR,
@@ -48,6 +49,8 @@ function setup (over: Partial<PermissionsApiDeps> = {}, manifest: Record<string,
   const call = async (name: string, ...args: unknown[]): Promise<unknown> => await (handlers.get(name) as Handler)(event(), ...args)
   return { handlers, prefs, sendEvent, applyManifest, ask, event, call, window }
 }
+
+afterEach(() => { setBaseManifestSource(undefined) })
 
 describe('registration', () => {
   it('registers the six calls, with no permission of its own', () => {
@@ -213,7 +216,7 @@ describe('permissions.remove', () => {
     expect(await call('permissions.remove', { permissions: ['history'] })).toBe(true)
     expect(prefs.get(ID).granted.permissions).toEqual(['bookmarks'])
     expect(sendEvent).toHaveBeenCalledWith(ID, 'permissions.onRemoved', { permissions: ['history'], origins: [] })
-    expect(applyManifest).toHaveBeenCalledWith(ID, 'quiet')
+    expect(applyManifest).toHaveBeenCalledWith(ID, 'now')
     expect(await call('permissions.contains', { permissions: ['history'] })).toBe(false)
   })
 
@@ -238,5 +241,32 @@ describe('permissions.remove', () => {
     prefs.update(ID, { granted: { permissions: ['history'], origins: [] } })
     expect(await call('permissions.remove', { permissions: ['storage'] })).toBe(false)
     expect(await call('permissions.remove', { permissions: ['history'] })).toBe(true)
+  })
+})
+
+describe('taking a grant back while the loaded manifest still carries it', () => {
+  const merged = { ...MANIFEST, permissions: ['storage', 'history'], host_permissions: ['https://required.example/*', 'https://a.example.com/*'] }
+
+  it('stops reporting it held, so a new request prompts again', async () => {
+    setBaseManifestSource(() => MANIFEST)
+    const { call, prefs, ask } = setup({}, merged)
+    prefs.update(ID, { granted: { permissions: ['history'], origins: ['https://a.example.com/*'] } })
+    expect(await call('permissions.contains', { permissions: ['history'], origins: ['https://a.example.com/*'] })).toBe(true)
+    expect(await call('permissions.remove', { permissions: ['history'], origins: ['https://a.example.com/*'] })).toBe(true)
+    expect(await call('permissions.contains', { permissions: ['history'] })).toBe(false)
+    expect(await call('permissions.contains', { origins: ['https://a.example.com/*'] })).toBe(false)
+    expect(await call('permissions.getAll')).toEqual({ permissions: ['storage'], origins: ['https://required.example/*'] })
+    expect(await call('permissions.request', { permissions: ['history'] }, true)).toBe(true)
+    expect(ask).toHaveBeenCalledTimes(1)
+  })
+
+  it('stores nothing for an item the extension stopped declaring while the sheet was open', async () => {
+    const updated = { ...MANIFEST, optional_permissions: ['bookmarks'] }
+    let current: Record<string, unknown> = MANIFEST
+    setBaseManifestSource(() => current)
+    const { call, prefs, sendEvent } = setup({ ask: async () => { current = updated; return true } })
+    expect(await call('permissions.request', { permissions: ['history'] }, true)).toBe(false)
+    expect(prefs.get(ID).granted.permissions).toEqual([])
+    expect(sendEvent).not.toHaveBeenCalled()
   })
 })

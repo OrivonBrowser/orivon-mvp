@@ -4,6 +4,7 @@
 // Allow, and only what the manifest declared can be asked for.
 import type { WebContents } from 'electron'
 import type { ApiEvent, ExtensionApiContext, ExtensionApiModule } from './api/api-types.js'
+import { baseManifestOr } from './base-manifest-source.js'
 import { parentOf } from './extension-popup-policy.js'
 import { readExtensionFacts } from './extensions-view-runner.js'
 import { setGrantedHostSource } from './granted-host-rule.js'
@@ -82,12 +83,15 @@ export function installPermissions (ctx: ExtensionApiContext, deps: PermissionsA
   const asking = new Set<string>()
 
   const grantedOf = (id: string): PermissionSet => ctx.prefs.get(id).granted
-  const heldOf = (event: ApiEvent): PermissionSet => heldSet(event.extension.manifest, grantedOf(event.extension.id))
+  /** What the extension was installed with: the loaded manifest also carries every grant merged in at its last reload. */
+  const baseOf = (event: ApiEvent): Readonly<Record<string, unknown>> => baseManifestOr(event.extension.id, event.extension.manifest)
+  const heldOf = (event: ApiEvent): PermissionSet => heldSet(baseOf(event), grantedOf(event.extension.id))
 
+  /** A grant is applied to the loaded manifest once no page of the extension is open; a taking back at once, so the library's own checks stop passing. */
   function persist (id: string, granted: PermissionSet, event: 'permissions.onAdded' | 'permissions.onRemoved', changed: PermissionRequest): void {
     ctx.prefs.update(id, { granted })
     ctx.sendEvent(id, event, { permissions: [...changed.permissions], origins: [...changed.origins] })
-    void ctx.extensions()?.applyManifest(id, 'quiet').catch((error: unknown) => {
+    void ctx.extensions()?.applyManifest(id, event === 'permissions.onRemoved' ? 'now' : 'quiet').catch((error: unknown) => {
       console.error(`[extensions] applying the permissions of ${id} failed:`, error)
     })
   }
@@ -108,7 +112,7 @@ export function installPermissions (ctx: ExtensionApiContext, deps: PermissionsA
   ctx.handle('permissions.request', async (event, raw, gesture) => {
     const id = event.extension.id
     const request = parseRequest(raw)
-    const outcome = classifyRequest(event.extension.manifest, grantedOf(id), request)
+    const outcome = classifyRequest(baseOf(event), grantedOf(id), request)
     if (outcome.kind === 'held') return true
     if (outcome.kind === 'never') throw new Error(NEVER_ERROR)
     if (outcome.kind === 'undeclared') throw new Error(UNDECLARED_ERROR)
@@ -136,8 +140,13 @@ export function installPermissions (ctx: ExtensionApiContext, deps: PermissionsA
       return false
     }
     deps.nag.allowed(id)
-    if (ctx.session.extensions.getExtension(id) == null) return false
-    persist(id, mergeGranted(grantedOf(id), outcome), 'permissions.onAdded', outcome)
+    const loaded = ctx.session.extensions.getExtension(id)
+    if (loaded == null) return false
+    // The prompt can stay open while the extension updates; only what the manifest it has now still lets it ask for is stored.
+    const current = classifyRequest(baseManifestOr(id, loaded.manifest ?? event.extension.manifest), grantedOf(id), request)
+    if (current.kind === 'held') return true
+    if (current.kind !== 'ask') return false
+    persist(id, mergeGranted(grantedOf(id), current), 'permissions.onAdded', current)
     return true
   })
 
@@ -145,7 +154,7 @@ export function installPermissions (ctx: ExtensionApiContext, deps: PermissionsA
     const id = event.extension.id
     const request = parseRequest(raw)
     const granted = grantedOf(id)
-    const required = requiredOf(event.extension.manifest, granted)
+    const required = requiredOf(baseOf(event), granted)
     const requiredAsked = request.permissions.some((name) => required.permissions.includes(name) && !granted.permissions.includes(name)) ||
       request.origins.some((origin) => required.origins.some((pattern) => patternCovers(pattern, origin)) && !granted.origins.includes(origin))
     if (requiredAsked) return false

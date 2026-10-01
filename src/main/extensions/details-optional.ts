@@ -7,7 +7,7 @@ import { permissionLine } from '../../broker/policy/extension-manifest.js'
 import { isStrippedPermissionName } from './extension-permission-check.js'
 import type { ExtensionPart } from './extensions-detail-parts.js'
 import type { ExtensionsDomainDeps } from './extensions-domain.js'
-import { subtractGranted } from './optional-permissions.js'
+import { patternCovers, subtractGranted } from './optional-permissions.js'
 
 export interface GrantedItem {
   readonly kind: 'permission' | 'origin'
@@ -29,13 +29,14 @@ export const optionalPart: ExtensionPart = (entry, facts, deps) => {
   const declaredOrigins = facts.manifestFacts?.optionalHostPermissions ?? []
   if (declaredPermissions.length === 0 && declaredOrigins.length === 0) return {}
   const held = deps.prefs.get(entry.id).granted
+  // Listed from what was granted, not from what was declared: a grant for a narrower pattern than the declared one is still the person's to take back.
   const granted: GrantedItem[] = [
-    ...declaredPermissions.filter((name) => held.permissions.includes(name)).map((value): GrantedItem => ({ kind: 'permission', value, words: wordsOf(value) })),
-    ...declaredOrigins.filter((origin) => held.origins.includes(origin)).map((value): GrantedItem => ({ kind: 'origin', value, words: hostWords(value) }))
+    ...held.permissions.map((value): GrantedItem => ({ kind: 'permission', value, words: wordsOf(value) })),
+    ...held.origins.map((value): GrantedItem => ({ kind: 'origin', value, words: hostWords(value) }))
   ]
   const mayAsk = [
     ...declaredPermissions.filter((name) => !held.permissions.includes(name)).map(wordsOf),
-    ...declaredOrigins.filter((origin) => !held.origins.includes(origin)).map(hostWords)
+    ...declaredOrigins.filter((origin) => !held.origins.some((pattern) => patternCovers(pattern, origin))).map(hostWords)
   ]
   const details: OptionalDetails = { granted, mayAsk: [...new Set(mayAsk)] }
   return { optional: details }
@@ -54,7 +55,10 @@ function revoke (field: 'permissions' | 'origins'): (body: Readonly<Record<strin
     const removed = { permissions: field === 'permissions' ? [value] : [], origins: field === 'origins' ? [value] : [] }
     deps.prefs.update(id, { granted: subtractGranted(granted, removed) })
     deps.host()?.getRouter().sendEvent(id, 'permissions.onRemoved', removed)
-    await deps.extensions.applyManifest(id, 'quiet')
+    // The page's reply must not wait for the reload, which can be held back by an open page of the extension.
+    void deps.extensions.applyManifest(id, 'now').catch((error: unknown) => {
+      console.error(`[extensions] applying the permissions of ${id} failed:`, error)
+    })
     return { ok: true }
   }
 }

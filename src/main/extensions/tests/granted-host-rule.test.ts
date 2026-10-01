@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { normalizePrefs } from '../extension-prefs.js'
 import { HOST_ACCESS_RULES, hostAccessFor } from '../extension-host-access.js'
-import { grantedHostRule, setGrantedHostSource } from '../granted-host-rule.js'
+import { setBaseManifestSource } from '../base-manifest-source.js'
+import { grantedHostRule, revokedHostRule, setGrantedHostSource } from '../granted-host-rule.js'
 
 const ID = 'a'.repeat(32)
 const store = (origins: string[]) => ({ get: () => normalizePrefs({ granted: { origins } }) })
 const MANIFEST = { manifest_version: 3, name: 'x', version: '1', host_permissions: ['https://required.example/*'] }
 
-afterEach(() => { setGrantedHostSource(undefined) })
+afterEach(() => { setGrantedHostSource(undefined); setBaseManifestSource(undefined) })
 
 describe('grantedHostRule', () => {
   it('is one of the host access rules', () => {
@@ -36,5 +37,29 @@ describe('grantedHostRule', () => {
     expect(hostAccessFor(ID, MANIFEST, 'https://a.example.com/x')).toBe(true)
     expect(hostAccessFor(ID, MANIFEST, 'https://required.example/x')).toBe(true)
     expect(hostAccessFor(ID, MANIFEST, 'https://nope.example/x')).toBe(false)
+  })
+})
+
+describe('revokedHostRule', () => {
+  const merged = { ...MANIFEST, host_permissions: ['https://required.example/*', 'https://a.example.com/*'] }
+
+  it('is one of the host access rules, after the granted one', () => {
+    expect(HOST_ACCESS_RULES.indexOf(revokedHostRule)).toBeGreaterThan(HOST_ACCESS_RULES.indexOf(grantedHostRule))
+  })
+
+  it('says no to a URL only the loaded manifest still carries, once its grant is gone', () => {
+    setBaseManifestSource(() => MANIFEST)
+    setGrantedHostSource(store([]))
+    expect(hostAccessFor(ID, merged, 'https://a.example.com/x')).toBe(false)
+    expect(hostAccessFor(ID, merged, 'https://required.example/x')).toBe(true)
+    setGrantedHostSource(store(['https://a.example.com/*']))
+    expect(hostAccessFor(ID, merged, 'https://a.example.com/x')).toBe(true)
+  })
+
+  it('answers nothing without an installed manifest to compare with', () => {
+    setGrantedHostSource(store([]))
+    expect(revokedHostRule({ extensionId: ID, url: 'https://a.example.com/x' })).toBeUndefined()
+    setBaseManifestSource(() => undefined)
+    expect(revokedHostRule({ extensionId: ID, url: 'https://a.example.com/x' })).toBeUndefined()
   })
 })
