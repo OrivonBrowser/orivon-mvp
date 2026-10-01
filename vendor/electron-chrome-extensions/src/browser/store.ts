@@ -238,8 +238,9 @@ export class ExtensionStore extends EventEmitter {
     permissions: chrome.permissions.Permissions,
   ) {
     if (typeof this.impl.requestPermissions !== 'function') {
-      // Default to allowed.
-      return true
+      // Orivon patch (UPSTREAM.md patch 56): was `return true`. A host that
+      // supplies no prompt grants nothing.
+      return false
     }
     const result: unknown = await this.impl.requestPermissions(extension, permissions)
     return typeof result === 'boolean' ? result : false

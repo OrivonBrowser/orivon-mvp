@@ -741,6 +741,11 @@
     where the answer is about one tab (`filterTabDetails` reads `details.id`, `insertCSS` the
     tab's id). Reason: a host decision that depends on more than the manifest (a per-extension
     site-access choice, a one-tab grant) needs to know which extension asks and about which tab.
+56. **`requestPermissions` refuses when the host gives no prompt.** `src/browser/store.ts`:
+    `requestPermissions` returns `false`, was `true`, when `impl.requestPermissions` is not a
+    function. Reason: the default granted every `chrome.permissions.request` unasked, so a host that
+    never wired its own prompt silently widened every extension. Orivon's `permissions` module
+    replaces the handler and asks; this default is only the safe fallback.
 
 `partition.ts` is reached only through the virtual specifier `src/main/extensions/
 electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and
