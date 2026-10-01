@@ -120,8 +120,13 @@ export class PasswordsPart implements SettingsPart {
     void this.show(id)
   }
 
+  /** Bumped by every hide: a reveal whose reply arrives after one was asked to hide is dropped. */
+  private revealGeneration = 0
+
   private async show (id: string): Promise<void> {
+    const generation = this.revealGeneration
     const reply = await this.bridge.request('passwords', { type: 'reveal', id })
+    if (generation !== this.revealGeneration) return
     const password = isRecord(reply) ? reply['password'] : undefined
     if (typeof password !== 'string') { this.local(); return }
     this.revealed = { id, password }
@@ -131,6 +136,7 @@ export class PasswordsPart implements SettingsPart {
 
   /** Forgets the password on show. */
   hide (redraw = true): void {
+    this.revealGeneration += 1
     this.clearTimer('hide')
     if (this.revealed === null) return
     this.revealed = null

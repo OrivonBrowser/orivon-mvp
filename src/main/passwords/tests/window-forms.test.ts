@@ -449,7 +449,6 @@ describe('the password button and the chooser', () => {
     const r = rig()
     const before = r.pushes()
     r.forms.focus(r.sender(), { type: 'focus', rect: { x: 1, y: 2, width: 3, height: 4 }, viewWidth: 1000, signUp: false })
-    expect(r.forms.focusedField('t1')).toEqual({ rect: { x: 1, y: 2, width: 3, height: 4 }, viewWidth: 1000, signUp: false })
     expect(r.pushes()).toBeGreaterThan(before)
   })
 

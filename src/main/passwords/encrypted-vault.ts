@@ -114,9 +114,18 @@ export class EncryptedVault implements PasswordVault {
     return toLogin(stored)
   }
 
-  remove (id: string): boolean {
-    if (this.#state !== 'ready' || !this.#logins.delete(id)) return false
-    this.#writeInBackground()
+  /** False when there was no such login, or when the file could not be written: the login is then still there. */
+  async remove (id: string): Promise<boolean> {
+    const stored = this.#logins.get(id)
+    if (this.#state !== 'ready' || stored === undefined) return false
+    this.#logins.delete(id)
+    try {
+      await this.#persist()
+    } catch (error) {
+      console.error('[passwords] the passwords file could not be written', error)
+      this.#logins.set(id, stored)
+      return false
+    }
     this.#changed()
     return true
   }

@@ -90,7 +90,7 @@ export interface WindowForms {
   configChanged: () => void
   loginState: (tabId: string | null) => LoginState
   logins: (tabId: string) => Login[]
-  focusedField: (tabId: string) => FocusedField | null
+  /** Whether the chooser would open under a focused box of this tab now: the one rule `focus` applies. */
   chooserWanted: (tabId: string) => boolean
   dismissChooser: (tabId: string) => void
   /** The pending offer of a tab, once it is worth showing. */
@@ -322,11 +322,9 @@ export function createWindowForms (window: ShellWindow, deps: FormsDeps): Window
       return [...deps.vault.list(origin)].sort((a, b) => b.used - a.used || b.created - a.created)
     },
 
-    focusedField: (tabId) => tabs.get(tabId)?.focused ?? null,
-
     chooserWanted: (tabId) => {
       const tab = tabs.get(tabId)
-      return tab !== undefined && !tab.chooserDismissed && deps.settings.get('passwords.autofill')
+      return tab !== undefined && wantsSuggest(tabId, tab)
     },
 
     dismissChooser (tabId) {

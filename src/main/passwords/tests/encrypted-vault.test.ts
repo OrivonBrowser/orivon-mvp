@@ -102,8 +102,8 @@ describe('EncryptedVault', () => {
     const login = await vault.save({ origin: SITE, username: 'ada', password: 'x' })
     const listener = vi.fn()
     vault.onChange(listener)
-    expect(vault.remove(login?.id ?? '')).toBe(true)
-    expect(vault.remove(login?.id ?? '')).toBe(false)
+    expect(await vault.remove(login?.id ?? '')).toBe(true)
+    expect(await vault.remove(login?.id ?? '')).toBe(false)
     expect(listener).toHaveBeenCalledTimes(1)
     await vault.flush()
     expect((await opened()).list()).toEqual([])
@@ -144,7 +144,7 @@ describe('EncryptedVault', () => {
   it('answers nothing for an id it does not hold', async () => {
     const vault = await opened()
     expect(await vault.reveal('nope')).toBeUndefined()
-    expect(vault.remove('nope')).toBe(false)
+    expect(await vault.remove('nope')).toBe(false)
   })
 
   it('drops invalid entries on reading, keeps the rest, and keeps the old file beside the new one', async () => {
@@ -245,6 +245,19 @@ describe('EncryptedVault', () => {
     writeFileSync(dir, 'a file where the directory should be')
     expect(await vault.save({ origin: SITE, username: 'grace', password: 'two' })).toBeNull()
     expect(vault.list().map((login) => login.username)).toEqual(['ada'])
+    rmSync(dir, { force: true })
+  })
+
+  it('keeps a login whose removal could not be written, and says so', async () => {
+    const vault = await opened()
+    const login = await vault.save({ origin: SITE, username: 'ada', password: 'one' })
+    const listener = vi.fn()
+    vault.onChange(listener)
+    rmSync(dir, { recursive: true, force: true })
+    writeFileSync(dir, 'a file where the directory should be')
+    expect(await vault.remove(login?.id ?? '')).toBe(false)
+    expect(vault.list().map((entry) => entry.username)).toEqual(['ada'])
+    expect(listener).not.toHaveBeenCalled()
     rmSync(dir, { force: true })
   })
 

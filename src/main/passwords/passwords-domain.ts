@@ -102,7 +102,7 @@ export function passwordsDomain (host: PasswordsHost): InternalDomain {
           return { ok: await host.clipboard.copy(password) }
         }
         case 'remove':
-          return validId(request.id) ? { ok: vault.remove(request.id) } : undefined
+          return validId(request.id) ? { ok: await vault.remove(request.id) } : undefined
         case 'neverRemove':
           if (!isStorableOrigin(request.origin)) return undefined
           vault.never.remove(request.origin)

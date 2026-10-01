@@ -68,3 +68,24 @@ export function choosePassword (passwords: readonly FieldInfo[]): number {
 export function isRevealControl (label: string): boolean {
   return /\b(show|hide|reveal|unmask|visib\w*|eye)\b/i.test(label)
 }
+
+/**
+ * Whether the chooser should lead with a strong password, for a page whose password fields are grouped by form.
+ * A page with a sign-in form and a sign-up form is neither: only the form the person touched answers, and with no
+ * touch only a page whose every form is a sign-up does.
+ */
+export function pageIsSignUp (signUps: readonly boolean[], focused: number): boolean {
+  const own = signUps[focused]
+  if (own !== undefined) return own
+  return signUps.length > 0 && signUps.every(Boolean)
+}
+
+/**
+ * The form a fill goes to when no box was touched: the first sign-up form for a fill of the new password, the first
+ * other form for a saved account. Falls back to the first form; -1 when there is none.
+ */
+export function fillScope (signUps: readonly boolean[], both: boolean): number {
+  if (signUps.length === 0) return -1
+  const wanted = signUps.indexOf(both)
+  return wanted === -1 ? 0 : wanted
+}

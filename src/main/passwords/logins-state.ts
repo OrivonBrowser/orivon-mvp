@@ -1,5 +1,6 @@
 import type { ShellStatePart } from '../shell/shell-state-parts.js'
 import { formsFor } from './forms-registry.js'
+import { oncePerTurn } from './once-per-turn.js'
 
 /** What the address bar's password button needs of the active tab: the logins its sign-in form could use, and whether an offer to keep one is waiting. */
 export const loginsStatePart: ShellStatePart = {
@@ -8,7 +9,7 @@ export const loginsStatePart: ShellStatePart = {
   watch: ({ window, services }, push) => {
     const stops = [
       formsFor(window, services).onChange(push),
-      services.passwords.onChange(push),
+      services.passwords.onChange(oncePerTurn(push)),
       services.settings.onChange(({ key }) => { if (key.startsWith('passwords.')) push() })
     ]
     return () => { for (const stop of stops) stop() }

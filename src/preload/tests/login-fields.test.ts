@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { autocompleteTokens, canBeUsername, choosePassword, chooseUsername, isRevealControl, isSignUp, isVisibleBox } from '../login-fields.js'
+import { autocompleteTokens, canBeUsername, choosePassword, chooseUsername, fillScope, isRevealControl, isSignUp, isVisibleBox, pageIsSignUp } from '../login-fields.js'
 import type { FieldInfo } from '../login-fields.js'
 
 const field = (over: Partial<FieldInfo> = {}): FieldInfo => ({ type: 'text', autocomplete: '', value: '', disabled: false, readOnly: false, visible: true, ...over })
@@ -95,5 +95,31 @@ describe('isRevealControl', () => {
 
   it('does not take a sign-in button for one', () => {
     for (const label of ['Sign in', 'Log in', 'Continue', 'Submit', '']) expect(isRevealControl(label)).toBe(false)
+  })
+})
+
+describe('pageIsSignUp', () => {
+  it('follows the form the person touched, not the whole page', () => {
+    expect(pageIsSignUp([false, true], 0)).toBe(false)
+    expect(pageIsSignUp([false, true], 1)).toBe(true)
+  })
+
+  it('is a sign-up with no touch only when every form is one', () => {
+    expect(pageIsSignUp([false, true], -1)).toBe(false)
+    expect(pageIsSignUp([true, true], -1)).toBe(true)
+    expect(pageIsSignUp([true], -1)).toBe(true)
+    expect(pageIsSignUp([], -1)).toBe(false)
+  })
+})
+
+describe('fillScope', () => {
+  it('sends a new password to the first sign-up form and an account to the first other form', () => {
+    expect(fillScope([false, true], true)).toBe(1)
+    expect(fillScope([true, false], false)).toBe(1)
+  })
+
+  it('falls back to the first form, and to none when there is none', () => {
+    expect(fillScope([false, false], true)).toBe(0)
+    expect(fillScope([], true)).toBe(-1)
   })
 })

@@ -8,6 +8,7 @@ import type { ShellInstaller } from '../shell/shell-installers.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import { formWatch, installFormWatchIpc } from './form-watch-ipc.js'
 import { formsFor } from './forms-registry.js'
+import { oncePerTurn } from './once-per-turn.js'
 import { SUGGEST_KEYS } from './suggest-keys.js'
 
 function wireMessages (services: ShellServices): void {
@@ -55,6 +56,6 @@ export const installFormWatch: ShellInstaller = {
     wireNavigations(services)
     const configChanged = (): void => { for (const window of services.windows.all()) formsFor(window, services).configChanged() }
     services.settings.onChange(({ key }) => { if (key.startsWith('passwords.')) configChanged() })
-    services.passwords.onChange(configChanged)
+    services.passwords.onChange(oncePerTurn(configChanged))
   }
 }

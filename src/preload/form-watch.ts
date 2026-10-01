@@ -5,7 +5,7 @@
 // ask it for a value nor trigger a fill: the only way in is main's message on FORM_FILL_CHANNEL.
 import { ipcRenderer } from 'electron'
 import { FORM_FILL_CHANNEL, FORM_WATCH_CHANNEL } from '../main/channels.js'
-import { choosePassword, chooseUsername, isRevealControl, isSignUp, isVisibleBox } from './login-fields.js'
+import { choosePassword, chooseUsername, fillScope, isRevealControl, isSignUp, isVisibleBox, pageIsSignUp } from './login-fields.js'
 import type { FieldInfo } from './login-fields.js'
 
 interface Config { enabled: boolean, save: boolean, autofill: boolean }
@@ -91,10 +91,27 @@ export function installFormWatch (): void {
 
   const send = (message: Record<string, unknown>): void => { ipcRenderer.send(FORM_WATCH_CHANNEL, message) }
 
+  /** The password boxes grouped by the form that holds them, in document order, and whether each form is a sign-up. */
+  function formsOfPasswords (): Array<{ fields: HTMLInputElement[], signUp: boolean }> {
+    const groups = new Map<Element, HTMLInputElement[]>()
+    for (const field of passwordInputs()) {
+      const scope = scopeOf(field)
+      groups.set(scope, [...groups.get(scope) ?? [], field])
+    }
+    return [...groups.values()].map((fields) => ({ fields, signUp: isSignUp(fields.map(infoOf)) }))
+  }
+
+  /** Whether the chooser leads with a strong password: judged by the form the person is in, never the whole page. */
+  function signUpNow (): boolean {
+    const forms = formsOfPasswords()
+    const focused = lastPassword === null ? -1 : forms.findIndex((form) => form.fields.includes(lastPassword as HTMLInputElement))
+    return pageIsSignUp(forms.map((form) => form.signUp), focused)
+  }
+
   function reportFields (): void {
     if (!config.enabled) return
     const passwords = passwordInputs()
-    const signUp = isSignUp(passwords.map(infoOf))
+    const signUp = signUpNow()
     const key = `${String(passwords.length > 0)}:${String(signUp)}`
     if (key === lastFields) return
     lastFields = key
@@ -155,7 +172,7 @@ export function installFormWatch (): void {
     // touch is what tells the person's focus from the page's.
     if (!event.isTrusted || !config.autofill || !navigator.userActivation.isActive) return
     focusReported = true
-    send({ type: 'focus', rect: rectOf(target), viewWidth: window.innerWidth, signUp: isSignUp(passwordsOf(scopeOf(password)).map(infoOf)) })
+    send({ type: 'focus', rect: rectOf(target), viewWidth: window.innerWidth, signUp: signUpNow() })
   }, true)
 
   document.addEventListener('focusout', () => {
@@ -187,8 +204,9 @@ export function installFormWatch (): void {
   window.addEventListener('load', () => { reportFields() })
 
   function fill (command: FillCommand): void {
-    const inputs = passwordInputs()
-    const target = lastPassword !== null && lastPassword.isConnected && usable(lastPassword) ? lastPassword : inputs[0]
+    const forms = formsOfPasswords()
+    const touched = lastPassword !== null && lastPassword.isConnected && usable(lastPassword) ? lastPassword : undefined
+    const target = touched ?? forms[fillScope(forms.map((form) => form.signUp), command.both)]?.fields[0]
     if (target === undefined) return
     if (command.username !== null) {
       const username = usernameOf(target)

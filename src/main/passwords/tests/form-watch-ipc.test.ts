@@ -87,14 +87,22 @@ describe('installFormWatchIpc', () => {
 
   it('lets a tab send its limit a second and drops the rest', () => {
     const { send, seen } = rig(undefined)
-    for (let i = 0; i < MESSAGES_PER_SECOND + 5; i++) send({ type: 'hello' })
+    for (let i = 0; i < MESSAGES_PER_SECOND + 5; i++) send({ type: 'fields', hasPassword: true, signUp: false })
     expect(seen).toHaveLength(MESSAGES_PER_SECOND)
+  })
+
+  it('never drops a hello: it turns the watcher on, and a lost one leaves the document unwatched', () => {
+    const { send, seen } = rig(undefined)
+    for (let i = 0; i < MESSAGES_PER_SECOND; i++) send({ type: 'fields', hasPassword: true, signUp: false })
+    send({ type: 'hello' })
+    expect(seen).toHaveLength(MESSAGES_PER_SECOND + 1)
+    expect(seen[MESSAGES_PER_SECOND]?.message).toEqual({ type: 'hello' })
   })
 
   it('takes the limit from its own key, the sender\'s id', () => {
     const keys: number[] = []
     const { send } = rig((key) => { keys.push(key); return true })
-    send({ type: 'hello' })
+    send({ type: 'fields', hasPassword: true, signUp: false })
     expect(keys).toEqual([7])
   })
 

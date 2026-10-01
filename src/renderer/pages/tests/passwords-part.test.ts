@@ -106,6 +106,16 @@ describe('PasswordsPart', () => {
       expect(part.revealed).toBeNull()
     })
 
+    it('drops a reveal whose reply arrives after the page was told to hide', async () => {
+      const { part } = setup({ reveal: { password: 'late' } })
+      await part.load()
+      part.pressReveal('a')
+      part.pressReveal('a')
+      part.hide()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(part.revealed).toBeNull()
+    })
+
     it('shows nothing when main has no password to give, and forgets one whose login went away', async () => {
       const { part } = setup({ reveal: undefined })
       await part.load()

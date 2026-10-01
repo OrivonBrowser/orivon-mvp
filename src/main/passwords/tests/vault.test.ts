@@ -55,8 +55,8 @@ describe('memoryVault', () => {
   it('removes a login and says whether there was one', async () => {
     const vault = memoryVault()
     const login = await vault.save({ origin: SITE, username: 'ada', password: 'x' })
-    expect(vault.remove(login?.id ?? '')).toBe(true)
-    expect(vault.remove(login?.id ?? '')).toBe(false)
+    expect(await vault.remove(login?.id ?? '')).toBe(true)
+    expect(await vault.remove(login?.id ?? '')).toBe(false)
     expect(await vault.reveal(login?.id ?? '')).toBeUndefined()
   })
 

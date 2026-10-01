@@ -25,6 +25,20 @@ describe('secretClipboard', () => {
     expect(held()).toBe('')
   })
 
+  it('clears a waiting secret at once when the app is quitting, and only while it is still held', async () => {
+    const { access, held, later } = fake()
+    const secrets = secretClipboard(access, later)
+    await secrets.copy('pw')
+    await secrets.flush()
+    expect(held()).toBe('')
+    await secrets.copy('pw2')
+    await access.write('something else')
+    await secrets.flush()
+    expect(held()).toBe('something else')
+    await secrets.flush()
+    expect(held()).toBe('something else')
+  })
+
   it('leaves the clipboard alone when the person copied something else since', async () => {
     const { access, held, scheduled, later } = fake()
     await secretClipboard(access, later).copy('pw')

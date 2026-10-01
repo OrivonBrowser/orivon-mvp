@@ -72,9 +72,11 @@ export function installFormWatchIpc (
     if (origin === null) return
     const tab = windows.findTab(event.sender)
     if (tab === null) return
-    if (!allow(event.sender.id)) return
     const message = parseFormMessage(payload)
     if (message === null) return
+    // A hello is sent once per document and turns the watcher on: a lost one leaves the page unwatched, so a flood of
+    // focus messages must not be able to use up its place.
+    if (message.type !== 'hello' && !allow(event.sender.id)) return
     watch.dispatch(message, { window: tab.window, tabId: tab.tabId, contents: event.sender, origin })
   }
   ipc.on(FORM_WATCH_CHANNEL, listener)

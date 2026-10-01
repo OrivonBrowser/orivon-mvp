@@ -1,7 +1,7 @@
 // The Electron side of the Passwords domain: the clipboard, the file dialogs for the window the page is in, and
 // the two files an import reads and an export writes.
 import { open, stat } from 'node:fs/promises'
-import { clipboard } from 'electron'
+import { app, clipboard } from 'electron'
 import { pickOpenFile, pickSaveFile } from '../shell/file-dialogs.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import { devRevealHideMs } from './dev-password-storage.js'
@@ -30,13 +30,16 @@ async function readBounded (path: string, maxBytes: number): Promise<ReadResult>
 }
 
 export function passwordsHost (services: Pick<ShellServices, 'passwords' | 'windows'>): PasswordsHost {
+  const secrets = secretClipboard({
+    write: async (text) => { await clipboard.writeText(text) },
+    read: async () => await clipboard.readText(),
+    clear: () => { clipboard.clear() }
+  })
+  // The minute's timer never runs in a process that is gone: a password copied just before quitting is cleared here.
+  app.once('before-quit', () => { void secrets.flush() })
   return {
     vault: services.passwords,
-    clipboard: secretClipboard({
-      write: async (text) => { await clipboard.writeText(text) },
-      read: async () => await clipboard.readText(),
-      clear: () => { clipboard.clear() }
-    }),
+    clipboard: secrets,
     revealHideMs: devRevealHideMs() ?? REVEAL_HIDE_MS,
     pickImport: async (caller) => await pickOpenFile(services.windows.findOwner(caller.contents)?.window, { title: 'Import passwords', filters: CSV_FILTERS }),
     pickExport: async (caller, defaultName) => await pickSaveFile(services.windows.findOwner(caller.contents)?.window, { title: 'Export passwords', defaultPath: defaultName, filters: CSV_FILTERS }),
