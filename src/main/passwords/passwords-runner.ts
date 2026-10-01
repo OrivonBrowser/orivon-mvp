@@ -1,6 +1,6 @@
 // The Electron side of the Passwords domain: the clipboard, the file dialogs for the window the page is in, and
 // the two files an import reads and an export writes.
-import { chmod, open, stat, writeFile } from 'node:fs/promises'
+import { open, stat } from 'node:fs/promises'
 import { clipboard } from 'electron'
 import { pickOpenFile, pickSaveFile } from '../shell/file-dialogs.js'
 import type { ShellServices } from '../shell/shell-services.js'
@@ -8,6 +8,7 @@ import { devRevealHideMs } from './dev-password-storage.js'
 import { passwordsDomain, REVEAL_HIDE_MS } from './passwords-domain.js'
 import type { PasswordsHost, ReadResult } from './passwords-domain.js'
 import { secretClipboard } from './secret-clipboard.js'
+import { writePrivate } from './write-private.js'
 import type { InternalDomain } from '../pages/internal-ipc.js'
 
 const CSV_FILTERS = [{ name: 'Passwords (CSV)', extensions: ['csv'] }, { name: 'All files', extensions: ['*'] }]
@@ -25,18 +26,6 @@ async function readBounded (path: string, maxBytes: number): Promise<ReadResult>
     }
   } catch {
     return { ok: false, reason: 'unreadable' }
-  }
-}
-
-/** Owner-only from the first byte: an export holds every password in the clear. */
-async function writePrivate (path: string, text: string): Promise<boolean> {
-  try {
-    await writeFile(path, text, { mode: 0o600 })
-    // A file that was already there keeps the mode it had.
-    await chmod(path, 0o600).catch(() => {})
-    return true
-  } catch {
-    return false
   }
 }
 

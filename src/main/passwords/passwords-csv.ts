@@ -58,6 +58,23 @@ export function parseCsvRows (text: string): string[][] {
   return rows
 }
 
+/** A spreadsheet reads a cell that starts with one of these as a formula. */
+const FORMULA_START = /^'?[=+\-@\t\r]/
+
+/**
+ * A page chooses the username it gets saved under, so an export opened in a spreadsheet must not run it: a cell that
+ * would start a formula gets one leading quote, which the spreadsheet shows as text. A cell that already starts with
+ * a quote before such a character gets one more, so reading the file back removes exactly what was added.
+ */
+export function escapeFormulaCell (cell: string): string {
+  return FORMULA_START.test(cell) ? `'${cell}` : cell
+}
+
+/** Undoes `escapeFormulaCell`. */
+export function unescapeFormulaCell (cell: string): string {
+  return cell.startsWith("'") && FORMULA_START.test(cell.slice(1)) ? cell.slice(1) : cell
+}
+
 const columnOf = (header: readonly string[], names: readonly string[]): number => header.findIndex((cell) => names.includes(cell.trim().toLowerCase()))
 
 /** The origin a cell's address belongs to, or null when it is not an `http(s)` address. */
@@ -81,8 +98,8 @@ export function parsePasswordsCsv (text: string): ParsedCsv {
   for (const [offset, row] of rows.slice(1).entries()) {
     if (offset >= MAX_CSV_ROWS) { skipped += 1; continue }
     const origin = originOfCell(row[url] ?? '')
-    const secret = row[password] ?? ''
-    const name = username < 0 ? '' : row[username] ?? ''
+    const secret = unescapeFormulaCell(row[password] ?? '')
+    const name = username < 0 ? '' : unescapeFormulaCell(row[username] ?? '')
     if (origin === null || secret === '' || secret.length > MAX_PASSWORD || name.length > MAX_USERNAME) { skipped += 1; continue }
     logins.push({ origin, username: name, password: secret })
   }
@@ -96,6 +113,6 @@ function quoteCell (cell: string): string {
 /** The export: `name,url,username,password,note`, the shape the other browsers read back. */
 export function printPasswordsCsv (logins: readonly CsvLogin[]): string {
   const lines = ['name,url,username,password,note']
-  for (const login of logins) lines.push([new URL(login.origin).hostname, login.origin, login.username, login.password, ''].map(quoteCell).join(','))
+  for (const login of logins) lines.push([new URL(login.origin).hostname, login.origin, escapeFormulaCell(login.username), escapeFormulaCell(login.password), ''].map(quoteCell).join(','))
   return `${lines.join('\r\n')}\r\n`
 }

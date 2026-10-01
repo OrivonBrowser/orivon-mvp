@@ -18,6 +18,9 @@ export interface ChooserView { logins: ChooserRow[], generated: string | null, m
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
 
+/** A click on the popup under a box this soon after it appeared is not a choice: a page can open it under the cursor. */
+export const EARLY_CLICK_MS = 500
+
 type Choice = { kind: 'login', id: string } | { kind: 'generate' }
 
 function chooserHandler (win: OverlayWindow, mode: ChooserView['mode']): OverlayHandler {
@@ -27,6 +30,7 @@ function chooserHandler (win: OverlayWindow, mode: ChooserView['mode']): Overlay
   let generated: string | null = null
   let choices: Choice[] = []
   let selected = -1
+  let shownAt = 0
   const activeTab = (): string | null => window.tabs.getState().activeTabId
 
   /** The one place a choice becomes a fill; false when the page, the tab or the store no longer allows it. */
@@ -80,6 +84,7 @@ function chooserHandler (win: OverlayWindow, mode: ChooserView['mode']): Overlay
       if (logins.length === 0 && generated === null) { close(); return undefined }
       tabId = id
       selected = -1
+      shownAt = Date.now()
       choices = [...(generated === null ? [] : [{ kind: 'generate' } as const]), ...logins.map((login): Choice => ({ kind: 'login', id: login.id }))]
       if (mode === 'field') forms.setKeys({ tabId: id, handle: keys })
       const view: ChooserView = { logins: logins.map(({ id: loginId, username }) => ({ id: loginId, username })), generated, mode }
@@ -87,6 +92,7 @@ function chooserHandler (win: OverlayWindow, mode: ChooserView['mode']): Overlay
     },
     request: async (command) => {
       if (!isRecord(command) || tabId === null) return undefined
+      if (mode === 'field' && Date.now() - shownAt < EARLY_CLICK_MS && (command['type'] === 'fill' || command['type'] === 'generate')) return { ok: false }
       switch (command['type']) {
         case 'fill': {
           const id = command['id']

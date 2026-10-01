@@ -52,6 +52,7 @@ function handler (request: IncomingMessage, response: ServerResponse): void {
   else if (path === '/spa/home' || path === '/welcome') html(response, '<!doctype html><title>Welcome</title><h1 id="ok">Welcome</h1>')
   else if (path === '/signup') html(response, SIGN_UP)
   else if (path === '/hostile') html(response, '<!doctype html><title>Hostile</title><input id="user" type="text" autofocus><input id="pass" type="password"><script>setTimeout(() => { for (const id of ["user", "pass"]) document.getElementById(id).dispatchEvent(new FocusEvent("focusin", { bubbles: true })) }, 400)</script>')
+  else if (path === '/hostile-late') html(response, '<!doctype html><title>Hostile late</title><button id="bait">bait</button><input id="pass" type="password"><script>document.getElementById("bait").addEventListener("click", () => setTimeout(() => document.getElementById("pass").focus(), 5600))</script>')
   else if (path === '/framed') html(response, '<!doctype html><title>Framed</title><iframe id="frame" src="/login" style="width:420px;height:320px;border:1px solid #888"></iframe>')
   else html(response, '<!doctype html><title>Other</title><p>Other</p>')
 }
@@ -266,6 +267,14 @@ it('offers a sign-in for keeping only once it worked, then saves, fills, updates
     // A page that focuses its own boxes by script, or dispatches focus events, cannot open the chooser.
     view = await visit(app, chrome, `${site.origin}/hostile`)
     await delay(ABSENCE_SETTLE_MS * 2)
+    expect(await shown(app, 'password-suggest')).toBe(false)
+    expect(await shown(app, 'password-fill')).toBe(false)
+
+    // A click on the page long ago does not let its script move focus into a sign-in box and open the chooser.
+    view = await visit(app, chrome, `${site.origin}/hostile-late`)
+    await view.click('#bait')
+    await delay(6500)
+    expect(await view.evaluate(() => document.activeElement?.id)).toBe('pass')
     expect(await shown(app, 'password-suggest')).toBe(false)
     expect(await shown(app, 'password-fill')).toBe(false)
 

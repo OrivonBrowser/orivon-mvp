@@ -150,8 +150,10 @@ export function installFormWatch (): void {
     if (password === undefined || !usable(password)) return
     lastPassword = password
     reportFields()
-    // An event a script dispatched is not the person's, and neither is an autofocus on load: the chooser waits for a touch of the page.
-    if (!event.isTrusted || !config.autofill || !navigator.userActivation.hasBeenActive) return
+    // An event a script dispatched is not the person's, and neither is an autofocus on load: the chooser waits for a
+    // touch of the page that is still recent. Chromium reports a focus() a script makes as trusted, so the recent
+    // touch is what tells the person's focus from the page's.
+    if (!event.isTrusted || !config.autofill || !navigator.userActivation.isActive) return
     focusReported = true
     send({ type: 'focus', rect: rectOf(target), viewWidth: window.innerWidth, signUp: isSignUp(passwordsOf(scopeOf(password)).map(infoOf)) })
   }, true)
