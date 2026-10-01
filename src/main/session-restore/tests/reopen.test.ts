@@ -5,6 +5,7 @@ import { ClosedStack } from '../closed-stack.js'
 import type { NewClosedEntry } from '../closed-stack.js'
 import { hintFor, reopenClosed, reopenEntry } from '../reopen.js'
 import type { SavedWindow } from '../session-types.js'
+import { groupsFor } from '../../tab-groups/groups-model.js'
 import { fakeTabs, shellWindow } from './tabs-fake.js'
 import type { FakeTabs } from './tabs-fake.js'
 
@@ -37,6 +38,19 @@ describe('reopening a closed tab', () => {
     reopenClosed(shells[0] as never, deps)
     expect(one.calls).toEqual(['create https://a.example/1 front', 'move t1 1', 'changed'])
     expect(stack.size).toBe(0)
+  })
+
+  it('puts the tab back in its group when the window still has that group', () => {
+    const fake = fakeTabs()
+    Object.assign(fake.tabs, { splits: { groups: { pairs: () => [], partnerOf: () => null } } })
+    const { stack, shells, deps } = setup([{ id: 1, fake }])
+    const group = groupsFor(fake.tabs).create()
+    stack.push(tab(0, { groupId: group }))
+    stack.push(tab(0, { groupId: 'g-999' }))
+    reopenClosed(shells[0] as never, deps)
+    expect([...fake.records.values()][0]?.groupId ?? null).toBeNull()
+    reopenClosed(shells[0] as never, deps)
+    expect([...fake.records.values()][1]?.groupId).toBe(group)
   })
 
   it('keeps the tab pinned when it was', () => {

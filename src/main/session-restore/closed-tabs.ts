@@ -13,7 +13,7 @@ export function watchClosedTabs (lifecycle: TabLifecycle, stack: ClosedStack, sn
     tabClosing: ({ reason, record, index, window }) => {
       if (reason !== 'closed') return
       const tab = snapshot(record, record.view.webContents)
-      if (tab !== null) stack.push({ kind: 'tab', tab, index, windowKey: window?.id ?? -1 })
+      if (tab !== null) stack.push({ kind: 'tab', tab, index, windowKey: window?.id ?? -1, ...(record.groupId == null ? {} : { groupId: record.groupId }) })
     }
   })
 }
