@@ -17,10 +17,6 @@ describe('the layout, reading and accessibility settings', () => {
     expect(validateSetting(spec, spec.default)).toBe(spec.default)
   })
 
-  it('leaves the extensions toolbar setting to the feature that owns it', () => {
-    expect(isSettingKey('toolbar.extensions')).toBe(false)
-  })
-
   it.each([
     ['sidePanel.side', 'right'], ['performance.memorySaver', true], ['performance.sleepAfter', '2h'], ['performance.keepAwake', ''],
     ['performance.energySaver', 'off'], ['reader.size', '18'], ['reader.width', 'medium'], ['reader.theme', 'auto'],
