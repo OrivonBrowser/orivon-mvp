@@ -293,6 +293,9 @@ type ParsedPattern =
   | { readonly shape: 'host-port', readonly pattern: ConnectPattern, readonly ports: PortRange }
   | { readonly shape: 'ports', readonly ports: PortRange }
 
+/** A pattern that is a whole origin (`web.context`'s, and `web.embed`'s exact origins and local patterns), not a `host:port`. */
+const ORIGIN_SHAPED = /^https?:\/\//
+
 /**
  * True if everything `requested` authorises is already authorised by
  * `granted`.
@@ -322,8 +325,10 @@ export function covers (granted: Pattern, requested: Pattern): boolean {
   // contracts/manifest.ts's pattern grammars ever starts with a scheme --
   // so it never reaches the connect grammar below at all. Exact string
   // equality is the correct (and only) "covers" relation for a pattern kind
-  // with none of host:port's own subset structure.
-  if (granted.startsWith('https://') || requested.startsWith('https://')) return granted === requested
+  // with none of host:port's own subset structure. web.embed's exact `http://`
+  // origins and local patterns (`http://*.localhost:<port>`) are the same
+  // shape over http, so they take the same route.
+  if (ORIGIN_SHAPED.test(granted) || ORIGIN_SHAPED.test(requested)) return granted === requested
 
   const from = parseForCoverage(granted)
   const to = parseForCoverage(requested)

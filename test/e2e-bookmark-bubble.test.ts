@@ -228,6 +228,7 @@ it('bookmarks all tabs into a dated folder in strip order, skipping the new-tab 
   const { app, chrome } = await launched()
   try {
     // Nothing has a site yet: the command does nothing.
+    expect(await waitFor(async () => (await tabIds(chrome)).length > 0)).toBe(true)
     const first = (await tabIds(chrome))[0] as string
     expect(first).toBeDefined()
     await pressKey(app, '/newtab/', 'D', ['control', 'shift'])

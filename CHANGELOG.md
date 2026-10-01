@@ -50,6 +50,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - **A program that starts with a burst of file calls no longer fails on the first one past the limit**: a synchronous `fs` call
   that the per-origin limiter refuses is asked again with a growing pause, and a WebAssembly program's file call is retried for
   about five seconds before it sees `EMFILE`.
+- **An asynchronous file call the limiter refuses is asked again too** (`fs.promises`, `readFile`, `writeFile`), and so is `readFileSync`
+  in a Worker, for about five seconds before the call fails, so an app that loads its data files beside another program doing the same does not see the limit as an error.
 - **A spawned program is given the app's files under their own path as well as `/`**, so a path the app holds
   (`/orivon/app/...`) means the same file to the program.
 - **A wildcard host pairs with a port in `tcp.connect` and `https.connect`**: `*:6697` and `*:6660-6699` are declarable, so an
@@ -219,6 +221,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - **AGPL-3.0-only licence.**
 
 ### Fixed
+
+- **An app that shows pages it serves itself is granted `web.embed` again**: a local pattern (`http://*.localhost:<port>`) or an exact
+  `http://` origin was read as a `host:port` pattern, which it is not, so no manifest declaring one was ever allowed to grant it. The
+  subset check now compares any whole-origin pattern exactly.
 
 - **Page zoom scales the page in every tab**: a tab's zoom now resizes what is drawn, where before only the percentage
   changed.
