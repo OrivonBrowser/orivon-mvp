@@ -58,6 +58,7 @@ const PAGE_HTML = `<!doctype html>
 <title>dnr-fixture</title>
 <body>
 <script src="/ads/blocked.js" onerror="window.__adBlocked = true"></script>
+<script src="/regex-blocked.js" onerror="window.__regexBlocked = true"></script>
 <script>
 window.__pageRan = true
 fetch('/from-fixture').then((r) => r.text().then((body) => { window.__redirectBody = body; window.__redirectUrl = r.url })).catch((e) => { window.__redirectError = String(e) })
@@ -71,6 +72,9 @@ function startDnrFixtureServer (): Promise<{ server: Server, origin: string }> {
     if (url === '/' || url.startsWith('/?')) {
       res.writeHead(200, { 'content-type': 'text/html' })
       res.end(PAGE_HTML)
+    } else if (url.startsWith('/regex-blocked')) {
+      res.writeHead(200, { 'content-type': 'application/javascript' })
+      res.end('window.__regexRan = true;')
     } else if (url.startsWith('/ads/')) {
       res.writeHead(200, { 'content-type': 'application/javascript' })
       res.end('window.__adRan = true;')
@@ -141,6 +145,12 @@ it('applies a loaded extension\'s static block rule and its service worker\'s dy
       check('the static rule blocked the /ads/*.js script (its onerror fired)', adBlocked)
       const adRan = await evaluateRetrying(view, () => Boolean((window as unknown as { __adRan?: boolean }).__adRan))
       check('the blocked ad script never actually ran', !adRan)
+
+      // ---- session regex rule sized from the API's own MAX_NUMBER_OF_REGEX_RULES ----
+      const regexBlocked = await waitFor(async () => await evaluateRetrying(view, () => Boolean((window as unknown as { __regexBlocked?: boolean }).__regexBlocked)))
+      check('the session regex rule the worker sized from MAX_NUMBER_OF_REGEX_RULES blocked /regex-blocked.js', regexBlocked)
+      const regexRan = await evaluateRetrying(view, () => Boolean((window as unknown as { __regexRan?: boolean }).__regexRan))
+      check('the regex-blocked script never ran', !regexRan)
 
       // ---- dynamic redirect rule (added by the service worker) ----
       const redirectBody = await waitFor(async () => await evaluateRetrying(view, () => (window as unknown as { __redirectBody?: string }).__redirectBody) === 'redirected-content')
