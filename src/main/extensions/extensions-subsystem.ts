@@ -20,6 +20,10 @@ import { startWebStore } from './store-runner.js'
 import { installStoreTestHook } from './store-test-hook.js'
 import { installExtensionsInstallTestHook } from './extensions-install-test-hook.js'
 import type { InstalledExtension } from './registry.js'
+import type { ExtensionPrefsStore } from './extension-prefs.js'
+import { createExtensionPrefsStore, prefsFilePath } from './extension-prefs-runner.js'
+import { createManifestApplier, type ApplyMode, type ApplyResult } from './effective-manifest-runner.js'
+import { extensionPageOpen } from './extension-page-open.js'
 import { attachExtensionsDnr, getDnrEngine } from './extensions-dnr.js'
 import { installDnrPermissionCheck, registerDnrApiHandlers } from './dnr-api.js'
 import { installDnrWebRequestHandlers } from './dnr-webrequest.js'
@@ -44,6 +48,11 @@ export interface ExtensionsApi {
   /** Installs an update a check held back for consent (registry.ts's
    * `ExtensionUpdater.pendingUpdate`), prompting first. */
   readonly updateFromStore: (id: string) => Promise<InstallOutcome>
+  /** What the person chose per extension (pins, grants, site access, shortcuts, overrides). */
+  readonly prefs: ExtensionPrefsStore
+  /** Rewrites the extension's loaded manifest from its base and `prefs`, then reloads it:
+   * at once for 'now', once no page of it is open for 'quiet'. */
+  readonly applyManifest: (id: string, mode: ApplyMode) => Promise<ApplyResult>
 }
 
 /**
@@ -92,9 +101,13 @@ export const extensionsSubsystem: Subsystem = {
     const { onRuleMatched, onTabNavigated } = registerDnrApiHandlers(hostExtensions.getRouter(), hostExtensions, userDataPath)
     installDnrWebRequestHandlers(session.defaultSession, getDnrEngine, onRuleMatched, onTabNavigated)
 
+    const prefs = createExtensionPrefsStore(ctx.privateSession ? null : prefsFilePath(userDataPath))
+    const manifests = createManifestApplier({ userDataPath, session: session.defaultSession, prefs, isOpen: extensionPageOpen })
+    manifests.applyAtBoot()
+
     await loadEnabledExtensions(userDataPath)
 
-    const install: InstallContext = { userDataPath, session: session.defaultSession, prompt: createExtensionInstallPrompt() }
+    const install: InstallContext = { userDataPath, session: session.defaultSession, prompt: createExtensionInstallPrompt(), prefs }
     const preloadPath = join(import.meta.dirname, '../preload/web-store.js')
     const store = await startWebStore(install, preloadPath)
     installStoreTestHook(store)
@@ -106,7 +119,9 @@ export const extensionsSubsystem: Subsystem = {
       list: () => readRegistry(userDataPath),
       installFromStore: store.installFromStore,
       checkForUpdates: store.checkForUpdates,
-      updateFromStore: store.updateFromStore
+      updateFromStore: store.updateFromStore,
+      prefs,
+      applyManifest: manifests.applyManifest
     }
     installExtensionsInstallTestHook(extensionsApi)
     publishExtensions(ctx, extensionsApi)

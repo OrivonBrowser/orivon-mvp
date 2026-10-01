@@ -23,6 +23,9 @@ import {
 } from './registry-runner.js'
 import type { ExtensionSource, ExtensionUpdater, InstalledExtension } from './registry.js'
 import { clearPendingDnrInstall, registerPendingDnrInstall } from './extensions-dnr.js'
+import { effectiveManifest, manifestText } from './effective-manifest.js'
+import type { ExtensionPrefsStore } from './extension-prefs.js'
+import { readBaseManifestText, restoreBaseManifest, writeBaseManifest } from './effective-manifest-runner.js'
 import { generateId } from '../../../vendor/electron-chrome-web-store/src/browser/id.js'
 
 // resolveSlotKey moved to registry-runner.ts (key.pub is persisted
@@ -37,6 +40,8 @@ export interface InstallContext {
   readonly userDataPath: string
   readonly session: Session
   readonly prompt: InstallPrompt
+  /** What the person chose per extension; with it, a new version loads with those choices already applied. */
+  readonly prefs?: ExtensionPrefsStore
 }
 
 export type InstallOutcome =
@@ -159,6 +164,11 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
   // moved aside first, so `pending.write`'s own tmp-dir-then-rename never
   // lands on a non-empty targetDir (unpack-runner.ts's own doc: it "must not
   // already exist").
+  // The installed manifest, kept apart from the loaded copy (which carries the person's choices).
+  const previousBase = readBaseManifestText(slotDir)
+  const baseText = manifestText(manifest)
+  const loadedText = ctx.prefs === undefined ? baseText : manifestText(effectiveManifest(manifest, ctx.prefs.get(id)))
+
   const asideDir = existsSync(targetDir) ? `${targetDir}.old-${randomBytes(6).toString('hex')}` : undefined
   if (asideDir !== undefined) renameSync(targetDir, asideDir)
 
@@ -173,6 +183,7 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
    * folder behind for the next boot to find, unregistered and never
    * cleaned up. */
   async function restoreAsideOnFailure (): Promise<void> {
+    restoreBaseManifest(slotDir, previousBase)
     if (asideDir === undefined) {
       rmSync(targetDir, { recursive: true, force: true })
       const previous = previousInSlot[0]
@@ -187,7 +198,8 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
   }
 
   try {
-    pending.write(targetDir, JSON.stringify(manifest))
+    writeBaseManifest(slotDir, baseText)
+    pending.write(targetDir, loadedText)
   } catch (error) {
     await restoreAsideOnFailure()
     throw error

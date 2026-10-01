@@ -9,12 +9,29 @@ export const apps: Section = {
       id: 'apps-extensions',
       label: 'Extensions',
       help: 'Manage your Chrome extensions: turn one off, remove it, or load one of your own.',
-      keywords: ['extensions', 'chrome', 'addons', 'plugins', 'crx', 'unpacked'],
+      keywords: ['extensions', 'chrome', 'addons', 'plugins', 'puzzle', 'crx', 'unpacked'],
+      group: 'Extensions',
       control: { type: 'action', label: 'Open extensions', run: async (state) => { await state.openPage('extensions') } }
+    },
+    {
+      id: 'apps-extensions-pin-new',
+      label: 'Pin new extensions to the toolbar',
+      keywords: ['extensions', 'addons', 'plugins', 'puzzle', 'pin', 'toolbar', 'install'],
+      group: 'Extensions',
+      control: { type: 'toggle', key: 'extensions.pinNew' }
+    },
+    {
+      id: 'apps-extensions-page-overrides',
+      label: 'Let extensions replace the new tab, History and Bookmarks pages',
+      help: 'Turn this off to keep Orivon\'s own pages even when an extension offers one.',
+      keywords: ['extensions', 'addons', 'plugins', 'new tab', 'newtab', 'history', 'bookmarks', 'override', 'replace', 'homepage'],
+      group: 'Extensions',
+      control: { type: 'toggle', key: 'extensions.pageOverrides' }
     },
     {
       id: 'apps-list',
       label: 'Permissions and files',
+      group: 'Apps',
       keywords: ['permissions', 'grants', 'revoke', 'apps', 'files', 'network', 'storage', 'access', 'folder', 'allow'],
       control: { type: 'apps' }
     },
@@ -22,6 +39,7 @@ export const apps: Section = {
       id: 'apps-identity',
       label: 'Identity key',
       help: 'Apps that ask for it can sign in as you with a key made for each of them. It is kept in your system\'s keyring, so it survives a restart, when there is one.',
+      group: 'Apps',
       keywords: ['identity', 'key', 'keyring', 'keychain', 'secrets', 'sign', 'login'],
       control: {
         type: 'info',

@@ -4,6 +4,7 @@ import { app, clipboard, session } from 'electron'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import { extensionsDomain } from '../extensions/extensions-domain.js'
+import { extensionHost } from '../extensions/extension-host.js'
 import { readExtensionFacts } from '../extensions/extensions-view-runner.js'
 import { pickExtensionFile, pickExtensionFolder } from '../extensions/extensions-picker-runner.js'
 import { settingsDomain } from '../settings/settings-domain.js'
@@ -82,6 +83,10 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     pages: pagesDomain(services.windows),
     extensions: extensionsDomain({
       extensions,
+      prefs: extensions.prefs,
+      host: extensionHost,
+      shell: services,
+      isPrivate: services.isPrivate,
       readFacts: readExtensionFacts,
       developerModeEnabled: () => services.settings.get('extensions.developerMode'),
       pickFolder: pickExtensionFolder,
@@ -124,6 +129,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     ),
     about: aboutDomain()
   })
+  extensions.prefs.onChange(() => { services.internalPages.publish('extensions.changed', undefined, ['extensions']) })
   onVerifierChange(() => { services.internalPages.publish('web3.changed', verifierView(), ['settings']) })
   // Reaches 'extensions' too: it reads and writes 'extensions.developerMode' through this same domain.
   services.settings.onChange((change) => { services.internalPages.publish('settings.changed', change, ['settings', 'extensions']) })
