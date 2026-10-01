@@ -97,11 +97,17 @@ function render (): void {
   const active = document.activeElement
   const focusedControl = active instanceof HTMLSelectElement ? 'select' : active instanceof HTMLInputElement && active.type === 'checkbox' ? 'input[type=checkbox]' : undefined
   const focusedChoice = focusedControl === undefined ? undefined : active?.closest('.row')?.id
+  const wasSettled = active instanceof HTMLElement && active.dataset['settled'] === 'true'
   // A control that keeps its nodes across redraws (`data-keep-focus`) takes the keyboard back by reference.
   const kept = document.activeElement instanceof HTMLElement && document.activeElement.closest('[data-keep-focus]') !== null ? document.activeElement : null
   renderNav()
   replaceChildren(content, query === '' ? renderSectionBody(current) : renderSearchBody(query))
-  if (focusedChoice !== undefined && focusedControl !== undefined) document.getElementById(focusedChoice)?.querySelector<HTMLElement>(focusedControl)?.focus()
+  const refocused = focusedChoice !== undefined && focusedControl !== undefined ? document.getElementById(focusedChoice)?.querySelector<HTMLElement>(focusedControl) : null
+  if (refocused !== null && refocused !== undefined) {
+    // The rebuilt control is as finished as the one it replaces; unsettled, it would hold every later redraw.
+    if (wasSettled) refocused.dataset['settled'] = 'true'
+    refocused.focus()
+  }
   if (kept?.isConnected === true) kept.focus()
   if (highlight !== null) {
     const row = document.getElementById(`row-${highlight}`)
