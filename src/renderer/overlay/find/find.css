@@ -1,0 +1,59 @@
+/* The find bar: one 44px row. Every control is 28px tall, so the row is the
+   same height with any of them disabled, and the count has a fixed width so
+   a changing number moves nothing. */
+
+body[data-overlay='find'] .findbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  height: 44px;
+  padding: 0 8px;
+}
+
+body[data-overlay='find'] .find-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  max-width: none;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  font: inherit;
+  color: var(--wink);
+}
+body[data-overlay='find'] .find-input::placeholder { color: var(--wink-off); }
+/* The ring sits inside the box: the card's edge is 1px away on every side. */
+body[data-overlay='find'] .find-input:focus-visible { outline: 2px solid var(--waccent-text); outline-offset: -2px; }
+body[data-overlay='find'] .find-input[aria-invalid='true']:focus-visible { outline-color: var(--wdanger-text); }
+
+body[data-overlay='find'] .find-count {
+  flex: none;
+  width: 72px;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--wink-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+body[data-overlay='find'] .find-case {
+  flex: none;
+  height: 28px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  font-weight: 600;
+  /* Off reads as off: no border or fill until it is pressed, like the icon buttons beside it. */
+  border-color: transparent;
+  background: none;
+  color: var(--wink-dim);
+}
+body[data-overlay='find'] .find-case[aria-pressed='true'] {
+  background: var(--waccent-wash);
+  color: var(--waccent-text);
+  border-color: color-mix(in srgb, var(--waccent-text) 40%, transparent);
+}
+body[data-overlay='find'] .btn.icon:focus-visible,
+body[data-overlay='find'] .find-case:focus-visible { outline: 2px solid var(--waccent-text); outline-offset: -2px; }

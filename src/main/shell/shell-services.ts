@@ -2,7 +2,7 @@
 // would give each its own in-memory copy of one file, and the last to write
 // would win.
 import { join } from 'node:path'
-import { session } from 'electron'
+import { app, session } from 'electron'
 import { BookmarkStore } from '../browsing/bookmarks.js'
 import { InternalPageRegistry } from '../pages/internal-registry.js'
 import { SettingsStore } from '../settings/settings-store.js'
@@ -24,18 +24,33 @@ import { ShortcutService } from '../shortcuts/shortcut-service.js'
 import { ShortcutStore } from '../shortcuts/shortcut-store.js'
 import { ZoomService } from '../zoom/zoom-service.js'
 import { ZoomStore } from '../zoom/zoom-store.js'
+import { ClosedStack } from '../session-restore/closed-stack.js'
+import { watchClosedTabs } from '../session-restore/closed-tabs.js'
+import { NullSessionStore, SessionStore } from '../session-restore/session-store.js'
+import type { SessionLog } from '../session-restore/session-store.js'
 import { TearDragController } from './tear-drag.js'
 import { WindowRegistry } from './window-registry.js'
 import type { SubsystemContext } from '../registry.js'
 import { TabLifecycle } from './tab-lifecycle.js'
+import { KIOSK_FLAG } from '../window-state/kiosk.js'
+import { FileWindowStateStore, NullWindowStateStore } from '../window-state/window-state-store.js'
+import type { WindowStateStore } from '../window-state/window-state-store.js'
 
 export interface ShellServices {
   readonly bookmarks: BookmarkStore
+  /** The tabs and windows closed, newest first: what Reopen closed tab brings back. In memory. */
+  readonly closedTabs: ClosedStack
   readonly commands: CommandBus
   readonly devtools: DevToolsService
   readonly history: HistoryService
   readonly internalPages: InternalPageRegistry
+  /** This process is a private session: it never writes a store file of its own. */
+  readonly isPrivate: boolean
+  /** This process was started with --orivon-kiosk (window-state/kiosk.ts). Read once, at start. */
+  readonly kiosk: boolean
   readonly profiles: ProfilesService
+  /** The open windows, kept in `session.json`; a private session writes nothing. */
+  readonly session: SessionLog
   readonly settings: SettingsStore
   readonly shortcuts: ShortcutService
   readonly shortcutStore: ShortcutStore
@@ -47,6 +62,8 @@ export interface ShellServices {
    * hears every window, not just the one it happened to attach to first. */
   readonly tabLifecycle: TabLifecycle
   readonly windows: WindowRegistry
+  /** Where the last-used window was; a private session keeps nothing. */
+  readonly windowState: WindowStateStore
   readonly zoom: ZoomService
   readonly zoomStore: ZoomStore
 }
@@ -57,10 +74,17 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
   const zoomStore = new ZoomStore(join(userDataPath, 'zoom.json'))
   const internalPages = new InternalPageRegistry()
   const windows = new WindowRegistry()
+  const tabLifecycle = new TabLifecycle()
+  const closedTabs = new ClosedStack()
+  // A kiosk runs on the person's own profile but is not their browsing: it records no session, offers none back
+  // and starts no other browser.
+  const kiosk = app.commandLine.hasSwitch(KIOSK_FLAG.slice(2))
+  watchClosedTabs(tabLifecycle, closedTabs)
   // A private session writes down no pages: it never opens a history file at all.
   const openedHistory = runtime.isPrivate ? { store: new NullHistoryStore(), problem: null } : openHistory(join(userDataPath, 'history.db'))
   return {
     bookmarks: new BookmarkStore(join(userDataPath, 'bookmarks.json')),
+    closedTabs,
     commands: new CommandBus(),
     devtools: new DevToolsService(settings, {
       // A security prompt: it must key on the app HOLDING GRANTS (ADR-0044)
@@ -80,13 +104,17 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     }),
     history: new HistoryService(openedHistory.store, settings, openedHistory.problem),
     internalPages,
-    profiles: new ProfilesService(runtime),
+    isPrivate: runtime.isPrivate,
+    kiosk,
+    profiles: new ProfilesService(runtime, undefined, kiosk),
+    session: runtime.isPrivate || kiosk ? new NullSessionStore() : new SessionStore(join(userDataPath, 'session.json')),
     settings,
     shortcuts: new ShortcutService(shortcutStore, platform),
     shortcutStore,
     tearDrag: new TearDragController(() => windows.all()),
-    tabLifecycle: new TabLifecycle(),
+    tabLifecycle,
     windows,
+    windowState: runtime.isPrivate ? new NullWindowStateStore() : new FileWindowStateStore(join(userDataPath, 'window-state.json')),
     zoom: new ZoomService(zoomStore, settings),
     zoomStore
   }

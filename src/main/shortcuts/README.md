@@ -1,8 +1,10 @@
 # `src/main/shortcuts/`: the keys, and the commands they run
 
 **What lives here.** Every command a key can run, and the rules for changing which key. `commands.ts`
-is the one table of commands (id, label, default binding, fixed aliases, whether holding the key
-repeats it); the key handling, the macOS menu, the main menu and the Shortcuts section of Settings all
+is the one table of commands (id, label, category, default binding, fixed aliases, whether holding the
+key repeats it, and whether an app's own tab keeps the key: `yieldToApp`, for find, print, save and the
+like, which an app has of its own; and `pending`, a reserved row whose chord the dispatcher leaves to
+the page until the feature lands); the key handling, the macOS menu, the main menu and the Shortcuts section of Settings all
 read it, so a command exists in all of them or none. `accelerator.ts` turns a key press into a
 chord and a chord into the text a person reads, `rules.ts` refuses a binding that would break typing
 (no modifier, or a reserved chord such as Ctrl+C), and `shortcut-store.ts` keeps only the bindings

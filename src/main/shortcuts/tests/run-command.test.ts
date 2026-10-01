@@ -1,41 +1,100 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { BookmarkStore } from '../../browsing/bookmarks.js'
 import type { ShellWindow } from '../../shell/window-registry.js'
 import { COMMANDS } from '../commands.js'
 import { runCommand } from '../run-command.js'
 import type { CommandDeps } from '../run-command.js'
-import type { DevToolsService } from '../../devtools/devtools-service.js'
-import type { ProfilesService } from '../../launch/profiles-service.js'
-import type { ZoomService } from '../../zoom/zoom-service.js'
+import type { ShellServices } from '../../shell/shell-services.js'
+import { ClosedStack } from '../../session-restore/closed-stack.js'
+import * as pageCommands from '../../page-tools/page-commands.js'
 
-interface Tab { id: string, url: string, title: string, isNewTab: boolean, isInternal: boolean, splitWith: string | null }
-const tab = (id: string, extra: Partial<Tab> = {}): Tab => ({ id, url: `https://${id}.example/`, title: id, isNewTab: false, isInternal: false, splitWith: null, ...extra })
+// The page tools have tests of their own; here only that a key reaches them.
+vi.mock('../../page-tools/page-commands.js', () => Object.fromEntries(['print', 'pdf', 'save', 'viewSource', 'screenshot', 'pip'].map((name) => [`${name}Command`, vi.fn(async () => {})])))
+vi.mock('../../page-tools/real-deps.js', () => ({ realDeps: { real: true } }))
 
-function harness (tabs: Tab[], activeTabId: string | null): { target: ShellWindow, zoom: Record<'step' | 'reset', ReturnType<typeof vi.fn>>, devtools: Record<'toggle', ReturnType<typeof vi.fn>>, profiles: Record<'openPrivate', ReturnType<typeof vi.fn>>, calls: Record<string, ReturnType<typeof vi.fn>>, bookmarks: Record<string, ReturnType<typeof vi.fn>>, deps: CommandDeps & { openWindow: ReturnType<typeof vi.fn<() => void>>, quit: ReturnType<typeof vi.fn<() => void>> }, send: ReturnType<typeof vi.fn> } {
-  const calls = Object.fromEntries(['createTab', 'closeTab', 'activateTab', 'back', 'forward', 'reload', 'openInternal', 'reloadIgnoringCache', 'moveTab', 'toggle', 'focusOther', 'swap', 'rotate'].map((name) => [name, vi.fn()]))
+interface Tab { id: string, url: string, title: string, isNewTab: boolean, isInternal: boolean, splitWith: string | null, pinned: boolean, muted: boolean }
+const tab = (id: string, extra: Partial<Tab> = {}): Tab => ({ id, url: `https://${id}.example/`, title: id, isNewTab: false, isInternal: false, splitWith: null, pinned: false, muted: false, ...extra })
+
+function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: boolean, homeUrl?: string } = {}): { target: ShellWindow, zoom: Record<'step' | 'reset', ReturnType<typeof vi.fn>>, devtools: Record<'toggle', ReturnType<typeof vi.fn>>, profiles: Record<'openPrivate', ReturnType<typeof vi.fn>>, calls: Record<string, ReturnType<typeof vi.fn>>, bookmarks: Record<string, ReturnType<typeof vi.fn>>, deps: CommandDeps & { openWindow: ReturnType<typeof vi.fn<() => void>>, quit: ReturnType<typeof vi.fn<() => void>> }, send: ReturnType<typeof vi.fn> } {
+  const calls = Object.fromEntries(['createTab', 'navigate', 'closeTab', 'activateTab', 'back', 'forward', 'reload', 'openInternal', 'reloadIgnoringCache', 'stop', 'overlayShow', 'overlayToggle', 'moveTab', 'toggle', 'changed', 'setAudioMuted', 'focusOther', 'swap', 'rotate'].map((name) => [name, vi.fn()]))
   const send = vi.fn()
-  const window = { close: vi.fn(), setFullScreen: vi.fn(), isFullScreen: vi.fn(() => false), getBounds: vi.fn(() => ({ x: 10, y: 20, width: 800, height: 600 })) }
+  const window = { close: vi.fn(), setFullScreen: vi.fn(), isFullScreen: vi.fn(() => false), isAlwaysOnTop: vi.fn(() => false), setAlwaysOnTop: vi.fn(), getBounds: vi.fn(() => ({ x: 10, y: 20, width: 800, height: 600 })) }
   const target = {
     window,
     chrome: { webContents: { focus: vi.fn(), send } },
     tabs: {
       getState: () => ({ tabs, activeTabId }),
       tabCount: tabs.length,
-      splits: { toggle: calls['toggle'], focusOther: calls['focusOther'], swap: calls['swap'], rotate: calls['rotate'] },
+      splits: { toggle: calls['toggle'], focusOther: calls['focusOther'], swap: calls['swap'], rotate: calls['rotate'], groups: { partnerOf: () => null } },
+      record: (id: string) => ({ pinned: tabs.find((t) => t.id === id)?.pinned, muted: tabs.find((t) => t.id === id)?.muted, view: { webContents: { isDestroyed: () => false, setAudioMuted: calls['setAudioMuted'] } } }),
+      ids: () => tabs.map((t) => t.id),
+      hasRoom: () => true,
+      liveWebContents: () => undefined,
       faviconFor: () => 'data:icon',
-      activeWebContents: () => ({ reloadIgnoringCache: calls['reloadIgnoringCache'] }),
+      activeWebContents: () => ({ reloadIgnoringCache: calls['reloadIgnoringCache'], stop: calls['stop'] }),
       ...calls
     },
+    overlays: { show: calls['overlayShow'], toggle: calls['overlayToggle'], isOpen: () => false, close: vi.fn(), send: vi.fn() },
     shortcutsSuspended: () => false
   } as unknown as ShellWindow
   const bookmarks = { has: vi.fn(() => false), add: vi.fn(), remove: vi.fn() }
   const zoom = { step: vi.fn(), reset: vi.fn() }
   const devtools = { toggle: vi.fn() }
   const profiles = { openPrivate: vi.fn() }
-  return { target, zoom, devtools, profiles, calls: { ...calls, close: window.close as never, setFullScreen: window.setFullScreen as never }, bookmarks, deps: { bookmarks: bookmarks as unknown as BookmarkStore, zoom: zoom as unknown as ZoomService, devtools: devtools as unknown as DevToolsService, profiles: profiles as unknown as ProfilesService, openWindow: vi.fn<() => void>(), quit: vi.fn<() => void>() }, send }
+  return { target, zoom, devtools, profiles, calls: { ...calls, close: window.close as never, setFullScreen: window.setFullScreen as never, setAlwaysOnTop: window.setAlwaysOnTop as never }, bookmarks, deps: { services: { bookmarks, zoom, devtools, profiles, closedTabs: new ClosedStack(), kiosk: options.kiosk === true, settings: { get: () => options.homeUrl ?? '' } } as unknown as ShellServices, openWindow: vi.fn<() => void>(), displays: () => [], quit: vi.fn<() => void>() }, send }
 }
 
+describe('the tab-state commands', () => {
+  it('pins the tab in front, and unpins it again', () => {
+    const { target, calls, deps } = harness([tab('a'), tab('b')], 'b')
+    runCommand('tab.pin', target, deps)
+    expect(calls['moveTab']).toHaveBeenCalledWith('b', 0)
+    const pinned = harness([tab('a', { pinned: true }), tab('b', { pinned: true })], 'b')
+    runCommand('tab.pin', pinned.target, pinned.deps)
+    expect(pinned.calls['moveTab']).toHaveBeenCalledWith('b', 1)
+  })
+
+  it('mutes the tab in front on its page and reports the change', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+    runCommand('tab.mute', target, deps)
+    expect(calls['setAudioMuted']).toHaveBeenCalledWith(true)
+    expect(calls['changed']).toHaveBeenCalled()
+  })
+
+  it('closes the other unpinned tabs, or those to the right, of the tab in front', () => {
+    const strip = [tab('a', { pinned: true }), tab('b'), tab('c'), tab('d')]
+    const others = harness(strip, 'c')
+    runCommand('tab.closeOthers', others.target, others.deps)
+    expect(others.calls['closeTab']?.mock.calls.map(([id]) => id)).toEqual(['b', 'd'])
+    const right = harness(strip, 'b')
+    runCommand('tab.closeRight', right.target, right.deps)
+    expect(right.calls['closeTab']?.mock.calls.map(([id]) => id)).toEqual(['c', 'd'])
+  })
+
+  it('opens a copy of the tab in front beside it, and none for the new-tab page', () => {
+    const { target, calls, deps } = harness([tab('a'), tab('b')], 'a')
+    calls['createTab']?.mockReturnValue('c')
+    runCommand('tab.duplicate', target, deps)
+    expect(calls['createTab']).toHaveBeenCalledWith('https://a.example/')
+    expect(calls['moveTab']).toHaveBeenCalledWith('c', 1)
+    const blank = harness([tab('a', { isNewTab: true })], 'a')
+    runCommand('tab.duplicate', blank.target, blank.deps)
+    expect(blank.calls['createTab']).not.toHaveBeenCalled()
+  })
+})
+
 describe('runCommand', () => {
+  it('hands each page command to the page tools, the ones that write with the real dependencies', () => {
+    const { target, deps } = harness([tab('a')], 'a')
+    const expected: Array<[Parameters<typeof runCommand>[0], keyof typeof pageCommands, boolean]> = [
+      ['page.print', 'printCommand', false], ['page.pdf', 'pdfCommand', true], ['page.save', 'saveCommand', true],
+      ['page.viewSource', 'viewSourceCommand', false], ['page.screenshot', 'screenshotCommand', false], ['page.pip', 'pipCommand', false]
+    ]
+    for (const [id, name, withDeps] of expected) {
+      runCommand(id, target, deps)
+      expect(pageCommands[name], id).toHaveBeenCalledWith(...(withDeps ? [target, { real: true }] : [target]))
+    }
+  })
+
   it('handles every command there is', () => {
     const { target, deps } = harness([tab('a')], 'a')
     for (const command of COMMANDS) expect(() => { runCommand(command.id, target, deps) }, command.id).not.toThrow()
@@ -140,6 +199,42 @@ describe('runCommand', () => {
     expect(calls['openInternal']).toHaveBeenCalledWith('settings')
   })
 
+  it('keeps the window on top, and lets it go again', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+    runCommand('window.alwaysOnTop', target, deps)
+    expect(calls['setAlwaysOnTop']).toHaveBeenCalledWith(true)
+  })
+
+  it('goes home: the home page in this tab, else the new tab page unless that is what is showing', () => {
+    const withHome = harness([tab('a')], 'a', { homeUrl: 'example.com' })
+    runCommand('nav.home', withHome.target, withHome.deps)
+    expect(withHome.calls['navigate']).toHaveBeenCalledWith('a', 'https://example.com/')
+
+    const without = harness([tab('a')], 'a')
+    runCommand('nav.home', without.target, without.deps)
+    expect(without.calls['createTab']).toHaveBeenCalledTimes(1)
+
+    const onNewTab = harness([tab('n', { isNewTab: true })], 'n')
+    runCommand('nav.home', onNewTab.target, onNewTab.deps)
+    expect(onNewTab.calls['createTab']).not.toHaveBeenCalled()
+  })
+
+  it('in a kiosk runs only what a kiosk allows', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a', { kiosk: true })
+    for (const id of ['tab.new', 'tab.close', 'window.new', 'window.newPrivate', 'window.fullscreen', 'window.alwaysOnTop', 'settings.open', 'nav.home'] as const) runCommand(id, target, deps)
+    expect(calls['createTab']).not.toHaveBeenCalled()
+    expect(calls['closeTab']).not.toHaveBeenCalled()
+    expect(calls['setFullScreen']).not.toHaveBeenCalled()
+    expect(calls['setAlwaysOnTop']).not.toHaveBeenCalled()
+    expect(calls['openInternal']).not.toHaveBeenCalled()
+    expect(deps.openWindow).not.toHaveBeenCalled()
+
+    runCommand('nav.reload', target, deps)
+    runCommand('app.quit', target, deps)
+    expect(calls['reload']).toHaveBeenCalledWith('a')
+    expect(deps.quit).toHaveBeenCalledTimes(1)
+  })
+
   it('zooms the site the active page is on, and does nothing where a page has no site', () => {
     const site = harness([tab('a')], 'a')
     runCommand('zoom.in', site.target, site.deps)
@@ -158,7 +253,35 @@ describe('runCommand', () => {
   it('toggles developer tools on the active tab\'s page', () => {
     const { target, deps, devtools } = harness([tab('a')], 'a')
     runCommand('devtools.toggle', target, deps)
-    expect(devtools.toggle).toHaveBeenCalledExactlyOnceWith({ reloadIgnoringCache: expect.anything() }, target.window)
+    expect(devtools.toggle).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ reloadIgnoringCache: expect.anything() }), target.window)
+  })
+
+  it('stops the active tab\'s load', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+
+    runCommand('nav.stop', target, deps)
+
+    expect(calls['stop']).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens the find bar, and opens it with a step for Find next and Find previous while it is closed', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+
+    runCommand('find.open', target, deps)
+    runCommand('find.next', target, deps)
+    runCommand('find.previous', target, deps)
+
+    expect(calls['overlayShow']).toHaveBeenNthCalledWith(1, 'find')
+    expect(calls['overlayShow']).toHaveBeenNthCalledWith(2, 'find', undefined, { step: true })
+    expect(calls['overlayShow']).toHaveBeenNthCalledWith(3, 'find', undefined, { step: false })
+  })
+
+  it('opens tab search, and closes it again when it is already open', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+
+    runCommand('tab.search', target, deps)
+
+    expect(calls['overlayToggle']).toHaveBeenCalledExactlyOnceWith('tab-search')
   })
 
   it('moves the active tab along the strip, and opens a window for it only when it has company', () => {

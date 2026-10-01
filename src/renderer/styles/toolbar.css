@@ -32,7 +32,8 @@
    which reads as oversized next to the bookmark toggle sitting right
    beside them -- owner, 2026-09-15. Parity across the row wins over
    quoting the reference exactly. */
-.navgroup .navbtn svg { width: 18px; height: 18px; }
+.navgroup .navbtn svg,
+.toolbar-slot .navbtn svg { width: 18px; height: 18px; }
 .navbtn:not(:disabled):hover {
   color: var(--wink);
 }
@@ -283,3 +284,15 @@ browser-action-list {
   border-radius: 50%;
   background: var(--wok);
 }
+
+/* Where a feature adds a toolbar button without editing index.html (chrome/toolbar-button.ts). Buttons
+   sit in ascending `order`; a slot with nothing visible in it takes no room, not even the gap its
+   parent puts between children. */
+.toolbar-slot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+.toolbar-slot:not(:has(> :not([hidden]))) { display: none; }
+.toolbar-slot > [hidden] { display: none; }

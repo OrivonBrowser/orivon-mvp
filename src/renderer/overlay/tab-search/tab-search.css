@@ -1,0 +1,84 @@
+/* Tab search: a sticky field and count over one list. Every row is the kit's listbox row; what is added is
+   the group labels, the marks on the right, the close button that appears on the row aimed at, and the
+   new-tab mark. The overlay's own #scroll does the scrolling, so the field stays in view. */
+
+body[data-overlay='tab-search'] #scroll { scroll-padding-top: 52px; scrollbar-width: thin; scrollbar-color: var(--wborder) transparent; }
+
+body[data-overlay='tab-search'] .ts-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 12px 8px;
+  background: var(--wbg);
+}
+
+body[data-overlay='tab-search'] .ts-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  max-width: none;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  font: inherit;
+  color: var(--wink);
+}
+body[data-overlay='tab-search'] .ts-input::placeholder { color: var(--wink-off); }
+body[data-overlay='tab-search'] .ts-input:focus-visible { outline: 2px solid var(--waccent-text); outline-offset: -2px; }
+
+body[data-overlay='tab-search'] .ts-count {
+  flex: none;
+  color: var(--wink-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+body[data-overlay='tab-search'] .ts-body { padding: 0 8px 8px; }
+
+body[data-overlay='tab-search'] .ts-group {
+  padding: 8px 10px 4px;
+  color: var(--wink-dim);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Every row is as tall as one with an address line, and a row without one centres its title. */
+body[data-overlay='tab-search'] .listbox-item { box-sizing: border-box; min-height: 48px; padding: 6px 10px; }
+body[data-overlay='tab-search'] .listbox-item.no-sub > .item-title { grid-row: 1 / span 2; }
+
+/* The marks and the close button share one column that never wraps or shrinks. */
+body[data-overlay='tab-search'] .item-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: visible;
+}
+/* Each mark sits in a 24px box like the close button, so the marks, the chip and the close line up in one column. */
+body[data-overlay='tab-search'] .ts-state { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; color: var(--wink-dim); }
+body[data-overlay='tab-search'] .ts-state svg { width: 16px; height: 16px; }
+/* A hit is tinted as well as weightier: bold alone does not show on the selected row's own tint. */
+body[data-overlay='tab-search'] mark { background: color-mix(in srgb, var(--waccent-text) 18%, transparent); color: inherit; font-weight: 600; border-radius: 2px; }
+/* A closed row has no close button; it keeps that column empty so its time ends where an open row's marks do. */
+body[data-overlay='tab-search'] .ts-ago { color: var(--wink-dim); margin-right: 28px; }
+
+body[data-overlay='tab-search'] .ts-close { width: 24px; height: 24px; opacity: 0; }
+body[data-overlay='tab-search'] .listbox-item:hover .ts-close,
+body[data-overlay='tab-search'] .listbox-item[aria-selected='true'] .ts-close,
+body[data-overlay='tab-search'] .ts-close:focus-visible { opacity: 1; }
+body[data-overlay='tab-search'] .ts-close:focus-visible { outline: 2px solid var(--waccent-text); outline-offset: -2px; }
+body[data-overlay='tab-search'] .ts-close:hover:not([disabled]) { background: var(--wdanger-wash); color: var(--wdanger); }
+
+/* The product mark a blank tab shows on the strip, at the icon's size. */
+body[data-overlay='tab-search'] .ts-mark {
+  width: 16px;
+  height: 16px;
+  background: url('../../assets/logo.png') center / contain no-repeat;
+}
+
+body[data-overlay='tab-search'] .empty-state { list-style: none; }

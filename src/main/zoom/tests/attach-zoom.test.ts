@@ -35,8 +35,20 @@ function attached (levels: Record<string, number>, isTab = true): { contents: Fa
 }
 
 describe('attachZoom', () => {
-  it('takes zoom out of the browser\'s hands', () => {
-    expect(attached({}).contents.setZoomMode).toHaveBeenCalledWith('manual')
+  it('holds a view back from zooming until it is known to be a tab, and then gives it a zoom of its own that scales the page', () => {
+    const { contents } = attached({})
+    expect(contents.setZoomMode).toHaveBeenCalledExactlyOnceWith('manual')
+    contents.emit('did-navigate', {}, 'https://a.example/')
+    contents.emit('did-navigate', {}, 'https://a.example/two')
+    expect(contents.setZoomMode).toHaveBeenLastCalledWith('isolated')
+    expect(contents.setZoomMode).toHaveBeenCalledTimes(2)
+  })
+
+  it('never lets the chrome or a popover zoom its pixels', () => {
+    const { contents } = attached({}, false)
+    contents.emit('did-navigate', {}, 'file:///chrome/index.html')
+    contents.emit('zoom-changed', {}, 'in')
+    expect(contents.setZoomMode).toHaveBeenCalledExactlyOnceWith('manual')
   })
 
   it('shows a page at its site\'s level as it commits, and back to normal for a page with no site', () => {
@@ -63,6 +75,19 @@ describe('attachZoom', () => {
     contents.url = 'orivon://settings/'
     contents.emit('zoom-changed', {}, 'out')
     expect(step).toHaveBeenCalledExactlyOnceWith('https://a.example', 'in')
+  })
+
+  it('puts the page back to its site\'s level when the wheel zoomed it on its own', () => {
+    vi.useFakeTimers()
+    try {
+      const { contents } = attached({ 'https://a.example': 110 })
+      contents.url = 'https://a.example/page'
+      contents.emit('did-navigate', {}, contents.url)
+      contents.emit('zoom-changed', {}, 'in')
+      contents.factor = 1.25
+      vi.runAllTimers()
+      expect(contents.factor).toBe(1.1)
+    } finally { vi.useRealTimers() }
   })
 
   it('takes the two events one turn of the wheel makes as one step, and a later turn, or the other way, as another', () => {

@@ -1,0 +1,353 @@
+/* The components every page and overlay builds from, on the tokens in
+   tokens.css: controls.css imports this first, so its own button, select and
+   switch rules (same specificity, later in the cascade) still win a tie.
+   A tone (`--tone`) is set on the component that has variants, so each
+   variant is one line; tone text is mixed toward the ink, because the
+   brand-level greens and oranges are fills and miss 4.5:1 as small text on
+   the light theme. Motion is colour, opacity and transform at 0.12s. */
+
+/* ---- Buttons ---------------------------------------------------------- */
+
+.btn.primary:hover:not([disabled]) { filter: brightness(1.08); }
+.btn.primary:active:not([disabled]) { filter: brightness(0.96); }
+/* A plain and a danger button press one step past their hover; primary and
+   an armed danger button keep their fill and only shift brightness. */
+.btn:not(.primary):not(.danger):active:not([disabled]) { background: color-mix(in srgb, var(--wink) 12%, transparent); }
+.btn.danger:not(.armed):active:not([disabled]) { background: color-mix(in srgb, var(--wdanger) 20%, transparent); }
+.btn.danger.armed:active:not([disabled]) { filter: brightness(0.96); }
+
+.btn.small { padding: 3px 10px; font-size: 12.5px; flex: none; }
+
+.btn .icon { width: 16px; height: 16px; vertical-align: -3px; }
+.btn .icon:not(:last-child) { margin-right: 6px; }
+
+/* Icon-only: a 28px hit box with a 16px glyph, quiet until it is aimed at.
+   `aria-pressed` makes it a toggle (pin, mute) that stays tinted while on. */
+.btn.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--wink-dim);
+}
+.btn.icon svg { width: 16px; height: 16px; margin: 0; }
+.btn.icon:hover:not([disabled]) { background: var(--whover); color: var(--wink); }
+.btn.icon:active:not([disabled]) { background: color-mix(in srgb, var(--wink) 12%, transparent); color: var(--wink); }
+.btn.icon[aria-pressed="true"] { background: var(--waccent-wash); color: var(--waccent-text); }
+.btn.icon[aria-pressed="true"]:hover:not([disabled]) { background: color-mix(in srgb, var(--waccent-text) 22%, transparent); }
+
+.link-btn {
+  padding: 2px 6px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--waccent-text);
+  cursor: pointer;
+}
+.link-btn:hover { text-decoration: underline; }
+.link-btn:active { text-decoration: underline; opacity: 0.8; }
+.link-btn[disabled] { opacity: 0.5; cursor: default; text-decoration: none; }
+
+.btn-row { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+
+/* ---- Choices and text ------------------------------------------------- */
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--wborder);
+  border-radius: 8px;
+  background: var(--wsurface);
+  overflow: hidden;
+}
+.segmented > button {
+  padding: 5px 12px;
+  border: none;
+  border-left: 1px solid var(--wborder);
+  background: none;
+  color: var(--wink-dim);
+  cursor: pointer;
+  transition: background-color 0.12s, color 0.12s;
+}
+.segmented > button:first-child { border-left: none; }
+.segmented > button:hover:not([disabled]) { background: var(--whover); color: var(--wink); }
+.segmented > button:active:not([disabled]) { background: color-mix(in srgb, var(--wink) 12%, transparent); }
+.segmented > button[aria-pressed="true"] { background: var(--waccent-wash); color: var(--waccent-text); font-weight: 600; }
+.segmented > button[disabled] { opacity: 0.5; cursor: default; }
+/* The container clips, so a ring drawn outside a segment would be cut off. */
+.segmented > button:focus-visible { outline-offset: -2px; }
+
+/* One box for a checkbox and a radio: 16px, drawn here because the platform's
+   is a different size and colour on each OS and ignores the theme. */
+.check { display: inline-flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+.check:has(input:disabled) { opacity: 0.5; cursor: default; }
+.check input {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  border: 1px solid var(--wink-off);
+  border-radius: 4px;
+  background: var(--wsurface);
+  cursor: inherit;
+  transition: background-color 0.12s, border-color 0.12s;
+}
+.check input[type="radio"] { border-radius: 50%; }
+.check:hover input:not(:disabled) { border-color: var(--wink-dim); }
+.check input:checked, .check input:indeterminate { background: var(--waccent); border-color: var(--waccent); }
+.check input::after { content: ""; position: absolute; opacity: 0; }
+.check input:checked::after, .check input:indeterminate::after { opacity: 1; }
+.check input[type="checkbox"]:checked::after {
+  left: 4.5px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--waccent-ink);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.check input[type="checkbox"]:indeterminate::after { left: 3px; top: 6px; width: 8px; height: 2px; border-radius: 4px; background: var(--waccent-ink); }
+.check input[type="radio"]:checked::after { inset: 4px; border-radius: 50%; background: var(--waccent-ink); }
+.check input:focus-visible { outline: 2px solid var(--waccent-text); outline-offset: 2px; }
+
+.textarea {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  min-height: 72px;
+  padding: 6px 10px;
+  border: 1px solid var(--wborder);
+  border-radius: 8px;
+  background: var(--wsurface);
+  font: inherit;
+  line-height: 1.45;
+  resize: vertical;
+}
+.textarea::placeholder { color: var(--wink-off); }
+.textarea[aria-invalid="true"] { border-color: var(--wdanger); }
+.textarea[disabled] { opacity: 0.5; }
+
+/* ---- Progress and loading --------------------------------------------- */
+
+.progress { height: 4px; border-radius: 999px; background: var(--wsurface); overflow: hidden; }
+.progress-bar {
+  width: calc(var(--value, 0) * 100%);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--waccent);
+  transition: width 0.12s linear;
+}
+.progress.is-error .progress-bar { background: var(--wdanger); }
+.progress.is-paused .progress-bar { background: var(--wink-off); }
+.progress.indeterminate .progress-bar { width: 40%; animation: progress-slide 1.2s ease-in-out infinite; }
+@keyframes progress-slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+
+.spinner {
+  display: inline-block;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: 2px solid color-mix(in srgb, var(--wink) 30%, transparent);
+  border-top-color: var(--wink-dim);
+  border-radius: 50%;
+  animation: kit-spin 0.8s linear infinite;
+}
+@keyframes kit-spin { to { transform: rotate(360deg); } }
+
+.skeleton { display: block; height: 14px; border-radius: 6px; background: var(--wsurface); animation: skeleton-pulse 1.4s ease-in-out infinite; }
+@keyframes skeleton-pulse { 50% { opacity: 0.5; } }
+
+/* ---- Chips and badges ------------------------------------------------- */
+
+/* A profile's avatar is `.chip.mark` and keeps its own rules. */
+.chip:not(.mark) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--wborder);
+  border-radius: 999px;
+  background: none;
+  color: var(--wink-dim);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background-color 0.12s, border-color 0.12s, color 0.12s;
+}
+.chip:not(.mark):hover:not([disabled]) { background: var(--whover); color: var(--wink); }
+.chip:not(.mark):active:not([disabled]) { background: color-mix(in srgb, var(--wink) 12%, transparent); }
+.chip:not(.mark)[aria-pressed="true"] {
+  background: var(--waccent-wash);
+  border-color: color-mix(in srgb, var(--waccent-text) 40%, var(--wborder));
+  color: var(--waccent-text);
+}
+.chip:not(.mark)[disabled] { opacity: 0.5; cursor: default; }
+
+.badge {
+  --tone: var(--wink-dim);
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--wsurface);
+  color: var(--tone);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.badge.ok, .badge.warn, .badge.danger { color: color-mix(in srgb, var(--tone) 65%, var(--wink)); }
+.badge.ok { --tone: var(--wok); background: var(--wok-wash); }
+.badge.warn { --tone: var(--wwarn); background: var(--wwarn-wash); }
+.badge.danger { --tone: var(--wdanger); background: color-mix(in srgb, var(--wdanger) 14%, transparent); }
+
+/* ---- Lists ------------------------------------------------------------ */
+
+.item-icon { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 20px; height: 20px; color: var(--wink-dim); }
+.item-icon svg, .item-icon img { width: 16px; height: 16px; }
+
+.listbox { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.listbox-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+.listbox-item > .item-icon { grid-column: 1; grid-row: 1 / span 2; margin-right: 12px; }
+.listbox-item > .item-title { grid-column: 2; grid-row: 1; }
+.listbox-item > .item-sub { grid-column: 2; grid-row: 2; }
+.listbox-item > .item-meta { grid-column: 3; grid-row: 1 / span 2; margin-left: 12px; }
+.item-title, .item-sub, .item-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-title { color: var(--wink-strong); }
+.item-sub { color: var(--wink-dim); font-size: 12.5px; }
+.item-meta { color: var(--wink-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+.item-title mark, .item-sub mark { background: none; color: inherit; font-weight: 600; }
+.listbox-item:hover { background: var(--whover); }
+.listbox-item[aria-selected="true"] { background: var(--waccent-wash); }
+.listbox-item[aria-selected="true"] .item-title { color: var(--waccent-text); }
+.listbox-item[aria-selected="true"] .item-icon { color: var(--waccent-text); }
+.listbox-item[aria-disabled="true"] { opacity: 0.5; cursor: default; }
+.listbox-item:focus-visible, .tree-item:focus-visible, .tab-btn:focus-visible { outline-offset: -2px; }
+
+.tree { list-style: none; margin: 0; padding: 0; }
+.tree-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px calc(8px + var(--level, 0) * 16px);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+.tree-item:hover { background: var(--whover); }
+.tree-item[aria-selected="true"] { background: var(--waccent-wash); color: var(--waccent-text); }
+.tree-item[aria-selected="true"] .item-icon { color: inherit; }
+.tree-item.drop-into { box-shadow: inset 0 0 0 2px var(--waccent); }
+.tree-label { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--wink-dim);
+  cursor: pointer;
+}
+.tree-toggle::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  background: currentColor;
+  -webkit-mask: var(--tree-chevron) center / contain no-repeat;
+  mask: var(--tree-chevron) center / contain no-repeat;
+  transition: transform 0.12s;
+}
+.tree-toggle:hover { background: var(--whover); color: var(--wink); }
+.tree-item[aria-expanded="true"] > .tree-toggle::before { transform: rotate(90deg); }
+/* A leaf keeps the toggle's width so its label lines up with its siblings'. */
+.tree-item:not([aria-expanded]) > .tree-toggle { visibility: hidden; }
+.drop-line { height: 2px; margin: 1px 8px; border-radius: 999px; background: var(--waccent); pointer-events: none; }
+
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--wborder); }
+.tab-btn {
+  margin-bottom: -1px;
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: none;
+  color: var(--wink-dim);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.12s, color 0.12s, border-color 0.12s;
+}
+.tab-btn:hover:not([disabled]) { background: var(--whover); color: var(--wink); }
+.tab-btn[aria-selected="true"] { border-bottom-color: var(--waccent-text); color: var(--waccent-text); }
+.tab-btn[disabled] { opacity: 0.5; cursor: default; }
+
+/* ---- Surfaces --------------------------------------------------------- */
+
+.sheet { padding: 16px 18px; border: 1px solid var(--wborder); border-radius: var(--wradius); background: var(--wpanel); }
+.sheet-title { font-size: 15px; font-weight: 600; }
+.origin { margin-top: 2px; color: var(--wink-strong); font-weight: 600; word-break: break-all; }
+.sheet-body { display: grid; gap: 12px; margin: 12px 0 16px; }
+.field { display: grid; gap: 4px; }
+.field > span:first-child { color: var(--wink-dim); font-size: 13px; font-weight: 500; }
+.field .text, .field .select, .field .textarea { width: 100%; max-width: none; }
+
+.banner {
+  --tone: var(--wwarn);
+  padding: 10px 14px;
+  border-radius: var(--wradius);
+  background: color-mix(in srgb, var(--tone) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tone) 35%, var(--wborder));
+}
+.banner[hidden] { display: none; }
+.banner.info { --tone: var(--waccent-text); }
+.banner.ok { --tone: var(--wok); }
+.banner.error { --tone: var(--wdanger); }
+
+.toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 420px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--wtoast-ink) 14%, transparent);
+  background: var(--wtoast-bg);
+  color: var(--wtoast-ink);
+  font-size: 13px;
+}
+.toast .link-btn { color: var(--wtoast-ink); font-weight: 600; text-decoration: underline; }
+
+.empty-state { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 72px 4px; color: var(--wink-dim); text-align: center; }
+.empty-state svg { width: 48px; height: 48px; opacity: 0.5; }
+.empty-state.compact { padding: 20px 8px; }
+.empty-state.compact svg { width: 32px; height: 32px; }
+
+/* The chevron a tree toggle is masked from: the same stroke as the icon set's. */
+:root { --tree-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 18 6-6-6-6'/%3E%3C/svg%3E"); }
+
+/* An overlay carries its own reduced-motion block; a page gets tokens.css's.
+   Repeated here so the kit never depends on which of the two loaded it. */
+@media (prefers-reduced-motion: reduce) {
+  .spinner, .skeleton, .progress.indeterminate .progress-bar { animation: none; }
+  .progress.indeterminate .progress-bar { width: 100%; opacity: 0.45; }
+  .progress-bar, .tree-toggle::before { transition: none; }
+}

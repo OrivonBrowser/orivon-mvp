@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { COMMAND_CHANNEL, SHELL_EVENT_CHANNEL, STATE_CHANNEL } from '../main/channels.js'
 import type { ShellCommand } from '../main/ipc/ipc.js'
+import type { ShellEvent } from '../main/shell/shell-events.js'
 import type { ShellState } from '../main/shell/tabs.js'
 import type { SiteSummary } from '../main/permissions/site-info-controller.js'
 import type { Web3Score } from '../main/browsing/site-trust.js'
@@ -72,6 +73,9 @@ export interface OrivonShell {
   /** The menu button was hovered or focused: builds the menu's view ahead of
    * the click that usually follows. Safe to call more than once. */
   prewarmMenu: () => void
+  /** A call with arguments that is not a command, run by main's `CHROME_ACTIONS[name]`
+   * (src/main/shell/chrome-actions.ts); resolves to what the action returns. A plain command goes through `runCommand`. */
+  act: (name: string, payload?: unknown) => Promise<unknown>
   /** Puts a tab at a place in the strip. */
   moveTab: (id: string, index: number) => void
   /** A genuine tab drag has started (past the press threshold, before any tear-out): lets main start
@@ -98,9 +102,9 @@ export interface OrivonShell {
    * actually was, so this ends the move with no edge-snap action, unlike `windowMoveEnd`. */
   windowMoveCancel: () => void
   onState: (listener: (state: ShellState) => void) => () => void
-  /** Commands main asks the chrome to carry out itself: focusing the address bar, or (while a tab from
-   * ANY window is being dragged) drawing or clearing this window's own cross-window drop mark. */
-  onCommand: (listener: (command: { type: 'focusAddress' } | { type: 'dragMark', index: number } | { type: 'dragMarkClear' }) => void) => () => void
+  /** Events main sends the chrome (src/main/shell/shell-events.ts): focusing the address bar, drawing or
+   * clearing this window's cross-window drop mark, or a payload for one chrome module. */
+  onCommand: (listener: (event: ShellEvent) => void) => () => void
   /** How main decided this window's tab strip drags: 'manual' on Linux/X11 (drag-mode.ts's `dragModeFor`),
    * where the tail after the new-tab button is plain, JS-driven `no-drag` content; 'native' everywhere else,
    * where it stays part of the OS-level drag region the strip already is. */
@@ -163,6 +167,7 @@ const api: OrivonShell = {
 
   openMenu: (anchor: PanelAnchor) => { send({ type: 'openMenu', anchor }) },
   prewarmMenu: () => { send({ type: 'prewarmMenu' }) },
+  act: async (name: string, payload?: unknown) => await request({ type: 'act', name, payload }),
   moveTab: (id: string, index: number) => { send({ type: 'moveTab', id, index }) },
   beginTabDrag: (id: string) => { send({ type: 'tabDragStart', id }) },
   dragTab: (id: string, x?: number, y?: number) => { send(x === undefined || y === undefined ? { type: 'dragTab', id } : { type: 'dragTab', id, x, y }) },
@@ -187,8 +192,8 @@ const api: OrivonShell = {
   /** Commands main asks the chrome to carry out itself: focusing the address
    * bar, or drawing/clearing a cross-window drop mark. Returns the
    * unsubscribe; a closure, like `onState`. */
-  onCommand: (listener: (command: { type: 'focusAddress' } | { type: 'dragMark', index: number } | { type: 'dragMarkClear' }) => void): (() => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, command: { type: 'focusAddress' } | { type: 'dragMark', index: number } | { type: 'dragMarkClear' }): void => listener(command)
+  onCommand: (listener: (event: ShellEvent) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, event: ShellEvent): void => listener(event)
     ipcRenderer.on(SHELL_EVENT_CHANNEL, handler)
     return () => ipcRenderer.removeListener(SHELL_EVENT_CHANNEL, handler)
   },

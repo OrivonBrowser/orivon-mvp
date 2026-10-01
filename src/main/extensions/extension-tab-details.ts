@@ -9,13 +9,13 @@ export interface OrivonTabDetails {
 }
 
 /** `details` (the library's own base, built from the real WebContents --
- * title/url/status/audible are already right) gets Orivon's own captured
- * favicon in place of whatever the page itself last declared, and `pinned`
- * explicitly, since Orivon has no concept of a pinned tab yet. `favicon` is
+ * title/url/status/audible/mutedInfo are already right) gets Orivon's own
+ * captured favicon in place of whatever the page itself last declared, and
+ * `pinned` from the tab's record, which the page cannot know. `favicon` is
  * `null` for a tab this host cannot find (not yet tracked, or none
  * captured) -- left alone rather than cleared, so a value the library's own
- * default already set survives. */
-export function applyOrivonTabDetails (details: OrivonTabDetails, favicon: string | null): void {
-  details.pinned = false
+ * default already set survives; the same tab reads as unpinned. */
+export function applyOrivonTabDetails (details: OrivonTabDetails, favicon: string | null, pinned: boolean): void {
+  details.pinned = pinned
   if (favicon !== null) details.favIconUrl = favicon
 }

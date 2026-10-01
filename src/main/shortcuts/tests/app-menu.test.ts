@@ -42,7 +42,7 @@ describe('buildAppMenuTemplate', () => {
     const run = vi.fn()
     const template = buildAppMenuTemplate(await service('darwin'), run) as MenuItemConstructorOptions[]
 
-    expect(template.map((item) => item.role ?? item.label)).toEqual(['appMenu', 'editMenu', 'Tab', 'Go', 'Window', 'windowMenu'])
+    expect(template.map((item) => item.role ?? item.label)).toEqual(['appMenu', 'editMenu', 'Tab', 'Go', 'Tools', 'Window', 'windowMenu'])
     const items = template.flatMap((item) => Array.isArray(item.submenu) ? item.submenu : [])
     expect(items).toHaveLength(COMMANDS.length)
     for (const item of items) expect(item.registerAccelerator).toBe(false)

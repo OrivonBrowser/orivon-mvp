@@ -9,6 +9,22 @@ import type { PressedKey } from '../dispatcher.js'
 import { ShortcutService } from '../shortcut-service.js'
 import { ShortcutStore } from '../shortcut-store.js'
 
+// A reserved row is one whose feature has not landed, and the dispatcher skips it. No real row is reserved
+// now, so the test of that rule reserves one itself; the yield tests read every row as landed.
+const feature = vi.hoisted(() => ({ landed: false, reserved: '' }))
+vi.mock('../commands.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../commands.js')>()
+  return {
+    ...real,
+    commandById: (id: string) => {
+      const def = real.commandById(id)
+      if (def !== undefined && id === feature.reserved) return { ...def, pending: true as const }
+      return feature.landed && def !== undefined ? { ...def, pending: undefined } : def
+    }
+  }
+})
+afterEach(() => { feature.landed = false; feature.reserved = '' })
+
 let dir: string
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'orivon-dispatcher-')) })
 afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
@@ -16,7 +32,7 @@ afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
 const key = (k: string, code: string, mods: Partial<PressedKey> = {}): PressedKey =>
   ({ type: 'keyDown', key: k, code, control: false, alt: false, shift: false, meta: false, isAutoRepeat: false, isComposing: false, ...mods })
 
-async function setup (options: { windowless?: boolean, suspended?: boolean } = {}): Promise<{
+async function setup (options: { windowless?: boolean, suspended?: boolean, appTab?: boolean } = {}): Promise<{
   contents: WebContents & EventEmitter
   service: ShortcutService
   run: ReturnType<typeof vi.fn>
@@ -29,7 +45,7 @@ async function setup (options: { windowless?: boolean, suspended?: boolean } = {
   const contents = new EventEmitter() as WebContents & EventEmitter
   const run = vi.fn()
   const recorded = vi.fn()
-  const resolved = options.windowless === true ? null : { suspended: options.suspended === true, run }
+  const resolved = options.windowless === true ? null : { suspended: options.suspended === true, isAppTab: options.appTab === true, run }
   attachShortcuts(contents, service, { windowFor: () => resolved, recorded })
   return {
     contents, service, run, recorded,
@@ -49,6 +65,16 @@ describe('attachShortcuts', () => {
 
     expect(run).toHaveBeenCalledExactlyOnceWith('tab.new')
     expect(event.preventDefault).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves the chord of a reserved command to the page until its feature lands', async () => {
+    feature.reserved = 'tab.search'
+    const { press, run } = await setup()
+
+    const event = press(key('A', 'KeyA', { control: true, shift: true }))
+
+    expect(run).not.toHaveBeenCalled()
+    expect(event.preventDefault).not.toHaveBeenCalled()
   })
 
   it('leaves alone a key that is bound to nothing, a key release, a modifier on its own, and composition', async () => {
@@ -83,6 +109,37 @@ describe('attachShortcuts', () => {
 
     expect(run).not.toHaveBeenCalled()
     expect(event.preventDefault).not.toHaveBeenCalled()
+  })
+
+  it('leaves a yielding key to a registered app\'s tab: the app gets it, unhandled', async () => {
+    feature.landed = true
+    const { press, run } = await setup({ appTab: true })
+
+    const find = press(key('f', 'KeyF', { control: true }))
+    const nextFind = press(key('F3', 'F3'))
+
+    expect(run).not.toHaveBeenCalled()
+    expect(find.preventDefault).not.toHaveBeenCalled()
+    expect(nextFind.preventDefault).not.toHaveBeenCalled()
+  })
+
+  it('still runs a browser key in an app tab when the command does not yield', async () => {
+    const { press, run } = await setup({ appTab: true })
+
+    const event = press(key('t', 'KeyT', { control: true }))
+
+    expect(run).toHaveBeenCalledExactlyOnceWith('tab.new')
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)
+  })
+
+  it('runs a yielding key in an ordinary tab', async () => {
+    feature.landed = true
+    const { press, run } = await setup()
+
+    const event = press(key('f', 'KeyF', { control: true }))
+
+    expect(run).toHaveBeenCalledExactlyOnceWith('find.open')
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)
   })
 
   it('does nothing for a view in no window', async () => {

@@ -49,6 +49,7 @@ function actions (overrides: Partial<ShellActions> = {}): ShellActions {
     runCommand: vi.fn(),
     openMenu: vi.fn(),
     prewarmMenu: vi.fn(),
+    act: vi.fn(),
     beginTabDrag: vi.fn(),
     dragTab: vi.fn(),
     dropTab: vi.fn(),
@@ -322,5 +323,25 @@ describe('registerShellIpc -- a manual window move', () => {
 
     expect(windowMoveCancel).toHaveBeenCalledOnce()
     expect(windowMoveEnd).not.toHaveBeenCalled()
+  })
+})
+
+describe('registerShellIpc -- act', () => {
+  it('hands the name and payload to the actions and returns what they answer', async () => {
+    const act = vi.fn(() => 'answer')
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ act }))
+
+    expect(await dispatch({ type: 'act', name: 'overlay.close', payload: { name: 'menu' } })).toBe('answer')
+
+    expect(act).toHaveBeenCalledWith('overlay.close', { name: 'menu' })
+  })
+
+  it('refuses a sender that is not the chrome view', async () => {
+    const act = vi.fn()
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ act }))
+
+    await dispatch({ type: 'act', name: 'overlay.close', payload: { name: 'menu' } }, OTHER_FRAME)
+
+    expect(act).not.toHaveBeenCalled()
   })
 })

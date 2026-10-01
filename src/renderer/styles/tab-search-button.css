@@ -1,0 +1,16 @@
+/* The button at the tab strip's right end that opens tab search. It looks like the new-tab button and sits after
+   the scrolling run of tabs, so it is always in view. */
+.tab-search-btn {
+  flex: none;
+  align-self: flex-end;
+  width: 28px;
+  height: 28px;
+  margin: 0 0 5px 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--wink-dim);
+}
+.tab-search-btn svg { width: 16px; height: 16px; }
+.tab-search-btn:hover { color: var(--wink); background: var(--whover-strong); }

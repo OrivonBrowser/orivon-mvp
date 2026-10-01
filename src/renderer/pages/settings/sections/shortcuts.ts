@@ -1,7 +1,7 @@
 import type { Row, Section } from '../model.js'
 import type { ShortcutRow } from '../shortcuts-state.js'
 
-const GROUPS: Readonly<Record<string, string>> = { tabs: 'Tabs', navigation: 'Pages', window: 'Windows' }
+const GROUPS: Readonly<Record<string, string>> = { tabs: 'Tabs', navigation: 'Pages', tools: 'Page tools', window: 'Windows' }
 
 function rowFor (shortcut: ShortcutRow): Row {
   return {
