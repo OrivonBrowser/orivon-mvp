@@ -9,6 +9,8 @@ export function setPinned (tabs: TabManager, id: string, on: boolean): boolean {
   if (record === undefined || (record.pinned === true) === on) return false
   if (on && tabs.splits.groups.partnerOf(id) !== null) return false
   record.pinned = on
+  // A pinned tab is never in a group: pinning leaves it.
+  if (on) record.groupId = null
   const rest = tabs.ids().filter((other) => other !== id)
   tabs.moveTab(id, rest.filter((other) => tabs.record(other)?.pinned === true).length)
   tabs.changed()

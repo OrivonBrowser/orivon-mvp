@@ -5,6 +5,7 @@
 import { contain } from './contain.js'
 import { bookmarkedStatePart } from './bookmarks-bar/bar-state.js'
 import { addressBarStatePart } from './state/address-bar.js'
+import { groupsStatePart } from './state/groups.js'
 import { homeStatePart } from './state/home.js'
 import { shortcutsStatePart } from './state/shortcuts.js'
 import type { ShellState, TabsSnapshot } from './tab-types.js'
@@ -22,6 +23,7 @@ export interface ShellStatePart {
 export const SHELL_STATE_PARTS: readonly ShellStatePart[] = [
   addressBarStatePart,
   bookmarkedStatePart,
+  groupsStatePart,
   homeStatePart,
   shortcutsStatePart
 ]

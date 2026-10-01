@@ -22,7 +22,11 @@ export type MenuEntry = '-' | CommandId
 
 /** Commands that do nothing on some pages; the menu greys their row there. */
 const UNAVAILABLE: Partial<Record<CommandId, (ctx: WindowContext) => boolean>> = {
-  'page.qr': ({ window }) => !qrAvailable(window)
+  'page.qr': ({ window }) => !qrAvailable(window),
+  'tab.ungroup': ({ window }) => {
+    const { tabs, activeTabId } = window.tabs.getState()
+    return (tabs.find((tab) => tab.id === activeTabId)?.group ?? null) === null
+  }
 }
 
 export const MENU_LAYOUT: readonly MenuEntry[] = [
@@ -55,6 +59,8 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
   { submenu: 'More tools', items: [
     'split.toggle',
     'tab.search',
+    'tab.group',
+    'tab.ungroup',
     'page.screenshot',
     'page.pip',
     'page.pdf',

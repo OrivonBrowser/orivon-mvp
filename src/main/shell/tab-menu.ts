@@ -21,6 +21,10 @@ export interface TabMenuModel {
   readonly inSplit: boolean
   /** The tabs it could be split with, that are not in a split already. */
   readonly splitPartners: ReadonlyArray<{ readonly label: string, readonly split: () => void }>
+  /** The tab is in a group. */
+  readonly grouped: boolean
+  /** The groups it could join: every group of the window but its own. */
+  readonly groups: ReadonlyArray<{ readonly label: string, readonly join: () => void }>
   /** The other windows of this process a tab can go to. */
   readonly otherWindows: ReadonlyArray<{ readonly label: string, readonly move: () => void }>
 }
@@ -31,6 +35,8 @@ export interface TabMenuActions {
   duplicate: () => void
   togglePin: () => void
   toggleMute: () => void
+  newGroup: () => void
+  ungroup: () => void
   moveToNewWindow: () => void
   separate: () => void
   close: () => void
@@ -51,6 +57,11 @@ export function tabMenuTemplate (model: TabMenuModel, actions: TabMenuActions): 
   const split: MenuItemConstructorOptions[] = model.inSplit
     ? [{ label: 'Separate Tabs', click: actions.separate }]
     : [{ label: 'Split with', enabled: model.splitPartners.length > 0, submenu: model.splitPartners.map((partner) => ({ label: partner.label, click: partner.split })) }]
+  const group: MenuItemConstructorOptions[] = [{ label: 'Add Tab to New Group', click: actions.newGroup }]
+  if (model.groups.length > 0) {
+    group.push({ label: 'Add Tab to Group', submenu: model.groups.map((other) => ({ label: other.label, click: other.join })) })
+  }
+  if (model.grouped) group.push({ label: 'Remove from Group', click: actions.ungroup })
   return [
     { label: 'New Tab to the Right', click: actions.newTabRight },
     { type: 'separator' },
@@ -58,6 +69,8 @@ export function tabMenuTemplate (model: TabMenuModel, actions: TabMenuActions): 
     { label: 'Duplicate', enabled: model.canDuplicate, click: actions.duplicate },
     { label: model.pinned ? 'Unpin Tab' : 'Pin Tab', enabled: model.pinned || model.canPin, click: actions.togglePin },
     { label: model.muted ? 'Unmute Tab' : 'Mute Tab', click: actions.toggleMute },
+    { type: 'separator' },
+    ...group,
     { type: 'separator' },
     ...split,
     { type: 'separator' },

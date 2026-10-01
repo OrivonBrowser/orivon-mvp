@@ -29,7 +29,10 @@ const ROWS: ReadonlyArray<[id: string, label: string, category: string, binding:
 ]
 
 // Rows whose feature has landed: they run something now, so they carry no pending flag. One id a line.
-const LANDED: readonly string[] = []
+const LANDED: readonly string[] = [
+  'tab.group',
+  'tab.ungroup'
+]
 
 const commandsIn = (entries: readonly MenuEntry[]): string[] => entries.flatMap((entry): string[] => {
   if (entry === '-') return []
@@ -74,8 +77,8 @@ describe('the layout, reading and accessibility command rows', () => {
 
   it('lists the guest window, and in More tools the reader, the side panel, the dark-mode tick and sleep, in the layout', () => {
     const inMenu = commandsIn(MENU_LAYOUT)
-    for (const id of ['window.newGuest', 'page.reader', 'sidePanel.toggle', 'page.forceDark', 'tab.sleep']) expect(inMenu, id).toContain(id)
-    for (const id of ['focus.nextPane', 'focus.previousPane', 'caret.toggle', 'tab.group', 'tab.ungroup']) expect(inMenu, id).not.toContain(id)
+    for (const id of ['window.newGuest', 'page.reader', 'sidePanel.toggle', 'page.forceDark', 'tab.sleep', 'tab.group', 'tab.ungroup']) expect(inMenu, id).toContain(id)
+    for (const id of ['focus.nextPane', 'focus.previousPane', 'caret.toggle']) expect(inMenu, id).not.toContain(id)
   })
 })
 
@@ -90,7 +93,7 @@ describe('the main menu while those commands are pending', () => {
     const ctx = {
       window: {
         window: { isAlwaysOnTop: () => false },
-        tabs: { getState: () => ({ tabs: [{ id: 'a', url: 'https://a.example/', displayUrl: 'https://a.example/', isNewTab: false, isInternal: false }], activeTabId: 'a' }) }
+        tabs: { getState: () => ({ tabs: [{ id: 'a', url: 'https://a.example/', displayUrl: 'https://a.example/', isNewTab: false, isInternal: false, group: 'g-1' }], activeTabId: 'a' }) }
       },
       services: { shortcuts: new ShortcutService(store, 'linux'), closedTabs: new ClosedStack(), settings: { get: () => 'auto' }, bookmarks: { children: () => [] }, zoom: { percentFor: () => 100 } }
     } as unknown as WindowContext
