@@ -1,0 +1,27 @@
+/* The keyboard focus ring of the chrome: one 2px accent line drawn inside the control, so it is never clipped by the
+   strip or the toolbar. A tab and a group chip are not buttons, so style.css's rule for buttons does not reach them.
+   `--wfocus-width` lets a later setting thicken the ring for everyone. The dark theme lifts the accent toward white:
+   the plain accent is about 2:1 on the dark chrome, the lifted one over 5:1. */
+
+:root { --wfocus: var(--waccent); }
+@media (prefers-color-scheme: dark) {
+  :root { --wfocus: color-mix(in srgb, var(--waccent) 55%, white); }
+}
+
+.tab:focus-visible,
+.tab-group-chip:focus-visible {
+  outline: var(--wfocus-width, 2px) solid var(--wfocus);
+  outline-offset: -2px;
+}
+/* A click focuses a tab too, and shows nothing. */
+.tab:focus:not(:focus-visible) { outline: none; }
+
+/* Read by a screen reader, never drawn: where the keyboard went. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+}

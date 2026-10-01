@@ -23,6 +23,8 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 | `bookmarks-bar.ts` | the row under the toolbar: the bar's items, folder menus, the overflow button, the right-click menu |
 | `bar-overflow.ts` | pure: which items fit, where an arrow key goes, what an event from main is worth |
 | `bar-drag.ts` | drag to reorder the bar, or to file an item in a folder |
+| `panes.ts` | the chrome's four parts as keyboard panes (F6 steps through them, main takes over past either end), the toolbar's and strip's single Tab stop, Escape back to the page, the screen-reader announcement; a module and a `TabDecorator` |
+| `roving.ts`, `roving-dom.ts` | pure: where an arrow, Home or End key moves in a row that shares one Tab stop; and the keydown wiring and stop bookkeeping over a container |
 | `toolbar-button.ts` | `ctx.toolbarButton(...)`: a button in one of the three toolbar slots |
 
 **Adding a feature.** A file here with a `create<Feature>(): ChromeModule`, one line in
@@ -41,7 +43,8 @@ types only, `src/preload/shell.ts` and the main-side state types.
 ## Design notes
 
 **The strip is rebuilt on every push,** so a `TabDecorator` re-adds what it draws each time, and
-anything transient lives outside `.tab`.
+anything transient lives outside `.tab`. The strip's keys are heard on `#tabrow` by delegation, and
+the focused tab is found again by its id after a rebuild.
 
 **Modules keep their DOM in the factory's closure, not at module scope,** so importing a module
 touches no `document` and a unit test can load the registry in Node.
