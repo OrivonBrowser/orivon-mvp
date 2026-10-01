@@ -1,6 +1,7 @@
 import { actionSettingsApi } from './action-settings.js'
 import { bookmarksApi } from './bookmarks.js'
 import { commandsApi } from './commands.js'
+import { declarativeNetRequestApi } from './declarative-net-request.js'
 import { historyApi } from './history.js'
 import { permissionsApi } from './permissions.js'
 import { searchApi } from './search.js'
@@ -27,6 +28,7 @@ export const EXTENSION_MAIN_WORLD_APIS: ReadonlyArray<() => void> = [
   actionSettingsApi,
   bookmarksApi,
   commandsApi,
+  declarativeNetRequestApi,
   historyApi,
   permissionsApi,
   searchApi,

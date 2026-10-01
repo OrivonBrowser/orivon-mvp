@@ -11,7 +11,22 @@
     "testMatchOutcome": "function",
     "updateDynamicRules": "function",
     "updateEnabledRulesets": "function",
-    "updateSessionRules": "function"
+    "updateSessionRules": "function",
+    "DYNAMIC_RULESET_ID": "string",
+    "SESSION_RULESET_ID": "string",
+    "GUARANTEED_MINIMUM_STATIC_RULES": "number",
+    "MAX_NUMBER_OF_STATIC_RULESETS": "number",
+    "MAX_NUMBER_OF_ENABLED_STATIC_RULESETS": "number",
+    "MAX_NUMBER_OF_DISABLED_STATIC_RULES": "number",
+    "MAX_NUMBER_OF_DYNAMIC_RULES": "number",
+    "MAX_NUMBER_OF_SESSION_RULES": "number",
+    "MAX_NUMBER_OF_REGEX_RULES": "number",
+    "ResourceType": "object",
+    "RuleActionType": "object",
+    "RequestMethod": "object",
+    "DomainType": "object",
+    "HeaderOperation": "object",
+    "RuleConditionKeys": "object"
   },
   "page": {
     "getAvailableStaticRuleCount": "function",
@@ -25,6 +40,21 @@
     "testMatchOutcome": "function",
     "updateDynamicRules": "function",
     "updateEnabledRulesets": "function",
-    "updateSessionRules": "function"
+    "updateSessionRules": "function",
+    "DYNAMIC_RULESET_ID": "string",
+    "SESSION_RULESET_ID": "string",
+    "GUARANTEED_MINIMUM_STATIC_RULES": "number",
+    "MAX_NUMBER_OF_STATIC_RULESETS": "number",
+    "MAX_NUMBER_OF_ENABLED_STATIC_RULESETS": "number",
+    "MAX_NUMBER_OF_DISABLED_STATIC_RULES": "number",
+    "MAX_NUMBER_OF_DYNAMIC_RULES": "number",
+    "MAX_NUMBER_OF_SESSION_RULES": "number",
+    "MAX_NUMBER_OF_REGEX_RULES": "number",
+    "ResourceType": "object",
+    "RuleActionType": "object",
+    "RequestMethod": "object",
+    "DomainType": "object",
+    "HeaderOperation": "object",
+    "RuleConditionKeys": "object"
   }
 }
