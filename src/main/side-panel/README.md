@@ -1,7 +1,7 @@
 # `src/main/side-panel/`: the side panel docked beside the page
 
 **What lives here.** A column beside the page, below the toolbar, on either side of the window, that lists
-bookmarks, history, the reading list and downloads while the person browses, and holds one view an extension
+bookmarks, history, a reading list that nothing fills yet and downloads while the person browses, and holds one view an extension
 supplies. The panel's own page is the `side-panel` overlay (a dock, see [`../overlays/`](../overlays/));
 the page area shrinks by the panel's width, in `tabBounds()` of [`../shell/window-layout.ts`](../shell/window-layout.ts).
 

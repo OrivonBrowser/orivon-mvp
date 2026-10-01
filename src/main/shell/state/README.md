@@ -2,7 +2,8 @@
 
 **What lives here.** One `ShellStatePart` per field a feature adds to `ShellState`, the object main pushes to the
 chrome view: `home.ts` (whether the toolbar shows the Home button, live with its setting) and `shortcuts.ts` (the
-bindings the chrome names in tooltips, live with the Shortcuts settings). Each is listed in
+bindings the chrome names in tooltips, live with the Shortcuts settings), `groups.ts` (each window's tab groups) and
+`side-panel.ts` (whether the panel is open, on which side, and the narrowest window that has one). Each is listed in
 [`../shell-state-parts.ts`](../shell-state-parts.ts), which reads every part on each push and unsubscribes its
 watchers when the window closes.
 
