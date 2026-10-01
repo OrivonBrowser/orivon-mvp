@@ -195,7 +195,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   const entry: ShellWindow = { window: win, chrome, tabs, overlays, shortcutsSuspended: () => fullscreen.tabId !== null }
 
   const context: WindowContext = { window: entry, services }
-  const panels = createWindowPanels({ ctx, win, services, tabs, overlays, chromeHeight, dirname: import.meta.dirname })
+  const panels = createWindowPanels({ ctx, win, services, tabs, overlays, dirname: import.meta.dirname })
   const windowState = createWindowState({
     win, chrome, tabs, services, context, fullscreen,
     layout: { chromeHeight, layoutChrome, tabBounds },
@@ -236,7 +236,6 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     services,
     panels,
     closeOverlays: overlays.closeOverlays,
-    memory: panels.memory,
     openWindow: (options) => { createShellWindow(ctx, services, options) },
     topHeight: CHROME_TOP_ROWS,
     area: tabBounds

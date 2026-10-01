@@ -14,6 +14,7 @@ import type { Attention } from '../downloads/download-attention.js'
 import type { TabLifecycle } from './tab-lifecycle.js'
 import type { ShellServices } from './shell-services.js'
 import type { CommandId } from '../shortcuts/commands.js'
+import type { SiteKind } from '../site-settings/kinds.js'
 
 export interface TabState {
   id: string
@@ -56,6 +57,8 @@ export interface TabState {
   pinned: boolean
   /** The page's sound is switched off. */
   muted: boolean
+  /** The page's site is set to be silent and the page is making sound: the mute is the site's, not the tab's. Absent when not. */
+  siteMuted?: boolean
   /** The page is making sound now. */
   audible: boolean
   /** Why the page's renderer died (`render-process-gone`'s reason), or null while it lives. */
@@ -90,6 +93,12 @@ export interface ShellState extends TabsSnapshot {
   bookmarksBar: boolean
   /** The active page's zoom, when it differs from what a site gets by default; otherwise null. */
   zoomPercent: number | null
+  /** What the active page was asked for and the answer it got, for the address bar's chip; empty when nothing was. */
+  siteAccess: ReadonlyArray<{ readonly kind: SiteKind, readonly state: 'allowed' | 'blocked', readonly label: string }>
+  /** How many windows the active page tried to open and was refused, for the pop-up chip. */
+  popupsBlocked: number
+  /** Whether the active page's site has JavaScript, images or sound switched off, for the mark on the address bar's key. */
+  contentBlocked: boolean
   /** Which profile this window is, for the chip beside the menu. */
   profile: { name: string, color: string, isPrivate: boolean, shown: boolean }
   /** The downloads button: whether it shows, its ring and its dot (`toolbar.downloads`). */
@@ -100,6 +109,8 @@ export interface ShellState extends TabsSnapshot {
   showFullUrl: boolean
   /** The key caps bound to the commands the chrome names in a tooltip, or null when one is cleared. */
   shortcutKeys: { readonly 'nav.home': readonly string[] | null, readonly 'tab.search': readonly string[] | null }
+  /** What the active tab's sign-in form can use, for the address bar's password button (src/main/passwords/). */
+  logins: { readonly count: number, readonly offer: boolean, readonly signUp: boolean }
 }
 
 export interface Bounds {

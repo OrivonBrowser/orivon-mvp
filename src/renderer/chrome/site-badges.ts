@@ -24,6 +24,7 @@ export function createSiteBadges (): ChromeModule {
   let shieldRequestUrl: string | null = null
   let shieldOrigin: string | null = null
   let permissionsRequestUrl: string | null = null
+  let connectionSecure = false
 
   function applyShield (score: Web3Score | null): void {
     if (shieldEl === undefined || web3ScoreBtn === undefined || web3MarkEl === undefined) return
@@ -64,7 +65,8 @@ export function createSiteBadges (): ChromeModule {
     if (sitePermissionsBtn === undefined) return
     sitePermissionsBtn.hidden = !summary.asked
     sitePermissionsBtn.classList.toggle('has-warning', summary.warning)
-    const label = summary.warning ? 'Permissions — this site has an unlimited grant' : 'Permissions'
+    const permissions = summary.warning ? 'Permissions — this site has an unlimited grant' : 'Permissions'
+    const label = connectionSecure ? `${permissions}. Connection is secure` : permissions
     sitePermissionsBtn.title = label
     sitePermissionsBtn.setAttribute('aria-label', label)
   }
@@ -73,6 +75,7 @@ export function createSiteBadges (): ChromeModule {
   function updatePermissionsBadge (active: TabState | undefined, ctx: ChromeContext): void {
     const url = hasSite(active) ? active.url : null
     permissionsRequestUrl = url
+    connectionSecure = active?.connection === 'secure'
     if (url === null) {
       applyPermissionsBadge({ asked: false, warning: false })
       return

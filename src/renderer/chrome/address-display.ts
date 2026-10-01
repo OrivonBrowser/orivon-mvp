@@ -1,19 +1,16 @@
 import type { TabState } from '../../main/shell/tabs.js'
 import type { ShellState } from '../../main/shell/tabs.js'
 import { h } from '../pages/shared/dom.js'
-import { lockIcon, warningIcon } from '../pages/shared/icons.js'
+import { warningIcon } from '../pages/shared/icons.js'
 import { formatAddress } from './address-format.js'
 import type { ChromeContext, ChromeModule } from './context.js'
 import { must } from './context.js'
 
-const SECURE_TITLE = 'Connection is secure'
 const INSECURE_TITLE = 'This site does not use a secure connection. Do not enter passwords or card numbers.'
 
-/** The connection mark, or nothing: a lock only for live https, a warning only for plain http to a public host. */
+/** The connection mark, or nothing: a warning only for plain http to a public host. A secure connection is not drawn as
+ * a third glyph beside the shield and the site button: the site button's title says it, and so does its popover. */
 function markFor (tab: TabState): HTMLElement | undefined {
-  if (tab.connection === 'secure') {
-    return h('span', { className: 'address-mark secure', title: SECURE_TITLE, role: 'img', ariaLabel: SECURE_TITLE }, lockIcon())
-  }
   if (tab.connection === 'insecure') {
     return h('span', { className: 'address-mark insecure', title: INSECURE_TITLE, ariaLabel: `Not secure. ${INSECURE_TITLE}` },
       warningIcon(), h('span', { className: 'address-mark-label', ariaHidden: 'true' }, 'Not secure'))

@@ -1,6 +1,9 @@
 @import '../shared/tokens.css';
 @import '../shared/controls.css';
 @import './controls/page-list.css';
+@import './passwords/passwords.css';
+@import './site-data/site-data.css';
+@import './sites/sites.css';
 @import './engines.css';
 
 .layout { display: flex; height: 100vh; }
@@ -188,3 +191,23 @@ kbd {
 .muted { color: var(--wink-dim); font-size: 13px; }
 .also { display: inline-flex; align-items: center; gap: 6px; }
 .listening { color: var(--waccent-text); font-weight: 500; }
+
+.row-control > .muted { text-align: right; }
+.default-browser { display: inline-flex; align-items: center; gap: 8px; color: var(--wink); font-weight: 500; }
+.default-browser .icon { flex: none; width: 16px; height: 16px; color: var(--wok); }
+.default-browser-problem { display: grid; gap: 6px; margin-top: 6px; }
+.default-browser-problem .problem, .default-browser-problem .row-help { margin: 0; }
+.command-line { display: flex; align-items: center; gap: 8px; }
+.command-line code {
+  min-width: 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--wsurface);
+  color: var(--wink);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.row-text > .problem { margin-top: 6px; }
+.row.wide .banner { display: flex; flex: 1; align-items: center; justify-content: space-between; gap: 12px; }
+.row.wide .banner[hidden] { display: none; }

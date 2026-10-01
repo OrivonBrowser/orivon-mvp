@@ -17,6 +17,15 @@ afterEach(() => {
 })
 
 describe('NotificationDecisions', () => {
+  it('keeps answers in memory only when it has no path, for a private session', () => {
+    const decisions = new NotificationDecisions(null)
+    decisions.set('https://chat.example', 'allow')
+    expect(decisions.get('https://chat.example')).toBe('allow')
+    decisions.forget('https://chat.example')
+    expect(decisions.entries()).toEqual([])
+    expect(readdirSync(dir)).toEqual([])
+  })
+
   it('has no decision for an origin nobody was asked about, and creates no file for it', () => {
     const decisions = new NotificationDecisions(path)
     expect(decisions.get('https://example.com')).toBeUndefined()
@@ -42,6 +51,34 @@ describe('NotificationDecisions', () => {
     const second = new NotificationDecisions(path)
     expect(second.get('https://ads.example')).toBeUndefined()
     expect(second.entries()).toEqual([{ origin: 'https://chat.example', decision: 'allow' }])
+  })
+
+  it('tells a listener when an answer is set, forgotten or cleared, and not when nothing changed', () => {
+    const decisions = new NotificationDecisions(path)
+    const listener = vi.fn()
+    const off = decisions.onChange(listener)
+    decisions.set('https://chat.example', 'allow')
+    decisions.set('https://chat.example', 'allow')
+    decisions.forget('https://nobody.example')
+    expect(listener).toHaveBeenCalledTimes(1)
+    decisions.forget('https://chat.example')
+    expect(listener).toHaveBeenCalledTimes(2)
+    decisions.set('https://a.example', 'block')
+    decisions.clear()
+    decisions.clear()
+    expect(listener).toHaveBeenCalledTimes(4)
+    off()
+    decisions.set('https://b.example', 'allow')
+    expect(listener).toHaveBeenCalledTimes(4)
+  })
+
+  it('forgets every answer, on disk too', () => {
+    const first = new NotificationDecisions(path)
+    first.set('https://chat.example', 'allow')
+    first.set('https://ads.example', 'block')
+    first.clear()
+    expect(first.entries()).toEqual([])
+    expect(new NotificationDecisions(path).entries()).toEqual([])
   })
 
   it('leaves no temporary file behind after a write', () => {

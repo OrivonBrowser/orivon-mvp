@@ -46,16 +46,18 @@ vi.mock('electron', () => ({
 const WINDOW = vi.hoisted(() => ({ id: 'window' }))
 const shell = vi.hoisted(() => ({
   confirmExternalLink: vi.fn(async (): Promise<boolean> => false),
-  askNotificationPermission: vi.fn(async (): Promise<'allow' | 'block' | 'dismiss'> => 'dismiss'),
+  askSite: vi.fn(async (_kinds: readonly string[], _tab: object): Promise<'allow' | 'block' | 'dismiss'> => 'dismiss'),
   windowShowing: vi.fn((): object | undefined => WINDOW),
   noteExclusiveAccess: vi.fn()
 }))
 vi.mock('../../shell/external-link-prompt.js', () => ({ confirmExternalLink: shell.confirmExternalLink }))
-vi.mock('../../shell/notification-prompt.js', () => ({ askNotificationPermission: shell.askNotificationPermission }))
+vi.mock('../../site-settings/ask-site.js', () => ({ askSite: shell.askSite }))
 vi.mock('../../shell/showing-window.js', () => ({ windowShowing: shell.windowShowing }))
 vi.mock('../../shell/exclusive-access-notice.js', () => ({ noteExclusiveAccess: shell.noteExclusiveAccess }))
 
-const { permissionGateSubsystem } = await import('../permission-gate.js')
+const { permissionGateSubsystem, setNotificationsBlockedCheck } = await import('../permission-gate.js')
+const { ALLOWED_PERMISSIONS } = await import('../allowed-permissions.js')
+const { siteAsks } = await import('../site-asks.js')
 
 // Electron's full permission vocabulary, merged from BOTH handler
 // signatures (session.md's own two lists differ slightly: 'display-
@@ -74,9 +76,10 @@ const ALL_PERMISSIONS = [
   'automatic-fullscreen', 'web-app-installation'
 ]
 
-/** The gate's allowlist, restated here rather than imported: a test that
- * read the same constant the implementation does would agree with it
- * however it changed, which is the one thing this file exists to stop.
+/** The gate's allowlist, restated here rather than read back from the
+ * implementation: a test that read the same constant the implementation does
+ * would agree with it however it changed, which is the one thing this file
+ * exists to stop. One case below pins the imported set to this list.
  * `fileSystem` is absent on purpose: it is allowed only with details naming
  * one file, which the matrix below never sends, and has its own cases. */
 const ALLOWED = ['clipboard-sanitized-write', 'fullscreen', 'pointerLock', 'keyboardLock']
@@ -85,6 +88,11 @@ const ALLOWED = ['clipboard-sanitized-write', 'fullscreen', 'pointerLock', 'keyb
  * their request handler waits on a dialog, so the synchronous matrix below
  * leaves them to their own cases. */
 const ASKED = ['openExternal', 'notifications']
+
+/** The names a per-site asker owns (`site-asks.ts`), restated here: `site-settings/electron-names.ts` is pinned to
+ * this list below. The matrix leaves them to the asker's own cases, since an asker answers them and the gate's own
+ * rules would not. */
+const ASKED_PER_SITE: string[] = ['media', 'clipboard-read', 'deprecated-sync-clipboard-read', 'geolocation', 'midi', 'midiSysex', 'idle-detection', 'window-management']
 
 // The details Electron passes for a File System Access operation, measured
 // against a real page: every read and write reaches the check handler with
@@ -95,7 +103,7 @@ const ACCESS_TYPES = ['readable', 'writable'] as const
 
 /** Every name that must still deny -- derived, so a permission added to
  * ALL_PERMISSIONS is covered without anyone remembering to list it. */
-const DENIED_PERMISSIONS = ALL_PERMISSIONS.filter((p) => !ALLOWED.includes(p) && !ASKED.includes(p))
+const DENIED_PERMISSIONS = ALL_PERMISSIONS.filter((p) => !ALLOWED.includes(p) && !ASKED.includes(p) && !ASKED_PER_SITE.includes(p))
 
 /** Asserts the whole matrix for one session: the allowlist is granted on
  * both handlers, everything else is refused on both, and no device
@@ -154,6 +162,10 @@ describe('permissionGateSubsystem', () => {
     expect(permissionGateSubsystem.critical).toBe(true)
   })
 
+  it('allows outright exactly the names this file lists, in the module the gate reads', () => {
+    expect([...ALLOWED_PERMISSIONS].sort()).toEqual([...ALLOWED].sort())
+  })
+
   it('denies every Electron permission but the allowlist on session.defaultSession', () => {
     permissionGateSubsystem.beforeReady?.()
     // afterReady takes a SubsystemContext, but this subsystem reads
@@ -186,7 +198,7 @@ describe('permissionGateSubsystem', () => {
     void permissionGateSubsystem.afterReady?.({} as never)
 
     const handlers = installedHandlers(fakeDefaultSession)
-    const granted = ALL_PERMISSIONS.filter((permission) => handlers.request(permission) || handlers.check(permission))
+    const granted = ALL_PERMISSIONS.filter((permission) => !ASKED_PER_SITE.includes(permission) && (handlers.request(permission) || handlers.check(permission)))
     expect(granted).toEqual(['clipboard-sanitized-write', 'fullscreen', 'pointerLock', 'keyboardLock'])
   })
 
@@ -240,7 +252,7 @@ describe('permissionGateSubsystem', () => {
 
     const handlers = installedHandlers(fakeDefaultSession)
     const details = { ...FILE, fileAccessType: 'writable' }
-    const granted = ALL_PERMISSIONS.filter((permission) => handlers.request(permission, details) || handlers.check(permission, details))
+    const granted = ALL_PERMISSIONS.filter((permission) => !ASKED_PER_SITE.includes(permission) && (handlers.request(permission, details) || handlers.check(permission, details)))
     expect(granted).toEqual(['clipboard-sanitized-write', 'fullscreen', 'pointerLock', 'keyboardLock', 'fileSystem'])
   })
 
@@ -330,20 +342,21 @@ describe('permissionGateSubsystem', () => {
     const details = { requestingUrl: `${site}/room`, isMainFrame: true }
     expect(handlers.checkFrom('notifications', `${site}/`)).toBe(false)
 
-    shell.askNotificationPermission.mockClear()
-    shell.askNotificationPermission.mockResolvedValueOnce('allow')
-    expect(await handlers.ask(fakeTab(`${site}/room`), 'notifications', details)).toBe(true)
-    expect(shell.askNotificationPermission).toHaveBeenCalledWith(WINDOW, site)
+    shell.askSite.mockClear()
+    shell.askSite.mockResolvedValueOnce('allow')
+    const tab = fakeTab(`${site}/room`)
+    expect(await handlers.ask(tab, 'notifications', details)).toBe(true)
+    expect(shell.askSite).toHaveBeenCalledWith(['notifications'], tab)
     expect(handlers.checkFrom('notifications', `${site}/`, { embeddingOrigin: `${site}/` })).toBe(true)
 
     expect(await handlers.ask(fakeTab(`${site}/room`), 'notifications', details)).toBe(true)
-    expect(shell.askNotificationPermission).toHaveBeenCalledTimes(1)
+    expect(shell.askSite).toHaveBeenCalledTimes(1)
   })
 
   it('remembers a block, on every session, and the check agrees', async () => {
     const handlers = defaultSessionHandlers()
     const site = 'https://ads.example'
-    shell.askNotificationPermission.mockResolvedValueOnce('block')
+    shell.askSite.mockResolvedValueOnce('block')
     expect(await handlers.ask(fakeTab(`${site}/`), 'notifications', { requestingUrl: `${site}/`, isMainFrame: true })).toBe(false)
 
     const partitionSession = makeFakeSession()
@@ -355,9 +368,81 @@ describe('permissionGateSubsystem', () => {
 
   it('answers from a decision made on an earlier run, read from the profile', async () => {
     const handlers = defaultSessionHandlers()
-    shell.askNotificationPermission.mockClear()
+    shell.askSite.mockClear()
     expect(handlers.checkFrom('notifications', `${REMEMBERED_SITE}/`)).toBe(true)
     expect(await handlers.ask(fakeTab(`${REMEMBERED_SITE}/`), 'notifications', { requestingUrl: `${REMEMBERED_SITE}/`, isMainFrame: true })).toBe(true)
-    expect(shell.askNotificationPermission).not.toHaveBeenCalled()
+    expect(shell.askSite).not.toHaveBeenCalled()
+  })
+
+  it('refuses a site with no answer of its own, without asking, while sites.notifications is block', async () => {
+    const handlers = defaultSessionHandlers()
+    shell.askSite.mockClear()
+    setNotificationsBlockedCheck(() => true)
+    try {
+      expect(await handlers.ask(fakeTab('https://new.example/'), 'notifications', { requestingUrl: 'https://new.example/', isMainFrame: true })).toBe(false)
+      expect(shell.askSite).not.toHaveBeenCalled()
+      // A site the person already allowed keeps its answer: the default only governs sites with none.
+      expect(await handlers.ask(fakeTab(`${REMEMBERED_SITE}/`), 'notifications', { requestingUrl: `${REMEMBERED_SITE}/`, isMainFrame: true })).toBe(true)
+    } finally {
+      setNotificationsBlockedCheck(() => false)
+    }
+  })
+
+  describe('per-site askers', () => {
+    it('asks the registry first on both handlers, and uses its answer when it gives one', async () => {
+      const handlers = defaultSessionHandlers()
+      const request = vi.spyOn(siteAsks, 'request').mockReturnValue(Promise.resolve(true))
+      const check = vi.spyOn(siteAsks, 'check').mockReturnValue(true)
+      try {
+        const contents = fakeTab()
+        expect(await handlers.ask(contents, 'geolocation', { requestingUrl: 'https://a.example/' })).toBe(true)
+        expect(request).toHaveBeenCalledWith(contents, 'geolocation', { requestingUrl: 'https://a.example/' })
+        expect(handlers.check('geolocation')).toBe(true)
+        expect(check).toHaveBeenCalledWith({}, 'geolocation', 'https://example.com', {})
+      } finally {
+        request.mockRestore()
+        check.mockRestore()
+      }
+    })
+
+    it('can refuse a name the allowlist passes, because the registry answers first', async () => {
+      const handlers = defaultSessionHandlers()
+      const request = vi.spyOn(siteAsks, 'request').mockReturnValue(Promise.resolve(false))
+      try {
+        expect(await handlers.ask(fakeTab(), 'fullscreen', {})).toBe(false)
+      } finally {
+        request.mockRestore()
+      }
+    })
+
+    it('falls through to its own rules when the registry has no answer', () => {
+      const handlers = defaultSessionHandlers()
+      const request = vi.spyOn(siteAsks, 'request').mockReturnValue(undefined)
+      const check = vi.spyOn(siteAsks, 'check').mockReturnValue(undefined)
+      try {
+        expect(handlers.request('fullscreen')).toBe(true)
+        expect(handlers.check('fullscreen')).toBe(true)
+        expect(handlers.request('geolocation')).toBe(false)
+        expect(handlers.check('geolocation')).toBe(false)
+      } finally {
+        request.mockRestore()
+        check.mockRestore()
+      }
+    })
+
+    it('leaves to the per-site asker exactly the names this file restates', async () => {
+      const { SITE_ASKED_PERMISSIONS } = await import('../../site-settings/electron-names.js')
+      expect([...SITE_ASKED_PERMISSIONS].sort()).toEqual([...ASKED_PER_SITE].sort())
+    })
+
+    it('answers a failed asker as a refusal of the request, never as an approval', async () => {
+      const handlers = defaultSessionHandlers()
+      const request = vi.spyOn(siteAsks, 'request').mockReturnValue(Promise.reject(new Error('prompt crashed')))
+      try {
+        expect(await handlers.ask(fakeTab(), 'geolocation', {})).toBe(false)
+      } finally {
+        request.mockRestore()
+      }
+    })
   })
 })

@@ -1,0 +1,15 @@
+/* The chooser sheet: a question, a list that scrolls when it is long, and the buttons below it. */
+
+body[data-overlay='chooser'] .chooser { padding: 16px 18px; }
+body[data-overlay='chooser'] .sheet-title { margin: 0; }
+body[data-overlay='chooser'] .origin { margin: 2px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body[data-overlay='chooser'] .chooser-line { margin: 4px 0 0; color: var(--wink-dim); }
+body[data-overlay='chooser'] .chooser-list { margin: 12px 0 16px; max-height: 240px; overflow-y: auto; }
+body[data-overlay='chooser'] .listbox { outline-offset: 2px; }
+body[data-overlay='chooser'] .listbox-item { padding: 8px 12px; }
+body[data-overlay='chooser'] .empty-state { margin: 8px 0 12px; }
+body[data-overlay='chooser'] .empty-state p { margin: 0; }
+body[data-overlay='chooser'] .btn-row { margin-top: 0; }
+body[data-overlay='chooser'] .chooser-warning { margin: 10px 0 0; }
+body[data-overlay='chooser'] .chooser-caution { margin: -8px 0 12px; color: var(--wdanger-text); font-size: 12px; }
+body[data-overlay='chooser'] .chooser-caution[hidden] { display: none; }

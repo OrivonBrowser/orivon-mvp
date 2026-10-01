@@ -1,0 +1,16 @@
+/* A small dot on the address bar's key for a site with JavaScript, images or sound switched off. */
+
+#site-permissions-btn { position: relative; }
+#site-permissions-btn[data-content-blocked]::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 7px;
+  height: 7px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--wwarn-mark);
+  border: 1.5px solid var(--wchrome);
+  pointer-events: none;
+}

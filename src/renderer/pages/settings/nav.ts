@@ -2,7 +2,7 @@
 // muted groups it falls under. Kept here, apart from main.ts's rendering and
 // sections/index.ts's ordering, so a new section only has to be added to one
 // list of icons and one map of groups, not worked into the drawing code.
-import { appearanceIcon, appsIcon, developerIcon, downloadIcon, fileIcon, homeIcon, infoIcon, keyboardIcon, privacyIcon, profilesIcon, searchGlassIcon, tabsIcon, webIcon } from '../shared/icons.js'
+import { appearanceIcon, appsIcon, developerIcon, downloadIcon, fileIcon, homeIcon, infoIcon, keyboardIcon, keyIcon, mapPinIcon, privacyIcon, profilesIcon, searchGlassIcon, slidersIcon, tabsIcon, webIcon } from '../shared/icons.js'
 import type { Section } from './model.js'
 
 export const NAV_ICON: Readonly<Record<string, () => SVGSVGElement>> = {
@@ -14,6 +14,9 @@ export const NAV_ICON: Readonly<Record<string, () => SVGSVGElement>> = {
   downloads: downloadIcon,
   profiles: profilesIcon,
   privacy: privacyIcon,
+  sites: slidersIcon,
+  passwords: keyIcon,
+  addresses: mapPinIcon,
   apps: appsIcon,
   web3: webIcon,
   shortcuts: keyboardIcon,
@@ -21,7 +24,7 @@ export const NAV_ICON: Readonly<Record<string, () => SVGSVGElement>> = {
   about: infoIcon
 }
 
-/** Three groups over the thirteen sections: what you are browsing with, who and what
+/** Three groups over the sections: what you are browsing with, who and what
  * may act on your behalf, and everything past everyday use. Relies on
  * sections/index.ts keeping its sections in this order -- a section moved out
  * of its neighbours here would read as belonging to the wrong group. */
@@ -34,6 +37,9 @@ const NAV_GROUP: Readonly<Record<string, string>> = {
   downloads: 'Browsing',
   profiles: 'Privacy and accounts',
   privacy: 'Privacy and accounts',
+  sites: 'Privacy and accounts',
+  passwords: 'Privacy and accounts',
+  addresses: 'Privacy and accounts',
   apps: 'Privacy and accounts',
   web3: 'Privacy and accounts',
   shortcuts: 'Advanced',

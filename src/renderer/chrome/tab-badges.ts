@@ -14,7 +14,8 @@ function hostOf (displayUrl: string): string {
 /** A tab's tooltip: the page's title, then where it is from, then what is true of it. The new-tab page is only "New tab". */
 export function tabTooltip (tab: TabState): string {
   if (tab.isNewTab) return 'New tab'
-  const state = [tab.audible && !tab.muted ? 'playing audio' : null, tab.muted ? 'muted' : null].filter((part) => part !== null)
+  const silenced = tab.muted || tab.siteMuted === true
+  const state = [tab.audible && !silenced ? 'playing audio' : null, tab.siteMuted === true ? 'muted by site settings' : tab.muted ? 'muted' : null].filter((part) => part !== null)
   const where = tab.displayUrl === '' ? '' : hostOf(tab.displayUrl)
   const lines = [tab.title.length > 0 ? tab.title : where, tab.title.length > 0 ? where : '']
   if (state.length > 0) lines[1] = `${lines[1] ?? ''} (${state.join(', ')})`.trim()
@@ -25,11 +26,12 @@ export function tabTooltip (tab: TabState): string {
 /** A tab's accessible name: its title, and whether it is playing or muted, which the icon and mark show only to sight. */
 export function tabName (tab: TabState): string {
   const title = tab.title.length > 0 ? tab.title : 'New tab'
-  return `${title}${tab.muted ? ', muted' : tab.audible ? ', playing audio' : ''}`
+  return `${title}${tab.siteMuted === true ? ', muted by site settings' : tab.muted ? ', muted' : tab.audible ? ', playing audio' : ''}`
 }
 
 /** What the speaker badge does: a tab that is muted offers to unmute, and any other to mute. */
 export function muteLabel (tab: TabState): string {
+  if (tab.siteMuted === true) return 'Muted by site settings'
   return tab.muted ? 'Unmute tab' : 'Mute tab'
 }
 
@@ -38,7 +40,8 @@ export function muteLabel (tab: TabState): string {
 export const decorateTabBadges: TabDecorator = function decorateTabBadges (el, tab, state, ctx) {
   el.title = tabTooltip(tab)
   el.setAttribute('aria-label', tabName(tab))
-  const sound = tab.audible || tab.muted
+  const silenced = tab.muted || tab.siteMuted === true
+  const sound = tab.audible || silenced
   el.classList.toggle('has-sound', sound && !tab.pinned)
   if (tab.pinned) {
     const at = state.tabs.findIndex((other) => other.id === tab.id)
@@ -49,7 +52,7 @@ export const decorateTabBadges: TabDecorator = function decorateTabBadges (el, t
       const mark = document.createElement('span')
       mark.className = 'tab-sound-mark'
       mark.setAttribute('aria-hidden', 'true')
-      mark.append(tab.muted ? speakerOffIcon() : speakerIcon())
+      mark.append(silenced ? speakerOffIcon() : speakerIcon())
       el.append(mark)
     }
     return
@@ -61,10 +64,12 @@ export const decorateTabBadges: TabDecorator = function decorateTabBadges (el, t
   badge.tabIndex = -1
   badge.title = muteLabel(tab)
   badge.setAttribute('aria-label', muteLabel(tab))
-  badge.append(tab.muted ? speakerOffIcon() : speakerIcon())
+  badge.append(silenced ? speakerOffIcon() : speakerIcon())
+  // The tab's own mute never overrides its site's: the badge reports it and does nothing.
+  if (tab.siteMuted === true) badge.setAttribute('aria-disabled', 'true')
   badge.addEventListener('click', (event) => {
     event.stopPropagation()
-    void ctx.shell.act('tab.mute', { id: tab.id })
+    if (tab.siteMuted !== true) void ctx.shell.act('tab.mute', { id: tab.id })
   })
   el.querySelector('.close')?.before(badge)
 }

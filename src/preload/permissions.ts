@@ -42,6 +42,10 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
     resetSiteNotifications: async (origin: string): Promise<void> => {
       await ipcRenderer.invoke(PERMISSIONS_COMMAND_CHANNEL, { type: 'resetSiteNotifications', origin } satisfies PermissionsCommand)
     },
+    /** The "All site settings" link. */
+    openSiteSettings: async (): Promise<void> => {
+      await ipcRenderer.invoke(PERMISSIONS_COMMAND_CHANNEL, { type: 'openSiteSettings' } satisfies PermissionsCommand)
+    },
     /** The Ethereum light client's state in words; null when this build has none to report. */
     lightClient: async (): Promise<LightClientView | null> => {
       const result: unknown = await ipcRenderer.invoke(PERMISSIONS_COMMAND_CHANNEL, { type: 'lightClient' } satisfies PermissionsCommand)

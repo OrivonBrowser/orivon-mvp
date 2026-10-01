@@ -62,6 +62,15 @@ export const PERMISSIONS_COMMAND_CHANNEL = 'orivon-permissions:command'
  * (src/main/manifest-hint.ts, src/main/app-install.ts). */
 export const MANIFEST_HINT_CHANNEL = 'orivon-loader:manifest-hint'
 
+/** Ordinary tab -> main: what the page's login forms report (src/preload/form-watch.ts): that the page is
+ * there, which fields it has, which one was focused, and a submitted credential. One-way. Main derives the
+ * origin from `event.senderFrame`, never from the payload, and answers only the top frame of a tab. */
+export const FORM_WATCH_CHANNEL = 'orivon-forms:watch'
+
+/** Main -> an ordinary tab's top frame: whether the watcher may act, and the account a person chose in
+ * Orivon's own chooser. A page cannot send on it; the watcher writes the values into its own fields. */
+export const FORM_FILL_CHANNEL = 'orivon-forms:fill'
+
 /** The site-info popup's own WebContentsView -> main: the current site's
  * capability switches, its Web3 Score evidence, and its Cookies and site
  * data page (`./ipc/site-info-ipc.ts`). A separate channel from

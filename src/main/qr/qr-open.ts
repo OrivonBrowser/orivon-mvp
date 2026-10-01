@@ -12,7 +12,7 @@ export function qrAddressFor (tab: Pick<TabState, 'isNewTab' | 'isInternal' | 'd
   return tab.displayUrl
 }
 
-function activeTab (window: Pick<ShellWindow, 'tabs'>): TabState | undefined {
+export function activeTab (window: Pick<ShellWindow, 'tabs'>): TabState | undefined {
   const { tabs, activeTabId } = window.tabs.getState()
   return tabs.find((tab) => tab.id === activeTabId)
 }

@@ -1,0 +1,30 @@
+/* The permission prompt and the review bubble share one card: the site on top, then what it wants or the rows to
+   change, then the way out. The card edge is the overlay's own, so this is padding and type, not a second border. */
+
+body[data-overlay='site-prompt'] .site-prompt { position: relative; padding: 14px 16px 14px; outline: none; }
+body[data-overlay='site-prompt'] .origin { margin: 0; padding-right: 32px; overflow-wrap: anywhere; word-break: normal; font-size: 14px; }
+body[data-overlay='site-prompt'] .sheet-title { margin: 0; padding-right: 4px; }
+
+body[data-overlay='site-prompt'] .sp-asks { display: grid; gap: 6px; margin: 8px 0 14px; }
+body[data-overlay='site-prompt'] .sp-ask { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 13px; }
+body[data-overlay='site-prompt'] .sp-icons { display: inline-flex; flex: none; gap: 4px; margin-top: 1px; color: var(--wink-dim); }
+body[data-overlay='site-prompt'] .sp-icons .icon { width: 16px; height: 16px; }
+body[data-overlay='site-prompt'] .sp-text { min-width: 0; overflow-wrap: anywhere; }
+body[data-overlay='site-prompt'] .banner { margin: -4px 0 14px; font-size: 12.5px; }
+
+/* Top right, over the space the site line leaves free. It comes last in the page so Tab reaches Block and Allow first. */
+body[data-overlay='site-prompt'] .sp-close { position: absolute; top: 8px; right: 8px; }
+
+/* The first half second: the buttons are visibly not ready, so a press that does nothing is not a surprise. */
+body[data-overlay='site-prompt'] .arming .btn-row .btn { opacity: 0.6; }
+body[data-overlay='site-prompt'] .btn-row .btn { transition: opacity 0.12s, background-color 0.12s, border-color 0.12s; }
+body[data-overlay='site-prompt'] .sp-note { margin: -6px 0 12px; color: var(--wink-dim); font-size: 12px; text-align: left; }
+
+body[data-overlay='site-prompt'] .sp-rows { display: grid; gap: 8px; margin: 12px 0 4px; padding: 0; list-style: none; }
+body[data-overlay='site-prompt'] .sp-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+body[data-overlay='site-prompt'] .sp-kind { display: inline-flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; }
+body[data-overlay='site-prompt'] .sp-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body[data-overlay='site-prompt'] .sp-row .segmented { flex: none; }
+body[data-overlay='site-prompt'] .sp-row .segmented > button { padding: 4px 10px; font-size: 12.5px; }
+body[data-overlay='site-prompt'] .sp-reload { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 0 0; }
+body[data-overlay='site-prompt'] .sp-foot { margin: 8px 0 -4px -6px; }

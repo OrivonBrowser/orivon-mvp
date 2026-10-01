@@ -14,7 +14,8 @@ import type { ContentAddress, PinRecord } from '../../broker/policy/pin.js'
 import { servedByVerifier } from '../../loader/fetch/verifier-origin.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { PARTITION_HEADER } from '../../loader/fetch/content-root.js'
-import { verifierCertificateVerdict } from './certificate-check.js'
+import { noteCertificate } from '../auth/note-certificate.js'
+import { ACCEPT, CHROMIUM_VERDICT, verifierCertificateVerdict } from './certificate-check.js'
 import { requestPartition, withPartition } from './partition.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import { contentAddressOf } from './content-address.js'
@@ -61,7 +62,10 @@ function changed (): void {
 
 function installCertificateCheck (target: Session): void {
   target.setCertificateVerifyProc((request, callback) => {
-    callback(verifierCertificateVerdict(request.hostname, request.certificate.fingerprint, fingerprint, (host) => BUILTIN_ADDRESSES.routesToVerifier(host)))
+    const verdict = verifierCertificateVerdict(request.hostname, request.certificate.fingerprint, fingerprint, (host) => BUILTIN_ADDRESSES.routesToVerifier(host))
+    // Only a connection that was accepted can describe the page that loaded: Chromium's own checks passed, or the verifier's certificate matched.
+    noteCertificate(request.hostname, verdict === ACCEPT || (verdict === CHROMIUM_VERDICT && request.errorCode === 0), request.validatedCertificate, request.certificate)
+    callback(verdict)
   })
 }
 

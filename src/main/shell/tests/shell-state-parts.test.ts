@@ -8,7 +8,7 @@ const tabs = { tabs: [], activeTabId: null }
 
 describe('the shell state parts', () => {
   it('adds no field when no part is registered', () => {
-    expect(SHELL_STATE_PARTS.map((part) => part.name)).toEqual(['addressBar', 'bookmarked', 'downloads', 'home', 'shortcuts'])
+    expect(SHELL_STATE_PARTS.map((part) => part.name)).toEqual(['addressBar', 'bookmarked', 'contentBlocked', 'downloads', 'home', 'logins', 'popupsBlocked', 'shortcuts', 'siteAccess'])
     expect(readStateParts(ctx, tabs, [])).toEqual({})
   })
 

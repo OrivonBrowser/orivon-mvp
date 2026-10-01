@@ -11,6 +11,8 @@ export interface Overlay {
   /** Events main sends with `overlays.send`. Returns the unsubscribe. */
   onEvent: (listener: (event: unknown) => void) => () => void
   close: () => void
+  /** The page lost the window's focus and closes itself: main then treats a click that follows on the toolbar as the same gesture, not a new one. */
+  closeOnBlur: () => void
 }
 
 export interface OverlayPage {
@@ -25,7 +27,7 @@ export interface OverlayBridge {
   ready: () => Promise<unknown>
   request: (command: unknown) => Promise<unknown>
   size: (height: number) => void
-  close: (reason: 'request' | 'escape') => void
+  close: (reason: 'request' | 'escape' | 'blur') => void
   onEvent: (listener: (message: unknown) => void) => () => void
 }
 
@@ -62,7 +64,8 @@ export function createOverlay (bridge: OverlayBridge): ReplayableOverlay {
         }
       }
     },
-    close: () => { bridge.close('request') }
+    close: () => { bridge.close('request') },
+    closeOnBlur: () => { bridge.close('blur') }
   }
 }
 

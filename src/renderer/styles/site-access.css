@@ -1,0 +1,8 @@
+/* The address bar's mark for a page that asked for a camera, a location or another permission. The plain pill
+   button look comes from .pillbtn; these only colour it by what was decided. */
+
+#site-access-chip[hidden] { display: none; }
+/* The accent mixed toward the ink, so it reads on both chromes: the raw indigo is too dark on the dark one. */
+#site-access-chip.allowed { color: color-mix(in srgb, var(--waccent) 55%, var(--wink)); }
+#site-access-chip.blocked { color: var(--wwarn-mark); }
+#site-access-chip[aria-expanded='true'], #site-access-chip:focus-visible { background: var(--whover-soft); }

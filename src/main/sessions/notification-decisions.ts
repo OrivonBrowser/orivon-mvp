@@ -35,10 +35,12 @@ export function parseNotificationDecisions (raw: string): Map<string, Notificati
 }
 
 export class NotificationDecisions {
-  readonly #path: string
+  readonly #path: string | null
   #decisions: Map<string, NotificationDecision> | undefined
+  readonly #listeners = new Set<() => void>()
 
-  constructor (path: string) {
+  /** A null path keeps the answers in memory only, for a private session. */
+  constructor (path: string | null) {
     this.#path = path
   }
 
@@ -47,24 +49,46 @@ export class NotificationDecisions {
   }
 
   set (origin: string, decision: NotificationDecision): void {
+    if (this.#loaded().get(origin) === decision) return
     this.#loaded().set(origin, decision)
     this.#save()
+    this.#changed()
   }
 
   /** Back to "never asked": the site's next request prompts again. */
   forget (origin: string): void {
-    if (this.#loaded().delete(origin)) this.#save()
+    if (!this.#loaded().delete(origin)) return
+    this.#save()
+    this.#changed()
+  }
+
+  /** Every site back to "never asked". */
+  clear (): void {
+    if (this.#loaded().size === 0) return
+    this.#loaded().clear()
+    this.#save()
+    this.#changed()
+  }
+
+  /** Returns the removal. */
+  onChange (listener: () => void): () => void {
+    this.#listeners.add(listener)
+    return () => { this.#listeners.delete(listener) }
   }
 
   entries (): Array<{ origin: string, decision: NotificationDecision }> {
     return [...this.#loaded()].map(([origin, decision]) => ({ origin, decision }))
   }
 
+  #changed (): void {
+    for (const listener of [...this.#listeners]) listener()
+  }
+
   #loaded (): Map<string, NotificationDecision> {
     if (this.#decisions === undefined) {
       let raw = ''
       try {
-        raw = readFileSync(this.#path, 'utf8')
+        if (this.#path !== null) raw = readFileSync(this.#path, 'utf8')
       } catch {
         // No file yet: nobody has answered for any site.
       }
@@ -76,6 +100,7 @@ export class NotificationDecisions {
   /** Never throws: the answer already holds in memory for this session, and
    * a disk that refuses the copy must not undo it. */
   #save (): void {
+    if (this.#path === null) return
     const origins = Object.fromEntries(this.#loaded())
     try {
       writeFileAtomic(this.#path, JSON.stringify({ version: FILE_VERSION, origins }, null, 2))

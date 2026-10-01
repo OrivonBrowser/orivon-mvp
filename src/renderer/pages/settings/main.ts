@@ -119,6 +119,17 @@ function go (section: Section, rowId?: string): void {
   if (rowId === undefined) content.scrollTop = 0
 }
 
+/** An address ending `#<row id>` (Clear browsing data's shortcut) shows that row, marks it and gives it the keyboard. The hash is then dropped, so asking for the same row again is a new navigation. */
+function showRowFromHash (): void {
+  const id = decodeURIComponent(location.hash.slice(1))
+  if (id === '') return
+  history.replaceState(null, '', location.pathname)
+  const found = sections.flatMap((section) => section.rows.filter(isShown).map((row) => ({ section, row }))).find(({ row }) => row.id === id)
+  if (found === undefined) return
+  go(found.section, found.row.id)
+  document.getElementById(`row-${id}`)?.querySelector<HTMLElement>('input, select, button')?.focus()
+}
+
 async function start (): Promise<void> {
   await state.load()
   sections = sectionsFor(state)
@@ -189,6 +200,8 @@ async function start (): Promise<void> {
         h('div', { className: 'nav-scroll' }, nav)),
       content))
   render()
+  showRowFromHash()
+  window.addEventListener('hashchange', showRowFromHash)
 }
 
 void start()

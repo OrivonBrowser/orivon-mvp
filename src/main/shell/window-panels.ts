@@ -12,9 +12,12 @@ import { deliveryLevelOverrideFor, scoreLevelOverrideFor } from '../dev/score-le
 import { localDdocFor } from '../dev/local-ddoc.js'
 import { createPermissionsPanel } from '../permissions/permissions-panel.js'
 import { createSiteInfoPanel } from '../permissions/site-info-panel.js'
+import { openCertificate } from '../auth/certificate-open.js'
+import { pageAccess } from '../site-settings/page-access.js'
+import { sitePermissions } from '../site-settings/site-permissions-view.js'
+import { siteSettingsControllerFor } from '../site-settings/site-settings-runner.js'
 import type { SubsystemContext } from '../registry.js'
 import type { OverlayHostHandle } from '../overlays/overlay-host.js'
-import type { SiteInfoMemory } from './window-actions.js'
 import type { ShellServices } from './shell-services.js'
 import type { TabManager } from './tabs.js'
 
@@ -24,21 +27,17 @@ export interface WindowPanelsDeps {
   readonly services: ShellServices
   readonly tabs: TabManager
   readonly overlays: OverlayHostHandle
-  /** Where the toolbar ends: an anchor with no rect of its own opens here. */
-  readonly chromeHeight: () => number
   readonly dirname: string
 }
 
 export interface WindowPanels {
   readonly permissions: ReturnType<typeof createPermissionsPanel>
   readonly siteInfo: ReturnType<typeof createSiteInfoPanel>
-  /** What the site-info popover last opened on. */
-  readonly memory: SiteInfoMemory
   /** The site-info popover's controller, which the chrome's IPC also reaches. */
   readonly siteInfoController: SiteInfoController
 }
 
-export function createWindowPanels ({ ctx, win, services, tabs, overlays, chromeHeight, dirname }: WindowPanelsDeps): WindowPanels {
+export function createWindowPanels ({ ctx, win, services, tabs, overlays, dirname }: WindowPanelsDeps): WindowPanels {
   // The all-sites popup reads and revokes through this one controller,
   // closing over `ctx` so it always sees whichever broker is currently
   // published (permissions.ts's own doc). `scoreLevelOverrideFor` is the
@@ -58,13 +57,10 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, chrome
 
   // The permissions surface is a panel inside this window rather than a
   // second one -- ./permissions-panel.ts.
-  const permissions = createPermissionsPanel(win, win.contentView, permissionsController, dirname, createSiteNotificationsController(notificationDecisions()))
-
-  // Remembers the anchor and origin the site-info popup was last opened
-  // with, so its own "Site settings" row (./site-info-panel.js's
-  // `openAllSites` parameter) has somewhere sensible to open the all-sites
-  // popup -- that row has no anchor of its own to measure.
-  const memory: SiteInfoMemory = { anchor: null, origin: undefined }
+  const permissions = createPermissionsPanel(win, win.contentView, permissionsController, dirname, createSiteNotificationsController(notificationDecisions()), () => {
+    permissions.close()
+    tabs.openInternal('settings', '/sites')
+  })
 
   const siteInfo = createSiteInfoPanel(
     win, win.contentView, siteInfoController, app.getPath('userData'),
@@ -73,9 +69,10 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, chrome
       const { activeTabId } = tabs.getState()
       if (activeTabId !== null) tabs.reload(activeTabId)
     },
+    // The "Site settings" row: the popover gives way to the Settings section.
     () => {
       siteInfo.close()
-      permissions.toggle(memory.anchor ?? { x: 0, y: chromeHeight(), width: 0, height: 0 }, memory.origin)
+      tabs.openInternal('settings', '/sites')
     },
     // The extensions disclosure's own "Manage" link: the same
     // close-then-navigate shape as the row above, but to a real page
@@ -84,10 +81,24 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, chrome
       siteInfo.close()
       tabs.openInternal('extensions')
     },
+    // The Certificate row: the popover gives way to the certificate viewer of the tab in front.
+    () => {
+      siteInfo.close()
+      openCertificate({ tabs, overlays })
+    },
+    // Reads the page in front for what it asked, never anything the popover sends.
+    sitePermissions({
+      controller: siteSettingsControllerFor(services, ctx),
+      requested: (origin) => {
+        const tab = tabs.activeWebContents()
+        return tab !== undefined && pageAccess.originOf(tab) === origin ? pageAccess.entries(tab).map((entry) => entry.kind) : []
+      },
+      isPrivate: services.isPrivate
+    }),
     dirname
   )
 
   overlays.adopt(permissions, permissions.restack)
   overlays.adopt(siteInfo, siteInfo.restack)
-  return { permissions, siteInfo, memory, siteInfoController }
+  return { permissions, siteInfo, siteInfoController }
 }
