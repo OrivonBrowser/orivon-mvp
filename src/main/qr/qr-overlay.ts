@@ -41,7 +41,7 @@ export function qrOverlayFor (deps: QrDeps): OverlayDef {
     focus: 'take',
     layer: 'popup',
     // A sheet about one page: it is gone when the tab changes or the page navigates.
-    closeOn: { ...CLOSE_LIKE_POPUP, navigation: true },
+    closeOn: { ...CLOSE_LIKE_POPUP, navigation: true, layout: false },
     keep: 'fresh',
     height: { initial: 420, min: 300, max: 480 },
     attach: ({ services }) => {

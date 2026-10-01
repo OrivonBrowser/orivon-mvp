@@ -38,7 +38,8 @@ export function certificateOverlayFor (deps: CertificateDeps): OverlayDef {
     surface: 'panel',
     focus: 'take',
     layer: 'popup',
-    closeOn: CLOSE_LIKE_POPUP,
+    // A sheet follows the window when it is resized; only a menu closes.
+    closeOn: { ...CLOSE_LIKE_POPUP, layout: false },
     keep: 'fresh',
     height: { initial: 320, min: 240, max: 460 },
     attach: ({ window }) => {

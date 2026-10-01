@@ -23,7 +23,7 @@ describe('the shortcut sheet', () => {
   it('is a centred sheet that goes with the tab or the navigation', () => {
     const def = shortcutOverlayFor({} as ShortcutHost)
     expect(def).toMatchObject({ name: 'shortcut-sheet', placement: { kind: 'area', at: 'center', width: 400 }, focus: 'take', layer: 'popup', keep: 'fresh' })
-    expect(def.closeOn).toEqual({ ...CLOSE_LIKE_POPUP, navigation: true })
+    expect(def.closeOn).toEqual({ ...CLOSE_LIKE_POPUP, navigation: true, layout: false })
   })
 
   it('tells the page the site, the suggested name and whether another profile is in use', () => {

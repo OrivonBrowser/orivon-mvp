@@ -48,7 +48,7 @@ export function shortcutOverlayFor (host: ShortcutHost): OverlayDef {
     focus: 'take',
     layer: 'popup',
     // A sheet about one page: it goes when the tab changes or the page navigates.
-    closeOn: { ...CLOSE_LIKE_POPUP, navigation: true },
+    closeOn: { ...CLOSE_LIKE_POPUP, navigation: true, layout: false },
     keep: 'fresh',
     height: { initial: 300, min: 200, max: 420 },
     attach: ({ services }) => {

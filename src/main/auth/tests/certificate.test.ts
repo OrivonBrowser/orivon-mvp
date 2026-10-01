@@ -190,7 +190,7 @@ describe('the certificate overlay', () => {
   it('is a centred popup with the popup dismissals', () => {
     const def = certificateOverlayFor({ cache: new CertificateCache(), writeClipboard: vi.fn() })
     expect(def).toMatchObject({ name: 'certificate', placement: { kind: 'area', at: 'center', width: 520 }, focus: 'take', layer: 'popup', keep: 'fresh', height: { max: 460 } })
-    expect(def.closeOn).toEqual({ blur: true, tabSwitch: true, navigation: false, layout: true })
+    expect(def.closeOn).toEqual({ blur: true, tabSwitch: true, navigation: false, layout: false })
   })
 
   it('shows the chain the active tab\'s host presented, whatever payload the chrome sent', () => {
