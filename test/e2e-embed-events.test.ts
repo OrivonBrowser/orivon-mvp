@@ -26,6 +26,7 @@ import type { ElectronApplication } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { ABSENCE_SETTLE_MS, delay, evaluateRetrying, HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
 import { closeElectronApp, forwardOutput, killChild, navigateToFixture, runPhase, waitForTcpReady } from './e2e-helpers.js'
+import { noNativeDialogs, questionGone, stubNativeDialogs } from './question-support.js'
 import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
 import { embedPartitionFor } from '../src/main/embed/embed-guard.js'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
@@ -365,21 +366,16 @@ it(
         )
 
         // ---- A306: a scheme Chromium does not know.
-        const dialogs = await app.evaluate(({ dialog }) => {
-          const seen: string[] = [];
-          (globalThis as unknown as { __embedDialogs: string[] }).__embedDialogs = seen
-          ;(dialog as unknown as { showMessageBox: () => Promise<{ response: number }> }).showMessageBox = async () => { seen.push('asked'); return { response: 1 } }
-          return seen.length
-        })
-        check('the dialog spy is in place', dialogs === 0)
+        await stubNativeDialogs(app)
+        check('no question is on screen to begin with', await questionGone(app))
         await evaluateRetrying(view, () => { (window as unknown as PageState).__embedNavigations.length = 0 })
         const custom = await heardAfter(view, async () => { await clickGuest(app, guestId, rowMiddle('custom')) }, 0)
         await evaluateRetrying(view, async () => { await (window as unknown as PageState).__embedView.executeJavaScript('location.href = "foo://x/y"') })
         await delay(ABSENCE_SETTLE_MS)
         const navigations = await evaluateRetrying(view, () => (window as unknown as PageState).__embedNavigations.slice())
-        const asked = await app.evaluate(() => (globalThis as unknown as { __embedDialogs: string[] }).__embedDialogs.slice())
+        const asked = [...await noNativeDialogs(app), ...(await questionGone(app) ? [] : ['question panel'])]
         check('the element hears will-navigate with the address, for a click and for a script alike', navigations.length === 2 && navigations.every((url: string) => url === 'foo://x/y'), JSON.stringify(navigations))
-        check('the shell raised no external-link prompt for it', asked.length === 0, JSON.stringify(asked))
+        check('the shell raised no external-link question for it, in the panel or natively', asked.length === 0, JSON.stringify(asked))
         check('it is neither a popup nor a download', custom.length === 0, JSON.stringify(custom))
         const stayed = await evaluateRetrying(view, async () => (window as unknown as PageState).__embedView.executeJavaScript('location.href'))
         check('the shown page stays where it was', stayed === `${SITE_ORIGIN}/`, String(stayed))

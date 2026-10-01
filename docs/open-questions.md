@@ -1881,3 +1881,12 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** remove the view and its row code now (rec.); keep it for when the reading list lands; hide it while the root is empty.
 - **Who decides:** owner
 - **Blocks:** nothing
+
+### A340: A question asked in a background tab waits with no sign **[OWNER]**
+
+- **Question:** A question for a tab that is not in front waits until its tab comes to the front, and nothing in the tab strip says so.
+  Should the waiting tab show a mark?
+- **Why it matters:** a page that asked for the camera in a background tab looks stuck, and the person cannot tell it is waiting for them.
+- **Options:** a dot on the tab like the audio indicator (rec.); a count in the tab menu; nothing, as now.
+- **Who decides:** owner
+- **Blocks:** nothing

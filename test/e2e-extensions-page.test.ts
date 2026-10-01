@@ -17,6 +17,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { delay, findChrome, HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
 import { closeElectronApp } from './e2e-helpers.js'
+import { answerQuestion, noNativeDialogs, stubNativeDialogs } from './question-support.js'
 import { seedExtensions } from './extensions-fixtures.js'
 import { parseRegistry } from '../src/main/extensions/registry.js'
 import type { InstalledExtension } from '../src/main/extensions/registry.js'
@@ -68,13 +69,14 @@ async function openExtensions (app: ElectronApplication, chrome: Page): Promise<
   return page
 }
 
-/** Replaces the native pickers: `showMessageBox` always accepts (nothing
- * here drives an install prompt), and `showOpenDialog` answers from a global
- * the test sets right before the click that opens it -- no native dialog
- * reaches the screen (this repository's hard rule for a headless run). */
+/** Records every native dialog (a message box must never be one), and makes
+ * `showOpenDialog` answer from a global the test sets right before the click
+ * that opens it -- no native dialog reaches the screen (this repository's
+ * hard rule for a headless run). The install question is not native: it is
+ * answered in the panel. */
 async function stubDialogs (app: ElectronApplication): Promise<void> {
+  await stubNativeDialogs(app)
   await app.evaluate(({ dialog }) => {
-    dialog.showMessageBox = (async () => ({ response: 0, checkboxChecked: false })) as unknown as typeof dialog.showMessageBox
     dialog.showOpenDialog = (async (options: { properties?: string[] }) => {
       const wantsFolder = options.properties?.includes('openDirectory') === true
       const path = (globalThis as unknown as { __openFolderPath?: string, __openFilePath?: string })[wantsFolder ? '__openFolderPath' : '__openFilePath']
@@ -171,12 +173,14 @@ it('lists installed extensions with their updater sentence, toggles one off, rem
       zip.writeZip(zipPath)
       await setStubbedFile(app, zipPath)
       await page.locator('button', { hasText: 'Install from file' }).click()
+      await answerQuestion(app, 'Add extension')
       expect(await waitFor(async () => (await page.locator('.ext-name', { hasText: 'Orivon E2E From File' }).count()) === 1)).toBe(true)
       // The installed manifest is kept beside the loaded copy; with no choice made they are the same bytes, and no prefs file exists yet.
       const installed = registryOf(userData).find((entry) => entry.name === 'Orivon E2E From File')
       if (installed === undefined) throw new Error('the installed extension is not in the registry')
       expect(readFileSync(join(dirname(installed.path), 'manifest.base.json'), 'utf8')).toBe(readFileSync(join(installed.path, 'manifest.json'), 'utf8'))
       expect(existsSync(join(userData, 'extensions', 'prefs.json'))).toBe(false)
+      expect(await noNativeDialogs(app)).toEqual([])
     } finally {
       rmSync(zipDir, { recursive: true, force: true })
     }

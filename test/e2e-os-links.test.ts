@@ -1,7 +1,7 @@
 // Orivon as the computer's browser, in the running shell: a link handed over by another program opens in a tab of
 // the running window, Settings says whether Orivon is the default browser and never registers it from an unpackaged
 // run, a newer release is one click away, a page is shared as a copied link or an email, and a site becomes a
-// shortcut in a directory the test chose. The clipboard, the confirmation box, the mail program and the default-browser
+// shortcut in a directory the test chose. The clipboard, the mail program and the default-browser
 // calls are replaced in the main process, so nothing reaches the machine. Set ORIVON_UI_SHOTS_DIR to also write
 // screenshots of the new surfaces in both colour schemes.
 import { spawn } from 'node:child_process'
@@ -15,6 +15,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './launch-electron.mjs'
 import { clickAddressBarRetrying } from './e2e-helpers.js'
+import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from './question-support.js'
 import { ABSENCE_SETTLE_MS, delay, findChrome, HERMETIC_RESOLVER, popoverShown, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 120_000
@@ -82,19 +83,14 @@ async function runToExit (args: string[], userData: string, timeoutMs = 20_000):
   })
 }
 
-interface Recorded { clipboard: string[], asked: Array<{ message: string, detail: string }>, opened: string[], setDefault: string[], isDefault: string[], answer: number, registered: boolean, accept: boolean }
+interface Recorded { clipboard: string[], opened: string[], setDefault: string[], isDefault: string[], registered: boolean, accept: boolean }
 
 /** Replaces, in the main process, everything that would reach the machine, and records what was asked of it. */
 async function stubSystem (app: App): Promise<void> {
-  await app.evaluate(({ app: electron, clipboard, dialog, shell }) => {
+  await app.evaluate(({ app: electron, clipboard, shell }) => {
     const g = globalThis as unknown as { __os: Recorded }
-    g.__os = { clipboard: [], asked: [], opened: [], setDefault: [], isDefault: [], answer: 0, registered: false, accept: true }
+    g.__os = { clipboard: [], opened: [], setDefault: [], isDefault: [], registered: false, accept: true }
     clipboard.writeText = ((text: string) => { g.__os.clipboard.push(text) }) as typeof clipboard.writeText
-    dialog.showMessageBox = (async (...args: unknown[]) => {
-      const options = args.at(-1) as { message: string, detail?: string }
-      g.__os.asked.push({ message: options.message, detail: options.detail ?? '' })
-      return { response: g.__os.answer, checkboxChecked: false }
-    }) as typeof dialog.showMessageBox
     shell.openExternal = (async (url: string) => { g.__os.opened.push(url) }) as typeof shell.openExternal
     electron.setAsDefaultProtocolClient = ((protocol: string) => {
       g.__os.setDefault.push(protocol)
@@ -107,7 +103,7 @@ async function stubSystem (app: App): Promise<void> {
 
 const recorded = async (app: App): Promise<Recorded> => await app.evaluate(() => (globalThis as unknown as { __os: Recorded }).__os)
 
-async function setRecorded (app: App, change: Partial<Pick<Recorded, 'answer' | 'registered' | 'accept'>>): Promise<void> {
+async function setRecorded (app: App, change: Partial<Pick<Recorded, 'registered' | 'accept'>>): Promise<void> {
   await app.evaluate((_electron, values) => { Object.assign((globalThis as unknown as { __os: Recorded }).__os, values) }, change)
 }
 
@@ -296,6 +292,7 @@ it('copies the address of the page in front and says so, and has nothing to copy
   const { app, chrome } = await launched()
   try {
     await stubSystem(app)
+    await stubNativeDialogs(app)
     const address = `${origin}/${QUERY}`
     await visit(chrome, address)
 
@@ -320,25 +317,27 @@ it('starts an email about the page only after the person agrees, with the title 
   const { app, chrome } = await launched()
   try {
     await stubSystem(app)
+    await stubNativeDialogs(app)
     const address = `${origin}/${QUERY}`
     await visit(chrome, address)
     const mailto = `mailto:?subject=${encodeURIComponent(TITLE)}&body=${encodeURIComponent(address)}`
 
-    await setRecorded(app, { answer: 1 })
     await runCommand(chrome, 'share.email')
-    expect(await waitFor(async () => (await recorded(app)).asked.length === 1)).toBe(true)
-    const question = (await recorded(app)).asked[0]
-    expect(question?.message).toBe('Open your mail program with this page\'s link?')
-    expect(question?.detail).toContain('127.0.0.1')
-    expect(question?.detail).toContain('mailto:?subject=')
+    const question = await readQuestion(await waitQuestion(app))
+    expect(question.message).toBe('Open your mail program with this page\'s link?')
+    expect(question.detail).toContain('127.0.0.1')
+    expect(question.detail).toContain('mailto:?subject=')
+    await answerQuestion(app, 'Cancel')
     await delay(ABSENCE_SETTLE_MS)
     expect((await recorded(app)).opened).toEqual([])
 
-    await setRecorded(app, { answer: 0 })
+    expect(await waitFor(async () => await questionGone(app))).toBe(true)
     await runCommand(chrome, 'share.email')
+    await answerQuestion(app, 'Allow')
     expect(await waitFor(async () => (await recorded(app)).opened.length === 1)).toBe(true)
     expect((await recorded(app)).opened).toEqual([mailto])
     expect(mailto).not.toMatch(/[\r\n ]/)
+    expect(await noNativeDialogs(app)).toEqual([])
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
@@ -380,6 +379,7 @@ it('makes a shortcut from the sheet into the applications directory the test cho
   const { app, chrome } = await launched({ env: { XDG_DATA_HOME: data } })
   try {
     await stubSystem(app)
+    await stubNativeDialogs(app)
     const address = `${origin}/${QUERY}`
     await visit(chrome, address)
 

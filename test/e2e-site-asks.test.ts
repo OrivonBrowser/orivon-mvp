@@ -13,6 +13,7 @@ import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from './launch-electron.mjs'
 import { html, launchShell, startServer, visit } from './qa-helpers.js'
 import type { FixtureServer } from './qa-helpers.js'
+import { nativeDialogsAsked as dialogsAsked, stubNativeDialogs as stubDialogs } from './question-support.js'
 import { delay, popoverShown, waitFor } from './smoke-helpers.mjs'
 
 const SHOTS_DIR = process.env.ORIVON_UI_SHOTS_DIR
@@ -120,16 +121,6 @@ async function waitChip (chrome: Page, hidden: boolean, label?: string): Promise
   return last
 }
 
-async function stubDialogs (app: App): Promise<void> {
-  await app.evaluate(({ dialog }) => {
-    const g = globalThis as unknown as { __dialogs: string[] }
-    g.__dialogs = []
-    for (const name of ['showMessageBox', 'showOpenDialog', 'showSaveDialog', 'showErrorBox'] as const) {
-      ;(dialog as unknown as Record<string, unknown>)[name] = async () => { g.__dialogs.push(name); return { response: 2, canceled: true, filePaths: [] } }
-    }
-  })
-}
-const dialogsAsked = async (app: App): Promise<string[]> => await app.evaluate(() => (globalThis as unknown as { __dialogs: string[] }).__dialogs)
 const userDataOf = async (app: App): Promise<string> => await app.evaluate(({ app: electron }) => electron.getPath('userData'))
 
 async function setScheme (app: App, pages: Page[], scheme: 'light' | 'dark'): Promise<void> {

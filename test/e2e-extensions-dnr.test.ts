@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { evaluateRetrying, HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
 import { closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
+import { answeringWith, noNativeDialogs, stubNativeDialogs } from './question-support.js'
 import { loadableManifest, readExtensionManifest } from '../src/broker/policy/extension-manifest.js'
 import { serializeRegistry, type InstalledExtension } from '../src/main/extensions/registry.js'
 import { resolveSlotKey } from '../src/main/extensions/install-runner.js'
@@ -187,10 +188,10 @@ it('a fresh install through the real install path blocks with no restart (extens
       app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], sandbox: true })
       const liveApp = app
 
-      const outcome = await liveApp.evaluate(async ({ dialog }, dir: string) => {
-        // Auto-approve the one consent dialog finishInstall shows -- there
-        // is no native dialog for a headless run to click through.
-        ;(dialog as unknown as { showMessageBox: unknown }).showMessageBox = async () => ({ response: 0, checkboxChecked: false })
+      await stubNativeDialogs(liveApp)
+      // The one consent question finishInstall asks is drawn in the tab in front: the hook waits for the
+      // person, so the panel is answered while it runs.
+      const outcome = await answeringWith(liveApp, 'Add extension', liveApp.evaluate(async (_electron, dir: string) => {
         const hook = (globalThis as unknown as {
           __orivonDevExtensionsInstall?: { installFromFolder: (dir: string) => Promise<{ installed: boolean }> }
         }).__orivonDevExtensionsInstall
@@ -198,8 +199,9 @@ it('a fresh install through the real install path blocks with no restart (extens
           throw new Error('extensions-install-test-hook.ts\'s seam is not installed -- build with ORIVON_ENABLE_DEV_GRANT=1 (scripts/build-e2e.mjs)')
         }
         return await hook.installFromFolder(dir)
-      }, FIXTURE_DIR)
+      }, FIXTURE_DIR))
       check('installFromFolder installed the fixture', outcome.installed === true, JSON.stringify(outcome))
+      check('no native message box was opened', (await noNativeDialogs(liveApp)).length === 0)
 
       const started = await startDnrFixtureServer()
       installServer = started.server

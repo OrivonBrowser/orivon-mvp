@@ -67,12 +67,17 @@ origin at all, and a registered app's self-declared `appName` is the app's own c
 sender's frame (T3) and cannot be spoofed the way a manifest's `name` can, so it is what actually
 appears; `appName`, when present, is added alongside it, never in its place.
 
-**`createPickPath`'s dialog is parented to the focused window**, not the real sender's own
-`BrowserWindow`: `ControlEvent` carries only `senderFrame`, structural-typed for testability
+**`createPickPath`'s dialog is parented to the window the person is using** (the focused
+`BaseWindow`, else the newest; every shell window is a `BaseWindow`, which `BrowserWindow.getFocusedWindow()`
+never returns), not the real sender's own window: `ControlEvent` carries only `senderFrame`, structural-typed for testability
 (`ipc.ts`'s own header). A page can only reach this call with a fresh user activation (checked in
 the isolated-world preload before the IPC is even sent), so the focused window is, in practice,
 the sender's own -- a real cross-window fix belongs with `ControlEvent` gaining the sender's
 `WebContents`, which the session lane's own attribution work may already add.
+
+**The refusal notice is not drawn here.** `notifyPickRefused` words it and hands it to `ctx.showNotice`, a sink
+`src/main/index.ts` publishes (the way `windowForSender` is), because this layer may not import the shell's panel
+code. With no sink it only logs.
 
 **`ipc.ts`'s dispatch functions take structural types, not `electron`'s**, so `ipc.test.ts` runs
 the whole control channel under plain Node. Importing `electron` at module scope is still safe

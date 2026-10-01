@@ -14,6 +14,7 @@ import { afterAll, beforeAll, expect, it } from 'vitest'
 import { CID } from 'multiformats/cid'
 import { assertNoElectronSurvivors, closeElectron, launchElectron } from './launch-electron.mjs'
 import { clickAddressBarRetrying, pressKey } from './e2e-helpers.js'
+import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from './question-support.js'
 import { evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
 import { startFixtureGateway } from './apps/ipfs-gateway/gateway.mjs'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
@@ -89,6 +90,7 @@ for (const kind of KINDS) {
       expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
       const chrome = findChrome(app)
       const userData = await userDataOf(app)
+      await stubNativeDialogs(app)
       expect(await waitFor(async () => await app.evaluate(() => (globalThis as { __orivonDevEthFixtures?: { listening: boolean } }).__orivonDevEthFixtures?.listening === true), 20_000)).toBe(true)
 
       if (kind.isApp) {
@@ -99,12 +101,6 @@ for (const kind of KINDS) {
           return true
         }, { origin, manifest: manifest(), capability: 'tcp.connect', patterns: ['127.0.0.1:9'] } satisfies DevGrantRequest)
         expect(registered).toBe(true)
-        // The question before developer tools open on an app is a native dialog: answered here, and counted.
-        await app.evaluate(({ dialog }) => {
-          const state = globalThis as unknown as { __asked: number }
-          state.__asked = 0
-          dialog.showMessageBoxSync = (() => { state.__asked += 1; return 0 }) as unknown as typeof dialog.showMessageBoxSync
-        })
       }
 
       await clickAddressBarRetrying(chrome, kind.typed())
@@ -129,6 +125,10 @@ for (const kind of KINDS) {
 
       // Developer tools open and close; an app asks once.
       await pressKey(app, part, 'F12')
+      if (kind.isApp) {
+        expect((await readQuestion(await waitQuestion(app))).message).toContain(origin)
+        await answerQuestion(app, 'Open developer tools')
+      }
       expect(await waitFor(async () => await toolsOpenAt(app, part) === true)).toBe(true)
       await pressKey(app, part, 'F12')
       expect(await waitFor(async () => await toolsOpenAt(app, part) === false)).toBe(true)
@@ -136,7 +136,8 @@ for (const kind of KINDS) {
       expect(await waitFor(async () => await toolsOpenAt(app, part) === true)).toBe(true)
       await pressKey(app, part, 'F12')
       expect(await waitFor(async () => await toolsOpenAt(app, part) === false)).toBe(true)
-      if (kind.isApp) expect(await app.evaluate(() => (globalThis as unknown as { __asked: number }).__asked)).toBe(1)
+      expect(await questionGone(app)).toBe(true)
+      expect(await noNativeDialogs(app)).toEqual([])
 
       // Split view: shown beside the other tab, each in its pane, and separated again.
       const pageView = async (): Promise<{ url: string, width: number }[]> => await app.evaluate(({ BaseWindow }, p) => {

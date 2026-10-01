@@ -50,6 +50,13 @@ The bookmarks bar's main side is [`bookmarks-bar/`](bookmarks-bar/) (its own REA
 folder menu, the right-click menu and what opens a bookmark. The bubble under the star, which names and files a
 bookmark, and the sheet for "Bookmark all tabs", are [`bookmark-bubble/`](bookmark-bubble/) (its own README).
 
+The question panel: every question the browser puts to the person is asked through `question/ask-question.ts`'s
+`askQuestion(target, spec, options)`, which resolves with the pressed button in the shape of Electron's message box.
+`question/question-spec.ts` is the spec and the cleaning every string passes through (pure, no `electron`),
+`question/question-overlay.ts` is the overlay and the map of questions main holds under random ids, and
+`question/install-questions.ts` binds the ask to this process's windows. The panel is drawn in the window of the tab
+the question belongs to, under the address pill with its top edge inside the toolbar; a background tab's question waits
+for its tab, a kiosk draws it centred, and only a question asked when no shell window exists opens a native box.
 The main menu under the toolbar's menu button: `menu-layout.ts` lists which commands it shows and in
 what shape (the names and keys come from [`../shortcuts/`](../shortcuts/), so the menu cannot show a
 key that does not work), and `menu-overlay.ts` is its `OverlayDef`, shown by the overlay host in
@@ -64,7 +71,7 @@ test-hook.ts` is the e2e-only record of what each was actually set to.
 [`../../loader/electron/serve.ts`](../../loader/electron/serve.ts);
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts); and, inside `src/main/`,
 [`../browsing/`](../browsing/), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/),
-[`../shortcuts/`](../shortcuts/) (the command table and the service the menu reads, and the command bus a window runs a chosen command through),
+[`../shortcuts/`](../shortcuts/) (the command table and the service the menu reads, and the command bus a window runs a chosen command through), [`../overlays/`](../overlays/) (the question panel is an overlay shown through the tab slots),
 [`../consent/grant-prompt-origin.ts`](../consent/grant-prompt-origin.ts) (the origin line every
 permission dialog shows), [`../sessions/`](../sessions/) (the two questions' types, and
 `permission-gate.ts`'s notification store, handed to the permissions panel),
