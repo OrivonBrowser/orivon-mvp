@@ -52,19 +52,17 @@ export interface InstallFromStoreOptions {
  * registry's `updater.lastResult` records why, in the person's own words,
  * so the extensions page can show it without a further check.
  *
- * `approvedManifest` is what tells this function whether it is being asked
- * for a FRESH install (undefined: nothing to compare against, so nothing
- * can need consent) or an UPDATE (the currently loaded manifest): a fresh
- * store install is always `options.skipPrompt: true` (the store page's own
- * `beforeInstall` hook already showed the prompt, from the same manifest,
- * before download -- showing this function's own prompt too would be a
- * second dialog for one decision) and a silent background update is too
- * (skipPrompt, AND held back rather than prompted, if it widens anything);
- * the "Update" button (`updateFromStore` below) is the one caller that
- * wants this function's own prompt: it passes no `approvedManifest` at all,
- * so nothing is held back, and no `skipPrompt`, so the ordinary store
- * install prompt -- built from the update's own, current permissions --
- * shows before it lands.
+ * `approvedManifest` is the manifest the person approved: the store page's
+ * own `beforeInstall` prompt showed it before download, so a store install
+ * and a silent background update both pass `options.skipPrompt: true` with
+ * it (showing this function's own prompt too would be a second dialog for
+ * one decision), and a background update is held back, not prompted, if it
+ * widens anything. The "Update" button (`updateFromStore` below) passes no
+ * `approvedManifest`, so nothing is held back, and no `skipPrompt`, so the
+ * ordinary store install prompt, built from the update's own permissions,
+ * shows before it lands. Whether the registry already holds the id, not
+ * whether a manifest came along, decides if the outcome reads `installed`
+ * or `updated`.
  */
 export async function installFromStoreCrx (
   ctx: InstallContext,
@@ -106,7 +104,7 @@ export async function installFromStoreCrx (
   return await finishInstall(ctx, {
     rawManifest,
     source: { kind: 'store', storeId: expectedId },
-    updater: { kind: 'store', lastCheckedAt: Date.now(), lastResult: approvedManifest === undefined ? 'installed' : 'updated' },
+    updater: { kind: 'store', lastCheckedAt: Date.now(), lastResult: readRegistry(ctx.userDataPath).some((entry) => entry.id === expectedId) ? 'updated' : 'installed' },
     slot: expectedId,
     developerPublicKey: crx.developerPublicKey,
     preApproved: options.skipPrompt === true,
