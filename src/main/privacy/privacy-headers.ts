@@ -14,6 +14,16 @@ function keyOf (headers: Readonly<Record<string, unknown>>, name: string): strin
   return Object.keys(headers).find((key) => key.toLowerCase() === wanted)
 }
 
+/** `headers` without any key spelled `name` in any case: a header sent twice under two spellings arrives as two keys. */
+function withoutHeader<V> (headers: Record<string, V>, name: string): Record<string, V> {
+  const wanted = name.toLowerCase()
+  const spellings = Object.keys(headers).filter((key) => key.toLowerCase() === wanted)
+  if (spellings.length === 0) return headers
+  const next = { ...headers }
+  for (const key of spellings) delete next[key]
+  return next
+}
+
 /** `headers` with `name` set to `value`, replacing a differently-cased spelling of the same header. */
 function withHeader (headers: Record<string, string>, name: string, value: string): Record<string, string> {
   const existing = keyOf(headers, name)
@@ -34,18 +44,10 @@ export function withPrivacySignals (headers: Record<string, string>, signals: Pr
 
 /** `headers` without the `Cookie` request header. */
 export function withoutCookie (headers: Record<string, string>): Record<string, string> {
-  const existing = keyOf(headers, 'cookie')
-  if (existing === undefined) return headers
-  const next = { ...headers }
-  delete next[existing]
-  return next
+  return withoutHeader(headers, 'cookie')
 }
 
 /** A response's headers without `Set-Cookie`. */
 export function withoutSetCookie (headers: Record<string, string[]>): Record<string, string[]> {
-  const existing = keyOf(headers, 'set-cookie')
-  if (existing === undefined) return headers
-  const next = { ...headers }
-  delete next[existing]
-  return next
+  return withoutHeader(headers, 'set-cookie')
 }

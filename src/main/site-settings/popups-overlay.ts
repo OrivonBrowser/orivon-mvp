@@ -51,8 +51,14 @@ export function createPopupsBubble ({ window, services, close }: OverlayWindow, 
         close()
         window.tabs.createTab(url)
       } else if (asked.type === 'apply') {
-        if (asked.allow) services.siteSettings.set(open.origin, 'popups', 'allow')
-        else services.siteSettings.forget(open.origin, 'popups')
+        if (asked.allow) {
+          services.siteSettings.set(open.origin, 'popups', 'allow')
+        } else if (services.siteSettings.get(open.origin, 'popups') === 'allow') {
+          // Back to blocking: the default blocks too, or this site keeps a block of its own against a default that allows.
+          if (services.settings.get('sites.popups') === 'block') services.siteSettings.forget(open.origin, 'popups')
+          else services.siteSettings.set(open.origin, 'popups', 'block')
+        }
+        // Keeping the block changes nothing: forgetting it would hand the site the default, which may allow.
         close()
       } else {
         if (commandById('siteSettings.open')?.pending === true) return undefined

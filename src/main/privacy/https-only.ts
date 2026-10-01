@@ -51,9 +51,10 @@ const isIpHost = (host: string): boolean => host.startsWith('[') || ipv4Octets(h
  * The `https:` address for an `http:` one, or null when it stays as it is: not
  * an `http:` address, a local or private host, a name a protocol routes to the
  * verifier, or a host `exempt` names (the person's own "continue" answers and
- * this run's developer names). A named host loses its port, which would
- * otherwise point HTTPS at a port that speaks HTTP; an IP address keeps its
- * own, because a bare IP has no other way to say which service it means.
+ * this run's developer names). A named host with an explicit port is left
+ * alone: dropping the port would send the tab to port 443, which is usually a
+ * different service from the one the address names. An IP address keeps its
+ * own port, because a bare IP has no other way to say which service it means.
  */
 export function upgradeTarget (url: string, exempt: (host: string) => boolean): string | null {
   let parsed: URL
@@ -65,7 +66,8 @@ export function upgradeTarget (url: string, exempt: (host: string) => boolean): 
   if (parsed.protocol !== 'http:') return null
   const host = parsed.hostname.toLowerCase().replace(/\.$/, '')
   if (host === '' || isLocalOrPrivateHost(host) || BUILTIN_ADDRESSES.routesToVerifier(host) || exempt(host)) return null
+  // The URL parser reports the default port as none, so an explicit port here is never port 80.
+  if (parsed.port !== '' && !isIpHost(host)) return null
   parsed.protocol = 'https:'
-  if (!isIpHost(host)) parsed.port = ''
   return parsed.href
 }

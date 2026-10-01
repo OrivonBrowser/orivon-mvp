@@ -38,6 +38,32 @@ describe('cookies of a site through a jar', () => {
     expect(j.remove).not.toHaveBeenCalled()
   })
 
+  it('puts back a same-named cookie of another scope that the removal took along', async () => {
+    const parent = { name: 'sid', domain: '.shop.example', path: '/', secure: true, value: 'parent', hostOnly: false, httpOnly: true, sameSite: 'lax', expirationDate: 1_900_000_000 }
+    const own = { name: 'sid', domain: 'www.shop.example', path: '/', secure: true, value: 'own', hostOnly: true, session: true }
+    let held: object[] = [parent, own]
+    const set = vi.fn(async (details: object) => { held = [...held, details] })
+    const j = {
+      get: vi.fn(async () => held),
+      remove: vi.fn(async () => { held = [] }),
+      set,
+      flushStore: vi.fn(async () => {})
+    } as never as CookieJar
+    expect(await removeSiteCookie(j, 'www.shop.example', cookieKey(own as never))).toBe(true)
+    expect(set).toHaveBeenCalledTimes(1)
+    expect(set).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://shop.example/', name: 'sid', value: 'parent', domain: '.shop.example', httpOnly: true, expirationDate: 1_900_000_000 }))
+  })
+
+  it('does not put back what the same removal was asked to remove', async () => {
+    const one = { name: 'sid', domain: '.shop.example', path: '/', secure: true, value: '1' }
+    const two = { name: 'sid', domain: 'www.shop.example', path: '/', secure: true, value: '2', hostOnly: true }
+    let held: object[] = [one, two]
+    const set = vi.fn(async () => {})
+    const j = { get: vi.fn(async () => held), remove: vi.fn(async () => { held = [] }), set, flushStore: vi.fn(async () => {}) } as never as CookieJar
+    expect(await removeCookies(j, [one, two])).toBe(0)
+    expect(set).not.toHaveBeenCalled()
+  })
+
   it('removes every cookie of the site and none of another', async () => {
     const j = jar()
     await removeSiteCookies(j, 'shop.example')

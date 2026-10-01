@@ -46,9 +46,10 @@ export function siteDataDomain (session: () => SiteDataSession, budgetMs = 2000)
           return { hosts: [...hosts].sort(([a], [b]) => a.localeCompare(b)).map(([host, cookies]): HostCookies => ({ host, cookies: viewsOf(cookies) })) }
         }
         case 'removeCookie': {
-          if (typeof request.key !== 'string' || !KEY.test(request.key)) return undefined
+          if (typeof request.key !== 'string' || !KEY.test(request.key) || typeof request.domain !== 'string' || !listed.has(request.domain)) return undefined
           const jar = session().cookies
-          const found = (await allCookies(jar)).find((cookie) => cookieKey(cookie) === request.key)
+          // Only among the cookies of the site that was listed, so a key computed for another site's cookie reaches nothing.
+          const found = cookiesOfDomain(await allCookies(jar), request.domain).find((cookie) => cookieKey(cookie) === request.key)
           if (found === undefined) return { ok: false }
           return { ok: await removeCookies(jar, [found]) === 0 }
         }

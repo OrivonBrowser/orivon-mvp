@@ -15,7 +15,7 @@ class FakeTab extends EventEmitter {
   getURL (): string { return this.url }
 }
 
-function rig (options: { blocked?: string[] } = {}) {
+function rig (options: { blocked?: string[], defaultAllows?: boolean } = {}) {
   const tab = new FakeTab()
   const other = new FakeTab('https://other.example/')
   let activeTabId: string | null = 't1'
@@ -30,7 +30,7 @@ function rig (options: { blocked?: string[] } = {}) {
   const store = new SiteSettingsStore(null)
   const run = vi.fn()
   const close = vi.fn()
-  const services = { siteSettings: store, commands: { run } }
+  const services = { siteSettings: store, commands: { run }, settings: { get: () => options.defaultAllows === true ? 'allow' : 'block' } }
   const blocks = new PopupBlocks<WebContents>()
   for (const url of options.blocked ?? ['https://ads.example/1', 'https://ads.example/2']) blocks.add(tab as unknown as WebContents, url)
   const handler = createPopupsBubble({ window, services, close, send: vi.fn() } as unknown as OverlayWindow, blocks)
@@ -128,6 +128,22 @@ describe('the popups-blocked overlay', () => {
       r.handler.show?.(undefined)
       r.handler.request({ type: 'apply', allow: false })
       expect(r.store.get(SITE, 'popups')).toBeUndefined()
+    })
+
+    it('keeps a block of the site\'s own when the default allows and the person keeps blocking', () => {
+      const r = rig({ defaultAllows: true })
+      r.store.set(SITE, 'popups', 'block')
+      r.handler.show?.(undefined)
+      r.handler.request({ type: 'apply', allow: false })
+      expect(r.store.get(SITE, 'popups')).toBe('block')
+    })
+
+    it('turns an allow into a block of the site\'s own when the default allows', () => {
+      const r = rig({ defaultAllows: true })
+      r.store.set(SITE, 'popups', 'allow')
+      r.handler.show?.(undefined)
+      r.handler.request({ type: 'apply', allow: false })
+      expect(r.store.get(SITE, 'popups')).toBe('block')
     })
 
     it('writes nothing for the tab in front when it is not the one the bubble was opened for', () => {

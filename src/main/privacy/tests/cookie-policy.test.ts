@@ -14,6 +14,12 @@ describe('isThirdParty', () => {
     expect(isThirdParty(facts('subFrame', 'https://ads.example/frame', 'https://shop.example/'))).toBe(true)
   })
 
+  it('treats a WebSocket handshake like any other request: third-party to another site, first-party to its own', () => {
+    expect(isThirdParty(facts('webSocket', 'wss://tracker.example/socket', 'https://shop.example/'))).toBe(true)
+    expect(isThirdParty(facts('webSocket', 'ws://tracker.example/socket', 'http://shop.example/'))).toBe(true)
+    expect(isThirdParty(facts('webSocket', 'wss://live.shop.example/socket', 'https://shop.example/'))).toBe(false)
+  })
+
   it('never treats the page\'s own navigation as third-party', () => {
     expect(isThirdParty(facts('mainFrame', 'https://other.example/', 'https://shop.example/'))).toBe(false)
   })

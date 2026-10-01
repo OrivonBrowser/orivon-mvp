@@ -10,7 +10,7 @@ import { isDevEthName } from '../dev/eth-resolver.js'
 import { requestSlot } from '../overlays/tab-slots.js'
 import { webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import { siteAsks } from '../sessions/site-asks.js'
-import { createUpgradeTracker } from './https-fallback.js'
+import { upgradeTracker } from './https-fallback.js'
 import { createFallbackSheets } from './https-fallback-runner.js'
 import { httpsState } from './https-state.js'
 import { createNetHandlers } from './net-handlers.js'
@@ -22,14 +22,15 @@ import { createStorageAccessAsker } from './storage-access.js'
 const PRIVACY_ORDER = 20
 const HTTPS_ORDER = 10
 
-const WEB = { urls: ['http://*/*', 'https://*/*'] }
-const WEB_ADDRESS = (url: string): boolean => url.startsWith('http://') || url.startsWith('https://')
+// WebSocket handshakes are included: they carry the cookies of their own host, so a third-party one is stripped like any request.
+const WEB = { urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }
+const WEB_ADDRESS = (url: string): boolean => /^(https?|wss?):\/\//.test(url)
 const PLAIN_ADDRESS = (url: string): boolean => url.startsWith('http://')
 
 export const installPrivacyNet: ShellInstaller = {
   name: 'privacy-net',
   install: (app, services) => {
-    const tracker = createUpgradeTracker()
+    const tracker = upgradeTracker
     const sheets = createFallbackSheets({ tracker, state: httpsState, windows: services.windows, requestSlot })
     const handlers = createNetHandlers({
       settings: services.settings,

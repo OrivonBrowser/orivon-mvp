@@ -8,8 +8,8 @@ describe('upgradeTarget', () => {
     expect(upgradeTarget('http://example.com/a/b?q=1#top', none)).toBe('https://example.com/a/b?q=1#top')
   })
 
-  it('drops a named host\'s port, which would point https at a plain-http service', () => {
-    expect(upgradeTarget('http://example.com:8080/x', none)).toBe('https://example.com/x')
+  it('leaves a named host with an explicit port alone, since port 443 is usually another service', () => {
+    expect(upgradeTarget('http://example.com:8080/x', none)).toBeNull()
     expect(upgradeTarget('http://example.com:80/x', none)).toBe('https://example.com/x')
   })
 

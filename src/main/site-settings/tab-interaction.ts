@@ -3,9 +3,10 @@
 // sees counts: a script's `dispatchEvent` never reaches it. Keyed weakly by
 // the tab's webContents. No `electron` import: a tab is used only through `on`.
 
-/** The one event of a tab's webContents this reads, typed as Electron emits it. */
+/** The two events of a tab's webContents this reads, typed as Electron emits them. */
 export interface InputTab {
-  on: (event: 'input-event', listener: (event: unknown, input: { type: string }) => void) => unknown
+  on: ((event: 'input-event', listener: (event: unknown, input: { type: string }) => void) => unknown) &
+  ((event: 'did-navigate', listener: () => void) => unknown)
 }
 
 export interface Interaction {
@@ -31,6 +32,11 @@ export class TabInteraction<T extends InputTab & object> {
     tab.on('input-event', (_event, input) => {
       if (!DELIBERATE_INPUT.has(input.type)) return
       mark.at = this.clock()
+      mark.consumed = false
+    })
+    // Input belongs to the document it was made on: a page reached by a click cannot spend the click that led to it.
+    tab.on('did-navigate', () => {
+      mark.at = null
       mark.consumed = false
     })
   }

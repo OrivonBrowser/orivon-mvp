@@ -30,7 +30,17 @@ describe('withPrivacySignals', () => {
   })
 })
 
+describe('withoutSetCookie', () => {
+  it('removes every spelling of the header, so cookies split across two spellings do not survive', () => {
+    expect(withoutSetCookie({ 'Set-Cookie': ['a=1'], 'set-cookie': ['b=2'], 'Content-Type': ['text/html'] })).toEqual({ 'Content-Type': ['text/html'] })
+  })
+})
+
 describe('withoutCookie', () => {
+  it('removes every spelling of the Cookie header', () => {
+    expect(withoutCookie({ Cookie: 'a=1', cookie: 'b=2', Accept: '*/*' })).toEqual({ Accept: '*/*' })
+  })
+
   it('removes the Cookie header whatever its case', () => {
     expect(withoutCookie({ Accept: '*/*', Cookie: 'a=1' })).toEqual({ Accept: '*/*' })
     expect(withoutCookie({ cookie: 'a=1' })).toEqual({})

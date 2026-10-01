@@ -74,7 +74,10 @@ export function createFallbackSheets (deps: FallbackDeps): FallbackSheets {
       }
     })
     contents.on('did-start-navigation', (event) => {
-      if (event.isMainFrame && !event.isSameDocument && !event.url.startsWith('chrome-error:')) endSheet(contents)
+      if (event.isMainFrame && !event.isSameDocument && !event.url.startsWith('chrome-error:')) {
+        deps.tracker.navigationStarted(id)
+        endSheet(contents)
+      }
     })
     contents.on('did-navigate', (_event, url) => { deps.tracker.navigated(id, url) })
     contents.once('destroyed', () => { deps.tracker.forget(id) })

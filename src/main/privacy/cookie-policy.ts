@@ -24,6 +24,9 @@ export interface RequestDetailsLike {
 
 const isWebAddress = (url: string): boolean => url.startsWith('http://') || url.startsWith('https://')
 
+/** A WebSocket handshake carries cookies like a request does, and its response may set them. */
+const isRequestAddress = (url: string): boolean => isWebAddress(url) || url.startsWith('ws://') || url.startsWith('wss://')
+
 /**
  * The address of the page the request belongs to: the top frame's, else the
  * tab's own. Both reads can throw (a frame that navigated or died), and an
@@ -47,7 +50,7 @@ export function topUrlOf (details: RequestDetailsLike): string | undefined {
 
 export function isThirdParty (facts: RequestFacts): boolean {
   if (facts.resourceType === 'mainFrame') return false
-  if (facts.topUrl === undefined || !isWebAddress(facts.topUrl) || !isWebAddress(facts.url)) return false
+  if (facts.topUrl === undefined || !isWebAddress(facts.topUrl) || !isRequestAddress(facts.url)) return false
   return !sameSite(facts.url, facts.topUrl)
 }
 

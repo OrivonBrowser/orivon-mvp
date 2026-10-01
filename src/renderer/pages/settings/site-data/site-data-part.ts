@@ -105,7 +105,7 @@ export class SiteDataPart implements SettingsPart {
 
   /** One cookie, deleted at once. */
   async removeCookie (domain: string, key: string): Promise<void> {
-    const reply = await this.bridge.request('siteData', { type: 'removeCookie', key })
+    const reply = await this.bridge.request('siteData', { type: 'removeCookie', domain, key })
     this.failed = !(isRecord(reply) && reply['ok'] === true)
     await this.refreshAfterDelete(domain)
   }

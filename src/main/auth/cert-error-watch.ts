@@ -9,6 +9,8 @@ import { isCertError } from './cert-error-text.js'
 export interface CertErrorDeps {
   readonly findTab: (contents: WebContents) => { window: ShellWindow, tabId: string } | null
   readonly ask: typeof requestSlot
+  /** Another sheet explains this failure (HTTPS-only upgraded the address and the upgrade failed), so this one stays out. */
+  readonly claimed?: (contentsId: number, url: string, code: number) => boolean
 }
 
 const watched = new WeakSet<WebContents>()
@@ -37,7 +39,7 @@ export function watchCertErrors (contents: WebContents, deps: CertErrorDeps): vo
   contents.on('did-fail-load', (_event, code, _description, url, isMainFrame) => {
     const host = isMainFrame && isCertError(code) ? hostOfFailure(url) : undefined
     const found = host === undefined ? null : deps.findTab(contents)
-    if (host === undefined || found === null) return
+    if (host === undefined || found === null || deps.claimed?.(contents.id, url, code) === true) return
     withdraw()
     pending = deps.ask({
       window: found.window,

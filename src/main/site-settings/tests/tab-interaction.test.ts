@@ -42,11 +42,21 @@ describe('TabInteraction', () => {
     expect(interaction.read(tab)).toEqual({ at: 1050, consumed: false })
   })
 
+  it('forgets the input when a new document commits, and not for a change of address inside one', () => {
+    const { interaction, tab } = rig()
+    tab.input('mouseDown')
+    tab.emit('did-navigate-in-page')
+    expect(interaction.read(tab).at).toBe(1000)
+    tab.emit('did-navigate')
+    expect(interaction.read(tab)).toEqual({ at: null, consumed: false })
+  })
+
   it('listens once however many times it is asked to watch', () => {
     const { interaction, tab } = rig()
     interaction.watch(tab)
     interaction.watch(tab)
     expect(tab.listenerCount('input-event')).toBe(1)
+    expect(tab.listenerCount('did-navigate')).toBe(1)
   })
 
   it('keeps each tab apart', () => {

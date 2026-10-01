@@ -93,6 +93,17 @@ describe('watching a tab for a certificate failure', () => {
     expect(s.asks[0]).toMatchObject({ window: WINDOW, tabId: 't1', slot: 'center', overlay: 'cert-error', payload: { host: 'bad.example', code: -202 } })
   })
 
+  it('stays out of a failure another sheet claims, such as an upgraded address that has no valid certificate', () => {
+    const s = setup()
+    const claimed = vi.fn((_id: number, url: string, _code: number) => url === 'https://upgraded.example/')
+    watchCertErrors(s.contents as unknown as WebContents, { ...s.deps, claimed })
+    fail(s.contents, -202, 'https://upgraded.example/')
+    expect(s.asks).toHaveLength(0)
+    fail(s.contents, -202, 'https://typed.example/')
+    expect(s.asks).toHaveLength(1)
+    expect(claimed).toHaveBeenCalledWith(expect.anything(), 'https://upgraded.example/', -202)
+  })
+
   it('ignores other failures, a sub frame, an address that is not https and a web contents that is not a tab', () => {
     const s = setup()
     watchCertErrors(s.contents as unknown as WebContents, s.deps)
