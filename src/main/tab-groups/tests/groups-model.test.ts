@@ -51,6 +51,7 @@ describe('the groups of a window', () => {
     groups.remove(id)
     groups.remove(id)
     expect(listener).toHaveBeenCalledTimes(3)
+    expect(listener.mock.calls.map(([change]) => [change.kind, change.group.id, change.group.title])).toEqual([['created', id, ''], ['updated', id, 'A'], ['removed', id, 'A']])
     stop()
     groups.create()
     expect(listener).toHaveBeenCalledTimes(3)

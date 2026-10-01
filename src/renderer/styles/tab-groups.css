@@ -76,7 +76,16 @@
 .tab-group-chip:focus-visible { outline: 2px solid var(--waccent); outline-offset: 1px; }
 .tab-group-chip[hidden] { display: none; }
 .tab-group-chip .tg-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tab-group-chip .tg-count { flex: none; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--wink-dim); }
+/* The count is small text on a tinted chip, so it takes the full ink; the rule beside it keeps it apart from the name. */
+.tab-group-chip .tg-count {
+  flex: none;
+  padding-left: 6px;
+  border-left: 1px solid color-mix(in srgb, var(--wink) 20%, transparent);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--wink);
+}
+.tab-group-chip.untitled .tg-count { padding-left: 0; border-left: none; }
 
 /* A group with no name is a dot; once collapsed it has a count to carry, and takes its tint. */
 .tab-group-chip .tg-dot { display: none; flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--tg); }

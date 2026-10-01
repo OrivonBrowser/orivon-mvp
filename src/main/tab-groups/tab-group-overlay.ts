@@ -43,7 +43,7 @@ export function asGroupRequest (command: unknown): GroupBubbleRequest | undefine
 
 export const tabGroupOverlay: OverlayDef = {
   name: TAB_GROUP_OVERLAY,
-  placement: { kind: 'anchor', width: 260, align: 'left' },
+  placement: { kind: 'anchor', width: 320, align: 'left' },
   surface: 'panel',
   focus: 'take',
   layer: 'popup',

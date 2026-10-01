@@ -37,12 +37,12 @@ body[data-overlay='tab-group'] .tg-name {
 body[data-overlay='tab-group'] .tg-name::placeholder { color: var(--wink-off); }
 body[data-overlay='tab-group'] .tg-name:focus-visible { outline: 2px solid var(--waccent-text); outline-offset: -2px; }
 
-body[data-overlay='tab-group'] .tg-swatches { display: flex; gap: 6px; padding: 0 2px; }
+body[data-overlay='tab-group'] .tg-swatches { display: flex; justify-content: space-between; padding: 0 4px; }
 
 body[data-overlay='tab-group'] .tg-swatch {
   flex: none;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 2px solid transparent;
   border-radius: 50%;

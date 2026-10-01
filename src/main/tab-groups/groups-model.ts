@@ -20,7 +20,13 @@ export interface GroupPatch {
   collapsed?: unknown
 }
 
-export type GroupsListener = () => void
+/** What happened to which group; for a removal, the group as it was. */
+export interface GroupsChange {
+  kind: 'created' | 'updated' | 'removed'
+  group: TabGroupState
+}
+
+export type GroupsListener = (change: GroupsChange) => void
 
 /** One counter for the process: an id names a group in every window, so a tab's group is never mistaken for another window's. */
 let nextGroupNumber = 1
@@ -38,7 +44,7 @@ export class TabGroups {
   create (color?: GroupColor, title = ''): string {
     const id = `g-${String(nextGroupNumber++)}`
     this.groups.set(id, { title: cleanGroupTitle(title), color: color !== undefined && isGroupColor(color) ? color : this.nextColor(), collapsed: false })
-    this.changed()
+    this.changed('created', id)
     return id
   }
 
@@ -53,13 +59,15 @@ export class TabGroups {
     }
     if (isGroupColor(patch.color) && patch.color !== group.color) { group.color = patch.color; changed = true }
     if (typeof patch.collapsed === 'boolean' && patch.collapsed !== group.collapsed) { group.collapsed = patch.collapsed; changed = true }
-    if (changed) this.changed()
+    if (changed) this.changed('updated', id)
     return changed
   }
 
   remove (id: string): boolean {
-    if (!this.groups.delete(id)) return false
-    this.changed()
+    const group = this.get(id)
+    if (group === undefined) return false
+    this.groups.delete(id)
+    this.notify({ kind: 'removed', group })
     return true
   }
 
@@ -76,14 +84,19 @@ export class TabGroups {
     return [...this.groups].map(([id, group]) => ({ id, ...group }))
   }
 
-  /** Fires after a group is created, changed or removed. Returns the removal. */
+  /** Fires after a group is created, changed or removed, with which and what it became. Returns the removal. */
   onChange (listener: GroupsListener): () => void {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
   }
 
-  private changed (): void {
-    for (const listener of [...this.listeners]) listener()
+  private changed (kind: 'created' | 'updated', id: string): void {
+    const group = this.get(id)
+    if (group !== undefined) this.notify({ kind, group })
+  }
+
+  private notify (change: GroupsChange): void {
+    for (const listener of [...this.listeners]) listener(change)
   }
 }
 
