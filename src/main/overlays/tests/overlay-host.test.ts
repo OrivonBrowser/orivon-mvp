@@ -566,10 +566,13 @@ describe('createOverlayHost: keep and reopen', () => {
     expect(views[0]?.bounds).toMatchObject({ height: 300 })
   })
 
-  it('a toggle right after a blur close is that click\'s echo and does nothing', () => {
-    const { host } = setup([def('a')])
+  it.each([
+    ['the host closes it on blur', {}, () => { views[0]?.spec.onBlur() }],
+    ['the page closes itself on blur', { closeOn: { blur: false, tabSwitch: true, navigation: false, layout: false } }, () => { views[0]?.spec.port.close('blur') }]
+  ])('a toggle right after %s is that click\'s echo and does nothing', (_name, patch, closeOnBlur) => {
+    const { host } = setup([def('a', patch)])
     host.show('a', ANCHOR)
-    views[0]?.spec.onBlur()
+    closeOnBlur()
     vi.advanceTimersByTime(100)
     host.toggle('a', ANCHOR)
     expect(host.isOpen('a')).toBe(false)
@@ -586,18 +589,6 @@ describe('createOverlayHost: keep and reopen', () => {
     expect(host.isOpen('a')).toBe(false)
     host.toggle('a', ANCHOR)
     expect(host.isOpen('a')).toBe(true)
-  })
-
-  it('a page that closes itself on blur is debounced too, even when the host does not close it on blur', () => {
-    const { host } = setup([def('bubble', { closeOn: { blur: false, tabSwitch: true, navigation: false, layout: false } })])
-    host.show('bubble', ANCHOR)
-    views[0]?.spec.port.close('blur')
-    vi.advanceTimersByTime(100)
-    host.toggle('bubble', ANCHOR)
-    expect(host.isOpen('bubble')).toBe(false)
-    vi.advanceTimersByTime(300)
-    host.toggle('bubble', ANCHOR)
-    expect(host.isOpen('bubble')).toBe(true)
   })
 
   it('the debounce does not apply to an overlay that does not close on blur', () => {
