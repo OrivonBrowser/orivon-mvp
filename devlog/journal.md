@@ -52,6 +52,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Tabs pin, mute and reopen; start-up restores or offers the last session; find, print, save, screenshots and page menus landed; 54 review findings fixed.
 - The Lounge runs its real, unmodified Node server in a forked Worker: accounts, IRC, SQLite scrollback, all driven end to end headless.
 - Downloads, bookmark folders and manager, address-bar suggestions, History by session, import, About and a task manager landed; 56 review findings fixed.
+- Extensions gained a menu with pinning, a permission sheet, command keys and history, bookmarks and search APIs; blockers run; 34 review findings fixed.
 
 ### In my head
 - Explored what `child_process` can safely mean: a WASI program in the app's own tab, native `subprocess` still excluded (`docs/planning/child-process-design.md`).

@@ -89,6 +89,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - **Chrome extensions.** Install from the Chrome Web Store, a `.crx`/`.zip` file or a folder, and manage them at
   `orivon://extensions`, which always says who updates each one. Content scripts, service workers, toolbar buttons,
   popups and options pages work on every website and on apps holding permissions, whose `window.orivon` refuses extension code.
+- **An Extensions button lists every extension**: its badge, a pin that puts its icon on the toolbar (a new one is pinned),
+  options, Manage and a two-click Remove. It shows while an extension is loaded unless Appearance says otherwise, and
+  an unpinned extension runs from its row.
+- **An extension asks for more access in a sheet**: nothing is granted until you press Allow, the install prompt says
+  what it may later ask for, grants last across restarts, and each can be taken back from its details page.
+- **Each extension has a details page** (`orivon://extensions/details`) with its source, who updates it, where it runs,
+  what Orivon does not provide and the extra access you allowed.
+- **Extension keyboard shortcuts work**: a command binds its suggested key when it is free, never takes one Orivon uses, and
+  can be changed, cleared or moved at `orivon://extensions/shortcuts`.
+- **Extensions can use bookmarks, history, top sites and search** (`chrome.bookmarks`, `history`, `topSites`, `search`);
+  they cannot save a script address as a bookmark, and an app's pages never reach them.
+- **An extension's DevTools panel works**: a manifest's `devtools_page` runs and `chrome.devtools.panels.create` answers.
 - **Google's sign-in pages are shown a Firefox identity**, since Google rejects this browser as "not secure"; the
   request headers, `navigator.userAgent` and the missing `navigator.userAgentData` agree on `accounts.google.com`
   and `accounts.youtube.com` alone. Not yet confirmed against a real account.

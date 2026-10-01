@@ -1527,12 +1527,13 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A298: A keyboard command or context-menu click does not count as invoking an extension **[AI-REC]**
+### A298: A context-menu click does not count as invoking an extension **[AI-REC]**
 
-- **Question:** Chrome grants activeTab, and so `chrome.tabCapture`, on a command or context-menu click as well as
-  the toolbar button; this build records only the toolbar button (`d-0204`). Record the other two?
-- **Why it matters:** an extension started by its keyboard shortcut is refused a capture Chrome would allow.
-- **Options:** record the invocation from `chrome.commands` and `contextMenus.onClicked` too (rec.); leave it.
+- **Question:** Chrome grants activeTab, and so `chrome.tabCapture`, on a context-menu click as well as on the toolbar
+  button and a command key; this build records the toolbar button, the Extensions menu row and a command key (`d-0204`).
+  Record a context-menu click too?
+- **Why it matters:** an extension started from its context-menu entry is refused a capture Chrome would allow.
+- **Options:** record the invocation from `contextMenus.onClicked` too (rec.); leave it.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
@@ -1748,5 +1749,60 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   not document. Should the list say so in the product, drop Startpage's, or ask each engine?
 - **Why it matters:** an engine that stops answering gives no rows, silently, while the switch stays on.
 - **Options:** keep the Settings help line that names the two (current); drop Startpage's; probe on every release.
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A333: A Settings row and an error-log view are shown and drive nothing **[AI-REC]**
+
+- **Question:** "Let extensions replace the new tab, History and Bookmarks pages" (`extensions.pageOverrides`) changes a
+  value no code reads, and `orivon://extensions/errors` shows a placeholder no link reaches. Hide both until the
+  features exist, or keep them?
+- **Why it matters:** a switch that does nothing tells a person Orivon honours a choice it does not.
+- **Options:** remove the row and the route until page overrides and an error log are built (rec.); keep them.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A334: `chrome.history` is exact only for the newest 200 pages **[AI-REC]**
+
+- **Question:** `onVisitRemoved` compares the newest 200 pages, `getVisits` is one visit per address and `typedCount` is 0.
+  Should the history service hand its removals and its visits to the extension API?
+- **Why it matters:** an extension that mirrors history misses the removal of an older page.
+- **Options:** give the history store an event with the removed addresses and a read of its `visits` table (rec.); keep.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A335: The macOS key names of extension commands are unit-tested only **[RESEARCH]**
+
+- **Question:** Do `Command`, `MacCtrl` and `Ctrl` in a manifest's `suggested_key` bind the chords Chrome binds, and does
+  a key pressed in an extension popup reach the dispatcher on macOS?
+- **Why it matters:** the extension shortcuts were run on Linux; a wrong mapping binds a key Orivon needs.
+- **Options:** run `e2e-extensions-shortcuts` on a macOS machine and fix the mapping (rec.).
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A336: The install prompt and the permission pages word `management` and `privacy` differently **[AI-REC]**
+
+- **Question:** The install prompt says what Chrome says; the details page and the permission sheet say "Manage your
+  extensions" and "Read your privacy settings". Use one wording for each permission?
+- **Why it matters:** a person sees two sentences for one permission and cannot tell they match.
+- **Options:** one table of words for every surface (rec.); keep Chrome's text at install.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A337: An update drops or revokes an extension's grant without telling the person **[AI-REC]**
+
+- **Question:** An update that makes a granted item required, or stops declaring it, changes the grant with no notice; a
+  grant also waits for the quiet reload, up to ten minutes. Say so in the details page or the update prompt?
+- **Why it matters:** a person who allowed something may find it gone, or not yet in force, with no word.
+- **Options:** list what changed in the update prompt and on the details page (rec.); keep it silent.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A338: A content blocker's blocking is run only with a fixture extension **[RESEARCH]**
+
+- **Question:** Does a real MV3 blocker (uBlock Origin Lite) block through Orivon's `declarativeNetRequest` engine? The
+  opt-in real-extension end-to-end file skips itself when no extracted extensions are configured.
+- **Why it matters:** the changelog and the scope row say content blockers work; only a fixture has shown it.
+- **Options:** run `e2e-extensions-real` with the four extensions extracted and record the result (rec.).
 - **Who decides:** research first
 - **Blocks:** nothing

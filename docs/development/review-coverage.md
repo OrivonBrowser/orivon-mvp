@@ -285,3 +285,13 @@ In all, 54 findings, 54 confirmed, none refuted.
 | The unit suite, every guard, smoke and 39 end-to-end files in three chunks, after the merge and again after the fixes | The merged branch | One timing regression in a test, fixed without weakening an assertion; the rest green |
 
 In all, 56 findings, 56 confirmed, none refuted.
+
+### `stream/b5-extensions`: the Extensions menu and pinning, optional permissions, command keys, the library APIs, `declarativeNetRequest` (2026-10-01)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| Code review by area, by Opus agents, each finding then attacked by a second agent trying to refute it | The branch against `main`, split into optional permissions and the extension sheet, and command keys with the bookmarks, history, search and `declarativeNetRequest` APIs | 16 findings, all confirmed. All were fixed with tests, none declined or deferred |
+| A designer's review of screenshots of every new surface, light and dark | The Extensions button and menu, the toolbar badge and letter tiles, the permission sheet, the extensions list, the details page and the shortcuts page | 18 findings, all confirmed and fixed |
+| The unit suite, every guard, smoke and 19 end-to-end files in three chunks, after the merge and again after the fixes | The merged branch | All green; one end-to-end spec failed once in a batch and passed on its immediate rerun and in the final batch, its cause not captured |
+
+In all, 34 findings, 34 confirmed, none refuted.

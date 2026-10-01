@@ -18,6 +18,8 @@ folder and to persist dynamic rules and enabled-ruleset choices, and `../install
 [`vendor/firefox-dnr`](../../../../vendor/firefox-dnr) (MPL-2.0, ported from Firefox's
 `ExtensionDNR.sys.mjs`; `UPSTREAM.md` has the revision and the full patch list) --
 `dnr-engine.ts` is a thin, typed orchestration layer over it, not a second implementation.
+Why Orivon runs the rules itself, and where they sit among the session's `webRequest` handlers:
+[`ADR-0051`](../../../../docs/decisions/ADR-0051-orivon-applies-extensions-declarativenetrequest-rules-itself.md).
 
 **What it depends on.** `vendor/firefox-dnr/` (the engine); `node:fs`, `node:path` and
 `../../../broker/adapters/atomic-write.js`'s `writeFileAtomic` (`dnr-runner.ts` only, for

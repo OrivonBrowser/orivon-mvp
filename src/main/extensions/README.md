@@ -31,11 +31,20 @@ extension's real loaded manifest -- UPSTREAM.md patch 37's own doc; and `extensi
 serves a manifest `sandbox.pages` document Chrome's own CSP `sandbox` directive, so it actually
 gets an opaque origin rather than only withholding `chrome.*` (UPSTREAM.md patch 40).
 
-**What it depends on.** `electron` (every file except `crx.ts`, `crx3-format.ts`,
-`electron-chrome-extensions-lib.d.ts`, `extension-host-access.ts`, `extension-known-permissions.ts`,
-`extension-sender-id-check.ts`, `extension-tab-details.ts`, `extension-tab-invocation.ts`,
-`extension-url-policy.ts`, `extensions-domain.ts`, `extensions-view-runner.ts`, `extensions-view.ts`,
-`registry-runner.ts`, `registry.ts`, `site-reach.ts`, `site-reach-runner.ts`, `store-download-seam.ts`,
+**What it depends on.** `electron` (every file except `action-pins-runner.ts`, `action-pins.ts`, `base-manifest-source.ts`, `crx.ts`, `crx3-format.ts`,
+`details-optional.ts`, `dnr-action-options.ts`, `dnr-api.ts`, `dnr-match-log.ts`,
+`effective-manifest.ts`, `electron-chrome-extensions-lib.d.ts`, `extension-commands.ts`,
+`extension-host-access.ts`, `extension-known-permissions.ts`, `extension-permission-check.ts`,
+`extension-prefs-runner.ts`, `extension-prefs.ts`, `extension-sender-id-check.ts`,
+`extension-tab-details.ts`, `extension-tab-invocation.ts`, `extension-url-policy.ts`,
+`extensions-detail-parts.ts`, `extensions-domain.ts`, `extensions-install-test-hook.ts`,
+`extensions-menu-command.ts`, `extensions-menu-model.ts`, `extensions-menu-names.ts`,
+`extensions-menu-overlay.ts`, `extensions-menu-points.ts`, `extensions-page-commands.ts`,
+`extensions-view-runner.ts`, `extensions-view.ts`, `granted-host-rule.ts`, `granted-reconcile.ts`,
+`install-lifecycle.ts`, `install-private.ts`, `install-store-runner.ts`,
+`manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `optional-permissions.ts`,
+`permission-nag-limit.ts`, `permission-prompt-overlay.ts`, `registry-runner.ts`, `registry.ts`,
+`shortcuts-page.ts`, `site-reach-runner.ts`, `site-reach.ts`, `store-download-seam.ts`,
 `store-runner.ts`, `store-test-hook.ts` and `unpack-runner.ts`), `node:crypto`, `node:fs`, `node:path`,
 `adm-zip`, `pbf`,
 [`../sessions/web-request-owner.ts`](../sessions/web-request-owner.ts)'s `webRequestOwnerFor`/
@@ -96,6 +105,7 @@ same exception, reached only through the virtual specifiers above).
 | `permissions-api.ts`, `permission-prompt-overlay.ts` | `chrome.permissions` and the sheet it asks in (an `OverlayDef` queued through `requestSlot`) |
 | `extension-host.ts`, `extension-host-impl.ts`, `extension-popup-policy.ts`, `extension-event-filter.ts` | The library wiring: construction and tab lifecycle, the shell callbacks, the popup and background-page window policy, the per-listener event filter |
 | `api/` | Main-side handlers for the namespaces Orivon adds to `chrome.*`, and the one permission check (`api/README.md`) |
+| `dnr/`, `dnr-api.ts`, `dnr-action-options.ts`, `dnr-match-log.ts`, `dnr-webrequest.ts`, `extensions-dnr.ts` | `declarativeNetRequest`, applied by Orivon rather than Electron ([`ADR-0051`](../../../docs/decisions/ADR-0051-orivon-applies-extensions-declarativenetrequest-rules-itself.md)): the Electron-free engine and its disk reads (`dnr/README.md`), the `chrome.declarativeNetRequest` handlers and badge counts, and the handlers registered on the session's one `webRequest` owner |
 | `extensions-subsystem.ts` | Registers everything into the running app via `../registry.ts`, including the Chrome Web Store (`store-runner.ts`) |
 | `store-test-hook.ts` | Test builds only -- exposes the store methods on `globalThis` for `test/e2e-extensions-store.test.ts` |
 | `extensions-domain.ts` | The `orivon://extensions` page's `InternalDomain` -- validates every request, wires the pieces above to what the page asks |
