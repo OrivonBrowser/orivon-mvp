@@ -26,7 +26,7 @@ rather than editing here.
 | [`pages/`](pages/) | The shell's own pages at `orivon://`, in a session only they can load, and the one channel they speak on | which webContents are which page | `internal-session.ts`, `internal-ipc.ts` and `pages-subsystem.ts` only |
 | [`downloads/`](downloads/) | The files tabs download, saved without a dialog, tracked and managed from `orivon://downloads` | `downloads.json` on disk (memory only in a private session) | `install-downloads.ts`, `folder-runner.ts` and the `DownloadItem` type in `download-service.ts` |
 | [`history/`](history/) | The pages that were visited, kept on this computer and forgotten on request | `history.db` on disk | `attach-history.ts` and `install-history.ts` only |
-| [`privacy/`](privacy/) | Clearing history, site data, the cache and app storage | no | no |
+| [`privacy/`](privacy/) | Clearing history, site data, the cache and app storage; the network controls (request headers, cookie policy, HTTPS-only, secure DNS) | no | the installer and the runners only |
 | [`site-settings/`](site-settings/) | What a site may do: per-site permissions, content settings and the prompt that asks | no | the installers only |
 | [`passwords/`](passwords/) | The saved-login store, its Settings domain and the form watcher that feeds it | yes: `passwords.json` | the installer and the runner only |
 | [`auth/`](auth/) | The sign-in sheets an HTTP server asks for and the certificates a connection shows | in memory only: pending challenges, the certificates connections presented | the installer, the clipboard write and the tab navigation count |
