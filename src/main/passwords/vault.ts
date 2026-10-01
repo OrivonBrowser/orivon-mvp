@@ -33,14 +33,20 @@ export interface NeverSaved {
 }
 
 export interface PasswordVault {
+  /** Where the store stands. A store that has to ask the system whether it can keep anything answers `unavailable` until `ready` resolves. */
   state: () => VaultState
+  /** Resolves once `state` is final; absent on a store that knows at once. */
+  ready?: () => Promise<void>
   /** Every login, or those of one origin; oldest first. Never carries a password. */
   list: (origin?: string) => readonly Login[]
   /** The password of one login, or undefined when there is none. Only the store's own pages call this. */
   reveal: (id: string) => Promise<string | undefined>
   /** Adds a login, or replaces the password of the one with the same origin and username. Null when it cannot be kept. */
   save: (entry: LoginInput) => Promise<Login | null>
-  remove: (id: string) => boolean
+  /** False when there was no such login, or when it could not be taken out of the store. */
+  remove: (id: string) => Promise<boolean>
+  /** Records that the login was just filled into a page, so the chooser lists the one used last first. */
+  touch?: (id: string) => void
   readonly never: NeverSaved
   onChange: (listener: () => void) => () => void
 }
@@ -68,10 +74,16 @@ export function memoryVault (state: VaultState = 'ready'): PasswordVault {
       changed()
       return await Promise.resolve(login)
     },
-    remove: (id) => {
+    touch: (id) => {
+      const entry = logins.get(id)
+      if (entry === undefined) return
+      logins.set(id, { login: { ...entry.login, used: Date.now() }, password: entry.password })
+      changed()
+    },
+    remove: async (id) => {
       const removed = logins.delete(id)
       if (removed) changed()
-      return removed
+      return await Promise.resolve(removed)
     },
     never: {
       has: (origin) => never.has(origin),

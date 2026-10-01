@@ -26,8 +26,8 @@ it claims in the session it belongs in.
 [`../../broker/`](../../broker/) (`grants/origin-hash.ts`, `grants/node-ledger-storage.ts`'s
 `writeFileAtomic`, `policy/origin.ts`, `broker-contracts.ts` types),
 [`../../loader/electron/serve.ts`](../../loader/electron/serve.ts),
-[`../../protocols/builtin.ts`](../../protocols/builtin.ts), [`../shell/`](../shell/) (the two
-questions, `external-link-prompt.ts` and `notification-prompt.ts`; `showing-window.ts`;
+[`../../protocols/builtin.ts`](../../protocols/builtin.ts), [`../shell/`](../shell/) (the native
+question `external-link-prompt.ts`; `showing-window.ts`;
 `exclusive-access-notice.ts`; `lock-navigation.ts`; `tab-view.ts`'s `partitionForTarget`), the
 top-level `registry.ts`. Only `permission-gate.ts`, `web-context-host.ts`, `web-request-owner.ts`
 and `session-attribution.ts` import `electron`: the decision files, `web-request-compose.ts`
@@ -96,7 +96,17 @@ to check either signal against.
 | `pointerLock` | 1(b) | A click; Escape in the browser process; "Press Esc to show your cursor" | `ADR-0026` |
 | `keyboardLock` | 1(b) | Acts only in fullscreen, which a click enters; holding Escape leaves; "Press and hold Esc to exit full screen" | `ADR-0026` |
 | `openExternal` | 2 | "Open *scheme* link with your system's default app?", every time; never asked for a page an app shows in a `<webview>`, which is refused (`ADR-0047`) | `ADR-0027` |
-| `notifications` | 2 | "*site* wants to show notifications", once per site, remembered | `ADR-0028` |
+| `notifications` | 2 | "*site* wants to show notifications", once per site, remembered; asked in the per-site prompt under the address bar | `ADR-0028` |
+
+**Names a per-site asker owns.** `media` (camera and microphone, one question for both),
+`clipboard-read` and `deprecated-sync-clipboard-read`, `geolocation`, `midi` and `midiSysex`,
+`idle-detection` and `window-management` are answered first by the asker
+[`../site-settings/`](../site-settings/) registers, and only for an ordinary tab on an `http(s)`
+site that is not a registered app. A main frame asks once per site and the answer is remembered; a
+frame never asks and gets only its own page's stored allow; the check handler reads the stored
+answers and never asks. Anything the asker does not own, or any contents that is not a tab (an
+extension's page, a shell view, an embed), falls through to this table, where none of these names
+passes.
 
 Which handler Electron routes each name to was measured, and each ADR records it. Two traps
 follow from it:

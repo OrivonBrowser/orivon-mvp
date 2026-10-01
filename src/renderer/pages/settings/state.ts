@@ -75,8 +75,8 @@ export class SettingsState {
     await this.privacy.load()
     await this.web3.load()
     await this.downloads.load()
-    for (const part of this.parts.values()) await part.load?.()
     await this.engines.load()
+    for (const part of this.parts.values()) await part.load?.()
     this.profiles = await this.bridge.request('profiles', { type: 'list' }) as SettingsState['profiles']
     this.bridge.onEvent((topic, payload) => {
       if (this.shortcuts.handle(topic, payload)) return

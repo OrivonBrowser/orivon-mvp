@@ -122,6 +122,17 @@ describe('registerPermissionsIpc', () => {
   })
 })
 
+describe('registerPermissionsIpc: the link to Site settings', () => {
+  it('opens Site settings from the panel only, and does nothing when no opener was wired', async () => {
+    const open = vi.fn()
+    registerPermissionsIpc(permissionsWebContents, PANEL_URL, fakePermissions(), () => {}, undefined, undefined, open)
+    await dispatch({ type: 'openSiteSettings' })
+    expect(open).toHaveBeenCalledTimes(1)
+    await dispatch({ type: 'openSiteSettings' }, OTHER_FRAME)
+    expect(open).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('registerPermissionsIpc: the light client section', () => {
   const VIEW = { state: 'synced' as const, summary: 'Following the chain.', checkpoint: 'Checkpoint 3 hours old.', about: 'It proves names.', endpoints: [] }
 

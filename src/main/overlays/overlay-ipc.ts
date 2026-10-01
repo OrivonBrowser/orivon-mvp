@@ -10,7 +10,7 @@ export interface OverlayPort {
   ready: () => unknown
   request: (command: unknown) => unknown
   size: (height: number) => void
-  close: (reason: 'request' | 'escape') => void
+  close: (reason: 'request' | 'escape' | 'blur') => void
 }
 
 function isFromOverlay (event: IpcMainInvokeEvent, contents: WebContents, url: string): boolean {
@@ -40,7 +40,10 @@ export function registerOverlayIpc (contents: WebContents, url: string, port: Ov
         return undefined
       }
       case 'close':
-        port.close((message as { reason?: unknown }).reason === 'escape' ? 'escape' : 'request')
+        {
+          const { reason } = message as { reason?: unknown }
+          port.close(reason === 'escape' || reason === 'blur' ? reason : 'request')
+        }
         return undefined
       default:
         return undefined

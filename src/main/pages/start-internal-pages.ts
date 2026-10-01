@@ -18,6 +18,8 @@ import { onVerifierChange, verifierView } from '../verifier/verifier-subsystem.j
 import { web3Domain } from '../verifier/web3-domain.js'
 import { appDomain } from './app-domain.js'
 import { telemetryDomain } from './telemetry-domain.js'
+import { realDefaultBrowserHost } from '../os/default-browser-runner.js'
+import { osDomain } from '../os/os-domain.js'
 import { checkUpdateNow } from '../self-update/update-check-runner.js'
 import { updatesDomain } from '../self-update/updates-domain.js'
 import { onTelemetryChanged } from '../../telemetry/runner.js'
@@ -37,7 +39,11 @@ import { copyToClipboard, readAboutFacts, readGpu } from '../info/about-runner.j
 import { tasksDomain } from '../info/tasks-domain.js'
 import { endProcess, focusTab, listTasks } from '../info/tasks-runner.js'
 import type { TasksEnv } from '../info/tasks-runner.js'
+import { passwordsDomainFor } from '../passwords/passwords-runner.js'
 import { privacyDomain } from '../privacy/privacy-domain.js'
+import { siteDataDomain } from '../privacy/site-data-domain.js'
+import { siteSettingsControllerFor } from '../site-settings/site-settings-runner.js'
+import { sitesDomain } from '../site-settings/sites-domain.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { nodeLoaderStorage } from '../../loader/cache/node-storage.js'
@@ -67,6 +73,7 @@ function aboutDomain (): InternalDomain {
 /** Once per process. */
 export function startInternalPages (services: ShellServices, ctx: SubsystemContext): void {
   const permissions = createPermissionsController(ctx)
+  const siteSettings = siteSettingsControllerFor(services, ctx)
   if (ctx.extensions === undefined) {
     throw new Error('startInternalPages requires ctx.extensions -- check extensionsSubsystem\'s position in subsystems.ts')
   }
@@ -100,6 +107,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     }),
     profiles: profilesDomain(services.profiles),
     pages: pagesDomain(services.windows),
+    passwords: passwordsDomainFor(services),
     extensions: extensionsDomain({
       extensions,
       prefs: extensions.prefs,
@@ -115,6 +123,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     privacy: privacyDomain(services.history, services.zoomStore, {
       history: services.history,
       zoom: services.zoomStore,
+      siteSettings,
       websites: session.defaultSession,
       // Only a CACHE-SERVED app still has a partition of its own to clear:
       // a granted-without-install app shares session.defaultSession, which
@@ -127,6 +136,8 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
         .map((app) => session.fromPartition(partitionFor(app.origin))),
       now: Date.now
     }),
+    sites: sitesDomain(siteSettings, { isPrivate: services.isPrivate }),
+    siteData: siteDataDomain(() => session.defaultSession),
     apps: appsDomain({ permissions, userDataPath: app.getPath('userData'), identity: identityKeyStorage }),
     web3: web3Domain({
       view: verifierView,
@@ -135,6 +146,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       forcedOff: () => process.env['ORIVON_ETH_LIGHT_CLIENT'] === 'off'
     }),
     app: appDomain(app, services.profiles.isPrivate),
+    os: osDomain(realDefaultBrowserHost, services.profiles.isPrivate, async (ms) => { await new Promise<void>((resolve) => { setTimeout(resolve, ms) }) }),
     tasks: tasksDomain({
       list: () => listTasks(tasksEnv),
       end: (pid) => endProcess(tasksEnv, pid),
@@ -144,7 +156,8 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     updates: updatesDomain(
       async () => await checkUpdateNow(app),
       services.profiles.isPrivate,
-      (answer) => { services.internalPages.publish('updates.changed', answer, ['settings']) }
+      (answer) => { services.internalPages.publish('updates.changed', answer, ['settings']) },
+      (caller, url) => { services.windows.findOwner(caller.contents)?.tabs.createTab(url) }
     ),
     about: aboutDomain()
   })
@@ -177,6 +190,8 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   services.closedTabs.onChange(() => { services.internalPages.publish('history.closed', undefined, ['history']) })
   services.downloads.onChange(throttleChanges((change) => { services.internalPages.publish('downloads.changed', change, ['downloads']) }))
   services.zoomStore.onChange(() => { services.internalPages.publish('privacy.changed', undefined, ['settings']) })
+  siteSettings.onChange(() => { services.internalPages.publish('sites.changed', undefined, ['settings']) })
+  services.passwords.onChange(() => { services.internalPages.publish('passwords.changed', undefined, ['settings']) })
   services.profiles.onChange(() => { services.internalPages.publish('profiles.changed', undefined, ['settings', 'profiles']) })
   // Never fires in a private session: startTelemetry never runs there, and
   // telemetry-domain.ts's own isPrivate guard makes decideConsent unreachable.

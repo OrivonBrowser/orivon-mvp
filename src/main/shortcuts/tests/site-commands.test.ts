@@ -17,7 +17,15 @@ const ROWS: ReadonlyArray<[id: string, label: string, category: string, binding:
 ]
 
 // Rows whose feature has landed: they run something now, so they carry no pending flag. One id a line.
-const LANDED: readonly string[] = []
+const LANDED: readonly string[] = [
+  'passwords.open',
+  'privacy.clearData',
+  'share.copyLink',
+  'share.email',
+  'site.certificate',
+  'site.shortcut',
+  'siteSettings.open'
+]
 
 const commandsIn = (entries: readonly MenuEntry[]): string[] => entries.flatMap((entry): string[] => {
   if (entry === '-') return []
@@ -47,8 +55,8 @@ describe('the site and privacy command rows', () => {
     expect(COMMANDS.filter((def) => (def as CommandDef).default === 'Mod+Shift+Delete').map((def) => def.id)).toEqual(['privacy.clearData'])
   })
 
-  it('lists each but the certificate and site settings rows, which the site panel and Settings open, in the main menu layout', () => {
+  it('lists each but the site settings row, which Settings opens, in the main menu layout', () => {
     const inMenu = commandsIn(MENU_LAYOUT)
-    for (const [id] of ROWS.filter(([id]) => id !== 'site.certificate' && id !== 'siteSettings.open')) expect(inMenu, id).toContain(id)
+    for (const [id] of ROWS.filter(([id]) => id !== 'siteSettings.open')) expect(inMenu, id).toContain(id)
   })
 })

@@ -27,13 +27,13 @@ rather than editing here.
 | [`downloads/`](downloads/) | The files tabs download, saved without a dialog, tracked and managed from `orivon://downloads` | `downloads.json` on disk (memory only in a private session) | `install-downloads.ts`, `folder-runner.ts` and the `DownloadItem` type in `download-service.ts` |
 | [`history/`](history/) | The pages that were visited, kept on this computer and forgotten on request | `history.db` on disk | `attach-history.ts` and `install-history.ts` only |
 | [`import/`](import/) | Bookmarks and history read once from another browser's profile files, through a read-only copy, into Orivon's own stores | no | `import-host.ts` only |
-| [`privacy/`](privacy/) | Clearing history, site data, the cache and app storage | no | no |
-| [`site-settings/`](site-settings/) | What a site may do: per-site permissions, content settings and the prompt that asks | no | the installers only |
-| [`passwords/`](passwords/) | The saved-login store and the form watcher that feeds it | no | the installer only |
-| [`auth/`](auth/) | The sign-in sheets an HTTP server asks for and the certificates a connection shows | no | the installer only |
-| [`os/`](os/) | What the operating system is told about Orivon: links from other programs, the default-browser registration, shortcuts, sharing | no | the installer only |
-| [`autofill/`](autofill/) | Saved postal addresses and the chooser that fills a form from them | no | the installer only |
-| [`devices/`](devices/) | The choosers for a screen to share and for a USB or HID device | no | the installer only |
+| [`privacy/`](privacy/) | Clearing history, site data, the cache and app storage; the network controls (request headers, cookie policy, HTTPS-only, secure DNS) | no | the installer and the runners only |
+| [`site-settings/`](site-settings/) | What a site may do: per-site permissions, content settings and the prompt that asks | yes: `site-settings.json` (memory only in a private session) | the installers only |
+| [`passwords/`](passwords/) | The saved-login store, its Settings domain and the form watcher that feeds it | yes: `passwords.json` | the installer and the runner only |
+| [`auth/`](auth/) | The sign-in sheets an HTTP server asks for and the certificates a connection shows | in memory only: pending challenges, the certificates connections presented | the installer, the clipboard write and the tab navigation count |
+| [`os/`](os/) | What the operating system is told about Orivon: links from other programs, the default-browser registration, shortcuts, sharing | no | the runners only |
+| [`autofill/`](autofill/) | Saved postal addresses and the chooser that fills a form from them; this build has only an empty installer | no | the installer only |
+| [`devices/`](devices/) | The choosers for a screen to share and for a USB or HID device; this build has only an empty installer | no | the installer only |
 | [`devtools/`](devtools/) | When developer tools may open on a page, and the question before they open on an app | which tools are open | `devtools-prompt.ts` only |
 | [`info/`](info/) | The About page and the task manager: the version and graphics facts, the process list, ending a process | when the last processor reading was taken | `about-runner.ts` and `tasks-runner.ts` only |
 | [`page-tools/`](page-tools/) | Print, save as PDF, save the page, view source, screenshots and picture in picture, and the toast that reports them | no | `real-deps.ts` and the files that type a `webContents`, as types |

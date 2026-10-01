@@ -25,6 +25,14 @@ export interface SlotAsk {
   readonly closed: (reason: SlotCloseReason) => void
 }
 
+/** What sits behind a sheet while it is shown, so a sheet is never drawn over a backdrop of the wrong theme. */
+export interface SheetBackdrop {
+  raise: (window: ShellWindow, tabId: string) => void
+  lower: (window: ShellWindow, tabId: string) => void
+}
+
+const NO_BACKDROP: SheetBackdrop = { raise: () => {}, lower: () => {} }
+
 /** Asks waiting behind the one at the head of a tab's slot; one more ends `queue-full`. */
 export const MAX_WAITING = 3
 
@@ -43,7 +51,7 @@ export interface TabSlots {
 }
 
 /** `defer` runs a function after the current synchronous turn; tests pass their own. */
-export function createTabSlots (defer: (run: () => void) => void = queueMicrotask): TabSlots {
+export function createTabSlots (defer: (run: () => void) => void = queueMicrotask, backdrop: () => SheetBackdrop = () => NO_BACKDROP): TabSlots {
   const windows = new WeakMap<ShellWindow, Map<string, TabAsks>>()
 
   const tabsOf = (window: ShellWindow): Map<string, TabAsks> => {
@@ -77,6 +85,7 @@ export function createTabSlots (defer: (run: () => void) => void = queueMicrotas
       tab.shown = next
       try {
         window.overlays.show(next.ask.overlay, next.ask.anchor?.(), next.ask.payload)
+        if (next.ask.slot === 'center') backdrop().raise(window, tabId)
         return
       } catch (error) {
         console.error(`[tab-slots] showing ${next.ask.overlay} failed:`, error)
@@ -102,6 +111,7 @@ export function createTabSlots (defer: (run: () => void) => void = queueMicrotas
   function end (window: ShellWindow, tabId: string, entry: Entry, reason: SlotCloseReason): void {
     const tab = tabsOf(window).get(tabId)
     if (tab !== undefined) remove(tab, entry)
+    if (entry.ask.slot === 'center') backdrop().lower(window, tabId)
     finish(entry, reason)
     if (tab === undefined) return
     if (reason !== 'replaced' && reason !== 'window-closed') present(window, tabId)
@@ -136,8 +146,10 @@ export function createTabSlots (defer: (run: () => void) => void = queueMicrotas
         const entry = tab.shown
         if (entry === null || entry.ask.overlay !== overlay) continue
         // Leaving the tab hides its ask and keeps it: it shows again when the tab comes back.
-        if (reason === 'tab-switch') tab.shown = null
-        else end(window, tabId, entry, reason)
+        if (reason === 'tab-switch') {
+          tab.shown = null
+          if (entry.ask.slot === 'center') backdrop().lower(window, tabId)
+        } else end(window, tabId, entry, reason)
         return
       }
     },
@@ -163,7 +175,14 @@ export function createTabSlots (defer: (run: () => void) => void = queueMicrotas
   }
 }
 
-const slots = createTabSlots()
+let sheetBackdrop: SheetBackdrop = NO_BACKDROP
+
+/** The real backdrop, installed once the shell exists; until then sheets raise nothing. */
+export function setSheetBackdrop (next: SheetBackdrop): void {
+  sheetBackdrop = next
+}
+
+const slots = createTabSlots(queueMicrotask, () => sheetBackdrop)
 
 /** Asks to show `overlay` in a slot of a tab; `cancel` withdraws the ask. */
 export const requestSlot = slots.requestSlot

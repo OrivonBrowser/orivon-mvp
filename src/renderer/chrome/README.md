@@ -8,7 +8,7 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 | `context.ts` | `ChromeModule`, `ChromeContext`, `TabDecorator`; the state every module reads; `must`, `hasSite`, `anchorFor` |
 | `modules.ts` | `CHROME_MODULES` and `TAB_DECORATORS`, one line per feature, and `dispatchShellEvent` |
 | `tab-strip.ts` | the tabs (pinned ones in front, the rest in one scrolling run, `#tab-scroll`), the new-tab button, the empty tail, the cross-window drop mark |
-| `tab-badges.ts` | a tab's pinned look, tooltip, accessible name and speaker badge; a `TabDecorator` |
+| `tab-badges.ts` | a tab's pinned look, tooltip, accessible name and speaker badge (a tab its site silenced reads "Muted by site settings" and the badge does nothing); a `TabDecorator` |
 | `tab-crashed.ts` | a crashed tab's mark; a `TabDecorator` |
 | `contain.ts` | `contained` and `runDecorators`: one feature's throw is logged and the rest run |
 | `tab-search-button.ts` | the button at the strip's right end that opens tab search |
@@ -18,8 +18,12 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 | `downloads-button.ts` | the downloads button in the cluster: a progress ring, a dot for what wants a look, the bubble on a click; `downloads-ring.ts` is its pure part |
 | `reload-stop.ts` | Reload becomes Stop after 150 ms of loading |
 | `home-button.ts` | the Home button, shown while `toolbar.home` is on |
+| `password-key.ts` | the password button in the address pill: saved logins for this site, or an offer to keep the last sign-in |
 | `prompt-anchor.ts` | reports the address pill's rectangle to main (`prompt.anchor`), so a prompt can open under it |
 | `site-badges.ts` | the Web3 Score shield and mark, the permissions key |
+| `site-access-chip.ts` | the mark in the address bar for a page that asked for the camera, a location or another permission; it opens the review bubble |
+| `content-dot.ts` | a mark on the address bar's key for a site with JavaScript, images or sound switched off: an attribute on `site-badges`'s button, drawn by `styles/content-dot.css` |
+| `popups-chip.ts` | the mark in the address bar for a page whose pop-ups were blocked, with a count from two; it opens the `popups-blocked` bubble |
 | `cluster.ts` | the bookmark star, the zoom chip, the all-sites button, the profile chip, the menu button |
 | `bookmark-star.ts` | the star: opens the bookmark bubble under itself, and answers Mod+D with its rectangle |
 | `bookmarks-bar.ts` | the row under the toolbar: the bar's items, folder menus, the overflow button, the right-click menu |

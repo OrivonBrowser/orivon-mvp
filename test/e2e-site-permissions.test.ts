@@ -6,10 +6,12 @@
 // forgets it; and it is asked once, remembered across a restart, and read
 // back by Notification.permission.
 //
-// NOTHING IS SHOWN AND NOTHING LAUNCHES. Both questions are native message
-// boxes no driver can press, so `dialog.showMessageBox` is replaced in the
-// main process with one that records what it was asked and answers from a
-// variable -- the privilege Playwright's `evaluate` already has. Answering
+// NOTHING IS SHOWN AND NOTHING LAUNCHES. The external-link question is a
+// native message box no driver can press, so `dialog.showMessageBox` is
+// replaced in the main process with one that records what it was asked and
+// answers from a variable -- the privilege Playwright's `evaluate` already
+// has. The notification question is the prompt under the address bar, an
+// overlay the test answers by clicking it. Answering
 // yes to an external link makes Electron itself run the OS handler, so the
 // launched app finds `xdg-open` (and every sibling opener) on PATH as a stub
 // that records its argument and launches nothing.
@@ -32,7 +34,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
-import { ABSENCE_SETTLE_MS, HERMETIC_RESOLVER, delay, evaluateRetrying, findChrome, waitFor } from './smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, HERMETIC_RESOLVER, delay, evaluateRetrying, findChrome, popoverShown, waitFor } from './smoke-helpers.mjs'
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, navigateToFixture, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
 import { focusWebContents, underVirtualDisplay, webContentsFocused } from './focus-helpers.js'
 
@@ -41,6 +43,7 @@ const HOST = '127.0.0.1'
 const PORT = 8898
 const ORIGIN = `http://${HOST}:${PORT}`
 const PAGE_URL = `${ORIGIN}/`
+const QUIET_URL = `${ORIGIN}/?quiet`
 const TITLE = 'site permissions fixture'
 const MAGNET = 'magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=probe%20file'
 
@@ -57,7 +60,9 @@ const PAGE = `<!doctype html><meta charset="utf-8"><title>${TITLE}</title>
   document.addEventListener('pointerlockchange', () => { window.__r.locked = document.pointerLockElement !== null })
   // Asked before anyone has touched the page: links at load, the pointer as
   // soon as the page has focus, which pointer lock needs.
-  const untilFocused = setInterval(() => {
+  // The notification phase loads this page with ?quiet: a prompt that hands focus back would otherwise let the
+  // page take the pointer, which is what the pointer-lock phase above is about.
+  const untilFocused = location.search === '?quiet' ? 0 : setInterval(() => {
     if (!document.hasFocus()) return
     clearInterval(untilFocused)
     document.body.requestPointerLock().then(() => { window.__r.unprompted = 'resolved' }, (e) => { window.__r.unprompted = e.name })
@@ -87,12 +92,11 @@ async function stubDialogs (app: ElectronApplication): Promise<void> {
   await app.evaluate(({ dialog }) => {
     const g = globalThis as unknown as { __asked: Asked[], __answers: Record<string, number> }
     g.__asked = []
-    g.__answers = { external: 1, notifications: 2 }
+    g.__answers = { external: 1 }
     dialog.showMessageBox = (async (...args: unknown[]) => {
       const options = args.at(-1) as { message: string, detail?: string, buttons?: string[] }
       g.__asked.push({ message: options.message, detail: options.detail ?? '', buttons: options.buttons ?? [] })
-      const response = options.message.startsWith('Open ') ? g.__answers['external'] : g.__answers['notifications']
-      return { response, checkboxChecked: false }
+      return { response: g.__answers['external'], checkboxChecked: false }
     }) as typeof dialog.showMessageBox
   })
 }
@@ -101,15 +105,29 @@ async function asked (app: ElectronApplication): Promise<Asked[]> {
   return await app.evaluate(() => (globalThis as unknown as { __asked: Asked[] }).__asked)
 }
 
-/** The notification questions only: the page's load-time external links ask too. */
-async function askedAboutNotifications (app: ElectronApplication): Promise<Asked[]> {
-  return (await asked(app)).filter((question) => question.message.endsWith('wants to show notifications'))
-}
-
-async function answer (app: ElectronApplication, question: 'external' | 'notifications', button: number): Promise<void> {
+async function answer (app: ElectronApplication, question: 'external', button: number): Promise<void> {
   await app.evaluate((_electron, [q, b]) => {
     (globalThis as unknown as { __answers: Record<string, number> }).__answers[q as string] = b as number
   }, [question, button])
+}
+
+/** The notification question is the prompt under the address bar, an Orivon overlay no native dialog stands in for. */
+async function waitForPrompt (app: ElectronApplication): Promise<Page> {
+  let found: Page | undefined
+  const shown = await waitFor(async () => {
+    if (!(await popoverShown(app, 'overlay=site-prompt'))) return false
+    const candidate = app.windows().filter((w) => w.url().includes('overlay=site-prompt') && !w.isClosed()).at(-1)
+    if (candidate === undefined) return false
+    try { await candidate.waitForSelector('.site-prompt .btn-row', { timeout: 2_000 }); found = candidate; return true } catch { return false }
+  }, 15_000)
+  if (!shown || found === undefined) throw new Error('the notification prompt did not appear')
+  return found
+}
+
+/** Waits out the half second the buttons ignore presses, then presses one. */
+async function answerPrompt (prompt: Page, label: 'Allow' | 'Block'): Promise<void> {
+  await prompt.waitForSelector('.site-prompt:not(.arming)')
+  try { await prompt.click(`.btn-row .btn:text-is("${label}")`) } catch (error) { if (!/closed|destroyed/.test(String(error))) throw error }
 }
 
 /** Every notice text on screen: a notice view's page is a data: URL. */
@@ -308,27 +326,31 @@ it.skipIf(!sessionBusIsPrivate())('asks a site once about notifications, remembe
 
       const first = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env })
       try {
+        // The fixture opens external links at load; those questions are native boxes and stay stubbed.
         await stubDialogs(first)
-        const view = await navigateToFixture(first, PAGE_URL, TITLE)
+        const view = await navigateToFixture(first, QUIET_URL, TITLE)
         const before = await evaluateRetrying(view, async () => [Notification.permission, (await navigator.permissions.query({ name: 'notifications' })).state])
         check(`a site nobody has answered for does not read as granted (Notification.permission, Permissions API: ${before.join(', ')})`, !before.includes('granted'))
 
         await view.click('#notify')
+        const prompt = await waitForPrompt(first)
+        const lines = await prompt.evaluate(() => [document.querySelector('.origin')?.textContent, document.querySelector('.sp-text')?.textContent, ...Array.from(document.querySelectorAll('.btn-row .btn')).map((b) => b.textContent)])
+        check('the site is asked, and named first', JSON.stringify(lines) === JSON.stringify([ORIGIN, 'wants to show notifications', 'Block', 'Allow']), JSON.stringify(lines))
+        // Escape is "not now": it decides nothing.
+        try { await prompt.keyboard.press('Escape') } catch (error) { if (!/closed/.test(String(error))) throw error }
         await waitFor(async () => (await pageState(view)).notify !== undefined)
-        const notNow = await askedAboutNotifications(first)
-        check('the site is asked, and named first', notNow.length === 1 && notNow[0]?.message === `${ORIGIN} wants to show notifications` &&
-          JSON.stringify(notNow[0]?.buttons) === '["Allow","Block","Not now"]', JSON.stringify(notNow))
         check(`"Not now" grants nothing (got ${String((await pageState(view)).notify)})`, (await pageState(view)).notify !== 'granted')
         await evaluateRetrying(view, () => { delete (window as unknown as { __r: PageState }).__r.notify })
         await view.click('#notify')
         await waitFor(async () => (await pageState(view)).notify !== undefined)
-        check('the same page load is not asked twice', (await askedAboutNotifications(first)).length === 1)
+        await delay(ABSENCE_SETTLE_MS)
+        check('the same page load is not asked twice', !(await popoverShown(first, 'overlay=site-prompt')))
 
         await view.reload()
-        await answer(first, 'notifications', 0)
         await view.click('#notify')
+        await answerPrompt(await waitForPrompt(first), 'Allow')
         const granted = await waitFor(async () => (await pageState(view)).notify === 'granted')
-        check('after a reload the site is asked again, and Allow grants', granted && (await askedAboutNotifications(first)).length === 2)
+        check('after a reload the site is asked again, and Allow grants', granted)
         const state = await evaluateRetrying(view, async () => [Notification.permission, (await navigator.permissions.query({ name: 'notifications' })).state])
         check(`Notification.permission and the Permissions API agree (got ${state.join(', ')})`, state[0] === 'granted' && state[1] === 'granted')
 
@@ -347,11 +369,12 @@ it.skipIf(!sessionBusIsPrivate())('asks a site once about notifications, remembe
       })
       try {
         await stubDialogs(second)
-        const view = await navigateToFixture(second, PAGE_URL, TITLE)
+        const view = await navigateToFixture(second, QUIET_URL, TITLE)
         check('after a restart the site reads as granted', await evaluateRetrying(view, () => Notification.permission) === 'granted')
         await view.click('#notify')
         await waitFor(async () => (await pageState(view)).notify !== undefined)
-        check('and is not asked again', (await pageState(view)).notify === 'granted' && (await askedAboutNotifications(second)).length === 0)
+        await delay(ABSENCE_SETTLE_MS)
+        check('and is not asked again', (await pageState(view)).notify === 'granted' && !(await popoverShown(second, 'overlay=site-prompt')))
       } finally {
         await closeElectronApp(second)
       }

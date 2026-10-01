@@ -22,6 +22,7 @@ interface OrivonPermissions {
   listSiteNotifications: () => Promise<readonly SiteNotificationRow[]>
   /** Forgets a site's notification answer; it is asked again next time. */
   resetSiteNotifications: (origin: string) => Promise<void>
+  openSiteSettings: () => Promise<void>
   lightClient: () => Promise<LightClientView | null>
   onLightClient: (listener: (view: LightClientView) => void) => void
   reportHeight: (height: number) => void
@@ -47,6 +48,8 @@ const permissions = must(window.orivonPermissions, 'orivonPermissions not expose
 
 const list = must(document.querySelector<HTMLDivElement>('#apps-list'), '#apps-list missing')
 const emptyState = must(document.querySelector<HTMLElement>('#empty-state'), '#empty-state missing')
+const siteSettingsLink = must(document.querySelector<HTMLButtonElement>('#site-settings-link'), '#site-settings-link missing')
+siteSettingsLink.addEventListener('click', () => { void permissions.openSiteSettings() })
 const lightClientSection = must(document.querySelector<HTMLElement>('#light-client'), '#light-client missing')
 
 const view = createPermissionsListView(

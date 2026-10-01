@@ -2,21 +2,23 @@ import { describe, expect, it, vi } from 'vitest'
 import { clearBrowsingData, parseClearRequest } from '../clear-data.js'
 import type { ClearRequest } from '../clear-data.js'
 
-const NOTHING: ClearRequest = { history: 'none', siteData: false, cache: false, zoomLevels: false, appData: false }
+const NOTHING: ClearRequest = { history: 'none', siteData: false, cache: false, zoomLevels: false, appData: false, siteSettings: false }
 const NOW = 10_000_000
 
-function setup (): { deps: Parameters<typeof clearBrowsingData>[1], history: Record<'clear' | 'removeRange', ReturnType<typeof vi.fn>>, zoom: { clear: ReturnType<typeof vi.fn> }, websites: { clearData: ReturnType<typeof vi.fn> }, app: { clearData: ReturnType<typeof vi.fn> } } {
+function setup (): { deps: Parameters<typeof clearBrowsingData>[1], history: Record<'clear' | 'removeRange', ReturnType<typeof vi.fn>>, zoom: { clear: ReturnType<typeof vi.fn> }, siteSettings: { resetAll: ReturnType<typeof vi.fn> }, websites: { clearData: ReturnType<typeof vi.fn> }, app: { clearData: ReturnType<typeof vi.fn> } } {
   const history = { clear: vi.fn(), removeRange: vi.fn() }
   const zoom = { clear: vi.fn() }
+  const siteSettings = { resetAll: vi.fn() }
   const websites = { clearData: vi.fn(async () => {}) }
   const app = { clearData: vi.fn(async () => {}) }
-  return { deps: { history, zoom, websites, appSessions: async () => [app, app], now: () => NOW } as never, history, zoom, websites, app }
+  return { deps: { history, zoom, siteSettings, websites, appSessions: async () => [app, app], now: () => NOW } as never, history, zoom, siteSettings, websites, app }
 }
 
 describe('clearing browsing data', () => {
   it('does nothing when nothing is chosen', async () => {
-    const { deps, history, zoom, websites, app } = setup()
+    const { deps, history, zoom, siteSettings, websites, app } = setup()
     expect(await clearBrowsingData(NOTHING, deps)).toEqual({ ok: true, failed: [] })
+    expect(siteSettings.resetAll).not.toHaveBeenCalled()
     expect(history.clear).not.toHaveBeenCalled()
     expect(history.removeRange).not.toHaveBeenCalled()
     expect(zoom.clear).not.toHaveBeenCalled()
@@ -59,6 +61,23 @@ describe('clearing browsing data', () => {
     expect(zoom.clear).toHaveBeenCalledTimes(1)
   })
 
+  it('forgets what each site was allowed or blocked, and only when asked', async () => {
+    const { deps, siteSettings, websites } = setup()
+    await clearBrowsingData({ ...NOTHING, siteSettings: true }, deps)
+    expect(siteSettings.resetAll).toHaveBeenCalledTimes(1)
+    expect(websites.clearData).not.toHaveBeenCalled()
+  })
+
+  it('says siteSettings failed when forgetting threw, and still clears the rest', async () => {
+    const { deps, siteSettings, zoom } = setup()
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    siteSettings.resetAll.mockImplementation(() => { throw new Error('disk') })
+    const result = await clearBrowsingData({ ...NOTHING, siteSettings: true, zoomLevels: true }, deps)
+    error.mockRestore()
+    expect(result).toEqual({ ok: false, failed: ['siteSettings'] })
+    expect(zoom.clear).toHaveBeenCalledTimes(1)
+  })
+
   it('goes on after one part fails, and says which did', async () => {
     const { deps, websites, history } = setup()
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -85,6 +104,8 @@ describe('parseClearRequest', () => {
     expect(parseClearRequest({ ...NOTHING, cache: 'yes' })).toBeNull()
     const { appData: _dropped, ...missing } = NOTHING
     expect(parseClearRequest(missing)).toBeNull()
+    const { siteSettings: _dropped2, ...noSiteSettings } = NOTHING
+    expect(parseClearRequest(noSiteSettings)).toBeNull()
     expect(parseClearRequest({ ...NOTHING, everything: true })).toEqual(NOTHING)
   })
 })

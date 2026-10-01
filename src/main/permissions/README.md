@@ -53,6 +53,12 @@ separately.
 
 **The site-info popup's "Manage" link opens `orivon://extensions` through `../shell/tabs.ts`'s
 `openInternal`, the same mechanism `../pages/pages-domain.ts` uses for one internal page to open
-another.** `openAllSites` already established the shape (close the popup, then act) for opening
-the all-sites PANEL; "Manage" reuses it to open a real PAGE instead, wired in at
-`../shell/window.ts` alongside `openAllSites`.
+another.** `openSiteSettings` (the "Site settings" row) has the same shape (close the popup, then
+act); both are wired in at `../shell/window-panels.ts`.
+
+**The popup's Permissions section is the one place a person changes what the site in front of them
+may do.** `../site-settings/site-permissions-view.ts` builds it for the popup's fixed origin, from
+`../site-settings/site-settings-controller.ts`, and the popup's `sitePermissions` and
+`setSitePermission` commands carry no origin of their own. The toolbar key shows on every `http(s)`
+page for that reason (`siteSummaryFor`'s `asked`); an app origin gets no Permissions section, its
+capability rows being the whole of what it may do.

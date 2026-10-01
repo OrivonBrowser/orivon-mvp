@@ -34,7 +34,9 @@ function renderChoice (control: Extract<Control, { type: 'choice' }>, state: Set
 }
 
 function renderToggle (control: Extract<Control, { type: 'toggle' }>, state: SettingsState, id: string): HTMLElement {
-  const input = h('input', { type: 'checkbox', id, checked: state.value(control.key) === true, disabled: control.disabled?.(state) === true })
+  // A switch that cannot act shows what is really happening: off.
+  const disabled = control.disabled?.(state) === true
+  const input = h('input', { type: 'checkbox', id, checked: !disabled && state.value(control.key) === true, disabled })
   input.addEventListener('change', () => { void state.set(control.key, input.checked) })
   return h('span', { className: 'switch' }, input, h('span', { className: 'track' }))
 }
@@ -170,6 +172,7 @@ export function renderRow (row: Row, state: SettingsState): HTMLElement {
         ? h('label', { className: 'row-label', htmlFor: controlId, textContent: row.label })
         : h('span', { className: 'row-label', textContent: row.label }),
       changed ? h('span', { className: 'changed', title: 'Changed from the default', textContent: 'Changed' }) : null,
-      helpText === '' ? null : h('p', { className: 'row-help', textContent: helpText })),
+      helpText === '' ? null : h('p', { className: 'row-help', textContent: helpText }),
+      row.below?.(state) ?? null),
     h('div', { className: 'row-control' }, field, reset))
 }

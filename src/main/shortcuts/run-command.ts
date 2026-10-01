@@ -16,7 +16,11 @@ import type { ShellWindowOptions } from '../shell/window-options.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import { reopenClosed } from '../session-restore/reopen.js'
+import { openCertificate } from '../auth/certificate-open.js'
 import { openQr } from '../qr/qr-open.js'
+import { copyLinkCommand, emailLinkCommand } from '../os/share-commands.js'
+import { realShareDeps } from '../os/share-runner.js'
+import { openShortcutSheet } from '../os/shortcut-open.js'
 import { TAB_SEARCH_OVERLAY } from '../tab-search/tab-search-overlay.js'
 import { dismissRestoreOffer } from '../startup/restore-offer.js'
 import { kioskAllows } from '../window-state/kiosk.js'
@@ -84,7 +88,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'find.next': dismissRestoreOffer(target); findStep(target, true); return
     case 'find.previous': dismissRestoreOffer(target); findStep(target, false); return
     case 'history.open': tabs.openInternal('history'); return
-    case 'privacy.clearData': return
+    case 'privacy.clearData': tabs.openInternal('settings', '/privacy#clear-data'); return
     case 'bookmarks.open': tabs.openInternal('bookmarks'); return
     case 'devtools.toggle': services.devtools.toggle(tabs.activeWebContents(), window); return
     case 'devtools.console': services.devtools.openConsole(tabs.activeWebContents(), window); return
@@ -123,8 +127,8 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'bookmarks.toggleBar': toggleBookmarksBar(services); return
     case 'window.alwaysOnTop': window.setAlwaysOnTop(!window.isAlwaysOnTop()); return
     case 'settings.open': tabs.openInternal('settings'); return
-    case 'passwords.open': return
-    case 'siteSettings.open': return
+    case 'passwords.open': tabs.openInternal('settings', '/passwords'); return
+    case 'siteSettings.open': tabs.openInternal('settings', '/sites'); return
     case 'about.open': tabs.openInternal('about'); return
     case 'extensions.open': tabs.openInternal('extensions'); return
     case 'extensions.menu': toggleExtensionsMenu(target, services.isPrivate); return
@@ -134,10 +138,10 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'page.pdf': void pdfCommand(target, realDeps); return
     case 'page.save': void saveCommand(target, realDeps); return
     case 'page.viewSource': void viewSourceCommand(target); return
-    case 'share.copyLink': return
-    case 'share.email': return
-    case 'site.certificate': return
-    case 'site.shortcut': return
+    case 'share.copyLink': copyLinkCommand(target, realShareDeps); return
+    case 'share.email': void emailLinkCommand(target, realShareDeps); return
+    case 'site.certificate': openCertificate(target); return
+    case 'site.shortcut': openShortcutSheet(target, services); return
     case 'page.screenshot': void screenshotCommand(target); return
     case 'page.qr': openQr(target); return
     case 'page.pip': void pipCommand(target); return

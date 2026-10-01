@@ -33,11 +33,30 @@ describe('memoryVault', () => {
     expect(vault.list()).toEqual([])
   })
 
+  it('touch records when a login was used, without changing the password, and ignores an unknown id', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(5000)
+      const vault = memoryVault()
+      const login = await vault.save({ origin: SITE, username: 'ada', password: 'x' })
+      const heard = vi.fn()
+      vault.onChange(heard)
+      vault.touch?.(login?.id ?? '')
+      expect(vault.list()[0]?.used).toBe(5000)
+      expect(await vault.reveal(login?.id ?? '')).toBe('x')
+      expect(heard).toHaveBeenCalledTimes(1)
+      vault.touch?.('nope')
+      expect(heard).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('removes a login and says whether there was one', async () => {
     const vault = memoryVault()
     const login = await vault.save({ origin: SITE, username: 'ada', password: 'x' })
-    expect(vault.remove(login?.id ?? '')).toBe(true)
-    expect(vault.remove(login?.id ?? '')).toBe(false)
+    expect(await vault.remove(login?.id ?? '')).toBe(true)
+    expect(await vault.remove(login?.id ?? '')).toBe(false)
     expect(await vault.reveal(login?.id ?? '')).toBeUndefined()
   })
 
