@@ -12,6 +12,7 @@
 @import './styles/tabstrip.css';
 @import './styles/tab-badges.css';
 @import './styles/tab-crashed.css';
+@import './styles/tab-sleeping.css';
 @import './styles/tab-search-button.css';
 @import './styles/toolbar.css';
 @import './styles/bookmarks.css';

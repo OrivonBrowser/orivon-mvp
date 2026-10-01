@@ -5,7 +5,7 @@ vi.mock('electron', () => ({ Menu: { buildFromTemplate: vi.fn() } }))
 
 const { tabMenuTemplate } = await import('../tab-menu.js')
 
-const actions = () => ({ newTabRight: vi.fn(), reload: vi.fn(), duplicate: vi.fn(), togglePin: vi.fn(), toggleMute: vi.fn(), moveToNewWindow: vi.fn(), separate: vi.fn(), close: vi.fn(), closeOthers: vi.fn(), closeRight: vi.fn(), run: vi.fn() })
+const actions = () => ({ newTabRight: vi.fn(), reload: vi.fn(), duplicate: vi.fn(), togglePin: vi.fn(), toggleMute: vi.fn(), sleep: vi.fn(), moveToNewWindow: vi.fn(), separate: vi.fn(), close: vi.fn(), closeOthers: vi.fn(), closeRight: vi.fn(), run: vi.fn() })
 const model = (overrides: Partial<Parameters<typeof tabMenuTemplate>[0]> = {}): Parameters<typeof tabMenuTemplate>[0] => ({
   canDuplicate: true, pinned: false, muted: false, canPin: true, othersClosable: true, rightClosable: true, tabCount: 3, inSplit: false, splitPartners: [], otherWindows: [], ...overrides
 })
@@ -14,7 +14,7 @@ const find = (template: MenuItemConstructorOptions[], label: string): MenuItemCo
 
 describe('a tab\'s menu', () => {
   it('offers what can be done to one tab, in order', () => {
-    expect(labels(tabMenuTemplate(model(), actions()))).toEqual(['New Tab to the Right', 'Reload', 'Duplicate', 'Pin Tab', 'Mute Tab', 'Split with', 'Move Tab to New Window', 'Close Tab', 'Close Other Tabs', 'Close Tabs to the Right', 'Reopen Closed Tab'])
+    expect(labels(tabMenuTemplate(model(), actions()))).toEqual(['New Tab to the Right', 'Reload', 'Duplicate', 'Pin Tab', 'Mute Tab', 'Put Tab to Sleep', 'Split with', 'Move Tab to New Window', 'Close Tab', 'Close Other Tabs', 'Close Tabs to the Right', 'Reopen Closed Tab'])
   })
 
   it('runs the action of the entry chosen', () => {
@@ -31,6 +31,15 @@ describe('a tab\'s menu', () => {
     expect(a.moveToNewWindow).toHaveBeenCalledTimes(1)
     expect(a.close).toHaveBeenCalledTimes(1)
     expect(a.closeOthers).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers sleep for a tab behind the one in front, and not for the one in front', () => {
+    const a = actions()
+    const behind = tabMenuTemplate(model({ canSleep: true }), a)
+    expect(find(behind, 'Put Tab to Sleep')?.enabled).toBe(true)
+    ;(find(behind, 'Put Tab to Sleep')?.click as () => void)()
+    expect(a.sleep).toHaveBeenCalledTimes(1)
+    expect(find(tabMenuTemplate(model({ canSleep: false }), actions()), 'Put Tab to Sleep')?.enabled).toBe(false)
   })
 
   it('leaves a window\'s only tab where it is', () => {

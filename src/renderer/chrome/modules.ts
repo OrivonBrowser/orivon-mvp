@@ -13,13 +13,15 @@ import { createReloadStop } from './reload-stop.js'
 import { createSiteBadges } from './site-badges.js'
 import { decorateTabBadges } from './tab-badges.js'
 import { decorateTabCrashed } from './tab-crashed.js'
+import { decorateTabSleeping } from './tab-sleeping.js'
 import { createTabSearchButton } from './tab-search-button.js'
 import { createTabStrip } from './tab-strip.js'
 
 /** Adds to a tab's element after the strip built it; one entry per feature, alphabetical by the file that draws it. */
 export const TAB_DECORATORS: readonly TabDecorator[] = [
   decorateTabBadges,
-  decorateTabCrashed
+  decorateTabCrashed,
+  decorateTabSleeping
 ]
 
 /** The chrome's features, initialised and rendered in this order; one entry per feature. */

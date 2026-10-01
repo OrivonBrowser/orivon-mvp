@@ -24,7 +24,7 @@
   cursor: default;
 }
 .host-list-item:first-child { border-top: none; }
-.host-list-item .item-title { font-size: 13px; user-select: text; }
+.host-list-item .item-title { grid-row: 1 / span 2; font-size: 13px; user-select: text; }
 .host-list-item .item-meta { margin-left: 10px; }
 
 .host-list-remove { opacity: 0; }

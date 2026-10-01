@@ -13,6 +13,7 @@ import type { ShellServices } from './shell-services.js'
 import { splitZoneFor } from './split-drop.js'
 import { dropTab, moveToNewWindow, moveToWindow } from './tab-move.js'
 import { closeOthers, closeToRight, duplicateTab, newTabToRight, tabMenuFlags, toggleMute, togglePin } from './tab-commands.js'
+import { sleepBackgroundTab } from '../memory-saver/sleep-command.js'
 import { showTabMenu, tabMenuTemplate } from './tab-menu.js'
 import { cascadeFrom } from './window-options.js'
 import type { ShellWindowOptions } from './window-options.js'
@@ -69,6 +70,7 @@ export function shellActions (parts: WindowParts): ShellActions {
     const partners = tab.pinned ? [] : all.filter((other) => other.id !== id && other.splitWith === null && !other.pinned)
     showTabMenu(window, tabMenuTemplate({
       ...flags,
+      canSleep: id !== tabs.getState().activeTabId && tab.sleeping !== true,
       tabCount: all.length,
       inSplit: tab.splitWith !== null,
       splitPartners: partners.map((other) => ({ label: other.title === '' ? 'New Tab' : other.title, split: () => { tabs.splits.split(id, other.id, 'right') } })),
@@ -79,6 +81,7 @@ export function shellActions (parts: WindowParts): ShellActions {
       duplicate: () => { duplicateTab(tabs, id) },
       togglePin: () => { togglePin(tabs, id) },
       toggleMute: () => { toggleMute(tabs, id) },
+      sleep: () => { void sleepBackgroundTab(entry, id) },
       moveToNewWindow: () => { moveToNewWindow(entry, id, openWindow, cascadeFrom(window.getBounds())) },
       separate: () => { tabs.splits.separate(id) },
       close: () => { tabs.closeTab(id) },

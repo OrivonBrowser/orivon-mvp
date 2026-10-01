@@ -27,4 +27,19 @@ describe('applyOrivonTabDetails', () => {
     applyOrivonTabDetails(details, null, false)
     expect(details.favIconUrl).toBeUndefined()
   })
+
+  it('reports a sleeping tab as discarded, with the address, title and icon it will wake to', () => {
+    const details: OrivonTabDetails = { pinned: false, url: '', title: '' }
+    applyOrivonTabDetails(details, 'data:image/png;base64,old', false, { url: 'https://a.example/', title: 'A', favicon: 'data:image/png;base64,kept' })
+    expect(details).toMatchObject({ discarded: true, url: 'https://a.example/', title: 'A', favIconUrl: 'data:image/png;base64,kept' })
+  })
+
+  it('keeps the captured icon for a sleeping tab that kept none, and leaves an awake tab\'s details alone', () => {
+    const sleeping: OrivonTabDetails = { pinned: false }
+    applyOrivonTabDetails(sleeping, 'data:image/png;base64,old', false, { url: 'https://a.example/', title: 'A', favicon: null })
+    expect(sleeping.favIconUrl).toBe('data:image/png;base64,old')
+    const awake: OrivonTabDetails = { pinned: false, url: 'https://live.example/' }
+    applyOrivonTabDetails(awake, null, false, null)
+    expect(awake).toEqual({ pinned: false, url: 'https://live.example/' })
+  })
 })
