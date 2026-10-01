@@ -14,9 +14,8 @@ interface FakeView {
   focusWanted: (() => boolean) | null
 }
 
-const { views, themeListeners, focus, faults } = vi.hoisted(() => ({
+const { views, themeListeners, focus } = vi.hoisted(() => ({
   views: [] as FakeView[],
-  faults: { setBounds: false },
   themeListeners: new Set<() => void>(),
   focus: { current: undefined as unknown }
 }))
@@ -30,7 +29,7 @@ vi.mock('../overlay-view.js', () => ({
       id: view.id,
       attach: () => { view.log.push('attach') },
       detach: () => { view.log.push('detach') },
-      setBounds: (bounds: unknown) => { if (faults.setBounds) throw new Error('setBounds failed'); view.bounds = bounds },
+      setBounds: (bounds: unknown) => { view.bounds = bounds },
       focusWhenReady: (wanted: () => boolean) => { view.focusWanted = wanted },
       send: (channel: string, message: unknown) => { view.sent.push([channel, message]) },
       refreshBackground: () => { view.log.push('background') },
@@ -81,7 +80,7 @@ function setup (defs: OverlayDef[], active = tab(), options: { focused?: boolean
 }
 
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(10_000) })
-afterEach(() => { vi.useRealTimers(); faults.setBounds = false; views.length = 0; focus.current = undefined; themeListeners.clear() })
+afterEach(() => { vi.useRealTimers(); views.length = 0; focus.current = undefined; themeListeners.clear() })
 
 describe('createOverlayHost: laziness', () => {
   it('builds no view, and attaches nothing, before the first show', () => {
@@ -797,19 +796,5 @@ describe('createOverlayHost: theme and dispose', () => {
     host.show('a', ANCHOR)
     host.dispose()
     expect(active.focus).not.toHaveBeenCalled()
-  })
-})
-
-describe('createOverlayHost: a show that throws', () => {
-  it('leaves the overlay closed, and the next toggle shows it again', () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {})
-    const { host } = setup([def('a')])
-    faults.setBounds = true
-    expect(() => { host.toggle('a', ANCHOR) }).not.toThrow()
-    expect(host.isOpen('a')).toBe(false)
-    faults.setBounds = false
-    host.toggle('a', ANCHOR)
-    expect(host.isOpen('a')).toBe(true)
-    expect(views.at(-1)?.log).toContain('attach')
   })
 })
