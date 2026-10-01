@@ -178,18 +178,63 @@ export interface StateSpec {
   includeContentErrors?: boolean
 }
 
+/** One shown shell view whose pre-paint colour disagrees with the colour its own page paints. */
+export interface BackingFinding { url: string, recorded: string, page: string }
+
 export interface StateReport {
   name: string
   expected: string
   action: string
   views: Array<{ url: string, title: string, shown: boolean }>
   audit: ReturnType<typeof applyAllowlist>
+  /** Shown shell views whose recorded backing differs from the page's own root background, in this scheme. */
+  backing: BackingFinding[]
   errors: Array<{ kind: string, url: string, text: string }>
   blank: boolean
   baseline: BaselineResult
   png: string | undefined
   ariaExcerpt: string
   mainLogTail: string
+}
+
+const asHex = (rgb: string): string | undefined => {
+  const m = /^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)$/.exec(rgb.trim())
+  if (m === null || (m[4] !== undefined && Number(m[4]) === 0)) return undefined
+  return `#${[m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, '0')).join('')}`
+}
+
+/**
+ * The colour main paints behind each shown shell view before its page has, against the colour that page paints
+ * (the root element's, else the body's). A mismatch is the frame a person sees between the two, in whichever
+ * scheme the run is in. A page that paints no background of its own, and a view main records no colour for,
+ * has nothing to compare and is left out.
+ */
+export async function backingFindings (app: ElectronApplication, pages: Page[]): Promise<BackingFinding[]> {
+  const recorded = await app.evaluate(({ BaseWindow }) => {
+    const hook = (globalThis as unknown as { __orivonDevViewBackgrounds?: Map<number, string> }).__orivonDevViewBackgrounds
+    const shown: Array<{ url: string, color: string | undefined }> = []
+    const walk = (view: { children?: unknown[] }): void => {
+      for (const child of (view.children ?? []) as Array<{ webContents?: { id: number, getURL: () => string }, getVisible?: () => boolean, children?: unknown[] }>) {
+        if (child.webContents !== undefined && (child.getVisible?.() ?? true)) shown.push({ url: child.webContents.getURL(), color: hook?.get(child.webContents.id) })
+        walk(child)
+      }
+    }
+    for (const win of BaseWindow.getAllWindows()) walk(win.contentView as unknown as { children?: unknown[] })
+    return shown
+  })
+  const found: BackingFinding[] = []
+  for (const view of recorded) {
+    const page = pages.find((p) => p.url() === view.url)
+    if (page === undefined || view.color === undefined || isContent(view.url)) continue
+    // A page that paints a gradient (the internal pages) starts it in the colour main backs the view with: its first stop.
+    const painted = await page.evaluate(() => [document.documentElement, document.body].flatMap((el) => {
+      const style = getComputedStyle(el)
+      return [style.backgroundColor, /rgba?\([^)]*\)/.exec(style.backgroundImage)?.[0] ?? '']
+    })).catch(() => [])
+    const pageColor = painted.map(asHex).find((c) => c !== undefined)
+    if (pageColor !== undefined && pageColor !== view.color.toLowerCase()) found.push({ url: view.url, recorded: view.color.toLowerCase(), page: pageColor })
+  }
+  return found
 }
 
 const lastMark = new WeakMap<ElectronApplication, ReturnType<typeof mark>>()
@@ -214,6 +259,8 @@ export async function captureState (app: ElectronApplication, name: string, spec
     audit.findings.push(...one.findings.map(tag))
     audit.allowed.push(...one.allowed.map((f) => ({ ...tag(f), reason: f.reason })))
   }
+
+  const backing = await backingFindings(app, pages.filter((p) => shownUrls.includes(p.url())))
 
   const composite: Buffer | undefined = snap.composites[0]?.png
   const approximate = snap.composites[0]?.ambiguous === true
@@ -241,6 +288,7 @@ export async function captureState (app: ElectronApplication, name: string, spec
     action: spec.action,
     views: snap.views.map((v) => ({ url: v.url, title: v.title, shown: v.png !== undefined })),
     audit,
+    backing,
     errors,
     blank: spec.allowBlank === true ? false : blank,
     baseline,
@@ -257,6 +305,7 @@ export async function captureState (app: ElectronApplication, name: string, spec
 export function checkState (check: Check, r: StateReport): void {
   const list = (xs: string[]): string | undefined => (xs.length === 0 ? undefined : xs.slice(0, 6).join('; '))
   check(`${r.name}: layout audit is clean`, r.audit.findings.length === 0, list(r.audit.findings.map((f) => `${f.rule} ${f.selector}: ${f.detail}`)))
+  check(`${r.name}: each shown view's backing colour is the one its page paints`, r.backing.length === 0, list(r.backing.map((b) => `${b.url.slice(-50)} is backed ${b.recorded}, its page paints ${b.page}`)))
   check(`${r.name}: no shell console or page errors`, r.errors.length === 0, list(r.errors.map((e) => `${e.kind} ${e.url}: ${e.text.slice(0, 120)}`)))
   check(`${r.name}: the window painted something`, !r.blank, r.png === undefined ? 'no screenshot was produced' : 'screenshot is one flat colour')
   const b = r.baseline
