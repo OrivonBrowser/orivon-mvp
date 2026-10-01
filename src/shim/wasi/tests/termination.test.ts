@@ -91,8 +91,16 @@ describe('failed orivon.fs calls', () => {
     expect(await statFile(hh)).toBe(Errno.SUCCESS)
     expect(stat).toHaveBeenCalledTimes(3)
     stat.mockReset().mockRejectedValue(orivonError('limit'))
-    expect(await statFile(hh)).toBe(Errno.NOSPC)
-    expect(stat).toHaveBeenCalledTimes(4)
+    vi.useFakeTimers()
+    try {
+      const spent = statFile(hh)
+      await vi.advanceTimersByTimeAsync(6000)
+      expect(await spent).toBe(Errno.NOSPC)
+    } finally {
+      vi.useRealTimers()
+    }
+    // The first call and one retry after each of the ten delays.
+    expect(stat).toHaveBeenCalledTimes(11)
   })
 
   it('does not retry a full disk, which comes with its own errno', async () => {
