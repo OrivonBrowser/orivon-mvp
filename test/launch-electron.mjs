@@ -19,7 +19,7 @@
 // .claude/skills/orivon-electron/SKILL.md for the full incident writeup.
 import { _electron as electron } from 'playwright'
 import { rmSync } from 'node:fs'
-import { mkdtemp, readdir, readFile, realpath, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { attachCollectors, holdEvidence } from './qa-evidence.mjs'
@@ -157,6 +157,14 @@ export function registerLaunchForTeardown (app, { userDataDir } = {}) {
   }
 }
 
+/** Writes `appearance.theme` into the profile's settings file, keeping every value a seed already put there. */
+async function seedTheme (userDataDir, scheme) {
+  const file = join(userDataDir, 'settings.json')
+  let stored = { version: 1, values: {} }
+  try { stored = JSON.parse(await readFile(file, 'utf8')) } catch { /* no file yet */ }
+  await writeFile(file, JSON.stringify({ ...stored, values: { ...stored.values, 'appearance.theme': scheme } }))
+}
+
 /**
  * @param {object} [options]
  * @param {string} [options.appPath] Directory of the app to run. Defaults to
@@ -184,6 +192,14 @@ export function registerLaunchForTeardown (app, { userDataDir } = {}) {
  *   helper and unprivileged user namespaces disabled), the launch throws
  *   a clear error instead of returning a window-less app or hanging -- see
  *   waitForShellWindow's SHELL_WINDOW_WAIT_MS bound below.
+ * @param {'light' | 'dark'} [options.scheme] Run the shell in this colour scheme,
+ *   the way a real run follows its theme setting. Playwright pins every page it
+ *   attaches to `prefers-color-scheme: light` unless the launch passes
+ *   `colorScheme: null`, so a launch without this option sees light CSS under
+ *   whatever backing colours main chose. With it, the pin is lifted and the
+ *   profile's `appearance.theme` is written (merged into a seeded
+ *   settings.json), so the first paint and every page agree and the desktop's
+ *   own theme cannot leak in.
  * @param {string} [options.reuseProfile] A profile directory from an earlier
  *   launch in this process, kept by closeElectron(app, { keepProfile: true }),
  *   for a test that relaunches on the state the first run wrote. Only a
@@ -202,6 +218,7 @@ export async function launchElectron ({
   env: envOverrides = {},
   seedProfile,
   sandbox = false,
+  scheme,
   reuseProfile
 } = {}) {
   const env = { ...process.env, ...envOverrides }
@@ -258,6 +275,7 @@ export async function launchElectron ({
     // Inside the same try as the launch, so a throwing seed is cleaned up by
     // the same catch rather than leaking the directory it was given.
     if (seedProfile !== undefined) await seedProfile(userDataDir)
+    if (scheme !== undefined) await seedTheme(userDataDir, scheme)
     app = await electron.launch({
       args: [appPath, `--user-data-dir=${userDataDir}`, ...args],
       env,
@@ -266,7 +284,8 @@ export async function launchElectron ({
       // playwright-core's electron launcher). `sandbox: true` callers want
       // the opposite -- Chromium's real namespace sandbox, which is what a
       // 'service-worker' session preload needs to run at all (A289).
-      chromiumSandbox: sandbox
+      chromiumSandbox: sandbox,
+      ...(scheme === undefined ? {} : { colorScheme: null })
     })
   } catch (error) {
     // electron.launch() itself threw -- a missing out/ build, a bad
