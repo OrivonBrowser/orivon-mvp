@@ -1,6 +1,6 @@
 // The bookmark store: the tree in memory, its file on disk, and the one API every surface reads and writes
 // it through. Main holds the truth; the chrome and the pages receive what they show and send ids back.
-// The file is plain JSON under <userData>, not a secret (ADR-0003's fifth storage tier).
+// The file is plain JSON under <userData>, not a secret.
 import { copyFile, mkdir, readFile, stat } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { writeFileAtomicAsync } from '../../broker/adapters/atomic-write.js'
