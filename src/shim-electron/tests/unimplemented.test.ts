@@ -35,6 +35,15 @@ describe('refusingProxy', () => {
     }
   })
 
+  it('reads as a plain CommonJS module: no __esModule marker and no then, so a compiled default import takes the module itself', () => {
+    const wrapped = refusingProxy({ request: () => 'ok' }, (prop) => notConsidered(`x.${prop}`)) as Record<string, unknown>
+    expect(wrapped['__esModule']).toBeUndefined()
+    expect(wrapped['then']).toBeUndefined()
+    // TypeScript's esModuleInterop helper: `mod && mod.__esModule ? mod : { default: mod }`.
+    const interop = (mod: Record<string, unknown>): { default: Record<string, unknown> } => (mod['__esModule'] ? mod as never : { default: mod })
+    expect((interop(wrapped).default['request'] as () => string)()).toBe('ok')
+  })
+
   it('lets a symbol property fall through instead of throwing', () => {
     const wrapped = refusingProxy({}, () => notConsidered('x')) as Record<symbol, unknown>
     expect(wrapped[Symbol.iterator]).toBeUndefined()

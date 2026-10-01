@@ -48,6 +48,10 @@ async function stat (path: PathLike): Promise<NodeStats> {
   return await doStat(path)
 }
 
+async function lstat (path: PathLike): Promise<NodeStats> {
+  return await doStat(path)
+}
+
 async function rm (path: PathLike, opts?: RmOptions): Promise<void> {
   await doRm(path, opts)
 }
@@ -104,6 +108,7 @@ export const promises = refusingProxy({
   mkdir,
   readdir,
   stat,
+  lstat,
   rm,
   // Data, not a function -- same A169 exception fs/fs.ts's own `known`
   // object documents for the top-level fs.constants.
@@ -112,6 +117,6 @@ export const promises = refusingProxy({
 
 // The `fs/promises` module target (module-map.ts) is this file itself: the
 // same object as fs.promises, as default export and as named members.
-export { openHandle as open, access, chmod, chmod as lchmod, watchPromise as watch, readFile, writeFile, appendFile, rename, unlink, rmdir, realpath, mkdir, readdir, stat, rm }
+export { openHandle as open, access, chmod, chmod as lchmod, watchPromise as watch, readFile, writeFile, appendFile, rename, unlink, rmdir, realpath, mkdir, readdir, stat, lstat, rm }
 export const constants = FS_CONSTANTS
 export default promises

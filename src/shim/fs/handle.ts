@@ -22,8 +22,9 @@
 import type { FileHandle } from '../../contracts/handles.js'
 import { getOrivon } from '../orivon-global.js'
 import { toNodeStats, type NodeStats } from './stats.js'
-import { encode } from '../encoding.js'
+import { encode, encodingOf } from '../encoding.js'
 import { announce, canCreate, watchersExist } from './notices.js'
+import { normalizeOpenFlags } from './flags.js'
 import { assertMode, confine, confineSync, fsError, guarded, type PathLike } from './paths.js'
 import { refuseShim } from '../errors.js'
 import {
@@ -176,6 +177,15 @@ export class NodeFileHandle {
     return { bytesWritten, buffer }
   }
 
+  /** Real Node's FileHandle#writeFile: the bytes go in at the current position, never truncating first, so a second call continues after the first. */
+  async writeFile (data: unknown, options?: { encoding?: string | null } | string | null): Promise<void> {
+    const bytes = encode(data, encodingOf(options))
+    let written = 0
+    while (written < bytes.length) {
+      written += (await this.write(bytes, written, bytes.length - written)).bytesWritten
+    }
+  }
+
   async stat (): Promise<NodeStats> { return await guarded(async () => toNodeStats(await this.handle.stat(), this.identity)) }
 
   async truncate (length = 0): Promise<void> {
@@ -228,19 +238,19 @@ export class NodeFileHandle {
 /** Node's default open flag, when the caller gives none. */
 const DEFAULT_FLAGS = 'r'
 
-export async function openHandle (path: PathLike, flags: string | null = DEFAULT_FLAGS, _mode?: number): Promise<NodeFileHandle> {
-  return await NodeFileHandle.open(path, flags ?? DEFAULT_FLAGS)
+export async function openHandle (path: PathLike, flags: string | number | null = DEFAULT_FLAGS, _mode?: number): Promise<NodeFileHandle> {
+  return await NodeFileHandle.open(path, normalizeOpenFlags(flags))
 }
 
 // ---- callback fs.open/fs.read/fs.write/fs.close/fs.fstat/... ----------
 
 /** `fs.open(path[, flags[, mode]], callback)`. The callback is always the last argument; `mode` is a POSIX permission bit this confined fs has nothing to set it on (fs/fs.ts's own `not-applicable` reasoning for chmod/chown), so it is accepted and ignored. */
 export function open (path: PathLike, callback: NodeCallback<number>): void
-export function open (path: PathLike, flags: string | null, callback: NodeCallback<number>): void
-export function open (path: PathLike, flags: string | null, mode: number, callback: NodeCallback<number>): void
+export function open (path: PathLike, flags: string | number | null, callback: NodeCallback<number>): void
+export function open (path: PathLike, flags: string | number | null, mode: number, callback: NodeCallback<number>): void
 export function open (path: PathLike, ...args: readonly unknown[]): void {
   const callback = args[args.length - 1] as NodeCallback<number>
-  const flags = args.length > 1 ? args[0] as string | null : null
+  const flags = args.length > 1 ? args[0] as string | number | null : null
   openHandle(path, flags).then(
     (handle) => callback(null, handle.fd),
     (error) => callback(error as Error)
@@ -437,11 +447,11 @@ class SyncNodeFileHandle {
 }
 
 /** `fs.openSync(path[, flags[, mode]])`. Also fs/core-sync.ts's own writeThroughHandleSync (appendFileSync, a non-'w' writeFileSync flag). */
-export function openHandleSync (path: PathLike, flags: string | null = DEFAULT_FLAGS): SyncNodeFileHandle {
-  return SyncNodeFileHandle.open(path, flags ?? DEFAULT_FLAGS)
+export function openHandleSync (path: PathLike, flags: string | number | null = DEFAULT_FLAGS): SyncNodeFileHandle {
+  return SyncNodeFileHandle.open(path, normalizeOpenFlags(flags))
 }
 
-export function openSync (path: PathLike, flags: string | null = DEFAULT_FLAGS, _mode?: number): number {
+export function openSync (path: PathLike, flags: string | number | null = DEFAULT_FLAGS, _mode?: number): number {
   return openHandleSync(path, flags).fd
 }
 

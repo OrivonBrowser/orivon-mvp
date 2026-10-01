@@ -33,6 +33,9 @@ export function refusingProxy<T extends object> (known: T, classify: (prop: stri
       if (typeof prop === 'symbol' || Reflect.has(target, prop)) {
         return Reflect.get(target, prop, receiver)
       }
+      // A Node module has neither: a stand-in for `__esModule` makes a compiled default import (TypeScript's
+      // `__importDefault`) take a stand-in as the module, and one for `then` makes `await` call it.
+      if (prop === '__esModule' || prop === 'then') return undefined
       let standIn = standIns.get(prop)
       if (standIn === undefined) {
         standIn = refusingFunction(prop, classify)
