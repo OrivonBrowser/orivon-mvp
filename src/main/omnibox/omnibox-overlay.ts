@@ -3,7 +3,8 @@
 // with the row a mouse chose.
 import type { OverlayDef, OverlayHandler, OverlayWindow } from '../overlays/overlay-types.js'
 import { isDisposition, pickRow } from './omnibox-actions.js'
-import { OMNIBOX_OVERLAY } from './omnibox-names.js'
+import { sendChromeEvent } from '../shell/shell-events.js'
+import { OMNIBOX_MODULE, OMNIBOX_OVERLAY } from './omnibox-names.js'
 import { existingOmnibox, omniboxFor } from './omnibox-window.js'
 
 export function createOmniboxOverlay (win: OverlayWindow): OverlayHandler {
@@ -11,13 +12,18 @@ export function createOmniboxOverlay (win: OverlayWindow): OverlayHandler {
     show: () => omniboxFor(win).snapshot(),
     request: (command) => {
       if (typeof command !== 'object' || command === null) return
-      const { type, index, disposition, seq } = command as Record<string, unknown>
+      const { type, index, disposition, seq, rev } = command as Record<string, unknown>
       if (type !== 'pick' || typeof index !== 'number' || !Number.isInteger(index) || !isDisposition(disposition)) return
       if (seq !== undefined && (typeof seq !== 'number' || !Number.isInteger(seq))) return
-      pickRow(win, index, disposition, seq)
+      if (rev !== undefined && (typeof rev !== 'number' || !Number.isInteger(rev))) return
+      pickRow(win, index, disposition, seq, rev)
     },
-    // Whatever closed it (a tab switch, a resize, a navigation), what it held is stale.
-    closed: () => { existingOmnibox(win.window)?.reset() }
+    // Whatever closed it (a tab switch, a resize, a navigation), what it held is stale, and the chrome, which keeps the
+    // field, is told so it does not go on believing the dropdown is open. A close the chrome asked for needs no telling.
+    closed: (reason) => {
+      existingOmnibox(win.window)?.reset()
+      if (reason !== 'request') sendChromeEvent(win.window, OMNIBOX_MODULE, { type: 'closed' })
+    }
   }
 }
 

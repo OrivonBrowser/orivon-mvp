@@ -25,13 +25,15 @@ would let it change a window other than activating a tab.
 
 **A process is ended by a number main looks up again.** The task manager page sends a process id, and
 `endProcess` rebuilds the list from a fresh `app.getAppMetrics()` and acts only when that id is in it and
-its row is endable. So the id can name nothing outside Orivon's own process tree, and a stale one (the
-process already gone, its number reused) is refused. The browser, the graphics process, and any process
-that also hosts one of Orivon's own views are never endable: ending them would take the window with them.
+its row is endable. Only a row of tabs and apps is endable: the browser, the graphics process, the network
+and other utility processes, an extension, and any process that also hosts one of Orivon's own views (the
+window, an overlay, an internal page) are never offered, since ending them would take the window or the
+browser's network with them.
 
-**The process is signalled, not asked to crash.** `forcefullyCrashRenderer()` leaves the driver attached to
-the page waiting forever under the end-to-end harness, while a signal gives the same `render-process-gone`
-report ("killed") and the same crashed tab.
+**The process is ended through a page that main found in it.** `endProcess` calls `forcefullyCrashRenderer()` on
+the page the fresh reading matched to that id, and never signals a bare number, so a process id the system has
+since given to something else is never touched. The tab gets the same `render-process-gone` report and the
+same crashed state as any crash.
 
 **The first processor reading is shown as unknown.** Electron measures CPU since the previous call, so the
 first call reads 0 for every process. A reading more than ten seconds after the last counts as a first one.

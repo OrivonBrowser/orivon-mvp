@@ -17,6 +17,8 @@ import type { Pattern } from '../../contracts/index.js'
 import { MAX_PORT, normalizeHost } from '../../broker/policy/canonical-host.js'
 import { MAX_PATTERNS } from '../../broker/policy/connect.js'
 import { hostSpecKind, parsePattern as parseConnectPattern, parsePortSpec } from '../../broker/policy/connect-patterns.js'
+import { RESERVED_PORTS, patternNamesPortExactly } from '../../broker/policy/reserved-ports.js'
+import { covers as patternCovers } from '../../broker/policy/update.js'
 import { classifyAddress, isPublicUnicast, type AddressClass } from '../../broker/policy/address.js'
 
 /**
@@ -38,6 +40,11 @@ export interface CapabilityGrantSummary {
    * accepting inbound traffic (A134), or a manifest pattern naming a
    * private/loopback/link-local address directly (A197). */
   readonly explanation?: string
+  /** The part of `explanation` that states reach beyond what the headline
+   * says: a port Orivon keeps closed to broad grants that the grant names,
+   * or a named host the wildcard does not cover. Kept apart so a level that
+   * drops the explanation (`./grant-level.ts`) can still say it. */
+  readonly reach?: string
 }
 
 /** The one glyph every warned row's `message` opens with (or, for a
@@ -95,6 +102,7 @@ export function portsPhrase (patterns: readonly Pattern[]): string {
  * (`connect-patterns.ts`'s own doc on `parsePattern`), so it contributes
  * nothing here either, rather than being rendered as if it were a host. */
 interface ConnectPatternInfo {
+  readonly raw: Pattern
   readonly host: string
   readonly port: string
   /** `hostSpecKind(host) === 'any-public-unicast'` -- true for a bare `'*'`
@@ -128,6 +136,7 @@ function parseConnectPatterns (patterns: readonly Pattern[]): readonly ConnectPa
     const parsed = parseConnectPattern(pattern)
     if (parsed === null) continue
     infos.push({
+      raw: pattern,
       host: parsed.host,
       port: parsed.port,
       hostIsWildcard: hostSpecKind(parsed.host) === 'any-public-unicast',
@@ -171,21 +180,89 @@ function coversAllPorts (portSpec: string): boolean {
   return parsed === 'any' || (parsed.lo === 1 && parsed.hi === MAX_PORT)
 }
 
+/** What each port `reserved-ports.ts` keeps closed to broad grants is for,
+ * in the words a person would use for it. Every entry of `RESERVED_PORTS`
+ * needs one; the test over `RESERVED_PORTS` fails when one is missing. */
+const RESERVED_PORT_PURPOSE: Readonly<Record<number, string>> = {
+  23: 'telnet',
+  25: 'mail',
+  465: 'mail',
+  587: 'mail',
+  53: 'DNS',
+  139: 'Windows file sharing',
+  445: 'Windows file sharing',
+  3389: 'remote desktop',
+  6667: 'IRC chat',
+  6697: 'IRC chat'
+}
+
+/** `a`, `a and b`, `a, b and c`. */
+function joinAnd (items: readonly string[]): string {
+  if (items.length <= 1) return items.join('')
+  return `${items.slice(0, -1).join(', ')} and ${String(items[items.length - 1])}`
+}
+
+/** `joinAnd` with the list capped at `MAX_LISTED_ROWS` and the rest counted. */
+function joinAndCapped (items: readonly string[]): string {
+  const { shown, more } = cappedRows(items)
+  return more === 0 ? joinAnd(shown) : `${shown.join(', ')} and ${String(more)} more`
+}
+
+/** The reserved ports (`reserved-ports.ts`) a set of wildcard-host patterns
+ * names as a single port, ascending -- the only way a wildcard host reaches
+ * one, which a broad `*:*` or a range never does. */
+function reservedPortsNamed (wildcard: readonly ConnectPatternInfo[]): readonly number[] {
+  return [...RESERVED_PORTS]
+    .filter((port) => wildcard.some((info) => patternNamesPortExactly(info, port)))
+    .sort((a, b) => a - b)
+}
+
+/** `mail (25, 465 and 587) and DNS (53)`: the ports grouped by what they are for. */
+function describePortPurposes (ports: readonly number[]): string {
+  const groups = new Map<string, number[]>()
+  for (const port of ports) {
+    const purpose = RESERVED_PORT_PURPOSE[port] ?? 'closed to broad grants'
+    groups.set(purpose, [...(groups.get(purpose) ?? []), port])
+  }
+  return joinAnd([...groups].map(([purpose, list]) => `${purpose} (${joinAnd(list.map(String))})`))
+}
+
+/** `onlyNamed`: the grant's wildcard reaches nothing but these ports, so
+ * "also" would say something the limit sentence before it already said. */
+function closedPortsSentence (ports: readonly number[], onlyNamed: boolean): string {
+  if (ports.length === 0) return ''
+  const reach = onlyNamed ? 'It can reach' : 'It can also reach'
+  return `${reach} ${ports.length === 1 ? 'a port' : 'ports'} Orivon keeps closed to broad grants: ${describePortPurposes(ports)}.`
+}
+
 function isSinglePort (portSpec: string): boolean {
   const parsed = parsePortSpec(portSpec)
   return parsed !== null && parsed !== 'any' && parsed.lo === parsed.hi
 }
 
+/** One spelling per port spec: `6697-6697` is `6697`, so two spellings of one port are listed once. An unreadable spec stays as written. */
+function canonicalPortSpec (portSpec: string): string {
+  const parsed = parsePortSpec(portSpec)
+  if (parsed === null) return portSpec
+  if (parsed === 'any') return '*'
+  return parsed.lo === parsed.hi ? String(parsed.lo) : `${String(parsed.lo)}-${String(parsed.hi)}`
+}
+
 /** `port 443`, or `any port` for a wildcard/full-range spec -- the same
  * shape `portsPhrase` renders, reused here for connect breadth (AR-02)
- * rather than a second joiner. */
-function portsListPhrase (specs: readonly string[]): string {
-  const unique = Array.from(new Set(specs))
+ * rather than a second joiner. `labelReserved`: a single reserved port says
+ * what it is for, where the sentence has no other place to. */
+function portsListPhrase (specs: readonly string[], labelReserved = false): string {
+  const unique = Array.from(new Set(specs.map(canonicalPortSpec)))
   if (unique.length === 1) {
     const only = unique[0]
     if (only !== undefined && coversAllPorts(only)) return 'any port'
   }
-  return portsPhrase(unique)
+  return portsPhrase(unique.map((spec) => {
+    const parsed = parsePortSpec(spec)
+    const purpose = labelReserved && parsed !== null && parsed !== 'any' && parsed.lo === parsed.hi ? RESERVED_PORT_PURPOSE[parsed.lo] : undefined
+    return purpose === undefined ? spec : `${spec} (${purpose})`
+  }))
 }
 
 // A133: anchored on something a count of hosts can actually be compared
@@ -294,22 +371,42 @@ function namedHostsSummaryWithSensitiveAddresses (verb: string, singular: string
 }
 
 /**
+ * What a named pattern adds to a wildcard grant: a host the wildcard does not
+ * cover. `*` reaches public hosts only, never a reserved port through `*:*`
+ * or a range, and only its own ports, so a LAN address, a reserved port or an
+ * unlisted port named beside it is reach the headline does not state. Whether
+ * a pattern is covered is `update.ts`'s own `covers`, the question "does this
+ * change widen the grant" asks, so the two cannot disagree.
+ */
+function extraReachSentence (wildcard: readonly ConnectPatternInfo[], named: readonly ConnectPatternInfo[]): string {
+  const extras = named.filter((info) => !wildcard.some((w) => patternCovers(w.raw, info.raw)))
+  if (extras.length === 0) return ''
+
+  const hosts = Array.from(new Set(extras.map((info) => info.host)))
+  const items = hosts.map((host) => {
+    const own = extras.filter((info) => info.host === host)
+    const cls = own[0]?.nonPublicAddressClass ?? null
+    const classClause = cls === null ? '' : ` (${describeAddressClass(cls as Exclude<AddressClass, 'public' | 'unparseable'>)})`
+    return `${host} on ${portsListPhrase(own.map((info) => info.port), true)}${classClause}`
+  })
+  return `It can also reach ${joinAndCapped(items)}.`
+}
+
+/**
  * `tcp.connect` / `https.connect` / `udp.send` share one shape: host:port
  * patterns, a host wildcard that means "any public address" REGARDLESS of
  * its paired port (R2-01), and port breadth that must stay visible even
  * when the host is narrow (AR-02).
  *
- * A pattern whose host is the wildcard makes the WHOLE grant read as
- * unlimited, however many named patterns sit alongside it -- "any public
- * address" already subsumes every other declared host, so this branch
- * never calls `namedHostsSummary`: the wildcard host must never be rendered
- * as if it were a literal hostname (R2-01's own failure mode), and there is
- * nothing a specific host could add to "any address" that needs its own
- * mention in a one-line summary (D-0004 rejects an expander for the detail
- * that would take). What DOES still vary honestly is the port: a wildcard
- * host paired only with bounded ports is still unlimited in HOST terms, but
- * "any site, on port 443" is a real, narrower fact than "any site, any
- * port" and the addendum requires both to read differently.
+ * A pattern whose host is the wildcard makes the row read as unlimited, and
+ * the wildcard host is never rendered as if it were a literal hostname
+ * (R2-01's own failure mode). The explanation then says what is true of the
+ * whole grant: the wildcard's own port limit ("any site, on port 443" is a
+ * narrower fact than "any site, any port", and each limit names what it
+ * limits, since rows of different capabilities may share one headline), the
+ * closed ports the grant names, and every named pattern the wildcard does
+ * not already cover. A named pattern the wildcard covers adds nothing to say
+ * (D-0004 rejects an expander for the detail that would take).
  */
 export function describeConnectCapability (
   verb: string,
@@ -324,10 +421,12 @@ export function describeConnectCapability (
 
   if (wildcard.length > 0) {
     const fullyOpen = wildcard.some((info) => coversAllPorts(info.port))
-    const explanation = fullyOpen
-      ? unlimitedExplanation
-      : `${unlimitedExplanation} Limited to ${portsListPhrase(wildcard.map((info) => info.port))}.`
-    return { warning: true, message: WARNING_HEADLINE, explanation }
+    const limit = fullyOpen ? '' : ` Its reach to any ${singular} is limited to ${portsListPhrase(wildcard.map((info) => info.port))}.`
+    const closed = reservedPortsNamed(wildcard)
+    const onlyNamed = wildcard.every((info) => closed.some((port) => patternNamesPortExactly(info, port)))
+    const reach = [closedPortsSentence(closed, onlyNamed), extraReachSentence(wildcard, named)].filter((sentence) => sentence !== '').join(' ')
+    const explanation = `${unlimitedExplanation}${limit}${reach === '' ? '' : ` ${reach}`}`
+    return { warning: true, message: WARNING_HEADLINE, explanation, ...(reach === '' ? {} : { reach }) }
   }
 
   if (named.some((info) => info.nonPublicAddressClass !== null)) {

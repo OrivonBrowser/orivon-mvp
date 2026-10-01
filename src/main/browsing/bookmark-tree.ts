@@ -7,6 +7,9 @@ import type { BookmarkNode, BookmarkRoot } from './bookmark-types.js'
 import { sanitizeDirectUrl } from './omnibox.js'
 
 export const MAX_NODES = 20_000
+/** What an id looks like: the bookmarks page names a folder in its address and the page's requests name rows, and both
+ * take only this. The renderer's router keeps a copy of it, since it cannot import from here. */
+export const ID_PATTERN = /^[A-Za-z0-9_-]{1,32}$/
 /** Levels below a root: a root's children are at depth 1. */
 export const MAX_DEPTH = 12
 export const MAX_TITLE = 512

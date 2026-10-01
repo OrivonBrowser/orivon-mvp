@@ -1,47 +1,9 @@
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { DownloadService, MAX_RUNNING_PER_TAB } from '../download-service.js'
-import type { DownloadDeps } from '../download-service.js'
-import type { DownloadStore } from '../download-store.js'
+import { AUTOMATIC_WINDOW_MS, MAX_AUTOMATIC_PER_WINDOW, MAX_RUNNING_PER_TAB } from '../download-service.js'
 import type { DownloadEntry } from '../download-types.js'
 import { fakeContents, FakeItem } from './fake-item.js'
-
-const DIR = join('/', 'dl')
-
-function harness (stored: DownloadEntry[] = [], over: Partial<DownloadDeps> = {}) {
-  const files = new Set<string>()
-  const written: DownloadEntry[][] = []
-  const store: DownloadStore = { read: () => stored, write: (entries) => { written.push([...entries]) }, flush: async () => {} }
-  let clock = 1000
-  let counter = 0
-  const deps: DownloadDeps = {
-    folder: () => DIR,
-    fallbackFolder: () => join('/', 'system'),
-    askWhere: () => false,
-    fileExists: (path) => files.has(path),
-    ensureFolder: vi.fn(() => true),
-    folderWritable: () => true,
-    openPath: vi.fn(async () => ''),
-    showInFolder: vi.fn(),
-    trash: vi.fn(async (path: string) => { files.delete(path) }),
-    fetchAgain: vi.fn(),
-    now: () => { clock += 1; return clock },
-    newId: () => { counter += 1; return `id${String(counter)}` },
-    ...over
-  }
-  const service = new DownloadService(store, deps)
-  const event = { preventDefault: vi.fn() }
-  const start = (item: FakeItem, tab = 1): string => {
-    const seen: string[] = []
-    const off = service.onStart((info) => { seen.push(info.id) })
-    service.track(item.asItem(), fakeContents(tab), event)
-    off()
-    return seen[0] ?? ''
-  }
-  return { service, deps, files, written, event, start }
-}
-
-const item = (name = 'file.bin', mime?: string, total?: number): FakeItem => new FakeItem(name, ['https://a.example/' + name], mime, total)
+import { DIR, harness, item } from './service-harness.js'
 
 describe('starting a download', () => {
   it('sets the save path before it returns, inside the folder, and lists the download', () => {
@@ -131,6 +93,66 @@ describe('the flood guard', () => {
     start(item('again.bin'), 1)
     expect(event.preventDefault).not.toHaveBeenCalled()
     expect(service.list().filter((entry) => entry.state === 'progressing')).toHaveLength(MAX_RUNNING_PER_TAB + 1)
+  })
+})
+
+describe('what a page chooses is stored short', () => {
+  it('keeps only the scheme of a data: address and cuts a long web address, so the list stays small', () => {
+    const { service, start } = harness()
+    const inline = new FakeItem('a.txt', [`data:text/plain;base64,${'A'.repeat(1_000_000)}`])
+    const long = new FakeItem('b.txt', [`https://a.example/${'x'.repeat(5000)}`])
+    start(inline)
+    start(long)
+    const [second, first] = service.list()
+    expect(first?.url).toBe('data:')
+    expect(second?.url).toHaveLength(2048)
+    expect(JSON.stringify(service.list()).length).toBeLessThan(10_000)
+  })
+
+  it('does not retry an address that was cut, nor one that carried only content', () => {
+    const { service, start, deps } = harness()
+    const long = new FakeItem('b.txt', [`https://a.example/${'x'.repeat(5000)}`])
+    const id = start(long)
+    long.finish('interrupted')
+    expect(service.retry(id)).toBe(false)
+    const inline = new FakeItem('a.txt', ['data:text/plain,hello'])
+    const inlineId = start(inline)
+    inline.finish('interrupted')
+    expect(service.retry(inlineId)).toBe(false)
+    expect(deps.fetchAgain).not.toHaveBeenCalled()
+  })
+})
+
+describe('downloads nobody asked for', () => {
+  const unasked = (name: string): FakeItem => new FakeItem(name, [`https://a.example/${name}`], undefined, 1, false)
+
+  it('refuses a tab that starts more than a few without a gesture in a short time, however small they are', () => {
+    const { service, start, event } = harness()
+    for (let count = 0; count < 20; count += 1) {
+      const small = unasked(`t${String(count)}.txt`)
+      start(small, 4)
+      small.finish('completed')
+    }
+    expect(event.preventDefault).toHaveBeenCalledTimes(20 - MAX_AUTOMATIC_PER_WINDOW)
+    expect(service.list().filter((entry) => entry.state === 'completed')).toHaveLength(MAX_AUTOMATIC_PER_WINDOW)
+    expect(service.list().filter((entry) => entry.reason === 'flood')).toHaveLength(1)
+  })
+
+  it('lets the page start again once the window has passed, and never counts a download the person asked for', () => {
+    let clock = 0
+    const { start, event } = harness([], { now: () => clock })
+    for (let count = 0; count < MAX_AUTOMATIC_PER_WINDOW; count += 1) start(unasked(`a${String(count)}.txt`), 4)
+    for (let count = 0; count < 10; count += 1) start(item(`asked${String(count)}.txt`), 5)
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    clock += AUTOMATIC_WINDOW_MS + 1
+    start(unasked('later.txt'), 4)
+    expect(event.preventDefault).not.toHaveBeenCalled()
+  })
+
+  it('counts each tab on its own', () => {
+    const { start, event } = harness()
+    for (let tab = 1; tab <= 5; tab += 1) start(unasked(`x${String(tab)}.txt`), tab)
+    expect(event.preventDefault).not.toHaveBeenCalled()
   })
 })
 
@@ -331,8 +353,10 @@ describe('opening, showing and deleting a file', () => {
     expect(deps.openPath).toHaveBeenCalledWith(path)
   })
 
-  it('never opens a dangerous type, but still shows it in its folder', async () => {
-    const { service, id, path, deps } = finished('setup.exe')
+  it('never opens a dangerous type, but still shows it in its folder once it is kept', async () => {
+    const { service, id, deps } = finished('setup.exe')
+    expect(service.keep(id)).toBe(true)
+    const path = service.list()[0]?.savePath ?? ''
     expect(await service.open(id)).toBe(false)
     expect(deps.openPath).not.toHaveBeenCalled()
     expect(service.showInFolder(id)).toBe(true)

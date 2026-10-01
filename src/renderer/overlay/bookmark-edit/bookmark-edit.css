@@ -1,0 +1,17 @@
+/* The bookmark bubble and the "Bookmark all tabs" sheet: a title, the fields across the full width, then the buttons.
+   Both overlays are registered to this page, so the rules are written for each. */
+
+body[data-overlay='bookmark-edit'] .bme,
+body[data-overlay='bookmark-all-tabs'] .bme { padding: 16px 18px; }
+body[data-overlay='bookmark-edit'] .sheet-title,
+body[data-overlay='bookmark-all-tabs'] .sheet-title { margin: 0; }
+
+/* The count sits under the title as a dim line, like a sheet's origin. */
+body[data-overlay='bookmark-all-tabs'] .bme-count { margin: 2px 0 0; color: var(--wink-dim); font-size: 13px; }
+
+/* The label row of "Folder name" carries the Cancel link at its right edge. */
+body[data-overlay='bookmark-edit'] .field-head { display: flex; align-items: center; justify-content: space-between; min-height: 22px; }
+body[data-overlay='bookmark-edit'] .field-head .link-btn { margin-right: -6px; font-size: 13px; }
+
+/* Remove sits at the left of the row, Done at the right. */
+body[data-overlay='bookmark-edit'] .btn-row .remove { margin-right: auto; }

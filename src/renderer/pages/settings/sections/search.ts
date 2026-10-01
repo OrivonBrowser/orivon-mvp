@@ -20,6 +20,18 @@ export const search: Section = {
       visible: (state) => state.value('search.engine') === 'custom'
     },
     {
+      id: 'search-suggestions',
+      label: 'Show suggestions from the search engine',
+      helpFor: (state) => {
+        const name = state.engines.defaultName === '' ? 'Your search engine' : state.engines.defaultName
+        if (state.engines.isPrivate) return 'Not used in a private window.'
+        if (!state.engines.suggestable) return `${name} does not offer suggestions.`
+        return `As you type a search, Orivon sends what you type to ${name}. Off, suggestions come only from your history, bookmarks and open tabs.`
+      },
+      keywords: ['suggestions', 'autocomplete', 'predictions', 'search suggestions', 'address bar', 'omnibox', 'privacy', 'typing'],
+      control: { type: 'toggle', key: 'search.suggestions', disabled: (state) => state.engines.isPrivate || !state.engines.suggestable }
+    },
+    {
       id: 'address-bar-autocomplete',
       label: 'Complete addresses as I type',
       help: 'Suggestions come from your history, bookmarks and open tabs on this device.',
@@ -34,6 +46,14 @@ export const search: Section = {
       keywords: ['url', 'https', 'www', 'elide', 'full address', 'address bar', 'omnibox', 'show full url'],
       control: { type: 'toggle', key: 'addressBar.showFullUrl' },
       group: 'Address bar'
+    },
+    {
+      id: 'search-engines',
+      label: 'Search a site from the address bar',
+      help: 'Type a keyword and a space before what you are looking for, like "w solar eclipse", to search that site instead of the default engine.',
+      keywords: ['keyword', 'shortcut', 'custom search engine', 'site search', 'add search engine', 'wikipedia', 'youtube', 'github', 'openstreetmap', 'omnibox', 'address bar', 'default'],
+      control: { type: 'engines' },
+      group: 'Site search and keywords'
     }
   ]
 }

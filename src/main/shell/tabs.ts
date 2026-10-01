@@ -22,7 +22,7 @@ import { MAX_TABS } from './tab-view.js'
 import { closeParkedViews } from './tab-parking.js'
 import { buildTabState } from './tab-state.js'
 import type { TabStateEnv } from './tab-state.js'
-import { openViewSource } from '../page-tools/view-source.js'
+import { openTypedViewSource } from '../page-tools/view-source.js'
 import { exitHtmlFullscreen, goBack, goForward, navigateTab, reloadTab } from './tab-navigation.js'
 import type { NavigationEnv } from './tab-navigation.js'
 import { TabOpener } from './tab-open.js'
@@ -144,7 +144,7 @@ export class TabManager {
       record: (id) => this.tabs.get(id),
       liveWebContents: (id) => this.liveWebContents(id),
       openInternal: (page, path) => { this.openInternal(page, path) },
-      viewSource: (url) => openViewSource(this, url),
+      viewSource: (url) => openTypedViewSource(this, url),
       broker: () => ctx.broker,
       searchUrl: shell?.searchUrl
     }

@@ -36,7 +36,7 @@ function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: bo
     overlays: { show: calls['overlayShow'], toggle: calls['overlayToggle'], isOpen: () => false, close: vi.fn(), send: vi.fn() },
     shortcutsSuspended: () => false
   } as unknown as ShellWindow
-  const bookmarks = { has: vi.fn(() => false), add: vi.fn(), remove: vi.fn(), children: vi.fn(() => []) }
+  const bookmarks = { has: vi.fn(() => false), add: vi.fn(), remove: vi.fn(), children: vi.fn(() => []), findByUrl: vi.fn((): Array<{ id: string, added: number }> => []), addUrl: vi.fn(() => ({ id: 'made', added: 1 })) }
   const zoom = { step: vi.fn(), reset: vi.fn() }
   const devtools = { toggle: vi.fn(), openConsole: vi.fn() }
   const profiles = { openPrivate: vi.fn() }
@@ -172,23 +172,37 @@ describe('runCommand', () => {
     expect(send).toHaveBeenCalledWith('orivon-shell:event', { type: 'module', module: 'address-suggest', payload: { type: 'focusSearch' } })
   })
 
-  it('bookmarks a page and removes the bookmark on the second press, with its icon', () => {
+  it('saves a page on the first press and opens the bubble; on a saved page it only opens the bubble, and never removes', () => {
+    const asked = { type: 'module', module: 'bookmark-star', payload: { open: true } }
     const first = harness([tab('a')], 'a')
     runCommand('bookmark.toggle', first.target, first.deps)
-    expect(first.bookmarks['add']).toHaveBeenCalledWith({ url: 'https://a.example/', title: 'a', favicon: 'data:icon' })
+    expect(first.bookmarks['addUrl']).toHaveBeenCalledWith({ url: 'https://a.example/', title: 'a', favicon: 'data:icon', parent: 'bar' })
+    expect(first.send).toHaveBeenCalledWith(expect.any(String), asked)
 
     const second = harness([tab('a')], 'a')
-    second.bookmarks['has']?.mockReturnValue(true)
+    second.bookmarks['findByUrl']?.mockReturnValue([{ id: 'old', added: 1 }])
     runCommand('bookmark.toggle', second.target, second.deps)
-    expect(second.bookmarks['remove']).toHaveBeenCalledWith('https://a.example/')
+    expect(second.bookmarks['addUrl']).not.toHaveBeenCalled()
+    expect(second.bookmarks['remove']).not.toHaveBeenCalled()
+    expect(second.send).toHaveBeenCalledWith(expect.any(String), asked)
   })
 
-  it('bookmarks nothing on the new-tab page or one of the shell\'s own pages', () => {
+  it('bookmarks nothing, and opens no bubble, on the new-tab page or one of the shell\'s own pages', () => {
     for (const extra of [{ isNewTab: true }, { isInternal: true }]) {
-      const { target, bookmarks, deps } = harness([tab('a', extra)], 'a')
+      const { target, bookmarks, deps, send } = harness([tab('a', extra)], 'a')
       runCommand('bookmark.toggle', target, deps)
-      expect(bookmarks['add']).not.toHaveBeenCalled()
+      expect(bookmarks['addUrl']).not.toHaveBeenCalled()
+      expect(send).not.toHaveBeenCalled()
     }
+  })
+
+  it('opens the Bookmark all tabs sheet when some tab has a site, and does nothing when none has', () => {
+    const some = harness([tab('a'), tab('b', { isNewTab: true })], 'a')
+    runCommand('bookmark.allTabs', some.target, some.deps)
+    expect(some.calls['overlayShow']).toHaveBeenCalledWith('bookmark-all-tabs')
+    const none = harness([tab('a', { isNewTab: true }), tab('b', { isInternal: true })], 'a')
+    runCommand('bookmark.allTabs', none.target, none.deps)
+    expect(none.calls['overlayShow']).not.toHaveBeenCalled()
   })
 
   it('opens windows, closes the window, toggles full screen and opens Settings', () => {
@@ -277,6 +291,12 @@ describe('runCommand', () => {
     expect(calls['openInternal']!.mock.calls).toEqual([['about'], ['tasks']])
   })
 
+  it('opens the Import page', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+    runCommand('import.open', target, deps)
+    expect(calls['openInternal']).toHaveBeenCalledWith('import')
+  })
+
   it('stops the active tab\'s load', () => {
     const { target, calls, deps } = harness([tab('a')], 'a')
 
@@ -363,5 +383,11 @@ describe('runCommand', () => {
     const { target, calls, deps } = harness([tab('a')], 'a')
     runCommand('downloads.open', target, deps)
     expect(calls['openInternal']).toHaveBeenCalledWith('downloads')
+  })
+
+  it('opens the Bookmarks page', () => {
+    const { target, calls, deps } = harness([tab('a')], 'a')
+    runCommand('bookmarks.open', target, deps)
+    expect(calls['openInternal']).toHaveBeenCalledWith('bookmarks')
   })
 })

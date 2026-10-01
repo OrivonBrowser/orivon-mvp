@@ -6,6 +6,7 @@ import { internalBridge } from '../shared/bridge.js'
 import type { OrivonInternal } from '../shared/bridge.js'
 import { AppsState } from './apps-state.js'
 import { DownloadsState } from './downloads-state.js'
+import { EnginesState } from './engines-state.js'
 import { PrivacyState } from './privacy-state.js'
 import { ShortcutsState } from './shortcuts-state.js'
 import { UpdatesState } from './updates-state.js'
@@ -39,6 +40,7 @@ export class SettingsState {
   readonly privacy: PrivacyState
   readonly apps: AppsState
   readonly downloads: DownloadsState
+  readonly engines: EnginesState
   readonly usage: UsageState
   readonly updates: UpdatesState
   readonly web3: Web3State
@@ -53,6 +55,7 @@ export class SettingsState {
     this.privacy = new PrivacyState(bridge, () => { this.notify() })
     this.apps = new AppsState(bridge, () => { this.notify() })
     this.downloads = new DownloadsState(bridge, () => { this.notify() })
+    this.engines = new EnginesState(bridge, () => { this.notify() })
     this.usage = new UsageState(bridge, () => { this.notify() })
     this.updates = new UpdatesState(bridge, () => { this.notify() })
     this.web3 = new Web3State(bridge)
@@ -72,6 +75,7 @@ export class SettingsState {
     await this.privacy.load()
     await this.web3.load()
     await this.downloads.load()
+    await this.engines.load()
     for (const part of this.parts.values()) await part.load?.()
     this.profiles = await this.bridge.request('profiles', { type: 'list' }) as SettingsState['profiles']
     this.bridge.onEvent((topic, payload) => {
@@ -79,6 +83,7 @@ export class SettingsState {
       if (this.web3.handle(topic, payload)) { this.notify(); return }
       if (this.apps.handle(topic)) return
       this.downloads.handle(topic, payload)
+      if (this.engines.handle(topic, payload)) return
       if (this.privacy.handle(topic)) return
       if (this.usage.handle(topic)) return
       if (this.updates.handle(topic, payload)) return

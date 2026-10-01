@@ -42,4 +42,17 @@ describe('summaryAtLevel', () => {
     const result = summaryAtLevel(summary, 4)
     expect(result.explanation).toBeUndefined()
   })
+
+  it('keeps a stated reach beyond the wildcard in the message, since the warning text is gone', () => {
+    const summary: CapabilityGrantSummary = {
+      warning: true,
+      message: '⚠ Unlimited network access',
+      explanation: 'reach anywhere. It can also reach port 6697.',
+      reach: 'It can also reach port 6697.'
+    }
+    expect(summaryAtLevel(summary, 4)).toEqual({
+      warning: false,
+      message: 'Unlimited network access. It can also reach port 6697.'
+    })
+  })
 })

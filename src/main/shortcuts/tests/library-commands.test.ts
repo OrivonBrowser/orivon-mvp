@@ -11,8 +11,6 @@ const ROWS: ReadonlyArray<[id: string, label: string, category: string, binding:
   ['bookmarks.open', 'Bookmark manager', 'navigation', 'Mod+Shift+O', false],
   ['bookmarks.toggleBar', 'Show bookmarks bar', 'navigation', 'Mod+Shift+B', false],
   ['bookmark.allTabs', 'Bookmark all tabs', 'navigation', 'Mod+Shift+D', false],
-  ['readingList.open', 'Reading list', 'navigation', undefined, false],
-  ['readingList.add', 'Add page to reading list', 'navigation', undefined, false],
   ['nav.focusSearch', 'Search the web', 'navigation', 'Mod+K', true],
   ['page.qr', 'Create QR code for this page', 'tools', undefined, false],
   ['devtools.console', 'JavaScript console', 'navigation', 'Mod+Shift+J', false],
@@ -24,9 +22,12 @@ const ROWS: ReadonlyArray<[id: string, label: string, category: string, binding:
 // Rows whose feature has landed: they run something now, so they carry no pending flag. One id a line.
 const LANDED: readonly string[] = [
   'about.open',
+  'bookmark.allTabs',
+  'bookmarks.open',
   'bookmarks.toggleBar',
   'devtools.console',
   'downloads.open',
+  'import.open',
   'nav.focusSearch',
   'page.qr',
   'tasks.open'

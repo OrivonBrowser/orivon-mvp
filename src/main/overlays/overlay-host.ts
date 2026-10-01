@@ -230,7 +230,8 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     const slot = slots.get(name)
     if (slot === undefined || disposed) return
     // Read before a replaced popup closes: focus inside it belongs to whatever that popup itself was going to give it back to.
-    const focused = focusedContents()
+    const chromeView = deps.context().window.chrome as Partial<WebContentsView> | undefined
+    const focused = focusedContents([...openSlots().map((other) => other.view ?? undefined), chromeView?.webContents, deps.activeContents()])
     const holder = focused === undefined ? undefined : openSlots().find((other) => other.view?.id === focused.id)
     const before = holder === undefined ? focused : holder.returnTo
     if (slot.def.layer === 'popup') closePopups(slot, 'replaced')

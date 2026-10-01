@@ -10,6 +10,7 @@ function setup () {
   const service = {
     list: vi.fn(() => [{ id: 'a' }]),
     pause: vi.fn(() => true), resume: vi.fn(() => true), cancel: vi.fn(() => true), retry: vi.fn(() => true), remove: vi.fn(() => true),
+    keep: vi.fn(() => true), discard: vi.fn(() => true),
     showInFolder: vi.fn(() => true), open: vi.fn(async () => false), deleteFile: vi.fn(async () => true), clear: vi.fn()
   }
   const host: DownloadsHost = {
@@ -36,7 +37,7 @@ describe('the downloads domain', () => {
     expect(await call('downloads', { type: 'list' })).toEqual({ entries: [{ id: 'a' }], folder: '/dl', private: false })
   })
 
-  it.each(['pause', 'resume', 'cancel', 'retry', 'remove', 'showInFolder', 'open', 'deleteFile'])('runs %s on the id it is given', async (type) => {
+  it.each(['pause', 'resume', 'cancel', 'retry', 'remove', 'keep', 'discard', 'showInFolder', 'open', 'deleteFile'])('runs %s on the id it is given', async (type) => {
     const { call, service } = setup()
     await call('downloads', { type, id: 'abc' })
     expect((service as unknown as Record<string, ReturnType<typeof vi.fn>>)[type]).toHaveBeenCalledWith('abc')

@@ -1,8 +1,8 @@
 # Table 3b: module system, bundling and delivery
 
-One part of the [compatibility matrix](../compatibility-matrix.md), which holds the legend, the
-definition of every column and the index of all tables. This page says what works today and
-nothing else.
+One part of the [compatibility matrix](../compatibility-matrix.md). The matrix page has this
+table in readable form, one row per topic; this page lists every item one by one, for looking up a
+single name. It says what works today and nothing else.
 
 The universe is the 5 CommonJS module-scope names with the `require` and `module` members, the 5 `import.meta` members of Node 24, the import kinds a bundle can contain, the package-resolution fields (`browser`, `node`, `exports`, `main`, `module`), the 9 top-level manifest fields, the 41-extension MIME table, the served limits and headers, and the four delivery environments (installed, granted without installing, developer mode, `.eth` and IPFS); an app is a bundle its own bundler built, the shim resolves no package at run time (`createRequire` and a forked child's `require` load a relative or absolute file and a shim builtin, never a bare package name), and bundler results are for Vite 7 (the renderer's bundler), esbuild 0.25 and webpack 5.
 

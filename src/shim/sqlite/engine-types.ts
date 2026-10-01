@@ -37,6 +37,7 @@ export interface SqliteCapi {
   sqlite3_close_v2 (db: Pointer): number
   sqlite3_errmsg (db: Pointer): string
   sqlite3_errstr (code: number): string
+  sqlite3_js_rc_str (code: number): string | undefined
   sqlite3_extended_errcode (db: Pointer): number
   sqlite3_exec (db: Pointer, sql: string, callback: number, argument: number, error: number): number
   sqlite3_db_config (db: Pointer, operation: number, enabled: number, out: number): number
@@ -47,6 +48,7 @@ export interface SqliteCapi {
   sqlite3_last_insert_rowid (db: Pointer): number | bigint
   sqlite3_prepare_v2 (db: Pointer, sql: string, length: number, out: Pointer, tail: number): number
   sqlite3_sql (statement: Pointer): string
+  sqlite3_stmt_readonly (statement: Pointer): number
   sqlite3_expanded_sql (statement: Pointer): string
   sqlite3_bind_parameter_count (statement: Pointer): number
   sqlite3_bind_parameter_index (statement: Pointer, name: string): number

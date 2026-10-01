@@ -42,8 +42,8 @@ nothing else: a debugger's port on the first process would be taken by the secon
 it ends, so `start-launch.ts` refuses one that is not directly under the temp directory, named as the
 system names a new one, and present.
 
-**What a private session starts with is a short list** (`private-session.ts`, `public-seed.ts`): the settings and
-keyboard shortcuts of the profile that opened it -- both preferences -- and the light client's checkpoint file,
+**What a private session starts with is a short list** (`private-session.ts`, `public-seed.ts`): the settings,
+keyboard shortcuts and search engines (`search-engines.json`, read and never written there) of the profile that opened it -- all preferences -- and the light client's checkpoint file,
 which is public and without which a `.eth` name would fail once the shipped one is old. Zoom levels, a list of
 sites, are never copied, and neither is the list of IPNS names visited that sits beside the checkpoint: it says
 what the person has browsed. A new profile gets the same seed. Adding to the list is a change

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aboutRows, aboutText, deviceRows, featureRows, featureTone, PRIVATE_PROFILE_TEXT, rawReport } from '../about-info.js'
+import { aboutRows, aboutText, deviceRows, featureRows, featureTone, PRIVATE_PROFILE_TEXT, rawReport, withoutPrivateDirectory } from '../about-info.js'
 import type { AboutFacts } from '../about-info.js'
 
 const FACTS: AboutFacts = {
@@ -49,6 +49,15 @@ describe('the About table', () => {
     expect(aboutRows(FACTS).find((entry) => entry.label === 'Profile folder')).toMatchObject({ value: '/home/a/.config/orivon', mono: true })
   })
 
+  it('keeps the temporary profile folder out of a private window\'s command line, in the table and in the copy', () => {
+    const commandLine = '/opt/orivon/orivon --orivon-private --orivon-private-dir=/tmp/orivon private x1 --user-data-dir=/tmp/orivon private x1 --flag'
+    const rows = aboutRows({ ...FACTS, commandLine, isPrivate: true })
+    expect(rows.find((row) => row.label === 'Command line')?.value).toBe('/opt/orivon/orivon --orivon-private --orivon-private-dir=<private> --user-data-dir=<private> --flag')
+    expect(aboutText(rows)).not.toContain('/tmp/orivon')
+    expect(withoutPrivateDirectory('a --user-data-dir=/x/y')).toBe('a --user-data-dir=<private>')
+    expect(aboutRows({ ...FACTS, commandLine, isPrivate: false }).find((row) => row.label === 'Command line')?.value).toBe(commandLine)
+  })
+
   it('copies as one "Label: value" line per row', () => {
     const text = aboutText(aboutRows(FACTS))
     expect(text.split('\n')).toHaveLength(12)
@@ -63,12 +72,13 @@ describe('the graphics feature badges', () => {
     ['enabled_on', 'Hardware accelerated', 'ok'],
     ['enabled_force', 'Hardware accelerated', 'ok'],
     ['enabled_readback', 'Hardware accelerated', 'ok'],
-    ['unavailable_software', 'Software only', 'warn'],
-    ['disabled_software', 'Software only', 'warn'],
-    ['disabled_off', 'Disabled', 'danger'],
-    ['disabled_off_ok', 'Disabled', 'danger'],
+    ['unavailable_software', 'Software only', 'neutral'],
+    ['disabled_software', 'Software only', 'neutral'],
+    ['disabled_off', 'Disabled', 'neutral'],
+    ['disabled_off_ok', 'Disabled', 'neutral'],
     ['unavailable_off', 'Disabled', 'danger'],
-    ['unavailable_off_ok', 'Disabled', 'danger'],
+    ['unavailable_off_ok', 'Disabled', 'neutral'],
+    ['blocklisted', 'Disabled', 'danger'],
     ['some_new_status', 'some_new_status', 'neutral'],
     ['', 'Unknown', 'neutral']
   ])('reads "%s" as "%s"', (status, text, tone) => {
@@ -78,7 +88,7 @@ describe('the graphics feature badges', () => {
   it('gives a known feature its label and an unknown one its own key', () => {
     const rows = featureRows({ '2d_canvas': 'enabled', video_decode: 'disabled_software', webgpu: 'disabled_off', brand_new: 'enabled' })
     expect(rows.map((row) => row.label)).toEqual(['Canvas', 'Video decode', 'WebGPU', 'brand_new'])
-    expect(rows.map((row) => row.tone)).toEqual(['ok', 'warn', 'danger', 'ok'])
+    expect(rows.map((row) => row.tone)).toEqual(['ok', 'neutral', 'neutral', 'ok'])
   })
 
   it('skips a value that is not a status string', () => {

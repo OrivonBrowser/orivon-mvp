@@ -3,7 +3,7 @@
 // blurs to this view on the press, and the chrome closes the list on that blur.
 import { faviconElement, globeIcon } from '../../icons.js'
 import { h } from '../../pages/shared/dom.js'
-import { searchGlassIcon, starIcon } from '../../pages/shared/icons.js'
+import { bookmarkIcon, searchGlassIcon } from '../../pages/shared/icons.js'
 import type { PageRow } from '../../../main/omnibox/omnibox-service.js'
 import type { Overlay, OverlayPage } from '../kit.js'
 import { segments } from '../tab-search/fuzzy.js'
@@ -11,8 +11,9 @@ import { asRowsMessage, dispositionFor } from './rows.js'
 import type { RowsMessage } from './rows.js'
 import './omnibox.css'
 
-function highlighted (text: string, ranges: ReadonlyArray<readonly [number, number]>): Node[] {
-  return segments(text, ranges).map((piece) => piece.hit ? h('mark', null, piece.text) : document.createTextNode(piece.text))
+/** A search row's matched part is what was typed, which the suggestion only continues, so it is dimmed instead of marked. */
+function highlighted (text: string, ranges: ReadonlyArray<readonly [number, number]>, typed = false): Node[] {
+  return segments(text, ranges).map((piece) => piece.hit ? (typed ? h('span', { className: 'omni-typed' }, piece.text) : h('mark', null, piece.text)) : document.createTextNode(piece.text))
 }
 
 function iconFor (row: PageRow): HTMLElement {
@@ -25,7 +26,7 @@ function iconFor (row: PageRow): HTMLElement {
 
 function metaFor (row: PageRow): HTMLElement | null {
   if (row.kind === 'bookmark') {
-    const star = h('span', { className: 'item-meta omni-star', title: 'Bookmarked' }, starIcon())
+    const star = h('span', { className: 'item-meta omni-star', title: 'Bookmarked' }, bookmarkIcon())
     star.setAttribute('role', 'img')
     star.setAttribute('aria-label', 'Bookmarked')
     return star
@@ -37,6 +38,7 @@ function metaFor (row: PageRow): HTMLElement | null {
 export const omniboxPage: OverlayPage = {
   mount (content, overlay: Overlay) {
     let seq = 0
+    let rev = 0
     const list = h('ul', { className: 'listbox', id: 'omnibox-list', role: 'listbox', ariaLabel: 'Suggestions' })
     content.append(list)
 
@@ -44,7 +46,7 @@ export const omniboxPage: OverlayPage = {
       const sameAsTitle = row.address === row.title
       const parts: Array<Node | null> = [
         iconFor(row),
-        h('span', { className: 'item-title' }, ...highlighted(row.title, row.match)),
+        h('span', { className: 'item-title' }, ...highlighted(row.title, row.match, row.kind === 'search')),
         row.address === '' || sameAsTitle ? null : h('span', { className: 'omni-dash', ariaHidden: 'true' }, '—'),
         row.address === '' || sameAsTitle ? null : h('span', { className: 'item-sub' }, ...highlighted(row.address, row.addressMatch)),
         metaFor(row)
@@ -58,13 +60,14 @@ export const omniboxPage: OverlayPage = {
         // No focus change and no middle-press autoscroll: the field stays where the person is typing.
         event.preventDefault()
         if (disposition === null) return
-        void overlay.request({ type: 'pick', index, disposition, seq })
+        void overlay.request({ type: 'pick', index, disposition, seq, rev })
       })
       return el
     }
 
     function render (message: RowsMessage): void {
       seq = message.seq
+      rev = message.rev
       list.replaceChildren(...message.rows.map((row, index) => rowElement(row, index, index === message.selected)))
     }
 

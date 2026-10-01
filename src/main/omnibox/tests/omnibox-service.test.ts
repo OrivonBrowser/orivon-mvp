@@ -70,18 +70,25 @@ describe('OmniboxService.select', () => {
   it('moves down and up, wrapping, and says what the bar shows for the row', () => {
     const { service } = make([page('https://a.org/'), page('https://b.org/', { score: 5 })])
     const { seq } = service.query('x', false)
-    expect(service.select(1, seq)).toEqual({ selected: 1, fill: 'https://a.org/' })
-    expect(service.select(1, seq)).toEqual({ selected: 2, fill: 'https://b.org/' })
-    expect(service.select(1, seq)).toEqual({ selected: 0, fill: null })
-    expect(service.select(-1, seq)).toEqual({ selected: 2, fill: 'https://b.org/' })
+    expect(service.select(1, seq)).toMatchObject({ selected: 1, fill: 'https://a.org/' })
+    expect(service.select(1, seq)).toMatchObject({ selected: 2, fill: 'https://b.org/' })
+    expect(service.select(1, seq)).toMatchObject({ selected: 0, fill: null })
+    expect(service.select(-1, seq)).toMatchObject({ selected: 2, fill: 'https://b.org/' })
     expect(service.snapshot().selected).toBe(2)
+  })
+
+  it('says the selected row in words for a screen reader: its title, address and kind, and where it is in the list', () => {
+    const { service } = make([page('https://a.org/', { title: 'Site A' })])
+    const { seq } = service.query('x', false)
+    expect(service.select(1, seq)?.announce).toBe('Site A, a.org, 2 of 2')
+    expect(service.select(1, seq)?.announce).toMatch(/, 1 of 2$/)
   })
 
   it('shows the words of a search row, not an address', () => {
     const { service } = make([], { verbatim: () => ({ kind: 'search', title: 'cats', address: '', url: 'https://s/?q=cats', match: [] }) })
     service.query('cats', false)
     service.query('cats', false)
-    expect(service.select(-1, undefined)).toEqual({ selected: 0, fill: null })
+    expect(service.select(-1, undefined)).toMatchObject({ selected: 0, fill: null })
   })
 
   it('ignores an answer meant for an older list, and a list with nothing in it', () => {
@@ -153,6 +160,23 @@ describe('a source that answers late', () => {
     gate.resolve()
     await vi.waitFor(() => { expect(late).toHaveLength(1) })
     expect(late[0]?.rows.map((row) => row.title)).toEqual(['q', 'https://x.org/', 'https://y.org/', 'https://z.org/', 'https://a.org/'])
+  })
+
+  it('refuses a click that was drawn from the rows before the late ones came in, since they have moved', async () => {
+    const gate = { resolve: () => {} }
+    const { service, late } = make([page('https://a.org/')], { lateSources: [later(lateRows, gate)] })
+    const first = service.query('q', false)
+    const before = service.snapshot()
+    expect(before.rows[1]?.address).toBe('a.org')
+    gate.resolve()
+    await vi.waitFor(() => { expect(late).toHaveLength(1) })
+    // Row 1 was the history page when the click was drawn; now it is a late suggestion.
+    expect(service.pick(1, 'current', first.seq, before.rev)).toBeUndefined()
+    const after = late[0] as Snapshot
+    expect(after.rev).not.toBe(before.rev)
+    expect(service.pick(1, 'current', first.seq, after.rev)).toMatchObject({ type: 'go', target: 'https://x.org/' })
+    // The keys name no revision, and the selected row never moves.
+    expect(service.pick(0, 'current', first.seq)).toMatchObject({ type: 'go' })
   })
 
   it('never moves a row the person has already selected', async () => {

@@ -34,5 +34,7 @@ export interface BookmarkTreeInput {
   title: string
   url?: string
   added?: number
+  /** A stored page icon (a `data:` URL); an import leaves it out. */
+  favicon?: string | null
   children?: BookmarkTreeInput[]
 }

@@ -6,7 +6,7 @@ type IconName = keyof typeof icons
 
 /** The icons the kit adds, in the order the gallery draws them. */
 export const NEW_ICONS = [
-  'download', 'folder', 'folderOpen', 'file', 'star', 'chevronRight', 'chevronDown', 'close', 'check', 'plus', 'more',
+  'download', 'folder', 'folderOpen', 'file', 'bookmark', 'import', 'activity', 'chevronRight', 'chevronDown', 'close', 'check', 'plus', 'more',
   'pin', 'speaker', 'speakerOff', 'warning', 'lock', 'key', 'printer', 'externalLink', 'copy', 'pencil', 'refresh',
   'home', 'panelRight', 'puzzle', 'pause', 'play', 'eye', 'eyeOff', 'arrowUp', 'arrowDown'
 ] as const

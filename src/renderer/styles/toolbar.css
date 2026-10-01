@@ -77,7 +77,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-right: 6px;
+  margin-right: 8px;
   flex: none;
 }
 
@@ -178,6 +178,7 @@
   display: flex;
   color: var(--wink-dim);
 }
+.pillbtn[hidden] { display: none; }
 .pillbtn svg { width: 16px; height: 16px; }
 .pillbtn:not(:disabled):hover {
   color: var(--wink);

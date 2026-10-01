@@ -53,7 +53,8 @@ export interface TaskTotals {
 /** Which page names a shared process: a person's own page before Orivon's. */
 const PRECEDENCE: readonly ContentsKind[] = ['tab', 'app', 'extension', 'internal', 'overlay', 'shell']
 
-const ENDABLE_KINDS: ReadonlySet<ContentsKind> = new Set(['tab', 'app', 'extension'])
+/** Only a person's own pages: a service process or an extension's page belongs to Orivon, and ending one takes every tab's requests or a subsystem with it. */
+const ENDABLE_KINDS: ReadonlySet<ContentsKind> = new Set(['tab', 'app'])
 
 export const NEW_TAB_NAME = 'New tab'
 
@@ -116,7 +117,7 @@ function processRow (metric: MetricInput, entries: readonly ContentsInput[]): Ta
     name: labelFor(kind, name === '' && kind === 'utility' ? 'Service' : name),
     memoryKb: metric.memoryKb,
     cpu: metric.cpu,
-    endable: kind === 'utility',
+    endable: false,
     children: []
   }
 }

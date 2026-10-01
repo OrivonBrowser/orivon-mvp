@@ -27,15 +27,15 @@ describe('buildLayout', () => {
     const sections = buildLayout({ ...base, grouping: 'session', entries: ENTRIES })
     const today = sections[0]?.blocks ?? []
     expect(today.map((block) => block.heading?.pages)).toEqual([2, 1])
-    expect(today[0]?.heading?.label).toBe('Today, 3:10 PM to 3:40 PM')
-    expect(today[1]?.heading?.label).toBe('Today, 9:00 AM')
-    expect(sections[1]?.blocks[0]?.heading?.label).toBe('Yesterday, 12:00 PM')
+    expect(today[0]?.heading?.label).toBe('3:10 PM to 3:40 PM')
+    expect(today[1]?.heading?.label).toBe('9:00 AM')
+    expect(sections[1]?.blocks[0]?.heading?.label).toBe('12:00 PM')
   })
 
   it('files a session that crosses midnight under the day it ended', () => {
     const sections = buildLayout({ ...base, grouping: 'session', entries: [entry(2, at(28, 0, 10)), entry(1, at(27, 23, 50))] })
     expect(sections.map((section) => section.label)).toEqual(['Today'])
-    expect(sections[0]?.blocks[0]?.heading?.label).toBe('Yesterday, 11:50 PM to Today, 12:10 AM')
+    expect(sections[0]?.blocks[0]?.heading?.label).toBe('Yesterday, 11:50 PM to 12:10 AM')
   })
 
   it('is flat and headingless when sorted, whatever the grouping', () => {

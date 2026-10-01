@@ -23,6 +23,10 @@ host for a host-routed one ([`../worker/host.ts`](../worker/host.ts)) -- since a
 host connection at all: a thread stays local to whatever created it, so a `SharedArrayBuffer` or a
 shared `WebAssembly.Memory`/`Module` in its `workerData` never has to cross into another process.
 
+**A spawned program's directories.** The app's files are its `/` and also `/orivon/app`, the path
+the app's own code holds them at, so a program given a path in either form finds the same file
+(`spawn.ts`'s `preopensFor`).
+
 **What it depends on.** [`../../contracts/`](../../contracts/) (types), [`../worker/`](../worker/),
 [`../wasi/`](../wasi/), [`../wasi-p2/`](../wasi-p2/) (`run.ts`, to check a component's jco output), `../fs/paths.ts`, `../node-errors.ts`, `../errors.ts`,
 `../orivon-global.ts`, `../warn-once.ts`, `../polyfills/module-proxy.ts`, and the `buffer`,

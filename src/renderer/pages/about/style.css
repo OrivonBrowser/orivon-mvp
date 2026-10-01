@@ -30,7 +30,11 @@
 .row:first-child { border-top: none; }
 .row-label { flex: none; width: 240px; color: var(--wink-dim); font-size: 13px; font-weight: 500; }
 .value { min-width: 0; flex: 1 1 auto; text-align: right; overflow-wrap: anywhere; user-select: text; }
-.value.mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px; }
+.value.mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px; white-space: pre-wrap; word-break: break-all; }
+/* A long value sits under its label and reads left to right, instead of as a ragged right-aligned paragraph. */
+.row.long { flex-direction: column; align-items: flex-start; gap: 4px; }
+.row.long .row-label { width: auto; }
+.row.long .value { flex: none; width: 100%; text-align: left; }
 .row > .badge { margin-left: auto; align-self: center; }
 
 .label-skeleton { flex: none; width: 120px; }

@@ -18,6 +18,15 @@ const entry = (id: string, over: Partial<DownloadEntry> = {}): DownloadEntry => 
   total: 10, received: 10, state: 'completed', startedAt: 1, endedAt: 2, danger: false, ...over
 })
 
+describe('a stored entry is read back short', () => {
+  it('cuts the address, the referrer and the content type a hand-edited file made long', () => {
+    const [read] = parseEntries({ version: 1, entries: [entry('a', { url: `data:text/plain,${'A'.repeat(1_000_000)}`, referrer: `https://a.example/${'x'.repeat(9000)}`, mime: 'm'.repeat(5000) })] })
+    expect(read?.url).toBe('data:')
+    expect(read?.referrer).toHaveLength(2048)
+    expect(read?.mime).toHaveLength(255)
+  })
+})
+
 describe('the downloads file', () => {
   it('writes the list and reads it back, without the fields that are only true for a moment', async () => {
     const store = new JsonDownloadStore(file)
@@ -51,6 +60,17 @@ describe('the downloads file', () => {
   it('keeps at most as many entries as its limit', () => {
     const many = Array.from({ length: MAX_ENTRIES + 5 }, (_, index) => entry(`e${String(index)}`))
     expect(parseEntries({ version: 1, entries: many })).toHaveLength(MAX_ENTRIES)
+  })
+})
+
+describe('a held download', () => {
+  it('is written and read back as held, and the flag is not invented for an ordinary entry', async () => {
+    const store = new JsonDownloadStore(file)
+    store.write([entry('h', { state: 'held', held: true, danger: true }), entry('p')])
+    await store.flush()
+    const [held, plain] = new JsonDownloadStore(file).read()
+    expect(held).toMatchObject({ id: 'h', state: 'held', held: true })
+    expect(plain).not.toHaveProperty('held')
   })
 })
 

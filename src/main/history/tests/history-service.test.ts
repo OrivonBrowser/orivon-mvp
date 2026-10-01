@@ -33,6 +33,17 @@ describe('the history service', () => {
       expect(service.faviconsFor(['a.example'])).toEqual({ 'a.example': GIF })
     })
 
+    it('does not throw into the state push that offered it when the store fails, and offers the icon again next time', () => {
+      const { service, store } = setup()
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const setFavicon = vi.spyOn(store, 'setFavicon').mockImplementationOnce(() => { throw new Error('disk full') })
+      expect(() => { service.setFavicon('a.example', PNG) }).not.toThrow()
+      service.setFavicon('a.example', PNG)
+      expect(setFavicon).toHaveBeenCalledTimes(2)
+      expect(service.faviconsFor(['a.example'])).toEqual({ 'a.example': PNG })
+      error.mockRestore()
+    })
+
     it('keeps nothing while history is off', () => {
       const { service } = setup({ 'history.remember': false })
       service.setFavicon('a.example', PNG)

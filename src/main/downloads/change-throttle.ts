@@ -3,7 +3,12 @@
 // fold into "the list changed", which the page answers by reading it again.
 import type { DownloadChange } from './download-types.js'
 
-export function throttleChanges (send: (change: DownloadChange) => void, intervalMs = 250): (change: DownloadChange) => void {
+export type ThrottledChanges = ((change: DownloadChange) => void) & {
+  /** Drops what is waiting and stops the timer, for a listener whose owner has gone: nothing is sent after it. */
+  readonly cancel: () => void
+}
+
+export function throttleChanges (send: (change: DownloadChange) => void, intervalMs = 250): ThrottledChanges {
   let timer: ReturnType<typeof setTimeout> | undefined
   let held: { readonly change: DownloadChange } | undefined
 
@@ -16,7 +21,7 @@ export function throttleChanges (send: (change: DownloadChange) => void, interva
     timer = setTimeout(release, intervalMs)
   }
 
-  return (change) => {
+  const push = (change: DownloadChange): void => {
     if (timer === undefined) {
       send(change)
       timer = setTimeout(release, intervalMs)
@@ -25,4 +30,10 @@ export function throttleChanges (send: (change: DownloadChange) => void, interva
     const sameDownload = held !== undefined && held.change !== null && change !== null && held.change.id === change.id
     held = held === undefined || sameDownload ? { change } : { change: null }
   }
+  const cancel = (): void => {
+    if (timer !== undefined) clearTimeout(timer)
+    timer = undefined
+    held = undefined
+  }
+  return Object.assign(push, { cancel })
 }

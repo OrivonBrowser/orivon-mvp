@@ -25,6 +25,7 @@ export function stateLine (entry: DownloadEntry): string {
   switch (entry.state) {
     case 'progressing': return progressText(entry)
     case 'paused': return `Paused, ${progressText(entry)}`
+    case 'held': return 'Waiting for you to keep or discard it'
     case 'completed': return entry.missing === true ? 'Moved or deleted' : 'Done'
     case 'cancelled': return 'Cancelled'
     case 'interrupted': return 'Failed'

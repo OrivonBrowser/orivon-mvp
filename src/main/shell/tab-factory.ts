@@ -15,7 +15,7 @@ import type { InternalPageRegistry } from '../pages/internal-registry.js'
 import { guardInternalView } from '../pages/internal-tab.js'
 import type { TabRecord, TabViewHost } from './tab-types.js'
 import { appTabArgsFor, makeTabView, partitionForTarget, wireView } from './tab-view.js'
-import { APP_DARK_WASH, INTERNAL_PAGE_BACKGROUND, resolveThemeColor } from './theme-colors.js'
+import { APP_DARK_WASH, INTERNAL_PAGE_BACKGROUND, onThemeUpdated, resolveThemeColor } from './theme-colors.js'
 
 /** The safe fallback for a REJECTED navigation (a dangerous typed scheme,
  * a bad window.open() URL, empty input) -- never the dashboard. Keeping
@@ -150,6 +150,11 @@ export class TabFactory {
     const record = this.recordFor(view, INTERNAL_PARTITION, { internalPage: page })
     wireView(id, record)
     guardInternalView(view, page, (target) => { record.host.openTab(target) })
+    // The page never leaves orivon://, so its backing colour follows the theme for as long as the view lives.
+    const stopTheme = onThemeUpdated(() => {
+      if (!view.webContents.isDestroyed()) view.setBackgroundColor(resolveThemeColor(INTERNAL_PAGE_BACKGROUND))
+    })
+    view.webContents.once('destroyed', stopTheme)
     this.internalPages?.register(view.webContents, page)
     this.host.tabLifecycle?.tabCreated(view.webContents, this.host.window)
     return { id, record }

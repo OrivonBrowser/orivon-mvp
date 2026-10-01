@@ -9,6 +9,7 @@
    change one, change both, then re-run `npm run smoke`. */
 
 @import './styles/address-display.css';
+@import './styles/downloads-button.css';
 @import './styles/tabstrip.css';
 @import './styles/tab-badges.css';
 @import './styles/tab-crashed.css';
@@ -76,10 +77,12 @@
   :root[data-private='true'] { --wchrome: #251c36; --wbookmarks: #20182f; --wsurface: #35294b; --wborder: #45375f; }
 }
 
-/* The omnibox leading dot's plain-http colour (toolbar.css's
-   .address-dot.insecure). Theme-invariant in the reference, same as
-   --waccent/--wmark/--wok above, so it isn't in the light/dark table. */
-:root { --winsecure: #f97316; }
+/* The plain-http colour, used as text and as a glyph on the address pill: the plain orange is 2.5:1 on the light pill,
+   so light takes a darker one. */
+:root { --winsecure: #c2410c; }
+@media (prefers-color-scheme: dark) {
+  :root { --winsecure: #f97316; }
+}
 /* The warning colour as a mark that must be seen on the chrome (a crashed tab's icon): the plain orange is 2.2:1 on
    the light chrome, so light takes a darker one. */
 :root { --wwarn-mark: #c2410c; }

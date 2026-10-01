@@ -4,6 +4,7 @@
 import { h } from '../shared/dom.js'
 import { renderApps } from './apps-view.js'
 import { renderClearData } from './clear-data.js'
+import { renderEngines } from './engines.js'
 import { renderPageList } from './controls/page-list.js'
 import { renderUsage } from './usage-view.js'
 import type { Control, Row } from './model.js'
@@ -33,7 +34,7 @@ function renderChoice (control: Extract<Control, { type: 'choice' }>, state: Set
 }
 
 function renderToggle (control: Extract<Control, { type: 'toggle' }>, state: SettingsState, id: string): HTMLElement {
-  const input = h('input', { type: 'checkbox', id, checked: state.value(control.key) === true })
+  const input = h('input', { type: 'checkbox', id, checked: state.value(control.key) === true, disabled: control.disabled?.(state) === true })
   input.addEventListener('change', () => { void state.set(control.key, input.checked) })
   return h('span', { className: 'switch' }, input, h('span', { className: 'track' }))
 }
@@ -130,10 +131,17 @@ export function renderRow (row: Row, state: SettingsState): HTMLElement {
     case 'toggle': field = renderToggle(control, state, controlId); break
     case 'text': field = renderText(control, state, controlId); break
     case 'pageList': field = renderPageList(control, state, controlId); break
-    case 'action': field = renderAction(control, state); break
+    case 'action': {
+      const button = renderAction(control, state)
+      if (control.shows === undefined) { field = button; break }
+      const shown = control.shows(state)
+      field = h('span', { className: 'action-value' }, h('span', { className: 'value', textContent: shown, title: shown }), button)
+      break
+    }
     case 'shortcut': field = renderShortcut(control, state); break
     case 'clearData': field = renderClearData(state); break
     case 'apps': field = renderApps(state); break
+    case 'engines': field = renderEngines(state); break
     case 'usage': field = renderUsage(state); break
     case 'custom': field = control.render(state); break
     case 'info': field = h('span', { className: 'value', textContent: control.text(state) }); break
@@ -155,7 +163,7 @@ export function renderRow (row: Row, state: SettingsState): HTMLElement {
   // A control that is more than one compact field (several checkboxes, a
   // list of apps, the usage-statistics block) stacks under its own label
   // full width, rather than squeezed beside it at the row's right edge.
-  const isWide = control.type === 'apps' || control.type === 'usage' || control.type === 'clearData' || control.type === 'pageList' || (control.type === 'custom' && control.wide === true)
+  const isWide = control.type === 'apps' || control.type === 'engines' || control.type === 'usage' || control.type === 'clearData' || control.type === 'pageList' || (control.type === 'custom' && control.wide === true)
   return h('div', { className: isWide ? 'row wide' : 'row', id: `row-${row.id}` },
     h('div', { className: 'row-text' },
       labelsControl

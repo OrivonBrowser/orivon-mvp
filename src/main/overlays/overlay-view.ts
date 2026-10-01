@@ -2,7 +2,7 @@
 // (../permissions/popover-view.ts says why a separate view, not a region of
 // the chrome), minus every decision about when it is shown, which is the
 // host's. Nothing here knows an overlay's feature.
-import { app, webContents, WebContentsView } from 'electron'
+import { app, WebContentsView } from 'electron'
 import type { Rectangle, View, WebContents } from 'electron'
 import { join } from 'node:path'
 import { rendererEntryUrl, validatedDevServerUrl } from '../shell/renderer-entry.js'
@@ -35,6 +35,8 @@ export interface OverlayViewHandle {
   send: (channel: string, message: unknown) => void
   refreshBackground: () => void
   isDestroyed: () => boolean
+  isFocused: () => boolean
+  focus: () => void
   destroy: () => void
 }
 
@@ -109,12 +111,20 @@ export function createOverlayView (spec: OverlayViewSpec): OverlayViewHandle {
       recordViewBackground(contents.id, next)
     },
     isDestroyed: () => contents.isDestroyed(),
+    isFocused: () => !contents.isDestroyed() && contents.isFocused(),
+    focus: () => { if (!contents.isDestroyed()) contents.focus() },
     destroy: () => { if (!contents.isDestroyed()) contents.close() }
   }
 }
 
-/** The webContents that holds keyboard focus in this process, if any. */
-export function focusedContents (): FocusTarget | undefined {
-  const focused: WebContents | null = webContents.getFocusedWebContents()
-  return focused ?? undefined
+/** A view the host can ask about focus: one it owns, or the chrome or the tab in front. */
+export interface FocusCandidate extends FocusTarget {
+  isFocused: () => boolean
+}
+
+/** Which of these holds keyboard focus, if any. Only views the window knows are live are asked:
+ * `webContents.getFocusedWebContents()` can answer one that is being torn down (an app's child host
+ * after its page ends), and reading it then kills the main process. */
+export function focusedContents (candidates: ReadonlyArray<FocusCandidate | undefined>): FocusTarget | undefined {
+  return candidates.find((candidate) => candidate !== undefined && !candidate.isDestroyed() && candidate.isFocused())
 }

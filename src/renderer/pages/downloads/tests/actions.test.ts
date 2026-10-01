@@ -52,3 +52,15 @@ describe('opensFile, isRemovable and spaceAction', () => {
     expect(spaceAction(entry({}))).toBeNull()
   })
 })
+
+describe('a held file', () => {
+  it('is answered with Discard and Keep, as labelled buttons, and is never removed, opened or paused', () => {
+    expect(actionsFor(entry({ state: 'held', danger: true }))).toEqual([
+      { id: 'discard', label: 'Discard', text: true },
+      { id: 'keep', label: 'Keep', text: true }
+    ])
+    expect(isRemovable(entry({ state: 'held' }))).toBe(false)
+    expect(opensFile(entry({ state: 'held' }))).toBe(false)
+    expect(spaceAction(entry({ state: 'held' }))).toBeNull()
+  })
+})

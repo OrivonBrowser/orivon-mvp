@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer as createHttps } from 'node:https'
+import { createServer as createTcp } from 'node:net'
 import type { Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -46,6 +47,15 @@ afterAll(async () => {
   await rm(scratch, { recursive: true, force: true })
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
+
+/** A port nothing listens on: the connection to it is refused. */
+async function freePort (): Promise<number> {
+  const probe = createTcp()
+  await new Promise<void>((resolve) => { probe.listen(0, '127.0.0.1', resolve) })
+  const { port } = probe.address() as AddressInfo
+  await new Promise<void>((resolve) => { probe.close(() => { resolve() }) })
+  return port
+}
 
 type App = ElectronApplication
 type MenuHolder = { __orivonLastMenu?: { items: Array<{ label: string, type: string, checked: boolean, click: () => void }> } | undefined }
@@ -203,12 +213,22 @@ it('marks plain http to a public name as not secure, live https with a lock, and
     expect(await markText(chrome)).toBe('')
     expect(await markTitle(chrome)).toBe('Connection is secure')
     expect(await chrome.locator('#address-display .address-mark.secure svg').count()).toBe(1)
+    // The permissions key shows only for a site that has asked for something, and this one has not.
+    expect(await chrome.locator('#site-permissions-btn').isVisible()).toBe(false)
     await shoot(app, chrome, 'https')
+
+    // A load that fails commits Chromium's error page under the address that failed: it has no lock either.
+    const dead = await freePort()
+    await clickAddressBarRetrying(chrome, `https://127.0.0.1:${String(dead)}/gone`)
+    await waitDisplay(chrome, `127.0.0.1:${String(dead)}/gone`)
+    await delay(ABSENCE_SETTLE_MS)
+    expect(await chrome.locator('#address-display .address-mark').count()).toBe(0)
 
     // A shell page keeps its scheme and gets no mark: the lock would describe nothing it serves.
     await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string) => void } }).orivonShell.openInternal('settings') })
     expect(await waitFor(async () => (await displayText(chrome)).startsWith('orivon://settings'))).toBe(true)
     expect(await chrome.locator('#address-display .address-mark').count()).toBe(0)
+    expect(await chrome.locator('#site-permissions-btn').isVisible()).toBe(false)
     expect(await hostText(chrome)).toBe('settings')
     await shoot(app, chrome, 'protocol')
     expect(mainOutput(app)).not.toContain('uncaught exception')

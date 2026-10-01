@@ -145,21 +145,27 @@ describe('menuItems', () => {
     const { ctx } = await setup()
     const on = vi.fn(() => true)
     const hint = vi.fn(() => 'note')
-    const items = menuItems(ctx, ['tab.new', 'bookmarks.open', { check: 'bookmark.allTabs', on }, { item: 'import.open', hint }])
+    // No row is pending on this branch, so two real rows are flagged for the length of the assertion.
+    const flagged = ['bookmarks.open', 'bookmark.allTabs'].map((id) => commandById(id) as { pending?: true })
+    for (const row of flagged) row.pending = true
+    let items: MenuItemView[]
+    try {
+      items = menuItems(ctx, ['tab.new', 'bookmarks.open', { check: 'bookmark.allTabs', on }, { item: 'bookmarks.open', hint }])
+    } finally {
+      for (const row of flagged) delete row.pending
+    }
     expect(items).toEqual([expect.objectContaining({ id: 'tab.new' })])
     expect(on).not.toHaveBeenCalled()
     expect(hint).not.toHaveBeenCalled()
   })
 
-  it('shows none of the library commands while they are pending, and the Bookmarks submenu only with what has landed', async () => {
+  it('lists the Bookmarks submenu with the bookmark commands and Import, and nothing for a reading list', async () => {
     const { ctx } = await setup()
     const items = menuItems(ctx)
     const submenu = items.find((item) => item.kind === 'submenu' && item.label === 'Bookmarks')
-    expect(submenu).toMatchObject({ items: [expect.objectContaining({ id: 'bookmarks.toggleBar' })] })
+    expect(submenu).toMatchObject({ items: [expect.objectContaining({ id: 'bookmark.allTabs' }), expect.anything(), expect.objectContaining({ id: 'bookmarks.toggleBar' }), expect.objectContaining({ id: 'bookmarks.open', label: 'Bookmark manager' }), expect.anything(), expect.objectContaining({ id: 'import.open' })] })
     const ids = runnableIds(items)
-    for (const id of ['bookmarks.open', 'bookmark.allTabs', 'readingList.open', 'readingList.add', 'import.open']) {
-      expect(ids.has(id as never), id).toBe(false)
-    }
+    for (const id of ['bookmarks.open', 'bookmark.allTabs', 'import.open']) expect(ids.has(id as never), id).toBe(true)
   })
 })
 

@@ -1289,16 +1289,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
-### A276: What happens to a download is not settled **[RESEARCH]**
-
-- **Question:** Where does a download go, does it ask, and what may an app tab download?
-- **Why it matters:** Settings has no downloads section because none of it was checked against a real
-  page; a control would promise behaviour nobody measured. A private window keeps downloaded files.
-- **Options:** download from a website tab and an app tab in each kind of window, then decide the
-  folder (rec.).
-- **Who decides:** research first
-- **Blocks:** a downloads section in Settings
-
 ### A277: Dragging a tab into another window is best effort on Wayland **[RESEARCH]**
 
 - **Question:** Can a tab dropped over another window find it under Wayland?
@@ -1328,11 +1318,11 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A280: History's defaults are provisional, and it feeds nothing yet **[AI-REC]**
+### A280: History's 90-day retention is a guess **[AI-REC]**
 
-- **Question:** Is 90 days the right retention, and should the address bar suggest from history?
-- **Why it matters:** 90 is a guess at what a person expects, and nothing else reads history. It is one
-  SQLite file through Node's experimental `node:sqlite`, behind an interface.
+- **Question:** Is 90 days the right default retention for history?
+- **Why it matters:** 90 is a guess at what a person expects. The address bar, the History page and the
+  bookmark and import code now read the same store, so the figure also decides what a suggestion can offer.
 - **Options:** keep the guess until people ask otherwise (rec.); set it from measured use.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
@@ -1413,15 +1403,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   quarter tiles and keyboard moves no longer start from there.
 - **Options:** keep it (rec.); go back to the native drag region and lose the middle click there.
 - **Who decides:** owner
-- **Blocks:** nothing
-
-### A294: History shows no favicons and cannot be sorted **[AI-REC]**
-
-- **Question:** Should History keep a favicon per site and sort by visits or title as well as by time?
-- **Why it matters:** each row shows a letter or a protocol badge because the store keeps no icon, and its
-  paging runs on (last visit, id), so another order needs an index and a schema step the store does not have.
-- **Options:** add both with the store's first migration, when people ask for them (rec.); add them now.
-- **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
 ### A304: A82's reserved-port carve-out blocks a P2P app's own DNS-over-UDP **[OWNER]**
@@ -1672,16 +1653,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** how much of compatibility Tables 2 and 3 a port benefits from
 
-### A314: A connect grant cannot pair a wildcard host with one port **[AI-REC]**
-
-- **Question:** `net.tcp.connect` and `net.https.connect` accept `*` as a host only in `*:*`. An app that dials
-  whatever server its user names on one service port (IRC on 6697) must ask for every port on every host.
-- **Why it matters:** the consent prompt then shows unlimited network access for an app that needs one port.
-- **Options:** accept `*:<port>` and `*:<low>-<high>` in the loader and the broker, still refusing private
-  addresses under `*` (rec.); leave `*:*` as the only wildcard.
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** a narrower grant for The Lounge's port
-
 ### A315: The `node:sqlite` VFS assumes one connection per file **[AI-REC]**
 
 - **Question:** the VFS takes no lock and caches file size and existence, which is safe only while one
@@ -1739,4 +1710,43 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Why it matters:** the project tells people what leaves the machine; this is a request to a third party with no consent step.
 - **Options:** keep it, named in Settings (current); off until the person turns it on; self-host the dictionaries.
 - **Who decides:** owner
+- **Blocks:** nothing
+
+### A321: "Save link as" and "Save image as" save with no dialog by default **[OWNER]**
+
+- **Question:** These two context-menu items are downloads like any other, so with "Ask where to save each file" off
+  they write into the Downloads folder at once. Should the items that say "as" always show a save dialog?
+- **Why it matters:** the label promises a choice of place; the file appears in the folder and the downloads peek shows it.
+- **Options:** keep one rule for every download (current); the two items always ask; the items ask only when no folder
+  has been chosen in Settings.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A322: Orivon opens any finished download that is not a program or a script **[OWNER]**
+
+- **Question:** A click on a finished row opens the file with the system's default program unless its type runs code.
+  Should Orivon open only a short allowlist of types (images, text, PDF, audio, video, archives) and show the rest in
+  the file manager?
+- **Why it matters:** the list of types that run code is open-ended (a new script host, a document with macros); an
+  allowlist shuts that gap but changes what a click does for every file the person downloads.
+- **Options:** keep the block list (current); an allowlist for Open, the file manager for everything else.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A323: The hold rename, the peek's focus hand-back and the import copy are measured on Linux only **[RESEARCH]**
+
+- **Question:** Do renaming a finished `Unconfirmed <id>.download` on Keep, a peek handing focus back to the page after a
+  click, copying a browser's database with its write-ahead log, and the locked-database error behave on Windows and macOS?
+- **Why it matters:** each was measured under Xvfb on Linux; Windows holds open files and renames differently.
+- **Options:** run the e2e files on a Windows and a macOS machine; add a probe for each (rec.).
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A324: Two engines give no suggestions and one uses an address nobody documents **[RESEARCH]**
+
+- **Question:** Brave Search and Mojeek have no suggestion address, and Startpage's answered one probe at an address it does
+  not document. Should the list say so in the product, drop Startpage's, or ask each engine?
+- **Why it matters:** an engine that stops answering gives no rows, silently, while the switch stays on.
+- **Options:** keep the Settings help line that names the two (current); drop Startpage's; probe on every release.
+- **Who decides:** research first
 - **Blocks:** nothing

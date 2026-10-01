@@ -2,6 +2,7 @@
 // checked here, and an id is looked up in the store, never trusted to carry an address.
 import type { ChromeAction } from '../chrome-actions.js'
 import { barItemsOf } from './bar-items.js'
+import { asAnchor } from '../bookmark-bubble/edit-action.js'
 import { showBarMenu } from './bar-menu-runner.js'
 import { asFrom } from './folder-model.js'
 import { clickOnFolder, FOLDER_OVERLAY } from './folder-overlay.js'
@@ -20,11 +21,11 @@ export const barOpen: ChromeAction = (payload, ctx) => {
   openBookmark(ctx, id, disposition)
 }
 
-/** `{ id: string | null, x, y }`: the right-click menu of one item, or of the empty bar. */
+/** `{ id: string | null, x, y, anchor? }`: the right-click menu of one item, or of the empty bar. `anchor` is the item's rectangle, where Edit and Rename put their bubble. */
 export const barMenu: ChromeAction = (payload, ctx) => {
-  const { id, x, y } = record(payload)
+  const { id, x, y, anchor } = record(payload)
   if ((id !== null && typeof id !== 'string') || !isNumber(x) || !isNumber(y)) return
-  showBarMenu(ctx, id, { x, y })
+  showBarMenu(ctx, id, { x, y }, asAnchor(anchor))
 }
 
 /** `{ id, parent, index? }`: drag reorder and drop into a folder. The index is a position in the parent's list as it stands; none appends. */

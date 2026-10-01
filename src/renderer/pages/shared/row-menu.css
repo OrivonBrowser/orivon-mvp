@@ -1,0 +1,28 @@
+/* The small menu a row opens (row-menu.ts). */
+
+.row-menu {
+  position: fixed;
+  z-index: 50;
+  display: grid;
+  gap: 2px;
+  min-width: 200px;
+  padding: 4px;
+  border: 1px solid var(--wborder);
+  border-radius: 8px;
+  background: var(--wpanel);
+}
+.row-menu-item {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+.row-menu-item:hover, .row-menu-item:focus-visible { background: var(--whover); }
+.row-menu-item:focus-visible { outline-offset: -2px; }
+.row-menu-item.danger { color: var(--wdanger); }
+.row-menu-item.danger:hover, .row-menu-item.danger:focus-visible { background: var(--wdanger-wash); }
+
+.row-menu-sep { height: 1px; margin: 2px 6px; background: var(--wborder); }

@@ -31,11 +31,12 @@ export function groupBySession (entries: readonly HistoryEntry[], gapMs: number 
   })
 }
 
-/** "Today, 2:05 PM to 3:40 PM"; a session that crosses midnight names both days. */
+/** "2:05 PM to 3:40 PM": a session sits under the heading of the day it ended, so that day is not repeated. One that
+ * began on an earlier day names that day, since the heading above it does not. */
 export function sessionLabel (session: Session, now: number, locale?: string): string {
-  const endDay = dayLabel(session.end, now, locale)
   const from = timeLabel(session.start, locale)
-  if (session.start === session.end) return `${endDay}, ${from}`
-  if (startOfDay(session.start) === startOfDay(session.end)) return `${endDay}, ${from} to ${timeLabel(session.end, locale)}`
-  return `${dayLabel(session.start, now, locale)}, ${from} to ${endDay}, ${timeLabel(session.end, locale)}`
+  if (session.start === session.end) return from
+  const to = timeLabel(session.end, locale)
+  if (startOfDay(session.start) === startOfDay(session.end)) return `${from} to ${to}`
+  return `${dayLabel(session.start, now, locale)}, ${from} to ${to}`
 }

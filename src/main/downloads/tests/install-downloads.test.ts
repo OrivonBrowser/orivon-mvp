@@ -5,15 +5,17 @@ import { installDownloads } from '../install-downloads.js'
 
 class FakeSession extends EventEmitter {}
 
-function setup () {
+function setup (discardHeldAtQuit = false) {
   const app = new EventEmitter()
+  const discardHeldFiles = vi.fn()
   const defaultSession = new FakeSession()
   const track = vi.fn()
   const tabs = new Set<WebContents>()
   installDownloads(app as never, {
     windows: { findTab: (contents) => tabs.has(contents) ? { window: {} as never, tabId: 't' } : null },
-    downloads: { track },
-    defaultSession: defaultSession as unknown as Session
+    downloads: { track, discardHeldFiles },
+    defaultSession: defaultSession as unknown as Session,
+    discardHeldAtQuit
   })
   const create = (type: string, session: FakeSession, isTab: boolean): WebContents => {
     const contents = { getType: () => type, session, isDestroyed: () => false } as unknown as WebContents
@@ -21,13 +23,22 @@ function setup () {
     app.emit('web-contents-created', {}, contents)
     return contents
   }
-  return { defaultSession, track, create }
+  return { app, defaultSession, track, create, discardHeldFiles }
 }
 
 beforeEach(() => { vi.useFakeTimers() })
 afterEach(() => { vi.useRealTimers() })
 
 describe('installDownloads', () => {
+  it('deletes the files a hold left as a private session ends, and does nothing at quit in an ordinary one', () => {
+    const private_ = setup(true)
+    private_.app.emit('before-quit', {})
+    expect(private_.discardHeldFiles).toHaveBeenCalledTimes(1)
+    const ordinary = setup(false)
+    ordinary.app.emit('before-quit', {})
+    expect(ordinary.discardHeldFiles).not.toHaveBeenCalled()
+  })
+
   it('handles the default session from the start, handing over the item, the tab and the event', () => {
     const { defaultSession, track } = setup()
     const event = { preventDefault: vi.fn() }

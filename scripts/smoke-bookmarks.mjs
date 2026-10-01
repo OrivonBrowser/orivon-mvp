@@ -74,7 +74,16 @@ export async function runBookmarksJourney (ctx) {
     bookmarkClicked ? await waitForTab(chrome, wantA) : { ok: false, info: undefined }
   )
 
-  await clickChecked(chrome, '#bookmark-toggle', 'the bookmark toggle is clickable to unstar')
+  // The star on a starred page opens the bookmark bubble; its Remove is what unstars.
+  await clickChecked(chrome, '#bookmark-toggle', 'the bookmark toggle is clickable to open the bubble')
+  const bubble = await waitFor(() => app.windows().some((w) => w.url().includes('overlay=bookmark-edit') && !w.isClosed()))
+    && app.windows().find((w) => w.url().includes('overlay=bookmark-edit'))
+  check('the star on a starred page opens the bookmark bubble', bubble !== undefined && bubble !== false)
+  if (bubble) {
+    await bubble.waitForSelector('.btn.remove')
+    // The page is closed by the very click that presses Remove, which Playwright reports as an error.
+    await bubble.click('.btn.remove').catch((error) => { if (!/closed/i.test(String(error))) throw error })
+  }
   checkTab(
     'unstarring the page clears the toggle',
     { bookmarked: false },

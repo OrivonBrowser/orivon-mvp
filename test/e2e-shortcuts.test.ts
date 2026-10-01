@@ -9,6 +9,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './launch-electron.mjs'
 import { clickAddressBarRetrying, pressKey } from './e2e-helpers.js'
+import { closing, overlayPage } from './bookmark-bubble-helpers.js'
 import { bookmarkUrls, delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, popoverShown, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
 
 let server: Server
@@ -64,10 +65,14 @@ it('runs the default shortcuts on the window they were pressed in, and the page 
     await pressKey(app, siteUrl, 'L', ['control'])
     expect(await waitFor(async () => await evaluateRetrying(chrome, () => document.activeElement?.id) === 'address')).toBe(true)
 
-    // Bookmark and un-bookmark.
+    // Bookmark, then open the bubble on the saved page: the key never removes, the bubble's Remove does.
     await pressKey(app, siteUrl, 'D', ['control'])
     expect(await waitFor(async () => (await bookmarkUrls(chrome)).length === 1)).toBe(true)
     await pressKey(app, siteUrl, 'D', ['control'])
+    const bubble = await overlayPage(app)
+    expect(await bubble.locator('.sheet-title').innerText()).toBe('Edit bookmark')
+    expect((await bookmarkUrls(chrome)).length).toBe(1)
+    await closing(async () => await bubble.click('.btn.remove'))
     expect(await waitFor(async () => (await bookmarkUrls(chrome)).length === 0)).toBe(true)
 
     // Tabs by number and by order.

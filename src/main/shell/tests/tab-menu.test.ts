@@ -14,7 +14,7 @@ const find = (template: MenuItemConstructorOptions[], label: string): MenuItemCo
 
 describe('a tab\'s menu', () => {
   it('offers what can be done to one tab, in order', () => {
-    expect(labels(tabMenuTemplate(model(), actions()))).toEqual(['New Tab to the Right', 'Reload', 'Duplicate', 'Pin Tab', 'Mute Tab', 'Put Tab to Sleep', 'Add Tab to New Group', 'Split with', 'Move Tab to New Window', 'Close Tab', 'Close Other Tabs', 'Close Tabs to the Right', 'Reopen Closed Tab'])
+    expect(labels(tabMenuTemplate(model(), actions()))).toEqual(['New Tab to the Right', 'Reload', 'Duplicate', 'Pin Tab', 'Mute Tab', 'Put Tab to Sleep', 'Add Tab to New Group', 'Split with', 'Move Tab to New Window', 'Close Tab', 'Close Other Tabs', 'Close Tabs to the Right', 'Reopen Closed Tab', 'Bookmark All Tabs…'])
   })
 
   it('runs the action of the entry chosen', () => {

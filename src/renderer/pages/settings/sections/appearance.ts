@@ -43,6 +43,22 @@ export const appearance: Section = {
       keywords: ['zoom', 'size', 'text', 'larger', 'smaller', 'magnify', 'scale'],
       control: { type: 'choice', key: 'appearance.defaultZoom' }
     },
+    {
+      id: 'downloads-button',
+      label: 'Downloads button',
+      help: 'The button on the toolbar that shows how far your downloads are and lists them.',
+      keywords: ['download', 'toolbar', 'button', 'icon', 'show', 'hide', 'progress', 'shelf'],
+      group: 'Toolbar',
+      control: {
+        type: 'choice',
+        key: 'toolbar.downloads',
+        options: [
+          { value: 'auto', label: 'When there are downloads' },
+          { value: 'always', label: 'Always' },
+          { value: 'never', label: 'Never' }
+        ]
+      }
+    },
     ...sidePanelRows,
     ...toolbarRows
   ]

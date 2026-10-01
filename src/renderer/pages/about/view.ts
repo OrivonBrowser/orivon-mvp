@@ -12,8 +12,11 @@ function skeletonCard (rows: number): HTMLElement {
     }))
 }
 
+/** A value longer than this goes under its label, where it has the card's whole width to wrap in. */
+const LONG_VALUE = 48
+
 function versionCard (rows: readonly AboutRow[]): HTMLElement {
-  return h('div', { className: 'card' }, ...rows.map((row) => h('div', { className: 'row' },
+  return h('div', { className: 'card' }, ...rows.map((row) => h('div', { className: row.mono || row.value.length > LONG_VALUE ? 'row long' : 'row' },
     h('span', { className: 'row-label', textContent: row.label }),
     h('span', { className: row.mono ? 'value mono' : 'value', textContent: row.value }))))
 }

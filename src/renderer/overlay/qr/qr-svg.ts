@@ -16,7 +16,14 @@ export interface QrMatrix {
 /** Text as the bytes the encoder takes: the encoder reads one byte per character, so anything outside ASCII is
  * percent-escaped first. A URL is ASCII already; this only matters for a display address that is not one. */
 export function asciiOnly (text: string): string {
-  return text.replace(/[^\x00-\x7f]/gu, (char) => encodeURIComponent(char))
+  // A lone surrogate cannot be percent-escaped (it throws), so it is read as the replacement character first.
+  const wellFormed = text.replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/gu, '\ufffd')
+  return wellFormed.replace(/[^\x00-\x7f]/gu, (char) => encodeURIComponent(char))
+}
+
+/** How many characters the encoder is given for `text`: what the limit is measured in, since escaping makes it longer. */
+export function qrDataLength (text: string): number {
+  return asciiOnly(text).length
 }
 
 /** The matrix for `text` at error correction M, or null when it is empty, too long, or does not fit any version. */

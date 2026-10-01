@@ -36,8 +36,15 @@ export function createAddressDisplay (): ChromeModule {
       return
     }
     const parts = formatAddress(tab.displayUrl, { full: state.showFullUrl === true })
+    // What comes before the site's own name (a scheme, a subdomain) is shortened from its left, and what comes after from its
+    // right, so the name itself is always in view.
+    const nameAt = parts.findIndex((part) => part.fixed === true)
     const text = h('span', { className: 'address-text', ariaHidden: 'true' },
-      ...parts.map((part) => h('span', { className: part.tone === 'strong' ? 'address-host' : 'address-rest' }, part.text)))
+      ...parts.map((part, index) => {
+        if (part.tone === 'strong') return h('span', { className: part.fixed === true ? 'address-host fixed' : 'address-host' }, part.text)
+        if (nameAt !== -1 && index < nameAt) return h('span', { className: 'address-rest lead' }, h('bdo', { dir: 'ltr' }, part.text))
+        return h('span', { className: 'address-rest' }, part.text)
+      }))
     display.replaceChildren(...[markFor(tab), text].filter((node): node is HTMLElement => node !== undefined))
     field.dataset['elided'] = 'true'
   }

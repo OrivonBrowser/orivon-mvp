@@ -3,7 +3,7 @@
 import type { HistoryEntry } from '../../../main/history/history-store.js'
 import { h } from '../shared/dom.js'
 import { chevronDownIcon, moreIcon, trashIcon } from '../shared/icons.js'
-import { timeLabel } from './days.js'
+import { dateTimeLabel, timeLabel } from './days.js'
 import type { Section } from './layout.js'
 import { siteMark } from './site-mark.js'
 
@@ -21,12 +21,26 @@ export interface RowActions {
 export interface RowView {
   readonly selected: ReadonlySet<number>
   readonly showVisits: boolean
+  /** The list has no day headings (it is sorted), so a time alone would not say which day. */
+  readonly showDate?: boolean
+  readonly now?: number
 }
 
 const titleOf = (entry: HistoryEntry): string => entry.title === '' ? entry.url : entry.title
 
 export function visitsLabel (count: number): string {
   return `${count.toLocaleString()} ${count === 1 ? 'visit' : 'visits'}`
+}
+
+function timeCell (entry: HistoryEntry, view: RowView): HTMLElement {
+  const dated = view.showDate === true
+  const when = dated ? dateTimeLabel(entry.lastVisit, view.now ?? Date.now()) : timeLabel(entry.lastVisit)
+  if (view.showVisits) {
+    return h('span', { className: 'time dated', title: `Last visited ${when}` },
+      h('span', { textContent: visitsLabel(entry.visitCount) }),
+      h('span', { className: 'time-when', textContent: when }))
+  }
+  return h('span', { className: dated ? 'time dated' : 'time', textContent: when })
 }
 
 export function renderRow (entry: HistoryEntry, view: RowView, actions: RowActions): HTMLElement {
@@ -65,7 +79,7 @@ export function renderRow (entry: HistoryEntry, view: RowView, actions: RowActio
     h('label', { className: 'check row-check' }, check),
     siteMark(entry.url, entry.favicon),
     target,
-    h('span', { className: 'time', textContent: view.showVisits ? visitsLabel(entry.visitCount) : timeLabel(entry.lastVisit) }),
+    timeCell(entry, view),
     more,
     remove)
   row.dataset['id'] = String(entry.id)
