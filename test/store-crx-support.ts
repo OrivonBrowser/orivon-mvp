@@ -34,12 +34,9 @@ function filesUnder (root: string, dir = root): string[] {
   })
 }
 
-/** A CRX3 of every file under `folder`, signed by `dev` and `publisher`. */
-export function buildFolderCrx (folder: string, dev: KeyPair, publisher: KeyPair): { bytes: Buffer, id: string, publisherKeyHash: string } {
-  const archiveZip = new AdmZip()
-  for (const file of filesUnder(folder)) archiveZip.addFile(relative(folder, file).split(sep).join('/'), readFileSync(file))
-  const archive = archiveZip.toBuffer()
-
+/** A CRX3 around `archive` (a zip), signed by `dev` and, when `publisher` is given, also by it: the second proof
+ * is what `requirePublisherProof: true` needs; omitting it builds the "refused" fixture. */
+export function buildCrx (archive: Buffer, dev: KeyPair, publisher?: KeyPair): { bytes: Buffer, id: string } {
   const crxId = createHash('sha256').update(dev.publicKey).digest().subarray(0, 16)
   const signedHeaderData = (() => {
     const pbf = new Pbf()
@@ -50,9 +47,10 @@ export function buildFolderCrx (folder: string, dev: KeyPair, publisher: KeyPair
   lengthPrefix.writeUInt32LE(signedHeaderData.length, 0)
   const dataToVerify = Buffer.concat([SIGNED_DATA_CONTEXT, lengthPrefix, signedHeaderData, archive])
 
+  const proofs: KeyPair[] = publisher === undefined ? [dev] : [dev, publisher]
   const header = (() => {
     const pbf = new Pbf()
-    for (const proof of [dev, publisher]) {
+    for (const proof of proofs) {
       pbf.writeMessage(2, writeProof, { publicKey: proof.publicKey, signature: signWithKey('sha256', dataToVerify, proof.privateKey) })
     }
     pbf.writeBytesField(10000, signedHeaderData)
@@ -63,9 +61,22 @@ export function buildFolderCrx (folder: string, dev: KeyPair, publisher: KeyPair
   prefix.write('Cr24', 0, 'binary')
   prefix.writeUInt32LE(3, 4)
   prefix.writeUInt32LE(header.length, 8)
+  return { bytes: Buffer.concat([prefix, header, archive]), id: convertHexadecimalToIDAlphabet(crxId.toString('hex')) }
+}
+
+/** A CRX3 holding only a manifest.json. */
+export function buildManifestCrx (manifest: Record<string, unknown>, dev: KeyPair, publisher?: KeyPair): { bytes: Buffer, id: string } {
+  const archiveZip = new AdmZip()
+  archiveZip.addFile('manifest.json', Buffer.from(JSON.stringify(manifest)))
+  return buildCrx(archiveZip.toBuffer(), dev, publisher)
+}
+
+/** A CRX3 of every file under `folder`, signed by `dev` and `publisher`. */
+export function buildFolderCrx (folder: string, dev: KeyPair, publisher: KeyPair): { bytes: Buffer, id: string, publisherKeyHash: string } {
+  const archiveZip = new AdmZip()
+  for (const file of filesUnder(folder)) archiveZip.addFile(relative(folder, file).split(sep).join('/'), readFileSync(file))
   return {
-    bytes: Buffer.concat([prefix, header, archive]),
-    id: convertHexadecimalToIDAlphabet(crxId.toString('hex')),
+    ...buildCrx(archiveZip.toBuffer(), dev, publisher),
     publisherKeyHash: createHash('sha256').update(publisher.publicKey).digest().toString('hex')
   }
 }
