@@ -9,6 +9,7 @@
 
 import type { ExtensionRouterHandle } from 'orivon:crx-extensions'
 import { getCachedStrippedPermissions, getDnrEngine, slotDirForLoadedExtension } from './extensions-dnr.js'
+import { parseActionOptions } from './dnr-action-options.js'
 import { writeDynamicRules, writeEnabledRulesetOverride } from './dnr/dnr-runner.js'
 import {
   extensionIdsWithBadgeTextEnabled,
@@ -98,6 +99,12 @@ function engineOrThrow(): DnrEngine {
   return engine
 }
 
+/** The tabs an extension may name in a call: whether one exists, and a way to hear it close. */
+export interface TabLookup {
+  readonly exists: (tabId: number) => boolean
+  readonly whenClosed: (tabId: number, run: () => void) => void
+}
+
 /**
  * Registers every `declarativeNetRequest.*` main-side handler on `router`
  * (the session's own, via `ElectronChromeExtensions.getRouter()`). Returns
@@ -111,10 +118,18 @@ function engineOrThrow(): DnrEngine {
 export function registerDnrApiHandlers(
   router: ExtensionRouterHandle,
   badgeHost: BadgeHost,
-  userDataPath: string
+  userDataPath: string,
+  tabs?: TabLookup
 ): { readonly onRuleMatched: OnRuleMatched, readonly onTabNavigated: OnTabNavigated } {
   const handle = router.apiHandler()
   const gated = { permission: DNR_PERMISSION }
+  // A count kept for a tab goes when the tab does, so a long session never accumulates them.
+  const watched = new Set<number>()
+  const watchTab = (tabId: number): void => {
+    if (tabs === undefined || watched.has(tabId)) return
+    watched.add(tabId)
+    tabs.whenClosed(tabId, () => { watched.delete(tabId); resetActionCountForTab(tabId) })
+  }
 
   function persistDynamicRules(extensionId: string): void {
     const slotDir = slotDirForLoadedExtension(userDataPath, extensionId)
@@ -193,18 +208,24 @@ export function registerDnrApiHandlers(
 
   handle(
     'declarativeNetRequest.setExtensionActionOptions',
-    (event, options: { displayActionCountAsBadgeText?: boolean, tabUpdate?: { tabId: number, increment: number } }) => {
+    (event, raw: unknown) => {
+      const options = parseActionOptions(raw)
+      const update = options.tabUpdate
+      if (update !== undefined && tabs?.exists(update.tabId) === false) {
+        throw new Error(`No tab with id: ${String(update.tabId)}.`)
+      }
       if (options.displayActionCountAsBadgeText !== undefined) {
         setDisplayActionCountAsBadgeText(event.extension.id, options.displayActionCountAsBadgeText)
       }
-      if (options.tabUpdate !== undefined) {
-        incrementActionCount(event.extension.id, options.tabUpdate.tabId, options.tabUpdate.increment)
+      if (update !== undefined) {
+        incrementActionCount(event.extension.id, update.tabId, update.increment)
+        watchTab(update.tabId)
         // Chrome re-renders the badge the moment this call changes the
         // count, not on the next matched rule -- a caller using tabUpdate to
         // set an initial or corrected count would otherwise see the old
         // badge text until something else happened to trigger a render.
         if (isDisplayActionCountAsBadgeTextEnabled(event.extension.id)) {
-          badgeHost.setBadgeText(event.extension.id, options.tabUpdate.tabId, String(getActionCount(event.extension.id, options.tabUpdate.tabId)))
+          badgeHost.setBadgeText(event.extension.id, update.tabId, String(getActionCount(event.extension.id, update.tabId)))
         }
       }
     },

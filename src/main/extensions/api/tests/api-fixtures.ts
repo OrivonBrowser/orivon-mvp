@@ -17,6 +17,8 @@ export function fakeContext (shell: Record<string, unknown>, over: Partial<Exten
     shell: () => shell,
     onShell: (run: (shell: never) => void) => { run(shell as never) },
     isAppOrigin: (url: string) => url.startsWith('https://app.example'),
+    held: () => true,
+    session: { extensions: { getAllExtensions: () => [{ id: EXT }], on: () => {} } },
     tab: () => undefined,
     activeTab: () => undefined,
     ...over

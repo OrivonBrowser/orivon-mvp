@@ -7,7 +7,7 @@
 // listener sees every extension (extension-host.ts's own header).
 
 import { join } from 'node:path'
-import { session } from 'electron'
+import { session, webContents } from 'electron'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { publishExtensions } from '../registry.js'
 import { readRegistry } from './registry-runner.js'
@@ -110,7 +110,10 @@ export const extensionsSubsystem: Subsystem = {
     // router/webRequest wiring may as well go right alongside it: nothing
     // reaches either before the first extension loads regardless.
     attachExtensionsDnr(session.defaultSession, userDataPath)
-    const { onRuleMatched, onTabNavigated } = registerDnrApiHandlers(hostExtensions.getRouter(), hostExtensions, userDataPath)
+    const { onRuleMatched, onTabNavigated } = registerDnrApiHandlers(hostExtensions.getRouter(), hostExtensions, userDataPath, {
+      exists: (tabId) => { const tab = webContents.fromId(tabId); return tab != null && !tab.isDestroyed() },
+      whenClosed: (tabId, run) => { webContents.fromId(tabId)?.once('destroyed', run) }
+    })
     installDnrWebRequestHandlers(session.defaultSession, getDnrEngine, onRuleMatched, onTabNavigated)
 
     const prefs = createExtensionPrefsStore(ctx.privateSession ? null : prefsFilePath(userDataPath))

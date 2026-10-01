@@ -230,4 +230,43 @@ describe('installDnrWebRequestHandlers', () => {
     dnrActiveListener!(true)
     expect(webRequest.onBeforeRequest.mock.calls.length).toBe(callsAfterFirst)
   })
+
+  describe('answering Electron', () => {
+    type Listener = (details: Record<string, unknown>, callback: (result: unknown) => void) => void
+    const decisionOf = (extra: Record<string, unknown>) => ({ matchedRules: [], ...extra })
+
+    function active (decision: Record<string, unknown>) {
+      const { session, webRequest } = fakeSession()
+      dnrActiveListener = undefined
+      installDnrWebRequestHandlers(session, () => ({ evaluate: () => decision }) as never)
+      dnrActiveListener!(true)
+      const listener = (name: 'onBeforeSendHeaders' | 'onHeadersReceived'): Listener => webRequest[name].mock.calls.at(-1)![1] as Listener
+      return { listener }
+    }
+    const request = { url: 'https://a.example/x', method: 'GET', resourceType: 'xhr', webContentsId: 7 }
+
+    it('answers a request no header rule touched with a bare {}, so Electron keeps its own headers', async () => {
+      const { listener } = active(decisionOf({}))
+      const callback = vi.fn()
+      listener('onBeforeSendHeaders')({ ...request, requestHeaders: { Accept: '*/*' } }, callback)
+      await vi.waitFor(() => { expect(callback).toHaveBeenCalledTimes(1) })
+      expect(callback).toHaveBeenCalledWith({})
+    })
+
+    it('never answers a response whose headers were undefined with an explicit empty set', async () => {
+      const { listener } = active(decisionOf({}))
+      const callback = vi.fn()
+      listener('onHeadersReceived')({ ...request }, callback)
+      await vi.waitFor(() => { expect(callback).toHaveBeenCalledTimes(1) })
+      expect(callback).toHaveBeenCalledWith({})
+    })
+
+    it('sends the changed headers when a modifyHeaders rule matched', async () => {
+      const { listener } = active(decisionOf({ requestHeaders: [{ header: 'X-Test', operation: 'set', value: '1' }] }))
+      const callback = vi.fn()
+      listener('onBeforeSendHeaders')({ ...request, requestHeaders: { Accept: '*/*' } }, callback)
+      await vi.waitFor(() => { expect(callback).toHaveBeenCalledTimes(1) })
+      expect(callback).toHaveBeenCalledWith({ requestHeaders: { Accept: '*/*', 'X-Test': '1' } })
+    })
+  })
 })

@@ -66,9 +66,19 @@ function shape (store: BookmarkStoreLike, node: NodeLike, deep: boolean, index =
   return toChromeNode(node, index, children)
 }
 
+/** A node of the reading list, at any depth: it is not part of this API, whatever id an extension names. */
+function inReadingList (store: BookmarkStoreLike, node: NodeLike): boolean {
+  return node.id === 'reading' || store.path(node.id)[0]?.id === 'reading'
+}
+
+/** The node an extension named, or undefined for one that is not there or not for an extension to see. */
+function visibleNode (store: BookmarkStoreLike, storeId: string | undefined): NodeLike | undefined {
+  const node = storeId === undefined ? undefined : store.node(storeId)
+  return node === undefined || inReadingList(store, node) ? undefined : node
+}
+
 function lookup (store: BookmarkStoreLike, chromeId: string): NodeLike {
-  const id = toStoreId(chromeId)
-  return (id === undefined ? undefined : store.node(id)) ?? fail(NOT_FOUND)
+  return visibleNode(store, toStoreId(chromeId)) ?? fail(NOT_FOUND)
 }
 
 function rootChildren (store: BookmarkStoreLike, deep: boolean): ChromeBookmarkNode[] {
@@ -121,7 +131,7 @@ function create (store: BookmarkStoreLike, details: unknown): ChromeBookmarkNode
   const parentChrome = textOf(given.parentId, 'parentId') ?? OTHER_ID
   if (parentChrome === CHROME_ROOT_ID) fail(ROOT_ERROR)
   const parentId = toStoreId(parentChrome)
-  const parent = parentId === undefined ? undefined : store.node(parentId)
+  const parent = visibleNode(store, parentId)
   if (parent === undefined) fail("Can't find parent bookmark for id.")
   if (parent?.kind !== 'folder') fail('Parent node is not a folder.')
   const index = indexOf(given.index, store.children(parentId as string).length)
@@ -162,7 +172,7 @@ function move (store: BookmarkStoreLike, chromeId: string, destination: unknown)
   const given = objectOf(destination, 'the destination')
   const parentChrome = textOf(given.parentId, 'parentId')
   if (parentChrome === CHROME_ROOT_ID) fail(ROOT_ERROR)
-  const parent = parentChrome === undefined ? store.node(node.parent) : (toStoreId(parentChrome) === undefined ? undefined : store.node(toStoreId(parentChrome) as string))
+  const parent = parentChrome === undefined ? visibleNode(store, node.parent) : visibleNode(store, toStoreId(parentChrome))
   if (parent === undefined) fail("Can't find parent bookmark for id.")
   if (parent?.kind !== 'folder') fail('Parent node is not a folder.')
   const target = parent as NodeLike
@@ -190,13 +200,22 @@ function emit (ctx: ExtensionApiContext, change: BookmarkChange): void {
   }
 }
 
-/** Keeps a snapshot of the tree and turns each store change into the events Chrome sends. */
+/** Keeps a snapshot of the tree, while an extension that may read it is loaded, and turns each store change into the events Chrome sends. */
 function watch (ctx: ExtensionApiContext, store: BookmarkStoreLike): void {
   let snapshot: Snapshot | undefined
   let queued = false
+  let started = false
   const take = (): Snapshot => takeSnapshot((parent) => store.children(parent))
+  const anyHolds = (): boolean => ctx.session.extensions.getAllExtensions().some((extension) => ctx.held(extension.id, 'bookmarks'))
+  // With no such extension a store change costs nothing: no snapshot is kept or walked.
+  const sync = (): void => {
+    if (!started) return
+    if (anyHolds()) snapshot ??= take()
+    else snapshot = undefined
+  }
   const settle = (): void => {
     queued = false
+    if (!anyHolds()) { snapshot = undefined; return }
     const next = take()
     const before = snapshot
     snapshot = next
@@ -207,9 +226,12 @@ function watch (ctx: ExtensionApiContext, store: BookmarkStoreLike): void {
       console.error('[orivon] a bookmarks event could not be sent:', error)
     }
   }
+  ctx.session.extensions.on('extension-loaded', sync)
+  ctx.session.extensions.on('extension-unloaded', sync)
   // The file is read once, so the first snapshot is the tree as loaded and not an empty one.
   void store.load().then(() => {
-    snapshot = take()
+    started = true
+    sync()
     store.onChange(() => {
       if (queued) return
       queued = true

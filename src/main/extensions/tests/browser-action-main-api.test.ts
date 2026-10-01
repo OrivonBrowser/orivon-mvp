@@ -13,10 +13,10 @@ const A = 'a'.repeat(32)
 const B = 'b'.repeat(32)
 const ANCHOR = { x: 1, y: 2, width: 3, height: 4 }
 
-function fakeCtx (tab: { id: number }): any {
+function fakeCtx (tab: { id: number }, names: Record<string, string> = {}): any {
   return {
     router: { apiHandler: () => vi.fn(), sendEvent: vi.fn() },
-    session: { extensions: { on: vi.fn() } },
+    session: { extensions: { on: vi.fn(), getExtension: (id: string) => (names[id] === undefined ? undefined : { name: names[id] }) } },
     store: {
       on: vi.fn(),
       getTabById: (id: number) => (id === tab.id ? tab : undefined),
@@ -46,6 +46,13 @@ describe('listActions', () => {
       { id: A, title: 'Alpha', hasPopup: true },
       { id: B, title: 'Beta', hasPopup: false }
     ])
+  })
+
+  it('orders the actions by extension name, whatever order they were created in, and carries the first letter of the name', () => {
+    const api = new BrowserActionAPI(fakeCtx({ id: 1 }, { [A]: 'zeta tools', [B]: 'Alpha tools' }))
+    withActions(api)
+    expect(api.listActions().map((a: { id: string }) => a.id)).toEqual([B, A])
+    expect((api as any).getState().actions.map((a: { id: string, letter: string }) => [a.id, a.letter])).toEqual([[B, 'A'], [A, 'Z']])
   })
 
   it('leaves out an extension the visibility check hides, and the state the chrome view reads too', () => {

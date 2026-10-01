@@ -223,7 +223,12 @@ export function createExtensionCommandKeys (deps: CommandKeysDeps): ExtensionCom
     isRecording: (owner) => recording?.owner === owner,
     beginRecording: (owner, extensionId, name) => {
       if (entryOf(extensionId, name) === undefined) return false
+      // One recording at a time: a page whose recording is replaced hears that it ended, so it leaves "Press a shortcut".
+      const previous = recording
       recording = { owner, extensionId, name }
+      if (previous !== null && previous.owner !== owner) {
+        deps.recorded(previous.owner, { extensionId: previous.extensionId, name: previous.name, keys: null, result: { status: 'cancelled' } })
+      }
       return true
     },
     cancelRecording: () => { recording = null },
@@ -233,6 +238,10 @@ export function createExtensionCommandKeys (deps: CommandKeysDeps): ExtensionCom
       recording = null
       const { extensionId, name } = active
       if (chord.key === 'Escape' && !chord.ctrl && !chord.alt && !chord.shift && !chord.meta) {
+        deps.recorded(owner, { extensionId, name, keys: null, result: { status: 'cancelled' } })
+        return
+      }
+      if (entryOf(extensionId, name) === undefined) {
         deps.recorded(owner, { extensionId, name, keys: null, result: { status: 'cancelled' } })
         return
       }
@@ -246,13 +255,14 @@ export function createExtensionCommandKeys (deps: CommandKeysDeps): ExtensionCom
       return true
     },
     move: (extensionId, name, chord) => {
+      if (entryOf(extensionId, name) === undefined) return { status: 'invalid', problem: 'unsupported' }
       const outcome = assign(current(), { extensionId, name }, chord, deps.platform, orivonLabel)
       if (outcome.status === 'extension') {
         announcing(() => {
           choose(outcome.holder.extensionId, outcome.holder.name, '')
           choose(extensionId, name, outcome.binding)
         })
-      } else if (outcome.status === 'ok' && entryOf(extensionId, name) !== undefined) announcing(() => { choose(extensionId, name, outcome.binding) })
+      } else if (outcome.status === 'ok') announcing(() => { choose(extensionId, name, outcome.binding) })
       return outcome
     },
     groups: () => {

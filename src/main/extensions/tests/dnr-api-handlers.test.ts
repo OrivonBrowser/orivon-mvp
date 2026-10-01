@@ -34,7 +34,7 @@ vi.mock('../dnr/dnr-runner.js', () => ({
 }))
 
 const { registerDnrApiHandlers } = await import('../dnr-api.js')
-const { clearExtensionMatchLog } = await import('../dnr-match-log.js')
+const { clearExtensionMatchLog, getActionCount } = await import('../dnr-match-log.js')
 
 // dnr-match-log.js is real here (not mocked): its badge-enabled flag and
 // action counts are process-lifetime state, so every extension id any test
@@ -172,6 +172,35 @@ describe('registerDnrApiHandlers', () => {
     onRuleMatched(7, { extensionId: 'ext-1', rulesetId: '_session', ruleId: 2, actionType: 'block' })
     expect(badgeHost.setBadgeText).toHaveBeenNthCalledWith(1, 'ext-1', 7, '1')
     expect(badgeHost.setBadgeText).toHaveBeenNthCalledWith(2, 'ext-1', 7, '2')
+  })
+
+  it('rejects a setExtensionActionOptions argument of the wrong shape, and keeps counts numeric', () => {
+    registryEntries = [extensionEntry('ext-1', ['declarativeNetRequest'])]
+    const router = fakeRouter()
+    registerDnrApiHandlers(router as any, fakeBadgeHost(), '/userdata')
+    const call = (options: unknown) => router.handlers.get('declarativeNetRequest.setExtensionActionOptions')!.callback({ extension: { id: 'ext-1' } }, options)
+    expect(() => call(null)).toThrow('Invalid argument')
+    expect(() => call({ displayActionCountAsBadgeText: 'yes' })).toThrow('Invalid argument')
+    expect(() => call({ tabUpdate: { tabId: 7, increment: '5' } })).toThrow('Invalid argument')
+    expect(() => call({ tabUpdate: { tabId: 1.5, increment: 1 } })).toThrow('Invalid argument')
+    expect(() => call({ tabUpdate: { tabId: -2, increment: 1 } })).toThrow('Invalid argument')
+    expect(getActionCount('ext-1', 7)).toBe(0)
+    call({ tabUpdate: { tabId: 7, increment: 2 } })
+    call({ tabUpdate: { tabId: 7, increment: 3 } })
+    expect(getActionCount('ext-1', 7)).toBe(5)
+  })
+
+  it('refuses a tab that does not exist, and forgets a tab\'s count when it closes', () => {
+    registryEntries = [extensionEntry('ext-1', ['declarativeNetRequest'])]
+    const router = fakeRouter()
+    let closed: (() => void) | undefined
+    registerDnrApiHandlers(router as any, fakeBadgeHost(), '/userdata', { exists: (tabId) => tabId === 9, whenClosed: (_tabId, run) => { closed = run } })
+    const call = (options: unknown) => router.handlers.get('declarativeNetRequest.setExtensionActionOptions')!.callback({ extension: { id: 'ext-1' } }, options)
+    expect(() => call({ tabUpdate: { tabId: 8, increment: 1 } })).toThrow('No tab with id: 8.')
+    call({ tabUpdate: { tabId: 9, increment: 4 } })
+    expect(getActionCount('ext-1', 9)).toBe(4)
+    closed?.()
+    expect(getActionCount('ext-1', 9)).toBe(0)
   })
 
   it('onTabNavigated blanks the badge of every extension in badge-count mode for that tab, leaves others alone', () => {

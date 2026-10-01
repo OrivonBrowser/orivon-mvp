@@ -36,16 +36,32 @@ export function installExtensionCommands (options: InstallCommandKeysOptions): E
   const { ctx, prefs, userDataPath } = options
   const extensions = session.defaultSession.extensions
   // Every extension subsystem listens for loads and unloads; ten is the emitter's default warning line.
-  extensions.setMaxListeners(Math.max(extensions.getMaxListeners(), 30))
+  extensions.setMaxListeners(Math.max(extensions.getMaxListeners(), 32))
 
   // What the session has loaded is the truth (an install loads before it is written to the registry); the registry
   // only says which was installed first. A private runtime loads nothing and reads no registry.
+  // The files are read once per load: a prefs change rebuilds the table on the next keystroke, and that must not touch the disk.
+  const read = new Map<string, { manifest: unknown, installedAt: number }>()
+  extensions.on('extension-loaded', () => { read.clear() })
+  extensions.on('extension-unloaded', () => { read.clear() })
+
   const loaded = (): LoadedExtension[] => {
     if (ctx.privateSession) return []
-    const installedAt = new Map(readRegistry(userDataPath).map((entry) => [entry.id, entry.installedAt]))
-    return extensions.getAllExtensions()
-      .map((live) => ({ id: live.id, name: live.name, manifest: inFileOrder(live.path, live.manifest as Record<string, unknown>) }))
-      .sort((a, b) => (installedAt.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (installedAt.get(b.id) ?? Number.MAX_SAFE_INTEGER))
+    const live = extensions.getAllExtensions()
+    if (live.some((extension) => !read.has(extension.id))) {
+      const installedAt = new Map(readRegistry(userDataPath).map((entry) => [entry.id, entry.installedAt]))
+      for (const extension of live) {
+        if (read.has(extension.id)) continue
+        read.set(extension.id, {
+          manifest: inFileOrder(extension.path, extension.manifest as Record<string, unknown>),
+          installedAt: installedAt.get(extension.id) ?? Number.MAX_SAFE_INTEGER
+        })
+      }
+    }
+    return live
+      .map((extension) => ({ id: extension.id, name: extension.name, ...(read.get(extension.id) as { manifest: unknown, installedAt: number }) }))
+      .sort((a, b) => a.installedAt - b.installedAt)
+      .map(({ id, name, manifest }) => ({ id, name, manifest }))
   }
 
   return createExtensionCommandKeys({

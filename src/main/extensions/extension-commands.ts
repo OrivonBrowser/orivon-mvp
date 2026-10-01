@@ -122,23 +122,29 @@ function suggestedText (value: unknown, platform: Platform): string | null {
   return typeof picked === 'string' ? picked : null
 }
 
+/** Chrome keeps at most this many suggested keys per extension, the first ones in manifest order. */
+export const MAX_SUGGESTED_KEYS = 4
+
 /** The manifest's commands, in the order it lists them. Anything malformed is left out. */
 export function parseCommands (manifest: unknown, platform: Platform): ExtensionCommand[] {
   const declared = typeof manifest === 'object' && manifest !== null ? (manifest as { commands?: unknown }).commands : undefined
   if (typeof declared !== 'object' || declared === null || Array.isArray(declared)) return []
   const commands: ExtensionCommand[] = []
+  let suggestions = 0
   for (const [name, details] of Object.entries(declared)) {
     if (typeof details !== 'object' || details === null) continue
     const { description, suggested_key: key } = details as { description?: unknown, suggested_key?: unknown }
     const text = suggestedText(key, platform)
     const binding = text === null ? null : toBinding(text, platform)
     const chord = binding === null ? null : parseBinding(binding, platform)
+    // The same refusals a recorded key meets: a bare letter or an editing key is never a suggestion.
+    const usable = binding !== null && chord !== null && checkBinding(chord, platform) === null && suggestions < MAX_SUGGESTED_KEYS
+    if (usable) suggestions++
     commands.push({
       name,
       description: typeof description === 'string' ? description : '',
       kind: kindOf(name),
-      // The same refusals a recorded key meets: a bare letter or an editing key is never a suggestion.
-      suggested: binding !== null && chord !== null && checkBinding(chord, platform) === null ? binding : null
+      suggested: usable ? binding : null
     })
   }
   return commands

@@ -16,7 +16,7 @@ afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
 const key = (k: string, code: string, mods: Partial<PressedKey> = {}): PressedKey =>
   ({ type: 'keyDown', key: k, code, control: false, alt: false, shift: false, meta: false, isAutoRepeat: false, isComposing: false, ...mods })
 
-async function setup (options: { suspended?: boolean, windowless?: boolean, holds?: string[], runs?: boolean } = {}) {
+async function setup (options: { suspended?: boolean, windowless?: boolean, appTab?: boolean, holds?: string[], runs?: boolean } = {}) {
   const store = new ShortcutStore(join(dir, 'shortcuts.json'), 'linux')
   await store.load()
   const service = new ShortcutService(store, 'linux')
@@ -31,7 +31,7 @@ async function setup (options: { suspended?: boolean, windowless?: boolean, hold
     handles: (chord) => (options.holds ?? ['y']).includes(chord.key),
     run: extensionRun
   }
-  const resolved = options.windowless === true ? null : { suspended: options.suspended === true, isAppTab: false, run }
+  const resolved = options.windowless === true ? null : { suspended: options.suspended === true, isAppTab: options.appTab === true, run }
   attachShortcuts(contents, service, { windowFor: () => resolved, recorded: vi.fn(), extensionKeys })
   return {
     run, record, extensionRun, service, startRecording: () => { recording = true },
@@ -64,6 +64,13 @@ describe('extension keys in the dispatcher', () => {
     const { press, extensionRun } = await setup({ runs: false })
     const event = press(key('Y', 'KeyY', { control: true, shift: true }))
     expect(extensionRun).toHaveBeenCalled()
+    expect(event.preventDefault).not.toHaveBeenCalled()
+  })
+
+  it('leaves a registered app\'s tab its own keys, and tells the extension nothing', async () => {
+    const { press, extensionRun } = await setup({ appTab: true })
+    const event = press(key('Y', 'KeyY', { control: true, shift: true }))
+    expect(extensionRun).not.toHaveBeenCalled()
     expect(event.preventDefault).not.toHaveBeenCalled()
   })
 

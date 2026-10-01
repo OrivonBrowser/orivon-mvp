@@ -322,6 +322,10 @@ export function installDnrWebRequestHandlers(
           if (decision.cancel === true) {
             return { cancel: true, requestHeaders: soFar.requestHeaders }
           }
+          // Nothing to change: hand back what came in, so the owner answers with a bare {} and Electron keeps the request as it is.
+          if (decision.requestHeaders === undefined || decision.requestHeaders.length === 0) {
+            return soFar
+          }
           return { requestHeaders: applyRequestHeaders(soFar.requestHeaders, decision.requestHeaders) }
         }
       ),
@@ -338,6 +342,9 @@ export function installDnrWebRequestHandlers(
           const decision: DnrDecision = engine.evaluate(scoped.dnrRequest)
           if (decision.cancel === true) {
             return { cancel: true, responseHeaders: soFar.responseHeaders }
+          }
+          if (decision.responseHeaders === undefined || decision.responseHeaders.length === 0) {
+            return soFar
           }
           return { responseHeaders: applyResponseHeaders(soFar.responseHeaders, decision.responseHeaders) }
         }

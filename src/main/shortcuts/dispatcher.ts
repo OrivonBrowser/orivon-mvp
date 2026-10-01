@@ -63,7 +63,8 @@ export function attachShortcuts (contents: WebContents, service: ShortcutService
       // A held-down key never repeats an extension's command, and a page in fullscreen keeps every key.
       if (keys === undefined || input.isAutoRepeat || !keys.handles(chord)) return
       const owner = host.windowFor(contents)
-      if (owner !== null && !owner.suspended && keys.run(chord, contents)) event.preventDefault()
+      // A registered app keeps every key for itself, an extension's included.
+      if (owner !== null && !owner.suspended && !owner.isAppTab && keys.run(chord, contents)) event.preventDefault()
       return
     }
     const target = host.windowFor(contents)

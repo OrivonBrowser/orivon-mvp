@@ -61,6 +61,24 @@ describe('reads', () => {
     await rejects(call('bookmarks.getChildren', 'reading'), "Can't find bookmark for id.")
   })
 
+  it('refuses every call on a reading-list entry whose id an extension knows', async () => {
+    const { store, call } = await setup()
+    const entry = store.addUrl({ url: 'https://read.test/', title: 'Later', parent: 'reading' })
+    const missing = "Can't find bookmark for id."
+    for (const id of [entry?.id]) {
+      await rejects(call('bookmarks.get', id), missing)
+      await rejects(call('bookmarks.getSubTree', id), missing)
+      await rejects(call('bookmarks.update', id, { title: 'x' }), missing)
+      await rejects(call('bookmarks.move', id, { parentId: '1' }), missing)
+      await rejects(call('bookmarks.remove', id), missing)
+    }
+    const mine = store.addUrl({ url: 'https://mine.test/', title: 'Mine', parent: 'bar' })
+    await rejects(call('bookmarks.move', mine?.id, { parentId: entry?.id }), "Can't find parent bookmark for id.")
+    await rejects(call('bookmarks.create', { parentId: entry?.id, title: 'x', url: 'https://x.test/' }), "Can't find parent bookmark for id.")
+    expect(store.node(entry?.id as string)).toBeDefined()
+    expect(store.node(mine?.id as string)?.parent).toBe('bar')
+  })
+
   it('answers get with a list for one id or many, and rejects an unknown id', async () => {
     const { store, call } = await setup()
     const a = store.addUrl({ url: 'https://a.test/', title: 'A', parent: 'bar' })
@@ -273,6 +291,27 @@ describe('events from the store\'s changes', () => {
     await second.load()
     await settled()
     second.addUrl({ url: 'https://new.test/', title: 'New', parent: 'bar' })
+    await settled()
+    expect(fake.events.map((event) => event.name)).toEqual(['bookmarks.onCreated'])
+  })
+
+  it('keeps no snapshot while no loaded extension holds bookmarks, and starts one when such an extension loads', async () => {
+    let holds = false
+    const listeners: Array<() => void> = []
+    const store = new BookmarkStore(join(dir, 'lazy.json'), () => `l${String(Math.random())}`)
+    await store.load()
+    const fake = fakeContext({ bookmarks: store }, {
+      held: () => holds,
+      session: { extensions: { getAllExtensions: () => [{ id: 'x' }], on: (_name: string, listener: () => void) => { listeners.push(listener) } } }
+    } as never)
+    installBookmarks(fake.ctx)
+    await settled()
+    store.addUrl({ url: 'https://a.test/', title: 'A', parent: 'bar' })
+    await settled()
+    expect(fake.events).toEqual([])
+    holds = true
+    for (const listener of listeners) listener()
+    store.addUrl({ url: 'https://b.test/', title: 'B', parent: 'bar' })
     await settled()
     expect(fake.events.map((event) => event.name)).toEqual(['bookmarks.onCreated'])
   })

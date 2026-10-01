@@ -23,14 +23,42 @@ export function resetCommandKeys (): void {
   source = new Promise<CommandKeysReader>((resolve) => { provide = resolve })
 }
 
-export const commandsApi: ExtensionApiModule = {
-  name: 'commands',
-  install: (ctx) => {
-    ctx.handle('commands.getAll', async ({ extension }) => {
-      const keys = await source
-      // The saved shortcuts decide which suggested key is free, so a worker that starts early waits for them.
-      await keys.whenReady()
-      return keys.getAll(extension.id)
-    })
+/** How long a worker waits for the saved shortcuts before it is answered with what is known (nothing bound yet). */
+export const READY_WAIT_MS = 30_000
+
+let warned = false
+
+/** Waits for the saved shortcuts, but never forever: the subsystem may fail after it provided the keys and before it could report them ready. */
+async function whenReadyOrLate (keys: CommandKeysReader, waitMs: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<void>((resolve) => {
+    timer = setTimeout(() => {
+      if (!warned) {
+        warned = true
+        console.error('[extensions] the shortcuts were not ready in time; commands.getAll answers without their keys')
+      }
+      resolve()
+    }, waitMs)
+  })
+  try {
+    await Promise.race([keys.whenReady(), late])
+  } finally {
+    clearTimeout(timer)
   }
 }
+
+export function createCommandsApi (waitMs: number): ExtensionApiModule {
+  return {
+    name: 'commands',
+    install: (ctx) => {
+      ctx.handle('commands.getAll', async ({ extension }) => {
+        const keys = await source
+        // The saved shortcuts decide which suggested key is free, so a worker that starts early waits for them.
+        await whenReadyOrLate(keys, waitMs)
+        return keys.getAll(extension.id)
+      })
+    }
+  }
+}
+
+export const commandsApi: ExtensionApiModule = createCommandsApi(READY_WAIT_MS)

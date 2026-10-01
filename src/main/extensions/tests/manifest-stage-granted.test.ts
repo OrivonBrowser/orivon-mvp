@@ -11,26 +11,33 @@ describe('applyGrantedStage', () => {
   })
 
   it('adds granted permissions to permissions and origins to host_permissions in MV3, without duplicates', () => {
-    const manifest = { manifest_version: 3, permissions: ['storage', 'history'], host_permissions: ['https://a.example/*'] }
+    const manifest = { manifest_version: 3, permissions: ['storage', 'history'], host_permissions: ['https://a.example/*'], optional_permissions: ['bookmarks'], optional_host_permissions: ['https://b.example/*'] }
     const merged = applyGrantedStage(manifest, prefs(['history', 'bookmarks'], ['https://b.example/*']))
     expect(merged['permissions']).toEqual(['storage', 'history', 'bookmarks'])
     expect(merged['host_permissions']).toEqual(['https://a.example/*', 'https://b.example/*'])
   })
 
   it('creates host_permissions when an MV3 manifest had none', () => {
-    const merged = applyGrantedStage({ manifest_version: 3 }, prefs([], ['https://b.example/*']))
+    const merged = applyGrantedStage({ manifest_version: 3, optional_host_permissions: ['https://b.example/*'] }, prefs([], ['https://b.example/*']))
     expect(merged['host_permissions']).toEqual(['https://b.example/*'])
     expect(merged).not.toHaveProperty('permissions')
   })
 
   it('puts MV2 origins in permissions, which has no host_permissions', () => {
-    const merged = applyGrantedStage({ manifest_version: 2, permissions: ['storage'] }, prefs(['history'], ['https://b.example/*']))
+    const merged = applyGrantedStage({ manifest_version: 2, permissions: ['storage'], optional_permissions: ['history', 'https://b.example/*'] }, prefs(['history'], ['https://b.example/*']))
     expect(merged['permissions']).toEqual(['storage', 'history', 'https://b.example/*'])
     expect(merged).not.toHaveProperty('host_permissions')
   })
 
+  it('leaves out a grant the manifest does not let it ask for, or already requires', () => {
+    const manifest = { manifest_version: 3, permissions: ['storage'], optional_permissions: ['history'] }
+    const merged = applyGrantedStage(manifest, prefs(['history', 'bookmarks', 'storage'], ['https://stray.example/*']))
+    expect(merged['permissions']).toEqual(['storage', 'history'])
+    expect(merged).not.toHaveProperty('host_permissions')
+  })
+
   it('does not change its input', () => {
-    const manifest = { manifest_version: 3, permissions: ['storage'] }
+    const manifest = { manifest_version: 3, permissions: ['storage'], optional_permissions: ['history'] }
     applyGrantedStage(manifest, prefs(['history'], []))
     expect(manifest.permissions).toEqual(['storage'])
   })

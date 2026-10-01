@@ -67,6 +67,14 @@ describe('toChromeText', () => {
   })
 })
 
+describe('parseCommands: the suggestion limit', () => {
+  it('keeps the first four suggested keys in manifest order and drops the rest, bare letters not counting', () => {
+    const commands = Object.fromEntries(['a', 'b', 'c', 'd', 'e', 'f'].map((name, index) => [name, { suggested_key: index === 1 ? 'K' : `Alt+Shift+${String(index)}` }]))
+    const parsed = parseCommands({ commands }, 'linux')
+    expect(parsed.map((command) => command.suggested)).toEqual(['Alt+Shift+0', null, 'Alt+Shift+2', 'Alt+Shift+3', 'Alt+Shift+4', null])
+  })
+})
+
 describe('parseCommands', () => {
   it('lists the commands in manifest order with their kind and suggestion', () => {
     const manifest = {

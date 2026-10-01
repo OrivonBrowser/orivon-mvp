@@ -450,7 +450,7 @@ export class BrowserActionAPI {
 
   private extensionNameOf(id: string): string {
     const sessionExtensions = this.ctx.session.extensions || this.ctx.session
-    const name = sessionExtensions.getExtension(id)?.name
+    const name = sessionExtensions.getExtension?.(id)?.name
     return typeof name === 'string' ? name : ''
   }
 

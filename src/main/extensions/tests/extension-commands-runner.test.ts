@@ -260,6 +260,43 @@ describe('recording a key', () => {
   })
 })
 
+describe('a recording and a move of a command that is not there', () => {
+  it('a second page recording tells the first its recording ended', () => {
+    const { keys, env, recorded } = setup()
+    keys.ready(env)
+    const first = {}
+    const second = {}
+    keys.beginRecording(first, A, 'mark')
+    keys.beginRecording(second, B, 'other')
+    expect(recorded).toHaveBeenCalledWith(first, { extensionId: A, name: 'mark', keys: null, result: { status: 'cancelled' } })
+    expect(keys.isRecording(first)).toBe(false)
+    expect(keys.isRecording(second)).toBe(true)
+  })
+
+  it('records nothing for a command whose extension was unloaded during the recording', () => {
+    let present = true
+    const { keys, env, prefs, recorded, loaded } = setup({ extensions: () => present ? [{ id: A, name: 'Alpha', manifest: MANIFEST_A }] : [] })
+    keys.ready(env)
+    const page = {}
+    keys.beginRecording(page, A, 'mark')
+    present = false
+    for (const listener of loaded) listener()
+    keys.record(page, chord('Mod+Shift+U'))
+    expect(prefs.get(A).shortcuts).toEqual({})
+    expect(recorded).toHaveBeenCalledWith(page, { extensionId: A, name: 'mark', keys: null, result: { status: 'cancelled' } })
+  })
+
+  it('refuses a move of a command the table does not have, and strips no other extension\'s key', () => {
+    const { keys, env, prefs, keyChanged } = setup()
+    keys.ready(env)
+    expect(keys.move('c'.repeat(32), 'ghost', chord('Alt+Shift+K'))).toEqual({ status: 'invalid', problem: 'unsupported' })
+    expect(keys.move(A, 'nothing', chord('Alt+Shift+K'))).toEqual({ status: 'invalid', problem: 'unsupported' })
+    expect(prefs.get(A).shortcuts).toEqual({})
+    expect(prefs.get('c'.repeat(32)).shortcuts).toEqual({})
+    expect(keyChanged).not.toHaveBeenCalled()
+  })
+})
+
 describe('chrome.commands.onChanged', () => {
   it('tells an extension its command moved to another key', () => {
     const { keys, env, keyChanged } = setup()

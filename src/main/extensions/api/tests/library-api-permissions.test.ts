@@ -31,7 +31,7 @@ function setup () {
   const held = new Set([`${HOLDER}:bookmarks`, `${HOLDER}:history`, `${HOLDER}:topSites`, `${HOLDER}:search`])
   const extensions = new Map([[HOLDER, { id: HOLDER, manifest: {} }], [OTHER, { id: OTHER, manifest: {} }]])
   const session = {
-    extensions: { on: vi.fn(), getExtension: (id: string) => extensions.get(id) ?? null },
+    extensions: { on: vi.fn(), getExtension: (id: string) => extensions.get(id) ?? null, getAllExtensions: () => [...extensions.values()] },
     serviceWorkers: { on: vi.fn() }
   } as unknown as Session
   const router = new ExtensionRouter(session)

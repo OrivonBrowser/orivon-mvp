@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { HistoryService } from '../../../history/history-service.js'
 import { SqliteHistoryStore } from '../../../history/sqlite-history-store.js'
 import { historyApi, installHistory, topSitesApi } from '../history-api.js'
@@ -157,6 +157,38 @@ describe('deleteRange and deleteAll', () => {
     visit(s, 'https://b.test/', 'B', NOW - 500)
     await s.call('history.deleteAll')
     expect(s.service.list().map((page) => page.url)).toEqual(['https://app.example/inbox'])
+  })
+})
+
+describe('a delete over a very long history', () => {
+  it('still finds a registered app\'s page beyond fifty thousand rows and keeps it', async () => {
+    const total = 60_000
+    const rows = Array.from({ length: total }, (_unused, index) => ({
+      id: index + 1,
+      url: index === total - 1 ? 'https://app.example/old' : `https://p${String(index)}.test/`,
+      title: 'P',
+      lastVisit: NOW - index,
+      visitCount: 1
+    }))
+    const removeMany = vi.fn()
+    const clear = vi.fn()
+    const removeRange = vi.fn()
+    const history = {
+      list: ({ limit = 500, after }: { limit?: number, after?: { lastVisit: number, id: number } } = {}) => {
+        const from = after === undefined || after.id === 0 ? 0 : rows.findIndex((row) => row.id === after.id) + 1
+        return rows.slice(from, from + limit)
+      },
+      listOrdered: () => [], visit: vi.fn(), remove: vi.fn(), removeMany, removeRange, clear, onChange: () => () => {}
+    }
+    const fake = fakeContext({ history: history as never })
+    installHistory(fake.ctx, () => NOW)
+    await fake.call('history.deleteAll')
+    expect(clear).not.toHaveBeenCalled()
+    expect(removeRange).not.toHaveBeenCalled()
+    expect(removeMany).toHaveBeenCalledTimes(1)
+    const removed = removeMany.mock.calls[0]?.[0] as number[]
+    expect(removed).toHaveLength(total - 1)
+    expect(removed).not.toContain(total)
   })
 })
 

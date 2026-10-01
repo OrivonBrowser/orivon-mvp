@@ -9,7 +9,7 @@ vi.mock('electron', () => ({
 }))
 
 const { ExtensionRouter } = await import('../../../../vendor/electron-chrome-extensions/src/browser/router.js')
-const { commandsApi, provideCommandKeys, resetCommandKeys } = await import('../api/commands-api.js')
+const { commandsApi, createCommandsApi, provideCommandKeys, resetCommandKeys } = await import('../api/commands-api.js')
 
 function fakeSession (extension: unknown): Session {
   return { extensions: { on: vi.fn(), getExtension: vi.fn(() => extension) }, serviceWorkers: { on: vi.fn() } } as unknown as Session
@@ -17,12 +17,12 @@ function fakeSession (extension: unknown): Session {
 
 const frame = (session: Session): never => ({ type: 'frame', sender: { session, id: 1 } }) as never
 
-function router (extensionId: string) {
+function router (extensionId: string, api = commandsApi) {
   const session = fakeSession({ id: extensionId, manifest: { permissions: [] } })
   const r = new ExtensionRouter(session)
   const old = vi.fn(() => 'library')
   r.apiHandler()('commands.getAll', old)
-  commandsApi.install({
+  api.install({
     handle: (name: string, run: never) => { r.apiHandler()(name, run, {}) }
   } as never)
   return { call: async () => await r.onExtensionMessage(frame(session), extensionId, 'commands.getAll'), old }
@@ -51,5 +51,14 @@ describe('commands.getAll', () => {
     expect(settled).toBe(false)
     release()
     expect(await pending).toEqual([])
+  })
+
+  it('answers with what is known when the saved shortcuts never become ready', async () => {
+    const { call } = router('ext-1', createCommandsApi(20))
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    provideCommandKeys({ whenReady: async () => await new Promise<void>(() => {}), getAll: () => [] })
+    expect(await call()).toEqual([])
+    expect(error).toHaveBeenCalledTimes(1)
+    error.mockRestore()
   })
 })

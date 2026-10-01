@@ -71,6 +71,22 @@ describe('installExtensionCommands', () => {
     expect(keys.groups()).toEqual([])
   })
 
+  it('reads the manifest files once per load, not on each rebuild of the table', () => {
+    const entry = loaded('one', { alpha: { description: 'A' }, zulu: { description: 'Z' } }, { zulu: { description: 'Z' }, alpha: { description: 'A' } }) as { path: string }
+    sessionExtensions.getAllExtensions.mockReturnValue([entry])
+    const prefs = createExtensionPrefsStore(null)
+    const keys = installExtensionCommands({ ctx: { privateSession: false } as never, prefs, userDataPath: dir })
+    keys.ready(environment)
+    const names = (): string[] => keys.groups()[0]?.commands.map((command) => command.name) ?? []
+    expect(names()).toEqual(['zulu', 'alpha'])
+    // The file changes under it: a rebuild caused by a prefs change must not notice.
+    writeFileSync(join(entry.path, 'manifest.json'), JSON.stringify({ name: 'one', commands: { alpha: { description: 'A' }, zulu: { description: 'Z' } } }))
+    prefs.update('one', { shortcuts: { alpha: 'Mod+Shift+U' } })
+    expect(names()).toEqual(['zulu', 'alpha'])
+    sessionExtensions.emit('extension-loaded')
+    expect(names()).toEqual(['alpha', 'zulu'])
+  })
+
   it('has nothing in a private runtime', () => {
     sessionExtensions.getAllExtensions.mockReturnValue([loaded('one', { a: { description: 'A' } })])
     const keys = KEYS(true)

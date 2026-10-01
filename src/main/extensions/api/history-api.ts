@@ -12,7 +12,7 @@ export type HistoryLike = Pick<ShellServices['history'], 'list' | 'listOrdered' 
 
 const BAD_URL = 'Invalid URL.'
 const PAGE = 500
-/** Most pages a range delete or a search reads: bounds the work of one call on a very large history. */
+/** Most pages a search reads: bounds the work of one call on a very large history. */
 const MAX_SCAN_PAGES = 100
 const TOP_SITES = 10
 const TOP_SITES_READ = 30
@@ -34,10 +34,10 @@ function addressArg (ctx: ExtensionApiContext, details: unknown): string {
   return safe
 }
 
-/** Pages visited in [from, to), newest first, in pages of 500 (every page, a registered app's too). */
-function* pagesIn (history: HistoryLike, text: string, from: number, to: number): Generator<HistoryEntry> {
+/** Pages visited in [from, to), newest first, in pages of 500 (every page, a registered app's too), at most `maxPages` of them. */
+function* pagesIn (history: HistoryLike, text: string, from: number, to: number, maxPages = MAX_SCAN_PAGES): Generator<HistoryEntry> {
   let after = { lastVisit: to, id: 0 }
-  for (let page = 0; page < MAX_SCAN_PAGES; page++) {
+  for (let page = 0; page < maxPages; page++) {
     const batch = history.list({ search: text, limit: PAGE, after })
     for (const entry of batch) {
       if (entry.lastVisit < from) return
@@ -68,11 +68,12 @@ function search (ctx: ExtensionApiContext, history: HistoryLike, query: unknown,
   return out
 }
 
-/** Forgets the visits in [from, to). A registered app's pages in the range stay: then the others go by name. */
+/** Forgets the visits in [from, to). A registered app's pages in the range stay: then the others go by name.
+ * The whole range is read, however long: stopping early would either delete an app's page or leave pages behind. */
 function forget (ctx: ExtensionApiContext, history: HistoryLike, from: number, to: number, everything: boolean): void {
   const named: number[] = []
   let apps = false
-  for (const entry of pagesIn(history, '', from, to)) {
+  for (const entry of pagesIn(history, '', from, to, Infinity)) {
     if (ctx.isAppOrigin(entry.url)) apps = true
     else named.push(entry.id)
   }
