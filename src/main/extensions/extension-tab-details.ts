@@ -29,7 +29,7 @@ export function applyOrivonTabDetails (details: OrivonTabDetails, favicon: strin
   details.pinned = pinned
   if (favicon !== null) details.favIconUrl = favicon
   if (sleeping == null) return
-  // `discarded`, as Chrome reports a tab whose page was dropped; the address and title are the ones it will wake to.
+  // `discarded`, the extension API's word for a tab whose page was dropped; the address and title are the ones it will wake to.
   details.discarded = true
   details.url = sleeping.url
   details.title = sleeping.title
