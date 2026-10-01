@@ -71,6 +71,16 @@ describe('checkArchiveSize', () => {
   it('refuses a bomb whose total dwarfs the archive it came in', () => {
     const result = checkArchiveSize([{ size: 500 * MIB, compressedSize: 400 * 1024 }], 400 * 1024)
     expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toMatch(/compression ratio/)
+  })
+
+  it('refuses many entries that each look honest when their total dwarfs the archive', () => {
+    // 100 entries at about 853:1 each (under the per-entry bound), 500 MiB in
+    // all, in a 1 MiB archive: only the total-versus-archive bound catches it.
+    const entries = Array.from({ length: 100 }, () => ({ size: 5 * MIB, compressedSize: 6 * 1024 }))
+    const result = checkArchiveSize(entries, MIB)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toMatch(/times its own length/)
   })
 
   it('refuses one entry whose declared ratio no deflate stream can reach', () => {
