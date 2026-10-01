@@ -29,3 +29,19 @@ export function openViewSource (tabs: SourceTabs, url: string): boolean {
   tabs.moveTab(opened[0], fromIndex + 1)
   return true
 }
+
+/**
+ * Opens the source of an address the person typed, in a foreground tab right after the active one, whatever the active
+ * tab shows: it may be the new-tab page, one of the shell's own pages or an app, none of which is the page being asked
+ * about. Only a web address the address bar would accept opens. Returns whether a tab opened.
+ */
+export function openTypedViewSource (tabs: SourceTabs, url: string): boolean {
+  const address = sanitizeDirectUrl(url)
+  if (address === null || !/^https?:\/\//i.test(address)) return false
+  const { tabs: order, activeTabId } = tabs.getState()
+  const fromIndex = order.findIndex((tab) => tab.id === activeTabId)
+  const opened = tabs.openTrusted(`view-source:${address}`)
+  if (opened === undefined) return false
+  if (fromIndex !== -1) tabs.moveTab(opened[0], fromIndex + 1)
+  return true
+}

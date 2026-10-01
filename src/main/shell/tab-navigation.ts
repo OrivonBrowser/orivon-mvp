@@ -49,10 +49,7 @@ export function navigateTab (env: NavigationEnv, id: string, rawInput: string): 
   }
   // `view-source:` followed by anything but a web address is an ordinary search, as before.
   const source = viewSourceTarget(rawInput)
-  if (source !== null) {
-    env.viewSource(source)
-    return
-  }
+  if (source !== null && env.viewSource(source)) return
   const target = resolveTarget(env, rawInput)
 
   const swap = partitionChanged(target, record.partition)

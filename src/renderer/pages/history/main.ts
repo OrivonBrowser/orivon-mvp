@@ -15,6 +15,8 @@ import { installKeys } from './page-keys.js'
 import { closeRowMenu, openRowMenu } from '../shared/row-menu.js'
 import { renderSelectionBar, OPEN_ALL_LIMIT } from './selection-bar.js'
 import { PAGE_SIZE, state, visible } from './state.js'
+import { unpackEntries } from './unpack.js'
+import type { PackedRow } from './unpack.js'
 import { renderClosed } from './view-closed.js'
 import type { ClosedRow } from './view-closed.js'
 import { renderBanner, renderEmpty } from './view-status.js'
@@ -44,7 +46,7 @@ let disarm: ReturnType<typeof setTimeout> | undefined
 
 const request = async (command: object): Promise<unknown> => await bridge.request('history', command)
 
-interface ListReply { readonly entries: readonly HistoryEntry[], readonly status: HistoryStatus }
+interface ListReply { readonly entries: readonly PackedRow[], readonly icons: readonly string[], readonly status: HistoryStatus }
 
 /** `limit` is one page unless a reload wants to keep as much on screen as was already loaded. A newer load makes an older reply stale. */
 async function load (append: boolean, limit = PAGE_SIZE): Promise<void> {
@@ -58,7 +60,8 @@ async function load (append: boolean, limit = PAGE_SIZE): Promise<void> {
   try {
     const reply = await request({ type: 'list', search: state.query, limit, order: state.order, ...place }) as ListReply
     if (mine !== generation) return
-    state.entries = append ? [...state.entries, ...reply.entries] : [...reply.entries]
+    const entries = unpackEntries(reply.entries, reply.icons)
+    state.entries = append ? [...state.entries, ...entries] : entries
     state.status = reply.status
     state.more = reply.entries.length === limit
   } finally {
@@ -188,7 +191,7 @@ function render (focus = false): void {
   state.selected = new Set([...state.selected].filter((id) => entryById(id) !== undefined))
   if (state.selected.size === 0) { state.anchor = null; state.armed = false }
   if (state.focusId === null || !ids.includes(state.focusId)) state.focusId = ids[0] ?? null
-  const view = { selected: state.selected, showVisits: state.order === 'visits' }
+  const view = { selected: state.selected, showVisits: state.order === 'visits', showDate: state.order !== 'recent', now: Date.now() }
   replaceChildren(list, state.entries.length === 0 ? renderEmpty(state.query) : h('div', { className: 'sections' }, ...renderSections(state.sections, view, rowActions)))
   list.classList.toggle('selecting', state.selected.size > 0)
   applyRoving(list, state.focusId)

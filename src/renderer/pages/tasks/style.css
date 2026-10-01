@@ -11,7 +11,6 @@ html, body { height: 100%; }
 .head h1 { display: flex; align-items: center; gap: 12px; font-size: 24px; font-weight: 700; color: var(--waccent-text); }
 .head h1 .icon { width: 24px; height: 24px; }
 .intro { margin-top: 2px; color: var(--wink-dim); font-size: 14px; }
-.head .btn { flex: none; }
 
 .banner[hidden] { display: none; }
 

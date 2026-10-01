@@ -98,6 +98,14 @@ describe('ImportState', () => {
     expect(state.result?.bookmarks).toBe(2)
   })
 
+  it('says another import is running, instead of calling the profile unreadable, when main answers busy', async () => {
+    const { state } = setup({ detect: DETECTED, run: { busy: true } })
+    await state.detect()
+    await state.start()
+    expect(state.step).toBe('error')
+    expect(state.error).toBe('busy')
+  })
+
   it('ends on an error when main does not answer, and goes back to the choice on "Try again"', async () => {
     const { state } = setup({ detect: DETECTED, run: undefined })
     await state.detect()

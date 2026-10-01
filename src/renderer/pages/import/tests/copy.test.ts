@@ -49,6 +49,7 @@ describe('errorText', () => {
     expect(errorText('locked', 'Chrome')).toBe('Orivon could not read Chrome\'s history while it is running. Close Chrome and try again.')
     expect(errorText('unreadable', 'Chrome')).toBe('This profile could not be read.')
     expect(errorText('format', null)).toBe('This file is not a bookmarks file.')
+    expect(errorText('busy', null)).toBe('Another import is running. Wait for it to finish, then try again.')
     expect(errorText('private', null)).toBe('Importing is not available in a private window.')
     expect(errorText('unreadable', null)).toBe('This file could not be read.')
   })

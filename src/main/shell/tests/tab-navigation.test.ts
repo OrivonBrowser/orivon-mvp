@@ -57,6 +57,15 @@ describe('typing into the address bar', () => {
     expect(loadURL).not.toHaveBeenCalled()
   })
 
+  it('does not swallow the input when no source tab could be opened', () => {
+    const { navigate, viewSource, loadURL } = setup()
+    viewSource.mockReturnValueOnce(false)
+    navigate('view-source:https://a.example/page')
+    expect(viewSource).toHaveBeenCalledTimes(1)
+    expect(loadURL).toHaveBeenCalledTimes(1)
+    expect(String(loadURL.mock.calls[0]?.[0])).not.toMatch(/^view-source:/i)
+  })
+
   it('treats view-source: of anything else as it always did: a search, never a view-source load', () => {
     const { navigate, viewSource, loadURL } = setup()
     navigate('view-source:javascript:1')

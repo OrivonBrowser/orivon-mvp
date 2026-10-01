@@ -1,5 +1,6 @@
 // The Import page's view of this machine: where other browsers keep their files, the file dialog, and the two
 // stores an import writes to. The only file in this directory that imports `electron`.
+import { join } from 'node:path'
 import { app } from 'electron'
 import { commandById } from '../shortcuts/commands.js'
 import { pickOpenFile } from '../shell/file-dialogs.js'
@@ -26,7 +27,10 @@ export function importHost (services: ImportHostServices, publish: (phase: 'book
       const days = services.settings.get('history.retentionDays')
       return days === 'forever' ? null : Number(days)
     },
-    progress: publish
+    progress: publish,
+    // On the profile's own disk, never the system's temporary folder, which may be held in memory: a browser's history
+    // can be hundreds of megabytes, and the copy of it lives only while it is read.
+    tempDir: join(app.getPath('userData'), 'import-tmp')
   })
   return {
     isPrivate: services.isPrivate,

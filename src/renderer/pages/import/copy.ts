@@ -1,7 +1,7 @@
 // What the Import page says, as plain functions of what happened, so the wording is settled in one place.
 import type { ImportErrorReason, ImportResult } from '../../../main/import/import-types.js'
 
-export type PageError = ImportErrorReason | 'private'
+export type PageError = ImportErrorReason | 'private' | 'busy'
 
 const count = (value: number): string => value.toLocaleString('en-US')
 
@@ -13,6 +13,7 @@ export function errorText (reason: PageError, browser: string | null): string {
     case 'locked': return `Orivon could not read ${browser ?? 'the other browser'}'s history while it is running. Close ${browser ?? 'it'} and try again.`
     case 'format': return 'This file is not a bookmarks file.'
     case 'private': return 'Importing is not available in a private window.'
+    case 'busy': return 'Another import is running. Wait for it to finish, then try again.'
     case 'unreadable': return browser === null ? 'This file could not be read.' : 'This profile could not be read.'
   }
 }
