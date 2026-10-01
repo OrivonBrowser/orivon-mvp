@@ -17,6 +17,7 @@
 @import './styles/tab-search-button.css';
 @import './styles/toolbar.css';
 @import './styles/bookmarks.css';
+@import './styles/focus.css';
 /* Same-entry import, unlike site-info/style.css's copy of these same
    tokens/rules below: this file already @imports its other rows the same
    way, and web3-shield.ts is the one module both this chrome view and the
@@ -134,7 +135,7 @@ button:disabled {
    colour. Every other focusable control keeps this ring. */
 button:focus-visible,
 input:focus-visible:not(.addressbar) {
-  outline: 2px solid var(--waccent);
+  outline: var(--wfocus-width, 2px) solid var(--wfocus);
   outline-offset: -2px;
 }
 .addressbar:focus-visible {

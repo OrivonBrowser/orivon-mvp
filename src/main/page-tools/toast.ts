@@ -42,7 +42,9 @@ export const TOAST_TEXT = {
   sleepAsk: { text: 'This tab is waiting for your answer, so it stays awake.', tone: 'info' },
   sleepMedia: { text: 'This tab is using your camera, microphone or screen, so it stays awake.', tone: 'info' },
   sleepKept: { text: 'This site is set to stay awake.', tone: 'info' },
-  sleepOther: { text: 'This tab cannot be put to sleep.', tone: 'info' }
+  sleepOther: { text: 'This tab cannot be put to sleep.', tone: 'info' },
+  caretOn: { text: 'Caret browsing is on', tone: 'info' },
+  caretOff: { text: 'Caret browsing is off', tone: 'info' }
 } as const satisfies Record<string, ToastText>
 
 export type ToastCode = keyof typeof TOAST_TEXT

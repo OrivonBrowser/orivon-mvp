@@ -1,0 +1,12 @@
+/* A sheet in the overlay's own card: the question, what it does, the opt-out, then the two buttons. */
+
+body[data-overlay='caret-confirm'] .caret { padding: 16px 18px; }
+body[data-overlay='caret-confirm'] .sheet-title { margin: 0; }
+body[data-overlay='caret-confirm'] .sheet-body { margin: 10px 0 16px; gap: 6px; }
+body[data-overlay='caret-confirm'] .check { margin-top: 8px; }
+body[data-overlay='caret-confirm'] .caret-text {
+  margin: 0;
+  color: var(--wink-dim);
+  font-size: 13px;
+  line-height: 1.5;
+}

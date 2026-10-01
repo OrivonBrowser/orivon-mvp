@@ -2,6 +2,7 @@
 // One line per page, in name order.
 import type { OverlayPage } from './kit.js'
 import { bookmarkFolderPage } from './bookmark-folder/page.js'
+import { caretConfirmPage } from './caret-confirm/page.js'
 import { findPage } from './find/page.js'
 import { menuPage } from './menu/page.js'
 import { omniboxPage } from './omnibox/page.js'
@@ -16,6 +17,7 @@ import { toastPage } from './toast/page.js'
 
 export const OVERLAY_PAGES: Readonly<Record<string, OverlayPage>> = {
   'bookmark-folder': bookmarkFolderPage,
+  'caret-confirm': caretConfirmPage,
   find: findPage,
   menu: menuPage,
   omnibox: omniboxPage,

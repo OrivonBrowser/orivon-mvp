@@ -2,6 +2,8 @@
 // has a method for nearly all of them; this maps a command to that method.
 import { SHELL_EVENT_CHANNEL } from '../channels.js'
 import { findStep, openFind } from '../find/find-commands.js'
+import { toggleCaret } from '../focus/caret-runner.js'
+import { cyclePane, goToChromePane } from '../focus/pane-cycle.js'
 import type { ShellWindow } from '../shell/window-registry.js'
 import { closeOthers, closeToRight, duplicateTab, toggleMute, togglePin } from '../shell/tab-commands.js'
 import { toggleBookmarksBar } from '../shell/bookmarks-bar/bar-visibility.js'
@@ -69,8 +71,9 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'nav.hardReload': tabs.activeWebContents()?.reloadIgnoringCache(); return
     case 'nav.home': goHome(tabs, services.settings, { newTab: false }); return
     case 'nav.stop': tabs.activeWebContents()?.stop(); return
-    case 'focus.nextPane': return
-    case 'focus.previousPane': return
+    case 'focus.nextPane': cyclePane({ window: target, services }, 1); return
+    case 'focus.previousPane': cyclePane({ window: target, services }, -1); return
+    case 'focus.toolbar': goToChromePane({ window: target, services }, 'toolbar'); return
     case 'nav.focusAddress':
       chrome.webContents.focus()
       chrome.webContents.send(SHELL_EVENT_CHANNEL, { type: 'focusAddress' })
@@ -147,7 +150,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'page.viewSource': void viewSourceCommand(target); return
     case 'page.reader': return
     case 'page.forceDark': return
-    case 'caret.toggle': return
+    case 'caret.toggle': toggleCaret({ window: target, services }); return
     case 'share.copyLink': return
     case 'share.email': return
     case 'site.certificate': return

@@ -8,6 +8,7 @@ import { createBookmarksBar } from './bookmarks-bar.js'
 import { createCluster } from './cluster.js'
 import { createHomeButton } from './home-button.js'
 import { createNavigation } from './navigation.js'
+import { createPanes } from './panes.js'
 import { createPromptAnchor } from './prompt-anchor.js'
 import { createReloadStop } from './reload-stop.js'
 import { createSidePanelButton } from './side-panel-button.js'
@@ -19,12 +20,15 @@ import { decorateTabSleeping } from './tab-sleeping.js'
 import { createTabSearchButton } from './tab-search-button.js'
 import { createTabStrip } from './tab-strip.js'
 
-/** Adds to a tab's element after the strip built it; one entry per feature, alphabetical by the file that draws it. */
+const panes = createPanes()
+
+/** Adds to a tab's element after the strip built it; one entry per feature, alphabetical by the file that draws it. The pane stops come last: they set the keyboard stop of what the others added. */
 export const TAB_DECORATORS: readonly TabDecorator[] = [
   decorateTabBadges,
   decorateTabCrashed,
   decorateTabGroup,
-  decorateTabSleeping
+  decorateTabSleeping,
+  panes.decorator
 ]
 
 /** The chrome's features, initialised and rendered in this order; one entry per feature. */
@@ -41,7 +45,8 @@ export const CHROME_MODULES: readonly ChromeModule[] = [
   createPromptAnchor(),
   createCluster(),
   createSidePanelButton(),
-  createBookmarksBar()
+  createBookmarksBar(),
+  panes.module
 ]
 
 /** Every module's `init`, once. A module that throws is logged by name and the rest still start. */
