@@ -7,6 +7,7 @@ import { commandById } from '../shortcuts/commands.js'
 import { bookmarksBarShown } from './bookmarks-bar/bar-visibility.js'
 import { qrAvailable } from '../qr/qr-open.js'
 import { hintFor } from '../session-restore/reopen.js'
+import { sidePanelFor } from '../side-panel/side-panel-host.js'
 import type { WindowContext } from './window-context.js'
 
 /** One line of the layout. A feature adds its entry beside the entries it belongs with. */
@@ -63,7 +64,7 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
     'site.shortcut',
     { check: 'window.alwaysOnTop', on: ({ window }) => window.window.isAlwaysOnTop() },
     'page.reader',
-    { check: 'sidePanel.toggle', on: () => false },
+    { check: 'sidePanel.toggle', on: ({ window }) => sidePanelFor(window).isOpen() },
     { check: 'page.forceDark', on: () => false },
     'tab.sleep',
     'privacy.clearData',

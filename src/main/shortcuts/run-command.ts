@@ -15,6 +15,7 @@ import { originFromUrl } from '../../broker/policy/origin.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import { reopenClosed } from '../session-restore/reopen.js'
 import { openQr } from '../qr/qr-open.js'
+import { sidePanelFor } from '../side-panel/side-panel-host.js'
 import { TAB_SEARCH_OVERLAY } from '../tab-search/tab-search-overlay.js'
 import { dismissRestoreOffer } from '../startup/restore-offer.js'
 import { kioskAllows } from '../window-state/kiosk.js'
@@ -132,7 +133,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'window.fullscreen': window.setFullScreen(!window.isFullScreen()); return
     case 'bookmarks.toggleBar': toggleBookmarksBar(services); return
     case 'window.alwaysOnTop': window.setAlwaysOnTop(!window.isAlwaysOnTop()); return
-    case 'sidePanel.toggle': return
+    case 'sidePanel.toggle': sidePanelFor(target).toggle(); return
     case 'settings.open': tabs.openInternal('settings'); return
     case 'passwords.open': return
     case 'siteSettings.open': return

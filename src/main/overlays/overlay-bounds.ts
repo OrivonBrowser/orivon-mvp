@@ -43,6 +43,20 @@ export function isAnchor (value: unknown): value is OverlayAnchor {
   return [rect['x'], rect['y'], rect['width'], rect['height']].every((n) => typeof n === 'number' && Number.isFinite(n))
 }
 
+/**
+ * The strip of the window the page area leaves free, beside it: on the left when the page starts after x 0,
+ * else on the right. Zero wide when the page takes the whole width (the dock is hidden), so a hidden dock
+ * needs no state of its own.
+ */
+export function dockBounds (frame: OverlayFrame): Electron.Rectangle {
+  const { area } = frame
+  const y = area.y
+  const height = Math.max(0, area.height)
+  if (area.x > 0) return { x: 0, y, width: area.x, height }
+  const x = area.x + area.width
+  return { x, y, width: Math.max(0, frame.width - x), height }
+}
+
 export function overlayBounds (
   placement: OverlayPlacement,
   anchor: OverlayAnchor | undefined,
@@ -50,6 +64,7 @@ export function overlayBounds (
   contentHeight: number,
   limits: OverlayLimits
 ): Electron.Rectangle {
+  if (placement.kind === 'dock') return dockBounds(frame)
   if (placement.kind === 'area') {
     const width = Math.max(0, Math.min(placement.width, frame.width - EDGE * 2))
     const areaBottom = frame.area.y + frame.area.height
