@@ -187,8 +187,8 @@ it('Ctrl+S saves the page complete, or as one .mhtml file by its extension, and 
     const mhtml = join(outDir, 'page.mhtml')
     await stubSaveDialog(app, mhtml)
     await pressKey(app, origin, 'S', ['control'])
-    expect(await waitFor(() => existsSync(mhtml))).toBe(true)
-    expect(readFileSync(mhtml, 'utf8')).toContain('MIME-Version')
+    // The file appears before its bytes are written: wait for the whole archive.
+    expect(await waitFor(() => existsSync(mhtml) && readFileSync(mhtml, 'utf8').includes('MIME-Version'))).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
