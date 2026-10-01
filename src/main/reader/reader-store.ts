@@ -1,5 +1,5 @@
-// The article each window's reader tab shows, held in memory only. The key is the window's tab manager, so
-// a closed window takes its article with it; `token` tells a late picture which showing it belongs to.
+// The article each reader tab shows, held in memory only. The key is the reader tab's record, so the article goes
+// with the tab when it moves to another window; `token` tells a late picture which showing it belongs to.
 import type { Article } from './reader-blocks.js'
 
 export interface ReaderEntry {
@@ -17,20 +17,20 @@ export class ReaderArticles {
   private readonly entries = new WeakMap<object, ReaderEntry>()
   private counter = 0
 
-  get (window: object): ReaderEntry | undefined {
-    return this.entries.get(window)
+  get (key: object): ReaderEntry | undefined {
+    return this.entries.get(key)
   }
 
-  /** Replaces what the window shows and returns the new entry. */
-  set (window: object, article: Article, links: readonly string[], source: string): ReaderEntry {
+  /** Replaces what the tab shows and returns the new entry. */
+  set (key: object, article: Article, links: readonly string[], source: string): ReaderEntry {
     this.counter += 1
     const entry: ReaderEntry = { article, links, source, images: new Map(), token: this.counter }
-    this.entries.set(window, entry)
+    this.entries.set(key, entry)
     return entry
   }
 
-  delete (window: object): void {
-    this.entries.delete(window)
+  delete (key: object): void {
+    this.entries.delete(key)
   }
 }
 

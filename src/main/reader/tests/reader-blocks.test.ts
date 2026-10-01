@@ -24,6 +24,23 @@ describe('validateArticle', () => {
     expect(result.blocks.map((block) => block.t)).toEqual(['p', 'h2', 'pre', 'hr'])
   })
 
+  it('drops the site name that ends a document title, but never the whole title', () => {
+    expect(valid([{ t: 'p', c: ['x'] }], { title: 'A Long Walk Home - Example Times', site: 'Example Times' }).title).toBe('A Long Walk Home')
+    expect(valid([{ t: 'p', c: ['x'] }], { title: 'Walk home | example times', site: 'Example Times' }).title).toBe('Walk home')
+    expect(valid([{ t: 'p', c: ['x'] }], { title: 'Example Times', site: 'Example Times' }).title).toBe('Example Times')
+    expect(valid([{ t: 'p', c: ['x'] }], { title: 'Notes on a.b (draft) - a.b (draft)', site: 'a.b (draft)' }).title).toBe('Notes on a.b (draft)')
+    expect(valid([{ t: 'p', c: ['x'] }], { title: 'Times and Example Times', site: '' }).title).toBe('Times and Example Times')
+  })
+
+  it('drops a first paragraph that only repeats the byline, and keeps one that says more', () => {
+    const body = { t: 'p', c: ['The story begins here.'] }
+    expect(valid([{ t: 'p', c: ['By Ada Writer'] }, body], { byline: 'Ada Writer' }).blocks).toHaveLength(1)
+    expect(valid([{ t: 'h2', c: ['Head'] }, { t: 'p', c: ['ada writer'] }, body], { byline: 'Ada Writer' }).blocks.map((entry) => entry.t)).toEqual(['h2', 'p'])
+    expect(valid([{ t: 'p', c: ['By Ada Writer and Bo Other'] }, body], { byline: 'Ada Writer' }).blocks).toHaveLength(2)
+    expect(valid([body, { t: 'p', c: ['Ada Writer'] }], { byline: 'Ada Writer' }).blocks).toHaveLength(2)
+    expect(valid([{ t: 'p', c: ['Ada Writer'] }], { byline: 'Ada Writer' }).blocks).toHaveLength(1)
+  })
+
   it('refuses what is not an article', () => {
     for (const raw of [null, 'x', 4, [], {}, { blocks: 'x' }, { blocks: [] }, { blocks: [{ t: 'script' }] }]) {
       expect(validateArticle(raw, PAGE)).toBeNull()

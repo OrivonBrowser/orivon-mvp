@@ -105,7 +105,8 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       settings: services.settings,
       ownerOf: (contents) => {
         const found = services.windows.findTab(contents)
-        return found === null ? undefined : { key: found.window.tabs, tabs: found.window.tabs, tabId: found.tabId, print: () => { services.commands.run('page.print', found.window) } }
+        const record = found === null ? undefined : found.window.tabs.record(found.tabId)
+        return found === null || record === undefined ? undefined : { key: record, tabs: found.window.tabs, tabId: found.tabId, print: () => { services.commands.run('page.print', found.window) } }
       }
     }),
     pages: pagesDomain(services.windows),

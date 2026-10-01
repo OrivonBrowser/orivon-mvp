@@ -191,6 +191,21 @@ function textOf (blocks: readonly Block[]): string {
   return parts.join(' ')
 }
 
+/** A document title usually ends in the site's name, which the page already shows as the source. */
+function withoutSite (title: string, site: string): string {
+  if (site === '') return title
+  const escaped = site.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const stripped = title.replace(new RegExp(`\\s*[-|\u2013\u2014:\u00b7]\\s*${escaped}$`, 'i'), '').trim()
+  return stripped === '' ? title : stripped
+}
+
+/** The first paragraph that only says who wrote the piece, which the meta line already shows. */
+function repeatsByline (text: string, byline: string): boolean {
+  const said = text.replace(/\s+/g, ' ').trim().toLowerCase()
+  const wanted = byline.toLowerCase()
+  return said === wanted || said === `by ${wanted}`
+}
+
 /** Checks an extraction result against the model and returns the article it describes, or null when it is not one
  * (nothing readable, or not even an object). Everything out of shape is dropped, never repaired. */
 export function validateArticle (raw: unknown, pageUrl: string): Article | null {
@@ -206,10 +221,14 @@ export function validateArticle (raw: unknown, pageUrl: string): Article | null 
   }
   if (blocks.length === 0) return null
   const lang = clean(raw['lang'])
+  const byline = clean(raw['byline']).replace(/\s+/g, ' ').trim().slice(0, LIMITS.byline)
+  const site = clean(raw['site']).replace(/\s+/g, ' ').trim().slice(0, LIMITS.site)
+  const first = blocks.findIndex((entry) => entry.t === 'p')
+  if (byline !== '' && first >= 0 && blocks.length > 1 && repeatsByline(textOf([blocks[first] as Block]), byline)) blocks.splice(first, 1)
   return {
-    title: clean(raw['title']).replace(/\s+/g, ' ').trim().slice(0, LIMITS.title),
-    byline: clean(raw['byline']).replace(/\s+/g, ' ').trim().slice(0, LIMITS.byline),
-    site: clean(raw['site']).replace(/\s+/g, ' ').trim().slice(0, LIMITS.site),
+    title: withoutSite(clean(raw['title']).replace(/\s+/g, ' ').trim(), site).slice(0, LIMITS.title),
+    byline,
+    site,
     url: base,
     lang: /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(lang) ? lang : '',
     words: countWords(textOf(blocks)),

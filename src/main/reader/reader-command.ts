@@ -8,7 +8,7 @@ import { toggleReader } from './reader-runner.js'
 import { readerArticles } from './reader-store.js'
 
 export function readerCommand (target: ShellWindow, services: ShellServices): void {
-  void toggleReader(target.tabs, target.tabs, {
+  void toggleReader(target.tabs, {
     articles: readerArticles,
     extract: extractArticle,
     fetcher: (wc) => async (url, init) => await wc.session.fetch(url, init),

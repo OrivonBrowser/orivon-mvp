@@ -54,6 +54,8 @@ export async function fetchImage (fetcher: ImageFetcher, url: string, pageUrl: s
   try {
     const response = await fetcher(address, { signal: controller.signal, credentials: 'omit', referrer: pageUrl })
     if (!response.ok) return null
+    // Wherever a redirect ended is held to the same rule as the address the article named.
+    if (response.url !== '' && webUrl(response.url, address) === null) return null
     const declared = (response.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase() ?? ''
     if (!(TYPES as readonly string[]).includes(declared)) return null
     const length = Number(response.headers.get('content-length') ?? '0')

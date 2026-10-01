@@ -12,7 +12,7 @@ export const READER_PREFS = ['reader.font', 'reader.size', 'reader.width', 'read
 type ReaderPref = (typeof READER_PREFS)[number]
 
 export interface ReaderOwner {
-  /** What the window's article is kept under: the window's tab manager. */
+  /** What the article is kept under: the reader tab's record. */
   readonly key: object
   readonly tabs: ReaderTabs & { createTab: (url: string, active: boolean) => string }
   readonly tabId: string

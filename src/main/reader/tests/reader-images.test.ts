@@ -13,6 +13,13 @@ function reply (bytes: Uint8Array, type = 'image/png', status = 200, extra: Reco
 const serving = (response: () => Response): ImageFetcher => async () => await Promise.resolve(response())
 
 describe('sniffImageType', () => {
+  it('refuses a picture whose redirect ended anywhere but http or https', async () => {
+    const landed = (url: string): Response => Object.defineProperty(reply(PNG), 'url', { value: url })
+    expect(await fetchImage(serving(() => landed('file:///etc/passwd')), 'https://img.test/a.png', PAGE)).toBeNull()
+    expect(await fetchImage(serving(() => landed('data:image/png;base64,AAAA')), 'https://img.test/a.png', PAGE)).toBeNull()
+    expect(await fetchImage(serving(() => landed('https://cdn.test/a.png')), 'https://img.test/a.png', PAGE)).toMatch(/^data:image\/png;base64,/)
+  })
+
   it('names the raster formats by their first bytes and nothing else', () => {
     expect(sniffImageType(PNG)).toBe('image/png')
     expect(sniffImageType(Uint8Array.from([0xff, 0xd8, 0xff, 0xe0]))).toBe('image/jpeg')

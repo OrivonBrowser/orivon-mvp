@@ -10,10 +10,9 @@ export const installReader: ShellInstaller = {
       if (change.key.startsWith('reader.')) services.internalPages.publish('reader.settings', change, ['reader'])
     })
     services.tabLifecycle.subscribe({
-      tabClosing: ({ record }) => {
-        if (record.internalPage !== 'reader') return
-        const found = services.windows.findTab(record.view.webContents)
-        if (found !== null) readerArticles.delete(found.window.tabs)
+      // A reader tab handed to another window keeps its article: it is keyed by the record that moves with it.
+      tabClosing: ({ record, reason }) => {
+        if (record.internalPage === 'reader' && reason !== 'moved') readerArticles.delete(record)
       }
     })
   }

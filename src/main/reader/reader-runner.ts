@@ -45,7 +45,7 @@ export function closeReader (tabs: ReaderTabs, readerId: string): void {
   tabs.closeTab(readerId)
 }
 
-export async function toggleReader (tabs: ReaderTabs, window: object, deps: ReaderDeps): Promise<void> {
+export async function toggleReader (tabs: ReaderTabs, deps: ReaderDeps): Promise<void> {
   const state = tabs.getState()
   const activeId = state.activeTabId
   const tab = state.tabs.find((candidate) => candidate.id === activeId)
@@ -60,21 +60,26 @@ export async function toggleReader (tabs: ReaderTabs, window: object, deps: Read
     return
   }
   const article = await deps.extract(wc)
-  if (article === null || !tabs.ids().includes(activeId)) {
-    if (article === null) deps.notify('notReadable')
+  // The extraction took a moment: if the person went to another tab or the page was swapped, the answer is dropped, not shown over what they are doing.
+  if (tabs.getState().activeTabId !== activeId || tabs.liveWebContents(activeId) !== wc) return
+  if (article === null) {
+    deps.notify('notReadable')
     return
   }
-  const entry = deps.articles.set(window, article, linkTable(article), activeId)
   const existing = readerTabId(tabs)
   tabs.openInternal('reader')
   const readerId = readerTabId(tabs)
   if (readerId === undefined) return
   const record = tabs.record(readerId)
+  if (record === undefined) return
+  // Kept under the reader tab's record, which goes with the tab if it is moved to another window.
+  const entry = deps.articles.set(record, article, linkTable(article), activeId)
   // Beside an article that is in a group, the reader tab is in that group too, as a tab opened to its right is.
-  if (record !== undefined) { record.reader = { source: activeId }; record.groupId = tabs.record(activeId)?.groupId ?? null }
+  record.reader = { source: activeId }
+  record.groupId = tabs.record(activeId)?.groupId ?? null
   placeBeside(tabs, readerId, activeId)
   if (existing !== undefined) deps.publish('reader.changed', undefined)
-  const alive = (): boolean => deps.articles.get(window)?.token === entry.token && tabs.ids().includes(readerId)
+  const alive = (): boolean => deps.articles.get(record)?.token === entry.token && tabs.ids().includes(readerId)
   const fetcher = deps.fetcher(wc)
   void fetchArticleImages(imageSlots(article), fetcher, article.url, (at, dataUrl) => {
     entry.images.set(at, dataUrl)
