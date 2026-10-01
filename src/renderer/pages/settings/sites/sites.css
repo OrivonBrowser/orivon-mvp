@@ -1,0 +1,71 @@
+/* The Site settings section: the sites that have an answer of their own, each opening to its kinds. Rows use the
+   kit's badge and the page's select; only what a site row adds is here. */
+
+.row:has(.sites-list) { gap: 12px; }
+
+.sites-list { display: grid; gap: 10px; width: 100%; }
+.sites-head .text { max-width: none; }
+.sites-list .banner { font-size: 13px; }
+.sites-foot { justify-content: flex-start; }
+
+.sites-ul {
+  list-style: none;
+  margin: 0;
+  display: grid;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--wborder);
+  border-radius: 8px;
+  background: var(--wsurface);
+  max-height: 480px;
+  overflow-y: auto;
+}
+.sites-ul[aria-busy="true"] { min-height: 92px; }
+.sites-ul .empty-state { padding: 28px 12px; }
+
+.site-line { display: flex; align-items: center; gap: 4px; }
+.site-toggle {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+.site-toggle:hover { background: var(--whover); }
+.site-toggle:focus-visible { outline-offset: -2px; }
+.site-mark { width: 28px; height: 28px; border-radius: 50%; font-size: 12px; }
+.site-host { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wink-strong); font-weight: 500; }
+.site-badges { display: flex; flex: 0 1 auto; gap: 6px; min-width: 0; margin-left: auto; overflow: hidden; }
+.site-chevron { flex: none; width: 16px; height: 16px; color: var(--wink-dim); transition: transform 0.12s; }
+.site-item.open .site-chevron { transform: rotate(90deg); }
+.site-line .btn.icon, .site-line .btn.small { flex: none; }
+.site-line .btn.small { white-space: nowrap; }
+
+.site-kinds {
+  list-style: none;
+  margin: 0 8px 8px 48px;
+  padding: 6px 0 0;
+  border-top: 1px solid var(--wborder);
+  display: grid;
+  gap: 2px;
+}
+.site-kind { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 8px; border-radius: 6px; }
+.site-kind-label { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.site-kind-label svg { flex: none; width: 16px; height: 16px; color: var(--wink-dim); }
+.site-select { width: 170px; flex: none; padding-top: 4px; padding-bottom: 4px; font-size: 13px; }
+
+.site-skeleton { display: flex; align-items: center; gap: 12px; padding: 8px 12px; }
+.site-skeleton-mark { width: 28px; height: 28px; border-radius: 50%; flex: none; }
+.site-skeleton-line { width: 45%; }
+
+.sites-show-all { justify-self: start; }
+.sites-show-all[hidden], .sites-list .banner[hidden], .sites-foot .btn[hidden] { display: none; }

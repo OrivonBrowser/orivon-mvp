@@ -22,8 +22,9 @@ import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
 import type { ExtensionLister } from '../extensions/site-reach-runner.js'
 
 export interface SiteSummary {
-  /** Whether the site has asked for at least one Orivon capability or
-   * picked a file/folder -- what the toolbar key's visibility switches on. */
+  /** What the toolbar key's visibility switches on: true for every ordinary
+   * website, whose popover lists what it may do, and for an app that has
+   * asked for a capability or picked a file/folder. */
   readonly asked: boolean
   readonly warning: boolean
 }
@@ -106,7 +107,7 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
   return {
     async siteSummaryFor (url) {
       const info = await siteInfoFor(url)
-      return { asked: info.asked, warning: info.capabilityRows.some((r) => r.warning) || info.pickedPathRows.some((r) => r.warning) }
+      return { asked: info.asked || /^https?:\/\//.test(info.origin), warning: info.capabilityRows.some((r) => r.warning) || info.pickedPathRows.some((r) => r.warning) }
     },
 
     siteInfoFor,

@@ -18,6 +18,7 @@ import type { SiteInfoController } from '../permissions/site-info-controller.js'
 import type { SiteTrust } from '../browsing/site-trust.js'
 import { browserStorageEstimateFor, cookieCountFor, orivonStorageFor } from '../permissions/site-data-runner.js'
 import type { BrowserStorageEstimate } from '../permissions/site-data-runner.js'
+import type { SitePermissionsAccess, SitePermissionsView } from '../site-settings/site-permissions-view.js'
 
 export interface SiteDataSnapshot {
   readonly cookieCount: number
@@ -46,13 +47,17 @@ export type SiteInfoCommand =
    * displayed -- so a manifest that changed underneath a long-open popup
    * fails that one capability closed rather than granting a surprise. */
   | { type: 'apply'; changes: ReadonlyArray<{ capability: CapabilityKind; on: boolean; shownPatterns: readonly Pattern[] }> }
+  /** This site's per-site permissions, for the origin the popover was built for: null when it has none. */
+  | { type: 'sitePermissions' }
+  /** One answer for one kind: `value` is `default`, `allow` or `block`; main refuses a kind that is not offered. */
+  | { type: 'setSitePermission'; kind: string; value: string }
   | { type: 'revokePickedPath'; pickId: string }
   | { type: 'clearBrowserData' }
   | { type: 'reload' }
-  | { type: 'openAllSites' }
+  | { type: 'openSiteSettings' }
   /** The extensions disclosure's own "Manage" link (docs/planning/extensions-
-   * exploration.md): opens `orivon://extensions` the same way `openAllSites`
-   * opens the all-sites panel. */
+   * exploration.md): opens `orivon://extensions` the same way `openSiteSettings`
+   * opens the Site settings page. */
   | { type: 'openExtensions' }
   /** The Certificate row: closes this popup and opens the certificate viewer for the active tab. */
   | { type: 'certificate' }
@@ -98,17 +103,18 @@ export function registerSiteInfoIpc (
   userDataPath: string,
   activeWebContents: () => WebContents | undefined,
   reloadActiveTab: () => void,
-  openAllSites: () => void,
+  openSiteSettings: () => void,
   openExtensions: () => void,
   onContentHeight: (height: number) => void = () => {},
-  openCertificate: () => void = () => {}
+  openCertificate: () => void = () => {},
+  sitePermissions: SitePermissionsAccess = { view: () => null, set: () => null }
 ): void {
   // On the popup's own webContents: the handler goes with it, and two windows
   // can each have one open.
   siteInfoWebContents.ipc.handle(SITE_INFO_COMMAND_CHANNEL, async (
     event: IpcMainInvokeEvent,
     command: SiteInfoCommand
-  ): Promise<void | SiteInfo | SiteTrust | null | SiteDataSnapshot | ApplyResult> => {
+  ): Promise<void | SiteInfo | SiteTrust | null | SiteDataSnapshot | ApplyResult | SitePermissionsView> => {
     if (!isFromSiteInfoWindow(event, siteInfoWebContents, popupUrl)) return
 
     switch (command.type) {
@@ -130,6 +136,10 @@ export function registerSiteInfoIpc (
         }
         return { info: await controller.siteInfoFor(origin), staleCapabilities }
       }
+      case 'sitePermissions':
+        return sitePermissions.view(origin)
+      case 'setSitePermission':
+        return typeof command.kind === 'string' && typeof command.value === 'string' ? sitePermissions.set(origin, command.kind, command.value) : null
       case 'revokePickedPath':
         await controller.revokePickedPath(origin, command.pickId)
         return await controller.siteInfoFor(origin)
@@ -146,8 +156,8 @@ export function registerSiteInfoIpc (
       case 'reload':
         reloadActiveTab()
         return
-      case 'openAllSites':
-        openAllSites()
+      case 'openSiteSettings':
+        openSiteSettings()
         return
       case 'openExtensions':
         openExtensions()

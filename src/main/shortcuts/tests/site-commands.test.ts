@@ -22,7 +22,8 @@ const LANDED: readonly string[] = [
   'share.copyLink',
   'share.email',
   'site.certificate',
-  'site.shortcut'
+  'site.shortcut',
+  'siteSettings.open'
 ]
 
 const commandsIn = (entries: readonly MenuEntry[]): string[] => entries.flatMap((entry): string[] => {

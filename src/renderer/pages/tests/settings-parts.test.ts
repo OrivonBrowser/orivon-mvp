@@ -3,7 +3,7 @@ import { groupLabelFor, NAV_ICON } from '../settings/nav.js'
 import { sectionsFor } from '../settings/sections/index.js'
 import { addresses } from '../settings/sections/addresses.js'
 import { privacySiteDataRows } from '../settings/sections/privacy-site-data.js'
-import { sites } from '../settings/sections/sites.js'
+import type { SitesPart } from '../settings/sites/sites-part.js'
 import type { SettingsPart, SettingsPartDef } from '../settings/settings-parts.js'
 import { SettingsState } from '../settings/state.js'
 import type { OrivonInternal } from '../shared/bridge.js'
@@ -70,9 +70,9 @@ describe('Settings parts', () => {
     expect(redrawn).toBe(1)
   })
 
-  it('has no part registered until a feature adds one', () => {
+  it('has no part registered for a feature that has not added one', () => {
     const state = new SettingsState({ request: async () => undefined, onEvent: () => () => {} } as unknown as OrivonInternal)
-    expect(() => state.part('sites')).toThrow()
+    expect(() => state.part('addresses')).toThrow()
   })
 })
 
@@ -85,14 +85,11 @@ describe('SettingsState.request', () => {
 })
 
 describe('the sections a feature fills', () => {
-  it('starts with the Site settings and Addresses sections empty, and lists neither', async () => {
-    for (const [section, id, title] of [[sites, 'sites', 'Site settings'], [addresses, 'addresses', 'Addresses']] as const) {
-      expect(section).toMatchObject({ id, title, rows: [] })
-    }
-    const { state } = setup([])
+  it('starts with the Addresses section empty, and lists it nowhere', async () => {
+    expect(addresses).toMatchObject({ id: 'addresses', title: 'Addresses', rows: [] })
+    const { state } = setup([{ name: 'sites', create: () => ({ defaults: [] }) as unknown as SitesPart }])
     await state.load()
     const listed = sectionsFor(state).map((section) => section.id)
-    expect(listed).not.toContain('sites')
     expect(listed).not.toContain('addresses')
     expect(listed.slice(0, 3)).toEqual(['appearance', 'search', 'startup'])
   })

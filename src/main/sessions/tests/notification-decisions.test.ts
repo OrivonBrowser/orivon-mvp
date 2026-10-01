@@ -44,6 +44,34 @@ describe('NotificationDecisions', () => {
     expect(second.entries()).toEqual([{ origin: 'https://chat.example', decision: 'allow' }])
   })
 
+  it('tells a listener when an answer is set, forgotten or cleared, and not when nothing changed', () => {
+    const decisions = new NotificationDecisions(path)
+    const listener = vi.fn()
+    const off = decisions.onChange(listener)
+    decisions.set('https://chat.example', 'allow')
+    decisions.set('https://chat.example', 'allow')
+    decisions.forget('https://nobody.example')
+    expect(listener).toHaveBeenCalledTimes(1)
+    decisions.forget('https://chat.example')
+    expect(listener).toHaveBeenCalledTimes(2)
+    decisions.set('https://a.example', 'block')
+    decisions.clear()
+    decisions.clear()
+    expect(listener).toHaveBeenCalledTimes(4)
+    off()
+    decisions.set('https://b.example', 'allow')
+    expect(listener).toHaveBeenCalledTimes(4)
+  })
+
+  it('forgets every answer, on disk too', () => {
+    const first = new NotificationDecisions(path)
+    first.set('https://chat.example', 'allow')
+    first.set('https://ads.example', 'block')
+    first.clear()
+    expect(first.entries()).toEqual([])
+    expect(new NotificationDecisions(path).entries()).toEqual([])
+  })
+
   it('leaves no temporary file behind after a write', () => {
     new NotificationDecisions(path).set('https://chat.example', 'allow')
     expect(readdirSync(dir)).toEqual(['notification-decisions.json'])

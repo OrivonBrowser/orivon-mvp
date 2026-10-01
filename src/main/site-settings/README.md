@@ -12,9 +12,13 @@
 | `page-access.ts` | per tab, what the current page was asked and answered, for the address bar's chip and its bubble |
 | `ask-site.ts` | `askSite(kinds, tab)`: the question under the address bar, through the tab slots; the ask held in main by a random id |
 | `site-prompt-overlay.ts`, `site-prompt-text.ts` | the `site-prompt` overlay (the question, and the review bubble under the chip) and the words it shows |
+| `site-settings-controller.ts` | pure: the one door the site-info popup and the Settings page read and change answers through, over the per-site store and the notifications store; only available kinds, never an app's origin |
+| `site-permissions-view.ts` | pure: what the popup lists for its one site, and the two things it may do |
+| `sites-domain.ts` | the Settings page's `sites` domain: the defaults, the sites with an answer, one site's rows, a change, a reset |
+| `site-settings-runner.ts` | builds the controller over the services; one per process |
 | `install-site-permissions.ts`, `install-content-settings.ts` | the installers `../shell/shell-installers.ts` runs at start; the second is empty until content settings land |
 
-**What it depends on.** `electron` (types), [`../shell/`](../shell/) (`ShellInstaller`, `ShellServices`, the
+**What it depends on.** `electron` (types), [`../sessions/notification-decisions.ts`](../sessions/notification-decisions.ts) (through the runner), [`../shell/`](../shell/) (`ShellInstaller`, `ShellServices`, the
 window registry, the prompt anchor), [`../overlays/`](../overlays/) (`requestSlot`),
 [`../sessions/site-asks.ts`](../sessions/site-asks.ts) (the registry the asker joins),
 [`../consent/grant-prompt-origin.ts`](../consent/grant-prompt-origin.ts) (how a site is written for the person),
@@ -43,3 +47,14 @@ system-exclusive MIDI as `midiSysex`, so that request carries the stronger wordi
 
 **Location is asked, and answered "unavailable".** Orivon has no location provider, so an allowed page still gets a
 position error; the prompt says so before the person allows it.
+
+**Notifications are one more kind with their own store.** Their answers stay in `notification-decisions.json`; the controller
+reads and writes them through an adapter, so the popup and the Settings list show Notifications beside the rest. A change to
+either store reaches the Settings page as `sites.changed`.
+
+**"Default" is not a stored value.** A row's choice is `default`, `allow` or `block`; `default` forgets the answer, so the
+setting for the kind decides again. The choice that says what the default already says is offered only while it is what is
+stored, so a select never lists two ways to say the same thing.
+
+**An app's origin has no row.** A registered app or one served from the cache is bounded by its grants; the controller lists
+no row for it and refuses to write one, so a stored answer for an origin that later became an app is never shown as if it counted.

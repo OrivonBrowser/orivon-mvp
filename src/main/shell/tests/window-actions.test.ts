@@ -27,7 +27,6 @@ function makeParts (window: unknown): WindowParts {
     services: {} as never,
     panels: { permissions: { close: vi.fn() }, siteInfo: { close: vi.fn() } } as never,
     closeOverlays: vi.fn(),
-    memory: { anchor: null, origin: undefined },
     openWindow: vi.fn(),
     topHeight: 0,
     area: () => ({ x: 0, y: 0, width: 0, height: 0 })

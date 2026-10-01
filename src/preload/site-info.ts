@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { SITE_INFO_COMMAND_CHANNEL } from '../main/channels.js'
 import type { ApplyResult, SiteDataSnapshot, SiteInfoCommand } from '../main/ipc/site-info-ipc.js'
 import type { SiteInfo } from '../main/permissions/site-info.js'
+import type { SitePermissionsView } from '../main/site-settings/site-permissions-view.js'
 import type { SiteTrust } from '../main/browsing/site-trust.js'
 import type { CapabilityKind, Pattern } from '../contracts/index.js'
 
@@ -37,6 +38,14 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
       const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'apply', changes } satisfies SiteInfoCommand)
       return (result ?? null) as ApplyResult | null
     },
+    sitePermissions: async (): Promise<SitePermissionsView | null> => {
+      const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'sitePermissions' } satisfies SiteInfoCommand)
+      return (result ?? null) as SitePermissionsView | null
+    },
+    setSitePermission: async (kind: string, value: string): Promise<SitePermissionsView | null> => {
+      const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'setSitePermission', kind, value } satisfies SiteInfoCommand)
+      return (result ?? null) as SitePermissionsView | null
+    },
     revokePickedPath: async (pickId: string): Promise<SiteInfo | null> => {
       const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'revokePickedPath', pickId } satisfies SiteInfoCommand)
       return (result ?? null) as SiteInfo | null
@@ -47,8 +56,8 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
     reload: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'reload' } satisfies SiteInfoCommand)
     },
-    openAllSites: async (): Promise<void> => {
-      await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'openAllSites' } satisfies SiteInfoCommand)
+    openSiteSettings: async (): Promise<void> => {
+      await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'openSiteSettings' } satisfies SiteInfoCommand)
     },
     openExtensions: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'openExtensions' } satisfies SiteInfoCommand)

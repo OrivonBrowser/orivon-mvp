@@ -95,7 +95,7 @@ export const COMMANDS = [
   { id: 'window.alwaysOnTop', label: 'Keep window on top', category: 'window' },
   { id: 'settings.open', label: 'Open Settings', category: 'window', default: 'Mod+,' },
   { id: 'passwords.open', label: 'Passwords', category: 'window' },
-  { id: 'siteSettings.open', label: 'Site settings', category: 'window', pending: true },
+  { id: 'siteSettings.open', label: 'Site settings', category: 'window' },
   { id: 'extensions.open', label: 'Extensions', category: 'window' },
   { id: 'import.open', label: 'Import bookmarks and history', category: 'window' },
   { id: 'about.open', label: 'About Orivon', category: 'window' },
