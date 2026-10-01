@@ -1750,3 +1750,16 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** keep the Settings help line that names the two (current); drop Startpage's; probe on every release.
 - **Who decides:** research first
 - **Blocks:** nothing
+
+### A325: A dual-stack server is slow or unreachable when IPv6 silently drops packets **[AI-REC]**
+
+- **Question:** The broker dials resolved addresses one after another, waiting up to 30 s each. An
+  address-checked TLS dial (`rejectUnauthorized: false`, an own `ca`) also stops at the first
+  address that times out. Should both dials race the address families, as Node does?
+- **Why it matters:** where IPv6 resolves first but drops packets, a plain connection to a
+  dual-stack server waits 30 s, and a TLS one to a self-signed IRC server fails. Node's own
+  `autoSelectFamily` falls back to IPv4 within 250 ms.
+- **Options:** a staggered dial in `node-adapters.ts` and `tls-adapter.ts` (rec.); leave it until
+  a person reports it.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing

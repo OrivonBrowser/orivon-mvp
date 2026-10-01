@@ -1,18 +1,21 @@
-// A minimal IRC server for end-to-end tests, on `node:net`: enough of RFC 1459/2812 for a real
+// A minimal IRC server for end-to-end tests, on `node:net` (or `node:tls`): enough of RFC 1459/2812 for a real
 // client to register, join a channel, exchange messages and answer its keep-alive. It records
 // every line it receives, and can speak as another nick. It answers NICK, PART, TOPIC, LIST and WHOIS.
 //
 //   const irc = await startFakeIrc(6667)
+//   const tls = await startFakeIrc(6697, '127.0.0.1', { tls: { cert, key } })   TLS from the first byte
 //   irc.lines            every line received from clients, in order
 //   irc.privmsgs()       the PRIVMSG lines only
 //   irc.say('bob', '#orivon', 'hello')   a PRIVMSG from another nick to every connected client
 //   await irc.close()
 
 import { createServer } from 'node:net'
+import { createServer as createTlsServer } from 'node:tls'
 
 /**
  * @param {number} port
  * @param {string} [host]
+ * @param {{ tls?: { cert: string, key: string } }} [options]
  * @returns {Promise<{
  *   lines: string[],
  *   clients: () => number,
@@ -22,13 +25,14 @@ import { createServer } from 'node:net'
  *   close: () => Promise<void>
  * }>}
  */
-export async function startFakeIrc (port, host = '127.0.0.1') {
+export async function startFakeIrc (port, host = '127.0.0.1', options = {}) {
   /** @type {string[]} */
   const lines = []
   /** @type {Set<import('node:net').Socket>} */
   const sockets = new Set()
 
-  const server = createServer((socket) => {
+  /** @param {import('node:net').Socket} socket */
+  const onSocket = (socket) => {
     sockets.add(socket)
     let nick = ''
     let user = false
@@ -100,7 +104,8 @@ export async function startFakeIrc (port, host = '127.0.0.1') {
         }
       }
     })
-  })
+  }
+  const server = options.tls === undefined ? createServer(onSocket) : createTlsServer(options.tls, onSocket)
 
   await new Promise((resolve, reject) => {
     server.once('error', reject)
