@@ -13,7 +13,13 @@ import { randomBytes } from 'node:crypto'
 /** Generous for any real extension, bounded so a zip bomb's entry count or
  * uncompressed size is refused before a single byte of it is written. */
 export const MAX_UNPACK_ENTRIES = 10_000
-export const MAX_UNPACK_BYTES = 256 * 1024 * 1024
+export const MAX_UNPACK_BYTES = 1024 * 1024 * 1024
+/** Total declared size over the archive's own length. Real extensions sit
+ * near 5:1; a bomb's total is orders of magnitude over its download. */
+export const MAX_UNPACK_RATIO = 100
+/** Deflate cannot exceed about 1032:1 per entry, so a header claiming more
+ * is lying about its size. */
+export const MAX_ENTRY_RATIO = 1100
 
 const S_IFMT = 0xF000
 const S_IFLNK = 0xA000
@@ -55,6 +61,37 @@ export function checkZipEntryPath (targetDir: string, entryName: string, unixMod
   return { ok: true }
 }
 
+export interface ArchiveEntrySize {
+  readonly size: number
+  readonly compressedSize: number
+}
+
+/**
+ * Pure. Are the sizes an archive declares plausible and bounded? Three
+ * bounds: the absolute total, the total against the archive's own length
+ * (catches many entries sharing one deflate stream, whose per-entry ratios
+ * look honest), and each entry's own ratio (catches a header that lies).
+ * The extractor caps inflation at the declared size, so the declared sum
+ * bounds the bytes written.
+ */
+export function checkArchiveSize (entries: ReadonlyArray<ArchiveEntrySize>, archiveLength: number): ZipEntryCheck {
+  let total = 0
+  for (const entry of entries) {
+    total += entry.size
+    if (total > MAX_UNPACK_BYTES) {
+      return { ok: false, reason: `archive's uncompressed size exceeds the ${String(MAX_UNPACK_BYTES)}-byte cap` }
+    }
+    if (entry.size === 0) continue
+    if (entry.compressedSize <= 0 || entry.size / entry.compressedSize > MAX_ENTRY_RATIO) {
+      return { ok: false, reason: 'an entry declares a compression ratio no archive can reach' }
+    }
+  }
+  if (total > MAX_UNPACK_RATIO * Math.max(archiveLength, 1)) {
+    return { ok: false, reason: `archive's uncompressed size is over ${String(MAX_UNPACK_RATIO)} times its own length` }
+  }
+  return { ok: true }
+}
+
 export interface UnpackedZip {
   readonly path: string
 }
@@ -77,12 +114,12 @@ export function unpackZip (zipBytes: Buffer, targetDir: string): UnpackedZip {
   if (entries.length > MAX_UNPACK_ENTRIES) {
     throw new Error(`archive has ${String(entries.length)} entries, over the ${String(MAX_UNPACK_ENTRIES)} cap`)
   }
-  let totalBytes = 0
+  const sizeCheck = checkArchiveSize(
+    entries.map((entry) => ({ size: entry.header.size, compressedSize: entry.header.compressedSize })),
+    zipBytes.length
+  )
+  if (!sizeCheck.ok) throw new Error(sizeCheck.reason)
   for (const entry of entries) {
-    totalBytes += entry.header.size
-    if (totalBytes > MAX_UNPACK_BYTES) {
-      throw new Error(`archive's uncompressed size exceeds the ${String(MAX_UNPACK_BYTES)}-byte cap`)
-    }
     const unixMode = entry.header.attr >>> 16
     const check = checkZipEntryPath(targetDir, entry.entryName, unixMode)
     if (!check.ok) throw new Error(`refused zip entry: ${check.reason}`)

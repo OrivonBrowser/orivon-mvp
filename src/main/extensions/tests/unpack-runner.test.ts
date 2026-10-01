@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import AdmZip from 'adm-zip'
-import { checkZipEntryPath, MAX_UNPACK_ENTRIES, unpackZip, writeFolderCopy } from '../unpack-runner.js'
+import { checkArchiveSize, checkZipEntryPath, MAX_UNPACK_BYTES, MAX_UNPACK_ENTRIES, unpackZip, writeFolderCopy } from '../unpack-runner.js'
 
 async function withTempDir (fn: (dir: string) => void): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), 'orivon-unpack-test-'))
@@ -43,6 +43,56 @@ describe('checkZipEntryPath', () => {
     // not a string search for the target's own name.
     const result = checkZipEntryPath('/tmp/extensions/slot', 'slot-but-not-really/x', REGULAR_FILE_MODE)
     expect(result.ok).toBe(true) // "slot-but-not-really" is INSIDE "slot", not a sibling of it
+  })
+})
+
+describe('checkArchiveSize', () => {
+  const MIB = 1024 * 1024
+
+  it('accepts a real store extension that unpacks to over 300 MiB (4.4:1 compressed JSON)', () => {
+    // 445 entries, 326,345,866 bytes uncompressed in a 74,974,138-byte CRX:
+    // the measured shape of a large content blocker's rulesets.
+    const entries = Array.from({ length: 444 }, () => ({ size: 700_000, compressedSize: 160_000 }))
+    const used = entries.reduce((sum, entry) => sum + entry.size, 0)
+    entries.push({ size: 326_345_866 - used, compressedSize: 74_901_750 - 444 * 160_000 })
+    expect(checkArchiveSize(entries, 74_974_138)).toEqual({ ok: true })
+  })
+
+  it('refuses a total over the absolute cap, whatever the ratio', () => {
+    const entries = [{ size: MAX_UNPACK_BYTES + 1, compressedSize: MAX_UNPACK_BYTES / 2 }]
+    const result = checkArchiveSize(entries, MAX_UNPACK_BYTES)
+    expect(result.ok).toBe(false)
+  })
+
+  it('has a 1 GiB absolute cap', () => {
+    expect(MAX_UNPACK_BYTES).toBe(1024 * MIB)
+  })
+
+  it('refuses a bomb whose total dwarfs the archive it came in', () => {
+    const result = checkArchiveSize([{ size: 500 * MIB, compressedSize: 400 * 1024 }], 400 * 1024)
+    expect(result.ok).toBe(false)
+  })
+
+  it('refuses one entry whose declared ratio no deflate stream can reach', () => {
+    // Total/archive stays under the overall ratio; the single entry lies.
+    const entries = [
+      { size: 5 * MIB, compressedSize: 1000 },
+      { size: 5 * MIB, compressedSize: 5 * MIB }
+    ]
+    expect(checkArchiveSize(entries, 6 * MIB).ok).toBe(false)
+  })
+
+  it('refuses a non-empty entry that claims zero compressed bytes', () => {
+    expect(checkArchiveSize([{ size: 10, compressedSize: 0 }], 1000).ok).toBe(false)
+  })
+
+  it('accepts empty entries (directories and empty files) without dividing by zero', () => {
+    const entries = [{ size: 0, compressedSize: 0 }, { size: 12, compressedSize: 14 }]
+    expect(checkArchiveSize(entries, 500)).toEqual({ ok: true })
+  })
+
+  it('accepts a highly compressible but honest archive under the overall ratio', () => {
+    expect(checkArchiveSize([{ size: 50 * MIB, compressedSize: 600 * 1024 }], 700 * 1024)).toEqual({ ok: true })
   })
 })
 
