@@ -33,10 +33,14 @@ export class OsPart implements SettingsPart {
     this.busy = true
     this.declined = false
     this.notify()
-    const view = viewOf(await this.bridge.request('os', { type: 'makeDefault' }))
-    this.busy = false
-    this.view = view
-    this.declined = view !== 'default'
-    this.notify()
+    try {
+      this.view = viewOf(await this.bridge.request('os', { type: 'makeDefault' }))
+    } catch {
+      // Main failed to answer: the row keeps what it knew and says the change did not happen.
+    } finally {
+      this.busy = false
+      this.declined = this.view !== 'default'
+      this.notify()
+    }
   }
 }

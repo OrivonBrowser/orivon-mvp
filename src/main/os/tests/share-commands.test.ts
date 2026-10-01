@@ -51,8 +51,9 @@ describe('Email link', () => {
     const { window, deps } = setup('b')
     await emailLinkCommand(window, deps)
     expect(deps.confirm).toHaveBeenCalledTimes(1)
-    const question = deps.confirm.mock.calls[0]?.[1] as { scheme: string, url: string, origin: string }
+    const question = deps.confirm.mock.calls[0]?.[1] as { scheme: string, url: string, origin: string, initiator?: string }
     expect(question.scheme).toBe('mailto')
+    expect(question.initiator).toBe('person')
     expect(question.origin).toBe('https://two.example')
     expect(deps.openExternal).toHaveBeenCalledWith('mailto:?subject=Two%20%26%20more&body=https%3A%2F%2Ftwo.example%2Fx')
     expect(question.url).toBe('mailto:?subject=Two%20%26%20more&body=https%3A%2F%2Ftwo.example%2Fx')

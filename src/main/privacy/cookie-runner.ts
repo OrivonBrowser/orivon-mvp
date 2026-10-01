@@ -28,9 +28,9 @@ async function restore (jar: Pick<CookieJar, 'set'>, cookie: Cookie): Promise<vo
       name: cookie.name,
       value: cookie.value,
       ...(cookie.hostOnly === true ? {} : { domain: cookie.domain }),
-      path: cookie.path,
-      secure: cookie.secure,
-      httpOnly: cookie.httpOnly,
+      path: cookie.path ?? '/',
+      secure: cookie.secure === true,
+      httpOnly: cookie.httpOnly === true,
       ...(cookie.session === true || cookie.expirationDate === undefined ? {} : { expirationDate: cookie.expirationDate }),
       sameSite: cookie.sameSite
     })

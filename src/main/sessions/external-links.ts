@@ -15,6 +15,8 @@ export interface ExternalLinkQuestion {
   readonly url: string
   /** The page asking, so the person can judge who wants this. */
   readonly origin: string
+  /** The person started it from the menu: the dialog then does not say a site wants anything. */
+  readonly initiator?: 'person'
 }
 
 /**

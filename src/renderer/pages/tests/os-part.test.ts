@@ -44,6 +44,19 @@ describe('the os Settings part', () => {
     expect(redraws()).toBe(2)
   })
 
+  it('stops waiting and says it did not happen when main fails to answer', async () => {
+    const request = vi.fn(async (_domain: string, command: { type: string }) => {
+      if (command.type === 'makeDefault') throw new Error('main failed')
+      return await Promise.resolve({ state: 'can-set' })
+    })
+    const p = new OsPart({ request } as unknown as OrivonInternal, () => {})
+    await p.load()
+    await p.makeDefault()
+    expect(p.busy).toBe(false)
+    expect(p.declined).toBe(true)
+    expect(p.view).toBe('can-set')
+  })
+
   it('says the system declined when it is still not the default afterwards', async () => {
     const { part: p } = part([{ state: 'can-set' }, { state: 'can-set', ok: false }])
     await p.load()

@@ -11,19 +11,19 @@ type Candidate = CertificateLike | null | undefined
 
 const readable = (certificate: Candidate): certificate is CertificateLike => typeof certificate?.data === 'string' && certificate.data !== ''
 
-/** Records the first certificate that can be read: the validated one, which has its issuers, else the one presented. */
-export function noteInto (cache: CertificateCache, host: string, candidates: readonly Candidate[]): void {
+/** Records the first certificate that can be read: the validated one, which has its issuers, else the one presented. `trusted` says the connection was accepted. */
+export function noteInto (cache: CertificateCache, host: string, trusted: boolean, candidates: readonly Candidate[]): void {
   try {
     const certificate = candidates.find(readable)
     if (certificate === undefined) return
-    // A host that keeps presenting the same certificate costs one hash, not a walk of the chain.
-    if (cache.leafOf(host) === sha256Of(certificate.data)) return
-    cache.set(host, chainOf(certificate))
+    // The same certificate again, with nothing to upgrade, costs one hash.
+    if (cache.leafOf(host) === sha256Of(certificate.data) && (!trusted || cache.trustedOf(host))) return
+    cache.set(host, chainOf(certificate), trusted)
   } catch (error) {
     console.error('[auth] reading a certificate failed:', error instanceof Error ? error.message : 'unknown')
   }
 }
 
-export function noteCertificate (host: string, ...candidates: readonly Candidate[]): void {
-  noteInto(certificates, host, candidates)
+export function noteCertificate (host: string, trusted: boolean, ...candidates: readonly Candidate[]): void {
+  noteInto(certificates, host, trusted, candidates)
 }

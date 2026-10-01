@@ -7,6 +7,8 @@ import { watchCertErrors } from './cert-error-watch.js'
 import { challenges } from './auth-state.js'
 import { handleSelectClientCertificate } from './client-certificate.js'
 import { handleLogin } from './login-handler.js'
+import { hostsOfTabs } from './certificate-open.js'
+import { certificates } from './note-certificate.js'
 import { loadOf } from './tab-load.js'
 import { requestSlot } from '../overlays/tab-slots.js'
 import { upgradeTracker } from '../privacy/https-fallback.js'
@@ -21,6 +23,7 @@ export const installAuth: ShellInstaller = {
     const certificate = { findTab, ask: askChooser, formatDate, now: Date.now }
     app.on('login', (event, contents, details, info, callback) => { handleLogin(login, event, contents, details, info, callback) })
     app.on('select-client-certificate', (event, contents, url, list, callback) => { handleSelectClientCertificate(certificate, event, contents, url, list, callback) })
+    certificates.keepHosts(() => hostsOfTabs(services.windows.all()))
     const certErrors = { findTab, ask: requestSlot, claimed: (id: number, url: string, code: number) => upgradeTracker.claims(id, url, code) }
     services.tabLifecycle.subscribe({
       tabCreated: (contents) => { watchCertErrors(contents, certErrors) },

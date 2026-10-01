@@ -33,7 +33,7 @@ export function copyLinkCommand (target: ShellWindow, deps: ShareDeps, tabId?: s
   }
 }
 
-/** Asks before handing the message to the mail program, as a page that opens a `mailto:` link is asked. */
+/** Asks before handing the message to the mail program; the dialog says the person started it, since no page asked. */
 export async function emailLinkCommand (target: ShellWindow, deps: ShareDeps, tabId?: string): Promise<void> {
   const tab = tabOf(target, tabId)
   const address = shareAddressFor(tab)
@@ -41,7 +41,7 @@ export async function emailLinkCommand (target: ShellWindow, deps: ShareDeps, ta
   const url = mailtoFor(tab.title, address)
   try {
     const origin = originFromUrl(tab.url) ?? address
-    if (!await deps.confirm(target.window, { scheme: 'mailto', url, origin })) return
+    if (!await deps.confirm(target.window, { scheme: 'mailto', url, origin, initiator: 'person' })) return
     await deps.openExternal(url)
   } catch (error) {
     console.error('[os] could not open the mail program', error)

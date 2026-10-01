@@ -1,6 +1,6 @@
 // The certificate viewer in the running shell: a page's chain, validity and fingerprint read from the one
-// verify proc, opened from the command and from the site-info popup, with the empty state for a host whose
-// certificate was not noted. The fixture's own certificate is accepted through a `certificate-error` listener
+// verify proc, opened from the command and from the site-info popup, kept for a page that is open however many
+// other hosts connect. The fixture's own certificate is accepted through a `certificate-error` listener
 // the test adds in main. Set ORIVON_UI_SHOTS_DIR to also write screenshots in both colour schemes.
 import { execFileSync } from 'node:child_process'
 import { X509Certificate } from 'node:crypto'
@@ -81,7 +81,8 @@ it('shows the certificate of the page, read from the verify proc, from the comma
     const viewer = await waitOverlay(app, 'certificate')
     await viewer.waitForSelector('.cert-grid')
     expect(await text(viewer, '.sheet-title')).toBe('Certificate for 127.0.0.1')
-    expect(await viewer.locator('.tab-btn').count()).toBe(1)
+    // A chain of one has no tab strip.
+    expect(await viewer.locator('.tab-btn').count()).toBe(0)
     const values = await viewer.locator('.cert-grid dd').allInnerTexts()
     const labels = await viewer.locator('.cert-grid dt').allInnerTexts()
     const field = (label: string): string => values[labels.indexOf(label)] ?? ''
@@ -94,8 +95,8 @@ it('shows the certificate of the page, read from the verify proc, from the comma
     expect(field('SHA-256 fingerprint').trim()).toBe(x509.fingerprint256)
     expect(field('Serial number').replace(/:/g, '').replace(/^0+/, '')).toBe(x509.serialNumber.replace(/^0+/, ''))
     await shoot(app, chrome, viewer, 'certificate')
-    // Copy PEM reports an outcome either way: a clipboard that stalls under a virtual display is reported, not waited on.
-    await viewer.click('button:has-text("Copy PEM")')
+    // Copying reports an outcome either way: a clipboard that stalls under a virtual display is reported, not waited on.
+    await viewer.click('button:has-text("Copy certificate")')
     expect(await waitFor(async () => /Copied|Could not copy/.test(await viewer.locator('.cert-status').innerText()))).toBe(true)
     await safely(viewer.keyboard.press('Escape'))
     expect(await waitFor(async () => !(await overlayShown(app, 'certificate')))).toBe(true)
@@ -138,25 +139,16 @@ it('offers no certificate for a page that did not come over https', async () => 
   }
 }, TEST_TIMEOUT_MS)
 
-it('says to reload when no certificate was noted for the host, and the reload reaches the server', async () => {
+it('keeps the certificate of the page on screen when more hosts connect than the viewer remembers', async () => {
   const { app, chrome } = await start()
   try {
     await visit(app, chrome, `${origin}/flood`)
     expect(await waitFor(async () => (await findChrome(app).locator('.tab.active .title').innerText()) === 'Flooded', 60_000)).toBe(true)
     await runCommand(chrome, 'site.certificate')
     const viewer = await waitOverlay(app, 'certificate')
-    await viewer.waitForSelector('.empty-state')
-    expect(await text(viewer, '.empty-state')).toBe('Reload the page to read its certificate.')
-    await shoot(app, chrome, viewer, 'certificate-empty')
-    const before = requests
-    await viewer.click('button:has-text("Reload")')
-    expect(await waitFor(() => requests > before)).toBe(true)
-    expect(await waitFor(async () => !(await overlayShown(app, 'certificate')))).toBe(true)
-    // Whether the reload made the certificate readable again is what the reload fallback depends on.
-    await runCommand(chrome, 'site.certificate')
-    const again = await waitOverlay(app, 'certificate')
-    await again.waitForSelector('.cert-grid, .empty-state')
-    console.info(`[e2e-certificate] after a reload the viewer shows ${(await again.locator('.cert-grid').count()) > 0 ? 'the chain' : 'the empty state'}`)
+    await viewer.waitForSelector('.cert-grid')
+    expect(await text(viewer, '.sheet-title')).toBe('Certificate for 127.0.0.1')
+    expect(await viewer.locator('.empty-state').count()).toBe(0)
   } finally {
     await closeElectron(app)
   }

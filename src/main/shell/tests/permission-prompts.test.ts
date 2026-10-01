@@ -31,6 +31,14 @@ describe('confirmExternalLink', () => {
     expect(options.buttons).toEqual(['Allow', 'Cancel'])
   })
 
+  it('does not say a site wants anything when the person started it', async () => {
+    await confirmExternalLink(WINDOW as never, { scheme: 'mailto', url: 'mailto:?subject=Page', origin: 'https://site.example', initiator: 'person' })
+    const options = lastOptions()
+    expect(options.message).toBe('Open your mail program with this page\'s link?')
+    expect(options.detail).toBe('mailto:?subject=Page')
+    expect(JSON.stringify(options)).not.toContain('site.example')
+  })
+
   // Enter and Escape must both land on Cancel: a stray key press never
   // launches another app.
   it('defaults to Cancel, and Escape cancels', async () => {

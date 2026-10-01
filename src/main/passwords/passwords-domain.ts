@@ -21,7 +21,7 @@ export type ReadResult = { readonly ok: true, readonly text: string } | { readon
 
 export interface PasswordsHost {
   readonly vault: PasswordVault
-  readonly clipboard: SecretClipboard
+  readonly clipboard: Pick<SecretClipboard, 'copy'>
   /** How long a shown password stays up before the page hides it again. */
   readonly revealHideMs: number
   /** The CSV the person picks, or undefined on cancel. */

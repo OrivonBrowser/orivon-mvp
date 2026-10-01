@@ -87,6 +87,12 @@ describe('slugFor and entryFileName', () => {
 })
 
 describe('desktopEntry', () => {
+  it('strips every control character from the name, so a title cannot add a line to the entry', () => {
+    const text = desktopEntry({ ...base, name: 'Mail\nExec=/bin/sh -c evil\r\nTerminal=true', address: 'https://example.com/' })
+    expect(text.split('\n').filter((line) => line.startsWith('Exec='))).toHaveLength(1)
+    expect(text.split('\n').filter((line) => line.startsWith('Terminal='))).toEqual(['Terminal=false'])
+  })
+
   const base = { name: 'Example', program: '/opt/Orivon/orivon', leading: [] as string[] }
 
   it('writes the five lines the desktop needs, and ends with a newline', () => {
@@ -155,5 +161,10 @@ describe('Windows shortcuts', () => {
     expect(linkFileName('Docs: a/b\\c?*')).toBe('Docs a b c.lnk')
     expect(linkFileName('...')).toBe('Orivon.lnk')
     expect(linkFileName('Example Domain')).toBe('Example Domain.lnk')
+  })
+
+  it('does not name a file after a device Windows reserves', () => {
+    for (const name of ['CON', 'nul', 'Com1', 'LPT9', 'aux.']) expect(linkFileName(name)).toMatch(/ \(site\)\.lnk$/)
+    expect(linkFileName('Console')).toBe('Console.lnk')
   })
 })

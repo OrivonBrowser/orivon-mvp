@@ -14,7 +14,7 @@ export interface LoginDeps {
   readonly ask: typeof requestSlot
 }
 
-/** `isMainFrame` is reported but not typed; a build without it is treated by whether the request is a navigation. */
+/** `isMainFrame` is reported but not typed. A build that does not report it leaves every request to be judged by the page the tab is on: a frame's navigation is a navigation request too. */
 type LoginDetails = AuthenticationResponseDetails & { isMainFrame?: boolean }
 
 const bare = (host: string): string => host.replace(/^\[|\]$/g, '').toLowerCase()
@@ -56,7 +56,7 @@ export function handleLogin (
     return
   }
   const server: AuthServer = { scheme: url.protocol.replace(/:$/, ''), host: info.host, port: info.port, isProxy: info.isProxy, realm: info.realm }
-  const mainFrame = details.isMainFrame ?? details.isRequestForNavigation
+  const mainFrame = details.isMainFrame === true
   const challenge = deps.challenges.add({
     owner: found.window,
     tabId: found.tabId,

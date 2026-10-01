@@ -10,7 +10,7 @@ const SERVER: AuthServer = { scheme: 'http', host: '127.0.0.1', port: 8080, isPr
 
 interface Login { id: string, origin: string, username: string, created: number, used: number }
 
-function setup (over: { vault?: 'ready' | 'unavailable' | 'private', logins?: Login[], autofill?: boolean, active?: string } = {}): {
+function setup (over: { vault?: 'ready' | 'unavailable' | 'private', logins?: Login[], autofill?: boolean, offerToSave?: boolean, active?: string } = {}): {
   handler: OverlayHandler
   challenges: AuthChallenges
   window: object
@@ -32,7 +32,7 @@ function setup (over: { vault?: 'ready' | 'unavailable' | 'private', logins?: Lo
     list: (origin?: string) => logins.filter((login) => origin === undefined || login.origin === origin),
     reveal: vi.fn(async (id: string) => id === 'l1' ? 'saved-secret' : undefined)
   } as unknown as PasswordVault
-  const services = { passwords: vault, settings: { get: (key: string) => key === 'passwords.autofill' ? over.autofill ?? true : undefined } }
+  const services = { passwords: vault, settings: { get: (key: string) => key === 'passwords.autofill' ? over.autofill ?? true : key === 'passwords.offerToSave' ? over.offerToSave ?? true : undefined } }
   const def = authSheetOverlayFor({ challenges, submitted })
   const handler = def.attach({ window, services, send: vi.fn(), close } as unknown as OverlayWindow)
   const answers: unknown[] = []
@@ -192,6 +192,15 @@ describe('the sign-in overlay', () => {
     await priv.handler.request({ type: 'submit', id: privId, username: 'u', password: 'p', remember: true })
     expect(priv.submitted).not.toHaveBeenCalled()
     expect(priv.challenges.takeRemember(priv.window, 't1')).toBeUndefined()
+  })
+
+  it('offers and keeps nothing when the person turned the offer to save passwords off', async () => {
+    const s = setup({ offerToSave: false })
+    const id = s.add()
+    expect((s.handler.show?.({ id }) as AuthView).canRemember).toBe(false)
+    await s.handler.request({ type: 'submit', id, username: 'u', password: 'p', remember: true })
+    expect(s.submitted).not.toHaveBeenCalled()
+    expect(s.challenges.takeRemember(s.window, 't1')).toBeUndefined()
   })
 
   it('starts the clock again when its tab goes to the background, and cancels nothing itself', () => {

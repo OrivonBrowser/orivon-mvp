@@ -10,6 +10,7 @@ interface Options {
   isPackaged?: boolean
   writeFile?: ShortcutHost['writeFile']
   writeLink?: ShortcutHost['writeLink']
+  taken?: string[]
 }
 
 function host (options: Options = {}): ShortcutHost & { files: Map<string, { text: string, mode: number }>, directories: string[], links: Written[] } {
@@ -27,6 +28,7 @@ function host (options: Options = {}): ShortcutHost & { files: Map<string, { tex
     makeDirectory: async (path) => { directories.push(path) },
     writeFile: options.writeFile ?? (async (path, text, mode) => { files.set(path, { text, mode }) }),
     writeLink: options.writeLink ?? ((path, details) => { links.push({ path, options: details }); return true }),
+    exists: (path) => options.taken?.includes(path) === true || links.some((link) => link.path === path),
     files,
     directories,
     links
@@ -95,6 +97,19 @@ describe('creating a shortcut on Windows', () => {
     expect(await createShortcut(h, { ...REQUEST, profileId: '0123456789ab' })).toEqual({ ok: true, where: 'desktop' })
     expect(h.links).toEqual([{ path: 'C:\\Users\\ada\\Desktop/Example.lnk', options: { target: '/opt/Orivon/orivon', args: '"--orivon-profile=0123456789ab" "https://example.com/a"', description: 'Example' } }])
     expect(h.files.size).toBe(0)
+  })
+
+  it('never writes over a shortcut the person already has, and numbers its own', async () => {
+    const h = host({ platform: 'win32', taken: ['C:\\Users\\ada\\Desktop/Example.lnk', 'C:\\Users\\ada\\Desktop/Example (2).lnk'] })
+    await createShortcut(h, REQUEST)
+    expect(h.links.map((link) => link.path)).toEqual(['C:\\Users\\ada\\Desktop/Example (3).lnk'])
+    await createShortcut(h, REQUEST)
+    expect(h.links.map((link) => link.path)[1]).toBe('C:\\Users\\ada\\Desktop/Example (4).lnk')
+  })
+
+  it('gives up rather than overwrite when every numbered name is taken', async () => {
+    const taken = ['C:\\Users\\ada\\Desktop/Example.lnk', ...Array.from({ length: 98 }, (_, index) => `C:\\Users\\ada\\Desktop/Example (${String(index + 2)}).lnk`)]
+    expect(await createShortcut(host({ platform: 'win32', taken }), REQUEST)).toEqual({ ok: false, reason: 'failed' })
   })
 
   it('reports a link the system would not write', async () => {

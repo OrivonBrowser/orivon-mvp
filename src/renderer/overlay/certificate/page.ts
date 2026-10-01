@@ -2,7 +2,7 @@
 // Main reads the chain and copies the PEM; the page draws what it is sent and names a certificate by its place.
 import type { CertificatePage } from '../../../main/auth/certificate-overlay.js'
 import type { CertificateView, Party } from '../../../main/auth/certificate-view.js'
-import { h } from '../../pages/shared/dom.js'
+import { h, replaceChildren } from '../../pages/shared/dom.js'
 import { lockIcon } from '../../pages/shared/icons.js'
 import type { Overlay, OverlayPage } from '../kit.js'
 import './certificate.css'
@@ -42,18 +42,19 @@ export const certificatePage: OverlayPage = {
     }
 
     function empty (host: string): void {
-      const reload = h('button', { type: 'button', className: 'btn primary' }, 'Reload')
-      reload.addEventListener('click', () => { void overlay.request({ type: 'reload' }) })
+      const done = close()
       card.replaceChildren(
         h('h1', { className: 'sheet-title', id: 'cert-title' }, `Certificate for ${host}`),
-        h('div', { className: 'empty-state compact', role: 'status' }, lockIcon(), h('p', null, 'Reload the page to read its certificate.')),
-        h('div', { className: 'btn-row' }, close(), reload))
+        h('div', { className: 'empty-state compact', role: 'status' }, lockIcon(), h('p', null, 'Orivon did not record the certificate this page loaded over.')),
+        h('div', { className: 'btn-row' }, done))
       card.setAttribute('aria-labelledby', 'cert-title')
-      reload.focus()
+      done.focus()
     }
 
     function chain (host: string, certificates: readonly CertificateView[]): void {
       let at = 0
+      // A chain of one has nothing to switch between: a lone tab would only look like a stray focused button.
+      const showTabs = certificates.length >= 2
       const body = h('div', { className: 'cert-body' })
       const tabs = h('div', { className: 'tabs', role: 'tablist', ariaLabel: 'Certificate chain' })
       const buttons = certificates.map((certificate, index) => {
@@ -83,7 +84,7 @@ export const certificatePage: OverlayPage = {
         const date = (ms: number, note: string | null): HTMLElement =>
           h('span', { className: note === null ? '' : 'cert-bad' }, formatDate(ms), note === null ? null : ` (${note})`)
         const status = h('span', { className: 'cert-status', role: 'status' })
-        const copy = h('button', { type: 'button', className: 'link-btn' }, 'Copy PEM')
+        const copy = h('button', { type: 'button', className: 'link-btn' }, 'Copy certificate (PEM)')
         copy.addEventListener('click', () => {
           void overlay.request<{ ok?: boolean } | undefined>({ type: 'copyPem', index }).then((reply) => {
             status.textContent = reply?.ok === true ? 'Copied' : 'Could not copy'
@@ -91,8 +92,8 @@ export const certificatePage: OverlayPage = {
             feedback = setTimeout(() => { status.textContent = '' }, FEEDBACK_MS)
           })
         })
-        body.setAttribute('role', 'tabpanel')
-        body.setAttribute('aria-labelledby', `cert-tab-${String(index)}`)
+        body.setAttribute('role', showTabs ? 'tabpanel' : 'group')
+        body.setAttribute('aria-labelledby', showTabs ? `cert-tab-${String(index)}` : 'cert-title')
         body.replaceChildren(
           h('dl', { className: 'cert-grid' },
             h('dt', null, 'Issued to'), h('dd', null, party(certificate.subject)),
@@ -104,14 +105,16 @@ export const certificatePage: OverlayPage = {
           h('div', { className: 'cert-actions' }, copy, status))
       }
 
+      const done = close()
       card.setAttribute('aria-labelledby', 'cert-title')
-      card.replaceChildren(
+      replaceChildren(card,
         h('h1', { className: 'sheet-title', id: 'cert-title' }, `Certificate for ${host}`),
-        tabs,
+        showTabs ? tabs : null,
         body,
-        h('div', { className: 'btn-row' }, close()))
+        h('div', { className: 'btn-row' }, done))
       select(0)
-      buttons[0]?.focus()
+      if (showTabs) buttons[0]?.focus()
+      else done.focus()
     }
 
     return {

@@ -72,6 +72,10 @@ function createAuthSheet (deps: AuthSheetDeps): (win: OverlayWindow) => OverlayH
       return originFromUrl(originOf(challenge.server)) ?? undefined
     }
 
+    /** Whether a password typed here may be kept: the vault can hold it, and the person has not turned the offer off. */
+    const canRemember = (origin: string | undefined): boolean =>
+      origin !== undefined && services.passwords.state() === 'ready' && services.settings.get('passwords.offerToSave')
+
     /** The newest login saved for this server, when the sheet may offer it: a first ask, from the page itself. */
     const savedFor = (challenge: Challenge, origin: string | undefined): { id: string, username: string } | undefined => {
       if (origin === undefined || !challenge.first || challenge.mismatch) return undefined
@@ -101,7 +105,7 @@ function createAuthSheet (deps: AuthSheetDeps): (win: OverlayWindow) => OverlayH
           retry: !challenge.first,
           username: challenge.username !== '' ? challenge.username : saved?.username ?? '',
           saved: saved?.username ?? null,
-          canRemember: origin !== undefined && services.passwords.state() === 'ready'
+          canRemember: canRemember(origin)
         }
       },
       request: async (command) => {
@@ -124,7 +128,7 @@ function createAuthSheet (deps: AuthSheetDeps): (win: OverlayWindow) => OverlayH
           if (password === '' || shownId !== asked.id || current(asked.id) === undefined) return undefined
         }
         if (asked.username === '' && password === '') return undefined
-        const remember = asked.remember && origin !== undefined && services.passwords.state() === 'ready'
+        const remember = asked.remember && canRemember(origin)
         deps.challenges.answer(asked.id, { username: asked.username, password }, remember && origin !== undefined ? { origin } : undefined)
         if (remember) deps.submitted(window, services.passwords, challenge.tabId)
         close()

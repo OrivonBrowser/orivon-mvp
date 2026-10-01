@@ -53,6 +53,8 @@ export interface EntryInput {
 }
 
 const NO_CONTROL = /[\u0000-\u001f\u007f]/
+/** Every run of control characters in a name: a line break there would start another line of the entry. */
+const CONTROL_RUNS = /[\u0000-\u001f\u007f]+/g
 
 /** The flags that open `input.address` in the profile it was made in. */
 export function launchArguments (input: Pick<EntryInput, 'address' | 'leading' | 'profileId'>): string[] {
@@ -65,7 +67,7 @@ export function desktopEntry (input: EntryInput): string {
   return [
     '[Desktop Entry]',
     'Type=Application',
-    `Name=${entryString(input.name.replace(NO_CONTROL, ' '))}`,
+    `Name=${entryString(input.name.replace(CONTROL_RUNS, ' '))}`,
     `Exec=${arguments_.map(execArgument).join(' ')}`,
     'Icon=orivon',
     'Terminal=false',
@@ -74,10 +76,14 @@ export function desktopEntry (input: EntryInput): string {
   ].join('\n')
 }
 
+/** Names Windows keeps for devices: a file called any of these, with any extension, cannot be created. */
+const RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i
+
 /** A file name Windows accepts, from the shortcut's name. */
 export function linkFileName (name: string): string {
   const safe = name.replace(/[<>:"/\\|?*]/g, ' ').replace(/\s+/g, ' ').replace(/[. ]+$/, '').trim()
-  return `${safe === '' ? 'Orivon' : safe}.lnk`
+  if (safe === '') return 'Orivon.lnk'
+  return `${RESERVED_NAME.test(safe) ? `${safe} (site)` : safe}.lnk`
 }
 
 /** The argument string of a Windows shortcut: each argument in double quotes. An address the URL parser produced holds no

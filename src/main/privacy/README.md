@@ -101,8 +101,8 @@ control and text-direction characters replaced with `?`.
 **A site's cookies are its own host's and its parent domains', inside one registrable domain.** A sibling
 subdomain's cookies are not listed for it, and a cookie set by an embedded frame of another site is listed under that
 site, not the page's. Removing a cookie goes by the cookie's own scheme (from Secure), host and path, which
-Electron resolves by name for that address, so a second cookie of the same name that the same address reaches can go
-with it.
+Electron resolves by name for that address, so a second cookie of the same name that the same address reaches goes
+with it; `removeCookies` reads those back and sets the ones that were not asked for again.
 
 **The all-sites list is approximate.** Electron has no per-origin usage API, so `site-data-inventory.ts` builds the list from
 the cookie jar and the per-origin IndexedDB folders under the session's storage path (`<scheme>_<host>_<port>`).
@@ -115,5 +115,12 @@ path and lists its cookies only.
 and the origins found on disk with their ports. A site that kept only local storage at a port no folder or cookie
 shows is out of reach of the all-sites list; the site-info popover clears the exact origin it was opened for.
 
-**The domain refuses what it did not list.** `removeSite` and `cookies` act only on a domain its last `list` returned,
-and re-read what that site keeps at the moment of the call.
+**The domain refuses what it did not list.** `removeSite`, `cookies` and `removeCookie` act only on a domain its last
+`list` returned, and re-read what that site keeps at the moment of the call; `removeCookie` looks its key up among that
+domain's cookies only.
+
+**The header handlers see every web request.** The cookie and signal handlers are registered for `http`, `https`, `ws`
+and `wss` with no resource-type filter, because the web-request owner has no way to withdraw a registration and the
+controls can be turned on at any time. Each request therefore makes a round trip through the main process even when
+every control is off, where the handler returns what it was given. Registering only while a control is on would
+remove that cost and needs the owner to support removal first.

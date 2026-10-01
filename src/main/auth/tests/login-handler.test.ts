@@ -111,13 +111,17 @@ describe('handleLogin', () => {
     expect(s.challenges.get('c2')?.mismatch).toBe(false)
   })
 
-  it('treats an iframe navigation as a subresource, and falls back to isRequestForNavigation without isMainFrame', () => {
-    const s = setup()
+  it('treats an iframe navigation as a subresource, and judges a request that does not say by the page the tab is on', () => {
+    const s = setup({ pageUrl: 'http://127.0.0.1:9090/page' })
     run(s, details({ isMainFrame: false }))
     expect(s.challenges.get('c1')?.mismatch).toBe(true)
+    // A navigation request that does not say whether it is a frame's is never taken for the page's own.
     const { isMainFrame: _unused, ...untyped } = details({ isRequestForNavigation: true }) as AuthenticationResponseDetails & { isMainFrame?: boolean }
     run(s, untyped, info({ realm: 'n' }))
-    expect(s.challenges.get('c2')?.mismatch).toBe(false)
+    expect(s.challenges.get('c2')?.mismatch).toBe(true)
+    const own = setup({ pageUrl: 'http://127.0.0.1:8080/page' })
+    run(own, untyped, info({ realm: 'n' }))
+    expect(own.challenges.get('c1')?.mismatch).toBe(false)
   })
 
   it('cancels an address it cannot read', () => {

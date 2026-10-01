@@ -29,7 +29,8 @@ export function certificateItem (certificate: Certificate, index: number, deps: 
     id: String(index),
     title: subject,
     sub: `Issued by ${certificate.issuerName !== '' ? certificate.issuerName : certificate.issuer.organizations[0] ?? 'an unknown issuer'}`,
-    meta: expires < deps.now() ? `Expired ${deps.formatDate(expires)}` : `Expires ${deps.formatDate(expires)}`
+    meta: expires < deps.now() ? `Expired ${deps.formatDate(expires)}` : `Expires ${deps.formatDate(expires)}`,
+    expired: expires < deps.now()
   }
 }
 
@@ -49,13 +50,20 @@ export function handleSelectClientCertificate (
     return
   }
   const host = hostOf(url)
+  const pageHost = hostOf(contents?.getURL() ?? '')
+  // Expired certificates go last; each keeps the place Electron gave it, which is what comes back.
+  const items = list.map((certificate, index) => certificateItem(certificate, index, deps))
+  items.sort((a, b) => Number(a.expired === true) - Number(b.expired === true))
   void deps.ask(found.window, found.tabId, {
     title: 'Choose a certificate',
     origin: host,
-    line: `${host} asks you to identify yourself with a certificate.`,
+    line: 'This site asks you to identify yourself with a certificate.',
+    // A page on another site can embed a request to this one; once chosen, the identity is kept for the session.
+    ...(pageHost !== host ? { warning: `This request comes from ${host}, not from the page you are on.` } : {}),
+    preselect: false,
     confirm: 'Use certificate',
     empty: 'No certificates are installed on this computer.',
-    items: list.map((certificate, index) => certificateItem(certificate, index, deps))
+    items
   }).then((choice) => {
     // Only an index that was offered can come back; anything else sends no certificate.
     const chosen = choice !== null && /^\d{1,4}$/.test(choice) ? list[Number(choice)] : undefined

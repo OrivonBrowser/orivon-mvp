@@ -16,6 +16,8 @@ export interface ShortcutHost {
   makeDirectory: (path: string) => Promise<void>
   writeFile: (path: string, text: string, mode: number) => Promise<void>
   writeLink: (path: string, options: { target: string, args: string, description: string }) => boolean
+  /** Whether something is already at `path`: a shortcut is never written over a file the person already has. */
+  exists: (path: string) => boolean
 }
 
 export interface ShortcutRequest {
@@ -42,6 +44,19 @@ function dataHome (host: ShortcutHost): string {
   return isAbsolute(set) ? set : join(host.home(), '.local', 'share')
 }
 
+/** The first path on the desktop that nothing occupies: `Name.lnk`, then `Name (2).lnk` and so on. */
+function freeLinkPath (host: ShortcutHost, name: string): string | undefined {
+  const file = linkFileName(name)
+  const stem = file.slice(0, -'.lnk'.length)
+  for (let copy = 1; copy <= MAX_COPIES; copy += 1) {
+    const path = join(host.desktop(), copy === 1 ? file : `${stem} (${String(copy)}).lnk`)
+    if (!host.exists(path)) return path
+  }
+  return undefined
+}
+
+const MAX_COPIES = 99
+
 export async function createShortcut (host: ShortcutHost, request: ShortcutRequest): Promise<ShortcutResult> {
   const { program, leading } = launcher(host)
   const profile = request.profileId === undefined ? {} : { profileId: request.profileId }
@@ -53,7 +68,9 @@ export async function createShortcut (host: ShortcutHost, request: ShortcutReque
       return { ok: true, where: 'applications' }
     }
     if (host.platform === 'win32') {
-      const written = host.writeLink(join(host.desktop(), linkFileName(request.name)), {
+      const path = freeLinkPath(host, request.name)
+      if (path === undefined) return { ok: false, reason: 'failed' }
+      const written = host.writeLink(path, {
         target: program,
         args: linkArguments({ address: request.address, leading, ...profile }),
         description: request.name

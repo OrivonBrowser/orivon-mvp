@@ -10,3 +10,6 @@ body[data-overlay='chooser'] .listbox-item { padding: 8px 12px; }
 body[data-overlay='chooser'] .empty-state { margin: 8px 0 12px; }
 body[data-overlay='chooser'] .empty-state p { margin: 0; }
 body[data-overlay='chooser'] .btn-row { margin-top: 0; }
+body[data-overlay='chooser'] .chooser-warning { margin: 10px 0 0; }
+body[data-overlay='chooser'] .chooser-caution { margin: -8px 0 12px; color: var(--wdanger-text); font-size: 12px; }
+body[data-overlay='chooser'] .chooser-caution[hidden] { display: none; }

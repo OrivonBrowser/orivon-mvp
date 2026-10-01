@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createRunCertificate } from '../../../protocols/verifier-host/serve/certificate.js'
 import type { OverlayHandler, OverlayWindow } from '../../overlays/overlay-types.js'
 import { CertificateCache, MAX_HOSTS } from '../certificate-cache.js'
-import { activeHttpsHost, certificateAvailable, httpsHostOf, openCertificate } from '../certificate-open.js'
+import { activeHttpsHost, certificateAvailable, hostsOfTabs, httpsHostOf, openCertificate } from '../certificate-open.js'
 import { certificateOverlayFor } from '../certificate-overlay.js'
 import type { CertificatePage } from '../certificate-overlay.js'
 import { chainOf, MAX_CHAIN, sha256Of } from '../certificate-view.js'
@@ -77,6 +77,29 @@ describe('CertificateCache', () => {
     expect(cache.get('EXTRA.test')).toMatchObject({ at: 1 })
   })
 
+  it('keeps the host of a page on screen however many others connect', () => {
+    const cache = new CertificateCache(() => 1)
+    const chain = chainOf(like('a'))
+    cache.keepHosts(() => new Set(['h0.test']))
+    for (let i = 0; i < MAX_HOSTS + 20; i++) cache.set(`h${String(i)}.test`, chain)
+    expect(cache.size).toBe(MAX_HOSTS)
+    expect(cache.get('h0.test')).toBeDefined()
+    expect(cache.get('h1.test')).toBeUndefined()
+  })
+
+  it('never lets a connection that was not accepted replace the chain of one that was', () => {
+    const cache = new CertificateCache()
+    cache.set('a.test', chainOf(like('good')), true)
+    cache.set('a.test', chainOf(like('intercepted')), false)
+    expect(cache.get('a.test')?.chain[0]?.subject.commonName).toBe('good')
+    cache.set('a.test', chainOf(like('renewed')), true)
+    expect(cache.get('a.test')?.chain[0]?.subject.commonName).toBe('renewed')
+    cache.set('b.test', chainOf(like('first')), false)
+    cache.set('b.test', chainOf(like('second')), false)
+    expect(cache.get('b.test')).toMatchObject({ trusted: false })
+    expect(cache.get('b.test')?.chain[0]?.subject.commonName).toBe('second')
+  })
+
   it('stores nothing for an empty host or chain', () => {
     const cache = new CertificateCache()
     cache.set('', chainOf(like('a')))
@@ -89,25 +112,36 @@ describe('noteCertificate', () => {
   it('records the chain for the host and does not walk it again for the same certificate', () => {
     const cache = new CertificateCache()
     const leaf = like('leaf', like('root'))
-    noteInto(cache, 'Leaf.test', [leaf])
+    noteInto(cache, 'Leaf.test', true, [leaf])
     expect(cache.get('leaf.test')?.chain).toHaveLength(2)
     const chain = cache.get('leaf.test')?.chain
-    noteInto(cache, 'leaf.test', [leaf])
+    noteInto(cache, 'leaf.test', true, [leaf])
     expect(cache.get('leaf.test')?.chain).toBe(chain)
-    noteInto(cache, 'leaf.test', [like('newer')])
+    noteInto(cache, 'leaf.test', true, [like('newer')])
     expect(cache.get('leaf.test')?.chain[0]?.subject.commonName).toBe('newer')
+  })
+
+  it('upgrades what an unaccepted connection left once an accepted one presents the same certificate, and not the other way', () => {
+    const cache = new CertificateCache()
+    const leaf = like('leaf')
+    noteInto(cache, 'a.test', false, [leaf])
+    expect(cache.trustedOf('a.test')).toBe(false)
+    noteInto(cache, 'a.test', true, [leaf])
+    expect(cache.trustedOf('a.test')).toBe(true)
+    noteInto(cache, 'a.test', false, [like('other')])
+    expect(cache.get('a.test')?.chain[0]?.subject.commonName).toBe('leaf')
   })
 
   it('takes the first certificate that can be read', () => {
     const cache = new CertificateCache()
-    noteInto(cache, 'a.test', [{} as never, null, like('second')])
+    noteInto(cache, 'a.test', true, [{} as never, null, like('second')])
     expect(cache.get('a.test')?.chain[0]?.subject.commonName).toBe('second')
   })
 
   it('never throws into the verify proc', () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const cache = new CertificateCache()
-    for (const bad of [null, undefined, {}, { data: 5 }, { data: 'x', issuer: null }]) expect(() => { noteInto(cache, 'a.test', [bad as never]) }).not.toThrow()
+    for (const bad of [null, undefined, {}, { data: 5 }, { data: 'x', issuer: null }]) expect(() => { noteInto(cache, 'a.test', true, [bad as never]) }).not.toThrow()
     log.mockRestore()
   })
 })
@@ -122,6 +156,11 @@ describe('when the viewer may open', () => {
     expect(httpsHostOf('https://Example.com:8443/a')).toBe('example.com')
     expect(httpsHostOf('https://[::1]/')).toBe('::1')
     for (const url of ['http://example.com/', 'orivon://settings', 'file:///x', 'ipfs://bafy', '', 'nonsense']) expect(httpsHostOf(url), url).toBeUndefined()
+  })
+
+  it('names the https hosts of every tab of every window, lower-case', () => {
+    const open = (...urls: string[]): never => ({ tabs: { getState: () => ({ tabs: urls.map((url, index) => ({ id: `t${String(index)}`, url })) }) } }) as never
+    expect([...hostsOfTabs([open('https://A.test/x', 'http://plain.test/'), open('https://b.test:8443/', 'orivon://settings')])].sort()).toEqual(['a.test', 'b.test'])
   })
 
   it('opens for the tab in front when it is https, and for nothing else', () => {
@@ -140,7 +179,7 @@ describe('the certificate overlay', () => {
   function setup (url = 'https://leaf.test/', writeClipboard: (text: string) => void = () => undefined): { handler: OverlayHandler, cache: CertificateCache, close: ReturnType<typeof vi.fn>, reload: ReturnType<typeof vi.fn>, leaf: CertificateLike } {
     const cache = new CertificateCache()
     const leaf = like('leaf')
-    noteInto(cache, 'leaf.test', [leaf])
+    noteInto(cache, 'leaf.test', true, [leaf])
     const reload = vi.fn()
     const close = vi.fn()
     const window = { tabs: { getState: () => ({ activeTabId: 't1', tabs: [{ id: 't1', url }] }), reload } }
@@ -186,17 +225,10 @@ describe('the certificate overlay', () => {
     await expect(s.handler.request({ type: 'copyPem', index: 0 })).resolves.toEqual({ ok: false })
   })
 
-  it('reloads the active tab and closes', async () => {
-    const s = setup()
-    await s.handler.request({ type: 'reload' })
-    expect(s.close).toHaveBeenCalledOnce()
-    expect(s.reload).toHaveBeenCalledWith('t1')
-  })
-
   it('refuses every other command and extra fields', async () => {
     const s = setup()
     s.handler.show?.(undefined)
-    for (const bad of [undefined, null, 'reload', {}, { type: 'open' }, { type: 'reload', index: 0 }, { type: 'copyPem' }, { type: 'copyPem', index: '0' }, { type: 'copyPem', index: 0, pem: 'x' }]) {
+    for (const bad of [undefined, null, 'reload', {}, { type: 'open' }, { type: 'reload' }, { type: 'reload', index: 0 }, { type: 'copyPem' }, { type: 'copyPem', index: '0' }, { type: 'copyPem', index: 0, pem: 'x' }]) {
       expect(await s.handler.request(bad), JSON.stringify(bad)).toBeUndefined()
     }
     expect(s.reload).not.toHaveBeenCalled()

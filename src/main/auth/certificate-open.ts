@@ -20,6 +20,18 @@ export function activeHttpsHost (window: Pick<ShellWindow, 'tabs'>): string | un
   return active === undefined ? undefined : httpsHostOf(active.url)
 }
 
+/** The https hosts every tab of every window shows, lower-case: their certificates are kept while the pages are open. */
+export function hostsOfTabs (windows: ReadonlyArray<Pick<ShellWindow, 'tabs'>>): Set<string> {
+  const hosts = new Set<string>()
+  for (const window of windows) {
+    for (const tab of window.tabs.getState().tabs) {
+      const host = httpsHostOf(tab.url)
+      if (host !== undefined) hosts.add(host.toLowerCase())
+    }
+  }
+  return hosts
+}
+
 /** Whether `site.certificate` would do anything here; the main menu greys its row by it. */
 export function certificateAvailable (window: Pick<ShellWindow, 'tabs'>): boolean {
   return activeHttpsHost(window) !== undefined

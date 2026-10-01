@@ -1,5 +1,5 @@
 // The certificate viewer: the chain the active tab's host presented, read here from what the verify proc noted.
-// The page can ask for two things: the PEM of one certificate of the chain it was shown, copied by main, and a reload.
+// The page can ask for one thing: the PEM of one certificate of the chain it was shown, copied by main.
 import { CLOSE_LIKE_POPUP } from '../overlays/overlay-types.js'
 import type { OverlayDef } from '../overlays/overlay-types.js'
 import { CERTIFICATE_OVERLAY } from './auth-names.js'
@@ -22,13 +22,12 @@ export interface CertificatePage {
   readonly chain: readonly CertificateView[] | null
 }
 
-type Command = { type: 'copyPem', index: number } | { type: 'reload' }
+type Command = { type: 'copyPem', index: number }
 
 function asCommand (command: unknown): Command | undefined {
   if (typeof command !== 'object' || command === null) return undefined
   const { type, index, ...rest } = command as Record<string, unknown>
   if (Object.keys(rest).length > 0) return undefined
-  if (type === 'reload' && index === undefined) return { type }
   return type === 'copyPem' && typeof index === 'number' && Number.isInteger(index) ? { type, index } : undefined
 }
 
@@ -42,7 +41,7 @@ export function certificateOverlayFor (deps: CertificateDeps): OverlayDef {
     closeOn: CLOSE_LIKE_POPUP,
     keep: 'fresh',
     height: { initial: 320, min: 240, max: 460 },
-    attach: ({ window, close }) => {
+    attach: ({ window }) => {
       /** The chain the page on screen was shown, so a copy names a row of it and nothing else. */
       let shown: readonly CertificateView[] = []
       return {
@@ -56,12 +55,6 @@ export function certificateOverlayFor (deps: CertificateDeps): OverlayDef {
         request: async (command) => {
           const asked = asCommand(command)
           if (asked === undefined) return undefined
-          if (asked.type === 'reload') {
-            const { activeTabId } = window.tabs.getState()
-            close()
-            if (activeTabId !== null) window.tabs.reload(activeTabId)
-            return undefined
-          }
           const pem = shown[asked.index]?.pem
           if (pem === undefined) return { ok: false }
           const written = new Promise<boolean>((resolve) => {

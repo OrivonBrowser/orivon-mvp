@@ -7,6 +7,8 @@ export interface ChooserItem {
   readonly title: string
   readonly sub?: string | undefined
   readonly meta?: string | undefined
+  /** The row is out of date: drawn as a problem and listed after the others, and choosing it is warned about. */
+  readonly expired?: boolean | undefined
 }
 
 export interface ChooserSpec {
@@ -14,6 +16,10 @@ export interface ChooserSpec {
   /** The site or device the question is about, drawn as the sheet's origin line. */
   readonly origin?: string | undefined
   readonly line?: string | undefined
+  /** A caution about who is asking, drawn above the list. */
+  readonly warning?: string | undefined
+  /** Whether a lone row starts selected; false when confirming must always be a deliberate choice. Default true. */
+  readonly preselect?: boolean | undefined
   /** The primary button's label. */
   readonly confirm: string
   /** What the sheet says when `items` is empty. */
@@ -27,6 +33,8 @@ export interface ChooserView {
   readonly title: string
   readonly origin: string | null
   readonly line: string | null
+  readonly warning: string | null
+  readonly preselect: boolean
   readonly confirm: string
   readonly empty: string
   readonly items: readonly ChooserItem[]
@@ -59,7 +67,13 @@ export class ChooserStore {
       seen.add(id)
       const sub = cut(item.sub)
       const meta = cut(item.meta)
-      items.push({ id, title: item.title.slice(0, MAX_TEXT), ...(sub === undefined ? {} : { sub }), ...(meta === undefined ? {} : { meta }) })
+      items.push({
+        id,
+        title: item.title.slice(0, MAX_TEXT),
+        ...(sub === undefined ? {} : { sub }),
+        ...(meta === undefined ? {} : { meta }),
+        ...(item.expired === true ? { expired: true } : {})
+      })
     }
     const id = this.newId()
     const view: ChooserView = {
@@ -67,6 +81,8 @@ export class ChooserStore {
       title: spec.title.slice(0, MAX_TEXT),
       origin: cut(spec.origin) ?? null,
       line: cut(spec.line) ?? null,
+      warning: cut(spec.warning) ?? null,
+      preselect: spec.preselect !== false,
       confirm: spec.confirm.slice(0, 40),
       empty: spec.empty.slice(0, MAX_TEXT),
       items
