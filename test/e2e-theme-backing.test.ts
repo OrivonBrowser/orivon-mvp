@@ -87,6 +87,8 @@ for (const mode of ['light', 'dark'] as const) {
       expect(await waitFor(async () => (await dashboardId(app)) === dash)).toBe(true)
       const toDashboard = (await startColours()).find((c) => c.includes('/newtab/'))
       expect(toDashboard?.endsWith(`|${APP_DARK_WASH}`)).toBe(true)
+      expect(await waitFor(async () => (await recorded(app, dash)) === APP_DARK_WASH)).toBe(true)
+      expect(await waitFor(async () => (await windowBackground(app)) === APP_DARK_WASH)).toBe(true)
 
       await chrome.evaluate((n) => { (window as unknown as Shell).orivonShell.openInternal(n) }, 'history')
       expect(await waitFor(async () => (await windowBackground(app)) === INTERNAL[mode])).toBe(true)

@@ -25,9 +25,19 @@ function paint (view: WebContentsView, color: string): void {
   recordViewBackground(view.webContents.id, color)
 }
 
-/** What the view holds when no sheet is over it: the dashboard's wash, an internal page's surface, or the default. Also what the window behind the views shows for the tab on top. */
+const withoutQuery = (url: string): string => url.split(/[?#]/)[0] ?? url
+
+/** Whether `url` is the new-tab page itself, in the dev server's form and in the built file's. */
+export function isDashboardUrl (url: string, dashboardUrl: string): boolean {
+  return withoutQuery(url) === withoutQuery(dashboardUrl)
+}
+
+/** What the view holds when no sheet is over it: the dashboard's wash while it shows the dashboard, an internal
+ * page's surface, or the default. Read from the URL the view shows, so a tab that came back to the dashboard
+ * has the wash again; a page can only choose between the wash and the default this way. Also what the window
+ * behind the views shows for the tab on top. */
 export function restingColor (record: TabRecord): string {
-  if (record.isDashboardTab) return APP_DARK_WASH
+  if (isDashboardUrl(record.view.webContents.getURL(), record.host.dashboardUrl)) return APP_DARK_WASH
   return record.internalPage !== null ? sheetColor() : DEFAULT_BACKGROUND
 }
 

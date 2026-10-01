@@ -3,16 +3,9 @@
 // the new page has not painted yet. Tied to Electron: a view's colour.
 import type { WebContentsView } from 'electron'
 import type { TabRecord } from './tab-types.js'
-import { sheetBackdropOf } from './sheet-backdrop.js'
+import { isDashboardUrl, sheetBackdropOf } from './sheet-backdrop.js'
 import { APP_DARK_WASH, DEFAULT_BACKGROUND } from './theme-colors.js'
 import { recordViewBackground } from './view-background-test-hook.js'
-
-const withoutQuery = (url: string): string => url.split(/[?#]/)[0] ?? url
-
-/** Whether `url` is the new-tab page itself, in the dev server's form and in the built file's. */
-export function isDashboardUrl (url: string, dashboardUrl: string): boolean {
-  return withoutQuery(url) === withoutQuery(dashboardUrl)
-}
 
 /** Paints a view and records the colour for the e2e hook. */
 export function paintBacking (view: WebContentsView, color: string): void {
@@ -33,7 +26,7 @@ export function watchBacking (view: WebContentsView, record: TabRecord, shown: (
   })
   // A navigation that never commits (a download, a 204) leaves the old document: the colour it was painted for comes back.
   wc.on('did-stop-loading', () => {
-    if (!shown() || !record.isDashboardTab || sheetBackdropOf(view) !== undefined) return
+    if (!shown() || !isDashboardUrl(wc.getURL(), record.host.dashboardUrl) || sheetBackdropOf(view) !== undefined) return
     paintBacking(view, APP_DARK_WASH)
   })
 }

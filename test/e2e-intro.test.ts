@@ -54,6 +54,12 @@ it('once, on a fresh profile: shows over the whole window, stays on top of a new
     const content = await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getContentBounds())
     expect(await intro.evaluate(() => [innerWidth, innerHeight])).toEqual([content?.width, content?.height])
 
+    // The keyboard is the welcome screen's in the main process, not only in its document: the dashboard's search box under it does not hold it.
+    const focusedUrls = (): Promise<string[]> => app.evaluate(({ webContents }) =>
+      webContents.getAllWebContents().filter((wc) => wc.isFocused()).map((wc) => wc.getURL()))
+    expect(await waitFor(async () => (await focusedUrls()).some((url) => url.includes('/intro/index.html')))).toBe(true)
+    expect((await focusedUrls()).some((url) => url.includes('/newtab/'))).toBe(false)
+
     // A new tab re-adds its view to the window, which would bury the intro
     // without keepOnTop; it must still be the topmost view afterwards.
     await findChrome(app).evaluate(() => { (window as unknown as { orivonShell: { newTab: () => void } }).orivonShell.newTab() })

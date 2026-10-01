@@ -54,8 +54,9 @@ export interface WindowFrame {
   readonly kiosk: boolean
 }
 
-/** The window's own background colour for the current OS/app theme -- exported
- * so window.ts can paint the chrome view (its own WebContentsView, a separate
+/** The colour a window is created with, and the chrome view's, for the current
+ * OS/app theme (window-backing.ts takes over the window's background once a tab
+ * is shown) -- exported so window.ts can paint the chrome view (its own WebContentsView, a separate
  * surface from the BaseWindow's own background) the SAME colour before it has
  * a pixel of its own to show, one home for the fact rather than a second copy
  * of these constants there. */

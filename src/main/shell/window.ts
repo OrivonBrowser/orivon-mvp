@@ -85,8 +85,9 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // window shown `instant` before either view exists; it does not cover
   // THIS view's own separate surface once attached. Kept live across an OS
   // theme change while the window stays open (theme-colors.ts's
-  // `onThemeUpdated` below), the same pattern window-frame.ts already uses
-  // for the window's own background and title-bar overlay.
+  // `onThemeUpdated` below). window-frame.ts sets the window's creation
+  // colour and keeps its title-bar overlay live; window-backing.ts owns the
+  // window's background once a tab is shown.
   const chromeBackground = windowBackgroundColor(services.profiles.isPrivate)
   chrome.setBackgroundColor(chromeBackground)
   recordViewBackground(chrome.webContents.id, chromeBackground)

@@ -22,7 +22,11 @@ import { findChrome, popoverShown, waitFor, waitForTab } from './smoke-helpers.m
 const FIXTURE_ADDRESS: Rect = { x: 240, y: 44, width: 260, height: 24 }
 
 /** The schemes every state is captured in. */
-const SCHEMES = (process.env['ORIVON_QA_SCHEMES'] ?? 'light,dark').split(',').filter((s): s is 'light' | 'dark' => s === 'light' || s === 'dark')
+const requested = (process.env['ORIVON_QA_SCHEMES'] ?? 'light,dark').split(',').map((s) => s.trim())
+const SCHEMES = requested.filter((s): s is 'light' | 'dark' => s === 'light' || s === 'dark')
+if (SCHEMES.length === 0 || SCHEMES.length !== requested.length) {
+  throw new Error(`ORIVON_QA_SCHEMES must list "light" and/or "dark", comma-separated; got "${process.env['ORIVON_QA_SCHEMES'] ?? ''}"`)
+}
 
 type Shell = { orivonShell: { openInternal: (page: string) => void } }
 

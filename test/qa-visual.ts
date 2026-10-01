@@ -207,7 +207,7 @@ const asHex = (rgb: string): string | undefined => {
  * The colour main paints behind each shown shell view before its page has, against the colour that page paints
  * (the root element's, else the body's). A mismatch is the frame a person sees between the two, in whichever
  * scheme the run is in. A page that paints no background of its own, and a view main records no colour for,
- * has nothing to compare and is left out.
+ * has nothing to compare and is left out, as is an address two views or pages share.
  */
 export async function backingFindings (app: ElectronApplication, pages: Page[]): Promise<BackingFinding[]> {
   const recorded = await app.evaluate(({ BaseWindow }) => {
@@ -224,8 +224,10 @@ export async function backingFindings (app: ElectronApplication, pages: Page[]):
   })
   const found: BackingFinding[] = []
   for (const view of recorded) {
-    const page = pages.find((p) => p.url() === view.url)
-    if (page === undefined || view.color === undefined || isContent(view.url)) continue
+    // Views pair with pages by address: two views or two pages at one address could cross, so neither is compared.
+    const sameAddress = pages.filter((p) => p.url() === view.url)
+    const page = sameAddress[0]
+    if (page === undefined || sameAddress.length > 1 || recorded.filter((v) => v.url === view.url).length > 1 || view.color === undefined || isContent(view.url)) continue
     // A page that paints a gradient (the internal pages) starts it in the colour main backs the view with: its first stop.
     const painted = await page.evaluate(() => [document.documentElement, document.body].flatMap((el) => {
       const style = getComputedStyle(el)

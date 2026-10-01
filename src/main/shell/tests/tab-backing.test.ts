@@ -4,12 +4,13 @@ import type { TabRecord } from '../tab-types.js'
 
 vi.mock('electron', () => ({ nativeTheme: { shouldUseDarkColors: false, on: () => {}, removeListener: () => {} } }))
 
-const { isDashboardUrl, watchBacking } = await import('../tab-backing.js')
+const { watchBacking } = await import('../tab-backing.js')
+const { isDashboardUrl, restingColor } = await import('../sheet-backdrop.js')
 
 const DASHBOARD = 'file:///app/out/renderer/newtab/index.html'
 
-function rig (record: Partial<TabRecord> = {}, shown = true): { wc: EventEmitter, colours: string[] } {
-  const wc = Object.assign(new EventEmitter(), { isDestroyed: () => false, id: 1 })
+function rig (record: Partial<TabRecord> = {}, shown = true): { wc: EventEmitter & { url: string }, colours: string[] } {
+  const wc = Object.assign(new EventEmitter(), { isDestroyed: () => false, id: 1, url: '', getURL (): string { return this.url } })
   const colours: string[] = []
   const view = { webContents: wc, setBackgroundColor: (c: string) => { colours.push(c) } }
   const full = { isDashboardTab: false, internalPage: null, host: { dashboardUrl: DASHBOARD }, ...record } as unknown as TabRecord
@@ -48,13 +49,28 @@ describe('a tab view\'s backing while a navigation starts', () => {
     expect([colours, parked.colours, internal.colours]).toEqual([[], [], []])
   })
 
-  it('puts the dashboard\'s wash back when a navigation never commits, and only for a dashboard tab', () => {
-    const dashboard = rig({ isDashboardTab: true })
+  it('puts the wash back when a navigation never commits and the view still shows the dashboard, whichever way the tab got there', () => {
+    const dashboard = rig()
+    dashboard.wc.url = DASHBOARD
     start(dashboard.wc, 'https://example.com/file.zip')
     dashboard.wc.emit('did-stop-loading')
     expect(dashboard.colours).toEqual(['#FFFFFF', '#0d0e14'])
-    const site = rig()
+    const site = rig({ isDashboardTab: true })
+    site.wc.url = 'https://example.com/'
     site.wc.emit('did-stop-loading')
     expect(site.colours).toEqual([])
+  })
+})
+
+describe('restingColor', () => {
+  const record = (url: string, extra: Partial<TabRecord> = {}): TabRecord =>
+    ({ isDashboardTab: false, internalPage: null, host: { dashboardUrl: DASHBOARD }, view: { webContents: { getURL: () => url } }, ...extra }) as unknown as TabRecord
+
+  it('is the wash for a tab showing the dashboard, even one that left it and came back', () => {
+    expect(restingColor(record(DASHBOARD))).toBe('#0d0e14')
+  })
+
+  it('is the default for a site, even on a tab created as the dashboard', () => {
+    expect(restingColor(record('https://example.com/', { isDashboardTab: true }))).toBe('#FFFFFF')
   })
 })
