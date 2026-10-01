@@ -3,7 +3,7 @@ import type { Bounds } from '../shell/tab-types.js'
 import type { OverlayAnchor, OverlayPlacement } from './overlay-types.js'
 
 /** Gap under a toolbar anchor, and the smallest margin kept to the window edges. */
-const GAP = 6
+export const GAP = 6
 const EDGE = 8
 /** Under an address bar the gap is tighter: the overlay reads as the bar's own dropdown. */
 const ANCHOR_WIDTH_GAP = 4

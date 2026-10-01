@@ -14,6 +14,9 @@ import { askView, reviewView, type AskView, type ReviewRow, type ReviewView } fr
 
 const PROMPT_WIDTH = 360
 
+/** An answer is ignored this long after the question appears, so a click or key meant for the page cannot land on it. Enforced here: the page only draws the buttons as not ready. */
+export const ANSWER_GUARD_MS = 500
+
 type Current = { mode: 'none' } | { mode: 'ask', id: string } | { mode: 'review', tabId: string }
 
 type Command =
@@ -49,8 +52,9 @@ function asShown (payload: unknown): { mode: 'ask', id: string } | { mode: 'revi
   return payload['mode'] === 'ask' && typeof payload['id'] === 'string' ? { mode: 'ask', id: payload['id'] } : undefined
 }
 
-export function createSitePrompt ({ window, services, close }: OverlayWindow, access: PageAccess<Electron.WebContents> = pageAccess): OverlayHandler {
+export function createSitePrompt ({ window, services, close, send }: OverlayWindow, access: PageAccess<Electron.WebContents> = pageAccess, now: () => number = Date.now): OverlayHandler {
   let current: Current = { mode: 'none' }
+  let shownAt = 0
   let stopWatching: (() => void) | undefined
 
   /** A new document ends the review; a page that only rewrites its own address does not. */
@@ -85,12 +89,13 @@ export function createSitePrompt ({ window, services, close }: OverlayWindow, ac
       current = { mode: 'none' }
       stopWatching?.()
       stopWatching = undefined
+      shownAt = now()
       const shown = asShown(payload)
       if (shown?.mode === 'ask') {
         const ask = pendingAsk(shown.id)
         if (ask === undefined || ask.window !== window) return undefined
         current = { mode: 'ask', id: ask.id }
-        return askView(ask.id, ask.origin, ask.kinds, ask.sysex, services.isPrivate)
+        return askView(ask.id, ask.origin, ask.kinds, ask.sysex, services.isPrivate, ANSWER_GUARD_MS)
       }
       if (shown?.mode === 'review') {
         const tabId = window.tabs.getState().activeTabId
@@ -111,7 +116,7 @@ export function createSitePrompt ({ window, services, close }: OverlayWindow, ac
       if (asked.type === 'answer') {
         if (current.mode !== 'ask' || current.id !== asked.id) return undefined
         const ask = pendingAsk(asked.id)
-        if (ask === undefined) return undefined
+        if (ask === undefined || now() - shownAt < ANSWER_GUARD_MS) return undefined
         // The answer first, then the close: closing alone would settle the ask as "not now".
         ask.settle(asked.answer)
         close()
@@ -138,6 +143,13 @@ export function createSitePrompt ({ window, services, close }: OverlayWindow, ac
         return { kind: asked.kind, value: asked.value }
       }
       return undefined
+    },
+
+    // A resize moves the question under the person's pointer: the guard starts over.
+    moved: () => {
+      if (current.mode !== 'ask') return
+      shownAt = now()
+      send({ type: 'arm' })
     },
 
     closed: (reason) => {

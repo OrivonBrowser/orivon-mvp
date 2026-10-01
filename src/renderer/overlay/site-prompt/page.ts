@@ -7,7 +7,7 @@ import { closeIcon } from '../../pages/shared/icons.js'
 import { SITE_KIND_ICONS } from '../../pages/shared/site-kind-icons.js'
 import type { SiteKind } from '../../../main/site-settings/kinds.js'
 import type { Overlay, OverlayPage } from '../kit.js'
-import { ARMING_MS, isAskView, isReviewView, segmentAfterKey } from './view.js'
+import { isAskView, isReviewView, segmentAfterKey } from './view.js'
 import './site-prompt.css'
 
 type Choice = 'ask' | 'allow' | 'block'
@@ -22,19 +22,26 @@ export const sitePromptPage: OverlayPage = {
     const root = h('div', { className: 'site-prompt', tabIndex: -1 })
     root.setAttribute('role', 'dialog')
     content.append(root)
-    let shownAt = 0
     let reviewing = false
     let armTimer: ReturnType<typeof setTimeout> | undefined
 
     // The bubble closes when the person goes elsewhere; a question stays until it is answered.
     window.addEventListener('blur', () => { if (reviewing) overlay.closeOnBlur() })
 
-    const armed = (): boolean => performance.now() - shownAt >= ARMING_MS
+    // Main refuses an answer inside the guard; the buttons only look not ready for as long.
+    let guardMs = 0
+    function arm (): void {
+      clearTimeout(armTimer)
+      root.classList.add('arming')
+      armTimer = setTimeout(() => { root.classList.remove('arming') }, guardMs)
+    }
+    overlay.onEvent((event) => {
+      if (reviewing || typeof event !== 'object' || event === null || (event as { type?: unknown }).type !== 'arm') return
+      arm()
+    })
 
     function drawAsk (view: AskView): void {
-      const answer = (value: 'allow' | 'block'): void => {
-        if (armed()) void overlay.request({ type: 'answer', id: view.id, answer: value })
-      }
+      const answer = (value: 'allow' | 'block'): void => { void overlay.request({ type: 'answer', id: view.id, answer: value }) }
       const block = h('button', { type: 'button', className: 'btn', onclick: () => { answer('block') } }, 'Block')
       const allow = h('button', { type: 'button', className: 'btn primary', onclick: () => { answer('allow') } }, 'Allow')
       const close = h('button', { type: 'button', className: 'btn icon sp-close', onclick: () => { overlay.close() } }, closeIcon())
@@ -44,7 +51,6 @@ export const sitePromptPage: OverlayPage = {
         h('span', { className: 'sp-icons', ariaHidden: 'true' }, ...line.kinds.map(iconOf)),
         h('span', { className: 'sp-text' }, line.text)))
       root.classList.remove('review')
-      root.classList.add('arming')
       root.setAttribute('aria-labelledby', 'sp-origin')
       root.setAttribute('aria-describedby', 'sp-asks')
       replaceChildren(root,
@@ -55,8 +61,8 @@ export const sitePromptPage: OverlayPage = {
         h('div', { className: 'btn-row' }, block, allow),
         close
       )
-      clearTimeout(armTimer)
-      armTimer = setTimeout(() => { root.classList.remove('arming') }, ARMING_MS)
+      guardMs = view.guardMs
+      arm()
     }
 
     function drawReview (view: ReviewView, changed: boolean): void {
@@ -120,7 +126,6 @@ export const sitePromptPage: OverlayPage = {
 
     return {
       shown (payload) {
-        shownAt = performance.now()
         if (isAskView(payload)) {
           reviewing = false
           drawAsk(payload)

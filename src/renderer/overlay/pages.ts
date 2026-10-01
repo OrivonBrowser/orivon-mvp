@@ -19,6 +19,7 @@ import { passwordFillPage } from './password-fill/page.js'
 import { passwordSavePage } from './password-save/page.js'
 import { popupsBlockedPage } from './popups-blocked/page.js'
 import { qrPage } from './qr/page.js'
+import { questionPage } from './question/page.js'
 import { restorePage } from './restore/page.js'
 import { sadTabPage } from './sad-tab/page.js'
 import { screenshotPage } from './screenshot/page.js'
@@ -51,6 +52,8 @@ export const OVERLAY_PAGES: Readonly<Record<string, OverlayPage>> = {
   'password-suggest': passwordFillPage,
   'popups-blocked': popupsBlockedPage,
   qr: qrPage,
+  question: questionPage,
+  'question-sheet': questionPage,
   restore: restorePage,
   'sad-tab': sadTabPage,
   screenshot: screenshotPage,

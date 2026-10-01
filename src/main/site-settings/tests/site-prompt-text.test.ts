@@ -31,17 +31,17 @@ describe('askLines', () => {
 
 describe('askView', () => {
   it('names the site, the question and, for location, what the person will actually get', () => {
-    expect(askView('abc', 'https://maps.example', ['location'], false, false)).toEqual({
-      mode: 'ask', id: 'abc', origin: 'https://maps.example', lines: [{ kinds: ['location'], text: 'wants to know your location' }], locationNote: LOCATION_NOTE, privateNote: null
+    expect(askView('abc', 'https://maps.example', ['location'], false, false, 500)).toEqual({
+      mode: 'ask', id: 'abc', origin: 'https://maps.example', lines: [{ kinds: ['location'], text: 'wants to know your location' }], locationNote: LOCATION_NOTE, privateNote: null, guardMs: 500
     })
   })
 
   it('says the answer is forgotten in a private window', () => {
-    expect(askView('abc', 'https://a.example', ['camera'], false, true).privateNote).toBe(PRIVATE_NOTE)
+    expect(askView('abc', 'https://a.example', ['camera'], false, true, 500).privateNote).toBe(PRIVATE_NOTE)
   })
 
   it('shortens a long host the way every permission question does, keeping the end that decides who it is', () => {
-    expect(askView('abc', 'https://a.b.c.d.accounts.example.com', ['camera'], false, false).origin).toMatch(/example\.com$/)
+    expect(askView('abc', 'https://a.b.c.d.accounts.example.com', ['camera'], false, false, 500).origin).toMatch(/example\.com$/)
   })
 })
 

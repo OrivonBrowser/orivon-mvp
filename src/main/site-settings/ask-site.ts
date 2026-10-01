@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto'
 import type { WebContents } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { requestSlot } from '../overlays/tab-slots.js'
-import { promptAnchor } from '../shell/actions/prompt-anchor.js'
+import { crossingAnchor } from '../shell/actions/prompt-anchor.js'
 import type { ShellWindow, WindowRegistry } from '../shell/window-registry.js'
 import type { SiteKind } from './kinds.js'
 import type { SiteAnswer } from './site-asks-engine.js'
@@ -66,7 +66,7 @@ export function createAskSite (deps: AskSiteDeps): AskSite {
         slot: 'address',
         overlay: SITE_PROMPT_OVERLAY,
         payload: { mode: 'ask', id },
-        anchor: () => promptAnchor(found.window),
+        anchor: () => crossingAnchor(found.window),
         closed: () => { settle('dismiss') }
       })
     })
