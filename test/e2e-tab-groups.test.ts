@@ -27,7 +27,7 @@ const CONTINUE = async (dir: string): Promise<void> => {
 beforeAll(async () => {
   server = createServer((request, response) => {
     response.setHeader('content-type', 'text/html')
-    response.end(`<!doctype html><title>Page ${request.url ?? ''}</title><p>${request.url ?? ''}</p>`)
+    response.end(`<!doctype html><title>Page ${request.url ?? ''}</title><p>${request.url ?? ''}</p><button id="open" onclick="window.open('/linked', '_blank')">open</button>`)
   })
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
   origin = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`
@@ -170,7 +170,7 @@ it('makes a group from a tab, names and colours it, adds a tab from the tab menu
     await activate(chrome, a)
     const before = await order(chrome)
     const view = findViewShowing(app, chrome, `${origin}/a`) as Page
-    await view.evaluate((address) => { window.open(address, '_blank') }, `${origin}/linked`)
+    await view.click('#open')
     expect(await waitFor(async () => (await order(chrome)).length === before.length + 1)).toBe(true)
     const linked = (await order(chrome)).find((id) => !before.includes(id)) ?? ''
     expect(await groupOfTab(chrome, linked)).toBe(await groupOfTab(chrome, a))
