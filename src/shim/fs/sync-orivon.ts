@@ -68,24 +68,35 @@ function isLimit (error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'limit'
 }
 
-function sleepSync (ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+/** Blocks for `ms`, or returns false where a thread may not block (a page's main thread): there the refusal is the answer. */
+function sleepSync (ms: number): boolean {
+  try {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** Runs `run`, asking again while the limiter refuses it; any other error, or the last refusal, is thrown as it came. */
-function retryLimited<T> (run: () => T, sleep: (ms: number) => void): T {
+function retryLimited<T> (run: () => T, sleep: (ms: number) => boolean | void): T {
   for (let attempt = 0; ; attempt += 1) {
     try {
       return run()
     } catch (error) {
       if (attempt >= LIMIT_RETRIES || !isLimit(error)) throw error
-      sleep(LIMIT_BACKOFF_MS * Math.min(attempt + 1, 8))
+      if (sleep(LIMIT_BACKOFF_MS * Math.min(attempt + 1, 8)) === false) throw error
     }
   }
 }
 
+/** `run`, asked again while the limiter refuses it, with its errors left as they are for a caller that maps them itself. */
+export function retriedSync<T> (run: () => T): T {
+  return retryLimited(run, sleepSync)
+}
+
 /** Runs one orivon.fs call, rethrowing its OrivonError as a Node-shaped one -- fs/paths.ts's guarded(), synchronous. */
-export function guardedSync<T> (run: () => T, sleep: (ms: number) => void = sleepSync): T {
+export function guardedSync<T> (run: () => T, sleep: (ms: number) => boolean | void = sleepSync): T {
   try {
     return retryLimited(run, sleep)
   } catch (error) {

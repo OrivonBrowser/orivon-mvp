@@ -47,6 +47,7 @@ import { Buffer } from 'buffer'
 import { decode, encodingOf } from '../encoding.js'
 import { toConfinedPath, type PathLike } from './paths.js'
 import { isRootPath, rootIsDirectoryError } from './root.js'
+import { guardedSync, retriedSync } from './sync-orivon.js'
 import { refusingProxy } from '../unimplemented.js'
 import { refuseShim } from '../errors.js'
 import { toNodeError } from '../node-errors.js'
@@ -98,12 +99,7 @@ export function readFileSync (path: PathLike, options?: ReadFileOptions | string
   // orivon.fs call underneath it is not.
   const confined = toConfinedPath(path, 'open')
   if (isRootPath(confined)) rootIsDirectoryError('read')
-  let bytes: Uint8Array
-  try {
-    bytes = getOrivon().fs.readFileSync(confined)
-  } catch (error) {
-    throw toNodeError(error)
-  }
+  const bytes = guardedSync(() => getOrivon().fs.readFileSync(confined))
   return decode(bytes, encodingOf(options))
 }
 
@@ -116,7 +112,7 @@ export function readFileSync (path: PathLike, options?: ReadFileOptions | string
  * existsSyncCore) -- no whole-file read.
  */
 export function existsSync (path: PathLike): boolean {
-  return existsSyncCore(path, (confined) => getOrivon().fs.readFileSync(confined))
+  return existsSyncCore(path, (confined) => retriedSync(() => getOrivon().fs.readFileSync(confined)))
 }
 
 export interface StatSyncOptions { throwIfNoEntry?: boolean }
