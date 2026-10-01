@@ -93,13 +93,15 @@ function renderNav (): void {
 
 function render (): void {
   const query = search.value.trim()
-  // A choice that was just made keeps the keyboard, so the row is found again in the new page.
-  const focusedChoice = document.activeElement instanceof HTMLSelectElement ? document.activeElement.closest('.row')?.id : undefined
+  // A choice or a switch that was just used keeps the keyboard, so the row is found again in the new page.
+  const active = document.activeElement
+  const focusedControl = active instanceof HTMLSelectElement ? 'select' : active instanceof HTMLInputElement && active.type === 'checkbox' ? 'input[type=checkbox]' : undefined
+  const focusedChoice = focusedControl === undefined ? undefined : active?.closest('.row')?.id
   // A control that keeps its nodes across redraws (`data-keep-focus`) takes the keyboard back by reference.
   const kept = document.activeElement instanceof HTMLElement && document.activeElement.closest('[data-keep-focus]') !== null ? document.activeElement : null
   renderNav()
   replaceChildren(content, query === '' ? renderSectionBody(current) : renderSearchBody(query))
-  if (focusedChoice !== undefined) document.getElementById(focusedChoice)?.querySelector('select')?.focus()
+  if (focusedChoice !== undefined && focusedControl !== undefined) document.getElementById(focusedChoice)?.querySelector<HTMLElement>(focusedControl)?.focus()
   if (kept?.isConnected === true) kept.focus()
   if (highlight !== null) {
     const row = document.getElementById(`row-${highlight}`)

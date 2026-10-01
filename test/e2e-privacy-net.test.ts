@@ -200,7 +200,7 @@ it('shows the five rows in Settings, saves a choice, applies it on the next requ
     await page.evaluate(() => { document.querySelector('.group-label')?.scrollIntoView() })
     await shoot(page, 'settings-privacy-rows')
 
-    await page.locator('#row-do-not-track input[type=checkbox]').evaluate((input) => { (input as HTMLInputElement).click() })
+    await page.locator('#row-do-not-track input[type=checkbox]').click()
     await page.locator('#row-secure-dns select').selectOption('cloudflare')
     await page.locator('#row-cookies select').selectOption('blockThirdParty')
     expect(await waitFor(() => savedSetting(userData, 'privacy.doNotTrack') === true && savedSetting(userData, 'privacy.secureDns') === 'cloudflare' && savedSetting(userData, 'privacy.cookies') === 'blockThirdParty')).toBe(true)

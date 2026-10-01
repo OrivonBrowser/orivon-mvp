@@ -37,7 +37,11 @@ function renderToggle (control: Extract<Control, { type: 'toggle' }>, state: Set
   // A switch that cannot act shows what is really happening: off.
   const disabled = control.disabled?.(state) === true
   const input = h('input', { type: 'checkbox', id, checked: !disabled && state.value(control.key) === true, disabled })
-  input.addEventListener('change', () => { void state.set(control.key, input.checked) })
+  input.addEventListener('change', () => {
+    // A click leaves the switch focused, and a focused input that is not settled holds every redraw (main.ts).
+    input.dataset['settled'] = 'true'
+    void state.set(control.key, input.checked)
+  })
   return h('span', { className: 'switch' }, input, h('span', { className: 'track' }))
 }
 
