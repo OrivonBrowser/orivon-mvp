@@ -3,11 +3,11 @@
 // once per site in a prompt under the address bar. The installer runs after
 // the settings are loaded and the broker exists, so the defaults and the
 // registered apps are both known.
-import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
-import { setNotificationsBlockedCheck } from '../sessions/permission-gate.js'
+import { configureSiteNotifications, setNotificationsBlockedCheck } from '../sessions/permission-gate.js'
 import { siteAsks } from '../sessions/site-asks.js'
 import type { ShellInstaller } from '../shell/shell-installers.js'
 import { windowShowing } from '../shell/showing-window.js'
+import { isAppOrigin } from './app-origin.js'
 import { bindAskSite, createAskSite } from './ask-site.js'
 import { siteKindById, type SiteKind } from './kinds.js'
 import { pageAccess } from './page-access.js'
@@ -27,13 +27,13 @@ export const installSitePermissions: ShellInstaller = {
       },
       isTab: (contents) => services.windows.findTab(contents) !== null,
       urlOf: (tab) => tab.getURL(),
-      // The same test the developer-tools gate makes: an app holding grants, or one served from the cache.
-      isApp: (origin) => ctx.broker?.app.hasGrantsSync(origin) === true || isOriginServedFromCacheSync(origin),
+      isApp: (origin) => isAppOrigin(ctx, origin),
       showing: (tab) => windowShowing(tab) !== undefined,
       ask,
       access: pageAccess
     })
     siteAsks.add(createSiteAsker(engine))
+    configureSiteNotifications({ isPrivate: services.isPrivate, isApp: (origin) => isAppOrigin(ctx, origin) })
     setNotificationsBlockedCheck(() => services.settings.get('sites.notifications') === 'block')
   }
 }

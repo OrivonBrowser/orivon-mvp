@@ -38,8 +38,8 @@ function mediaKinds (details: unknown): SiteKind[] | undefined {
 
 /**
  * The kinds a permission request is about, or undefined when the asker does not own it. A `media` request with no
- * device type is a tab capture, which the gate's own rule decides. Chromium reports both plain and system-exclusive
- * MIDI as `midiSysex`, so a request under that name carries the stronger wording: allowing it allows both.
+ * device type is a tab capture, which the gate's own rule decides. One stored allow covers plain and system-exclusive
+ * MIDI, so every MIDI request carries the stronger wording whichever name Chromium sends it under.
  */
 export function requestOf (permission: string, details: unknown): SiteRequest | undefined {
   if (permission === 'media') {
@@ -47,7 +47,7 @@ export function requestOf (permission: string, details: unknown): SiteRequest | 
     return kinds === undefined ? undefined : { kinds, sysex: false }
   }
   const kind = PLAIN.get(permission)
-  return kind === undefined ? undefined : { kinds: [kind], sysex: permission === 'midiSysex' }
+  return kind === undefined ? undefined : { kinds: [kind], sysex: kind === 'midi' }
 }
 
 /**

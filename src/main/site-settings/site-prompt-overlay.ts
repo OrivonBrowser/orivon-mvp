@@ -51,6 +51,14 @@ function asShown (payload: unknown): { mode: 'ask', id: string } | { mode: 'revi
 
 export function createSitePrompt ({ window, services, close }: OverlayWindow, access: PageAccess<Electron.WebContents> = pageAccess): OverlayHandler {
   let current: Current = { mode: 'none' }
+  let stopWatching: (() => void) | undefined
+
+  /** A new document ends the review; a page that only rewrites its own address does not. */
+  function closeOnNewDocument (wc: Electron.WebContents): void {
+    const onNavigate = (): void => { close() }
+    wc.once('did-navigate', onNavigate)
+    stopWatching = () => { wc.removeListener('did-navigate', onNavigate) }
+  }
 
   /** The tab the bubble is about, while it is still the one in front and on the page the record describes. */
   function reviewTab (tabId: string): { wc: Electron.WebContents, origin: string } | undefined {
@@ -75,6 +83,8 @@ export function createSitePrompt ({ window, services, close }: OverlayWindow, ac
   return {
     show: (payload): AskView | ReviewView | undefined => {
       current = { mode: 'none' }
+      stopWatching?.()
+      stopWatching = undefined
       const shown = asShown(payload)
       if (shown?.mode === 'ask') {
         const ask = pendingAsk(shown.id)
@@ -89,6 +99,7 @@ export function createSitePrompt ({ window, services, close }: OverlayWindow, ac
         const rows = rowsOf(tab.wc, tab.origin)
         if (rows.length === 0) return undefined
         current = { mode: 'review', tabId }
+        closeOnNewDocument(tab.wc)
         return reviewView(tab.origin, rows, commandById('siteSettings.open')?.pending !== true)
       }
       return undefined
@@ -132,6 +143,8 @@ export function createSitePrompt ({ window, services, close }: OverlayWindow, ac
     closed: (reason) => {
       const was = current
       current = { mode: 'none' }
+      stopWatching?.()
+      stopWatching = undefined
       // The slot decides what the close means: a tab switch only hides the question, anything else ends it as "not now".
       if (was.mode === 'ask') slotClosed(window, SITE_PROMPT_OVERLAY, reason)
     }
@@ -145,8 +158,10 @@ export const sitePromptOverlay: OverlayDef = {
   // Focus goes to the prompt so a key the person types at the page cannot answer it; the page puts it on the dialog, not a button.
   focus: 'take',
   layer: 'bar',
-  // A click elsewhere leaves a question open; a tab switch hides it and a new page ends it. The review bubble closes itself on blur.
-  closeOn: { blur: false, tabSwitch: true, navigation: true, layout: false },
+  // A click elsewhere leaves a question open and a tab switch hides it. A new document ends a question in ask-site.ts and a
+  // review in the handler; the slot's own navigation close also fires when a page only rewrites its address, which must not
+  // dismiss a question a single-page app is waiting on. The review bubble closes itself on blur.
+  closeOn: { blur: false, tabSwitch: true, navigation: false, layout: false },
   keep: 'fresh',
   height: { initial: 170, min: 100, max: 460 },
   attach: (win) => createSitePrompt(win)

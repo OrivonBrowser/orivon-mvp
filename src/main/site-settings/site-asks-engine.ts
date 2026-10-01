@@ -24,6 +24,8 @@ export interface RequestDetails {
 export interface CheckDetails {
   isMainFrame?: boolean | undefined
   embeddingOrigin?: string | undefined
+  /** Set for `media`: the origin of the frame the check is about, which is not always the page's own. */
+  securityOrigin?: string | undefined
 }
 
 export interface SiteAsksDeps<T extends NavigatingTab & object> {
@@ -47,6 +49,14 @@ export interface SiteAsksEngine<T extends NavigatingTab & object> {
   /** True only for a stored allow on the tab's own site; undefined for a non-tab. Reads the store, never asks. */
   check: (kind: SiteKind | 'unknown', contents: T | null, requestingOrigin: string, details: CheckDetails) => boolean | undefined
 }
+
+/**
+ * Kinds Orivon has no backing service for on every platform. An allow is remembered, so it applies the day a service
+ * exists, but the page is told no: nothing here can promise that a system provider would not answer a `true`.
+ */
+const WITHOUT_SERVICE: ReadonlySet<SiteKind> = new Set<SiteKind>(['location'])
+
+const reachable = (kinds: readonly SiteKind[]): boolean => !kinds.some((kind) => WITHOUT_SERVICE.has(kind))
 
 const stateOf = (value: SiteDecision): 'allowed' | 'blocked' => value === 'allow' ? 'allowed' : 'blocked'
 
@@ -76,7 +86,7 @@ export function createSiteAsksEngine<T extends NavigatingTab & object> (deps: Si
 
     const stored = request.kinds.map((kind) => deps.store.get(origin, kind))
     // A frame never asks: the question would name the page's own site, and a frame is someone else's code.
-    if (details.isMainFrame !== true) return stored.every((value) => value === 'allow')
+    if (details.isMainFrame !== true) return reachable(request.kinds) && stored.every((value) => value === 'allow')
 
     request.kinds.forEach((kind, index) => {
       const value = stored[index]
@@ -85,7 +95,7 @@ export function createSiteAsksEngine<T extends NavigatingTab & object> (deps: Si
     if (stored.includes('block')) return false
 
     const undecided = request.kinds.filter((_, index) => stored[index] === undefined)
-    if (undecided.length === 0) return true
+    if (undecided.length === 0) return reachable(request.kinds)
     for (const kind of undecided) {
       if (deps.defaultFor(kind) === 'block') {
         deps.access.note(tab, origin, kind, 'blocked')
@@ -108,7 +118,7 @@ export function createSiteAsksEngine<T extends NavigatingTab & object> (deps: Si
       deps.store.set(origin, kind, answer)
       deps.access.note(tab, origin, kind, stateOf(answer))
     }
-    return answer === 'allow'
+    return answer === 'allow' && reachable(request.kinds)
   }
 
   return {
@@ -125,7 +135,10 @@ export function createSiteAsksEngine<T extends NavigatingTab & object> (deps: Si
       // A cross-origin frame names the page that embeds it: it never borrows that page's answer.
       if (details.embeddingOrigin !== undefined && originFromUrl(details.embeddingOrigin) !== origin) return false
       if (details.isMainFrame !== true && tabOrigin(contents) !== origin) return false
+      // A media check describes the page's main document in `requestingOrigin`; the frame it is about is `securityOrigin`.
+      if (details.securityOrigin !== undefined && originFromUrl(details.securityOrigin) !== origin) return false
       if (deps.store.get(origin, kind) !== 'allow') return false
+      if (!reachable([kind])) return false
       // Chromium does not always make a request once a check passes, so the page's chip learns of the allowance here.
       if (details.isMainFrame === true && tabOrigin(contents) === origin) deps.access.note(contents, origin, kind, 'allowed')
       return true

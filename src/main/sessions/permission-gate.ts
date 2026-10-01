@@ -23,16 +23,27 @@ import { createSiteNotifications } from './site-notifications.js'
 import { allowTabCaptureMediaRequest } from './tab-capture-media.js'
 
 let decisions: NotificationDecisions | undefined
+let privateRuntime = false
+let isAppOrigin: (origin: string) => boolean = () => false
 
 /** Every session's one store of per-site notification answers, so a site
  * decided in one partition is decided in all. */
 export function notificationDecisions (): NotificationDecisions {
-  decisions ??= new NotificationDecisions(join(app.getPath('userData'), 'notification-decisions.json'))
+  decisions ??= new NotificationDecisions(privateRuntime ? null : join(app.getPath('userData'), 'notification-decisions.json'))
   return decisions
 }
 
 const externalLinks = createExternalLinks({ windowShowing, confirm: confirmExternalLink })
 let notificationsBlocked: () => boolean = () => false
+
+/**
+ * What the per-site installer knows about this process, before the first answer is read: a private runtime keeps its
+ * notification answers in memory like every other per-site answer, and a registered app's origin is never asked.
+ */
+export function configureSiteNotifications (options: { isPrivate: boolean, isApp: (origin: string) => boolean }): void {
+  privateRuntime = options.isPrivate
+  isAppOrigin = options.isApp
+}
 
 /** Whether `sites.notifications` is `block`; the per-site installer supplies it once the settings are loaded. */
 export function setNotificationsBlockedCheck (check: () => boolean): void {
@@ -44,7 +55,8 @@ const siteNotifications = createSiteNotifications<object, WebContents>({
   windowShowing,
   // The same prompt under the address bar every per-site question uses, so the answer is the person's and the page cannot time it.
   ask: async (_window, _origin, tab) => await askSite(['notifications'], tab),
-  blockedByDefault: () => notificationsBlocked()
+  blockedByDefault: () => notificationsBlocked(),
+  isApp: (origin) => isAppOrigin(origin)
 })
 
 /** Answers a request that waits on the person. */

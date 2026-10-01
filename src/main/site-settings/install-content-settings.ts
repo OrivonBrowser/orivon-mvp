@@ -6,7 +6,7 @@
 // registration would silently replace) that reads its setting per request, so
 // a change takes effect on the next request without re-registering anything.
 import { session } from 'electron'
-import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
+import { isAppOrigin } from './app-origin.js'
 import { webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import type { ShellInstaller } from '../shell/shell-installers.js'
 import { applyMuted } from '../shell/signals/audio.js'
@@ -33,7 +33,7 @@ export const installContentSettings: ShellInstaller = {
       store: siteSettings,
       defaultFor: (kind: ContentKind) => settings.get(`sites.${kind}`) === 'block' ? 'block' : 'allow',
       // The same test the permission gate makes: an app holding grants, or one served from the cache.
-      isApp: (origin) => ctx.broker?.app.hasGrantsSync(origin) === true || isOriginServedFromCacheSync(origin)
+      isApp: (origin) => isAppOrigin(ctx, origin)
     })
 
     sitePopups.bind(createPopupBlocker({ rules, interaction: tabInteraction, blocks: popupBlocks }))
@@ -76,7 +76,7 @@ export const installContentSettings: ShellInstaller = {
     services.downloads.onStart(createAutoDownloads({
       store: siteSettings,
       defaultFor: () => settings.get('sites.autoDownloads') === 'block' ? 'block' : 'ask',
-      isApp: (origin) => ctx.broker?.app.hasGrantsSync(origin) === true || isOriginServedFromCacheSync(origin),
+      isApp: (origin) => isAppOrigin(ctx, origin),
       isTab: (contents) => services.windows.findTab(contents) !== null,
       ask: askSite,
       access: pageAccess

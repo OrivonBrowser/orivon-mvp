@@ -49,9 +49,9 @@ type Rig = ReturnType<typeof rig>
 const askView = (r: Rig): Record<string, unknown> => r.handler.show?.(r.shows[0]?.payload) as Record<string, unknown>
 
 describe('the site-prompt overlay', () => {
-  it('is a 360px panel under the address pill that only a tab switch or a new page closes', () => {
+  it('is a 360px panel under the address pill that a tab switch hides and that does not close on an address rewrite', () => {
     expect(sitePromptOverlay.placement).toEqual({ kind: 'anchor', width: 360, align: 'left' })
-    expect(sitePromptOverlay.closeOn).toEqual({ blur: false, tabSwitch: true, navigation: true, layout: false })
+    expect(sitePromptOverlay.closeOn).toEqual({ blur: false, tabSwitch: true, navigation: false, layout: false })
     expect(sitePromptOverlay).toMatchObject({ name: 'site-prompt', surface: 'panel', focus: 'take', layer: 'bar', keep: 'fresh' })
   })
 
@@ -112,6 +112,18 @@ describe('the site-prompt overlay', () => {
         expect(r.handler.request(command)).toBeUndefined()
       }
       expect(r.close).not.toHaveBeenCalled()
+    })
+
+    it('stays open and answerable when the page only rewrites its own address, and ends on a new document', async () => {
+      const r = rig()
+      const answer = r.ask(['camera'], r.contents)
+      const view = askView(r)
+      r.tab.emit('did-navigate-in-page')
+      expect(r.handler.request({ type: 'answer', id: view['id'], answer: 'allow' })).toBeUndefined()
+      await expect(answer).resolves.toBe('allow')
+      const second = r.ask(['camera'], r.contents)
+      r.tab.emit('did-navigate')
+      await expect(second).resolves.toBe('dismiss')
     })
 
     it('does not let a prompt for another window be answered from this one', () => {
@@ -212,6 +224,18 @@ describe('the site-prompt overlay', () => {
       review(r)
       r.handler.request({ type: 'reload' })
       expect(r.tab.reload).toHaveBeenCalledTimes(1)
+      expect(r.close).toHaveBeenCalledTimes(1)
+    })
+
+    it('closes on a new document in the tab, and not on an in-page address change', () => {
+      const r = reviewRig()
+      review(r)
+      r.tab.emit('did-navigate-in-page')
+      expect(r.close).not.toHaveBeenCalled()
+      r.tab.emit('did-navigate')
+      expect(r.close).toHaveBeenCalledTimes(1)
+      r.handler.closed?.('navigation')
+      r.tab.emit('did-navigate')
       expect(r.close).toHaveBeenCalledTimes(1)
     })
 

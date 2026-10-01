@@ -178,7 +178,8 @@ async function confirmStaged (): Promise<void> {
 
 async function chooseSitePermission (kind: SiteKind, value: string): Promise<void> {
   const next = await bridge.setSitePermission(kind, value)
-  if (next === null) return
+  // A refusal changed nothing: draw again so the select goes back to what is stored.
+  if (next === null) { renderCurrent(); return }
   touchedKinds.add(kind)
   sitePermissions = next
   permissionsChanged = true

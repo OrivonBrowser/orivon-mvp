@@ -5,7 +5,7 @@ import type { DefaultRow } from './sites-model.js'
 const COPY: Readonly<Record<string, { readonly help: string, readonly keywords: readonly string[] }>> = {
   camera: { help: 'Sites can ask to use your camera.', keywords: ['webcam', 'video', 'permission'] },
   microphone: { help: 'Sites can ask to use your microphone.', keywords: ['mic', 'audio', 'recording', 'permission'] },
-  location: { help: 'Sites can ask for your location. Orivon has no location service yet, so an allowed site is told the position is unavailable.', keywords: ['geolocation', 'gps', 'position', 'permission'] },
+  location: { help: 'Sites can ask for your location. Orivon has no location service yet, so an allowed site is still told it cannot have your position.', keywords: ['geolocation', 'gps', 'position', 'permission'] },
   clipboardRead: { help: 'Sites can ask to read what you copied.', keywords: ['paste', 'copy', 'clipboard', 'permission'] },
   midi: { help: 'Sites can ask to control and reprogram your MIDI devices.', keywords: ['music', 'instrument', 'sysex', 'permission'] },
   idle: { help: 'Sites can ask to know when you are away from the computer.', keywords: ['idle', 'away', 'device use', 'idle detection', 'permission'] },

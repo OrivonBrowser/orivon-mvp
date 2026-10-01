@@ -23,6 +23,17 @@ function setup (answer: NotificationAnswer = 'allow', initial: Record<string, No
   return { notifications: createSiteNotifications({ decisions, ask, windowShowing }), decisions, ask, windowShowing }
 }
 
+describe('site notifications: a registered app', () => {
+  it('is refused without a question, and nothing is stored for it', async () => {
+    const decisions = memoryDecisions()
+    const ask = vi.fn(async (): Promise<NotificationAnswer> => 'allow')
+    const notifications = createSiteNotifications({ decisions, ask, windowShowing: () => WINDOW, isApp: (origin) => origin === SITE })
+    expect(await notifications.request(fakeTab(PAGE), { requestingUrl: PAGE, isMainFrame: true })).toBe(false)
+    expect(ask).not.toHaveBeenCalled()
+    expect(decisions.set).not.toHaveBeenCalled()
+  })
+})
+
 describe('site notifications: the request (Notification.requestPermission)', () => {
   it('asks the person in the window showing the tab, naming the site, and remembers an allow', async () => {
     const { notifications, decisions, ask } = setup('allow')

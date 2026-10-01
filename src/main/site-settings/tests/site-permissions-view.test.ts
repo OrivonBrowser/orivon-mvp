@@ -49,9 +49,10 @@ describe('the popover\'s permissions', () => {
     expect(view?.rows.find((row) => row.kind === 'microphone')?.value).toBe('block')
   })
 
-  it('refuses a change it should and answers the unchanged view', () => {
+  it('answers null for a change it refused, so the popover does not claim one', () => {
     const { access, store } = setup()
-    expect(access.set(SHOP, 'devices', 'block')?.shown).toEqual([])
+    expect(access.set(SHOP, 'devices', 'block')).toBeNull()
+    expect(access.set(SHOP, 'camera', 'sometimes')).toBeNull()
     expect(access.set('https://app.example', 'camera', 'allow')).toBeNull()
     expect(store.entries()).toEqual([])
   })

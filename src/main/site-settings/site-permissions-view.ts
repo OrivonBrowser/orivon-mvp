@@ -23,6 +23,7 @@ export interface SitePermissionsDeps {
 export interface SitePermissionsAccess {
   /** Null for an origin that has no per-site settings: an app, or an address that is not an ordinary website. */
   view: (origin: string) => SitePermissionsView | null
+  /** Null when the change was refused (an app, a kind that is not available, a value that is not a choice): nothing changed. */
   set: (origin: string, kind: unknown, value: unknown) => SitePermissionsView | null
 }
 
@@ -36,8 +37,7 @@ export function sitePermissions (deps: SitePermissionsDeps): SitePermissionsAcce
   return {
     view,
     set: (origin, kind, value) => {
-      deps.controller.set(origin, kind, value)
-      return view(origin)
+      return deps.controller.set(origin, kind, value) ? view(origin) : null
     }
   }
 }

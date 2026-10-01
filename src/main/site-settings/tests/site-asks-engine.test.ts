@@ -45,6 +45,17 @@ describe('request', () => {
     expect(access.entries(tab)).toEqual([{ kind: 'camera', state: 'allowed' }])
   })
 
+  it('remembers an allow for a kind with no service behind it and still tells the page no', async () => {
+    const LOCATION: SiteRequest = { kinds: ['location'], sysex: false }
+    const { engine, store, ask, tab } = rig({ answer: 'allow' })
+    expect(await engine.request(LOCATION, tab, MAIN)).toBe(false)
+    expect(store.get(SITE, 'location')).toBe('allow')
+    expect(await engine.request(LOCATION, tab, MAIN)).toBe(false)
+    expect(await engine.request(LOCATION, tab, { isMainFrame: false, requestingUrl: `${SITE}/f` })).toBe(false)
+    expect(engine.check('location', tab, SITE, { isMainFrame: true })).toBe(false)
+    expect(ask).toHaveBeenCalledTimes(1)
+  })
+
   it('stores a block, tells the page no, and marks the page blocked', async () => {
     const { engine, store, access, tab } = rig({ answer: 'block' })
     expect(await engine.request(CAMERA, tab, MAIN)).toBe(false)
@@ -250,6 +261,13 @@ describe('check', () => {
     store.set(SITE, 'camera', 'allow')
     expect(engine.check('camera', tab, 'https://ads.example', { isMainFrame: false, embeddingOrigin: SITE })).toBe(false)
     expect(engine.check('camera', tab, SITE, { isMainFrame: false, embeddingOrigin: 'https://ads.example' })).toBe(false)
+  })
+
+  it('refuses a media check about another origin than the page, which a cross-origin frame in an allowed page makes', () => {
+    const { engine, store, tab } = rig()
+    store.set(SITE, 'camera', 'allow')
+    expect(engine.check('camera', tab, SITE, { isMainFrame: true, securityOrigin: 'https://ads.example/' })).toBe(false)
+    expect(engine.check('camera', tab, SITE, { isMainFrame: true, securityOrigin: `${SITE}/` })).toBe(true)
   })
 
   it('gives a same-origin frame the page\'s answer, and refuses a frame on another site than the tab\'s', () => {

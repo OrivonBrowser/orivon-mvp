@@ -37,7 +37,7 @@ export interface ReviewView {
   readonly settingsLink: boolean
 }
 
-export const LOCATION_NOTE = 'Orivon has no location service yet. If you allow this, the site is told your position is unavailable.'
+export const LOCATION_NOTE = 'Orivon has no location service yet. If you allow this, your choice is kept, but the site is still told it cannot have your position.'
 export const PRIVATE_NOTE = 'Forgotten when this private window closes.'
 
 const WANTS: Readonly<Partial<Record<SiteKind, string>>> = {

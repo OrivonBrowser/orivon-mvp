@@ -17,6 +17,15 @@ afterEach(() => {
 })
 
 describe('NotificationDecisions', () => {
+  it('keeps answers in memory only when it has no path, for a private session', () => {
+    const decisions = new NotificationDecisions(null)
+    decisions.set('https://chat.example', 'allow')
+    expect(decisions.get('https://chat.example')).toBe('allow')
+    decisions.forget('https://chat.example')
+    expect(decisions.entries()).toEqual([])
+    expect(readdirSync(dir)).toEqual([])
+  })
+
   it('has no decision for an origin nobody was asked about, and creates no file for it', () => {
     const decisions = new NotificationDecisions(path)
     expect(decisions.get('https://example.com')).toBeUndefined()

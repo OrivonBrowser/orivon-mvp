@@ -29,9 +29,10 @@ describe('requestOf', () => {
     expect(requestOf(permission, {})?.kinds).toEqual([kind])
   })
 
-  it('carries the stronger MIDI wording only for the name Chromium uses for system-exclusive access', () => {
+  it('carries the stronger MIDI wording for every MIDI request, since one allow covers both', () => {
     expect(requestOf('midiSysex', {})?.sysex).toBe(true)
-    expect(requestOf('midi', {})?.sysex).toBe(false)
+    expect(requestOf('midi', {})?.sysex).toBe(true)
+    expect(requestOf('geolocation', {})?.sysex).toBe(false)
   })
 
   it('does not own any other name', () => {

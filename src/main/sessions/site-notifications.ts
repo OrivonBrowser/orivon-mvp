@@ -20,6 +20,8 @@ export interface SiteNotificationDeps<W, T extends PromptingTab = PromptingTab> 
   ask: (window: W, origin: string, tab: T) => Promise<NotificationAnswer>
   /** `sites.notifications` is `block`: a site with no answer of its own is refused without being asked. */
   blockedByDefault?: () => boolean
+  /** A registered app's origin: its permissions are the manifest's, so it is never asked and nothing is stored for it. */
+  isApp?: (origin: string) => boolean
 }
 
 export interface SiteNotifications<T extends PromptingTab = PromptingTab> {
@@ -33,7 +35,7 @@ export function createSiteNotifications<W, T extends PromptingTab = PromptingTab
   return {
     async request (tab, details) {
       const origin = originFromUrl(details.requestingUrl ?? '')
-      if (origin === null) return false
+      if (origin === null || deps.isApp?.(origin) === true) return false
       // A frame never asks: the question names the page's own site, and a
       // frame from anywhere else would borrow it.
       if (details.isMainFrame !== true) return origin === originFromUrl(tab.getURL()) && allowed(origin)

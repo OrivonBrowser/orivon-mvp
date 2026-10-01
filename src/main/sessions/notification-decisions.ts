@@ -35,11 +35,12 @@ export function parseNotificationDecisions (raw: string): Map<string, Notificati
 }
 
 export class NotificationDecisions {
-  readonly #path: string
+  readonly #path: string | null
   #decisions: Map<string, NotificationDecision> | undefined
   readonly #listeners = new Set<() => void>()
 
-  constructor (path: string) {
+  /** A null path keeps the answers in memory only, for a private session. */
+  constructor (path: string | null) {
     this.#path = path
   }
 
@@ -87,7 +88,7 @@ export class NotificationDecisions {
     if (this.#decisions === undefined) {
       let raw = ''
       try {
-        raw = readFileSync(this.#path, 'utf8')
+        if (this.#path !== null) raw = readFileSync(this.#path, 'utf8')
       } catch {
         // No file yet: nobody has answered for any site.
       }
@@ -99,6 +100,7 @@ export class NotificationDecisions {
   /** Never throws: the answer already holds in memory for this session, and
    * a disk that refuses the copy must not undo it. */
   #save (): void {
+    if (this.#path === null) return
     const origins = Object.fromEntries(this.#loaded())
     try {
       writeFileAtomic(this.#path, JSON.stringify({ version: FILE_VERSION, origins }, null, 2))
