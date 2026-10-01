@@ -703,8 +703,9 @@ is not the same as it doing anything: read the note, not just the symbol.
 | `printerProvider` | ⚠️ | Exists as an object; no working members measured |
 | `privacy` | ⚠️ | Inert `ChromeSetting` placeholders; a `get` call triggers a native "Unknown Extension API" log |
 | `proxy` | ⚠️ | Exists as a namespace; `settings.get` explicitly rejects `"Access to extension API denied."` |
-| `runtime` | ⚠️ | `id`/`getManifest`/`getURL`/`connect`/`sendMessage`/lifecycle events/`openOptionsPage` work; `onMessageExternal` and `onConnectExternal` fire for a matching page (Table 7b); `getContexts` lists the worker, popup, tab pages and offscreen document; `connectNative`/`disconnectNative`/`sendNativeMessage` throw by design (below) |
-| `scripting` | ✅ | `executeScript` measured running a real function in a tab and returning its result; it needs host access, and `activeTab` alone is refused (Table 7d) |
+| `browser` global | ✅ | The same object as `chrome` for every namespace Orivon provides, so an extension that takes `self.browser \|\| self.chrome` gets `permissions`, `webRequest` and the rest (measured with a fixture) |
+| `runtime` | ⚠️ | `id`/`getManifest`/`getURL`/`connect`/`sendMessage`/lifecycle events/`openOptionsPage` work; `onMessageExternal` and `onConnectExternal` fire for a matching page (Table 7b); `getContexts` lists the worker, popup, tab pages and offscreen document; `connectNative`/`disconnectNative`/`sendNativeMessage` throw by design (below); `onInstalled` is never dispatched for an extension loaded into a running browser (measured), so a welcome page opened from it does not open |
+| `scripting` | ✅ | `registerContentScripts` with `world: 'MAIN'` measured running in the page's own world, and an isolated one staying out of it; `executeScript` measured running a real function in a tab and returning its result; it needs host access, and `activeTab` alone is refused (Table 7d) |
 | `search` | ✅ | `query` opens the default engine's results in the current tab, a new tab or a new window (`api/search-api.ts`) |
 | `sidePanel` | ⚠️ | Every method resolves as a no-op; no panel surface opens |
 | `storage.local` | ✅ | Native to Electron |
@@ -716,8 +717,8 @@ is not the same as it doing anything: read the note, not just the symbol.
 | `topSites` | ✅ | The most visited web addresses from history, up to ten, one per site (`api/history-api.ts`) |
 | `userScripts` | ⚠️ | Every method resolves as a no-op; no user-script world runs |
 | `webNavigation` | ✅ | `getFrame`/`getAllFrames` and the full event set work |
-| `webRequest` | ⚠️ | Every event object exists so feature-detection does not throw, but no extension listener is ever called (measured); the permission is removed from the loaded copy (`ADR-0043`) and Orivon owns the session's `webRequest` handlers; `declarativeNetRequest` is the way to block |
-| `declarativeNetRequest` | ✅ | Static, dynamic and session rules, applied by Orivon (`ADR-0051`); `responseHeaders` conditions are refused; websites' worker requests are not matched |
+| `webRequest` | ⚠️ | Every event object and the `ResourceType` and `*Options` enums exist so feature-detection and a listener filter built from them do not throw, but no extension listener is ever called (measured); the permission is removed from the loaded copy (`ADR-0043`) and Orivon owns the session's `webRequest` handlers; `declarativeNetRequest` is the way to block |
+| `declarativeNetRequest` | ✅ | Static, dynamic and session rules, applied by Orivon (`ADR-0051`); `responseHeaders` conditions are refused; websites' worker requests are not matched. Static rules past 30,000 per extension draw on a shared pool of 300,000, and its constants and enums (`MAX_NUMBER_OF_REGEX_RULES`, `ResourceType` and the rest) are present; `RuleConditionKeys` lists only the keys the engine evaluates, so it has no `TOP_DOMAINS` |
 | `windows` | ⚠️ | A rich working set, filtered the same as `tabs` |
 
 **Not there** (`typeof === 'undefined'` in every context measured, including the most privileged):
