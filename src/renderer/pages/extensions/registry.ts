@@ -5,6 +5,7 @@ import type { CardBadge, DetailSection, ExtensionView } from './types.js'
 import type { ViewName } from './router.js'
 import { aboutSection } from './views/details-about.js'
 import { detailsView } from './views/details.js'
+import { optionalSection } from './views/details-optional.js'
 import { listView } from './views/list.js'
 import { stubView } from './views/stub.js'
 
@@ -12,7 +13,8 @@ export type { CardBadge, DetailSection, ExtensionView, PageContext } from './typ
 
 /** One per line; shown sorted by `order`. */
 export const DETAIL_SECTIONS: readonly DetailSection[] = [
-  aboutSection
+  aboutSection,
+  optionalSection
 ]
 
 /** One per line. */
