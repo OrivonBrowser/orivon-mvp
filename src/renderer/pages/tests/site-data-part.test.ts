@@ -118,7 +118,7 @@ describe('deleting', () => {
     await settled()
     await part.pressDeleteAll()
     await part.pressDeleteAll()
-    expect(request).toHaveBeenCalledWith('privacy', { type: 'clear', request: { history: 'none', siteData: true, cache: false, zoomLevels: false, appData: false } })
+    expect(request).toHaveBeenCalledWith('privacy', { type: 'clear', request: { history: 'none', siteData: true, cache: false, zoomLevels: false, appData: false, siteSettings: false } })
   })
 
   it('deletes a cookie at once by its key and reads the list again', async () => {

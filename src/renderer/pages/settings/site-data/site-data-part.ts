@@ -125,7 +125,7 @@ export class SiteDataPart implements SettingsPart {
   async pressDeleteAll (): Promise<void> {
     if (!this.isArmed({ kind: 'all' })) { this.arm({ kind: 'all' }); return }
     this.disarm()
-    const reply = await this.bridge.request('privacy', { type: 'clear', request: { history: 'none', siteData: true, cache: false, zoomLevels: false, appData: false } })
+    const reply = await this.bridge.request('privacy', { type: 'clear', request: { history: 'none', siteData: true, cache: false, zoomLevels: false, appData: false, siteSettings: false } })
     this.failed = !(isRecord(reply) && reply['ok'] === true)
     this.open.clear()
     this.hosts.clear()
