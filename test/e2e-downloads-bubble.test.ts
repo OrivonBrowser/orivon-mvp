@@ -9,12 +9,14 @@ import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron, mainOutput, profileDirOf } from './launch-electron.mjs'
+import { assertNoElectronSurvivors, closeElectron, mainOutput } from './launch-electron.mjs'
 import { delay, popoverShown, waitFor } from './smoke-helpers.mjs'
 import { clickLink, launchDownloads, removeDir, scratchDir, shellCalls, startServer, stubSystem, visitFiles } from './downloads-fixture.js'
 import type { DownloadServer } from './downloads-fixture.js'
 
 type App = ElectronApplication
+/** The bubble ignores a click for this long after a peek appears or a file turns held; a click that follows waits it out. */
+const SETTLE_MS = 650
 const SHOTS = process.env['ORIVON_SHOTS_DIR']
 const TEST_TIMEOUT_MS = 120_000
 /** Longer than the peek's five seconds, so one wait sees it go. */
@@ -91,11 +93,12 @@ it('shows the button with the first download, peeks, and pauses, resumes and can
     await rowOf(peek, 'slow.bin').waitFor()
     expect(await app.evaluate(({ webContents }) => webContents.getFocusedWebContents()?.getURL() ?? '')).not.toContain('/overlay/')
 
+    await delay(SETTLE_MS)
     await rowOf(peek, 'slow.bin').locator('[data-action="pause"]').click()
     await peek.waitForSelector('.dlb-row.is-paused')
     expect(await waitFor(async () => (await titleOf(chrome)).includes('paused'))).toBe(true)
     expect(await button(chrome).getAttribute('data-paused')).toBe('true')
-    expect(await rowOf(peek, 'slow.bin').locator('.dlb-line-text').textContent()).toMatch(/^Paused, /)
+    expect(await rowOf(peek, 'slow.bin').locator('.dlb-line-text').textContent()).toMatch(/^Paused · /)
 
     await rowOf(peek, 'slow.bin').locator('[data-action="resume"]').click()
     await peek.waitForSelector('.dlb-row.is-completed', { timeout: 30_000 })
@@ -126,6 +129,7 @@ it('shows the button with the first download, peeks, and pauses, resumes and can
     await clickLink(files, '#slow')
     const second = await overlayPage(app, 'downloads-peek')
     await second.waitForSelector('.dlb-row.is-progressing')
+    await delay(SETTLE_MS)
     await second.locator('.dlb-row.is-progressing [data-action="cancel"]').click()
     await second.waitForSelector('.dlb-row.is-cancelled')
     expect(await second.locator('.dlb-row.is-cancelled .dlb-line-text').textContent()).toBe('Cancelled')
@@ -160,6 +164,7 @@ it('holds a file that runs code under a temporary name until Keep or Discard, an
     await bubble.waitForSelector('.dlb-row.is-held')
     expect(await bubble.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset['action'])).toBe('discard')
     await shoot(app, chrome, 'held', bubble)
+    await delay(SETTLE_MS)
     await rowOf(bubble, 'setup.exe').locator('[data-action="keep"]').click()
     await bubble.waitForSelector('.dlb-row.is-completed')
     expect(await leftIn(dir)).toEqual(['setup.exe'])
@@ -175,6 +180,7 @@ it('holds a file that runs code under a temporary name until Keep or Discard, an
     const next = await overlayPage(app, 'downloads-peek')
     await next.waitForSelector('.dlb-row.is-held')
     expect(heldName(await leftIn(dir))).toBeDefined()
+    await delay(SETTLE_MS)
     await next.locator('.dlb-row.is-held [data-action="discard"]').click()
     expect(await waitFor(async () => (await leftIn(dir)).join() === 'setup.exe')).toBe(true)
     expect(await waitFor(async () => await next.locator('.dlb-row').count() === 1)).toBe(true)
@@ -278,7 +284,8 @@ it('works in a private window from memory, and writes no list', async () => {
   const { app, chrome } = await launchDownloads({ folder: dir, args: ['--orivon-private'] })
   let profile = ''
   try {
-    profile = profileDirOf(app) ?? ''
+    // A private run moves its user-data folder to a temporary one: that is where a list would be written.
+    profile = await app.evaluate(({ app: electron }) => electron.getPath('userData'))
     await stubSystem(app)
     const files = await visitFiles(app, chrome, server.origin)
     await clickLink(files, '#file')
@@ -287,6 +294,7 @@ it('works in a private window from memory, and writes no list', async () => {
     await peek.waitForSelector('.dlb-row.is-completed')
     expect(await rowOf(peek, 'file.bin').count()).toBe(1)
     await delay(800)
+    expect(existsSync(profile)).toBe(true)
     expect(existsSync(join(profile, 'downloads.json'))).toBe(false)
   } finally {
     await closeElectron(app)

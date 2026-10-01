@@ -116,11 +116,11 @@ export class DownloadRow {
 
   private renderProgress (): void {
     const { entry } = this
-    const shown = entry.state === 'progressing' || entry.state === 'paused' || entry.state === 'interrupted'
+    const shown = entry.state === 'progressing' || entry.state === 'paused'
     this.progress.hidden = !shown
     const fraction = fractionOf(entry)
-    const indeterminate = shown && entry.state !== 'interrupted' && fraction === null
-    this.progress.className = `progress${indeterminate ? ' indeterminate' : ''}${entry.state === 'paused' ? ' is-paused' : ''}${entry.state === 'interrupted' ? ' is-error' : ''}`
+    const indeterminate = shown && fraction === null
+    this.progress.className = `progress${indeterminate ? ' indeterminate' : ''}${entry.state === 'paused' ? ' is-paused' : ''}`
     this.progress.style.setProperty('--value', String(fraction ?? 0))
   }
 

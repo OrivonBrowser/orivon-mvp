@@ -75,6 +75,24 @@ describe('showing the bubble', () => {
     expect(unsubscribed).toHaveBeenCalledTimes(1)
   })
 
+  it('sends nothing and clears no dot for a change that was waiting when it closed', () => {
+    vi.useFakeTimers()
+    try {
+      const { handler, send, fire, window, downloads } = rig([entry('a', 'progressing')])
+      handler.show?.(undefined)
+      fire(entry('a', 'progressing'))
+      attentionFor(window as never, downloads).note(entry('a', 'completed'))
+      fire(entry('a', 'completed'))
+      const sent = send.mock.calls.length
+      handler.closed?.('request')
+      vi.advanceTimersByTime(1000)
+      expect(send).toHaveBeenCalledTimes(sent)
+      expect(attentionFor(window as never, downloads).value()).toBe('done')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('does not stack a second subscription when it is shown again', () => {
     const { handler, unsubscribed } = rig([])
     handler.show?.(undefined)

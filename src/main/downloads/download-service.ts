@@ -5,8 +5,8 @@
 import { basename, dirname, join } from 'node:path'
 import type { DownloadItem, WebContents } from 'electron'
 import { isDangerousFile } from './dangerous-file.js'
-import { holdPath, keepPath, released, restoreEntries, shouldHold } from './danger-hold.js'
-import { isActive, isSettled, safeFileName, summarise, uniquePath } from './download-model.js'
+import { holdPath, isHoldPath, keepPath, released, restoreEntries, shouldHold } from './danger-hold.js'
+import { MAX_ADDRESS_LENGTH, boundedText, isActive, isSettled, safeFileName, storedAddress, summarise, uniquePath } from './download-model.js'
 import { MAX_ENTRIES } from './download-store.js'
 import type { DownloadStore } from './download-store.js'
 import type { DownloadChange, DownloadEntry, DownloadReason, DownloadState, DownloadSummary } from './download-types.js'
@@ -45,6 +45,11 @@ export interface StartInfo {
 
 /** How many downloads one tab may have running before the rest are refused. */
 export const MAX_RUNNING_PER_TAB = 10
+/** How many downloads a page may start without the person asking for any, in a window of time, before the rest are refused. */
+export const MAX_AUTOMATIC_PER_WINDOW = 3
+export const AUTOMATIC_WINDOW_MS = 10_000
+/** Stands for the tabs a download does not name (one with no tab behind it) in the bookkeeping per tab. */
+const NO_TAB = -1
 const MISSING_CHECK_MS = 2000
 const RETRY_WAIT_MS = 30_000
 
@@ -70,6 +75,8 @@ export class DownloadService {
   private readonly startListeners = new Set<(info: StartInfo) => void>()
   /** Tabs whose refused downloads have already been written down once. */
   private readonly flooded = new Set<number>()
+  /** When each tab last started a download the person did not ask for, newest last. */
+  private readonly automatic = new Map<number, number[]>()
   /** A retry's address to the entry it replaces once the new download starts. */
   private readonly retrying = new Map<string, string>()
   private readonly missingChecks = new Map<string, { at: number, missing: boolean }>()
@@ -109,12 +116,12 @@ export class DownloadService {
   /** Called from `will-download`, synchronously: the save path is decided before this returns. */
   track (item: DownloadItem, contents: WebContents | undefined, event: { preventDefault: () => void }): void {
     const contentsId = contents?.id
-    const url = item.getURLChain()[0] ?? item.getURL()
-    const referrer = pageAddress(contents)
+    const url = storedAddress(item.getURLChain()[0] ?? item.getURL())
+    const referrer = storedAddress(pageAddress(contents))
     const suggested = safeFileName(item.getFilename())
-    const mime = item.getMimeType()
-    if (contentsId !== undefined && this.runningIn(contentsId) >= this.maxRunning) {
-      this.refuse(event, { url, referrer, fileName: suggested, mime, contentsId })
+    const mime = boundedText(item.getMimeType())
+    if ((contentsId !== undefined && this.runningIn(contentsId) >= this.maxRunning) || this.tooManyAutomatic(contentsId ?? NO_TAB, item.hasUserGesture(), url)) {
+      this.refuse(event, { url, referrer, fileName: suggested, mime, contentsId: contentsId ?? NO_TAB })
       return
     }
     const folder = this.usableFolder()
@@ -173,7 +180,8 @@ export class DownloadService {
     if (entry === undefined || !isSettled(entry)) return false
     const live = this.live.get(id)
     if (live !== undefined && entry.state === 'interrupted' && live.item.canResume()) return this.resume(id)
-    if (!/^https?:\/\//iu.test(entry.url)) return false
+    // An address that was cut to be stored is not the one that was asked for.
+    if (!/^https?:\/\//iu.test(entry.url) || entry.url.length >= MAX_ADDRESS_LENGTH) return false
     this.retrying.set(entry.url, id)
     setTimeout(() => { this.retrying.delete(entry.url) }, RETRY_WAIT_MS).unref()
     this.deps.fetchAgain(entry.url)
@@ -217,7 +225,7 @@ export class DownloadService {
   keep (id: string): boolean {
     const entry = this.find(id)
     if (entry?.state !== 'held') return false
-    if (!this.deps.fileExists(entry.savePath)) { this.discard(id); return false }
+    if (!this.deps.fileExists(entry.savePath) || !isHoldPath(entry.savePath)) { this.discard(id); return false }
     const target = keepPath(entry, (path) => this.taken(path))
     if (!this.drive(() => { this.deps.rename(entry.savePath, target) })) return false
     return this.patch(id, { state: 'completed', savePath: target, fileName: basename(target), danger: true, held: false })
@@ -226,7 +234,9 @@ export class DownloadService {
   /** Deletes a held file and forgets the download. */
   discard (id: string): boolean {
     const entry = this.find(id)
-    if (entry?.state !== 'held' || !this.drive(() => { this.deps.removeFile(entry.savePath) })) return false
+    if (entry?.state !== 'held') return false
+    // A path that is not a hold file is never deleted: the entry is only forgotten.
+    if (isHoldPath(entry.savePath) && !this.drive(() => { this.deps.removeFile(entry.savePath) })) return false
     this.drop([id])
     this.emit(null)
     return true
@@ -251,6 +261,14 @@ export class DownloadService {
     await this.store.flush()
   }
 
+  /** Deletes every temporary file a hold still has on disk. A private session calls this as it ends: its list is not
+   * kept, so nothing would ever answer for a file it left. */
+  discardHeldFiles (): void {
+    for (const entry of [...this.entries, ...this.unlisted.values()]) {
+      if (entry.held === true && isHoldPath(entry.savePath)) this.drive(() => { this.deps.removeFile(entry.savePath) })
+    }
+  }
+
   private find (id: string): DownloadEntry | undefined {
     return this.entries.find((entry) => entry.id === id)
   }
@@ -266,6 +284,17 @@ export class DownloadService {
       if (live.contentsId === contentsId && this.isRunning(id)) running += 1
     }
     return running
+  }
+
+  /** Whether this download is one more than a page may start unasked: counted per tab over a short window, and not by a
+   * retry the person pressed. A refused download is not counted, so the window drains and the page may start again. */
+  private tooManyAutomatic (tab: number, userGesture: boolean, url: string): boolean {
+    if (userGesture || this.retrying.has(url)) return false
+    const now = this.deps.now()
+    const recent = (this.automatic.get(tab) ?? []).filter((at) => now - at < AUTOMATIC_WINDOW_MS)
+    if (recent.length >= MAX_AUTOMATIC_PER_WINDOW) { this.automatic.set(tab, recent); return true }
+    this.automatic.set(tab, [...recent, now])
+    return false
   }
 
   /** Whether a file could not take this name: it is on disk, or a download in progress is about to put one there. */
@@ -353,9 +382,10 @@ export class DownloadService {
     const holding = entry.held === true && (itemPath === '' || itemPath === entry.savePath)
     const savePath = itemPath === '' || holding ? entry.savePath : itemPath
     const fileName = holding || savePath === '' ? entry.fileName : basename(savePath)
+    const mime = boundedText(item.getMimeType())
     return {
-      received: item.getReceivedBytes(), total: item.getTotalBytes(), mime: item.getMimeType(), speed: item.getCurrentBytesPerSecond(),
-      savePath, fileName, danger: holding || isDangerousFile(fileName, item.getMimeType()), ...(entry.held === true ? { held: holding } : {})
+      received: item.getReceivedBytes(), total: item.getTotalBytes(), mime, speed: item.getCurrentBytesPerSecond(),
+      savePath, fileName, danger: holding || isDangerousFile(fileName, mime), ...(entry.held === true ? { held: holding } : {})
     }
   }
 
@@ -379,7 +409,7 @@ export class DownloadService {
     const live = this.live.get(id)
     if (live === undefined) return
     this.live.delete(id)
-    if (live.contentsId !== undefined) this.flooded.delete(live.contentsId)
+    this.flooded.delete(live.contentsId ?? NO_TAB)
     const entry = this.find(id) ?? this.unlisted.get(id)
     if (entry === undefined) return
     const progress = this.progress(live.item, entry)

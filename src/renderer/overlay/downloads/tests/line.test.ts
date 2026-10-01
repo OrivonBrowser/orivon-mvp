@@ -9,14 +9,14 @@ const entry = (over: Partial<DownloadEntry> = {}): DownloadEntry => ({
 const ids = (over: Partial<DownloadEntry>): string[] => rowActions(entry(over)).map((action) => action.id)
 
 describe('lineFor', () => {
-  it('says how far a running download is, in the words of the page', () => {
-    expect(lineFor(entry({ state: 'progressing', speed: 1024 * 1024 }))).toBe('12.4 MB of 80.0 MB, 1.0 MB/s, 2 min left')
-    expect(lineFor(entry({ state: 'paused' }))).toBe('Paused, 12.4 MB of 80.0 MB')
+  it('says how far a running download is and how long it has left, without the speed, so it fits the bubble', () => {
+    expect(lineFor(entry({ state: 'progressing', speed: 1024 * 1024 }))).toBe('12 MB / 80 MB · 2 min left')
+    expect(lineFor(entry({ state: 'paused' }))).toBe('Paused · 12 MB of 80 MB')
   })
 
   it('gives a finished file its size and its host', () => {
-    expect(lineFor(entry())).toBe('80.0 MB · example.org')
-    expect(lineFor(entry({ total: 0, received: 2048 }))).toBe('2.0 KB · example.org')
+    expect(lineFor(entry())).toBe('80 MB · example.org')
+    expect(lineFor(entry({ total: 0, received: 2048 }))).toBe('2 KB · example.org')
   })
 
   it('says why a download failed, and that a file is gone', () => {

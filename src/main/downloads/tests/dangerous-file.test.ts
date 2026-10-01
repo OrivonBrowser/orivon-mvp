@@ -6,6 +6,14 @@ describe('isDangerousFile', () => {
     expect(isDangerousFile(name, '')).toBe(true)
   })
 
+  it.each([
+    'a.vbe', 'a.wsh', 'a.ws', 'a.cpl', 'a.msc', 'a.msp', 'a.mst', 'a.chm', 'a.scf', 'a.url', 'a.website', 'a.inf', 'a.gadget',
+    'a.application', 'a.appref-ms', 'a.settingcontent-ms', 'a.xbap', 'a.iso', 'a.img', 'a.vhd', 'a.vhdx', 'a.psm1', 'a.psd1',
+    'a.ps1xml', 'a.terminal', 'a.workflow', 'a.scpt', 'a.applescript', 'a.mpkg', 'a.webloc', 'a.inetloc', 'a.fileloc', 'a.py', 'a.pl'
+  ])('says %s is dangerous too', (name) => {
+    expect(isDangerousFile(name, '')).toBe(true)
+  })
+
   it('goes by the last extension, so a double extension does not hide one', () => {
     expect(isDangerousFile('photo.jpg.exe', 'image/jpeg')).toBe(true)
     expect(isDangerousFile('setup.exe.txt', 'text/plain')).toBe(false)

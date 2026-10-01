@@ -112,6 +112,14 @@ describe('keep', () => {
     error.mockRestore()
   })
 
+  it('keeps a file whose name is long text in a language that takes several bytes a letter', () => {
+    const { service, id, deps } = heldDownload(`${'漢'.repeat(150)}.exe`)
+    expect(service.keep(id)).toBe(true)
+    const kept = service.list()[0]?.fileName ?? ''
+    expect(Buffer.byteLength(kept)).toBeLessThanOrEqual(200)
+    expect(deps.rename).toHaveBeenCalledWith(HELD, join(DIR, kept))
+  })
+
   it('forgets a held download whose temporary file has gone', () => {
     const { service, id, files } = heldDownload()
     files.delete(HELD)
@@ -201,6 +209,48 @@ describe('a restart', () => {
     expect(service.list()[0]).toMatchObject({ state: 'interrupted', reason: 'closed' })
     expect(service.list()[0]).not.toHaveProperty('held')
     expect(deps.removeFile).toHaveBeenCalledWith(stored().savePath)
+  })
+})
+
+describe('a restart with a list that cannot be trusted', () => {
+  const stored = (over: Partial<DownloadEntry>): DownloadEntry => ({
+    id: 'h', url: 'https://a.example/setup.exe', referrer: '', fileName: 'setup.exe', savePath: join(DIR, 'Unconfirmed h.download'), mime: '',
+    total: 4096, received: 4096, state: 'held', startedAt: 1, danger: true, held: true, ...over
+  })
+
+  it('deletes the temporary file of a hold that was interrupted, and lists the entry as an ordinary failure', () => {
+    const { service, deps } = harness([stored({ state: 'interrupted', reason: 'network' })])
+    expect(service.list()[0]).toMatchObject({ state: 'interrupted', reason: 'network' })
+    expect(service.list()[0]).not.toHaveProperty('held')
+    expect(deps.removeFile).toHaveBeenCalledWith(join(DIR, 'Unconfirmed h.download'))
+  })
+
+  it('touches nothing on disk for a held entry whose path is not a hold file, and drops the entry', () => {
+    const stolen = ['/etc/passwd', join(DIR, 'notes.txt'), join('relative', 'Unconfirmed x.download'), join(DIR, 'Unconfirmed ../x.download')]
+    const entries = stolen.flatMap((savePath, index) => ['held', 'progressing', 'interrupted'].map((state) => stored({ id: `${String(index)}${state}`, savePath, state: state as DownloadEntry['state'] })))
+    const { service, deps } = harness(entries, { fileExists: () => true })
+    expect(service.list()).toEqual([])
+    expect(deps.removeFile).not.toHaveBeenCalled()
+    expect(deps.rename).not.toHaveBeenCalled()
+  })
+})
+
+describe('the end of a private session', () => {
+  it('deletes every temporary file a hold left, whether it is waiting or still arriving', () => {
+    const { service, start, deps, files } = harness()
+    const arriving = item('a.exe')
+    start(arriving)
+    const waiting = item('b.exe')
+    start(waiting)
+    waiting.finish('completed')
+    const plain = item('c.pdf')
+    start(plain)
+    files.add(arriving.savePath)
+    files.add(waiting.savePath)
+    service.discardHeldFiles()
+    expect(deps.removeFile).toHaveBeenCalledTimes(2)
+    expect(deps.removeFile).toHaveBeenCalledWith(arriving.savePath)
+    expect(deps.removeFile).toHaveBeenCalledWith(waiting.savePath)
   })
 })
 

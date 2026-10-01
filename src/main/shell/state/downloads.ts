@@ -25,6 +25,6 @@ export const downloadsStatePart: ShellStatePart = {
     const pushSoon = throttleChanges(() => { push() })
     const stopDownloads = downloads.onChange((change) => { attention.note(change); pushSoon(change) })
     const stopSettings = settings.onChange(({ key }) => { if (key === 'toolbar.downloads') push() })
-    return () => { stopDownloads(); stopSettings() }
+    return () => { stopDownloads(); stopSettings(); pushSoon.cancel() }
   }
 }

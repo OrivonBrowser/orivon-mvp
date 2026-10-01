@@ -24,16 +24,26 @@ describe('safeFileName', () => {
     expect(safeFileName('', 'page')).toBe('page')
   })
 
-  it('cuts a long name to 200 characters and keeps its extension', () => {
+  it('cuts a long name to 200 bytes and keeps its extension', () => {
     const name = safeFileName(`${'a'.repeat(300)}.pdf`)
     expect(name).toHaveLength(200)
     expect(name.endsWith('.pdf')).toBe(true)
     expect(safeFileName('b'.repeat(300))).toHaveLength(200)
   })
 
+  it('counts bytes, not characters, so a name of CJK text or emoji fits a file system that allows 255', () => {
+    for (const text of ['漢'.repeat(150), '😀'.repeat(150), 'é'.repeat(300)]) {
+      for (const suggested of [text, `${text}.pdf`]) {
+        const name = safeFileName(suggested)
+        expect(Buffer.byteLength(name)).toBeLessThanOrEqual(200)
+        expect(Buffer.byteLength(name)).toBeGreaterThan(190)
+      }
+    }
+    expect(safeFileName(`${'漢'.repeat(150)}.pdf`).endsWith('.pdf')).toBe(true)
+  })
+
   it('does not split a surrogate pair when it cuts', () => {
     const name = safeFileName('😀'.repeat(150))
-    expect(name.length).toBeLessThanOrEqual(200)
     expect(name).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])/u)
   })
 
@@ -46,6 +56,22 @@ describe('safeFileName', () => {
     expect(safeFileName('a\u0000b\u001fc.txt')).toBe('a_b_c.txt')
     expect(safeFileName('cod‮fdp.exe')).toBe('cod_fdp.exe')
     expect(safeFileName('a<b>c:d"e|f?g*h')).toBe('a_b_c_d_e_f_g_h')
+  })
+
+  it('replaces C1 controls, the Arabic letter mark, zero-width characters and the byte order mark', () => {
+    expect(safeFileName('a\u0080b\u009fc')).toBe('a_b_c')
+    expect(safeFileName('a\u061cb')).toBe('a_b')
+    expect(safeFileName('a\u200bb\u200cc\u200dd\u200ee\u200ff')).toBe('a_b_c_d_e_f')
+    expect(safeFileName('a\u202ab\u202ec\u2066d\u2069e')).toBe('a_b_c_d_e')
+    expect(safeFileName('a\ufeffb.txt')).toBe('a_b.txt')
+  })
+
+  it('prefixes the console device names and the superscript COM and LPT names as well', () => {
+    expect(safeFileName('CONIN$')).toBe('_CONIN$')
+    expect(safeFileName('conout$.txt')).toBe('_conout$.txt')
+    expect(safeFileName('COM\u00b9')).toBe('_COM\u00b9')
+    expect(safeFileName('lpt\u00b3.log')).toBe('_lpt\u00b3.log')
+    expect(safeFileName('com0')).toBe('com0')
   })
 })
 
@@ -71,8 +97,21 @@ describe('uniquePath', () => {
     expect(uniquePath(dir, 'notes', (path) => taken.has(path))).toBe(join(dir, 'notes (1)'))
   })
 
-  it('stops looking after a bounded number of tries', () => {
-    expect(uniquePath(dir, 'f.txt', () => true)).toBe(join(dir, 'f (10001).txt'))
+  it('stops counting after a hundred and uses a random suffix, which is also checked', () => {
+    const tried: string[] = []
+    const suffixes = ['aaaaaaaa', 'bbbbbbbb']
+    const path = uniquePath(dir, 'f.txt', (candidate) => {
+      tried.push(candidate)
+      return candidate !== join(dir, 'f (bbbbbbbb).txt')
+    }, () => suffixes.shift() ?? 'cccccccc')
+    expect(path).toBe(join(dir, 'f (bbbbbbbb).txt'))
+    expect(tried).toHaveLength(1 + 100 + 2)
+    expect(tried).not.toContain(join(dir, 'f (101).txt'))
+  })
+
+  it('never returns a name that exists, however many copies there are', () => {
+    const real = uniquePath(dir, 'f.txt', (candidate) => !/ \([0-9a-f]{8}\)/u.test(candidate))
+    expect(real).toMatch(/f \([0-9a-f]{8}\)\.txt$/u)
   })
 })
 

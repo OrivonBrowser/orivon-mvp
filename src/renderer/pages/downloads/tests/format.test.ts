@@ -9,13 +9,17 @@ const entry = (over: Partial<DownloadEntry>): DownloadEntry => ({
 const MB = 1024 * 1024
 
 describe('formatBytes and formatSpeed', () => {
-  it('uses one decimal above a byte', () => {
+  it('uses one decimal below ten, none from ten up, and none for a round number', () => {
     expect(formatBytes(0)).toBe('0 B')
     expect(formatBytes(512)).toBe('512 B')
     expect(formatBytes(1536)).toBe('1.5 KB')
-    expect(formatBytes(80 * MB)).toBe('80.0 MB')
-    expect(formatBytes(12.4 * MB)).toBe('12.4 MB')
-    expect(formatBytes(3 * 1024 * MB)).toBe('3.0 GB')
+    expect(formatBytes(80 * MB)).toBe('80 MB')
+    expect(formatBytes(12.4 * MB)).toBe('12 MB')
+    expect(formatBytes(200 * 1024)).toBe('200 KB')
+    expect(formatBytes(1024 * 1024)).toBe('1 MB')
+    expect(formatBytes(4.25 * MB)).toBe('4.3 MB')
+    expect(formatBytes(3 * 1024 * MB)).toBe('3 GB')
+    expect(formatBytes(1023.6 * 1024)).toBe('1 MB')
     expect(formatBytes(-5)).toBe('0 B')
   })
 
@@ -32,22 +36,22 @@ describe('formatTimeLeft', () => {
 
 describe('statusLine', () => {
   it('gives progress, speed and time left', () => {
-    expect(statusLine(entry({ received: 12.4 * MB, total: 80 * MB, speed: 2.1 * MB }))).toBe('12.4 MB of 80.0 MB, 2.1 MB/s, 33 s left')
+    expect(statusLine(entry({ received: 12.4 * MB, total: 80 * MB, speed: 2.1 * MB }))).toBe('12 MB of 80 MB · 2.1 MB/s · 33 s left')
   })
 
   it('leaves out what is not known: no speed yet, or no total', () => {
-    expect(statusLine(entry({ received: 12.4 * MB, total: 80 * MB }))).toBe('12.4 MB of 80.0 MB')
-    expect(statusLine(entry({ received: 12.4 * MB, speed: 2.1 * MB }))).toBe('12.4 MB, 2.1 MB/s')
+    expect(statusLine(entry({ received: 12.4 * MB, total: 80 * MB }))).toBe('12 MB of 80 MB')
+    expect(statusLine(entry({ received: 12.4 * MB, speed: 2.1 * MB }))).toBe('12 MB · 2.1 MB/s')
   })
 
   it('says paused, with how far it got', () => {
-    expect(statusLine(entry({ state: 'paused', received: 12.4 * MB, total: 80 * MB }))).toBe('Paused, 12.4 MB of 80.0 MB')
-    expect(statusLine(entry({ state: 'paused', received: 12.4 * MB }))).toBe('Paused, 12.4 MB')
+    expect(statusLine(entry({ state: 'paused', received: 12.4 * MB, total: 80 * MB }))).toBe('Paused · 12 MB of 80 MB')
+    expect(statusLine(entry({ state: 'paused', received: 12.4 * MB }))).toBe('Paused · 12 MB')
   })
 
   it('gives the size of a finished file, or says it is gone', () => {
-    expect(statusLine(entry({ state: 'completed', total: 80 * MB, received: 80 * MB }))).toBe('80.0 MB')
-    expect(statusLine(entry({ state: 'completed', total: 0, received: 2 * MB }))).toBe('2.0 MB')
+    expect(statusLine(entry({ state: 'completed', total: 80 * MB, received: 80 * MB }))).toBe('80 MB')
+    expect(statusLine(entry({ state: 'completed', total: 0, received: 2.5 * MB }))).toBe('2.5 MB')
     expect(statusLine(entry({ state: 'completed', total: 80 * MB, missing: true }))).toBe('Moved or deleted')
   })
 
