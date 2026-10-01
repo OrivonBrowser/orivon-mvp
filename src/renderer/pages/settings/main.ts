@@ -89,6 +89,8 @@ function renderNav (): void {
     previous = section
   }
   replaceChildren(nav, ...items)
+  // A strip that scrolls sideways keeps the current section in view.
+  nav.querySelector('.nav-item.current')?.scrollIntoView({ block: 'nearest', inline: 'center' })
 }
 
 function render (): void {

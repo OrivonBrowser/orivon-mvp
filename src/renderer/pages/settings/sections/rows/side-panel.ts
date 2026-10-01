@@ -4,16 +4,16 @@ import type { Row } from '../../model.js'
 export const sidePanelRows: readonly Row[] = [
   {
     id: 'side-panel-side',
-    label: 'Show the side panel on the',
-    help: 'The panel beside the page that lists your bookmarks, history and more. Open it from More tools in the menu.',
+    label: 'Side panel position',
+    help: 'The panel beside the page for bookmarks, history and more. Open it with the side panel button on the toolbar.',
     keywords: ['sidebar', 'panel', 'dock', 'left', 'right', 'bookmarks', 'history'],
     group: 'Side panel',
     control: {
       type: 'choice',
       key: 'sidePanel.side',
       options: [
-        { value: 'right', label: 'Right' },
-        { value: 'left', label: 'Left' }
+        { value: 'right', label: 'Right side' },
+        { value: 'left', label: 'Left side' }
       ]
     }
   }

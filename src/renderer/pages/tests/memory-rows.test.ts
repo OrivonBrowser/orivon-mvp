@@ -25,6 +25,14 @@ describe('the Performance rows', () => {
     expect(wait?.visible?.(state(false))).toBe(false)
   })
 
+  it('shows the keep-awake list while either saver can put tabs to sleep', () => {
+    const list = memoryRows.find((row) => row.id === 'keep-awake')
+    const values = (saver: boolean, energy: string): SettingsState => ({ value: (key: string) => key === 'performance.memorySaver' ? saver : key === 'performance.energySaver' ? energy : undefined }) as unknown as SettingsState
+    expect(list?.visible?.(values(true, 'off'))).toBe(true)
+    expect(list?.visible?.(values(false, 'battery'))).toBe(true)
+    expect(list?.visible?.(values(false, 'off'))).toBe(false)
+  })
+
   it('is found by the words a person would search for', () => {
     const words = new Set(memoryRows.flatMap((row) => row.keywords ?? []))
     for (const word of ['memory', 'sleep', 'discard', 'suspend', 'tabs', 'battery', 'performance', 'ram']) expect(words.has(word), word).toBe(true)
@@ -33,7 +41,7 @@ describe('the Performance rows', () => {
   it('puts the energy saver under its own heading, and offers Off and When on battery', () => {
     const energy = memoryRows.find((row) => row.id === 'energy-saver')
     expect(energy?.group).toBe('Energy')
-    expect(energy?.help).toBe('On battery, tabs go to sleep after 5 minutes.')
+    expect(energy?.help).toBe('When this is on, tabs go to sleep after 5 minutes while the computer runs on battery.')
     expect(energy?.control).toMatchObject({ type: 'choice', options: [{ value: 'off', label: 'Off' }, { value: 'battery', label: 'When on battery' }] })
   })
 })

@@ -141,9 +141,11 @@
   .layout { flex-direction: column; height: auto; min-height: 100vh; }
   .sidebar { width: auto; border-right: none; border-bottom: 1px solid var(--wborder); }
   .nav-scroll { padding: 2px 12px 10px; }
-  .nav-list { display: flex; overflow-x: auto; gap: 4px; }
+  .nav-list { display: flex; overflow-x: auto; gap: 4px; scrollbar-width: none; }
+  .nav-item { flex: none; }
   .nav-group { display: none; }
-  .row { flex-direction: column; align-items: stretch; }
+  .row { flex-direction: column; align-items: stretch; gap: 12px; }
+  .row:has(.switch), .row:has(.row-control > kbd.value) { flex-direction: row; align-items: center; }
   .row-control { max-width: none; }
   .content { padding: 20px 16px 48px; }
 }

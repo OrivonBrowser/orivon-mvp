@@ -23,13 +23,14 @@ export const memoryRows: readonly Row[] = [
     label: 'Always keep these sites awake',
     help: 'Sites you add here, and their subdomains, never go to sleep. Pinned tabs, tabs playing sound and tabs with unsaved changes stay awake too.',
     keywords: ['memory', 'sleep', 'discard', 'suspend', 'tabs', 'exceptions', 'never', 'keep', 'sites'],
-    control: hostListControl('performance.keepAwake', { placeholder: 'Add a site, like example.com', empty: 'Sites you add here never go to sleep.', label: 'Add a site to keep awake' })
+    control: hostListControl('performance.keepAwake', { placeholder: 'Add a site, like example.com', empty: 'Sites you add here never go to sleep.', label: 'Add a site to keep awake' }),
+    visible: (state) => state.value('performance.memorySaver') === true || state.value('performance.energySaver') === 'battery'
   },
   {
     id: 'energy-saver',
     group: 'Energy',
     label: 'Energy saver',
-    help: 'On battery, tabs go to sleep after 5 minutes.',
+    help: 'When this is on, tabs go to sleep after 5 minutes while the computer runs on battery.',
     keywords: ['battery', 'energy', 'power', 'sleep', 'tabs', 'laptop', 'performance', 'save'],
     control: {
       type: 'choice',
