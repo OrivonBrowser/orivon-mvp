@@ -1,0 +1,28 @@
+{
+  "worker": {
+    "getAllFrames": "function",
+    "getFrame": "function",
+    "onBeforeNavigate": "event",
+    "onCommitted": "event",
+    "onCompleted": "event",
+    "onCreatedNavigationTarget": "event",
+    "onDOMContentLoaded": "event",
+    "onErrorOccurred": "event",
+    "onHistoryStateUpdated": "event",
+    "onReferenceFragmentUpdated": "event",
+    "onTabReplaced": "event"
+  },
+  "page": {
+    "getAllFrames": "function",
+    "getFrame": "function",
+    "onBeforeNavigate": "event",
+    "onCommitted": "event",
+    "onCompleted": "event",
+    "onCreatedNavigationTarget": "event",
+    "onDOMContentLoaded": "event",
+    "onErrorOccurred": "event",
+    "onHistoryStateUpdated": "event",
+    "onReferenceFragmentUpdated": "event",
+    "onTabReplaced": "event"
+  }
+}

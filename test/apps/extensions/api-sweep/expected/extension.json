@@ -1,0 +1,15 @@
+{
+  "worker": {
+    "getViews": "function",
+    "inIncognitoContext": "boolean",
+    "isAllowedFileSchemeAccess": "function",
+    "isAllowedIncognitoAccess": "function"
+  },
+  "page": {
+    "getBackgroundPage": "function",
+    "getViews": "function",
+    "inIncognitoContext": "boolean",
+    "isAllowedFileSchemeAccess": "function",
+    "isAllowedIncognitoAccess": "function"
+  }
+}

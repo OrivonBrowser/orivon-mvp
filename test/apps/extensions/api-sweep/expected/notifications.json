@@ -1,0 +1,22 @@
+{
+  "worker": {
+    "clear": "function",
+    "create": "function",
+    "getAll": "function",
+    "getPermissionLevel": "function",
+    "onButtonClicked": "event",
+    "onClicked": "event",
+    "onClosed": "event",
+    "update": "function"
+  },
+  "page": {
+    "clear": "function",
+    "create": "function",
+    "getAll": "function",
+    "getPermissionLevel": "function",
+    "onButtonClicked": "event",
+    "onClicked": "event",
+    "onClosed": "event",
+    "update": "function"
+  }
+}

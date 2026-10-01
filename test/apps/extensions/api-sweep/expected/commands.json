@@ -1,0 +1,10 @@
+{
+  "worker": {
+    "getAll": "function",
+    "onCommand": "event"
+  },
+  "page": {
+    "getAll": "function",
+    "onCommand": "event"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "worker": {
+    "getAvailableStaticRuleCount": "function",
+    "getDynamicRules": "function",
+    "getEnabledRulesets": "function",
+    "getMatchedRules": "function",
+    "getSessionRules": "function",
+    "isRegexSupported": "function",
+    "onRuleMatchedDebug": "event",
+    "setExtensionActionOptions": "function",
+    "testMatchOutcome": "function",
+    "updateDynamicRules": "function",
+    "updateEnabledRulesets": "function",
+    "updateSessionRules": "function"
+  },
+  "page": {
+    "getAvailableStaticRuleCount": "function",
+    "getDynamicRules": "function",
+    "getEnabledRulesets": "function",
+    "getMatchedRules": "function",
+    "getSessionRules": "function",
+    "isRegexSupported": "function",
+    "onRuleMatchedDebug": "event",
+    "setExtensionActionOptions": "function",
+    "testMatchOutcome": "function",
+    "updateDynamicRules": "function",
+    "updateEnabledRulesets": "function",
+    "updateSessionRules": "function"
+  }
+}

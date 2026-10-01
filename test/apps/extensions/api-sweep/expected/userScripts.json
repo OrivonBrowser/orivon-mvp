@@ -1,0 +1,16 @@
+{
+  "worker": {
+    "configureWorld": "function",
+    "getScripts": "function",
+    "register": "function",
+    "unregister": "function",
+    "update": "function"
+  },
+  "page": {
+    "configureWorld": "function",
+    "getScripts": "function",
+    "register": "function",
+    "unregister": "function",
+    "update": "function"
+  }
+}
