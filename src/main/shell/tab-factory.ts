@@ -15,6 +15,7 @@ import type { InternalPageRegistry } from '../pages/internal-registry.js'
 import { guardInternalView } from '../pages/internal-tab.js'
 import type { TabRecord, TabViewHost } from './tab-types.js'
 import { appTabArgsFor, makeTabView, partitionForTarget, wireView } from './tab-view.js'
+import { paintBacking } from './tab-backing.js'
 import { APP_DARK_WASH, INTERNAL_PAGE_BACKGROUND, onThemeUpdated, resolveThemeColor } from './theme-colors.js'
 
 /** The safe fallback for a REJECTED navigation (a dangerous typed scheme,
@@ -152,7 +153,7 @@ export class TabFactory {
     guardInternalView(view, page, (target) => { record.host.openTab(target) })
     // The page never leaves orivon://, so its backing colour follows the theme for as long as the view lives.
     const stopTheme = onThemeUpdated(() => {
-      if (!view.webContents.isDestroyed()) view.setBackgroundColor(resolveThemeColor(INTERNAL_PAGE_BACKGROUND))
+      if (!view.webContents.isDestroyed()) paintBacking(view, resolveThemeColor(INTERNAL_PAGE_BACKGROUND))
     })
     view.webContents.once('destroyed', stopTheme)
     this.internalPages?.register(view.webContents, page)

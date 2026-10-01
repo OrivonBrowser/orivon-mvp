@@ -15,6 +15,7 @@ import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { DEFAULT_BACKGROUND } from './theme-colors.js'
 import { sheetBackdropOf } from './sheet-backdrop.js'
 import { recordViewBackground } from './view-background-test-hook.js'
+import { watchBacking } from './tab-backing.js'
 import { repartitionView } from './tab-parking.js'
 import { parseInternalUrl } from '../pages/internal-pages.js'
 import { canViewSource } from '../page-tools/view-source.js'
@@ -223,6 +224,7 @@ export function wireView (id: string, record: TabRecord): void {
     record.host.emitState()
   })
   wc.on('did-navigate-in-page', () => { record.host.emitState() })
+  watchBacking(view, record, shown)
   wc.on('did-start-loading', () => { record.host.emitState() })
   wc.on('did-stop-loading', () => { record.host.emitState() })
   wc.on('page-favicon-updated', (_event, favicons: string[]) => {

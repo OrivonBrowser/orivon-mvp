@@ -25,8 +25,8 @@ function paint (view: WebContentsView, color: string): void {
   recordViewBackground(view.webContents.id, color)
 }
 
-/** What the view holds when no sheet is over it: the dashboard's wash, an internal page's surface, or the default. */
-function restingColor (record: TabRecord): string {
+/** What the view holds when no sheet is over it: the dashboard's wash, an internal page's surface, or the default. Also what the window behind the views shows for the tab on top. */
+export function restingColor (record: TabRecord): string {
   if (record.isDashboardTab) return APP_DARK_WASH
   return record.internalPage !== null ? sheetColor() : DEFAULT_BACKGROUND
 }
