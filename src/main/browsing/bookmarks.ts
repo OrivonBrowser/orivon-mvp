@@ -48,6 +48,8 @@ export class BookmarkStore {
   private readonly writer = new DebouncedWriter(async () => { await this.writeNow() })
   /** What the file was when read: a legacy or unreadable file is kept aside before the first write replaces it. */
   private fileState: FileState = 'current'
+  /** A notice of a late icon is queued and has not run yet. */
+  private iconNoticePending = false
   private kept = false
   /** The addresses of the bar and Other bookmarks, rebuilt when the tree changes: `has` runs on every state push. */
   private addresses: ReadonlySet<string> | null = null
@@ -66,7 +68,14 @@ export class BookmarkStore {
 
   private async readFromDisk (): Promise<void> {
     let raw: string
-    try { raw = await readFile(this.filePath, 'utf8') } catch { return }
+    try {
+      raw = await readFile(this.filePath, 'utf8')
+    } catch (error) {
+      // No file is a first launch. A file that is there and cannot be read is not: it is kept as it is until the next
+      // write has made a copy of it.
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.fileState = 'unreadable'
+      return
+    }
     const modified = await stat(this.filePath).then((info) => info.mtimeMs, () => this.clock())
     const parsed = parseBookmarksFile(raw, { legacyAdded: Math.trunc(modified), newId: this.newId })
     this.tree = parsed.tree
@@ -164,9 +173,9 @@ export class BookmarkStore {
   }
 
   /** Fills the icon of every saved page of that address that has none, and reports whether anything changed.
-   * Deliberately silent to `onChange`, only scheduling the write: its caller runs inside a state push, and a
-   * notification there would push state from within a push. An icon already stored is never replaced: it is the
-   * one the person chose when starring. */
+   * The listeners hear of it one microtask later, never inside the call: its caller runs inside a state push, and a
+   * notification there would push state from within a push. Every window then draws the icon, not only the one whose
+   * push found it. An icon already stored is never replaced: it is the one the person chose when starring. */
   fillMissingFavicon (url: string, favicon: string): boolean {
     const safe = sanitizeStoredFavicon(favicon)
     if (safe === null) return false
@@ -174,6 +183,13 @@ export class BookmarkStore {
     if (next === null) return false
     this.tree = next
     this.writer.schedule()
+    if (!this.iconNoticePending) {
+      this.iconNoticePending = true
+      queueMicrotask(() => {
+        this.iconNoticePending = false
+        for (const listener of [...this.listeners]) listener()
+      })
+    }
     return true
   }
 
@@ -201,7 +217,10 @@ export class BookmarkStore {
       await mkdir(dirname(this.filePath), { recursive: true })
       if (!this.kept && this.fileState !== 'current') {
         // The old file is the only copy of what this build could not read or has just converted.
-        await copyFile(this.filePath, `${this.filePath}.bak`).catch(() => {})
+        await copyFile(this.filePath, `${this.filePath}.bak`).catch((error: NodeJS.ErrnoException) => {
+          // An unreadable file is replaced only once its copy exists; without one, the write waits.
+          if (this.fileState === 'unreadable' && error.code !== 'ENOENT') throw error
+        })
         this.kept = true
       }
       await writeFileAtomicAsync(this.filePath, serializeBookmarksFile(this.tree))

@@ -74,6 +74,7 @@
 .bm-skeleton .line { flex: 1 1 auto; max-width: 55%; height: 12px; }
 .bm-more { justify-self: center; margin: 8px 0; }
 
+.edit-hint { margin: 4px 0 0; color: var(--wink-dim); font-size: 12px; }
 .empty-state .hint { max-width: 380px; font-size: 13px; }
 
 .drop-line { position: absolute; z-index: 5; }

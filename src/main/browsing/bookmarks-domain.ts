@@ -6,6 +6,7 @@ import type { BaseWindow, WebContents } from 'electron'
 import type { InternalDomain } from '../pages/internal-ipc.js'
 import type { ShellWindow } from '../shell/window-registry.js'
 import type { BookmarkNode, BookmarkTreeInput } from './bookmark-types.js'
+import { ID_PATTERN, MAX_NODES } from './bookmark-tree.js'
 import type { BookmarkStore } from './bookmarks.js'
 import { MAX_UNDO_NODES, UNDO_MS, restore, snapshot, topLevel } from './bookmarks-undo.js'
 import type { RemovedBatch } from './bookmarks-undo.js'
@@ -13,11 +14,13 @@ import type { RemovedBatch } from './bookmarks-undo.js'
 export type ManagerDisposition = 'current' | 'tab' | 'background' | 'window' | 'private'
 const DISPOSITIONS: readonly ManagerDisposition[] = ['current', 'tab', 'background', 'window', 'private']
 
-export const MAX_IDS = 500
+/** As many as a folder can hold: a page lets the person choose every row of one, and a request that names them all is not refused. */
+export const MAX_IDS = MAX_NODES
 export const MAX_SEARCH_RESULTS = 200
 const MAX_SEARCH_TEXT = 200
 const MAX_TITLE_TEXT = 4_096
 const MAX_URL_TEXT = 16_384
+/** The longest id `ID_PATTERN` takes: a longer text is a malformed request, not a node that is missing. */
 const MAX_ID_LENGTH = 32
 
 type Store = Pick<BookmarkStore, 'node' | 'children' | 'path' | 'folders' | 'search' | 'addFolder' | 'update' | 'move' | 'remove' | 'importTree' | 'exportTree'>
@@ -72,7 +75,7 @@ export function bookmarksDomain (store: Store, deps: BookmarksDomainDeps): Inter
 
   /** A node of the bar or Other bookmarks, or of a folder in them: the reading list is not this page's. */
   const inScope = (id: unknown): id is string => {
-    if (typeof id !== 'string' || id.length === 0 || id.length > MAX_ID_LENGTH) return false
+    if (typeof id !== 'string' || !ID_PATTERN.test(id)) return false
     const root = store.path(id)[0]
     return root !== undefined && (root.id === 'bar' || root.id === 'other')
   }

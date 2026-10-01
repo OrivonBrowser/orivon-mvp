@@ -1,7 +1,7 @@
 // The list at the right: the folder's rows (or a search's results), the path to the folder, and what stands in for
 // rows when there are none. Each row is a listbox option; one is in the tab order at a time, and its button with it.
 import { h } from '../shared/dom.js'
-import { folderIcon, moreIcon, starIcon, webIcon } from '../shared/icons.js'
+import { bookmarkIcon, folderIcon, moreIcon, webIcon } from '../shared/icons.js'
 import { addressLabel, splitMatches } from './row-text.js'
 import type { Crumb, Row } from './state.js'
 
@@ -111,13 +111,13 @@ export interface EmptyView {
 }
 
 export function renderEmpty (view: EmptyView): HTMLElement {
-  if (view.query !== '') return h('div', { className: 'empty-state' }, starIcon(), h('p', { textContent: `No bookmark matches "${view.query}".` }))
+  if (view.query !== '') return h('div', { className: 'empty-state' }, bookmarkIcon(), h('p', { textContent: `No bookmarks match "${view.query}".` }))
   const lines: Array<Node | string> = [h('p', { textContent: 'This folder is empty.' })]
   if (view.storeEmpty) {
-    lines.push(h('p', { className: 'hint', textContent: 'Bookmark a page with the star in the address bar, or import bookmarks from another browser.' }))
+    lines.push(h('p', { className: 'hint', textContent: 'Bookmark a page with the bookmark button next to the address bar (Ctrl+D), or import bookmarks from another browser.' }))
     if (view.importAvailable) lines.push(h('button', { className: 'btn', type: 'button', textContent: 'Import bookmarks…', onclick: view.importBookmarks }))
   }
-  return h('div', { className: 'empty-state' }, starIcon(), ...lines)
+  return h('div', { className: 'empty-state' }, bookmarkIcon(), ...lines)
 }
 
 /** Where the list is: each part but the last takes you there. While a search has the list it says so instead. */
@@ -125,7 +125,7 @@ export function renderCrumbs (crumbs: readonly Crumb[], searching: boolean, coun
   const nav = h('nav', { className: 'crumbs' })
   nav.setAttribute('aria-label', 'Folder path')
   if (searching) {
-    nav.append(h('span', { className: 'crumb-here', textContent: 'Search results' }), h('span', { className: 'crumb-count', textContent: `${count.toLocaleString()}${count === 200 ? '+' : ''}` }))
+    nav.append(h('span', { className: 'crumb-here', textContent: 'Search results' }), h('span', { className: 'crumb-count', textContent: `${count.toLocaleString()}${count === 200 ? '+' : ''} ${count === 1 ? 'result' : 'results'}` }))
     return nav
   }
   const parts: Array<Node | string> = []

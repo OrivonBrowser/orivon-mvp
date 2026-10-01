@@ -158,6 +158,17 @@ describe('the bookmarks domain', () => {
     expect(await call({ type: 'move', ids: Array.from({ length: MAX_IDS + 1 }, () => a.id), parent: 'bar' })).toBeUndefined()
   })
 
+  it('takes a request that names more than five hundred rows, as when every row of a long folder is chosen', async () => {
+    const ids = Array.from({ length: 650 }, (_, index) => page(`Row ${String(index)}`).id)
+    const target = folder('Target')
+    expect(await call({ type: 'move', ids: ids.slice(0, 600), parent: target.id })).toEqual({ ok: true })
+    expect(store.children(target.id)).toHaveLength(600)
+    expect(await call({ type: 'copy', ids })).toEqual({ ok: true, count: 650 })
+    const gone = await call({ type: 'remove', ids }) as { removed: number }
+    expect(gone.removed).toBe(650)
+    expect(titles('bar')).toEqual(['Target'])
+  })
+
   it('removes a subtree, counts every item, and undo puts it back in the same place with the same shape', async () => {
     const a = page('A')
     const work = folder('Work')

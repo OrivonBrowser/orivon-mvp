@@ -2,6 +2,7 @@
 // Other bookmarks. Pure, so a hand-typed address is judged in one place.
 export const DEFAULT_FOLDER = 'bar'
 
+/** The shape of an id is `ID_PATTERN` in src/main/browsing/bookmark-tree.ts; a test holds the two the same. */
 const FOLDER_PATH = /^\/folder\/([A-Za-z0-9_-]{1,32})\/?$/
 
 /** The folder `pathname` names, or null when it names none (the page then shows the bar). */
