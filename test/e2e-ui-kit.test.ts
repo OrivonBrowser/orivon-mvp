@@ -163,7 +163,7 @@ it('draws every component at its promised size and state, in light and dark', as
 
       // Every icon the kit adds has a 24px viewBox and draws something.
       const icons = await page.evaluate(() => [...document.querySelectorAll('#icon-grid svg')].map((el) => ({ box: el.getAttribute('viewBox'), drawn: el.getBoundingClientRect().width > 0 && el.children.length > 0 })))
-      expect(icons).toHaveLength(31)
+      expect(icons).toHaveLength(33)
       expect(icons.every((one) => one.box === '0 0 24 24' && one.drawn)).toBe(true)
 
       if (SHOTS_DIR !== undefined) {
