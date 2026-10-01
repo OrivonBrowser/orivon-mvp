@@ -72,18 +72,24 @@ function sleepSync (ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 }
 
-/** Runs one orivon.fs call, rethrowing its OrivonError as a Node-shaped one -- fs/paths.ts's guarded(), synchronous. */
-export function guardedSync<T> (run: () => T, sleep: (ms: number) => void = sleepSync): T {
+/** Runs `run`, asking again while the limiter refuses it; any other error, or the last refusal, is thrown as it came. */
+function retryLimited<T> (run: () => T, sleep: (ms: number) => void): T {
   for (let attempt = 0; ; attempt += 1) {
     try {
       return run()
     } catch (error) {
-      if (attempt < LIMIT_RETRIES && isLimit(error)) {
-        sleep(LIMIT_BACKOFF_MS * Math.min(attempt + 1, 8))
-        continue
-      }
-      throw toNodeError(error)
+      if (attempt >= LIMIT_RETRIES || !isLimit(error)) throw error
+      sleep(LIMIT_BACKOFF_MS * Math.min(attempt + 1, 8))
     }
+  }
+}
+
+/** Runs one orivon.fs call, rethrowing its OrivonError as a Node-shaped one -- fs/paths.ts's guarded(), synchronous. */
+export function guardedSync<T> (run: () => T, sleep: (ms: number) => void = sleepSync): T {
+  try {
+    return retryLimited(run, sleep)
+  } catch (error) {
+    throw toNodeError(error)
   }
 }
 
@@ -92,9 +98,10 @@ export function tryStatSync (confined: string): boolean | undefined {
   const fs = trySyncFs()
   if (fs === undefined) return undefined
   try {
-    fs.stat(confined)
+    retryLimited(() => fs.stat(confined), sleepSync)
     return true
   } catch {
+    // Missing, or refused for good: a limit that outlasts the retries is not an answer about the file, but existsSync has no other.
     return false
   }
 }

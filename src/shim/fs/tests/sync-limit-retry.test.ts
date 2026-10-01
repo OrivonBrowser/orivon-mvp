@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
-import { guardedSync } from '../sync-orivon.js'
+import { afterEach, describe, expect, it } from 'vitest'
+import { SYNCHRONOUS } from '../../worker/sync-channel.js'
+import { guardedSync, tryStatSync } from '../sync-orivon.js'
 
 describe('guardedSync and a rate-limited call', () => {
   it('asks again, with a growing pause, until the call is admitted', () => {
@@ -29,5 +30,25 @@ describe('guardedSync and a rate-limited call', () => {
       throw Object.assign(new Error('no such file'), { code: 'not-found' })
     }, () => undefined)).toThrow()
     expect(calls).toBe(1)
+  })
+})
+
+describe('existsSync\'s probe and a rate-limited call', () => {
+  const holder = globalThis as unknown as Record<string, unknown>
+  afterEach(() => { Reflect.deleteProperty(holder, 'orivon') })
+
+  function withStat (stat: () => void): void {
+    holder['orivon'] = { [SYNCHRONOUS]: { fs: { stat } } }
+  }
+
+  it('answers true for a file the limiter refused twice before it admitted the stat', () => {
+    let refused = 2
+    withStat(() => { if (refused-- > 0) throw Object.assign(new Error('too frequently'), { code: 'limit' }) })
+    expect(tryStatSync('/orivon/app/present')).toBe(true)
+  })
+
+  it('answers false for a file that is missing', () => {
+    withStat(() => { throw Object.assign(new Error('missing'), { code: 'not-found' }) })
+    expect(tryStatSync('/orivon/app/absent')).toBe(false)
   })
 })
