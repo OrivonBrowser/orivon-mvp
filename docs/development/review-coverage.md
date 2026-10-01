@@ -285,3 +285,10 @@ In all, 54 findings, 54 confirmed, none refuted.
 | The unit suite, every guard, smoke and 39 end-to-end files in three chunks, after the merge and again after the fixes | The merged branch | One timing regression in a test, fixed without weakening an assertion; the rest green |
 
 In all, 56 findings, 56 confirmed, none refuted.
+
+### `stream/lounge-tls-errors`: Node's error for a refused certificate, and The Lounge over TLS (2026-10-01)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| `/code-review` at medium effort | The branch against `main` | No findings |
+| The new TLS checks run against the bundle built before the fix | `test/e2e-the-lounge-real.test.ts` step j | The trusted-only check failed with the old text, as reported; the rest passed |
