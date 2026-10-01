@@ -316,9 +316,10 @@ it('says what each kind wants, asks for camera and microphone once, and decides 
     await answer(prompt, 'Block')
     expect(await result(view, 'clip')).toBe('ERR:NotAllowedError')
 
-    // The other kinds, each in its own words.
+    // The other kinds, each in its own words. A machine with no MIDI service answers an allowed request with
+    // the platform's InvalidStateError; a refusal by the permission would be NotAllowedError or SecurityError.
     for (const [button, key, text, expected] of [
-      ['#midi', 'midi', 'wants to control and reprogram your MIDI devices', 'midi'],
+      ['#midi', 'midi', 'wants to control and reprogram your MIDI devices', /^(midi|ERR:InvalidStateError)$/],
       ['#idle', 'idle', 'wants to know when you are away from this computer', 'granted'],
       ['#win', 'win', 'wants to place windows across your screens', /^screens:\d+$/]
     ] as const) {

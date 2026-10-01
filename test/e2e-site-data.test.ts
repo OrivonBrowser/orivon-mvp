@@ -45,6 +45,8 @@ function page (writes: boolean): string {
 
 async function site (host: string, cookies: string[]): Promise<Fixture> {
   const server = createServer((request, response) => {
+    // The tab's own favicon request would set the cookies again, at whatever moment it happens to land.
+    if (request.url === '/favicon.ico') { response.statusCode = 404; response.end(); return }
     response.setHeader('content-type', 'text/html')
     response.setHeader('set-cookie', cookies)
     response.end(page(request.url !== '/check'))
@@ -138,7 +140,7 @@ it('lists a site\'s cookies by name, deletes one, then all, and leaves the other
   expect(await window.locator('.cookie-name').allTextContents()).toEqual(['a', 'b', 'c'])
   expect(await cookieRow(window, 'b').locator('.badge').allTextContents()).toEqual(['HttpOnly'])
   expect(await cookieRow(window, 'c').textContent()).toContain('until you close Orivon')
-  expect(await cookieRow(window, 'a').textContent()).toMatch(/expires \d/)
+  expect(await cookieRow(window, 'a').textContent()).toMatch(/expires .*\d{4}/)
   // The page holds no value, not in its text and not in any attribute.
   expect(await window.evaluate(() => document.documentElement.outerHTML)).not.toContain(SECRET)
   expect(await window.getByText('localhost').count()).toBe(0)
