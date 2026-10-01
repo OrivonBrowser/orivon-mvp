@@ -5,7 +5,8 @@
 import { WebContentsView } from 'electron'
 import type { NativeImage, WebContents, WebPreferences } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
-import { shouldClearFavicon } from '../browsing/favicon.js'
+import { faviconOnCommit } from '../browsing/favicon.js'
+import { knownIcon } from '../history/favicon-host.js'
 import type { TabRecord } from './tab-types.js'
 import { showContextMenu } from './context-menu.js'
 import { confirmLeavePage } from './leave-page-prompt.js'
@@ -111,6 +112,10 @@ function resetViewBackground (view: WebContentsView): void {
   recordViewBackground(view.webContents.id, color)
 }
 
+/** Each of a dozen subsystems watches a tab's `did-navigate` once, which is past Node's limit of ten and would print
+ * a leak warning for every tab. A ceiling just above that count, not unlimited, so a listener added per navigation or per move still warns. */
+const TAB_LISTENER_ROOM = 24
+
 /** Every event a tab's WebContentsView needs wired -- shared by createTab(),
  * repartitionView() and an adopted popup (Rule 3): each gets EXACTLY the
  * same favicon/title/loading/crash handling and the same popup handling
@@ -122,6 +127,7 @@ function resetViewBackground (view: WebContentsView): void {
 export function wireView (id: string, record: TabRecord): void {
   const view = record.view
   const wc = view.webContents
+  wc.setMaxListeners(Math.max(wc.getMaxListeners(), TAB_LISTENER_ROOM))
   // False while this view is swapped out or parked: its events are then
   // not the tab's. A parked view acting on a navigation would swap the tab
   // it no longer shows.
@@ -139,10 +145,9 @@ export function wireView (id: string, record: TabRecord): void {
     // actually fires.
     trackDocumentOrigin(wc, navigatedUrl, record.host.broker)
     if (!shown()) return
-    if (shouldClearFavicon(record.faviconOrigin, navigatedUrl)) {
-      record.favicon = null
-      record.faviconOrigin = null
-    }
+    // History's icon only while history is remembering: a private window reads nothing kept on disk.
+    const history = record.host.services?.history
+    faviconOnCommit(record, navigatedUrl, (address) => history?.remembering === true ? knownIcon(history, address) : null)
     // Never for the dashboard: its own dev-mode URL is a real http(s)
     // address (partitionChanged would otherwise see a "changed" origin on
     // the dashboard's OWN first load, since its current partition is
