@@ -187,7 +187,9 @@ describeOrSkip('real Chrome extensions', () => {
             const scope = `chrome-extension://${id}/`
             return { running: entry !== undefined, errors: store[scope] ?? [] }
           }, spec.id)
-          if (spec.mv2 !== true) check(`${slot}: service worker running ${SW_SETTLE_MS / 1000}s after load`, swInfo.running, JSON.stringify(swInfo.errors))
+          // A manifest version 2 extension has no worker and its popup is not what its slot measures.
+          if (spec.mv2 === true) continue
+          check(`${slot}: service worker running ${SW_SETTLE_MS / 1000}s after load`, swInfo.running, JSON.stringify(swInfo.errors))
 
           // ---- action popup opens with a non-empty body ----
           // Read through popup.content() (Page.getFrameTree/DOM.getOuterHTML
@@ -301,13 +303,17 @@ describeOrSkip('real Chrome extensions', () => {
           const failures = new Map<string, string>()
           cdp.on('Network.requestWillBeSent', (event: { requestId: string, request: { url: string } }) => { urls.set(event.requestId, event.request.url) })
           cdp.on('Network.loadingFailed', (event: { requestId: string, errorText: string }) => { failures.set(urls.get(event.requestId) ?? event.requestId, event.errorText) })
-          const adUrl = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js'
+          // The ad URLs are answered by the extension: its lists either cancel them or redirect them to a
+          // neutered resource of its own, which a fetch() cannot follow (ERR_UNSAFE_REDIRECT). Either failure
+          // shows the extension acted before the lookup could fail.
+          const adUrls = ['https://ad.doubleclick.net/ad/e2e-orivon', 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js']
           const controlUrl = `${started.origin}/harmless-control-path.js`
           await view.evaluate(async (targets: string[]) => {
             for (const target of targets) await fetch(target, { mode: 'no-cors' }).catch(() => {})
-          }, [adUrl, controlUrl])
-          const adFailure = await waitFor(() => failures.has(adUrl), 8000).then(() => failures.get(adUrl)).catch(() => undefined)
-          check('ubo: a request to a well-known ad script is cancelled by the extension', adFailure?.includes('ERR_BLOCKED_BY_CLIENT') === true, JSON.stringify([...failures]))
+          }, [...adUrls, controlUrl])
+          await waitFor(() => adUrls.every((url) => failures.has(url)), 8000).catch(() => undefined)
+          const acted = (url: string): boolean => /ERR_BLOCKED_BY_CLIENT|ERR_UNSAFE_REDIRECT/.test(failures.get(url) ?? '')
+          check('ubo: requests to well-known ad URLs are cancelled or redirected by the extension, not failed by the network', adUrls.every(acted), JSON.stringify([...failures]))
           check('ubo: a request to the fixture origin is not blocked', !failures.has(controlUrl), JSON.stringify([...failures]))
           await cdp.detach()
         }
