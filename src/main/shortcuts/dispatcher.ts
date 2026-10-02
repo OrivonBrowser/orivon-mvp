@@ -29,7 +29,7 @@ export interface ExtensionKeys {
 }
 
 export interface DispatcherHost {
-  /** The window's commands are held while a page has the screen; `isAppTab`: the contents are a registered app's tab. `alive`: false once the window is gone, which a command waiting for the end of the key event checks. Null: the contents are in no window. */
+  /** The window's commands are held while a page has the screen; `isAppTab`: the contents are a registered app's tab. `alive`: false once the window is closing or gone, which a command waiting for the end of the key event checks. Null: the contents are in no window. */
   windowFor: (contents: WebContents) => { suspended: boolean, isAppTab: boolean, run: (id: CommandId) => void, alive?: () => boolean } | null
   /** A recording finished, for the page that asked. */
   recorded: (contents: WebContents, outcome: RecordOutcome) => void
@@ -77,9 +77,10 @@ export function attachShortcuts (contents: WebContents, service: ShortcutService
     if (def?.pending === true) return
     event.preventDefault()
     if (input.isAutoRepeat && !service.isRepeatable(id)) return
-    // A command can close a tab, a window or the developer tools, destroying a webContents Chromium may still be
-    // notifying observers on while this event is delivered: `~WebContentsImpl` answers with a CHECK that ends the
-    // main process. Running the command once the event has returned takes every such path out of the delivery.
+    // A command can close the developer tools (directly, or by closing, moving or closing others on a tab that has
+    // them open), and their webContents is destroyed at once: if Chromium is still notifying observers while this
+    // event is delivered, `~WebContentsImpl` answers with a CHECK that ends the main process. Running the command
+    // once the event has returned takes every such path out of the delivery.
     setImmediate(() => { if (target.alive?.() !== false) target.run(id) })
   })
 }
