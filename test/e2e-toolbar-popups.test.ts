@@ -1,6 +1,8 @@
 // The toolbar's popups in the running shell: Escape closes the site card, the Web3 Score page and the all-sites
 // list and hands the keyboard back so Ctrl+F still opens find; the key and the shield swap one popup for the other
-// whichever order they are pressed in, including after the first popup already lost focus to the press.
+// whichever order they are pressed in, including after the first popup already lost focus to the press. The all-sites
+// popup reopens topmost, sized and painted after every way it can have left the window, among them an overlay or a tab
+// switch closing it without a blur, and its page crashing or being destroyed while it shows.
 // RUN THIS WITH:
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-toolbar-popups.test.ts
 import type { ElectronApplication, Page } from 'playwright'
@@ -212,3 +214,87 @@ it('the all-sites popup reopens on screen after every way it can have been close
     await closeElectron(app)
   }
 }, 90_000)
+
+/** The all-sites popup's webContents id, or undefined while none exists. */
+async function permissionsContentsId (app: ElectronApplication): Promise<number | undefined> {
+  return await app.evaluate(({ webContents }) => webContents.getAllWebContents().find((wc) => wc.getURL().includes('/permissions/'))?.id)
+}
+
+async function openPermissions (app: ElectronApplication, chrome: Page): Promise<void> {
+  // Past the debounce that reads a toggle just after a blur close as that close's echo.
+  await delay(450)
+  await chrome.locator('#permissions-btn').click()
+  expect(await waitFor(async () => await permissionsShown(app))).toBe(true)
+}
+
+it('the all-sites popup reopens on screen after another overlay, a tab switch or the site card took its place', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    await ready(app, chrome)
+    const closedBy: Record<string, () => Promise<void>> = {
+      // Pressed inside the popup, which holds the keyboard: the overlay host closes it, no blur first.
+      'the find bar opening': async () => {
+        await pressKey(app, '/permissions/', 'F', ['control'])
+        expect(await waitFor(async () => await findShown(app))).toBe(true)
+        await pressKey(app, 'overlay=find', 'Escape')
+        expect(await waitFor(async () => !(await findShown(app)))).toBe(true)
+      },
+      'a new tab': async () => { await pressKey(app, '/permissions/', 'T', ['control']) },
+      'a tab switch': async () => { await pressKey(app, '/permissions/', 'Tab', ['control']) },
+      'the site card opening': async () => {
+        await chrome.locator('#site-permissions-btn').click()
+        expect(await waitFor(async () => await siteInfoShown(app))).toBe(true)
+        await pressKey(app, '/site-info/', 'Escape')
+        expect(await waitFor(async () => !(await siteInfoShown(app)))).toBe(true)
+      },
+      'a relayout': async () => {
+        await app.evaluate(({ BaseWindow }) => {
+          const win = BaseWindow.getAllWindows()[0]
+          if (win === undefined) throw new Error('no window')
+          const [width, height] = win.getSize()
+          win.setSize((width ?? 1200) + 30, height ?? 800)
+        })
+      }
+    }
+
+    await openPermissions(app, chrome)
+    for (const [path, close] of Object.entries(closedBy)) {
+      await close()
+      expect({ path, closed: await waitFor(async () => !(await permissionsShown(app))) }).toEqual({ path, closed: true })
+      await openPermissions(app, chrome)
+      await expectPermissionsOnScreen(app, path)
+    }
+  } finally {
+    await closeElectron(app)
+  }
+}, 120_000)
+
+it('the all-sites popup reopens on screen after its renderer crashed or its contents were destroyed while it showed', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    await ready(app, chrome)
+    const brokenBy: Record<string, () => Promise<void>> = {
+      'the renderer crashing': async () => {
+        await app.evaluate(({ webContents }) => { webContents.getAllWebContents().find((wc) => wc.getURL().includes('/permissions/'))?.forcefullyCrashRenderer() })
+      },
+      'the contents being destroyed': async () => {
+        await app.evaluate(({ webContents }) => { webContents.getAllWebContents().find((wc) => wc.getURL().includes('/permissions/'))?.close({ waitForBeforeUnload: false }) })
+      }
+    }
+    for (const [path, breakIt] of Object.entries(brokenBy)) {
+      await openPermissions(app, chrome)
+      await expectPermissionsOnScreen(app, `${path}: first open`)
+      const before = await permissionsContentsId(app)
+      await breakIt()
+      // A popup that lost its page takes itself off the window, so the person's next click opens a new one.
+      expect({ path, closed: await waitFor(async () => !(await permissionsShown(app))) }).toEqual({ path, closed: true })
+      await openPermissions(app, chrome)
+      await expectPermissionsOnScreen(app, path)
+      expect({ path, rebuilt: (await permissionsContentsId(app)) !== before }).toEqual({ path, rebuilt: true })
+      await pressKey(app, '/permissions/', 'Escape')
+      expect(await waitFor(async () => !(await permissionsShown(app)))).toBe(true)
+    }
+  } finally {
+    await closeElectron(app)
+  }
+}, 120_000)

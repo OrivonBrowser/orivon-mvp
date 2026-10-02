@@ -12,13 +12,14 @@ interface FakeWebContents {
   setWindowOpenHandler: ReturnType<typeof vi.fn>
   loadURL: ReturnType<typeof vi.fn>
   isDestroyed: () => boolean
+  destroy: () => void
   isLoading: () => boolean
   isFocused: ReturnType<typeof vi.fn>
   close: ReturnType<typeof vi.fn>
   focus: ReturnType<typeof vi.fn>
 }
 
-const { views } = vi.hoisted(() => ({ views: [] as Array<{ webContents: FakeWebContents, args: readonly string[] }> }))
+const { views } = vi.hoisted(() => ({ views: [] as Array<{ webContents: FakeWebContents, args: readonly string[], view: Record<string, unknown> }> }))
 
 vi.mock('electron', () => ({
   app: { isPackaged: false },
@@ -29,10 +30,11 @@ vi.mock('electron', () => ({
       id: views.length + 1,
       handlers,
       on: (event, handler) => { handlers.set(event, handler) },
-      once: vi.fn(),
+      once: vi.fn((event: string, handler: () => void) => { handlers.set(event, handler) }),
       setWindowOpenHandler: vi.fn(),
       loadURL: vi.fn().mockResolvedValue(undefined),
       isDestroyed: () => destroyed,
+      destroy: () => { destroyed = true },
       isLoading: () => false,
       isFocused: vi.fn(() => false),
       close: vi.fn(() => { destroyed = true }),
@@ -42,7 +44,7 @@ vi.mock('electron', () => ({
     this['setBackgroundColor'] = vi.fn()
     this['setBorderRadius'] = vi.fn()
     this['setBounds'] = vi.fn()
-    views.push({ webContents, args: options.webPreferences.additionalArguments })
+    views.push({ webContents, args: options.webPreferences.additionalArguments, view: this })
   }),
   nativeTheme: { shouldUseDarkColors: false, on: vi.fn(), removeListener: vi.fn() }
 }))
@@ -149,5 +151,90 @@ describe('focus when a popup closes', () => {
     second.popover.toggle(ANCHOR, [], 'main')
     last().isFocused.mockReturnValue(true)
     expect(() => { second.popover.close() }).not.toThrow()
+  })
+})
+
+describe('a popup whose page is gone while it shows', () => {
+  it('closes when its renderer crashes, and the next click opens a new popup at once', () => {
+    const { popover, attached } = setup()
+    popover.toggle(ANCHOR, [], 'main')
+    last().handlers.get('render-process-gone')?.()
+    expect(attached()).toBe(0)
+    expect(popover.isOpen()).toBe(false)
+    popover.toggle(ANCHOR, [], 'main')
+    expect(views).toHaveLength(2)
+    expect(attached()).toBe(1)
+  })
+
+  it('closes without throwing when its contents are destroyed and the view no longer answers webContents', () => {
+    const { popover, attached } = setup()
+    popover.toggle(ANCHOR, [], 'main')
+    const view = views[0]
+    expect(view).toBeDefined()
+    // The order the end-to-end run observed: the view has already lost its contents when blur arrives, and 'destroyed' follows.
+    const contents = view?.webContents
+    contents?.destroy()
+    if (view !== undefined) view.view['webContents'] = undefined
+    expect(() => { contents?.handlers.get('blur')?.() }).not.toThrow()
+    contents?.handlers.get('destroyed')?.()
+    expect(attached()).toBe(0)
+    expect(popover.isOpen()).toBe(false)
+    expect(() => { popover.close() }).not.toThrow()
+    popover.toggle(ANCHOR, [], 'main')
+    expect(views).toHaveLength(2)
+    expect(attached()).toBe(1)
+  })
+
+  it('is closed by the window-level close even when the contents were destroyed first', () => {
+    const { popover } = setup()
+    popover.toggle(ANCHOR, [], 'main')
+    const view = views[0]
+    view?.webContents.destroy()
+    if (view !== undefined) view.view['webContents'] = undefined
+    expect(() => { popover.close() }).not.toThrow()
+    expect(popover.isOpen()).toBe(false)
+  })
+})
+
+describe('a popup whose detaching throws', () => {
+  it('still releases its contents and does not throw to the caller', () => {
+    const detach = vi.fn(() => { throw new Error('window disposed') })
+    const win = { getContentBounds: () => ({ x: 0, y: 0, width: 1200, height: 800 }), on: vi.fn() }
+    const popover = createPopoverView(win as never, { addChildView: vi.fn(), removeChildView: detach } as never, {
+      dirname: '/app', entryPath: '/site-info/', fallbackHtml: '../renderer/site-info/index.html',
+      preloadRelPath: '../preload/site-info.js', urlArgName: 'orivon-site-info-url', align: 'left',
+      background: BACKGROUND, registerIpc: () => () => {}
+    })
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {})
+    popover.toggle(ANCHOR, [], 'main')
+    expect(() => { popover.close() }).not.toThrow()
+    expect(last().close).toHaveBeenCalledTimes(1)
+    expect(popover.isOpen()).toBe(false)
+    quiet.mockRestore()
+  })
+})
+
+describe('a warm popup whose page is gone', () => {
+  it('is rebuilt on the next open, and the dead view\'s late destroyed event is not read as a fresh open request', () => {
+    let attached = 0
+    const contentView = { addChildView: () => { attached += 1 }, removeChildView: () => { attached -= 1 } }
+    const win = { getContentBounds: () => ({ x: 0, y: 0, width: 1200, height: 800 }), on: vi.fn() }
+    const popover = createPopoverView(win as never, contentView as never, {
+      dirname: '/app', entryPath: '/site-info/', fallbackHtml: '../renderer/site-info/index.html',
+      preloadRelPath: '../preload/site-info.js', urlArgName: 'orivon-site-info-url', align: 'left',
+      background: BACKGROUND, warm: true, registerIpc: () => () => {}
+    })
+    popover.toggle(ANCHOR, [], 'main')
+    const dead = views[0]
+    dead?.webContents.handlers.get('render-process-gone')?.()
+    expect(attached).toBe(0)
+    popover.toggle(ANCHOR, [], 'main')
+    expect(views).toHaveLength(2)
+    expect(attached).toBe(1)
+    // The person clicks away from the rebuilt popup, then the dead one's contents report destroyed.
+    views[1]?.webContents.handlers.get('blur')?.()
+    dead?.webContents.handlers.get('destroyed')?.()
+    popover.toggle(ANCHOR, [], 'main')
+    expect(attached).toBe(0)
   })
 })
