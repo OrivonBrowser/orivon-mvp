@@ -73,6 +73,24 @@ async function panelFits (panel: Page): Promise<{ fits: boolean, detail: string 
   return { fits: m.left >= 0 && m.top >= 0 && m.right >= 0 && m.bottom >= 0 && !m.scrolls, detail: JSON.stringify(m) }
 }
 
+/** Waits until the popup view whose address contains `part` has kept one size for five polls: a popup is sized after its content reports its height, in more than one step. */
+async function popupSized (app: ElectronApplication, part: string): Promise<boolean> {
+  let last = ''
+  let same = 0
+  return await waitFor(async () => {
+    const now = await app.evaluate(({ BaseWindow }, needle) => {
+      const [win] = BaseWindow.getAllWindows()
+      const views = (win?.contentView.children ?? []) as unknown as Array<{ getBounds: () => { x: number, y: number, width: number, height: number }, webContents?: { getURL: () => string } }>
+      const view = views.find((v) => (v.webContents?.getURL() ?? '').includes(needle))
+      return view === undefined ? '' : JSON.stringify(view.getBounds())
+    }, part)
+    same = now !== '' && now === last ? same + 1 : 0
+    last = now
+    await delay(100)
+    return same >= 5
+  })
+}
+
 async function openInternal (app: ElectronApplication, chrome: Page, name: string, path?: string): Promise<Page> {
   await chrome.evaluate(([n, at]) => { (window as unknown as Shell).orivonShell.openInternal(n as string, at) }, [name, path])
   const shown = (): Page | undefined => app.windows().find((w) => w.url().startsWith(`orivon://${name}`))
@@ -114,6 +132,7 @@ for (const scheme of SCHEMES) {
         await chrome.click('#address')
         await chrome.fill('#address', 'orivon browser')
         expect(await chrome.inputValue('#address')).toBe('orivon browser')
+        expect(await popupSized(app, 'overlay=omnibox')).toBe(true)
         await state(check, app, `address-bar-typed-${scheme}`, {
           expected: 'The address bar is focused and shows the typed text "orivon browser" in full, with no text cut at either edge; the dashboard stays visible underneath.',
           action: 'Clicked the address bar and typed "orivon browser" without pressing Enter.'
