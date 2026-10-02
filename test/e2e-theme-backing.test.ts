@@ -164,6 +164,14 @@ for (const mode of ['light', 'dark'] as const) {
         })
         expect(style.colour).toBe('rgb(57, 66, 68)')
         expect(style.image).toContain('data:image/webp')
+        // Before the stylesheet is applied the document's canvas is the browser's own dark or white, one frame of
+        // near-black under a dark scheme: an inline rule ahead of the stylesheet link paints the same colour then.
+        const inlineFirst = await page.evaluate(() => {
+          const rule = document.head.querySelector('style')
+          const sheet = document.head.querySelector('link[rel="stylesheet"]')
+          return rule !== null && sheet !== null && (rule.compareDocumentPosition(sheet) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 && /^html\s*\{\s*background:\s*#394244/i.test(rule.textContent ?? '')
+        })
+        expect(inlineFirst).toBe(true)
       }
     } finally {
       await closeElectron(app)
