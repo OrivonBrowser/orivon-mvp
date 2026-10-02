@@ -101,6 +101,19 @@ it('installs a service-worker extension from the store into a running browser, a
       const entry = parseRegistry(readFileSync(join(userData, 'extensions', 'registry.json'), 'utf8')).entries.find((candidate) => candidate.id === crx.id)
       check('the registry records the extension as installed, not updated', entry?.updater.kind === 'store' && entry.updater.lastResult === 'installed', JSON.stringify(entry?.updater))
 
+      // The first worker can open the welcome tab while the one-time recovery
+      // reload (extension-sw-preload-recovery.ts) is removing and loading the
+      // extension again; the page is navigated again once that reload is
+      // done, so the page that counts is the one that has its APIs.
+      const welcomeUrl = `chrome-extension://${crx.id}/welcome.html`
+      const welcomeHasApis = async (): Promise<boolean> => await liveApp.evaluate(({ webContents }, url: string) => {
+        const page = webContents.getAllWebContents().find((wc) => !wc.isDestroyed() && wc.getURL() === url)
+        if (page === undefined) return false
+        return page.executeJavaScript('typeof chrome.scripting?.getRegisteredContentScripts === "function"').then((has) => has === true, () => false)
+      }, welcomeUrl)
+      const settled = await waitFor(welcomeHasApis, 10_000).catch(() => false)
+      check('the welcome tab has the extension APIs once the recovery reload is done', settled)
+
       const registered = await liveApp.evaluate(({ webContents }, id: string) => {
         const page = webContents.getAllWebContents().find((wc) => !wc.isDestroyed() && wc.getURL() === `chrome-extension://${id}/welcome.html`)
         if (page === undefined) return -1

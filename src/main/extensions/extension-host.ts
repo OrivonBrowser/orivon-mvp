@@ -11,7 +11,7 @@
 //      are created after every subsystem runs, so extension-host-impl.ts's
 //      callbacks (createTab, createWindow, ...) reject cleanly if an
 //      extension somehow calls one before this runs.
-import { session } from 'electron'
+import { session, webContents } from 'electron'
 import type { Session, WebContents } from 'electron'
 // Virtual specifiers (electron-chrome-extensions-lib.d.ts's own header says
 // why): electron.vite.config.ts's alias resolves each to the real vendor
@@ -37,6 +37,7 @@ import { buildHostImpl, isExtensionActivatingTab, isLoadedExtension, shellInitia
 import { watchPinSetting } from './action-pins-runner.js'
 import { watchForMissedServiceWorkerPreload } from './extension-sw-preload-recovery.js'
 import { beginDnrReload, endDnrReload } from './extensions-dnr.js'
+import { reloadExtensionPages } from './extension-pages-reload.js'
 import { senderMatchesClaimedExtensionId } from './extension-sender-id-check.js'
 import { registerSandboxPageQuery } from './extension-sandbox-page-query.js'
 import { apiOrHostAccessFor, hostAccessFor } from './extension-host-access.js'
@@ -138,7 +139,7 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
   watchForMissedServiceWorkerPreload(session.defaultSession, (id, phase) => {
     if (phase === 'start') beginDnrReload(id)
     else endDnrReload(id)
-  })
+  }, (id) => { reloadExtensionPages(id, webContents.getAllWebContents()) })
 
   installPopupPolicy(hostExtensions, { services: () => bridge?.services, isLoaded: isLoadedExtension })
 
