@@ -126,6 +126,9 @@ export function installRoutedCore (
     const framer = wire.framer(head)
     // Reachable exactly as long as the stream is: the pull and cancel closures call finish, which sets it.
     const lifetime = { finished: false }
+    // A cancel closes the socket under a read already in flight; that read ends
+    // the stream quietly instead of reporting a body cut short.
+    let cancelled = false
     unread?.register(lifetime, socket)
     let leftover: Uint8Array | undefined = head.rest.byteLength > 0 ? head.rest : undefined
     let controllerRef: ReadableStreamDefaultController<Uint8Array> | undefined
@@ -157,12 +160,12 @@ export function installRoutedCore (
             if (pieces.length > 0) return
           }
         } catch (error) {
-          reportFailure(request, error)
+          if (!cancelled) reportFailure(request, error)
           finish()
           throw error
         }
       },
-      cancel () { finish() }
+      cancel () { cancelled = true; finish() }
     }, new ByteLengthQueuingStrategy({ highWaterMark: READ_AHEAD_BYTES }))
   }
 

@@ -76,6 +76,21 @@ describe('a routed fetch that fails', () => {
   })
 })
 
+describe('a routed response body the app cancels', () => {
+  it('logs nothing: the read the cancel interrupts is not a failure', async () => {
+    const spy = logged()
+    const target = fakeTarget({ connectSecure: async () => fakeSocket([bytes('HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nshort')], true) })
+    installRouted(target)
+    const response = await target.fetch!('https://api.example/big')
+    await settle()
+
+    await response.body!.cancel()
+    await settle()
+
+    expect(spy).not.toHaveBeenCalled()
+  })
+})
+
 describe('the other routed entry points', () => {
   it('logs a routed XMLHttpRequest whose dial dies', async () => {
     const spy = logged()
