@@ -11,7 +11,6 @@ import { showContextMenu } from './context-menu.js'
 import { confirmLeavePage } from './leave-page-prompt.js'
 import { windowOpenHandler } from './popups.js'
 import { keepsOpenerSession, openerCutNeeded, popupTargetIsApp } from './popup-opener.js'
-import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { DEFAULT_BACKGROUND } from './theme-colors.js'
 import { sheetBackdropOf } from './sheet-backdrop.js'
 import { recordViewBackground } from './view-background-test-hook.js'
@@ -19,7 +18,8 @@ import { repartitionView } from './tab-parking.js'
 import { parseInternalUrl } from '../pages/internal-pages.js'
 import { canViewSource } from '../page-tools/view-source.js'
 import { sitePopups } from '../site-settings/site-popups.js'
-import { isNavigationHeld, refuseHeldNavigation } from './navigation-hold.js'
+import { refuseHeldNavigation, refuseHeldWindow } from './navigation-hold.js'
+import { loadServedAddresses } from './served-address.js'
 import { releaseOriginDocument, trackDocumentOrigin } from './tab-origin-liveness.js'
 import { watchLoadFailure } from './load-failure.js'
 import { wireSignInIdentity } from './sign-in-identity-tab.js'
@@ -270,18 +270,8 @@ export function wireView (id: string, record: TabRecord): void {
     const { window } = record.host
     if (window !== undefined && confirmLeavePage(window)) event.preventDefault()
   })
-  // Registered before the handler below, which loads a URL that a prevented
-  // event could not undo.
   refuseHeldNavigation(wc)
-  // Chromium knows no `ipfs:` scheme and would offer a link to one to the
-  // OS; it loads here instead, from the URL its protocol serves it at.
-  wc.on('will-navigate', (event) => {
-    if (record.internalPage !== null) return
-    const served = BUILTIN_ADDRESSES.servedUrl(event.url)
-    if (served === undefined) return
-    event.preventDefault()
-    void wc.loadURL(served)
-  })
+  loadServedAddresses(wc, () => record.internalPage !== null)
   wc.on('context-menu', (_event, params) => {
     const { window } = record.host
     if (window === undefined) return
@@ -319,7 +309,7 @@ export function wireView (id: string, record: TabRecord): void {
     partitionFor: (url) => partitionForTarget(url),
     webPreferencesFor: (url) => tabWebPreferences(record.host.preloadPath, undefined, appTabArgsFor(url, record.host.broker)),
     isApp: (url) => popupTargetIsApp(url, record.host.broker),
-    popupBlocked: (details, from) => isNavigationHeld(wc) || sitePopups.check(wc, from.url, details.url)
+    popupBlocked: (details, from) => refuseHeldWindow(wc, details.url) || sitePopups.check(wc, from.url, details.url)
   }, () => ({ url: wc.getURL(), partition: record.partition })))
   wireTabSignals(id, record)
 }

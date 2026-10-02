@@ -129,7 +129,10 @@ export function createManifestHintListener (
         // installed or consented to. Only on a NEW registration: a
         // registered origin's tab already carries its flag, and reloading
         // it again would loop.
-        const reloadable = event.sender !== undefined && !event.sender.isDestroyed()
+        // Only while the tab is still on the page that reported the hint: the
+        // person may have gone elsewhere while the question was open, and
+        // that page is not the one that was asked about.
+        const reloadable = caller.stillOn(origin)
         if (result.outcome === 'granted-without-install') {
           console.log(`[orivon] granted ${origin} without installing (newly registered: ${String(result.newlyRegistered)}, reloading: ${String(result.newlyRegistered && reloadable)})`)
           if (result.newlyRegistered && reloadable) event.sender?.reload()

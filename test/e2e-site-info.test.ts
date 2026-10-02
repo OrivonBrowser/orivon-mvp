@@ -31,7 +31,7 @@ import { afterAll, expect, it } from 'vitest'
 import { createServer } from 'node:http'
 import type { Server } from 'node:http'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
-import { findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, delay, findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from './smoke-helpers.mjs'
 import { APP_CLOSE_RACE_MS, asPage, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
 import { seedExtensions } from './extensions-fixtures.js'
 import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from './question-support.js'
@@ -278,8 +278,13 @@ it(
         })
         const question = await readQuestion(await waitQuestion(running))
         check(`asking for it again reaches the person, in the panel (${JSON.stringify(question.buttons)})`, question.buttons.includes('Allow') && question.buttons.includes('Deny'))
+        await tabView().evaluate(() => { location.href = '/held-away' })
+        await delay(ABSENCE_SETTLE_MS)
+        check('while the question is open the page cannot take its tab elsewhere', running.windows().some((w) => w.url() === url) && !running.windows().some((w) => w.url().includes('/held-away')))
         await answerQuestion(running, 'Deny')
         check('and a Deny resolves false', (await answered) === false)
+        await tabView().evaluate(() => { location.href = '/after-deny' })
+        check('once answered the page can navigate again', await waitFor(() => running.windows().some((w) => w.url() === `${url}after-deny`), 10_000))
         check('no native message box was opened', (await noNativeDialogs(running)).length === 0)
       } finally {
         if (app !== undefined) await closeElectronApp(app)

@@ -133,9 +133,10 @@ export function repartitionView (
   // view.ts raises directly (tab-lifecycle.ts's own doc says why).
   host.tabLifecycle?.viewReplaced(oldView.webContents, newView.webContents, host.window)
 
-  // The list is read while the old view still holds it, and only once the
-  // page being swapped to has committed there (a typed address has not).
-  // Same session, so no cookie, storage or partition boundary is crossed.
+  // The list is read while the old view still holds it. A typed address has
+  // not committed yet, so the pages up to the one being left carry and the
+  // address loads after them. Same session, so no cookie, storage or
+  // partition boundary is crossed.
   const carried = parked === undefined && oldPartition === nextPartition && !oldView.webContents.isDestroyed() && carryHistory(oldView.webContents, newView.webContents, target)
 
   // Only once the record shows the new view: the old one's handlers then

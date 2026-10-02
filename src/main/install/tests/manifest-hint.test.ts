@@ -150,8 +150,10 @@ describe('createManifestHintListener', () => {
     const PIN = { schema: 1 as const, origin: APP, bundleHash: 'sha256:' + 'a'.repeat(64), assets: [], version: '1.0.0', pinnedAt: 0 }
     const MANIFEST = { orivonApiVersion: 0 as const, id: 'app.test', name: 'Test', version: '1.0.0', entry: 'index.html', capabilities: {} }
 
-    function reportingTab (): { reload: ReturnType<typeof vi.fn<() => void>>, isDestroyed: () => boolean, mainFrame: null, session: unknown } {
-      return { reload: vi.fn<() => void>(), isDestroyed: () => false, mainFrame: null, session: undefined }
+    const onPage = (origin: string): { url: string, origin: string } => ({ url: `${origin}/`, origin })
+
+    function reportingTab (on: string = APP): { reload: ReturnType<typeof vi.fn<() => void>>, isDestroyed: () => boolean, mainFrame: { url: string, origin: string }, session: unknown } {
+      return { reload: vi.fn<() => void>(), isDestroyed: () => false, mainFrame: onPage(on), session: undefined }
     }
 
     it('reloads once after an install that newly registered the app, so the tab is rebuilt with its app-tab flag', async () => {
@@ -178,10 +180,26 @@ describe('createManifestHintListener', () => {
 
     it('does not reload a tab that was closed while the install ran', async () => {
       const installApp = vi.fn<InstallApp>(async () => ({ outcome: 'installed', canonicalOrigin: APP, manifest: MANIFEST, pin: PIN, newlyRegistered: true }))
-      const sender = { reload: vi.fn<() => void>(), isDestroyed: () => true, mainFrame: null, session: undefined }
+      const sender = { reload: vi.fn<() => void>(), isDestroyed: () => true, mainFrame: onPage(APP), session: undefined }
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
       createManifestHintListener(installApp)({ ...frameFor(APP), sender }, `${APP}/`)
+      await flush()
+
+      expect(sender.reload).not.toHaveBeenCalled()
+      logSpy.mockRestore()
+    })
+
+    it.each([
+      ['an install', { outcome: 'installed' as const, canonicalOrigin: APP, manifest: MANIFEST, pin: PIN, newlyRegistered: true as const }],
+      ['a grant without installing', { outcome: 'granted-without-install' as const, canonicalOrigin: APP, newlyRegistered: true }]
+    ])('does not reload a tab the person moved to another page while the question after %s was open', async (_name, result) => {
+      const installApp = vi.fn<InstallApp>(async () => result)
+      const sender = reportingTab()
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+      createManifestHintListener(installApp)({ ...frameFor(APP), sender }, `${APP}/`)
+      sender.mainFrame = onPage(OTHER)
       await flush()
 
       expect(sender.reload).not.toHaveBeenCalled()

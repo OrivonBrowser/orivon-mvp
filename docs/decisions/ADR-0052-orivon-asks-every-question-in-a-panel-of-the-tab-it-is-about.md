@@ -21,7 +21,7 @@ The panel is safe to trust because of rules main enforces and the page of the pa
   first) and ends as a cancel after five seconds; a kiosk, which has no toolbar, draws the panel centred.
 - **It belongs to one tab.** It is shown while its tab is in front, waits for the tab when it is not,
   hides on a tab switch and ends as a cancel when the tab or window closes, the queue is full, an abort
-  signal fires or (for a question about a page) the page navigates. A call with no tab goes to the tab
+  signal fires or (for a question about a link or a tool) the page navigates. A call with no tab goes to the tab
   in front of the focused shell window; a native box is the fallback only when no shell window exists.
 - **Words come from main.** The page of the panel is told a random id and nothing it could be made to
   restate; the spec, its buttons, which of them are guarded and what a way out answers are held in main.
@@ -67,8 +67,10 @@ rushing and stacking defences exist once and are tested once.
 
 - A question for a background tab waits for its tab with no sign on the tab strip (open question A340).
 - A person can use the address bar while a question is open: the question is tab-modal, not window-modal.
-  A question about a link ends when the tab gets a new page; a consent question stays, and the page's own
-  navigations are dropped meanwhile. A server redirect that follows a navigation the person started in that
+  A question about a link ends when the tab gets a new page. A consent question stays up, and the page's own
+  navigations are dropped meanwhile; if the person moved the tab elsewhere, the answer is dropped (nothing
+  is granted, nothing recorded as declined, and the tab is not reloaded) because the tab is no longer on the
+  origin that was asked about. A server redirect that follows a navigation the person started in that
   tab while a consent question is open is dropped too.
 - Every call site's tests replace `askQuestion` with a function; none replaces `dialog`.
 - A change to `src/main/shell/question/` is reviewed as a change to the consent surface of every grant.

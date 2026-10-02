@@ -59,12 +59,19 @@ export interface UpdateOutcomeDeps {
  * or an older manifest is a no-op on top of what is already there.
  */
 async function finishInstall (deps: UpdateOutcomeDeps, result: LoadInstalled, caller?: DialogCaller): Promise<LoadInstalled> {
+  // Once registered the tab counts as the app's, so it must not move on to
+  // another page before the question about this one is answered.
+  const release = caller?.hold?.()
   try {
-    await deps.broker.registerApp(result.canonicalOrigin, result.manifest)
-  } catch (error) {
-    console.error('[app-install] registerApp failed after a successful install; the bundle is installed but its version floor was not persisted', result.canonicalOrigin, error)
+    try {
+      await deps.broker.registerApp(result.canonicalOrigin, result.manifest)
+    } catch (error) {
+      console.error('[app-install] registerApp failed after a successful install; the bundle is installed but its version floor was not persisted', result.canonicalOrigin, error)
+    }
+    await requestInstallConsent(deps.broker, deps.consent, result.canonicalOrigin, result.manifest, deps.perCapabilityConsent, caller)
+  } finally {
+    release?.()
   }
-  await requestInstallConsent(deps.broker, deps.consent, result.canonicalOrigin, result.manifest, deps.perCapabilityConsent, caller)
   return result
 }
 

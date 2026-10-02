@@ -60,7 +60,8 @@ for its tab, a kiosk draws it centred, and only a question asked when no shell w
 `navigation-hold.ts` holds a tab's page where it is while a question about it is open (`holdNavigation`, nesting and
 released once): `tab-view.ts` drops a main-frame navigation, a redirect and a `window.open` the page starts meanwhile, so
 an answer cannot be given to a page that is no longer the one asked about. A change of address inside the document is
-not a navigation and still works.
+not a navigation and still works. `served-address.ts` loads an `ipfs:` link at the URL its protocol serves it at, and not
+while the tab is held: a load from there is one the hold would never see.
 The main menu under the toolbar's menu button: `menu-layout.ts` lists which commands it shows and in
 what shape (the names and keys come from [`../shortcuts/`](../shortcuts/), so the menu cannot show a
 key that does not work), and `menu-overlay.ts` is its `OverlayDef`, shown by the overlay host in
@@ -133,8 +134,10 @@ read as an origin change; the handler excludes the dashboard explicitly.
 **Residual: `did-navigate` fires after commit**, so the new origin's page has rendered once in
 the old partition and may already have read from it. Intercepting before commit would cost a
 fresh view and a lost history entry on every cross-origin link; it is open as A109. A swap within one
-session (an origin newly registered as an app, an opener being cut) carries the back and forward list
-over with `NavigationHistory.restore` and loses nothing; only a swap across partitions starts a new list.
+session (an origin newly registered as an app, an opener being cut, a typed address that flips the
+app-tab flag) carries the back and forward list over with `NavigationHistory.restore`; a typed address
+that has not committed loads after the pages up to the one being left. Only a swap across partitions
+starts a new list.
 
 **One process, several windows: what is per window and what is shared.** Per window: the chrome view, the
 `TabManager`, the popovers, the fullscreen and notice state, and the IPC handlers on the chrome view and the

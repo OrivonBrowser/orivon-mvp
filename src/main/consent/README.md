@@ -55,7 +55,7 @@ renders unchanged; `./request-grant-prompt.ts` and `./install-consent-prompt.ts`
 closures, never an Electron object.** Every question here belongs to the tab whose page triggered
 it -- drawn in that tab's panel, shown only while the tab is still alive and on the origin that
 asked, and re-checked once more when the person answers, since a question can be up for up to 120
-seconds (A153) and the page is free to navigate or close in that window. `window()`, `stillOn()`
+seconds (A153) and the person can navigate or close the tab in that window (the page cannot: see below). `window()`, `stillOn()`
 and `contents()` carry that state across the Electron boundary as plain functions so
 `request-grant.ts`, `install-consent.ts` and `update-outcomes.ts` can all reason about it without
 importing `electron` themselves. `contents()` is what `askQuestion` resolves to a tab, and a caller

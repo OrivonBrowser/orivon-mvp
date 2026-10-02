@@ -24,6 +24,13 @@ export function isNavigationHeld (contents: object): boolean {
   return holds.has(contents)
 }
 
+/** True, and logged, when a window the page tried to open is dropped because the tab is held. */
+export function refuseHeldWindow (wc: object, url: string): boolean {
+  if (!isNavigationHeld(wc)) return false
+  console.log('[orivon] dropped a window while a question about the page is open:', url)
+  return true
+}
+
 type Refusable = { preventDefault: () => void, url: string, isMainFrame?: boolean }
 
 /** Drops what the page itself starts while held: a new address, a redirect, a script. A change of the address inside the same document fires none of these, so a single-page app keeps routing. */

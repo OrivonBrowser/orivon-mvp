@@ -20,6 +20,7 @@ import type { SubsystemContext } from '../registry.js'
 import type { OverlayHostHandle } from '../overlays/overlay-host.js'
 import type { ShellServices } from './shell-services.js'
 import type { TabManager } from './tabs.js'
+import { reloadFromCard } from './reload-from-card.js'
 
 export interface WindowPanelsDeps {
   readonly ctx: SubsystemContext
@@ -65,12 +66,7 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, dirnam
   const siteInfo = createSiteInfoPanel(
     win, win.contentView, siteInfoController, app.getPath('userData'),
     () => tabs.activeWebContents(),
-    // The card closes with the reload it asked for, so it cannot go on telling the person to reload the page that just did.
-    () => {
-      siteInfo.close()
-      const { activeTabId } = tabs.getState()
-      if (activeTabId !== null) tabs.reload(activeTabId)
-    },
+    () => { reloadFromCard(siteInfo, tabs) },
     // The "Site settings" row: the popover gives way to the Settings section.
     () => {
       siteInfo.close()

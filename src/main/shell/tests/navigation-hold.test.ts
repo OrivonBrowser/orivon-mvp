@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
-import { holdNavigation, isNavigationHeld, refuseHeldNavigation } from '../navigation-hold.js'
+import { holdNavigation, isNavigationHeld, refuseHeldNavigation, refuseHeldWindow } from '../navigation-hold.js'
 
 type Attempt = { url: string, isMainFrame: boolean, preventDefault: () => void }
 
@@ -69,5 +69,19 @@ describe('refuseHeldNavigation', () => {
     expect(attempt('will-navigate', 'https://a.example/')).toBe(false)
     holdNavigation(wc)()
     expect(attempt('will-frame-navigate', 'https://a.example/')).toBe(false)
+  })
+})
+
+describe('refuseHeldWindow', () => {
+  it('drops, and logs, a window the page opens while held, and nothing else', () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const wc = {}
+    expect(refuseHeldWindow(wc, 'https://a.example/')).toBe(false)
+    expect(log).not.toHaveBeenCalled()
+    const release = holdNavigation(wc)
+    expect(refuseHeldWindow(wc, 'https://a.example/')).toBe(true)
+    expect(log).toHaveBeenCalledTimes(1)
+    release()
+    log.mockRestore()
   })
 })

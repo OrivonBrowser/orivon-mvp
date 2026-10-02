@@ -156,13 +156,44 @@ describe('a swap within one session carries the back and forward list', () => {
 })
 
 describe('a swap made before the address has committed', () => {
-  it('loads the address, since the old view is still on the page being left', () => {
+  it('keeps the pages behind the one being left, and loads the address after them', () => {
     const registered = new Set<string>([APP])
     const manager = managerWith(registered)
     const id = manager.createTab(`${APP}/`)
     const oldView = createdViews[0] as RecordedView
     oldView.webContents.navigationHistory.entries = [{ url: 'https://before.example/', title: 'Before' }, { url: `${APP}/`, title: 'App' }]
     oldView.webContents.navigationHistory.active = 1
+
+    manager.navigate(id, 'https://plain.example/')
+
+    const newView = createdViews[1] as RecordedView
+    expect(newView.webContents.navigationHistory.restore).toHaveBeenCalledExactlyOnceWith({
+      entries: [{ url: 'https://before.example/', title: 'Before' }, { url: `${APP}/`, title: 'App' }],
+      index: 1
+    })
+    expect(newView.webContents.loadURL).toHaveBeenCalledWith('https://plain.example/')
+    expect(newView.webContents.reload).not.toHaveBeenCalled()
+  })
+
+  it('drops the pages ahead of the one being left, as any new address does', () => {
+    const registered = new Set<string>([APP])
+    const manager = managerWith(registered)
+    const id = manager.createTab(`${APP}/`)
+    const oldView = createdViews[0] as RecordedView
+    oldView.webContents.navigationHistory.entries = [{ url: `${APP}/`, title: 'App' }, { url: `${APP}/two`, title: 'Two' }]
+    oldView.webContents.navigationHistory.active = 0
+
+    manager.navigate(id, 'https://plain.example/')
+
+    const restored = (createdViews[1] as RecordedView).webContents.navigationHistory.restore.mock.calls[0]?.[0] as { entries: object[], index: number }
+    expect(restored.entries).toEqual([{ url: `${APP}/`, title: 'App' }])
+    expect(restored.index).toBe(0)
+  })
+
+  it('a tab with no committed page yet just loads the address', () => {
+    const registered = new Set<string>([APP])
+    const manager = managerWith(registered)
+    const id = manager.createTab(`${APP}/`)
 
     manager.navigate(id, 'https://plain.example/')
 
