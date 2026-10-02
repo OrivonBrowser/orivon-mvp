@@ -135,6 +135,15 @@ function findPopup (windows: Page[], id: string): Page | undefined {
   return windows.find((w) => w.url().startsWith(`chrome-extension://${id}/`))
 }
 
+/** The text a popup rendered, read from main: '' until its document has some. */
+async function mainReadPopupText (app: Awaited<ReturnType<typeof launchElectron>>, id: string): Promise<string> {
+  return await app.evaluate(async ({ webContents }, extensionId: string) => {
+    const popup = webContents.getAllWebContents().find((wc) => wc.getType() === 'window' && wc.getURL().startsWith(`chrome-extension://${extensionId}/`))
+    if (popup === undefined) return ''
+    return String(await popup.executeJavaScript('document.body ? document.body.innerText : ""'))
+  }, id)
+}
+
 const SW_SETTLE_MS = 10_000
 const TEST_TIMEOUT_MS = 180_000
 
@@ -187,9 +196,8 @@ describeOrSkip('real Chrome extensions', () => {
             const scope = `chrome-extension://${id}/`
             return { running: entry !== undefined, errors: store[scope] ?? [] }
           }, spec.id)
-          // A manifest version 2 extension has no worker and its popup is not what its slot measures.
-          if (spec.mv2 === true) continue
-          check(`${slot}: service worker running ${SW_SETTLE_MS / 1000}s after load`, swInfo.running, JSON.stringify(swInfo.errors))
+          // A manifest version 2 extension runs a background page, not a worker.
+          if (spec.mv2 !== true) check(`${slot}: service worker running ${SW_SETTLE_MS / 1000}s after load`, swInfo.running, JSON.stringify(swInfo.errors))
 
           // ---- action popup opens with a non-empty body ----
           // Read through popup.content() (Page.getFrameTree/DOM.getOuterHTML
@@ -217,7 +225,13 @@ describeOrSkip('real Chrome extensions', () => {
               await chrome.click(actionSelector).catch(() => {})
               popupOpened = await waitFor(() => findPopup(liveApp.windows(), spec.id) !== undefined, 8000).catch(() => false)
               const popup = findPopup(liveApp.windows(), spec.id)
-              bodyLen = popup === undefined ? 0 : await popup.content().then((html) => html.length).catch(() => 0)
+              // An MV2 popup shares its background page's renderer, where Playwright's own content() never
+              // returns (measured with uBlock Origin); main reads the rendered text instead.
+              bodyLen = popup === undefined
+                ? 0
+                : spec.mv2 === true
+                  ? await waitFor(async () => (await mainReadPopupText(liveApp, spec.id)).length > 0, 8000).then(async () => (await mainReadPopupText(liveApp, spec.id)).length).catch(() => 0)
+                  : await popup.content().then((html) => html.length).catch(() => 0)
             }
             check(`${slot}: action popup renders a non-empty body`, popupOpened && bodyLen > 0, `bodyLen=${String(bodyLen)}`)
           } else {
