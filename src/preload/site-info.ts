@@ -71,6 +71,10 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
     openCertificate: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'certificate' } satisfies SiteInfoCommand)
     },
+    /** Escape in the page: asks main to close the popup and hand the keyboard back to the tab. */
+    close: (): void => {
+      void ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'close' } satisfies SiteInfoCommand)
+    },
     /** Fire-and-forget, same as settings.ts's own reportHeight -- a popup
      * that failed to resize is cosmetic, and must never break rendering. */
     reportHeight: (height: number): void => {

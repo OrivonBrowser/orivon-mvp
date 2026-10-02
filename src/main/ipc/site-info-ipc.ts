@@ -71,6 +71,8 @@ export type SiteInfoCommand =
   | { type: 'certificate' }
   /** Same contract as ./permissions-ipc.ts's own `contentHeight`. */
   | { type: 'contentHeight'; height: number }
+  /** Escape in the popup's page: closes the popup. No argument. */
+  | { type: 'close' }
 
 /** Identity alone is not enough (open-questions.md A269), the same reason
  * ./permissions-ipc.ts's own `isFromPermissionsPanel` checks the URL too --
@@ -116,7 +118,8 @@ export function registerSiteInfoIpc (
   openExtensions: () => void,
   onContentHeight: (height: number) => void = () => {},
   openCertificate: () => void = () => {},
-  sitePermissions: SitePermissionsAccess = { view: () => null, set: () => null }
+  sitePermissions: SitePermissionsAccess = { view: () => null, set: () => null },
+  closePopup: () => void = () => {}
 ): void {
   // On the popup's own webContents: the handler goes with it, and two windows
   // can each have one open.
@@ -182,6 +185,10 @@ export function registerSiteInfoIpc (
         return
       case 'openExtensions':
         openExtensions()
+        return
+      case 'close':
+        // After the reply: this popup's close destroys the webContents, which would drop an invoke still waiting.
+        setImmediate(closePopup)
         return
       case 'certificate':
         openCertificate()

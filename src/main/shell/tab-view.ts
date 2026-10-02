@@ -22,6 +22,7 @@ import { canViewSource } from '../page-tools/view-source.js'
 import { sitePopups } from '../site-settings/site-popups.js'
 import { releaseOriginDocument, trackDocumentOrigin } from './tab-origin-liveness.js'
 import { watchLoadFailure } from './load-failure.js'
+import { trackInflightUrl } from './inflight-url.js'
 import { wireSignInIdentity } from './sign-in-identity-tab.js'
 import { watchAppTab } from './app-tab-watch.js'
 import { wireTabSignals } from './tab-signals.js'
@@ -133,6 +134,7 @@ export function wireView (id: string, record: TabRecord): void {
   // it no longer shows.
   const shown = (): boolean => record.view === view
   wireSignInIdentity(wc) // ./sign-in-identity-tab.ts's own header says why this runs here.
+  trackInflightUrl(wc, record, shown)
   wc.on('page-title-updated', () => { record.host.emitState() })
   watchLoadFailure(wc, () => { record.host.emitState() })
   // A press in a pane is the person choosing it, in a split. Not focus, which a page loading in the other pane can take.
@@ -297,7 +299,7 @@ export function wireView (id: string, record: TabRecord): void {
       openInWindow: (url) => { record.host.openWindow(url) },
       // A private window has no way back to the profile: it offers no second private session.
       ...(services === undefined || services.isPrivate ? {} : { openInPrivate: (url: string) => { services.profiles.openPrivate(url) } }),
-      page: { bare: () => record.internalPage !== null || record.isDashboardTab, viewSource: () => canViewSource(record, wc.getURL()), readable: () => readableNow(wc) },
+      page: { bare: () => record.internalPage !== null || record.isDashboardTab, viewSource: () => canViewSource(record, wc.getURL()), readable: () => readableNow(wc), reload: () => { record.host.reload(id) } },
       ...(services === undefined ? {} : { services }),
       runCommand,
       ...(devtools?.allowed(wc) === true ? { inspect: (x: number, y: number) => { devtools.inspect(wc, window, x, y) } } : {})

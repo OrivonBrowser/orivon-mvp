@@ -2,30 +2,65 @@ import { describe, expect, it, vi } from 'vitest'
 import { createOverlay, mountPage, readyEvents, shownPayload } from '../overlay/kit.js'
 import type { Overlay, OverlayBridge, OverlayPage } from '../overlay/kit.js'
 
-const root = { id: 'root' } as unknown as HTMLElement
+const root = { id: 'root', replaceChildren: vi.fn() } as unknown as HTMLElement
 const overlay = { name: 'demo', platform: 'linux' } as Overlay
 
 function quiet (): void { vi.spyOn(console, 'error').mockImplementation(() => {}) }
 
 describe('mountPage: a page that fails leaves an error state, never a blank overlay', () => {
-  it('shows the error state when mount throws, and ignores every later show', () => {
+  it('shows the error state when mount throws, and builds the page again on the next show', () => {
     quiet()
     const showError = vi.fn()
-    const mounted = mountPage({ mount: () => { throw new Error('boom') } }, root, overlay, showError)
+    const shown = vi.fn()
+    let attempts = 0
+    const mount = vi.fn(() => {
+      attempts += 1
+      if (attempts === 1) throw new Error('boom')
+      return { shown }
+    })
+    const mounted = mountPage({ mount }, root, overlay, showError)
     expect(showError).toHaveBeenCalledWith(root)
-    expect(() => { mounted.shown(1) }).not.toThrow()
+    mounted.shown(1)
+    expect(mount).toHaveBeenCalledTimes(2)
+    expect(shown).toHaveBeenCalledWith(1)
     expect(showError).toHaveBeenCalledTimes(1)
   })
 
-  it('shows the error state when a later show throws, then stops calling the page', () => {
+  it('clears the error state from the root before the page is built again', () => {
     quiet()
-    const shown = vi.fn(() => { throw new Error('bad payload') })
+    const order: string[] = []
+    const fakeRoot = { replaceChildren: () => { order.push('clear') } } as unknown as HTMLElement
+    let attempts = 0
+    const mounted = mountPage({ mount: () => { order.push('mount'); attempts += 1; if (attempts === 1) throw new Error('boom'); return { shown: () => {} } } }, fakeRoot, overlay, () => { order.push('error') })
+    mounted.shown(1)
+    expect(order).toEqual(['mount', 'error', 'clear', 'mount'])
+  })
+
+  it('keeps showing the error state while the page keeps failing, one failure per show', () => {
+    quiet()
     const showError = vi.fn()
-    const mounted = mountPage({ mount: () => ({ shown }) }, root, overlay, showError)
-    mounted.shown('a')
-    mounted.shown('b')
+    const mounted = mountPage({ mount: () => { throw new Error('boom') } }, root, overlay, showError)
+    expect(() => { mounted.shown(1) }).not.toThrow()
+    expect(() => { mounted.shown(2) }).not.toThrow()
+    expect(showError).toHaveBeenCalledTimes(3)
+  })
+
+  it('shows the error state when a show throws, and the next show puts the same page back', () => {
+    quiet()
+    const pageNodes = ['title', 'list']
+    const fakeRoot = { childNodes: pageNodes as unknown[], replaceChildren (...nodes: unknown[]) { this.childNodes = nodes } }
+    const showError = vi.fn((r: { replaceChildren: (...nodes: unknown[]) => void }) => { r.replaceChildren('error') })
+    const shown = vi.fn((payload: unknown) => { if (payload === 'bad') throw new Error('bad payload') })
+    const mount = vi.fn(() => ({ shown }))
+    const mounted = mountPage({ mount }, fakeRoot as unknown as HTMLElement, overlay, showError as unknown as (r: HTMLElement) => void)
+    mounted.shown('bad')
     expect(showError).toHaveBeenCalledTimes(1)
-    expect(shown).toHaveBeenCalledTimes(1)
+    expect(fakeRoot.childNodes).toEqual(['error'])
+    mounted.shown('good')
+    expect(mount).toHaveBeenCalledTimes(1)
+    expect(fakeRoot.childNodes).toEqual(pageNodes)
+    expect(shown).toHaveBeenLastCalledWith('good')
+    expect(showError).toHaveBeenCalledTimes(1)
   })
 
   it('shows the error state for an overlay with no registered page', () => {
