@@ -29,21 +29,12 @@ export interface ExtensionKeys {
 }
 
 export interface DispatcherHost {
-  /** The window's commands are held while a page has the screen; `isAppTab`: the contents are a registered app's tab. Null: the contents are in no window. */
-  windowFor: (contents: WebContents) => { suspended: boolean, isAppTab: boolean, run: (id: CommandId) => void } | null
+  /** The window's commands are held while a page has the screen; `isAppTab`: the contents are a registered app's tab. `alive`: false once the window is gone, which a command waiting for the end of the key event checks. Null: the contents are in no window. */
+  windowFor: (contents: WebContents) => { suspended: boolean, isAppTab: boolean, run: (id: CommandId) => void, alive?: () => boolean } | null
   /** A recording finished, for the page that asked. */
   recorded: (contents: WebContents, outcome: RecordOutcome) => void
   extensionKeys?: ExtensionKeys | undefined
 }
-
-/**
- * Commands that open or close another webContents, the developer tools. Closing them from inside the key event's
- * delivery destroys a webContents that Chromium may still be notifying observers on, and `~WebContentsImpl`
- * answers with a CHECK that ends the whole main process (SIGTRAP), or Electron's own listener on the destroyed
- * object throws "Object has been destroyed". Under load it hit about one close in a hundred, so they run once the
- * event has returned.
- */
-const AFTER_THE_KEY: ReadonlySet<string> = new Set<CommandId>(['devtools.toggle', 'devtools.console'])
 
 export function attachShortcuts (contents: WebContents, service: ShortcutService, host: DispatcherHost): void {
   contents.on('before-input-event', (event, input: PressedKey) => {
@@ -86,7 +77,9 @@ export function attachShortcuts (contents: WebContents, service: ShortcutService
     if (def?.pending === true) return
     event.preventDefault()
     if (input.isAutoRepeat && !service.isRepeatable(id)) return
-    if (AFTER_THE_KEY.has(id)) setImmediate(() => { target.run(id) })
-    else target.run(id)
+    // A command can close a tab, a window or the developer tools, destroying a webContents Chromium may still be
+    // notifying observers on while this event is delivered: `~WebContentsImpl` answers with a CHECK that ends the
+    // main process. Running the command once the event has returned takes every such path out of the delivery.
+    setImmediate(() => { if (target.alive?.() !== false) target.run(id) })
   })
 }
