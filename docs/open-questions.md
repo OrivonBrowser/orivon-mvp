@@ -1883,6 +1883,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Blocks:** nothing
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 ### A342: Pinning a tab ended the browser, and the cause is not found **[OWNER]**
 
 - **Question:** Pinning a tab was reported to end the browser after a leak warning. No code path that throws was found in pinning, moving, grouping, sleeping or the session recorder, and repeated pins of a plain, a grouped, a moved and a sleeping tab (from its menu) end cleanly. Which tab was it, and what did the terminal print around it?
@@ -1908,4 +1909,12 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** open a new tab, leave it for a site, return to it, resize or maximise, switch tabs, split; name the one.
 - **Who decides:** owner
 >>>>>>> stream/fix-visual
+=======
+### A346: A bookmarks-bar folder menu closes when its row menu opens, and items cannot be dragged out of it **[AI-REC]**
+
+- **Question:** The row menu is a native menu, which takes focus, so the folder menu closes as it opens; Chrome keeps it open. Chrome also drags an item out of an open folder menu onto the bar. Build both?
+- **Why it matters:** a person deleting several items from a folder reopens it after each; moving one back to the bar needs the menu row.
+- **Options:** leave as is until a person asks (rec.); keep the overlay open while a native menu is up; main-coordinated drag across the folder and chrome views.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+>>>>>>> stream/fix-bookmarks
 - **Blocks:** nothing

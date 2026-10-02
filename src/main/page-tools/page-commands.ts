@@ -18,10 +18,10 @@ async function guarded (name: string, work: () => void | Promise<void>): Promise
   }
 }
 
-export async function printCommand (target: ShellWindow): Promise<void> {
+export async function printCommand (target: ShellWindow, deps: PageToolDeps): Promise<void> {
   await guarded('print', async () => {
     const page = activePage(target)
-    if (page !== undefined) await printPage(target, page.wc)
+    if (page !== undefined) await printPage(target, page, deps)
   })
 }
 

@@ -73,9 +73,9 @@ describe('the bookmarks chrome actions', () => {
     const page = store.addUrl({ url: 'https://a.example/', title: 'A' }) as NonNullable<ReturnType<typeof store.addUrl>>
 
     runChromeAction('bookmarks.folder', { id: folder.id, anchor }, ctx)
-    expect(overlays.show).toHaveBeenCalledWith('bookmark-folder', anchor, { id: folder.id })
+    expect(overlays.show).toHaveBeenCalledWith('bookmark-folder', anchor, { id: folder.id, anchor })
     runChromeAction('bookmarks.folder', { id: 'bar', from: 4, anchor }, ctx)
-    expect(overlays.show).toHaveBeenLastCalledWith('bookmark-folder', anchor, { id: 'bar', from: 4 })
+    expect(overlays.show).toHaveBeenLastCalledWith('bookmark-folder', anchor, { id: 'bar', anchor, from: 4 })
 
     for (const bad of [undefined, {}, { id: folder.id }, { id: folder.id, anchor: { x: 1 } }, { id: folder.id, anchor: { ...anchor, x: Infinity } }, { id: page.id, anchor }, { id: 'nope', anchor }, { id: folder.id, anchor, from: -2 }]) {
       runChromeAction('bookmarks.folder', bad, ctx)

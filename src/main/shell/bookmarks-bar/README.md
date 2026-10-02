@@ -37,5 +37,10 @@ and as many as the window has room for.
 click that caused it arrive together, so `folder-overlay.ts` remembers which folder a menu was dismissed from for a
 moment: the same folder's click is that dismissal's echo, another folder's click opens its own menu.
 
+**The folder menu manages its rows through the same menu as the bar, and checks the root of every id.** A row's
+right-click asks main (`menu`) to pop the bar's native menu at the pointer, and Delete or Ctrl/Cmd+Backspace asks
+for `remove`. Both resolve the id in the store and refuse a root, the reading list or an unknown id, because the
+overlay page is a shell renderer that sends ids only. The native menu takes focus, so the folder menu closes as it opens.
+
 **The bar's overflow menu is the folder menu over the bar's own list.** `bookmarks.folder` with `id: 'bar'` and a
 `from` index lists the items that did not fit; it has no "Open all".
