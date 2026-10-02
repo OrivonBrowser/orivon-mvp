@@ -200,6 +200,12 @@ function isFromChromeView (sender: WebContents): boolean {
  */
 const trackedTabs = new Set<WebContents>()
 
+/** Whether `webContentsId` is a tab the library tracks: the id an extension's `tabId` names. */
+export function isExtensionTab (webContentsId: number): boolean {
+  const contents = webContents.fromId(webContentsId)
+  return contents !== undefined && trackedTabs.has(contents)
+}
+
 function notifyShell (wc: WebContents, run: (wc: WebContents) => void): void {
   shellInitiated.add(wc)
   try {
