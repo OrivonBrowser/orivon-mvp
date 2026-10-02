@@ -12,13 +12,14 @@ interface FakeWebContents {
   setWindowOpenHandler: ReturnType<typeof vi.fn>
   loadURL: ReturnType<typeof vi.fn>
   isDestroyed: () => boolean
+  destroy: () => void
   isLoading: () => boolean
   isFocused: ReturnType<typeof vi.fn>
   close: ReturnType<typeof vi.fn>
   focus: ReturnType<typeof vi.fn>
 }
 
-const { views } = vi.hoisted(() => ({ views: [] as Array<{ webContents: FakeWebContents, args: readonly string[] }> }))
+const { views } = vi.hoisted(() => ({ views: [] as Array<{ webContents: FakeWebContents, args: readonly string[], view: Record<string, unknown> }> }))
 
 vi.mock('electron', () => ({
   app: { isPackaged: false },
@@ -29,10 +30,11 @@ vi.mock('electron', () => ({
       id: views.length + 1,
       handlers,
       on: (event, handler) => { handlers.set(event, handler) },
-      once: vi.fn(),
+      once: vi.fn((event: string, handler: () => void) => { handlers.set(event, handler) }),
       setWindowOpenHandler: vi.fn(),
       loadURL: vi.fn().mockResolvedValue(undefined),
       isDestroyed: () => destroyed,
+      destroy: () => { destroyed = true },
       isLoading: () => false,
       isFocused: vi.fn(() => false),
       close: vi.fn(() => { destroyed = true }),
@@ -42,7 +44,7 @@ vi.mock('electron', () => ({
     this['setBackgroundColor'] = vi.fn()
     this['setBorderRadius'] = vi.fn()
     this['setBounds'] = vi.fn()
-    views.push({ webContents, args: options.webPreferences.additionalArguments })
+    views.push({ webContents, args: options.webPreferences.additionalArguments, view: this })
   }),
   nativeTheme: { shouldUseDarkColors: false, on: vi.fn(), removeListener: vi.fn() }
 }))
@@ -149,5 +151,46 @@ describe('focus when a popup closes', () => {
     second.popover.toggle(ANCHOR, [], 'main')
     last().isFocused.mockReturnValue(true)
     expect(() => { second.popover.close() }).not.toThrow()
+  })
+})
+
+describe('a popup whose page is gone while it shows', () => {
+  it('closes when its renderer crashes, and the next click opens a new popup at once', () => {
+    const { popover, attached } = setup()
+    popover.toggle(ANCHOR, [], 'main')
+    last().handlers.get('render-process-gone')?.()
+    expect(attached()).toBe(0)
+    expect(popover.isOpen()).toBe(false)
+    popover.toggle(ANCHOR, [], 'main')
+    expect(views).toHaveLength(2)
+    expect(attached()).toBe(1)
+  })
+
+  it('closes without throwing when its contents are destroyed and the view no longer answers webContents', () => {
+    const { popover, attached } = setup()
+    popover.toggle(ANCHOR, [], 'main')
+    const view = views[0]
+    expect(view).toBeDefined()
+    // The order Electron runs a close in: blur first, then the view loses its contents, then 'destroyed'.
+    view?.webContents.destroy()
+    view?.webContents.handlers.get('blur')?.()
+    if (view !== undefined) view.view['webContents'] = undefined
+    view?.webContents.handlers.get('destroyed')?.()
+    expect(attached()).toBe(0)
+    expect(popover.isOpen()).toBe(false)
+    expect(() => { popover.close() }).not.toThrow()
+    popover.toggle(ANCHOR, [], 'main')
+    expect(views).toHaveLength(2)
+    expect(attached()).toBe(1)
+  })
+
+  it('is closed by the window-level close even when the contents were destroyed first', () => {
+    const { popover } = setup()
+    popover.toggle(ANCHOR, [], 'main')
+    const view = views[0]
+    view?.webContents.destroy()
+    if (view !== undefined) view.view['webContents'] = undefined
+    expect(() => { popover.close() }).not.toThrow()
+    expect(popover.isOpen()).toBe(false)
   })
 })
