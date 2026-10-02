@@ -545,7 +545,7 @@ describe('captureFaviconInto', () => {
     expect(target.favicon).toBe(`data:image/png;base64,${Buffer.from(PNG_BYTES).toString('base64')}`)
   })
 
-  it('never writes anything once every candidate has failed', async () => {
+  it('signals no change when every candidate fails and no icon was shown', async () => {
     mockRequestOnce((request) => { request.emit('error', new Error('refused')) })
     const target = makeTarget()
     let updated = false
@@ -554,6 +554,28 @@ describe('captureFaviconInto', () => {
 
     expect(target.favicon).toBeNull()
     expect(updated).toBe(false)
+  })
+
+  it('shows the globe once every candidate a page announced has failed, over an icon the tab remembered for the site', async () => {
+    mockRequestOnce((request) => { request.emit('response', respondOk(404, [])) })
+    const target: FaviconTarget = { favicon: 'data:image/png;base64,Qw==', faviconOrigin: 'https://example.com', pendingFaviconUrl: null }
+    let updated = false
+
+    await captureFaviconInto(target, ['https://93.184.216.34/favicon.ico'], () => PUBLIC_PAGE, () => true, () => { updated = true })
+
+    expect(target.favicon).toBeNull()
+    expect(target.faviconOrigin).toBe('https://example.com')
+    expect(updated).toBe(true)
+  })
+
+  it('keeps the globe on a same-site page that announces nothing after one whose icons all failed', async () => {
+    mockRequestOnce((request) => { request.emit('response', respondOk(404, [])) })
+    const target: FaviconTarget = { favicon: 'data:image/png;base64,Qw==', faviconOrigin: 'https://example.com', pendingFaviconUrl: null }
+
+    await captureFaviconInto(target, ['https://93.184.216.34/favicon.ico'], () => PUBLIC_PAGE, () => true, () => {})
+    faviconOnCommit(target, 'https://example.com/other', () => 'data:image/png;base64,Qw==')
+
+    expect(target.favicon).toBeNull()
   })
 
   // The bug this fixes: favicon.ts used to record the ICON's own origin

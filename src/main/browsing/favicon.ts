@@ -102,7 +102,7 @@ function rememberIcon (target: FaviconTarget, origin: string, dataUrl: string): 
  * shown, brings back the icon this tab already fetched for that origin, else `saved(nextUrl)` (the icon history
  * keeps for the site): the browser announces an icon only when the set of icons changes, so a return to a site after
  * a blank page or an error page would announce nothing and leave the globe. A real change of icon is announced and
- * replaces what is shown here.
+ * replaces what is shown here; an announced set none of which loads shows the globe (captureFaviconInto).
  */
 export function faviconOnCommit (target: FaviconTarget, nextUrl: string, saved: (url: string) => string | null = () => null): void {
   if (shouldClearFavicon(target.faviconOrigin, nextUrl)) {
@@ -407,7 +407,7 @@ function decodedDataUrlCandidate (candidate: string): string | null {
 /** Tries each candidate from `page-favicon-updated`, in order, and stores
  * the first one that actually decodes to a recognised image, unless the
  * tab has since closed, a newer icon set has arrived, or the tab has moved
- * to another origin.
+ * to another origin. When none does, the tab shows the globe, as Chrome does.
  *
  * `pageUrl` is read ONCE, at the start, for the document that fired the
  * event: it decides whether a loopback candidate may be fetched at all
@@ -466,5 +466,12 @@ export async function captureFaviconInto (
     onUpdated()
     return
   }
+
+  // None of the page's own icons loaded, so it shows the globe over whatever the tab kept for the site. The origin
+  // stays recorded so that faviconOnCommit does not restore that icon on a later same-site page announcing nothing.
+  target.faviconOrigin = declaringOrigin
+  if (target.favicon === null) return
+  target.favicon = null
+  onUpdated()
 }
 
