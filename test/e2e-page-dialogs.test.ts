@@ -30,6 +30,9 @@ const FRAME = `<!doctype html><title>frame</title><body>frame<script>
   onmessage = function () { var answer = confirm('the frame asks'); parent.postMessage('answered:' + answer, '*') }
 </script></body>`
 
+const CSP_SANDBOXED = `<!doctype html><title>Sandboxed top</title><body>top
+<button id="ask" onclick="window.results = [prompt('csp prompt', 'x'), confirm('csp confirm')]">ask</button></body>`
+
 const mainPage = (frameOrigin: string): string => `<!doctype html><title>Dialogs fixture</title><body style="font:16px sans-serif">
 <button id="alert" onclick="alert('Hello there'); window.alerted = true">alert</button>
 <button id="confirm" onclick="window.confirmed = confirm('Delete everything?')">confirm</button>
@@ -54,6 +57,11 @@ async function serve (): Promise<{ origin: string, frameOrigin: string }> {
   const main = await startServer((request, response) => {
     if (request.url === '/next') { html(response, NEXT); return }
     if (request.url === '/frame') { html(response, FRAME); return }
+    if (request.url === '/csp-sandbox') {
+      response.setHeader('content-security-policy', 'sandbox allow-scripts')
+      html(response, CSP_SANDBOXED)
+      return
+    }
     html(response, mainPage(frames.origin))
   })
   servers.push(frames, main)
@@ -309,6 +317,23 @@ it('ends the panel of a frame in its own process when the page removes the frame
 
     expect(await noNativeDialogs(app)).toEqual([])
     expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, E2E_TIMEOUT_MS)
+
+it('gives a top-level document sandboxed by its own policy no prompt, no confirm and no panel', async () => {
+  const { origin } = await serve()
+  const { app, chrome } = await launchShell()
+  try {
+    await stubNativeDialogs(app)
+    const view = await visit(app, chrome, `${origin}/csp-sandbox`)
+    view.on('dialog', () => {})
+    await view.click('#ask')
+    expect(await waitFor(async () => JSON.stringify(await read<unknown>(view, 'results')) === '[null,false]')).toBe(true)
+    await delay(ABSENCE_SETTLE_MS)
+    expect(await questionGone(app)).toBe(true)
+    expect(await noNativeDialogs(app)).toEqual([])
   } finally {
     await closeElectron(app)
   }

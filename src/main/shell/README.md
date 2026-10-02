@@ -62,7 +62,7 @@ released once): `tab-view.ts` drops a main-frame navigation, a redirect and a `w
 an answer cannot be given to a page that is no longer the one asked about. A change of address inside the document is
 not a navigation and still works. `page-dialogs.ts` answers a page's own `alert`, `confirm` and `prompt` (it replaces the one handler
 Electron keeps on a tab's internal dialog event for `alert` and `confirm`, and takes `prompt` from the tab's preload, which blocks on a send;
-it replies once the person has answered in the panel, or with the dismissed default when the tab navigates, closes or dies), and `signals/crashed.ts` does not call a page blocked on one unresponsive.
+it replies once the person has answered in the panel, or with the dismissed default when the tab navigates; a closed tab, a dead renderer, Electron's cancel event or a removed frame close the panel and send no answer, because the callback for a gone frame crashes the browser process), and `signals/crashed.ts` does not call a page blocked on one unresponsive.
 `leave-page-prompt.ts` keeps a page that asks "Leave this page?" where it is while the panel asks, lets the next attempt
 through after Leave, and runs again a navigation the shell started (`tab-navigation.ts` records it). `served-address.ts` loads an `ipfs:` link at the URL its protocol serves it at, and not
 while the tab is held: a load from there is one the hold would never see.

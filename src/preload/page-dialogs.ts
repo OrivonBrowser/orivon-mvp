@@ -42,7 +42,8 @@ function wrapPrompt (askMain: (message: string, defaultText: string) => string |
   const leaving = (): boolean => {
     try {
       const type = (window as unknown as { event?: { type?: unknown } }).event?.type
-      return type === 'beforeunload' || type === 'pagehide' || type === 'unload'
+      // A page hidden by a navigation raises visibilitychange as part of being left.
+      return type === 'beforeunload' || type === 'pagehide' || type === 'unload' || (type === 'visibilitychange' && document.visibilityState === 'hidden')
     } catch {
       return false
     }

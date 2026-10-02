@@ -70,6 +70,21 @@ describe('the page-prompt wrapper', () => {
     expect(ask).not.toHaveBeenCalled()
   })
 
+  it('answers a prompt raised by a page being hidden as dismissed, and asks for one raised by it being shown', () => {
+    installPageDialogs()
+    const { func } = installed()
+    const ask = vi.fn(() => 'asked')
+    const native = { prompt: () => 'native', event: { type: 'visibilitychange' } }
+    vi.stubGlobal('window', native)
+    vi.stubGlobal('document', { visibilityState: 'hidden' })
+    func(ask)
+    const prompt = (native as unknown as Record<string, () => unknown>)['prompt']
+    expect(prompt?.()).toBeNull()
+    expect(ask).not.toHaveBeenCalled()
+    vi.stubGlobal('document', { visibilityState: 'visible' })
+    expect(prompt?.()).toBe('asked')
+  })
+
   it('asks as usual while any other event is being handled', () => {
     installPageDialogs()
     const { func } = installed()

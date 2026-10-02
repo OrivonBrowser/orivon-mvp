@@ -175,8 +175,9 @@ describe('taking over Electron\'s dialog event', () => {
     const callback = (...args: unknown[]): void => { seen.push(args) }
     r.wc.emit('-run-dialog', { frame: MAIN, dialogType: 'beforeunload', messageText: 'x' }, callback)
     r.wc.emit('-run-dialog', { frame: MAIN, dialogType: 'alert' }, callback)
+    expect(seen).toEqual([[false, ''], [false, '']])
     r.wc.emit('-run-dialog', null, callback)
-    expect(seen).toEqual([[false, ''], [false, ''], [false, '']])
+    expect(seen).toHaveLength(2)
     expect(r.ask).not.toHaveBeenCalled()
   })
 })
@@ -236,7 +237,12 @@ describe('answering a page that waits', () => {
     const r = rig()
     expect(r.send({ type: 'prompt' })).toEqual({ value: undefined, replied: true })
     expect(r.send(request('prompt'), null)).toEqual({ value: null, replied: true })
-    expect(r.run('confirm', 'x', null)).toEqual({ value: false, replied: true })
+    expect(r.ask).not.toHaveBeenCalled()
+  })
+
+  it('sends nothing to Electron\'s callback when it names no frame: that is most likely a frame already gone', () => {
+    const r = rig()
+    expect(r.run('confirm', 'x', null)).toEqual({ value: undefined, replied: false })
     expect(r.ask).not.toHaveBeenCalled()
   })
 
@@ -286,7 +292,7 @@ describe('a page that leaves while it waits', () => {
     r.wc.emit('-cancel-dialogs')
     await flush()
     expect(confirm.replied).toBe(false)
-    expect(prompt.replied).toBe(false)
+    expect(prompt).toEqual({ value: null, replied: true })
     expect(hasPendingPageDialog(r.wc as unknown as WebContents)).toBe(false)
   })
 
@@ -306,7 +312,7 @@ describe('a page that leaves while it waits', () => {
     const second = r.run('confirm')
     r.wc.emit('destroyed')
     await flush()
-    expect(first.replied).toBe(false)
+    expect(first).toEqual({ value: null, replied: true })
     expect(second.replied).toBe(false)
     expect(hasPendingPageDialog(r.wc as unknown as WebContents)).toBe(false)
   })
@@ -329,6 +335,35 @@ describe('a frame that leaves while its dialog is open', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('sends nothing when the person answers after the frame went but before the poll saw it', async () => {
+    vi.useFakeTimers()
+    try {
+      const frame = { origin: 'https://ads.example', parent: MAIN, detached: false }
+      let answer: (result: QuestionResult) => void = () => {}
+      const r = rig((): Promise<QuestionResult> => new Promise((resolve) => { answer = resolve }))
+      const confirm = r.run('confirm', 'hello', frame)
+      frame.detached = true
+      answer({ response: 0, checkboxChecked: false })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(confirm.replied).toBe(false)
+      await vi.advanceTimersByTimeAsync(300)
+      expect(confirm.replied).toBe(false)
+      expect(hasPendingPageDialog(r.wc as unknown as WebContents)).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('sends nothing to a tab destroyed before the answer', async () => {
+    let answer: (result: QuestionResult) => void = () => {}
+    const r = rig((): Promise<QuestionResult> => new Promise((resolve) => { answer = resolve }))
+    const confirm = r.run('confirm')
+    r.wc.isDestroyed = () => true
+    answer({ response: 0, checkboxChecked: false })
+    await flush()
+    expect(confirm.replied).toBe(false)
   })
 
   it('treats a frame it can no longer read as removed', async () => {

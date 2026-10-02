@@ -10,7 +10,8 @@ import { installPageDialogs } from './page-dialogs.js'
 // extension's own page (a `chrome-extension:` tab) gets none of it --
 // shared with preload/newtab.ts's own fallback branch (a dashboard tab the
 // user has navigated away from is an ordinary tab too).
-// A subframe of the tab runs this preload too (./frame.ts) and gets only the
-// page-dialog wrapper; everything else is for the top frame.
+// A tab's preload reaches the top frame only: no tab setting runs one in a
+// subframe. The inMainFrame() gate (./frame.ts) stays as a second line, so a
+// preload that ever did reach a subframe would expose nothing there.
 installPageDialogs()
 if (inMainFrame()) exposeOrdinaryTabSurface()

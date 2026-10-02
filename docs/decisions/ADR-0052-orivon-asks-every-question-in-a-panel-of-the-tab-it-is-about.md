@@ -47,9 +47,12 @@ A page's own questions go through the same panel, and the mechanism is part of t
   answers once the person has, which Electron allows to come later (`src/preload/page-dialogs.ts`). The
   panel is headed with the asking frame's own origin, read in main from the committed frame and never from
   the page: "<origin> says", and "An embedded page on <origin> says" for a frame inside the page. It offers
-  OK and Cancel only, in a style a grant never has, and the text is cleaned and cut like any page text. Every
-  path out replies: a navigation of the tab, a closed tab or window, a crashed page, Electron's own
-  `-cancel-dialogs` and a refused call each give the page what a dismissed dialog gives. After a document's
+  OK and Cancel only, in a style a grant never has, and the text is cleaned and cut like any page text. A
+  navigation of the tab, a refused or malformed call and the person's answer reply with the dismissed
+  default or the answer. A closed tab or window, a dead renderer, Electron's own `-cancel-dialogs` and a
+  removed frame close the panel and send nothing to Electron's callback, which takes the browser process
+  down when its frame is gone; a callback is also withheld when the frame went between the answer and the
+  next look at it. After a document's
   second dialog the next one offers "Do not let this page show more dialogs", and once ticked the rest are
   answered at once until the next page.
 - **Chromium decides first, and the shell takes what is left.** Chromium makes its own checks before the

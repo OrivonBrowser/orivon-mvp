@@ -5,8 +5,10 @@
 // handler Electron installed for it, which draws a native box, is replaced here.
 // `prompt` never reaches that event, so the tab's preload sends it
 // (src/preload/page-dialogs.ts). Either way the page's script stays blocked
-// until the person answers, so every path out of here replies: an answer, a
-// navigation, a closed tab, a refused or malformed call.
+// until the person answers, so an answer, a navigation and a refused or
+// malformed call reply. A closed tab, a dead renderer, Electron's own cancel
+// event and a removed frame close the panel and send nothing to Electron's
+// callback, which takes the browser process down when its frame is gone.
 import type { IpcMainEvent, WebContents, WebFrameMain } from 'electron'
 import { PAGE_DIALOG_CHANNEL } from '../channels.js'
 import { askQuestion, type AskQuestion } from './question/ask-question.js'
@@ -152,9 +154,11 @@ export function watchPageDialogs (contents: WebContents, shown: () => boolean, a
 
   // A dialog whose frame or renderer is gone has nothing waiting on it: its panel is closed and no answer is
   // sent, because Electron's callback for a frame that no longer exists takes the browser process down (measured).
+  // Only a dialog answered through that callback is abandoned; a prompt, answered over IPC, is replied the default.
   const abandoned = new WeakSet<AbortController>()
+  const viaCallback = new WeakSet<AbortController>()
   const endAll = (): void => { for (const controller of [...open]) controller.abort() }
-  const abandonAll = (): void => { for (const controller of [...open]) { abandoned.add(controller); controller.abort() } }
+  const abandonAll = (): void => { for (const controller of [...open]) { if (viaCallback.has(controller)) abandoned.add(controller); controller.abort() } }
   // A cross-origin frame lives in a process of its own: its parent can remove it while its dialog is open, and
   // nothing else says so.
   let poll: ReturnType<typeof setInterval> | undefined
@@ -171,14 +175,16 @@ export function watchPageDialogs (contents: WebContents, shown: () => boolean, a
   contents.on('destroyed', () => { abandonAll(); watched.delete(contents) })
 
   /** Asks one dialog and calls `reply` exactly once with what the page's own function returns. */
-  const handle = (request: PageDialogRequest, frame: WebFrameMain | null | undefined, reply: (value: PageDialogReply) => void): void => {
-    if (frame === null || frame === undefined) { reply(defaultReply(request.type)); return }
+  const handle = (request: PageDialogRequest, frame: WebFrameMain | null | undefined, reply: (value: PageDialogReply) => void, throughCallback = false): void => {
+    // Electron raised a dialog it could not name a frame for: the frame is most likely gone, so no callback.
+    if (frame === null || frame === undefined) { if (!throughCallback) reply(defaultReply(request.type)); return }
     if (!shown() || document.stopped || contents.isDestroyed()) { reply(defaultReply(request.type)); return }
 
     const spec = pageDialogSpec(request, speaker(frame.origin, frame === contents.mainFrame), document.count >= FREE_DIALOGS)
     document.count += 1
     const controller = new AbortController()
     open.add(controller)
+    if (throughCallback) viaCallback.add(controller)
     if (frame !== contents.mainFrame) { frames.set(controller, frame); startPolling() }
     const done = (answer: PageDialogReply): void => {
       open.delete(controller)
@@ -217,13 +223,18 @@ export function watchPageDialogs (contents: WebContents, shown: () => boolean, a
     const request = typeof type === 'string' && TYPES.includes(type) && typeof info.messageText === 'string'
       ? readRequest({ type, message: info.messageText, defaultText: typeof info.defaultPromptText === 'string' ? info.defaultPromptText : '' })
       : undefined
-    if (request === undefined) { try { callback(false, '') } catch { /* the page is gone */ } return }
+    if (request === undefined) {
+      if (!contents.isDestroyed() && info.frame != null && !frameEnded(info.frame)) { try { callback(false, '') } catch { /* the page is gone */ } }
+      return
+    }
     let called = false
     handle(request, info.frame, (value) => {
       if (called) return
       called = true
+      // The poll notices a removed frame only every FRAME_POLL_MS: an answer given before that must not reach it.
+      if (contents.isDestroyed() || (info.frame != null && frameEnded(info.frame))) return
       try { callback(...callbackArguments(request.type, value)) } catch { /* the page is gone: nobody waits */ }
-    })
+    }, true)
   })
   emitter.on(CANCEL_DIALOGS, abandonAll)
 }
