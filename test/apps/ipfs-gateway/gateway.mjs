@@ -10,7 +10,7 @@ import { CID } from 'multiformats/cid'
 const HOST = '127.0.0.1'
 
 /**
- * @param {Record<string, Record<string, string>>} sites site name -> path -> content
+ * @param {Record<string, Record<string, string> | string>} sites site name -> path -> content; a string is a site whose root is that one file
  * @param {{ dnslinks?: Record<string, string> }} [options] DNS name -> the site whose root its DNSLink names
  */
 export async function startFixtureGateway (sites, options = {}) {
@@ -23,6 +23,10 @@ export async function startFixtureGateway (sites, options = {}) {
   const store = { put: async (cid, bytes) => { blocks.set(cid.toString(), bytes); return cid } }
 
   for (const [site, contents] of Object.entries(sites)) {
+    if (typeof contents === 'string') {
+      for await (const entry of importer([{ content: new TextEncoder().encode(contents) }], store, { cidVersion: 1, rawLeaves: true })) roots[site] = entry.cid.toString()
+      continue
+    }
     const candidates = Object.entries(contents).map(([path, content]) => ({ path, content: new TextEncoder().encode(content) }))
     for await (const entry of importer(candidates, store, { wrapWithDirectory: true, cidVersion: 1, rawLeaves: true })) {
       if (entry.path === '') roots[site] = entry.cid.toString()

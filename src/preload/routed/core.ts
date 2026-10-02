@@ -44,6 +44,14 @@ export function installRoutedCore (
     return target.location === undefined || url.origin !== target.location.origin
   }
 
+  /** One console line per failed request, as Chromium prints one for a native request that fails; the origin and path only, so a query's tokens stay out of it. An abort is the caller's own doing and says nothing. */
+  function reportFailure (request: RoutedRequest, error: unknown): void {
+    if (request.signal?.aborted === true || (error as { name?: unknown } | null)?.name === 'AbortError') return
+    const cause = (error as { cause?: unknown } | null)?.cause
+    const detail = cause instanceof Error ? cause.message : error instanceof Error ? error.message : String(error)
+    console.error(`${request.method} ${request.url.origin}${request.url.pathname} failed: ${detail}`)
+  }
+
   /** Races one socket operation against the caller's abort and, when armed, the idle timeout. Either one closes the socket. */
   function guarded<T> (socket: RoutedSocket, request: RoutedRequest, operation: Promise<T>, what: string): Promise<T> {
     const { signal, idle } = request
@@ -142,6 +150,7 @@ export function installRoutedCore (
             if (pieces.length > 0) return
           }
         } catch (error) {
+          reportFailure(request, error)
           finish()
           throw error
         }
@@ -181,7 +190,7 @@ export function installRoutedCore (
     return response
   }
 
-  async function request (req: RoutedRequest): Promise<Response | undefined> {
+  async function exchange (req: RoutedRequest): Promise<Response | undefined> {
     let url = req.url
     let method = req.method
     let headers = withDefaults(req.headers)
@@ -221,6 +230,16 @@ export function installRoutedCore (
         if (error instanceof TypeError && error.message === 'Failed to fetch') throw error
         throw wire.networkError(`${url.host}: ${error instanceof Error ? error.message : String(error)}`)
       }
+    }
+  }
+
+  /** Every entry point (fetch, XHR, EventSource) comes through here, the dial included. */
+  async function request (req: RoutedRequest): Promise<Response | undefined> {
+    try {
+      return await exchange(req)
+    } catch (error) {
+      reportFailure(req, error)
+      throw error
     }
   }
 

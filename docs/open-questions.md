@@ -1889,3 +1889,13 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** Get the extension id and the terminal output at the exit (rec.); wrap each `session.extensions` listener in `contain()`, which hides the cause; leave it.
 - **Who decides:** research first, with the owner's id and output
 - **Blocks:** nothing
+
+### A349: A routed response from www.youtube.com ends before its body completes **[RESEARCH]**
+
+- **Question:** FreeTube's watch page fails with `Failed to fetch` when the routed `GET` of YouTube's player script
+  (`.../player_es6.vflset/en_US/base.js`, `Content-Length: 703899`, `Content-Encoding: br`) ends with "the connection closed
+  before the response body completed". The same request through `curl --http1.1` completes. Where does the stream end early?
+- **Why it matters:** a large response over `net.connectSecure` may be cut for every routed app, not only FreeTube.
+- **Options:** measure the bytes read before the end against a local TLS server sending the same size (rec.); read the main-side socket's end handling.
+- **Who decides:** research first
+- **Blocks:** FreeTube playback (the watch page)

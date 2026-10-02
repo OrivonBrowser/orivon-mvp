@@ -1,9 +1,10 @@
 // The wire half of the sign-in identity (./sign-in-identity.ts): a request to
 // a sign-in host leaves with Firefox's User-Agent and none of Chromium's
 // Sec-CH-UA* headers. ./sign-in-identity-tab.ts sets `navigator.userAgent`,
-// but `setUserAgent()` called from `did-start-navigation` lands after the
-// headers of that navigation's own request are already fixed, so only a
-// handler at the network layer can correct them. Tied to Electron.
+// but a tab can only change it at points that miss the request in flight (a
+// server redirect into a sign-in host changes it after loading stops), so
+// only a handler at the network layer can correct the request headers.
+// Tied to Electron.
 import { session } from 'electron'
 import type { Session } from 'electron'
 import { webRequestOwnerFor } from '../sessions/web-request-owner.js'
