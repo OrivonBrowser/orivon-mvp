@@ -52,18 +52,18 @@ export class DevToolsService implements DevToolsGate {
       contents.closeDevTools()
       return
     }
-    if (this.permit(contents, window)) this.show(contents)
+    if (this.permitted(contents, window)) this.show(contents)
   }
 
   /** Opens them on the Console panel, or moves an open set there. The same rules as `toggle`. */
   openConsole (contents: WebContents | undefined, window: BaseWindow): void {
-    if (contents === undefined || contents.isDestroyed() || !this.permit(contents, window)) return
+    if (contents === undefined || contents.isDestroyed() || !this.permitted(contents, window)) return
     if (!contents.isDevToolsOpened()) this.show(contents)
     showConsolePanel(contents)
   }
 
   inspect (contents: WebContents, window: BaseWindow, x: number, y: number): void {
-    if (contents.isDestroyed() || !this.permit(contents, window)) return
+    if (contents.isDestroyed() || !this.permitted(contents, window)) return
     if (!contents.isDevToolsOpened()) this.show(contents)
     contents.inspectElement(x, y)
   }
@@ -72,6 +72,11 @@ export class DevToolsService implements DevToolsGate {
     if (contents === undefined) return
     this.open.delete(contents)
     if (!contents.isDestroyed() && contents.isDevToolsOpened()) contents.closeDevTools()
+  }
+
+  /** `permit`, and the page still there afterwards: the question can stay open while its tab is closed. */
+  private permitted (contents: WebContents, window: BaseWindow): boolean {
+    return this.permit(contents, window) && !contents.isDestroyed()
   }
 
   private permit (contents: WebContents, window: BaseWindow): boolean {

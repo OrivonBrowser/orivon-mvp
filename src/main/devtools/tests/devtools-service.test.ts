@@ -60,6 +60,18 @@ describe('developer tools', () => {
     expect(service.allowed(as(contents))).toBe(false)
   })
 
+  it.each([
+    ['toggle', (service: DevToolsService, c: FakeContents) => { service.toggle(as(c), WINDOW) }],
+    ['openConsole', (service: DevToolsService, c: FakeContents) => { service.openConsole(as(c), WINDOW) }],
+    ['inspect', (service: DevToolsService, c: FakeContents) => { service.inspect(as(c), WINDOW, 1, 2) }]
+  ])('%s opens nothing on a page that was closed while the question was open', (_name, act) => {
+    const contents = page()
+    const { service } = setup({ appOf: () => ({ key: 'app', label: 'App' }), confirm: vi.fn(() => { contents.destroyed = true; return true }) })
+    expect(() => { act(service, contents) }).not.toThrow()
+    expect(contents.openDevTools).not.toHaveBeenCalled()
+    expect(contents.inspectElement).not.toHaveBeenCalled()
+  })
+
   it('close the ones already open when the setting is turned off', () => {
     const { service, change } = setup()
     const contents = page()
