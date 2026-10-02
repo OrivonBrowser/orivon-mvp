@@ -4,6 +4,8 @@
 // into a hashed BundleTree) does not need to know the inside of. Tested
 // through fetch/tests/bundle.test.ts's own suite, same as install-origin.ts.
 
+import { servedByVerifier } from './verifier-origin.js'
+
 /**
  * Structurally typed against the real global `fetch`'s `Response` (which
  * satisfies this shape as-is) so tests can stub it trivially, the same way
@@ -87,6 +89,14 @@ export type RequestHeaders = Readonly<Record<string, string>>
  * other bounds here (docs/open-questions.md A15).
  */
 export const FETCH_IDLE_TIMEOUT_MS = 20_000
+
+/**
+ * FETCH_IDLE_TIMEOUT_MS for a URL the verifier serves (`./verifier-origin.ts`).
+ * The verifier can be silent for minutes while it waits on IPFS gateways, and
+ * it gives up on each block by itself, so this drops only a verifier that has
+ * stopped answering altogether. Uncalibrated, same caveat as above.
+ */
+export const VERIFIER_IDLE_TIMEOUT_MS = 5 * 60_000
 
 /**
  * Bounds the WHOLE fetchBundle() operation -- the install-origin guard's own
@@ -173,13 +183,13 @@ function declaredLength (response: FetchResponse): number | undefined {
   return Number(raw)
 }
 
-/** A timer that aborts `controller` after FETCH_IDLE_TIMEOUT_MS without a `touch()`. */
-function idleWatch (controller: AbortController): { touch: () => void, pause: () => void } {
+/** A timer that aborts `controller` after `idleMs` without a `touch()`. */
+function idleWatch (controller: AbortController, idleMs: number): { touch: () => void, pause: () => void } {
   let timer: ReturnType<typeof setTimeout> | undefined
   const pause = (): void => { if (timer !== undefined) clearTimeout(timer) }
   const touch = (): void => {
     pause()
-    timer = setTimeout(() => { controller.abort() }, FETCH_IDLE_TIMEOUT_MS)
+    timer = setTimeout(() => { controller.abort() }, idleMs)
   }
   touch()
   return { touch, pause }
@@ -245,12 +255,13 @@ export async function fetchWithBudget (
   if (bundleSignal.aborted) return rejected(`could not fetch ${label} (${url}): ${deadlineError().message}`)
 
   const controller = new AbortController()
-  const idle = idleWatch(controller)
+  const idleMs = servedByVerifier(url) ? VERIFIER_IDLE_TIMEOUT_MS : FETCH_IDLE_TIMEOUT_MS
+  const idle = idleWatch(controller, idleMs)
   const forwardBundleAbort = (): void => { controller.abort() }
   bundleSignal.addEventListener('abort', forwardBundleAbort, { once: true })
   const abortError = (): Error => bundleSignal.aborted
     ? deadlineError()
-    : new Error(`timed out: no progress for ${String(FETCH_IDLE_TIMEOUT_MS)}ms`)
+    : new Error(`timed out: no progress for ${String(idleMs)}ms`)
   try {
     let response: FetchResponse
     try {
