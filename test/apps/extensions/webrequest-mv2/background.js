@@ -37,3 +37,6 @@ for (const event of ['onSendHeaders', 'onResponseStarted', 'onBeforeRedirect', '
     })
   }, ALL_URLS)
 }
+
+// Every listener above is registered; the e2e spec waits for this before it makes a request.
+window.__wrReady = true

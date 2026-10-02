@@ -20,8 +20,8 @@ export function webRequestApi (): void {
     const addOnMain = crx.call('webRequest.addListener')
     const removeOnMain = crx.call('webRequest.removeListener')
     const replyToMain = crx.call('webRequest.reply')
-    let nextListenerId = 1
-    let subscribed = false
+    // A new document starts its numbers somewhere else, so it never answers for an id an older document of the page was given.
+    let nextListenerId = Math.floor(Math.random() * 2 ** 30) + 1
 
     const warn = (error: unknown): void => {
       console.error('Unchecked runtime.lastError: ' + (error instanceof Error ? error.message : String(error)))
@@ -52,11 +52,11 @@ export function webRequestApi (): void {
       replyToMain(dispatchId, picked).catch(() => {})
     }
 
-    const onDispatch = (listenerId: number, dispatchId: number, details: unknown): void => {
+    const onDispatch = (listenerId: number, dispatchId: number, eventName: string, details: unknown): void => {
       const entry = listeners.get(listenerId)
-      if (entry === undefined || typeof entry.callback !== 'function') {
-        // A registration this context no longer holds (the page reloaded): answer at once so the request does not wait.
-        if (dispatchId !== 0) answer(dispatchId, null)
+      if (entry === undefined || entry.event !== eventName || typeof entry.callback !== 'function') {
+        // A registration this context does not hold (the page reloaded): say so at once, so the request does not wait and main forgets it.
+        if (dispatchId !== 0) answer(dispatchId, { gone: true })
         return
       }
       let result: unknown
@@ -77,10 +77,6 @@ export function webRequestApi (): void {
         if (typeof callback !== 'function') throw new TypeError(signature + 'No matching signature.')
         if (typeof filter !== 'object' || filter === null) throw new TypeError(signature + 'No matching signature.')
         for (const entry of listeners.values()) if (entry.event === name && entry.callback === callback) return
-        if (!subscribed) {
-          subscribed = true
-          crx.event('webRequest.dispatch').addListener(onDispatch)
-        }
         const listenerId = nextListenerId++
         listeners.set(listenerId, { event: name, callback })
         const sent = { urls: filter.urls, types: filter.types, tabId: filter.tabId, windowId: filter.windowId }
@@ -106,6 +102,9 @@ export function webRequestApi (): void {
       hasListener: (callback: unknown): boolean => [...listeners.values()].some((entry) => entry.event === name && entry.callback === callback),
       hasListeners: (): boolean => [...listeners.values()].some((entry) => entry.event === name)
     })
+
+    // Subscribed as the namespace is built, so a context that holds no listener yet still answers for the ones an older document left.
+    crx.event('webRequest.dispatch').addListener(onDispatch)
 
     const events: Record<string, object> = {}
     for (const name of EVENT_NAMES) events[name] = makeEvent(name)

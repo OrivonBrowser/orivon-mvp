@@ -5,8 +5,10 @@ interface Harness {
   readonly api: Record<string, any>
   /** Every `crx.call(name)(...args)` made, in order. */
   readonly calls: Array<{ name: string, args: unknown[] }>
-  /** What main sends over `webRequest.dispatch`. */
-  readonly dispatch: (listenerId: number, dispatchId: number, details: unknown) => void
+  /** What main sends over `webRequest.dispatch` for the nth listener added (1-based), under the event it was added to unless `eventName` says otherwise. */
+  readonly dispatch: (nth: number, dispatchId: number, details: unknown, eventName?: string) => void
+  /** The same for a listener id this context may not hold. */
+  readonly dispatchRaw: (listenerId: number, dispatchId: number, eventName: string, details: unknown) => void
   /** Settles when main's next `webRequest.addListener` call is answered. */
   readonly failNextAdd: (message: string) => void
   readonly subscriptions: () => number
@@ -42,7 +44,12 @@ function harness (): Harness {
   return {
     api,
     calls,
-    dispatch: (listenerId, dispatchId, details) => { dispatchListener?.(listenerId, dispatchId, details) },
+    dispatch: (nth, dispatchId, details, eventName) => {
+      const added = calls.filter((call) => call.name === 'webRequest.addListener')[nth - 1]
+      if (added === undefined) throw new Error(`no listener number ${String(nth)} was added`)
+      dispatchListener?.(added.args[1], dispatchId, eventName ?? added.args[0], details)
+    },
+    dispatchRaw: (listenerId, dispatchId, eventName, details) => { dispatchListener?.(listenerId, dispatchId, eventName, details) },
     failNextAdd: (message) => { failure = message },
     subscriptions: () => subscriptions
   }
@@ -102,15 +109,24 @@ describe('chrome.webRequest events', () => {
     const h = harness()
     h.api.onBeforeRequest.addListener(() => {}, { urls: ['https://*/*'], types: ['script'], tabId: 2, extra: () => {} }, ['blocking'])
     await settle()
-    expect(h.calls).toEqual([{ name: 'webRequest.addListener', args: ['onBeforeRequest', 1, { urls: ['https://*/*'], types: ['script'], tabId: 2, windowId: undefined }, ['blocking']] }])
+    expect(h.calls).toEqual([{ name: 'webRequest.addListener', args: ['onBeforeRequest', expect.any(Number), { urls: ['https://*/*'], types: ['script'], tabId: 2, windowId: undefined }, ['blocking']] }])
   })
 
-  it('numbers listeners across events, and subscribes to the dispatch event once', () => {
+  it('numbers listeners across events from a random start, and subscribes to the dispatch event once, before any listener is added', () => {
     const h = harness()
+    expect(h.subscriptions()).toBe(1)
     h.api.onBeforeRequest.addListener(() => {}, FILTER)
     h.api.onCompleted.addListener(() => {}, FILTER)
-    expect(h.calls.map((call) => call.args[1])).toEqual([1, 2])
+    const [first, second] = h.calls.map((call) => call.args[1] as number)
+    expect(first).toBeGreaterThanOrEqual(1)
+    expect(second).toBe((first as number) + 1)
     expect(h.subscriptions()).toBe(1)
+    const starts = new Set(Array.from({ length: 8 }, () => {
+      const other = harness()
+      other.api.onCompleted.addListener(() => {}, FILTER)
+      return other.calls[0]?.args[1]
+    }))
+    expect(starts.size).toBeGreaterThan(1)
   })
 
   it('throws a TypeError at once for a callback or filter that is not what Chrome takes', () => {
@@ -147,7 +163,7 @@ describe('chrome.webRequest events', () => {
     h.api.onCompleted.removeListener(callback)
     await settle()
     expect(h.api.onCompleted.hasListener(callback)).toBe(false)
-    expect(h.calls.at(-1)).toEqual({ name: 'webRequest.removeListener', args: ['onCompleted', 1] })
+    expect(h.calls.at(-1)).toEqual({ name: 'webRequest.removeListener', args: ['onCompleted', h.calls[0]?.args[1]] })
   })
 
   it('drops a listener main refused, and logs it as Chrome logs a lastError', async () => {
@@ -245,12 +261,21 @@ describe('chrome.webRequest dispatch', () => {
     } finally { spy.mockRestore() }
   })
 
-  it('answers a dispatch for a listener it no longer holds at once, so main does not wait', async () => {
+  it('answers a dispatch for a listener it does not hold with { gone: true } at once, so main does not wait and forgets it', async () => {
     const h = harness()
-    h.api.onBeforeRequest.addListener(() => ({ cancel: true }), FILTER, ['blocking'])
-    h.dispatch(99, 9, {})
-    h.dispatch(99, 0, {})
+    h.dispatchRaw(-5, 9, 'onBeforeRequest', {})
+    h.dispatchRaw(-5, 0, 'onBeforeRequest', {})
     await settle()
-    expect(replies(h)).toEqual([[9, null]])
+    expect(replies(h)).toEqual([[9, { gone: true }]])
+  })
+
+  it('answers { gone: true } for an id it holds under another event, and never calls that listener', async () => {
+    const h = harness()
+    const called: unknown[] = []
+    h.api.onBeforeRequest.addListener((details: unknown) => { called.push(details); return { cancel: true } }, FILTER, ['blocking'])
+    h.dispatch(1, 10, {}, 'onCompleted')
+    await settle()
+    expect(called).toEqual([])
+    expect(replies(h)).toEqual([[10, { gone: true }]])
   })
 })

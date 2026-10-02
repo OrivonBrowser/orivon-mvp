@@ -140,11 +140,13 @@ it('serves an MV2 extension\'s blocking and observing webRequest listeners from 
       })
       const liveApp = app
 
-      // The background page registers its listeners as it loads; a request made before it has is not seen.
-      const backgroundReady = await waitFor(async () => await liveApp.evaluate(({ webContents }, id: string) =>
-        webContents.getAllWebContents().some((wc) => wc.getURL().startsWith(`chrome-extension://${id}/`)), extensionId))
+      // The background page registers its listeners as it loads; a request made before it has is not seen,
+      // so the request waits for the flag the page sets after its last addListener call.
+      const backgroundReady = await waitFor(async () => await liveApp.evaluate(async ({ webContents }, id: string) => {
+        const background = webContents.getAllWebContents().find((wc) => !wc.isDestroyed() && wc.getURL().startsWith(`chrome-extension://${id}/`))
+        return await background?.executeJavaScript('window.__wrReady === true').catch(() => false) === true
+      }, extensionId), 20_000)
       check('the extension\'s background page loaded', backgroundReady)
-      await new Promise((resolve) => setTimeout(resolve, 1_500))
 
       const view = await navigateToFixture(app, fixtureUrl, 'webrequest-fixture')
       const pageRan = await waitFor(async () => await evaluateRetrying(view, () => Boolean((window as unknown as { __pageRan?: boolean }).__pageRan)))

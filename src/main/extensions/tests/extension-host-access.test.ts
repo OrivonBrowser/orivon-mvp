@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { HOST_ACCESS_RULES, apiOrHostAccessFor, hasApiOrHostAccess, hasApiPermission, hasHostAccess, hostAccessFor, type HostAccessRule } from '../extension-host-access.js'
+import { HOST_ACCESS_RULES, apiOrHostAccessFor, hasApiOrHostAccess, hasApiPermission, hasHostAccess, hostAccessFor, hostAccessForPatterns, type HostAccessRule } from '../extension-host-access.js'
 
 const MANIFEST_WITH_COOKIES = { manifest_version: 3, name: 'x', version: '1.0.0', permissions: ['cookies'] }
 const MANIFEST_WITH_HOST = { manifest_version: 3, name: 'x', version: '1.0.0', host_permissions: ['https://a.example/*'] }
@@ -92,6 +92,29 @@ describe('hostAccessFor', () => {
 
   it('falls back to the manifest when every rule abstains', () => {
     expect(withRules([() => undefined], () => hostAccessFor(ID, MANIFEST_WITH_HOST, 'https://a.example/'))).toBe(true)
+  })
+})
+
+describe('hostAccessForPatterns', () => {
+  const ID = 'a'.repeat(32)
+  const PATTERNS = ['https://a.example/*']
+
+  it('answers from the patterns it is given, refusing file: and an absent URL', () => {
+    expect(hostAccessForPatterns(ID, PATTERNS, 'https://a.example/x')).toBe(true)
+    expect(hostAccessForPatterns(ID, PATTERNS, 'https://b.example/x')).toBe(false)
+    expect(hostAccessForPatterns(ID, ['<all_urls>'], 'file:///etc/passwd')).toBe(false)
+    expect(hostAccessForPatterns(ID, PATTERNS, undefined)).toBe(false)
+  })
+
+  it('lets a rule answer first, and agrees with hostAccessFor on the same manifest', () => {
+    const live = HOST_ACCESS_RULES as HostAccessRule[]
+    live.unshift(() => false)
+    try {
+      expect(hostAccessForPatterns(ID, PATTERNS, 'https://a.example/x')).toBe(false)
+    } finally { live.shift() }
+    for (const url of ['https://a.example/path', 'https://b.example/path']) {
+      expect(hostAccessForPatterns(ID, PATTERNS, url, 3)).toBe(hostAccessFor(ID, MANIFEST_WITH_HOST, url, 3))
+    }
   })
 })
 

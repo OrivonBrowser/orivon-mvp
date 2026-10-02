@@ -73,4 +73,22 @@ describe('requestVisibleTo', () => {
     expect(requestVisibleTo(ME, page({ url: '::' }), all)).toBe(false)
     expect(requestVisibleTo(ME, page({ initiator: 'null' }), all)).toBe(true)
   })
+
+  describe('apps', () => {
+    const isApp = (url: string): boolean => url.startsWith('https://app.example')
+
+    it('hides a request for a registered app\'s URL', () => {
+      expect(requestVisibleTo(ME, page({ url: 'https://app.example/api.js', initiator: undefined }), all, isApp)).toBe(false)
+      expect(requestVisibleTo(ME, page({ url: 'https://app.example/api.js', initiator: undefined }), all)).toBe(true)
+    })
+
+    it('hides a request an app initiated', () => {
+      expect(requestVisibleTo(ME, page({ initiator: 'https://app.example' }), all, isApp)).toBe(false)
+    })
+
+    it('hides a request made from a page that is an app, whatever the initiator says', () => {
+      expect(requestVisibleTo(ME, page({ pageUrl: 'https://app.example/index.html' }), all, isApp)).toBe(false)
+      expect(requestVisibleTo(ME, page({ pageUrl: 'https://site.example/index.html' }), all, isApp)).toBe(true)
+    })
+  })
 })

@@ -11,6 +11,8 @@ export interface VisibleRequest {
   /** The origin of the document that made the request; absent for a
    * top-level navigation and for an opaque origin. */
   readonly initiator?: string | undefined
+  /** The URL of the page that made the request, when it was a page. */
+  readonly pageUrl?: string | undefined
 }
 
 const WEB_SCHEMES = new Set(['http:', 'https:', 'ws:', 'wss:'])
@@ -46,8 +48,15 @@ function initiatorHidden (initiator: URL, extensionId: string): boolean {
   return initiator.protocol === 'chrome-extension:' && initiator.hostname !== extensionId
 }
 
-export function requestVisibleTo (extensionId: string, request: VisibleRequest, hasHostAccess: (url: string) => boolean): boolean {
+/** `isAppOrigin` answers for a registered app's origin: a request whose URL, initiator or page is one is hidden from every extension. */
+export function requestVisibleTo (
+  extensionId: string,
+  request: VisibleRequest,
+  hasHostAccess: (url: string) => boolean,
+  isAppOrigin: (url: string) => boolean = () => false
+): boolean {
   if (!request.fromPage) return false
+  if ([request.url, request.initiator, request.pageUrl].some((url) => url !== undefined && isAppOrigin(url))) return false
   const url = parse(request.url)
   if (url === undefined || isProtectedUrl(url)) return false
   const ownUrl = url.protocol === 'chrome-extension:' && url.hostname === extensionId

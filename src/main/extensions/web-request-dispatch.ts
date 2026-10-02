@@ -30,6 +30,8 @@ export const BLOCKING_REPLY_TIMEOUT_MS = 10_000
 /** The channel the preload's `webRequest.dispatch` event listens on. */
 const DISPATCH_CHANNEL = 'crx-webRequest.dispatch'
 
+const OWN_PAGES_ONLY = 'webRequest listeners can be added only from the extension\'s own pages'
+
 const BLOCKING_DENIED = 'You do not have permission to use blocking webRequest listeners. Be sure to declare the webRequestBlocking permission in your manifest.'
 
 /** Every URL on the session: what each extension may see is decided per
@@ -55,6 +57,7 @@ interface Registration {
 interface Pending {
   readonly extensionId: string
   readonly host: DispatchHost
+  readonly listenerId: number
   readonly settle: (response: unknown, answered: boolean) => void
 }
 
@@ -62,9 +65,13 @@ export interface WebRequestDispatcherDeps {
   readonly owner: WebRequestOwner
   /** Whether `webContentsId` is a tab the shell shows: any other page reports tab -1. */
   readonly isTab: (webContentsId: number) => boolean
-  /** The loaded extension's manifest; undefined once it is gone. */
-  readonly manifestOf: (extensionId: string) => unknown
-  readonly hostAccess: (extensionId: string, manifest: unknown, url: string, tabId: number | undefined) => boolean
+  /** The loaded extension's host permissions, parsed once by the caller; undefined once it is gone. */
+  readonly hostPermissionsOf: (extensionId: string) => readonly string[] | undefined
+  readonly hostAccess: (extensionId: string, hostPermissions: readonly string[], url: string, tabId: number | undefined) => boolean
+  /** A registered app's origin: no extension sees a request that touches one. */
+  readonly isAppOrigin: (url: string) => boolean
+  /** The current URL of the page `webContentsId` is; undefined when it is gone. */
+  readonly pageUrlOf: (webContentsId: number) => string | undefined
   /** Whether the extension holds a permission the loaded copy had stripped. */
   readonly held: (extensionId: string, permission: string) => boolean
   readonly installedAt: (extensionId: string) => number
@@ -77,6 +84,13 @@ export interface WebRequestDispatcher {
   readonly reply: (event: ApiEvent, dispatchId: unknown, response: unknown) => void
   readonly dropExtension: (extensionId: string) => void
   readonly registrationCount: (event: WebRequestEventName) => number
+}
+
+/** The preload's answer for a listener it does not hold: exactly `{ gone: true }`. */
+function isGone (response: unknown): boolean {
+  if (typeof response !== 'object' || response === null || Array.isArray(response)) return false
+  const keys = Object.keys(response)
+  return keys.length === 1 && keys[0] === 'gone' && (response as { gone: unknown }).gone === true
 }
 
 function hostOf (event: ApiEvent): DispatchHost {
@@ -115,14 +129,19 @@ export function createWebRequestDispatcher (deps: WebRequestDispatcherDeps): Web
     syncOwner()
   }
 
-  function watch (host: DispatchHost): void {
+  /** A page keeps its registrations only while it is the document that made them: a page that is gone, crashed or navigated away from its extension no longer holds the listeners. A host belongs to one extension. */
+  function watch (host: DispatchHost, extensionId: string): void {
     if (watchedHosts.has(host)) return
     watchedHosts.add(host)
-    if ('once' in host) host.once('destroyed', () => { dropHost(host) })
+    if (!('on' in host)) return
+    const ownPages = `chrome-extension://${extensionId}/`
+    host.once('destroyed', () => { dropHost(host) })
+    host.on('render-process-gone', () => { dropHost(host) })
+    host.on('did-navigate', (_event, url) => { if (!url.startsWith(ownPages)) dropHost(host) })
   }
 
   /** The registrations that may hear `url`'s `event`, in registration order. */
-  function targetsFor (event: WebRequestEventName, base: WebRequestDetails, fromPage: boolean): Registration[] {
+  function targetsFor (event: WebRequestEventName, base: WebRequestDetails, fromPage: boolean, pageUrl: string | undefined): Registration[] {
     const visibleTo = new Map<string, boolean>()
     const tabId = base.tabId === -1 ? undefined : base.tabId
     const out: Registration[] = []
@@ -132,11 +151,13 @@ export function createWebRequestDispatcher (deps: WebRequestDispatcherDeps): Web
       if (!filterMatches(entry.filter, base)) continue
       let visible = visibleTo.get(entry.extensionId)
       if (visible === undefined) {
-        const manifest = deps.manifestOf(entry.extensionId)
-        visible = manifest !== undefined && requestVisibleTo(
+        // The permission is read per request: a grant taken back stops the events at once.
+        const hostPermissions = deps.held(entry.extensionId, 'webRequest') ? deps.hostPermissionsOf(entry.extensionId) : undefined
+        visible = hostPermissions !== undefined && requestVisibleTo(
           entry.extensionId,
-          { url: base.url, fromPage, type: base.type, initiator: base.initiator },
-          (url) => deps.hostAccess(entry.extensionId, manifest, url, tabId)
+          { url: base.url, fromPage, type: base.type, initiator: base.initiator, pageUrl },
+          (url) => deps.hostAccess(entry.extensionId, hostPermissions, url, tabId),
+          deps.isAppOrigin
         )
         visibleTo.set(entry.extensionId, visible)
       }
@@ -153,7 +174,7 @@ export function createWebRequestDispatcher (deps: WebRequestDispatcherDeps): Web
 
   function send (entry: Registration, dispatchId: number, details: unknown): boolean {
     try {
-      entry.host.send(DISPATCH_CHANNEL, entry.listenerId, dispatchId, details)
+      entry.host.send(DISPATCH_CHANNEL, entry.listenerId, dispatchId, entry.event, details)
       return true
     } catch (error) {
       warnOnce(entry.extensionId, `could not reach a listener (${String(error)})`)
@@ -172,6 +193,7 @@ export function createWebRequestDispatcher (deps: WebRequestDispatcherDeps): Web
       pending.set(dispatchId, {
         extensionId: entry.extensionId,
         host: entry.host,
+        listenerId: entry.listenerId,
         settle: (response, answered) => {
           clearTimeout(timer)
           resolve(answered ? { extensionId: entry.extensionId, installedAt: entry.installedAt, response } : undefined)
@@ -189,12 +211,13 @@ export function createWebRequestDispatcher (deps: WebRequestDispatcherDeps): Web
    * a blocking event, gathers what they answer. */
   async function dispatch (event: OwnerEvent, raw: ElectronRequestDetails, payload: RequestPayload, blocking: boolean): Promise<Reply[]> {
     const base = baseDetails(event, raw, deps.isTab)
-    const targets = targetsFor(event, base, raw.webContentsId !== undefined)
+    const targets = targetsFor(event, base, raw.webContentsId !== undefined, raw.webContentsId === undefined ? undefined : deps.pageUrlOf(raw.webContentsId))
     if (targets.length === 0) return []
     const replies: Array<Promise<Reply | undefined>> = []
     for (const entry of targets) {
       const details = detailsFor(event, base, payload, entry.spec)
-      if (blocking && entry.spec.blocking) replies.push(ask(entry, details))
+      // A listener that has since lost webRequestBlocking is told about the request and not waited for.
+      if (blocking && entry.spec.blocking && deps.held(entry.extensionId, 'webRequestBlocking')) replies.push(ask(entry, details))
       else send(entry, 0, details)
     }
     return (await Promise.all(replies)).filter((reply): reply is Reply => reply !== undefined)
@@ -269,7 +292,9 @@ export function createWebRequestDispatcher (deps: WebRequestDispatcherDeps): Web
         throw new Error(BLOCKING_DENIED)
       }
       const host = hostOf(event)
-      watch(host)
+      // `send` reaches a page's main frame only, so a listener added from a frame inside some other page would be answered by that page.
+      if ('getURL' in host && !host.getURL().startsWith(`chrome-extension://${extensionId}/`)) throw new Error(OWN_PAGES_ONLY)
+      watch(host, extensionId)
       registrations = registrations.filter((entry) => !(entry.host === host && entry.listenerId === listenerId))
       registrations.push({ extensionId, event: name, listenerId, host, filter: parsedFilter.value, spec: parsedSpec.value, installedAt: deps.installedAt(extensionId) })
       syncOwner()
@@ -287,6 +312,13 @@ export function createWebRequestDispatcher (deps: WebRequestDispatcherDeps): Web
       const entry = pending.get(dispatchId)
       if (entry === undefined || entry.extensionId !== event.extension.id || entry.host !== event.sender) return
       pending.delete(dispatchId)
+      if (isGone(response)) {
+        // The page no longer holds this listener: forget it and go on without its opinion.
+        registrations = registrations.filter((held) => !(held.host === entry.host && held.listenerId === entry.listenerId))
+        syncOwner()
+        entry.settle(undefined, false)
+        return
+      }
       entry.settle(response, true)
     },
 

@@ -43,13 +43,6 @@ const EXTENSION_ORDER = 1000
  * never as a narrower Electron-level filter here. */
 const DNR_FILTER: WebRequestFilter = { urls: ['<all_urls>'] }
 
-// `initiatorOf` feeds `initiatorDomains`/`domainType` matching; the
-// host-permission gate does not use it for a navigation at all
-// (`vendor/firefox-dnr/UPSTREAM.md` patch 15), so its approximation of a
-// navigation's initiator cannot widen what an extension may `redirect` or
-// `modifyHeaders`.
-export { frameIdOf, initiatorOf, parentFrameIdOf }
-
 /** Never `chrome-extension:`/`orivon:`. The URLs a
  * `webRequest` listener actually sees for those schemes are an extension's
  * own resource loads and Orivon's internal pages, neither of which another
@@ -81,6 +74,10 @@ export function toScopedRequest(details: {
     return null
   }
   const frame = safeFrame(details)
+  // For a navigation this is the previous document's origin: it feeds
+  // `initiatorDomains`/`domainType` only, and the host-permission gate does not
+  // use it for a navigation (`vendor/firefox-dnr/UPSTREAM.md` patch 15), so it
+  // cannot widen what an extension may `redirect` or `modifyHeaders`.
   const initiator = initiatorOf(frame)
   const parentFrameId = frame === null ? undefined : parentFrameIdOf(frame)
   return {

@@ -29,6 +29,11 @@ never reaches them by accident. A webRequest filter is not a permission: a block
 pattern and leaves every other pattern to the shared matcher. Whether the extension may then see
 the request is `visibility.ts`'s question, asked against the HTTP origin the WebSocket shares.
 
+**A registered app is out of every answer.** `visibility.ts` hides a request from every extension
+when its URL, its initiator or the page that made it is the origin of a registered app, the same
+rule the data APIs apply (`../api/README.md`). The predicate arrives as a function, like host
+access, so the file stays free of the grants.
+
 **`windowId` is accepted and ignored.** A request carries a tab id, not a window id, and no
 blocker filters on a window. The filter parses it so a listener that passes one still registers.
 
