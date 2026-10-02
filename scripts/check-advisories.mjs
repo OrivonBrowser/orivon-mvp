@@ -10,10 +10,12 @@
 // out/ and then scanned what it had just built).
 
 import { spawnSync } from 'node:child_process'
+import { commandLine } from './cli.mjs'
 
 const THRESHOLD = ['high', 'critical']
 
-const result = spawnSync('npm', ['audit', '--json'], { encoding: 'utf8', shell: false })
+const audit = commandLine('npm', ['audit', '--json'])
+const result = spawnSync(audit.file, audit.args, { encoding: 'utf8', shell: audit.shell })
 
 if (result.error !== undefined) {
   console.error(`Could not run npm audit: ${result.error.message}`)
