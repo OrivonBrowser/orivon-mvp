@@ -74,7 +74,7 @@ const { createExtensionHost, attachExtensionShell, EXTENSIONS_LISTENER_ROOM } = 
 const AN_EXTENSION_ID = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 
 function buildShell (): { services: ShellServices, openTrusted: ReturnType<typeof vi.fn> } {
-  const openTrusted = vi.fn((target?: string) => target === undefined ? undefined : ['tab-id', {}])
+  const openTrusted = vi.fn((target?: string) => target === undefined ? undefined : ['tab-id', { on: vi.fn() }])
   const win = { id: 1 } as unknown as BaseWindow
   const shellWindow = { window: win, tabs: { openTrusted } }
   const services = {

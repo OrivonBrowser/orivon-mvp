@@ -38,6 +38,7 @@ import { watchPinSetting } from './action-pins-runner.js'
 import { watchForMissedServiceWorkerPreload } from './extension-sw-preload-recovery.js'
 import { beginDnrReload, endDnrReload } from './extensions-dnr.js'
 import { createExtensionPageRecovery, RELOAD_AFTER_GRACE_MS } from './extension-pages-reload.js'
+import { isExtensionOpened } from './extension-opened-pages.js'
 import { senderMatchesClaimedExtensionId } from './extension-sender-id-check.js'
 import { registerSandboxPageQuery } from './extension-sandbox-page-query.js'
 import { apiOrHostAccessFor, hostAccessFor } from './extension-host-access.js'
@@ -153,7 +154,7 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
   const pageRecovery = createExtensionPageRecovery<WebContents>({
     now: Date.now,
     graceMs: RELOAD_AFTER_GRACE_MS,
-    isEligible: (wc) => bridge?.services.windows.findTab(wc) != null
+    isEligible: (wc, id) => bridge?.services.windows.findTab(wc) != null && isExtensionOpened(wc, id)
   })
   app.on('web-contents-created', (_event, wc) => {
     wc.on('did-fail-load', (_failEvent, errorCode, _description, url, isMainFrame) => {

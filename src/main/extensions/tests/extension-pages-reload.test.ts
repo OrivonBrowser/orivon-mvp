@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createExtensionPageRecovery, type ReloadablePage } from '../extension-pages-reload.js'
+import { createExtensionOpenedPages, type ExtensionOpenedPages, type TrackablePage } from '../extension-opened-pages.js'
 import { watchForMissedServiceWorkerPreload } from '../extension-sw-preload-recovery.js'
 import { EXTENSION_SW_HEALTH_REPLY_CHANNEL } from '../../channels.js'
 
@@ -13,8 +14,9 @@ function page (url: string, destroyed = false): ReloadablePage & { loadURL: Retu
 const WELCOME = `chrome-extension://${ID}/welcome.html`
 const ERR_FAILED = -2
 const ERR_ABORTED = -3
+const ERR_BLOCKED_BY_CLIENT = -20
 
-function recovery (now: () => number = () => 0, isEligible: (p: ReloadablePage) => boolean = () => true) {
+function recovery (now: () => number = () => 0, isEligible: (p: ReloadablePage, id: string) => boolean = () => true) {
   return createExtensionPageRecovery({ now, graceMs: 1000, isEligible })
 }
 
@@ -151,5 +153,78 @@ describe('watchForMissedServiceWorkerPreload: pages opened around the recovery',
 
     expect(reloaded).toHaveBeenCalledExactlyOnceWith(ID)
     errorSpy.mockRestore()
+  })
+})
+
+describe('extension pages the host opened: only those are navigated again', () => {
+  type Details = { url: string, isMainFrame: boolean, isSameDocument: boolean }
+  type Tracked = ReloadablePage & TrackablePage & { loadURL: ReturnType<typeof vi.fn>, emit: (url: string, isMainFrame?: boolean, isSameDocument?: boolean) => void }
+
+  function tracked (): Tracked {
+    const listeners: Array<(details: Details) => void> = []
+    return Object.assign(page(WELCOME), {
+      on: (_event: 'did-start-navigation', listener: (details: Details) => void) => { listeners.push(listener) },
+      emit: (url: string, isMainFrame = true, isSameDocument = false) => { for (const l of listeners) l({ url, isMainFrame, isSameDocument }) }
+    })
+  }
+
+  function trackedRecovery (opened: ExtensionOpenedPages<Tracked>) {
+    return createExtensionPageRecovery({ now: () => 0, graceMs: 1000, isEligible: (p, id) => opened.isOpenedBy(p as Tracked, id) })
+  }
+
+  it('never reloads a web page that sits on the extension URL its own navigation was refused', () => {
+    const opened = createExtensionOpenedPages<Tracked>()
+    const hostile = tracked()
+    const recover = trackedRecovery(opened)
+
+    recover.begin(ID)
+    recover.pageFailed(hostile, WELCOME, ERR_BLOCKED_BY_CLIENT)
+    expect(recover.sweep(ID, [hostile])).toBe(0)
+    recover.end(ID)
+    recover.pageFailed(hostile, WELCOME, ERR_BLOCKED_BY_CLIENT)
+
+    expect(hostile.loadURL).not.toHaveBeenCalled()
+  })
+
+  it('still reloads a page the host sent to the extension URL, held or swept', () => {
+    const opened = createExtensionOpenedPages<Tracked>()
+    const swept = tracked()
+    const held = tracked()
+    opened.mark(swept, WELCOME)
+    opened.mark(held, WELCOME)
+    const recover = trackedRecovery(opened)
+
+    expect(recover.sweep(ID, [swept])).toBe(1)
+    recover.begin(ID)
+    recover.pageFailed(held, WELCOME, ERR_FAILED)
+    recover.end(ID)
+
+    expect(swept.loadURL).toHaveBeenCalledExactlyOnceWith(WELCOME)
+    expect(held.loadURL).toHaveBeenCalledExactlyOnceWith(WELCOME)
+  })
+
+  it('stops counting a page once its main frame leaves the extension, so a web page steered back is not reloaded', () => {
+    const opened = createExtensionOpenedPages<Tracked>()
+    const tab = tracked()
+    opened.mark(tab, WELCOME)
+
+    tab.emit(`chrome-extension://${ID}/other.html`)
+    tab.emit('https://evil.example/', false)
+    tab.emit(`chrome-extension://${ID}/page.html#x`, true, true)
+    expect(opened.isOpenedBy(tab, ID)).toBe(true)
+
+    tab.emit('https://evil.example/')
+    expect(opened.isOpenedBy(tab, ID)).toBe(false)
+  })
+
+  it('does not count a page for another extension, and ignores a URL that is not an extension page', () => {
+    const opened = createExtensionOpenedPages<Tracked>()
+    const tab = tracked()
+    opened.mark(tab, 'https://example.com/')
+    expect(opened.isOpenedBy(tab, ID)).toBe(false)
+    opened.mark(tab, WELCOME)
+    expect(opened.isOpenedBy(tab, OTHER)).toBe(false)
+    tab.emit(`chrome-extension://${OTHER}/x.html`)
+    expect(opened.isOpenedBy(tab, ID)).toBe(false)
   })
 })

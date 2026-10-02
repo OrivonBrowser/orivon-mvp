@@ -33,8 +33,10 @@ function navigateAgain (extensionId: string, page: ReloadablePage, url: string):
 export interface ExtensionPageRecoveryDeps<P extends ReloadablePage> {
   readonly now: () => number
   readonly graceMs: number
-  /** False for a page that is not worth navigating (one nobody sees). */
-  readonly isEligible: (page: P) => boolean
+  /** False for a page that is not worth navigating (one nobody sees) and for
+   * one the extension did not put on its own URL itself: a web page's refused
+   * attempt at that URL must not be delivered by a reload the browser starts. */
+  readonly isEligible: (page: P, extensionId: string) => boolean
 }
 
 export interface ExtensionPageRecovery<P extends ReloadablePage> {
@@ -63,7 +65,7 @@ export function createExtensionPageRecovery<P extends ReloadablePage> (deps: Ext
   const windows = new Map<string, ReloadWindow<P>>()
 
   const retry = (extensionId: string, window: ReloadWindow<P>, page: P, url: string): void => {
-    if (window.navigated.has(page) || page.isDestroyed() || !deps.isEligible(page)) return
+    if (window.navigated.has(page) || page.isDestroyed() || !deps.isEligible(page, extensionId)) return
     window.navigated.add(page)
     navigateAgain(extensionId, page, url)
   }
@@ -100,7 +102,7 @@ export function createExtensionPageRecovery<P extends ReloadablePage> (deps: Ext
       const prefix = `chrome-extension://${extensionId}/`
       let count = 0
       for (const page of pages) {
-        if (page.isDestroyed() || !deps.isEligible(page)) continue
+        if (page.isDestroyed() || !deps.isEligible(page, extensionId)) continue
         const url = page.getURL()
         if (!url.startsWith(prefix)) continue
         if (window?.navigated.has(page) === true) continue
