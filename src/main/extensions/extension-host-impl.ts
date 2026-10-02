@@ -12,6 +12,7 @@ import type { ShellServices } from '../shell/shell-services.js'
 import type { SubsystemContext } from '../registry.js'
 import { extensionOpenedUrl } from './extension-url-policy.js'
 import { applyOrivonTabDetails } from './extension-tab-details.js'
+import { markExtensionOpened, openExtensionTab } from './extension-opened-pages.js'
 
 export interface ShellBridge { ctx: SubsystemContext, services: ShellServices }
 
@@ -64,7 +65,7 @@ export function buildHostImpl (getBridge: () => ShellBridge | undefined): HostIm
     }
     tabActivationFromExtension = true
     try {
-      const opened = shellWindow.tabs.openTrusted(target)
+      const opened = openExtensionTab(shellWindow.tabs, target)
       if (opened === undefined) throw new Error('extensions: tab capacity reached')
       return [opened[1], win]
     } finally {
@@ -110,7 +111,7 @@ export function buildHostImpl (getBridge: () => ShellBridge | undefined): HostIm
       .map((u) => extensionOpenedUrl(u, isLoadedExtension))
       .filter((u): u is string => u !== undefined)
     return createShellWindow(bridge.ctx, bridge.services, {
-      first: (tabs) => { if (urls.length === 0) tabs.createTab(); else for (const u of urls) tabs.openTrusted(u) }
+      first: (tabs) => { if (urls.length === 0) tabs.createTab(); else for (const u of urls) openExtensionTab(tabs, u) }
     })
   },
 
@@ -118,7 +119,9 @@ export function buildHostImpl (getBridge: () => ShellBridge | undefined): HostIm
 
   navigateTab: async (wc, url) => {
     const target = extensionOpenedUrl(url, isLoadedExtension)
-    if (target !== undefined) await wc.loadURL(target)
+    if (target === undefined) return
+    markExtensionOpened(wc, target)
+    await wc.loadURL(target)
   }
   }
 }

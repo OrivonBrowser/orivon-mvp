@@ -20,6 +20,18 @@ else: an import, a helper in the same file or any outer identifier is a `Referen
 page. `tests/self-contained.test.ts` rebuilds every entry from `fn.toString()` against a fake
 `__crx` and expects it to define at least one namespace without throwing.
 
+**Constants live here too.** `declarative-net-request.ts` and `web-request.ts` add the constants and
+enums the library's namespace of the same name lacks, because an extension reads them while its
+service worker loads (a blocker builds its listener filter from `webRequest.ResourceType` and sizes
+its regex rules from `MAX_NUMBER_OF_REGEX_RULES`). Their values come from the engine
+(`vendor/firefox-dnr/src/dnr-limits.mjs` and `src/main/extensions/dnr/types.ts`), and their tests
+compare them, so a changed limit fails here.
+
+**`runtime.ts`** is the one entry that also answers a question of main's. `getManifest` returns the
+`declarative_net_request` the loaded copy keeps under `x_orivon_declarative_net_request`, and in a
+service worker `onInstalled` fires from details main parked at install (`runtime-installed.ts`,
+asked once through `runtime.takeInstalled`).
+
 **What an entry may use.** `globalThis.__crx` (`crx.d.ts`): `declares(permission)`, `call(name)`
 for a main-side handler, `event(name)` for an event main routes, and `define(ns, build)`. Whether
 a permission is granted is main's answer; `declares` only says the manifest asks for it.

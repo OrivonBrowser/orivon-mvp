@@ -318,7 +318,7 @@ async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMe
       return
     }
     const common: Record<string, string> = {
-      'content-type': contentTypeFor(file.servedPath),
+      'content-type': file.contentType ?? contentTypeFor(file.servedPath),
       'x-content-type-options': 'nosniff',
       'accept-ranges': 'bytes',
       // Revalidated every time: a name can point elsewhere tomorrow, and the root CID says whether it has.

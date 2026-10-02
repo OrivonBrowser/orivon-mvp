@@ -40,25 +40,6 @@ function validateOrThrow(
   return validated
 }
 
-/**
- * A static ruleset's own rules, unlike `updateDynamicRules`/
- * `updateSessionRules`'s transactional all-or-nothing contract (Chrome's
- * documented behavior for those two, `validateOrThrow` above), tolerate an
- * individual invalid rule: Chrome silently drops the bad rule and keeps
- * loading the rest of the ruleset rather than failing the whole extension's
- * DNR. `RuleValidator#addRules` already implements the per-rule skip
- * (`vendor/firefox-dnr/src/extension-dnr.mjs`'s `addRules` only omits the
- * one rule a `#checkCond*`/`#checkAction` call rejects); this only needs to
- * avoid `validateOrThrow`'s own all-or-nothing throw on `getFailures()`. A
- * ruleset-wide quota failure (`quotaCounter.tryAddRules`) still throws --
- * that failure is not about any one rule's shape.
- */
-function validateStaticRuleset(validator: VendorRuleValidator, quotaCounter: VendorRuleQuotaCounter, rulesetId: string): DnrRule[] {
-  const validated = validator.getValidatedRules()
-  quotaCounter.tryAddRules(rulesetId, validated)
-  return validated
-}
-
 /** Strips the vendored `Rule`/`RuleCondition` wrapper classes back to plain data. */
 function serializeRule(rule: { id: number; priority: number; condition: object; action: object }): DnrRule {
   return {
@@ -71,7 +52,17 @@ function serializeRule(rule: { id: number; priority: number; condition: object; 
 
 interface StaticRulesetEntry {
   enabled: boolean
-  rules: DnrRule[]
+  /** A function until first read: a disabled ruleset's file is not parsed before it is enabled. */
+  rules: DnrRule[] | (() => DnrRule[])
+}
+
+/** Chrome's global static rule pool: rules an extension enables beyond its
+ * GUARANTEED_MINIMUM_STATIC_RULES draw on this, shared by every extension. */
+export const GLOBAL_STATIC_RULE_POOL = 300_000
+
+export interface DnrEngineOptions {
+  /** Defaults to GLOBAL_STATIC_RULE_POOL; tests shrink it. */
+  globalStaticRulePool?: number
 }
 
 /** Per-extension bookkeeping the vendored RuleManager does not retain: disabled rulesets' rules. */
@@ -79,6 +70,15 @@ interface StaticState {
   /** In manifest ("rule_resources") order. */
   order: string[]
   byId: Map<string, StaticRulesetEntry>
+  /** Enabled by the manifest but not loaded for want of quota: not reported as enabled, still kept as enabled when the choice is saved. */
+  skipped: Set<string>
+}
+
+/** A deferred ruleset read runs once, however many times the ruleset is enabled and disabled. */
+function memoizedRules(rules: DnrRule[] | (() => DnrRule[])): DnrRule[] | (() => DnrRule[]) {
+  if (typeof rules !== 'function') return rules
+  let read: DnrRule[] | undefined
+  return () => (read ??= rules())
 }
 
 function computeRedirectUrl(matchedRule: VendorMatchedRule, requestURI: URL): string | null {
@@ -175,36 +175,89 @@ function parseUrlOrNull(spec: string | null | undefined): URL | null {
  * Creates a fresh, in-memory `declarativeNetRequest` engine. See this
  * directory's README for what it does and does not own.
  */
-export function createDnrEngine() {
+export function createDnrEngine(options: DnrEngineOptions = {}) {
+  const globalPool = options.globalStaticRulePool ?? GLOBAL_STATIC_RULE_POOL
+  /** Per extension: enabled static rules beyond the guaranteed minimum. */
+  const poolUse = new Map<string, number>()
+  /** Per extension: enabled static rules in all. */
+  const enabledTotals = new Map<string, number>()
   const registry = ExtensionDNR.createRuleManagerRegistry()
   const staticState = new Map<string, StaticState>()
   const frameAncestry = new FrameAncestryTracker()
 
+  function poolUsedByOthers(extensionId: string): number {
+    let used = 0
+    for (const [id, extra] of poolUse) {
+      if (id !== extensionId) used += extra
+    }
+    return used
+  }
+
+  function readRules(entry: StaticRulesetEntry): DnrRule[] {
+    return typeof entry.rules === 'function' ? entry.rules() : entry.rules
+  }
+
   /**
-   * Validates and applies exactly the given `enabledIds` (manifest order
-   * already applied by the caller) as `extensionId`'s enabled static
-   * rulesets -- the one function that can fail this way (the enabled-count
-   * limit, or a ruleset's own quota), so both `setStaticRulesets` (which has
-   * no prior state to protect) and `updateEnabledRulesets` (which does, see
-   * its own doc) route through it with the FULL proposed set, never a
-   * partially-mutated one.
+   * Validates and applies the given `enabledIds` (manifest order already
+   * applied by the caller) as `extensionId`'s enabled static rulesets: the
+   * one function that can fail on a quota, so both `setStaticRulesets` and
+   * `updateEnabledRulesets` (which has prior state to protect, see its own
+   * doc) route through it with the FULL proposed set, never a partially
+   * mutated one.
+   *
+   * Rules up to GUARANTEED_MINIMUM_STATIC_RULES are the extension's own;
+   * beyond that they draw on the global pool other extensions share
+   * (Chrome's model). `skipWhatDoesNotFit` is for loading a manifest's
+   * defaults, where Chrome keeps the rulesets that fit and ignores the
+   * rest; a runtime enable (false) throws instead. Unlike a dynamic or
+   * session update, an individual invalid rule is dropped, not fatal:
+   * RuleValidator#addRules already skips it and Chrome keeps loading the
+   * rest of the ruleset. Returns the ids applied.
    */
-  function applyEnabledStaticRulesets(extensionId: string, state: StaticState, enabledIds: readonly string[]): void {
+  function applyEnabledStaticRulesets(
+    extensionId: string,
+    state: StaticState,
+    enabledIds: readonly string[],
+    skipWhatDoesNotFit: boolean
+  ): string[] {
     if (enabledIds.length > ExtensionDNRLimits.MAX_NUMBER_OF_ENABLED_STATIC_RULESETS) {
       throw new Error(
         `Enabled static rulesets exceed MAX_NUMBER_OF_ENABLED_STATIC_RULESETS (${ExtensionDNRLimits.MAX_NUMBER_OF_ENABLED_STATIC_RULESETS}).`
       )
     }
-    const ruleManager = registry.getRuleManager(extensionId)
-    const quotaCounter = new RuleQuotaCounter('GUARANTEED_MINIMUM_STATIC_RULES')
-    const rulesets = enabledIds.map(id => {
+    const poolAvailable = globalPool - poolUsedByOthers(extensionId)
+    let total = 0
+    let regexTotal = 0
+    const applied: Array<{ id: string, rules: DnrRule[] }> = []
+    for (const id of enabledIds) {
       const entry = state.byId.get(id)!
       const validator: VendorRuleValidator = new RuleValidator([], { extensionId })
-      validator.addRules(withDefaultPriority(entry.rules))
-      const rules = validateStaticRuleset(validator, quotaCounter, id)
-      return { id, rules, disabledRuleIds: null }
-    })
-    ruleManager.setEnabledStaticRulesets(rulesets)
+      validator.addRules(withDefaultPriority(readRules(entry)))
+      const rules = validator.getValidatedRules() as DnrRule[]
+      const regexCount = rules.filter(rule => rule.condition.regexFilter).length
+      const extra = Math.max(0, total + rules.length - ExtensionDNRLimits.GUARANTEED_MINIMUM_STATIC_RULES)
+      const overRules = extra > poolAvailable
+      const overRegex = regexTotal + regexCount > ExtensionDNRLimits.MAX_NUMBER_OF_REGEX_RULES
+      if (overRules || overRegex) {
+        const what = overRules
+          ? `Number of rules across all enabled static rulesets exceeds the global static rule limit (GUARANTEED_MINIMUM_STATIC_RULES plus the shared pool of ${String(globalPool)})`
+          : 'Number of regexFilter rules across all enabled static rulesets exceeds MAX_NUMBER_OF_REGEX_RULES'
+        if (!skipWhatDoesNotFit) throw new Error(`${what} if ruleset "${id}" were to be enabled.`)
+        console.warn(`[dnr] ${extensionId}: ruleset "${id}" not loaded: ${what}.`)
+        state.byId.set(id, { ...entry, enabled: false })
+        state.skipped.add(id)
+        continue
+      }
+      total += rules.length
+      regexTotal += regexCount
+      applied.push({ id, rules })
+    }
+    registry.getRuleManager(extensionId).setEnabledStaticRulesets(
+      applied.map(({ id, rules }) => ({ id, rules, disabledRuleIds: null }))
+    )
+    enabledTotals.set(extensionId, total)
+    poolUse.set(extensionId, Math.max(0, total - ExtensionDNRLimits.GUARANTEED_MINIMUM_STATIC_RULES))
+    return applied.map(({ id }) => id)
   }
 
   function enabledIdsInOrder(state: StaticState): string[] {
@@ -227,18 +280,20 @@ export function createDnrEngine() {
       }
       const state: StaticState = {
         order: rulesets.map(r => r.id),
-        byId: new Map(rulesets.map(r => [r.id, { enabled: r.enabled, rules: r.rules }])),
+        byId: new Map(rulesets.map(r => [r.id, { enabled: r.enabled, rules: memoizedRules(r.rules) }])),
+        skipped: new Set(),
       }
       staticState.set(extensionId, state)
-      applyEnabledStaticRulesets(extensionId, state, enabledIdsInOrder(state))
+      applyEnabledStaticRulesets(extensionId, state, enabledIdsInOrder(state), true)
     },
 
     /**
      * Validates the PROPOSED enabled set (every id, the enabled-count limit
      * and each newly-enabled ruleset's own quota) against a copy of
      * `state.byId`'s flags before touching the real ones: a rejected call
-     * (an unknown id, too many rulesets enabled, or a ruleset that blows the
-     * GUARANTEED_MINIMUM_STATIC_RULES quota once actually validated) must
+     * (an unknown id, too many rulesets enabled, or a set that passes the
+     * global static rule limit -- the guarantee plus the shared pool -- or
+     * MAX_NUMBER_OF_REGEX_RULES once actually validated) must
      * change nothing at all, not leave some ids flipped and others not.
      * Applying the flags to a scratch Map first, computing the proposed
      * enabled-id list from THAT, and only committing it onto `state.byId`
@@ -265,9 +320,10 @@ export function createDnrEngine() {
         proposedFlags.set(id, { ...proposedFlags.get(id)!, enabled: true })
       }
       const proposedEnabledIds = state.order.filter(id => proposedFlags.get(id)!.enabled)
-      applyEnabledStaticRulesets(extensionId, state, proposedEnabledIds)
+      applyEnabledStaticRulesets(extensionId, state, proposedEnabledIds, false)
       // Only reached once the proposed set validated and applied cleanly.
       state.byId = proposedFlags
+      for (const id of [...enableIds, ...disableIds]) state.skipped.delete(id)
     },
 
     updateDynamicRules(extensionId: string, options: DnrUpdateRuleOptions): void {
@@ -318,10 +374,21 @@ export function createDnrEngine() {
       return ruleManager ? [...ruleManager.enabledStaticRulesetIds] : []
     },
 
+    /** What to save as the enabled choice: the enabled rulesets plus any the manifest enabled that did not fit the pool, so a later boot tries them again. */
+    getEnabledRulesetsToPersist(extensionId: string): string[] {
+      const enabled = [...(registry.getRuleManager(extensionId, false)?.enabledStaticRulesetIds ?? [])]
+      const state = staticState.get(extensionId)
+      if (state === undefined || state.skipped.size === 0) return enabled
+      return state.order.filter((id) => enabled.includes(id) || state.skipped.has(id))
+    },
+
     /** `chrome.declarativeNetRequest.getAvailableStaticRuleCount`. */
     getAvailableStaticRuleCount(extensionId: string): number {
       const ruleManager = registry.getRuleManager(extensionId, false)
-      return ruleManager ? ruleManager.availableStaticRuleCount : ExtensionDNRLimits.GUARANTEED_MINIMUM_STATIC_RULES
+      if (!ruleManager) return ExtensionDNRLimits.GUARANTEED_MINIMUM_STATIC_RULES + globalPool - poolUsedByOthers(extensionId)
+      const own = ExtensionDNRLimits.GUARANTEED_MINIMUM_STATIC_RULES - (enabledTotals.get(extensionId) ?? 0)
+      const pool = globalPool - poolUsedByOthers(extensionId) - (poolUse.get(extensionId) ?? 0)
+      return Math.max(own, 0) + Math.max(pool, 0)
     },
 
     /**
@@ -359,6 +426,8 @@ export function createDnrEngine() {
 
     removeExtension(extensionId: string): void {
       staticState.delete(extensionId)
+      poolUse.delete(extensionId)
+      enabledTotals.delete(extensionId)
       registry.removeRuleManager(extensionId)
     },
 

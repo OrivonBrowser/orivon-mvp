@@ -28,6 +28,7 @@ const SCRIPTED = {
   'index.html': '<!doctype html><meta charset="utf-8"><title>scripted fixture</title><body>scripted<script src="app.js"></script></body>',
   'app.js': 'document.body.dataset.app = "ran" // scripted'
 }
+const SINGLE_FILE = '<!doctype html><meta charset="utf-8"><title>single file fixture</title><body>one block</body>'
 const BROKEN = { 'index.html': '<!doctype html><meta charset="utf-8"><title>tampered fixture</title><body>tampered</body>' }
 
 const TEST_TIMEOUT_MS = ADDRESS_BAR_STABLE_TIMEOUT_MS * 4 + DEFAULT_ACTION_TIMEOUT_MS * 6 + APP_CLOSE_RACE_MS + 60_000
@@ -61,7 +62,7 @@ it('loads a .eth name from verified IPFS content, refuses a tampered block, and 
     // script.eth is dropped for the session, and broken.eth's refusal must
     // still come from its own tampered block, on the other.
     const gateway = await startFixtureGateway({ site: SITE, script: SCRIPTED })
-    const brokenGateway = await startFixtureGateway({ broken: BROKEN })
+    const brokenGateway = await startFixtureGateway({ broken: BROKEN, single: SINGLE_FILE })
     const loopback = await listen((_req, res) => { res.writeHead(200, { 'access-control-allow-origin': '*', 'content-type': 'text/plain' }).end('loopback service') })
     const publicPage = await listen((_req, res) => { res.writeHead(200, { 'content-type': 'text/html' }).end('<!doctype html><title>public page</title><body>public</body>') })
     let app: Awaited<ReturnType<typeof launchElectron>> | undefined
@@ -72,7 +73,7 @@ it('loads a .eth name from verified IPFS content, refuses a tampered block, and 
         appPath: '.',
         args: [HERMETIC_RESOLVER, `--ip-address-space-overrides=${HOST}:${String(publicPage.port)}=public`],
         env: {
-          ORIVON_TEST_ETH_FIXTURES: JSON.stringify({ 'fixture.eth': `ipfs://${gateway.roots['site']!}`, 'broken.eth': `ipfs://${brokenGateway.roots['broken']!}`, 'script.eth': `ipfs://${gateway.roots['script']!}` }),
+          ORIVON_TEST_ETH_FIXTURES: JSON.stringify({ 'fixture.eth': `ipfs://${gateway.roots['site']!}`, 'broken.eth': `ipfs://${brokenGateway.roots['broken']!}`, 'script.eth': `ipfs://${gateway.roots['script']!}`, 'single.eth': `ipfs://${brokenGateway.roots['single']!}` }),
           ORIVON_TEST_IPFS_GATEWAYS: `${gateway.url},${brokenGateway.url}`
         }
       })
@@ -82,7 +83,10 @@ it('loads a .eth name from verified IPFS content, refuses a tampered block, and 
       if (!listening) throw new Error('the verifier host never reported listening')
 
       const view = await navigateToFixture(app, 'https://fixture.eth/', 'verified fixture')
-      const page = await evaluateRetrying(view, () => ({ secure: window.isSecureContext, subtle: typeof crypto.subtle, ran: document.body.dataset['app'] ?? null }))
+      const readPage = async (): Promise<{ secure: boolean, subtle: string, ran: string | null }> => await evaluateRetrying(view, () => ({ secure: window.isSecureContext, subtle: typeof crypto.subtle, ran: document.body.dataset['app'] ?? null }))
+      // The title is up once the head is parsed; the script is its own verified fetch at the end of the body, so it may not have run yet.
+      let page = await readPage()
+      await waitFor(async () => { page = await readPage(); return page.ran === 'ran' })
       check(`fixture.eth loaded from the gateway and is a secure context (${JSON.stringify(page)})`, page.secure && page.subtle === 'object')
       check('its script ran', page.ran === 'ran')
       check(`the gateway was asked for raw blocks (${String(gateway.requests.length)} requests)`, gateway.requests.some((r) => r.endsWith('?format=raw')))
@@ -96,6 +100,10 @@ it('loads a .eth name from verified IPFS content, refuses a tampered block, and 
       const tamperedScript = await evaluateRetrying(scripted, async () => ({ ran: document.body.dataset['app'] ?? null, fetched: await fetch('/app.js').then((r) => r.status, () => 0) }))
       check(`a script whose block was tampered is refused: it never ran, and fetching it fails (${JSON.stringify(tamperedScript)})`, tamperedScript.ran === null && tamperedScript.fetched !== 200)
 
+      const single = await navigateToFixture(app, 'https://single.eth/', 'single file fixture')
+      const singlePage = await evaluateRetrying(single, () => ({ type: document.contentType, text: document.body.innerText }))
+      check(`a name whose content is one HTML file renders as a page, not a download (${JSON.stringify(singlePage)})`, singlePage.type === 'text/html' && singlePage.text === 'one block')
+
       const brokenView = await navigateToFixture(app, 'https://broken.eth/', 'Cannot verify this site')
       const brokenPage = await evaluateRetrying(brokenView, () => document.body.innerText)
       const brokenBlock = brokenGateway.blockOf('broken', 'index.html')
@@ -103,6 +111,7 @@ it('loads a .eth name from verified IPFS content, refuses a tampered block, and 
 
       expect(page).toEqual({ secure: true, subtle: 'object', ran: 'ran' })
       expect(tamperedScript.ran).toBeNull()
+      expect(singlePage).toEqual({ type: 'text/html', text: 'one block' })
       expect(fromEth).toBe(fromPublic)
       expect(brokenPage).toContain(brokenBlock)
     } finally {

@@ -78,7 +78,10 @@ constant the tests hold it to.
 - **The idle timeout** is a hang detector, far longer than any long-poll or quiet event stream.
   An EventSource treats it as a dropped stream and reconnects.
 - **A response body** is read up to 512 KiB ahead of the app, so a small response frees its
-  socket even unread; a larger one dropped unread closes when garbage-collected. No body cap.
+  socket even unread; a larger one dropped unread closes when garbage-collected, and one the
+  app is reading never does, however slowly it reads. The collection is watched on a plain
+  object the stream's own closures hold, not on the stream, whose JS wrapper the engine may drop
+  while the Response still owns it. No body cap.
 - **A WebSocket** has no idle timeout once open and no message size cap; outbound frames go in
   pieces of at most 64 KiB.
 
@@ -101,7 +104,10 @@ written down, since a silent divergence in a web platform API is a trap.
   them; `fetch(url, { headers })` keeps them.
 - **Response shape.** `response.type` is `'default'`; `redirect: 'manual'` gives an
   `'opaqueredirect'`, status 0. A network failure is `TypeError('Failed to fetch')`, the message
-  retry libraries match, with the detail on `cause`.
+  retry libraries match, with the detail on `cause`. Each failed request, from `fetch`, XHR or
+  `EventSource`, also writes one `console.error` line (`GET https://host/path failed: <reason>`,
+  query string left out), as Chromium prints a line for a native one: an app that shows only the
+  error would otherwise never show the reason.
 - **XMLHttpRequest.** A synchronous `open(..., false)` goes native. `xhr.upload instanceof
   XMLHttpRequestUpload` is false. A `'document'` response is parsed with `DOMParser`.
 - **WebSocket.** No extension, so `extensions` is `''`. The upgrade carries the page's origin as

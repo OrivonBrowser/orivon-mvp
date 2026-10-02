@@ -5,6 +5,7 @@ import { generateKeyPairSync } from 'node:crypto'
 import AdmZip from 'adm-zip'
 import { installFromFile, installFromFolder, resolveSlotKey } from '../install-runner.js'
 import { readRegistry } from '../registry-runner.js'
+import { takePendingInstalled } from '../runtime-installed.js'
 import { generateId } from '../../../../vendor/electron-chrome-web-store/src/browser/id.js'
 import { ALWAYS_ALLOW, ALWAYS_DENY, FIXTURE_MANIFEST, buildCrx, fakeSession, withTempDir, writeFixtureFolder } from './install-runner-fixtures.js'
 
@@ -119,6 +120,38 @@ describe('installFromFolder', () => {
       expect(second.entry.path).not.toBe(first.entry.path)
       expect(existsSync(firstPath)).toBe(false)
       expect(readRegistry(userDataPath)).toHaveLength(1)
+    })
+  })
+
+  it('parks the onInstalled details before the load: install first, then update with the version it replaced', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const source = writeFixtureFolder(root, FIXTURE_MANIFEST)
+      const { session } = fakeSession()
+      const first = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)
+      if (!first.installed) throw new Error('first install refused')
+      expect(takePendingInstalled(first.entry.id)).toEqual({ reason: 'install' })
+
+      writeFileSync(join(source, 'manifest.json'), JSON.stringify({ ...FIXTURE_MANIFEST, version: '2.0.0' }))
+      const second = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)
+      expect(second.installed).toBe(true)
+      expect(takePendingInstalled(first.entry.id)).toEqual({ reason: 'update', previousVersion: first.entry.version })
+    })
+  })
+
+  it('parks nothing when an update\'s load fails and the previous version is loaded back', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const source = writeFixtureFolder(root, FIXTURE_MANIFEST)
+      const { session, setFailNextLoad } = fakeSession()
+      const first = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)
+      if (!first.installed) throw new Error('first install refused')
+      expect(takePendingInstalled(first.entry.id)).toEqual({ reason: 'install' })
+
+      writeFileSync(join(source, 'manifest.json'), JSON.stringify({ ...FIXTURE_MANIFEST, version: '2.0.0' }))
+      setFailNextLoad(new Error('boom'))
+      await expect(installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)).rejects.toThrow('boom')
+      expect(takePendingInstalled(first.entry.id)).toBeUndefined()
     })
   })
 

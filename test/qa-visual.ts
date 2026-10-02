@@ -139,6 +139,10 @@ export async function compareBaseline (name: string, png: Buffer, options: { max
 
 /** Fixed content size, so a state looks the same on every run. */
 export async function prepareWindow (app: ElectronApplication, size: { width: number, height: number } = { width: 1280, height: 800 }): Promise<void> {
+  // The window re-asserts its initial bounds the moment it is shown (window-frame.ts's showOnce), which
+  // undoes a resize made before that: wait until every window is visible, then resize.
+  const shown = await waitFor(() => app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows().every((w) => w.isVisible())))
+  if (!shown) throw new Error('the window was never shown, so its size cannot be set')
   await app.evaluate(({ BaseWindow }, s) => { for (const w of BaseWindow.getAllWindows()) w.setContentSize(s.width, s.height) }, size)
   const chrome = findChrome(app)
   const settled = await waitFor(async () => (await chrome.evaluate(() => window.innerWidth)) === size.width)
