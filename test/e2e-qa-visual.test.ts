@@ -12,14 +12,28 @@
 
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { runPhase } from './e2e-helpers.js'
+import { clickAddressBarRetrying, runPhase } from './e2e-helpers.js'
 import { assertNoElectronSurvivors, closeElectron } from './launch-electron.mjs'
+import { answerQuestion, noNativeDialogs, readQuestion, stubNativeDialogs, waitQuestion } from './question-support.js'
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './qa-helpers.js'
 import { captureState, checkState, prepareWindow, type Check, type Rect, type StateSpec } from './qa-visual.js'
-import { ABSENCE_SETTLE_MS, delay, findChrome, popoverShown, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, delay, findChrome, findViewShowing, popoverShown, waitFor, waitForTab } from './smoke-helpers.mjs'
 
 /** The address text of a fixture page: its port changes on every run. */
 const FIXTURE_ADDRESS: Rect = { x: 240, y: 44, width: 260, height: 24 }
+
+/** Where a question panel names its origin, whose port changes on every run: the header lines of a consent question and its last detail line, and the header of a page's own question. */
+const CONSENT_ORIGIN_LINES: Rect[] = [{ x: 188, y: 78, width: 240, height: 46 }, { x: 188, y: 192, width: 240, height: 20 }]
+const PAGE_QUESTION_ORIGIN: Rect = { x: 190, y: 78, width: 240, height: 20 }
+
+const MANIFEST = JSON.stringify({
+  orivonApiVersion: 0,
+  id: 'app.orivon.fixture.visual-consent',
+  name: 'Visual consent fixture',
+  version: '1.0.0',
+  entry: 'index.html',
+  capabilities: { fs: { quotaBytes: 1024 } }
+})
 
 /** The schemes every state is captured in. */
 const requested = (process.env['ORIVON_QA_SCHEMES'] ?? 'light,dark').split(',').map((s) => s.trim())
@@ -44,6 +58,16 @@ afterAll(async () => {
 async function state (check: Check, app: ElectronApplication, name: string, spec: StateSpec, size?: { width: number, height: number }): Promise<void> {
   await prepareWindow(app, size)
   checkState(check, await captureState(app, name, spec))
+}
+
+/** The panel's card sits whole inside its own view: nothing is clipped at an edge and nothing scrolls. */
+async function panelFits (panel: Page): Promise<{ fits: boolean, detail: string }> {
+  const m = await panel.evaluate(() => {
+    const card = (document.querySelector('.q') as HTMLElement).getBoundingClientRect()
+    const root = document.documentElement
+    return { left: card.left, top: card.top, right: window.innerWidth - card.right, bottom: window.innerHeight - card.bottom, scrolls: root.scrollHeight > root.clientHeight || root.scrollWidth > root.clientWidth }
+  })
+  return { fits: m.left >= 0 && m.top >= 0 && m.right >= 0 && m.bottom >= 0 && !m.scrolls, detail: JSON.stringify(m) }
 }
 
 async function openInternal (app: ElectronApplication, chrome: Page, name: string): Promise<Page> {
@@ -189,6 +213,63 @@ for (const scheme of SCHEMES) {
       })
     } finally {
       await closeElectron(app)
+    }
+  }, QA_TEST_TIMEOUT_MS)
+
+  it(`the question panel shows a consent question and a page's confirm() (${scheme})`, async () => {
+    // The consent fixture advertises a manifest, so visiting it asks for its grants; the dialog fixture asks nothing until clicked.
+    const consent = await startServer((req, res) => {
+      if (req.url === '/.well-known/orivon.json') { res.writeHead(200, { 'content-type': 'application/json' }).end(MANIFEST); return }
+      html(res, '<!doctype html><meta charset="utf-8"><title>Consent fixture</title><link rel="orivon-manifest" href="/.well-known/orivon.json"><body style="font:16px sans-serif;margin:32px"><h1>Consent fixture</h1>')
+    })
+    const dialogs = await startServer((_req, res) => {
+      html(res, '<!doctype html><meta charset="utf-8"><title>Dialog fixture</title><body style="font:16px sans-serif;margin:32px"><h1>Dialog fixture</h1><button id="ask" onclick="window.answer = confirm(\'Delete everything?\')">Ask</button>')
+    })
+    const { app, chrome } = await launchShell({ scheme })
+    try {
+      await stubNativeDialogs(app)
+      await runPhase('visual states of the question panel', async (check) => {
+        expect(await waitFor(() => dashboardOf(app) !== undefined)).toBe(true)
+        await prepareWindow(app)
+
+        await clickAddressBarRetrying(chrome, `${consent.origin}/`)
+        const grant = await waitQuestion(app)
+        await grant.waitForSelector('.q:not(.arming)')
+        const said = await readQuestion(grant)
+        check('the consent question names the app origin and offers Allow and Deny', said.buttons.includes('Allow') && said.buttons.includes('Deny'), JSON.stringify(said))
+        const grantFit = await panelFits(grant)
+        check('the consent card sits inside its view, uncut and unscrolled', grantFit.fits, grantFit.detail)
+        await state(check, app, `question-consent-${scheme}`, {
+          expected: 'A question panel floats over the page, directly under the address pill with its top edge crossing into the toolbar: a header naming the 127.0.0.1 origin that is asking, a message about what the app wants, and two readable buttons, Allow and Deny, with Allow the filled one. Text and buttons are fully inside the panel in this colour scheme, nothing is cut, and the page and toolbar stay visible around it.',
+          action: 'Typed the address of a loopback app that advertises a manifest and waited for its grant question to arm.',
+          ignore: [FIXTURE_ADDRESS, ...CONSENT_ORIGIN_LINES]
+        })
+        await answerQuestion(app, 'Deny')
+
+        await visit(app, chrome, `${dialogs.origin}/`)
+        const view = findViewShowing(app, chrome, `${dialogs.origin}/`) as Page
+        view.on('dialog', () => {}) // The debugger reports each dialog; Playwright must not answer it.
+        // The click does not return until the question is answered, which is after the state is read: it gets the time that takes.
+        const asking = view.click('#ask', { timeout: 60_000 })
+        const confirmPanel = await waitQuestion(app)
+        await confirmPanel.waitForSelector('.q:not(.arming)')
+        const confirmSaid = await readQuestion(confirmPanel)
+        check('the confirm() panel is headed with the page origin and offers OK and Cancel', confirmSaid.origin === `${dialogs.origin} says` && confirmSaid.message === 'Delete everything?' && confirmSaid.buttons.includes('OK') && confirmSaid.buttons.includes('Cancel'), JSON.stringify(confirmSaid))
+        const confirmFit = await panelFits(confirmPanel)
+        check('the confirm card sits inside its view, uncut and unscrolled', confirmFit.fits, confirmFit.detail)
+        await state(check, app, `question-page-confirm-${scheme}`, {
+          expected: 'A question panel floats over the page, directly under the address pill with its top edge crossing into the toolbar: a header reading "<127.0.0.1 origin> says", the message "Delete everything?" and two readable buttons, Cancel and OK, with OK the filled one. A dashed line down the left edge of the panel marks a question that comes from the page. Text and buttons are fully inside the panel in this colour scheme, nothing is cut. The page behind may show as flat grey in the picture, because its script is paused inside confirm() and cannot be captured.',
+          action: 'Clicked a button on a loopback page whose script calls confirm("Delete everything?").',
+          ignore: [FIXTURE_ADDRESS, PAGE_QUESTION_ORIGIN]
+        })
+        await answerQuestion(app, 'Cancel')
+        await asking
+        check('no native message box was opened', (await noNativeDialogs(app)).length === 0)
+      })
+    } finally {
+      await closeElectron(app)
+      await consent.close()
+      await dialogs.close()
     }
   }, QA_TEST_TIMEOUT_MS)
 }
