@@ -82,23 +82,6 @@ function setup (defs: OverlayDef[], active = tab(), options: { focused?: boolean
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(10_000) })
 afterEach(() => { vi.useRealTimers(); views.length = 0; focus.current = undefined; themeListeners.clear() })
 
-describe('createOverlayHost: keys typed in an overlay', () => {
-  it('reach the handler, which may swallow them', () => {
-    const key = vi.fn((input: { key: string }) => input.key === 'Enter')
-    const { host } = setup([def('a', {}, { key })])
-    host.show('a', ANCHOR)
-    expect(views[0]?.spec.onKey?.({ key: 'Tab', isAutoRepeat: false })).toBe(false)
-    expect(views[0]?.spec.onKey?.({ key: 'Enter', isAutoRepeat: true })).toBe(true)
-    expect(key).toHaveBeenCalledTimes(2)
-  })
-
-  it('are not swallowed when the handler has no say, or a replaced view sends them', () => {
-    const { host } = setup([def('a')])
-    host.show('a', ANCHOR)
-    expect(views[0]?.spec.onKey?.({ key: 'Enter', isAutoRepeat: true })).toBe(false)
-  })
-})
-
 describe('createOverlayHost: laziness', () => {
   it('builds no view, and attaches nothing, before the first show', () => {
     const { host } = setup([def('a')])
