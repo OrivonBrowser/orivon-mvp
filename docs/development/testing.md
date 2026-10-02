@@ -255,6 +255,13 @@ The driver does fail to attach to one window, spike gate 3's, for a cause still 
 direct launch without Playwright, and the failure is specific to that gate's video and
 service-worker setup, not to `BaseWindow` in general.
 
+A page's visibility is the one thing the driver changes. Under Playwright every page reads
+`document.visibilityState` and `WebFrameMain.visibilityState` as `'visible'`, a hidden
+`BrowserWindow` and a tab detached from its window included; the same calls on a shell with no
+driver attached read `'hidden'`. A spec cannot assert that a background tab is hidden, and a
+reading of `'visible'` from a driven page is not a finding. To measure it, launch the built app
+under the headless runner with a main-process module loaded by Electron's `--require` switch.
+
 ### Checking against real Chrome extensions
 
 [`test/e2e-extensions-real.test.ts`](../../test/e2e-extensions-real.test.ts) installs whichever
