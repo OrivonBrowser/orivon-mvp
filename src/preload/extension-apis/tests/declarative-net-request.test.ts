@@ -27,6 +27,16 @@ describe('chrome.declarativeNetRequest constants', () => {
     }
   })
 
+  it('carries the quota constants and the regex reasons the engine does not define, at Chrome\'s values', () => {
+    const api = defined()
+    expect(api.MAX_NUMBER_OF_DYNAMIC_AND_SESSION_RULES).toBe(5000)
+    expect(api.MAX_NUMBER_OF_UNSAFE_DYNAMIC_RULES).toBe(5000)
+    expect(api.MAX_NUMBER_OF_UNSAFE_SESSION_RULES).toBe(5000)
+    expect(api.GETMATCHEDRULES_QUOTA_INTERVAL).toBe(10)
+    expect(api.MAX_GETMATCHEDRULES_CALLS_PER_INTERVAL).toBe(20)
+    expect(api.UnsupportedRegexReason).toEqual({ SYNTAX_ERROR: 'syntaxError', MEMORY_LIMIT_EXCEEDED: 'memoryLimitExceeded' })
+  })
+
   it('names the dynamic and session rulesets as the engine does', () => {
     const api = defined()
     expect(api.DYNAMIC_RULESET_ID).toBe('_dynamic')
@@ -69,7 +79,7 @@ describe('chrome.declarativeNetRequest constants', () => {
 
   it('freezes every enum, so a page cannot rewrite what an extension reads', () => {
     const api = defined()
-    for (const name of ['ResourceType', 'RuleActionType', 'RequestMethod', 'DomainType', 'HeaderOperation', 'RuleConditionKeys']) {
+    for (const name of ['ResourceType', 'RuleActionType', 'RequestMethod', 'DomainType', 'HeaderOperation', 'UnsupportedRegexReason', 'RuleConditionKeys']) {
       expect(Object.isFrozen(api[name]), name).toBe(true)
     }
   })

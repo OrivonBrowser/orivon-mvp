@@ -22,6 +22,15 @@ export function declarativeNetRequestApi (): void {
       MAX_NUMBER_OF_DYNAMIC_RULES: 30000,
       MAX_NUMBER_OF_SESSION_RULES: 5000,
       MAX_NUMBER_OF_REGEX_RULES: 1000,
+      // Chrome's published values for what the engine does not define: it keeps
+      // no separate quota for "unsafe" rules (every dynamic or session rule
+      // counts toward the totals above), does not limit getMatchedRules calls,
+      // and only reports a regex the platform RegExp refuses.
+      MAX_NUMBER_OF_DYNAMIC_AND_SESSION_RULES: 5000,
+      MAX_NUMBER_OF_UNSAFE_DYNAMIC_RULES: 5000,
+      MAX_NUMBER_OF_UNSAFE_SESSION_RULES: 5000,
+      GETMATCHEDRULES_QUOTA_INTERVAL: 10,
+      MAX_GETMATCHEDRULES_CALLS_PER_INTERVAL: 20,
       DYNAMIC_RULESET_ID: '_dynamic',
       SESSION_RULESET_ID: '_session',
       ResourceType: frozen({
@@ -62,6 +71,7 @@ export function declarativeNetRequestApi (): void {
       }),
       DomainType: frozen({ FIRST_PARTY: 'firstParty', THIRD_PARTY: 'thirdParty' }),
       HeaderOperation: frozen({ APPEND: 'append', SET: 'set', REMOVE: 'remove' }),
+      UnsupportedRegexReason: frozen({ SYNTAX_ERROR: 'syntaxError', MEMORY_LIMIT_EXCEEDED: 'memoryLimitExceeded' }),
       RuleConditionKeys: frozen({
         URL_FILTER: 'urlFilter',
         REGEX_FILTER: 'regexFilter',
