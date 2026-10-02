@@ -46,6 +46,22 @@ describe('HostSupervisor', () => {
     expect(hosts[0]?.sent).toEqual([{ type: 'start', config: CONFIG }])
   })
 
+  it('says the host is starting on the first start and on every restart, before the process is forked', () => {
+    const hosts: FakeHost[] = []
+    const timers: Array<() => void> = []
+    const log: string[] = []
+    const supervisor = new HostSupervisor({
+      fork: () => { log.push('fork'); const h = new FakeHost(); hosts.push(h); return h },
+      config: () => CONFIG,
+      events: { starting: () => log.push('starting'), listening: () => {}, down: () => log.push('down'), status: () => {}, checkpoint: () => {}, ipnsSequence: () => {} },
+      setTimer: (run) => { timers.push(run) }
+    })
+    supervisor.start()
+    hosts[0]?.crash()
+    timers[0]?.()
+    expect(log).toEqual(['starting', 'fork', 'down', 'starting', 'fork'])
+  })
+
   it('passes on what the host reports', () => {
     const { supervisor, hosts, log } = harness()
     supervisor.start()
