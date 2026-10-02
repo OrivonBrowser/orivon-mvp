@@ -17,6 +17,7 @@ import { Sites } from '../sites.js'
 
 const ROOT = 'bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi'
 const BIG = MAX_BUFFERED_BYTES + 1024
+const CUT = 200 * 1024
 
 interface StubFile { bytes: Buffer, failAfter?: number, failure?: ResolutionError }
 const FILES: Record<string, StubFile> = {
@@ -24,7 +25,8 @@ const FILES: Record<string, StubFile> = {
   '/docs/index.html': { bytes: Buffer.from('<h1>docs</h1>') },
   '/app.js': { bytes: Buffer.from('run()') },
   '/bad.js': { bytes: Buffer.from('x'.repeat(100)), failAfter: 10, failure: new ResolutionError('unverifiable', 'block does not hash to its CID') },
-  '/big.bin': { bytes: Buffer.alloc(BIG, 7), failAfter: 1024 * 1024, failure: new ResolutionError('unverifiable', 'tampered') }
+  '/big.bin': { bytes: Buffer.alloc(BIG, 7), failAfter: 1024 * 1024, failure: new ResolutionError('unverifiable', 'tampered') },
+  '/cut.js': { bytes: Buffer.alloc(CUT, 7), failAfter: 64 * 1024, failure: new ResolutionError('unverifiable', 'tampered') }
 }
 
 function open (path: string, range?: { start: number, end: number }): GatheredFile {
@@ -261,6 +263,14 @@ describe('the .eth loopback server', () => {
     expect(reply.status).toBe(502)
     expect(reply.body.toString()).not.toContain('xxxx')
     expect(reply.body.toString()).toContain('Cannot verify this site')
+  })
+
+  it('streams even a small file to an install, which names its root and checks every byte itself, so a slow gateway still reads as progress', async () => {
+    expect((await get('/cut.js')).status).toBe(502)
+    const install = await get('/cut.js', { headers: { 'x-orivon-content-root': ROOT } })
+    expect(install.status).toBe(200)
+    expect(Number(install.headers['content-length'])).toBe(CUT)
+    expect(install.body.length).toBeLessThan(CUT)
   })
 
   it('cuts a large file that fails verification mid-stream, so it arrives short of its length', async () => {
