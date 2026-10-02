@@ -1882,6 +1882,18 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
+### A345: Does the new tab's flat dark-grey stage still read as a flicker **[OWNER]**
+
+- **Question:** A new tab shows a flat `#394244` (the mean of the dashboard picture) for 230 ms (light) to 370 ms (dark)
+  while its renderer starts, then the picture; the window behind it never shows white. Does that still read as a flicker
+  on the owner's screen, in the owner's scheme? If so, which removal: a spare dashboard view kept warm and shown once it
+  has painted, or the previous page held under the new view until the dashboard paints?
+- **Why it matters:** the colour is a judgement call; only the owner's eye can say whether a dark stage on a light page
+  is acceptable. Either removal changes tab creation (pane host, tab factory), so it is not built until needed.
+- **Options:** accept the flat colour; warm spare dashboard view; hold the previous page under the new view.
+- **Who decides:** owner
+- **Blocks:** nothing
+
 ### A346: A bookmarks-bar folder menu closes when its row menu opens, and items cannot be dragged out of it **[AI-REC]**
 
 - **Question:** The row menu is a native menu, which takes focus, so the folder menu closes as it opens; Chrome keeps it open. Chrome also drags an item out of an open folder menu onto the bar. Build both?

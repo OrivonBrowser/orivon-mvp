@@ -136,6 +136,12 @@ until shown otherwise.
   a native `dialog.showMessageBoxSync`: specs replace it and the screenshots cannot show it.
 - `capturePage()` fails under this machine's GPU-less xvfb; screenshots go through Playwright's own
   capture of each view, which works, and the window composite pairs views to pages by URL then size.
+- A frame that lasts a moment (a tab's flat pre-paint colour, a window backing showing through) is not in
+  a screenshot. Measure it in a throwaway spec under the headless runner: start
+  `ffmpeg -f x11grab -framerate 30 -video_size <window size> -i $DISPLAY` before the action, stop it after,
+  read the frames with PIL, and read the colours the main process holds in the same run (the dev
+  `__orivonDevViewBackgrounds` hook, the window's `getBackgroundColor()`) on a 1 ms timer. Delete the
+  spec afterwards; `test/e2e-theme-backing.test.ts` keeps the colours as assertions, not the frames.
 - An uncaught exception in the main process raises a blocking error dialog, so no spec provokes one.
 - A control hidden by `opacity` is not audited: hover-revealed buttons make that mostly intended.
 - Malformed calls to `window.orivon.*` from a page are not yet covered; they need the page-script
