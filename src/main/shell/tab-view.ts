@@ -8,7 +8,8 @@ import { originFromUrl } from '../../broker/policy/origin.js'
 import { shouldClearFavicon } from '../browsing/favicon.js'
 import type { TabRecord } from './tab-types.js'
 import { showContextMenu } from './context-menu.js'
-import { confirmLeavePage } from './leave-page-prompt.js'
+import { forgetNavigation, leaveAllowed } from './leave-page-prompt.js'
+import { watchPageDialogs } from './page-dialogs.js'
 import { windowOpenHandler } from './popups.js'
 import { keepsOpenerSession, openerCutNeeded, popupTargetIsApp } from './popup-opener.js'
 import { DEFAULT_BACKGROUND } from './theme-colors.js'
@@ -52,7 +53,12 @@ export const EXIT_FULLSCREEN_WORLD_ID = 1001
  * `webviewTag` only for a registered app's tab (ADR-0039): the element is
  * inert everywhere else, and even there every attach is decided by
  * `../embed/embed-host.ts` against the live `web.embed` grant, so turning
- * the tag on grants nothing by itself. */
+ * the tag on grants nothing by itself.
+ *
+ * The tab's preloads run in its subframes too, so a frame's own alert reaches
+ * the question panel; each gives a subframe nothing but the dialog wrapper
+ * (src/preload/frame.ts). `disableDialogs` answers at once the dialogs the
+ * wrapper never reaches (a frame created blank, whose preload has not run). */
 export function tabWebPreferences (preload: string, partition: string | undefined, additionalArguments?: string[]): WebPreferences {
   return {
     preload,
@@ -61,6 +67,8 @@ export function tabWebPreferences (preload: string, partition: string | undefine
     contextIsolation: true,
     sandbox: true,
     nodeIntegration: false,
+    nodeIntegrationInSubFrames: true,
+    disableDialogs: true,
     webSecurity: true,
     webviewTag: additionalArguments?.includes(APP_TAB_FLAG) === true
   }
@@ -267,9 +275,10 @@ export function wireView (id: string, record: TabRecord): void {
       event.preventDefault()
       return
     }
-    const { window } = record.host
-    if (window !== undefined && confirmLeavePage(window)) event.preventDefault()
+    if (leaveAllowed(wc)) event.preventDefault()
   })
+  wc.on('did-start-navigation', (details) => { if (details.isMainFrame && !details.isSameDocument) forgetNavigation(wc) })
+  watchPageDialogs(wc, shown)
   refuseHeldNavigation(wc)
   loadServedAddresses(wc, () => record.internalPage !== null)
   wc.on('context-menu', (_event, params) => {

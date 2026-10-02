@@ -13,10 +13,8 @@
 // at load: Playwright's `evaluate` runs as a user gesture, so an ask from
 // there would prove nothing.
 //
-// THE ONE THING SUBSTITUTED is the Leave/Stay dialog: a native message box no
-// driver here can press, so `dialog.showMessageBoxSync` is replaced in the
-// main process with one that answers from a variable -- the same privilege
-// Playwright's `evaluate` already has. Escape is sent through
+// The Leave/Stay question is drawn in the tab's question panel and answered by
+// pressing its real buttons. Escape is sent through
 // `webContents.sendInputEvent`, the browser-side input path a real key
 // takes; Playwright's own keyboard reaches the page without passing there.
 //
@@ -28,6 +26,7 @@ import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } 
 import { ABSENCE_SETTLE_MS, HERMETIC_RESOLVER, delay, evaluateRetrying, findChrome, findViewShowing, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
 import { focusWebContents, underVirtualDisplay, webContentsFocused } from './focus-helpers.js'
+import { answerQuestion, noNativeDialogs, readQuestion, stubNativeDialogs, waitQuestion } from './question-support.js'
 
 const HOST = '127.0.0.1'
 // 8872-8884 belong to other suites' fixtures; this file needs one of its own.
@@ -211,24 +210,23 @@ it('gives an ordinary page fullscreen, real popups, a leave prompt and a Chrome 
 
       // --- beforeunload -------------------------------------------------
       view.on('dialog', () => {}) // Electron answers it; stop Playwright answering too.
-      await app.evaluate(({ dialog }) => {
-        const g = globalThis as unknown as { __leaveAsked: number, __leaveAnswer: number }
-        g.__leaveAsked = 0
-        g.__leaveAnswer = 1
-        dialog.showMessageBoxSync = ((..._args: unknown[]) => { g.__leaveAsked += 1; return g.__leaveAnswer }) as typeof dialog.showMessageBoxSync
-      })
+      await stubNativeDialogs(app)
       await view.click('#guard')
       await clickAddressBarRetrying(chrome, `${ORIGIN}next`)
-      const askedOnce = await waitFor(async () => await app?.evaluate(() => (globalThis as unknown as { __leaveAsked: number }).__leaveAsked) === 1)
+      const asked = await waitQuestion(app)
+      const question = await readQuestion(asked)
+      check('a guarded page asks before leaving, in the panel', question.message === 'Leave this page?' && question.buttons.join() === 'Stay,Leave', JSON.stringify(question))
+      await answerQuestion(app, 'Stay')
       await delay(ABSENCE_SETTLE_MS)
       const stayed = await evaluateRetrying(view, () => document.title)
-      check('a guarded page asks before leaving', askedOnce)
       check(`choosing Stay keeps the page (title is ${stayed})`, stayed === TITLE)
 
-      await app.evaluate(() => { (globalThis as unknown as { __leaveAnswer: number }).__leaveAnswer = 0 })
       await clickAddressBarRetrying(chrome, `${ORIGIN}next`)
+      await waitQuestion(app)
+      await answerQuestion(app, 'Leave')
       const moved = await waitForTab(chrome, { address: `${ORIGIN}next`, title: 'next page' })
-      check('choosing Leave navigates', moved.ok, JSON.stringify(moved.info))
+      check('choosing Leave runs the navigation again', moved.ok, JSON.stringify(moved.info))
+      check('no native box was opened for it', (await noNativeDialogs(app)).length === 0)
     } finally {
       if (app !== undefined) await closeElectronApp(app)
       if (server !== undefined) await new Promise<void>((resolve) => { server?.close(() => { resolve() }) })

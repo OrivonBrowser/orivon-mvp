@@ -7,8 +7,8 @@ import { partitionFor } from '../../../broker/grants/origin-hash.js'
 // wireView is where a tab's page-level events meet the shell: fullscreen,
 // beforeunload, window.open and the context menu. These tests drive the same
 // events Electron emits on a real tab's webContents.
-const { showMessageBoxSync, buildFromTemplate, adoptedViews } = vi.hoisted(() => ({
-  showMessageBoxSync: vi.fn(),
+const { askQuestion, buildFromTemplate, adoptedViews } = vi.hoisted(() => ({
+  askQuestion: vi.fn(),
   buildFromTemplate: vi.fn((_template: unknown) => ({ popup: vi.fn() })),
   adoptedViews: [] as Array<{ options: Record<string, unknown> }>
 }))
@@ -20,7 +20,6 @@ vi.mock('electron', () => ({
     this.setBackgroundColor = vi.fn()
     adoptedViews.push(this)
   }),
-  dialog: { showMessageBoxSync },
   Menu: { buildFromTemplate },
   clipboard: { writeText: vi.fn() }
 }))
@@ -29,6 +28,7 @@ vi.mock('electron', () => ({
 // string, not the APP constant below: vi.mock's factory is hoisted above
 // every const in this file, so a reference to APP here would run before it
 // is initialised.
+vi.mock('../question/ask-question.js', () => ({ askQuestion }))
 vi.mock('../../../loader/electron/serve.js', () => ({ isOriginServedFromCacheSync: (origin: string) => origin === 'https://app.example' }))
 
 const { wireView, makeTabView } = await import('../tab-view.js')
@@ -42,6 +42,7 @@ const APP_PARTITION = partitionFor(APP)
 interface FakeContents extends EventEmitter {
   opener: unknown
   setWindowOpenHandler: ReturnType<typeof vi.fn>
+  ipc: { on: ReturnType<typeof vi.fn> }
   loadURL: ReturnType<typeof vi.fn>
   close: ReturnType<typeof vi.fn>
   getURL: () => string
@@ -53,6 +54,7 @@ function fakeContents (url = 'https://news.example/'): FakeContents {
   const wc = new EventEmitter() as FakeContents
   wc.opener = null
   wc.setWindowOpenHandler = vi.fn()
+  wc.ipc = { on: vi.fn() }
   wc.loadURL = vi.fn(async () => {})
   wc.close = vi.fn()
   wc.getURL = () => url
@@ -97,7 +99,7 @@ function openHandler (wc: FakeContents): (details: Partial<HandlerDetails>) => W
 }
 
 beforeEach(() => {
-  showMessageBoxSync.mockReset()
+  askQuestion.mockReset()
   buildFromTemplate.mockClear()
   adoptedViews.length = 0
 })
@@ -116,39 +118,49 @@ describe('wireView -- HTML fullscreen', () => {
   })
 })
 
-describe('wireView -- a beforeunload guard asks instead of silently blocking', () => {
-  it('leaves the page when the person chooses Leave', () => {
+describe('wireView -- a beforeunload guard asks in the panel and keeps the page meanwhile', () => {
+  it('keeps the page and asks in the tab\'s own panel', () => {
     const wc = fakeContents()
     wireView('tab-1', record(wc))
-    showMessageBoxSync.mockReturnValue(0)
-    const event = { preventDefault: vi.fn() }
-
-    wc.emit('will-prevent-unload', event)
-
-    expect(showMessageBoxSync).toHaveBeenCalledTimes(1)
-    expect(event.preventDefault).toHaveBeenCalledTimes(1)
-  })
-
-  it('stays on the page when the person chooses Stay', () => {
-    const wc = fakeContents()
-    wireView('tab-1', record(wc))
-    showMessageBoxSync.mockReturnValue(1)
+    askQuestion.mockReturnValue(new Promise(() => {}))
     const event = { preventDefault: vi.fn() }
 
     wc.emit('will-prevent-unload', event)
 
     expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(askQuestion).toHaveBeenCalledTimes(1)
+    expect(askQuestion.mock.calls[0]?.[0]).toEqual({ contents: wc })
+    expect(askQuestion.mock.calls[0]?.[1]).toMatchObject({ message: 'Leave this page?', buttons: ['Leave', 'Stay'] })
   })
 
-  it('attaches the question to the window, so it cannot appear anywhere else on screen', () => {
+  it('lets the next attempt through unasked once the person chose Leave', async () => {
     const wc = fakeContents()
-    const window = { isDestroyed: () => false }
-    wireView('tab-1', record(wc, undefined, fakeHost({ window: window as never })))
-    showMessageBoxSync.mockReturnValue(1)
-
+    wireView('tab-1', record(wc))
+    askQuestion.mockResolvedValue({ response: 0, checkboxChecked: false })
     wc.emit('will-prevent-unload', { preventDefault: vi.fn() })
+    await vi.waitFor(() => { expect(askQuestion).toHaveBeenCalledTimes(1) })
+    await new Promise((resolve) => { setTimeout(resolve, 0) })
+    const again = { preventDefault: vi.fn() }
 
-    expect(showMessageBoxSync.mock.calls[0]?.[0]).toBe(window)
+    wc.emit('will-prevent-unload', again)
+
+    expect(again.preventDefault).toHaveBeenCalledTimes(1)
+    expect(askQuestion).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks again after Stay: no approval is kept', async () => {
+    const wc = fakeContents()
+    wireView('tab-1', record(wc))
+    askQuestion.mockResolvedValue({ response: 1, checkboxChecked: false })
+    wc.emit('will-prevent-unload', { preventDefault: vi.fn() })
+    await vi.waitFor(() => { expect(askQuestion).toHaveBeenCalledTimes(1) })
+    await new Promise((resolve) => { setTimeout(resolve, 0) })
+    const again = { preventDefault: vi.fn() }
+
+    wc.emit('will-prevent-unload', again)
+
+    expect(again.preventDefault).not.toHaveBeenCalled()
+    expect(askQuestion).toHaveBeenCalledTimes(2)
   })
 })
 
@@ -696,20 +708,6 @@ describe('wireView -- a tab that changes host', () => {
 
     expect(after.openTab).toHaveBeenCalledWith('https://other.example/', true, undefined)
     expect(before.openTab).not.toHaveBeenCalled()
-  })
-
-  it('asks the leave-page question in the new host\'s window', () => {
-    const wc = fakeContents()
-    const oldWindow = { isDestroyed: () => false }
-    const newWindow = { isDestroyed: () => false }
-    const r = record(wc, undefined, fakeHost({ window: oldWindow as never }))
-    wireView('tab-1', r)
-    r.host = fakeHost({ window: newWindow as never })
-    showMessageBoxSync.mockReturnValue(1)
-
-    wc.emit('will-prevent-unload', { preventDefault: vi.fn() })
-
-    expect(showMessageBoxSync.mock.calls[0]?.[0]).toBe(newWindow)
   })
 })
 

@@ -34,6 +34,32 @@ The panel is safe to trust because of rules main enforces and the page of the pa
   applies to the page asked about, and on a first visit the tab is not rebuilt as the app before the
   person has said yes.
 
+A page's own questions go through the same panel, and the mechanism is part of this decision:
+
+- **A page's `alert`, `confirm` and `prompt` are asked in the panel.** The tab's preload wraps the three
+  functions (a `Proxy` over the native ones, so `toString`, `name` and the property's descriptor read as the
+  page expects) and blocks on a synchronous send; main sets the reply when the person has answered, which
+  Electron allows to come later (`src/preload/page-dialogs.ts`, `src/main/shell/page-dialogs.ts`). The
+  panel is headed with the frame's own origin, read in main from the committed frame and never from the page:
+  "<origin> says", and "An embedded page on <origin> says" for a frame inside the page. It offers OK and
+  Cancel only, in a style a grant never has, and the text is cleaned and cut like any page text. Every path
+  out replies: a navigation of the tab, a closed tab or window, a crashed page and a refused call each give
+  the page what a dismissed dialog gives. After a document's second dialog the next one offers "Do not let
+  this page show more dialogs", and once ticked the rest are answered at once until the next page.
+- **A tab's preloads run in its subframes and give them only that wrapper.** This is what lets a frame's
+  own dialog reach the panel under its own origin. Every tab preload asks `src/preload/frame.ts` first, and a
+  subframe installs no `window.orivon`, no routed network and nothing else; a preload that cannot tell which
+  frame it is in counts as a subframe. The tab's `disableDialogs` answers at once a dialog in a frame the
+  preload never reached (a frame created blank), so Electron's native box is never drawn for a tab.
+- **A page that is blocked on its own dialog is not reported as unresponsive.** The renderer cannot
+  answer input while it waits, and the browser would otherwise offer the person the sad-tab card for a page
+  that is waiting on them.
+- **A page's `beforeunload` guard is asked in the panel, and the page stays meanwhile.** Electron settles an
+  unload from the event itself and cannot be told later, so the page is kept (Stay is the default and the
+  way out), the question is asked, and "Leave" lets the next attempt through unasked, for twenty seconds.
+  A navigation the shell started (the address bar, back, forward, reload) is run again at once on Leave. One
+  the page started (a link, a script) is not known at that event, so the person repeats it.
+
 A native box remains for the OS file and folder pickers, which are not questions, and for a failure
 before any window exists. `npm run check:native-dialogs` fails the build on a message box anywhere else.
 
@@ -53,6 +79,13 @@ dialog; it now names the file that asks through the panel.
   windows are `BaseWindow`s, which `BrowserWindow.getFocusedWindow()` never returns.
 - **A page-drawn modal in the tab's own view.** One less overlay. A hostile page could draw the same
   thing, and nothing about it would say which is which.
+- **Electron's native dialog for a page's own `alert` and `confirm`, with `prompt()` returning null.** No
+  work, and a page's dialog is then the one question the browser cannot place, withdraw or tell from a
+  look-alike. Electron offers no hook to supply a prompt, and the private `-run-dialog` event in its binary
+  is not an interface.
+- **The tab's `safeDialogs` or `disableDialogs` alone.** Both are settings of the whole tab, not of a frame,
+  so a frame cannot be given the panel while the main page keeps the native box. `disableDialogs` is kept as
+  the backstop for frames the wrapper does not reach, which answer at once as a dismissed dialog does.
 - **A separate window per question.** Keeps the isolation of a native box and adds a surface with its own
   `webPreferences` to defend, and the same problem of belonging to no tab.
 
@@ -73,6 +106,13 @@ rushing and stacking defences exist once and are tested once.
   origin that was asked about. A server redirect that follows a navigation the person started in that
   tab while a consent question is open is dropped too.
 - Every call site's tests replace `askQuestion` with a function; none replaces `dialog`.
+- While a page's dialog is open its renderer is blocked, as it is behind a native box, so every tab that
+  shares that renderer process waits too. The panel for a tab in the background waits for its tab.
+- `nodeIntegrationInSubFrames` is on for every tab. The preloads give a subframe nothing beyond the dialog
+  wrapper, and `src/preload/tests/frame-gate.test.ts` fails a subframe that gains more. The editing rule
+  that blocks the flag (`.claude/hookify.electron-webprefs.local.md`) still lists it (A341).
+- A person who stays on a page that asked to be kept must click its link again after choosing Leave: the
+  destination of a navigation the page started is not known at the event that asks.
 - A change to `src/main/shell/question/` is reviewed as a change to the consent surface of every grant.
 
 ## Reversibility

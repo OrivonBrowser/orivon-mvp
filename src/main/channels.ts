@@ -181,3 +181,6 @@ export const EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL = 'orivon-extensions:sandbox-p
 
 /** Main -> an app's page: a shown page asked for a window or started a download (ADR-0047). The page's preload turns it into an event on the `<webview>` element. */
 export const EMBED_EVENT_CHANNEL = 'orivon-embed:event'
+
+/** A page's `alert`, `confirm` or `prompt`, from the wrapper a tab's preload puts over them: a synchronous send from any frame of the tab, answered by main once the person has. */
+export const PAGE_DIALOG_CHANNEL = 'orivon-page-dialog'

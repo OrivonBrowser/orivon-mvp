@@ -26,9 +26,7 @@ import { isInvokedDirectly, trackedFiles } from './cli.mjs'
 /** The files that may open a native message box, each with why. */
 export const ALLOWED_FILES = new Map([
   ['src/main/shell/question/ask-question.ts', 'the question panel\'s fallback, for a question asked when no shell window exists'],
-  ['src/main/index.ts', 'the start-up failure box: it runs before any window exists'],
-  // Provisional: it asks in a native box today and leaves this list when its question moves into the panel.
-  ['src/main/shell/leave-page-prompt.ts', 'the Leave this page question']
+  ['src/main/index.ts', 'the start-up failure box: it runs before any window exists']
 ])
 
 const SOURCE = /^src\/.*\.(ts|tsx|mts|cts|js|mjs|cjs)$/

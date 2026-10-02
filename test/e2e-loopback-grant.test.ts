@@ -119,9 +119,9 @@ it.skipIf(!ORDINARY_BUILD)(
         const view = findViewShowing(app, chrome, `${ORIGIN}/`)
         if (view === undefined) throw new Error('no view showing the origin after the grant')
 
-        // A subframe gets no preload of its own -- `nodeIntegrationInSubFrames`
-        // is unset, and a hookify rule blocks setting it. That is what this
-        // asserts, and enabling it would fail here, flagging the change.
+        // A subframe's preload installs the page-dialog wrapper and nothing
+        // else (src/preload/frame.ts): no `window.orivon`. That is what this
+        // asserts, and a subframe that gained the surface would fail here.
         //
         // It does NOT assert that the child is cut off: a same-origin child
         // reaches `parent.orivon` by the web's own same-origin policy, and the

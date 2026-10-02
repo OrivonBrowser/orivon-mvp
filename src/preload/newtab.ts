@@ -3,6 +3,8 @@ import type { Bookmark } from '../main/browsing/bookmarks.js'
 import { NEWTAB_COMMAND_CHANNEL } from '../main/channels.js'
 import type { NewTabCommand } from '../main/ipc/newtab-ipc.js'
 import { exposeOrdinaryTabSurface } from './ordinary-tab.js'
+import { inMainFrame } from './frame.js'
+import { installPageDialogs } from './page-dialogs.js'
 
 // Loaded ONLY for a genuinely fresh tab (src/main/tabs.ts's createTab(),
 // `url === undefined`) -- the dashboard's own page (src/renderer/newtab/).
@@ -28,7 +30,12 @@ import { exposeOrdinaryTabSurface } from './ordinary-tab.js'
 const ARG_PREFIX = '--orivon-newtab-url='
 const expectedUrl = process.argv.find((arg) => arg.startsWith(ARG_PREFIX))?.slice(ARG_PREFIX.length)
 
-if (expectedUrl !== undefined && location.href === expectedUrl) {
+// A subframe of the tab runs this preload too (./frame.ts) and gets only the page-dialog wrapper.
+installPageDialogs()
+
+const topFrame = inMainFrame()
+
+if (topFrame && expectedUrl !== undefined && location.href === expectedUrl) {
   function send (command: NewTabCommand): void {
     void ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, command)
   }
@@ -45,7 +52,7 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
      * correctly by the one mechanism, not two. */
     navigate: (input: string): void => { send({ type: 'navigate', input }) }
   })
-} else {
+} else if (topFrame) {
   // ./ordinary-tab.ts's own doc: the SAME surface preload/app.ts gives
   // every ordinary tab, including its chrome-extension: gate -- this
   // branch means the dashboard tab was navigated away, and is now an

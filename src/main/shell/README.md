@@ -60,7 +60,11 @@ for its tab, a kiosk draws it centred, and only a question asked when no shell w
 `navigation-hold.ts` holds a tab's page where it is while a question about it is open (`holdNavigation`, nesting and
 released once): `tab-view.ts` drops a main-frame navigation, a redirect and a `window.open` the page starts meanwhile, so
 an answer cannot be given to a page that is no longer the one asked about. A change of address inside the document is
-not a navigation and still works. `served-address.ts` loads an `ipfs:` link at the URL its protocol serves it at, and not
+not a navigation and still works. `page-dialogs.ts` answers a page's own `alert`, `confirm` and `prompt` (a tab's preloads
+wrap them in every frame and block on a send; this replies once the person has answered in the panel, or with the dismissed
+default when the tab navigates, closes or dies), and `signals/crashed.ts` does not call a page blocked on one unresponsive.
+`leave-page-prompt.ts` keeps a page that asks "Leave this page?" where it is while the panel asks, lets the next attempt
+through after Leave, and runs again a navigation the shell started (`tab-navigation.ts` records it). `served-address.ts` loads an `ipfs:` link at the URL its protocol serves it at, and not
 while the tab is held: a load from there is one the hold would never see.
 The main menu under the toolbar's menu button: `menu-layout.ts` lists which commands it shows and in
 what shape (the names and keys come from [`../shortcuts/`](../shortcuts/), so the menu cannot show a
@@ -212,7 +216,9 @@ only thing that drops `window.opener` at all. This is also the one case `keepsOp
 exempts: the opener link is exactly what must not survive here.
 
 **[`leave-page-prompt.ts`](leave-page-prompt.ts): closing a tab never asks.** `closeTab()`
-closes the webContents without running `beforeunload` (A231).
+closes the webContents without running `beforeunload` (A231). A navigation does: Electron settles an unload from the
+`will-prevent-unload` event and cannot be told later, so the page is kept, the question is asked in the panel, and Leave
+lets the next attempt through. A navigation the page started is repeated by the person.
 
 **[`user-agent.ts`](user-agent.ts): the string, not the brand list.** `navigator.userAgentData`
 lists Chromium rather than Google Chrome, and Electron has no API to change it. Google's sign-in

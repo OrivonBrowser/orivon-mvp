@@ -12,6 +12,7 @@ interface FakeContents extends EventEmitter {
   getTitle: () => string
   navigationHistory: { canGoBack: () => boolean, canGoForward: () => boolean }
   setWindowOpenHandler: ReturnType<typeof vi.fn>
+  ipc: { on: ReturnType<typeof vi.fn> }
   close: ReturnType<typeof vi.fn>
 }
 
@@ -32,6 +33,7 @@ function makeFakeWebContents (): FakeContents {
   emitter.getTitle = () => ''
   emitter.navigationHistory = { canGoBack: () => false, canGoForward: () => false }
   emitter.setWindowOpenHandler = vi.fn()
+  emitter.ipc = { on: vi.fn() }
   // Electron can fire 'destroyed' synchronously from close().
   emitter.close = vi.fn(() => { destroyed = true; emitter.emit('destroyed') })
   return emitter

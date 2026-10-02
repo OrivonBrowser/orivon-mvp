@@ -33,6 +33,7 @@ interface FakeWebContents extends EventEmitter {
   getTitle: ReturnType<typeof vi.fn>
   navigationHistory: FakeHistory
   setWindowOpenHandler: ReturnType<typeof vi.fn>
+  ipc: { on: ReturnType<typeof vi.fn> }
   close: ReturnType<typeof vi.fn>
 }
 
@@ -73,6 +74,7 @@ function makeFakeWebContents (): FakeWebContents {
   emitter.getTitle = vi.fn(() => '')
   emitter.navigationHistory = makeFakeHistory()
   emitter.setWindowOpenHandler = vi.fn()
+  emitter.ipc = { on: vi.fn() }
   // Real Electron destruction can fire 'destroyed' synchronously from
   // close() -- mirrored here so a repartitionView() that forgot to strip
   // the OLD view's listener FIRST would be caught by this test file, not

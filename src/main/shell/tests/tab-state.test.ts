@@ -14,6 +14,7 @@ interface FakeContents extends EventEmitter {
   getTitle: () => string
   navigationHistory: { canGoBack: () => boolean, canGoForward: () => boolean, getAllEntries: () => Array<{ url: string, title: string, pageState?: string }>, getActiveIndex: () => number, restore: ReturnType<typeof vi.fn> }
   setWindowOpenHandler: ReturnType<typeof vi.fn>
+  ipc: { on: ReturnType<typeof vi.fn> }
   setAudioMuted: ReturnType<typeof vi.fn>
   isCurrentlyAudible: ReturnType<typeof vi.fn>
   close: ReturnType<typeof vi.fn>
@@ -33,6 +34,7 @@ function makeFakeWebContents (): FakeContents {
   emitter.getTitle = () => ''
   emitter.navigationHistory = { canGoBack: () => false, canGoForward: () => false, getAllEntries: () => [{ url: 'https://a.example/', title: '' }], getActiveIndex: () => 0, restore: vi.fn(async () => {}) }
   emitter.setWindowOpenHandler = vi.fn()
+  emitter.ipc = { on: vi.fn() }
   emitter.setAudioMuted = vi.fn()
   emitter.isCurrentlyAudible = vi.fn(() => false)
   emitter.close = vi.fn(() => { destroyed = true; emitter.emit('destroyed') })

@@ -911,16 +911,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A232: `prompt()` always returns `null` **[AI-REC]**
-
-- **Question:** Electron has no `window.prompt()` dialog or hook, so every call reads as Cancel;
-  `alert()` and `confirm()` work. Draw one?
-- **Why it matters:** A page that asks for input this way never gets it.
-- **Options:** wait for a port that needs it (rec.); a shell-drawn prompt through a preload
-  override of `window.prompt` that blocks the page synchronously.
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
 ### A233: A form `POST` that changes a tab's partition loses its body **[AI-REC]**
 
 - **Question:** The shell swaps partitions after commit (`did-navigate`) and reloads as a `GET`, so
@@ -1889,5 +1879,15 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   Should the waiting tab show a mark?
 - **Why it matters:** a page that asked for the camera in a background tab looks stuck, and the person cannot tell it is waiting for them.
 - **Options:** a dot on the tab like the audio indicator (rec.); a count in the tab menu; nothing, as now.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A341: The editing rule that blocks `nodeIntegrationInSubFrames` still lists it **[OWNER]**
+
+- **Question:** `tabWebPreferences` now sets `nodeIntegrationInSubFrames: true` (a frame's own dialog needs the preload to run
+  there, and each preload gives a frame only the dialog wrapper), but `.claude/hookify.electron-webprefs.local.md` blocks any edit
+  containing that setting. Narrow the rule to everything but `tab-view.ts`, or keep it and accept the block on that file?
+- **Why it matters:** the next edit that touches the line is refused with a message that says the setting is never allowed.
+- **Options:** the rule names `tab-view.ts` as its one exception and says why (rec.); leave it and disable the rule by hand when needed.
 - **Who decides:** owner
 - **Blocks:** nothing
