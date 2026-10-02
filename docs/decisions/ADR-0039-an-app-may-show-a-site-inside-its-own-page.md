@@ -74,8 +74,8 @@ showing the site to the person.
    those per call: they travel Electron's own guest channel, not the broker's. A "show only"
    grant would promise a limit the platform cannot keep. One grant, honestly worded, instead.
 4. **Let the app's page script reach every frame, not only the top one.** Rejected for this
-   build: a preload in subframes needs `nodeIntegrationInSubFrames`, which the shell keeps off
-   for every guest (a tab turns it on only to give a frame the page-dialog wrapper). A frame inside a shown page runs that page's own code, untouched by the app.
+   build: a preload in subframes needs `nodeIntegrationInSubFrames`, which the shell refuses on
+   every renderer. A frame inside a shown page runs that page's own code, untouched by the app.
 5. **Custom URL schemes answered by the app for the pages it shows.** Not in this ADR. An app
    that wants to answer `foo://` inside its shown pages needs a request channel from the shell
    back into the app, a shape nothing in `orivon.*` has yet. Deferred until a need names it

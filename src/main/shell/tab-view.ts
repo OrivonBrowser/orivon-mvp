@@ -55,10 +55,9 @@ export const EXIT_FULLSCREEN_WORLD_ID = 1001
  * `../embed/embed-host.ts` against the live `web.embed` grant, so turning
  * the tag on grants nothing by itself.
  *
- * The tab's preloads run in its subframes too, so a frame's own alert reaches
- * the question panel; each gives a subframe nothing but the dialog wrapper
- * (src/preload/frame.ts). `disableDialogs` answers at once the dialogs the
- * wrapper never reaches (a frame created blank, whose preload has not run). */
+ * Neither `disableDialogs` nor `nodeIntegrationInSubFrames` is set: a page's
+ * `alert` and `confirm` are answered by `./page-dialogs.ts` from Electron's own
+ * dialog event, which Chromium raises per frame once its own checks pass. */
 export function tabWebPreferences (preload: string, partition: string | undefined, additionalArguments?: string[]): WebPreferences {
   return {
     preload,
@@ -67,8 +66,6 @@ export function tabWebPreferences (preload: string, partition: string | undefine
     contextIsolation: true,
     sandbox: true,
     nodeIntegration: false,
-    nodeIntegrationInSubFrames: true,
-    disableDialogs: true,
     webSecurity: true,
     webviewTag: additionalArguments?.includes(APP_TAB_FLAG) === true
   }

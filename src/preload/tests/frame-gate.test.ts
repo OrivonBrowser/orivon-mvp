@@ -1,5 +1,5 @@
-// A tab's preloads run in every subframe too (the tab's `nodeIntegrationInSubFrames`); a subframe must get the
-// page-dialog wrapper and nothing else.
+// A tab's preload reaches the top frame only today; each one still asks which frame it is in before it exposes
+// anything, so a setting that ran it in a subframe would give that frame the `prompt` wrapper and nothing else.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const calls = vi.hoisted(() => ({ names: [] as string[], exposed: [] as string[] }))

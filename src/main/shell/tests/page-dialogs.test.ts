@@ -17,21 +17,27 @@ type Frame = typeof MAIN | typeof FRAME | typeof OPAQUE
 interface Rig {
   wc: EventEmitter & { isDestroyed: () => boolean, getOSProcessId: () => number, mainFrame: typeof MAIN, ipc: { on: ReturnType<typeof vi.fn> } }
   ask: ReturnType<typeof vi.fn>
-  /** Sends one dialog the way the preload does, and returns what the page would read. */
+  /** Sends one dialog the way Electron's `-run-dialog` does, and returns what the page would read. */
+  run: (type: string, message?: string, frame?: Frame | null, defaultText?: string) => { value: unknown, replied: boolean }
+  /** Sends one prompt the way the preload does. */
   send: (raw: unknown, frame?: Frame | null) => { value: unknown, replied: boolean }
   shown: { value: boolean }
+  /** The handler Electron installed for the event, which the shell takes over. */
+  electron: ReturnType<typeof vi.fn>
 }
 
 let nextProcessId = 100
 
 /** `ask` answers nothing until told: each call parks a resolver, and an abort answers it as a cancel. */
-function rig (answer?: (spec: QuestionSpec) => QuestionResult | Promise<QuestionResult>): Rig {
+function rig (answer?: (spec: QuestionSpec) => QuestionResult | Promise<QuestionResult>, internalListeners = 1): Rig {
   const wc = new EventEmitter() as Rig['wc']
   wc.isDestroyed = () => false
   const processId = nextProcessId++
   wc.getOSProcessId = () => processId
   wc.mainFrame = MAIN
   wc.ipc = { on: vi.fn() }
+  const electron = vi.fn()
+  for (let i = 0; i < internalListeners; i++) wc.on('-run-dialog', electron)
   const shown = { value: true }
   const ask = vi.fn(async (_target: unknown, spec: QuestionSpec, options?: { signal?: AbortSignal }): Promise<QuestionResult> => {
     if (answer !== undefined) return await answer(spec)
@@ -46,6 +52,16 @@ function rig (answer?: (spec: QuestionSpec) => QuestionResult | Promise<Question
     wc,
     ask,
     shown,
+    electron,
+    run: (type, message = 'hello', frame = MAIN, defaultText = '') => {
+      const out = { value: undefined as unknown, replied: false }
+      const callback = (success: boolean, input: string): void => {
+        out.replied = true
+        out.value = type === 'alert' ? undefined : type === 'confirm' ? success : success ? input : null
+      }
+      wc.emit('-run-dialog', { frame, dialogType: type, messageText: message, defaultPromptText: defaultText }, callback)
+      return out
+    },
     send: (raw, frame = MAIN) => {
       const out = { value: undefined as unknown, replied: false }
       const event = {
@@ -119,28 +135,98 @@ describe('the question one dialog becomes', () => {
   })
 })
 
-describe('answering a page that waits', () => {
-  it('asks in the tab\'s panel and replies with the answer once it comes', async () => {
-    const r = rig((spec) => ({ response: spec.kind === 'page-prompt' ? 0 : 0, checkboxChecked: false, text: 'typed' }))
+describe('taking over Electron\'s dialog event', () => {
+  it('replaces the one handler Electron installed, and listens for its cancel event', () => {
+    const r = rig()
+    expect(r.wc.listeners('-run-dialog')).toHaveLength(1)
+    expect(r.wc.listeners('-run-dialog')[0]).not.toBe(r.electron)
+    expect(r.wc.listeners('-cancel-dialogs')).toHaveLength(1)
+    r.run('alert')
+    expect(r.electron).not.toHaveBeenCalled()
+  })
 
-    const alert = r.send(request('alert'))
+  it('leaves Electron\'s handler in place, and says so once, when it is not exactly one', () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const none = rig(undefined, 0)
+      expect(none.wc.listeners('-run-dialog')).toHaveLength(0)
+      const two = rig(undefined, 2)
+      expect(two.wc.listeners('-run-dialog')).toHaveLength(2)
+      expect(two.wc.listeners('-run-dialog').every((listener) => listener === two.electron)).toBe(true)
+      expect(two.wc.listeners('-cancel-dialogs')).toHaveLength(0)
+      expect(log.mock.calls.length).toBeLessThanOrEqual(1)
+    } finally {
+      log.mockRestore()
+    }
+  })
+
+  it('pins the shape Electron raises: the frame, the type, the text and the default text, then a callback of an answer and an input', async () => {
+    const r = rig((spec) => ({ response: 0, checkboxChecked: false, ...(spec.kind === 'page-prompt' ? { text: 'typed' } : {}) }))
+    const seen: unknown[] = []
+    r.wc.emit('-run-dialog', { frame: MAIN, dialogType: 'confirm', messageText: 'sure?', defaultPromptText: '' }, (...args: unknown[]) => { seen.push(args) })
+    await flush()
+    expect(seen).toEqual([[true, '']])
+    expect(r.ask.mock.calls[0]?.[1]).toMatchObject({ kind: 'page-confirm', message: 'sure?' })
+  })
+
+  it('answers a call it cannot read as dismissed, so the page never waits on nothing', () => {
+    const r = rig()
+    const seen: unknown[] = []
+    const callback = (...args: unknown[]): void => { seen.push(args) }
+    r.wc.emit('-run-dialog', { frame: MAIN, dialogType: 'beforeunload', messageText: 'x' }, callback)
+    r.wc.emit('-run-dialog', { frame: MAIN, dialogType: 'alert' }, callback)
+    r.wc.emit('-run-dialog', null, callback)
+    expect(seen).toEqual([[false, ''], [false, ''], [false, '']])
+    expect(r.ask).not.toHaveBeenCalled()
+  })
+})
+
+describe('answering a page that waits', () => {
+  it('asks in the tab\'s panel and calls back with the answer once it comes', async () => {
+    const r = rig(() => ({ response: 0, checkboxChecked: false, text: 'typed' }))
+
+    const alert = r.run('alert')
     expect(alert.replied).toBe(false)
     await flush()
     expect(alert).toEqual({ value: undefined, replied: true })
     expect(r.ask.mock.calls[0]?.[0]).toEqual({ contents: r.wc })
     expect(r.ask.mock.calls[0]?.[1]).toMatchObject({ kind: 'page-alert', origin: 'https://shop.example' })
 
-    const confirm = r.send(request('confirm'))
-    const prompt = r.send(request('prompt', 'q', 'd'))
+    const confirm = r.run('confirm')
     await flush()
     expect(confirm.value).toBe(true)
-    expect(prompt.value).toBe('typed')
+  })
+
+  it('answers a Cancel as false for a confirm', async () => {
+    const r = rig((spec) => ({ response: spec.cancelId, checkboxChecked: false }))
+    const confirm = r.run('confirm')
+    await flush()
+    expect(confirm).toEqual({ value: false, replied: true })
+  })
+
+  it('answers a prompt from the preload with the typed text, and only from the top frame', async () => {
+    const r = rig(() => ({ response: 0, checkboxChecked: false, text: 'Ada' }))
+    const prompt = r.send(request('prompt', 'q', 'd'))
+    await flush()
+    expect(prompt.value).toBe('Ada')
+    expect(r.ask.mock.calls[0]?.[1]).toMatchObject({ kind: 'page-prompt', input: { initial: 'd' } })
+
+    const frame = r.send(request('prompt'), FRAME)
+    expect(frame).toEqual({ value: null, replied: true })
+    expect(r.ask).toHaveBeenCalledTimes(1)
+  })
+
+  it('takes no alert or confirm from the preload channel: those are Electron\'s event only', () => {
+    const r = rig()
+    expect(r.send(request('alert'))).toEqual({ value: undefined, replied: true })
+    expect(r.send(request('confirm'))).toEqual({ value: false, replied: true })
+    expect(r.ask).not.toHaveBeenCalled()
   })
 
   it('says it is a frame inside the page that speaks, with the frame\'s own origin', async () => {
     const r = rig(() => ({ response: 0, checkboxChecked: false }))
-    r.send(request('alert'), FRAME)
-    r.send(request('alert'), OPAQUE)
+    r.run('alert', 'hello', FRAME)
+    r.run('alert', 'hello', OPAQUE)
     await flush()
     expect(r.ask.mock.calls[0]?.[1]).toMatchObject({ origin: 'An embedded page on https://ads.example' })
     expect(r.ask.mock.calls[1]?.[1]).toMatchObject({ origin: 'An embedded page' })
@@ -148,31 +234,34 @@ describe('answering a page that waits', () => {
 
   it('answers a call it cannot read at once, so the page never waits on nothing', () => {
     const r = rig()
-    expect(r.send({ type: 'alert' })).toEqual({ value: undefined, replied: true })
-    expect(r.send(request('alert'), null)).toEqual({ value: undefined, replied: true })
+    expect(r.send({ type: 'prompt' })).toEqual({ value: undefined, replied: true })
+    expect(r.send(request('prompt'), null)).toEqual({ value: null, replied: true })
+    expect(r.run('confirm', 'x', null)).toEqual({ value: false, replied: true })
     expect(r.ask).not.toHaveBeenCalled()
   })
 
   it('asks nothing for a view that is parked or being replaced', () => {
     const r = rig()
     r.shown.value = false
-    expect(r.send(request('confirm'))).toEqual({ value: false, replied: true })
+    expect(r.run('confirm')).toEqual({ value: false, replied: true })
     expect(r.send(request('prompt'))).toEqual({ value: null, replied: true })
     expect(r.ask).not.toHaveBeenCalled()
   })
 
   it('replies the default when the question could not be asked', async () => {
     const r = rig(() => { throw new Error('no window') })
-    const confirm = r.send(request('confirm'))
+    const confirm = r.run('confirm')
     await flush()
     expect(confirm).toEqual({ value: false, replied: true })
   })
 
   it('does not throw when the page is already gone by the time it is answered', async () => {
     const r = rig(() => ({ response: 0, checkboxChecked: false }))
+    const gone = (): void => { throw new Error('Object has been destroyed') }
+    expect(() => { r.wc.emit('-run-dialog', { frame: MAIN, dialogType: 'alert', messageText: 'x' }, gone) }).not.toThrow()
     const handler = r.wc.ipc.on.mock.calls[0]?.[1] as (event: unknown, raw: unknown) => void
-    const gone = { senderFrame: MAIN, set returnValue (_value: unknown) { throw new Error('Object has been destroyed') } }
-    expect(() => { handler(gone, request('alert')) }).not.toThrow()
+    const dead = { senderFrame: MAIN, set returnValue (_value: unknown) { throw new Error('Object has been destroyed') } }
+    expect(() => { handler(dead, request('prompt')) }).not.toThrow()
     await flush()
   })
 })
@@ -180,7 +269,7 @@ describe('answering a page that waits', () => {
 describe('a page that leaves while it waits', () => {
   it('is answered the default when its main frame navigates, and stops counting as waiting', async () => {
     const r = rig()
-    const confirm = r.send(request('confirm'))
+    const confirm = r.run('confirm')
     expect(hasPendingPageDialog(r.wc as unknown as WebContents)).toBe(true)
 
     r.wc.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
@@ -190,40 +279,52 @@ describe('a page that leaves while it waits', () => {
     expect(hasPendingPageDialog(r.wc as unknown as WebContents)).toBe(false)
   })
 
+  it('closes its panels, and sends no answer, when Electron cancels its dialogs: Chromium has dropped the calls', async () => {
+    const r = rig()
+    const confirm = r.run('confirm')
+    const prompt = r.send(request('prompt'))
+    r.wc.emit('-cancel-dialogs')
+    await flush()
+    expect(confirm.replied).toBe(false)
+    expect(prompt.replied).toBe(false)
+    expect(hasPendingPageDialog(r.wc as unknown as WebContents)).toBe(false)
+  })
+
   it('keeps asking through a same-document change or a frame\'s own navigation', () => {
     const r = rig()
-    const confirm = r.send(request('confirm'))
+    const confirm = r.run('confirm')
     r.wc.emit('did-start-navigation', { isMainFrame: true, isSameDocument: true })
     r.wc.emit('did-start-navigation', { isMainFrame: false, isSameDocument: false })
     expect(confirm.replied).toBe(false)
     expect(hasPendingPageDialog(r.wc as unknown as WebContents)).toBe(true)
   })
 
-  it('is answered when the page process dies or the tab is destroyed', async () => {
+  it('closes its panels, and sends no answer to a renderer that is gone, when the page process dies or the tab is destroyed', async () => {
     const r = rig()
     const first = r.send(request('prompt'))
     r.wc.emit('render-process-gone')
-    const second = r.send(request('confirm'))
+    const second = r.run('confirm')
     r.wc.emit('destroyed')
     await flush()
-    expect(first).toEqual({ value: null, replied: true })
-    expect(second).toEqual({ value: false, replied: true })
+    expect(first.replied).toBe(false)
+    expect(second.replied).toBe(false)
+    expect(hasPendingPageDialog(r.wc as unknown as WebContents)).toBe(false)
   })
 })
 
 describe('a frame that leaves while its dialog is open', () => {
-  it('ends the dialog when the frame is removed, and keeps it while the frame is there', async () => {
+  it('ends the panel, with no answer sent to the gone frame, when the frame is removed, and keeps it while the frame is there', async () => {
     vi.useFakeTimers()
     try {
       const frame = { origin: 'https://ads.example', parent: MAIN, detached: false }
       const r = rig()
-      const confirm = r.send(request('confirm'), frame)
+      const confirm = r.run('confirm', 'hello', frame)
       await vi.advanceTimersByTimeAsync(600)
       expect(confirm.replied).toBe(false)
 
       frame.detached = true
       await vi.advanceTimersByTimeAsync(300)
-      expect(confirm).toEqual({ value: false, replied: true })
+      expect(confirm.replied).toBe(false)
       expect(hasPendingPageDialog(r.wc as unknown as WebContents)).toBe(false)
     } finally {
       vi.useRealTimers()
@@ -235,9 +336,10 @@ describe('a frame that leaves while its dialog is open', () => {
     try {
       const frame = { origin: 'https://ads.example', parent: MAIN, get detached (): boolean { throw new Error('Render frame was disposed') } }
       const r = rig()
-      const alert = r.send(request('alert'), frame as never)
+      const alert = r.run('alert', 'hello', frame as never)
       await vi.advanceTimersByTimeAsync(300)
-      expect(alert.replied).toBe(true)
+      expect(alert.replied).toBe(false)
+      expect(hasPendingPageDialog(r.wc as unknown as WebContents)).toBe(false)
     } finally {
       vi.useRealTimers()
     }
@@ -247,7 +349,7 @@ describe('a frame that leaves while its dialog is open', () => {
     vi.useFakeTimers()
     try {
       const r = rig()
-      const confirm = r.send(request('confirm'))
+      const confirm = r.run('confirm')
       await vi.advanceTimersByTimeAsync(2000)
       expect(confirm.replied).toBe(false)
     } finally {
@@ -264,7 +366,7 @@ describe('a renderer shared by two tabs', () => {
     b.wc.getOSProcessId = a.wc.getOSProcessId
     expect(hasPendingPageDialog(b.wc as unknown as WebContents)).toBe(false)
 
-    a.send(request('confirm'))
+    a.run('confirm')
     expect(hasPendingPageDialog(a.wc as unknown as WebContents)).toBe(true)
     expect(hasPendingPageDialog(b.wc as unknown as WebContents)).toBe(true)
     expect(hasPendingPageDialog(other.wc as unknown as WebContents)).toBe(false)
@@ -277,21 +379,21 @@ describe('a renderer shared by two tabs', () => {
 describe('a page that will not stop', () => {
   it('offers to stop after two dialogs, and then answers the rest at once until the next page', async () => {
     const r = rig((spec) => ({ response: 0, checkboxChecked: spec.checkboxLabel !== undefined }))
-    r.send(request('alert'))
-    r.send(request('alert'))
+    r.run('alert')
+    r.run('alert')
     await flush()
     expect(r.ask.mock.calls[1]?.[1].checkboxLabel).toBeUndefined()
 
-    r.send(request('alert'))
+    r.run('alert')
     await flush()
     expect(r.ask.mock.calls[2]?.[1].checkboxLabel).toMatch(/more dialogs/)
 
-    const quiet = r.send(request('confirm'))
+    const quiet = r.run('confirm')
     expect(quiet).toEqual({ value: false, replied: true })
     expect(r.ask).toHaveBeenCalledTimes(3)
 
     r.wc.emit('did-navigate')
-    r.send(request('alert'))
+    r.run('alert')
     await flush()
     expect(r.ask).toHaveBeenCalledTimes(4)
     expect(r.ask.mock.calls[3]?.[1].checkboxLabel).toBeUndefined()
@@ -299,7 +401,7 @@ describe('a page that will not stop', () => {
 
   it('keeps asking when the box is left unticked', async () => {
     const r = rig(() => ({ response: 0, checkboxChecked: false }))
-    for (let i = 0; i < 5; i++) r.send(request('alert'))
+    for (let i = 0; i < 5; i++) r.run('alert')
     await flush()
     expect(r.ask).toHaveBeenCalledTimes(5)
   })

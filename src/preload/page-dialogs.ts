@@ -1,35 +1,44 @@
-// A page's `alert`, `confirm` and `prompt`, asked in the browser's own panel
-// instead of Electron's native box. Runs in every frame of a tab, which is why
-// it is the only thing a subframe's preload does (./frame.ts). The page's call
-// stays synchronous: the wrapper blocks on a send main answers once the
-// person has, and a Proxy over the native function keeps `toString`, `name`
-// and the property's descriptor as the page expects them.
+// A page's `prompt`, asked in the browser's own panel instead of failing.
+// Electron's renderer throws for `prompt`, and the event it raises for
+// `alert` and `confirm` is never raised for it, so this is the one dialog
+// that has to be caught in the page (the other two reach main through
+// Electron's own dialog event: src/main/shell/page-dialogs.ts). The page's
+// call stays synchronous: the wrapper blocks on a send main answers once the
+// person has, and a Proxy over the page's function keeps `toString`, `name`
+// and the property's descriptor as the page expects them. Runs where a tab's
+// preload runs, which is the top frame.
 import { contextBridge, ipcRenderer } from 'electron'
 import { PAGE_DIALOG_CHANNEL } from '../main/channels.js'
-import { sandboxedWithoutModals } from './dialog-gates.js'
 
-type DialogType = 'alert' | 'confirm' | 'prompt'
+/**
+ * Chromium refuses a dialog to a document sandboxed without `allow-modals` before it tells the browser; a
+ * wrapper in front of that check repeats the part it can see. A top-level http(s) document with an opaque
+ * origin is one sandboxed without `allow-same-origin` (the sandbox flags themselves are not readable), and
+ * it loses its prompt even where `allow-modals` was given: the cautious side.
+ */
+function sandboxed (): boolean {
+  return window.origin === 'null' && /^https?:$/.test(location.protocol)
+}
 
-/** Asks main and returns what the page's own function returns: nothing, a boolean, a string or null. A reply that is not the expected shape is a refusal. */
-function ask (type: DialogType, message: string, defaultText: string): unknown {
+/** Asks main and returns what the page's own `prompt` returns: the typed text, or null. A reply that is not a string is a refusal. */
+function ask (message: string, defaultText: string): string | null {
   let reply: unknown
   try {
-    // Chromium's own refusal (./dialog-gates.ts) comes first: a dialog it would have ignored is never asked.
-    reply = sandboxedWithoutModals() ? undefined : ipcRenderer.sendSync(PAGE_DIALOG_CHANNEL, { type, message, defaultText })
+    reply = sandboxed() ? null : ipcRenderer.sendSync(PAGE_DIALOG_CHANNEL, { type: 'prompt', message, defaultText })
   } catch {
-    reply = undefined
+    reply = null
   }
-  if (type === 'confirm') return reply === true
-  if (type === 'prompt') return typeof reply === 'string' ? reply : null
-  return undefined
+  return typeof reply === 'string' ? reply : null
 }
 
 /** Runs in the page's main world through contextBridge.executeInMainWorld, so it closes over nothing from this module. */
-function wrapDialogs (askMain: (type: string, message: string, defaultText: string) => unknown): void {
+function wrapPrompt (askMain: (message: string, defaultText: string) => string | null): void {
   const text = (value: unknown): string => {
     try { return String(value) } catch { return '' }
   }
-  /** Chromium ignores a dialog raised while the page is being left; the event being handled says so (./dialog-gates.ts). */
+  // Chromium ignores a dialog raised while the page is being left, so that a page cannot put its own words in
+  // front of someone who is leaving; the event being handled says so. No listener of ours is registered for it:
+  // one would make every page one that has a handler, and every navigation of it wait for its renderer.
   const leaving = (): boolean => {
     try {
       const type = (window as unknown as { event?: { type?: unknown } }).event?.type
@@ -39,23 +48,21 @@ function wrapDialogs (askMain: (type: string, message: string, defaultText: stri
     }
   }
   const page = window as unknown as Record<string, unknown>
-  for (const name of ['alert', 'confirm', 'prompt']) {
-    const native = page[name]
-    if (typeof native !== 'function') continue
-    page[name] = new Proxy(native, {
-      apply: (_target, _self, args: unknown[]) => leaving() ? (name === 'confirm' ? false : name === 'prompt' ? null : undefined) : askMain(name, args.length > 0 ? text(args[0]) : '', name === 'prompt' && args.length > 1 ? text(args[1]) : '')
-    })
-  }
+  const native = page.prompt
+  if (typeof native !== 'function') return
+  page.prompt = new Proxy(native, {
+    apply: (_target, _self, args: unknown[]) => leaving() ? null : askMain(args.length > 0 ? text(args[0]) : '', args.length > 1 ? text(args[1]) : '')
+  })
 }
 
-/** Fail-open like the other main-world installers: `executeInMainWorld` is `@experimental`, and the tab's `disableDialogs` setting answers a page's dialog at once if the wrapper is missing. */
+/** Fail-open like the other main-world installers: `executeInMainWorld` is `@experimental`, and without the wrapper the page's `prompt` throws as Electron's does. */
 export function installPageDialogs (): void {
   try {
     contextBridge.executeInMainWorld({
-      func: wrapDialogs,
-      args: [(type: string, message: string, defaultText: string) => ask(type as DialogType, message, defaultText)]
+      func: wrapPrompt,
+      args: [(message: string, defaultText: string) => ask(message, defaultText)]
     })
   } catch (error) {
-    console.error('[orivon] page dialogs not wrapped', error)
+    console.error('[orivon] page prompt not wrapped', error)
   }
 }

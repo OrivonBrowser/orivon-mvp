@@ -9,16 +9,12 @@ import { asPage } from './main-world-socket.test-helpers.js'
 
 const invoke = vi.fn()
 const on = vi.fn()
-let capturedPort: ((event: { ports: unknown[] }, payload: unknown) => void) | undefined
 let executeInMainWorld: ReturnType<typeof vi.fn> | undefined
 
 vi.mock('electron', () => ({
   ipcRenderer: {
     invoke: (...args: unknown[]) => invoke(...args),
-    on: (...args: unknown[]) => {
-      if (args[0] === 'orivon:port') capturedPort = args[1] as typeof capturedPort
-      return on(...args)
-    },
+    on: (...args: unknown[]) => on(...args),
     sendSync: vi.fn()
   },
   contextBridge: {
@@ -30,8 +26,9 @@ vi.mock('electron', () => ({
 
 const { exposeOrivon } = await import('../orivon.js')
 
-// Registered once, at the first net call (socket-bridge.ts) -- kept by the mocked `on` above, so no reset loses it.
-const portListener = (event: { ports: unknown[] }, payload: unknown): void => { capturedPort?.(event, payload) }
+// Registered once, at module load (socket-bridge.ts) -- captured before any reset.
+const portListener = on.mock.calls.find(([channel]) => channel === 'orivon:port')?.[1] as
+  ((event: { ports: unknown[] }, payload: unknown) => void) | undefined
 
 function installViaFakeMainWorld (): Record<string, unknown> {
   const target: Record<string, unknown> = {}

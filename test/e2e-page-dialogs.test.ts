@@ -2,8 +2,9 @@
 // question panel of the page's tab, headed with who is speaking (a frame inside the page by its own origin), and the
 // page's script waits exactly as it would for a native box. The clicks are real: a page that holds the renderer is
 // driven by a click that has not returned yet, so each click is started, answered through the panel, then awaited.
-// Electron's native box cannot be observed from here, so what proves it never opens is the page's own outcome: a
-// frame the preload never reached (a blank one) is answered at once, a script is released when its tab navigates away.
+// Electron's native box is replaced by the shell's handler for Electron's own dialog event, so what proves it never
+// opens is the stub on dialog.showMessageBox plus the page's own outcome: a script is released when its tab navigates
+// away, and a call Chromium refuses (a sandbox without allow-modals, a page being left) never reaches the panel.
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { afterAll, expect, it } from 'vitest'
@@ -44,7 +45,7 @@ const mainPage = (frameOrigin: string): string => `<!doctype html><title>Dialogs
 <iframe name="same" src="/frame"></iframe>
 <iframe name="sandboxed" sandbox="allow-scripts" src="${frameOrigin}/frame"></iframe>
 <button id="ask-sandboxed" onclick="window.frameAnswer = undefined; frames.sandboxed.postMessage('ask', '*')">ask sandboxed</button>
-<button id="dismissal" onclick="onbeforeunload = function () { confirm('Call this number now') }; onpagehide = function () { alert('Your PC is infected') }">dismissal dialogs</button>
+<button id="dismissal" onclick="onbeforeunload = function () { confirm('Call this number now') }; onpagehide = function () { alert('Your PC is infected'); prompt('Enter your password') }">dismissal dialogs</button>
 <script>addEventListener('message', function (e) { if (typeof e.data === 'string' && e.data.indexOf('answered:') === 0) window.frameAnswer = e.data })</script>
 </body>`
 
@@ -145,7 +146,7 @@ it('asks a page\'s alert, confirm and prompt in the panel, headed with the page\
   }
 }, E2E_TIMEOUT_MS)
 
-it('speaks for a frame by its own origin, answers a frame nothing reached at once, and releases a script whose tab navigates away', async () => {
+it('speaks for a frame by its own origin, asks a frame the page made itself, and releases a script whose tab navigates away', async () => {
   const { origin, frameOrigin } = await serve()
   const { app, chrome } = await launchShell()
   try {
@@ -162,11 +163,13 @@ it('speaks for a frame by its own origin, answers a frame nothing reached at onc
     await asking
     expect(await waitFor(async () => await read<string | undefined>(view, 'frameAnswer') === 'answered:true')).toBe(true)
 
-    // A blank frame the page makes is reached by no preload: its confirm is answered no, at once, with no panel.
-    await view.click('#blank')
-    expect(await read<boolean>(view, 'blank')).toBe(false)
-    await delay(ABSENCE_SETTLE_MS)
-    expect(await questionGone(app)).toBe(true)
+    // A blank frame the page makes has no document of its own: its confirm is asked, and the page reads the answer.
+    const blanking = view.click('#blank')
+    const blankPanel = await waitQuestionSaying(app, 'blank')
+    expect((await readQuestion(blankPanel)).origin).toMatch(/^An embedded page/)
+    await answerQuestion(app, 'OK')
+    await blanking
+    expect(await read<boolean>(view, 'blank')).toBe(true)
 
     // A question for a tab that is not in front waits for it.
     await view.click('#later')
@@ -238,7 +241,7 @@ const exposure = (): Record<string, unknown> => ({
   fetchIsNative: /\[native code\]/.test(Function.prototype.toString.call(fetch))
 })
 
-it('gives a frame nothing but its dialogs, and honours what Chromium refuses a page: a sandbox, and the page being left', async () => {
+it('gives a frame no preload, and honours what Chromium refuses a page: a sandbox, and the page being left', async () => {
   const { origin, frameOrigin } = await serve()
   const { app, chrome } = await launchShell()
   try {
@@ -248,7 +251,7 @@ it('gives a frame nothing but its dialogs, and honours what Chromium refuses a p
     await view.waitForSelector('iframe[name=sandboxed]')
     await waitFor(() => view.frames().filter((frame) => frame.name() !== '').length >= 2)
 
-    // The top frame has the surface; no frame has more than the dialog wrapper (src/preload/frame.ts).
+    // The top frame has the surface; no frame has any of it, because a tab's preload runs in the top frame only.
     expect(await view.evaluate(exposure)).toEqual({ orivon: 'object', process: 'undefined', buffer: 'undefined', fetchIsNative: true })
     const same = view.frames().find((frame) => frame.name() === 'same')
     expect(same).toBeDefined()
@@ -257,7 +260,7 @@ it('gives a frame nothing but its dialogs, and honours what Chromium refuses a p
     expect(cross).toBeDefined()
     expect(await cross?.evaluate(exposure)).toEqual({ orivon: 'undefined', process: 'undefined', buffer: 'undefined', fetchIsNative: true })
 
-    // A document sandboxed without allow-modals has its dialogs ignored, as in Chromium: answered no, no panel.
+    // A document sandboxed without allow-modals has its dialogs ignored by Chromium itself: answered no, no panel.
     await view.click('#ask-sandboxed')
     expect(await waitFor(async () => await read<string | undefined>(view, 'frameAnswer') === 'answered:false')).toBe(true)
     await delay(ABSENCE_SETTLE_MS)

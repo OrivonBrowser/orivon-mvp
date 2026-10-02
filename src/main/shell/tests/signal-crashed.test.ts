@@ -46,13 +46,13 @@ beforeEach(() => { vi.mocked(syncSadTab).mockClear() })
 
 describe('the crashed signal -- a page blocked on its own dialog', () => {
   const blockOnDialog = (wc: Rig['wc']): void => {
-    const ipc = { on: vi.fn() }
-    Object.assign(wc, { ipc, mainFrame: {} })
+    const mainFrame = { origin: 'https://page.example', detached: false }
+    Object.assign(wc, { ipc: { on: vi.fn() }, mainFrame })
+    wc.on('-run-dialog', () => {})
     const waiting = (_target: unknown, spec: { cancelId: number }, options?: { signal?: AbortSignal }): Promise<unknown> =>
       new Promise((resolve) => { options?.signal?.addEventListener('abort', () => { resolve({ response: spec.cancelId, checkboxChecked: false }) }) })
     watchPageDialogs(wc as never, () => true, waiting as never)
-    const handler = ipc.on.mock.calls[0]?.[1] as (event: unknown, raw: unknown) => void
-    handler({ senderFrame: (wc as unknown as { mainFrame: object }).mainFrame, returnValue: undefined }, { type: 'confirm', message: 'wait', defaultText: '' })
+    wc.emit('-run-dialog', { frame: mainFrame, dialogType: 'confirm', messageText: 'wait', defaultPromptText: '' }, () => {})
   }
 
   it('is waiting for the person, not hung: its silence marks nothing', () => {

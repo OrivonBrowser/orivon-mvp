@@ -382,6 +382,8 @@ it(
         check('the shown page stays where it was', stayed === `${SITE_ORIGIN}/`, String(stayed))
 
         // ---- a dialog of the shown page is asked in the app's own tab, with the shown page's origin, and never in a native box.
+        // The debugger reports every dialog a page raises, and Playwright dismisses one nobody listens for: the shown page's would be answered no before the person could answer it.
+        for (const page of app.context().pages()) page.on('dialog', () => {})
         await clickGuest(app, guestId, rowMiddle('ask'))
         const panel = await waitQuestion(app)
         const spoken = await readQuestion(panel)

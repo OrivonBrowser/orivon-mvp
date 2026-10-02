@@ -19,7 +19,7 @@ says the embedding app itself holds a listener on that port; the guard resolves 
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`broker-contracts.ts`
 types, `policy/embed-origin.ts`'s document gate, `policy/address.ts`'s address classes, `policy/origin.ts`, `grants/origin-hash.ts`);
 [`../dev/dev-mode.ts`](../dev/dev-mode.ts) (DevTools in a guest, developer mode only);
-[`../shell/page-dialogs.ts`](../shell/page-dialogs.ts) (a shown page's `alert`, `confirm` and `prompt`, asked in the app's own tab with the shown page's origin; the guest's `disableDialogs` answers a frame the preload does not reach);
+[`../shell/page-dialogs.ts`](../shell/page-dialogs.ts) (a shown page's `alert`, `confirm` and `prompt`, asked in the app's own tab with the shown page's origin, from Electron's own dialog event on the guest);
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts) (which hostnames route to the
 verifier) and [`../verifier/partition.ts`](../verifier/partition.ts) (the same partition-stamp
 rule the default session applies, reused rather than copied -- it imports nothing itself, so

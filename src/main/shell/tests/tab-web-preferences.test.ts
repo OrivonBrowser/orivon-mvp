@@ -10,16 +10,15 @@ describe('every tab\'s webPreferences', () => {
     expect(prefs).toMatchObject({ contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true })
   })
 
-  it('runs the preload in the page\'s frames so a frame\'s own dialog reaches the panel', () => {
-    expect(prefs.nodeIntegrationInSubFrames).toBe(true)
-  })
-
-  it('answers at once a dialog the wrapper never reaches, so no native box is ever drawn', () => {
-    expect(prefs.disableDialogs).toBe(true)
+  it('runs the preload in the top frame only, and leaves a page\'s dialogs to Electron\'s dialog event', () => {
+    expect(prefs.nodeIntegrationInSubFrames).toBeUndefined()
+    expect(prefs.disableDialogs).toBeUndefined()
   })
 
   it('is the same for a popup\'s own and an app\'s tab', () => {
     const app = tabWebPreferences('/preload/app.js', 'persist:x', ['--orivon-app-tab'])
-    expect(app).toMatchObject({ nodeIntegrationInSubFrames: true, disableDialogs: true, sandbox: true, nodeIntegration: false })
+    expect(app).toMatchObject({ sandbox: true, nodeIntegration: false })
+    expect(app.nodeIntegrationInSubFrames).toBeUndefined()
+    expect(app.disableDialogs).toBeUndefined()
   })
 })

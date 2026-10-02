@@ -7,8 +7,8 @@
 // as it does in Firefox. Each document is a fresh realm: nothing needs
 // restoring when the tab leaves the host.
 //
-// Runs in the top frame only (./ordinary-tab.ts is gated on ./frame.ts's
-// inMainFrame()), so a sign-in page embedded in another site's iframe keeps the property.
+// Runs in the main frame only (a tab's preload does not reach subframes), so
+// a sign-in page embedded in another site's iframe keeps the property.
 
 import { contextBridge } from 'electron'
 

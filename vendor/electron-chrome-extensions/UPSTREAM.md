@@ -771,11 +771,6 @@
     `commandMap` and `getAll` stay in place and are unused by Orivon. Reason: the library
     registered commands but never fired one, and Orivon's shortcut dispatcher is what notices the
     key press.
-61. **Only a top frame or a worker gets `chrome.*`.** `src/preload.ts`: injection also requires
-    `process.type === 'service-worker'` or `process.isMainFrame === true`. Reason: Orivon's tabs run
-    their preloads in subframes (`nodeIntegrationInSubFrames`, for a frame's own page dialogs), which
-    makes this session-wide `frame` preload run in every iframe; without the check a
-    `chrome-extension:` page a site embeds would get the extension API and its IPC.
 
 `partition.ts` is reached only through the virtual specifier `src/main/extensions/
 electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and

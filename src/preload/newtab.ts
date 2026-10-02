@@ -30,7 +30,7 @@ import { installPageDialogs } from './page-dialogs.js'
 const ARG_PREFIX = '--orivon-newtab-url='
 const expectedUrl = process.argv.find((arg) => arg.startsWith(ARG_PREFIX))?.slice(ARG_PREFIX.length)
 
-// A subframe of the tab runs this preload too (./frame.ts) and gets only the page-dialog wrapper.
+// The page's `prompt` is asked in the browser's panel (./page-dialogs.ts).
 installPageDialogs()
 
 const topFrame = inMainFrame()

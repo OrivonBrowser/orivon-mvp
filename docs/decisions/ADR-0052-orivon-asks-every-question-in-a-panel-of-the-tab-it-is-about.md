@@ -36,46 +36,50 @@ The panel is safe to trust because of rules main enforces and the page of the pa
 
 A page's own questions go through the same panel, and the mechanism is part of this decision:
 
-- **A page's `alert`, `confirm` and `prompt` are asked in the panel.** The tab's preload wraps the three
-  functions (a `Proxy` over the native ones, so `toString`, `name` and the property's descriptor read as the
-  page expects) and blocks on a synchronous send; main sets the reply when the person has answered, which
-  Electron allows to come later (`src/preload/page-dialogs.ts`, `src/main/shell/page-dialogs.ts`). The
-  panel is headed with the frame's own origin, read in main from the committed frame and never from the page:
-  "<origin> says", and "An embedded page on <origin> says" for a frame inside the page. It offers OK and
-  Cancel only, in a style a grant never has, and the text is cleaned and cut like any page text. Every path
-  out replies: a navigation of the tab, a closed tab or window, a crashed page and a refused call each give
-  the page what a dismissed dialog gives. After a document's second dialog the next one offers "Do not let
-  this page show more dialogs", and once ticked the rest are answered at once until the next page.
-- **A tab's preloads run in its subframes and give them only that wrapper.** This is what lets a frame's
-  own dialog reach the panel under its own origin. Every tab preload asks `src/preload/frame.ts` first, and a
-  subframe installs no `window.orivon`, no routed network and nothing else; a preload that cannot tell which
-  frame it is in counts as a subframe. The tab's `disableDialogs` answers at once a dialog in a frame the
-  preload never reached (a frame created blank), so Electron's native box is never drawn for a tab. The
-  session-wide `frame` preloads run in those subframes too: the web-store preload already answers only in
-  its page's top frame, and the extension preload does the same by a vendor patch (`vendor/electron-chrome-
-  extensions/UPSTREAM.md` patch 61), so a `chrome-extension:` page that a site embeds gets no `chrome.*` and
-  no extension IPC. A subframe's preload also evaluates the tab's whole bundle, so the socket bridge listens
-  only from a page's first network call on (`src/preload/surface/net.ts`) and a frame that never opens a
-  socket registers no IPC listener.
-- **The wrapper repeats the two refusals Chromium makes before a dialog reaches the browser.** The wrapper
-  takes the call first, so the checks Chromium made are made again (`src/preload/dialog-gates.ts`). A call
-  raised while the page is being left (the event being handled is `beforeunload`, `pagehide` or `unload`)
-  is answered as dismissed, so a page cannot put its words in front of someone who is leaving. A document
-  sandboxed without `allow-modals` gets no dialog: an opaque origin, which a sandbox without
-  `allow-same-origin` gives, and a `sandbox` attribute without `allow-modals` on the frame element of any
-  same-origin ancestor. A preload cannot read a frame's sandbox flags, so two cases are not told apart:
-  a sandboxed frame that does have `allow-modals` and an opaque origin loses its dialog (the cautious side),
-  and a sandbox that keeps `allow-same-origin`, drops `allow-modals` and sits under a cross-origin parent
-  still gets its dialog. A page that dispatches an event of its own around the call hides the
-  `beforeunload` event from the check. These gaps are *provisional*: a way to read the document's sandbox
-  flags in Electron 44, or a dialog-requested event on `webContents`, would close them. A preload that
-  listened for `beforeunload` itself would close the last one but makes every page one that has such a
-  handler, and every navigation of it then waits on its renderer: measured, a page held on its own dialog
-  could not be navigated away from. The check therefore reads `window.event` at the call.
-- **A page an app shows in a `<webview>` is asked the same way.** The guest's `disableDialogs` is on, its
-  preload installs the wrapper in the guest's top frame, and the question is asked in the app's own tab,
-  headed with the shown page's origin (`src/main/embed/embed-host.ts`). A native box is never drawn for a
-  guest either.
+- **A page's `alert`, `confirm` and `prompt` are asked in the panel.** `alert` and `confirm` come from
+  Electron's own dialog event: Electron's `webContents` handles them in a listener on its internal
+  `-run-dialog` event (info with the asking `frame`, the type, the text and the default text, and a
+  callback of an answer and an input), which draws a native box. The shell removes that one listener from
+  each tab and installs its own, so the page stays blocked until the person has answered and the callback
+  then releases it (`src/main/shell/page-dialogs.ts`). `prompt` never reaches that event, because Electron's
+  renderer throws for it, so the tab's preload wraps it alone (a `Proxy` over the page's function, so
+  `toString`, `name` and the descriptor read as the page expects) and blocks on a synchronous send that main
+  answers once the person has, which Electron allows to come later (`src/preload/page-dialogs.ts`). The
+  panel is headed with the asking frame's own origin, read in main from the committed frame and never from
+  the page: "<origin> says", and "An embedded page on <origin> says" for a frame inside the page. It offers
+  OK and Cancel only, in a style a grant never has, and the text is cleaned and cut like any page text. Every
+  path out replies: a navigation of the tab, a closed tab or window, a crashed page, Electron's own
+  `-cancel-dialogs` and a refused call each give the page what a dismissed dialog gives. After a document's
+  second dialog the next one offers "Do not let this page show more dialogs", and once ticked the rest are
+  answered at once until the next page.
+- **Chromium decides first, and the shell takes what is left.** Chromium makes its own checks before the
+  event is raised: a document sandboxed without `allow-modals` (measured for a sandboxed frame) gets no
+  dialog, and a call made while the page is being left (`beforeunload`, `pagehide`,
+  `unload`) is ignored, so a page cannot put its words in front of someone leaving. Measured on Electron 44,
+  neither reaches the handler, so neither needs a copy of the check in the shell. A frame's dialog arrives
+  with that frame's own origin, so a cross-origin frame is spoken for by itself, and a tab's preload runs in
+  the top frame only (`nodeIntegrationInSubFrames` stays off, and so do `disableDialogs` and `safeDialogs`).
+- **The shell relies on an internal Electron event, and says what happens when it moves.** `-run-dialog` is
+  not in Electron's typings. The shell takes it over only when exactly one listener is present on the tab
+  (the shape measured on 44); with any other count it logs once and leaves Electron's own handling, which
+  shows a native box for `alert` and `confirm`. A unit test pins the shape of the event with a fake emitter
+  and an end-to-end spec drives the real one, so an Electron upgrade that changes it fails there. This is
+  *provisional*: a public dialog-requested event on `webContents` would replace it.
+- **`prompt` repeats the two refusals itself, because it is the one call the preload takes before Chromium
+  decides.** A call raised while the page is being left (the event being handled, read from `window.event`,
+  is `beforeunload`, `pagehide` or `unload`) is answered as dismissed. A top-level http(s) document with an
+  opaque origin, which is what a sandbox without `allow-same-origin` gives, gets no prompt either; a
+  sandbox that has `allow-modals` with an opaque origin loses its prompt (the cautious side), and a sandbox
+  that keeps `allow-same-origin` and drops `allow-modals` still gets its prompt, because a preload cannot
+  read the sandbox flags. A page that dispatches an event of its own around the call hides the leaving
+  event. A listener of the preload's own for `beforeunload` would close that gap but makes every page one
+  that has such a handler, and every navigation of it then waits on its renderer (measured: a page held on
+  its own dialog could not be navigated away from), so the check reads `window.event` at the call. A
+  subframe keeps Electron's behaviour: its `prompt` throws, because no preload runs there.
+- **A page an app shows in a `<webview>` is asked the same way.** The guest gets the same handler on its
+  `-run-dialog` event, its preload installs the `prompt` wrapper in the guest's top frame, and the question
+  is asked in the app's own tab, headed with the shown page's origin (`src/main/embed/embed-host.ts`). A
+  native box is never drawn for a guest either.
 - **A page that is blocked on its own dialog is not reported as unresponsive.** The renderer cannot
   answer input while it waits, and the browser would otherwise offer the person the sad-tab card for a page
   that is waiting on them.
@@ -88,7 +92,9 @@ A page's own questions go through the same panel, and the mechanism is part of t
   the next document begins.
 - **A dialog ends with its frame.** A cross-origin frame lives in a process of its own, so its parent can
   remove it while its dialog is open; the panel is looked at every quarter second while one is up for a
-  subframe and closes when the frame is gone.
+  subframe and closes when the frame is gone. A dialog whose frame or renderer is gone, or that Electron
+  cancels, is closed and gets no answer: calling Electron's callback for a frame that no longer exists took
+  the browser process down (measured), and nothing is waiting on it.
 
 A native box remains for the OS file and folder pickers, which are not questions, and for a failure
 before any window exists. `npm run check:native-dialogs` fails the build on a message box anywhere else.
@@ -111,11 +117,14 @@ dialog; it now names the file that asks through the panel.
   thing, and nothing about it would say which is which.
 - **Electron's native dialog for a page's own `alert` and `confirm`, with `prompt()` returning null.** No
   work, and a page's dialog is then the one question the browser cannot place, withdraw or tell from a
-  look-alike. Electron offers no hook to supply a prompt, and the private `-run-dialog` event in its binary
-  is not an interface.
-- **The tab's `safeDialogs` or `disableDialogs` alone.** Both are settings of the whole tab, not of a frame,
-  so a frame cannot be given the panel while the main page keeps the native box. `disableDialogs` is kept as
-  the backstop for frames the wrapper does not reach, which answer at once as a dismissed dialog does.
+  look-alike.
+- **A preload wrapper over all three functions, in every frame.** It needs `nodeIntegrationInSubFrames`, so
+  the whole tab bundle is evaluated in every frame (the session-wide extension preloads too), and it takes
+  the call before Chromium decides whether it may show anything, so every refusal Chromium makes has to be
+  guessed again from inside the page (a sandbox's flags are not readable there). Electron's own event is
+  raised after those checks and names the asking frame.
+- **The tab's `safeDialogs` or `disableDialogs`.** Both are settings of the whole tab and answer in place of
+  the panel, so a frame cannot be given the panel through them.
 - **A separate window per question.** Keeps the isolation of a native box and adds a surface with its own
   `webPreferences` to defend, and the same problem of belonging to no tab.
 
@@ -139,11 +148,7 @@ rushing and stacking defences exist once and are tested once.
 - While a page's dialog is open its renderer is blocked, as it is behind a native box, so every tab that
   shares that renderer process waits too, and none of them is reported as unresponsive. The panel for a tab
   in the background waits for its tab.
-- `nodeIntegrationInSubFrames` is on for every tab. The tab's own preloads give a subframe nothing beyond
-  the dialog wrapper, `src/preload/tests/frame-gate.test.ts` fails a subframe that gains more, and the
-  `src/preload/tests/subframe-import-effects.test.ts` fails a subframe's preload that leaves a listener
-  behind. The editing rule that blocks the flag (`.claude/hookify.electron-webprefs.local.md`) still lists
-  it (A341).
+- A subframe's `prompt` throws, as it does in Electron; its `alert` and `confirm` are asked.
 - A person who stays on a page that asked to be kept must click its link again after choosing Leave: the
   destination of a navigation the page started is not known at the event that asks.
 - A change to `src/main/shell/question/` is reviewed as a change to the consent surface of every grant.

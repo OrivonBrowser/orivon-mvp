@@ -2,14 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { asPage } from './main-world-socket.test-helpers.js'
 
 // surface/orivon.ts imports `contextBridge`/`ipcRenderer` directly from
-// 'electron' at module scope (and registers `ipcRenderer.on(PORT_CHANNEL, ...)`
-// in socket-bridge.ts at the first net call) -- outside a
+// 'electron' at module scope (including a module-load-time
+// `ipcRenderer.on(PORT_CHANNEL, ...)` call in socket-bridge.ts) -- outside a
 // real Electron process, requiring 'electron' from plain Node returns a
 // path string, not this shape, so the module cannot even be imported
 // without mocking it first.
 const invoke = vi.fn()
 const on = vi.fn()
-let capturedPort: ((event: { ports: unknown[] }, payload: unknown) => void) | undefined
 const sendSync = vi.fn()
 let executeInMainWorld: ReturnType<typeof vi.fn> | undefined
 const exposeInMainWorld = vi.fn()
@@ -17,10 +16,7 @@ const exposeInMainWorld = vi.fn()
 vi.mock('electron', () => ({
   ipcRenderer: {
     invoke: (...args: unknown[]) => invoke(...args),
-    on: (...args: unknown[]) => {
-      if (args[0] === 'orivon:port') capturedPort = args[1] as typeof capturedPort
-      return on(...args)
-    },
+    on: (...args: unknown[]) => on(...args),
     sendSync: (...args: unknown[]) => sendSync(...args)
   },
   contextBridge: {
@@ -33,12 +29,14 @@ vi.mock('electron', () => ({
 const { exposeOrivon } = await import('../orivon.js')
 const { TIMEOUT_MS } = await import('../control-call.js')
 
-// socket-bridge.ts registers its PORT_CHANNEL listener exactly ONCE, at the
-// first net call (surface/net.ts's lazy `createSocketBridge(...)`). The mocked
-// `ipcRenderer.on` above keeps that listener, rather than searching
-// `on.mock.calls` per test: `on.mockReset()` below wipes that call history on
-// every test, but the reference captured at the first registration survives.
-const portListener = (event: { ports: unknown[] }, payload: unknown): void => { capturedPort?.(event, payload) }
+// socket-bridge.ts registers its PORT_CHANNEL listener exactly ONCE, at
+// module load (surface/orivon.ts's module-level `createSocketBridge(...)`
+// call, above) -- before any test's `beforeEach` runs. Capture it here,
+// once, rather than searching `on.mock.calls` per test: `on.mockReset()`
+// below wipes that call history on every test, but a listener reference
+// captured now survives.
+const portListener = on.mock.calls.find(([channel]) => channel === 'orivon:port')?.[1] as
+  ((event: { ports: unknown[] }, payload: unknown) => void) | undefined
 
 /**
  * Simulates a real executeInMainWorld: actually calls `installOrivon` (the

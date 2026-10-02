@@ -60,9 +60,9 @@ for its tab, a kiosk draws it centred, and only a question asked when no shell w
 `navigation-hold.ts` holds a tab's page where it is while a question about it is open (`holdNavigation`, nesting and
 released once): `tab-view.ts` drops a main-frame navigation, a redirect and a `window.open` the page starts meanwhile, so
 an answer cannot be given to a page that is no longer the one asked about. A change of address inside the document is
-not a navigation and still works. `page-dialogs.ts` answers a page's own `alert`, `confirm` and `prompt` (a tab's preloads
-wrap them in every frame and block on a send; this replies once the person has answered in the panel, or with the dismissed
-default when the tab navigates, closes or dies), and `signals/crashed.ts` does not call a page blocked on one unresponsive.
+not a navigation and still works. `page-dialogs.ts` answers a page's own `alert`, `confirm` and `prompt` (it replaces the one handler
+Electron keeps on a tab's internal dialog event for `alert` and `confirm`, and takes `prompt` from the tab's preload, which blocks on a send;
+it replies once the person has answered in the panel, or with the dismissed default when the tab navigates, closes or dies), and `signals/crashed.ts` does not call a page blocked on one unresponsive.
 `leave-page-prompt.ts` keeps a page that asks "Leave this page?" where it is while the panel asks, lets the next attempt
 through after Leave, and runs again a navigation the shell started (`tab-navigation.ts` records it). `served-address.ts` loads an `ipfs:` link at the URL its protocol serves it at, and not
 while the tab is held: a load from there is one the hold would never see.
@@ -227,5 +227,4 @@ browser presents as Firefox, which has no `navigator.userAgentData` and sends no
 headers: [`sign-in-identity-headers.ts`](sign-in-identity-headers.ts) rewrites the request headers,
 [`sign-in-identity-tab.ts`](sign-in-identity-tab.ts) swaps `navigator.userAgent`, and
 `../../preload/sign-in-identity.ts` deletes `navigator.userAgentData` at document start. The
-preload acts only from a tab's top frame (a subframe's preload gets nothing but the page-dialog wrapper), so a
-sign-in page in another site's iframe keeps it.
+preload runs in a tab's main frame only, so a sign-in page in another site's iframe keeps it.
