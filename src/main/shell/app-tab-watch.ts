@@ -13,6 +13,16 @@ export function watchAppTab (view: WebContentsView, additionalArguments: string[
   reportAppFailures(view)
 }
 
+/** An address with its query and fragment dropped: either can carry a token, and this ends up in a log. */
+function originAndPath (url: string): string {
+  try {
+    const parsed = new URL(url)
+    return parsed.origin === 'null' ? `${parsed.protocol}//${parsed.pathname}` : `${parsed.origin}${parsed.pathname}`
+  } catch {
+    return '(unreadable address)'
+  }
+}
+
 /** Prints what an app's own page cannot tell anyone: an uncaught error, a
  * preload that never ran, a dead renderer. An app whose bundle throws while
  * its module graph is still evaluating renders nothing and logs nothing the
@@ -31,7 +41,7 @@ export function watchAppTab (view: WebContentsView, additionalArguments: string[
  * function is handed. */
 function reportAppFailures (view: WebContentsView): void {
   const { webContents } = view
-  const where = (): string => webContents.isDestroyed() ? '(closed)' : webContents.getURL()
+  const where = (): string => webContents.isDestroyed() ? '(closed)' : originAndPath(webContents.getURL())
 
   webContents.on('console-message', (details) => {
     if (details.level !== 'error') return

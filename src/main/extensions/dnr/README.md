@@ -45,6 +45,17 @@ none of them Electron-specific.
 
 ## Design notes
 
+**Static rules draw on a global pool, as in Chrome.** An extension's enabled static rulesets hold
+up to `GUARANTEED_MINIMUM_STATIC_RULES` (30,000) rules on their own; rules beyond that come out
+of a pool of 300,000 shared by every extension (`GLOBAL_STATIC_RULE_POOL`, `dnr-engine.ts`),
+returned when an extension is removed. The regex rules across the enabled rulesets stay capped at
+`MAX_NUMBER_OF_REGEX_RULES`. At load (`setStaticRulesets`) the rulesets that fit, in manifest
+order, are enabled and the rest are skipped with a logged reason, so one oversized ruleset never
+costs an extension all of its rules; `updateEnabledRulesets` throws instead, and changes nothing.
+`getAvailableStaticRuleCount` is the guaranteed headroom plus the pool that is left. A ruleset
+that starts disabled is read from disk on its first enable (`DnrStaticRuleset.rules` may be a
+function), because a large extension lists dozens and parsing them all stalls the main thread.
+
 **`dnr-runner.ts`'s on-disk layout is this repository's own choice, not a Chrome-documented
 file.** `<userData>/extensions/<slot>/dnr-dynamic.json` holds the extension's dynamic rules;
 `dnr-enabled-rulesets.json`, alongside it, holds

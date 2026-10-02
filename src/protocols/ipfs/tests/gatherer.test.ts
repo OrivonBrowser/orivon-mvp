@@ -45,6 +45,16 @@ describe('the IPFS gatherer', () => {
     expect(site.ddoc()).toEqual({ status: 'met', refusals: [] })
   })
 
+  it('serves a root that is one HTML file at /, typed as HTML', async () => {
+    const single = await buildDag({ page: '<!doctype html><title>x</title>' }, { wrapWithDirectory: false })
+    expect(single.root.code).toBe(0x55)
+    const site = await gatherer(fakeGateways(single.blocks)).mount('one.eth', [onChain({ kind: 'ipfs', cid: single.root.toString() })])
+    const file = await site.open('/')
+    expect(file).toMatchObject({ servedPath: '/', contentType: 'text/html; charset=utf-8' })
+    expect(await read(site, '/')).toBe('<!doctype html><title>x</title>')
+    expect(site.ddoc()).toEqual({ status: 'met', refusals: [] })
+  })
+
   it('meets DDOC through a DNSLink too, every byte verified, and records the DNS hop among its pointers', async () => {
     const txt = { '_dnslink.app.example': `/ipfs/${dag.root.toString()}` }
     const site = await gatherer(undefined, txt).mount('uniswap.eth', [onChain({ kind: 'dnslink', domain: 'app.example' })])

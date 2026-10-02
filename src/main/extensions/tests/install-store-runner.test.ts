@@ -83,6 +83,25 @@ describe('installFromStoreCrx', () => {
     })
   })
 
+  it('records a first install as installed and a later one over it as updated, even though both carry an approved manifest', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const { session } = fakeSession()
+      const dev = makeRsaKeyPair()
+      const first = buildStoreCrx(STORE_MANIFEST, dev)
+      const fresh = await installFromStoreCrx({ userDataPath, session, prompt: ALWAYS_DENY }, first.bytes, first.id, JSON.stringify(STORE_MANIFEST), { skipPrompt: true, publisherKeyHash: first.publisherKeyHash })
+      expect(fresh.installed).toBe(true)
+      if (!fresh.installed) return
+      expect(fresh.entry.updater.kind === 'store' ? fresh.entry.updater.lastResult : undefined).toBe('installed')
+
+      const next = buildStoreCrx({ ...STORE_MANIFEST, version: '1.1.0' }, dev)
+      const update = await installFromStoreCrx({ userDataPath, session, prompt: ALWAYS_DENY }, next.bytes, first.id, JSON.stringify(STORE_MANIFEST), { skipPrompt: true, publisherKeyHash: next.publisherKeyHash })
+      expect(update.installed).toBe(true)
+      if (!update.installed) return
+      expect(update.entry.updater.kind === 'store' ? update.entry.updater.lastResult : undefined).toBe('updated')
+    })
+  })
+
   it('refuses when the CRX\'s own declared id does not match the requested id', async () => {
     await withTempDir(async (root) => {
       const userDataPath = join(root, 'userData')

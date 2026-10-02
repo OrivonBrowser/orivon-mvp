@@ -7,6 +7,7 @@ import type { ExtensionApiModule } from './api-types.js'
 import { bookmarksApi } from './bookmarks-api.js'
 import { commandsApi } from './commands-api.js'
 import { historyApi, topSitesApi } from './history-api.js'
+import { runtimeApi } from './runtime-api.js'
 import { searchApi } from './search-api.js'
 
 export const EXTENSION_APIS: readonly ExtensionApiModule[] = [
@@ -15,6 +16,7 @@ export const EXTENSION_APIS: readonly ExtensionApiModule[] = [
   commandsApi,
   historyApi,
   permissionsApi,
+  runtimeApi,
   searchApi,
   topSitesApi
 ]

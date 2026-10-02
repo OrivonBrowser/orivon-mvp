@@ -16,7 +16,7 @@ import { runPhase } from './e2e-helpers.js'
 import { assertNoElectronSurvivors, closeElectron } from './launch-electron.mjs'
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './qa-helpers.js'
 import { captureState, checkState, prepareWindow, type Check, type Rect, type StateSpec } from './qa-visual.js'
-import { findChrome, popoverShown, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, delay, findChrome, popoverShown, waitFor, waitForTab } from './smoke-helpers.mjs'
 
 /** The address text of a fixture page: its port changes on every run. */
 const FIXTURE_ADDRESS: Rect = { x: 240, y: 44, width: 260, height: 24 }
@@ -56,6 +56,21 @@ async function openInternal (app: ElectronApplication, chrome: Page, name: strin
 }
 
 const dashboardOf = (app: ElectronApplication): Page | undefined => app.windows().find((w) => w.url().endsWith('/newtab/index.html'))
+
+it('prepareWindow sets the size the window keeps even when called the moment the shell is up', async () => {
+  const { app } = await launchShell()
+  try {
+    // No wait between launch and the resize: the window may not be shown yet, and showing it re-asserts its initial size.
+    await prepareWindow(app, { width: 800, height: 600 })
+    const chrome = findChrome(app)
+    expect(await waitFor(async () => (await chrome.evaluate(() => window.innerWidth)) === 800)).toBe(true)
+    // Absence of a later reset cannot be polled for: settle, then read once.
+    await delay(ABSENCE_SETTLE_MS)
+    expect(await chrome.evaluate(() => window.innerWidth)).toBe(800)
+  } finally {
+    await closeElectron(app)
+  }
+}, QA_TEST_TIMEOUT_MS)
 
 for (const scheme of SCHEMES) {
   it(`the shell looks right in each state it can be in (${scheme})`, async () => {

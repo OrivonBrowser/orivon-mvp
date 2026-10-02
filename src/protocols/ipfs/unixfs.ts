@@ -1,6 +1,7 @@
 // A path under a verified root, read through the exporter over the verifying
 // blockstore. `/` and a directory serve its `index.html`; there are no
-// directory listings.
+// directory listings. A root that is itself one file is served at `/`, typed
+// as HTML when its first bytes say so.
 
 import { exporter } from 'ipfs-unixfs-exporter'
 import type { UnixFSEntry } from 'ipfs-unixfs-exporter'
@@ -10,6 +11,7 @@ import type { GatherRange, GatheredFile, Refusal } from '../resolution/providers
 import { blockstoreFor } from './blockstore.js'
 import type { BlockSource } from './blockstore.js'
 import { readFileRange } from './file-reader.js'
+import { SNIFF_BYTES, looksLikeHtml } from './sniff.js'
 
 const INDEX = 'index.html'
 
@@ -47,6 +49,16 @@ async function entryAt (root: CID, segments: readonly string[], store: ReturnTyp
   return await exporter([root.toString(), ...segments].join('/'), store, { signal })
 }
 
+async function readPrefix (chunks: AsyncIterable<Uint8Array>, path: string): Promise<Uint8Array> {
+  const parts: Uint8Array[] = []
+  try {
+    for await (const chunk of chunks) parts.push(chunk)
+  } catch (error) {
+    throw failureOf(error, path)
+  }
+  return Buffer.concat(parts)
+}
+
 /** Throws a ResolutionError. Every byte of the returned body was verified before it is yielded. */
 export async function openPath (source: BlockSource, root: CID, pathname: string, range: GatherRange | undefined, signal: AbortSignal, onRefusal: (refusal: Refusal) => void): Promise<GatheredFile> {
   const segments = pathSegments(pathname)
@@ -76,9 +88,17 @@ export async function openPath (source: BlockSource, root: CID, pathname: string
   const content = entry.type === 'file'
     ? readFileRange(node as Parameters<typeof readFileRange>[0], get, start, end, source.limits)
     : (async function * () { if (size > 0) yield (node as Uint8Array).subarray(start, end + 1) })()
+  let contentType: string | undefined
+  if (served.length === 0 && size > 0) {
+    const prefix = entry.type === 'file'
+      ? await readPrefix(readFileRange(node as Parameters<typeof readFileRange>[0], get, 0, Math.min(SNIFF_BYTES, size) - 1, source.limits), pathname)
+      : (node as Uint8Array).subarray(0, SNIFF_BYTES)
+    if (looksLikeHtml(prefix)) contentType = 'text/html; charset=utf-8'
+  }
   return {
     servedPath: `/${served.join('/')}`,
     size,
+    ...(contentType !== undefined && { contentType }),
     body: (async function * () {
       try {
         for await (const chunk of content) yield chunk

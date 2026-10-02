@@ -11,7 +11,7 @@
 //      are created after every subsystem runs, so extension-host-impl.ts's
 //      callbacks (createTab, createWindow, ...) reject cleanly if an
 //      extension somehow calls one before this runs.
-import { session } from 'electron'
+import { app, session, webContents } from 'electron'
 import type { Session, WebContents } from 'electron'
 // Virtual specifiers (electron-chrome-extensions-lib.d.ts's own header says
 // why): electron.vite.config.ts's alias resolves each to the real vendor
@@ -37,6 +37,8 @@ import { buildHostImpl, isExtensionActivatingTab, isLoadedExtension, shellInitia
 import { watchPinSetting } from './action-pins-runner.js'
 import { watchForMissedServiceWorkerPreload } from './extension-sw-preload-recovery.js'
 import { beginDnrReload, endDnrReload } from './extensions-dnr.js'
+import { createExtensionPageRecovery, RELOAD_AFTER_GRACE_MS } from './extension-pages-reload.js'
+import { isExtensionOpened } from './extension-opened-pages.js'
 import { senderMatchesClaimedExtensionId } from './extension-sender-id-check.js'
 import { registerSandboxPageQuery } from './extension-sandbox-page-query.js'
 import { apiOrHostAccessFor, hostAccessFor } from './extension-host-access.js'
@@ -144,10 +146,30 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
   // otherwise drop session rules, badge mode and its webRequest
   // registration for a worker recovering from a missed preload, which is
   // not a real unload.
-  watchForMissedServiceWorkerPreload(session.defaultSession, (id, phase) => {
-    if (phase === 'start') beginDnrReload(id)
-    else endDnrReload(id)
+  //
+  // The same reload leaves a tab of the extension behind: the welcome tab a
+  // first worker opens on install is loaded while the extension is removed,
+  // and its failure can be reported after the reload ends. Only tabs are
+  // navigated again, never the extension's hidden offscreen document.
+  const pageRecovery = createExtensionPageRecovery<WebContents>({
+    now: Date.now,
+    graceMs: RELOAD_AFTER_GRACE_MS,
+    isEligible: (wc, id) => bridge?.services.windows.findTab(wc) != null && isExtensionOpened(wc, id)
   })
+  app.on('web-contents-created', (_event, wc) => {
+    wc.on('did-fail-load', (_failEvent, errorCode, _description, url, isMainFrame) => {
+      if (isMainFrame) pageRecovery.pageFailed(wc, url, errorCode)
+    })
+  })
+  watchForMissedServiceWorkerPreload(session.defaultSession, (id, phase) => {
+    if (phase === 'start') {
+      beginDnrReload(id)
+      pageRecovery.begin(id)
+    } else {
+      endDnrReload(id)
+      pageRecovery.end(id)
+    }
+  }, (id) => { pageRecovery.sweep(id, webContents.getAllWebContents()) })
 
   installPopupPolicy(hostExtensions, { services: () => bridge?.services, isLoaded: isLoadedExtension })
 

@@ -141,7 +141,7 @@ export function registerDnrApiHandlers(
   function persistEnabledRulesets(extensionId: string): void {
     const slotDir = slotDirForLoadedExtension(userDataPath, extensionId)
     if (slotDir !== undefined) {
-      writeEnabledRulesetOverride(slotDir, engineOrThrow().getEnabledRulesets(extensionId))
+      writeEnabledRulesetOverride(slotDir, engineOrThrow().getEnabledRulesetsToPersist(extensionId))
     }
   }
 

@@ -8,7 +8,18 @@
     "onErrorOccurred": "event",
     "onHeadersReceived": "event",
     "onResponseStarted": "event",
-    "onSendHeaders": "event"
+    "onSendHeaders": "event",
+    "MAX_HANDLER_BEHAVIOR_CHANGED_CALLS_PER_10_MINUTES": "number",
+    "handlerBehaviorChanged": "function",
+    "ResourceType": "object",
+    "OnBeforeRequestOptions": "object",
+    "OnBeforeSendHeadersOptions": "object",
+    "OnSendHeadersOptions": "object",
+    "OnHeadersReceivedOptions": "object",
+    "OnAuthRequiredOptions": "object",
+    "OnResponseStartedOptions": "object",
+    "OnBeforeRedirectOptions": "object",
+    "OnCompletedOptions": "object"
   },
   "page": {
     "onAuthRequired": "event",
@@ -19,6 +30,17 @@
     "onErrorOccurred": "event",
     "onHeadersReceived": "event",
     "onResponseStarted": "event",
-    "onSendHeaders": "event"
+    "onSendHeaders": "event",
+    "MAX_HANDLER_BEHAVIOR_CHANGED_CALLS_PER_10_MINUTES": "number",
+    "handlerBehaviorChanged": "function",
+    "ResourceType": "object",
+    "OnBeforeRequestOptions": "object",
+    "OnBeforeSendHeadersOptions": "object",
+    "OnSendHeadersOptions": "object",
+    "OnHeadersReceivedOptions": "object",
+    "OnAuthRequiredOptions": "object",
+    "OnResponseStartedOptions": "object",
+    "OnBeforeRedirectOptions": "object",
+    "OnCompletedOptions": "object"
   }
 }
