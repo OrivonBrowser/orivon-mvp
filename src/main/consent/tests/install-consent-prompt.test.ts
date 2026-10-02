@@ -14,6 +14,7 @@ vi.mock('../../shell/navigation-hold.js', () => ({ holdNavigation }))
 const specOf = (call = 0): Record<string, unknown> | undefined => askQuestion.mock.calls[call]?.[1] as Record<string, unknown> | undefined
 
 const { createInstallConsentPrompt } = await import('../install-consent-prompt.js')
+const { normaliseSpec, viewOf } = await import('../../shell/question/question-spec.js')
 
 const ORIGIN = 'https://app.example'
 
@@ -27,6 +28,18 @@ describe('createInstallConsentPrompt', () => {
     const result = await consent(ORIGIN, manifestWith({ fs: {} }), ['fs'], [])
 
     expect(result).toBe(true)
+  })
+
+  it('hands the panel a spec whose view names the origin once, while the spec still names it for a native box', async () => {
+    askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+    await createInstallConsentPrompt()(ORIGIN, manifestWith({ fs: {} }), ['fs'], [])
+
+    const spec = normaliseSpec(specOf() as never)
+    const view = viewOf('id', spec)
+    const panel = [view.origin, view.title, view.message, view.detail].filter((part) => part !== undefined).join('\n')
+    expect(panel.split(ORIGIN)).toHaveLength(2)
+    expect(view.origin).toBe(ORIGIN)
+    expect(`${spec.title ?? ''}\n${spec.detail ?? ''}`).toContain(ORIGIN)
   })
 
   it('resolves false when the user picks the second (Deny) button', async () => {

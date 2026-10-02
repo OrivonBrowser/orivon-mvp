@@ -123,14 +123,31 @@ export function normaliseSpec (spec: QuestionSpec): QuestionSpec {
   }
 }
 
+/**
+ * The panel names the origin once, in its header. A native box has no header, so a caller writes the origin
+ * as the title and as the last detail line too; those two copies are dropped here and nowhere else.
+ */
+function withoutRepeatedOrigin (spec: QuestionSpec): { title: string | undefined, detail: string | undefined } {
+  const { origin, title, detail } = spec
+  if (origin === undefined || isPageKind(spec.kind)) return { title, detail }
+  const lines = detail?.split('\n')
+  while (lines !== undefined && lines.length > 0 && lines[lines.length - 1]?.trim() === origin) lines.pop()
+  const remaining = lines?.join('\n').trimEnd()
+  return {
+    title: title?.trim() === origin ? undefined : title,
+    detail: remaining === undefined || remaining === '' ? undefined : remaining
+  }
+}
+
 /** The view the panel's page is drawn from. */
 export function viewOf (id: string, spec: QuestionSpec): QuestionView {
+  const { title, detail } = withoutRepeatedOrigin(spec)
   return {
     id,
     kind: spec.kind,
-    title: spec.title,
+    title,
     message: spec.message,
-    detail: spec.detail,
+    detail,
     warning: spec.warning === true,
     origin: spec.origin,
     buttons: spec.buttons,

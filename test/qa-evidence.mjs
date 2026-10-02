@@ -27,7 +27,7 @@ const ORPHAN_SHOT_MS = 600
 const HOLD_BUDGET_MS = 3_500
 const DOM_CAP_BYTES = 200_000
 
-/** @typedef {{ url: string, title: string, png: Buffer | undefined, aria: string | undefined, html: string | undefined, errors: string[] }} ViewSnapshot */
+/** @typedef {{ url: string, title: string, png: Buffer | undefined, aria: string | undefined, html: string | undefined, cornerRadius: number, errors: string[] }} ViewSnapshot */
 /** @typedef {{ url: string, bounds: { x: number, y: number, width: number, height: number }, visible: boolean }} ViewGeometry */
 /** @typedef {{ width: number, height: number, views: ViewGeometry[] }} WindowGeometry */
 /** @typedef {{ views: ViewSnapshot[], composites: Array<{ width: number, height: number, png: Buffer, ambiguous: boolean }>, geometry: WindowGeometry[], errors: string[] }} WindowSnapshot */
@@ -154,7 +154,7 @@ const safeUrl = (page) => { try { return page.url() } catch { return '' } }
 /** @returns {Promise<ViewSnapshot>} */
 async function snapPage (page, timeout, shotTimeout) {
   /** @type {ViewSnapshot} */
-  const out = { url: '', title: '', png: undefined, aria: undefined, html: undefined, errors: [] }
+  const out = { url: '', title: '', png: undefined, aria: undefined, html: undefined, cornerRadius: 0, errors: [] }
   try { out.url = page.url() } catch { /* closed */ }
   const step = async (name, run) => {
     try { return await run() } catch (e) { out.errors.push(`${name}: ${String(e?.message ?? e).split('\n')[0]}`); return undefined }
@@ -163,9 +163,32 @@ async function snapPage (page, timeout, shotTimeout) {
   if (shotTimeout > 0) out.png = await step('screenshot', () => page.screenshot({ timeout: shotTimeout, animations: 'disabled', caret: 'hide' }))
   else out.errors.push('screenshot: skipped, not a visible view')
   out.aria = await step('aria', () => page.ariaSnapshot({ timeout }))
+  out.cornerRadius = (await step('radius', () => page.evaluate(cardRadius))) ?? 0
   const html = await step('dom', () => page.evaluate(redactDom))
   out.html = html === undefined ? undefined : html.slice(0, DOM_CAP_BYTES)
   return out
+}
+
+/** The corner radius an overlay page draws its card with, which is the radius main clips the view to; 0 for any other page. Runs in the page. */
+function cardRadius () {
+  if (document.body?.dataset?.surface === undefined) return 0
+  const radius = Number.parseFloat(getComputedStyle(document.body, '::after').borderTopLeftRadius)
+  return Number.isFinite(radius) ? Math.max(0, Math.min(radius, 40)) : 0
+}
+
+/** Puts back what lay under the corners a rounded view's clip cuts away: a page screenshot is the whole rectangle, the window shows only the rounded part. */
+function restoreCorners (canvas, before, x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height / 2)
+  for (let dy = 0; dy < r; dy++) {
+    for (let dx = 0; dx < r; dx++) {
+      if (Math.hypot(r - dx - 0.5, r - dy - 0.5) <= r) continue
+      for (const [px, py] of [[dx, dy], [width - 1 - dx, dy], [dx, height - 1 - dy], [width - 1 - dx, height - 1 - dy]]) {
+        const at = ((y + py) * canvas.width + x + px) * 4
+        if (x + px < 0 || x + px >= canvas.width || y + py < 0 || y + py >= canvas.height) continue
+        before.copy(canvas.data, at, at, at + 4)
+      }
+    }
+  }
 }
 
 /** @returns {Promise<WindowGeometry[]>} */
@@ -213,7 +236,9 @@ function compose (geometry, snaps) {
       const entry = pool.splice(i, 1)[0]
       try {
         const src = decoded(entry)
+        const before = entry.snap.cornerRadius > 0 ? Buffer.from(canvas.data) : undefined
         PNG.bitblt(src, canvas, 0, 0, Math.min(src.width, view.bounds.width), Math.min(src.height, view.bounds.height), Math.max(0, view.bounds.x), Math.max(0, view.bounds.y))
+        if (before !== undefined) restoreCorners(canvas, before, view.bounds.x, view.bounds.y, Math.min(src.width, view.bounds.width), Math.min(src.height, view.bounds.height), entry.snap.cornerRadius)
       } catch { /* undecodable view: leave the gap visible */ }
     }
     return { width: win.width, height: win.height, png: PNG.sync.write(canvas), ambiguous }

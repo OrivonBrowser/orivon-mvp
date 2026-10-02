@@ -62,4 +62,35 @@ describe('viewOf', () => {
     const view = viewOf('abc', normaliseSpec(spec({ guarded: [0], origin: 'https://a.example' })))
     expect(view).toMatchObject({ id: 'abc', kind: 'consent', origin: 'https://a.example', guarded: [0], guardMs: GUARD_MS, warning: false })
   })
+
+  const occurrences = (text: string, needle: string): number => text.split(needle).length - 1
+  const shown = (view: ReturnType<typeof viewOf>): string => [view.origin, view.title, view.message, view.detail].filter((part) => part !== undefined).join('\n')
+
+  it('names the origin once for a consent question that repeated it as title and last detail line', () => {
+    const origin = 'http://127.0.0.1:45429'
+    const view = viewOf('abc', normaliseSpec(spec({ origin, title: origin, message: 'This app wants to:', detail: `Claims to be "X".\n- Store files\n${origin}` })))
+    expect(occurrences(shown(view), origin)).toBe(1)
+    expect(view.origin).toBe(origin)
+    expect(view.title).toBeUndefined()
+    expect(view.detail).toBe('Claims to be "X".\n- Store files')
+  })
+
+  it('keeps a title or a detail that says more than the origin', () => {
+    const view = viewOf('abc', normaliseSpec(spec({ origin: 'https://a.example', title: 'Install', detail: 'From https://a.example today' })))
+    expect(view).toMatchObject({ title: 'Install', detail: 'From https://a.example today' })
+  })
+
+  it('leaves a page question and a spec with no origin as written', () => {
+    const page = viewOf('abc', normaliseSpec(spec({ kind: 'page-alert', origin: 'https://a.example', title: 'https://a.example', detail: 'https://a.example' })))
+    expect(page).toMatchObject({ title: 'https://a.example', detail: 'https://a.example' })
+    const bare = viewOf('abc', normaliseSpec(spec({ title: 'https://a.example', detail: 'https://a.example' })))
+    expect(bare).toMatchObject({ title: 'https://a.example', detail: 'https://a.example' })
+  })
+
+  it('leaves the spec itself whole, so the native box still names the origin', () => {
+    const origin = 'https://a.example'
+    const whole = normaliseSpec(spec({ origin, title: origin, detail: `x\n${origin}` }))
+    viewOf('abc', whole)
+    expect(whole).toMatchObject({ title: origin, detail: `x\n${origin}` })
+  })
 })

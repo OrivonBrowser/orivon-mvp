@@ -25,8 +25,8 @@ import { ABSENCE_SETTLE_MS, delay, evaluateRetrying, findChrome, findViewShowing
 /** The address text of a fixture page: its port changes on every run. */
 const FIXTURE_ADDRESS: Rect = { x: 240, y: 44, width: 260, height: 24 }
 
-/** Where a question panel names its origin, whose port changes on every run: the header lines of a consent question and its last detail line, and the header of a page's own question. */
-const CONSENT_ORIGIN_LINES: Rect[] = [{ x: 188, y: 78, width: 240, height: 46 }, { x: 188, y: 192, width: 240, height: 20 }]
+/** Where a question panel names its origin, whose port changes on every run: the header of a consent question, and the header of a page's own question. */
+const CONSENT_ORIGIN_LINE: Rect = { x: 188, y: 78, width: 240, height: 20 }
 const PAGE_QUESTION_ORIGIN: Rect = { x: 190, y: 78, width: 240, height: 20 }
 
 const MANIFEST = JSON.stringify({
@@ -68,9 +68,10 @@ async function panelFits (panel: Page): Promise<{ fits: boolean, detail: string 
   const m = await panel.evaluate(() => {
     const card = (document.querySelector('.q') as HTMLElement).getBoundingClientRect()
     const root = document.documentElement
-    return { left: card.left, top: card.top, right: window.innerWidth - card.right, bottom: window.innerHeight - card.bottom, scrolls: root.scrollHeight > root.clientHeight || root.scrollWidth > root.clientWidth }
+    const body = document.body.getBoundingClientRect()
+    return { left: card.left, top: card.top, right: window.innerWidth - card.right, bottom: window.innerHeight - card.bottom, scrolls: root.scrollHeight > root.clientHeight || root.scrollWidth > root.clientWidth, unpaintedRight: window.innerWidth - body.right, unpaintedBottom: window.innerHeight - body.bottom }
   })
-  return { fits: m.left >= 0 && m.top >= 0 && m.right >= 0 && m.bottom >= 0 && !m.scrolls, detail: JSON.stringify(m) }
+  return { fits: m.left >= 0 && m.top >= 0 && m.right >= 0 && m.bottom >= 0 && !m.scrolls && m.unpaintedRight === 0 && m.unpaintedBottom === 0, detail: JSON.stringify(m) }
 }
 
 /** Waits until the popup view whose address contains `part` has kept one size for five polls: a popup is sized after its content reports its height, in more than one step. */
@@ -142,6 +143,8 @@ for (const scheme of SCHEMES) {
 
         await chrome.click('#menu')
         expect(await waitFor(async () => await popoverShown(app, 'overlay=menu'))).toBe(true)
+        const menuPage = app.windows().find((page) => page.url().includes('overlay=menu')) as Page
+        check('the menu card fills its view to the right edge', await menuPage.evaluate(() => window.innerWidth - document.body.getBoundingClientRect().right) === 0)
         await state(check, app, `menu-popup-${scheme}`, {
           expected: 'The main menu is open as a popup under the menu button at the top right: a list of labelled entries, none cut off or overlapping, inside the window.',
           action: 'Clicked the menu button and waited for the popup to be shown.'
@@ -229,7 +232,7 @@ for (const scheme of SCHEMES) {
           action: 'Resized the window content to 800x600 on the dashboard.'
         }, { width: 800, height: 600 })
         await state(check, app, `dashboard-500x400-${scheme}`, {
-          expected: 'At the smallest size a window can have, 500x400, the toolbar is one row: back, forward, reload, the star, an address field wide enough to read an address in, the all-sites button and the menu. The identity placeholder and the node-status dot are gone, and nothing is cut or overlaps.',
+          expected: 'At the smallest size a window can have, 500x400, the toolbar is one row: back, forward, reload, the star, an address field wide enough to read an address in, the all-sites button, the side-panel button and the menu. The identity placeholder and the node-status dot are gone, and nothing is cut or overlaps.',
           action: 'Resized the window content to 500x400, the minimum, on the dashboard.'
         }, { width: 500, height: 400 })
       })
@@ -259,12 +262,14 @@ for (const scheme of SCHEMES) {
         await grant.waitForSelector('.q:not(.arming)')
         const said = await readQuestion(grant)
         check('the consent question names the app origin and offers Allow and Deny', said.buttons.includes('Allow') && said.buttons.includes('Deny'), JSON.stringify(said))
+        const shown = [said.origin, said.title, said.message, said.detail].join('\n')
+        check('the consent question names the origin once', said.origin.length > 0 && shown.split(said.origin).length === 2, JSON.stringify(said))
         const grantFit = await panelFits(grant)
         check('the consent card sits inside its view, uncut and unscrolled', grantFit.fits, grantFit.detail)
         await state(check, app, `question-consent-${scheme}`, {
           expected: 'A question panel floats over the page, directly under the address pill with its top edge crossing into the toolbar: a header naming the 127.0.0.1 origin that is asking, a message about what the app wants, and two readable buttons, Allow and Deny, with Allow the filled one. Text and buttons are fully inside the panel in this colour scheme, nothing is cut, and the page and toolbar stay visible around it.',
           action: 'Typed the address of a loopback app that advertises a manifest and waited for its grant question to arm.',
-          ignore: [FIXTURE_ADDRESS, ...CONSENT_ORIGIN_LINES]
+          ignore: [FIXTURE_ADDRESS, CONSENT_ORIGIN_LINE]
         })
         await answerQuestion(app, 'Deny')
 
