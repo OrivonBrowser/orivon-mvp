@@ -77,6 +77,24 @@ async function boxOfTab (chrome: Page, id: string): Promise<Box> {
   throw new Error(`the tab ${id} has no box`)
 }
 
+/** The size a pane's page lays itself out at, read from the page. A view put on screen without its renderer being told the pane's size keeps laying the page out at the size it had before, so the pane shows a clipped or empty page. */
+async function layoutSizeOf (app: ElectronApplication, part: string): Promise<{ width: number, height: number } | undefined> {
+  const page = app.windows().find((candidate) => candidate.url().includes(part))
+  if (page === undefined) return undefined
+  return await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))
+}
+
+/** Whether each page in `parts` lays itself out at the size of its pane, the pane being where the window put its view. */
+async function pagesFitTheirPanes (app: ElectronApplication, parts: readonly string[]): Promise<boolean> {
+  const views = await layout(app)
+  for (const part of parts) {
+    const pane = inWindow(views, part)
+    const size = await layoutSizeOf(app, part)
+    if (pane === undefined || size === undefined || size.width !== pane.width || size.height !== pane.height) return false
+  }
+  return true
+}
+
 const runCommand = async (chrome: Page, id: string): Promise<void> => {
   await chrome.evaluate((command) => { (window as unknown as { orivonShell: { runCommand: (id: string) => void } }).orivonShell.runCommand(command) }, id)
 }
@@ -303,6 +321,45 @@ it('splits when a tab is dragged with the pointer to the edge of the page and le
 
     expect(await waitFor(async () => (await joined(chrome)).join() === [first, a].join())).toBe(true)
     expect(await activeId(chrome)).toBe(first)
+    // Both pages are laid out at their half of the window, the dragged tab's included.
+    expect(await waitFor(async () => await pagesFitTheirPanes(app, [`${origin}/a`, '/newtab/']))).toBe(true)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('splits from the right-click menu of a tab behind the one in front, and lays both pages out at their panes', async () => {
+  const { app, chrome } = await launched()
+  try {
+    await app.evaluate(({ Menu }) => { (Menu.prototype as unknown as { popup: () => void }).popup = function (this: unknown) { (globalThis as unknown as { __menu: unknown }).__menu = this } })
+    const [, a, b] = await openTabs(chrome, '/a', '/b') as [string, string, string]
+    // /b is in front, and the menu is the one of /a behind it: the tab that is brought in is the one the person is in.
+    expect(await activeId(chrome)).toBe(b)
+    await chrome.click(`.tab[data-id="${a}"]`, { button: 'right' })
+    expect(await waitFor(async () => await app.evaluate(() => (globalThis as unknown as { __menu?: unknown }).__menu !== undefined))).toBe(true)
+    const partners = await app.evaluate(() => {
+      const menu = (globalThis as unknown as { __menu: { items: Array<{ label: string, submenu?: { items: Array<{ label: string, click: () => void }> } }> } }).__menu
+      const entries = menu.items.find((item) => item.label === 'Split with')?.submenu?.items ?? []
+      entries.find((entry) => entry.label === 'Page /b')?.click()
+      return entries.map((entry) => entry.label)
+    })
+    expect(partners).toContain('Page /b')
+
+    expect(await waitFor(async () => (await joined(chrome)).join() === [a, b].join())).toBe(true)
+    expect(await waitFor(async () => backdropAt(await layout(app)) !== undefined)).toBe(true)
+    expect(await activeId(chrome)).toBe(b)
+    const views = await layout(app)
+    const left = inWindow(views, `${origin}/a`)
+    const right = inWindow(views, `${origin}/b`)
+    if (left === undefined || right === undefined) throw new Error('a pane is missing')
+    expect(left.x + left.width).toBeLessThan(right.x)
+    // The pane that was behind is attached by the split and the other is only resized: each page is laid out at its own pane.
+    expect(await waitFor(async () => await pagesFitTheirPanes(app, [`${origin}/a`, `${origin}/b`]))).toBe(true)
+    for (const part of [`${origin}/a`, `${origin}/b`]) {
+      const page = app.windows().find((candidate) => candidate.url().includes(part))
+      expect(await page?.evaluate(() => document.visibilityState)).toBe('visible')
+    }
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
