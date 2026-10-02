@@ -108,12 +108,20 @@ it(
         check('the second view really is a registered app tab, so the two halves differ only by the flag', routed)
 
         await throwInPage(appTab, APP)
+        // The prefix names the tab's origin and path only: its query and
+        // fragment can carry a token, so `?app` is not in it.
         const seen = await waitFor(
-          () => mainOutput(app as NonNullable<typeof app>).includes(`[orivon][app ${ORIGIN}/?app]`) &&
+          () => mainOutput(app as NonNullable<typeof app>).includes(`[orivon][app ${ORIGIN}/]`) &&
             mainOutput(app as NonNullable<typeof app>).includes(APP),
           15_000
         )
         const line = mainOutput(app).split('\n').find((l) => l.includes('[orivon][app')) ?? '(nothing reported)'
+        const prefixes = [...mainOutput(app).matchAll(/\[orivon\]\[app ([^\]]*)\]/g)].map((m) => m[1] ?? '')
+        check(
+          'the failure line names the tab by origin and path, never its query or fragment',
+          prefixes.length > 0 && prefixes.every((p) => !/[?#]/.test(p)),
+          prefixes.join(' | ')
+        )
         check(
           `AN APP TAB IS: ${line.replace('[main] ', '').trim()}`,
           seen,
