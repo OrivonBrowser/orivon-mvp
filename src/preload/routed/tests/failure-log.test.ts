@@ -91,14 +91,14 @@ describe('the other routed entry points', () => {
     expect(String(spy.mock.calls[0]![0])).toMatch(/^GET https:\/\/api\.example\/data failed: .*ECONNRESET/)
   })
 
-  it('logs a routed EventSource whose dial dies, once per attempt', async () => {
+  it('logs a routed EventSource whose dial dies, once for the attempt', async () => {
     const spy = logged()
     const target = fakeTarget({ connectSecure: async () => { throw reset() } }) as FetchRouteTarget & { EventSource: new (url: string) => EventSource }
     target.EventSource = class extends EventTarget {} as unknown as typeof target.EventSource
     installRouted(target, [installRoutedEvents, installEventSourceRoute].map((fn) => reserialised(fn)))
     const source = new target.EventSource('https://stream.example/feed')
     await settle()
-    expect(spy.mock.calls.length).toBeGreaterThanOrEqual(1)
+    expect(spy).toHaveBeenCalledTimes(1)
     expect(String(spy.mock.calls[0]![0])).toMatch(/^GET https:\/\/stream\.example\/feed failed: .*ECONNRESET/)
     ;(source as unknown as { close: () => void }).close()
   })

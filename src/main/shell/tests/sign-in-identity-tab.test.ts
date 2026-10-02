@@ -30,12 +30,12 @@ describe('wireSignInIdentity', () => {
     expect(setUserAgent).not.toHaveBeenCalled()
   })
 
-  it('has already swapped by the time will-navigate fires, so that event changes nothing', () => {
+  it('never swaps the identity from will-navigate either, for the same reason', () => {
     const { tab, emitter, setUserAgent } = fakeTab()
     wireSignInIdentity(tab)
-    emitter.emit('did-start-navigation', { url: SIGN_IN, isMainFrame: true, isSameDocument: false })
     emitter.emit('will-navigate', { url: SIGN_IN, isMainFrame: true })
-    expect(setUserAgent).toHaveBeenCalledTimes(1)
+    emitter.emit('will-navigate', { url: ELSEWHERE, isMainFrame: true })
+    expect(setUserAgent).not.toHaveBeenCalled()
   })
 
   it('swaps once at the start of a navigation onto a sign-in host, and back at the start of one off it', () => {

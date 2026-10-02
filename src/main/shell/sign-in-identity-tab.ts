@@ -19,12 +19,11 @@ import { resolveSignInHosts } from './sign-in-identity-test-seam.js'
 /** Wires one webContents's main-frame navigations to swap identity on the
  * way in and restore it on the way out. `did-start-navigation` is the point
  * Chromium accepts a user-agent change without reloading the tab: the
- * navigation that is starting takes the new override itself, and the
- * `will-navigate` that follows it finds nothing left to change. It is never
- * done from `will-redirect`: there the tab is mid-load and the entry
- * overrides the user agent, so Chromium cancels the redirect and reloads the
- * last committed page, which a post-sign-in redirect off the sign-in host
- * turns into an endless reload.
+ * navigation that is starting takes the new override itself. It is never
+ * done from `will-navigate` or `will-redirect`: there the entry overrides
+ * the user agent while the tab is mid-load, so Chromium cancels the
+ * navigation and reloads the last committed page, which a post-sign-in
+ * redirect off the sign-in host turns into an endless reload.
  *
  * A server redirect that crosses the boundary fires no `did-start-navigation`,
  * so `did-stop-loading` catches it up: with nothing loading, a change reloads
@@ -54,7 +53,6 @@ export function wireSignInIdentity (webContents: WebContents): void {
       ? firefoxUserAgent(process.platform)
       : chromeUserAgent(process.versions.chrome, process.platform))
   }
-  webContents.on('will-navigate', (details) => { if (details.isMainFrame) follow(details.url) })
   webContents.on('did-start-navigation', (details) => {
     if (details.isMainFrame && !details.isSameDocument) follow(details.url)
   })

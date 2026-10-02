@@ -203,9 +203,16 @@ describe('a root that is itself a file', async () => {
     expect((await open(await raw('%PDF-1.7 not a page'))).contentType).toBeUndefined()
   })
 
-  it('never sniffs a file below the root', async () => {
-    const file = await openPath(source().s, dag.root, '/docs/a%20b.txt', undefined, signal, () => {})
-    expect(file.contentType).toBeUndefined()
+  it('never sniffs a file below the root, nor the index.html a directory root serves', async () => {
+    const html = '<!doctype html><title>a</title>'
+    const tree = await buildDag({ 'index.html': html, about: html })
+    const s = new BlockSource(fakeGateways(tree.blocks).fetch, new GatewayPool(['https://a.gateway'], 4), DEFAULT_LIMITS)
+    const about = await openPath(s, tree.root, '/about', undefined, signal, () => {})
+    expect(about.servedPath).toBe('/about')
+    expect(about.contentType).toBeUndefined()
+    const home = await openPath(s, tree.root, '/', undefined, signal, () => {})
+    expect(home.servedPath).toBe('/index.html')
+    expect(home.contentType).toBeUndefined()
   })
 })
 

@@ -249,8 +249,11 @@ it.skipIf(!ORDINARY_BUILD || !BUILT)(
         // App.vue asks api.github.com for the latest release shortly after the data is ready; a failure logs
         // 'errored while checking for updates'. (The banner itself shows only when upstream publishes a
         // release newer than the pinned build, so it cannot be asserted.)
+        // Absence-only: a bounded wait first, so a slow failure still lands in consoleLines, but a check that
+        // never ran passes too.
+        await new Promise((resolve) => setTimeout(resolve, 3_000))
         const updateCheckErrors = consoleLines.filter((line) => /errored while checking for updates/.test(line))
-        check('the update check reached GitHub and parsed its answer', updateCheckErrors.length === 0, JSON.stringify(updateCheckErrors.slice(0, 2)))
+        check('the update check logged no error (absence-only)', updateCheckErrors.length === 0, JSON.stringify(updateCheckErrors.slice(0, 2)))
 
         if (REQUIRE_PLAYBACK) {
           // readyState/a mounted <video> is not enough: a manifest with no
