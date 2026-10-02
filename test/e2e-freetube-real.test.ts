@@ -28,11 +28,11 @@
 import { afterAll, expect, it } from 'vitest'
 import type { ChildProcess } from 'node:child_process'
 import type { Page } from 'playwright'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
 import { findChrome, tabViews, waitFor } from './smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, killChild, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, asPage, clickAddressBarRetrying, closeElectronApp, killChild, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
 import { PORT_APP_FREETUBE_REAL, startOwnServer } from './freetube-fixture.js'
 import { answerEveryQuestion, stubNativeDialogs } from './question-support.js'
 
@@ -46,6 +46,17 @@ const ORDINARY_BUILD = process.env['ORIVON_ORDINARY_BUILD'] === '1'
 const PORTS_ROOT = process.env['ORIVON_PORTS_ROOT'] ?? join(process.cwd(), '..', 'orivon-ports')
 const ROOT = process.env['ORIVON_FREETUBE_REAL_ROOT'] ?? join(PORTS_ROOT, 'out', 'freetube', 'static')
 const BUILT = existsSync(join(ROOT, 'index.html'))
+
+/**
+ * `window.orivon` answers only a call made by a script the page itself loaded (ADR-0045), so the datastore
+ * checks run through asPage (e2e-helpers.ts), which loads a real same-origin `<script src>`. The static
+ * server here is the sibling's, so the script is a file written under the prepared build's root for the
+ * length of the run, and removed again in the `finally`.
+ */
+const AS_PAGE_SCRIPT_NAME = '__as-page-script.js'
+const AS_PAGE_SCRIPT_PATH = join(ROOT, AS_PAGE_SCRIPT_NAME)
+const setAsPageScript = (js: string): void => { writeFileSync(AS_PAGE_SCRIPT_PATH, js, 'utf8') }
+const clearAsPageScript = (): void => { try { unlinkSync(AS_PAGE_SCRIPT_PATH) } catch { /* never written */ } }
 
 /**
  * Playback needs a minted PoToken (ftElectron.generatePoToken, ADR-0019's
@@ -323,7 +334,7 @@ it.skipIf(!ORDINARY_BUILD || !BUILT)(
           const rootView = viewAtOrigin(app, chrome, ORIGIN)
           const statResults: Record<string, { ok: boolean, size?: number, error?: string }> = rootView === undefined
             ? {}
-            : await rootView.evaluate(async (files: readonly string[]) => {
+            : await asPage(rootView, setAsPageScript, `${ORIGIN}/${AS_PAGE_SCRIPT_NAME}`, async (files: readonly string[]) => {
               const orivon = (globalThis as unknown as OrivonPageGlobal).orivon
               const out: Record<string, { ok: boolean, size?: number, error?: string }> = {}
               for (const file of files) {
@@ -357,7 +368,7 @@ it.skipIf(!ORDINARY_BUILD || !BUILT)(
             const view = viewAtOrigin(app as NonNullable<typeof app>, chrome, ORIGIN)
             if (view === undefined) return undefined
             try {
-              return await view.evaluate(async () => {
+              return await asPage(view, setAsPageScript, `${ORIGIN}/${AS_PAGE_SCRIPT_NAME}`, async () => {
                 const orivon = (globalThis as unknown as OrivonPageGlobal).orivon
                 const bytes = await orivon.fs.readFile('history.db')
                 return new TextDecoder().decode(bytes)
@@ -396,6 +407,7 @@ it.skipIf(!ORDINARY_BUILD || !BUILT)(
           )
         }
       } finally {
+        clearAsPageScript()
         if (app !== undefined) await closeElectronApp(app)
         if (server !== undefined) await killChild(server)
       }

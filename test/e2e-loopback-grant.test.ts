@@ -30,8 +30,8 @@ import type { ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
 import { HERMETIC_RESOLVER, evaluateRetrying, findChrome, findViewShowing, waitFor } from './smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, killChild, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
-import { PORT_APP_FREETUBE, startOwnServer } from './freetube-fixture.js'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, asPage, clickAddressBarRetrying, closeElectronApp, killChild, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
+import { AS_PAGE_SCRIPT_URL, PORT_APP_FREETUBE, clearFreetubeAsPageScript, setFreetubeAsPageScript, startOwnServer } from './freetube-fixture.js'
 import { answerAccepting, noNativeDialogs, stubNativeDialogs } from './question-support.js'
 
 const ORDINARY_BUILD = process.env['ORIVON_ORDINARY_BUILD'] === '1'
@@ -119,6 +119,11 @@ it.skipIf(!ORDINARY_BUILD)(
         const view = findViewShowing(app, chrome, `${ORIGIN}/`)
         if (view === undefined) throw new Error('no view showing the origin after the grant')
 
+        // `window.orivon` answers only a call made by a script the page itself loaded (ADR-0045), so each
+        // call below goes through asPage (e2e-helpers.ts): a real `<script src>` served from this
+        // fixture's own static root, never page.evaluate().
+        const asPageUrl = `${ORIGIN}/${AS_PAGE_SCRIPT_URL}`
+
         // A subframe's preload installs the page-dialog wrapper and nothing
         // else (src/preload/frame.ts): no `window.orivon`. That is what this
         // asserts, and a subframe that gained the surface would fail here.
@@ -128,7 +133,7 @@ it.skipIf(!ORDINARY_BUILD)(
         // call is correctly attributed to the parent's frame because it runs
         // the parent's preload closure. That is the web working, not an Orivon
         // property, so it is reported in the label rather than asserted.
-        const reachThrough = await view.evaluate(async () => {
+        const reachThrough = await asPage(view, setFreetubeAsPageScript, asPageUrl, async () => {
           const frame = document.createElement('iframe')
           frame.src = '/index.html'
           document.body.append(frame)
@@ -149,7 +154,7 @@ it.skipIf(!ORDINARY_BUILD)(
           reachThrough.ownSurface === 'undefined',
           `typeof child.orivon was ${reachThrough.ownSurface}`
         )
-        const grants = await evaluateRetrying(view, async () => {
+        const grants = await asPage(view, setFreetubeAsPageScript, asPageUrl, async () => {
           const orivon = (globalThis as unknown as { orivon: { app: { grants: () => Promise<Array<{ capability: string }>> } } }).orivon
           return (await orivon.app.grants()).map((g) => g.capability)
         })
@@ -208,6 +213,7 @@ it.skipIf(!ORDINARY_BUILD)(
           cspEnforced.includes('connect-src')
         )
       } finally {
+        clearFreetubeAsPageScript()
         if (app !== undefined) await closeElectronApp(app)
         if (server !== undefined) await killChild(server)
       }
