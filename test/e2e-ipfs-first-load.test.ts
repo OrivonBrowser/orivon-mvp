@@ -8,7 +8,8 @@ import { findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor, waitForTab } f
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
 import { startFixtureGateway } from './apps/ipfs-gateway/gateway.mjs'
 
-const START_DELAY_MS = 6_000
+// Well under the gate's 10 s bound less a slow host start (~3 s): longer, and a slow machine releases the request before the host listens.
+const START_DELAY_MS = 4_000
 const TEST_TIMEOUT_MS = ADDRESS_BAR_STABLE_TIMEOUT_MS * 2 + DEFAULT_ACTION_TIMEOUT_MS * 4 + APP_CLOSE_RACE_MS + 60_000
 
 afterAll(async () => {
