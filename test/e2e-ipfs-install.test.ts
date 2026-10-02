@@ -11,6 +11,8 @@ import { findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from './smoke-help
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
 import { startFixtureGateway } from './apps/ipfs-gateway/gateway.mjs'
 import { originHash } from '../src/broker/grants/origin-hash.js'
+import { answerAccepting, noNativeDialogs, stubNativeDialogs } from './question-support.js'
+import type { QuestionText } from './question-support.js'
 
 const MANIFEST = { orivonApiVersion: 0, id: 'ipfs.orivon.fixture', name: 'Ipfs fixture', version: '1.0.0', entry: 'index.html', assets: ['app.js'], capabilities: { fs: { quotaBytes: 1_048_576 } } }
 const APP = {
@@ -38,14 +40,7 @@ it('installs an app served from a typed ipfs:// address, pins its CID, and asks 
         env: { ORIVON_TEST_ETH_FIXTURES: '{}', ORIVON_TEST_IPFS_GATEWAYS: gateway.url }
       })
       const running = app
-      await running.evaluate(({ dialog }) => {
-        const globals = globalThis as unknown as { __promptCount?: number }
-        globals.__promptCount = 0
-        dialog.showMessageBox = (async () => {
-          globals.__promptCount = (globals.__promptCount ?? 0) + 1
-          return { response: 0, checkboxChecked: false }
-        }) as unknown as typeof dialog.showMessageBox
-      })
+      await stubNativeDialogs(running)
       const listening = await waitFor(async () => await running.evaluate(() => (globalThis as { __orivonDevEthFixtures?: { listening: boolean } }).__orivonDevEthFixtures?.listening === true), 20_000)
       check('the verifier host is listening', listening)
       if (!listening) throw new Error('the verifier host never reported listening')
@@ -64,16 +59,21 @@ it('installs an app served from a typed ipfs:// address, pins its CID, and asks 
       check(`the hint installed it: a pin exists for ${origin}`, pinned)
       const pin = pinned ? JSON.parse(readFileSync(pinFile, 'utf8')) as { content?: { cid: string } } : {}
       check(`the pin records the root CID (${JSON.stringify(pin.content)})`, pin.content?.cid === root)
-      // The pin lands before the consent step runs, so the prompt is polled for, never read once.
-      const readPrompts = async (): Promise<number> => await running.evaluate(() => (globalThis as unknown as { __promptCount?: number }).__promptCount ?? 0)
-      await waitFor(async () => (await readPrompts()) >= 1, 10_000)
-      const prompts = await readPrompts()
-      check(`the install consent prompt was shown (${String(prompts)})`, prompts >= 1)
+      // The pin lands before the consent step runs, so the question is waited for, never looked for once.
+      let asked: QuestionText | undefined
+      try {
+        asked = await answerAccepting(running)
+      } catch (error) {
+        check(`the install consent question appeared (${String(error)})`, false)
+      }
+      const namesApp = asked !== undefined && JSON.stringify(asked).includes(root)
+      check(`the install consent question names the app's address (${JSON.stringify(asked)})`, namesApp)
 
       expect(loaded.ok).toBe(true)
       expect(pinned).toBe(true)
       expect(pin.content?.cid).toBe(root)
-      expect(prompts).toBeGreaterThanOrEqual(1)
+      expect(namesApp).toBe(true)
+      expect(await noNativeDialogs(running)).toEqual([])
     } finally {
       if (app !== undefined) await closeElectronApp(app)
       await gateway.close()
