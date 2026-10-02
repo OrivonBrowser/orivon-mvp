@@ -70,6 +70,23 @@ describe('the page-prompt wrapper', () => {
     expect(ask).not.toHaveBeenCalled()
   })
 
+  it('still sees the event being handled after the page replaces window.event', () => {
+    installPageDialogs()
+    const { func } = installed()
+    const ask = vi.fn(() => 'asked')
+    let event: { type: string } | undefined = { type: 'beforeunload' }
+    const native = { prompt: () => 'native' }
+    Object.defineProperty(native, 'event', { get: () => event, set: () => {}, configurable: true })
+    vi.stubGlobal('window', native)
+    func(ask)
+    Object.defineProperty(native, 'event', { value: 0, writable: true, configurable: true })
+    const prompt = (native as unknown as Record<string, () => unknown>)['prompt']
+    expect(prompt?.()).toBeNull()
+    expect(ask).not.toHaveBeenCalled()
+    event = { type: 'click' }
+    expect(prompt?.()).toBe('asked')
+  })
+
   it('answers a prompt raised by a page being hidden as dismissed, and asks for one raised by it being shown', () => {
     installPageDialogs()
     const { func } = installed()

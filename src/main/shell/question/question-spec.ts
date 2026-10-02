@@ -22,7 +22,7 @@ export interface QuestionSpec {
   readonly cancelId: number
   /** Indexes that ignore the person for GUARD_MS after every show. */
   readonly guarded?: readonly number[]
-  /** `dialog` starts on the panel itself, so Enter accepts nothing; a number starts on that button. */
+  /** `dialog` starts on the panel itself, so a key meant for the page lands on no button; a number starts on that button. */
   readonly focus?: 'dialog' | number
   /** A text box, for a page's `prompt()`. */
   readonly input?: { readonly initial: string }

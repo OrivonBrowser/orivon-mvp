@@ -26,9 +26,12 @@ The panel is safe to trust because of rules main enforces and the page of the pa
 - **Words come from main.** The page of the panel is told a random id and nothing it could be made to
   restate; the spec, its buttons, which of them are guarded and what a way out answers are held in main.
   Page-supplied text is cleaned of control and bidirectional characters and cut before it is drawn.
-- **An accepting button ignores the person for 500 ms** after every show, counted in main from the moment
-  the page reports it drawn. Focus starts on the panel itself, so Enter accepts nothing. Escape answers
-  the way out.
+- **An accepting button ignores the person until the panel has been still for 500 ms**, counted in main from
+  the later of the moment the page reports it drawn and the last key pressed in the panel. Focus starts on
+  the panel itself, so a key meant for the page lands on no button; but a page can raise a question while
+  the person types, and Tab, Tab, Enter would then reach the accepting button, so every key but a single
+  Enter or Space (the press that activates a button) restarts the wait, and a held Enter or Space, whose
+  repeats are not presses, is dropped before the page sees it. Escape answers the way out.
 - **The page that asked is held while its consent question is open.** Its main-frame navigations,
   redirects and `window.open` are dropped and logged (`src/main/shell/navigation-hold.ts`), so the answer
   applies to the page asked about, and on a first visit the tab is not rebuilt as the app before the
@@ -49,10 +52,10 @@ A page's own questions go through the same panel, and the mechanism is part of t
   the page: "<origin> says", and "An embedded page on <origin> says" for a frame inside the page. It offers
   OK and Cancel only, in a style a grant never has, and the text is cleaned and cut like any page text. A
   navigation of the tab, a refused or malformed call and the person's answer reply with the dismissed
-  default or the answer. A closed tab or window, a dead renderer, Electron's own `-cancel-dialogs` and a
-  removed frame close the panel and send nothing to Electron's callback, which takes the browser process
-  down when its frame is gone; a callback is also withheld when the frame went between the answer and the
-  next look at it. After a document's
+  default or the answer. A closed tab or window is answered as dismissed while the frame that asked is
+  alive. A dead renderer, Electron's own `-cancel-dialogs` and a removed frame close the panel and send
+  nothing to Electron's callback, which takes the browser process down when its frame is gone; a callback
+  is also withheld when the frame went between the answer and the next look at it. After a document's
   second dialog the next one offers "Do not let this page show more dialogs", and once ticked the rest are
   answered at once until the next page.
 - **Chromium decides first, and the shell takes what is left.** Chromium makes its own checks before the
@@ -77,7 +80,7 @@ A page's own questions go through the same panel, and the mechanism is part of t
   read the sandbox flags. A page that dispatches an event of its own around the call hides the leaving
   event. A listener of the preload's own for `beforeunload` would close that gap but makes every page one
   that has such a handler, and every navigation of it then waits on its renderer (measured: a page held on
-  its own dialog could not be navigated away from), so the check reads `window.event` at the call. A
+  its own dialog could not be navigated away from), so the check reads `window.event` at the call, through the browser's own getter taken before any page script runs, because a page can replace the property (`window.event = 0`). A
   subframe keeps Electron's behaviour: its `prompt` throws, because no preload runs there.
 - **A page an app shows in a `<webview>` is asked the same way.** The guest gets the same handler on its
   `-run-dialog` event, its preload installs the `prompt` wrapper in the guest's top frame, and the question
@@ -99,8 +102,21 @@ A page's own questions go through the same panel, and the mechanism is part of t
   cancels, is closed and gets no answer: calling Electron's callback for a frame that no longer exists took
   the browser process down (measured), and nothing is waiting on it.
 
-A native box remains for the OS file and folder pickers, which are not questions, and for a failure
-before any window exists. `npm run check:native-dialogs` fails the build on a message box anywhere else.
+A native message box remains for the OS file and folder pickers, which are not questions, and for a
+browser question (never a page's own dialog, which is answered as dismissed) asked before any window
+exists. `npm run check:native-dialogs` fails the build on a message box anywhere else.
+
+Which views can still raise a native `alert`, `confirm` or `prompt` box is settled view by view. A tab and a
+`<webview>` guest take Electron's dialog event over, as above, and ask in the panel. The views no one
+watches are built with `disableDialogs`, which makes the page's call return as dismissed without a box: an
+app's web context (`src/main/sessions/web-context-host.ts`), an app's child host
+(`src/main/children/child-host.ts`), an extension's popup and an extension's offscreen document (patch 62
+in `vendor/electron-chrome-extensions/UPSTREAM.md`). An extension's popup is watched, but routing its
+dialogs to a tab's panel would bind a window that is not a tab to a tab's question, so a popup's `confirm`
+answers false instead; an extension that needs a question draws it in its own page. The shell's own pages
+carry no page script. A tab whose internal dialog listener is not exactly the one Electron installs is left
+on Electron's own handling and logged once (`src/main/shell/page-dialogs.ts`): the one case where a tab can
+still show a native box.
 
 ## Context
 

@@ -6,6 +6,7 @@ import type { QuestionResult, QuestionSpec } from '../question/question-spec.js'
 
 vi.mock('electron', () => ({}))
 const { PAGE_DIALOG_CHANNEL } = await import('../../channels.js')
+const { formatOriginForDisplay } = await import('../../consent/grant-prompt-origin.js')
 const { defaultReply, hasPendingPageDialog, pageDialogSpec, readRequest, replyFor, speaker, watchPageDialogs } = await import('../page-dialogs.js')
 
 const MAIN = { origin: 'https://shop.example', parent: null, detached: false }
@@ -119,6 +120,12 @@ describe('the question one dialog becomes', () => {
     expect(speaker('https://ads.example', false)).toBe('An embedded page on https://ads.example')
     expect(speaker('null', true)).toBeUndefined()
     expect(speaker('null', false)).toBe('An embedded page')
+  })
+
+  it('writes the origin the way the rest of the shell does: a long host keeps its authority end', () => {
+    expect(speaker('https://a.b.c.d.shop.example', true)).toBe(formatOriginForDisplay('https://a.b.c.d.shop.example'))
+    expect(speaker('https://a.b.c.d.shop.example', true)).not.toContain('a.b.c.d')
+    expect(speaker('https://a.b.c.d.ads.example', false)).toBe(`An embedded page on ${formatOriginForDisplay('https://a.b.c.d.ads.example')}`)
   })
 
   it('reads the person\'s answer as the page\'s own function would return it', () => {

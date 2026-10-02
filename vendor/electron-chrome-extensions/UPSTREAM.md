@@ -771,6 +771,12 @@
     `commandMap` and `getAll` stay in place and are unused by Orivon. Reason: the library
     registered commands but never fired one, and Orivon's shortcut dispatcher is what notices the
     key press.
+62. **No native dialog from a popup or an offscreen document.** `src/browser/popup.ts` and
+    `src/browser/api/offscreen.ts` build their view with `disableDialogs: true`, so a page's `alert`,
+    `confirm` and `prompt` return as dismissed and no native message box opens. Reason: Orivon draws
+    every question in the question panel of a tab, and a view that is not a tab has no panel to draw in;
+    nobody watches an offscreen document, and routing a popup's dialogs to the front tab would show
+    another page's question under a popup's words.
 
 `partition.ts` is reached only through the virtual specifier `src/main/extensions/
 electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and

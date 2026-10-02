@@ -6,11 +6,13 @@
 // `prompt` never reaches that event, so the tab's preload sends it
 // (src/preload/page-dialogs.ts). Either way the page's script stays blocked
 // until the person answers, so an answer, a navigation and a refused or
-// malformed call reply. A closed tab, a dead renderer, Electron's own cancel
-// event and a removed frame close the panel and send nothing to Electron's
-// callback, which takes the browser process down when its frame is gone.
+// malformed call reply. A closed tab is answered as a cancel while its frame
+// is alive. A dead renderer, Electron's own cancel event and a removed frame
+// close the panel and send nothing to Electron's callback, which takes the
+// browser process down when its frame is gone.
 import type { IpcMainEvent, WebContents, WebFrameMain } from 'electron'
 import { PAGE_DIALOG_CHANNEL } from '../channels.js'
+import { formatOriginForDisplay } from '../consent/grant-prompt-origin.js'
 import { askQuestion, type AskQuestion } from './question/ask-question.js'
 import type { QuestionResult, QuestionSpec } from './question/question-spec.js'
 
@@ -47,11 +49,12 @@ export function defaultReply (type: PageDialogType): PageDialogReply {
   return type === 'confirm' ? false : type === 'prompt' ? null : undefined
 }
 
-/** Who is speaking: the frame's own origin, which main reads from the committed document and the page cannot set. A frame inside the page says so, as Chromium's own dialog does. */
+/** Who is speaking: the frame's own origin, which main reads from the committed document and the page cannot set, written as the rest of the shell writes an origin. A frame inside the page says so, as Chromium's own dialog does. */
 export function speaker (frameOrigin: string, topFrame: boolean): string | undefined {
   const known = frameOrigin !== '' && frameOrigin !== 'null'
-  if (topFrame) return known ? frameOrigin : undefined
-  return known ? `An embedded page on ${frameOrigin}` : 'An embedded page'
+  const shown = known ? formatOriginForDisplay(frameOrigin) : ''
+  if (topFrame) return known ? shown : undefined
+  return known ? `An embedded page on ${shown}` : 'An embedded page'
 }
 
 /** The question for one dialog. A text on a dialog the person has now seen twice offers to stop the rest. */

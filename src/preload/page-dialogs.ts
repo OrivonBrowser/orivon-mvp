@@ -39,9 +39,19 @@ function wrapPrompt (askMain: (message: string, defaultText: string) => string |
   // Chromium ignores a dialog raised while the page is being left, so that a page cannot put its own words in
   // front of someone who is leaving; the event being handled says so. No listener of ours is registered for it:
   // one would make every page one that has a handler, and every navigation of it wait for its renderer.
+  // `window.event` is replaceable by the page (`window.event = 0`), so the browser's own getter is taken now,
+  // before any page script has run, and read through instead.
+  let descriptor: PropertyDescriptor | undefined
+  for (let owner: object | null = window; owner !== null && descriptor === undefined; owner = Object.getPrototypeOf(owner) as object | null) {
+    descriptor = Object.getOwnPropertyDescriptor(owner, 'event')
+  }
+  const getEvent = descriptor?.get
+  const call = Reflect.apply
+  const currentEvent = (): { type?: unknown } | undefined =>
+    (getEvent === undefined ? (window as unknown as { event?: { type?: unknown } }).event : call(getEvent, window, []) as { type?: unknown } | undefined)
   const leaving = (): boolean => {
     try {
-      const type = (window as unknown as { event?: { type?: unknown } }).event?.type
+      const type = currentEvent()?.type
       // A page hidden by a navigation raises visibilitychange as part of being left.
       return type === 'beforeunload' || type === 'pagehide' || type === 'unload' || (type === 'visibilitychange' && document.visibilityState === 'hidden')
     } catch {

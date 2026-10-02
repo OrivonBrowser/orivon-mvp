@@ -1,8 +1,8 @@
 // The panel every question is drawn in. Main sends the whole question on each
 // show and enforces the guard itself, counting from the page's report that the
-// question is drawn; the page only names a button. A
-// consent question starts focus on the panel, never a button, so Enter
-// accepts nothing; a guarded button looks disabled for the guard's length.
+// question is drawn and from the last key pressed in the panel; the page only
+// names a button. A consent question starts focus on the panel, never a
+// button; a guarded button looks disabled for the guard's length.
 import { h, replaceChildren } from '../../pages/shared/dom.js'
 import type { Overlay, OverlayPage } from '../kit.js'
 import type { QuestionView } from '../../../main/shell/question/question-spec.js'

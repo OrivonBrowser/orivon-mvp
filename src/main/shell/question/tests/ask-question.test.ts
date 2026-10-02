@@ -239,6 +239,16 @@ describe('askQuestion', () => {
     expect(settled).toBe(false)
   })
 
+  it('ends when the contents it was asked about are destroyed, as a typed address that needs a new session does, with no navigation event', async () => {
+    const r = rig()
+    const ends = r.ask({ contents: r.contents }, CONSENT, { endOnNavigation: true })
+    await vi.advanceTimersByTimeAsync(0)
+    r.contents.emit('destroyed')
+    expect(await ends).toEqual({ response: 1, checkboxChecked: false })
+    expect(r.closes).toContain(QUESTION_OVERLAY)
+    expect(r.contents.listenerCount('destroyed')).toBe(0)
+  })
+
   it('makes a question for a background tab wait for its tab', async () => {
     const r = rig({ active: 'other' })
     const answer = r.ask({ contents: r.contents }, CONSENT)
@@ -299,6 +309,16 @@ describe('askQuestion', () => {
     const ask = createAskQuestion({ windows: { findTab: () => null, focused: () => undefined }, kiosk: false, native })
     expect(await ask({}, NOTICE)).toEqual({ response: 0, checkboxChecked: true })
     expect(native).toHaveBeenCalledTimes(1)
+  })
+
+  it('never answers a page dialog natively: with no window to draw in it is a cancel, whatever each kind cancels with', async () => {
+    const native = vi.fn(async (): Promise<QuestionResult> => ({ response: 0, checkboxChecked: true }))
+    const ask = createAskQuestion({ windows: { findTab: () => null, focused: () => undefined }, kiosk: false, native })
+    for (const kind of ['page-alert', 'page-confirm', 'page-prompt'] as const) {
+      const spec = { kind, message: 'Hello', origin: 'https://a.example', buttons: ['OK', 'Cancel'], cancelId: 1 }
+      expect(await ask({}, spec)).toEqual({ response: 1, checkboxChecked: false })
+    }
+    expect(native).not.toHaveBeenCalled()
   })
 
   it('holds the guard in main: the accept button of a shown question does nothing early, whatever the page sends', async () => {

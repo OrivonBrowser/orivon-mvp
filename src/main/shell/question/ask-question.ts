@@ -5,13 +5,14 @@
 // tab: a question for a background tab waits for its tab, a tab switch hides
 // it, and a closed tab, an abort or a new page answers it as a cancel.
 // This is the one file outside the file pickers that may open a native box,
-// and only when no shell window exists to draw in.
+// and only when no shell window exists to draw in, and never for a page's own
+// dialog: that is answered as a cancel.
 import { dialog, type MessageBoxOptions } from 'electron'
 import { crossingAnchor, promptAnchor } from '../actions/prompt-anchor.js'
 import { requestSlot } from '../../overlays/tab-slots.js'
 import type { ShellWindow, WindowRegistry } from '../window-registry.js'
 import { QUESTION_OVERLAY, QUESTION_SHEET_OVERLAY, holdQuestion, releaseQuestion } from './question-overlay.js'
-import { needsToolbar, normaliseSpec, type QuestionResult, type QuestionSpec } from './question-spec.js'
+import { isPageKind, needsToolbar, normaliseSpec, type QuestionResult, type QuestionSpec } from './question-spec.js'
 
 /** Where a question goes. A tab's contents resolves to its tab; a tab's own window and id say so directly; neither means the tab in front in the window the person is using. */
 export interface QuestionTarget {
@@ -43,6 +44,8 @@ export interface AskQuestionDeps {
 
 /** A message box for a question asked before any window exists. */
 async function nativeBox (spec: QuestionSpec): Promise<QuestionResult> {
+  // A box has no way to say whose dialog it is and no text box for a prompt, so a page is never answered through one.
+  if (isPageKind(spec.kind)) return { response: spec.cancelId, checkboxChecked: false }
   const options: MessageBoxOptions = {
     type: spec.warning === true ? 'warning' : 'question',
     buttons: [...spec.buttons],
@@ -60,10 +63,13 @@ async function nativeBox (spec: QuestionSpec): Promise<QuestionResult> {
 
 const isDestroyed = (contents: object): boolean => typeof (contents as { isDestroyed?: unknown }).isDestroyed === 'function' && (contents as { isDestroyed: () => boolean }).isDestroyed()
 
-type NavigableContents = { once: (event: 'did-navigate', listener: () => void) => unknown, removeListener: (event: 'did-navigate', listener: () => void) => unknown }
+type EndEvent = 'did-navigate' | 'destroyed'
+type NavigableContents = { once: (event: EndEvent, listener: () => void) => unknown, removeListener: (event: EndEvent, listener: () => void) => unknown }
 
 export function createAskQuestion (deps: AskQuestionDeps): AskQuestion {
-  const native = deps.native ?? nativeBox
+  const nativeAnswer = deps.native ?? nativeBox
+  const native = async (spec: QuestionSpec): Promise<QuestionResult> =>
+    isPageKind(spec.kind) ? { response: spec.cancelId, checkboxChecked: false } : await nativeAnswer(spec)
 
   function resolveTab (target: QuestionTarget): { window: ShellWindow, tabId: string } | undefined | 'gone' {
     if (target.window !== undefined && target.tabId !== undefined) return { window: target.window, tabId: target.tabId }
@@ -114,7 +120,10 @@ export function createAskQuestion (deps: AskQuestionDeps): AskQuestion {
         settled = true
         if (id !== undefined) releaseQuestion(id)
         options.signal?.removeEventListener('abort', onEnd)
-        if (watching) contents.removeListener('did-navigate', onEnd)
+        if (watching) {
+          contents.removeListener('did-navigate', onEnd)
+          contents.removeListener('destroyed', onEnd)
+        }
         resolve(result)
       }
       function onEnd (): void {
@@ -122,7 +131,11 @@ export function createAskQuestion (deps: AskQuestionDeps): AskQuestion {
         settle(cancel)
       }
       options.signal?.addEventListener('abort', onEnd, { once: true })
-      if (watching) contents.once('did-navigate', onEnd)
+      // A new page ends it, and so does the contents going away: a typed address that needs another session replaces the view without a navigation.
+      if (watching) {
+        contents.once('did-navigate', onEnd)
+        contents.once('destroyed', onEnd)
+      }
 
       const kiosk = deps.kiosk
       const show = (): void => {
