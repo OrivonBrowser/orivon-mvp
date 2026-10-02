@@ -163,7 +163,7 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
 
   /** The view currently attached to `contentView`, or null while hidden/closed. */
   let shown: WebContentsView | null = null
-  /** What `shown` held at construction. A view whose contents were destroyed answers `webContents` with nothing, so the close path reads these instead. */
+  /** What `shown` held when it was shown. A view whose contents were destroyed answers `webContents` with nothing, so the close path reads these instead. */
   let shownContents: WebContents | null = null
   let shownContentsId = 0
   /** Popups this module closed itself, whose `destroyed` event follows. */
@@ -243,7 +243,13 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
       if (wasShown) hide()
       // Not the echo of a click away: the next click on the icon is a request to open. A popup this module closed itself is that echo.
       if (wasShown || !closedHere.has(popup)) lastClosedAt = 0
-      if (warmView === popup) { warmView = null; removeIpc?.(); removeIpc = null; contentsOf(popup)?.close() }
+      if (warmView === popup) {
+        warmView = null
+        removeIpc?.()
+        removeIpc = null
+        closedHere.add(popup)
+        contentsOf(popup)?.close()
+      }
     }
     popup.webContents.on('render-process-gone', gone)
     popup.webContents.once('destroyed', gone)
@@ -299,11 +305,13 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
     const alive = contents !== null && !contents.isDestroyed()
     // Read before the view leaves: a blur close finds it already false, and focus then stays where the person put it.
     const hadFocus = alive && contents.isFocused()
+    // A throw here (a window being disposed) must not skip the cleanup below nor reach the caller.
     try {
       contentView.removeChildView(popup)
-    } finally {
-      recordPopoverShown(id, false)
+    } catch (error) {
+      console.error('[popover] detaching the popup failed', error)
     }
+    recordPopoverShown(id, false)
     // A `warm` popup's view survives being hidden -- only the window closing
     // (below) ever destroys it.
     if (spec.warm !== true) {

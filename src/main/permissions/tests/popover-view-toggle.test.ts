@@ -171,11 +171,12 @@ describe('a popup whose page is gone while it shows', () => {
     popover.toggle(ANCHOR, [], 'main')
     const view = views[0]
     expect(view).toBeDefined()
-    // The order Electron runs a close in: blur first, then the view loses its contents, then 'destroyed'.
-    view?.webContents.destroy()
-    view?.webContents.handlers.get('blur')?.()
+    // The order the end-to-end run observed: the view has already lost its contents when blur arrives, and 'destroyed' follows.
+    const contents = view?.webContents
+    contents?.destroy()
     if (view !== undefined) view.view['webContents'] = undefined
-    view?.webContents.handlers.get('destroyed')?.()
+    expect(() => { contents?.handlers.get('blur')?.() }).not.toThrow()
+    contents?.handlers.get('destroyed')?.()
     expect(attached()).toBe(0)
     expect(popover.isOpen()).toBe(false)
     expect(() => { popover.close() }).not.toThrow()
@@ -192,5 +193,48 @@ describe('a popup whose page is gone while it shows', () => {
     if (view !== undefined) view.view['webContents'] = undefined
     expect(() => { popover.close() }).not.toThrow()
     expect(popover.isOpen()).toBe(false)
+  })
+})
+
+describe('a popup whose detaching throws', () => {
+  it('still releases its contents and does not throw to the caller', () => {
+    const detach = vi.fn(() => { throw new Error('window disposed') })
+    const win = { getContentBounds: () => ({ x: 0, y: 0, width: 1200, height: 800 }), on: vi.fn() }
+    const popover = createPopoverView(win as never, { addChildView: vi.fn(), removeChildView: detach } as never, {
+      dirname: '/app', entryPath: '/site-info/', fallbackHtml: '../renderer/site-info/index.html',
+      preloadRelPath: '../preload/site-info.js', urlArgName: 'orivon-site-info-url', align: 'left',
+      background: BACKGROUND, registerIpc: () => () => {}
+    })
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {})
+    popover.toggle(ANCHOR, [], 'main')
+    expect(() => { popover.close() }).not.toThrow()
+    expect(last().close).toHaveBeenCalledTimes(1)
+    expect(popover.isOpen()).toBe(false)
+    quiet.mockRestore()
+  })
+})
+
+describe('a warm popup whose page is gone', () => {
+  it('is rebuilt on the next open, and the dead view\'s late destroyed event is not read as a fresh open request', () => {
+    let attached = 0
+    const contentView = { addChildView: () => { attached += 1 }, removeChildView: () => { attached -= 1 } }
+    const win = { getContentBounds: () => ({ x: 0, y: 0, width: 1200, height: 800 }), on: vi.fn() }
+    const popover = createPopoverView(win as never, contentView as never, {
+      dirname: '/app', entryPath: '/site-info/', fallbackHtml: '../renderer/site-info/index.html',
+      preloadRelPath: '../preload/site-info.js', urlArgName: 'orivon-site-info-url', align: 'left',
+      background: BACKGROUND, warm: true, registerIpc: () => () => {}
+    })
+    popover.toggle(ANCHOR, [], 'main')
+    const dead = views[0]
+    dead?.webContents.handlers.get('render-process-gone')?.()
+    expect(attached).toBe(0)
+    popover.toggle(ANCHOR, [], 'main')
+    expect(views).toHaveLength(2)
+    expect(attached).toBe(1)
+    // The person clicks away from the rebuilt popup, then the dead one's contents report destroyed.
+    views[1]?.webContents.handlers.get('blur')?.()
+    dead?.webContents.handlers.get('destroyed')?.()
+    popover.toggle(ANCHOR, [], 'main')
+    expect(attached).toBe(0)
   })
 })
