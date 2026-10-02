@@ -13,6 +13,8 @@ let dir: string
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'orivon-dispatcher-ext-')) })
 afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
 
+// A command runs on the turn after the key event.
+const settle = async (): Promise<void> => { await new Promise<void>((resolve) => { setImmediate(resolve) }) }
 const key = (k: string, code: string, mods: Partial<PressedKey> = {}): PressedKey =>
   ({ type: 'keyDown', key: k, code, control: false, alt: false, shift: false, meta: false, isAutoRepeat: false, isComposing: false, ...mods })
 
@@ -55,6 +57,7 @@ describe('extension keys in the dispatcher', () => {
   it('lets Orivon\'s own command win and never asks the extension', async () => {
     const { press, extensionRun, run } = await setup({ holds: ['t'] })
     const event = press(key('t', 'KeyT', { control: true }))
+    await settle()
     expect(run).toHaveBeenCalledWith('tab.new')
     expect(extensionRun).not.toHaveBeenCalled()
     expect(event.preventDefault).toHaveBeenCalled()
@@ -123,6 +126,7 @@ describe('extension keys in the dispatcher', () => {
     attachShortcuts(contents, service, { windowFor: () => ({ suspended: false, isAppTab: false, run }), recorded: vi.fn() })
     const event = { preventDefault: vi.fn() }
     contents.emit('before-input-event', event, key('t', 'KeyT', { control: true }))
+    await settle()
     expect(run).toHaveBeenCalledWith('tab.new')
     contents.emit('before-input-event', event, key('Y', 'KeyY', { control: true, shift: true }))
     expect(event.preventDefault).toHaveBeenCalledTimes(1)

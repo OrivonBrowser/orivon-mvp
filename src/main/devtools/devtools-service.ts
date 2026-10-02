@@ -86,8 +86,10 @@ export class DevToolsService implements DevToolsGate {
   private show (contents: WebContents): void {
     contents.openDevTools({ mode: this.settings.get('developer.dock') })
     this.open.add(contents)
-    contents.once('devtools-closed', () => { this.open.delete(contents) })
     // A tab torn down with its tools open may no longer be able to name this page.
-    contents.once('destroyed', () => { this.open.delete(contents) })
+    const forget = (): void => { this.open.delete(contents) }
+    contents.once('destroyed', forget)
+    // Each open adds a listener for the page's whole life, so closing the tools takes it away again.
+    contents.once('devtools-closed', () => { forget(); contents.removeListener('destroyed', forget) })
   }
 }

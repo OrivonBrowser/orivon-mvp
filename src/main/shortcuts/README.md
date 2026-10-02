@@ -40,6 +40,11 @@ page cannot take a browser shortcut and a handled key never reaches it. A menu a
 key before this runs and reaches only the windows that have a menu, which is why Linux and Windows have
 no application menu and macOS's is display-only (its accelerators are switched off).
 
+**A command runs after the key event returns.** A command can close a tab, a window or the developer tools,
+and destroying a webContents inside the `before-input-event` delivery trips a check in Chromium's
+`~WebContentsImpl` that ends the main process. `dispatcher.ts` keeps the key from the page inside the event
+and runs the command on the next turn of the event loop, skipping it when the window is gone by then.
+
 **A chord is matched by what it means, not always by the key it prints.** Letters and symbols match on
 the character produced, so a remapped layout keeps Ctrl+T on the T it shows; digits match on the physical
 key, because Shift changes the character but not the position a person means.
