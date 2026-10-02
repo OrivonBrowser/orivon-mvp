@@ -70,6 +70,27 @@ it('installs a service-worker extension from the store into a running browser, a
         session.defaultSession.serviceWorkers.on('console-message', (_e, d) => { if (store.length < 40) store.push(`${String(d.level)} ${String(d.message).slice(0, 200)}`) })
       })
 
+      // The one-time recovery reload (extension-sw-preload-recovery.ts) takes
+      // longer here, so the first worker's welcome tab lands inside the window
+      // where the extension is removed and not yet loaded again. The install's
+      // own load is the first call; every later one is the recovery's. The
+      // failed page loads are logged to show the window was really hit.
+      await liveApp.evaluate(({ app: electronApp, session }) => {
+        const failures: string[] = []
+        ;(globalThis as unknown as { __loadFailures: string[] }).__loadFailures = failures
+        electronApp.on('web-contents-created', (_event, wc) => {
+          wc.on('did-fail-load', (_e, code, _description, url, isMainFrame) => { if (isMainFrame) failures.push(`${String(code)} ${url}`) })
+        })
+        const extensions = session.defaultSession.extensions as unknown as { loadExtension: (path: string, options?: unknown) => Promise<unknown> }
+        const original = extensions.loadExtension.bind(extensions)
+        let calls = 0
+        extensions.loadExtension = async (path, options) => {
+          calls += 1
+          if (calls > 1) await new Promise((resolve) => setTimeout(resolve, 1500))
+          return await original(path, options)
+        }
+      })
+
       // A web tab is open while the extension arrives.
       await navigateToFixture(app, `${origin}/`, 'store-live-page')
       await waitFor(async () => await liveApp.evaluate(() => typeof (globalThis as unknown as { __orivonDevExtensionsStore?: unknown }).__orivonDevExtensionsStore === 'object'))
@@ -112,7 +133,8 @@ it('installs a service-worker extension from the store into a running browser, a
         return page.executeJavaScript('typeof chrome.scripting?.getRegisteredContentScripts === "function"').then((has) => has === true, () => false)
       }, welcomeUrl)
       const settled = await waitFor(welcomeHasApis, 10_000).catch(() => false)
-      check('the welcome tab has the extension APIs once the recovery reload is done', settled)
+      const failures = await liveApp.evaluate(() => (globalThis as unknown as { __loadFailures: string[] }).__loadFailures)
+      check('the welcome tab has the extension APIs once the recovery reload is done', settled, failures.join(' | '))
 
       const registered = await liveApp.evaluate(({ webContents }, id: string) => {
         const page = webContents.getAllWebContents().find((wc) => !wc.isDestroyed() && wc.getURL() === `chrome-extension://${id}/welcome.html`)

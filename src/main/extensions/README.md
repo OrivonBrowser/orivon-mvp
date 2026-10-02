@@ -95,8 +95,7 @@ same exception, reached only through the virtual specifiers above).
 
 | File | Layer |
 |---|---|
-| `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts`, `store-download-seam.ts`, `extension-prefs.ts`, `effective-manifest.ts`, `manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `extensions-detail-parts.ts`, `extensions-page-commands.ts`, `extension-permission-check.ts`, `install-private.ts`, `optional-permissions.ts`, `permission-nag-limit.ts`, `granted-host-rule.ts`, `granted-reconcile.ts`, `details-optional.ts` | The decision -- no `electron`, unit-tested under plain vitest |
-| `crx.ts`, `extension-pages-reload.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts`, `extension-commands.ts`, `extension-action-anchor.ts`, `store-download-seam.ts`, `extension-prefs.ts`, `effective-manifest.ts`, `manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `extensions-detail-parts.ts`, `extensions-page-commands.ts`, `extension-permission-check.ts`, `install-private.ts` | The decision -- no `electron`, unit-tested under plain vitest |
+| `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts`, `extension-commands.ts`, `extension-action-anchor.ts`, `extension-pages-reload.ts`, `store-download-seam.ts`, `extension-prefs.ts`, `effective-manifest.ts`, `manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `extensions-detail-parts.ts`, `extensions-page-commands.ts`, `extension-permission-check.ts`, `install-private.ts`, `optional-permissions.ts`, `permission-nag-limit.ts`, `granted-host-rule.ts`, `granted-reconcile.ts`, `details-optional.ts` | The decision -- no `electron`, unit-tested under plain vitest |
 | `unpack-runner.ts`, `registry-runner.ts`, `install-runner.ts`, `install-store-runner.ts`, `install-lifecycle.ts`, `extensions-view-runner.ts`, `store-runner.ts`, `extension-prefs-runner.ts`, `effective-manifest-runner.ts`, `extension-page-open.ts` | The real I/O |
 | `extension-commands-runner.ts`, `install-extension-commands.ts`, `shortcuts-page.ts` | The keys of extension commands: the table and what a key runs (fakes for everything it reaches), the real session, registry and shell behind it, and what the shortcuts page may ask |
 | `extension-install-prompt.ts`, `extensions-picker-runner.ts` | The native dialogs (`dialog.showMessageBox`, `dialog.showOpenDialog`) |
@@ -161,8 +160,11 @@ seconds to a single e2e run seeding four real extensions (dNR's own vendored rul
 `extension-host.ts`'s call site instead) reaches this file's generic hook without this file ever
 importing that caller's module itself. Its `onReloaded` parameter is the same hand-off for the pages: a
 page of the extension opened while it was removed (the welcome tab a first worker opens on install)
-fails to load, and one opened before keeps a dead context, so `extension-host.ts` navigates each open
-page of that extension again through `extension-pages-reload.ts`.
+fails to load, and one opened before keeps a dead context. `extension-host.ts` navigates each open tab
+of that extension again through `extension-pages-reload.ts`, and a tab whose load fails while the
+extension is removed, or within a few seconds after it is loaded again, is navigated again once the
+extension is back: the failure can be reported after the reload ended, when the tab held no URL yet.
+The extension's hidden offscreen document is never navigated.
 
 **[`site-reach.ts`](site-reach.ts) returns none for an origin served from its pinned cache,
 without ever looking at the installed extensions.** ADR-0045 has extensions run on every page,
