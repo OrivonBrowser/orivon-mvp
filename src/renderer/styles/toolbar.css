@@ -347,3 +347,17 @@ browser-action-list::part(badge) {
 /* A toggle in the cluster that stays tinted while what it opens is open. */
 .iconbtn[aria-pressed='true'] { color: var(--wfocus); background: color-mix(in srgb, var(--wfocus) 16%, transparent); }
 .iconbtn[aria-pressed='true']:not(:disabled):hover { background: color-mix(in srgb, var(--wfocus) 24%, transparent); }
+
+/* A narrow window (it stops at 500px, window-frame.ts's MIN_WINDOW_WIDTH): the address field is the only
+   part of the row that gives way, so the two placeholders in the cluster go, the gaps tighten, and the
+   extension buttons stop at two -- without this the field is about 50px wide at the minimum. */
+@media (max-width: 640px) {
+  .toolbar { padding: 0 8px; }
+  .bookmarkbtn { margin: 0 4px; }
+  .toolbar-cluster { margin-left: 4px; }
+  .toolbar-cluster .sep,
+  #identity,
+  .statusdot { display: none; }
+  browser-action-list { max-width: 68px; overflow: hidden; }
+  .profile-chip { max-width: 72px; }
+}

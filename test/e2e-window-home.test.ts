@@ -163,6 +163,27 @@ it('with no home page, Home opens the new tab page and never swaps a loaded page
   }
 }, TEST_TIMEOUT_MS)
 
+it('stops the window at its minimum size, and the address field still has room there', async () => {
+  const { app, chrome } = await launchShell({ seedProfile: settingsJson({ 'toolbar.home': true }) })
+  try {
+    expect(await waitFor(async () => await homeShown(chrome))).toBe(true)
+    expect(await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getMinimumSize())).toEqual([500, 400])
+    expect(await waitFor(async () => await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.isVisible() === true))).toBe(true)
+    await app.evaluate(({ BaseWindow }) => { BaseWindow.getAllWindows()[0]?.setSize(300, 200) })
+    expect(await waitFor(async () => (await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getSize())) !== undefined)).toBe(true)
+    const size = await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getSize() ?? [0, 0])
+    expect(size[0]).toBeGreaterThanOrEqual(500)
+    expect(size[1]).toBeGreaterThanOrEqual(400)
+    // The chrome view takes the new width a moment after the window does.
+    expect(await waitFor(async () => (await chrome.evaluate(() => window.innerWidth)) <= 520)).toBe(true)
+    const field = await chrome.evaluate(() => document.querySelector<HTMLInputElement>('#address')?.getBoundingClientRect().width ?? 0)
+    expect(field).toBeGreaterThanOrEqual(120)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
 it('opens the window at the place it was left, and never at one no display shows', async () => {
   const saved = await launchShell({ seedProfile: stateJson({ x: 60, y: 40, width: 900, height: 620 }) })
   try {

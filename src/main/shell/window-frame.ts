@@ -36,6 +36,11 @@ const BACKGROUND_PRIVATE_LIGHT = OVERLAY_PRIVATE_LIGHT.color
 /** Height of the native overlay: the tab row's height, in src/renderer/style.css too. */
 const OVERLAY_HEIGHT = 36
 
+/** The smallest a window can be made, a size the toolbar still leaves the address field room at:
+ * styles/toolbar.css's narrow rule (its `max-width: 640px` query) is written against this width. */
+export const MIN_WINDOW_WIDTH = 500
+export const MIN_WINDOW_HEIGHT = 400
+
 // Dev/test tooling only -- never gated on app.isPackaged or "is this a
 // production build" (run-from-source is a real shipping path on Windows and
 // macOS, build-plan.md; a real user's window must always take focus).
@@ -107,6 +112,8 @@ export function createWindowFrame (dirname: string, place: Placement = {}, isPri
   const win = new BaseWindow({
     ...initialBounds,
     show: false,
+    minWidth: MIN_WINDOW_WIDTH,
+    minHeight: MIN_WINDOW_HEIGHT,
     kiosk,
     icon: iconPath,
     backgroundColor: background(),

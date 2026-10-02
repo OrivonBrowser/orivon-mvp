@@ -156,6 +156,10 @@ it('the dashboard and toolbar still fit in a narrow window', async () => {
         expected: 'At 800x600 the toolbar controls and the address bar all fit on one row with nothing cut or overlapping, the dashboard content stays centred and inside the window.',
         action: 'Resized the window content to 800x600 on the dashboard.'
       }, { width: 800, height: 600 })
+      await state(check, app, 'dashboard-500x400', {
+        expected: 'At the smallest size a window can have, 500x400, the toolbar is one row: back, forward, reload, the star, an address field wide enough to read an address in, the all-sites button and the menu. The identity placeholder and the node-status dot are gone, and nothing is cut or overlaps.',
+        action: 'Resized the window content to 500x400, the minimum, on the dashboard.'
+      }, { width: 500, height: 400 })
     })
   } finally {
     await closeElectron(app)
