@@ -251,6 +251,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 - **A page with no icon of its own shows the globe again**, as in Chrome, instead of an icon the tab or history remembered
   for its site; a remembered icon still comes back on a return after a blank or failed page.
+- **`npm run dev` and `npm start` start on Windows again**: Node refuses to spawn an npm `.cmd` shim without a shell, so the
+  launch and build scripts exited 1 with nothing on screen; they now run the shim through cmd.exe and print a failed launch.
 - **An app opened from `ipfs://` or a `.eth` name asks for its grants again over slow gateways**: its install gave up when a
   file took over 20 seconds to start arriving, so no consent prompt ever appeared. A refused install now logs its reason.
 - **An app that shows pages it serves itself is granted `web.embed` again**: a local pattern (`http://*.localhost:<port>`) or an exact
