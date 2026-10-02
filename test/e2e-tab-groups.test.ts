@@ -128,6 +128,13 @@ it('makes a group from a tab, names and colours it, adds a tab from the tab menu
     expect(await page.locator('.tg-swatch').count()).toBe(8)
     expect(await page.locator('.tg-swatch[aria-checked="true"]').getAttribute('aria-label')).toBe('Gray')
     expect(await page.locator('.tg-actions [role="menuitem"]').allTextContents()).toEqual(['New tab in group', 'Ungroup', 'Move group to new window', 'Close group'])
+    // The bubble shows all of its content: it is shorter than its 320 px cap, so its own scroll box does not scroll.
+    const fit = await page.evaluate(() => {
+      const scroller = document.getElementById('scroll') as HTMLElement
+      return { content: Math.ceil((document.getElementById('content') as HTMLElement).getBoundingClientRect().height), scrolls: scroller.scrollHeight > scroller.clientHeight }
+    })
+    expect(fit.content).toBeLessThan(320)
+    expect(fit.scrolls).toBe(false)
     await shootBubble(page, 'bubble-empty')
     await shootChrome(chrome, 'strip-untitled')
 

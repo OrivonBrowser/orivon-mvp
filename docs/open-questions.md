@@ -1917,3 +1917,16 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** leave as is until a person asks (rec.); keep the overlay open while a native menu is up; main-coordinated drag across the folder and chrome views.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
+
+### A347: Which right-click menu scrolled for the owner, and on which monitor layout **[RESEARCH]**
+
+- **Question:** Right-click menus are native Electron menus. On Linux X11, Chromium bounds one by the work area
+  of the display under the pointer and clips only the primary display's work area to the desktop's single
+  `_NET_WORKAREA` rectangle, so a menu scrolls when that rectangle is shorter than it. The page menu measures 379 px
+  under a virtual display. The live desktop reports `_NET_WORKAREA` 0,872,4920,1048, which leaves the primary 1048 px
+  and does not scroll it, so the work area is provisional as the cause. The tab-group bubble (an overlay capped at
+  320 px) measures 234 px and does not scroll. Which surface scrolled, and on which layout, settles it.
+- **Why it matters:** a menu that scrolls where the screen has room reads as broken, and a native menu has no lever.
+- **Options:** keep the menus native (owner's call, recorded in `d-0399`); on a repro, draw that menu as an overlay.
+- **Who decides:** research first
+- **Blocks:** nothing

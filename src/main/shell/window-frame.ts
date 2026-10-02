@@ -90,7 +90,8 @@ export function createWindowFrame (dirname: string, place: Placement = {}, isPri
   // Sized against bounds, not workArea. A display's workArea is the panel
   // minus the desktop environment's reserved struts, and on a multi-monitor
   // layout where the monitors have different heights and vertical offsets,
-  // GNOME reports a work area far shorter than the monitor itself -- a
+  // Chromium on X11 clips the primary's work area to the desktop's single
+  // _NET_WORKAREA rectangle, which can be far shorter than the monitor -- a
   // 1920x1080 primary can come back 328px tall. Clamping the window to that
   // produces a letterbox slot with no way to grow it from here; bounds is
   // the physical panel and is always right.
@@ -193,9 +194,10 @@ export function showWhenReady ({ win, initialBounds, kiosk }: WindowFrame, optio
     }
     // Re-asserted after show, not just passed to the constructor. A window
     // manager may shrink a window to the display's work area as it maps it,
-    // and a work area can be reported far smaller than the monitor (GNOME
-    // does this on a multi-monitor layout with mixed heights and vertical
-    // offsets). The constructor size loses that argument; a setBounds once
+    // and a work area can be reported far smaller than the monitor (on X11
+    // Chromium clips the primary's to the single _NET_WORKAREA rectangle,
+    // short on a multi-monitor layout with mixed heights). The constructor
+    // size loses that argument; a setBounds once
     // the window is mapped is honoured. Harmless where the first size
     // already stuck -- it sets what is already set.
     if (!kiosk) {
