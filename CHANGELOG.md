@@ -249,6 +249,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **`npm run dev` and `npm start` start on Windows again**: Node refuses to spawn an npm `.cmd` shim without a shell, so the
+  launch and build scripts exited 1 with nothing on screen; they now run the shim through cmd.exe and print a failed launch.
 - **An app that shows pages it serves itself is granted `web.embed` again**: a local pattern (`http://*.localhost:<port>`) or an exact
   `http://` origin was read as a `host:port` pattern, which it is not, so no manifest declaring one was ever allowed to grant it. The
   subset check now compares any whole-origin pattern exactly.

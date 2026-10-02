@@ -15,11 +15,11 @@
  * constraint: zero runtime dependencies). A plain Node script is portable
  * without adding one.
  */
-import { spawnSync } from 'node:child_process'
+import { spawnCommandSync } from './cli.mjs'
 
-const result = spawnSync(
-  process.platform === 'win32' ? 'npx.cmd' : 'npx',
+const result = spawnCommandSync(
+  'npx',
   ['electron-vite', 'build'],
-  { stdio: 'inherit', env: { ...process.env, ORIVON_ENABLE_DEV_GRANT: '1' } }
+  { env: { ...process.env, ORIVON_ENABLE_DEV_GRANT: '1' } }
 )
 process.exit(result.status ?? 1)
