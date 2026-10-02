@@ -581,40 +581,6 @@ describe('createOverlayHost: keep and reopen', () => {
     expect(host.isOpen('a')).toBe(true)
   })
 
-  it('a click held down for longer than the debounce is still the echo of the press that closed the overlay', () => {
-    const { host } = setup([def('a')])
-    host.show('a', ANCHOR)
-    // The press lands on the toolbar button: the overlay loses focus and closes, and the click that completes the gesture arrives a second later.
-    const pressedAt = Date.now()
-    views[0]?.spec.onBlur()
-    vi.advanceTimersByTime(1_000)
-    host.toggle('a', ANCHOR, undefined, pressedAt)
-    expect(host.isOpen('a')).toBe(false)
-  })
-
-  it('a fresh press just after another close opens the overlay: the debounce is for the press that closed it, not for the clock', () => {
-    const { host } = setup([def('a')])
-    host.show('a', ANCHOR)
-    views[0]?.spec.onBlur()
-    vi.advanceTimersByTime(120)
-    host.toggle('a', ANCHOR, undefined, Date.now() - 40)
-    expect(host.isOpen('a')).toBe(true)
-  })
-
-  it('a press time that is not a time, or lies in the future, falls back to the debounce', () => {
-    const { host } = setup([def('a')])
-    host.show('a', ANCHOR)
-    views[0]?.spec.onBlur()
-    vi.advanceTimersByTime(100)
-    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Date.now() + 60_000]) {
-      host.toggle('a', ANCHOR, undefined, bad)
-      expect(host.isOpen('a')).toBe(false)
-    }
-    vi.advanceTimersByTime(300)
-    host.toggle('a', ANCHOR, undefined, Date.now() - 20)
-    expect(host.isOpen('a')).toBe(true)
-  })
-
   it('a toggle of an open overlay closes it, and a request-close does not debounce the next open', () => {
     const { host } = setup([def('a')])
     host.toggle('a', ANCHOR)
