@@ -1882,14 +1882,13 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 ### A342: Pinning a tab ended the browser, and the cause is not found **[OWNER]**
 
 - **Question:** Pinning a tab was reported to end the browser after a leak warning. No code path that throws was found in pinning, moving, grouping, sleeping or the session recorder, and repeated pins of a plain, a grouped, a moved and a sleeping tab (from its menu) end cleanly. Which tab was it, and what did the terminal print around it?
 - **Why it matters:** the warning was a false leak (now silenced), but a crash that left no JavaScript line would be a native crash no test here has shown.
 - **Options:** the owner pastes the lines around the event (an `[orivon] uncaught exception` line, or none) and says whether the tab was just moved, grouped, split or asleep, and whether "pin" was the tab menu or the extension's Pin to Toolbar (rec.); close it as not reproduced.
 - **Who decides:** owner
+- **Blocks:** nothing
 
 ### A344: The main menu that opens once and then no longer opens is not reproduced **[RESEARCH]**
 
@@ -1899,7 +1898,8 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Why it matters:** the failure may sit in a path the check does not drive, and a menu that cannot reopen blocks the window.
 - **Options:** ask the owner for the three details (rec.); extend the check to a dev-server run; close the entry with the hardening alone.
 - **Who decides:** research first
-=======
+- **Blocks:** nothing
+
 ### A345: Which action still flickers in light mode is not known **[OWNER]**
 
 - **Question:** The owner still sees a flicker in light mode. The code shows three candidates: the dashboard tab leaving
@@ -1908,13 +1908,12 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Why it matters:** a settled screenshot cannot catch a frame that lasts a moment, so only the owner's eye can say.
 - **Options:** open a new tab, leave it for a site, return to it, resize or maximise, switch tabs, split; name the one.
 - **Who decides:** owner
->>>>>>> stream/fix-visual
-=======
+- **Blocks:** nothing
+
 ### A346: A bookmarks-bar folder menu closes when its row menu opens, and items cannot be dragged out of it **[AI-REC]**
 
 - **Question:** The row menu is a native menu, which takes focus, so the folder menu closes as it opens; Chrome keeps it open. Chrome also drags an item out of an open folder menu onto the bar. Build both?
 - **Why it matters:** a person deleting several items from a folder reopens it after each; moving one back to the bar needs the menu row.
 - **Options:** leave as is until a person asks (rec.); keep the overlay open while a native menu is up; main-coordinated drag across the folder and chrome views.
 - **Who decides:** AI, the recommendation stands unless the owner objects
->>>>>>> stream/fix-bookmarks
 - **Blocks:** nothing
