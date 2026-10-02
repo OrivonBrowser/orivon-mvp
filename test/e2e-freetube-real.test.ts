@@ -204,6 +204,30 @@ it.skipIf(!ORDINARY_BUILD || !BUILT)(
         const refusedInline = consoleLines.filter((line) => /(Refused to execute|Executing) inline script/.test(line))
         check(`the decipher helper in sigFrame runs its script and answers (${sigFrame}; ${JSON.stringify(refusedInline.slice(0, 2))})`, sigFrame === 'answered 2' && refusedInline.length === 0)
 
+        // The helper script belongs to the sandboxed frame. Loaded into the top document it must install
+        // no message listener there, or the page itself would evaluate code posted to it.
+        const topAnswer = await view.evaluate(async () => {
+          await new Promise<void>((resolve) => {
+            const script = document.createElement('script')
+            script.src = '/orivon/sig-frame.js'
+            script.onload = () => { setTimeout(resolve, 200) }
+            script.onerror = () => { resolve() }
+            document.head.appendChild(script)
+          })
+          return await new Promise<string>((resolve) => {
+            const onMessage = (event: MessageEvent): void => {
+              if (event.source !== window || typeof event.data !== 'string' || !event.data.includes('topprobe') || !/"(result|error)"/.test(event.data)) return
+              clearTimeout(timer)
+              window.removeEventListener('message', onMessage)
+              resolve(event.data)
+            }
+            const timer = setTimeout(() => { window.removeEventListener('message', onMessage); resolve('no answer') }, 1_500)
+            window.addEventListener('message', onMessage)
+            window.postMessage(JSON.stringify({ id: 'topprobe', code: 'return 7' }), '*')
+          })
+        })
+        check(`the decipher helper script loaded in the top document answers nothing (${topAnswer})`, topAnswer === 'no answer')
+
         // Opening a video: does FreeTube's own Local API reach YouTube through
         // the routed fetch and populate the watch page?
         //

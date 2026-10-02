@@ -34,7 +34,11 @@ export function installRoutedCore (
   const REDIRECT_STATUSES = [301, 302, 303, 307, 308]
   const ORIGIN_BOUND_HEADERS = ['authorization', 'cookie', 'proxy-authorization', 'host']
   const BODY_HEADERS = ['content-encoding', 'content-language', 'content-location', 'content-type', 'content-length', 'transfer-encoding']
-  // Closes the socket under a streamed body the app dropped unread.
+  // Closes the socket under a streamed body the app dropped unread. It
+  // watches a plain object the body's own pull and cancel hold (see
+  // bodyStream), never a stream: the engine may drop a stream's JS wrapper
+  // while the Response still owns the stream, and a registry on the wrapper
+  // then closes the socket under a body that is being read.
   const unread = typeof FinalizationRegistry === 'function'
     ? new FinalizationRegistry<RoutedSocket>((socket) => { void socket.close() })
     : undefined
@@ -120,10 +124,13 @@ export function installRoutedCore (
   /** The response body as a stream the app pulls: framed off the socket as it arrives, never collected first. */
   function bodyStream (socket: RoutedSocket, request: RoutedRequest, head: ResponseHead, host: string): ReadableStream<Uint8Array> {
     const framer = wire.framer(head)
+    // Reachable exactly as long as the stream is: the pull and cancel closures call finish, which sets it.
+    const lifetime = { finished: false }
+    unread?.register(lifetime, socket)
     let leftover: Uint8Array | undefined = head.rest.byteLength > 0 ? head.rest : undefined
     let controllerRef: ReadableStreamDefaultController<Uint8Array> | undefined
     const { signal } = request
-    const finish = (): void => { signal?.removeEventListener('abort', onAbort); void socket.close() }
+    const finish = (): void => { lifetime.finished = true; signal?.removeEventListener('abort', onAbort); void socket.close() }
     const onAbort = (): void => { try { controllerRef?.error(wire.abortReason(signal)) } catch { /* already settled */ } finish() }
     // The abort is watched for the life of the body, not per read.
     const reading: RoutedRequest = { ...request, signal: undefined }
@@ -172,7 +179,6 @@ export function installRoutedCore (
       body = bodyStream(socket, request, head, url.host)
       const encoding = wire.headerValue(head.headers, 'content-encoding')
       if (encoding !== undefined && wire.headerValue(head.headers, 'content-length') !== '0') body = wire.decode(body, encoding)
-      unread?.register(body, socket)
     }
     const response = new Response(body, { status: head.status, statusText: head.statusText, headers })
     const finalUrl = new URL(url.href)
