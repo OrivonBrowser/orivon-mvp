@@ -49,18 +49,12 @@
   pointer-events: none;
 }
 
-/* The empty tail after the new-tab button (index.html). In the native drag
-   mode it needs no rule of its own -- an untagged descendant of #tabrow's
-   own .drag class stays part of that drag region. In the manual mode
-   (drag-mode.ts's dragModeFor, main.ts sets [data-drag-mode]) it is
-   ordinary no-drag content instead, wired up in JS (strip-drag.ts). */
+/* The empty tail after the new-tab button (index.html): an untagged descendant of #tabrow's own .drag
+   class, so it stays part of the window's drag region and the window manager moves the window from it. */
 .tabstrip-tail {
   flex: 1 1 auto;
   align-self: stretch;
   min-width: 8px;
-}
-html[data-drag-mode="manual"] .tabstrip-tail {
-  -webkit-app-region: no-drag;
 }
 
 .tab {

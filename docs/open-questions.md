@@ -1385,24 +1385,15 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** the first public release
 
-### A292: A middle click on the empty tab strip does nothing off Linux X11 **[RESEARCH]**
+### A292: A middle click on the empty tab strip does nothing **[RESEARCH]**
 
-- **Question:** Can a middle click on the strip's empty end open a tab on Windows, macOS and native Wayland?
-- **Why it matters:** there the end stays a native drag region, which gives the page no click at all; on
-  Linux X11 the shell handles it itself (`d-0195`) and loses nothing a person sees.
-- **Options:** Windows' `hookWindowMessage` for a middle click in the caption area (rec., untested); accept it
-  on macOS and Wayland, where the window manager owns the drag.
+- **Question:** Can a middle click on the strip's empty end open a tab, with the window manager still moving the window from it?
+- **Why it matters:** the end is a native drag region on every platform (`d-0387`). On Linux X11 a drag region hands the page no
+  event of any button, even under a view stacked above it (measured), and Chromium's window-event filter applies the desktop's
+  own middle-click title-bar action there (GNOME's is set per user).
+- **Options:** accept it (rec.); Windows' `hookWindowMessage` for a middle click in the caption area (untested); read the pointer
+  from the X server in main while it is over the end, which would also fire the desktop's own action.
 - **Who decides:** research first
-- **Blocks:** nothing
-
-### A293: Moving the window by the strip's end on X11 bypasses the window manager **[OWNER]**
-
-- **Question:** Is a window move done by the shell good enough where the window manager's own was before?
-- **Why it matters:** `d-0195` moves the window itself so the strip's end can take a middle click. It
-  maximizes at a top edge and takes half a screen at a side, but a window manager's own tiling previews,
-  quarter tiles and keyboard moves no longer start from there.
-- **Options:** keep it (rec.); go back to the native drag region and lose the middle click there.
-- **Who decides:** owner
 - **Blocks:** nothing
 
 ### A304: A82's reserved-port carve-out blocks a P2P app's own DNS-over-UDP **[OWNER]**
@@ -1928,5 +1919,14 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   320 px) measures 234 px and does not scroll. Which surface scrolled, and on which layout, settles it.
 - **Why it matters:** a menu that scrolls where the screen has room reads as broken, and a native menu has no lever.
 - **Options:** keep the menus native (owner's call, recorded in `d-0399`); on a repro, draw that menu as an overlay.
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A343: A split's new pane took no input, and the cause was not reproduced **[RESEARCH]**
+
+- **Question:** After a tab was dropped onto an app tab, the new pane took no clicks or keys while the first pane worked. Does it still
+  happen now that the pane is stacked beside its partner and the dropped page takes the keyboard?
+- **Why it matters:** the order fix and the focus are built from what the code showed; nothing reproduced the failure.
+- **Options:** repeat the drop on a real session (rec.); if it persists, read `contentView.children` and each view's bounds then.
 - **Who decides:** research first
 - **Blocks:** nothing

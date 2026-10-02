@@ -18,9 +18,7 @@ live-document counter. `tab-order.ts` is where a tab sits in the strip, `tab-mov
 same page (and is where a dragged tab's cross-window target -- which window's strip, and where in it -- is
 worked out from the tab centres `strip-centres.ts` reads off the target window's chrome page, shared by the actual move and by `tear-drag.ts`'s own mark), `tab-menu.ts` is its right-click
 menu (and `context-menu.ts` the menu a page gets: `context-menu-groups.ts` holds one function per group, `context-menu-text.ts` cleans what a page controls before it reaches a label, `paste-and-go.ts` is the address bar's clipboard submit), and `window-actions.ts` is what the chrome's buttons and menus ask of their window, and `chrome-actions.ts`
-(with `actions/`) is where a chrome module's own call to main lands. `drag-mode.ts`
-decides whether the empty tail of the strip is native OS drag content or JS-driven (Linux/X11 only);
-`window-move.ts` is the arithmetic a manual window move and its Aero-snap-style edge release use.
+(with `actions/`) is where a chrome module's own call to main lands.
 `tear-drag.ts` is the floating preview a tab shows once torn out of its strip, and the mark it leaves on
 whichever window's strip it is dragged over. Split view: `split-model.ts` is the arithmetic and the groups
 of joined tabs, `split-controller.ts` plans which views show where, `pane-host.ts` puts them on screen in
