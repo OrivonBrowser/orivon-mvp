@@ -4,7 +4,7 @@
 // docs/planning/extensions-build-plan.md). Skipped entirely unless
 // ORIVON_REAL_EXTENSIONS_DIR points at a folder of unpacked extension
 // directories (<dir>/<slot>/manifest.json for each of ubol, darkreader,
-// bitwarden, metamask -- any subset present is measured, the rest are
+// bitwarden, metamask and the optional ubo -- any subset present is measured, the rest are
 // skipped with a logged reason). Never committed extension code;
 // re-download the latest releases from each project's GitHub releases
 // when the directory is missing (see docs/development/testing.md).
@@ -53,13 +53,16 @@ interface ExtSpec {
   readonly slot: string
   readonly dir: string
   readonly popup: string
+  /** A manifest version 2 extension runs a background page, not a service worker. */
+  readonly mv2?: boolean
 }
 
 const SPECS: readonly ExtSpec[] = [
   { slot: 'ubol', dir: 'ubol', popup: 'popup.html' },
   { slot: 'darkreader', dir: 'darkreader', popup: 'ui/popup/index.html' },
   { slot: 'bitwarden', dir: 'bitwarden', popup: 'popup/index.html' },
-  { slot: 'metamask', dir: 'metamask', popup: 'popup-init.html' }
+  { slot: 'metamask', dir: 'metamask', popup: 'popup-init.html' },
+  { slot: 'ubo', dir: 'ubo', popup: 'popup-fenix.html', mv2: true }
 ]
 
 /** Seeds the registry the real way (test/extensions-fixtures.ts's own doc
@@ -184,7 +187,7 @@ describeOrSkip('real Chrome extensions', () => {
             const scope = `chrome-extension://${id}/`
             return { running: entry !== undefined, errors: store[scope] ?? [] }
           }, spec.id)
-          check(`${slot}: service worker running ${SW_SETTLE_MS / 1000}s after load`, swInfo.running, JSON.stringify(swInfo.errors))
+          if (spec.mv2 !== true) check(`${slot}: service worker running ${SW_SETTLE_MS / 1000}s after load`, swInfo.running, JSON.stringify(swInfo.errors))
 
           // ---- action popup opens with a non-empty body ----
           // Read through popup.content() (Page.getFrameTree/DOM.getOuterHTML
@@ -285,6 +288,28 @@ describeOrSkip('real Chrome extensions', () => {
             blockOutcome.adPath === 'blocked' && blockOutcome.controlPath === 'resolved',
             JSON.stringify(blockOutcome)
           )
+        }
+
+        const ubo = seeded.get('ubo')
+        if (ubo !== undefined) {
+          // uBlock Origin blocks through blocking webRequest listeners, so this is the check that Orivon
+          // serves them. The hermetic resolver fails the ad host's lookup as well, so the reason a request
+          // failed is read from the network log: only the extension's own cancel reads ERR_BLOCKED_BY_CLIENT.
+          const cdp = await view.context().newCDPSession(view)
+          await cdp.send('Network.enable')
+          const urls = new Map<string, string>()
+          const failures = new Map<string, string>()
+          cdp.on('Network.requestWillBeSent', (event) => { urls.set(event.requestId, event.request.url) })
+          cdp.on('Network.loadingFailed', (event) => { failures.set(urls.get(event.requestId) ?? event.requestId, event.errorText) })
+          const adUrl = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js'
+          const controlUrl = `${started.origin}/harmless-control-path.js`
+          await view.evaluate(async (targets: string[]) => {
+            for (const target of targets) await fetch(target, { mode: 'no-cors' }).catch(() => {})
+          }, [adUrl, controlUrl])
+          const adFailure = await waitFor(() => failures.has(adUrl), 8000).then(() => failures.get(adUrl)).catch(() => undefined)
+          check('ubo: a request to a well-known ad script is cancelled by the extension', adFailure?.includes('ERR_BLOCKED_BY_CLIENT') === true, JSON.stringify([...failures]))
+          check('ubo: a request to the fixture origin is not blocked', !failures.has(controlUrl), JSON.stringify([...failures]))
+          await cdp.detach()
         }
       } finally {
         if (app !== undefined) await closeElectronApp(app)
