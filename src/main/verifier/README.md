@@ -2,7 +2,7 @@
 
 **What lives here.** What the main process does for every host a protocol serves (`.eth` names,
 `ipfs://` addresses): the resolver rules that send them to the verifier's loopback port, the
-certificate check each session applies, starting and restarting the verifier host
+certificate check each session applies, starting and restarting the verifier host (and what a request waits for until it listens)
 ([`../../protocols/verifier-host/`](../../protocols/verifier-host/)), the light client's
 checkpoint ([`ADR-0031`](../../../docs/decisions/ADR-0031-helios-is-the-light-client.md)), what the
 host verified between runs, the per-site partition stamp, the gateway proxy check, and the
@@ -52,6 +52,17 @@ which cannot resolve a `.eth` name either, so that partition never needs the sta
 document over Chromium's ordinary networking, so it reaches the verifier exactly as a tab does,
 and `src/main/embed/embed-host.ts`'s `configureEmbedSession` installs the identical stamp there,
 reusing `partition.ts` rather than copying it.
+
+**A request to a host the verifier serves waits until the host listens.** The host starts after the
+first page loads, and then forks, reads its config and binds, so an address typed in the first
+seconds would reach a closed port and leave the tab on the connection-refused page, for good.
+[`listening-gate.ts`](listening-gate.ts) is the wait: an `onBeforeRequest` handler on the default
+session starts the host at once if it has not started, then holds the request until the host
+listens, reports it cannot serve, or `LISTEN_WAIT_MS` passes. The bound is about three times the
+slowest start measured, so a host that never answers still ends in the ordinary error. A restart
+holds requests again. `verifierContentAddress` waits the same way for a cache-served origin. An
+embed guest's session and an isolated context's session register their own handlers and do not
+wait: neither can be open before the host has started.
 
 **The certificate check goes on every session, through `session-created`.** A partition without
 it cannot load any host the verifier serves.
