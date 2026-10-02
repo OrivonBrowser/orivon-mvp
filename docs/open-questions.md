@@ -1938,3 +1938,16 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** Get the extension id and the terminal output at the exit (rec.); wrap each `session.extensions` listener in `contain()`, which hides the cause; leave it.
 - **Who decides:** research first, with the owner's id and output
 - **Blocks:** nothing
+
+### A350: A page's `fetch()` cannot follow a `webRequest` redirect to the extension's own file **[RESEARCH]**
+
+- **Question:** How can a page's `fetch()` follow a blocking listener's redirect to the extension's own web-accessible
+  file? Electron 44 fails it with `ERR_UNSAFE_REDIRECT`; a `<script>` follows the same redirect. Measured with full uBlock
+  Origin, which answers most blocked `fetch()` calls with its neutered stand-in (77 of the 132 hosts on
+  adblock.turtlecute.org).
+- **Why it matters:** the page sees a failed request where Chrome gives it an empty success, which an anti-ad-block script
+  can notice. The request is still stopped, so an ad-block test page scores these as blocked.
+- **Options:** find where Electron refuses the scheme on a subresource redirect and allow web-accessible files (rec.);
+  answer such a redirect with the file's bytes from main; leave it.
+- **Who decides:** research first
+- **Blocks:** nothing

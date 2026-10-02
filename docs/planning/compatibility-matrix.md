@@ -602,8 +602,9 @@ explaining *why a tier exists*, it belongs there.
 
 ## Table 7: Extensions
 
-What an extension gets in this build. Measured two ways: four real extensions (uBlock Origin
-Lite, Dark Reader, Bitwarden, MetaMask) through `test/e2e-extensions-real.test.ts`, and a fifth
+What an extension gets in this build. Measured two ways: five real extensions (uBlock Origin
+Lite, Dark Reader, Bitwarden, MetaMask, and the optional full uBlock Origin) through
+`test/e2e-extensions-real.test.ts`, and a sixth
 (Volume Master, opt-in via `ORIVON_VOLUME_MASTER_DIR`) through
 `test/e2e-extensions-offscreen-capture.test.ts`; plus a full `chrome.*` namespace sweep across a
 service worker, popup, options page, a `side_panel`-declared tab, a sandboxed page and content
@@ -717,7 +718,7 @@ is not the same as it doing anything: read the note, not just the symbol.
 | `topSites` | ✅ | The most visited web addresses from history, up to ten, one per site (`api/history-api.ts`) |
 | `userScripts` | ⚠️ | Every method resolves as a no-op; no user-script world runs |
 | `webNavigation` | ✅ | `getFrame`/`getAllFrames` and the full event set work |
-| `webRequest` | ⚠️ | Every event object and the `ResourceType` and `*Options` enums exist so feature-detection and a listener filter built from them do not throw, but no extension listener is ever called (measured); the permission is removed from the loaded copy (`ADR-0043`) and Orivon owns the session's `webRequest` handlers; `declarativeNetRequest` is the way to block |
+| `webRequest` | ✅ | All nine events, served by Orivon from the session's own handlers (`ADR-0053`): blocking `onBeforeRequest`/`onBeforeSendHeaders`/`onHeadersReceived` (cancel, redirect, header changes) for a manifest version 2 extension holding `webRequestBlocking`, observing for any holder of `webRequest`; full uBlock Origin blocks with it (measured). An extension sees a page's requests in the default session it has host access to, never Orivon's own, an `orivon:` page's, another extension's or the Chrome Web Store's; a blocking answer is waited for 10 seconds at most. `onAuthRequired` never fires, `requestBody` has raw bytes only, a worker's listeners hear events only while it runs, and a page's `fetch()` cannot follow a redirect to the extension's own file (A350) |
 | `declarativeNetRequest` | ✅ | Static, dynamic and session rules, applied by Orivon (`ADR-0051`); `responseHeaders` conditions are refused; websites' worker requests are not matched. Static rules past 30,000 per extension draw on a shared pool of 300,000, and its constants and enums (the `MAX_NUMBER_OF_*` rule limits, `GETMATCHEDRULES_QUOTA_INTERVAL`, `ResourceType`, `UnsupportedRegexReason` and the rest) are present, the quota constants holding Chrome's values while the engine enforces no unsafe-rule quota and no `getMatchedRules` call limit; `RuleConditionKeys` lists only the keys the engine evaluates, so it has no `TOP_DOMAINS` |
 | `windows` | ⚠️ | A rich working set, filtered the same as `tabs` |
 
@@ -1130,7 +1131,7 @@ the reference set, and whether this build has it.
 | Extension shortcuts | ✅ | An extension's command keys bind when free, rebind at `orivon://extensions/shortcuts`, and never take a key Orivon uses (Table 7b) |
 | Asking for more access later | ✅ | `chrome.permissions.request` asks in a sheet and the person can take a grant back from the details page (Table 7b) |
 | Bookmarks, history, top sites and search for extensions | ✅ | Over Orivon's own stores; history and top sites never list an app's pages (Table 7c) |
-| `webRequest` | ⚠️ | Present, no extension listener is ever called (Table 7c) |
+| `webRequest` | ✅ | Served by Orivon, blocking included for manifest version 2; full uBlock Origin blocks (Table 7c) |
 | `sidePanel`, `userScripts` | ⚠️ | Present as no-ops (Table 7c) |
 | Native messaging | 🚫 | Off by design: it would start desktop programs outside the broker |
 | Extensions inside apps a person has granted permissions to | ✅ | Table 7d |
