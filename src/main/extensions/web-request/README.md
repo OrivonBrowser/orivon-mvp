@@ -42,7 +42,9 @@ of a request is asked at once with the same headers, so each reply is a complete
 the original. `merge.ts` reads what a reply changed (the pairs it dropped and the pairs it added)
 and applies those changes oldest install first, newest last. Two extensions, or two listeners of
 one extension, that change different headers both take effect; where they disagree about one
-header the newest install wins. A reply whose header list has a malformed entry is ignored whole.
+header the newest install wins. A reply whose header list has a malformed entry, a name that is not an
+HTTP token or a value holding CR, LF or NUL is ignored whole: Chromium refuses such a header, and Chrome
+refuses such a reply. `Host` is never changed, as declarativeNetRequest never rewrites it either.
 
 **A redirect target is checked per extension.** A listener may send a request to the web, to a
 `data:` URL, to a blank page, or to a page of its own extension; any other scheme, another

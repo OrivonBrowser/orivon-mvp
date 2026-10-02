@@ -26,10 +26,15 @@ with main, and main sends it the requests from the default session's `webRequest
 - An extension sees a request only as Chrome would show it: from a page in the default session,
   never Orivon's own main-process requests, an `orivon:` page, another extension's pages or the
   Chrome Web Store; and only with host access to the URL and, for a subresource, its initiator.
+  A request whose address, initiator or page is a registered app's origin is hidden too, as every
+  other extension API leaves apps out.
 - Answers combine as Chrome combines them: any cancel wins; the most recently installed
   extension's redirect wins, and a redirect may go only to the web, `data:`, `about:blank` or the
   extension's own files; each header change applies as its difference from the original, oldest
-  install first, so a newer install's replacement of a header prevails.
+  install first, so a newer install's replacement of a header prevails. A header list holding a name
+  that is not an HTTP token or a value with CR, LF or NUL is ignored whole, and `Host` never changes.
+- A page holds its listeners only while it shows its extension: one that is gone, crashes or
+  navigates away loses them, and a listener number the page no longer knows is answered at once.
 
 ## Context
 

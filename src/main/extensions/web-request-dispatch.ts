@@ -123,21 +123,25 @@ export function createWebRequestDispatcher (deps: WebRequestDispatcherDeps): Web
     }
   }
 
-  function dropHost (host: DispatchHost): void {
-    registrations = registrations.filter((entry) => entry.host !== host)
-    settleWhere((entry) => entry.host === host)
+  /** Forgets `host`'s registrations that `drops` picks (all of them by default), and the answers still awaited from them. */
+  function dropHost (host: DispatchHost, drops: (entry: Registration) => boolean = () => true): void {
+    const dropped = registrations.filter((entry) => entry.host === host && drops(entry))
+    if (dropped.length === 0) return
+    registrations = registrations.filter((entry) => !dropped.includes(entry))
+    settleWhere((entry) => entry.host === host && dropped.some((gone) => gone.listenerId === entry.listenerId))
     syncOwner()
   }
 
-  /** A page keeps its registrations only while it is the document that made them: a page that is gone, crashed or navigated away from its extension no longer holds the listeners. A host belongs to one extension. */
-  function watch (host: DispatchHost, extensionId: string): void {
+  /** A page keeps a registration only while it shows the extension that made it: a page that is gone or
+   * crashed loses all of them, and one that navigates loses those of every extension it no longer shows.
+   * Judged per registration, since a tab can go from one extension's page to another's. */
+  function watch (host: DispatchHost): void {
     if (watchedHosts.has(host)) return
     watchedHosts.add(host)
     if (!('on' in host)) return
-    const ownPages = `chrome-extension://${extensionId}/`
     host.once('destroyed', () => { dropHost(host) })
     host.on('render-process-gone', () => { dropHost(host) })
-    host.on('did-navigate', (_event, url) => { if (!url.startsWith(ownPages)) dropHost(host) })
+    host.on('did-navigate', (_event, url) => { dropHost(host, (entry) => !url.startsWith(`chrome-extension://${entry.extensionId}/`)) })
   }
 
   /** The registrations that may hear `url`'s `event`, in registration order. */
@@ -294,7 +298,7 @@ export function createWebRequestDispatcher (deps: WebRequestDispatcherDeps): Web
       const host = hostOf(event)
       // `send` reaches a page's main frame only, so a listener added from a frame inside some other page would be answered by that page.
       if ('getURL' in host && !host.getURL().startsWith(`chrome-extension://${extensionId}/`)) throw new Error(OWN_PAGES_ONLY)
-      watch(host, extensionId)
+      watch(host)
       registrations = registrations.filter((entry) => !(entry.host === host && entry.listenerId === listenerId))
       registrations.push({ extensionId, event: name, listenerId, host, filter: parsedFilter.value, spec: parsedSpec.value, installedAt: deps.installedAt(extensionId) })
       syncOwner()

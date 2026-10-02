@@ -17,8 +17,9 @@ export interface VisibleRequest {
 
 const WEB_SCHEMES = new Set(['http:', 'https:', 'ws:', 'wss:'])
 
-/** Pages no extension may observe: the web store, whose listings an
- * extension could otherwise rewrite to hide what it is. */
+/** The web store: no extension sees its pages or anything they load,
+ * since a listing or a script there could otherwise be rewritten to hide
+ * what an extension is. */
 function isProtectedUrl (url: URL): boolean {
   if (url.protocol !== 'https:') return false
   if (url.hostname === 'chromewebstore.google.com') return true
@@ -58,10 +59,12 @@ export function requestVisibleTo (
   if (!request.fromPage) return false
   if ([request.url, request.initiator, request.pageUrl].some((url) => url !== undefined && isAppOrigin(url))) return false
   const url = parse(request.url)
-  if (url === undefined || isProtectedUrl(url)) return false
+  if (url === undefined) return false
+  const initiator = request.initiator === undefined ? undefined : parse(request.initiator)
+  const page = request.pageUrl === undefined ? undefined : parse(request.pageUrl)
+  if ([url, initiator, page].some((each) => each !== undefined && isProtectedUrl(each))) return false
   const ownUrl = url.protocol === 'chrome-extension:' && url.hostname === extensionId
   if (!ownUrl && !WEB_SCHEMES.has(url.protocol)) return false
-  const initiator = request.initiator === undefined ? undefined : parse(request.initiator)
   if (initiator !== undefined && initiatorHidden(initiator, extensionId)) return false
   if (!ownUrl && !hasHostAccess(accessUrlOf(url))) return false
   if (initiator === undefined || NAVIGATION_TYPES.has(request.type)) return true

@@ -487,6 +487,21 @@ describe('a page that no longer holds its listeners', () => {
     expect(dispatcher.registrationCount('onBeforeRequest')).toBe(0)
   })
 
+  it('judges each registration by its own extension when a page moves between two extensions\' pages', () => {
+    const { dispatcher } = setup()
+    const host = fakeHost()
+    let url = `chrome-extension://${ME}/page.html`
+    host.getURL = () => url
+    dispatcher.addListener(apiEvent(host), 'onBeforeRequest', 1, FILTER, ['blocking'])
+    url = `chrome-extension://${OTHER}/page.html`
+    host.emit('did-navigate', url)
+    expect(dispatcher.registrationCount('onBeforeRequest')).toBe(0)
+    dispatcher.addListener(apiEvent(host, OTHER), 'onBeforeRequest', 7, FILTER, ['blocking'])
+    url = `chrome-extension://${ME}/page.html`
+    host.emit('did-navigate', url)
+    expect(dispatcher.registrationCount('onBeforeRequest')).toBe(0)
+  })
+
   it('forgets a listener the page says it does not hold, and stops waiting at once', async () => {
     const { dispatcher, fake } = setup()
     const host = fakeHost()

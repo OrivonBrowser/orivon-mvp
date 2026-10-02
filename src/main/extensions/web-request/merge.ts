@@ -58,21 +58,30 @@ interface Pair {
 
 const pairKey = (pair: Pair): string => `${pair.name.toLowerCase()}\u0000${pair.value}`
 
+/** An HTTP token (RFC 9110 `tchar`s), what a header name must be. */
+const HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
+/** CR, LF and NUL end or split a header line; Chromium refuses a value holding one, as Chrome refuses the reply. */
+const BAD_VALUE = /[\r\n\0]/
+
 /** A reply's header list as pairs, or undefined when it is absent or any
- * entry is malformed (the whole list is then ignored, never half-applied). */
+ * entry is malformed or not a valid header (the whole list is then ignored,
+ * never half-applied). */
 function parseHeaderList (raw: unknown): Pair[] | undefined {
   if (!Array.isArray(raw)) return undefined
   const pairs: Pair[] = []
   for (const entry of raw) {
     const record = asRecord(entry)
-    if (record === undefined || typeof record.name !== 'string' || record.name === '') return undefined
+    if (record === undefined || typeof record.name !== 'string' || !HEADER_NAME.test(record.name)) return undefined
+    let value: string
     if (typeof record.value === 'string') {
-      pairs.push({ name: record.name, value: record.value })
+      value = record.value
     } else if (Array.isArray(record.binaryValue) && record.binaryValue.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255)) {
-      pairs.push({ name: record.name, value: String.fromCharCode(...(record.binaryValue as number[])) })
+      value = String.fromCharCode(...(record.binaryValue as number[]))
     } else {
       return undefined
     }
+    if (BAD_VALUE.test(value)) return undefined
+    pairs.push({ name: record.name, value })
   }
   return pairs
 }
@@ -81,16 +90,22 @@ function parseHeaderList (raw: unknown): Pair[] | undefined {
  * is the difference from the original. Applying the differences one after
  * another, newest last, lets two extensions each change a different header
  * without the second undoing the first. `undefined`: nobody changed anything. */
-function applyHeaderDeltas (original: readonly Pair[], replies: readonly Reply[], listKey: 'requestHeaders' | 'responseHeaders'): Pair[] | undefined {
+function applyHeaderDeltas (
+  original: readonly Pair[],
+  replies: readonly Reply[],
+  listKey: 'requestHeaders' | 'responseHeaders',
+  fixed: ReadonlySet<string> = new Set()
+): Pair[] | undefined {
   const originalKeys = new Set(original.map(pairKey))
+  const isFixed = (key: string): boolean => fixed.has(key.slice(0, key.indexOf('\u0000')))
   let current = [...original]
   let changed = false
   for (const reply of oldestFirst(replies)) {
     const proposed = parseHeaderList(asRecord(reply.response)?.[listKey])
     if (proposed === undefined) continue
     const proposedKeys = new Set(proposed.map(pairKey))
-    const deleted = new Set([...originalKeys].filter((key) => !proposedKeys.has(key)))
-    const added = proposed.filter((pair) => !originalKeys.has(pairKey(pair)))
+    const deleted = new Set([...originalKeys].filter((key) => !proposedKeys.has(key) && !isFixed(key)))
+    const added = proposed.filter((pair) => !originalKeys.has(pairKey(pair)) && !fixed.has(pair.name.toLowerCase()))
     if (deleted.size === 0 && added.length === 0) continue
     changed = true
     // A header this reply dropped and wrote again is a replacement, so it also takes the place of a value an older install set.
@@ -115,12 +130,16 @@ function groupByName (pairs: readonly Pair[]): Map<string, { name: string, value
   return groups
 }
 
+/** Request headers no listener may change: `Host` names the server the request goes to, which
+ * declarativeNetRequest refuses to rewrite too. */
+const UNCHANGEABLE_REQUEST_HEADERS: ReadonlySet<string> = new Set(['host'])
+
 export type RequestHeadersMerge = { readonly cancel: true } | { readonly requestHeaders: Record<string, string> } | undefined
 export type ResponseHeadersMerge = { readonly cancel: true } | { readonly responseHeaders: Record<string, string[]> } | undefined
 
 export function mergeRequestHeaders (original: Readonly<Record<string, string>>, replies: readonly Reply[]): RequestHeadersMerge {
   if (replies.some(cancelled)) return { cancel: true }
-  const merged = applyHeaderDeltas(Object.entries(original).map(([name, value]) => ({ name, value })), replies, 'requestHeaders')
+  const merged = applyHeaderDeltas(Object.entries(original).map(([name, value]) => ({ name, value })), replies, 'requestHeaders', UNCHANGEABLE_REQUEST_HEADERS)
   if (merged === undefined) return undefined
   const requestHeaders: Record<string, string> = {}
   for (const { name, values } of groupByName(merged).values()) {

@@ -69,6 +69,11 @@ describe('requestVisibleTo', () => {
     expect(requestVisibleTo(ME, page({ url: 'https://chrome.google.com/other' }), all)).toBe(true)
   })
 
+  it('hides what a web store page loads from elsewhere, by its initiator or its page', () => {
+    expect(requestVisibleTo(ME, page({ url: 'https://www.gstatic.com/s.js', initiator: 'https://chromewebstore.google.com' }), all)).toBe(false)
+    expect(requestVisibleTo(ME, page({ url: 'https://www.gstatic.com/s.js', initiator: 'https://www.gstatic.com', pageUrl: 'https://chromewebstore.google.com/detail/x' }), all)).toBe(false)
+  })
+
   it('treats a malformed URL as hidden and a malformed initiator as absent', () => {
     expect(requestVisibleTo(ME, page({ url: '::' }), all)).toBe(false)
     expect(requestVisibleTo(ME, page({ initiator: 'null' }), all)).toBe(true)

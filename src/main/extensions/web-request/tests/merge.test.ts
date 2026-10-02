@@ -61,6 +61,19 @@ describe('mergeRequestHeaders', () => {
     expect(mergeRequestHeaders(original, [reply({ requestHeaders: [{ name: 'accept', value: '*/*' }, { name: 'User-Agent', value: 'x' }, { name: 'Cookie', value: 'a=1' }] })])).toBeUndefined()
   })
 
+  it('ignores a whole list holding a header name that is not a token or a value with CR, LF or NUL', () => {
+    for (const bad of [{ name: 'Bad Name', value: '1' }, { name: 'X-A:', value: '1' }, { name: '', value: '1' }, { name: 'X-A', value: '1\r\nX-B: 2' }, { name: 'X-A', value: 'a\u0000b' }, { name: 'X-A', binaryValue: [97, 10, 98] }]) {
+      expect(mergeRequestHeaders(original, [reply({ requestHeaders: [{ name: 'Accept', value: 'changed' }, bad] })])).toBeUndefined()
+    }
+  })
+
+  it('never changes Host, while applying the reply\'s other changes', () => {
+    const withHost = { Host: 'site.example', Accept: '*/*' }
+    expect(mergeRequestHeaders(withHost, [reply({ requestHeaders: [{ name: 'Host', value: 'evil.example' }, { name: 'Accept', value: 'text/html' }] })]))
+      .toEqual({ requestHeaders: { Host: 'site.example', Accept: 'text/html' } })
+    expect(mergeRequestHeaders(withHost, [reply({ requestHeaders: [{ name: 'Accept', value: '*/*' }] })])).toBeUndefined()
+  })
+
   it('applies an added, a changed and a removed header', () => {
     const merged = mergeRequestHeaders(original, [reply({ requestHeaders: [
       { name: 'Accept', value: '*/*' }, { name: 'User-Agent', value: 'y' }, { name: 'X-New', value: '1' }
