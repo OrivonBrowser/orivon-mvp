@@ -299,8 +299,8 @@ describeOrSkip('real Chrome extensions', () => {
           await cdp.send('Network.enable')
           const urls = new Map<string, string>()
           const failures = new Map<string, string>()
-          cdp.on('Network.requestWillBeSent', (event) => { urls.set(event.requestId, event.request.url) })
-          cdp.on('Network.loadingFailed', (event) => { failures.set(urls.get(event.requestId) ?? event.requestId, event.errorText) })
+          cdp.on('Network.requestWillBeSent', (event: { requestId: string, request: { url: string } }) => { urls.set(event.requestId, event.request.url) })
+          cdp.on('Network.loadingFailed', (event: { requestId: string, errorText: string }) => { failures.set(urls.get(event.requestId) ?? event.requestId, event.errorText) })
           const adUrl = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js'
           const controlUrl = `${started.origin}/harmless-control-path.js`
           await view.evaluate(async (targets: string[]) => {

@@ -23,7 +23,7 @@ export function parentFrameIdOf(frame: FrameLike): number | undefined {
 /** `details.frame` can throw when read after the frame navigated away or
  * was destroyed (Electron's own doc on the field; `../verifier/
  * verifier-subsystem.ts` guards the same read the same way). */
-export function safeFrame(details: { frame?: FrameLike | null }): FrameLike | null {
+export function safeFrame(details: { frame?: FrameLike | null | undefined }): FrameLike | null {
   try {
     return details.frame ?? null
   } catch {
