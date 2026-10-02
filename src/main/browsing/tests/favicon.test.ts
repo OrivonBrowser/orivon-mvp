@@ -578,6 +578,20 @@ describe('captureFaviconInto', () => {
     expect(target.favicon).toBeNull()
   })
 
+  it('brings back the globe, not the site\'s earlier icon, on returning after a blank page to a site whose last page had none', async () => {
+    mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })
+    mockRequestOnce((request) => { request.emit('response', respondOk(404, [])) })
+    const target: FaviconTarget = { favicon: null, faviconOrigin: null, pendingFaviconUrl: null }
+
+    await captureFaviconInto(target, ['https://93.184.216.34/icon.png'], () => 'https://example.com/icon', () => true, () => {})
+    expect(target.favicon).not.toBeNull()
+    await captureFaviconInto(target, ['https://93.184.216.34/favicon.ico'], () => 'https://example.com/plain', () => true, () => {})
+    faviconOnCommit(target, 'about:blank')
+    faviconOnCommit(target, 'https://example.com/plain', () => 'data:image/png;base64,Qw==')
+
+    expect(target.favicon).toBeNull()
+  })
+
   // The bug this fixes: favicon.ts used to record the ICON's own origin
   // (here, a CDN host different from the page), which shouldClearFavicon
   // then compared against the PAGE's origin on every navigation -- so an

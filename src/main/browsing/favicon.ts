@@ -86,11 +86,12 @@ export function shouldClearFavicon (previousOrigin: string | null, nextUrl: stri
 
 /** How many sites' icons a tab keeps to show again: a tab goes back and forth between a few, not a long list. */
 const REMEMBERED_SITES = 4
-/** Per tab, in memory only: the icons the tab itself fetched, by origin. Never written anywhere. */
-const shownIcons = new WeakMap<object, Map<string, string>>()
+/** Per tab, in memory only: what the tab last showed for each origin, an icon it fetched or `null` for the globe
+ * when none of the page's own icons loaded. Never written anywhere. */
+const shownIcons = new WeakMap<object, Map<string, string | null>>()
 
-function rememberIcon (target: FaviconTarget, origin: string, dataUrl: string): void {
-  const icons = shownIcons.get(target) ?? new Map<string, string>()
+function rememberIcon (target: FaviconTarget, origin: string, dataUrl: string | null): void {
+  const icons = shownIcons.get(target) ?? new Map<string, string | null>()
   icons.delete(origin)
   icons.set(origin, dataUrl)
   while (icons.size > REMEMBERED_SITES) icons.delete(icons.keys().next().value as string)
@@ -99,8 +100,8 @@ function rememberIcon (target: FaviconTarget, origin: string, dataUrl: string): 
 
 /**
  * What the tab's icon is as a page at `nextUrl` commits. Clears it as `shouldClearFavicon` says, then, with none
- * shown, brings back the icon this tab already fetched for that origin, else `saved(nextUrl)` (the icon history
- * keeps for the site): the browser announces an icon only when the set of icons changes, so a return to a site after
+ * shown, brings back what this tab last showed for that origin, an icon or the globe, else `saved(nextUrl)` (the icon
+ * history keeps for the site): the browser announces an icon only when the set of icons changes, so a return after
  * a blank page or an error page would announce nothing and leave the globe. A real change of icon is announced and
  * replaces what is shown here; an announced set none of which loads shows the globe (captureFaviconInto).
  */
@@ -117,8 +118,13 @@ export function faviconOnCommit (target: FaviconTarget, nextUrl: string, saved: 
     return
   }
   if (origin === 'null') return
-  const icon = shownIcons.get(target)?.get(origin) ?? saved(nextUrl)
-  if (icon === null) return
+  const remembered = shownIcons.get(target)
+  const icon = remembered?.has(origin) === true ? remembered.get(origin) ?? null : saved(nextUrl)
+  if (icon === null) {
+    // A globe the tab remembers is the page's own answer, so the site's icon from history must not replace it.
+    if (remembered?.has(origin) === true) target.faviconOrigin = origin
+    return
+  }
   target.favicon = icon
   target.faviconOrigin = origin
 }
@@ -470,6 +476,7 @@ export async function captureFaviconInto (
   // None of the page's own icons loaded, so it shows the globe over whatever the tab kept for the site. The origin
   // stays recorded so that faviconOnCommit does not restore that icon on a later same-site page announcing nothing.
   target.faviconOrigin = declaringOrigin
+  rememberIcon(target, declaringOrigin, null)
   if (target.favicon === null) return
   target.favicon = null
   onUpdated()

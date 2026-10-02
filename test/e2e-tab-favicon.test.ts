@@ -134,6 +134,13 @@ it('shows the globe on a page of the site that declares no icon, whose default /
     expect(await waitFor(() => defaultIconAsks > asksBefore), 'the page asked for its default icon').toBe(true)
     await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS))
     expect(await hasIcon(chrome), 'the site\'s icon is not kept for a page whose own icon is missing').toBe(false)
+
+    await navigate(app, `${origin}/plain`, 'about:blank')
+    expect(await waitFor(async () => await committedAt(app, 'about:blank'))).toBe(true)
+    await clickAddressBarRetrying(chrome, `${origin}/plain`)
+    expect(await waitFor(async () => await committedAt(app, `${origin}/plain`))).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS))
+    expect(await hasIcon(chrome), 'a return after a blank page brings back the globe, not the site\'s earlier icon').toBe(false)
   } finally {
     await closeElectron(app)
   }
