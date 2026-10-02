@@ -128,6 +128,81 @@ it('pins a tab to the front of the strip without a close button, and unpins it a
   }
 }, TEST_TIMEOUT_MS)
 
+// A tab collects a listener from each subsystem that watches it; none may grow with a pin, a group or a move, and
+// the count a tab starts with must not print Node's leak warning.
+it('pins and unpins a plain, a grouped and a moved tab again and again with no crash and no listener warning', async () => {
+  const { app, chrome } = await launched()
+  try {
+    const [, plain, grouped] = await openTabs(chrome, '/plain', '/grouped') as [string, string, string]
+    const toggle = async (): Promise<void> => {
+      for (let n = 0; n < 6; n += 1) {
+        const before = (await pinnedIds(chrome)).length
+        await runCommand(chrome, 'tab.pin')
+        expect(await waitFor(async () => (await pinnedIds(chrome)).length !== before), `pin toggle ${String(n)}`).toBe(true)
+      }
+    }
+    await activate(chrome, plain)
+    await toggle()
+    await activate(chrome, grouped)
+    await runCommand(chrome, 'tab.group')
+    await toggle()
+
+    // A tab handed over from another window.
+    await chrome.evaluate(() => { (window as unknown as { orivonShell: { newWindow: () => void } }).orivonShell.newWindow() })
+    expect(await waitFor(() => app.windows().filter((w) => w.url().endsWith('/renderer/index.html')).length === 2)).toBe(true)
+    const second = app.windows().filter((w) => w.url().endsWith('/renderer/index.html')).find((page) => page !== chrome) as Page
+    await clickAddressBarRetrying(second, `${origin}/moved`)
+    expect((await waitForTab(second, { address: `${origin}/moved` })).ok).toBe(true)
+    const moved = (await tabIds(second))[0] as string
+    const point = await app.evaluate(({ BaseWindow }) => {
+      const [older] = [...BaseWindow.getAllWindows()].sort((a, b) => a.id - b.id)
+      const bounds = older?.getBounds() ?? { x: 0, y: 0, width: 0, height: 0 }
+      return { x: bounds.x + bounds.width / 2, y: bounds.y + 20 }
+    })
+    await second.evaluate(([id, x, y]) => { (window as unknown as { orivonShell: { dropTab: (id: string, x: number, y: number, cx: number, cy: number) => void } }).orivonShell.dropTab(id as string, x as number, y as number, -50, -50) }, [moved, point.x, point.y] as const)
+    expect(await waitFor(async () => (await tabIds(chrome)).includes(moved))).toBe(true)
+    await activate(chrome, moved)
+    await toggle()
+
+    const output = mainOutput(app)
+    expect(output).not.toContain('uncaught exception')
+    expect(output).not.toContain('MaxListenersExceededWarning')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+// A sleeping tab is a record with a placeholder in place of its page; pinning it from the tab's menu does not wake it.
+it('pins and unpins a sleeping tab from its menu again and again with no crash and no listener warning', async () => {
+  const { app, chrome } = await launched()
+  try {
+    // A page under the test driver counts as captured, which keeps it awake: the seam the memory-saver spec uses.
+    await app.evaluate(() => { (globalThis as unknown as { __orivonSleepIgnoreCapture: boolean }).__orivonSleepIgnoreCapture = true })
+    await app.evaluate(({ Menu }) => { (Menu.prototype as unknown as { popup: () => void }).popup = function (this: unknown) { (globalThis as unknown as { __menu?: unknown }).__menu = this } })
+    const [, asleep] = await openTabs(chrome, '/asleep', '/other') as [string, string, string]
+    await activate(chrome, asleep)
+    await runCommand(chrome, 'tab.sleep')
+    expect(await waitFor(async () => await chrome.locator(`.tab.sleeping[data-id="${asleep}"]`).count() === 1)).toBe(true)
+    const labels = async (): Promise<string[]> => await app.evaluate(() => ((globalThis as unknown as { __menu?: { items: Array<{ label: string, type: string }> } }).__menu?.items ?? []).filter((item) => item.type !== 'separator').map((item) => item.label))
+    const choose = async (label: string): Promise<void> => { await app.evaluate((_, l) => { ((globalThis as unknown as { __menu: { items: Array<{ label: string, click: () => void }> } }).__menu.items.find((item) => item.label === l))?.click() }, label) }
+
+    for (let n = 0; n < 6; n += 1) {
+      const label = n % 2 === 0 ? 'Pin Tab' : 'Unpin Tab'
+      await app.evaluate(() => { (globalThis as unknown as { __menu?: unknown }).__menu = undefined })
+      await chrome.click(`.tab[data-id="${asleep}"]`, { button: 'right' })
+      expect(await waitFor(async () => (await labels()).includes(label)), `menu ${String(n)} offers ${label}`).toBe(true)
+      await choose(label)
+      expect(await waitFor(async () => (await pinnedIds(chrome)).includes(asleep) === (n % 2 === 0)), `pin toggle ${String(n)}`).toBe(true)
+    }
+
+    const output = mainOutput(app)
+    expect(output).not.toContain('uncaught exception')
+    expect(output).not.toContain('MaxListenersExceededWarning')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
 it('closes the others, or those to the right, but never a pinned tab, and copies a tab beside it', async () => {
   const { app, chrome } = await launched()
   try {
@@ -193,6 +268,18 @@ it('gives the tabs the room there is, then scrolls only their run, keeping the b
         button !== undefined && button.left >= bounds.right - 1 && search !== undefined && search.right <= row.getBoundingClientRect().right
     }))
     expect(layout, 'the tab in front is in view, and the buttons sit after the scrolling run').toBe(true)
+
+    // A plain mouse wheel only turns up and down: over the strip it scrolls the tabs along.
+    const firstTab = (await order(chrome))[0] as string
+    await chrome.click(`.tab[data-id="${firstTab}"]`)
+    expect(await waitFor(async () => await chrome.evaluate(() => (document.querySelector<HTMLElement>('#tab-scroll')?.scrollLeft ?? 1) === 0))).toBe(true)
+    const strip = await chrome.evaluate(() => {
+      const box = document.querySelector('#tab-scroll')?.getBoundingClientRect()
+      return box === undefined ? null : { x: box.left + box.width / 2, y: box.top + box.height / 2 }
+    })
+    await chrome.mouse.move(strip?.x ?? 0, strip?.y ?? 0)
+    await chrome.mouse.wheel(0, 400)
+    expect(await waitFor(async () => await chrome.evaluate(() => (document.querySelector<HTMLElement>('#tab-scroll')?.scrollLeft ?? 0) > 0)), 'the wheel scrolled the strip').toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
@@ -333,6 +420,35 @@ it('draws pinned, playing and muted tabs in a strip of few tabs and of many', as
     expect(widths.filter((w) => w.pinned).every((w) => w.width === 36)).toBe(true)
     expect(Math.min(...widths.filter((w) => !w.pinned).map((w) => w.width))).toBeGreaterThanOrEqual(44)
     await shoot(chrome, 'strip-13-narrow')
+
+    // An inactive tab too narrow for a title has no close button: a click near its centred icon must activate it, never close it.
+    const unpinned = (await order(chrome)).filter((id) => ![first, a, tone].includes(id))
+    const target = unpinned[1] as string
+    for (const width of [44, 62]) {
+      // The strip is rebuilt on every state push, so the width is set once the tab in front is settled.
+      await activate(chrome, c)
+      expect(await waitFor(async () => await chrome.evaluate((id) => document.querySelector('.tab.active')?.getAttribute('data-id') === id, c))).toBe(true)
+      await chrome.evaluate(([id, px]) => {
+        const el = document.querySelector<HTMLElement>(`.tab[data-id="${id as string}"]`)
+        if (el === null) return
+        el.style.flex = `0 0 ${String(px)}px`
+        el.style.minWidth = `${String(px)}px`
+        el.style.maxWidth = `${String(px)}px`
+      }, [target, width] as const)
+      const read = async (): Promise<{ close: string, x: number, y: number } | null> => await chrome.evaluate((id) => {
+        const el = document.querySelector<HTMLElement>(`.tab[data-id="${id}"]`)
+        const close = el?.querySelector('.close')
+        if (el === null || close === null || close === undefined) return null
+        const box = el.getBoundingClientRect()
+        return { close: getComputedStyle(close).display, x: box.left + box.width / 2 + 8, y: box.top + box.height / 2 }
+      }, target)
+      const found = await read()
+      expect(found?.close, `inactive close button at ${String(width)}px`).toBe('none')
+      const count = (await order(chrome)).length
+      await chrome.mouse.click(found?.x ?? 0, found?.y ?? 0)
+      expect(await waitFor(async () => await chrome.evaluate((id) => document.querySelector('.tab.active')?.getAttribute('data-id') === id, target)), `a click at ${String(width)}px activates the tab`).toBe(true)
+      expect((await order(chrome)).length).toBe(count)
+    }
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)

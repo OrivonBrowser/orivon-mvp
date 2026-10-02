@@ -14,13 +14,15 @@ import type { SubsystemContext } from '../../registry.js'
 let capturedOptions: any
 
 const getExtension = vi.fn<(id: string) => unknown>()
+const setMaxListeners = vi.fn()
+let maxListeners = 10
 
 vi.mock('electron', () => ({
   app: { on: vi.fn() },
   ipcMain: { on: vi.fn() },
   session: {
     defaultSession: {
-      extensions: { getExtension, addListener: vi.fn() },
+      extensions: { getExtension, addListener: vi.fn(), setMaxListeners, getMaxListeners: () => maxListeners },
       serviceWorkers: { on: vi.fn() },
       webRequest: { onBeforeRequest: vi.fn(), onBeforeSendHeaders: vi.fn(), onHeadersReceived: vi.fn() }
     },
@@ -67,7 +69,7 @@ vi.mock('orivon:crx-extensions-tab-capture', () => ({
   setTabCaptureConsumedCheck: vi.fn()
 }))
 
-const { createExtensionHost, attachExtensionShell } = await import('../extension-host.js')
+const { createExtensionHost, attachExtensionShell, EXTENSIONS_LISTENER_ROOM } = await import('../extension-host.js')
 
 const AN_EXTENSION_ID = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 
@@ -85,6 +87,24 @@ function buildShell (): { services: ShellServices, openTrusted: ReturnType<typeo
   } as unknown as ShellServices
   return { services, openTrusted }
 }
+
+describe('extension-host: the session\'s extensions emitter', () => {
+  it('has room for every subsystem\'s extension-unloaded listener before the first one attaches', () => {
+    setMaxListeners.mockReset()
+    maxListeners = 10
+    createExtensionHost('preload.js')
+    expect(setMaxListeners).toHaveBeenCalledWith(EXTENSIONS_LISTENER_ROOM)
+    expect(EXTENSIONS_LISTENER_ROOM).toBeGreaterThan(16)
+  })
+
+  it('never lowers a ceiling someone raised higher', () => {
+    setMaxListeners.mockReset()
+    maxListeners = 100
+    createExtensionHost('preload.js')
+    expect(setMaxListeners).toHaveBeenCalledWith(100)
+    maxListeners = 10
+  })
+})
 
 describe('extension-host: createTab', () => {
   beforeEach(() => {

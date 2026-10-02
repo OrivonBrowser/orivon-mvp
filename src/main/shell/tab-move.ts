@@ -1,7 +1,8 @@
 // Moving a tab between windows. The tab is the same page throughout, with its
 // history, scroll and state: its view is taken out of one window and shown in
 // another. Never moves a tab out of a window where a page holds the screen.
-import { clampToRun } from './tab-order.js'
+import { stripCentresFor } from './strip-centres.js'
+import { clampToRun, dropIndex } from './tab-order.js'
 import type { ShellWindow } from './window-registry.js'
 import type { Placement, ShellWindowOptions } from './window-options.js'
 
@@ -48,9 +49,9 @@ export function inTop (bounds: Rect, point: Point, height: number): boolean {
 /** The other window a dragged tab is over, and where in its strip it would land, or `null` when the point is
  * over no window's strip but its own. Shared by `dropTab` below (the actual move) and the floating preview's
  * own cross-window mark (`tear-drag.ts`), so the place the mark is drawn at is always the place a drop right
- * now would use -- one formula, not two that could drift apart. The index is a share of the strip's own
- * width, not real tab boundaries: the strip's layout is the chrome's, unknown here, and this only has to
- * agree with itself. */
+ * now would use. The place is the number of the strip's tabs whose centre is left of the point, as the strip's
+ * own drag counts it. Without the centres of the tabs now in that strip (`strip-centres.ts`), the point's share
+ * of the window's width stands in for them. */
 export function crossWindowTargetFor (
   from: ShellWindow,
   point: Point,
@@ -63,7 +64,10 @@ export function crossWindowTargetFor (
   if (target === undefined) return null
   const bounds = target.window.getBounds()
   const tabs = target.tabs.getState().tabs
-  const wanted = Math.round(((point.x - bounds.x) / bounds.width) * tabs.length)
+  const centres = stripCentresFor(target)
+  const wanted = centres === null
+    ? Math.round(((point.x - bounds.x) / bounds.width) * tabs.length)
+    : dropIndex(centres, point.x - target.window.getContentBounds().x)
   // A pinned tab lands in the pinned run, and any other outside it, as `giveTab` will place it.
   return { window: target, index: clampToRun(wanted, pinned, tabs.filter((tab) => tab.pinned).length, tabs.length) }
 }

@@ -163,6 +163,53 @@ it('with no home page, Home opens the new tab page and never swaps a loaded page
   }
 }, TEST_TIMEOUT_MS)
 
+it('stops the window at its minimum size, and the address field still has room there', async () => {
+  const { app, chrome } = await launchShell({ seedProfile: settingsJson({ 'toolbar.home': true }) })
+  try {
+    expect(await waitFor(async () => await homeShown(chrome))).toBe(true)
+    expect(await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getMinimumSize())).toEqual([500, 400])
+    expect(await waitFor(async () => await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.isVisible() === true))).toBe(true)
+    await app.evaluate(({ BaseWindow }) => { BaseWindow.getAllWindows()[0]?.setSize(300, 200) })
+    expect(await waitFor(async () => (await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getSize())) !== undefined)).toBe(true)
+    const size = await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getSize() ?? [0, 0])
+    expect(size[0]).toBeGreaterThanOrEqual(500)
+    expect(size[1]).toBeGreaterThanOrEqual(400)
+    // The chrome view takes the new width a moment after the window does.
+    expect(await waitFor(async () => (await chrome.evaluate(() => window.innerWidth)) <= 520)).toBe(true)
+    const field = await chrome.evaluate(() => document.querySelector<HTMLInputElement>('#address')?.getBoundingClientRect().width ?? 0)
+    expect(field).toBeGreaterThanOrEqual(120)
+
+    // Four extension buttons (the library's own element and class, built by hand since no extension is
+    // installed): the list shows one whole button and clips the rest, instead of squeezing all four.
+    const buttons = await chrome.evaluate(() => {
+      const list = document.querySelector('browser-action-list')
+      const root = list?.shadowRoot
+      if (list === null || list === undefined || root === null || root === undefined) return null
+      for (let i = 0; i < 4; i += 1) {
+        const node = document.createElement('button')
+        node.className = 'action'
+        ;(node as unknown as { part: string }).part = 'action'
+        root.appendChild(node)
+      }
+      const box = list.getBoundingClientRect()
+      return {
+        listRight: box.right,
+        widths: [...root.querySelectorAll('.action')].map((node) => node.getBoundingClientRect().width),
+        rights: [...root.querySelectorAll('.action')].map((node) => node.getBoundingClientRect().right),
+        field: document.querySelector<HTMLInputElement>('#address')?.getBoundingClientRect().width ?? 0
+      }
+    })
+    expect(buttons).not.toBeNull()
+    expect(buttons?.widths).toEqual([32, 32, 32, 32])
+    expect(buttons?.rights[0] ?? 1e9).toBeLessThanOrEqual((buttons?.listRight ?? 0) + 0.5)
+    expect(buttons?.rights[1] ?? 0).toBeGreaterThan((buttons?.listRight ?? 1e9) + 0.5)
+    expect(buttons?.field ?? 0).toBeGreaterThanOrEqual(96)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
 it('opens the window at the place it was left, and never at one no display shows', async () => {
   const saved = await launchShell({ seedProfile: stateJson({ x: 60, y: 40, width: 900, height: 620 }) })
   try {

@@ -254,21 +254,28 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     slot.anchor = isAnchor(anchor) ? anchor : slot.anchor
     slot.open = true
     if (!wasOpen) openOrder.push(slot)
-    view.setBounds(boundsFor(slot))
-    const result = showResult(handler, payload)
-    // The handler runs at once, and may close this overlay or open another popup over it: nothing is left to attach then.
-    if (!slot.open || slot.view !== view) return
-    if (slot.pageReady) {
-      void result.then((reply) => {
-        if (slot.open && slot.view === view && reply.shown) view.send(OVERLAY_EVENT_CHANNEL, { type: 'show', payload: reply.payload })
-      })
-    } else {
-      slot.pending = result
+    // A throw past this point (a view that cannot take bounds, or attach) must not leave the slot open with nothing
+    // on screen: the next toggle would read as a close and the overlay could never open again.
+    try {
+      view.setBounds(boundsFor(slot))
+      const result = showResult(handler, payload)
+      // The handler runs at once, and may close this overlay or open another popup over it: nothing is left to attach then.
+      if (!slot.open || slot.view !== view) return
+      if (slot.pageReady) {
+        void result.then((reply) => {
+          if (slot.open && slot.view === view && reply.shown) view.send(OVERLAY_EVENT_CHANNEL, { type: 'show', payload: reply.payload })
+        })
+      } else {
+        slot.pending = result
+      }
+      view.attach(deps.contentView)
+      restack()
+      recordPopoverShown(view.id, true)
+      if (slot.def.focus === 'take' && !inBackground()) view.focusWhenReady(() => slot.open && slot.view === view)
+    } catch (error) {
+      console.error(`[overlay] showing "${slot.def.name}" failed`, error)
+      closeSlot(slot, 'request')
     }
-    view.attach(deps.contentView)
-    restack()
-    recordPopoverShown(view.id, true)
-    if (slot.def.focus === 'take' && !inBackground()) view.focusWhenReady(() => slot.open && slot.view === view)
   }
 
   function send (name: string, event: unknown): void {

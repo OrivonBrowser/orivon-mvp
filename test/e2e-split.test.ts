@@ -105,6 +105,8 @@ it('shows two tabs side by side, each in its pane, with the divider between them
     expect(Math.abs(left.width - right.width)).toBeLessThanOrEqual(1)
     // The backdrop is under the panes: it came first among the window's views.
     expect(views.findIndex((view) => view.url.includes('/split-frame/'))).toBeLessThan(views.findIndex((view) => view.url.includes(`${origin}/a`)))
+    // The pane that joined sits above the one that was already there, in the order they read.
+    expect(views.findIndex((view) => view.url.includes(`${origin}/a`))).toBeLessThan(views.findIndex((view) => view.url.includes(`${origin}/b`)))
     // The tab in front is the one the person was in.
     expect(await activeId(chrome)).toBe(a)
     expect(await chrome.locator('.tab.joined-first .title').textContent()).toBe('Page /a')
@@ -242,10 +244,25 @@ it('previews where a dragged tab would go over a page edge, and splits when it i
     expect(inWindow(await layout(app), `${origin}/a`)?.width).toBeGreaterThan(area.width - 20)
 
     // Let go at the left edge: the dragged tab is the left pane.
+    await app.evaluate(({ webContents }) => {
+      const g = globalThis as unknown as { __focused: string[] }
+      g.__focused = []
+      for (const wc of webContents.getAllWebContents()) {
+        const focus = wc.focus.bind(wc)
+        wc.focus = () => { g.__focused.push(wc.getURL()); focus() }
+      }
+    })
     await chrome.evaluate(([id, x, y]) => { (window as unknown as { orivonShell: { dropTab: (id: string, sx: number, sy: number, cx: number, cy: number) => void } }).orivonShell.dropTab(id as string, x as number, y as number, x as number, y as number) }, [first, 40, area.height / 2] as const)
     expect(await waitFor(async () => (await joined(chrome)).join() === [first, a].join())).toBe(true)
     expect(await waitFor(async () => backdropAt(await layout(app)) !== undefined)).toBe(true)
     expect(await activeId(chrome)).toBe(first)
+    // The pane dropped on the left sits straight below its partner in the window (nothing, the
+    // chrome view included, between them), and the keyboard went into the dropped tab's page.
+    const views = await layout(app)
+    const dropped = views.findIndex((view) => view.url.includes('/newtab/'))
+    expect(dropped).toBeGreaterThan(-1)
+    expect(dropped).toBe(views.findIndex((view) => view.url.includes(`${origin}/a`)) - 1)
+    expect(await waitFor(async () => (await app.evaluate(() => (globalThis as unknown as { __focused: string[] }).__focused)).at(-1)?.includes('/newtab/') === true)).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)

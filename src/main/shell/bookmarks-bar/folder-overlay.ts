@@ -4,7 +4,10 @@
 import { CLOSE_LIKE_POPUP } from '../../overlays/overlay-types.js'
 import type { OverlayDef } from '../../overlays/overlay-types.js'
 import type { ShellWindow } from '../window-registry.js'
-import { asFolderRequest, asFrom, folderModel } from './folder-model.js'
+import { asAnchor } from '../bookmark-bubble/edit-action.js'
+import type { OverlayAnchor } from '../../overlays/overlay-types.js'
+import { showBarMenu } from './bar-menu-runner.js'
+import { asFolderRequest, asFrom, folderModel, isMenuEntry } from './folder-model.js'
 import { openAll, openBookmark } from './open-bookmark.js'
 
 export const FOLDER_OVERLAY = 'bookmark-folder'
@@ -15,13 +18,15 @@ const ECHO_MS = 300
 interface Memory {
   /** The folder the open menu was shown for. */
   shown: string | null
+  /** Where the bar's folder button is: the row menu's Edit and Rename put their bubble under it. */
+  anchor: OverlayAnchor | undefined
   dismissed: { id: string, at: number } | null
 }
 
 const memories = new WeakMap<ShellWindow, Memory>()
 const memoryOf = (window: ShellWindow): Memory => {
   let memory = memories.get(window)
-  if (memory === undefined) { memory = { shown: null, dismissed: null }; memories.set(window, memory) }
+  if (memory === undefined) { memory = { shown: null, anchor: undefined, dismissed: null }; memories.set(window, memory) }
   return memory
 }
 
@@ -47,10 +52,11 @@ export const bookmarkFolderOverlay: OverlayDef = {
     const memory = memoryOf(window)
     return {
       show: (payload) => {
-        const { id, from } = (payload ?? {}) as { id?: unknown, from?: unknown }
+        const { id, from, anchor } = (payload ?? {}) as { id?: unknown, from?: unknown, anchor?: unknown }
         const start = asFrom(from)
         const model = typeof id === 'string' && start !== null ? folderModel(services.bookmarks, id, start) : null
         memory.shown = model === null ? null : model.id
+        memory.anchor = asAnchor(anchor)
         memory.dismissed = null
         return model
       },
@@ -58,6 +64,16 @@ export const bookmarkFolderOverlay: OverlayDef = {
         const asked = asFolderRequest(command)
         if (asked === undefined) return undefined
         if (asked.type === 'children') return folderModel(services.bookmarks, asked.id, asked.from)
+        if (asked.type === 'menu') {
+          if (isMenuEntry(services.bookmarks, asked.id)) showBarMenu(win, asked.id, undefined, memory.anchor)
+          return undefined
+        }
+        if (asked.type === 'remove') {
+          const parent = services.bookmarks.node(asked.id)?.parent
+          if (parent === undefined || !isMenuEntry(services.bookmarks, asked.id)) return undefined
+          services.bookmarks.remove([asked.id])
+          return folderModel(services.bookmarks, parent, asked.from)
+        }
         win.close()
         if (asked.type === 'open') openBookmark(win, asked.id, asked.disposition)
         else openAll(win, asked.id)

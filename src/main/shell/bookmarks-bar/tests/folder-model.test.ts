@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { asFolderRequest, asFrom, folderModel, MAX_ROWS } from '../folder-model.js'
 import { bookmarkFolderOverlay, clickOnFolder } from '../folder-overlay.js'
 import type { OverlayWindow } from '../../../overlays/overlay-types.js'
 import type { ShellWindow } from '../../window-registry.js'
 import { harness, tiny } from './harness.js'
+
+vi.mock('electron', () => ({ Menu: {}, clipboard: {} }))
 
 describe('the folder model', () => {
   it('lists a folder\'s rows with favicons for pages, names the pages Open all would open, and refuses what is not a bar or Other folder', () => {
@@ -40,12 +42,15 @@ describe('the folder model', () => {
     expect(all?.more).toBe(5)
   })
 
-  it('reads a request from the page, and refuses any that is not exactly one of its three', () => {
+  it('reads a request from the page, and refuses any that is not exactly one it lists', () => {
     expect(asFolderRequest({ type: 'children', id: 'x' })).toEqual({ type: 'children', id: 'x' })
     expect(asFolderRequest({ type: 'children', id: 'x', from: 3 })).toEqual({ type: 'children', id: 'x', from: 3 })
     expect(asFolderRequest({ type: 'open', id: 'x', disposition: 'background' })).toEqual({ type: 'open', id: 'x', disposition: 'background' })
     expect(asFolderRequest({ type: 'openAll', id: 'x' })).toEqual({ type: 'openAll', id: 'x' })
-    for (const bad of [undefined, null, 'x', 7, {}, { type: 'children' }, { type: 'children', id: '' }, { type: 'children', id: 'x', from: -1 }, { type: 'children', id: 'x', from: 1.5 },
+    expect(asFolderRequest({ type: 'menu', id: 'x' })).toEqual({ type: 'menu', id: 'x' })
+    expect(asFolderRequest({ type: 'remove', id: 'x' })).toEqual({ type: 'remove', id: 'x' })
+    expect(asFolderRequest({ type: 'remove', id: 'x', from: 2 })).toEqual({ type: 'remove', id: 'x', from: 2 })
+    for (const bad of [undefined, null, 'x', 7, {}, { type: 'children' }, { type: 'children', id: '' }, { type: 'children', id: 'x', from: -1 }, { type: 'children', id: 'x', from: 1.5 }, { type: 'menu', id: '' }, { type: 'remove', id: '' }, { type: 'remove', id: 'x', from: -1 }, { type: 'menu' },
       { type: 'open', id: 'x' }, { type: 'open', id: 'x', disposition: 'private' }, { type: 'open', id: 3, disposition: 'current' }, { type: 'delete', id: 'x' }]) {
       expect(asFolderRequest(bad), JSON.stringify(bad)).toBeUndefined()
     }

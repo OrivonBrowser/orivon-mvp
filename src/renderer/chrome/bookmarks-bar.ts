@@ -44,9 +44,10 @@ export function createBookmarksBar (): ChromeModule {
     const all = elements()
     for (const el of all) el.hidden = false
     more.hidden = true
-    const available = list.clientWidth
+    // Fractional widths, as painted: the integer offsetWidth rounds each item and can let the last one overhang.
+    const available = list.getBoundingClientRect().width
     if (available > 0) {
-      const count = visibleCount(all.map((el) => el.offsetWidth), available, GAP_PX, MORE_PX)
+      const count = visibleCount(all.map((el) => el.getBoundingClientRect().width), available, GAP_PX, MORE_PX)
       all.forEach((el, index) => { el.hidden = index >= count })
       more.hidden = count >= all.length
     }

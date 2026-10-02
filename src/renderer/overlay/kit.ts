@@ -83,8 +83,12 @@ export function shownPayload (message: unknown, type: 'show' | 'ready'): { paylo
 
 /**
  * Mounts `page` into `root` so that a page that throws, while mounting or on
- * a later show, leaves a small error state and never a blank overlay. After a
- * failure later shows are ignored: the page's own nodes are gone.
+ * a later show, leaves a small error state and never a blank overlay. A view
+ * is kept warm across many opens, so one bad payload must not break it for
+ * good: after a throw in `shown`, the page's own nodes are set aside and put
+ * back for the next show (the page, with its listeners, stays the one
+ * mounted); after a throw in `mount` there is no page to put back, so the
+ * next show clears the root and mounts again.
  */
 export function mountPage (
   page: OverlayPage | undefined,
@@ -92,9 +96,7 @@ export function mountPage (
   overlay: Overlay,
   showError: (root: HTMLElement) => void
 ): { shown: (payload: unknown) => void } {
-  let failed = false
   const fail = (error: unknown): void => {
-    failed = true
     console.error(`[overlay] page "${overlay.name}" failed`, error)
     try { showError(root) } catch (again) { console.error('[overlay] the error state failed too', again) }
   }
@@ -102,17 +104,31 @@ export function mountPage (
     fail(new Error('no page is registered for this overlay'))
     return { shown: () => {} }
   }
-  let mounted: { shown: (payload: unknown) => void }
-  try {
-    mounted = page.mount(root, overlay)
-  } catch (error) {
-    fail(error)
-    return { shown: () => {} }
+  let mounted: { shown: (payload: unknown) => void } | undefined
+  let setAside: Node[] | undefined
+  const build = (): void => {
+    try {
+      mounted = page.mount(root, overlay)
+    } catch (error) {
+      mounted = undefined
+      fail(error)
+    }
   }
+  build()
   return {
     shown (payload) {
-      if (failed) return
-      try { mounted.shown(payload) } catch (error) { fail(error) }
+      if (mounted === undefined) {
+        root.replaceChildren()
+        build()
+        if (mounted === undefined) return
+      } else if (setAside !== undefined) {
+        root.replaceChildren(...setAside)
+        setAside = undefined
+      }
+      try { mounted.shown(payload) } catch (error) {
+        setAside = [...root.childNodes]
+        fail(error)
+      }
     }
   }
 }

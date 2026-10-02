@@ -26,7 +26,7 @@ One spec: `node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e
 | Spec | Proves |
 |---|---|
 | `e2e-qa-audit` | each layout-audit rule fires on a page broken on purpose and none on a clean page |
-| `e2e-qa-visual` | eleven shell states: audit clean, no shell errors, painted, baseline match, record for reading |
+| `e2e-qa-visual` | eleven shell states in light and in dark: audit clean, no shell errors, painted, each view's backing equals its page's colour, baseline match, record for reading |
 | `e2e-qa-journey` | star a bookmark, see it on disk, relaunch on the same profile, unstar, relaunch again |
 | `e2e-qa-adversarial` | corrupt profile files, tab churn, a killed renderer, an abandoned load |
 | `e2e-qa-evidence` | the failure bundle holds console, page errors, failed requests, a dead renderer, main log, real pixels |

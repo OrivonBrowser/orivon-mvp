@@ -32,7 +32,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { mkdtemp, realpath, rm, stat } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -144,6 +144,44 @@ describe('launchElectron', () => {
     if (userDataDirArg === undefined) throw new Error('launchElectron did not pass --user-data-dir to electron.launch')
     const userDataDir = userDataDirArg.slice('--user-data-dir='.length)
     await expect(stat(userDataDir)).rejects.toThrow()
+  })
+
+  describe('the scheme option', () => {
+    /** What the mocked launch saw: its options and the settings file as it stood when Electron would have started. */
+    async function launchAndInspect (options: Parameters<typeof launchElectron>[0]): Promise<{ colorScheme: unknown, hasColorScheme: boolean, settings: unknown }> {
+      let seen: { colorScheme: unknown, hasColorScheme: boolean, settings: unknown } | undefined
+      mockElectronLaunch.mockClear()
+      mockElectronLaunch.mockImplementationOnce(async (launch: { args: string[], colorScheme?: unknown }) => {
+        const dir = launch.args.find((a) => a.startsWith('--user-data-dir='))?.slice('--user-data-dir='.length) ?? ''
+        const text = await readFile(join(dir, 'settings.json'), 'utf8').catch(() => undefined)
+        seen = { colorScheme: launch.colorScheme, hasColorScheme: 'colorScheme' in launch, settings: text === undefined ? undefined : JSON.parse(text) }
+        throw new Error('injected: launch failure')
+      })
+      await expect(launchElectron(options)).rejects.toThrow('injected: launch failure')
+      if (seen === undefined) throw new Error('the mocked launch never ran')
+      return seen
+    }
+
+    it('lifts the light pin and seeds the profile with the chosen theme, keeping what a seed wrote', async () => {
+      const seen = await launchAndInspect({
+        scheme: 'dark',
+        seedProfile: async (dir: string) => { await writeFile(join(dir, 'settings.json'), JSON.stringify({ version: 1, values: { 'appearance.bookmarksBar': 'always' } })) }
+      })
+      expect(seen.colorScheme).toBeNull()
+      expect(seen.settings).toEqual({ version: 1, values: { 'appearance.bookmarksBar': 'always', 'appearance.theme': 'dark' } })
+    })
+
+    it('seeds a profile of its own when nothing else did', async () => {
+      const seen = await launchAndInspect({ scheme: 'light' })
+      expect(seen.colorScheme).toBeNull()
+      expect(seen.settings).toEqual({ version: 1, values: { 'appearance.theme': 'light' } })
+    })
+
+    it('changes nothing for a launch that does not ask: the page scheme pin stays and no setting is written', async () => {
+      const seen = await launchAndInspect({})
+      expect(seen.hasColorScheme).toBe(false)
+      expect(seen.settings).toBeUndefined()
+    })
   })
 
   it.each([

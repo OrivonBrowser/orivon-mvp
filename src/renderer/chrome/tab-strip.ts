@@ -1,11 +1,13 @@
 import type { ShellState, TabState } from '../../main/shell/tabs.js'
 import { closeIcon, faviconElement } from '../icons.js'
-import { makeStripDraggable } from '../strip-drag.js'
 import { isDraggingTab, makeTabDraggable } from '../tab-drag.js'
 import type { ChromeContext, ChromeModule, TabDecorator } from './context.js'
 import { must } from './context.js'
 import { contained, runDecorators } from './contain.js'
 import { placeAmongAll } from './tab-groups.js'
+
+/** What one line of a wheel that counts in lines scrolls the strip by. */
+const WHEEL_LINE_PX = 40
 
 function renderFavicon (tab: TabState): HTMLSpanElement {
   const fav = document.createElement('span')
@@ -42,6 +44,23 @@ export function createTabStrip (decorators: readonly TabDecorator[], finishers: 
     const before = scroller.scrollLeft > 1
     const after = scroller.scrollLeft < scroller.scrollWidth - scroller.clientWidth - 1
     scroller.dataset['fade'] = before && after ? 'both' : before ? 'start' : after ? 'end' : 'none'
+  }
+
+  /** The strip scrolls sideways and has no scrollbar, so an ordinary mouse wheel, which only turns up and down,
+   * scrolls it along. A sideways wheel or touchpad swipe, and a wheel with the strip already at that end, are left to
+   * the page's own handling. */
+  function wheelAlongStrip (event: WheelEvent): void {
+    const scroller = tabScroll
+    if (scroller === undefined || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
+    const room = scroller.scrollWidth - scroller.clientWidth
+    if (room <= 0) return
+    const step = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+      ? event.deltaY * WHEEL_LINE_PX
+      : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? event.deltaY * scroller.clientWidth : event.deltaY
+    const next = Math.min(Math.max(scroller.scrollLeft + step, 0), room)
+    if (next === scroller.scrollLeft) return
+    event.preventDefault()
+    scroller.scrollLeft = next
   }
 
   function renderTabs (state: ShellState, ctx: ChromeContext): void {
@@ -146,17 +165,17 @@ export function createTabStrip (decorators: readonly TabDecorator[], finishers: 
       row.append(el)
       return el
     })()
-    // An approximate place, not real tab boundaries: the index itself is what must agree with where a drop
-    // would actually land (tab-move.ts's `crossWindowTargetFor`), which this only has to point at closely
-    // enough to read as "here".
+    // The index is a place in the state's tab order, which is the order of the `.tab` elements; a tab hidden in
+    // a collapsed group takes no room, so the line goes before the next tab shown (as `placeAmongAll` reads
+    // it), or after the last one.
     const tabs = [...row.querySelectorAll<HTMLElement>('.tab')]
-    const before = tabs[index]
+    const before = tabs.slice(Math.max(0, index)).find((tab) => !tab.hidden)
     const rowLeft = row.getBoundingClientRect().left
     // The row itself never scrolls (only the run of unpinned tabs inside it does), and a tab's viewport rect
     // already accounts for that run's scroll, so the distance from the row's edge is the mark's place.
     const x = before !== undefined
       ? before.getBoundingClientRect().left - rowLeft
-      : (tabs.at(-1)?.getBoundingClientRect().right ?? rowLeft) - rowLeft
+      : (tabs.filter((tab) => !tab.hidden).at(-1)?.getBoundingClientRect().right ?? rowLeft) - rowLeft
     dropMark.style.left = `${String(x)}px`
     dropMark.hidden = false
   }
@@ -167,6 +186,7 @@ export function createTabStrip (decorators: readonly TabDecorator[], finishers: 
       tabrow = must(document.querySelector<HTMLDivElement>('#tabrow'), '#tabrow missing')
       tabScroll = must(document.querySelector<HTMLDivElement>('#tab-scroll'), '#tab-scroll missing')
       tabScroll.addEventListener('scroll', markOverflow, { passive: true })
+      tabScroll.addEventListener('wheel', wheelAlongStrip, { passive: false })
       // A narrower window must not leave the tab in front out of view.
       const scroller = tabScroll
       if (typeof ResizeObserver === 'function') {
@@ -176,20 +196,7 @@ export function createTabStrip (decorators: readonly TabDecorator[], finishers: 
         }).observe(scroller)
       }
       newTabBtn = must(document.querySelector<HTMLButtonElement>('#new-tab'), '#new-tab missing')
-      const stripTail = must(document.querySelector<HTMLDivElement>('#tab-strip-tail'), '#tab-strip-tail missing')
       newTabBtn.addEventListener('click', () => shell.newTab())
-      // The empty strip past the new-tab button: only wired up here in the manual drag mode (drag-mode.ts
-      // decides, main-side) -- in the native mode the tail is plain OS-level drag content and none of this runs.
-      if (shell.dragMode === 'manual') {
-        makeStripDraggable(stripTail, {
-          newTab: () => { shell.newTab() },
-          toggleMaximize: () => { shell.toggleMaximize() },
-          moveStart: (x, y) => { shell.windowMoveStart(x, y) },
-          moveTo: (x, y) => { shell.windowMoveTo(x, y) },
-          moveEnd: (x, y) => { shell.windowMoveEnd(x, y) },
-          moveCancel: () => { shell.windowMoveCancel() }
-        })
-      }
     },
     render: renderTabs,
     event: (payload) => {

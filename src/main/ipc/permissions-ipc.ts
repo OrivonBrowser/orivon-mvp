@@ -35,6 +35,8 @@ export type PermissionsCommand =
   | { type: 'lightClient' }
   /** The "All site settings" link: closes the panel and opens the Site settings page. No argument. */
   | { type: 'openSiteSettings' }
+  /** Escape in the panel's page: closes the panel. No argument. */
+  | { type: 'close' }
 
 export interface LightClientSource {
   view: () => LightClientView
@@ -59,7 +61,8 @@ export function registerPermissionsIpc (
   onContentHeight: (height: number) => void = () => {},
   sites?: SiteNotificationsController,
   lightClient?: LightClientSource,
-  openSiteSettings: () => void = () => {}
+  openSiteSettings: () => void = () => {},
+  closePanel: () => void = () => {}
 ): () => void {
   const unsubscribe = lightClient?.subscribe(() => {
     if (!permissionsWebContents.isDestroyed()) permissionsWebContents.send(LIGHT_CLIENT_STATUS_CHANNEL, lightClient.view())
@@ -93,6 +96,10 @@ export function registerPermissionsIpc (
         return lightClient?.view() ?? null
       case 'openSiteSettings':
         openSiteSettings()
+        return
+      case 'close':
+        // After the reply: a non-warm panel's close destroys this webContents, which would drop an invoke still waiting.
+        setImmediate(closePanel)
         return
     }
   })

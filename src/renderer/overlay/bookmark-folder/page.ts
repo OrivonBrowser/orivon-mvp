@@ -47,6 +47,11 @@ export const bookmarkFolderPage: OverlayPage = {
         if (folder) drill(row.id)
         else void overlay.request({ type: 'open', id: row.id, disposition: dispositionOf(event) })
       })
+      // The bar's own right-click menu, popped up by main at the pointer.
+      button.addEventListener('contextmenu', (event) => {
+        event.preventDefault()
+        void overlay.request({ type: 'menu', id: row.id })
+      })
       // A middle press would start Chromium's autoscroll before the release that opens the page.
       button.addEventListener('mousedown', (event) => { if (event.button === 1) event.preventDefault() })
       button.addEventListener('auxclick', (event) => {
@@ -105,9 +110,25 @@ export const bookmarkFolderPage: OverlayPage = {
       if (level !== undefined) void load(level, from)
     }
 
+    /** Deletes the focused bookmark or folder and lists the folder again, the focus on the row that took its place. */
+    async function removeAt (at: number, key: string): Promise<void> {
+      const level = levels.at(-1)
+      if (level === undefined) return
+      const next = await overlay.request<unknown>({ type: 'remove', id: key, ...(level.from === undefined ? {} : { from: level.from }) })
+      if (!isModel(next)) return
+      model = next
+      render()
+      rows[Math.min(at, rows.length - 1)]?.focus()
+    }
+
     document.addEventListener('keydown', (event) => {
       const at = rows.findIndex((row) => row === document.activeElement)
-      if (NAV_KEYS.includes(event.key)) {
+      const key = (document.activeElement as HTMLElement | null)?.dataset['key']
+      const deleting = event.key === 'Delete' || (event.key === 'Backspace' && (event.ctrlKey || event.metaKey))
+      if (deleting && key !== undefined && key !== 'back' && key !== 'all') {
+        event.preventDefault()
+        void removeAt(at, key)
+      } else if (NAV_KEYS.includes(event.key)) {
         event.preventDefault()
         rows[nextRow(rows.length, at, event.key as NavKey)]?.focus()
       } else if (event.key === 'ArrowRight' && document.activeElement?.getAttribute('aria-haspopup') === 'menu') {

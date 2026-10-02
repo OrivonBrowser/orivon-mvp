@@ -1,5 +1,6 @@
 import type { AppPermissions, PermissionRow, PickedPathRow, SiteNotificationRow } from '../../main/permissions/permissions.js'
 import type { CapabilityKind, GrantId } from '../../contracts/index.js'
+import { closeOnEscape } from '../pages/shared/escape-closes.js'
 import { createPermissionsListView } from './permissions-view.js'
 import { renderLightClient } from './light-client-view.js'
 import type { LightClientView } from '../../main/verifier/status-view.js'
@@ -26,6 +27,7 @@ interface OrivonPermissions {
   lightClient: () => Promise<LightClientView | null>
   onLightClient: (listener: (view: LightClientView) => void) => void
   reportHeight: (height: number) => void
+  close: () => void
   focusOrigin: string | null
 }
 
@@ -45,6 +47,8 @@ function must<T> (value: T | null | undefined, message: string): T {
 // but preload/permissions.ts, so `orivonPermissions` missing here means the
 // preload itself failed, not a legitimately unprivileged load.
 const permissions = must(window.orivonPermissions, 'orivonPermissions not exposed -- preload did not run')
+
+closeOnEscape(document, () => { permissions.close() })
 
 const list = must(document.querySelector<HTMLDivElement>('#apps-list'), '#apps-list missing')
 const emptyState = must(document.querySelector<HTMLElement>('#empty-state'), '#empty-state missing')
