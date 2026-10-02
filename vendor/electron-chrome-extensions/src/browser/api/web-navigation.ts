@@ -56,7 +56,13 @@ export class WebNavigationAPI {
     this.ctx.store.on('tab-added', this.observeTab.bind(this))
   }
 
+  /** Orivon patch (UPSTREAM.md 29): 'tab-added' fires again for the SAME webContents each time its tab is
+   * handed to another window, and a second listener set would send every webNavigation event twice. */
+  private observedTabs = new WeakSet<Electron.WebContents>()
+
   private observeTab(tab: Electron.WebContents) {
+    if (this.observedTabs.has(tab)) return
+    this.observedTabs.add(tab)
     tab.once('will-navigate', this.onCreatedNavigationTarget.bind(this, tab))
     tab.on('did-start-navigation', this.onBeforeNavigate.bind(this, tab))
     tab.on('did-frame-finish-load', this.onFinishLoad.bind(this, tab))

@@ -163,3 +163,17 @@ describe('registerPermissionsIpc: the light client section', () => {
     expect(await dispatch({ type: 'lightClient' }, OTHER_FRAME)).toBeUndefined()
   })
 })
+
+describe('registerPermissionsIpc: closing from the panel', () => {
+  it('asks the panel to close, after the reply has gone, and only for the panel itself', async () => {
+    const close = vi.fn()
+    registerPermissionsIpc(permissionsWebContents, PANEL_URL, fakePermissions(), () => {}, undefined, undefined, () => {}, close)
+    await dispatch({ type: 'close' })
+    expect(close).not.toHaveBeenCalled()
+    await new Promise((resolve) => { setImmediate(resolve) })
+    expect(close).toHaveBeenCalledTimes(1)
+    await dispatch({ type: 'close' }, OTHER_FRAME)
+    await new Promise((resolve) => { setImmediate(resolve) })
+    expect(close).toHaveBeenCalledTimes(1)
+  })
+})

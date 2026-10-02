@@ -60,7 +60,7 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, dirnam
   const permissions = createPermissionsPanel(win, win.contentView, permissionsController, dirname, createSiteNotificationsController(notificationDecisions()), () => {
     permissions.close()
     tabs.openInternal('settings', '/sites')
-  })
+  }, () => tabs.activeWebContents())
 
   const siteInfo = createSiteInfoPanel(
     win, win.contentView, siteInfoController, app.getPath('userData'),

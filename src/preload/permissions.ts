@@ -57,6 +57,10 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
         if (typeof view === 'object' && view !== null) listener(view as LightClientView)
       })
     },
+    /** Escape in the page: asks main to close the panel and hand the keyboard back to the tab. */
+    close: (): void => {
+      void ipcRenderer.invoke(PERMISSIONS_COMMAND_CHANNEL, { type: 'close' } satisfies PermissionsCommand)
+    },
     /** Tells main how tall the rendered content is, so the panel sizes to it
      * (src/main/permissions/permissions-panel.ts). Fire-and-forget: a panel that failed
      * to resize is cosmetic, and must never break rendering the list. */

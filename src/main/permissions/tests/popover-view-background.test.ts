@@ -22,6 +22,7 @@ interface FakeWebContents {
   loadURL: ReturnType<typeof vi.fn>
   isDestroyed: ReturnType<typeof vi.fn>
   isLoading: ReturnType<typeof vi.fn>
+  isFocused: ReturnType<typeof vi.fn>
   close: ReturnType<typeof vi.fn>
   focus: ReturnType<typeof vi.fn>
 }
@@ -39,6 +40,7 @@ function fakeWebContents (): FakeWebContents {
     loadURL: vi.fn().mockResolvedValue(undefined),
     isDestroyed: vi.fn(() => destroyed),
     isLoading: vi.fn().mockReturnValue(false),
+    isFocused: vi.fn().mockReturnValue(false),
     close: vi.fn(() => { destroyed = true; calls.push(`close:${id}`) }),
     focus: vi.fn()
   }

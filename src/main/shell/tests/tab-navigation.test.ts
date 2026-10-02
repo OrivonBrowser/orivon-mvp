@@ -8,7 +8,7 @@ vi.mock('../tab-view.js', () => ({
   EXIT_FULLSCREEN_WORLD_ID: 1001
 }))
 
-const { navigateTab } = await import('../tab-navigation.js')
+const { navigateTab, reloadTab } = await import('../tab-navigation.js')
 type Env = Parameters<typeof navigateTab>[0]
 
 function setup (): { navigate: (input: string) => void, openInternal: ReturnType<typeof vi.fn>, viewSource: ReturnType<typeof vi.fn>, loadURL: ReturnType<typeof vi.fn> } {
@@ -73,4 +73,65 @@ describe('typing into the address bar', () => {
     expect(viewSource).not.toHaveBeenCalled()
     for (const call of loadURL.mock.calls) expect(String(call[0])).not.toMatch(/^(view-source|javascript|file):/i)
   })
+})
+
+describe('reload while a page is loading', () => {
+  function loading (opts: { loadingMain: boolean, inflightUrl?: string, active?: string }): { reload: () => void, wcReload: ReturnType<typeof vi.fn>, loadURL: ReturnType<typeof vi.fn> } {
+    const wcReload = vi.fn()
+    const loadURL = vi.fn(async () => {})
+    const wc = {
+      isDestroyed: () => false,
+      isLoadingMainFrame: () => opts.loadingMain,
+      reload: wcReload,
+      loadURL,
+      navigationHistory: { getActiveIndex: () => (opts.active === undefined ? -1 : 0), getEntryAtIndex: (index: number) => (index === 0 ? { url: opts.active } : null) }
+    }
+    const env = {
+      record: () => ({ view: { webContents: wc }, partition: undefined, inflightUrl: opts.inflightUrl }),
+      liveWebContents: () => wc,
+      openInternal: vi.fn(),
+      viewSource: vi.fn(),
+      broker: () => undefined,
+      searchUrl: undefined
+    } as unknown as Env
+    return { reload: () => { reloadTab(env, 'tab-1') }, wcReload, loadURL }
+  }
+
+  it('restarts the load that has not committed, instead of reloading the page before it', () => {
+    const { reload, wcReload, loadURL } = loading({ loadingMain: true, inflightUrl: 'https://slow.example/next', active: 'https://old.example/' })
+    reload()
+    expect(loadURL).toHaveBeenCalledWith('https://slow.example/next')
+    expect(wcReload).not.toHaveBeenCalled()
+  })
+
+  it('reloads a committed page that is still loading its subresources', () => {
+    const { reload, wcReload, loadURL } = loading({ loadingMain: true, active: 'https://old.example/' })
+    reload()
+    expect(wcReload).toHaveBeenCalledTimes(1)
+    expect(loadURL).not.toHaveBeenCalled()
+  })
+
+  it('reloads when nothing is loading', () => {
+    const { reload, wcReload, loadURL } = loading({ loadingMain: false, inflightUrl: 'https://stale.example/' })
+    reload()
+    expect(wcReload).toHaveBeenCalledTimes(1)
+    expect(loadURL).not.toHaveBeenCalled()
+  })
+
+  it('reloads the page itself when the load in flight is for the address already shown', () => {
+    const { reload, wcReload, loadURL } = loading({ loadingMain: true, inflightUrl: 'https://same.example/', active: 'https://same.example/' })
+    reload()
+    expect(wcReload).toHaveBeenCalledTimes(1)
+    expect(loadURL).not.toHaveBeenCalled()
+  })
+
+  it.each(['file:///etc/passwd', 'data:text/html,hi', 'javascript:alert(1)', 'orivon://settings/', 'about:blank'])(
+    'never sends the in-flight address %s through the address bar\'s path',
+    (inflightUrl) => {
+      const { reload, wcReload, loadURL } = loading({ loadingMain: true, inflightUrl, active: 'https://old.example/' })
+      reload()
+      expect(loadURL).not.toHaveBeenCalled()
+      expect(wcReload).toHaveBeenCalledTimes(1)
+    }
+  )
 })

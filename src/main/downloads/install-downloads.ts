@@ -13,11 +13,7 @@ export interface InstallHost {
   readonly discardHeldAtQuit?: boolean
 }
 
-/** `web-contents-created` already has about ten listeners from the other installers: past Node's default limit of ten it warns of a leak that is not one. */
-const WEB_CONTENTS_LISTENER_ROOM = 24
-
-export function installDownloads (app: Pick<App, 'on' | 'getMaxListeners' | 'setMaxListeners'>, host: InstallHost): void {
-  app.setMaxListeners(Math.max(app.getMaxListeners(), WEB_CONTENTS_LISTENER_ROOM))
+export function installDownloads (app: Pick<App, 'on'>, host: InstallHost): void {
   const attached = new WeakSet<Session>()
   const attach = (target: Session): void => {
     if (attached.has(target)) return

@@ -25,8 +25,9 @@ anything that lets a page name a path: a file path comes from the save dialog an
 ## Design notes
 
 **Print refuses before it calls.** With no printer, `webContents.print` never calls back and leaves
-the tab's page unresponsive for good, so `print.ts` lists the printers first and shows a toast that
-offers Save as PDF instead. A cancelled dialog is not a failure and says nothing.
+the tab's page unresponsive for good, so `print.ts` lists the printers first and, when there are none,
+runs Save as PDF directly, as a browser's print preview offers it. A cancelled dialog is not a failure
+and says nothing.
 
 **Every wait on a page has a clock.** A crashed or wedged page never settles an `executeJavaScript`,
 `capturePage` or `printToPDF`, and the clipboard may never answer on a machine with no display

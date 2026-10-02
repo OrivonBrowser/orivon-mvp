@@ -155,6 +155,9 @@ it('elides the address over the real input, selects it on a click and restores o
     expect(await chrome.locator('#address-display').textContent()).toBe('')
     expect(await inputOpacity(chrome)).toBe('1')
     expect(await chrome.locator('#address').getAttribute('placeholder')).toBe('Search or enter address')
+    // The New Tab page has asked for nothing, so the key stays away until a web page shows.
+    await delay(ABSENCE_SETTLE_MS)
+    expect(await chrome.locator('#site-permissions-btn').isVisible()).toBe(false)
 
     const url = `${http.origin}/docs/page?tab=1`
     await visit(app, chrome, url)

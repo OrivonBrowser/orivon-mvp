@@ -4,7 +4,8 @@
 // gets a toast, and a private window stores nothing. Set ORIVON_UI_SHOTS_DIR to also write screenshots.
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
@@ -240,5 +241,54 @@ it('works in a private window', async () => {
     expect(await waitFor(async () => await page.evaluate(() => getComputedStyle(document.querySelector('.body') as Element).fontFamily).then((f) => f.includes('Georgia')))).toBe(true)
   } finally {
     await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('the reader\'s Print button opens the print dialog when there is a printer, and saves a PDF when there is none', async () => {
+  const { app, chrome } = await launched()
+  const outDir = mkdtempSync(join(tmpdir(), 'orivon-reader-print-'))
+  try {
+    await visit(chrome, `${origin}/article`)
+    expect(await waitFor(async () => await bookShown(chrome))).toBe(true)
+    await runCommand(chrome, 'page.reader')
+    const page = await openedReader(app)
+    await page.waitForSelector('h1')
+
+    // Stubs go on the reader tab's own contents, found by its address, never on the article's.
+    const stub = async (printers: unknown[]): Promise<void> => {
+      await app.evaluate(({ webContents }, list) => {
+        const wc = webContents.getAllWebContents().find((c) => c.getURL().startsWith('orivon://reader'))
+        if (wc === undefined) throw new Error('no reader tab')
+        const g = globalThis as unknown as { __printed: unknown[] }
+        g.__printed = []
+        wc.getPrintersAsync = (async () => list) as never
+        wc.print = ((options: unknown, done: (ok: boolean, reason: string) => void) => { g.__printed.push(options); done(false, 'cancelled') }) as never
+      }, printers)
+    }
+    const printed = async (): Promise<unknown[]> => await app.evaluate(() => (globalThis as unknown as { __printed: unknown[] }).__printed)
+
+    await stub([{ name: 'fake' }])
+    await page.click('header.bar button[aria-label="Print"]')
+    expect(await waitFor(async () => (await printed()).length === 1)).toBe(true)
+    expect(await printed()).toEqual([{ silent: false, printBackground: true }])
+
+    await stub([])
+    const target = join(outDir, 'article.pdf')
+    await app.evaluate(({ dialog }, chosen) => {
+      const g = globalThis as unknown as { __saveTitles: unknown[] }
+      g.__saveTitles = []
+      ;(dialog as unknown as { showSaveDialog: (...args: unknown[]) => Promise<unknown> }).showSaveDialog = async (...args: unknown[]) => {
+        g.__saveTitles.push((args[args.length - 1] as { title?: string }).title)
+        return { canceled: false, filePath: chosen }
+      }
+    }, target)
+    await page.click('header.bar button[aria-label="Print"]')
+    expect(await waitFor(() => existsSync(target) && readFileSync(target).subarray(0, 4).toString('latin1') === '%PDF')).toBe(true)
+    expect(await app.evaluate(() => (globalThis as unknown as { __saveTitles: unknown[] }).__saveTitles)).toEqual(['Save as PDF'])
+    expect(await printed()).toEqual([])
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+    rmSync(outDir, { recursive: true, force: true })
   }
 }, TEST_TIMEOUT_MS)

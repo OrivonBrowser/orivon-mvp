@@ -224,8 +224,8 @@
     switched to a tab this library never learned about (`extension-host.ts`'s own doc) had no way
     to stop the library's own idea of the active tab from staying pointed at whatever tracked tab
     was active before.
-29. **`observeTab`/`observeWindow` are idempotent.** `src/browser/api/tabs.ts` and `src/browser/
-    api/windows.ts`: each keeps its own `WeakSet` of webContents/windows it has already attached
+29. **`observeTab`/`observeWindow` are idempotent.** `src/browser/api/tabs.ts`, `src/browser/
+    api/web-navigation.ts` and `src/browser/api/windows.ts`: each keeps its own `WeakSet` of webContents/windows it has already attached
     listeners to, and returns immediately on a repeat. Reason: `tab-added`/`window-added` can fire
     again for the SAME webContents/window (a tab handed to another window, or a one-tab window's
     view replaced -- `extension-host.ts`'s own doc), and neither method checked for that before --

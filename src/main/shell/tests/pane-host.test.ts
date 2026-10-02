@@ -8,21 +8,23 @@ const B = (x: number) => ({ x, y: 0, width: 100, height: 100 })
  * on `addChildView`); a fresh one goes at `index`, the end by default. */
 function setup (): { host: PaneHost, children: string[], view: (name: string) => { name: string, setBounds: ReturnType<typeof vi.fn> } } {
   const children: string[] = []
-  const contentView = {
-    addChildView: vi.fn((view: { name: string }, index?: number) => {
-      const at = children.indexOf(view.name)
-      if (at !== -1) children.splice(at, 1)
-      if (at !== -1 || index === undefined) children.push(view.name)
-      else children.splice(Math.min(index, children.length), 0, view.name)
-    }),
-    removeChildView: vi.fn((view: { name: string }) => { const at = children.indexOf(view.name); if (at !== -1) children.splice(at, 1) })
-  }
   const views = new Map<string, { name: string, setBounds: ReturnType<typeof vi.fn> }>()
-  return {
-    host: new PaneHost(contentView as never),
-    children,
-    view: (name) => { let found = views.get(name); if (found === undefined) { found = { name, setBounds: vi.fn() }; views.set(name, found) } return found }
+  const view = (name: string): { name: string, setBounds: ReturnType<typeof vi.fn> } => {
+    let found = views.get(name)
+    if (found === undefined) { found = { name, setBounds: vi.fn() }; views.set(name, found) }
+    return found
   }
+  const contentView = {
+    get children () { return children.map(view) },
+    addChildView: vi.fn((child: { name: string }, index?: number) => {
+      const at = children.indexOf(child.name)
+      if (at !== -1) children.splice(at, 1)
+      if (at !== -1 || index === undefined) children.push(child.name)
+      else children.splice(Math.min(index, children.length), 0, child.name)
+    }),
+    removeChildView: vi.fn((child: { name: string }) => { const at = children.indexOf(child.name); if (at !== -1) children.splice(at, 1) })
+  }
+  return { host: new PaneHost(contentView as never), children, view }
 }
 
 describe('PaneHost', () => {
@@ -115,6 +117,43 @@ describe('PaneHost', () => {
     expect(view('B').setBounds).toHaveBeenLastCalledWith(B(100))
   })
 
+  it('puts a pane dropped to the right straight after its partner, below whatever the window appended since', () => {
+    const { host, children, view } = setup()
+    const contentView = (host as unknown as { contentView: { addChildView: (v: never) => void } }).contentView
+    contentView.addChildView(view('chrome') as never)
+    const backdrop = { id: 'backdrop', view: view('X') as never, bounds: B(0) }
+    host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
+    contentView.addChildView(view('popover') as never)
+
+    host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }, { id: 'b', view: view('B') as never, bounds: B(100) }], backdrop)
+
+    expect(children).toEqual(['X', 'chrome', 'A', 'B', 'popover'])
+  })
+
+  it('puts a pane dropped to the left straight before its partner', () => {
+    const { host, children, view } = setup()
+    const contentView = (host as unknown as { contentView: { addChildView: (v: never) => void } }).contentView
+    contentView.addChildView(view('chrome') as never)
+    const backdrop = { id: 'backdrop', view: view('X') as never, bounds: B(0) }
+    host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
+    contentView.addChildView(view('popover') as never)
+
+    host.show([{ id: 'b', view: view('B') as never, bounds: B(0) }, { id: 'a', view: view('A') as never, bounds: B(100) }], backdrop)
+
+    expect(children).toEqual(['X', 'chrome', 'B', 'A', 'popover'])
+  })
+
+  it('stacks two panes that are both new right after the backdrop, in the order given', () => {
+    const { host, children, view } = setup()
+    const contentView = (host as unknown as { contentView: { addChildView: (v: never) => void } }).contentView
+    contentView.addChildView(view('chrome') as never)
+    contentView.addChildView(view('popover') as never)
+
+    host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }, { id: 'b', view: view('B') as never, bounds: B(100) }], { id: 'backdrop', view: view('X') as never, bounds: B(0) })
+
+    expect(children).toEqual(['X', 'A', 'B', 'chrome', 'popover'])
+  })
+
   it('shows a different view in a pane\'s place', () => {
     const { host, children, view } = setup()
     host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
@@ -122,5 +161,17 @@ describe('PaneHost', () => {
     expect(children).toEqual(['A2'])
     expect(host.isShown('a')).toBe(true)
     expect(view('A2').setBounds).toHaveBeenLastCalledWith(B(5))
+  })
+
+  it('keeps a replaced pane at its place in the window, below a popover open above it', () => {
+    const { host, children, view } = setup()
+    const contentView = (host as unknown as { contentView: { addChildView: (v: never) => void } }).contentView
+    contentView.addChildView(view('chrome') as never)
+    host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }, { id: 'b', view: view('B') as never, bounds: B(100) }], { id: 'backdrop', view: view('X') as never, bounds: B(0) })
+    contentView.addChildView(view('popover') as never)
+
+    host.replace('a', view('A2') as never, B(0))
+
+    expect(children).toEqual(['X', 'A2', 'B', 'chrome', 'popover'])
   })
 })

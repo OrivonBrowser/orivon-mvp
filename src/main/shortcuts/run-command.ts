@@ -143,7 +143,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'extensions.menu': toggleExtensionsMenu(target, services.isPrivate); return
     case 'import.open': tabs.openInternal('import'); return
     case 'app.quit': deps.quit(); return
-    case 'page.print': void printCommand(target); return
+    case 'page.print': void printCommand(target, realDeps); return
     case 'page.pdf': void pdfCommand(target, realDeps); return
     case 'page.save': void saveCommand(target, realDeps); return
     case 'page.viewSource': void viewSourceCommand(target); return

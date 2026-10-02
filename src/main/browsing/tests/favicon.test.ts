@@ -21,6 +21,7 @@ const {
   MAX_FAVICON_REDIRECTS,
   captureFaviconInto,
   faviconCandidates,
+  faviconOnCommit,
   fetchFaviconDataUrlCached,
   isSafeFaviconUrl,
   readCapped,
@@ -666,5 +667,63 @@ describe('captureFaviconInto', () => {
     expect(target.favicon).toBe(`data:image/png;base64,${Buffer.from(PNG_BYTES).toString('base64')}`)
     expect(target.faviconOrigin).toBe('https://a.example')
     expect(updated).toBe(true)
+  })
+})
+
+describe('faviconOnCommit', () => {
+  /** A tab that has shown the icon `data:A` for a.example, as a capture leaves it. */
+  async function tabShowingA (): Promise<FaviconTarget> {
+    const target: FaviconTarget = { favicon: null, faviconOrigin: null, pendingFaviconUrl: null }
+    const svg = `data:image/svg+xml,${encodeURIComponent('<svg id="a"></svg>')}`
+    await captureFaviconInto(target, [svg], () => 'https://a.example/', () => true, () => {})
+    expect(target.favicon).not.toBeNull()
+    return target
+  }
+
+  it('clears the icon on a blank page, and brings it back on returning to the site it came from', async () => {
+    const target = await tabShowingA()
+    const icon = target.favicon
+
+    faviconOnCommit(target, 'about:blank')
+    expect(target.favicon).toBeNull()
+    expect(target.faviconOrigin).toBeNull()
+
+    faviconOnCommit(target, 'https://a.example/x')
+    expect(target.favicon).toBe(icon)
+    expect(target.faviconOrigin).toBe('https://a.example')
+  })
+
+  it('shows no icon of another site\'s on a page of a site it has not shown', async () => {
+    const target = await tabShowingA()
+    faviconOnCommit(target, 'https://b.example/')
+    expect(target.favicon).toBeNull()
+  })
+
+  it('keeps the icon on a page of the same origin', async () => {
+    const target = await tabShowingA()
+    const icon = target.favicon
+    faviconOnCommit(target, 'https://a.example/page2')
+    expect(target.favicon).toBe(icon)
+  })
+
+  it('falls back to the icon the history keeps for the site when the tab never showed it', () => {
+    const target: FaviconTarget = { favicon: null, faviconOrigin: null, pendingFaviconUrl: null }
+    faviconOnCommit(target, 'https://c.example/', () => 'data:image/png;base64,Qw==')
+    expect(target.favicon).toBe('data:image/png;base64,Qw==')
+    expect(target.faviconOrigin).toBe('https://c.example')
+  })
+
+  it('remembers the last few sites only: the oldest is forgotten first', async () => {
+    const target: FaviconTarget = { favicon: null, faviconOrigin: null, pendingFaviconUrl: null }
+    for (const name of ['a', 'b', 'c', 'd', 'e']) {
+      faviconOnCommit(target, `https://${name}.example/`)
+      await captureFaviconInto(target, [`data:image/svg+xml,${encodeURIComponent(`<svg id="${name}"></svg>`)}`], () => `https://${name}.example/`, () => true, () => {})
+    }
+    faviconOnCommit(target, 'about:blank')
+    faviconOnCommit(target, 'https://a.example/')
+    expect(target.favicon).toBeNull()
+    faviconOnCommit(target, 'about:blank')
+    faviconOnCommit(target, 'https://e.example/')
+    expect(target.favicon).not.toBeNull()
   })
 })

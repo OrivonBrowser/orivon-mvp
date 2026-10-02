@@ -12,7 +12,7 @@ that differ from the defaults, in `<userData>/shortcuts.json`. `shortcut-service
 command does this chord run", "what is bound to what", and the changes: set, clear, reset, trade two,
 and record the next key pressed. `dispatcher.ts` listens for keys, `run-command.ts` and
 `command-bus.ts` carry a command out on a window, `install-shortcuts.ts` puts the dispatcher on every
-view the process makes, and `app-menu.ts` builds the macOS menu. `shortcuts-domain.ts` is what
+view the process makes, `page-key-ipc.ts` takes the one key an app's page reports back (a `Ctrl+F` the app left unhandled opens find), and `app-menu.ts` builds the macOS menu. `shortcuts-domain.ts` is what
 Settings may ask of all this.
 
 **What it depends on.** `electron` (`dispatcher.ts` types, `install-shortcuts.ts` and `app-menu.ts`);

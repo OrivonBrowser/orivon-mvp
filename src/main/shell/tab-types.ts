@@ -206,6 +206,8 @@ export interface TabViewHost {
   paneClicked: (id: string) => void
   /** "Open Link in Split View": the link opens in a new tab beside this one. */
   openInSplit: (id: string, url: string) => void
+  /** The tab's own reload, which restarts a navigation that has not committed (tab-navigation.ts's reloadTab). */
+  reload: (id: string) => void
   emitState: () => void
   captureFavicon: (id: string, record: TabRecord, favicons: string[]) => Promise<void>
   forgetTab: (id: string) => void
@@ -296,4 +298,6 @@ export interface TabRecord {
   sleeping?: SleepingTab | null
   /** Set on a reader tab: the id of the tab it was made from. Absent reads as null. */
   reader?: { source: string } | null
+  /** The main frame's address while a navigation has started and not yet committed, failed or stopped (inflight-url.ts). Absent when none is in flight. */
+  inflightUrl?: string
 }

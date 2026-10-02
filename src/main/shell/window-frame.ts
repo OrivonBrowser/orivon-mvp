@@ -23,11 +23,12 @@ const OVERLAY_LIGHT = { color: '#e4e4eb', symbolColor: '#202124' }
 const OVERLAY_PRIVATE_DARK = { color: '#251c36', symbolColor: '#e6e7e8' }
 const OVERLAY_PRIVATE_LIGHT = { color: '#d8cfe8', symbolColor: '#202124' }
 
-// The window's own background, same values as the overlay's `color` above
+// The window's own background at creation, same values as the overlay's `color` above
 // (== src/renderer/style.css's --wchrome for each theme/private combination)
 // -- Electron paints this the instant the window is created, before either
 // view has a pixel to show, so it is what a tear-off (shown at once, see
-// `instant` below) shows instead of a flash of white.
+// `instant` below) shows instead of a flash of white. Once a tab is shown the
+// colour is that tab's (window-backing.ts).
 const BACKGROUND_DARK = OVERLAY_DARK.color
 const BACKGROUND_LIGHT = OVERLAY_LIGHT.color
 const BACKGROUND_PRIVATE_DARK = OVERLAY_PRIVATE_DARK.color
@@ -35,6 +36,11 @@ const BACKGROUND_PRIVATE_LIGHT = OVERLAY_PRIVATE_LIGHT.color
 
 /** Height of the native overlay: the tab row's height, in src/renderer/style.css too. */
 const OVERLAY_HEIGHT = 36
+
+/** The smallest a window can be made, a size the toolbar still leaves the address field room at:
+ * styles/toolbar.css's narrow rule (its `max-width: 640px` query) is written against this width. */
+export const MIN_WINDOW_WIDTH = 500
+export const MIN_WINDOW_HEIGHT = 400
 
 // Dev/test tooling only -- never gated on app.isPackaged or "is this a
 // production build" (run-from-source is a real shipping path on Windows and
@@ -53,8 +59,9 @@ export interface WindowFrame {
   readonly kiosk: boolean
 }
 
-/** The window's own background colour for the current OS/app theme -- exported
- * so window.ts can paint the chrome view (its own WebContentsView, a separate
+/** The colour a window is created with, and the chrome view's, for the current
+ * OS/app theme (window-backing.ts takes over the window's background once a tab
+ * is shown) -- exported so window.ts can paint the chrome view (its own WebContentsView, a separate
  * surface from the BaseWindow's own background) the SAME colour before it has
  * a pixel of its own to show, one home for the fact rather than a second copy
  * of these constants there. */
@@ -88,7 +95,8 @@ export function createWindowFrame (dirname: string, place: Placement = {}, isPri
   // Sized against bounds, not workArea. A display's workArea is the panel
   // minus the desktop environment's reserved struts, and on a multi-monitor
   // layout where the monitors have different heights and vertical offsets,
-  // GNOME reports a work area far shorter than the monitor itself -- a
+  // Chromium on X11 clips the primary's work area to the desktop's single
+  // _NET_WORKAREA rectangle, which can be far shorter than the monitor -- a
   // 1920x1080 primary can come back 328px tall. Clamping the window to that
   // produces a letterbox slot with no way to grow it from here; bounds is
   // the physical panel and is always right.
@@ -107,6 +115,8 @@ export function createWindowFrame (dirname: string, place: Placement = {}, isPri
   const win = new BaseWindow({
     ...initialBounds,
     show: false,
+    minWidth: MIN_WINDOW_WIDTH,
+    minHeight: MIN_WINDOW_HEIGHT,
     kiosk,
     icon: iconPath,
     backgroundColor: background(),
@@ -130,7 +140,6 @@ export function createWindowFrame (dirname: string, place: Placement = {}, isPri
   // on. Unregistered on 'closed', or a later theme change would call
   // setTitleBarOverlay on an already-destroyed window.
   function applyOverlayForTheme (): void {
-    win.setBackgroundColor(background())
     if (process.platform === 'darwin') return
     win.setTitleBarOverlay(overlay())
   }
@@ -192,9 +201,10 @@ export function showWhenReady ({ win, initialBounds, kiosk }: WindowFrame, optio
     }
     // Re-asserted after show, not just passed to the constructor. A window
     // manager may shrink a window to the display's work area as it maps it,
-    // and a work area can be reported far smaller than the monitor (GNOME
-    // does this on a multi-monitor layout with mixed heights and vertical
-    // offsets). The constructor size loses that argument; a setBounds once
+    // and a work area can be reported far smaller than the monitor (on X11
+    // Chromium clips the primary's to the single _NET_WORKAREA rectangle,
+    // short on a multi-monitor layout with mixed heights). The constructor
+    // size loses that argument; a setBounds once
     // the window is mapped is honoured. Harmless where the first size
     // already stuck -- it sets what is already set.
     if (!kiosk) {

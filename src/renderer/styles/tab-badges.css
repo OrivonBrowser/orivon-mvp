@@ -34,16 +34,17 @@
   .tab:not(.active).has-sound .title { padding-right: 16px; }
 }
 
-/* Too narrow for a readable title, which would be one letter and an ellipsis: icon only, as in other browsers. */
+/* Too narrow for a readable title, which would be one letter and an ellipsis: icon only, as in other browsers. A tab
+   not in front has no close button then: with the icon centred, a click anywhere near it would close the tab. */
 @container (max-width: 39px) {
   .tab .title { display: none; }
+  .tab:not(.active) .close { display: none; }
   .tab .fav { margin: 0 auto; }
 }
 
 /* At the minimum width every tab shows its icon (or its sound mark) centred. The tab in front keeps its icon too, and
    its close button takes the icon's place while the pointer is over the tab or the keyboard is on it. */
 @container (max-width: 35px) {
-  .tab:not(.active) .close { display: none; }
   .tab:not(.active).has-sound .tab-audio { margin: 0 auto; }
   .tab.active .tab-audio { display: none; }
   .tab.active .close { right: auto; left: 50%; transform: translateX(-50%); }

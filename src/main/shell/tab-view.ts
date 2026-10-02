@@ -5,7 +5,8 @@
 import { WebContentsView } from 'electron'
 import type { NativeImage, WebContents, WebPreferences } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
-import { shouldClearFavicon } from '../browsing/favicon.js'
+import { faviconOnCommit } from '../browsing/favicon.js'
+import { knownIcon } from '../history/favicon-host.js'
 import type { TabRecord } from './tab-types.js'
 import { showContextMenu } from './context-menu.js'
 import { confirmLeavePage } from './leave-page-prompt.js'
@@ -15,12 +16,14 @@ import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { DEFAULT_BACKGROUND } from './theme-colors.js'
 import { sheetBackdropOf } from './sheet-backdrop.js'
 import { recordViewBackground } from './view-background-test-hook.js'
+import { watchBacking } from './tab-backing.js'
 import { repartitionView } from './tab-parking.js'
 import { parseInternalUrl } from '../pages/internal-pages.js'
 import { canViewSource } from '../page-tools/view-source.js'
 import { sitePopups } from '../site-settings/site-popups.js'
 import { releaseOriginDocument, trackDocumentOrigin } from './tab-origin-liveness.js'
 import { watchLoadFailure } from './load-failure.js'
+import { trackInflightUrl } from './inflight-url.js'
 import { wireSignInIdentity } from './sign-in-identity-tab.js'
 import { watchAppTab } from './app-tab-watch.js'
 import { wireTabSignals } from './tab-signals.js'
@@ -111,6 +114,10 @@ function resetViewBackground (view: WebContentsView): void {
   recordViewBackground(view.webContents.id, color)
 }
 
+/** Each of a dozen subsystems watches a tab's `did-navigate` once, which is past Node's limit of ten and would print
+ * a leak warning for every tab. A ceiling just above that count, not unlimited, so a listener added per navigation or per move still warns. */
+const TAB_LISTENER_ROOM = 24
+
 /** Every event a tab's WebContentsView needs wired -- shared by createTab(),
  * repartitionView() and an adopted popup (Rule 3): each gets EXACTLY the
  * same favicon/title/loading/crash handling and the same popup handling
@@ -122,11 +129,13 @@ function resetViewBackground (view: WebContentsView): void {
 export function wireView (id: string, record: TabRecord): void {
   const view = record.view
   const wc = view.webContents
+  wc.setMaxListeners(Math.max(wc.getMaxListeners(), TAB_LISTENER_ROOM))
   // False while this view is swapped out or parked: its events are then
   // not the tab's. A parked view acting on a navigation would swap the tab
   // it no longer shows.
   const shown = (): boolean => record.view === view
   wireSignInIdentity(wc) // ./sign-in-identity-tab.ts's own header says why this runs here.
+  trackInflightUrl(wc, record, shown)
   wc.on('page-title-updated', () => { record.host.emitState() })
   watchLoadFailure(wc, () => { record.host.emitState() })
   // A press in a pane is the person choosing it, in a split. Not focus, which a page loading in the other pane can take.
@@ -139,10 +148,9 @@ export function wireView (id: string, record: TabRecord): void {
     // actually fires.
     trackDocumentOrigin(wc, navigatedUrl, record.host.broker)
     if (!shown()) return
-    if (shouldClearFavicon(record.faviconOrigin, navigatedUrl)) {
-      record.favicon = null
-      record.faviconOrigin = null
-    }
+    // History's icon only while history is remembering: a private window reads nothing kept on disk.
+    const history = record.host.services?.history
+    faviconOnCommit(record, navigatedUrl, (address) => history?.remembering === true ? knownIcon(history, address) : null)
     // Never for the dashboard: its own dev-mode URL is a real http(s)
     // address (partitionChanged would otherwise see a "changed" origin on
     // the dashboard's OWN first load, since its current partition is
@@ -223,6 +231,7 @@ export function wireView (id: string, record: TabRecord): void {
     record.host.emitState()
   })
   wc.on('did-navigate-in-page', () => { record.host.emitState() })
+  watchBacking(view, record, shown)
   wc.on('did-start-loading', () => { record.host.emitState() })
   wc.on('did-stop-loading', () => { record.host.emitState() })
   wc.on('page-favicon-updated', (_event, favicons: string[]) => {
@@ -292,7 +301,7 @@ export function wireView (id: string, record: TabRecord): void {
       openInWindow: (url) => { record.host.openWindow(url) },
       // A private window has no way back to the profile: it offers no second private session.
       ...(services === undefined || services.isPrivate ? {} : { openInPrivate: (url: string) => { services.profiles.openPrivate(url) } }),
-      page: { bare: () => record.internalPage !== null || record.isDashboardTab, viewSource: () => canViewSource(record, wc.getURL()), readable: () => readableNow(wc) },
+      page: { bare: () => record.internalPage !== null || record.isDashboardTab, viewSource: () => canViewSource(record, wc.getURL()), readable: () => readableNow(wc), reload: () => { record.host.reload(id) } },
       ...(services === undefined ? {} : { services }),
       runCommand,
       ...(devtools?.allowed(wc) === true ? { inspect: (x: number, y: number) => { devtools.inspect(wc, window, x, y) } } : {})
