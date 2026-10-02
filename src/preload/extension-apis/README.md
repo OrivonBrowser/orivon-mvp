@@ -27,6 +27,16 @@ its regex rules from `MAX_NUMBER_OF_REGEX_RULES`). Their values come from the en
 (`vendor/firefox-dnr/src/dnr-limits.mjs` and `src/main/extensions/dnr/types.ts`), and their tests
 compare them, so a changed limit fails here.
 
+**`web-request.ts`** is the other entry that does more than add constants: it makes the nine
+`chrome.webRequest` events real. A listener gets a number from this context and is registered with
+main (`webRequest.addListener`); main sends each matching request over the one
+`webRequest.dispatch` event, and a blocking listener's answer goes back through `webRequest.reply`,
+cut down to `cancel`, `redirectUrl` and a complete header list. A dispatch for a number this
+context no longer holds (the page reloaded) is answered with nothing at once, so a request never
+waits on a listener that is gone. `onActionIgnored` stays inert, and `handlerBehaviorChanged` is a
+no-op because main reads every listener's answer fresh. Main's half is
+[`../../main/extensions/web-request-dispatch.ts`](../../main/extensions/web-request-dispatch.ts).
+
 **`runtime.ts`** is the one entry that also answers a question of main's. `getManifest` returns the
 `declarative_net_request` the loaded copy keeps under `x_orivon_declarative_net_request`, and in a
 service worker `onInstalled` fires from details main parked at install (`runtime-installed.ts`,
