@@ -10,14 +10,17 @@
 // Run: npm run qa:visual      First run on a machine records baselines;
 //      ORIVON_QA_UPDATE_BASELINES=1 re-records after an intended change.
 
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
+import { runCommand } from './auth-support.js'
 import { clickAddressBarRetrying, runPhase } from './e2e-helpers.js'
 import { assertNoElectronSurvivors, closeElectron } from './launch-electron.mjs'
 import { answerQuestion, noNativeDialogs, readQuestion, stubNativeDialogs, waitQuestion } from './question-support.js'
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './qa-helpers.js'
 import { captureState, checkState, prepareWindow, type Check, type Rect, type StateSpec } from './qa-visual.js'
-import { ABSENCE_SETTLE_MS, delay, findChrome, findViewShowing, popoverShown, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, delay, evaluateRetrying, findChrome, findViewShowing, popoverShown, waitFor, waitForTab } from './smoke-helpers.mjs'
 
 /** The address text of a fixture page: its port changes on every run. */
 const FIXTURE_ADDRESS: Rect = { x: 240, y: 44, width: 260, height: 24 }
@@ -42,7 +45,7 @@ if (SCHEMES.length === 0 || SCHEMES.length !== requested.length) {
   throw new Error(`ORIVON_QA_SCHEMES must list "light" and/or "dark", comma-separated; got "${process.env['ORIVON_QA_SCHEMES'] ?? ''}"`)
 }
 
-type Shell = { orivonShell: { openInternal: (page: string) => void } }
+type Shell = { orivonShell: { openInternal: (page: string, path?: string) => void } }
 
 let server: FixtureServer
 beforeAll(async () => {
@@ -70,8 +73,8 @@ async function panelFits (panel: Page): Promise<{ fits: boolean, detail: string 
   return { fits: m.left >= 0 && m.top >= 0 && m.right >= 0 && m.bottom >= 0 && !m.scrolls, detail: JSON.stringify(m) }
 }
 
-async function openInternal (app: ElectronApplication, chrome: Page, name: string): Promise<Page> {
-  await chrome.evaluate((n) => { (window as unknown as Shell).orivonShell.openInternal(n) }, name)
+async function openInternal (app: ElectronApplication, chrome: Page, name: string, path?: string): Promise<Page> {
+  await chrome.evaluate(([n, at]) => { (window as unknown as Shell).orivonShell.openInternal(n as string, at) }, [name, path])
   const shown = (): Page | undefined => app.windows().find((w) => w.url().startsWith(`orivon://${name}`))
   expect(await waitFor(() => shown() !== undefined)).toBe(true)
   const page = shown() as Page
@@ -272,4 +275,85 @@ for (const scheme of SCHEMES) {
       await dialogs.close()
     }
   }, QA_TEST_TIMEOUT_MS)
+
+  it(`the shell parts fixed in this round look right: bookmarks overflow, Web3 and Profiles settings, a crowded tab strip (${scheme})`, async () => {
+    const bookmarks = JSON.stringify({
+      version: 2,
+      roots: {
+        bar: Array.from({ length: 30 }, (_, i) => ({ id: `bar${String(i)}`, kind: 'url', title: `Bookmark number ${String(i + 1)}`, url: `${server.origin}/b${String(i)}`, added: 1 })),
+        other: [],
+        reading: []
+      }
+    })
+    const { app, chrome } = await launchShell({ scheme, seedProfile: async (dir) => { await writeFile(join(dir, 'bookmarks.json'), bookmarks) } })
+    try {
+      await runPhase('visual states of what this round fixed', async (check) => {
+        expect(await waitFor(() => dashboardOf(app) !== undefined)).toBe(true)
+        await (dashboardOf(app) as Page).waitForLoadState('load')
+        expect(await waitFor(async () => (await evaluateRetrying(chrome, () => document.querySelectorAll('#bookmarks-list .bmitem').length)) > 3)).toBe(true)
+
+        await prepareWindow(app, { width: 700, height: 600 })
+        await chrome.evaluate(async () => { await new Promise<void>((resolve) => { requestAnimationFrame(() => { requestAnimationFrame(() => { resolve() }) }) }) })
+        const bar = await chrome.evaluate(() => {
+          const list = document.querySelector('#bookmarks-list') as HTMLElement
+          const edge = list.getBoundingClientRect().right
+          const shown = Array.from(list.querySelectorAll<HTMLElement>('.bmitem, .bmmore')).filter((el) => !el.hidden)
+          return { chevrons: list.querySelectorAll('.bmmore:not([hidden])').length, items: shown.filter((el) => el.classList.contains('bmitem')).length, overhang: Math.max(...shown.map((el) => el.getBoundingClientRect().right - edge)) }
+        })
+        check('the bookmarks bar at 700 px shows some bookmarks and one chevron, and nothing passes the bar\'s right edge', bar.chevrons === 1 && bar.items > 1 && bar.items < 30 && bar.overhang <= 0, JSON.stringify(bar))
+        await state(check, app, `bookmarks-bar-overflow-${scheme}`, {
+          expected: 'At 700 px wide a row of bookmarks sits under the address bar: whole bookmark buttons from the left, then a chevron at the right end of the row that stands for the rest. No bookmark is cut by the right edge or the chevron, and nothing overlaps the toolbar.',
+          action: 'Launched a profile with 30 bookmarks on the bar and resized the window content to 700x600.'
+        }, { width: 700, height: 600 })
+
+        const web3 = await openInternal(app, chrome, 'settings', '/web3')
+        await web3.waitForSelector('#row-web3-forced-off')
+        const toggle = web3.locator('#row-web3-light-client input[type=checkbox]')
+        const stateLine = (await web3.locator('#row-web3-state .value').textContent()) ?? ''
+        check('Settings > Web3: the light-client switch is off and disabled while this run forces it off, and its state line is a sentence', await toggle.isDisabled() && !(await toggle.isChecked()) && /^[A-Z]/.test(stateLine) && !/^[a-z]+: /.test(stateLine), stateLine)
+        check('the key and the Web2 pill stay away from a Settings page', !(await chrome.locator('#site-permissions-btn').isVisible()) && !(await chrome.locator('#web3-mark').isVisible()))
+        await state(check, app, `settings-web3-${scheme}`, {
+          expected: 'orivon://settings/web3 is open with Web3 selected in the navigation. A light-client row shows its switch OFF and greyed out, labelled "Off for this run" because this run forces it off; the state row below it is a full sentence beginning with a capital letter, not a "code: value" pair. No key button sits in the address field.',
+          action: 'Opened orivon://settings/web3 in a run that forces the light client off.'
+        })
+
+        const profiles = await openInternal(app, chrome, 'profiles')
+        await profiles.waitForSelector('.create .btn')
+        const heights = await profiles.evaluate(() => ['.top .btn', '.create .btn', '.create .text'].map((sel) => (document.querySelector(sel) as HTMLElement).getBoundingClientRect().height))
+        check('Profiles: the Create profile button is on one line, as tall as its text field', heights[1] === heights[0] && heights[2] === heights[0], JSON.stringify(heights))
+        await state(check, app, `profiles-page-${scheme}`, {
+          expected: 'orivon://profiles is open: one profile card marked "This window", and a create row with a text field, colour swatches and a "Create profile" button whose label is on a single line, the button as tall as the field next to it.',
+          action: 'Opened orivon://profiles on a fresh profile.'
+        })
+
+        await prepareWindow(app, { width: 700, height: 600 })
+        for (let i = 0; i < 24; i += 1) await runCommand(chrome, 'tab.new')
+        expect(await waitFor(async () => (await evaluateRetrying(chrome, () => document.querySelectorAll('#tab-scroll .tab').length)) >= 27)).toBe(true)
+        // The 25 dashboards share one address, so the capture could not tell which view is the front one: the front tab goes to the fixture page, which has an address of its own.
+        await visit(app, chrome, `${server.origin}/`)
+        await chrome.evaluate(async () => { await new Promise<void>((resolve) => { requestAnimationFrame(() => { requestAnimationFrame(() => { resolve() }) }) }) })
+        const strip = await chrome.evaluate(() => {
+          const scroller = document.querySelector('#tab-scroll') as HTMLElement
+          const view = scroller.getBoundingClientRect()
+          const active = scroller.querySelector('.tab.active') as HTMLElement
+          const a = active.getBoundingClientRect()
+          const narrowInactive = Array.from(scroller.querySelectorAll<HTMLElement>('.tab:not(.active)')).filter((t) => t.getBoundingClientRect().width <= 63)
+          return {
+            activeInView: a.left >= view.left - 0.5 && a.right <= view.right + 0.5,
+            narrowInactive: narrowInactive.length,
+            narrowWithClose: narrowInactive.filter((t) => { const c = t.querySelector('.close'); return c !== null && getComputedStyle(c).display !== 'none' }).length,
+            tabs: scroller.querySelectorAll('.tab').length
+          }
+        })
+        check('the tab strip with 27 tabs keeps the active tab in view and gives no narrow inactive tab a close button', strip.activeInView && strip.narrowInactive > 0 && strip.narrowWithClose === 0, JSON.stringify(strip))
+        await state(check, app, `tab-strip-crowded-${scheme}`, {
+          expected: 'At 700 px with 27 tabs the strip holds tabs squeezed to icons; the tab in front (the last one, the Fixture page) is fully inside the strip, drawn as the selected tab with its icon (its close button shows only while the pointer is over it); the other narrow tabs show only their icon, with no close button on them. The new-tab button and the strip\'s overflow control stay visible; the fixture page (heading and one line of text) fills the page area under the toolbar and bookmarks bar.',
+          action: 'Opened 24 more tabs with the new-tab command in a 700x600 window, then loaded the fixture page in the front one.',
+          ignore: [{ x: 240, y: 44, width: 200, height: 24 }]
+        }, { width: 700, height: 600 })
+      })
+    } finally {
+      await closeElectron(app)
+    }
+  }, QA_TEST_TIMEOUT_MS * 2)
 }
