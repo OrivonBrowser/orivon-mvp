@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { crc32 } from 'node:zlib'
 import AdmZip from 'adm-zip'
-import { checkArchiveSize, checkZipEntryPath, MAX_UNPACK_BYTES, MAX_UNPACK_ENTRIES, unpackZip, writeFolderCopy } from '../unpack-runner.js'
+import { checkArchiveSize, checkZipEntryPath, MAX_UNPACK_BYTES, MAX_UNPACK_ENTRIES, peekManifest, unpackZip, writeFolderCopy } from '../unpack-runner.js'
 
 async function withTempDir (fn: (dir: string) => void): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), 'orivon-unpack-test-'))
@@ -166,6 +167,125 @@ describe('unpackZip', () => {
       rmSync(root, { recursive: true, force: true })
     }
   }, 20_000)
+})
+
+interface CraftedCentralEntry {
+  readonly name: string
+  readonly size: number
+  readonly compressedSize: number
+  readonly method: number
+  readonly offset: number
+}
+
+/** A zip from raw bytes: AdmZip cannot express central entries that lie
+ * about a stored file's size or share one local header. */
+function craftZip (localName: string, data: Buffer, central: ReadonlyArray<CraftedCentralEntry>, localMethod = 0): Buffer {
+  const name = Buffer.from(localName)
+  const local = Buffer.alloc(30)
+  local.writeUInt32LE(0x04034b50, 0)
+  local.writeUInt16LE(20, 4)
+  local.writeUInt16LE(localMethod, 8)
+  local.writeUInt32LE(crc32(data), 14)
+  local.writeUInt32LE(data.length, 18)
+  local.writeUInt32LE(data.length, 22)
+  local.writeUInt16LE(name.length, 26)
+  const parts: Buffer[] = [local, name, data]
+  let cdSize = 0
+  for (const entry of central) {
+    const entryName = Buffer.from(entry.name)
+    const header = Buffer.alloc(46)
+    header.writeUInt32LE(0x02014b50, 0)
+    header.writeUInt16LE(20, 4)
+    header.writeUInt16LE(20, 6)
+    header.writeUInt16LE(entry.method, 10)
+    header.writeUInt32LE(crc32(data), 16)
+    header.writeUInt32LE(entry.compressedSize, 20)
+    header.writeUInt32LE(entry.size, 24)
+    header.writeUInt16LE(entryName.length, 28)
+    header.writeUInt32LE(entry.offset, 42)
+    parts.push(header, entryName)
+    cdSize += header.length + entryName.length
+  }
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0)
+  end.writeUInt16LE(central.length, 8)
+  end.writeUInt16LE(central.length, 10)
+  end.writeUInt32LE(cdSize, 12)
+  end.writeUInt32LE(30 + name.length + data.length, 16)
+  parts.push(end)
+  return Buffer.concat(parts)
+}
+
+describe('an archive whose central directory lies about a stored file', () => {
+  it('writes nothing for 1,000 names that share one local header and declare size 0', () => {
+    const root = mkdtempSync(join(tmpdir(), 'orivon-unpack-test-'))
+    try {
+      const data = Buffer.alloc(64 * 1024, 0x41)
+      const central = Array.from({ length: 1000 }, (_, i) => ({ name: `n${String(i)}.txt`, size: 0, compressedSize: data.length, method: 0, offset: 0 }))
+      const target = join(root, 'extensions', 'slot', '1.0.0')
+
+      expect(() => unpackZip(craftZip('a.txt', data, central), target)).toThrow()
+      expect(existsSync(target)).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('counts the larger of the declared and the stored size toward the total', () => {
+    const MIB = 1024 * 1024
+    const entries = Array.from({ length: 2 }, () => ({ size: 0, compressedSize: 600 * MIB, method: 0, offset: 0 }))
+    const result = checkArchiveSize(entries.map((entry, i) => ({ ...entry, offset: i })), 2000 * MIB)
+    expect(result.ok).toBe(false)
+  })
+
+  it('refuses a stored entry whose size differs from its compressed size', () => {
+    const result = checkArchiveSize([{ size: 10, compressedSize: 12, method: 0, offset: 0 }], 1000)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toMatch(/stored/)
+  })
+
+  it('refuses two entries that point at one local header', () => {
+    const result = checkArchiveSize([
+      { size: 10, compressedSize: 10, method: 0, offset: 0 },
+      { size: 10, compressedSize: 10, method: 0, offset: 0 }
+    ], 1000)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toMatch(/local header/)
+  })
+
+  it('still accepts an ordinary archive, with its empty files, folders and folders AdmZip implies', () => {
+    const zip = new AdmZip()
+    zip.addFile('manifest.json', Buffer.from('{}'))
+    zip.addFile('empty.txt', Buffer.alloc(0))
+    zip.addFile('a/b/c.js', Buffer.from('1'))
+    zip.addFile('d/', Buffer.alloc(0))
+    const root = mkdtempSync(join(tmpdir(), 'orivon-unpack-test-'))
+    try {
+      expect(unpackZip(zip.toBuffer(), join(root, 'x')).path).toBe(join(root, 'x'))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('peekManifest', () => {
+  it('refuses a manifest.json that declares more than 1 MiB before inflating it', () => {
+    const zip = new AdmZip()
+    zip.addFile('manifest.json', Buffer.from('{"pad":"' + 'a'.repeat(2 * 1024 * 1024) + '"}'))
+    expect(() => peekManifest(zip.toBuffer())).toThrow(/manifest.json is over/)
+  })
+
+  it('refuses a manifest.json whose declared ratio no deflate stream can reach', () => {
+    const data = Buffer.alloc(16, 0x41)
+    const lying = craftZip('manifest.json', data, [{ name: 'manifest.json', size: 900_000, compressedSize: 16, method: 0, offset: 0 }])
+    expect(() => peekManifest(lying)).toThrow(/manifest.json/)
+  })
+
+  it('reads an ordinary manifest', () => {
+    const zip = new AdmZip()
+    zip.addFile('manifest.json', Buffer.from('{"name":"x"}'))
+    expect(peekManifest(zip.toBuffer())).toEqual({ name: 'x' })
+  })
 })
 
 describe('writeFolderCopy', () => {

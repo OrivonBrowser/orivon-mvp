@@ -20,6 +20,11 @@ export const MAX_UNPACK_RATIO = 100
 /** Deflate cannot exceed about 1032:1 per entry, so a header claiming more
  * is lying about its size. */
 export const MAX_ENTRY_RATIO = 1100
+/** A manifest.json is read into memory to find the install target, before
+ * the archive's other checks have run. */
+export const MAX_MANIFEST_BYTES = 1024 * 1024
+
+const METHOD_STORED = 0
 
 const S_IFMT = 0xF000
 const S_IFLNK = 0xA000
@@ -64,22 +69,37 @@ export function checkZipEntryPath (targetDir: string, entryName: string, unixMod
 export interface ArchiveEntrySize {
   readonly size: number
   readonly compressedSize: number
+  /** The entry's compression method; 0 is stored. */
+  readonly method?: number
+  /** Where the entry's local header starts in the archive. */
+  readonly offset?: number
 }
 
 /**
- * Pure. Are the sizes an archive declares plausible and bounded? Three
- * bounds: the absolute total, the total against the archive's own length
- * (catches many entries sharing one deflate stream, whose per-entry ratios
- * look honest), and each entry's own ratio (catches a header that lies).
- * The extractor caps inflation at the declared size, so the declared sum
- * bounds the bytes written.
+ * Pure. Are the sizes an archive declares plausible and bounded? Bounds: the
+ * absolute total, the total against the archive's own length (catches many
+ * entries sharing one deflate stream, whose per-entry ratios look honest),
+ * each entry's own ratio (catches a header that lies), and the shape of the
+ * archive itself: the extractor writes a stored entry's compressed bytes
+ * whatever size its central header declares, and an entry's local header can
+ * be named by several central entries. So the larger of the two sizes counts
+ * toward the total, a stored entry must declare one size, and no two
+ * entries with data may share a local header.
  */
 export function checkArchiveSize (entries: ReadonlyArray<ArchiveEntrySize>, archiveLength: number): ZipEntryCheck {
   let total = 0
+  const offsets = new Set<number>()
   for (const entry of entries) {
-    total += entry.size
+    total += Math.max(entry.size, entry.compressedSize)
     if (total > MAX_UNPACK_BYTES) {
       return { ok: false, reason: `archive's uncompressed size exceeds the ${String(MAX_UNPACK_BYTES)}-byte cap` }
+    }
+    if (entry.method === METHOD_STORED && entry.size !== entry.compressedSize) {
+      return { ok: false, reason: 'a stored entry declares a size other than the bytes it holds' }
+    }
+    if (entry.compressedSize > 0 && entry.offset !== undefined) {
+      if (offsets.has(entry.offset)) return { ok: false, reason: 'two entries share one local header' }
+      offsets.add(entry.offset)
     }
     if (entry.size === 0) continue
     if (entry.compressedSize <= 0 || entry.size / entry.compressedSize > MAX_ENTRY_RATIO) {
@@ -115,7 +135,7 @@ export function unpackZip (zipBytes: Buffer, targetDir: string): UnpackedZip {
     throw new Error(`archive has ${String(entries.length)} entries, over the ${String(MAX_UNPACK_ENTRIES)} cap`)
   }
   const sizeCheck = checkArchiveSize(
-    entries.map((entry) => ({ size: entry.header.size, compressedSize: entry.header.compressedSize })),
+    entries.map((entry) => ({ size: entry.header.size, compressedSize: entry.header.compressedSize, method: entry.header.method, offset: entry.header.offset })),
     zipBytes.length
   )
   if (!sizeCheck.ok) throw new Error(sizeCheck.reason)
@@ -160,6 +180,11 @@ export function peekManifest (archive: Buffer): Record<string, unknown> {
   const zip = new AdmZip(archive)
   const entry = zip.getEntry('manifest.json')
   if (entry === null) throw new Error('archive has no manifest.json')
+  const { size, compressedSize } = entry.header
+  if (size > MAX_MANIFEST_BYTES) throw new Error(`archive's manifest.json is over the ${String(MAX_MANIFEST_BYTES)}-byte cap`)
+  if (size > 0 && (compressedSize <= 0 || size / compressedSize > MAX_ENTRY_RATIO)) {
+    throw new Error("archive's manifest.json declares a compression ratio no archive can reach")
+  }
   const parsed: unknown = JSON.parse(entry.getData().toString('utf8'))
   return readManifestObject(parsed, 'archive')
 }
