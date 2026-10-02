@@ -1,8 +1,10 @@
 // Small pieces of scaffolding duplicated across the check:* guard scripts
 // (check-no-native-modules.mjs, check-contracts-pure.mjs, check-no-secrets.mjs,
-// check-comments.mjs, check-size.mjs) -- docs/development/code-guidelines.md Rule 3.
+// check-comments.mjs, check-size.mjs) and the launch scripts (dev.mjs,
+// build-ordinary.mjs, build-e2e.mjs, run-headless.mjs, qa.mjs) --
+// docs/development/code-guidelines.md Rule 3.
 
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { relative, sep } from 'node:path'
 
 /**
@@ -52,4 +54,41 @@ export function trackedFiles (root) {
     stdio: ['ignore', 'pipe', 'pipe']
   })
   return out.split('\0').filter(Boolean)
+}
+
+/** An argument cmd.exe passes through unchanged, so it needs no quotes. */
+const CMD_PLAIN = /^[\w./\\:=@,+-]+$/
+
+/**
+ * How to spawn `command` from PATH with `args`, decided without spawning.
+ *
+ * On Windows, npm's shims (`npx`, `electron-vite`) are `.cmd` files, and
+ * Node refuses to spawn a `.cmd` without a shell: the spawn fails with
+ * EINVAL. So there the command runs through cmd.exe, as one quoted string
+ * rather than a command plus an args array, which Node deprecates together
+ * with `shell` (DEP0190). Elsewhere it is spawned directly, with no shell.
+ * @param {string} command
+ * @param {string[]} args
+ * @param {string} [platform]
+ * @returns {{ file: string, args: string[], shell: boolean }}
+ */
+export function commandLine (command, args, platform = process.platform) {
+  if (platform !== 'win32') return { file: command, args, shell: false }
+  const quoted = [command, ...args].map((arg) => CMD_PLAIN.test(arg) ? arg : `"${arg.replaceAll('"', '""')}"`)
+  return { file: quoted.join(' '), args: [], shell: true }
+}
+
+/**
+ * `spawnSync` for a command on PATH, through `commandLine`, with stdio
+ * inherited. A failure to start the command at all is printed, so a launch
+ * script never exits 1 with nothing on screen.
+ * @param {string} command
+ * @param {string[]} args
+ * @param {import('node:child_process').SpawnSyncOptions} [options]
+ */
+export function spawnCommandSync (command, args, options = {}) {
+  const line = commandLine(command, args)
+  const result = spawnSync(line.file, line.args, { stdio: 'inherit', ...options, shell: line.shell })
+  if (result.error !== undefined) console.error(`failed to launch ${command}:`, result.error)
+  return result
 }

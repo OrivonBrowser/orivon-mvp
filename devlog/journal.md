@@ -61,6 +61,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - FreeTube plays video: a cleanup closed routed sockets mid-read under garbage collection. AdBlock and uBlock Origin Lite now run too.
 - 35 reported bugs worked: tab drops, window moves, reload, popups, bookmark folders, print, .eth pages, sign-in loop; two native crashes fixed.
 - Full uBlock Origin now blocks: Orivon serves extensions' webRequest listeners itself; the ad-block test page went from 10 to 90 of 132.
+- The Lounge is pinned on IPFS from our own node and runs end to end from ipfs:// in Orivon; thelounge.orivonstack.eth comes next.
 
 ### In my head
 - Explored what `child_process` can safely mean: a WASI program in the app's own tab, native `subprocess` still excluded (`docs/planning/child-process-design.md`).
@@ -68,5 +69,6 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Audited how AI sessions spend their budget: most goes to very long sessions and a 700 KB questions file. Handoff written for Opus 5.5.
 - Direction: the wallet moves from OUT to IN; explored as three provider layers behind one registry, mnemonic first, reads through Helios (`docs/planning/wallet-system-exploration.md`).
 - Decided native modules, spawn and fork run only as WebAssembly under the broker; native machine code never runs for an app (ADR-0040).
+- TIM's DNS hijacks Orivon's three IPFS gateways; the DoH fallback already routes around it, but a cold first load still takes ~47 s.
 
 ### Non-repo

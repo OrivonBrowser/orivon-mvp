@@ -12,6 +12,8 @@ export interface HostProcess {
 }
 
 export interface SupervisorEvents {
+  /** The host process is being forked, the first time and after every restart. */
+  starting?: () => void
   listening: (fingerprint: string) => void
   down: (reason: string) => void
   status: (status: LightClientState) => void
@@ -66,6 +68,7 @@ export class HostSupervisor {
 
   start (): void {
     if (this.stopped || this.child !== undefined) return
+    this.deps.events.starting?.()
     const child = this.deps.fork()
     this.child = child
     this.startedAt = this.now()
