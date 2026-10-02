@@ -36,6 +36,15 @@ export interface DispatcherHost {
   extensionKeys?: ExtensionKeys | undefined
 }
 
+/**
+ * Commands that open or close another webContents, the developer tools. Closing them from inside the key event's
+ * delivery destroys a webContents that Chromium may still be notifying observers on, and `~WebContentsImpl`
+ * answers with a CHECK that ends the whole main process (SIGTRAP), or Electron's own listener on the destroyed
+ * object throws "Object has been destroyed". Under load it hit about one close in a hundred, so they run once the
+ * event has returned.
+ */
+const AFTER_THE_KEY: ReadonlySet<string> = new Set<CommandId>(['devtools.toggle', 'devtools.console'])
+
 export function attachShortcuts (contents: WebContents, service: ShortcutService, host: DispatcherHost): void {
   contents.on('before-input-event', (event, input: PressedKey) => {
     if (input.type !== 'keyDown' || input.isComposing) return
@@ -77,6 +86,7 @@ export function attachShortcuts (contents: WebContents, service: ShortcutService
     if (def?.pending === true) return
     event.preventDefault()
     if (input.isAutoRepeat && !service.isRepeatable(id)) return
-    target.run(id)
+    if (AFTER_THE_KEY.has(id)) setImmediate(() => { target.run(id) })
+    else target.run(id)
   })
 }

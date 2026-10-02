@@ -173,3 +173,40 @@ it('asks once before opening them on an app that holds permissions, and not agai
     await closeElectron(app)
   }
 }, TEST_TIMEOUT_MS)
+
+// Closing the tools destroys their own webContents; inside the key event's delivery that is a CHECK in
+// ~WebContentsImpl that ends the main process (about one close in a hundred under load), so the key's
+// command must have returned before the tools open or close. Observed from the main process: a listener
+// placed before and one after the shortcut dispatcher's mark the span of the event.
+it('opens and closes the tools after the key event has returned, never inside it', async () => {
+  const { app, chrome } = await launched()
+  try {
+    const address = `${siteOrigin}/page`
+    await open(app, chrome, address)
+    await app.evaluate(({ webContents }, part) => {
+      const state = globalThis as unknown as { __insideKey: boolean, __calls: { call: string, inside: boolean }[] }
+      state.__insideKey = false
+      state.__calls = []
+      const contents = webContents.getAllWebContents().find((c) => c.getURL().includes(part))
+      if (contents === undefined) throw new Error('no page')
+      contents.prependListener('before-input-event', () => { state.__insideKey = true })
+      contents.on('before-input-event', () => { state.__insideKey = false })
+      for (const call of ['openDevTools', 'closeDevTools'] as const) {
+        const original = contents[call].bind(contents) as (...args: unknown[]) => void
+        ;(contents as unknown as Record<string, unknown>)[call] = (...args: unknown[]) => {
+          state.__calls.push({ call, inside: state.__insideKey })
+          original(...args)
+        }
+      }
+    }, address)
+    await pressKey(app, address, 'F12')
+    expect(await waitFor(async () => await toolsOpenAt(app, address) === true)).toBe(true)
+    await pressKey(app, address, 'F12')
+    expect(await waitFor(async () => await toolsOpenAt(app, address) === false)).toBe(true)
+    const calls = await app.evaluate(() => (globalThis as unknown as { __calls: { call: string, inside: boolean }[] }).__calls)
+    expect(calls).toEqual([{ call: 'openDevTools', inside: false }, { call: 'closeDevTools', inside: false }])
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)

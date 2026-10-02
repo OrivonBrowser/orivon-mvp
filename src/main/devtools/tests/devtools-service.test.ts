@@ -154,4 +154,15 @@ describe('developer tools', () => {
     change('developer.tools', false)
     expect(contents.closeDevTools).not.toHaveBeenCalled()
   })
+
+  it('leave no listener behind on a page whose tools were opened and closed again', () => {
+    const { service } = setup()
+    const contents = page()
+    for (let i = 0; i < 30; i++) {
+      service.toggle(as(contents), WINDOW)
+      service.toggle(as(contents), WINDOW)
+    }
+    expect(contents.listenerCount('destroyed')).toBe(0)
+    expect(contents.listenerCount('devtools-closed')).toBe(0)
+  })
 })
