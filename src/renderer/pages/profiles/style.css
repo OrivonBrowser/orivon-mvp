@@ -21,6 +21,7 @@
 .actions { display: flex; gap: 10px; margin-top: 12px; }
 .row { display: flex; gap: 10px; margin-bottom: 12px; }
 .row .text { flex: 1 1 auto; max-width: none; }
+.row .btn { flex: none; white-space: nowrap; }
 
 .chip { width: 32px; height: 32px; border-radius: 50%; font-size: 14px; }
 .swatches { display: flex; gap: 8px; flex-wrap: wrap; }

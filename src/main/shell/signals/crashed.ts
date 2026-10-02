@@ -5,6 +5,7 @@ import type { WebContentsView } from 'electron'
 import { markResponsive, markUnresponsive, troubleOf } from '../../sad-tab/sad-tab-state.js'
 import { syncSadTab, watchActivations } from '../../sad-tab/sad-tab-controller.js'
 import { DEFAULT_BACKGROUND, INTERNAL_PAGE_BACKGROUND, onThemeUpdated, resolveThemeColor } from '../theme-colors.js'
+import { paintBacking } from '../tab-backing.js'
 import type { TabSignal } from '../tab-signals.js'
 import type { TabRecord } from '../tab-types.js'
 
@@ -18,7 +19,7 @@ function followTheme (): void {
   if (followingTheme) return
   followingTheme = true
   onThemeUpdated(() => {
-    for (const view of dimmed) view.setBackgroundColor(resolveThemeColor(INTERNAL_PAGE_BACKGROUND))
+    for (const view of dimmed) paintBacking(view, resolveThemeColor(INTERNAL_PAGE_BACKGROUND))
   })
 }
 
@@ -26,13 +27,13 @@ function followTheme (): void {
  * dashboard and the shell's own pages already carry their own colour; only an ordinary page is on the default. */
 function dim (view: WebContentsView, record: TabRecord): void {
   if (record.isDashboardTab || record.internalPage !== null) return
-  view.setBackgroundColor(resolveThemeColor(INTERNAL_PAGE_BACKGROUND))
+  paintBacking(view, resolveThemeColor(INTERNAL_PAGE_BACKGROUND))
   dimmed.add(view)
   followTheme()
 }
 
 function undim (view: WebContentsView): void {
-  if (dimmed.delete(view)) view.setBackgroundColor(DEFAULT_BACKGROUND)
+  if (dimmed.delete(view)) paintBacking(view, DEFAULT_BACKGROUND)
 }
 
 export const crashedSignal: TabSignal = {

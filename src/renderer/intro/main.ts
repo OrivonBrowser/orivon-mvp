@@ -7,6 +7,8 @@ const FADE_MS = 400
 
 const overlay = document.getElementById('overlay')
 const enter = document.getElementById('enter')
+// The one control on the screen: Enter acts at once, without a Tab first.
+enter?.focus()
 
 enter?.addEventListener('click', () => {
   // "leaving" first, so the shell makes its view transparent before the fade

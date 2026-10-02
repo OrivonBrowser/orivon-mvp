@@ -23,11 +23,12 @@ const OVERLAY_LIGHT = { color: '#e4e4eb', symbolColor: '#202124' }
 const OVERLAY_PRIVATE_DARK = { color: '#251c36', symbolColor: '#e6e7e8' }
 const OVERLAY_PRIVATE_LIGHT = { color: '#d8cfe8', symbolColor: '#202124' }
 
-// The window's own background, same values as the overlay's `color` above
+// The window's own background at creation, same values as the overlay's `color` above
 // (== src/renderer/style.css's --wchrome for each theme/private combination)
 // -- Electron paints this the instant the window is created, before either
 // view has a pixel to show, so it is what a tear-off (shown at once, see
-// `instant` below) shows instead of a flash of white.
+// `instant` below) shows instead of a flash of white. Once a tab is shown the
+// colour is that tab's (window-backing.ts).
 const BACKGROUND_DARK = OVERLAY_DARK.color
 const BACKGROUND_LIGHT = OVERLAY_LIGHT.color
 const BACKGROUND_PRIVATE_DARK = OVERLAY_PRIVATE_DARK.color
@@ -53,8 +54,9 @@ export interface WindowFrame {
   readonly kiosk: boolean
 }
 
-/** The window's own background colour for the current OS/app theme -- exported
- * so window.ts can paint the chrome view (its own WebContentsView, a separate
+/** The colour a window is created with, and the chrome view's, for the current
+ * OS/app theme (window-backing.ts takes over the window's background once a tab
+ * is shown) -- exported so window.ts can paint the chrome view (its own WebContentsView, a separate
  * surface from the BaseWindow's own background) the SAME colour before it has
  * a pixel of its own to show, one home for the fact rather than a second copy
  * of these constants there. */
@@ -130,7 +132,6 @@ export function createWindowFrame (dirname: string, place: Placement = {}, isPri
   // on. Unregistered on 'closed', or a later theme change would call
   // setTitleBarOverlay on an already-destroyed window.
   function applyOverlayForTheme (): void {
-    win.setBackgroundColor(background())
     if (process.platform === 'darwin') return
     win.setTitleBarOverlay(overlay())
   }

@@ -373,3 +373,10 @@ export async function pressKey (app: ElectronApplication, urlPart: string, keyCo
     for (const { type } of events) target.sendInputEvent({ type, keyCode: code as string, modifiers: mods as Array<'control'> })
   }, [urlPart, keyCode, modifiers] as const)
 }
+
+/** Switches the whole app to a colour scheme at run time, the way the OS theme flipping would. `nativeTheme`
+ * is the one source every view reads, so a launch that does not pin the pages' scheme (launch-electron.mjs's
+ * `scheme` option) follows it in the chrome, the tabs, the overlays and the main-side backing colours. */
+export async function setScheme (app: ElectronApplication, scheme: 'light' | 'dark' | 'system'): Promise<void> {
+  await app.evaluate(({ nativeTheme }, next) => { nativeTheme.themeSource = next }, scheme)
+}

@@ -32,6 +32,7 @@ import { showIntro } from './intro-view.js'
 import { createWindowFrame, showWhenReady, windowBackgroundColor } from './window-frame.js'
 import { recordViewBackground } from './view-background-test-hook.js'
 import { onThemeUpdated } from './theme-colors.js'
+import { followActiveTabBacking } from './window-backing.js'
 import { dragModeFor } from './drag-mode.js'
 import type { ShellServices } from './shell-services.js'
 import { resolveCurrent } from '../browsing/search-current.js'
@@ -84,13 +85,18 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // window shown `instant` before either view exists; it does not cover
   // THIS view's own separate surface once attached. Kept live across an OS
   // theme change while the window stays open (theme-colors.ts's
-  // `onThemeUpdated` below), the same pattern window-frame.ts already uses
-  // for the window's own background and title-bar overlay.
+  // `onThemeUpdated` below). window-frame.ts sets the window's creation
+  // colour and keeps its title-bar overlay live; window-backing.ts owns the
+  // window's background once a tab is shown.
   const chromeBackground = windowBackgroundColor(services.profiles.isPrivate)
   chrome.setBackgroundColor(chromeBackground)
   recordViewBackground(chrome.webContents.id, chromeBackground)
   win.contentView.addChildView(chrome)
-  function applyChromeBackgroundForTheme (): void { chrome.setBackgroundColor(windowBackgroundColor(services.profiles.isPrivate)) }
+  function applyChromeBackgroundForTheme (): void {
+    const color = windowBackgroundColor(services.profiles.isPrivate)
+    chrome.setBackgroundColor(color)
+    recordViewBackground(chrome.webContents.id, color)
+  }
   const unregisterChromeThemeListener = onThemeUpdated(applyChromeBackgroundForTheme)
   win.on('closed', () => { unregisterChromeThemeListener() })
   // The chrome preload is unconditionally privileged (src/preload/shell.ts
@@ -276,6 +282,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   })
 
   layoutChrome()
+  win.on('closed', followActiveTabBacking(win, tabs))
   if (first === undefined) tabs.createTab()
   else first(tabs)
   // After the first tab, so the view stacks above it.
