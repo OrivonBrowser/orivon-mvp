@@ -19,7 +19,7 @@ import type { RunCertificate } from './certificate.js'
 import { ERROR_PAGE_CSP, renderErrorPage } from './error-pages.js'
 import type { Sites } from './sites.js'
 
-/** A file up to this size is read and verified whole before its first byte is sent, so a failure is an error page, never half a document. */
+/** A file up to this size is read and verified whole before its first byte is sent to a page, so a failure is an error page, never half a document. */
 export const MAX_BUFFERED_BYTES = 16 * 1024 * 1024
 
 /**
@@ -210,8 +210,11 @@ async function writeBufferedChunks (res: ServerResponse, chunks: Uint8Array[], d
   }
 }
 
-async function sendBody (res: ServerResponse, status: number, headers: Record<string, string>, file: GatheredFile, length: number, budget: BufferBudget, partition: string | undefined, bufferedResponseDeadlineMs: number): Promise<void> {
-  if (length <= MAX_BUFFERED_BYTES) {
+async function sendBody (res: ServerResponse, status: number, headers: Record<string, string>, file: GatheredFile, length: number, budget: BufferBudget, partition: string | undefined, bufferedResponseDeadlineMs: number, forInstall: boolean): Promise<void> {
+  // An install is streamed whatever the size: it checks every byte itself and
+  // refuses a short body, and it gives up on a response that sends nothing for
+  // a while, which a file gathered whole from slow gateways would do.
+  if (length <= MAX_BUFFERED_BYTES && !forInstall) {
     if (!budget.reserve(partition, length)) {
       res.writeHead(503, { 'content-type': 'text/plain', 'cache-control': 'no-store', 'retry-after': '1' }).end('the verifier is holding too many responses right now')
       return
@@ -340,7 +343,7 @@ async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMe
       res.writeHead(status, headers).end()
       return
     }
-    await sendBody(res, status, headers, file, length, budget, partition, bufferedResponseDeadlineMs)
+    await sendBody(res, status, headers, file, length, budget, partition, bufferedResponseDeadlineMs, typeof expected === 'string')
   } catch (error) {
     if (res.headersSent) res.destroy()
     else sendError(res, shown, error)

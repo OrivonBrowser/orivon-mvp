@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MAX_ASSET_BYTES, MAX_BUNDLE_BYTES } from '../../../broker/policy/bundle-hash.js'
 import { MAX_ANSWERS } from '../../../broker/policy/connect.js'
 import type { Resolver } from '../../../broker/policy/connect.js'
-import { BUNDLE_TIMEOUT_MS, FETCH_IDLE_TIMEOUT_MS, fetchBundle } from '../bundle.js'
+import { BUNDLE_TIMEOUT_MS, FETCH_IDLE_TIMEOUT_MS, VERIFIER_IDLE_TIMEOUT_MS, fetchBundle } from '../bundle.js'
 import type { Fetch } from '../bundle.js'
 import { MANIFEST_URL, ORIGIN, PUBLIC_RESOLVER, manifestJson, memoryStorage, stubFetch, utf8 } from '../../tests/test-helpers.js'
 import type { RouteSpec } from '../../tests/test-helpers.js'
@@ -563,6 +563,19 @@ describe('fetchBundle: a stalled fetch or body cannot stall the install forever'
     const stalls: Fetch = async () => await new Promise<never>(() => {})
     const pending = fetchBundle(stalls, ORIGIN, PUBLIC_RESOLVER, memoryStorage())
     await vi.advanceTimersByTimeAsync(FETCH_IDLE_TIMEOUT_MS + 1)
+    const result = await pending
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toMatch(/timed out/i)
+  })
+
+  it('waits longer on the verifier, which gives up on each IPFS block itself, but not forever', async () => {
+    const stalls: Fetch = async () => await new Promise<never>(() => {})
+    let settled = false
+    const pending = fetchBundle(stalls, 'https://app.eth', PUBLIC_RESOLVER, memoryStorage()).finally(() => { settled = true })
+    await vi.advanceTimersByTimeAsync(FETCH_IDLE_TIMEOUT_MS + 1)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(VERIFIER_IDLE_TIMEOUT_MS)
     const result = await pending
     expect(result.ok).toBe(false)
     if (result.ok) return

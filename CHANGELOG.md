@@ -249,6 +249,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **An app opened from `ipfs://` or a `.eth` name asks for its grants again over slow gateways**: its install gave up when a
+  file took over 20 seconds to start arriving, so no consent prompt ever appeared. A refused install now logs its reason.
 - **An app that shows pages it serves itself is granted `web.embed` again**: a local pattern (`http://*.localhost:<port>`) or an exact
   `http://` origin was read as a `host:port` pattern, which it is not, so no manifest declaring one was ever allowed to grant it. The
   subset check now compares any whole-origin pattern exactly.

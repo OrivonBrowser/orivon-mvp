@@ -129,7 +129,11 @@ export const appInstallSubsystem: Subsystem = {
         }
         return outcome
       }
-      return await installFromHint({ broker, loader, consent, perCapabilityConsent, reconsentPrompt, capabilityPrompt, rollbackChoicePrompt }, hintingOrigin, hintedUrl, caller)
+      const result = await installFromHint({ broker, loader, consent, perCapabilityConsent, reconsentPrompt, capabilityPrompt, rollbackChoicePrompt }, hintingOrigin, hintedUrl, caller)
+      if (result.outcome === 'rejected') {
+        console.warn(`[app-install] install refused for ${hintingOrigin}: ${result.reason}`)
+      }
+      return result
     })
   }
 }

@@ -56,6 +56,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Extensions gained a menu with pinning, a permission sheet, command keys and history, bookmarks and search APIs; blockers run; 34 review findings fixed.
 - The Lounge reaches self-signed IRC networks like irchighway once "trusted only" is unticked; a refused certificate now reads in Node's words.
 - Sites ask once for camera, location and more; passwords save and fill; privacy controls, sign-in sheets and certificate viewer landed; 61 review findings fixed.
+- The Lounge published to IPFS now asks for its grants: its install had silently timed out on slow public gateways.
 - The browser asks every question in a panel inside the tab, not an OS window: grants, installs, alert/confirm/prompt, leaving a page.
 - FreeTube plays video: a cleanup closed routed sockets mid-read under garbage collection. AdBlock and uBlock Origin Lite now run too.
 - 35 reported bugs worked: tab drops, window moves, reload, popups, bookmark folders, print, .eth pages, sign-in loop; two native crashes fixed.
