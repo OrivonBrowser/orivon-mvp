@@ -17,6 +17,7 @@ interface FakeContents extends EventEmitter {
   ipc: { on: ReturnType<typeof vi.fn> }
   setAudioMuted: ReturnType<typeof vi.fn>
   isCurrentlyAudible: ReturnType<typeof vi.fn>
+  focus: ReturnType<typeof vi.fn>
   close: ReturnType<typeof vi.fn>
 }
 interface RecordedView { webContents: FakeContents, setBounds: ReturnType<typeof vi.fn>, setBackgroundColor: ReturnType<typeof vi.fn> }
@@ -37,6 +38,7 @@ function makeFakeWebContents (): FakeContents {
   emitter.ipc = { on: vi.fn() }
   emitter.setAudioMuted = vi.fn()
   emitter.isCurrentlyAudible = vi.fn(() => false)
+  emitter.focus = vi.fn()
   emitter.close = vi.fn(() => { destroyed = true; emitter.emit('destroyed') })
   return emitter
 }
@@ -60,7 +62,7 @@ beforeEach(() => { createdViews.length = 0 })
 const APP_CTX = { broker: { app: { isRegisteredSync: (origin: string) => origin === 'https://app.example' }, dropOrigin: async () => {} } } as unknown as SubsystemContext
 
 function newManager (ctx: SubsystemContext = {} as SubsystemContext): InstanceType<typeof TabManager> {
-  return new TabManager({ addChildView: vi.fn(), removeChildView: vi.fn() } as never, () => ({ x: 0, y: 0, width: 800, height: 600 }), vi.fn(), 'http://localhost:5999/newtab/', ctx)
+  return new TabManager({ children: [], addChildView: vi.fn(), removeChildView: vi.fn() } as never, () => ({ x: 0, y: 0, width: 800, height: 600 }), vi.fn(), 'http://localhost:5999/newtab/', ctx)
 }
 
 /** A strip of `n` tabs, ids in strip order. */

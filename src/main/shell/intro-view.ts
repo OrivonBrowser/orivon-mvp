@@ -57,6 +57,8 @@ export function showIntro (win: BaseWindow, tabs: Pick<TabManager, 'onStateChang
   })
   webContents.on('render-process-gone', () => { dismiss() })
 
+  // Keyboard input goes to the focused view, which is the dashboard's search box under this one until it is asked.
+  webContents.once('did-finish-load', () => { if (open && !webContents.isDestroyed()) webContents.focus() })
   webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   webContents.on('will-navigate', (event) => { event.preventDefault() })
   webContents.on('did-navigate-in-page', (_event, url) => {

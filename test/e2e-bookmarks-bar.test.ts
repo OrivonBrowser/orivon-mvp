@@ -82,6 +82,15 @@ async function fileOf (app: App): Promise<{ version: number, roots: Record<strin
 const barTitles = async (chrome: Page): Promise<string[]> => await evaluateRetrying(chrome, () =>
   Array.from(document.querySelectorAll<HTMLElement>('#bookmarks-list .bmitem')).filter((el) => !el.hidden).map((el) => el.getAttribute('aria-label') ?? ''))
 
+/** How far the right edge of the last thing the bar shows (an item, or the chevron) passes the list's own, in px. */
+const overhang = async (chrome: Page): Promise<number> => await chrome.evaluate(async () => {
+  await new Promise<void>((resolve) => { requestAnimationFrame(() => { requestAnimationFrame(() => { resolve() }) }) })
+  const list = document.querySelector('#bookmarks-list') as HTMLElement
+  const edge = list.getBoundingClientRect().right
+  const shown = Array.from(list.querySelectorAll<HTMLElement>('.bmitem, .bmmore')).filter((el) => !el.hidden)
+  return Math.max(...shown.map((el) => el.getBoundingClientRect().right - edge))
+})
+
 const overlayOf = (app: App): Page | undefined => app.windows().find((w) => w.url().includes('overlay=bookmark-folder'))
 const folderShown = async (app: App): Promise<boolean> => await popoverShown(app, 'overlay=bookmark-folder')
 
@@ -232,10 +241,23 @@ it('moves what does not fit behind a chevron that lists it, and Mod+Shift+B hide
   try {
     expect(await waitFor(async () => (await barTitles(chrome)).length > 3)).toBe(true)
     await resizeTo(app, 620, 700)
-    expect(await waitFor(async () => await chrome.locator('.bmmore:not([hidden])').count() === 1)).toBe(true)
+    // The chevron may already show at the old width, so the new width is what is waited for; two frames later the bar has laid out at it.
+    expect(await waitFor(async () => await evaluateRetrying(chrome, () => window.innerWidth <= 620))).toBe(true)
+    await chrome.evaluate(async () => { await new Promise<void>((resolve) => { requestAnimationFrame(() => { requestAnimationFrame(() => { resolve() }) }) }) })
+    expect(await chrome.locator('.bmmore:not([hidden])').count()).toBe(1)
     const shown = (await barTitles(chrome)).length
     expect(shown).toBeGreaterThan(1)
     expect(shown).toBeLessThan(32)
+
+    // Nothing the bar shows is cut by its right edge, at any width: the measure is the fractional one a paint uses.
+    for (let width = 560; width <= 760; width += 7) {
+      await resizeTo(app, width, 700)
+      expect(await waitFor(async () => await chrome.evaluate((w) => window.innerWidth === w, width))).toBe(true)
+      expect(await overhang(chrome), `at ${String(width)} px`).toBeLessThanOrEqual(0)
+    }
+    await resizeTo(app, 620, 700)
+    expect(await waitFor(async () => await evaluateRetrying(chrome, () => window.innerWidth <= 620))).toBe(true)
+    await chrome.evaluate(async () => { await new Promise<void>((resolve) => { requestAnimationFrame(() => { requestAnimationFrame(() => { resolve() }) }) }) })
 
     await park(chrome)
     await chrome.click('.bmmore')
@@ -347,6 +369,44 @@ it('offers the right-click menus and deletes from them', async () => {
     await choose('Delete')
     expect(await waitFor(async () => (await barTitles(chrome)).length === 3)).toBe(true)
     expect(await waitFor(async () => !JSON.stringify(await fileOf(app).catch(() => ({}))).includes('Design notes'))).toBe(true)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('manages the rows of an open folder menu: right-click menu, Delete from the keyboard, and Move to Bookmarks Bar', async () => {
+  const { app, chrome } = await launched(async (dir) => { await writeFile(join(dir, 'bookmarks.json'), tree(3)) })
+  try {
+    expect(await waitFor(async () => (await barTitles(chrome)).length === 5)).toBe(true)
+    await app.evaluate(({ Menu }) => { (Menu.prototype as unknown as { popup: () => void }).popup = function (this: unknown) { (globalThis as unknown as { __menu: unknown }).__menu = this } })
+    const labels = async (): Promise<string[]> => await app.evaluate(() => ((globalThis as unknown as { __menu?: { items: Array<{ label: string, type: string }> } }).__menu?.items ?? []).map((item) => item.type === 'separator' ? '-' : item.label))
+    const choose = async (label: string): Promise<void> => { await app.evaluate((_, l) => { ((globalThis as unknown as { __menu: { items: Array<{ label: string, click: () => void }> } }).__menu.items.find((item) => item.label === l))?.click() }, label) }
+    const reset = async (): Promise<void> => { await app.evaluate(() => { (globalThis as unknown as { __menu?: unknown }).__menu = undefined }) }
+    const stored = async (): Promise<string> => JSON.stringify(await fileOf(app).catch(() => ({})))
+
+    await chrome.click('#bookmarks-list .bmitem[data-id="work0000000"]')
+    const menu = await folderPage(app)
+
+    await menu.click('.bmf-row[data-key="w1"]', { button: 'right' })
+    expect(await waitFor(async () => (await labels()).length > 0)).toBe(true)
+    expect(await labels()).toEqual(['Open in New Tab', 'Open in New Window', 'Open in Private Window', '-', 'Edit…', 'Copy Link', 'Move to Bookmarks Bar', 'Delete', '-', 'Add Folder…', '-', 'Show Bookmarks Bar', ...MANAGER_ROW])
+    await choose('Delete')
+    expect(await waitFor(async () => !(await stored()).includes('"w1"'))).toBe(true)
+
+    await reset()
+    await menu.click('.bmf-row[data-key="w2"]', { button: 'right' })
+    expect(await waitFor(async () => (await labels()).includes('Move to Bookmarks Bar'))).toBe(true)
+    await choose('Move to Bookmarks Bar')
+    expect(await waitFor(async () => (await barTitles(chrome)).includes('Sprint board'))).toBe(true)
+    expect(await waitFor(async () => ((await fileOf(app).catch(() => undefined))?.roots['bar'] ?? []).some((node) => node['id'] === 'w2'))).toBe(true)
+
+    // Ctrl+Backspace on a focused row deletes it, before the key means "back"; the folder is listed again.
+    await menu.focus('.bmf-row[data-key="w3"]')
+    await menu.keyboard.press('Control+Backspace')
+    expect(await waitFor(async () => !(await stored()).includes('"w3"'))).toBe(true)
+    expect(await waitFor(async () => !(await rowLabels(menu)).some((label) => label.startsWith('A page whose title')))).toBe(true)
+    expect(await folderShown(app)).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)

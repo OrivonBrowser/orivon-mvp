@@ -18,6 +18,11 @@ export function pinnedCount (order: readonly string[], isPinned: (id: string) =>
   return order.filter(isPinned).length
 }
 
+/** The place among tabs whose centres are `centres` that a tab let go at `x` takes: after every tab whose centre is left of it. */
+export function dropIndex (centres: readonly number[], x: number): number {
+  return centres.filter((centre) => x > centre).length
+}
+
 /** Keeps a place inside the run its tab belongs to. `count` is the pinned run's length and `length` the strip's,
  * both without the mover: a pinned tab takes a place from 0 to `count`, any other from `count` to `length`. */
 export function clampToRun (index: number, pinned: boolean, count: number, length: number): number {

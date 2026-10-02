@@ -84,9 +84,24 @@ export function goForward (env: NavigationEnv, id: string): void {
   if (contents !== undefined && history?.canGoForward() === true) startNavigation(contents, () => { history.goForward() })
 }
 
+/** The address of the last committed entry: `getURL()` can already read a navigation that is still in flight. */
+function committedUrl (wc: WebContents): string | undefined {
+  const entry = wc.navigationHistory.getEntryAtIndex(wc.navigationHistory.getActiveIndex()) as { url: string } | null
+  return entry?.url
+}
+
+/** Reload, or while a navigation has started and not committed, a restart of that navigation: `wc.reload()` would
+ * drop it and reload the page before it. Only a web address restarts, through the address bar's own path, so a
+ * scheme the page itself was refused never loads as if browser-initiated. */
 export function reloadTab (env: NavigationEnv, id: string): void {
-  const contents = env.liveWebContents(id)
-  if (contents !== undefined) startNavigation(contents, () => { contents.reload() })
+  const wc = env.liveWebContents(id)
+  if (wc === undefined) return
+  const pending = env.record(id)?.inflightUrl
+  if (pending !== undefined && wc.isLoadingMainFrame() && /^https?:\/\//i.test(pending) && pending !== committedUrl(wc)) {
+    navigateTab(env, id, pending)
+    return
+  }
+  startNavigation(wc, () => { wc.reload() })
 }
 
 /** Rejected omnibox input (a dangerous scheme, or empty) never reaches `loadURL` -- it falls back

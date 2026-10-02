@@ -96,6 +96,9 @@ export class SplitController {
     if (!this.groups.create(a, b, orientationOf(zone))) return false
     this.placeTogether(a, b)
     this.host.activate(dropped)
+    // A pane brought forward by a drag has had no click, so the keyboard would stay in the chrome view
+    // the drag started from.
+    this.host.focus(dropped)
     return true
   }
 
@@ -115,7 +118,10 @@ export class SplitController {
     if (partner === undefined) return
     this.split(id, partner, 'right')
     // The person stays where they were, unless the other pane is a new page they will want to use.
-    if (existing !== undefined) this.host.activate(id)
+    if (existing !== undefined) {
+      this.host.activate(id)
+      this.host.focus(id)
+    }
   }
 
   separate (id: string): void {

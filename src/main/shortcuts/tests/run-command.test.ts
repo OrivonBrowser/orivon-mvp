@@ -89,7 +89,7 @@ describe('runCommand', () => {
   it('hands each page command to the page tools, the ones that write with the real dependencies', () => {
     const { target, deps } = harness([tab('a')], 'a')
     const expected: Array<[Parameters<typeof runCommand>[0], keyof typeof pageCommands, boolean]> = [
-      ['page.print', 'printCommand', false], ['page.pdf', 'pdfCommand', true], ['page.save', 'saveCommand', true],
+      ['page.print', 'printCommand', true], ['page.pdf', 'pdfCommand', true], ['page.save', 'saveCommand', true],
       ['page.viewSource', 'viewSourceCommand', false], ['page.screenshot', 'screenshotCommand', false], ['page.pip', 'pipCommand', false]
     ]
     for (const [id, name, withDeps] of expected) {

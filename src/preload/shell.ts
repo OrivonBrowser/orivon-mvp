@@ -29,15 +29,6 @@ import { injectBrowserAction } from '../../vendor/electron-chrome-extensions/src
 const ARG_PREFIX = '--orivon-shell-url='
 const expectedUrl = process.argv.find((arg) => arg.startsWith(ARG_PREFIX))?.slice(ARG_PREFIX.length)
 
-// Which strip-drag mode the chrome uses for the tail after the new-tab
-// button -- computed once by main (drag-mode.ts's `dragModeFor`) and handed
-// down the same way `chromeUrl` is, since only main knows the platform and
-// session type this process actually launched under. Not a secret: a
-// renderer cannot fake its way into another mode by lying about this value,
-// there is nothing to gate here, it only says which code path main.ts takes.
-const DRAG_MODE_PREFIX = '--orivon-drag-mode='
-const dragMode: 'native' | 'manual' = process.argv.find((arg) => arg.startsWith(DRAG_MODE_PREFIX))?.slice(DRAG_MODE_PREFIX.length) === 'manual' ? 'manual' : 'native'
-
 /** What the chrome view gets as `window.orivonShell`. `src/renderer/main.ts`
  * imports this type, so a command dropped here fails the typecheck there. */
 export interface OrivonShell {
@@ -90,25 +81,10 @@ export interface OrivonShell {
   endTabDrag: () => void
   /** Asks main for the right-click menu of a tab. */
   showTabMenu: (id: string) => void
-  /** Toggles maximize/restore -- the manual drag mode's own double click (dragMode below). */
-  toggleMaximize: () => void
-  /** The three points of a manual window move, in screen coordinates: dragMode's own left-drag on the
-   * strip's empty tail. `windowMoveStart` once, `windowMoveTo` on every subsequent pointer move,
-   * `windowMoveEnd` on release. */
-  windowMoveStart: (x: number, y: number) => void
-  windowMoveTo: (x: number, y: number) => void
-  windowMoveEnd: (x: number, y: number) => void
-  /** The move ended in a `pointercancel`, not a release: its coordinates are not where the pointer
-   * actually was, so this ends the move with no edge-snap action, unlike `windowMoveEnd`. */
-  windowMoveCancel: () => void
   onState: (listener: (state: ShellState) => void) => () => void
   /** Events main sends the chrome (src/main/shell/shell-events.ts): focusing the address bar, drawing or
    * clearing this window's cross-window drop mark, or a payload for one chrome module. */
   onCommand: (listener: (event: ShellEvent) => void) => () => void
-  /** How main decided this window's tab strip drags: 'manual' on Linux/X11 (drag-mode.ts's `dragModeFor`),
-   * where the tail after the new-tab button is plain, JS-driven `no-drag` content; 'native' everywhere else,
-   * where it stays part of the OS-level drag region the strip already is. */
-  dragMode: 'native' | 'manual'
   platform: string
 }
 
@@ -174,11 +150,6 @@ const api: OrivonShell = {
   dropTab: (id: string, x: number, y: number, clientX: number, clientY: number) => { send({ type: 'dropTab', id, x, y, clientX, clientY }) },
   endTabDrag: () => { send({ type: 'endTabDrag' }) },
   showTabMenu: (id: string) => { send({ type: 'tabMenu', id }) },
-  toggleMaximize: () => { send({ type: 'toggleMaximize' }) },
-  windowMoveStart: (x: number, y: number) => { send({ type: 'windowMoveStart', x, y }) },
-  windowMoveTo: (x: number, y: number) => { send({ type: 'windowMoveTo', x, y }) },
-  windowMoveEnd: (x: number, y: number) => { send({ type: 'windowMoveEnd', x, y }) },
-  windowMoveCancel: () => { send({ type: 'windowMoveCancel' }) },
 
   /** Subscribes to shell state pushes from main. Returns an unsubscribe
    * function; the listener is a closure, not the raw ipcRenderer, so the
@@ -204,11 +175,7 @@ const api: OrivonShell = {
    * "Sandbox" section). Needed because env(titlebar-area-*) and navigator.windowControlsOverlay
    * both report empty/false for this shell's BaseWindow + WebContentsView
    * composition -- confirmed empirically, open-questions.md A34. */
-  platform: process.platform,
-  // Another read-only value, same shape as `platform` above: computed once
-  // by main (window.ts) and handed down as an `additionalArguments` string,
-  // since only main knows the real platform and session type.
-  dragMode
+  platform: process.platform
 }
 
 if (expectedUrl !== undefined && location.href === expectedUrl) {

@@ -2,7 +2,7 @@
 // background of its own, so the sheet would float on whatever the view last held: Electron's white, or the
 // new-tab picture's dark wash. While a sheet is up the view carries the shell's own surface colour for the
 // current theme; when the sheet goes the view gets back what it had. Tied to Electron: a view's colour.
-import type { WebContentsView } from 'electron'
+import type { WebContents, WebContentsView } from 'electron'
 import type { SheetBackdrop } from '../overlays/tab-slots.js'
 import type { TabRecord } from './tab-types.js'
 import { APP_DARK_WASH, DEFAULT_BACKGROUND, INTERNAL_PAGE_BACKGROUND, onThemeUpdated, resolveThemeColor } from './theme-colors.js'
@@ -20,14 +20,27 @@ export function sheetBackdropOf (view: WebContentsView): string | undefined {
 }
 
 function paint (view: WebContentsView, color: string): void {
-  if (view.webContents.isDestroyed()) return
+  const wc: WebContents | undefined = view.webContents
+  if (wc === undefined || wc.isDestroyed()) return
   view.setBackgroundColor(color)
-  recordViewBackground(view.webContents.id, color)
+  recordViewBackground(wc.id, color)
 }
 
-/** What the view holds when no sheet is over it: the dashboard's wash, an internal page's surface, or the default. */
-function restingColor (record: TabRecord): string {
-  if (record.isDashboardTab) return APP_DARK_WASH
+const withoutQuery = (url: string): string => url.split(/[?#]/)[0] ?? url
+
+/** Whether `url` is the new-tab page itself, in the dev server's form and in the built file's. */
+export function isDashboardUrl (url: string, dashboardUrl: string): boolean {
+  return withoutQuery(url) === withoutQuery(dashboardUrl)
+}
+
+/** What the view holds when no sheet is over it: the dashboard's wash while it shows the dashboard, an internal
+ * page's surface, or the default. Read from the URL the view shows, so a tab that came back to the dashboard
+ * has the wash again; a page can only choose between the wash and the default this way. Also what the window
+ * behind the views shows for the tab on top. */
+export function restingColor (record: TabRecord): string {
+  // A page's own event can land while its view is torn down and has no webContents at all: no address, so no wash.
+  const wc: WebContents | undefined = record.view.webContents
+  if (wc !== undefined && !wc.isDestroyed() && isDashboardUrl(wc.getURL(), record.host.dashboardUrl)) return APP_DARK_WASH
   return record.internalPage !== null ? sheetColor() : DEFAULT_BACKGROUND
 }
 

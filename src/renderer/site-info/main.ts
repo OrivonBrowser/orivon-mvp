@@ -2,6 +2,7 @@ import type { SiteInfo } from '../../main/permissions/site-info.js'
 import type { SiteTrust } from '../../main/browsing/site-trust.js'
 import type { ApplyResult, SiteDataSnapshot } from '../../main/ipc/site-info-ipc.js'
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
+import { closeOnEscape } from '../pages/shared/escape-closes.js'
 import { renderMainPage } from './main-view.js'
 import { renderWeb3Page } from './web3-view.js'
 import { renderDataPage } from './data-view.js'
@@ -32,6 +33,7 @@ interface OrivonSiteInfo {
   openExtensions: () => Promise<void>
   openCertificate: () => Promise<void>
   reportHeight: (height: number) => void
+  close: () => void
   initialPage: 'main' | 'web3'
   origin: string | null
 }
@@ -52,6 +54,8 @@ function must<T> (value: T | null | undefined, message: string): T {
 // but preload/site-info.ts, so `orivonSiteInfo` missing here means the
 // preload itself failed, not a legitimately unprivileged load.
 const bridge = must(window.orivonSiteInfo, 'orivonSiteInfo not exposed -- preload did not run')
+
+closeOnEscape(document, () => { bridge.close() })
 
 const mainSection = must(document.querySelector<HTMLElement>('#main-page'), '#main-page missing')
 const web3Section = must(document.querySelector<HTMLElement>('#web3-page'), '#web3-page missing')

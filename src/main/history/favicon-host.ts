@@ -11,3 +11,14 @@ export function faviconHost (address: string): string | null {
     return null
   }
 }
+
+/** The icon history keeps for the site of `address`; null when none is kept. */
+export function knownIcon (history: { faviconsFor: (hosts: readonly string[]) => Record<string, string> } | undefined, address: string): string | null {
+  const host = faviconHost(address)
+  if (history === undefined || host === null) return null
+  try {
+    return history.faviconsFor([host])[host] ?? null
+  } catch {
+    return null
+  }
+}

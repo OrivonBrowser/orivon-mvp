@@ -166,6 +166,84 @@ it('moves a tab into another window when let go over its strip, and closes the w
   }
 }, TEST_TIMEOUT_MS)
 
+// Tabs sit packed at the left of the strip, so a slot is a place among the real tabs, not a share of the
+// window's width: the right half of the last tab is the end slot.
+it('lands a tab last when let go over the right half of the last tab of another window\'s strip', async () => {
+  const { app, chrome: first } = await launched()
+  try {
+    await openTabs(app, first, '/one', '/two')
+    await first.evaluate(() => { (window as unknown as { orivonShell: { newWindow: () => void } }).orivonShell.newWindow() })
+    expect(await waitFor(() => chromePages(app).length === 2)).toBe(true)
+    const second = chromePages(app).find((page) => page !== first) as Page
+    await clickAddressBarRetrying(second, `${origin}/travelling`)
+    expect((await waitForTab(second, { address: `${origin}/travelling` })).ok).toBe(true)
+    const travelling = (await tabIds(second))[0] as string
+    const before = await tabIds(first)
+    expect(before).toHaveLength(3)
+
+    const lastTab = await first.evaluate(() => {
+      const box = [...document.querySelectorAll('#tabrow .tab')].at(-1)?.getBoundingClientRect()
+      return box === undefined ? null : { left: box.left, width: box.width }
+    })
+    expect(lastTab).not.toBeNull()
+    const point = await app.evaluate(({ BaseWindow }, tab) => {
+      const [older] = [...BaseWindow.getAllWindows()].sort((a, b) => a.id - b.id)
+      const bounds = older?.getContentBounds() ?? { x: 0, y: 0 }
+      return { x: bounds.x + (tab?.left ?? 0) + (tab?.width ?? 0) * 0.75, y: bounds.y + 20 }
+    }, lastTab)
+    await second.evaluate(([id, x, y]) => { (window as unknown as { orivonShell: { dropTab: (id: string, x: number, y: number, cx: number, cy: number) => void } }).orivonShell.dropTab(id as string, x as number, y as number, -50, -50) }, [travelling, point.x, point.y] as const)
+
+    expect(await waitFor(async () => (await tabIds(first)).includes(travelling))).toBe(true)
+    expect((await tabIds(first)).at(-1)).toBe(travelling)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+// A collapsed group takes no room in the strip: a drop past the tab before it lands after the whole group,
+// the place the strip's own drag gives and the place the mark is drawn.
+it('lands a tab after a collapsed group when let go over the right half of the tab before it', async () => {
+  const { app, chrome: first } = await launched()
+  try {
+    const [dashboard, one, two] = await openTabs(app, first, '/one', '/two') as [string, string, string]
+    await first.evaluate((id) => { (window as unknown as { orivonShell: { activateTab: (id: string) => void } }).orivonShell.activateTab(id) }, one)
+    await runCommand(first, 'tab.group')
+    expect(await waitFor(async () => await first.locator('.tab-group-chip').count() === 1)).toBe(true)
+    const bubble = (): Page | undefined => app.windows().find((w) => w.url().includes('overlay=tab-group'))
+    expect(await waitFor(() => bubble() !== undefined)).toBe(true)
+    await (bubble() as Page).keyboard.press('Escape').catch(() => {})
+    await first.locator('.tab-group-chip').click()
+    expect(await waitFor(async () => (await first.locator(`.tab[data-id="${one}"]`).evaluate((el) => (el as HTMLElement).hidden)))).toBe(true)
+
+    await first.evaluate(() => { (window as unknown as { orivonShell: { newWindow: () => void } }).orivonShell.newWindow() })
+    expect(await waitFor(() => chromePages(app).length === 2)).toBe(true)
+    const second = chromePages(app).find((page) => page !== first) as Page
+    await clickAddressBarRetrying(second, `${origin}/travelling`)
+    expect((await waitForTab(second, { address: `${origin}/travelling` })).ok).toBe(true)
+    const travelling = (await tabIds(second))[0] as string
+
+    const firstTab = await first.evaluate((id) => {
+      const box = document.querySelector(`#tabrow .tab[data-id="${id}"]`)?.getBoundingClientRect()
+      return box === undefined ? null : { left: box.left, width: box.width }
+    }, dashboard)
+    expect(firstTab).not.toBeNull()
+    const point = await app.evaluate(({ BaseWindow }, tab) => {
+      const [older] = [...BaseWindow.getAllWindows()].sort((a, b) => a.id - b.id)
+      const bounds = older?.getContentBounds() ?? { x: 0, y: 0 }
+      return { x: bounds.x + (tab?.left ?? 0) + (tab?.width ?? 0) * 0.75, y: bounds.y + 20 }
+    }, firstTab)
+    await second.evaluate(([id, x, y]) => { (window as unknown as { orivonShell: { dropTab: (id: string, x: number, y: number, cx: number, cy: number) => void } }).orivonShell.dropTab(id as string, x as number, y as number, -50, -50) }, [travelling, point.x, point.y] as const)
+
+    expect(await waitFor(async () => (await tabIds(first)).includes(travelling))).toBe(true)
+    // Past the first tab's centre, the group's hidden tab is behind the tab let go, not in front of it.
+    expect(await tabIds(first)).toEqual([dashboard, one, travelling, two])
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
 it('takes a tab out into a window of its own when it is dragged out of the window', async () => {
   const { app, chrome } = await launched()
   try {
@@ -253,64 +331,28 @@ it('shows a tab\'s own new window at once, without waiting on ready-to-show', as
   }
 }, TEST_TIMEOUT_MS)
 
-// The empty strip's tail, past the new-tab button, in the manual drag mode
-// main decides for this run (drag-mode.ts's dragModeFor: Linux under
-// run-headless.mjs's own virtual X11 display, never native Wayland). These
-// exercise the DOM/IPC wiring with Playwright's synthetic pointer events,
-// which populate a real event's screenX/screenY from the window's actual
-// on-screen position -- unlike `screen.getCursorScreenPoint()` (tear-drag.ts's
-// own cross-window mark and floating preview), which asks the OS directly
-// and does NOT move under CDP-simulated input; that half needs the real-XTest
-// verification under real X input instead.
-it('the empty strip: middle click opens a tab, double click toggles maximize, a left drag moves the window', async () => {
+// The empty strip's tail, past the new-tab button, is part of the strip's native drag region on every
+// platform: the window manager moves the window from it (so it can leave the screen, tile and move by
+// keyboard) and a double click maximizes through the window manager's own setting. A drag region hands
+// the page no pointer event of any button, so the tail takes no middle click. The move itself needs a
+// window manager on the display; a bare Xvfb runs none, so what is read here is the region.
+it('the empty strip is a native drag region, and the buttons and tabs in it are not', async () => {
   const { app, chrome } = await launched()
   try {
-    // Recomputed before each interaction: opening a tab (or maximizing,
-    // which resizes the window) reflows the strip, and a stale point could
-    // land on a tab instead of the tail past it.
-    const tailPoint = async (): Promise<{ x: number, y: number }> => {
-      const box = await chrome.locator('#tab-strip-tail').boundingBox()
-      if (box === null) throw new Error('the strip tail has no box')
-      return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
-    }
-    // Counted once the first tab is drawn, or the count is of an empty strip.
     expect(await waitFor(async () => (await tabIds(chrome)).length === 1)).toBe(true)
-    const before = await tabIds(chrome)
-    // A synthetic middle click occasionally does not reach the renderer at
-    // all under load (observed here, not specific to this feature) -- one
-    // retry at a freshly-read point, rather than a longer wait, since a
-    // lost event is never going to arrive no matter how long this waits.
-    for (let attempt = 0; attempt < 2 && (await tabIds(chrome)).length === before.length; attempt++) {
-      const point = await tailPoint()
-      await chrome.mouse.click(point.x, point.y, { button: 'middle' })
-      await waitFor(async () => (await tabIds(chrome)).length === before.length + 1, 2_000)
-    }
-    expect(await tabIds(chrome)).toHaveLength(before.length + 1)
-
-    // Under Xvfb there is no window manager, so maximize()/isMaximized()'s
-    // own OS-level effect is not observable here (the same gap this run's
-    // report names for edge tiling) -- a spy on the method itself is what
-    // proves the double click reaches main and calls the right thing.
-    await app.evaluate(({ BaseWindow }) => {
-      const win = BaseWindow.getAllWindows()[0]
-      const g = globalThis as unknown as { __maximizeCalls: number }
-      g.__maximizeCalls = 0
-      if (win !== undefined) win.maximize = () => { g.__maximizeCalls += 1 }
+    const regions = await chrome.evaluate(() => {
+      const region = (selector: string): string => {
+        const el = document.querySelector(selector)
+        return el === null ? 'missing' : String((getComputedStyle(el) as unknown as Record<string, string>)['webkitAppRegion'])
+      }
+      return { row: region('#tabrow'), tail: region('#tab-strip-tail'), newTab: region('#new-tab'), tab: region('.tab') }
     })
-    const toMaximize = await tailPoint()
-    await chrome.mouse.dblclick(toMaximize.x, toMaximize.y)
-    expect(await waitFor(async () => (await app.evaluate(() => (globalThis as unknown as { __maximizeCalls: number }).__maximizeCalls)) === 1)).toBe(true)
-
-    const boundsBefore = await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getBounds())
-    const dragFrom = await tailPoint()
-    await chrome.mouse.move(dragFrom.x, dragFrom.y)
-    await chrome.mouse.down()
-    await chrome.mouse.move(dragFrom.x + 60, dragFrom.y + 40, { steps: 6 })
-    await chrome.mouse.up()
-    expect(await waitFor(async () => {
-      const now = await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getBounds())
-      return now !== undefined && boundsBefore !== undefined && now.x !== boundsBefore.x
-    })).toBe(true)
+    expect(regions.row).toBe('drag')
+    expect(regions.tail).not.toBe('no-drag')
+    expect(regions.tail).not.toBe('missing')
+    expect(regions.newTab).toBe('no-drag')
+    expect(regions.tab).toBe('no-drag')
+    expect(await chrome.evaluate(() => (window as unknown as { orivonShell: Record<string, unknown> }).orivonShell['dragMode'])).toBeUndefined()
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)

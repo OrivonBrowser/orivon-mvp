@@ -1,7 +1,8 @@
 // Find in page and Stop in the running shell: the bar opens on the key, counts
 // live while the person types, steps and toggles case, closes on Escape and
 // keeps the selection, and a tab switch closes it and gives it back with the
-// query. While a page loads, the reload button is Stop, and Escape stops too.
+// query. The reload button always reloads, so a click while a page loads restarts
+// the load, and Escape stops it.
 // Set ORIVON_UI_SHOTS_DIR to also write screenshots in both colour schemes.
 import type { ServerResponse } from 'node:http'
 import { execFileSync } from 'node:child_process'
@@ -19,12 +20,30 @@ const SHOTS_DIR = process.env.ORIVON_UI_SHOTS_DIR
 
 let server: FixtureServer
 const held: ServerResponse[] = []
+const heldImages: ServerResponse[] = []
+const requests = new Map<string, number>()
+const seen = (path: string): number => requests.get(path) ?? 0
 
 const WORDS = 'orivon Orivon ORIVON orivon Orivon'
 const repeated = (n: number): string => Array.from({ length: n }, (_, i) => `<p>line ${String(i)} orivon</p>`).join('')
 
 beforeAll(async () => {
   server = await startServer((request, response) => {
+    requests.set(request.url ?? '', seen(request.url ?? '') + 1)
+    if (request.url === '/hang') {
+      // No headers at all: the navigation never commits.
+      held.push(response)
+      return
+    }
+    if (request.url === '/slowimg') {
+      // Committed at once, but its load goes on until the image answers.
+      html(response, '<!doctype html><title>slowimg</title><p>waiting for an image</p><img src="/image-held" alt="">')
+      return
+    }
+    if (request.url === '/image-held') {
+      heldImages.push(response)
+      return
+    }
     if (request.url === '/slow') {
       // Headers and a first chunk, then silence: the load is still going until the test ends it.
       response.writeHead(200, { 'content-type': 'text/html' })
@@ -38,7 +57,7 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  for (const response of held) response.destroy()
+  for (const response of [...held, ...heldImages]) response.destroy()
   await server.close()
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
@@ -256,7 +275,17 @@ it('works on an internal page', async () => {
   }
 }, QA_TEST_TIMEOUT_MS)
 
-it('turns reload into Stop while a page loads, and Stop and Escape both end the load', async () => {
+/** Clicks the button at its centre with a raw mouse press: Playwright's own click waits for navigations. */
+async function mouseClick (chrome: Page, selector: string): Promise<void> {
+  const box = await chrome.locator(selector).boundingBox()
+  if (box === null) throw new Error(`${selector} has no box`)
+  await chrome.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+}
+
+const tabLoading = async (app: App, part: string): Promise<boolean | undefined> =>
+  await app.evaluate(({ webContents }, p) => webContents.getAllWebContents().find((wc) => wc.getURL().includes(p))?.isLoading(), part)
+
+it('restarts the load when reload is clicked during it, and Escape stops it', async () => {
   const { app, chrome } = await launchShell()
   const problems: string[] = []
   chrome.on('console', (message) => { if (message.type() === 'error') problems.push(message.text()) })
@@ -265,27 +294,71 @@ it('turns reload into Stop while a page loads, and Stop and Escape both end the 
     await visit(app, chrome, `${server.origin}/`)
     const reload = chrome.locator('#reload')
     expect(await reload.getAttribute('aria-label')).toBe('Reload')
-    const loadingOf = async (): Promise<boolean> => await chrome.evaluate(() => document.querySelector('#reload')?.getAttribute('aria-label') === 'Stop loading')
 
     await clickAddressBarRetrying(chrome, `${server.origin}/slow`)
-    const stop = await waitFor(loadingOf)
-    const diagnosis = JSON.stringify({ label: await reload.getAttribute('aria-label'), tab: await chrome.evaluate(() => document.querySelector('.tab.active .fav')?.className), problems: problems.map((problem) => problem.slice(0, 200)), loading: await app.evaluate(({ webContents }, part) => webContents.getAllWebContents().find((wc) => wc.getURL().includes(part))?.isLoading(), '/slow') })
-    expect({ stop, diagnosis }).toEqual({ stop: true, diagnosis })
-    expect(await reload.getAttribute('title')).toBe('Stop loading (Esc)')
-    const size = await reload.evaluate((el) => { const r = el.getBoundingClientRect(); return [r.width, r.height] })
-    expect(size).toEqual([34, 34])
-    await shoot(app, chrome, undefined, 'stop-button')
-
-    await reload.click()
-    expect(await waitFor(async () => !(await loadingOf()))).toBe(true)
+    expect(await waitFor(async () => (await tabLoading(app, '/slow')) === true)).toBe(true)
+    // Long enough that a button that swaps to Stop after a short delay would have done so.
+    await delay(400)
     expect(await reload.getAttribute('aria-label')).toBe('Reload')
-    expect(await app.evaluate(({ webContents }, part) => webContents.getAllWebContents().find((wc) => wc.getURL().includes(part))?.isLoading(), '/slow')).toBe(false)
+    expect(await reload.getAttribute('title')).toBeNull()
+    const before = seen('/slow')
+    await mouseClick(chrome, '#reload')
+    expect(await waitFor(() => seen('/slow') === before + 1)).toBe(true)
+    expect(await tabLoading(app, '/slow')).toBe(true)
+    expect(await reload.getAttribute('aria-label')).toBe('Reload')
 
-    await clickAddressBarRetrying(chrome, `${server.origin}/slow`)
-    expect(await waitFor(loadingOf)).toBe(true)
     await pressKey(app, '/slow', 'Escape')
-    expect(await waitFor(async () => !(await loadingOf()))).toBe(true)
+    expect(await waitFor(async () => (await tabLoading(app, '/slow')) === false)).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
+    expect(problems).toEqual([])
+  } finally {
+    await closeElectron(app)
+  }
+}, QA_TEST_TIMEOUT_MS)
+
+it('restarts a navigation that has not answered yet, and does not reload the page before it', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    await visit(app, chrome, `${server.origin}/`)
+    const roots = seen('/')
+    await app.evaluate(({ webContents }, origin) => {
+      const wc = webContents.getAllWebContents().find((c) => c.getURL() === `${origin}/`)
+      void wc?.executeJavaScript("location.href = '/hang'")
+    }, server.origin)
+    expect(await waitFor(() => seen('/hang') === 1)).toBe(true)
+
+    await mouseClick(chrome, '#reload')
+    expect(await waitFor(() => seen('/hang') === 2)).toBe(true)
+    await delay(300)
+    expect(seen('/')).toBe(roots)
+    expect(seen('/hang')).toBe(2)
+  } finally {
+    await closeElectron(app)
+  }
+}, QA_TEST_TIMEOUT_MS)
+
+it('restarts a navigation the page being left outlives, once that page finishes its own load', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    await visit(app, chrome, `${server.origin}/`)
+    const navigate = async (from: string, to: string): Promise<void> => {
+      const tab = app.windows().find((w) => w.url() === `${server.origin}${from}`)
+      expect(tab).toBeDefined()
+      void tab?.evaluate((next) => { location.href = next }, to).catch(() => {})
+    }
+    const hangs = seen('/hang')
+    await navigate('/', '/slowimg')
+    expect(await waitFor(() => seen('/image-held') === 1)).toBe(true)
+    await navigate('/slowimg', '/hang')
+    expect(await waitFor(() => seen('/hang') === hangs + 1)).toBe(true)
+    const shown = seen('/slowimg')
+
+    for (const response of heldImages) response.end()
+    await delay(500)
+    await mouseClick(chrome, '#reload')
+    expect(await waitFor(() => seen('/hang') === hangs + 2)).toBe(true)
+    await delay(300)
+    expect(seen('/slowimg')).toBe(shown)
   } finally {
     await closeElectron(app)
   }

@@ -8,7 +8,7 @@ folder per overlay with that overlay's page (`auth-sheet/`, `bookmark-edit/`, `b
 `popups-blocked/`, `qr/`, `question/` (also the page of `question-sheet`), `restore/`, `sad-tab/`, `screenshot/`, `shortcut-sheet/`, `side-panel/`, `site-prompt/`,
 `tab-group/`, `tab-search/`, `toast/`). `pages.ts` maps an overlay's name to its page, one line each, in name order.
 `kit.ts` is what a page is written against: `mount(root, overlay)`, the bridge's calls, and the parts that report
-the page's height and close it on Escape. `surface.css` and `style.css` paint the shared surface.
+the page's height and close it on Escape. A page that throws leaves an error state, and the next show builds it again. `surface.css` and `style.css` paint the shared surface.
 
 **Tied to Electron, entirely.** A sandboxed renderer document; it reaches main only through the bridge that
 [`../../preload/overlay.ts`](../../preload/overlay.ts) exposes as `window.orivonOverlay`.

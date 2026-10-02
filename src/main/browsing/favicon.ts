@@ -84,6 +84,45 @@ export function shouldClearFavicon (previousOrigin: string | null, nextUrl: stri
   }
 }
 
+/** How many sites' icons a tab keeps to show again: a tab goes back and forth between a few, not a long list. */
+const REMEMBERED_SITES = 4
+/** Per tab, in memory only: the icons the tab itself fetched, by origin. Never written anywhere. */
+const shownIcons = new WeakMap<object, Map<string, string>>()
+
+function rememberIcon (target: FaviconTarget, origin: string, dataUrl: string): void {
+  const icons = shownIcons.get(target) ?? new Map<string, string>()
+  icons.delete(origin)
+  icons.set(origin, dataUrl)
+  while (icons.size > REMEMBERED_SITES) icons.delete(icons.keys().next().value as string)
+  shownIcons.set(target, icons)
+}
+
+/**
+ * What the tab's icon is as a page at `nextUrl` commits. Clears it as `shouldClearFavicon` says, then, with none
+ * shown, brings back the icon this tab already fetched for that origin, else `saved(nextUrl)` (the icon history
+ * keeps for the site): the browser announces an icon only when the set of icons changes, so a return to a site after
+ * a blank page or an error page would announce nothing and leave the globe. A real change of icon is announced and
+ * replaces what is shown here.
+ */
+export function faviconOnCommit (target: FaviconTarget, nextUrl: string, saved: (url: string) => string | null = () => null): void {
+  if (shouldClearFavicon(target.faviconOrigin, nextUrl)) {
+    target.favicon = null
+    target.faviconOrigin = null
+  }
+  if (target.favicon !== null || target.faviconOrigin !== null) return
+  let origin: string
+  try {
+    origin = new URL(nextUrl).origin
+  } catch {
+    return
+  }
+  if (origin === 'null') return
+  const icon = shownIcons.get(target)?.get(origin) ?? saved(nextUrl)
+  if (icon === null) return
+  target.favicon = icon
+  target.faviconOrigin = origin
+}
+
 /**
  * Reads a stream up to `cap` bytes, returning null the instant it would
  * be exceeded (cancelling the underlying stream rather than reading
@@ -423,6 +462,7 @@ export async function captureFaviconInto (
 
     target.favicon = dataUrl
     target.faviconOrigin = declaringOrigin
+    rememberIcon(target, declaringOrigin, dataUrl)
     onUpdated()
     return
   }

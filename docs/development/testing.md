@@ -255,6 +255,13 @@ The driver does fail to attach to one window, spike gate 3's, for a cause still 
 direct launch without Playwright, and the failure is specific to that gate's video and
 service-worker setup, not to `BaseWindow` in general.
 
+Under Playwright a page's visibility is forced: every page reads
+`document.visibilityState` and `WebFrameMain.visibilityState` as `'visible'`, a hidden
+`BrowserWindow` and a tab detached from its window included; the same calls on a shell with no
+driver attached read `'hidden'`. A spec cannot assert that a background tab is hidden, and a
+reading of `'visible'` from a driven page is not a finding. To measure it, launch the built app
+under the headless runner with a main-process module loaded by Electron's `--require` switch.
+
 ### Checking against real Chrome extensions
 
 [`test/e2e-extensions-real.test.ts`](../../test/e2e-extensions-real.test.ts) installs whichever
@@ -292,10 +299,21 @@ last run. All three launch Electron headless, like `test:e2e`.
 | Spec | Proves |
 |---|---|
 | [`e2e-qa-audit`](../../test/e2e-qa-audit.test.ts) | Every layout-audit rule fires on a page broken on purpose, and none on a clean one |
-| [`e2e-qa-visual`](../../test/e2e-qa-visual.test.ts) | Eleven shell states: layout audit clean, no shell errors, something painted, and under `qa` the pixel baseline matched |
+| [`e2e-qa-visual`](../../test/e2e-qa-visual.test.ts) | Eleven shell states in light and in dark: layout audit clean, no shell errors, something painted, each shown view's backing colour equal to the one its page paints, and under `qa` the pixel baseline matched |
 | [`e2e-qa-journey`](../../test/e2e-qa-journey.test.ts) | A bookmark starred in the toolbar is on disk, survives a relaunch on the same profile, and so does removing it |
 | [`e2e-qa-adversarial`](../../test/e2e-qa-adversarial.test.ts) | Corrupt profile files, tab churn, a killed renderer and an abandoned load leave the shell working and consistent |
 | [`e2e-qa-evidence`](../../test/e2e-qa-evidence.test.ts) | The failure bundle holds what the page logged and threw, a dead renderer, the main log and real pixels |
+
+**Colour schemes.** Playwright pins every page it attaches to `prefers-color-scheme: light` unless the
+launch passes `colorScheme: null`, while the shell's own colours follow `nativeTheme`; a launch with
+no option therefore sees light pages under a theme main chose on its own. `launchElectron({ scheme })`
+([`launch-electron.mjs`](../../test/launch-electron.mjs)) lifts the pin and writes the profile's
+`appearance.theme`, merged into any settings a seed wrote, so the first paint and every page agree
+and the desktop's own theme cannot leak in; without it a launch is unchanged. `setScheme(app, scheme)`
+([`e2e-helpers.ts`](../../test/e2e-helpers.ts)) flips `nativeTheme` at run time. `e2e-qa-visual` takes
+every state once per scheme (`ORIVON_QA_SCHEMES=light` or `dark` narrows it, and each scheme has its
+own baseline), and [`e2e-theme-backing`](../../test/e2e-theme-backing.test.ts) reads the colours a view
+and the window hold at the moments a navigation starts.
 
 **Failure evidence, for every e2e spec.** [`launch-electron.mjs`](../../test/launch-electron.mjs)
 starts recording each launched app ([`qa-evidence.mjs`](../../test/qa-evidence.mjs)) and, at close,

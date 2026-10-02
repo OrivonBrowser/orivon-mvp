@@ -118,6 +118,24 @@ describe('wireView -- HTML fullscreen', () => {
   })
 })
 
+describe('wireView -- the listeners every tab collects', () => {
+  it('leaves room for the dozen subsystems that each watch did-navigate, without allowing an unbounded number', () => {
+    const wc = fakeContents()
+    expect(wc.getMaxListeners()).toBe(10)
+    wireView('tab-1', record(wc))
+
+    expect(wc.getMaxListeners()).toBeGreaterThanOrEqual(24)
+    expect(wc.getMaxListeners()).toBeLessThan(100)
+  })
+
+  it('does not lower a limit that is already higher', () => {
+    const wc = fakeContents()
+    wc.setMaxListeners(50)
+    wireView('tab-1', record(wc))
+    expect(wc.getMaxListeners()).toBe(50)
+  })
+})
+
 describe('wireView -- a beforeunload guard asks in the panel and keeps the page meanwhile', () => {
   it('keeps the page and asks in the tab\'s own panel', () => {
     const wc = fakeContents()

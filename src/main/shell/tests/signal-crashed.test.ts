@@ -21,7 +21,7 @@ const { troubleOf } = await import('../../sad-tab/sad-tab-state.js')
 interface Rig {
   wc: EventEmitter & { isDestroyed: () => boolean }
   record: TabRecord
-  view: { setBackgroundColor: ReturnType<typeof vi.fn> }
+  view: { setBackgroundColor: ReturnType<typeof vi.fn>, webContents: Rig['wc'] }
   emitState: ReturnType<typeof vi.fn>
   owner: object
 }
@@ -31,7 +31,7 @@ function rig (options: { shown?: boolean, isDashboardTab?: boolean, internalPage
   wc.isDestroyed = () => false
   const owner = {}
   const emitState = vi.fn()
-  const view = { setBackgroundColor: vi.fn() }
+  const view = { setBackgroundColor: vi.fn(), webContents: wc }
   const record = {
     crashed: null,
     isDashboardTab: options.isDashboardTab ?? false,

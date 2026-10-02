@@ -22,7 +22,7 @@ describe('the page commands', () => {
   it('do nothing in a window with no page, and never throw', async () => {
     const { window, show } = windowWith(undefined)
     const deps = fakeDeps()
-    await printCommand(window)
+    await printCommand(window, deps)
     await pdfCommand(window, deps)
     await saveCommand(window, deps)
     await viewSourceCommand(window)
@@ -35,7 +35,7 @@ describe('the page commands', () => {
   it('print goes to the active page', async () => {
     const print = vi.fn()
     const { window } = windowWith(live({ getPrintersAsync: async () => [{}], print }))
-    await printCommand(window)
+    await printCommand(window, fakeDeps())
     expect(print).toHaveBeenCalled()
   })
 
@@ -74,6 +74,6 @@ describe('the page commands', () => {
   it('a failure ends in the log, not as a rejection', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const { window } = windowWith(live({ getPrintersAsync: () => { throw new Error('sync') } }))
-    await expect(printCommand(window)).resolves.toBeUndefined()
+    await expect(printCommand(window, fakeDeps())).resolves.toBeUndefined()
   })
 })

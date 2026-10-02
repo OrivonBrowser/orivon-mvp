@@ -73,24 +73,24 @@ it('lists an app that holds a permission with what it has stored, and takes the 
   }
 }, TEST_TIMEOUT_MS)
 
-it('says how the light client is, switches it, and offers a restart only while the choice differs from this run', async () => {
+it('says how the light client is, and shows its switch off and out of reach while this run has it forced off', async () => {
   const { app, chrome } = await launched()
   try {
-    const userData = await userDataOf(app)
     const page = await openSettings(app, chrome, '/web3')
     await page.waitForSelector('#row-web3-light-client')
-    expect(await page.locator('#row-web3-state .value').textContent()).toMatch(/^[a-z]+: /)
-    expect(await page.locator('#row-web3-servers .value').textContent()).toContain('https://')
-    expect(await page.locator('#row-web3-restart').count()).toBe(0)
-
+    // Every test launch forces the light client off (launch-electron.mjs), whatever the stored choice says.
+    await page.waitForSelector('#row-web3-forced-off')
+    expect(await page.locator('#row-web3-forced-off .value').textContent()).toBe('Off for this run')
     const toggle = page.locator('#row-web3-light-client input[type=checkbox]')
-    expect(await toggle.isChecked()).toBe(true)
-    await toggle.click()
-    await page.waitForSelector('#row-web3-restart')
-    expect(await waitFor(() => { try { return (JSON.parse(readFileSync(join(userData, 'settings.json'), 'utf8')) as { values: Record<string, unknown> }).values['web3.lightClient'] === false } catch { return false } })).toBe(true)
-
-    await toggle.click()
-    expect(await waitFor(async () => (await page.locator('#row-web3-restart').count()) === 0)).toBe(true)
+    expect(await toggle.isDisabled()).toBe(true)
+    expect(await toggle.isChecked()).toBe(false)
+    // The sentence only, with no machine word in front of it.
+    const state = (await page.locator('#row-web3-state .value').textContent()) ?? ''
+    expect(state).toMatch(/^[A-Z]/)
+    expect(state).not.toMatch(/^[a-z]+: /)
+    expect(await page.locator('#row-web3-servers .value').textContent()).toContain('https://')
+    // A restart inherits the forced switch, so none is offered.
+    expect(await page.locator('#row-web3-restart').count()).toBe(0)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)

@@ -19,9 +19,6 @@ const shell = must(window.orivonShell, 'orivonShell not exposed -- the preload d
 // See ../style.css's [data-platform] rules -- reserves room for Electron's native window buttons before the
 // first paint, rather than waiting on a state push.
 document.documentElement.dataset['platform'] = shell.platform
-// See styles/tabstrip.css's [data-drag-mode="manual"] rule -- which strip modes the empty tail after the
-// new-tab button (drag-mode.ts, main-side).
-document.documentElement.dataset['dragMode'] = shell.dragMode
 
 const { ctx, setState } = createChromeContext(shell)
 initModules(ctx)

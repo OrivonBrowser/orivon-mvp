@@ -67,6 +67,11 @@ export const MANIFEST_HINT_CHANNEL = 'orivon-loader:manifest-hint'
  * origin from `event.senderFrame`, never from the payload, and answers only the top frame of a tab. */
 export const FORM_WATCH_CHANNEL = 'orivon-forms:watch'
 
+/** A registered app's tab -> main: a browser key the app left unhandled, as `{ command }` (src/preload/page-keys.ts).
+ * One-way. Main accepts only a listed command, only from the top frame of the tab in front, and runs it on that tab's window
+ * (src/main/shortcuts/page-key-ipc.ts). */
+export const PAGE_KEY_CHANNEL = 'orivon-shortcuts:page-key'
+
 /** Main -> an ordinary tab's top frame: whether the watcher may act, and the account a person chose in
  * Orivon's own chooser. A page cannot send on it; the watcher writes the values into its own fields. */
 export const FORM_FILL_CHANNEL = 'orivon-forms:fill'
