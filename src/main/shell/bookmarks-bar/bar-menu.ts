@@ -14,6 +14,8 @@ export interface BarMenuModel {
   /** A private window offers no second private session. */
   isPrivate: boolean
   barShown: boolean
+  /** The item sits directly in the bar; otherwise it is offered a move back to it. */
+  parentIsBar: boolean
 }
 
 export interface BarMenuActions {
@@ -26,8 +28,10 @@ export interface BarMenuActions {
   edit: () => void
   /** The sheet for a folder's name. */
   rename: () => void
-  /** A new folder in the bar. */
+  /** A new folder beside the item, or in the bar for the empty bar. */
   addFolder: () => void
+  /** Moves the item to the end of the bar. */
+  moveToBar: () => void
   remove: () => void
   toggleBar: () => void
   /** Absent while the Bookmark manager command is still a stub: no row then. */
@@ -47,12 +51,14 @@ export function barMenuTemplate (model: BarMenuModel, actions: BarMenuActions): 
     ...(actions.openManager === undefined ? [] : [{ label: 'Bookmark Manager', click: actions.openManager }])
   ]
   const addFolder: MenuItemConstructorOptions = { label: 'Add Folder…', click: actions.addFolder }
+  const moveToBar: MenuItemConstructorOptions[] = model.parentIsBar ? [] : [{ label: 'Move to Bookmarks Bar', click: actions.moveToBar }]
   if (target.kind === 'bar') return [addFolder, separator, ...common]
   if (target.kind === 'folder') {
     return [
       { label: openAllLabel(target.pages), enabled: target.pages > 0, click: actions.openAll },
       separator,
       { label: 'Rename…', click: actions.rename },
+      ...moveToBar,
       { label: 'Delete', click: actions.remove },
       separator,
       addFolder,
@@ -67,6 +73,7 @@ export function barMenuTemplate (model: BarMenuModel, actions: BarMenuActions): 
     separator,
     { label: 'Edit…', click: actions.edit },
     { label: 'Copy Link', click: actions.copyLink },
+    ...moveToBar,
     { label: 'Delete', click: actions.remove },
     separator,
     addFolder,

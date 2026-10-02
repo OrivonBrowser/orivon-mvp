@@ -1,7 +1,6 @@
 // What the chrome's buttons and menus ask of their window beyond the tab
 // collection: opening one popover closes the others, and a tab can be sent to
 // another window. Assembled per window from the pieces window.ts made.
-import { screen } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { ShellActions } from '../ipc/ipc.js'
 import { copyLinkCommand, emailLinkCommand } from '../os/share-commands.js'
@@ -13,7 +12,8 @@ import { isRect } from './actions/overlay.js'
 import { runChromeAction } from './chrome-actions.js'
 import type { ShellServices } from './shell-services.js'
 import { splitZoneFor } from './split-drop.js'
-import { dropTab, moveToNewWindow, moveToWindow } from './tab-move.js'
+import { refreshStripLayouts, stripCentresFor } from './strip-centres.js'
+import { dropTab, inTop, moveToNewWindow, moveToWindow } from './tab-move.js'
 import { closeOthers, closeToRight, duplicateTab, newTabToRight, tabMenuFlags, toggleMute, togglePin } from './tab-commands.js'
 import { sleepBackgroundTab } from '../memory-saver/sleep-command.js'
 import { showTabMenu, tabMenuTemplate } from './tab-menu.js'
@@ -24,13 +24,13 @@ import { cascadeFrom } from './window-options.js'
 import type { ShellWindowOptions } from './window-options.js'
 import type { Bounds } from './tab-types.js'
 import type { ShellWindow } from './window-registry.js'
-import { edgeZoneFor, grabFor, halfOfWorkArea, positionFor, restorePositionFor } from './window-move.js'
-import type { DragGrab } from './window-move.js'
 
 /** How close to a page's edge a dragged tab has to be for it to split, WHILE a drag is under way -- narrower
  * than `zoneAt`'s own default share (split-model.ts), used for a plain drop, so a tab is easy to tear off
  * rather than getting caught by a wide edge band on the way to open space. */
 const TAB_DRAG_SPLIT_SHARE = 0.12
+/** How long a drop waits for the strip of the window it lands in to report where its tabs are. */
+const STRIP_READ_MS = 150
 
 export interface WindowParts {
   readonly entry: ShellWindow
@@ -54,9 +54,6 @@ function windowLabel (other: ShellWindow, position: number): string {
 export function shellActions (parts: WindowParts): ShellActions {
   const { entry, services, panels, closeOverlays, openWindow, topHeight, area } = parts
   const { tabs, window } = entry
-
-  /** Captured once at the start of a manual window move (drag-mode.ts), null between drags. */
-  let moveGrab: DragGrab | null = null
 
   const showTabMenuFor = (id: string): void => {
     const { tabs: all } = tabs.getState()
@@ -149,37 +146,18 @@ export function shellActions (parts: WindowParts): ShellActions {
       // toolbar), stays where it was, matching the floating preview parking there instead of following the
       // pointer (tear-drag.ts's own tick()); anywhere else -- this window's own page, or outside every
       // window -- opens a window of its own, the floating preview's own promise. `dropTab` (tab-move.ts)
-      // decides which, from `screenPoint` alone.
-      dropTab(entry, id, screenPoint, services.windows.all(), openWindow, topHeight)
-    },
-    showTabMenu: showTabMenuFor,
-    toggleMaximize: () => { if (window.isMaximized()) window.unmaximize(); else window.maximize() },
-    windowMoveStart: (point) => { moveGrab = grabFor(point, window.getBounds()) },
-    windowMoveTo: (point) => {
-      if (moveGrab === null) return
-      if (window.isMaximized()) {
-        // getBounds() read right after unmaximize() still reports the maximized size on X11 (the
-        // request is asynchronous) -- getNormalBounds(), read before asking to unmaximize, is what
-        // the restored width, and the grab this recomputes for the moves after it, actually need.
-        const restored = window.getNormalBounds()
-        window.unmaximize()
-        const to = restorePositionFor(point, restored.width, moveGrab)
-        window.setPosition(to.x, to.y)
-        moveGrab = grabFor(point, { ...restored, x: to.x, y: to.y })
-      } else {
-        const to = positionFor(point, moveGrab)
-        window.setPosition(to.x, to.y)
+      // decides which, from `screenPoint` alone. A strip whose layout was not read yet (a drop with no
+      // hover over it) is read first: the slot is the one under the pointer, not a share of the width.
+      const windows = services.windows.all()
+      const unread = windows.filter((other) => other !== entry && !other.window.isDestroyed() && inTop(other.window.getBounds(), screenPoint, topHeight) && stripCentresFor(other) === null)
+      if (unread.length === 0) {
+        dropTab(entry, id, screenPoint, windows, openWindow, topHeight)
+        return
       }
+      void refreshStripLayouts(unread, STRIP_READ_MS).then(() => {
+        if (!window.isDestroyed()) dropTab(entry, id, screenPoint, services.windows.all(), openWindow, topHeight)
+      })
     },
-    windowMoveEnd: (point) => {
-      moveGrab = null
-      const workArea = screen.getDisplayNearestPoint(point).workArea
-      const zone = edgeZoneFor(point, workArea)
-      if (zone === 'maximize') window.maximize()
-      else if (zone !== null) window.setBounds(halfOfWorkArea(workArea, zone))
-    },
-    // A pointercancel's own coordinates are not where the pointer actually was: just stop tracking
-    // the move, with no edge-snap action (unlike windowMoveEnd).
-    windowMoveCancel: () => { moveGrab = null }
+    showTabMenu: showTabMenuFor
   }
 }

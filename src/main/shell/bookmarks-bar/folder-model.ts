@@ -31,6 +31,10 @@ export type FolderRequest =
   | { type: 'children', id: string, from?: number }
   | { type: 'open', id: string, disposition: ClickDisposition }
   | { type: 'openAll', id: string }
+  /** The right-click menu of a row, popped up at the pointer. */
+  | { type: 'menu', id: string }
+  /** Delete a row from the keyboard; the answer is the folder it was in, listed again from `from`. */
+  | { type: 'remove', id: string, from?: number }
 
 /** The folder's listing, or null when `id` is not a folder of the bar or of Other bookmarks. */
 export function folderModel (store: Pick<BookmarkStore, 'node' | 'children' | 'path'>, id: string, from?: number): FolderModel | null {
@@ -47,6 +51,13 @@ export function folderModel (store: Pick<BookmarkStore, 'node' | 'children' | 'p
   return model
 }
 
+/** Whether `id` is a bookmark or folder inside the bar or Other bookmarks, which a folder menu may act on: not a root, and not the reading list. */
+export function isMenuEntry (store: Pick<BookmarkStore, 'path'>, id: string): boolean {
+  const path = store.path(id)
+  const root = path[0]?.id
+  return path.length > 1 && (root === 'bar' || root === 'other')
+}
+
 /** An index from a renderer: a whole number from zero, or nothing. */
 export function asFrom (value: unknown): number | undefined | null {
   if (value === undefined) return undefined
@@ -61,7 +72,11 @@ export function asFolderRequest (command: unknown): FolderRequest | undefined {
     const from = asFrom((command as Record<string, unknown>)['from'])
     return from === null ? undefined : from === undefined ? { type, id } : { type, id, from }
   }
-  if (type === 'openAll') return { type, id }
+  if (type === 'openAll' || type === 'menu') return { type, id }
+  if (type === 'remove') {
+    const from = asFrom((command as Record<string, unknown>)['from'])
+    return from === null ? undefined : from === undefined ? { type, id } : { type, id, from }
+  }
   if (type === 'open' && isClickDisposition(disposition)) return { type, id, disposition }
   return undefined
 }

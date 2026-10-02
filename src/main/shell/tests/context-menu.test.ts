@@ -201,6 +201,16 @@ describe('showContextMenu -- a tab\'s menu against a chrome menu', () => {
     expect(run).toHaveBeenCalledWith('page.print')
   })
 
+  it('sends Reload through the tab\'s own reload when the host gives one, so a load in flight restarts', () => {
+    buildFromTemplate.mockClear()
+    const wc = tabContents()
+    const reload = vi.fn()
+    showContextMenu(wc as never, params({}), { window: {} as never, openInNewTab: vi.fn(), page: { bare: () => false, reload }, runCommand: vi.fn() })
+    click(lastTemplate(), 'Reload')
+    expect(reload).toHaveBeenCalledTimes(1)
+    expect(wc['reload']).not.toHaveBeenCalled()
+  })
+
   it('offers a kiosk no way to open another tab, window or private session, and keeps the copy items', () => {
     buildFromTemplate.mockClear()
     const open = vi.fn()

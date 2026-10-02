@@ -44,6 +44,8 @@ vi.mock('electron', () => ({
 
 const { TabManager } = await import('../tabs.js')
 const { crossWindowTargetFor, dropTab, moveToNewWindow, moveToWindow } = await import('../tab-move.js')
+const { rememberStripLayout, parseStripLayout, centresOf } = await import('../strip-centres.js')
+const { placeAmongAll } = await import('../../../renderer/chrome/tab-groups.js')
 
 beforeEach(() => { createdViews.length = 0 })
 
@@ -236,19 +238,84 @@ describe('crossWindowTargetFor', () => {
     expect(crossWindowTargetFor(from.entry, { x: 300, y: 500 }, [other.entry, from.entry], 80)).toBeNull()
   })
 
-  it('names the window and the index a drop right now would use -- the same formula dropTab itself applies', () => {
-    const bounds = { x: 100, y: 100, width: 800, height: 600 }
+  /** A target window of three tabs at screen x=100, 1200 wide, its content area starting at x=100. */
+  function threeTabTarget (): { from: Side, target: Side, moved: string, tabIds: string[] } {
+    const bounds = { x: 100, y: 100, width: 1200, height: 600 }
     const [from, target] = [side(), side()]
-    for (const each of [from, target]) (each.entry.window as unknown as { getBounds: () => typeof bounds }).getBounds = () => bounds
-    target.manager.createTab('https://a.example/')
-    target.manager.createTab('https://b.example/')
-    const moved = from.manager.createTab('https://c.example/')
+    for (const each of [from, target]) {
+      const window = each.entry.window as unknown as { getBounds: () => typeof bounds, getContentBounds: () => typeof bounds }
+      window.getBounds = () => bounds
+      window.getContentBounds = () => bounds
+    }
+    const tabIds = ['https://a.example/', 'https://b.example/', 'https://c.example/'].map((url) => target.manager.createTab(url))
+    const moved = from.manager.createTab('https://d.example/')
+    return { from, target, moved, tabIds }
+  }
 
-    const found = crossWindowTargetFor(from.entry, { x: 300, y: 110 }, [target.entry, from.entry], 80)
-    expect(found).toEqual({ window: target.entry, index: Math.round(((300 - bounds.x) / bounds.width) * 2) })
+  it('places a tab by the strip\'s real tab centres: the end slot is under the last tab\'s right half', () => {
+    const { from, target, tabIds } = threeTabTarget()
+    // Three 242px tabs packed at the left: centres 125, 367, 609 from the content area's left edge.
+    expect(rememberStripLayout(target.entry, { ids: tabIds, centres: [125, 367, 609] })).toBe(true)
+    const at = (x: number): number | undefined => crossWindowTargetFor(from.entry, { x: 100 + x, y: 110 }, [target.entry, from.entry], 80)?.index
 
-    // dropTab, given the exact same point, lands the tab at that same index.
-    dropTab(from.entry, moved, { x: 300, y: 110 }, [target.entry, from.entry], vi.fn(), 80)
-    expect(ids(target.manager).indexOf(moved)).toBe(found?.index)
+    expect(at(650)).toBe(3)
+    expect(at(600)).toBe(2)
+    expect(at(300)).toBe(1)
+    expect(at(100)).toBe(0)
+  })
+
+  it('drops where the mark was drawn: the same index, at the end of the strip over the last tab\'s right half', () => {
+    const { from, target, moved, tabIds } = threeTabTarget()
+    rememberStripLayout(target.entry, { ids: tabIds, centres: [125, 367, 609] })
+    const point = { x: 100 + 650, y: 110 }
+    const found = crossWindowTargetFor(from.entry, point, [target.entry, from.entry], 80)
+    expect(found?.index).toBe(3)
+
+    dropTab(from.entry, moved, point, [target.entry, from.entry], vi.fn(), 80)
+    expect(ids(target.manager).at(-1)).toBe(moved)
+  })
+
+  it('drops after a collapsed group when the pointer is past the tab before it, as the strip\'s own drag does', () => {
+    const { from, target, tabIds } = threeTabTarget()
+    // a (shown), b and c (hidden in a collapsed group), d (shown, at 242px).
+    const d = target.manager.createTab('https://d.example/')
+    const order = [...tabIds, d]
+    const boxes = [{ hidden: false, left: 0, width: 242 }, { hidden: true, left: 0, width: 0 }, { hidden: true, left: 0, width: 0 }, { hidden: false, left: 242, width: 242 }]
+    expect(rememberStripLayout(target.entry, { ids: order, centres: centresOf(boxes) })).toBe(true)
+    const row = { querySelectorAll: () => order.map((id, at) => ({ dataset: { id }, hidden: boxes[at]?.hidden === true })) } as unknown as ParentNode
+    const shownCentres = [121, 363]
+
+    for (const x of [30, 100, 130, 200, 300, 400]) {
+      const found = crossWindowTargetFor(from.entry, { x: 100 + x, y: 110 }, [target.entry, from.entry], 80)?.index
+      const shownBefore = shownCentres.filter((centre) => centre < x).length
+      expect(found, `at ${String(x)}`).toBe(placeAmongAll(row, [], shownBefore))
+    }
+    expect(centresOf(boxes)).toEqual([121, 121, 121, 363])
+  })
+
+  it('puts the centre of a tab hidden before every shown tab at the strip\'s left edge', () => {
+    expect(centresOf([{ hidden: true, left: 0, width: 0 }, { hidden: false, left: 50, width: 100 }])).toEqual([0, 100])
+  })
+
+  it('goes by the share of the window\'s width when no centres are known', () => {
+    const { from, target } = threeTabTarget()
+    const found = crossWindowTargetFor(from.entry, { x: 100 + 650, y: 110 }, [target.entry, from.entry], 80)
+    expect(found).toEqual({ window: target.entry, index: Math.round((650 / 1200) * 3) })
+  })
+
+  it('ignores centres of another set of tabs than the window has now', () => {
+    const { from, target, tabIds } = threeTabTarget()
+    rememberStripLayout(target.entry, { ids: [...tabIds.slice(0, 2), 'gone'], centres: [125, 367, 609] })
+    const found = crossWindowTargetFor(from.entry, { x: 100 + 650, y: 110 }, [target.entry, from.entry], 80)
+    expect(found?.index).toBe(Math.round((650 / 1200) * 3))
+  })
+
+  it('refuses a layout that is not one', () => {
+    expect(parseStripLayout({ ids: ['a'], centres: [] })).toBeNull()
+    expect(parseStripLayout({ ids: ['a', 'b'], centres: [10, 5] })).toBeNull()
+    expect(parseStripLayout({ ids: ['a'], centres: [Number.NaN] })).toBeNull()
+    expect(parseStripLayout({ ids: [1], centres: [1] })).toBeNull()
+    expect(parseStripLayout(null)).toBeNull()
+    expect(parseStripLayout({ ids: ['a', 'b'], centres: [5, 5] })).toEqual({ ids: ['a', 'b'], centres: [5, 5] })
   })
 })

@@ -1,20 +1,23 @@
 // Print: the operating system's print dialog for the active tab, backgrounds on. A machine with no
-// printer is refused before `print` is called, because the call never comes back there and leaves
-// the tab's page unresponsive for good; the toast offers Save as PDF instead.
+// printer goes straight to Save as PDF, as a browser's print preview does, and `print` is never called
+// there: the call never comes back and leaves the tab's page unresponsive for good.
 import type { WebContentsPrintOptions } from 'electron'
 import type { ShellWindow } from '../shell/window-registry.js'
+import type { PageToolDeps } from './deps.js'
+import { savePdf } from './save-pdf.js'
+import type { PdfContents } from './save-pdf.js'
 import { showToast } from './toast.js'
 import { withTimeout } from './with-timeout.js'
 
-export interface PrintContents {
+export interface PrintContents extends PdfContents {
   getPrintersAsync: () => Promise<unknown[]>
   print: (options: WebContentsPrintOptions, callback: (success: boolean, failureReason: string) => void) => void
-  isCrashed: () => boolean
 }
 
 const PRINTERS_MS = 5000
 
-export async function printPage (window: ShellWindow, wc: PrintContents): Promise<void> {
+export async function printPage (window: ShellWindow, page: { wc: PrintContents, title: string }, deps: PageToolDeps): Promise<void> {
+  const { wc } = page
   if (wc.isCrashed()) { showToast(window, 'printFailed'); return }
   let printers: unknown[]
   try {
@@ -24,7 +27,7 @@ export async function printPage (window: ShellWindow, wc: PrintContents): Promis
     showToast(window, 'printFailed')
     return
   }
-  if (printers.length === 0) { showToast(window, 'noPrinter'); return }
+  if (printers.length === 0) { await savePdf(window, page, deps); return }
   try {
     wc.print({ silent: false, printBackground: true }, (success, reason) => {
       // Closing the dialog is a choice, not a failure.

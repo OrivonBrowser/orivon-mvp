@@ -17,6 +17,7 @@
 import { BaseWindow, nativeTheme, screen, WebContentsView } from 'electron'
 import type { NativeImage } from 'electron'
 import { SHELL_EVENT_CHANNEL } from '../channels.js'
+import { refreshStripLayout, stripCentresFor } from './strip-centres.js'
 import { inTop, crossWindowTargetFor } from './tab-move.js'
 import { captureTabPage } from './tab-view.js'
 import type { ShellWindow } from './window-registry.js'
@@ -24,6 +25,8 @@ import type { ShellWindow } from './window-registry.js'
 const POLL_MS = 16 // ~60Hz: fast enough to track the pointer smoothly, cheap enough to run every drag
 const MAX_PREVIEW_WIDTH = 480
 const PREVIEW_SHARE = 1 / 3
+/** The least time between two reads of a strip's layout whose last read no longer fits its tabs. */
+const STRIP_READ_RETRY_MS = 250
 const CHIP_WIDTH = 168
 const CHIP_HEIGHT = 32
 /** Offset from the real cursor, so the preview trails it rather than sitting exactly under it (and hiding it). */
@@ -80,6 +83,7 @@ export class TearDragController {
   private size = { width: 0, height: 0 }
   private inZone = false
   private topHeight = 0
+  private nextRead = 0
   /** A capture started at the drag's press, before any tear -- so the thumbnail is usually already in hand
    * by the time the tab actually leaves the strip, rather than starting a ~57ms-cold capture at that moment. */
   private warming: { tabId: string, promise: Promise<string | null> } | null = null
@@ -90,6 +94,7 @@ export class TearDragController {
   prewarm (source: ShellWindow, tabId: string): void {
     const bounds = source.window.getContentBounds()
     const size = previewSizeFor(bounds.width, bounds.height)
+    for (const other of this.windows()) if (other !== source) void refreshStripLayout(other)
     this.warming = {
       tabId,
       promise: captureTabPage(source.tabs.liveWebContents(tabId)).then((image) => imageToDataUrl(image, size))
@@ -221,6 +226,7 @@ export class TearDragController {
     if (target === null) {
       this.clearMark()
     } else if (target.window !== this.markedWindow) {
+      void refreshStripLayout(target.window) // its tabs may have moved since the drag began
       this.clearMark() // a different window than the one last marked, if any
       this.markedWindow = target.window
       this.markedIndex = target.index
@@ -229,6 +235,11 @@ export class TearDragController {
       // Same window, a different place in its strip: no clear/resend cycle, just the new index.
       this.markedIndex = target.index
       target.window.chrome.webContents.send(SHELL_EVENT_CHANNEL, { type: 'dragMark', index: target.index })
+    }
+
+    if (target !== null && stripCentresFor(target.window) === null && Date.now() >= this.nextRead) {
+      this.nextRead = Date.now() + STRIP_READ_RETRY_MS
+      void refreshStripLayout(target.window) // a tab opened or closed there since it was read
     }
 
     const wantChip = target !== null

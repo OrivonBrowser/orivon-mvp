@@ -387,3 +387,18 @@ describe('registerSiteInfoIpc -- contentHeight', () => {
     expect(onContentHeight).not.toHaveBeenCalled()
   })
 })
+
+describe('registerSiteInfoIpc -- close', () => {
+  it('asks the popup to close, after the reply has gone, and only for the popup itself', async () => {
+    const close = vi.fn()
+    registerSiteInfoIpc(siteInfoWebContents, POPUP_URL, fakeController(), ORIGIN, '/tmp/orivon-test-userdata', () => undefined, vi.fn(), vi.fn(), vi.fn(), undefined, undefined, undefined, close)
+    await dispatch({ type: 'close' })
+    expect(close).not.toHaveBeenCalled()
+    await new Promise((resolve) => { setImmediate(resolve) })
+    expect(close).toHaveBeenCalledTimes(1)
+    await dispatch({ type: 'close' }, OTHER_FRAME_URL)
+    await dispatch({ type: 'close' }, OTHER_FRAME)
+    await new Promise((resolve) => { setImmediate(resolve) })
+    expect(close).toHaveBeenCalledTimes(1)
+  })
+})

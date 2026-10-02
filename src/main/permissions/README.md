@@ -11,7 +11,9 @@
   against the manifest), `site-info-controller.ts` (the surface's one door to the broker and
   loader), `site-data-runner.ts` (Cookies and site data I/O) and `site-info-panel.ts`.
 
-Both popups share their `WebContentsView` lifecycle through `popover-view.ts`. Rows take an
+Both popups share their `WebContentsView` lifecycle through `popover-view.ts`: it closes a popup on blur, on Escape
+(each page asks main to close it over its own channel) and when another popup opens, hands the keyboard back to the tab in front
+when the popup held it, and keys a toggle by the icon that asked, so the key and the shield swap one page for the other. Rows take an
 optional displayed Website level; at Level 4 their warnings are gone
 ([`ADR-0037`](../../../docs/decisions/ADR-0037-a-level-4-site-s-grants-are-shown-without-warnings.md)).
 

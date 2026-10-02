@@ -8,7 +8,7 @@
 // popover (./site-info-panel.js); this file owns only the grant-list
 // content on top of it.
 
-import type { BaseWindow, View } from 'electron'
+import type { BaseWindow, View, WebContents } from 'electron'
 import type { PermissionsController, SiteNotificationsController } from './permissions.js'
 import { registerPermissionsIpc } from '../ipc/permissions-ipc.js'
 import { createPopoverView } from './popover-view.js'
@@ -33,7 +33,8 @@ export function createPermissionsPanel (
   permissions: PermissionsController,
   dirname: string,
   sites: SiteNotificationsController,
-  openSiteSettings: () => void
+  openSiteSettings: () => void,
+  activeContents: () => WebContents | undefined
 ): PermissionsPanel {
   const popover = createPopoverView(win, contentView, {
     dirname,
@@ -43,8 +44,9 @@ export function createPermissionsPanel (
     urlArgName: 'orivon-permissions-url',
     align: 'right',
     background: PANEL_POPOVER_BACKGROUND,
+    activeContents,
     registerIpc: (webContents, url, onContentHeight) => {
-      return registerPermissionsIpc(webContents, url, permissions, onContentHeight, sites, { view: verifierView, subscribe: onVerifierChange }, openSiteSettings)
+      return registerPermissionsIpc(webContents, url, permissions, onContentHeight, sites, { view: verifierView, subscribe: onVerifierChange }, openSiteSettings, () => { popover.close() })
     }
   })
 

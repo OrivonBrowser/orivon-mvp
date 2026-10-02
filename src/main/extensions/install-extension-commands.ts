@@ -35,8 +35,6 @@ function inFileOrder (folder: string, loaded: Record<string, unknown>): unknown 
 export function installExtensionCommands (options: InstallCommandKeysOptions): ExtensionCommandKeys {
   const { ctx, prefs, userDataPath } = options
   const extensions = session.defaultSession.extensions
-  // Every extension subsystem listens for loads and unloads; ten is the emitter's default warning line.
-  extensions.setMaxListeners(Math.max(extensions.getMaxListeners(), 32))
 
   // What the session has loaded is the truth (an install loads before it is written to the registry); the registry
   // only says which was installed first. A private runtime loads nothing and reads no registry.

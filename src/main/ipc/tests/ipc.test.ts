@@ -55,11 +55,6 @@ function actions (overrides: Partial<ShellActions> = {}): ShellActions {
     dropTab: vi.fn(),
     endTabDrag: vi.fn(),
     showTabMenu: vi.fn(),
-    toggleMaximize: vi.fn(),
-    windowMoveStart: vi.fn(),
-    windowMoveTo: vi.fn(),
-    windowMoveEnd: vi.fn(),
-    windowMoveCancel: vi.fn(),
     ...overrides
   }
 }
@@ -309,20 +304,6 @@ describe('registerShellIpc -- dragging a tab over the page', () => {
     await dispatch({ type: 'endTabDrag' }, OTHER_FRAME)
 
     expect(endTabDrag).toHaveBeenCalledOnce()
-  })
-})
-
-describe('registerShellIpc -- a manual window move', () => {
-  it('cancels the move without the edge-snap windowMoveEnd carries', async () => {
-    const windowMoveEnd = vi.fn()
-    const windowMoveCancel = vi.fn()
-    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ windowMoveEnd, windowMoveCancel }))
-
-    await dispatch({ type: 'windowMoveCancel' })
-    await dispatch({ type: 'windowMoveCancel' }, OTHER_FRAME)
-
-    expect(windowMoveCancel).toHaveBeenCalledOnce()
-    expect(windowMoveEnd).not.toHaveBeenCalled()
   })
 })
 

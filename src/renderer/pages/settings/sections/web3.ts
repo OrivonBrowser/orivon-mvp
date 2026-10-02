@@ -9,7 +9,7 @@ export const web3: Section = {
       label: 'Verify .eth names on this computer',
       help: 'A light client proves what a .eth name points to before its page loads, so nobody has to be trusted to say. Turn it off and no .eth name loads. It is read when Orivon starts.',
       keywords: ['ethereum', 'ens', 'eth', 'light client', 'helios', 'verify', 'names', 'ipfs'],
-      control: { type: 'toggle', key: 'web3.lightClient' }
+      control: { type: 'toggle', key: 'web3.lightClient', disabled: (state) => state.web3.status?.forcedOff === true }
     },
     {
       id: 'web3-restart',
@@ -21,12 +21,12 @@ export const web3: Section = {
         label: 'Restart Orivon',
         run: async (state) => { await state.web3.relaunch() }
       },
-      visible: (state) => state.web3.needsRestart(state.value('web3.lightClient') === true) && state.profiles?.isPrivate !== true
+      visible: (state) => state.web3.needsRestart(state.value('web3.lightClient') === true) && state.profiles?.isPrivate !== true && state.web3.status?.forcedOff !== true
     },
     {
       id: 'web3-forced-off',
       label: 'Switched off from outside',
-      help: 'This run was started with the light client switched off, whatever is chosen here.',
+      help: 'This run was started with the light client switched off, so the switch above cannot change it. The choice made there applies to a start without that.',
       keywords: ['environment', 'variable'],
       control: { type: 'info', text: () => 'Off for this run' },
       visible: (state) => state.web3.status?.forcedOff === true
@@ -35,7 +35,7 @@ export const web3: Section = {
       id: 'web3-state',
       label: 'The light client',
       keywords: ['status', 'syncing', 'synced', 'state'],
-      control: { type: 'info', text: (state) => state.web3.status === null ? '' : `${state.web3.status.view.state}: ${state.web3.status.view.summary}` }
+      control: { type: 'info', text: (state) => state.web3.status === null ? '' : state.web3.status.view.summary }
     },
     {
       id: 'web3-checkpoint',

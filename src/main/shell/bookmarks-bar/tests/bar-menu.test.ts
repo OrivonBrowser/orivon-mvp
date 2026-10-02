@@ -6,9 +6,9 @@ import type { BarMenuActions, BarMenuModel } from '../bar-menu.js'
 
 const actions = (): { [K in keyof BarMenuActions]-?: Mock<() => void> } => ({
   openInTab: vi.fn<() => void>(), openInWindow: vi.fn<() => void>(), openInPrivate: vi.fn<() => void>(), openAll: vi.fn<() => void>(), copyLink: vi.fn<() => void>(),
-  edit: vi.fn<() => void>(), rename: vi.fn<() => void>(), addFolder: vi.fn<() => void>(), remove: vi.fn<() => void>(), toggleBar: vi.fn<() => void>(), openManager: vi.fn<() => void>()
+  edit: vi.fn<() => void>(), rename: vi.fn<() => void>(), addFolder: vi.fn<() => void>(), moveToBar: vi.fn<() => void>(), remove: vi.fn<() => void>(), toggleBar: vi.fn<() => void>(), openManager: vi.fn<() => void>()
 })
-const model = (overrides: Partial<BarMenuModel> = {}): BarMenuModel => ({ target: { kind: 'url' }, isPrivate: false, barShown: true, ...overrides })
+const model = (overrides: Partial<BarMenuModel> = {}): BarMenuModel => ({ target: { kind: 'url' }, isPrivate: false, barShown: true, parentIsBar: true, ...overrides })
 const labels = (template: MenuItemConstructorOptions[]): string[] => template.map((item) => item.type === 'separator' ? '-' : item.label ?? '')
 const find = (template: MenuItemConstructorOptions[], label: string): MenuItemConstructorOptions => template.find((item) => item.label === label) as MenuItemConstructorOptions
 
@@ -52,6 +52,18 @@ describe('the bookmarks bar menu', () => {
     const click = (label: string): void => { (find(template, label).click as () => void)() }
     click('Open in New Tab'); click('Open in New Window'); click('Open in Private Window'); click('Edit…'); click('Add Folder…'); click('Copy Link'); click('Delete'); click('Show Bookmarks Bar'); click('Bookmark Manager')
     for (const name of ['openInTab', 'openInWindow', 'openInPrivate', 'edit', 'addFolder', 'copyLink', 'remove', 'toggleBar', 'openManager'] as const) expect(a[name], name).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers Move to Bookmarks Bar to a page or folder that is not directly in the bar, and runs it', () => {
+    const a = actions()
+    for (const target of [{ kind: 'url' }, { kind: 'folder', pages: 1 }] as const) {
+      expect(labels(barMenuTemplate(model({ target }), a)), target.kind).not.toContain('Move to Bookmarks Bar')
+      const nested = barMenuTemplate(model({ target, parentIsBar: false }), a)
+      expect(labels(nested), target.kind).toContain('Move to Bookmarks Bar')
+      ;(find(nested, 'Move to Bookmarks Bar').click as () => void)()
+    }
+    expect(a.moveToBar).toHaveBeenCalledTimes(2)
+    expect(labels(barMenuTemplate(model({ target: { kind: 'bar' }, parentIsBar: false }), a))).not.toContain('Move to Bookmarks Bar')
   })
 
   it('runs Rename… on a folder', () => {

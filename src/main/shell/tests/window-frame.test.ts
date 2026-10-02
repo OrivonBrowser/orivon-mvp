@@ -36,6 +36,13 @@ describe('createWindowFrame', () => {
     expect(created.at(-1)).toMatchObject({ kiosk: false })
   })
 
+  it('never lets a window shrink below the size the toolbar needs, ordinary or private', () => {
+    for (const isPrivate of [false, true]) {
+      createWindowFrame('/out/main', {}, isPrivate)
+      expect(created.at(-1)).toMatchObject({ minWidth: 500, minHeight: 400 })
+    }
+  })
+
   it('centres at the default size, over which a saved place wins', () => {
     expect(createWindowFrame('/out/main').initialBounds).toEqual({ x: 320, y: 140, width: 1280, height: 800 })
     expect(createWindowFrame('/out/main', { x: 5, y: 6, width: 700, height: 500 }).initialBounds).toEqual({ x: 5, y: 6, width: 700, height: 500 })

@@ -47,5 +47,5 @@ export const barFolder: ChromeAction = (payload, { window, services }) => {
   const rect = { x: box['x'] as number, y: box['y'] as number, width: box['width'] as number, height: box['height'] as number }
   const what = clickOnFolder(window, id)
   if (what === 'close') window.overlays.close(FOLDER_OVERLAY)
-  else if (what === 'show') window.overlays.show(FOLDER_OVERLAY, rect, start === undefined ? { id } : { id, from: start })
+  else if (what === 'show') window.overlays.show(FOLDER_OVERLAY, rect, start === undefined ? { id, anchor: rect } : { id, anchor: rect, from: start })
 }

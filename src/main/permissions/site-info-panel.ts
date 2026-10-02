@@ -22,10 +22,11 @@ import type { SitePermissionsAccess } from '../site-settings/site-permissions-vi
 export type SiteInfoPage = 'main' | 'web3'
 
 export interface SiteInfoPanel {
-  /** Clicking either toolbar icon again while the popup is open closes it,
-   * the same `toggle` shape ./permissions-panel.ts already has. Opening it
-   * on a DIFFERENT origin never happens through this alone: window.ts
-   * closes this popup on every active-tab and active-origin change first
+  /** Clicking the icon that opened the popup again closes it, the same
+   * `toggle` shape ./permissions-panel.ts already has; clicking the other
+   * icon while it shows swaps it to that icon's page. Opening it on a
+   * DIFFERENT origin never happens through this alone: window.ts closes
+   * this popup on every active-tab and active-origin change first
    * (`../shell/window.ts`), so a toggle call always either opens fresh or
    * closes what is already showing the origin it was opened for. */
   toggle: (anchor: PopoverAnchor, origin: string, page: SiteInfoPage) => void
@@ -61,8 +62,9 @@ export function createSiteInfoPanel (
     urlArgName: 'orivon-site-info-url',
     align: 'left',
     background: PANEL_POPOVER_BACKGROUND,
+    activeContents: activeWebContents,
     registerIpc: (webContents, url, onContentHeight) => {
-      registerSiteInfoIpc(webContents, url, controller, openOrigin, userDataPath, activeWebContents, reloadActiveTab, openSiteSettings, openExtensions, onContentHeight, openCertificate, sitePermissions)
+      registerSiteInfoIpc(webContents, url, controller, openOrigin, userDataPath, activeWebContents, reloadActiveTab, openSiteSettings, openExtensions, onContentHeight, openCertificate, sitePermissions, () => { popover.close() })
       return () => {}
     }
   })
@@ -70,7 +72,7 @@ export function createSiteInfoPanel (
   return {
     toggle (anchor, origin, page) {
       openOrigin = origin
-      popover.toggle(anchor, [`--orivon-site-info-page=${page}`, `--orivon-site-info-origin=${origin}`])
+      popover.toggle(anchor, [`--orivon-site-info-page=${page}`, `--orivon-site-info-origin=${origin}`], page)
     },
     close: popover.close,
     isOpen: popover.isOpen,

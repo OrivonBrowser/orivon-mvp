@@ -43,27 +43,40 @@ export class PaneHost {
       this.backdrop = nextBackdrop
     }
     if (backdrop !== null) backdrop.view.setBounds(backdrop.bounds)
-    // A lone pane (the ordinary, undivided case) is appended with no index, exactly as before --
-    // where it lands relative to whatever else is on `contentView` has never mattered, since
-    // nothing else occupies its bounds. Only once there is a backdrop, or more than one pane, does
-    // the order among them matter (a split's two panes side by side): a genuinely new pane there
-    // goes right after the backdrop (if any) and every pane before it in `panes` -- an index
-    // counted purely among this host's own views, never the popovers/notice sharing `contentView`,
-    // which only ever append themselves with no index of their own (an insert at a low index never
-    // changes any of their relative order to one another, only shifts their numeric position).
-    // Keeps a split's two panes in the order `panes` gives them even when only one of the two is
-    // new: appended, it would land above its partner.
+    // A lone pane (the ordinary, undivided case) is appended with no index: nothing else occupies
+    // its bounds, so where it lands among `contentView`'s children has never mattered. Once there is
+    // a backdrop or a second pane the order matters, and a new pane goes where `slotFor` says.
     const ordered = panes.length > 1 || nextBackdrop !== null
-    let index = nextBackdrop !== null ? 1 : 0
-    for (const pane of panes) {
+    panes.forEach((pane, at) => {
       if (this.shown.get(pane.id) !== pane.view) {
-        if (ordered) this.contentView.addChildView(pane.view, index)
+        if (ordered) this.contentView.addChildView(pane.view, this.slotFor(panes, at, nextBackdrop))
         else this.contentView.addChildView(pane.view)
         this.shown.set(pane.id, pane.view)
       }
       pane.view.setBounds(pane.bounds)
-      index += 1
+    })
+  }
+
+  /** Where in `contentView.children` the new pane `panes[at]` goes, so a split's panes keep the order
+   * `panes` gives them even when only one is new. The index is read off the children as they are now,
+   * not counted among this host's own views: the chrome, the popovers, the notice and the welcome
+   * screen share the list, and the ones appended after the partner went in sit above it. A new pane
+   * lands right after the pane before it, else right before the pane after it, else on the backdrop
+   * -- always below everything appended since, so no popover is ever covered. */
+  private slotFor (panes: readonly PaneView[], at: number, backdrop: View | null): number | undefined {
+    const siblings = this.contentView.children
+    for (let before = at - 1; before >= 0; before -= 1) {
+      const view = this.shown.get(panes[before]?.id ?? '')
+      const index = view === undefined ? -1 : siblings.indexOf(view)
+      if (index !== -1) return index + 1
     }
+    for (let after = at + 1; after < panes.length; after += 1) {
+      const view = this.shown.get(panes[after]?.id ?? '')
+      const index = view === undefined ? -1 : siblings.indexOf(view)
+      if (index !== -1) return index
+    }
+    const base = backdrop === null ? -1 : siblings.indexOf(backdrop)
+    return base === -1 ? undefined : base + 1
   }
 
   isShown (id: string): boolean {
@@ -80,8 +93,12 @@ export class PaneHost {
 
   /** Shows `view` for a pane that is on screen already under another view, in the same place. */
   replace (id: string, view: View, bounds: Bounds): void {
+    const old = this.shown.get(id)
+    const index = old === undefined ? -1 : this.contentView.children.indexOf(old)
     this.hide(id)
-    this.contentView.addChildView(view)
+    // At the old view's place, never on top: a popover open above the pane stays above it.
+    if (index === -1) this.contentView.addChildView(view)
+    else this.contentView.addChildView(view, index)
     this.shown.set(id, view)
     view.setBounds(bounds)
   }
