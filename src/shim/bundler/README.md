@@ -107,6 +107,9 @@ reimplements the part of esbuild's `browser` handling the shim's tree needs (a s
 `main`, whether `main` is written `lib/index.js` or `./lib`; `"./file": "./other"` and `"lib/file": "lib/other"`,
 with or without an extension; `"name": false`), and a nested `package.json` with no `name` (only a `type`)
 belongs to the package above it. A published package would ship this tree already bundled.
+Those packages are found by their real paths, the ones esbuild reports: pnpm keeps each package and
+its own dependencies under `node_modules/.pnpm/`, and a worktree's `node_modules` may be a link, so
+the names under `node_modules/` alone miss them and `createHash` is undefined again.
 
 **A package row named like a builtin is asked for with a trailing slash** (`events/`). Under
 `platform: 'node'`, esbuild otherwise answers `events` with the builtin.

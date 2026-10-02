@@ -3,7 +3,7 @@
 // under Node's type stripping: erasable TypeScript only, node: imports only,
 // and the alias table read as JSON beside this file (README.md).
 
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { builtinModules } from 'node:module'
 import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -24,6 +24,14 @@ export const virtualRoot: string = TABLE.virtualRoot
 
 const NODE_BUILTINS = new Set(builtinModules)
 const NODE_MODULES_DIR = `${CHECKOUT_ROOT}node_modules${sep}`
+// Where node_modules really is. esbuild reports real paths, and they differ from the ones above
+// when node_modules is itself a link (a worktree's) or a package is one (pnpm's `.pnpm/` store).
+const REAL_NODE_MODULES_DIR = existsSync(NODE_MODULES_DIR) ? `${realpathSync(NODE_MODULES_DIR)}${sep}` : NODE_MODULES_DIR
+const REAL_CHECKOUT_ROOT = `${dirname(REAL_NODE_MODULES_DIR)}${sep}`
+
+function insideCheckout (dir: string): boolean {
+  return `${dir}${sep}`.startsWith(CHECKOUT_ROOT) || `${dir}${sep}`.startsWith(REAL_CHECKOUT_ROOT)
+}
 const EMPTY_MODULE = `${HERE}empty.cjs`
 const PACKAGE_RESOLVE_MARK = 'orivon-shim-package-resolve'
 const REQUIRE_NAMESPACE = 'orivon-shim-require'
@@ -80,7 +88,7 @@ export function packageOf (file: string): PackageInfo | undefined {
       }
     }
     const parent = dirname(dir)
-    if (parent === dir || !dir.startsWith(CHECKOUT_ROOT)) {
+    if (parent === dir || !insideCheckout(dir)) {
       for (const seen of visited) packages.set(seen, undefined)
       return undefined
     }
@@ -127,11 +135,14 @@ export function browserRule (info: PackageInfo, wanted: string): string | false 
 
 let shimPackageDirs: Set<string> | undefined
 
-/** The directory of `name` as a package installed for `fromDir`, found the way Node walks node_modules. */
+/**
+ * The real directory of `name` as a package installed for `fromDir`, found the way Node walks
+ * node_modules. Real, so the next walk starts where pnpm keeps the package's own dependencies.
+ */
 function installedAt (name: string, fromDir: string): string | undefined {
-  for (let dir = fromDir; `${dir}${sep}`.startsWith(CHECKOUT_ROOT); dir = dirname(dir)) {
+  for (let dir = fromDir; insideCheckout(dir); dir = dirname(dir)) {
     const candidate = join(dir, 'node_modules', name)
-    if (existsSync(join(candidate, 'package.json'))) return candidate
+    if (existsSync(join(candidate, 'package.json'))) return realpathSync(candidate)
     if (dirname(dir) === dir) break
   }
   return undefined
@@ -160,7 +171,7 @@ function shimPackages (): Set<string> {
  */
 function isShimTree (file: string): boolean {
   if (file.startsWith(SHIM_DIR)) return true
-  if (!file.startsWith(NODE_MODULES_DIR)) return false
+  if (!file.startsWith(NODE_MODULES_DIR) && !file.startsWith(REAL_NODE_MODULES_DIR)) return false
   const owner = packageOf(file)
   return owner !== undefined && shimPackages().has(owner.dir)
 }
