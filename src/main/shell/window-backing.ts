@@ -14,7 +14,9 @@ export function followActiveTabBacking (win: BaseWindow, tabs: TabManager): () =
   const sync = (id: string | null): void => {
     if (win.isDestroyed()) return
     const record = id === null ? undefined : tabs.record(id)
-    if (record === undefined) return
+    // A tab whose page is being torn down (closed by an extension, a crash) has no webContents to read: the
+    // colour it had stays until the tab goes or another is shown.
+    if (id === null || record === undefined || tabs.liveWebContents(id) === undefined) return
     const color = restingColor(record)
     if (color === applied) return
     applied = color

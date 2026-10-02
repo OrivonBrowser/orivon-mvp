@@ -64,7 +64,7 @@ describe('a tab view\'s backing while a navigation starts', () => {
 
 describe('restingColor', () => {
   const record = (url: string, extra: Partial<TabRecord> = {}): TabRecord =>
-    ({ isDashboardTab: false, internalPage: null, host: { dashboardUrl: DASHBOARD }, view: { webContents: { getURL: () => url } }, ...extra }) as unknown as TabRecord
+    ({ isDashboardTab: false, internalPage: null, host: { dashboardUrl: DASHBOARD }, view: { webContents: { getURL: () => url, isDestroyed: () => false } }, ...extra }) as unknown as TabRecord
 
   it('is the wash for a tab showing the dashboard, even one that left it and came back', () => {
     expect(restingColor(record(DASHBOARD))).toBe('#0d0e14')

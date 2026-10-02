@@ -1,17 +1,18 @@
 // What a tab's view paints before its page has: the colour is chosen when a navigation STARTS, because the
 // old document covers the view until the new one commits and a colour set after the commit lands on the frame
 // the new page has not painted yet. Tied to Electron: a view's colour.
-import type { WebContentsView } from 'electron'
+import type { WebContents, WebContentsView } from 'electron'
 import type { TabRecord } from './tab-types.js'
 import { isDashboardUrl, sheetBackdropOf } from './sheet-backdrop.js'
 import { APP_DARK_WASH, DEFAULT_BACKGROUND } from './theme-colors.js'
 import { recordViewBackground } from './view-background-test-hook.js'
 
-/** Paints a view and records the colour for the e2e hook. */
+/** Paints a view and records the colour for the e2e hook. A view torn down has no webContents, and gets nothing. */
 export function paintBacking (view: WebContentsView, color: string): void {
-  if (view.webContents.isDestroyed()) return
+  const wc: WebContents | undefined = view.webContents
+  if (wc === undefined || wc.isDestroyed()) return
   view.setBackgroundColor(color)
-  recordViewBackground(view.webContents.id, color)
+  recordViewBackground(wc.id, color)
 }
 
 /** Follows the page a tab is going to: the dashboard's wash only for the dashboard, the default for everything
