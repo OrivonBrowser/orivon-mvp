@@ -274,7 +274,7 @@ it('View page source does nothing on a page that is not on the web', async () =>
   }
 }, TEST_TIMEOUT_MS)
 
-it('Ctrl+P prints with backgrounds on; with no printer it never prints and offers Save as PDF, which saves', async () => {
+it('Ctrl+P prints with backgrounds on; with no printer it never prints and goes straight to Save as PDF, which saves', async () => {
   const { app } = await launched(`${origin}/`)
   try {
     // With no printer the real call never comes back: the tool must not make it.
@@ -283,19 +283,17 @@ it('Ctrl+P prints with backgrounds on; with no printer it never prints and offer
       if (wc === undefined) throw new Error('no tab')
       const g = globalThis as unknown as { __printed: unknown[] }
       g.__printed = []
+      wc.getPrintersAsync = (async () => []) as never
       wc.print = ((options: unknown) => { g.__printed.push(options) }) as never
     }, origin)
-    await pressKey(app, origin, 'P', ['control'])
-    expect(await waitForToast(app, 'No printer found')).toBe(true)
-    expect(await app.evaluate(() => (globalThis as unknown as { __printed: unknown[] }).__printed)).toEqual([])
-    const toast = toastPage(app) as Page
-    await shoot(app, toast, 'toast-no-printer')
-
-    const target = join(outDir, 'from-toast.pdf')
+    const target = join(outDir, 'from-print.pdf')
     await stubSaveDialog(app, target)
-    await toast.getByRole('button', { name: 'Save as PDF' }).click()
-    expect(await waitForToast(app, 'Saved from-toast.pdf')).toBe(true)
+    await pressKey(app, origin, 'P', ['control'])
+    expect(await waitForToast(app, 'Saved from-print.pdf')).toBe(true)
+    expect(await app.evaluate(() => (globalThis as unknown as { __printed: unknown[] }).__printed)).toEqual([])
     expect(readFileSync(target).subarray(0, 4).toString('latin1')).toBe('%PDF')
+    expect((await saveOptions(app))[0]?.title).toBe('Save as PDF')
+    expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
   }
