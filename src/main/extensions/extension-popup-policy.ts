@@ -6,6 +6,7 @@ import type { BaseWindow, WebContents } from 'electron'
 import type { ElectronChromeExtensions } from 'orivon:crx-extensions'
 import type { ShellServices } from '../shell/shell-services.js'
 import { extensionOpenedUrl, type IsLoadedExtension } from './extension-url-policy.js'
+import { openExtensionTab } from './extension-opened-pages.js'
 
 export interface PopupPolicyDeps {
   /** undefined until the first window exists. */
@@ -48,7 +49,7 @@ export function setupWindowOpenPolicy (contents: WebContents, deps: PopupPolicyD
       const win = services.windows.focused()?.window
       const target = extensionOpenedUrl(url, deps.isLoaded)
       const shellWindow = win === undefined ? undefined : services.windows.all().find((w) => w.window === win)
-      if (shellWindow !== undefined && target !== undefined) shellWindow.tabs.openTrusted(target)
+      if (shellWindow !== undefined && target !== undefined) openExtensionTab(shellWindow.tabs, target)
     }
     return { action: 'deny' }
   })

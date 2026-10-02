@@ -225,13 +225,15 @@ describe('extension-host: window-open policy for popups and MV2 background pages
     createExtensionHost('preload.js')
     buildShell()
 
-    const onWebContentsCreated = appOn.mock.calls.find((call: any[]) => call[0] === 'web-contents-created')?.[1]
-    expect(onWebContentsCreated).toBeInstanceOf(Function)
+    const handlers = appOn.mock.calls.filter((call: any[]) => call[0] === 'web-contents-created').map((call: any[]) => call[1])
+    expect(handlers.length).toBeGreaterThan(0)
+    const onWebContentsCreated = (...args: unknown[]): void => { for (const handler of handlers) handler(...args) }
 
     const bgSetHandler = vi.fn()
     onWebContentsCreated(undefined, {
       session: mockedSession.defaultSession,
       getType: () => 'backgroundPage',
+      on: vi.fn(),
       setWindowOpenHandler: bgSetHandler
     })
     expect(bgSetHandler).toHaveBeenCalledTimes(1)
@@ -240,6 +242,7 @@ describe('extension-host: window-open policy for popups and MV2 background pages
     onWebContentsCreated(undefined, {
       session: mockedSession.defaultSession,
       getType: () => 'window',
+      on: vi.fn(),
       setWindowOpenHandler: tabSetHandler
     })
     expect(tabSetHandler).not.toHaveBeenCalled()

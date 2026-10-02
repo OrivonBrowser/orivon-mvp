@@ -151,6 +151,9 @@ it('builds no overlay before the first keystroke, and finishes what is typed inl
   const { app, chrome } = await launchShell({ seedProfile: async (dir: string) => { await seedPages(dir) } })
   try {
     expect(await app.evaluate(({ webContents }) => webContents.getAllWebContents().some((wc) => wc.getURL().includes('overlay=omnibox')))).toBe(false)
+    // The chrome page exists, with its #address, before its module script has run and the address-suggest
+    // module has given the field its combobox attributes: wait for that module, then click and read.
+    expect(await waitFor(async () => (await chrome.evaluate(() => document.querySelector('#address')?.getAttribute('role') ?? null)) === 'combobox')).toBe(true)
     await chrome.click('#address')
     expect(await app.evaluate(({ webContents }) => webContents.getAllWebContents().some((wc) => wc.getURL().includes('overlay=omnibox')))).toBe(false)
     const roles = await chrome.evaluate(() => {

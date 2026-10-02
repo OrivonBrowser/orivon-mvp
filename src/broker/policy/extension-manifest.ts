@@ -210,6 +210,11 @@ function isStrippedPermission (name: string): boolean {
   return name === 'nativeMessaging' || name.startsWith('webRequest') || name.startsWith('declarativeNetRequest')
 }
 
+/** Where the loaded copy keeps the `declarative_net_request` value it removed, so the extension's own
+ * `runtime.getManifest()` can still answer with it (src/preload/extension-apis/runtime.ts). Orivon
+ * runs those rules itself; the key is out of the copy Chromium loads, not out of the extension's view. */
+export const LOADED_DNR_KEY = 'x_orivon_declarative_net_request'
+
 export interface StrippedRecord {
   readonly permissions: readonly string[]
   readonly optionalPermissions: readonly string[]
@@ -225,7 +230,8 @@ export interface LoadableManifestResult {
  * The manifest copy Orivon writes into the folder it loads: every
  * `webRequest*`/`declarativeNetRequest*` permission and `nativeMessaging`
  * removed from `permissions`/`optional_permissions`, and the top-level
- * `declarative_net_request` key moved out entirely. `stripped` records
+ * `declarative_net_request` key moved out entirely (to `LOADED_DNR_KEY`, which
+ * only the extension's own `getManifest` reads). `stripped` records
  * exactly what was removed, so those APIs could be served from Orivon's own
  * engine later -- see this directory's README, Design notes, for why either
  * permission left in place crashes the main process on the session's first
@@ -246,6 +252,8 @@ export function loadableManifest (raw: Record<string, unknown>): LoadableManifes
   }
   const declarativeNetRequest = manifest.declarative_net_request
   delete manifest.declarative_net_request
+  delete manifest[LOADED_DNR_KEY]
+  if (declarativeNetRequest !== undefined) manifest[LOADED_DNR_KEY] = declarativeNetRequest
 
   return {
     manifest,

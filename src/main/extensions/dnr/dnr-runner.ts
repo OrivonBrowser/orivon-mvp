@@ -108,7 +108,7 @@ export function clearPersistedRuleState(slotDir: string): void {
 }
 
 /**
- * Reads each static ruleset's rules from `loadedPath` (the extension's own
+ * Reads each enabled static ruleset's rules (a disabled one's on first use) from `loadedPath` (the extension's own
  * loaded folder), confined to it: `resource.path` comes from the
  * extension's own manifest, so a resolved path that escapes `loadedPath` is
  * refused outright rather than followed. A ruleset whose file is missing,
@@ -123,11 +123,12 @@ export function loadStaticRulesets(
   enabledOverride: readonly string[] | null
 ): DnrStaticRuleset[] {
   const root = resolve(loadedPath)
-  return resources.map((resource) => ({
-    id: resource.id,
-    enabled: enabledOverride !== null ? enabledOverride.includes(resource.id) : resource.enabled,
-    rules: readRulesetFile(root, resource),
-  }))
+  return resources.map((resource) => {
+    const enabled = enabledOverride !== null ? enabledOverride.includes(resource.id) : resource.enabled
+    // A disabled ruleset is read when first enabled: a large extension lists
+    // dozens, and parsing them all would stall the main thread at load.
+    return { id: resource.id, enabled, rules: enabled ? readRulesetFile(root, resource) : () => readRulesetFile(root, resource) }
+  })
 }
 
 function readRulesetFile(root: string, resource: DnrRuleResource): DnrRule[] {

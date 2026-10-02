@@ -22,3 +22,18 @@ chrome.declarativeNetRequest.updateDynamicRules({
     }
   ]
 })
+
+// Sized from the API's own constant, as a real blocker does: when the constant
+// is missing the arithmetic gives NaN, no rule is added and /regex-blocked.js loads.
+const dnr = chrome.declarativeNetRequest
+if (0 < dnr.MAX_NUMBER_OF_REGEX_RULES * 0.95) {
+  dnr.updateSessionRules({
+    removeRuleIds: [201],
+    addRules: [{
+      id: 201,
+      priority: 1,
+      action: { type: dnr.RuleActionType.BLOCK },
+      condition: { regexFilter: '^https?://[^/]+/regex-blocked\\.js', resourceTypes: [dnr.ResourceType.SCRIPT] }
+    }]
+  })
+}

@@ -94,7 +94,8 @@ export function createPreloadRecovery (deps: PreloadRecoveryDeps): PreloadRecove
  * itself must not import that module (its own header says why). */
 export function watchForMissedServiceWorkerPreload (
   ses: Session,
-  onReloadBoundary?: PreloadRecoveryDeps['onReloadBoundary']
+  onReloadBoundary?: PreloadRecoveryDeps['onReloadBoundary'],
+  onReloaded?: (id: string) => void
 ): void {
   const recovery = createPreloadRecovery({
     getExtensionPath: (id) => ses.extensions.getExtension(id)?.path,
@@ -104,6 +105,7 @@ export function watchForMissedServiceWorkerPreload (
     loadExtension: async (path) => await ses.extensions.loadExtension(path, { allowFileAccess: false }),
     onRecovered: (id) => {
       console.error(`[extensions] ${id}'s service worker started before the library's preload took effect; reloaded it once to recover`)
+      onReloaded?.(id)
     },
     ...(onReloadBoundary === undefined ? {} : { onReloadBoundary })
   })

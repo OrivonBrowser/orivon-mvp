@@ -1,10 +1,13 @@
 import { actionSettingsApi } from './action-settings.js'
 import { bookmarksApi } from './bookmarks.js'
 import { commandsApi } from './commands.js'
+import { declarativeNetRequestApi } from './declarative-net-request.js'
 import { historyApi } from './history.js'
 import { permissionsApi } from './permissions.js'
+import { runtimeApi } from './runtime.js'
 import { searchApi } from './search.js'
 import { topSitesApi } from './top-sites.js'
+import { webRequestApi } from './web-request.js'
 
 // The namespaces Orivon adds to `chrome.*` in an extension's own main world,
 // one per line, alphabetical. Each entry is ONE function with no import and
@@ -27,8 +30,11 @@ export const EXTENSION_MAIN_WORLD_APIS: ReadonlyArray<() => void> = [
   actionSettingsApi,
   bookmarksApi,
   commandsApi,
+  declarativeNetRequestApi,
   historyApi,
   permissionsApi,
+  runtimeApi,
   searchApi,
-  topSitesApi
+  topSitesApi,
+  webRequestApi
 ]

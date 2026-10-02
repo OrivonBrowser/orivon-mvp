@@ -13,6 +13,7 @@ const engine = {
   getSessionRules: vi.fn(() => []),
   updateEnabledRulesets: vi.fn(),
   getEnabledRulesets: vi.fn(() => []),
+  getEnabledRulesetsToPersist: vi.fn(() => []),
   getAvailableStaticRuleCount: vi.fn(() => 5000),
   testMatch: vi.fn(() => []),
 }

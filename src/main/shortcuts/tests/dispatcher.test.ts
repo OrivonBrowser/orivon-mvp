@@ -29,6 +29,8 @@ let dir: string
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'orivon-dispatcher-')) })
 afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
 
+// A command runs on the turn after the key event.
+const settle = async (): Promise<void> => { await new Promise<void>((resolve) => { setImmediate(resolve) }) }
 const key = (k: string, code: string, mods: Partial<PressedKey> = {}): PressedKey =>
   ({ type: 'keyDown', key: k, code, control: false, alt: false, shift: false, meta: false, isAutoRepeat: false, isComposing: false, ...mods })
 
@@ -63,6 +65,7 @@ describe('attachShortcuts', () => {
 
     const event = press(key('t', 'KeyT', { control: true }))
 
+    await settle()
     expect(run).toHaveBeenCalledExactlyOnceWith('tab.new')
     expect(event.preventDefault).toHaveBeenCalledTimes(1)
   })
@@ -73,6 +76,7 @@ describe('attachShortcuts', () => {
 
     const event = press(key('A', 'KeyA', { control: true, shift: true }))
 
+    await settle()
     expect(run).not.toHaveBeenCalled()
     expect(event.preventDefault).not.toHaveBeenCalled()
   })
@@ -87,6 +91,7 @@ describe('attachShortcuts', () => {
       press(key('t', 'KeyT', { control: true, isComposing: true }))
     ]
 
+    await settle()
     expect(run).not.toHaveBeenCalled()
     for (const event of events) expect(event.preventDefault).not.toHaveBeenCalled()
   })
@@ -96,9 +101,11 @@ describe('attachShortcuts', () => {
 
     const held = press(key('t', 'KeyT', { control: true, isAutoRepeat: true }))
     expect(held.preventDefault).toHaveBeenCalledTimes(1)
+    await settle()
     expect(run).not.toHaveBeenCalled()
 
     press(key('Tab', 'Tab', { control: true, isAutoRepeat: true }))
+    await settle()
     expect(run).toHaveBeenCalledExactlyOnceWith('tab.next')
   })
 
@@ -107,6 +114,7 @@ describe('attachShortcuts', () => {
 
     const event = press(key('t', 'KeyT', { control: true }))
 
+    await settle()
     expect(run).not.toHaveBeenCalled()
     expect(event.preventDefault).not.toHaveBeenCalled()
   })
@@ -118,6 +126,7 @@ describe('attachShortcuts', () => {
     const find = press(key('f', 'KeyF', { control: true }))
     const nextFind = press(key('F3', 'F3'))
 
+    await settle()
     expect(run).not.toHaveBeenCalled()
     expect(find.preventDefault).not.toHaveBeenCalled()
     expect(nextFind.preventDefault).not.toHaveBeenCalled()
@@ -128,6 +137,7 @@ describe('attachShortcuts', () => {
 
     const event = press(key('t', 'KeyT', { control: true }))
 
+    await settle()
     expect(run).toHaveBeenCalledExactlyOnceWith('tab.new')
     expect(event.preventDefault).toHaveBeenCalledTimes(1)
   })
@@ -138,6 +148,7 @@ describe('attachShortcuts', () => {
 
     const event = press(key('f', 'KeyF', { control: true }))
 
+    await settle()
     expect(run).toHaveBeenCalledExactlyOnceWith('find.open')
     expect(event.preventDefault).toHaveBeenCalledTimes(1)
   })
@@ -146,6 +157,7 @@ describe('attachShortcuts', () => {
     const { press, run } = await setup({ windowless: true })
 
     expect(press(key('t', 'KeyT', { control: true })).preventDefault).not.toHaveBeenCalled()
+    await settle()
     expect(run).not.toHaveBeenCalled()
   })
 
@@ -158,6 +170,7 @@ describe('attachShortcuts', () => {
 
     expect(modifier.preventDefault).not.toHaveBeenCalled()
     expect(chord.preventDefault).toHaveBeenCalledTimes(1)
+    await settle()
     expect(run).not.toHaveBeenCalled()
     expect(recorded).toHaveBeenCalledExactlyOnceWith(contents, { commandId: 'tab.new', result: { status: 'ok' }, binding: 'Mod+Alt+Y' })
   })
@@ -168,6 +181,7 @@ describe('attachShortcuts', () => {
 
     press(key('w', 'KeyW', { control: true }))
 
+    await settle()
     expect(run).not.toHaveBeenCalled()
     expect(recorded.mock.calls[0]?.[1]).toMatchObject({ result: { status: 'conflict', with: 'tab.close' } })
   })
@@ -179,6 +193,7 @@ describe('attachShortcuts', () => {
 
     press(key('w', 'KeyW', { control: true }))
 
+    await settle()
     expect(run).toHaveBeenCalledExactlyOnceWith('tab.close')
   })
 })

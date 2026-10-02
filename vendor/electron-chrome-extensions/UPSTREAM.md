@@ -771,6 +771,12 @@
     `commandMap` and `getAll` stay in place and are unused by Orivon. Reason: the library
     registered commands but never fired one, and Orivon's shortcut dispatcher is what notices the
     key press.
+61. **`browser` mirrors `chrome`.** `src/renderer/index.ts`: `finalizeScript` copies every own
+    property of `chrome` onto `globalThis.browser` when that is a different object. Reason: an
+    extension context has a separate `browser` global holding only Electron's native
+    namespaces; extensions that take `self.browser || self.chrome` (uBlock Origin Lite, AdBlock)
+    read `browser.permissions` or `browser.webRequest` and threw at load, so their service worker
+    never registered.
 62. **No native dialog from a popup or an offscreen document.** `src/browser/popup.ts` and
     `src/browser/api/offscreen.ts` build their view with `disableDialogs: true`, so a page's `alert`,
     `confirm` and `prompt` return as dismissed and no native message box opens. Reason: Orivon draws

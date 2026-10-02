@@ -54,18 +54,18 @@ export class DevToolsService implements DevToolsGate {
       contents.closeDevTools()
       return
     }
-    if (await this.permit(contents) && !contents.isDevToolsOpened()) this.show(contents)
+    if (await this.permitted(contents) && !contents.isDevToolsOpened()) this.show(contents)
   }
 
   /** Opens them on the Console panel, or moves an open set there. The same rules as `toggle`. */
   async openConsole (contents: WebContents | undefined): Promise<void> {
-    if (contents === undefined || contents.isDestroyed() || !await this.permit(contents)) return
+    if (contents === undefined || contents.isDestroyed() || !await this.permitted(contents)) return
     if (!contents.isDevToolsOpened()) this.show(contents)
     showConsolePanel(contents)
   }
 
   async inspect (contents: WebContents, x: number, y: number): Promise<void> {
-    if (contents.isDestroyed() || !await this.permit(contents)) return
+    if (contents.isDestroyed() || !await this.permitted(contents)) return
     if (!contents.isDevToolsOpened()) this.show(contents)
     contents.inspectElement(x, y)
   }
@@ -74,6 +74,11 @@ export class DevToolsService implements DevToolsGate {
     if (contents === undefined) return
     this.open.delete(contents)
     if (!contents.isDestroyed() && contents.isDevToolsOpened()) contents.closeDevTools()
+  }
+
+  /** `permit`, and the page still there afterwards: the question can stay open while its tab is closed. */
+  private async permitted (contents: WebContents): Promise<boolean> {
+    return await this.permit(contents) && !contents.isDestroyed()
   }
 
   /** Whether to go on, asking once per app. The question stays open while the person reads it, so the page may have gone, or
@@ -98,8 +103,10 @@ export class DevToolsService implements DevToolsGate {
   private show (contents: WebContents): void {
     contents.openDevTools({ mode: this.settings.get('developer.dock') })
     this.open.add(contents)
-    contents.once('devtools-closed', () => { this.open.delete(contents) })
     // A tab torn down with its tools open may no longer be able to name this page.
-    contents.once('destroyed', () => { this.open.delete(contents) })
+    const forget = (): void => { this.open.delete(contents) }
+    contents.once('destroyed', forget)
+    // Each open adds a listener for the page's whole life, so closing the tools takes it away again.
+    contents.once('devtools-closed', () => { forget(); contents.removeListener('destroyed', forget) })
   }
 }

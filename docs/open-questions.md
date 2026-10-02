@@ -1930,3 +1930,11 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** a dot on the tab like the audio indicator (rec.); a count in the tab menu; nothing, as now.
 - **Who decides:** owner
 - **Blocks:** nothing
+
+### A348: A browser exit right after a Chrome Web Store install is not reproduced **[RESEARCH]**
+
+- **Question:** What exits the browser right after a successful store install, the owner reports, with the extension working after a restart? A live install of a module worker with a welcome tab, an offscreen document and a static ruleset, with a web tab open, and of the real 75 MB AdBlock package, left the process running.
+- **Why it matters:** The report stands unexplained. What the live install did show was every real blocker's worker failing at load (fixed), which looks like "works after a restart" from outside.
+- **Options:** Get the extension id and the terminal output at the exit (rec.); wrap each `session.extensions` listener in `contain()`, which hides the cause; leave it.
+- **Who decides:** research first, with the owner's id and output
+- **Blocks:** nothing
