@@ -107,6 +107,14 @@ describe('TabManager.dispose -- a closing window (A259)', () => {
     expect(fakeContentView.addChildView).toHaveBeenCalledTimes(2)
   })
 
+  it('reports itself disposed from the moment dispose starts', () => {
+    const { manager } = managerOverAWindow()
+    manager.createTab('https://a.example/')
+    expect(manager.isDisposed()).toBe(false)
+    manager.dispose()
+    expect(manager.isDisposed()).toBe(true)
+  })
+
   it('stops pushing state to its listeners', () => {
     const { manager } = managerOverAWindow()
     manager.createTab('https://a.example/')

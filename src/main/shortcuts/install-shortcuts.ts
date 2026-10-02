@@ -30,7 +30,7 @@ export function installShortcuts (app: Pick<App, 'on'>, service: ShortcutService
       if (owner === undefined) return null
       const tabId = owner.tabs.findTabIdByWebContents(contents)
       const view = tabId === null ? undefined : owner.tabs.record(tabId)?.view
-      return { suspended: owner.shortcutsSuspended(), isAppTab: view !== undefined && appTabViews.has(view), run: (id: CommandId) => { commands.run(id, owner) }, alive: () => !owner.window.isDestroyed() }
+      return { suspended: owner.shortcutsSuspended(), isAppTab: view !== undefined && appTabViews.has(view), run: (id: CommandId) => { commands.run(id, owner) }, alive: () => !owner.window.isDestroyed() && !owner.tabs.isDisposed() }
     },
     recorded: (contents: WebContents, outcome: unknown) => {
       if (!contents.isDestroyed()) contents.send(INTERNAL_EVENT_CHANNEL, { topic: 'shortcuts.recorded', payload: outcome })
