@@ -1881,3 +1881,11 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** remove the view and its row code now (rec.); keep it for when the reading list lands; hide it while the root is empty.
 - **Who decides:** owner
 - **Blocks:** nothing
+
+### A346: A bookmarks-bar folder menu closes when its row menu opens, and items cannot be dragged out of it **[AI-REC]**
+
+- **Question:** The row menu is a native menu, which takes focus, so the folder menu closes as it opens; Chrome keeps it open. Chrome also drags an item out of an open folder menu onto the bar. Build both?
+- **Why it matters:** a person deleting several items from a folder reopens it after each; moving one back to the bar needs the menu row.
+- **Options:** leave as is until a person asks (rec.); keep the overlay open while a native menu is up; main-coordinated drag across the folder and chrome views.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
