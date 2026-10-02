@@ -1,6 +1,5 @@
 import type { ShellState, TabState } from '../../main/shell/tabs.js'
 import { closeIcon, faviconElement } from '../icons.js'
-import { makeStripDraggable } from '../strip-drag.js'
 import { isDraggingTab, makeTabDraggable } from '../tab-drag.js'
 import type { ChromeContext, ChromeModule, TabDecorator } from './context.js'
 import { must } from './context.js'
@@ -176,20 +175,7 @@ export function createTabStrip (decorators: readonly TabDecorator[], finishers: 
         }).observe(scroller)
       }
       newTabBtn = must(document.querySelector<HTMLButtonElement>('#new-tab'), '#new-tab missing')
-      const stripTail = must(document.querySelector<HTMLDivElement>('#tab-strip-tail'), '#tab-strip-tail missing')
       newTabBtn.addEventListener('click', () => shell.newTab())
-      // The empty strip past the new-tab button: only wired up here in the manual drag mode (drag-mode.ts
-      // decides, main-side) -- in the native mode the tail is plain OS-level drag content and none of this runs.
-      if (shell.dragMode === 'manual') {
-        makeStripDraggable(stripTail, {
-          newTab: () => { shell.newTab() },
-          toggleMaximize: () => { shell.toggleMaximize() },
-          moveStart: (x, y) => { shell.windowMoveStart(x, y) },
-          moveTo: (x, y) => { shell.windowMoveTo(x, y) },
-          moveEnd: (x, y) => { shell.windowMoveEnd(x, y) },
-          moveCancel: () => { shell.windowMoveCancel() }
-        })
-      }
     },
     render: renderTabs,
     event: (payload) => {

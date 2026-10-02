@@ -32,7 +32,6 @@ import { showIntro } from './intro-view.js'
 import { createWindowFrame, showWhenReady, windowBackgroundColor } from './window-frame.js'
 import { recordViewBackground } from './view-background-test-hook.js'
 import { onThemeUpdated } from './theme-colors.js'
-import { dragModeFor } from './drag-mode.js'
 import type { ShellServices } from './shell-services.js'
 import { resolveCurrent } from '../browsing/search-current.js'
 import { bookmarksBarShown as barShown } from './bookmarks-bar/bar-visibility.js'
@@ -59,12 +58,6 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // same string, the pattern `--orivon-newtab-url` already establishes
   // below for the dashboard.
   const chromeUrl = rendererEntryUrl(import.meta.dirname, devServerUrl, '/', '../renderer/index.html')
-  // Which strip-drag mode the chrome uses for the empty tail after the
-  // new-tab button (drag-mode.ts's own doc: a real caption click there is
-  // eaten by Chromium's window-event filter under X11, so Linux drives it
-  // from JS instead; everywhere else the native drag region still works).
-  const dragMode = dragModeFor(process.platform, process.env, app.commandLine.getSwitchValue('ozone-platform'))
-
   const chrome = new WebContentsView({
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/shell.js'),
@@ -73,7 +66,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
       sandbox: true,
       nodeIntegration: false,
       webSecurity: true,
-      additionalArguments: [`--orivon-shell-url=${chromeUrl}`, `--orivon-drag-mode=${dragMode}`]
+      additionalArguments: [`--orivon-shell-url=${chromeUrl}`]
     }
   })
   // Set BEFORE addChildView: a freshly created WebContentsView defaults to

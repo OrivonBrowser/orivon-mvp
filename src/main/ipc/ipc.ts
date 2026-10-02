@@ -100,17 +100,6 @@ export type ShellCommand =
   | { type: 'endTabDrag' }
   /** The right-click menu of a tab, which main shows (it lists the other windows). */
   | { type: 'tabMenu'; id: string }
-  /** A double click on the empty tail of the strip, in the manual drag mode drag-mode.ts's `dragModeFor`
-   * chooses for Linux/X11 (native drag regions elsewhere handle this at the OS level, no command needed). */
-  | { type: 'toggleMaximize' }
-  /** The three points of a manual window move, all in screen coordinates -- the same tail, same mode. Start
-   * captures where within the window the pointer took hold; `windowMoveTo` repeats on every pointer move
-   * while the drag lasts; `windowMoveEnd` is where an Aero-snap-style release tiles the window, if anywhere. */
-  | { type: 'windowMoveStart'; x: number; y: number }
-  | { type: 'windowMoveTo'; x: number; y: number }
-  | { type: 'windowMoveEnd'; x: number; y: number }
-  /** The move ended in a `pointercancel`, not a release: no edge-snap action, unlike `windowMoveEnd`. */
-  | { type: 'windowMoveCancel' }
 
 /**
  * BOTH object identity AND URL, matching `newtab-ipc.ts`'s own
@@ -142,11 +131,6 @@ export interface ShellActions {
   dropTab: (id: string, screen: { x: number, y: number }, client: { x: number, y: number }) => void
   endTabDrag: () => void
   showTabMenu: (id: string) => void
-  toggleMaximize: () => void
-  windowMoveStart: (point: { x: number, y: number }) => void
-  windowMoveTo: (point: { x: number, y: number }) => void
-  windowMoveEnd: (point: { x: number, y: number }) => void
-  windowMoveCancel: () => void
 }
 
 export function registerShellIpc (
@@ -253,21 +237,6 @@ export function registerShellIpc (
         return
       case 'tabMenu':
         if (typeof command.id === 'string') actions.showTabMenu(command.id)
-        return
-      case 'toggleMaximize':
-        actions.toggleMaximize()
-        return
-      case 'windowMoveStart':
-        if (Number.isFinite(command.x) && Number.isFinite(command.y)) actions.windowMoveStart({ x: command.x, y: command.y })
-        return
-      case 'windowMoveTo':
-        if (Number.isFinite(command.x) && Number.isFinite(command.y)) actions.windowMoveTo({ x: command.x, y: command.y })
-        return
-      case 'windowMoveEnd':
-        if (Number.isFinite(command.x) && Number.isFinite(command.y)) actions.windowMoveEnd({ x: command.x, y: command.y })
-        return
-      case 'windowMoveCancel':
-        actions.windowMoveCancel()
         return
     }
   })

@@ -5,7 +5,7 @@ entirely.
 
 | Entry | What it is |
 |---|---|
-| (top level) | The chrome view: `main.ts` starts the modules in [`chrome/`](chrome/) (tab strip, navigation, site badges, the toolbar cluster, the bookmarks bar; each a `ChromeModule`), and the drag helpers here (`tab-drag.ts`, and `strip-drag.ts` for the empty tail past the new-tab button in the manual drag mode, Linux/X11 only -- `src/main/shell/drag-mode.ts` decides), in its own `WebContentsView` above the active tab |
+| (top level) | The chrome view: `main.ts` starts the modules in [`chrome/`](chrome/) (tab strip, navigation, site badges, the toolbar cluster, the bookmarks bar; each a `ChromeModule`), and the tab drag helper here (`tab-drag.ts`), in its own `WebContentsView` above the active tab |
 | [`chrome/`](chrome/) | The chrome view's features, one file each, and the three toolbar slots a feature puts a button in |
 | [`newtab/`](newtab/) | The new-tab dashboard: ordinary content in a fresh tab's own view (`src/main/shell/tabs.ts`'s `createTab()`), not part of the chrome |
 | [`permissions/`](permissions/) | The all-sites permissions popup: every app and its grants, revoke-only |
