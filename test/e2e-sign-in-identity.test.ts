@@ -18,7 +18,7 @@ async function findChromeRetrying (app: import('playwright').ElectronApplication
 interface HeaderServer { port: number, close: () => void, documentHeaders: () => http.IncomingHttpHeaders | undefined, hits: string[], redirectTo: (location: string) => void }
 
 /** `/leave` answers 302 to wherever `redirectTo` says, the way a sign-in host sends a tab on once it is done. */
-async function startHeaderServer (): Promise<HeaderServer> {
+async function startHeaderServer (rootDelayMs = 0): Promise<HeaderServer> {
   let last: http.IncomingHttpHeaders | undefined
   let leaveTo = '/'
   const hits: string[] = []
@@ -30,7 +30,9 @@ async function startHeaderServer (): Promise<HeaderServer> {
       return
     }
     res.setHeader('content-type', 'text/html')
-    res.end('<!doctype html><title>fixture</title><body>fixture-ok</body>')
+    const body = '<!doctype html><title>fixture</title><body>fixture-ok</body>'
+    if (req.url === '/' && rootDelayMs > 0) setTimeout(() => res.end(body), rootDelayMs)
+    else res.end(body)
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
@@ -38,11 +40,18 @@ async function startHeaderServer (): Promise<HeaderServer> {
   return { port, close: () => { server.close() }, documentHeaders: () => last, hits, redirectTo: (location) => { leaveTo = location } }
 }
 
-/** Submits the address bar, repeating until a tab whose URL contains `needle` exists: the first
- * submit can land before the chrome view has wired its form handler. */
+/** How long a submit gets to show up as a tab before the helper tries once more. */
+const SUBMIT_GRACE_MS = 5000
+
+/** Submits the address bar, and once more after SUBMIT_GRACE_MS if no tab whose URL contains `needle` exists: the
+ * first submit can land before the chrome view has wired its form handler. Every submit starts a navigation, so
+ * submitting again at each poll would send a slow host the same GET several times. */
 async function navigateTo (app: import('playwright').ElectronApplication, chrome: any, url: string, needle: string): Promise<void> {
+  let lastSubmit = 0
   const appeared = await waitFor(async () => {
-    if (!app.windows().some((w: any) => w.url().includes(needle))) {
+    if (app.windows().some((w: any) => w.url().includes(needle))) return true
+    if (Date.now() - lastSubmit >= SUBMIT_GRACE_MS) {
+      lastSubmit = Date.now()
       await chrome.evaluate((u: string) => {
         const input = document.querySelector('#address') as HTMLInputElement
         input.value = u
@@ -50,9 +59,8 @@ async function navigateTo (app: import('playwright').ElectronApplication, chrome
         const form = document.querySelector('#address-form') as HTMLFormElement
         form.dispatchEvent(new Event('submit', { cancelable: true }))
       }, url)
-      return false
     }
-    return true
+    return false
   }, 30_000)
   if (!appeared) throw new Error(`no tab matching ${needle} after retrying the address bar`)
 }
@@ -126,7 +134,9 @@ describe('the Firefox sign-in identity, against local fixtures only', () => {
   // agent from will-redirect makes Chromium cancel the redirect and reload the last committed page,
   // which sends the same redirect again: the tab loads forever.
   it('lets a server redirect leave a sign-in host, and enter one, without reloading the page it came from', async () => {
-    const signInFixture = await startHeaderServer()
+    // A slow first response keeps the tab on its old page past the address-bar helper's first poll, so a helper
+    // that submitted again at the first poll would send a second GET / and the count below would be 2.
+    const signInFixture = await startHeaderServer(1500)
     const plainFixture = await startHeaderServer()
     const app = await launchElectron({
       env: {
