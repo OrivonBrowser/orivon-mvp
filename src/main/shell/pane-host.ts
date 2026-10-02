@@ -93,8 +93,12 @@ export class PaneHost {
 
   /** Shows `view` for a pane that is on screen already under another view, in the same place. */
   replace (id: string, view: View, bounds: Bounds): void {
+    const old = this.shown.get(id)
+    const index = old === undefined ? -1 : this.contentView.children.indexOf(old)
     this.hide(id)
-    this.contentView.addChildView(view)
+    // At the old view's place, never on top: a popover open above the pane stays above it.
+    if (index === -1) this.contentView.addChildView(view)
+    else this.contentView.addChildView(view, index)
     this.shown.set(id, view)
     view.setBounds(bounds)
   }

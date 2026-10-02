@@ -162,4 +162,16 @@ describe('PaneHost', () => {
     expect(host.isShown('a')).toBe(true)
     expect(view('A2').setBounds).toHaveBeenLastCalledWith(B(5))
   })
+
+  it('keeps a replaced pane at its place in the window, below a popover open above it', () => {
+    const { host, children, view } = setup()
+    const contentView = (host as unknown as { contentView: { addChildView: (v: never) => void } }).contentView
+    contentView.addChildView(view('chrome') as never)
+    host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }, { id: 'b', view: view('B') as never, bounds: B(100) }], { id: 'backdrop', view: view('X') as never, bounds: B(0) })
+    contentView.addChildView(view('popover') as never)
+
+    host.replace('a', view('A2') as never, B(0))
+
+    expect(children).toEqual(['X', 'A2', 'B', 'chrome', 'popover'])
+  })
 })

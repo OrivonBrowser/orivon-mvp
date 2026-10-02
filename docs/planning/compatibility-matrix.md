@@ -828,7 +828,7 @@ the reference set, and whether this build has it.
 | Hover preview / thumbnail | ❌ | Not found |
 | Tab discarding / memory saver | ✅ | A tab out of front for 15 minutes to 4 hours (2 hours by default, `performance.sleepAfter`) closes its page and keeps its address, title, icon and history, and wakes where it was, scroll included, when opened; a pinned, audible, captured, typed-into, prompt-waiting, app, other-session or kept-site tab stays awake, and a restored session brings its unpinned background tabs back asleep (`src/main/memory-saver/`, `tab.sleep`) |
 | Split view (two tabs side by side) | ✅ | `split-controller.ts`, `split-model.ts`, `split-frame.ts` |
-| Window size and move | ⚠️ partial | A window stops at 500 by 400, and below 640 px wide the toolbar drops its two placeholders and caps the extension buttons at two (`window-frame.ts`, `toolbar.css`). The empty end of the tab strip is a native drag region, so the window manager moves the window; a middle click there opens no tab (A292) |
+| Window size and move | ⚠️ partial | A window stops at 500 by 400, and below 640 px wide the toolbar drops its two placeholders and shows one extension button and clips the rest (`window-frame.ts`, `toolbar.css`). The empty end of the tab strip is a native drag region, so the window manager moves the window; a middle click there opens no tab (A292) |
 | Close other tabs | ✅ | `tab.closeOthers` and the tab menu close every unpinned tab but the one chosen (`src/main/shell/tab-commands.ts`) |
 | Close tabs to the right | ✅ | `tab.closeRight` and the tab menu close the unpinned tabs right of a tab, or of its split pair (`src/main/shell/tab-commands.ts`) |
 | Next/previous tab, go to tab N | ✅ | `tab.next`/`tab.previous`/`tab.goto1..9`/`tab.gotoLast` |
@@ -836,7 +836,7 @@ the reference set, and whether this build has it.
 | Open a link in a background tab (keeps the current tab focused) | ✅ | A middle click or a plain ctrl+click opens a background tab; the current tab stays in front (`popups.ts`) |
 | Open a link in a new window (Shift+click) | ✅ | Opens a real new window; a private window's shift+click opens a private window (`popups.ts`) |
 | Middle-click a tab to close it | ✅ | `auxclick`/`mousedown` guard on each tab element |
-| Middle-click the empty end of the tab strip to open a tab | ⚠️ | Linux X11 only (`docs/open-questions.md` A292) |
+| Middle-click the empty end of the tab strip to open a tab | ❌ | The empty end is a native drag region, which hands the page no event of any button, so no tab opens on any platform; on Linux the desktop's own middle-click title-bar action applies there (`docs/open-questions.md` A292) |
 | Tab loading spinner | ✅ | `.loading` class on the favicon element |
 | Tab title tooltip on hover | ✅ | Title, host, and whether the tab is playing audio, muted, in a split view or crashed (`src/renderer/chrome/tab-badges.ts`, `tab-crashed.ts`) |
 | Tab close button appears on hover | ✅ | `.tab:hover .close`; a pinned tab has none, and an inactive tab too narrow for one shows none |

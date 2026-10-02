@@ -256,12 +256,12 @@ it('previews where a dragged tab would go over a page edge, and splits when it i
     expect(await waitFor(async () => (await joined(chrome)).join() === [first, a].join())).toBe(true)
     expect(await waitFor(async () => backdropAt(await layout(app)) !== undefined)).toBe(true)
     expect(await activeId(chrome)).toBe(first)
-    // The pane dropped on the left sits below its partner in the window, not above it, and the
-    // keyboard went into the dropped tab's page.
+    // The pane dropped on the left sits straight below its partner in the window (nothing, the
+    // chrome view included, between them), and the keyboard went into the dropped tab's page.
     const views = await layout(app)
     const dropped = views.findIndex((view) => view.url.includes('/newtab/'))
     expect(dropped).toBeGreaterThan(-1)
-    expect(dropped).toBeLessThan(views.findIndex((view) => view.url.includes(`${origin}/a`)))
+    expect(dropped).toBe(views.findIndex((view) => view.url.includes(`${origin}/a`)) - 1)
     expect(await waitFor(async () => (await app.evaluate(() => (globalThis as unknown as { __focused: string[] }).__focused)).at(-1)?.includes('/newtab/') === true)).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {

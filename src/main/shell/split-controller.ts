@@ -96,8 +96,8 @@ export class SplitController {
     if (!this.groups.create(a, b, orientationOf(zone))) return false
     this.placeTogether(a, b)
     this.host.activate(dropped)
-    // A pane that came forward by a drag has no click in it yet: without this the keyboard stays in
-    // the strip the tab was dragged from, and the new pane is the one that takes no input.
+    // A pane brought forward by a drag has had no click, so the keyboard would stay in the chrome view
+    // the drag started from.
     this.host.focus(dropped)
     return true
   }
