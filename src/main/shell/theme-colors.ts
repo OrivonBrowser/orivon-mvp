@@ -19,13 +19,16 @@ export interface ThemeColorPair {
   readonly dark: string
 }
 
-/** The app's own dark wash, the same in both themes -- used where the
- * shell shows before any page of its own has loaded: the intro screen's
- * backdrop (intro-view.ts) and the new-tab dashboard's pre-paint background
- * (tab-factory.ts), matching newtab/style.css's `html` background, which is
- * this same value in both themes for the same reason (a picture wash, not a
- * themed surface). */
+/** The app's own dark wash, the same in both themes -- the intro screen's
+ * backdrop (intro-view.ts), matching intro/style.css's page background. */
 export const APP_DARK_WASH = '#0d0e14'
+
+/** What the new-tab dashboard shows before its page has painted, the same in
+ * both themes: the mean colour of its picture under its dark wash, so the
+ * jump to the picture is small where a near-black base read as a black flash.
+ * Literally the base colour under the picture in newtab/style.css's `html`
+ * background, which is what the page paints once it is up. */
+export const DASHBOARD_BACKGROUND = '#394244'
 
 /** Electron's own default: what a WebContentsView paints before anything
  * ever calls `setBackgroundColor` on it. Named so putting a view back reads as

@@ -41,11 +41,16 @@ html, body {
    search box and tiles follow the OS scheme, so whatever sits on the picture
    itself (.wordmark, .tile-section-title) has fixed light colours below. The
    wash is orivon-browser-v2's new-tab one. `fixed` keeps a tall bookmark grid
-   from scrolling or tiling the picture. */
+   from scrolling or tiling the picture. The last two layers show until the
+   full picture has decoded: a tiny copy of it (small enough that the build
+   inlines it, so the first paint has it) and a flat colour, the picture's
+   mean under the wash, which the shell also paints the view with before this
+   page exists (theme-colors.ts's DASHBOARD_BACKGROUND). */
 html {
   background:
     linear-gradient(rgba(13, 14, 20, 0.58), rgba(13, 14, 20, 0.58)),
-    url('../assets/intro-background.webp') center / cover no-repeat fixed #0d0e14;
+    url('../assets/intro-background.webp') center / cover no-repeat fixed,
+    url('../assets/newtab-placeholder.webp') center / cover no-repeat fixed #394244;
 }
 
 button {

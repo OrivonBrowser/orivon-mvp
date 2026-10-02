@@ -108,7 +108,7 @@ it('a click with no prior hover still opens the menu, building it then', async (
   }
 }, TEST_TIMEOUT_MS)
 
-it('a brand-new tab is painted the app\'s own dark wash before its page ever loads', async () => {
+it('a brand-new tab is painted the dashboard\'s own colour before its page ever loads', async () => {
   const app = await launchElectron({ appPath: '.', ...SILENT })
   try {
     const chrome = await readyChrome(app)
@@ -131,9 +131,9 @@ it('a brand-new tab is painted the app\'s own dark wash before its page ever loa
       return undefined
     }, before)
 
-    // theme-colors.ts's APP_DARK_WASH -- the same value in both themes, so
+    // theme-colors.ts's DASHBOARD_BACKGROUND -- the same value in both themes, so
     // this needs no assumption about which one the test machine is in.
-    expect(recorded).toBe('#0d0e14')
+    expect(recorded).toBe('#394244')
   } finally {
     await closeElectron(app)
     expect(await assertNoElectronSurvivors()).toEqual([])

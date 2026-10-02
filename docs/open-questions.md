@@ -1882,16 +1882,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A345: Which action still flickers in light mode is not known **[OWNER]**
-
-- **Question:** The owner still sees a flicker in light mode. The code shows three candidates: the dashboard tab leaving
-  for a site (now painted white when the navigation starts), the strip a resize or a maximise exposes (now the shown
-  tab's colour), and the split pane's frame view, which has no pre-paint colour. Which action is it, and does it remain?
-- **Why it matters:** a settled screenshot cannot catch a frame that lasts a moment, so only the owner's eye can say.
-- **Options:** open a new tab, leave it for a site, return to it, resize or maximise, switch tabs, split; name the one.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A346: A bookmarks-bar folder menu closes when its row menu opens, and items cannot be dragged out of it **[AI-REC]**
 
 - **Question:** The row menu is a native menu, which takes focus, so the folder menu closes as it opens; Chrome keeps it open. Chrome also drags an item out of an open folder menu onto the bar. Build both?

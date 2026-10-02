@@ -10,7 +10,7 @@ import { assertNoElectronSurvivors, closeElectron } from './launch-electron.mjs'
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './qa-helpers.js'
 import { waitFor } from './smoke-helpers.mjs'
 
-const APP_DARK_WASH = '#0d0e14'
+const DASHBOARD_BACKGROUND = '#394244'
 const WHITE = '#ffffff'
 const INTERNAL = { light: '#f4f4f8', dark: '#17181c' }
 
@@ -63,8 +63,8 @@ for (const mode of ['light', 'dark'] as const) {
       let id: number | undefined
       expect(await waitFor(async () => { id = await dashboardId(app); return id !== undefined && (await recorded(app, id)) !== undefined })).toBe(true)
       const dash = id as number
-      expect(await recorded(app, dash)).toBe(APP_DARK_WASH)
-      expect(await windowBackground(app)).toBe(APP_DARK_WASH)
+      expect(await recorded(app, dash)).toBe(DASHBOARD_BACKGROUND)
+      expect(await windowBackground(app)).toBe(DASHBOARD_BACKGROUND)
 
       // What the view holds the moment each main-frame navigation starts, read after the shell's own listeners ran.
       await app.evaluate(({ webContents }, wcId: number) => {
@@ -86,9 +86,9 @@ for (const mode of ['light', 'dark'] as const) {
       await chrome.click('#back')
       expect(await waitFor(async () => (await dashboardId(app)) === dash)).toBe(true)
       const toDashboard = (await startColours()).find((c) => c.includes('/newtab/'))
-      expect(toDashboard?.endsWith(`|${APP_DARK_WASH}`)).toBe(true)
-      expect(await waitFor(async () => (await recorded(app, dash)) === APP_DARK_WASH)).toBe(true)
-      expect(await waitFor(async () => (await windowBackground(app)) === APP_DARK_WASH)).toBe(true)
+      expect(toDashboard?.endsWith(`|${DASHBOARD_BACKGROUND}`)).toBe(true)
+      expect(await waitFor(async () => (await recorded(app, dash)) === DASHBOARD_BACKGROUND)).toBe(true)
+      expect(await waitFor(async () => (await windowBackground(app)) === DASHBOARD_BACKGROUND)).toBe(true)
 
       await chrome.evaluate((n) => { (window as unknown as Shell).orivonShell.openInternal(n) }, 'history')
       expect(await waitFor(async () => (await windowBackground(app)) === INTERNAL[mode])).toBe(true)
@@ -110,3 +110,63 @@ it('a change of scheme at run time moves the window behind the views with the ta
     await closeElectron(app)
   }
 }, QA_TEST_TIMEOUT_MS)
+
+type NewTabShell = { orivonShell: { newTab: () => void } }
+
+for (const mode of ['light', 'dark'] as const) {
+  it(`in ${mode}: opening a new tab never shows the window or the view in a colour other than the dashboard's, and its first paint carries the picture`, async () => {
+    const { app, chrome } = await launchShell({ scheme: mode })
+    try {
+      const dashboards = (): Promise<number[]> =>
+        app.evaluate(({ webContents }) => webContents.getAllWebContents().filter((wc) => wc.getURL().includes('/newtab/')).map((wc) => wc.id))
+      expect(await waitFor(async () => (await dashboards()).length === 1)).toBe(true)
+      const [first] = await dashboards()
+
+      // Every colour the window and any dashboard view holds, sampled every millisecond from before the tab exists
+      // until its page has loaded: a flash lasts a few frames, so the settled state cannot show it.
+      await app.evaluate(({ BaseWindow, webContents }) => {
+        const g = globalThis as unknown as { __seen: Set<string>, __seenTimer?: NodeJS.Timeout, __orivonDevViewBackgrounds?: Map<number, string> }
+        g.__seen = new Set()
+        g.__seenTimer = setInterval(() => {
+          const win = BaseWindow.getAllWindows()[0]
+          if (win === undefined) return
+          g.__seen.add(`window ${win.getBackgroundColor().toLowerCase()}`)
+          for (const wc of webContents.getAllWebContents()) {
+            const colour = g.__orivonDevViewBackgrounds?.get(wc.id)
+            if (colour !== undefined && (wc.getURL() === '' || wc.getURL().includes('/newtab/'))) g.__seen.add(`view ${colour.toLowerCase()}`)
+          }
+        }, 1)
+      })
+      await chrome.evaluate(() => { (window as unknown as NewTabShell).orivonShell.newTab() })
+      expect(await waitFor(async () => (await dashboards()).length === 2)).toBe(true)
+      const fresh = (await dashboards()).find((id) => id !== first) as number
+      const loaded = await app.evaluate(async ({ webContents }, id: number) => {
+        const wc = webContents.fromId(id)
+        for (let i = 0; i < 2_000 && wc !== undefined && (wc.isLoading() || wc.getURL() === ''); i++) await new Promise((r) => { setTimeout(r, 5) })
+        return wc?.isLoading() === false
+      }, fresh)
+      expect(loaded).toBe(true)
+      const seen = await app.evaluate(() => {
+        const g = globalThis as unknown as { __seen: Set<string>, __seenTimer?: NodeJS.Timeout }
+        if (g.__seenTimer !== undefined) clearInterval(g.__seenTimer)
+        return [...g.__seen].sort()
+      })
+      expect(seen).toEqual([`view ${DASHBOARD_BACKGROUND}`, `window ${DASHBOARD_BACKGROUND}`])
+
+      // The page itself: its own base colour is the backing, and a small copy of the picture is inlined in the
+      // stylesheet, so the first paint shows the picture instead of the base colour until the full file is decoded.
+      const pages = app.windows().filter((p) => p.url().includes('/newtab/'))
+      expect(pages.length).toBe(2)
+      for (const page of pages) {
+        const style = await page.evaluate(() => {
+          const css = getComputedStyle(document.documentElement)
+          return { colour: css.backgroundColor, image: css.backgroundImage }
+        })
+        expect(style.colour).toBe('rgb(57, 66, 68)')
+        expect(style.image).toContain('data:image/webp')
+      }
+    } finally {
+      await closeElectron(app)
+    }
+  }, QA_TEST_TIMEOUT_MS)
+}
