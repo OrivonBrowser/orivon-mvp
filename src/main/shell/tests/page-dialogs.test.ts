@@ -8,24 +8,28 @@ vi.mock('electron', () => ({}))
 const { PAGE_DIALOG_CHANNEL } = await import('../../channels.js')
 const { defaultReply, hasPendingPageDialog, pageDialogSpec, readRequest, replyFor, speaker, watchPageDialogs } = await import('../page-dialogs.js')
 
-const MAIN = { origin: 'https://shop.example', parent: null }
-const FRAME = { origin: 'https://ads.example', parent: MAIN }
-const OPAQUE = { origin: 'null', parent: MAIN }
+const MAIN = { origin: 'https://shop.example', parent: null, detached: false }
+const FRAME = { origin: 'https://ads.example', parent: MAIN, detached: false }
+const OPAQUE = { origin: 'null', parent: MAIN, detached: false }
 
 type Frame = typeof MAIN | typeof FRAME | typeof OPAQUE
 
 interface Rig {
-  wc: EventEmitter & { isDestroyed: () => boolean, mainFrame: typeof MAIN, ipc: { on: ReturnType<typeof vi.fn> } }
+  wc: EventEmitter & { isDestroyed: () => boolean, getOSProcessId: () => number, mainFrame: typeof MAIN, ipc: { on: ReturnType<typeof vi.fn> } }
   ask: ReturnType<typeof vi.fn>
   /** Sends one dialog the way the preload does, and returns what the page would read. */
   send: (raw: unknown, frame?: Frame | null) => { value: unknown, replied: boolean }
   shown: { value: boolean }
 }
 
+let nextProcessId = 100
+
 /** `ask` answers nothing until told: each call parks a resolver, and an abort answers it as a cancel. */
 function rig (answer?: (spec: QuestionSpec) => QuestionResult | Promise<QuestionResult>): Rig {
   const wc = new EventEmitter() as Rig['wc']
   wc.isDestroyed = () => false
+  const processId = nextProcessId++
+  wc.getOSProcessId = () => processId
   wc.mainFrame = MAIN
   wc.ipc = { on: vi.fn() }
   const shown = { value: true }
@@ -204,6 +208,69 @@ describe('a page that leaves while it waits', () => {
     await flush()
     expect(first).toEqual({ value: null, replied: true })
     expect(second).toEqual({ value: false, replied: true })
+  })
+})
+
+describe('a frame that leaves while its dialog is open', () => {
+  it('ends the dialog when the frame is removed, and keeps it while the frame is there', async () => {
+    vi.useFakeTimers()
+    try {
+      const frame = { origin: 'https://ads.example', parent: MAIN, detached: false }
+      const r = rig()
+      const confirm = r.send(request('confirm'), frame)
+      await vi.advanceTimersByTimeAsync(600)
+      expect(confirm.replied).toBe(false)
+
+      frame.detached = true
+      await vi.advanceTimersByTimeAsync(300)
+      expect(confirm).toEqual({ value: false, replied: true })
+      expect(hasPendingPageDialog(r.wc as unknown as WebContents)).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('treats a frame it can no longer read as removed', async () => {
+    vi.useFakeTimers()
+    try {
+      const frame = { origin: 'https://ads.example', parent: MAIN, get detached (): boolean { throw new Error('Render frame was disposed') } }
+      const r = rig()
+      const alert = r.send(request('alert'), frame as never)
+      await vi.advanceTimersByTimeAsync(300)
+      expect(alert.replied).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not look at the top frame, which lives as long as the tab', async () => {
+    vi.useFakeTimers()
+    try {
+      const r = rig()
+      const confirm = r.send(request('confirm'))
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(confirm.replied).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('a renderer shared by two tabs', () => {
+  it('is waiting, not hung, for the tab that did not ask as well', () => {
+    const a = rig()
+    const b = rig()
+    const other = rig()
+    b.wc.getOSProcessId = a.wc.getOSProcessId
+    expect(hasPendingPageDialog(b.wc as unknown as WebContents)).toBe(false)
+
+    a.send(request('confirm'))
+    expect(hasPendingPageDialog(a.wc as unknown as WebContents)).toBe(true)
+    expect(hasPendingPageDialog(b.wc as unknown as WebContents)).toBe(true)
+    expect(hasPendingPageDialog(other.wc as unknown as WebContents)).toBe(false)
+
+    a.wc.emit('destroyed')
+    expect(hasPendingPageDialog(b.wc as unknown as WebContents)).toBe(false)
   })
 })
 

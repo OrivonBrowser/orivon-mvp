@@ -130,3 +130,54 @@ describe('a navigation the shell started', () => {
     expect(go).toHaveBeenCalledTimes(2)
   })
 })
+
+describe('a Leave that was not used', () => {
+  it('does not carry over to the document that replaced the page', async () => {
+    const wc = contents()
+    leaveAllowed(wc, answering(0))
+    await flush()
+    // The page dropped its handler: the navigation started with no question, and a new document began.
+    forgetNavigation(wc)
+
+    const ask = answering(1)
+    expect(leaveAllowed(wc, ask)).toBe(false)
+    expect(ask).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('a navigation typed while the question is open', () => {
+  it('is the one Leave goes to, not the one the question was raised for', async () => {
+    const wc = contents()
+    const first = vi.fn()
+    const second = vi.fn()
+    let answer: (value: { response: number, checkboxChecked: boolean }) => void = () => {}
+    const ask = vi.fn(() => new Promise<{ response: number, checkboxChecked: boolean }>((resolve) => { answer = resolve })) as unknown as AskQuestion
+
+    startNavigation(wc, first)
+    expect(leaveAllowed(wc, ask)).toBe(false)
+    startNavigation(wc, second)
+    expect(leaveAllowed(wc, ask)).toBe(false)
+    expect(ask).toHaveBeenCalledTimes(1)
+
+    answer({ response: 0, checkboxChecked: false })
+    await flush()
+
+    expect(second).toHaveBeenCalledTimes(2)
+    expect(first).toHaveBeenCalledTimes(1)
+  })
+
+  it('is not run again after Stay', async () => {
+    const wc = contents()
+    const second = vi.fn()
+    let answer: (value: { response: number, checkboxChecked: boolean }) => void = () => {}
+    const ask = vi.fn(() => new Promise<{ response: number, checkboxChecked: boolean }>((resolve) => { answer = resolve })) as unknown as AskQuestion
+
+    leaveAllowed(wc, ask)
+    startNavigation(wc, second)
+    leaveAllowed(wc, ask)
+    answer({ response: 1, checkboxChecked: false })
+    await flush()
+
+    expect(second).toHaveBeenCalledTimes(1)
+  })
+})

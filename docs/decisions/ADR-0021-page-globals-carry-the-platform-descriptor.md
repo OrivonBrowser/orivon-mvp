@@ -33,7 +33,7 @@ dashboard. `configurable: true` alone does not help; non-writability alone block
 `event.senderFrame` and the grant ledger ([`../../src/broker/transport/ipc.ts`](../../src/broker/transport/ipc.ts),
 [`capabilities/net.ts`](../../src/broker/capabilities/net.ts)); it cannot observe a renderer global.
 `window.orivon` — hence the uncapped `orivon.net.connect` the routed `fetch` is itself built on
-— reaches every ordinary tab regardless. And a same-origin subframe gets no preload, so an
+— reaches every ordinary tab regardless. And a subframe gets only the page-dialog wrapper from a tab's preloads, so an
 unrouted `fetch` was always one line away.
 
 **The lock arrived by copy-paste**, from `window.orivon`'s own deliberate lock, which does carry

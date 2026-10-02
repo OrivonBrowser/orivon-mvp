@@ -26,7 +26,7 @@ import type { ElectronApplication } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { ABSENCE_SETTLE_MS, delay, evaluateRetrying, HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
 import { closeElectronApp, forwardOutput, killChild, navigateToFixture, runPhase, waitForTcpReady } from './e2e-helpers.js'
-import { noNativeDialogs, questionGone, stubNativeDialogs } from './question-support.js'
+import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from './question-support.js'
 import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
 import { embedPartitionFor } from '../src/main/embed/embed-guard.js'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
@@ -52,7 +52,7 @@ const BLOB_NAME = `${RUN_ID}.txt`
 const FILE_BODY = 'twelve bytes'
 
 /** One line of the shown page: a fixed box at a known place, so a click at its middle finds it. */
-const ROWS = ['blank', 'plain', 'named', 'post', 'download', 'redirect', 'blob', 'open', 'features', 'custom', 'foreign'] as const
+const ROWS = ['blank', 'plain', 'named', 'post', 'download', 'redirect', 'blob', 'open', 'features', 'custom', 'foreign', 'ask'] as const
 type Row = typeof ROWS[number]
 const ROW_HEIGHT = 40
 const rowMiddle = (row: Row): { x: number, y: number } => ({ x: 100, y: ROWS.indexOf(row) * ROW_HEIGHT + ROW_HEIGHT / 2 })
@@ -73,6 +73,7 @@ ${box('open', '<button id="openbtn" style="width:100%;height:100%" onclick="wind
 ${box('features', '<button style="width:100%;height:100%" onclick="window.open(\'/sized\', \'sized\', \'width=300,height=200\')">features</button>')}
 ${box('custom', link('href="foo://x/y"', 'custom'))}
 ${box('foreign', link(`href="${OTHER_ORIGIN}/${FILE_NAME}"`, 'foreign'))}
+${box('ask', '<button style="width:100%;height:100%" onclick="window.asked = confirm(\'the shown page asks\')">ask</button>')}
 <script>
   var blob = new Blob(['made by the page'], { type: 'text/plain' });
   document.getElementById('bloblink').href = URL.createObjectURL(blob);
@@ -379,6 +380,16 @@ it(
         check('it is neither a popup nor a download', custom.length === 0, JSON.stringify(custom))
         const stayed = await evaluateRetrying(view, async () => (window as unknown as PageState).__embedView.executeJavaScript('location.href'))
         check('the shown page stays where it was', stayed === `${SITE_ORIGIN}/`, String(stayed))
+
+        // ---- a dialog of the shown page is asked in the app's own tab, with the shown page's origin, and never in a native box.
+        await clickGuest(app, guestId, rowMiddle('ask'))
+        const panel = await waitQuestion(app)
+        const spoken = await readQuestion(panel)
+        check('the shown page\'s confirm is asked in the app tab\'s panel, headed with the shown page\'s origin', spoken.origin === `${SITE_ORIGIN} says` && spoken.message === 'the shown page asks', JSON.stringify(spoken))
+        await answerQuestion(app, 'OK')
+        const answer = await waitFor(async () => await evaluateRetrying(view, async () => (window as unknown as PageState).__embedView.executeJavaScript('window.asked')) === true, EVENT_WAIT_MS)
+        check('the shown page reads the answer', answer)
+        check('no native box was drawn for it', (await noNativeDialogs(app)).length === 0)
       } finally {
         await closeElectronApp(app)
       }

@@ -53,6 +53,9 @@ export function hardenGuest (webPreferences: WebPreferences, params: Record<stri
   webPreferences.webviewTag = false
   webPreferences.plugins = false
   webPreferences.devTools = settings.devTools
+  // The guest's own preload asks its dialogs in the app's panel (./embed-host.ts); a frame that preload does
+  // not reach is answered at once instead of drawing Electron's native box.
+  webPreferences.disableDialogs = true
   // Chromium never reports a popup while this is true, and the element sets
   // it from its own `allowpopups` attribute, which the app need not have
   // written. The window-open handler ./embed-host.ts installs denies every

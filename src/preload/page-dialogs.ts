@@ -6,6 +6,7 @@
 // and the property's descriptor as the page expects them.
 import { contextBridge, ipcRenderer } from 'electron'
 import { PAGE_DIALOG_CHANNEL } from '../main/channels.js'
+import { sandboxedWithoutModals } from './dialog-gates.js'
 
 type DialogType = 'alert' | 'confirm' | 'prompt'
 
@@ -13,7 +14,8 @@ type DialogType = 'alert' | 'confirm' | 'prompt'
 function ask (type: DialogType, message: string, defaultText: string): unknown {
   let reply: unknown
   try {
-    reply = ipcRenderer.sendSync(PAGE_DIALOG_CHANNEL, { type, message, defaultText })
+    // Chromium's own refusal (./dialog-gates.ts) comes first: a dialog it would have ignored is never asked.
+    reply = sandboxedWithoutModals() ? undefined : ipcRenderer.sendSync(PAGE_DIALOG_CHANNEL, { type, message, defaultText })
   } catch {
     reply = undefined
   }
@@ -27,12 +29,21 @@ function wrapDialogs (askMain: (type: string, message: string, defaultText: stri
   const text = (value: unknown): string => {
     try { return String(value) } catch { return '' }
   }
+  /** Chromium ignores a dialog raised while the page is being left; the event being handled says so (./dialog-gates.ts). */
+  const leaving = (): boolean => {
+    try {
+      const type = (window as unknown as { event?: { type?: unknown } }).event?.type
+      return type === 'beforeunload' || type === 'pagehide' || type === 'unload'
+    } catch {
+      return false
+    }
+  }
   const page = window as unknown as Record<string, unknown>
   for (const name of ['alert', 'confirm', 'prompt']) {
     const native = page[name]
     if (typeof native !== 'function') continue
     page[name] = new Proxy(native, {
-      apply: (_target, _self, args: unknown[]) => askMain(name, args.length > 0 ? text(args[0]) : '', name === 'prompt' && args.length > 1 ? text(args[1]) : '')
+      apply: (_target, _self, args: unknown[]) => leaving() ? (name === 'confirm' ? false : name === 'prompt' ? null : undefined) : askMain(name, args.length > 0 ? text(args[0]) : '', name === 'prompt' && args.length > 1 ? text(args[1]) : '')
     })
   }
 }

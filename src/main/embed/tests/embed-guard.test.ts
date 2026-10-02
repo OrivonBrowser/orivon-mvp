@@ -66,6 +66,7 @@ describe('hardenGuest', () => {
       webviewTag: false,
       plugins: false,
       devTools: false,
+      disableDialogs: true,
       disablePopups: false
     })
     expect(params).toEqual({

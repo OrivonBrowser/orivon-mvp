@@ -227,4 +227,5 @@ browser presents as Firefox, which has no `navigator.userAgentData` and sends no
 headers: [`sign-in-identity-headers.ts`](sign-in-identity-headers.ts) rewrites the request headers,
 [`sign-in-identity-tab.ts`](sign-in-identity-tab.ts) swaps `navigator.userAgent`, and
 `../../preload/sign-in-identity.ts` deletes `navigator.userAgentData` at document start. The
-preload runs in a tab's main frame only, so a sign-in page in another site's iframe keeps it.
+preload acts only from a tab's top frame (a subframe's preload gets nothing but the page-dialog wrapper), so a
+sign-in page in another site's iframe keeps it.

@@ -46,7 +46,16 @@ function isSandboxPage(): boolean {
   }
 }
 
-if (contextUrl().startsWith('chrome-extension://') && !isSandboxPage()) {
+// Orivon patch (UPSTREAM.md patch 61): a frame preload runs in a page's subframes too once the
+// tab opts into `nodeIntegrationInSubFrames` (for its page dialogs), so a `chrome-extension:` page
+// a site embeds in an iframe would get the whole `chrome.*` surface. Only a document's own top
+// frame (an extension tab, popup or page) and a service worker get it; a frame that cannot say
+// which it is gets nothing.
+function isTopFrameOrWorker(): boolean {
+  return process.type === 'service-worker' || process.isMainFrame === true
+}
+
+if (isTopFrameOrWorker() && contextUrl().startsWith('chrome-extension://') && !isSandboxPage()) {
   // Orivon patch (UPSTREAM.md patch 45): Orivon's own namespaces ride along.
   injectExtensionAPIs(getExtraMainWorldApis())
 }

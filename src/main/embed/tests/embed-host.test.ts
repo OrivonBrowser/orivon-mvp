@@ -39,6 +39,9 @@ vi.mock('electron', () => ({
   }
 }))
 
+const dialogs = vi.hoisted(() => ({ watch: vi.fn() }))
+vi.mock('../../shell/page-dialogs.js', () => ({ watchPageDialogs: dialogs.watch }))
+
 const { installEmbedHost } = await import('../embed-host.js')
 const { EMBED_EVENT_CHANNEL } = await import('../../channels.js')
 const { embedPartitionFor } = await import('../embed-guard.js')
@@ -408,6 +411,17 @@ describe('installEmbedHost -- a shown page\'s popups and downloads are told to i
 
   const item = (over: Partial<Downloading> = {}): Downloading =>
     ({ getURLChain: () => ['https://a.example/go', 'https://a.example/f.bin'], getFilename: () => 'f.bin', getMimeType: () => 'application/octet-stream', getTotalBytes: () => 9, ...over })
+
+  it('asks a shown page\'s dialogs in the tab of the app that shows it', () => {
+    dialogs.watch.mockClear()
+    const { embedder, guest } = attached()
+    expect(dialogs.watch).toHaveBeenCalledTimes(1)
+    const [watched, shown, ask, panelOf] = dialogs.watch.mock.calls[0] as [unknown, () => boolean, unknown, () => unknown]
+    expect(watched).toBe(guest)
+    expect(shown()).toBe(true)
+    expect(ask).toBeUndefined()
+    expect(panelOf()).toBe(embedder)
+  })
 
   it('denies a guest\'s windows from the moment it exists, before it has attached', () => {
     installEmbedHost(fakeBroker(new Set([ORIGIN_A]), vi.fn()), '/preload/embed.js')

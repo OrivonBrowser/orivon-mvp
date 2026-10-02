@@ -23,6 +23,8 @@ const APPROVAL_MS = 20_000
 const intents = new WeakMap<WebContents, { at: number, run: () => void }>()
 const approvals = new WeakMap<WebContents, number>()
 const asking = new WeakSet<WebContents>()
+/** What "Leave" runs again: the newest shell navigation the page refused while the question was open. */
+const replays = new WeakMap<WebContents, () => void>()
 
 /** Runs a navigation the shell started, remembering how to run it again if the page asks the person first. */
 export function startNavigation (contents: WebContents, go: () => void): void {
@@ -30,9 +32,10 @@ export function startNavigation (contents: WebContents, go: () => void): void {
   go()
 }
 
-/** A new document is on its way: whatever was remembered ran, and is not for a later question. */
+/** A new document is on its way: whatever was remembered ran, and a "Leave" that was not used up belongs to the page that is gone. */
 export function forgetNavigation (contents: WebContents): void {
   intents.delete(contents)
+  approvals.delete(contents)
 }
 
 /** What `will-prevent-unload` does: true to let the page go (call `preventDefault`), false to keep it, with the question asked meanwhile. */
@@ -44,8 +47,14 @@ export function leaveAllowed (contents: WebContents, ask: AskQuestion = askQuest
     approvals.delete(contents)
     if (until > Date.now()) return true
   }
-  if (asking.has(contents)) return false
   const replay = recent !== undefined && Date.now() - recent.at < INTENT_MS ? recent.run : undefined
+  if (asking.has(contents)) {
+    // An address typed while the question is open is the one "Leave" must go to.
+    if (replay !== undefined) replays.set(contents, replay)
+    return false
+  }
+  if (replay === undefined) replays.delete(contents)
+  else replays.set(contents, replay)
   asking.add(contents)
   ask({ contents }, {
     kind: 'confirm',
@@ -57,9 +66,14 @@ export function leaveAllowed (contents: WebContents, ask: AskQuestion = askQuest
     focus: STAY
   }, { endOnNavigation: true }).then((result) => {
     asking.delete(contents)
+    const run = replays.get(contents)
+    replays.delete(contents)
     if (result.response !== LEAVE || contents.isDestroyed()) return
     approvals.set(contents, Date.now() + APPROVAL_MS)
-    replay?.()
-  }, () => { asking.delete(contents) })
+    run?.()
+  }, () => {
+    asking.delete(contents)
+    replays.delete(contents)
+  })
   return false
 }

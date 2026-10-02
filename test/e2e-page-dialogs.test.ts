@@ -4,6 +4,8 @@
 // driven by a click that has not returned yet, so each click is started, answered through the panel, then awaited.
 // Electron's native box cannot be observed from here, so what proves it never opens is the page's own outcome: a
 // frame the preload never reached (a blank one) is answered at once, a script is released when its tab navigates away.
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { afterAll, expect, it } from 'vitest'
 import type { ElectronApplication, Page } from 'playwright'
 import { runCommand } from './auth-support.js'
@@ -12,7 +14,7 @@ import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNative
 import { html, launchShell, startServer, visit } from './qa-helpers.js'
 import type { FixtureServer } from './qa-helpers.js'
 import { clickAddressBarRetrying } from './e2e-helpers.js'
-import { ABSENCE_SETTLE_MS, delay, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, delay, HERMETIC_RESOLVER, waitFor, waitForTab } from './smoke-helpers.mjs'
 
 const E2E_TIMEOUT_MS = 150_000
 const servers: FixtureServer[] = []
@@ -39,6 +41,10 @@ const mainPage = (frameOrigin: string): string => `<!doctype html><title>Dialogs
 <button id="guard" onclick="onbeforeunload = function (e) { e.preventDefault(); e.returnValue = 'x' }">guard</button>
 <button id="go" onclick="location.href = '/next'">go</button>
 <iframe src="${frameOrigin}/frame" title="frame"></iframe>
+<iframe name="same" src="/frame"></iframe>
+<iframe name="sandboxed" sandbox="allow-scripts" src="${frameOrigin}/frame"></iframe>
+<button id="ask-sandboxed" onclick="window.frameAnswer = undefined; frames.sandboxed.postMessage('ask', '*')">ask sandboxed</button>
+<button id="dismissal" onclick="onbeforeunload = function () { confirm('Call this number now') }; onpagehide = function () { alert('Your PC is infected') }">dismissal dialogs</button>
 <script>addEventListener('message', function (e) { if (typeof e.data === 'string' && e.data.indexOf('answered:') === 0) window.frameAnswer = e.data })</script>
 </body>`
 
@@ -46,6 +52,7 @@ async function serve (): Promise<{ origin: string, frameOrigin: string }> {
   const frames = await startServer((_request, response) => { html(response, FRAME) })
   const main = await startServer((request, response) => {
     if (request.url === '/next') { html(response, NEXT); return }
+    if (request.url === '/frame') { html(response, FRAME); return }
     html(response, mainPage(frames.origin))
   })
   servers.push(frames, main)
@@ -218,6 +225,87 @@ it('keeps a page that asks before it is left, and lets a second attempt through 
     expect(await questionGone(app)).toBe(true)
 
     expect(await noNativeDialogs(app)).toEqual([])
+  } finally {
+    await closeElectron(app)
+  }
+}, E2E_TIMEOUT_MS)
+
+/** What a frame can reach that only the top frame of a tab is given. */
+const exposure = (): Record<string, unknown> => ({
+  orivon: typeof (globalThis as Record<string, unknown>).orivon,
+  process: typeof (globalThis as Record<string, unknown>).process,
+  buffer: typeof (globalThis as Record<string, unknown>).Buffer,
+  fetchIsNative: /\[native code\]/.test(Function.prototype.toString.call(fetch))
+})
+
+it('gives a frame nothing but its dialogs, and honours what Chromium refuses a page: a sandbox, and the page being left', async () => {
+  const { origin, frameOrigin } = await serve()
+  const { app, chrome } = await launchShell()
+  try {
+    await stubNativeDialogs(app)
+    const view = await visit(app, chrome, `${origin}/`)
+    view.on('dialog', () => {}) // The debugger reports every dialog the page raises; Playwright must not answer it.
+    await view.waitForSelector('iframe[name=sandboxed]')
+    await waitFor(() => view.frames().filter((frame) => frame.name() !== '').length >= 2)
+
+    // The top frame has the surface; no frame has more than the dialog wrapper (src/preload/frame.ts).
+    expect(await view.evaluate(exposure)).toEqual({ orivon: 'object', process: 'undefined', buffer: 'undefined', fetchIsNative: true })
+    const same = view.frames().find((frame) => frame.name() === 'same')
+    expect(same).toBeDefined()
+    expect(await same?.evaluate(exposure)).toEqual({ orivon: 'undefined', process: 'undefined', buffer: 'undefined', fetchIsNative: true })
+    const cross = view.frames().find((frame) => frame.url().startsWith(`${frameOrigin}/frame`) && frame.name() === '')
+    expect(cross).toBeDefined()
+    expect(await cross?.evaluate(exposure)).toEqual({ orivon: 'undefined', process: 'undefined', buffer: 'undefined', fetchIsNative: true })
+
+    // A document sandboxed without allow-modals has its dialogs ignored, as in Chromium: answered no, no panel.
+    await view.click('#ask-sandboxed')
+    expect(await waitFor(async () => await read<string | undefined>(view, 'frameAnswer') === 'answered:false')).toBe(true)
+    await delay(ABSENCE_SETTLE_MS)
+    expect(await questionGone(app)).toBe(true)
+
+    // A page being left cannot put its own words in front of the person: its dialogs during beforeunload and pagehide are ignored, and the navigation goes on.
+    await view.click('#dismissal')
+    await view.evaluate(() => { document.getElementById('go')?.click() }) // The page's own navigation is still counted pending by the driver, which would make a click wait for it.
+    const moved = await waitForTab(chrome, { address: `${origin}/next`, title: 'next page' })
+    expect(moved.ok).toBe(true)
+    expect(await questionGone(app)).toBe(true)
+
+    expect(await noNativeDialogs(app)).toEqual([])
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, E2E_TIMEOUT_MS)
+
+it('ends the panel of a frame in its own process when the page removes the frame', async () => {
+  // 127.0.0.2 is another site than 127.0.0.1, so its frame lives in a process of its own and the page stays free to act.
+  const far = createServer((_request, response) => { html(response, FRAME) })
+  await new Promise<void>((resolve) => { far.listen(0, '127.0.0.2', resolve) })
+  const farOrigin = `http://127.0.0.2:${String((far.address() as AddressInfo).port)}`
+  const main = await startServer((_request, response) => {
+    html(response, `<!doctype html><title>Removal fixture</title><body>
+<button id="ask-far" onclick="frames[0].postMessage('ask', '*')">ask</button>
+<button id="remove" onclick="document.querySelector('iframe').remove()">remove</button>
+<iframe src="${farOrigin}/frame"></iframe></body>`)
+  })
+  servers.push(main, { origin: farOrigin, close: async () => { await new Promise<void>((resolve) => { far.close(() => { resolve() }); far.closeAllConnections() }) } })
+  const { app, chrome } = await launchShell({ args: [`${HERMETIC_RESOLVER}, EXCLUDE 127.0.0.2`] })
+  try {
+    await stubNativeDialogs(app)
+    const view = await visit(app, chrome, `${main.origin}/`)
+    view.on('dialog', () => {}) // The debugger reports every dialog the page raises; Playwright must not answer it.
+    await view.waitForSelector('iframe')
+    await waitFor(() => view.frames().some((frame) => frame.url().startsWith(farOrigin)))
+
+    await view.click('#ask-far')
+    const panel = await waitQuestionSaying(app, 'the frame asks')
+    expect((await readQuestion(panel)).origin).toBe(`An embedded page on ${farOrigin} says`)
+
+    await view.click('#remove')
+    expect(await waitFor(async () => await questionGone(app))).toBe(true)
+
+    expect(await noNativeDialogs(app)).toEqual([])
+    expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
   }

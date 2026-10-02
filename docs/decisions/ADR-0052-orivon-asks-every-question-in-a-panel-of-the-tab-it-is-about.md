@@ -50,15 +50,45 @@ A page's own questions go through the same panel, and the mechanism is part of t
   own dialog reach the panel under its own origin. Every tab preload asks `src/preload/frame.ts` first, and a
   subframe installs no `window.orivon`, no routed network and nothing else; a preload that cannot tell which
   frame it is in counts as a subframe. The tab's `disableDialogs` answers at once a dialog in a frame the
-  preload never reached (a frame created blank), so Electron's native box is never drawn for a tab.
+  preload never reached (a frame created blank), so Electron's native box is never drawn for a tab. The
+  session-wide `frame` preloads run in those subframes too: the web-store preload already answers only in
+  its page's top frame, and the extension preload does the same by a vendor patch (`vendor/electron-chrome-
+  extensions/UPSTREAM.md` patch 61), so a `chrome-extension:` page that a site embeds gets no `chrome.*` and
+  no extension IPC. A subframe's preload also evaluates the tab's whole bundle, so the socket bridge listens
+  only from a page's first network call on (`src/preload/surface/net.ts`) and a frame that never opens a
+  socket registers no IPC listener.
+- **The wrapper repeats the two refusals Chromium makes before a dialog reaches the browser.** The wrapper
+  takes the call first, so the checks Chromium made are made again (`src/preload/dialog-gates.ts`). A call
+  raised while the page is being left (the event being handled is `beforeunload`, `pagehide` or `unload`)
+  is answered as dismissed, so a page cannot put its words in front of someone who is leaving. A document
+  sandboxed without `allow-modals` gets no dialog: an opaque origin, which a sandbox without
+  `allow-same-origin` gives, and a `sandbox` attribute without `allow-modals` on the frame element of any
+  same-origin ancestor. A preload cannot read a frame's sandbox flags, so two cases are not told apart:
+  a sandboxed frame that does have `allow-modals` and an opaque origin loses its dialog (the cautious side),
+  and a sandbox that keeps `allow-same-origin`, drops `allow-modals` and sits under a cross-origin parent
+  still gets its dialog. A page that dispatches an event of its own around the call hides the
+  `beforeunload` event from the check. These gaps are *provisional*: a way to read the document's sandbox
+  flags in Electron 44, or a dialog-requested event on `webContents`, would close them. A preload that
+  listened for `beforeunload` itself would close the last one but makes every page one that has such a
+  handler, and every navigation of it then waits on its renderer: measured, a page held on its own dialog
+  could not be navigated away from. The check therefore reads `window.event` at the call.
+- **A page an app shows in a `<webview>` is asked the same way.** The guest's `disableDialogs` is on, its
+  preload installs the wrapper in the guest's top frame, and the question is asked in the app's own tab,
+  headed with the shown page's origin (`src/main/embed/embed-host.ts`). A native box is never drawn for a
+  guest either.
 - **A page that is blocked on its own dialog is not reported as unresponsive.** The renderer cannot
   answer input while it waits, and the browser would otherwise offer the person the sad-tab card for a page
   that is waiting on them.
 - **A page's `beforeunload` guard is asked in the panel, and the page stays meanwhile.** Electron settles an
   unload from the event itself and cannot be told later, so the page is kept (Stay is the default and the
   way out), the question is asked, and "Leave" lets the next attempt through unasked, for twenty seconds.
-  A navigation the shell started (the address bar, back, forward, reload) is run again at once on Leave. One
-  the page started (a link, a script) is not known at that event, so the person repeats it.
+  A navigation the shell started (the address bar, back, forward, reload) is run again at once on Leave, and
+  an address typed while the question is open is the one Leave goes to. One the page started (a link, a
+  script) is not known at that event, so the person repeats it. A Leave that nothing used is dropped when
+  the next document begins.
+- **A dialog ends with its frame.** A cross-origin frame lives in a process of its own, so its parent can
+  remove it while its dialog is open; the panel is looked at every quarter second while one is up for a
+  subframe and closes when the frame is gone.
 
 A native box remains for the OS file and folder pickers, which are not questions, and for a failure
 before any window exists. `npm run check:native-dialogs` fails the build on a message box anywhere else.
@@ -107,10 +137,13 @@ rushing and stacking defences exist once and are tested once.
   tab while a consent question is open is dropped too.
 - Every call site's tests replace `askQuestion` with a function; none replaces `dialog`.
 - While a page's dialog is open its renderer is blocked, as it is behind a native box, so every tab that
-  shares that renderer process waits too. The panel for a tab in the background waits for its tab.
-- `nodeIntegrationInSubFrames` is on for every tab. The preloads give a subframe nothing beyond the dialog
-  wrapper, and `src/preload/tests/frame-gate.test.ts` fails a subframe that gains more. The editing rule
-  that blocks the flag (`.claude/hookify.electron-webprefs.local.md`) still lists it (A341).
+  shares that renderer process waits too, and none of them is reported as unresponsive. The panel for a tab
+  in the background waits for its tab.
+- `nodeIntegrationInSubFrames` is on for every tab. The tab's own preloads give a subframe nothing beyond
+  the dialog wrapper, `src/preload/tests/frame-gate.test.ts` fails a subframe that gains more, and the
+  `src/preload/tests/subframe-import-effects.test.ts` fails a subframe's preload that leaves a listener
+  behind. The editing rule that blocks the flag (`.claude/hookify.electron-webprefs.local.md`) still lists
+  it (A341).
 - A person who stays on a page that asked to be kept must click its link again after choosing Leave: the
   destination of a navigation the page started is not known at the event that asks.
 - A change to `src/main/shell/question/` is reviewed as a change to the consent surface of every grant.

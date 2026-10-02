@@ -5,7 +5,7 @@
 // every path out of here replies: an answer, a navigation, a closed tab, a
 // refused or malformed call. Electron's own native box is never reached: the
 // tab's `disableDialogs` answers a frame the wrapper missed.
-import type { IpcMainEvent, WebContents } from 'electron'
+import type { IpcMainEvent, WebContents, WebFrameMain } from 'electron'
 import { PAGE_DIALOG_CHANNEL } from '../channels.js'
 import { askQuestion, type AskQuestion } from './question/ask-question.js'
 import type { QuestionResult, QuestionSpec } from './question/question-spec.js'
@@ -74,25 +74,59 @@ export function replyFor (request: PageDialogRequest, spec: QuestionSpec, result
   return request.type === 'confirm' ? true : result.text ?? request.defaultText
 }
 
-const pending = new WeakMap<WebContents, Set<AbortController>>()
+/** How often a dialog's frame is looked at while its panel is open: a frame its parent removes takes no more part in the page. */
+const FRAME_POLL_MS = 250
 
-/** True while a page of this tab is blocked on a dialog, so a renderer that cannot answer input is not taken for a hung one. */
+const pending = new WeakMap<WebContents, Set<AbortController>>()
+const watched = new Set<WebContents>()
+
+/**
+ * True while a page of this tab, or of another tab in the same renderer process (an opened popup shares its
+ * opener's), is blocked on a dialog: a process that answers no input is waiting for the person, not hung.
+ */
 export function hasPendingPageDialog (contents: WebContents): boolean {
-  return (pending.get(contents)?.size ?? 0) > 0
+  if ((pending.get(contents)?.size ?? 0) > 0) return true
+  let processId: number
+  try { processId = contents.getOSProcessId() } catch { return false }
+  for (const other of watched) {
+    if (other === contents || (pending.get(other)?.size ?? 0) === 0) continue
+    try { if (other.getOSProcessId() === processId) return true } catch { /* a tab torn down is not blocking anything */ }
+  }
+  return false
 }
 
-/** Answers the page dialogs of one tab. `shown` is false for a view that is parked or being replaced: its page is not the person's, so nothing is asked. */
-export function watchPageDialogs (contents: WebContents, shown: () => boolean, ask: AskQuestion = askQuestion): void {
+/** A frame that is gone (removed by its parent) or unreadable no longer has a script waiting on it. */
+function frameEnded (frame: WebFrameMain): boolean {
+  try { return frame.detached } catch { return true }
+}
+
+/**
+ * Answers the page dialogs of one tab. `shown` is false for a view that is parked or being replaced: its page
+ * is not the person's, so nothing is asked. A page an app shows inside itself has no panel of its own: its
+ * question is asked in `panelOf`, the app's tab.
+ */
+export function watchPageDialogs (contents: WebContents, shown: () => boolean, ask: AskQuestion = askQuestion, panelOf: () => WebContents = () => contents): void {
   const open = new Set<AbortController>()
+  const frames = new Map<AbortController, WebFrameMain>()
   pending.set(contents, open)
+  watched.add(contents)
   const document = { count: 0, stopped: false }
 
   const endAll = (): void => { for (const controller of [...open]) controller.abort() }
+  // A cross-origin frame lives in a process of its own: its parent can remove it while its dialog is open, and
+  // nothing else says so.
+  let poll: ReturnType<typeof setInterval> | undefined
+  const stopPolling = (): void => { if (poll !== undefined && frames.size === 0) { clearInterval(poll); poll = undefined } }
+  const startPolling = (): void => {
+    poll ??= setInterval(() => {
+      for (const [controller, frame] of [...frames]) if (frameEnded(frame)) controller.abort()
+    }, FRAME_POLL_MS)
+  }
   // A page that is leaving, or gone, asks nothing more: Chromium cancels its open dialogs on a navigation the same way.
   contents.on('did-start-navigation', (event) => { if (event.isMainFrame && !event.isSameDocument) endAll() })
   contents.on('did-navigate', () => { document.count = 0; document.stopped = false })
   contents.on('render-process-gone', endAll)
-  contents.on('destroyed', endAll)
+  contents.on('destroyed', () => { endAll(); watched.delete(contents) })
 
   contents.ipc.on(PAGE_DIALOG_CHANNEL, (event: IpcMainEvent, raw: unknown) => {
     let replied = false
@@ -110,11 +144,14 @@ export function watchPageDialogs (contents: WebContents, shown: () => boolean, a
     document.count += 1
     const controller = new AbortController()
     open.add(controller)
+    if (frame !== contents.mainFrame) { frames.set(controller, frame); startPolling() }
     const done = (answer: PageDialogReply): void => {
       open.delete(controller)
+      frames.delete(controller)
+      stopPolling()
       reply(answer)
     }
-    ask({ contents }, spec, { signal: controller.signal }).then((result) => {
+    ask({ contents: panelOf() }, spec, { signal: controller.signal }).then((result) => {
       if (result.checkboxChecked) document.stopped = true
       done(replyFor(request, spec, result))
     }, () => { done(defaultReply(request.type)) })

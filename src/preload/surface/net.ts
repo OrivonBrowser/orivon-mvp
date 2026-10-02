@@ -48,21 +48,28 @@ interface TcpServerDescriptor {
   readonly localPort: number
 }
 
-const socketBridge = createSocketBridge({ ipcRenderer: ipcRenderer as unknown as IpcRendererLike, portChannel: PORT_CHANNEL, wrapPort })
+let sharedSocketBridge: ReturnType<typeof createSocketBridge> | undefined
+
+/** Listens for socket ports from the first net call on, always before the call is sent: a port may arrive ahead of its reply. A frame that never opens a socket registers nothing. */
+function socketBridge (): ReturnType<typeof createSocketBridge> {
+  sharedSocketBridge ??= createSocketBridge({ ipcRenderer: ipcRenderer as unknown as IpcRendererLike, portChannel: PORT_CHANNEL, wrapPort })
+  return sharedSocketBridge
+}
 
 /**
  * The one net.connect closure handed into the main world. Correlates the
  * CONTROL_CHANNEL descriptor with its separately-delivered PORT_CHANNEL
- * port (socketBridge.waitForPort handles either arrival order), then wraps
+ * port (waitForPort handles either arrival order), then wraps
  * that port in a SocketPort (../ports/socket.ts) -- the whole per-socket state
  * machine main-world-socket.ts needs, plus the three control-channel
  * operations (close/setNoDelay/setKeepAlive) net.connect itself doesn't
  * expose.
  */
 export async function netConnectBridge (opts: { host: string, port: number }): Promise<MainWorldSocketBridge> {
+  const bridge = socketBridge()
   const descriptor = await call<SocketDescriptor>('net.connect', opts, TIMEOUT_MS.net)
   try {
-    return buildBridgeResult(descriptor, await socketBridge.waitForPort(descriptor.id))
+    return buildBridgeResult(descriptor, await bridge.waitForPort(descriptor.id))
   } catch (error) {
     // The broker already registered this socket against the concurrentSockets
     // cap the instant net.connect replied -- if anything after that fails
@@ -86,9 +93,10 @@ export async function netConnectBridge (opts: { host: string, port: number }): P
  * Rule 3).
  */
 export async function netConnectSecureBridge (opts: SecureConnectOptions): Promise<MainWorldSocketBridge> {
+  const bridge = socketBridge()
   const descriptor = await call<SocketDescriptor>('net.connectSecure', opts, TIMEOUT_MS.net)
   try {
-    return buildBridgeResult(descriptor, await socketBridge.waitForPort(descriptor.id))
+    return buildBridgeResult(descriptor, await bridge.waitForPort(descriptor.id))
   } catch (error) {
     // Same reasoning as netConnectBridge's own catch: release the slot the
     // broker already counted this socket against.
@@ -150,9 +158,10 @@ function bindPayload (opts: unknown): unknown {
  * caller is what knows which kind of port it asked for.
  */
 export async function netUdpBindBridge (opts: { port: number, scope?: BindScope }): Promise<MainWorldUdpBridge> {
+  const bridge = socketBridge()
   const descriptor = await call<UdpSocketDescriptor>('net.udpBind', bindPayload(opts), TIMEOUT_MS.net)
   try {
-    return buildUdpBridgeResult(descriptor, await socketBridge.waitForPort(descriptor.id))
+    return buildUdpBridgeResult(descriptor, await bridge.waitForPort(descriptor.id))
   } catch (error) {
     // Same reasoning as netConnectBridge's: the broker counted this socket
     // against concurrentSockets the instant it replied, and nothing else on
@@ -191,9 +200,10 @@ function buildUdpBridgeResult (descriptor: UdpSocketDescriptor, port: PortLike):
  * SERVER's own accept-demand/AcceptedMessage channel (../ports/server.ts).
  */
 export async function netListenBridge (opts: { port: number, scope?: BindScope }): Promise<MainWorldServerBridge> {
+  const bridge = socketBridge()
   const descriptor = await call<TcpServerDescriptor>('net.listen', bindPayload(opts), TIMEOUT_MS.net)
   try {
-    return buildServerBridgeResult(descriptor, await socketBridge.waitForPort(descriptor.id))
+    return buildServerBridgeResult(descriptor, await bridge.waitForPort(descriptor.id))
   } catch (error) {
     // Same reasoning as netConnectBridge's/netUdpBindBridge's own catch: the
     // broker counted this server against concurrentSockets the instant it
