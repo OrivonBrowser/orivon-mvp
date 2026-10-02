@@ -1922,16 +1922,20 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A350: A split by dragging a tab, and a blank pane beside FreeTube, are not reproduced **[RESEARCH]**
+### A350: A split by dragging a tab, and a blank pane beside FreeTube, are not reproduced as reported **[RESEARCH]**
 
-- **Question:** On the owner's desktop a tab dragged onto the page edge no longer splits, and a tab split in from the right-click menu
-  beside FreeTube leaves a blank pane. What does that session have that a headless one does not?
-- **Why it matters:** headless, both gestures split and both pages lay out at their pane: real X pointer events under a window manager,
-  the real FreeTube build, the dev server's chrome page, dark, a sleeping or background-opened tab, many tabs, a maximized or moved
-  window, every edge. Not covered: hardware compositing, a fractional display scale, the owner's window manager.
-- **Options:** the owner's launch output and a screenshot of the blank pane, with how the tab was opened (rec.); `npm run dev` with
-  `--disable-gpu` to rule hardware compositing in or out.
+- **Question:** On the owner's desktop a tab dragged onto the page edge no longer splits, and a tab split in beside FreeTube leaves a blank pane. Is the cause a page captured while hidden?
+- **Why it matters:** Headless (xvfb, openbox, real X pointer events, the real FreeTube build) both gestures split and lay out. One failing state was measured: a hidden tab whose capture is started, then split in, stays laid out at its old size (1280x724 in a 632x716 pane); a bounds change at once does not cure it, a one-pixel change 250 ms later does. Raw CDP captures and `webContents.capturePage` alone did not leave it, so the mechanism is unconfirmed, and no capture of a hidden page completes under xvfb.
+- **Options:** `captureTabPage` captures with `stayHidden` (the drag's preview of a tab behind gets no thumbnail); a pane whose page lays out at another size than its bounds is nudged after it goes on screen; a right-click does not start the capture. Settles it: the owner's launch output and a screenshot of the blank pane on a GPU, or `npm run dev` with `--disable-gpu`.
 - **Who decides:** research first
+- **Blocks:** nothing
+
+### A353: A tab's icon is shared by every address on the same host **[AI-REC]**
+
+- **Question:** Tab icons are kept under the host name alone, so FreeTube on 127.0.0.1:9291 and any other page on 127.0.0.1 show the same icon. Should the key include the port?
+- **Why it matters:** local apps on different ports are different sites to the person, and each shows the icon of whichever loaded last.
+- **Options:** key by host and port (rec.); keep the host key for the history list only.
+- **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
 ### A340: A question asked in a background tab waits with no sign **[OWNER]**

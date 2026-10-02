@@ -22,7 +22,7 @@ vi.mock('../../../loader/electron/serve.js', () => ({
   isOriginServedFromCacheSync: (origin: string) => served.has(origin)
 }))
 
-const { appTabArgsFor, appTabFlagChanged, makeTabView, partitionChanged, partitionForTarget, popupTargetIsApp } = await import('../tab-view.js')
+const { appTabArgsFor, appTabFlagChanged, captureTabPage, makeTabView, partitionChanged, partitionForTarget, popupTargetIsApp } = await import('../tab-view.js')
 
 const APP = 'https://app.example'
 const SITE = 'https://news.example'
@@ -202,5 +202,19 @@ describe('makeTabView: an explicit backgroundColor is set on the view before it 
   it('leaves an ordinary tab (no colour passed) at Electron\'s own default', () => {
     const view = makeTabView('preload.js', undefined, undefined)
     expect((view as unknown as { setBackgroundColor: (c: string) => void }).setBackgroundColor).not.toHaveBeenCalled()
+  })
+})
+
+describe('captureTabPage', () => {
+  it('captures a page without making it visible, so a page behind the one in front stays hidden', async () => {
+    const image = { isEmpty: () => true }
+    const capturePage = vi.fn().mockResolvedValue(image)
+    expect(await captureTabPage({ capturePage } as never)).toBe(image)
+    expect(capturePage).toHaveBeenCalledExactlyOnceWith(undefined, { stayHidden: true })
+  })
+
+  it('is null for no page, and for a capture that throws', async () => {
+    expect(await captureTabPage(undefined)).toBeNull()
+    expect(await captureTabPage({ capturePage: vi.fn().mockRejectedValue(new Error('gone')) } as never)).toBeNull()
   })
 })

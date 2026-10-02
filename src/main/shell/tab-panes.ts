@@ -3,6 +3,7 @@
 // this puts the plan (./split-controller.ts) on the window through PaneHost.
 import type { View, WebContentsView } from 'electron'
 import { PaneHost } from './pane-host.js'
+import type { LayoutSizeOf } from './pane-host.js'
 import type { SplitController } from './split-controller.js'
 import type { Bounds, TabRecord, TabShell } from './tab-types.js'
 
@@ -19,10 +20,24 @@ export interface TabPanesHost {
   readonly shell: TabShell | undefined
 }
 
+/** The size, in view pixels, a tab's page lays itself out at (its CSS size times the page zoom). */
+const pageLayoutSize: LayoutSizeOf = async (view) => {
+  try {
+    const contents = (view as WebContentsView).webContents
+    if (contents.isDestroyed()) return null
+    const css: unknown = await contents.executeJavaScript('[window.innerWidth, window.innerHeight]')
+    if (!Array.isArray(css) || typeof css[0] !== 'number' || typeof css[1] !== 'number') return null
+    const zoom = contents.getZoomFactor()
+    return { width: Math.round(css[0] * zoom), height: Math.round(css[1] * zoom) }
+  } catch {
+    return null
+  }
+}
+
 /** The window's PaneHost, plus the tab-aware calls that decide what it shows. */
 export class TabPanes extends PaneHost {
   constructor (private readonly deps: TabPanesHost) {
-    super(deps.contentView)
+    super(deps.contentView, pageLayoutSize)
   }
 
   /** Shows `view` for a tab whose view was swapped, in the tab's pane. */

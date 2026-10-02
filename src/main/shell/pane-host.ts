@@ -10,11 +10,23 @@ export interface PaneView {
   readonly bounds: Bounds
 }
 
+/** The size, in view pixels, the page in `view` lays itself out at; `null` when that cannot be read. */
+export type LayoutSizeOf = (view: View) => Promise<{ width: number, height: number } | null>
+
+/** How long after a pane goes on screen its page's layout is checked, and the longest the check may be one pixel off. */
+const SETTLE_MS = 250
+const SETTLE_TOLERANCE_PX = 2
+const SETTLE_TRIES = 3
+const NUDGE_MS = 80
+
 export class PaneHost {
   private readonly shown = new Map<string, View>()
+  private readonly placed = new Map<string, Bounds>()
+  private readonly settling = new Map<string, ReturnType<typeof setTimeout>>()
   private backdrop: View | null = null
 
-  constructor (private readonly contentView: View) {}
+  /** `layoutSizeOf`, when given, lets a pane that went on screen be checked against its bounds (`settle`). */
+  constructor (private readonly contentView: View, private readonly layoutSizeOf?: LayoutSizeOf) {}
 
   /** Shows exactly these panes, sized, with `backdrop` behind them when there is one.
    *
@@ -30,7 +42,7 @@ export class PaneHost {
     for (const [id, view] of this.shown) {
       if (wanted.get(id) === view) continue
       this.contentView.removeChildView(view)
-      this.shown.delete(id)
+      this.forget(id)
     }
     const nextBackdrop = backdrop?.view ?? null
     if (this.backdrop !== nextBackdrop) {
@@ -52,9 +64,44 @@ export class PaneHost {
         if (ordered) this.contentView.addChildView(pane.view, this.slotFor(panes, at, nextBackdrop))
         else this.contentView.addChildView(pane.view)
         this.shown.set(pane.id, pane.view)
+        this.settle(pane.id, pane.view, SETTLE_TRIES)
       }
+      this.placed.set(pane.id, pane.bounds)
       pane.view.setBounds(pane.bounds)
     })
+  }
+
+  private forget (id: string): void {
+    this.shown.delete(id)
+    this.placed.delete(id)
+    clearTimeout(this.settling.get(id))
+    this.settling.delete(id)
+  }
+
+  /** A page that was captured while it was behind another can be put on screen and keep laying itself
+   * out at the size it had before, so its pane shows a clipped or empty page, and a bounds change that
+   * arrives at once does not reach it. Shortly after a pane is put on screen the size its page lays out
+   * at is read; when it is not the pane's, the view is made one pixel wider and put back, a change the
+   * page does take. Costs one read of two numbers per pane put on screen. */
+  private settle (id: string, view: View, tries: number): void {
+    const { layoutSizeOf } = this
+    if (layoutSizeOf === undefined || tries === 0) return
+    clearTimeout(this.settling.get(id))
+    this.settling.set(id, setTimeout(() => {
+      this.settling.delete(id)
+      void layoutSizeOf(view).then((size) => {
+        const bounds = this.placed.get(id)
+        if (this.shown.get(id) !== view || bounds === undefined || size === null) return
+        if (Math.abs(size.width - bounds.width) <= SETTLE_TOLERANCE_PX && Math.abs(size.height - bounds.height) <= SETTLE_TOLERANCE_PX) return
+        view.setBounds({ ...bounds, width: bounds.width + 1 })
+        this.settling.set(id, setTimeout(() => {
+          this.settling.delete(id)
+          if (this.shown.get(id) !== view) return
+          view.setBounds(this.placed.get(id) ?? bounds)
+          this.settle(id, view, tries - 1)
+        }, NUDGE_MS))
+      })
+    }, SETTLE_MS))
   }
 
   /** Where in `contentView.children` the new pane `panes[at]` goes, so a split's panes keep the order
@@ -88,7 +135,7 @@ export class PaneHost {
     const view = this.shown.get(id)
     if (view === undefined) return
     this.contentView.removeChildView(view)
-    this.shown.delete(id)
+    this.forget(id)
   }
 
   /** Shows `view` for a pane that is on screen already under another view, in the same place. */
@@ -100,6 +147,7 @@ export class PaneHost {
     if (index === -1) this.contentView.addChildView(view)
     else this.contentView.addChildView(view, index)
     this.shown.set(id, view)
+    this.placed.set(id, bounds)
     view.setBounds(bounds)
   }
 }

@@ -365,3 +365,51 @@ it('splits from the right-click menu of a tab behind the one in front, and lays 
     await closeElectron(app)
   }
 }, TEST_TIMEOUT_MS)
+
+/** A picture of a page that is behind the one in front. Playwright asks the page for a frame it is not drawing, which keeps the page laid out at the size it had until its view is next told its size; the picture itself may never arrive, so the wait is short and its failure no matter. */
+async function pictureOfHiddenPage (app: ElectronApplication, part: string): Promise<void> {
+  const page = app.windows().find((candidate) => candidate.url().includes(part))
+  if (page === undefined) throw new Error(`no page for ${part}`)
+  await page.screenshot({ timeout: 1500 }).catch(() => undefined)
+}
+
+it('lays a page out at its pane when it was captured behind the one in front and is split in from the menu', async () => {
+  const { app, chrome } = await launched()
+  try {
+    await app.evaluate(({ Menu }) => { (Menu.prototype as unknown as { popup: () => void }).popup = function (this: unknown) { (globalThis as unknown as { __menu: unknown }).__menu = this } })
+    const [, a, b] = await openTabs(chrome, '/a', '/b') as [string, string, string]
+    expect(await activeId(chrome)).toBe(b)
+    await pictureOfHiddenPage(app, `${origin}/a`)
+    await chrome.click(`.tab[data-id="${a}"]`, { button: 'right' })
+    expect(await waitFor(async () => await app.evaluate(() => (globalThis as unknown as { __menu?: unknown }).__menu !== undefined))).toBe(true)
+    await app.evaluate(() => {
+      const menu = (globalThis as unknown as { __menu: { items: Array<{ label: string, submenu?: { items: Array<{ label: string, click: () => void }> } }> } }).__menu
+      menu.items.find((item) => item.label === 'Split with')?.submenu?.items.find((entry) => entry.label === 'Page /b')?.click()
+    })
+    expect(await waitFor(async () => (await joined(chrome)).join() === [a, b].join())).toBe(true)
+    expect(await waitFor(async () => await pagesFitTheirPanes(app, [`${origin}/a`, `${origin}/b`]), 8000)).toBe(true)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('lays a page out at its pane when it was captured behind the one in front and is dragged to the edge of the page', async () => {
+  const { app, chrome } = await launched()
+  try {
+    const [, a, b] = await openTabs(chrome, '/a', '/b') as [string, string, string]
+    expect(await activeId(chrome)).toBe(b)
+    await pictureOfHiddenPage(app, `${origin}/a`)
+    const box = await boxOfTab(chrome, a)
+    await chrome.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await chrome.mouse.down()
+    await chrome.mouse.move(40, box.y + 300, { steps: 12 })
+    expect(await waitFor(async () => backdropAt(await layout(app)) !== undefined)).toBe(true)
+    await chrome.mouse.up()
+    expect(await waitFor(async () => (await joined(chrome)).join() === [a, b].join())).toBe(true)
+    expect(await waitFor(async () => await pagesFitTheirPanes(app, [`${origin}/a`, `${origin}/b`]), 8000)).toBe(true)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
