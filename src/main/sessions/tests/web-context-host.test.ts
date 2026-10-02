@@ -98,7 +98,8 @@ function fakeWebContents (resolvedOrigin: string): FakeWebContents {
   return wc
 }
 
-const { sessionsByPartition, fromPartitionCalls, lastWebContents } = vi.hoisted(() => ({
+const { sessionsByPartition, fromPartitionCalls, lastWebContents, viewOptions } = vi.hoisted(() => ({
+  viewOptions: { current: undefined as unknown },
   sessionsByPartition: new Map<string, unknown>(),
   fromPartitionCalls: [] as string[],
   lastWebContents: { current: undefined as unknown }
@@ -118,7 +119,8 @@ vi.mock('electron', () => ({
   },
   WebContentsView: class {
     webContents: unknown
-    constructor () {
+    constructor (options?: unknown) {
+      viewOptions.current = options
       this.webContents = lastWebContents.current
     }
     setBounds = vi.fn()
@@ -179,6 +181,15 @@ describe('createWebContextHost -- open', () => {
     const [url, options] = wc.loadURL.mock.calls[0] as [string, { baseURLForDataURL: string }]
     expect(url).toContain('data:text/html,')
     expect(options.baseURLForDataURL).toBe(`${ORIGIN}/`)
+  })
+
+  it('builds every context with page dialogs disabled: nobody watches it, so a native box could never be answered', async () => {
+    setNextWebContents(ORIGIN)
+    const host = createWebContextHost(stubBroker)
+
+    await host.open(OPENER, ORIGIN, { width: 100, height: 100 })
+
+    expect(viewOptions.current).toMatchObject({ webPreferences: { disableDialogs: true, sandbox: true } })
   })
 
   it('mutes audio and denies window.open, on every context', async () => {

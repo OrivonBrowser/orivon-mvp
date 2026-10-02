@@ -28,6 +28,7 @@ import type { GrantedWithoutInstall } from './grant-without-install.js'
 import { createTokenBucketLimiter } from '../../broker/transport/token-bucket.js'
 import type { RateLimiter } from '../../broker/transport/token-bucket.js'
 import type { DialogCaller } from '../consent/request-grant.js'
+import { holdNavigation } from '../shell/navigation-hold.js'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 
 /** The one shape this file needs from an ipcMain.on event -- structural, matching origin.ts's own SenderFrameLike so a test never needs a real Electron event. */
@@ -102,6 +103,8 @@ export function createManifestHintListener (
     // resolves a window and never reads as still on `origin`.
     const caller: DialogCaller = {
       window: () => event.sender === undefined ? undefined : windowForSender?.(event.sender),
+      contents: () => event.sender,
+      hold: () => holdNavigation(event.sender),
       stillOn: (checkedOrigin) => event.sender !== undefined && !event.sender.isDestroyed() && originFromSenderFrame(event.sender.mainFrame) === checkedOrigin
     }
 
@@ -126,7 +129,10 @@ export function createManifestHintListener (
         // installed or consented to. Only on a NEW registration: a
         // registered origin's tab already carries its flag, and reloading
         // it again would loop.
-        const reloadable = event.sender !== undefined && !event.sender.isDestroyed()
+        // Only while the tab is still on the page that reported the hint: the
+        // person may have gone elsewhere while the question was open, and
+        // that page is not the one that was asked about.
+        const reloadable = caller.stillOn(origin)
         if (result.outcome === 'granted-without-install') {
           console.log(`[orivon] granted ${origin} without installing (newly registered: ${String(result.newlyRegistered)}, reloading: ${String(result.newlyRegistered && reloadable)})`)
           if (result.newlyRegistered && reloadable) event.sender?.reload()

@@ -118,6 +118,12 @@ export interface SubsystemContext {
    */
   readonly windowForSender: ((sender: WebContents) => BaseWindow | undefined) | undefined
   /**
+   * Shows the person a message in the window they are using: what a layer that may not import the shell's panel code
+   * (the broker's transport) calls to say a request was refused. Published in `main/index.ts` with `windowForSender`,
+   * for the same reason, so a reader treats `undefined` as routine early in startup and reads it at the moment of use.
+   */
+  readonly showNotice: ((notice: { readonly title: string, readonly message: string }) => void) | undefined
+  /**
    * Whether the WebContents making a call is attributed to the origin it
    * claims -- `isAttributedSession`'s (`../broker/policy/origin.js`)
    * injected other half. Every renderer-reachable broker channel
@@ -182,6 +188,8 @@ const senderAttributedSlot = createPublishedSlot<(sender: unknown, origin: strin
 const extensionsSlot = createPublishedSlot<ExtensionsApi>('extensions', 'a second one could load into a different session than the one every extension actually runs in')
 const windowForSenderSlot = createPublishedSlot<(sender: WebContents) => BaseWindow | undefined>('windowForSender', 'a second one could disagree about which window currently holds a given tab')
 
+const showNoticeSlot = createPublishedSlot<(notice: { readonly title: string, readonly message: string }) => void>('showNotice', 'a second one could draw a message somewhere the first does not')
+
 class SubsystemContextImpl implements SubsystemContext {
   readonly app: App
   readonly privateSession: boolean
@@ -217,6 +225,10 @@ class SubsystemContextImpl implements SubsystemContext {
 
   get windowForSender (): ((sender: WebContents) => BaseWindow | undefined) | undefined {
     return windowForSenderSlot.get(this)
+  }
+
+  get showNotice (): ((notice: { readonly title: string, readonly message: string }) => void) | undefined {
+    return showNoticeSlot.get(this)
   }
 }
 
@@ -269,6 +281,11 @@ export function publishExtensions (ctx: SubsystemContext, extensions: Extensions
 /** The one sanctioned way to set `ctx.windowForSender` -- see `publishBroker`'s own doc; same guarantee, same reason. */
 export function publishWindowForSender (ctx: SubsystemContext, windowForSender: (sender: WebContents) => BaseWindow | undefined): void {
   windowForSenderSlot.publish(ctx, windowForSender)
+}
+
+/** The one sanctioned way to set `ctx.showNotice` -- see `publishBroker`'s own doc; same guarantee, same reason. */
+export function publishShowNotice (ctx: SubsystemContext, showNotice: (notice: { readonly title: string, readonly message: string }) => void): void {
+  showNoticeSlot.publish(ctx, showNotice)
 }
 
 export interface Subsystem {

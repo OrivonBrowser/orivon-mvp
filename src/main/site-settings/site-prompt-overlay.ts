@@ -4,6 +4,7 @@
 // The page sends a few fixed words; the site, the kinds and the tab are
 // always read here, in main, never taken from the page.
 import { originFromUrl } from '../../broker/policy/origin.js'
+import { createKeyQuiet } from '../overlays/key-quiet.js'
 import type { OverlayDef, OverlayHandler, OverlayWindow } from '../overlays/overlay-types.js'
 import { slotClosed } from '../overlays/tab-slots.js'
 import { commandById } from '../shortcuts/commands.js'
@@ -14,10 +15,14 @@ import { askView, reviewView, type AskView, type ReviewRow, type ReviewView } fr
 
 const PROMPT_WIDTH = 360
 
+/** An answer is ignored this long after the question appears, so a click or key meant for the page cannot land on it. Enforced here: the page only draws the buttons as not ready. */
+export const ANSWER_GUARD_MS = 500
+
 type Current = { mode: 'none' } | { mode: 'ask', id: string } | { mode: 'review', tabId: string }
 
 type Command =
   | { type: 'answer', id: string, answer: 'allow' | 'block' }
+  | { type: 'drawn', id: string }
   | { type: 'set', kind: SiteKind, value: SiteValue }
   | { type: 'reload' }
   | { type: 'settings' }
@@ -30,6 +35,7 @@ function asCommand (command: unknown): Command | undefined {
   const { type, ...rest } = command
   const keys = Object.keys(rest).sort().join(',')
   if ((type === 'reload' || type === 'settings') && keys === '') return { type }
+  if (type === 'drawn' && keys === 'id') return typeof rest['id'] === 'string' ? { type, id: rest['id'] } : undefined
   if (type === 'answer' && keys === 'answer,id') {
     const { id, answer } = rest
     return typeof id === 'string' && (answer === 'allow' || answer === 'block') ? { type, id, answer } : undefined
@@ -49,8 +55,12 @@ function asShown (payload: unknown): { mode: 'ask', id: string } | { mode: 'revi
   return payload['mode'] === 'ask' && typeof payload['id'] === 'string' ? { mode: 'ask', id: payload['id'] } : undefined
 }
 
-export function createSitePrompt ({ window, services, close }: OverlayWindow, access: PageAccess<Electron.WebContents> = pageAccess): OverlayHandler {
+export function createSitePrompt ({ window, services, close, send }: OverlayWindow, access: PageAccess<Electron.WebContents> = pageAccess, now: () => number = Date.now): OverlayHandler {
   let current: Current = { mode: 'none' }
+  // The guard counts from the page drawing the question, never from the show: the page loads cold, so the show can come long before anything is on screen.
+  let shownAt: number | null = null
+  // A key typed at the page when the prompt appears must not reach Allow either: the keyboard has to be quiet for the guard's length too.
+  const keys = createKeyQuiet(now)
   let stopWatching: (() => void) | undefined
 
   /** A new document ends the review; a page that only rewrites its own address does not. */
@@ -81,16 +91,19 @@ export function createSitePrompt ({ window, services, close }: OverlayWindow, ac
   }
 
   return {
+    key: keys.onKey,
     show: (payload): AskView | ReviewView | undefined => {
       current = { mode: 'none' }
       stopWatching?.()
       stopWatching = undefined
+      shownAt = null
+      keys.reset()
       const shown = asShown(payload)
       if (shown?.mode === 'ask') {
         const ask = pendingAsk(shown.id)
         if (ask === undefined || ask.window !== window) return undefined
         current = { mode: 'ask', id: ask.id }
-        return askView(ask.id, ask.origin, ask.kinds, ask.sysex, services.isPrivate)
+        return askView(ask.id, ask.origin, ask.kinds, ask.sysex, services.isPrivate, ANSWER_GUARD_MS)
       }
       if (shown?.mode === 'review') {
         const tabId = window.tabs.getState().activeTabId
@@ -108,10 +121,14 @@ export function createSitePrompt ({ window, services, close }: OverlayWindow, ac
     request: (command) => {
       const asked = asCommand(command)
       if (asked === undefined) return undefined
+      if (asked.type === 'drawn') {
+        if (current.mode === 'ask' && current.id === asked.id && shownAt === null) shownAt = now()
+        return true
+      }
       if (asked.type === 'answer') {
         if (current.mode !== 'ask' || current.id !== asked.id) return undefined
         const ask = pendingAsk(asked.id)
-        if (ask === undefined) return undefined
+        if (ask === undefined || shownAt === null || now() - shownAt < ANSWER_GUARD_MS || keys.quietFor() < ANSWER_GUARD_MS) return undefined
         // The answer first, then the close: closing alone would settle the ask as "not now".
         ask.settle(asked.answer)
         close()
@@ -138,6 +155,13 @@ export function createSitePrompt ({ window, services, close }: OverlayWindow, ac
         return { kind: asked.kind, value: asked.value }
       }
       return undefined
+    },
+
+    // A resize moves the question under the person's pointer: the guard starts over.
+    moved: () => {
+      if (current.mode !== 'ask' || shownAt === null) return
+      shownAt = now()
+      send({ type: 'arm' })
     },
 
     closed: (reason) => {

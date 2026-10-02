@@ -64,6 +64,33 @@ describe('askPermission', () => {
     expect(fake.closes).toBe(1)
   })
 
+  it('ignores Allow until 500 ms after the last key, and never takes it from a held Enter', async () => {
+    const fake = fakeWindow()
+    const answer = askPermission(fake.window, 'a', ask())
+    vi.advanceTimersByTime(ALLOW_GUARD_MS + 100)
+    expect(fake.handler.key?.({ key: 'Tab', isAutoRepeat: false })).toBe(false)
+    vi.advanceTimersByTime(ALLOW_GUARD_MS - 1)
+    fake.handler.request({ allow: true })
+    expect(fake.closes).toBe(0)
+    expect(fake.handler.key?.({ key: 'Enter', isAutoRepeat: true })).toBe(true)
+    vi.advanceTimersByTime(ALLOW_GUARD_MS - 1)
+    fake.handler.request({ allow: true })
+    expect(fake.closes).toBe(0)
+    vi.advanceTimersByTime(1)
+    fake.handler.request({ allow: true })
+    expect(await answer).toBe(true)
+    expect(fake.closes).toBe(1)
+  })
+
+  it('lets the press that activates a button count, so one Enter on Allow after the guard answers', async () => {
+    const fake = fakeWindow()
+    const answer = askPermission(fake.window, 'a', ask())
+    vi.advanceTimersByTime(ALLOW_GUARD_MS + 100)
+    expect(fake.handler.key?.({ key: 'Enter', isAutoRepeat: false })).toBe(false)
+    fake.handler.request({ allow: true })
+    expect(await answer).toBe(true)
+  })
+
   it('takes Deny at once', async () => {
     const fake = fakeWindow()
     const answer = askPermission(fake.window, 'a', ask())

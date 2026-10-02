@@ -544,6 +544,20 @@ describe('requestGrant: an abandoned call never shows its dialog', () => {
     expect(consent).not.toHaveBeenCalled()
   })
 
+  it('hands the live signal to consent(), so a question already on its way can be withdrawn', async () => {
+    const broker = stubBroker([], {
+      manifest: async () => manifestWith({ fs: { quotaBytes: 1024 } }),
+      declinedCapabilitiesFor: async () => undefined
+    })
+    const consent = vi.fn(async () => false)
+    const controller = new AbortController()
+    const caller = { window: () => undefined, stillOn: () => true }
+
+    await requestGrant(broker, consent, APP, { capability: 'fs' }, undefined, caller, undefined, controller.signal)
+
+    expect(consent).toHaveBeenCalledWith(APP, 'fs', expect.anything(), caller, controller.signal)
+  })
+
   it('does not record a decline for an abandoned call -- a later, genuine ask still prompts', async () => {
     const calls: BrokerCall[] = []
     const broker = stubBroker(calls, {

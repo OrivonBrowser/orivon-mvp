@@ -13,6 +13,7 @@ import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from './launch-electron.mjs'
 import { html, launchShell, startServer, visit } from './qa-helpers.js'
 import type { FixtureServer } from './qa-helpers.js'
+import { nativeDialogsAsked as dialogsAsked, stubNativeDialogs as stubDialogs } from './question-support.js'
 import { delay, popoverShown, waitFor } from './smoke-helpers.mjs'
 
 const SHOTS_DIR = process.env.ORIVON_UI_SHOTS_DIR
@@ -120,16 +121,6 @@ async function waitChip (chrome: Page, hidden: boolean, label?: string): Promise
   return last
 }
 
-async function stubDialogs (app: App): Promise<void> {
-  await app.evaluate(({ dialog }) => {
-    const g = globalThis as unknown as { __dialogs: string[] }
-    g.__dialogs = []
-    for (const name of ['showMessageBox', 'showOpenDialog', 'showSaveDialog', 'showErrorBox'] as const) {
-      ;(dialog as unknown as Record<string, unknown>)[name] = async () => { g.__dialogs.push(name); return { response: 2, canceled: true, filePaths: [] } }
-    }
-  })
-}
-const dialogsAsked = async (app: App): Promise<string[]> => await app.evaluate(() => (globalThis as unknown as { __dialogs: string[] }).__dialogs)
 const userDataOf = async (app: App): Promise<string> => await app.evaluate(({ app: electron }) => electron.getPath('userData'))
 
 async function setScheme (app: App, pages: Page[], scheme: 'light' | 'dark'): Promise<void> {
@@ -170,6 +161,16 @@ it('asks once per site, remembers the answer across a page load, and the chip ch
     expect(await promptShown(app)).toBe(false)
     await view.click('#cam')
     let prompt = await waitPrompt(app)
+    // A press in the first half second does nothing. The page's own look-ready class is cleared first, so what refuses it is
+    // main's guard, which counts from the page drawing the question and so is still running however slowly the page loaded.
+    await prompt.evaluate(() => {
+      document.querySelector('.site-prompt')?.classList.remove('arming')
+      document.querySelector<HTMLButtonElement>('.btn-row .btn.primary')?.click()
+    })
+    await delay(100)
+    expect(await promptShown(app)).toBe(true)
+    // The page's class is gone, so the page no longer says when main's guard has run out: wait it out before a real answer.
+    await delay(500)
     expect(await textOf(prompt, '.origin')).toEqual([origins.a])
     expect(await textOf(prompt, '.sp-text')).toEqual(['wants to use your camera'])
     expect(await textOf(prompt, '.btn-row .btn')).toEqual(['Block', 'Allow'])
@@ -179,11 +180,6 @@ it('asks once per site, remembers the answer across a page load, and the chip ch
     expect(await prompt.evaluate(() => document.activeElement?.classList.contains('site-prompt'))).toBe(true)
     expect(await prompt.evaluate(() => Array.from(document.querySelectorAll('button')).map((b) => b.getAttribute('aria-label') ?? b.textContent))).toEqual(['Block', 'Allow', 'Not now'])
 
-    // Buttons ignore a press for half a second; a press that lands early does nothing.
-    if (await prompt.evaluate(() => document.querySelector('.site-prompt')?.classList.contains('arming') === true)) {
-      await prompt.evaluate(() => { document.querySelector<HTMLButtonElement>('.btn-row .btn.primary')?.click() })
-      expect(await promptShown(app)).toBe(true)
-    }
     await shootBoth(app, chrome, 'ask-camera')
     await prompt.waitForSelector('.site-prompt:not(.arming)')
     await prompt.keyboard.press('Enter')

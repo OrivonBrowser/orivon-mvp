@@ -16,6 +16,7 @@ import { evaluateRetrying, HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mj
 import { closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
 import { parseRegistry } from '../src/main/extensions/registry.js'
 import { buildFolderCrx, makeRsaKeyPair } from './store-crx-support.js'
+import { answeringWith, noNativeDialogs, stubNativeDialogs } from './question-support.js'
 
 const FIXTURE_DIR = fileURLToPath(new URL('./apps/extensions/store-live/', import.meta.url)).replace(/[/\\]$/, '')
 const TEST_TIMEOUT_MS = 120_000
@@ -61,8 +62,8 @@ it('installs a service-worker extension from the store into a running browser, a
       const liveApp = app
       let exited = false
       liveApp.process().on('exit', () => { exited = true })
-      await liveApp.evaluate(({ dialog }) => {
-        dialog.showMessageBox = (async () => ({ response: 0, checkboxChecked: false })) as unknown as typeof dialog.showMessageBox
+      await stubNativeDialogs(liveApp)
+      await liveApp.evaluate(() => {
         ;(globalThis as unknown as { __swLog: string[] }).__swLog = []
       })
       await liveApp.evaluate(({ session }) => {
@@ -95,10 +96,10 @@ it('installs a service-worker extension from the store into a running browser, a
       await navigateToFixture(app, `${origin}/`, 'store-live-page')
       await waitFor(async () => await liveApp.evaluate(() => typeof (globalThis as unknown as { __orivonDevExtensionsStore?: unknown }).__orivonDevExtensionsStore === 'object'))
 
-      const outcome = await liveApp.evaluate(async (_electron, id: string) => {
+      const outcome = await answeringWith(liveApp, 'Add extension', liveApp.evaluate(async (_electron, id: string) => {
         const store = (globalThis as unknown as { __orivonDevExtensionsStore: { installFromStore: (id: string) => Promise<{ installed: boolean, reason?: string }> } }).__orivonDevExtensionsStore
         return await store.installFromStore(id)
-      }, crx.id)
+      }, crx.id))
       check('the store install succeeds', outcome.installed, JSON.stringify(outcome))
 
       await new Promise((resolve) => setTimeout(resolve, AFTER_INSTALL_MS))
@@ -147,6 +148,7 @@ it('installs a service-worker extension from the store into a running browser, a
       const second = await navigateToFixture(app, `${origin}/?second`, 'store-live-page')
       const blocked = await waitFor(async () => await evaluateRetrying(second, () => Boolean((window as unknown as { __blocked?: boolean }).__blocked)), 10_000).catch(() => false)
       check('the static ruleset blocks a script on the next page, with no restart', blocked)
+      check('no native message box was opened', (await noNativeDialogs(liveApp)).length === 0, JSON.stringify(await noNativeDialogs(liveApp)))
     } finally {
       if (app !== undefined) await closeElectronApp(app)
     }

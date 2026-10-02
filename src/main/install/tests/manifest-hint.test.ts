@@ -5,6 +5,8 @@ import { MANIFEST_HINT_CHANNEL } from '../../channels.js'
 import { APP, APP_SESSION, attributedFrom, DEFAULT_SESSION, frameFor, NO_FRAME, OTHER } from '../../../broker/transport/tests/ipc.test-helpers.js'
 import { createTokenBucketLimiter } from '../../../broker/transport/token-bucket.js'
 import type { LoadResult } from '../../../loader/index.js'
+import type { DialogCaller } from '../../consent/request-grant.js'
+import { isNavigationHeld } from '../../shell/navigation-hold.js'
 
 const REJECTED: LoadResult = { outcome: 'rejected', reason: 'unused' }
 
@@ -127,12 +129,31 @@ describe('createManifestHintListener', () => {
     expect(installApp).toHaveBeenCalledTimes(2)
   })
 
+  describe('the caller names the tab that reported the hint', () => {
+    it('hands the tab over as the panel to ask in, and a hold that keeps its page where it is until released', async () => {
+      let caller: DialogCaller | undefined
+      const installApp = vi.fn<InstallApp>(async (_origin, _url, given) => { caller = given; return REJECTED })
+      const event = frameFor(APP)
+
+      createManifestHintListener(installApp)(event, `${APP}/`)
+      await flush()
+
+      expect(caller?.contents?.()).toBe(event.sender)
+      const release = caller?.hold?.()
+      expect(isNavigationHeld(event.sender as object)).toBe(true)
+      release?.()
+      expect(isNavigationHeld(event.sender as object)).toBe(false)
+    })
+  })
+
   describe('reloading the tab that reported the hint', () => {
     const PIN = { schema: 1 as const, origin: APP, bundleHash: 'sha256:' + 'a'.repeat(64), assets: [], version: '1.0.0', pinnedAt: 0 }
     const MANIFEST = { orivonApiVersion: 0 as const, id: 'app.test', name: 'Test', version: '1.0.0', entry: 'index.html', capabilities: {} }
 
-    function reportingTab (): { reload: ReturnType<typeof vi.fn<() => void>>, isDestroyed: () => boolean, mainFrame: null, session: unknown } {
-      return { reload: vi.fn<() => void>(), isDestroyed: () => false, mainFrame: null, session: undefined }
+    const onPage = (origin: string): { url: string, origin: string } => ({ url: `${origin}/`, origin })
+
+    function reportingTab (on: string = APP): { reload: ReturnType<typeof vi.fn<() => void>>, isDestroyed: () => boolean, mainFrame: { url: string, origin: string }, session: unknown } {
+      return { reload: vi.fn<() => void>(), isDestroyed: () => false, mainFrame: onPage(on), session: undefined }
     }
 
     it('reloads once after an install that newly registered the app, so the tab is rebuilt with its app-tab flag', async () => {
@@ -159,10 +180,26 @@ describe('createManifestHintListener', () => {
 
     it('does not reload a tab that was closed while the install ran', async () => {
       const installApp = vi.fn<InstallApp>(async () => ({ outcome: 'installed', canonicalOrigin: APP, manifest: MANIFEST, pin: PIN, newlyRegistered: true }))
-      const sender = { reload: vi.fn<() => void>(), isDestroyed: () => true, mainFrame: null, session: undefined }
+      const sender = { reload: vi.fn<() => void>(), isDestroyed: () => true, mainFrame: onPage(APP), session: undefined }
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
       createManifestHintListener(installApp)({ ...frameFor(APP), sender }, `${APP}/`)
+      await flush()
+
+      expect(sender.reload).not.toHaveBeenCalled()
+      logSpy.mockRestore()
+    })
+
+    it.each([
+      ['an install', { outcome: 'installed' as const, canonicalOrigin: APP, manifest: MANIFEST, pin: PIN, newlyRegistered: true as const }],
+      ['a grant without installing', { outcome: 'granted-without-install' as const, canonicalOrigin: APP, newlyRegistered: true }]
+    ])('does not reload a tab the person moved to another page while the question after %s was open', async (_name, result) => {
+      const installApp = vi.fn<InstallApp>(async () => result)
+      const sender = reportingTab()
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+      createManifestHintListener(installApp)({ ...frameFor(APP), sender }, `${APP}/`)
+      sender.mainFrame = onPage(OTHER)
       await flush()
 
       expect(sender.reload).not.toHaveBeenCalled()

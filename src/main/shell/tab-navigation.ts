@@ -9,6 +9,7 @@ import { parseInternalUrl } from '../pages/internal-pages.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { BLANK_URL } from './tab-factory.js'
+import { startNavigation } from './leave-page-prompt.js'
 import { repartitionView } from './tab-parking.js'
 import type { TabRecord } from './tab-types.js'
 import { appTabFlagChanged, EXIT_FULLSCREEN_WORLD_ID, partitionChanged } from './tab-view.js'
@@ -60,17 +61,27 @@ export function navigateTab (env: NavigationEnv, id: string, rawInput: string): 
     return
   }
 
-  void record.view.webContents.loadURL(target)
+  const contents = record.view.webContents
+  // A page that asks "Leave this page?" and is stayed on rejects the load as aborted: that is the answer, not a failure.
+  startNavigation(contents, () => { void load(contents, target) })
+}
+
+async function load (contents: WebContents, target: string): Promise<void> {
+  try {
+    await contents.loadURL(target)
+  } catch { /* aborted by the page's own question, or failed: either is shown by the tab itself */ }
 }
 
 export function goBack (env: NavigationEnv, id: string): void {
-  const history = env.liveWebContents(id)?.navigationHistory
-  if (history?.canGoBack() === true) history.goBack()
+  const contents = env.liveWebContents(id)
+  const history = contents?.navigationHistory
+  if (contents !== undefined && history?.canGoBack() === true) startNavigation(contents, () => { history.goBack() })
 }
 
 export function goForward (env: NavigationEnv, id: string): void {
-  const history = env.liveWebContents(id)?.navigationHistory
-  if (history?.canGoForward() === true) history.goForward()
+  const contents = env.liveWebContents(id)
+  const history = contents?.navigationHistory
+  if (contents !== undefined && history?.canGoForward() === true) startNavigation(contents, () => { history.goForward() })
 }
 
 /** The address of the last committed entry: `getURL()` can already read a navigation that is still in flight. */
@@ -90,7 +101,7 @@ export function reloadTab (env: NavigationEnv, id: string): void {
     navigateTab(env, id, pending)
     return
   }
-  wc.reload()
+  startNavigation(wc, () => { wc.reload() })
 }
 
 /** Rejected omnibox input (a dangerous scheme, or empty) never reaches `loadURL` -- it falls back

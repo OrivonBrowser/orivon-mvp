@@ -10,6 +10,7 @@ import { originFromUrl } from '../../broker/policy/origin.js'
 import { INTERNAL_PARTITION } from '../pages/internal-pages.js'
 import type { TabRecord } from './tab-types.js'
 import { applyTabSignals } from './tab-signals.js'
+import { carryHistory } from './tab-history.js'
 import { appTabArgsFor, appTabOrigins, appTabViews, makeTabView, wireView } from './tab-view.js'
 import type { WebContentsView } from 'electron'
 
@@ -95,10 +96,11 @@ export function closeParkedViews (record: TabRecord): void {
  *
  * A view leaving an app's partition is parked rather than closed, and a tab
  * coming back to that app gets it again, with the app's own history and
- * sessionStorage. Every other swap starts from an empty `navigationHistory`,
- * since Electron gives no way to carry it across: entering an app, or
- * leaving one for the open web, still costs the back button (A109; ADR-0018
- * for what swaps at all). */
+ * sessionStorage. A swap within one session (the app-tab flag flipping on a
+ * newly registered origin, an opener being cut) carries the back and forward
+ * list over with `NavigationHistory.restore`. A swap across partitions starts
+ * from an empty list: entering an app, or leaving one for the open web, still
+ * costs the back button (A109; ADR-0018 for what swaps at all). */
 export function repartitionView (
   id: string,
   record: TabRecord,
@@ -131,11 +133,17 @@ export function repartitionView (
   // view.ts raises directly (tab-lifecycle.ts's own doc says why).
   host.tabLifecycle?.viewReplaced(oldView.webContents, newView.webContents, host.window)
 
+  // The list is read while the old view still holds it. A typed address has
+  // not committed yet, so the pages up to the one being left carry and the
+  // address loads after them. Same session, so no cookie, storage or
+  // partition boundary is crossed.
+  const carried = parked === undefined && oldPartition === nextPartition && !oldView.webContents.isDestroyed() && carryHistory(oldView.webContents, newView.webContents, target)
+
   // Only once the record shows the new view: the old one's handlers then
   // ignore it, so closing it here cannot reach forgetTab().
   retireView(record, oldView, oldPartition)
 
   if (wasShown) host.attachView(id, newView)
 
-  void newView.webContents.loadURL(target)
+  if (!carried) void newView.webContents.loadURL(target)
 }

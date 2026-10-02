@@ -14,7 +14,7 @@ describe('chromeContextMenuHost -- Inspect on the chrome\'s own right-click menu
 
     expect(host.inspect).toBeTypeOf('function')
     host.inspect?.(3, 4)
-    expect(dt.inspect).toHaveBeenCalledWith(contents, window, 3, 4)
+    expect(dt.inspect).toHaveBeenCalledWith(contents, 3, 4)
   })
 
   it('is absent where DevToolsGate.allowed() refuses -- dev mode off is one such answer, tested against the real gate in shell-services-devtools.test.ts', () => {

@@ -238,7 +238,9 @@ export function createChildHostPool (
         contextIsolation: true,
         nodeIntegration: false,
         offscreen: true,
-        backgroundThrottling: false
+        backgroundThrottling: false,
+        // Nobody watches the host: a native alert box could never be answered.
+        disableDialogs: true
       }
     })
     const webContents = view.webContents

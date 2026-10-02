@@ -22,6 +22,9 @@ html, body {
   line-height: 1.4;
 }
 
+/* The shared page rules reserve a scrollbar gutter on the root; here the root never scrolls (#scroll does), and a reserved gutter would leave a strip of the view's own backing colour at the card's right edge. */
+html { scrollbar-gutter: auto; }
+
 /* The page paints its own surface as well as main's pre-paint colour, so the two never disagree about the theme. */
 html { background: transparent; }
 body { display: flex; flex-direction: column; background: var(--wbg); }

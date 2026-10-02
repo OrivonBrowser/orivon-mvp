@@ -122,6 +122,8 @@ export class PopupView extends EventEmitter {
         nodeIntegrationInWorker: false,
         contextIsolation: true,
         enablePreferredSizeMode: true,
+        // Orivon patch 62: no native alert, confirm or prompt box from a popup.
+        disableDialogs: true,
       },
     })
 

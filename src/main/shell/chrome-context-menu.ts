@@ -22,6 +22,6 @@ export function chromeContextMenuHost (
     openInNewTab,
     ...(pasteAndGo === undefined ? {} : { pasteAndGo }),
     ...(fullAddresses === undefined ? {} : { fullAddresses }),
-    ...(canInspect ? { inspect: (x: number, y: number) => { devtools?.inspect(chromeContents, window, x, y) } } : {})
+    ...(canInspect ? { inspect: (x: number, y: number) => { void devtools?.inspect(chromeContents, x, y) } } : {})
   }
 }

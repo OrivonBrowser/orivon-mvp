@@ -29,6 +29,18 @@ describe('installFromFolder', () => {
     })
   })
 
+  it('hands the prompt the page the person asked from, so the question is drawn in that tab', async () => {
+    await withTempDir(async (root) => {
+      const source = writeFixtureFolder(root, FIXTURE_MANIFEST)
+      const { session } = fakeSession()
+      const where = { contents: {} }
+      const seen: unknown[] = []
+      await installFromFolder({ userDataPath: join(root, 'userData'), session, prompt: async (_description, at) => { seen.push(at); return false } }, source, where)
+      expect(seen).toEqual([where])
+      expect(seen[0]).toBe(where)
+    })
+  })
+
   it('never writes anything when the person declines the prompt', async () => {
     await withTempDir(async (root) => {
       const userDataPath = join(root, 'userData')

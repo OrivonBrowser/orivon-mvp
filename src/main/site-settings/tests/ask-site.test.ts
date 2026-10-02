@@ -4,6 +4,7 @@ import type { WebContents } from 'electron'
 import type { ShellWindow } from '../../shell/window-registry.js'
 import { createAskSite, pendingAsk, SITE_PROMPT_OVERLAY, askSite, bindAskSite } from '../ask-site.js'
 import { slotClosed, tabSlotEvents } from '../../overlays/tab-slots.js'
+import { crossingAnchor, promptAnchor, promptAnchorReport, TOOLBAR_OVERLAP } from '../../shell/actions/prompt-anchor.js'
 
 class FakeTab extends EventEmitter {
   constructor (public url = 'https://meet.example/room') { super() }
@@ -42,6 +43,18 @@ describe('askSite', () => {
     held?.settle('allow')
     expect(await answer).toBe('allow')
     expect(pendingAsk(payload.id)).toBeUndefined()
+  })
+
+  it('opens across the toolbar line, its top edge inside the address pill, not below it', () => {
+    const { ask, shows, window, contents } = rig()
+    const pill = { x: 120, y: 40, width: 600, height: 32 }
+    promptAnchorReport(pill, { window } as never)
+    void ask(['camera'], contents)
+    expect(shows[0]?.anchor).toEqual(crossingAnchor(window))
+    expect(shows[0]?.anchor).not.toEqual(promptAnchor(window))
+    // overlayBounds puts the panel GAP under the anchor's bottom, so the anchor ends TOOLBAR_OVERLAP + GAP above the pill's bottom.
+    const anchor = shows[0]?.anchor as { y: number, height: number }
+    expect(pill.y + pill.height - (anchor.y + anchor.height)).toBeGreaterThanOrEqual(TOOLBAR_OVERLAP)
   })
 
   it('answers dismiss for every way out but an answer', async () => {

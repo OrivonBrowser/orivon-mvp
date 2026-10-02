@@ -33,12 +33,12 @@ class FakeWebContents extends EventEmitter {
 class FakeBrowserWindow extends EventEmitter {
   static instances: FakeBrowserWindow[] = []
   webContents = new FakeWebContents()
-  readonly constructorOpts: { backgroundColor?: string }
+  readonly constructorOpts: { backgroundColor?: string, webPreferences?: { disableDialogs?: boolean } }
   private destroyed = false
   private visible = false
   private bounds = { x: 0, y: 0, width: 25, height: 25 }
 
-  constructor (opts: { backgroundColor?: string }) {
+  constructor (opts: { backgroundColor?: string, webPreferences?: { disableDialogs?: boolean } }) {
     super()
     this.constructorOpts = opts
     FakeBrowserWindow.instances.push(this)
@@ -110,6 +110,13 @@ beforeEach(() => {
   FakeBrowserWindow.reset()
   baseWindows = []
   nativeThemeStub.shouldUseDarkColors = false
+})
+
+describe('PopupView: page dialogs (UPSTREAM.md patch 62)', () => {
+  it('is built with dialogs disabled, so alert, confirm and prompt never open a native box', () => {
+    const popup = makePopup(fakeParent())
+    expect(browserWindowOf(popup).constructorOpts.webPreferences?.disableDialogs).toBe(true)
+  })
 })
 
 describe('PopupView: closing on parent window events (UPSTREAM.md patch 34)', () => {

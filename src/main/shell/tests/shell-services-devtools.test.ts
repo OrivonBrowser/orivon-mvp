@@ -22,7 +22,7 @@ function service (developerMode: () => boolean): DevToolsService {
     appOf: () => null,
     isShellPage: (c) => isShellUiPage(c, internalPages, SHELL_SESSION),
     developerMode,
-    confirm: () => true
+    confirm: async () => true
   })
 }
 

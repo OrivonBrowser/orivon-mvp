@@ -2,6 +2,7 @@
 // with. `askPermission` queues it in the tab's centre slot (a site's own sheet
 // goes first) and settles with the person's answer; anything but a click on
 // Allow, after the guard below, is a refusal.
+import { createKeyQuiet } from '../overlays/key-quiet.js'
 import type { OverlayDef, OverlayHandler, OverlayWindow } from '../overlays/overlay-types.js'
 import { requestSlot, slotClosed } from '../overlays/tab-slots.js'
 import type { ShellWindow } from '../shell/window-registry.js'
@@ -9,7 +10,7 @@ import type { PromptLine } from './optional-permissions.js'
 
 export const PERMISSION_OVERLAY = 'extension-permission'
 
-/** Allow ignores clicks and keys for this long after the sheet appears, so a click or key meant for the page cannot land on it. */
+/** Allow ignores clicks for this long after the sheet appears and after the last key pressed in it, so a click or key meant for the page cannot land on it. */
 export const ALLOW_GUARD_MS = 500
 
 /** What the sheet is about, as main knows it. */
@@ -66,16 +67,20 @@ function allowOf (command: unknown): boolean | undefined {
   return typeof allow === 'boolean' && Object.keys(rest).length === 0 ? allow : undefined
 }
 
-export function createPermissionPrompt ({ window, close }: OverlayWindow): OverlayHandler {
+export function createPermissionPrompt ({ window, close }: OverlayWindow, now: () => number = Date.now): OverlayHandler {
   let shownToken: number | null = null
   let shownAt = 0
+  // Tab, Tab, Enter typed at a page that raises the sheet as the person types must not reach Allow: the keyboard has to be quiet for the guard's length too.
+  const keys = createKeyQuiet(now)
   return {
+    key: keys.onKey,
     show: (payload): PermissionPromptView | undefined => {
       const token = tokenOf(payload)
       const entry = token === undefined ? undefined : pending.get(token)
       if (token === undefined || entry === undefined) { shownToken = null; return undefined }
       shownToken = token
-      shownAt = Date.now()
+      shownAt = now()
+      keys.reset()
       const { ask } = entry
       return { name: ask.name, id: ask.extensionId, icon: ask.icon, lines: ask.lines, guardMs: ALLOW_GUARD_MS }
     },
@@ -83,7 +88,7 @@ export function createPermissionPrompt ({ window, close }: OverlayWindow): Overl
       const allow = allowOf(command)
       const entry = shownToken === null ? undefined : pending.get(shownToken)
       if (allow === undefined || entry === undefined) return undefined
-      if (allow && Date.now() - shownAt < ALLOW_GUARD_MS) return undefined
+      if (allow && (now() - shownAt < ALLOW_GUARD_MS || keys.quietFor() < ALLOW_GUARD_MS)) return undefined
       entry.settle(allow)
       close()
       return undefined
@@ -107,5 +112,5 @@ export const permissionOverlay: OverlayDef = {
   closeOn: { blur: true, tabSwitch: true, navigation: false, layout: false },
   keep: 'fresh',
   height: { min: 200, max: 460 },
-  attach: createPermissionPrompt
+  attach: (win) => createPermissionPrompt(win)
 }

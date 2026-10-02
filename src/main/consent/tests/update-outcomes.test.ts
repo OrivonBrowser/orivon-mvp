@@ -476,3 +476,37 @@ describe('driveLoadResult: passthrough outcomes', () => {
     expect(registerApp).not.toHaveBeenCalled()
   })
 })
+
+describe('driveLoadResult: the tab is held from registering the origin until the question is answered', () => {
+  const caller = (events: string[]) => ({
+    window: () => undefined,
+    stillOn: () => true,
+    hold: () => { events.push('hold'); return () => { events.push('release') } }
+  })
+
+  it('an installed app holds before registerApp and releases after the consent question', async () => {
+    const events: string[] = []
+    const manifest = manifestWithCapabilities()
+    const installed: LoadResult = { outcome: 'installed', canonicalOrigin: APP, manifest, pin: { schema: 1, origin: APP, bundleHash: 'sha256:' + 'a'.repeat(64), assets: [], version: manifest.version, pinnedAt: 0 } }
+    const registerApp = vi.fn(async () => { events.push('register') })
+    const consent = vi.fn(async () => { events.push('ask'); return true })
+
+    await driveLoadResult({ broker: fakeBroker({ registerApp }), loader: fakeLoader({ outcome: 'rejected', reason: 'unused' }), consent }, installed, NO_GRANTS, caller(events))
+
+    expect(events).toEqual(['hold', 'register', 'ask', 'release'])
+  })
+
+  it('releases the hold when registering the origin fails', async () => {
+    const events: string[] = []
+    const manifest = manifestWithCapabilities()
+    const installed: LoadResult = { outcome: 'installed', canonicalOrigin: APP, manifest, pin: { schema: 1, origin: APP, bundleHash: 'sha256:' + 'a'.repeat(64), assets: [], version: manifest.version, pinnedAt: 0 } }
+    const consent = vi.fn(async () => true)
+    const broker = fakeBroker({ registerApp: async () => { throw new Error('floor not persisted') } })
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await driveLoadResult({ broker, loader: fakeLoader({ outcome: 'rejected', reason: 'unused' }), consent }, installed, NO_GRANTS, caller(events))
+
+    expect(events).toEqual(['hold', 'release'])
+    consoleError.mockRestore()
+  })
+})

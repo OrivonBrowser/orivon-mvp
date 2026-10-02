@@ -6,7 +6,7 @@ import type { ShellWindow } from '../../shell/window-registry.js'
 import { commandById } from '../../shortcuts/commands.js'
 import { createAskSite } from '../ask-site.js'
 import { PageAccess } from '../page-access.js'
-import { createSitePrompt, sitePromptOverlay } from '../site-prompt-overlay.js'
+import { ANSWER_GUARD_MS, createSitePrompt, sitePromptOverlay } from '../site-prompt-overlay.js'
 import { SiteSettingsStore } from '../site-settings-store.js'
 
 const SITE = 'https://meet.example'
@@ -38,15 +38,23 @@ function rig (options: { isPrivate?: boolean, defaults?: Record<string, string> 
     commands: { run }
   }
   const access = new PageAccess<WebContents>()
-  const overlay = { window, services, close, send: vi.fn() } as unknown as OverlayWindow
-  const handler = createSitePrompt(overlay, access)
+  const send = vi.fn()
+  const clock = { now: 0 }
+  const overlay = { window, services, close, send } as unknown as OverlayWindow
+  const handler = createSitePrompt(overlay, access, () => clock.now)
   const ask = createAskSite({ windows: { findTab: (contents) => contents === (tab as unknown) ? { window, tabId: 't1' } : null } })
   const contents = tab as unknown as WebContents
-  return { tab, contents, window, store, access, handler, close, run, ask, shows, setActive: (id: string | null) => { activeTabId = id } }
+  return { tab, contents, window, store, access, handler, close, send, clock, run, ask, shows, setActive: (id: string | null) => { activeTabId = id } }
 }
 
 type Rig = ReturnType<typeof rig>
-const askView = (r: Rig): Record<string, unknown> => r.handler.show?.(r.shows[0]?.payload) as Record<string, unknown>
+/** Shows the question, has the page report it drawn and lets the guard pass, as a person who read it would. */
+const askView = (r: Rig): Record<string, unknown> => {
+  const view = r.handler.show?.(r.shows[0]?.payload) as Record<string, unknown>
+  r.handler.request({ type: 'drawn', id: view['id'] })
+  r.clock.now += ANSWER_GUARD_MS
+  return view
+}
 
 describe('the site-prompt overlay', () => {
   it('is a 360px panel under the address pill that a tab switch hides and that does not close on an address rewrite', () => {
@@ -79,6 +87,69 @@ describe('the site-prompt overlay', () => {
       r.handler.request({ type: 'answer', id: view['id'], answer: 'allow' })
       expect(await answer).toBe('allow')
       expect(r.close).toHaveBeenCalledTimes(1)
+    })
+
+    it('refuses an answer inside the guard, and takes it once the guard has passed', async () => {
+      const r = rig()
+      const answer = r.ask(['camera'], r.contents)
+      const view = r.handler.show?.(r.shows[0]?.payload) as Record<string, unknown>
+      expect(view['guardMs']).toBe(ANSWER_GUARD_MS)
+      r.handler.request({ type: 'drawn', id: view['id'] })
+      r.clock.now += ANSWER_GUARD_MS - 1
+      r.handler.request({ type: 'answer', id: view['id'], answer: 'allow' })
+      expect(r.close).not.toHaveBeenCalled()
+      r.clock.now += 1
+      r.handler.request({ type: 'answer', id: view['id'], answer: 'allow' })
+      expect(await answer).toBe('allow')
+    })
+
+    it('refuses an answer within the guard of the last key, and never takes one from a held Enter', async () => {
+      const r = rig()
+      const answer = r.ask(['camera'], r.contents)
+      const view = askView(r)
+      r.handler.key?.({ key: 'Tab', isAutoRepeat: false })
+      r.clock.now += 100
+      r.handler.request({ type: 'answer', id: view['id'], answer: 'allow' })
+      expect(r.close).not.toHaveBeenCalled()
+      expect(r.handler.key?.({ key: 'Enter', isAutoRepeat: true })).toBe(true)
+      r.clock.now += ANSWER_GUARD_MS - 1
+      r.handler.request({ type: 'answer', id: view['id'], answer: 'allow' })
+      expect(r.close).not.toHaveBeenCalled()
+      r.clock.now += 1
+      r.handler.request({ type: 'answer', id: view['id'], answer: 'allow' })
+      expect(await answer).toBe('allow')
+    })
+
+    it('does not start the guard until the page reports the question drawn, however long since the show', () => {
+      const r = rig()
+      const answer = r.ask(['camera'], r.contents)
+      const view = r.handler.show?.(r.shows[0]?.payload) as Record<string, unknown>
+      r.clock.now += ANSWER_GUARD_MS * 10
+      r.handler.request({ type: 'answer', id: view['id'], answer: 'allow' })
+      expect(r.close).not.toHaveBeenCalled()
+      r.handler.request({ type: 'drawn', id: 'wrong' })
+      r.handler.request({ type: 'drawn', id: view['id'], extra: 1 })
+      r.clock.now += ANSWER_GUARD_MS
+      r.handler.request({ type: 'answer', id: view['id'], answer: 'allow' })
+      expect(r.close).not.toHaveBeenCalled()
+      r.handler.request({ type: 'drawn', id: view['id'] })
+      r.clock.now += ANSWER_GUARD_MS - 1
+      r.handler.request({ type: 'answer', id: view['id'], answer: 'allow' })
+      expect(r.close).not.toHaveBeenCalled()
+      r.clock.now += 1
+      r.handler.request({ type: 'answer', id: view['id'], answer: 'allow' })
+      expect(r.close).toHaveBeenCalledTimes(1)
+      void answer
+    })
+
+    it('starts the guard over when the overlay is moved, and tells the page', () => {
+      const r = rig()
+      void r.ask(['camera'], r.contents)
+      const view = askView(r)
+      r.handler.moved?.()
+      expect(r.send).toHaveBeenCalledWith({ type: 'arm' })
+      r.handler.request({ type: 'answer', id: view['id'], answer: 'allow' })
+      expect(r.close).not.toHaveBeenCalled()
     })
 
     it('answers dismiss when the overlay closes without an answer', async () => {

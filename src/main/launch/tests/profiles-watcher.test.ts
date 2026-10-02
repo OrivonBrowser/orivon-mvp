@@ -1,3 +1,4 @@
+import { mkdirSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -86,7 +87,9 @@ describe('watchProfiles', () => {
   it('fires when a profile made after the watch started changes, even though profiles/ did not exist yet', async () => {
     const { calls } = watching()
 
-    await mkdir(join(root, 'profiles', 'abc'), { recursive: true })
+    // Synchronous, so profiles/ and profiles/abc both exist before the watcher is given a turn: the
+    // watch on profiles/ then starts with abc already inside it and gets no event for it.
+    mkdirSync(join(root, 'profiles', 'abc'), { recursive: true })
     expect(await waitForChange(calls)).toBe(true) // the mkdir itself, a root-level event
 
     // Proves the retried, deeper watch on profiles/abc is ALSO live, not

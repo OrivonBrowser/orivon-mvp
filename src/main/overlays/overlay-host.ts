@@ -167,6 +167,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
         },
         close: (reason) => { if (current()) closeSlot(slot, reason) }
       },
+      onKey: (key) => current() && slot.open && slot.handler?.key?.(key) === true,
       onBlur: () => { if (current() && slot.open && slot.def.closeOn.blur) closeSlot(slot, 'blur') },
       onGone: () => { if (current()) discardView(slot) },
       // A click gave focus to a view that must never hold it: hand it straight back.

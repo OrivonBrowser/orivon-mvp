@@ -51,12 +51,17 @@ export interface OverlayWindow extends WindowContext {
   takeFocus?: () => void
 }
 
+/** A key press seen by an overlay's own page before the page does. */
+export interface OverlayKey { readonly key: string, readonly isAutoRepeat: boolean }
+
 export interface OverlayHandler {
   /** Its result goes to the page on every show. The payload is the chrome's, unvalidated: check every field as `request` does. */
   show?: (payload: unknown) => unknown
   /** Untrusted: the page sends anything, so validate every field and run only listed commands. */
   request: (command: unknown) => unknown
   closed?: (reason: OverlayCloseReason) => void
+  /** Runs for every key pressed down in this overlay's page, before the page sees it; returning true drops the key. */
+  key?: (key: OverlayKey) => boolean
   /** Runs after the host has repositioned this open overlay: a window resize, a chrome height change or HTML fullscreen that did not close it. */
   moved?: () => void
   /** Runs once when the window is gone, whether or not the overlay was open: the place to drop a subscription to anything that outlives the window. */

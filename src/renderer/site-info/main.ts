@@ -176,7 +176,7 @@ async function confirmStaged (): Promise<void> {
   if (result === null) { renderCurrent(); return }
   info = result.info
   pendingStaleCapabilities = new Set(result.staleCapabilities)
-  showReloadBanner = result.staleCapabilities.length < changes.length
+  showReloadBanner = result.staleCapabilities.length + result.refusedCapabilities.length < changes.length
   renderCurrent()
 }
 

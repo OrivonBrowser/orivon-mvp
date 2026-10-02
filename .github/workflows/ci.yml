@@ -81,6 +81,10 @@ jobs:
       - name: Every page global carries a descriptor an app can replace
         run: npm run check:page-globals
 
+      # Every question is asked in the tab's own window; a native message box is a separate OS window.
+      - name: No native message box outside the files that may open one
+        run: npm run check:native-dialogs
+
       - name: Build
         run: npm run build
 

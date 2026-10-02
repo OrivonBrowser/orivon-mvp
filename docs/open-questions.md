@@ -316,16 +316,17 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A109: Entering or leaving an app swaps the view and loses history **[AI-REC]**
+### A109: Entering or leaving an app across partitions swaps the view and loses history **[AI-REC]**
 
-- **Question:** Should a view swap into or out of an app keep back/forward history, and should a
-  cross-origin navigation be caught before it commits?
+- **Question:** Should a view swap across partitions (into or out of an app that has a partition of its
+  own) keep back/forward history, and should a cross-origin navigation be caught before it commits?
 - **Why it matters:** The swapped-in view starts with empty history. `did-navigate` swaps after
   commit, so the new origin's first render can read the old partition.
-- **Options:** carry history over with `NavigationHistory.restore()` (rec., flicker unmeasured);
-  intercept with `will-navigate`/`will-redirect`, a fresh view per cross-origin click; accept
-  both, as `src/main/shell/README.md` discloses.
-- **Who decides:** owner, before the restore path is built
+- **Options:** carry history over with `NavigationHistory.restore()` as a swap within one session already
+  does (rec.; entries from another origin would load inside the app's session); intercept with
+  `will-navigate`/`will-redirect`, a fresh view per cross-origin click; accept both, as
+  `src/main/shell/README.md` discloses.
+- **Who decides:** owner, before a restore across partitions is built
 - **Blocks:** nothing
 
 ### A111: `window.nostr` cannot reach a page until `id.requestIdentity` exists **[AI-REC]**
@@ -907,16 +908,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Why it matters:** Chrome asks on tab close; here unsaved work can be lost silently.
 - **Options:** wait for a report (rec.); run `beforeunload` from `closeTab()` first; an asynchronous
   `will-prevent-unload` if Electron adds one.
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
-### A232: `prompt()` always returns `null` **[AI-REC]**
-
-- **Question:** Electron has no `window.prompt()` dialog or hook, so every call reads as Cancel;
-  `alert()` and `confirm()` work. Draw one?
-- **Why it matters:** A page that asks for input this way never gets it.
-- **Options:** wait for a port that needs it (rec.); a shell-drawn prompt through a preload
-  override of `window.prompt` that blocks the page synchronously.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
@@ -1929,6 +1920,15 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Why it matters:** the order fix and the focus are built from what the code showed; nothing reproduced the failure.
 - **Options:** repeat the drop on a real session (rec.); if it persists, read `contentView.children` and each view's bounds then.
 - **Who decides:** research first
+- **Blocks:** nothing
+
+### A340: A question asked in a background tab waits with no sign **[OWNER]**
+
+- **Question:** A question for a tab that is not in front waits until its tab comes to the front, and nothing in the tab strip says so.
+  Should the waiting tab show a mark?
+- **Why it matters:** a page that asked for the camera in a background tab looks stuck, and the person cannot tell it is waiting for them.
+- **Options:** a dot on the tab like the audio indicator (rec.); a count in the tab menu; nothing, as now.
+- **Who decides:** owner
 - **Blocks:** nothing
 
 ### A348: A browser exit right after a Chrome Web Store install is not reproduced **[RESEARCH]**

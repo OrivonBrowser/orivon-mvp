@@ -10,6 +10,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './launch-electron.mjs'
 import { clickAddressBarRetrying, pressKey } from './e2e-helpers.js'
+import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from './question-support.js'
 import { delay, findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from './smoke-helpers.mjs'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
@@ -137,37 +138,33 @@ it('asks once before opening them on an app that holds permissions, and not agai
     }, { origin: appOrigin, manifest: manifest(), capability: 'tcp.connect', patterns: ['127.0.0.1:9'] } satisfies DevGrantRequest)
     expect(registered).toBe(true)
 
-    // The question is a native dialog no driver can answer: the answers are given here, and counted.
-    await app.evaluate(({ dialog }) => {
-      const state = globalThis as unknown as { __asked: string[], __answer: number }
-      state.__asked = []
-      state.__answer = 1
-      dialog.showMessageBoxSync = ((_window: unknown, options: { message: string }) => {
-        state.__asked.push(options.message)
-        return state.__answer
-      }) as unknown as typeof dialog.showMessageBoxSync
-    })
-    const asked = async (): Promise<string[]> => await app.evaluate(() => (globalThis as unknown as { __asked: string[] }).__asked)
-
+    await stubNativeDialogs(app)
     const address = `${appOrigin}/app`
     await open(app, chrome, address)
 
-    // Cancel: nothing opens.
+    // The question is drawn in the tab. A key typed at the page does not answer it, and Cancel opens nothing.
     await pressKey(app, address, 'F12')
-    expect(await waitFor(async () => (await asked()).length === 1)).toBe(true)
-    expect((await asked())[0]).toContain(appOrigin)
+    const question = await readQuestion(await waitQuestion(app))
+    expect(question.message).toContain(appOrigin)
+    expect(question.buttons).toEqual(['Cancel', 'Open developer tools'])
+    await pressKey(app, address, 'Enter')
+    await delay(400)
+    expect(await questionGone(app)).toBe(false)
+    expect(await toolsOpenAt(app, address)).toBe(false)
+    await answerQuestion(app, 'Cancel')
+    expect(await waitFor(async () => await questionGone(app))).toBe(true)
     expect(await toolsOpenAt(app, address)).toBe(false)
 
     // Open: they open, and closing and opening again does not ask again.
-    await app.evaluate(() => { (globalThis as unknown as { __answer: number }).__answer = 0 })
     await pressKey(app, address, 'F12')
+    await answerQuestion(app, 'Open developer tools')
     expect(await waitFor(async () => await toolsOpenAt(app, address) === true)).toBe(true)
-    expect((await asked()).length).toBe(2)
     await pressKey(app, address, 'F12')
     expect(await waitFor(async () => await toolsOpenAt(app, address) === false)).toBe(true)
     await pressKey(app, address, 'F12')
     expect(await waitFor(async () => await toolsOpenAt(app, address) === true)).toBe(true)
-    expect((await asked()).length).toBe(2)
+    expect(await questionGone(app)).toBe(true)
+    expect(await noNativeDialogs(app)).toEqual([])
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)

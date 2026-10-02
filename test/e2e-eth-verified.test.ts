@@ -31,7 +31,8 @@ const SCRIPTED = {
 const SINGLE_FILE = '<!doctype html><meta charset="utf-8"><title>single file fixture</title><body>one block</body>'
 const BROKEN = { 'index.html': '<!doctype html><meta charset="utf-8"><title>tampered fixture</title><body>tampered</body>' }
 
-const TEST_TIMEOUT_MS = ADDRESS_BAR_STABLE_TIMEOUT_MS * 4 + DEFAULT_ACTION_TIMEOUT_MS * 6 + APP_CLOSE_RACE_MS + 60_000
+const SCRIPT_RUN_CEILING_MS = 40_000
+const TEST_TIMEOUT_MS = ADDRESS_BAR_STABLE_TIMEOUT_MS * 4 + DEFAULT_ACTION_TIMEOUT_MS * 6 + APP_CLOSE_RACE_MS + 60_000 + SCRIPT_RUN_CEILING_MS
 
 afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
@@ -85,8 +86,9 @@ it('loads a .eth name from verified IPFS content, refuses a tampered block, and 
       const view = await navigateToFixture(app, 'https://fixture.eth/', 'verified fixture')
       const readPage = async (): Promise<{ secure: boolean, subtle: string, ran: string | null }> => await evaluateRetrying(view, () => ({ secure: window.isSecureContext, subtle: typeof crypto.subtle, ran: document.body.dataset['app'] ?? null }))
       // The title is up once the head is parsed; the script is its own verified fetch at the end of the body, so it may not have run yet.
+      // The wait is for the script's own mark, with a ceiling that only a stuck fetch reaches: the verified fetch is several round trips to the gateway and the block hashing, which a loaded runner takes longer over than the default wait.
       let page = await readPage()
-      await waitFor(async () => { page = await readPage(); return page.ran === 'ran' })
+      await waitFor(async () => { page = await readPage(); return page.ran === 'ran' }, SCRIPT_RUN_CEILING_MS)
       check(`fixture.eth loaded from the gateway and is a secure context (${JSON.stringify(page)})`, page.secure && page.subtle === 'object')
       check('its script ran', page.ran === 'ran')
       check(`the gateway was asked for raw blocks (${String(gateway.requests.length)} requests)`, gateway.requests.some((r) => r.endsWith('?format=raw')))

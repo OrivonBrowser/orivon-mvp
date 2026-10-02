@@ -141,6 +141,18 @@ describe('app.requestGrant builds a DialogCaller from the real sending frame', (
     }
   }
 
+  it('contents() is the sending tab itself, so the question is drawn in that tab\'s own panel', async () => {
+    let contents: (() => unknown) | undefined
+    const ctx: RequestGrantCtx = {
+      requestGrant: async (_origin, _request, caller) => { contents = caller.contents; return true }
+    }
+    const event = frameFor(APP)
+
+    await handleControlRequest(stubBroker([]), event, envelope('app.requestGrant', { capability: 'fs' }), undefined, undefined, ctx)
+
+    expect(contents?.()).toBe(event.sender)
+  })
+
   it('stillOn(origin) is true while the sender is alive and still on that origin', async () => {
     const { ctx, caller } = fakeCtxCapturingCaller()
 

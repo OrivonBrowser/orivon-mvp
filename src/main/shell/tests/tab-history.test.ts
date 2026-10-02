@@ -25,6 +25,7 @@ describe('restoreHistory', () => {
     const { wc, restore } = contents()
     restore.mockImplementation(() => { throw new Error('refused') })
     expect(() => { restoreHistory(wc, [{ url: 'https://a.example/1', title: '' }], 0) }).not.toThrow()
+    expect(restoreHistory(wc, [{ url: 'https://a.example/1', title: '' }], 0)).toBe(false)
   })
 })
 

@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron'
 import { EMBED_SCRIPT_CHANNEL } from '../main/channels.js'
+import { installPageDialogs } from './page-dialogs.js'
 
 // Loaded by every page an app shows inside itself (ADR-0039), and by
 // nothing else: src/main/embed/embed-host.ts sets it on the guest at
@@ -56,6 +57,9 @@ ${source}
     console.error('[orivon] the script this app runs in the pages it shows threw:', error)
   })
 }
+
+// The shown page's own alert, confirm and prompt reach the app's panel instead of a native box.
+installPageDialogs()
 
 const reply = ipcRenderer.sendSync(EMBED_SCRIPT_CHANNEL) as { source?: unknown } | null
 if (reply !== null && typeof reply === 'object' && typeof reply.source === 'string' && reply.source !== '') {
