@@ -116,7 +116,7 @@ export function shellActions (parts: WindowParts): ShellActions {
     runCommand: (id) => { services.commands.run(id, entry) },
     act: (name, payload) => runChromeAction(name, payload, { window: entry, services }),
     // The anchor comes from the chrome page: only a rectangle of numbers places a view.
-    openMenu: (anchor) => { if (isRect(anchor)) entry.overlays.toggle('menu', anchor) },
+    openMenu: (anchor, pressedAt) => { if (isRect(anchor)) entry.overlays.toggle('menu', anchor, undefined, pressedAt) },
     prewarmMenu: () => { entry.overlays.prewarm('menu') },
     dragTab: (id, point) => {
       const zone = point === null ? null : splitZoneFor(tabs.getState().activeTabId, id, area(), point, TAB_DRAG_SPLIT_SHARE)

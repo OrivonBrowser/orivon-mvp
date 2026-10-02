@@ -91,4 +91,8 @@ shows a text box asks for the keyboard from its handler (`takeFocus`) on the fir
 on behaves as `take` until it closes.
 
 **Blur closes on the same mousedown that a re-click on the opener uses to ask again.** That click's
-message reaches main after the blur, so a toggle within 300 ms of a blur-close is read as its echo.
+message reaches main after the blur, and a button held down delays it by as long as it was held. A toggle
+that names the time its press landed (`toggle`'s `pressedAt`: the toolbar's menu button sends it) is the
+echo when the blur-close happened at or after that press, however long the press lasted, and is a fresh
+request when the close was earlier. A toggle with no press time (a key, an overlay opened from another
+button) is the echo when it comes within 300 ms of a blur-close.

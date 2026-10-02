@@ -59,8 +59,9 @@ export interface OrivonShell {
   openPermissions: (anchor: PanelAnchor, url?: string) => void
   /** Opens (or closes) the site-info popup; `page` says which icon was clicked. */
   openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => void
-  /** Opens (or closes) the main menu under the button that opens it. */
-  openMenu: (anchor: PanelAnchor) => void
+  /** Opens (or closes) the main menu under the button that opens it. `pressedAt` is when the press that this click completes
+   * landed (epoch milliseconds); a click from the keyboard has none. */
+  openMenu: (anchor: PanelAnchor, pressedAt?: number) => void
   /** The menu button was hovered or focused: builds the menu's view ahead of
    * the click that usually follows. Safe to call more than once. */
   prewarmMenu: () => void
@@ -141,7 +142,7 @@ const api: OrivonShell = {
     send(url === undefined ? { type: 'openSiteInfo', anchor, page } : { type: 'openSiteInfo', url, anchor, page })
   },
 
-  openMenu: (anchor: PanelAnchor) => { send({ type: 'openMenu', anchor }) },
+  openMenu: (anchor: PanelAnchor, pressedAt?: number) => { send(pressedAt === undefined ? { type: 'openMenu', anchor } : { type: 'openMenu', anchor, pressedAt }) },
   prewarmMenu: () => { send({ type: 'prewarmMenu' }) },
   act: async (name: string, payload?: unknown) => await request({ type: 'act', name, payload }),
   moveTab: (id: string, index: number) => { send({ type: 'moveTab', id, index }) },

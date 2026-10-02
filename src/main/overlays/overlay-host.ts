@@ -18,6 +18,9 @@ const DEFAULT_HEIGHT = { initial: 180, min: 120, max: 460 }
 /** Blur closes an overlay on the same mousedown a re-click on its own toolbar button uses to ask for it again, and that click's message reaches main only afterwards; a toggle this soon after our own blur-close is that echo, not fresh intent. */
 const REOPEN_DEBOUNCE_MS = 300
 
+/** How far before a press a close may have happened and still be that press's own: clocks of two processes, rounded. */
+const PRESS_SKEW_MS = 50
+
 /** Events sent before the page has said `ready` are held, up to this many, and delivered once it has. */
 const QUEUE_LIMIT = 32
 
@@ -62,6 +65,17 @@ interface Slot {
   lastBlurCloseAt: number
   /** A `never` overlay whose handler asked for the keyboard: it behaves as `take` until it closes. */
   focusTaken: boolean
+}
+
+/**
+ * A click on the button that opened an overlay: its press took the focus the overlay held, which closed it, and the
+ * click that follows asks to open it again. That is one gesture and must leave it closed. A click that names the time
+ * of its press is judged by it however long the button was held: a close at or after the press is the press's own, a
+ * close before it is somebody else's. A click that does not (a key) is judged by REOPEN_DEBOUNCE_MS alone.
+ */
+function isEchoOfOwnClose (slot: Slot, pressedAt: number | undefined, now: number): boolean {
+  if (pressedAt !== undefined && Number.isFinite(pressedAt) && pressedAt <= now + PRESS_SKEW_MS) return slot.lastBlurCloseAt >= pressedAt - PRESS_SKEW_MS
+  return now - slot.lastBlurCloseAt < REOPEN_DEBOUNCE_MS
 }
 
 async function showResult (handler: OverlayHandler, payload: unknown): Promise<OverlayReady> {
@@ -292,11 +306,11 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
 
   return {
     show,
-    toggle (name, anchor, payload) {
+    toggle (name, anchor, payload, pressedAt) {
       const slot = slots.get(name)
       if (slot === undefined) return
       if (slot.open) { closeSlot(slot, 'request'); return }
-      if (Date.now() - slot.lastBlurCloseAt < REOPEN_DEBOUNCE_MS) return
+      if (isEchoOfOwnClose(slot, pressedAt, Date.now())) return
       show(name, anchor, payload)
     },
     close (name) {

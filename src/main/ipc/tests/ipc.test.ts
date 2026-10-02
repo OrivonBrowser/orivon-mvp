@@ -115,7 +115,19 @@ describe('registerShellIpc -- openMenu', () => {
     expect(openMenu).not.toHaveBeenCalled()
     await dispatch({ type: 'openMenu', anchor })
 
-    expect(openMenu).toHaveBeenCalledExactlyOnceWith(anchor)
+    expect(openMenu).toHaveBeenCalledExactlyOnceWith(anchor, undefined)
+  })
+
+  it('passes the time of the press the click completes, and nothing that is not a number', async () => {
+    const openMenu = vi.fn()
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ openMenu }))
+    const anchor = { x: 1, y: 2, width: 3, height: 4 }
+
+    await dispatch({ type: 'openMenu', anchor, pressedAt: 1_790_000_000_000 })
+    await dispatch({ type: 'openMenu', anchor, pressedAt: '1' } as never)
+
+    expect(openMenu).toHaveBeenNthCalledWith(1, anchor, 1_790_000_000_000)
+    expect(openMenu).toHaveBeenNthCalledWith(2, anchor, undefined)
   })
 })
 

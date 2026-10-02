@@ -18,7 +18,16 @@ export function createCluster (): ChromeModule {
   }
 
   function wireMenu (menuBtn: HTMLButtonElement, ctx: ChromeContext): void {
-    menuBtn.addEventListener('click', () => { ctx.shell.openMenu(ctx.anchorFor(menuBtn)) })
+    // A press on this button takes the focus the open menu holds and closes it; the click that follows must read as that
+    // same gesture however long the button was held, so main is told when the press landed. A key has no press.
+    let pressedAt: number | undefined
+    menuBtn.addEventListener('pointerdown', (event) => { pressedAt = performance.timeOrigin + event.timeStamp })
+    menuBtn.addEventListener('pointercancel', () => { pressedAt = undefined })
+    menuBtn.addEventListener('click', (event) => {
+      const pressed = event.detail === 0 ? undefined : pressedAt
+      pressedAt = undefined
+      ctx.shell.openMenu(ctx.anchorFor(menuBtn), pressed)
+    })
     // Builds the menu's (kept-warm) view ahead of the click that usually follows a hover or a keyboard
     // tab-stop, so opening it then costs no more than attaching an already-live view -- never at window
     // startup, which would cost every window a hidden renderer process nobody may ever open. Once is

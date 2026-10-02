@@ -195,3 +195,34 @@ it('reopens on screen after every way it can have been closed', async () => {
     expect(await assertNoElectronSurvivors()).toEqual([])
   }
 }, 90_000)
+
+it('a press held on the button while the menu is open closes it, and letting go does not reopen it', async () => {
+  const app = await launchElectron({ appPath: '.', ...SILENT })
+  try {
+    const chrome = await readyChrome(app)
+    await chrome.click('#menu')
+    expect(await waitFor(async () => await popoverShown(app, 'overlay=menu'))).toBe(true)
+    await menuPage(app)?.waitForSelector('.menu-row')
+
+    const box = await chrome.locator('#menu').boundingBox()
+    if (box === null) throw new Error('the menu button has no box')
+    await chrome.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await chrome.mouse.down()
+    // What a real press does on landing: the keyboard focus moves to the toolbar, so the menu loses it and closes.
+    await app.evaluate(({ webContents }) => { webContents.getAllWebContents().find((wc) => wc.getURL().endsWith('/renderer/index.html'))?.focus() })
+    expect(await waitFor(async () => !(await popoverShown(app, 'overlay=menu')))).toBe(true)
+    // Held well past the time a blur-close is taken to be the echo of the click that follows.
+    await new Promise((resolve) => { setTimeout(resolve, 700) })
+    await chrome.mouse.up()
+
+    // A refusal is an absence: wait it out, then read once.
+    await new Promise((resolve) => { setTimeout(resolve, ABSENCE_SETTLE_MS) })
+    expect(await popoverShown(app, 'overlay=menu')).toBe(false)
+
+    await chrome.click('#menu')
+    expect(await waitFor(async () => await popoverShown(app, 'overlay=menu'))).toBe(true)
+  } finally {
+    await closeElectron(app)
+    expect(await assertNoElectronSurvivors()).toEqual([])
+  }
+}, TEST_TIMEOUT_MS)

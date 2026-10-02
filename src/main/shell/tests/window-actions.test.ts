@@ -22,8 +22,8 @@ describe('shellActions openMenu', () => {
     ;(parts.entry as unknown as { overlays: unknown }).overlays = { toggle }
     const actions = shellActions(parts)
     const anchor = { x: 900, y: 40, width: 30, height: 30 }
-    actions.openMenu(anchor)
-    expect(toggle).toHaveBeenCalledExactlyOnceWith('menu', anchor)
+    actions.openMenu(anchor, 1_790_000_000_000)
+    expect(toggle).toHaveBeenCalledExactlyOnceWith('menu', anchor, undefined, 1_790_000_000_000)
     for (const bad of [undefined, null, 'x', { x: Number.NaN, y: 1, width: 2, height: 3 }, { x: 1, y: 1, width: 2 }]) actions.openMenu(bad as never)
     expect(toggle).toHaveBeenCalledTimes(1)
   })

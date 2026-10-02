@@ -75,8 +75,9 @@ export type ShellCommand =
    * `openPermissions`; `page` is which icon was clicked (the shield opens
    * straight to the Web3 Score page, the key to the main page). */
   | { type: 'openSiteInfo'; url?: string; anchor: PanelAnchor; page: SiteInfoPage }
-  /** Opens, or closes, the main menu under the toolbar's menu button. Same `anchor` contract as `openPermissions`. */
-  | { type: 'openMenu'; anchor: PanelAnchor }
+  /** Opens, or closes, the main menu under the toolbar's menu button. Same `anchor` contract as `openPermissions`. `pressedAt`
+   * is when the press that this click completes landed (epoch milliseconds), absent for a key. */
+  | { type: 'openMenu'; anchor: PanelAnchor; pressedAt?: number }
   /** The toolbar's menu button was hovered or focused: builds its (kept-warm)
    * view ahead of the click that usually follows, so opening it costs no
    * more than attaching an already-live view. Never fired at window
@@ -123,7 +124,7 @@ export interface ShellActions {
   openPermissions: (anchor: PanelAnchor, url?: string) => void
   openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => void
   runCommand: (id: CommandId) => void
-  openMenu: (anchor: PanelAnchor) => void
+  openMenu: (anchor: PanelAnchor, pressedAt?: number) => void
   prewarmMenu: () => void
   act: (name: string, payload: unknown) => unknown
   beginTabDrag: (id: string) => void
@@ -213,7 +214,7 @@ export function registerShellIpc (
         actions.openSiteInfo(command.anchor, command.page, command.url)
         return
       case 'openMenu':
-        actions.openMenu(command.anchor)
+        actions.openMenu(command.anchor, typeof command.pressedAt === 'number' ? command.pressedAt : undefined)
         return
       case 'prewarmMenu':
         actions.prewarmMenu()
