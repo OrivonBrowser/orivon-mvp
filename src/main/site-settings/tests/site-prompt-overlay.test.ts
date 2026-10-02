@@ -103,6 +103,23 @@ describe('the site-prompt overlay', () => {
       expect(await answer).toBe('allow')
     })
 
+    it('refuses an answer within the guard of the last key, and never takes one from a held Enter', async () => {
+      const r = rig()
+      const answer = r.ask(['camera'], r.contents)
+      const view = askView(r)
+      r.handler.key?.({ key: 'Tab', isAutoRepeat: false })
+      r.clock.now += 100
+      r.handler.request({ type: 'answer', id: view['id'], answer: 'allow' })
+      expect(r.close).not.toHaveBeenCalled()
+      expect(r.handler.key?.({ key: 'Enter', isAutoRepeat: true })).toBe(true)
+      r.clock.now += ANSWER_GUARD_MS - 1
+      r.handler.request({ type: 'answer', id: view['id'], answer: 'allow' })
+      expect(r.close).not.toHaveBeenCalled()
+      r.clock.now += 1
+      r.handler.request({ type: 'answer', id: view['id'], answer: 'allow' })
+      expect(await answer).toBe('allow')
+    })
+
     it('does not start the guard until the page reports the question drawn, however long since the show', () => {
       const r = rig()
       const answer = r.ask(['camera'], r.contents)

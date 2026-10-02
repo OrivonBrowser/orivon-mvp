@@ -66,7 +66,8 @@ function fakeWebContents (): Record<string, unknown> {
   }
 }
 
-const { sessionsByPartition, lastWebContents, defaultSessionFetch } = vi.hoisted(() => ({
+const { sessionsByPartition, lastWebContents, defaultSessionFetch, viewOptions } = vi.hoisted(() => ({
+  viewOptions: { current: undefined as unknown },
   sessionsByPartition: new Map<string, unknown>(),
   lastWebContents: { current: undefined as unknown },
   defaultSessionFetch: vi.fn(async () => new Response('app session response'))
@@ -86,7 +87,8 @@ vi.mock('electron', () => ({
   },
   WebContentsView: class {
     webContents: unknown
-    constructor () {
+    constructor (options?: unknown) {
+      viewOptions.current = options
       this.webContents = lastWebContents.current
     }
   }
@@ -124,6 +126,12 @@ beforeEach(() => {
 })
 
 describe('createChildHostPool', () => {
+  it('builds the host with page dialogs disabled: nobody watches it, so a native box could never be answered', async () => {
+    const pool = createChildHostPool(() => stubBroker())
+    await pool.getOrCreate('http://localhost:5173')
+    expect(viewOptions.current).toMatchObject({ webPreferences: { disableDialogs: true, sandbox: true } })
+  })
+
   it('handles both http and https on the host session, with the same document handler, for an http: origin', async () => {
     const pool = createChildHostPool(() => stubBroker())
     await pool.getOrCreate('http://localhost:5173')

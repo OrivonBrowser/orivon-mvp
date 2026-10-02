@@ -4,6 +4,7 @@
 // The page sends a few fixed words; the site, the kinds and the tab are
 // always read here, in main, never taken from the page.
 import { originFromUrl } from '../../broker/policy/origin.js'
+import { createKeyQuiet } from '../overlays/key-quiet.js'
 import type { OverlayDef, OverlayHandler, OverlayWindow } from '../overlays/overlay-types.js'
 import { slotClosed } from '../overlays/tab-slots.js'
 import { commandById } from '../shortcuts/commands.js'
@@ -58,6 +59,8 @@ export function createSitePrompt ({ window, services, close, send }: OverlayWind
   let current: Current = { mode: 'none' }
   // The guard counts from the page drawing the question, never from the show: the page loads cold, so the show can come long before anything is on screen.
   let shownAt: number | null = null
+  // A key typed at the page when the prompt appears must not reach Allow either: the keyboard has to be quiet for the guard's length too.
+  const keys = createKeyQuiet(now)
   let stopWatching: (() => void) | undefined
 
   /** A new document ends the review; a page that only rewrites its own address does not. */
@@ -88,11 +91,13 @@ export function createSitePrompt ({ window, services, close, send }: OverlayWind
   }
 
   return {
+    key: keys.onKey,
     show: (payload): AskView | ReviewView | undefined => {
       current = { mode: 'none' }
       stopWatching?.()
       stopWatching = undefined
       shownAt = null
+      keys.reset()
       const shown = asShown(payload)
       if (shown?.mode === 'ask') {
         const ask = pendingAsk(shown.id)
@@ -123,7 +128,7 @@ export function createSitePrompt ({ window, services, close, send }: OverlayWind
       if (asked.type === 'answer') {
         if (current.mode !== 'ask' || current.id !== asked.id) return undefined
         const ask = pendingAsk(asked.id)
-        if (ask === undefined || shownAt === null || now() - shownAt < ANSWER_GUARD_MS) return undefined
+        if (ask === undefined || shownAt === null || now() - shownAt < ANSWER_GUARD_MS || keys.quietFor() < ANSWER_GUARD_MS) return undefined
         // The answer first, then the close: closing alone would settle the ask as "not now".
         ask.settle(asked.answer)
         close()

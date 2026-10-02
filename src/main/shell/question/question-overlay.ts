@@ -5,6 +5,7 @@
 // taken from the page. `ask-question.ts` is what callers use.
 import { randomBytes } from 'node:crypto'
 import type { OverlayDef, OverlayHandler, OverlayWindow } from '../../overlays/overlay-types.js'
+import { createKeyQuiet } from '../../overlays/key-quiet.js'
 import { slotClosed } from '../../overlays/tab-slots.js'
 import type { ShellWindow } from '../window-registry.js'
 import { GUARD_MS, MAX_INPUT, viewOf, type QuestionResult, type QuestionSpec, type QuestionView } from './question-spec.js'
@@ -76,12 +77,17 @@ export function createQuestionPanel (name: string, now: () => number = Date.now)
     let shownId: string | null = null
     // The guard counts from the page drawing the question, never from the show: the page loads cold, so the show can come long before anything is on screen.
     let shownAt: number | null = null
+    // A key typed at the page when the question appears, or Tab, Tab, Enter at it, must not reach a guarded button: the keyboard has to be quiet for the guard's length too.
+    const keys = createKeyQuiet(now)
     return {
+      key: keys.onKey,
+
       show: (payload): QuestionView | undefined => {
         const entry = heldQuestion(idOf(payload))
         if (entry === undefined || entry.window !== window) { shownId = null; return undefined }
         shownId = entry.id
         shownAt = null
+        keys.reset()
         return viewOf(entry.id, entry.spec)
       },
 
@@ -96,7 +102,7 @@ export function createQuestionPanel (name: string, now: () => number = Date.now)
         if (answer === undefined || entry === undefined) return undefined
         const { spec } = entry
         if (answer.button < 0 || answer.button >= spec.buttons.length) return undefined
-        if (spec.guarded?.includes(answer.button) === true && (shownAt === null || now() - shownAt < GUARD_MS)) return undefined
+        if (spec.guarded?.includes(answer.button) === true && (shownAt === null || now() - shownAt < GUARD_MS || keys.quietFor() < GUARD_MS)) return undefined
         if (answer.text !== undefined && spec.input === undefined) return undefined
         if (answer.checkbox !== undefined && spec.checkboxLabel === undefined) return undefined
         entry.settle({

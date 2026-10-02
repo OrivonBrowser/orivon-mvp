@@ -77,6 +77,46 @@ describe('the question handler', () => {
     expect(r.results).toEqual([{ response: 0, checkboxChecked: false }])
   })
 
+  it('refuses a guarded button within the guard of the last key, however long since the page drew', () => {
+    const r = rig()
+    r.handler.show?.({ id: r.id })
+    draw(r)
+    r.clock.now += GUARD_MS * 10
+    r.handler.key?.({ key: 'Tab', isAutoRepeat: false })
+    r.clock.now += 100
+    r.handler.key?.({ key: 'Tab', isAutoRepeat: false })
+    r.clock.now += 100
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.results).toEqual([])
+    r.clock.now += GUARD_MS
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.results).toEqual([{ response: 0, checkboxChecked: false }])
+  })
+
+  it('lets one Enter on the focused button answer, once the keys before it have been quiet', () => {
+    const r = rig()
+    r.handler.show?.({ id: r.id })
+    draw(r)
+    r.clock.now += GUARD_MS
+    r.handler.key?.({ key: 'Tab', isAutoRepeat: false })
+    r.clock.now += GUARD_MS
+    expect(r.handler.key?.({ key: 'Enter', isAutoRepeat: false })).toBe(false)
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.results).toEqual([{ response: 0, checkboxChecked: false }])
+  })
+
+  it('never answers from a held Enter or Space: its repeats are swallowed and restart the guard', () => {
+    const r = rig()
+    r.handler.show?.({ id: r.id })
+    draw(r)
+    r.clock.now += GUARD_MS * 10
+    expect(r.handler.key?.({ key: 'Enter', isAutoRepeat: true })).toBe(true)
+    expect(r.handler.key?.({ key: ' ', isAutoRepeat: true })).toBe(true)
+    r.clock.now += 100
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.results).toEqual([])
+  })
+
   it('takes a report of drawing only for the question on screen, once', () => {
     const r = rig()
     draw(r)
