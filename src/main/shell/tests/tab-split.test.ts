@@ -55,7 +55,7 @@ const AREA = { x: 0, y: 100, width: 1000, height: 600 }
 interface Rig {
   manager: InstanceType<typeof TabManager>
   children: unknown[]
-  contentView: { addChildView: ReturnType<typeof vi.fn>, removeChildView: ReturnType<typeof vi.fn> }
+  contentView: { children: unknown[], addChildView: ReturnType<typeof vi.fn>, removeChildView: ReturnType<typeof vi.fn> }
   area: { current: typeof AREA }
   backdrop: { view: { name: string, setBounds: ReturnType<typeof vi.fn> }, update: ReturnType<typeof vi.fn> }
   fullscreen: (id: string, entered: boolean) => void
@@ -71,6 +71,7 @@ function rig (): Rig {
   // the top instead of appending a duplicate; a fresh one goes at `index`,
   // the end by default (see pane-host.test.ts's identical fake).
   const contentView = {
+    children,
     addChildView: vi.fn((view: unknown, index?: number) => {
       const at = children.indexOf(view)
       if (at !== -1) children.splice(at, 1)
@@ -342,11 +343,23 @@ describe('two tabs in a split', () => {
     expect(manager.getState().tabs.every((tab) => tab.splitWith !== null)).toBe(true)
   })
 
+  it('put the keyboard in the dropped tab\'s page, the pane the person is now in', () => {
+    const { manager } = rig()
+    const a = manager.createTab('https://a.example/')
+    const b = manager.createTab('https://b.example/')
+
+    manager.splits.split(a, b, 'right')
+
+    expect((createdViews[1] as RecordedView).webContents.focus).toHaveBeenCalledTimes(1)
+    expect((createdViews[0] as RecordedView).webContents.focus).not.toHaveBeenCalled()
+  })
+
   it('go to the other pane on request', () => {
     const { manager } = rig()
     const a = manager.createTab('https://a.example/')
     const b = manager.createTab('https://b.example/')
     manager.splits.split(a, b, 'right')
+    for (const view of createdViews as RecordedView[]) view.webContents.focus.mockClear()
 
     expect(manager.splits.focusOther(b)).toBe(true)
     expect(manager.getState().activeTabId).toBe(a)
