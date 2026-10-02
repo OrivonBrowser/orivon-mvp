@@ -56,6 +56,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Extensions gained a menu with pinning, a permission sheet, command keys and history, bookmarks and search APIs; blockers run; 34 review findings fixed.
 - The Lounge reaches self-signed IRC networks like irchighway once "trusted only" is unticked; a refused certificate now reads in Node's words.
 - Sites ask once for camera, location and more; passwords save and fill; privacy controls, sign-in sheets and certificate viewer landed; 61 review findings fixed.
+- The Lounge published to IPFS now asks for its grants: its install had silently timed out on slow public gateways.
 
 ### In my head
 - Explored what `child_process` can safely mean: a WASI program in the app's own tab, native `subprocess` still excluded (`docs/planning/child-process-design.md`).
