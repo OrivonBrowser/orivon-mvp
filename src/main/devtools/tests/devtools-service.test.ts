@@ -60,6 +60,18 @@ describe('developer tools', () => {
     expect(service.allowed(as(contents))).toBe(false)
   })
 
+  it.each([
+    ['toggle', (service: DevToolsService, c: FakeContents) => { service.toggle(as(c), WINDOW) }],
+    ['openConsole', (service: DevToolsService, c: FakeContents) => { service.openConsole(as(c), WINDOW) }],
+    ['inspect', (service: DevToolsService, c: FakeContents) => { service.inspect(as(c), WINDOW, 1, 2) }]
+  ])('%s opens nothing on a page that was closed while the question was open', (_name, act) => {
+    const contents = page()
+    const { service } = setup({ appOf: () => ({ key: 'app', label: 'App' }), confirm: vi.fn(() => { contents.destroyed = true; return true }) })
+    expect(() => { act(service, contents) }).not.toThrow()
+    expect(contents.openDevTools).not.toHaveBeenCalled()
+    expect(contents.inspectElement).not.toHaveBeenCalled()
+  })
+
   it('close the ones already open when the setting is turned off', () => {
     const { service, change } = setup()
     const contents = page()
@@ -153,5 +165,16 @@ describe('developer tools', () => {
     contents.closeDevTools.mockClear()
     change('developer.tools', false)
     expect(contents.closeDevTools).not.toHaveBeenCalled()
+  })
+
+  it('leave no listener behind on a page whose tools were opened and closed again', () => {
+    const { service } = setup()
+    const contents = page()
+    for (let i = 0; i < 30; i++) {
+      service.toggle(as(contents), WINDOW)
+      service.toggle(as(contents), WINDOW)
+    }
+    expect(contents.listenerCount('destroyed')).toBe(0)
+    expect(contents.listenerCount('devtools-closed')).toBe(0)
   })
 })

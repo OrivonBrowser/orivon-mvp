@@ -163,6 +163,11 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
 
   /** The view currently attached to `contentView`, or null while hidden/closed. */
   let shown: WebContentsView | null = null
+  /** What `shown` held when it was shown. A view whose contents were destroyed answers `webContents` with nothing, so the close path reads these instead. */
+  let shownContents: WebContents | null = null
+  let shownContentsId = 0
+  /** Popups this module closed itself, whose `destroyed` event follows. */
+  const closedHere = new WeakSet<WebContentsView>()
   /** Set only for a `warm` popup: the one view built for this window's whole
    * lifetime, kept even while `shown` is null. */
   let warmView: WebContentsView | null = null
@@ -176,6 +181,12 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
   /** Which icon the showing popup was opened by, and which one the last close was of. */
   let shownKey = ''
   let lastClosedKey = ''
+
+  /** A view's contents, or undefined once they were destroyed (the view then answers `webContents` with nothing, whatever its type says). */
+  function contentsOf (view: WebContentsView): WebContents | undefined {
+    const contents = view.webContents as WebContents | undefined
+    return contents === undefined || contents.isDestroyed() ? undefined : contents
+  }
 
   function currentBackground (): string {
     return resolveThemeColor(spec.background)
@@ -219,18 +230,36 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
       // hidden (or, for a non-warm popup, already destroyed) must not resize
       // whatever replaced it. `currentAnchor` is null exactly when `shown` is,
       // so the second check only matters for the type-checker.
-      if (shown !== popup || currentAnchor === null || popup.webContents.isDestroyed()) return
+      if (shown !== popup || currentAnchor === null || contentsOf(popup) === undefined) return
       popup.setBounds(popoverBounds(win, currentAnchor, spec.align, contentHeight, maxHeight))
     })
     // Click-away dismissal, the one behaviour that makes this feel like a
     // toolbar popup rather than a stuck overlay.
     popup.webContents.on('blur', () => { if (shown === popup) hide() })
+    // A popup whose page is gone (crashed, or its contents destroyed) leaves the window the same way a click away does,
+    // so the person's next click on its icon opens a new one instead of closing the dead one.
+    const gone = (): void => {
+      const wasShown = shown === popup
+      // The popup held the keyboard, and its page is gone before it can hand it back.
+      if (wasShown) hide(true)
+      // Not the echo of a click away: the next click on the icon is a request to open. A popup this module closed itself is that echo.
+      if (wasShown || !closedHere.has(popup)) lastClosedAt = 0
+      if (warmView === popup) {
+        warmView = null
+        removeIpc?.()
+        removeIpc = null
+        closedHere.add(popup)
+        contentsOf(popup)?.close()
+      }
+    }
+    popup.webContents.on('render-process-gone', gone)
+    popup.webContents.once('destroyed', gone)
     void popup.webContents.loadURL(url)
     return popup
   }
 
   function ensureWarmView (): WebContentsView {
-    if (warmView === null || warmView.webContents.isDestroyed()) warmView = construct([])
+    if (warmView === null || contentsOf(warmView) === undefined) warmView = construct([])
     return warmView
   }
 
@@ -238,6 +267,8 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
     const popup = spec.warm === true ? ensureWarmView() : construct(extraArgs)
     currentAnchor = anchor
     shown = popup
+    shownContents = popup.webContents
+    shownContentsId = popup.webContents.id
     shownKey = key
     // Added last, so it renders above the active tab's view. Tab switches
     // and clicks into the page both blur this webContents, which hides the
@@ -255,30 +286,43 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
     // very first show) is focused once its page is actually ready to take it.
     if (popup.webContents.isLoading()) {
       popup.webContents.once('did-finish-load', () => {
-        if (shown === popup && !popup.webContents.isDestroyed()) popup.webContents.focus()
+        if (shown === popup) contentsOf(popup)?.focus()
       })
     } else {
       popup.webContents.focus()
     }
   }
 
-  function hide (): void {
+  /** `focusTabAfter`: the popup's page is gone, so it cannot be asked whether it held the keyboard. */
+  function hide (focusTabAfter = false): void {
     if (shown === null) return
     const popup = shown
-    // Read before the view leaves: a blur close finds it already false, and focus then stays where the person put it.
-    const hadFocus = !popup.webContents.isDestroyed() && popup.webContents.isFocused()
-    contentView.removeChildView(popup)
-    recordPopoverShown(popup.webContents.id, false)
+    const contents = shownContents
+    const id = shownContentsId
     shown = null
+    shownContents = null
     currentAnchor = null
     lastClosedAt = Date.now()
     lastClosedKey = shownKey
+    const alive = contents !== null && !contents.isDestroyed()
+    // Read before the view leaves: a blur close finds it already false, and focus then stays where the person put it.
+    const hadFocus = focusTabAfter || (alive && contents.isFocused())
+    // A throw here (a window being disposed) must not skip the cleanup below nor reach the caller.
+    try {
+      contentView.removeChildView(popup)
+    } catch (error) {
+      console.error('[popover] detaching the popup failed', error)
+    }
+    recordPopoverShown(id, false)
     // A `warm` popup's view survives being hidden -- only the window closing
     // (below) ever destroys it.
     if (spec.warm !== true) {
       removeIpc?.()
       removeIpc = null
-      if (!popup.webContents.isDestroyed()) popup.webContents.close()
+      if (alive && !contents.isDestroyed()) {
+        closedHere.add(popup)
+        contents.close()
+      }
     }
     if (hadFocus) {
       const tab = spec.activeContents?.()
@@ -295,7 +339,7 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
     // comment on the same call for why (one process-wide EventEmitter, one
     // direct listener per window/popover otherwise).
     const applyBackgroundForTheme = (): void => {
-      if (warmView === null || warmView.webContents.isDestroyed()) return
+      if (warmView === null || contentsOf(warmView) === undefined) return
       const color = currentBackground()
       warmView.setBackgroundColor(color)
       recordViewBackground(warmView.webContents.id, color)
@@ -304,7 +348,7 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
     win.on('closed', () => {
       unregisterThemeListener()
       removeIpc?.()
-      if (warmView !== null && !warmView.webContents.isDestroyed()) warmView.webContents.close()
+      if (warmView !== null) contentsOf(warmView)?.close()
     })
   }
 
@@ -322,9 +366,9 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
       if (key === lastClosedKey && Date.now() - lastClosedAt < REOPEN_DEBOUNCE_MS) return
       show(anchor, extraArgs, key)
     },
-    close: hide,
+    close: () => { hide() },
     isOpen: () => shown !== null,
     prewarm () { if (spec.warm === true) ensureWarmView() },
-    restack () { if (shown !== null && !shown.webContents.isDestroyed()) contentView.addChildView(shown) }
+    restack () { if (shown !== null && contentsOf(shown) !== undefined) contentView.addChildView(shown) }
   }
 }

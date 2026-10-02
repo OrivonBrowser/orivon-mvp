@@ -180,6 +180,9 @@ export class TabManager {
     for (const id of [...this.tabs.keys()]) this.forgetTab(id, true)
   }
 
+  /** True from the moment the window starts closing: no tab may be opened or driven on this manager any more. */
+  isDisposed (): boolean { return this.disposed }
+
   getState (): TabsSnapshot {
     return {
       tabs: this.order.map((id) => buildTabState(id, this.tabs.get(id), this.liveWebContents(id), this.stateEnv)),
