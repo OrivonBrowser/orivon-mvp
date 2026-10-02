@@ -249,6 +249,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **A port bundled against a pnpm-installed checkout gets a working `crypto`**: the shim bundler now finds its own
+  dependencies by their real paths, so The Lounge's server no longer crashes on `createHash is not a function`.
+- **`npm run check:advisories` runs on Windows**: it spawns `npm audit` through the same `.cmd`-aware launcher.
 - **`npm run dev` and `npm start` start on Windows again**: Node refuses to spawn an npm `.cmd` shim without a shell, so the
   launch and build scripts exited 1 with nothing on screen; they now run the shim through cmd.exe and print a failed launch.
 - **An app opened from `ipfs://` or a `.eth` name asks for its grants again over slow gateways**: its install gave up when a

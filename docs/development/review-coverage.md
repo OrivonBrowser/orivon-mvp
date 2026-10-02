@@ -330,3 +330,11 @@ In all, 36 findings, 36 confirmed, none refuted.
 |---|---|---|
 | `/code-review` at medium effort | The branch against `main` | No findings |
 | The unit suite on Windows, on this branch and on `main` | Both trees | The same 36 test files fail on both, none caused by this branch; one more failed only under a parallel run and passed three times alone |
+
+### `stream/shim-pnpm-layout`: the shim bundler under a pnpm install, and the advisories guard on Windows (2026-10-02)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| `/code-review` at low effort | The branch against `main` | No findings |
+| `src/shim` unit tests on Windows, on this branch and on `main` | Both trees | The two bundler tests that failed on `main` pass, and three Express/websocket bundling tests with them; five other files fail the same on both |
+| The Lounge's real end-to-end spec, its build rebuilt against this plugin | A real window on Windows | Every check passes but the relaunch status read, a timing race the change does not touch |
