@@ -43,6 +43,13 @@ import { apiOrHostAccessFor, hostAccessFor } from './extension-host-access.js'
 import { clearInvocationsForExtension, hasRecentInvocation } from './extension-tab-invocation.js'
 import { recordTabCaptureInvocation } from './extension-tab-capture-invocation.js'
 
+/** The session's extensions emitter takes one `extension-unloaded` listener from each extension subsystem: the
+ * vendored library's eight, the invocation ledger, the dNR engine, the bookmarks and manifest APIs, the command
+ * keys and the loaded-extensions feed, which is past Node's warning line of ten. Set here, before the first of them
+ * attaches, and above the count with room for a subsystem to come, not unlimited: a listener added per extension or
+ * per navigation still warns. */
+export const EXTENSIONS_LISTENER_ROOM = 32
+
 /** The `<browser-action-list partition="...">` token that resolves to
  * `session.defaultSession`, where every extension runs -- the default
  * session has no name of its own for `session.fromPartition()` to find, so
@@ -86,6 +93,8 @@ export function whenShellServices (run: (services: ShellServices) => void): void
  * watchForMissedServiceWorkerPreload's one-time reload recovers every miss
  * (0 failures after reload, same measurements), for either cause. */
 export function createExtensionHost (preloadPath: string): ElectronChromeExtensions {
+  const sessionExtensions = session.defaultSession.extensions
+  sessionExtensions.setMaxListeners(Math.max(sessionExtensions.getMaxListeners(), EXTENSIONS_LISTENER_ROOM))
   setSessionPartitionResolver((partition) =>
     partition === EXTENSIONS_DEFAULT_PARTITION ? session.defaultSession : session.fromPartition(partition))
   setMessageSenderIdCheck(senderMatchesClaimedExtensionId)
