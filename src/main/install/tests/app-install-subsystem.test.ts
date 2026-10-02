@@ -1,13 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 
-// app-install-subsystem.ts pulls in install-consent-prompt.ts, which imports
-// 'electron' at module scope -- mocked first, same reasoning as
-// request-grant-subsystem.test.ts's own header. `session.defaultSession` is
-// touched unconditionally, once broker/loader are both present, to register
-// the default session's one granted-origin CSP handler -- a bare fake
-// webRequest is enough, since no test here inspects what got registered.
+// The consent prompts ask through askQuestion; nothing here opens a question,
+// so it is replaced outright. `session.defaultSession` is touched
+// unconditionally, once broker/loader are both present, to register the
+// default session's one granted-origin CSP handler -- a bare fake webRequest
+// is enough, since no test here inspects what got registered.
+vi.mock('../../shell/question/ask-question.js', () => ({ askQuestion: vi.fn(async () => ({ response: 1, checkboxChecked: false })) }))
 vi.mock('electron', () => ({
-  dialog: { showMessageBox: vi.fn(async () => ({ response: 1 })) },
   session: { defaultSession: { webRequest: { onHeadersReceived: vi.fn(), onBeforeRequest: vi.fn(), onBeforeSendHeaders: vi.fn() } } }
 }))
 

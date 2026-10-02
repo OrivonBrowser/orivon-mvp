@@ -121,6 +121,8 @@ export function watchProfiles (root: string, onChange: () => void): ProfilesWatc
       watcher.on('error', () => { watchingProfilesDir = false })
       others.push(watcher)
       watchingProfilesDir = true
+      // Whatever is in profiles/ already raised no event on the new watch: a profile made together with profiles/ itself is found here.
+      reconcilePerProfileWatches()
     } catch {
       // Not made yet: retried on the next root-level event that names it -- see ensureProfilesDirWatch's own caller below.
     }

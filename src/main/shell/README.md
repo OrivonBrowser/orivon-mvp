@@ -48,6 +48,22 @@ The bookmarks bar's main side is [`bookmarks-bar/`](bookmarks-bar/) (its own REA
 folder menu, the right-click menu and what opens a bookmark. The bubble under the star, which names and files a
 bookmark, and the sheet for "Bookmark all tabs", are [`bookmark-bubble/`](bookmark-bubble/) (its own README).
 
+The question panel: every question the browser puts to the person is asked through `question/ask-question.ts`'s
+`askQuestion(target, spec, options)`, which resolves with the pressed button in the shape of Electron's message box.
+`question/question-spec.ts` is the spec and the cleaning every string passes through (pure, no `electron`),
+`question/question-overlay.ts` is the overlay and the map of questions main holds under random ids, and
+`question/install-questions.ts` binds the ask to this process's windows. The panel is drawn in the window of the tab
+the question belongs to, under the address pill with its top edge inside the toolbar; a background tab's question waits
+for its tab, a kiosk draws it centred, and only a question asked when no shell window exists opens a native box.
+`navigation-hold.ts` holds a tab's page where it is while a question about it is open (`holdNavigation`, nesting and
+released once): `tab-view.ts` drops a main-frame navigation, a redirect and a `window.open` the page starts meanwhile, so
+an answer cannot be given to a page that is no longer the one asked about. A change of address inside the document is
+not a navigation and still works. `page-dialogs.ts` answers a page's own `alert`, `confirm` and `prompt` (it replaces the one handler
+Electron keeps on a tab's internal dialog event for `alert` and `confirm`, and takes `prompt` from the tab's preload, which blocks on a send;
+it replies once the person has answered in the panel, or with the dismissed default when the tab navigates; a closed tab is answered as dismissed while its frame is alive; a dead renderer, Electron's cancel event or a removed frame close the panel and send no answer, because the callback for a gone frame crashes the browser process), and `signals/crashed.ts` does not call a page blocked on one unresponsive.
+`leave-page-prompt.ts` keeps a page that asks "Leave this page?" where it is while the panel asks, lets the next attempt
+through after Leave, and runs again a navigation the shell started (`tab-navigation.ts` records it). `served-address.ts` loads an `ipfs:` link at the URL its protocol serves it at, and not
+while the tab is held: a load from there is one the hold would never see.
 The main menu under the toolbar's menu button: `menu-layout.ts` lists which commands it shows and in
 what shape (the names and keys come from [`../shortcuts/`](../shortcuts/), so the menu cannot show a
 key that does not work), and `menu-overlay.ts` is its `OverlayDef`, shown by the overlay host in
@@ -62,7 +78,7 @@ test-hook.ts` is the e2e-only record of what each was actually set to.
 [`../../loader/electron/serve.ts`](../../loader/electron/serve.ts);
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts); and, inside `src/main/`,
 [`../browsing/`](../browsing/), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/),
-[`../shortcuts/`](../shortcuts/) (the command table and the service the menu reads, and the command bus a window runs a chosen command through),
+[`../shortcuts/`](../shortcuts/) (the command table and the service the menu reads, and the command bus a window runs a chosen command through), [`../overlays/`](../overlays/) (the question panel is an overlay shown through the tab slots),
 [`../consent/grant-prompt-origin.ts`](../consent/grant-prompt-origin.ts) (the origin line every
 permission dialog shows), [`../sessions/`](../sessions/) (the two questions' types, and
 `permission-gate.ts`'s notification store, handed to the permissions panel),
@@ -119,7 +135,11 @@ read as an origin change; the handler excludes the dashboard explicitly.
 
 **Residual: `did-navigate` fires after commit**, so the new origin's page has rendered once in
 the old partition and may already have read from it. Intercepting before commit would cost a
-fresh view and a lost history entry on every cross-origin link; it is open as A109.
+fresh view and a lost history entry on every cross-origin link; it is open as A109. A swap within one
+session (an origin newly registered as an app, an opener being cut, a typed address that flips the
+app-tab flag) carries the back and forward list over with `NavigationHistory.restore`; a typed address
+that has not committed loads after the pages up to the one being left. Only a swap across partitions
+starts a new list.
 
 **One process, several windows: what is per window and what is shared.** Per window: the chrome view, the
 `TabManager`, the popovers, the fullscreen and notice state, and the IPC handlers on the chrome view and the
@@ -194,7 +214,9 @@ only thing that drops `window.opener` at all. This is also the one case `keepsOp
 exempts: the opener link is exactly what must not survive here.
 
 **[`leave-page-prompt.ts`](leave-page-prompt.ts): closing a tab never asks.** `closeTab()`
-closes the webContents without running `beforeunload` (A231).
+closes the webContents without running `beforeunload` (A231). A navigation does: Electron settles an unload from the
+`will-prevent-unload` event and cannot be told later, so the page is kept, the question is asked in the panel, and Leave
+lets the next attempt through. A navigation the page started is repeated by the person.
 
 **[`user-agent.ts`](user-agent.ts): the string, not the brand list.** `navigator.userAgentData`
 lists Chromium rather than Google Chrome, and Electron has no API to change it. Google's sign-in

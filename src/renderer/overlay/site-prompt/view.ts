@@ -10,7 +10,7 @@ export function isAskView (value: unknown): value is AskView {
   if (!isRecord(value) || value['mode'] !== 'ask' || typeof value['id'] !== 'string' || typeof value['origin'] !== 'string') return false
   const { lines } = value
   return Array.isArray(lines) && lines.length > 0 && lines.every((line) => isRecord(line) && isStringArray(line['kinds']) && typeof line['text'] === 'string') &&
-    (value['locationNote'] === null || typeof value['locationNote'] === 'string') && (value['privateNote'] === null || typeof value['privateNote'] === 'string')
+    (value['locationNote'] === null || typeof value['locationNote'] === 'string') && (value['privateNote'] === null || typeof value['privateNote'] === 'string') && typeof value['guardMs'] === 'number'
 }
 
 export function isReviewView (value: unknown): value is ReviewView {
@@ -19,9 +19,6 @@ export function isReviewView (value: unknown): value is ReviewView {
   return Array.isArray(rows) && rows.length > 0 && rows.every((row) => isRecord(row) && typeof row['kind'] === 'string' && typeof row['label'] === 'string' &&
     (row['value'] === 'ask' || row['value'] === 'allow' || row['value'] === 'block') && typeof row['askOffered'] === 'boolean')
 }
-
-/** Buttons ignore a press this soon after the prompt appears: a page can time one under the cursor or a key the person was already typing. */
-export const ARMING_MS = 500
 
 /** The segment a Left or Right key reaches from `index` among `count`, without wrapping. */
 export function segmentAfterKey (index: number, key: string, count: number): number {

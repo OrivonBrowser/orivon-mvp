@@ -31,7 +31,7 @@ import type { CapabilityRequest, Pattern, CapabilityKind } from '../../contracts
  * prompt (breadth visible, a rendered manifest) needs to replace; nothing
  * about `requestGrant`'s own logic changes when it does.
  */
-export type ConsentPrompt = (origin: string, capability: CapabilityKind, patterns: readonly Pattern[], caller?: DialogCaller) => Promise<boolean>
+export type ConsentPrompt = (origin: string, capability: CapabilityKind, patterns: readonly Pattern[], caller?: DialogCaller, abandoned?: AbortSignal) => Promise<boolean>
 
 /**
  * What a dialog needs to know about the page that asked, without owning an
@@ -61,6 +61,10 @@ export interface DialogCaller {
    * got.
    */
   id?: unknown
+  /** The calling tab's `WebContents`, opaque here like `window()`: the panel a question is drawn in belongs to that tab, and its navigation is held while the question is open. */
+  contents?: () => unknown
+  /** Holds the calling tab's page where it is until the returned function is called. Set where the first-visit flow runs, which takes it from before the origin is registered; the prompts take their own around each question. */
+  hold?: () => () => void
 }
 
 /**
@@ -184,9 +188,13 @@ async function requestGrantOnce (
   // earlier: `abandoned` can fire at any point while this sat queued.
   const askConsent = async (): Promise<boolean> => {
     if (abandoned?.aborted === true) return false
-    return caller === undefined
-      ? await consent(origin, request.capability, decision.patterns)
-      : await consent(origin, request.capability, decision.patterns, caller)
+    if (caller === undefined) return await consent(origin, request.capability, decision.patterns)
+    // The signal travels with the question: a question drawn in a tab that is
+    // not in front waits for the tab, and the origin's turn is held meanwhile,
+    // so a call that gave up has to be able to take its question back.
+    return abandoned === undefined
+      ? await consent(origin, request.capability, decision.patterns, caller)
+      : await consent(origin, request.capability, decision.patterns, caller, abandoned)
   }
   const accepted = prompts === undefined ? await askConsent() : await withOriginTurn(origin, prompts, askConsent)
 

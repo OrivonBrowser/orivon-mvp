@@ -254,7 +254,9 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
           contextIsolation: true,
           nodeIntegration: false,
           offscreen: true,
-          backgroundThrottling: false
+          backgroundThrottling: false,
+          // Nobody watches a context: a native alert box could never be answered, and the script an app runs here must not be able to raise one.
+          disableDialogs: true
         }
       })
       view.setBounds({ x: 0, y: 0, width: size.width, height: size.height })

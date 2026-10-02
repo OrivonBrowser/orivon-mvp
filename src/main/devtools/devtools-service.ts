@@ -2,7 +2,7 @@
 // key, the menu, "Inspect" in a page's own menu) comes through here, so the
 // rules hold for all of them: the setting, the shell's own pages, and the one
 // question asked before a console can act with an app's permissions.
-import type { BaseWindow, WebContents } from 'electron'
+import type { WebContents } from 'electron'
 import type { SettingsStore } from '../settings/settings-store.js'
 import { showConsolePanel } from './open-console.js'
 
@@ -15,14 +15,14 @@ export interface DevToolsDeps {
   isShellPage: (contents: WebContents) => boolean
   /** The developer-only overrides are on (set from outside the browser, never from a page). */
   developerMode: () => boolean
-  /** Asks whether to go ahead, for the app shown as `label`. */
-  confirm: (window: BaseWindow, label: string) => boolean
+  /** Asks whether to go ahead, for the app shown as `label`. Drawn in the tab of `contents`. */
+  confirm: (contents: WebContents, label: string) => Promise<boolean>
 }
 
 /** What a tab's own menu needs of developer tools. */
 export interface DevToolsGate {
   allowed: (contents: WebContents) => boolean
-  inspect: (contents: WebContents, window: BaseWindow, x: number, y: number) => void
+  inspect: (contents: WebContents, x: number, y: number) => Promise<void>
   /** Closes the tools on `contents`, which is about to stop being the page a tab shows. A view whose page is already gone passes undefined. */
   closeFor: (contents: WebContents | undefined) => void
 }
@@ -30,6 +30,8 @@ export interface DevToolsGate {
 export class DevToolsService implements DevToolsGate {
   /** Apps already asked about in this run. */
   private readonly confirmed = new Set<string>()
+  /** Apps whose question is open now: a second request for one does not stack another question on it. */
+  private readonly asking = new Set<string>()
   private readonly open = new Set<WebContents>()
 
   constructor (private readonly settings: Pick<SettingsStore, 'get' | 'onChange'>, private readonly deps: DevToolsDeps) {
@@ -46,24 +48,24 @@ export class DevToolsService implements DevToolsGate {
   }
 
   /** Opens them on `contents`, or closes them if they are open. A page with no tab (undefined) does nothing. */
-  toggle (contents: WebContents | undefined, window: BaseWindow): void {
+  async toggle (contents: WebContents | undefined): Promise<void> {
     if (contents === undefined || contents.isDestroyed()) return
     if (contents.isDevToolsOpened()) {
       contents.closeDevTools()
       return
     }
-    if (this.permitted(contents, window)) this.show(contents)
+    if (await this.permitted(contents) && !contents.isDevToolsOpened()) this.show(contents)
   }
 
   /** Opens them on the Console panel, or moves an open set there. The same rules as `toggle`. */
-  openConsole (contents: WebContents | undefined, window: BaseWindow): void {
-    if (contents === undefined || contents.isDestroyed() || !this.permitted(contents, window)) return
+  async openConsole (contents: WebContents | undefined): Promise<void> {
+    if (contents === undefined || contents.isDestroyed() || !await this.permitted(contents)) return
     if (!contents.isDevToolsOpened()) this.show(contents)
     showConsolePanel(contents)
   }
 
-  inspect (contents: WebContents, window: BaseWindow, x: number, y: number): void {
-    if (contents.isDestroyed() || !this.permitted(contents, window)) return
+  async inspect (contents: WebContents, x: number, y: number): Promise<void> {
+    if (contents.isDestroyed() || !await this.permitted(contents)) return
     if (!contents.isDevToolsOpened()) this.show(contents)
     contents.inspectElement(x, y)
   }
@@ -75,17 +77,27 @@ export class DevToolsService implements DevToolsGate {
   }
 
   /** `permit`, and the page still there afterwards: the question can stay open while its tab is closed. */
-  private permitted (contents: WebContents, window: BaseWindow): boolean {
-    return this.permit(contents, window) && !contents.isDestroyed()
+  private async permitted (contents: WebContents): Promise<boolean> {
+    return await this.permit(contents) && !contents.isDestroyed()
   }
 
-  private permit (contents: WebContents, window: BaseWindow): boolean {
+  /** Whether to go on, asking once per app. The question stays open while the person reads it, so the page may have gone, or
+   * moved to another app, by the time it is answered: the answer then counts for nothing. */
+  private async permit (contents: WebContents): Promise<boolean> {
     if (!this.allowed(contents)) return false
     const app = this.deps.appOf(contents)
     if (app === null || this.confirmed.has(app.key)) return true
-    if (!this.deps.confirm(window, app.label)) return false
+    if (this.asking.has(app.key)) return false
+    this.asking.add(app.key)
+    let yes = false
+    try {
+      yes = await this.deps.confirm(contents, app.label)
+    } finally {
+      this.asking.delete(app.key)
+    }
+    if (!yes || contents.isDestroyed() || this.deps.appOf(contents)?.key !== app.key) return false
     this.confirmed.add(app.key)
-    return true
+    return this.allowed(contents)
   }
 
   private show (contents: WebContents): void {

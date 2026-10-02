@@ -94,7 +94,8 @@ export class OffscreenAPI {
     const url = resolveOwnPageUrl(extensionId, parameters.url)
 
     const view = new WebContentsView({
-      webPreferences: { session: this.ctx.session, sandbox: true },
+      // Orivon patch 62: nobody watches an offscreen document, so a native box could never be answered.
+      webPreferences: { session: this.ctx.session, sandbox: true, disableDialogs: true },
     })
     this.docs.set(extensionId, { view })
 

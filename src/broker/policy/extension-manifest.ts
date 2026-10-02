@@ -293,6 +293,8 @@ export interface ExtensionInstallDescription {
   readonly message: string
   readonly detail: string
   readonly warning: boolean
+  /** The label of the button that agrees, when it is not "Add extension" (a removal). */
+  readonly accept?: string
 }
 
 const MAX_LISTED_HOSTS = 5

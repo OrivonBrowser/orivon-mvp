@@ -19,6 +19,7 @@ import { bookmarkFolderOverlay } from '../shell/bookmarks-bar/folder-overlay.js'
 import { passwordFillOverlay, passwordSuggestOverlay } from '../passwords/chooser-overlays.js'
 import { passwordSaveOverlay } from '../passwords/password-overlays.js'
 import { menuOverlay } from '../shell/menu-overlay.js'
+import { questionOverlay, questionSheetOverlay } from '../shell/question/question-overlay.js'
 import { omniboxOverlay } from '../omnibox/omnibox-overlay.js'
 import { popupsBlockedOverlay } from '../site-settings/popups-overlay.js'
 import { sitePromptOverlay } from '../site-settings/site-prompt-overlay.js'
@@ -50,6 +51,8 @@ export const OVERLAYS: readonly OverlayDef[] = [
   permissionOverlay,
   popupsBlockedOverlay,
   qrOverlay,
+  questionOverlay,
+  questionSheetOverlay,
   restoreOverlay,
   sadTabOverlay,
   screenshotOverlay,

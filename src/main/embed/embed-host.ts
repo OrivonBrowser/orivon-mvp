@@ -21,6 +21,7 @@ import type { EmbedDownload, EmbedPopup } from '../../contracts/index.js'
 import { embedPartitionFor, guestRequestAllowed, hardenGuest, showsLocalPageOn } from './embed-guard.js'
 import { createNoticeBudget, downloadDetail, popupDetail } from './embed-events.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
+import { watchPageDialogs } from '../shell/page-dialogs.js'
 
 /** Spelled again, not imported: `content-root.ts` lives under `src/loader/`,
  * which this directory's README forbids depending on -- a shown page is
@@ -174,6 +175,8 @@ export function installEmbedHost (broker: Broker, preloadPath = join(import.meta
       notify.popup(guest.id, popupDetail(details))
       return { action: 'deny' }
     })
+    // The shown page's alert, confirm and prompt are asked in the app's own tab, headed with the shown page's origin.
+    watchPageDialogs(guest, () => !guest.isDestroyed(), undefined, () => embedder)
     guest.once('destroyed', () => {
       owners.delete(guest.id)
       guests.delete(guest.id)

@@ -6,12 +6,11 @@
 // forgets it; and it is asked once, remembered across a restart, and read
 // back by Notification.permission.
 //
-// NOTHING IS SHOWN AND NOTHING LAUNCHES. The external-link question is a
-// native message box no driver can press, so `dialog.showMessageBox` is
-// replaced in the main process with one that records what it was asked and
-// answers from a variable -- the privilege Playwright's `evaluate` already
-// has. The notification question is the prompt under the address bar, an
-// overlay the test answers by clicking it. Answering
+// NOTHING IS SHOWN AND NOTHING LAUNCHES. The external-link question is the
+// question panel under the address bar, read and answered by clicking its
+// real buttons; the native dialog methods are replaced with recorders only
+// to prove none was opened. The notification question is the prompt under
+// the address bar, an overlay the test answers by clicking it. Answering
 // yes to an external link makes Electron itself run the OS handler, so the
 // launched app finds `xdg-open` (and every sibling opener) on PATH as a stub
 // that records its argument and launches nothing.
@@ -37,6 +36,7 @@ import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } 
 import { ABSENCE_SETTLE_MS, HERMETIC_RESOLVER, delay, evaluateRetrying, findChrome, popoverShown, waitFor } from './smoke-helpers.mjs'
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, navigateToFixture, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
 import { focusWebContents, underVirtualDisplay, webContentsFocused } from './focus-helpers.js'
+import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from './question-support.js'
 
 const HOST = '127.0.0.1'
 // 8872-8885, 8893-8895 and 8897 belong to other suites' fixtures.
@@ -83,33 +83,6 @@ const PAGE = `<!doctype html><meta charset="utf-8"><title>${TITLE}</title>
   })
 </script>
 </body>`
-
-interface Asked { message: string, detail: string, buttons: string[] }
-
-/** Replaces the message box in the main process: records each question and
- * answers with the button index the test last set for that question. */
-async function stubDialogs (app: ElectronApplication): Promise<void> {
-  await app.evaluate(({ dialog }) => {
-    const g = globalThis as unknown as { __asked: Asked[], __answers: Record<string, number> }
-    g.__asked = []
-    g.__answers = { external: 1 }
-    dialog.showMessageBox = (async (...args: unknown[]) => {
-      const options = args.at(-1) as { message: string, detail?: string, buttons?: string[] }
-      g.__asked.push({ message: options.message, detail: options.detail ?? '', buttons: options.buttons ?? [] })
-      return { response: g.__answers['external'], checkboxChecked: false }
-    }) as typeof dialog.showMessageBox
-  })
-}
-
-async function asked (app: ElectronApplication): Promise<Asked[]> {
-  return await app.evaluate(() => (globalThis as unknown as { __asked: Asked[] }).__asked)
-}
-
-async function answer (app: ElectronApplication, question: 'external', button: number): Promise<void> {
-  await app.evaluate((_electron, [q, b]) => {
-    (globalThis as unknown as { __answers: Record<string, number> }).__answers[q as string] = b as number
-  }, [question, button])
-}
 
 /** The notification question is the prompt under the address bar, an Orivon overlay no native dialog stands in for. */
 async function waitForPrompt (app: ElectronApplication): Promise<Page> {
@@ -189,19 +162,20 @@ it('lets a page lock the pointer and keyboard with a notice, and open an externa
     try {
       server = await serveFixture()
       app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env: { PATH: `${openers.dir}:${process.env['PATH'] ?? ''}` } })
-      await stubDialogs(app)
+      await stubNativeDialogs(app)
       const view = await navigateToFixture(app, PAGE_URL, TITLE)
 
       // --- External links, before any click --------------------------------
-      await waitFor(async () => (await asked(app as ElectronApplication)).length > 0)
+      const atLoad = await readQuestion(await waitQuestion(app))
       await waitFor(async () => (await pageState(view)).secondTel === true)
       await delay(ABSENCE_SETTLE_MS)
-      const atLoad = await asked(app)
       check('a tel: link opened at load is asked about, naming the scheme, the site and the URL',
-        atLoad[0]?.message === 'Open tel link with your system\'s default app?' &&
-        atLoad[0]?.detail === `${ORIGIN} wants to open:\ntel:+15555550100` &&
-        JSON.stringify(atLoad[0]?.buttons) === '["Allow","Cancel"]', JSON.stringify(atLoad))
-      check('a second link with no click in between is refused without asking', atLoad.length === 1, JSON.stringify(atLoad))
+        atLoad.message === 'Open tel link with your system\'s default app?' &&
+        atLoad.detail === `${ORIGIN} wants to open:\ntel:+15555550100` &&
+        JSON.stringify([...atLoad.buttons].sort()) === '["Allow","Cancel"]', JSON.stringify(atLoad))
+      await answerQuestion(app, 'Cancel')
+      await delay(ABSENCE_SETTLE_MS)
+      check('a second link with no click in between is refused without asking', await questionGone(app))
 
       // --- Pointer lock -----------------------------------------------------
       if (underVirtualDisplay()) {
@@ -245,18 +219,20 @@ it('lets a page lock the pointer and keyboard with a notice, and open an externa
 
       // --- External links, from clicks --------------------------------------
       await view.click('#mail')
-      await waitFor(async () => (await asked(app as ElectronApplication)).length === 2)
+      const mail = await readQuestion(await waitQuestion(app))
+      check('a clicked mailto: link is asked about', mail.message === 'Open mailto link with your system\'s default app?', JSON.stringify(mail))
+      await answerQuestion(app, 'Cancel')
       await delay(ABSENCE_SETTLE_MS)
-      const mail = (await asked(app))[1]
-      check('a clicked mailto: link is asked about', mail?.message === 'Open mailto link with your system\'s default app?', JSON.stringify(mail))
       check('Cancel launches nothing', openers.launched() === '', openers.launched())
 
-      await answer(app, 'external', 0)
       await view.click('#magnet')
+      const magnet = await readQuestion(await waitQuestion(app))
+      await answerQuestion(app, 'Allow')
       const launched = await waitFor(() => openers.launched() !== '')
       check('Allow hands exactly the URL the person was shown to the OS handler',
-        launched && openers.launched() === `${MAGNET}\n` && (await asked(app))[2]?.detail === `${ORIGIN} wants to open:\n${MAGNET}`,
-        `${openers.launched()} / ${JSON.stringify((await asked(app))[2])}`)
+        launched && openers.launched() === `${MAGNET}\n` && magnet.detail === `${ORIGIN} wants to open:\n${MAGNET}`,
+        `${openers.launched()} / ${JSON.stringify(magnet)}`)
+      check('no native message box was opened for any of them', (await noNativeDialogs(app)).length === 0)
     } finally {
       if (app !== undefined) await closeElectronApp(app)
       if (server !== undefined) await new Promise<void>((resolve) => { server?.close(() => { resolve() }) })
@@ -327,7 +303,7 @@ it.skipIf(!sessionBusIsPrivate())('asks a site once about notifications, remembe
       const first = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env })
       try {
         // The fixture opens external links at load; those questions are native boxes and stay stubbed.
-        await stubDialogs(first)
+        await stubNativeDialogs(first)
         const view = await navigateToFixture(first, QUIET_URL, TITLE)
         const before = await evaluateRetrying(view, async () => [Notification.permission, (await navigator.permissions.query({ name: 'notifications' })).state])
         check(`a site nobody has answered for does not read as granted (Notification.permission, Permissions API: ${before.join(', ')})`, !before.includes('granted'))
@@ -368,7 +344,7 @@ it.skipIf(!sessionBusIsPrivate())('asks a site once about notifications, remembe
         seedProfile: async (dir: string) => { writeFileSync(join(dir, 'notification-decisions.json'), saved) }
       })
       try {
-        await stubDialogs(second)
+        await stubNativeDialogs(second)
         const view = await navigateToFixture(second, QUIET_URL, TITLE)
         check('after a restart the site reads as granted', await evaluateRetrying(view, () => Notification.permission) === 'granted')
         await view.click('#notify')

@@ -1,3 +1,4 @@
+import { GAP } from '../../overlays/overlay-bounds.js'
 import type { OverlayAnchor } from '../../overlays/overlay-types.js'
 import type { ChromeAction } from '../chrome-actions.js'
 import type { ShellWindow } from '../window-registry.js'
@@ -24,4 +25,17 @@ export const promptAnchorReport: ChromeAction = (payload, { window }) => {
 /** Where the address pill is, as the chrome last reported it, or undefined before the first report. */
 export function promptAnchor (window: ShellWindow): OverlayAnchor | undefined {
   return reported.get(window)
+}
+
+/** How far a question reaches up into the toolbar from the pill's bottom edge: past the line page content can never draw over. */
+export const TOOLBAR_OVERLAP = 8
+
+/**
+ * The rectangle to anchor a prompt to so that its top edge sits TOOLBAR_OVERLAP inside the address pill instead of
+ * below it. A page can draw a look-alike prompt only inside its own area, so a prompt that starts in the toolbar
+ * cannot be copied edge to edge. Undefined before the chrome's first report.
+ */
+export function crossingAnchor (window: ShellWindow): OverlayAnchor | undefined {
+  const pill = reported.get(window)
+  return pill === undefined ? undefined : { ...pill, height: pill.height - TOOLBAR_OVERLAP - GAP }
 }

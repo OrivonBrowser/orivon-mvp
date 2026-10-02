@@ -18,6 +18,8 @@ export interface AskView {
   readonly locationNote: string | null
   /** The answer is forgotten when this window closes. */
   readonly privateNote: string | null
+  /** How long the buttons are drawn as not ready: main refuses an answer that soon after the show. */
+  readonly guardMs: number
 }
 
 export interface ReviewRow {
@@ -67,14 +69,15 @@ export function askLines (kinds: readonly SiteKind[], sysex: boolean): AskLine[]
   return lines
 }
 
-export function askView (id: string, origin: string, kinds: readonly SiteKind[], sysex: boolean, isPrivate: boolean): AskView {
+export function askView (id: string, origin: string, kinds: readonly SiteKind[], sysex: boolean, isPrivate: boolean, guardMs: number): AskView {
   return {
     mode: 'ask',
     id,
     origin: formatOriginForDisplay(origin),
     lines: askLines(kinds, sysex),
     locationNote: kinds.includes('location') ? LOCATION_NOTE : null,
-    privateNote: isPrivate ? PRIVATE_NOTE : null
+    privateNote: isPrivate ? PRIVATE_NOTE : null,
+    guardMs
   }
 }
 

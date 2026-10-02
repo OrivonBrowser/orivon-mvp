@@ -12,7 +12,7 @@ import { MENU_POPOVER_BACKGROUND, PANEL_POPOVER_BACKGROUND, resolveThemeColor } 
 import { recordViewBackground } from '../shell/view-background-test-hook.js'
 import { registerOverlayIpc } from './overlay-ipc.js'
 import type { OverlayPort } from './overlay-ipc.js'
-import type { OverlayDef } from './overlay-types.js'
+import type { OverlayDef, OverlayKey } from './overlay-types.js'
 
 const CORNER_RADIUS = 10
 
@@ -49,6 +49,8 @@ export interface OverlayViewSpec {
   readonly port: OverlayPort
   readonly onBlur: () => void
   readonly onFocus: () => void
+  /** A key pressed down in the page, before the page sees it; true drops it. */
+  readonly onKey?: (key: OverlayKey) => boolean
   /** The page's renderer process died (crashed, was killed or ran out of memory); the webContents itself is not destroyed. */
   readonly onGone: () => void
 }
@@ -90,6 +92,10 @@ export function createOverlayView (spec: OverlayViewSpec): OverlayViewHandle {
   contents.on('blur', () => { setImmediate(spec.onBlur) })
   contents.on('focus', spec.onFocus)
   contents.on('render-process-gone', spec.onGone)
+  contents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || spec.onKey === undefined) return
+    if (spec.onKey({ key: input.key, isAutoRepeat: input.isAutoRepeat })) event.preventDefault()
+  })
   void contents.loadURL(url)
 
   return {

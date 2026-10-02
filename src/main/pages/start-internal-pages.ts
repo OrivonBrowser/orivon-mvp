@@ -127,8 +127,8 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       isPrivate: services.isPrivate,
       readFacts: readExtensionFacts,
       developerModeEnabled: () => services.settings.get('extensions.developerMode'),
-      pickFolder: pickExtensionFolder,
-      pickFile: pickExtensionFile,
+      pickFolder: async (page) => await pickExtensionFolder(services.windows.findOwner(page)?.window),
+      pickFile: async (page) => await pickExtensionFile(services.windows.findOwner(page)?.window),
       notify: () => { services.internalPages.publish('extensions.changed', undefined, ['extensions']) }
     }),
     privacy: privacyDomain(services.history, services.zoomStore, {

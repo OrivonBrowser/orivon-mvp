@@ -143,7 +143,7 @@ describe('registerSiteInfoIpc -- apply', () => {
 
     expect(controller.turnOn).toHaveBeenCalledWith(ORIGIN, 'fs', [])
     expect(controller.turnOff).toHaveBeenCalledWith(ORIGIN, 'tcp.connect')
-    expect(result).toEqual({ info: EMPTY_INFO, staleCapabilities: [] })
+    expect(result).toEqual({ info: EMPTY_INFO, staleCapabilities: [], refusedCapabilities: [] })
   })
 
   it('collects which capabilities came back stale, without aborting the rest', async () => {
@@ -162,6 +162,23 @@ describe('registerSiteInfoIpc -- apply', () => {
 
     expect(controller.turnOn).toHaveBeenCalledTimes(2)
     expect((result as { staleCapabilities: readonly string[] }).staleCapabilities).toEqual(['fs'])
+  })
+
+  it('reports a capability the broker did not grant (no manifest loaded, or no longer declared), so the card does not tell the person to reload for it', async () => {
+    const answers: Record<string, 'not-registered' | 'not-declared' | 'ok'> = { fs: 'not-registered', id: 'not-declared', 'tcp.connect': 'ok' }
+    const controller = fakeController({ turnOn: vi.fn(async (_origin, capability) => answers[capability] ?? 'ok') })
+    register(controller)
+
+    const result = await dispatch({
+      type: 'apply',
+      changes: [
+        { capability: 'fs', on: true, shownPatterns: [] },
+        { capability: 'id', on: true, shownPatterns: [] },
+        { capability: 'tcp.connect', on: true, shownPatterns: [] }
+      ]
+    })
+
+    expect(result).toEqual({ info: EMPTY_INFO, staleCapabilities: [], refusedCapabilities: ['fs', 'id'] })
   })
 })
 

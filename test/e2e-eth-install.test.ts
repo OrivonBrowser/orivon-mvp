@@ -17,6 +17,7 @@ import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetryi
 import { startFixtureGateway } from './apps/ipfs-gateway/gateway.mjs'
 import { originHash } from '../src/broker/grants/origin-hash.js'
 import { BUILTIN_ADDRESSES } from '../src/protocols/builtin.js'
+import { answerEveryQuestion, noNativeDialogs, stubNativeDialogs } from './question-support.js'
 
 const ORIGIN = 'https://app.eth'
 const SHOWN = BUILTIN_ADDRESSES.displayUrl(`${ORIGIN}/`)
@@ -46,14 +47,9 @@ it('installs a .eth app from verified IPFS content, pins its CID, and opens it f
         env: { ORIVON_TEST_ETH_FIXTURES: JSON.stringify({ 'app.eth': `ipfs://${root}` }), ORIVON_TEST_IPFS_GATEWAYS: gateway.url }
       })
       const running = app
-      await running.evaluate(({ dialog }) => {
-        const globals = globalThis as unknown as { __promptCount?: number }
-        globals.__promptCount = 0
-        dialog.showMessageBox = (async () => {
-          globals.__promptCount = (globals.__promptCount ?? 0) + 1
-          return { response: 0, checkboxChecked: false }
-        }) as unknown as typeof dialog.showMessageBox
-      })
+      await stubNativeDialogs(running)
+      // The fixture declares nothing to ask about; should it ever, the question is answered in the panel.
+      answerEveryQuestion(running)
       const listening = await waitFor(async () => await running.evaluate(() => (globalThis as { __orivonDevEthFixtures?: { listening: boolean } }).__orivonDevEthFixtures?.listening === true), 20_000)
       check('the verifier host is listening', listening)
       if (!listening) throw new Error('the verifier host never reported listening')
@@ -93,6 +89,7 @@ it('installs a .eth app from verified IPFS content, pins its CID, and opens it f
       }, 10_000)
       check(`with the gateway gone, it opens from its pin and its script runs (${String(ran)})`, reopened.ok && ran === 'ran')
 
+      expect(await noNativeDialogs(running)).toEqual([])
       expect(pin.content).toEqual({ cid: root, via: 'ipfs', pointersVerified: true })
       expect(ran).toBe('ran')
     } finally {

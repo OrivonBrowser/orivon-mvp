@@ -1,0 +1,21 @@
+/* The question panel: who is asking, the question, any detail, then the buttons. A question a page raised wears a
+   plainer, dashed card and says "<site> says", so it can never pass for one the browser asks about itself. */
+
+body[data-overlay^='question'] .q { position: relative; padding: 14px 16px; outline: none; }
+body[data-overlay^='question'] .q-origin { margin: 0 0 6px; padding-right: 4px; overflow-wrap: anywhere; font-size: 13px; color: var(--wink-dim); }
+body[data-overlay^='question'] .sheet-title { margin: 0 0 6px; }
+body[data-overlay^='question'] .q-message { margin: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; white-space: pre-wrap; }
+body[data-overlay^='question'] .q-detail { margin: 8px 0 0; color: var(--wink-dim); font-size: 12.5px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
+body[data-overlay^='question'] .q-input { box-sizing: border-box; width: 100%; margin: 10px 0 0; }
+body[data-overlay^='question'] .q-check { margin-top: 10px; }
+body[data-overlay^='question'] .btn-row { margin-top: 14px; }
+body[data-overlay^='question'] .btn-row .btn { transition: opacity 0.12s, background-color 0.12s, border-color 0.12s; }
+
+/* The first half second: a guarded button is visibly not ready, so a press that does nothing is not a surprise. */
+body[data-overlay^='question'] .arming .btn.guarded { opacity: 0.6; }
+
+body[data-overlay^='question'] .q-browser .q-origin { color: var(--wink); font-weight: 600; }
+body[data-overlay^='question'] .q-warning .q-message { color: var(--wwarn-mark, #c2410c); }
+
+body[data-overlay^='question'] .q-page { border-left: 3px dashed var(--wborder); }
+body[data-overlay^='question'] .q-page .q-message { font-weight: 400; }

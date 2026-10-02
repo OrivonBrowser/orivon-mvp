@@ -360,21 +360,22 @@ deterministic checks found and a blank Verdict. A reader looks at the PNG and fi
 deterministic checks already fail the spec; the reading is for what they cannot see, and a state
 is judged right only on positive evidence that it shows what it should.
 
-**Limits.** The consent prompts are native dialogs, so a screenshot cannot show them and the specs
-replace them. `capturePage()` fails without a GPU, so captures go through Playwright's own
+**Limits.** A question is drawn in the question panel, an overlay page: a spec reads and presses its real
+buttons (`test/question-support.ts`) and records the native boxes opened, which must be none. Leave this
+page is still a native box, so the specs replace it. `capturePage()` fails without a GPU, so captures go through Playwright's own
 screenshot of each view (measured behaviour in the `orivon-electron` skill). An uncaught exception
 in the main process raises a blocking error dialog, so no spec provokes one. Malformed calls to
 `window.orivon.*` are not covered yet.
 
 ## Guards
 
-Twelve checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
+Thirteen checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
 and CI's `check` job runs all of them; [`../../scripts/README.md`](../../scripts/README.md) says
 what each one enforces.
 
 `check:natives` · `check:contracts` · `check:secrets` · `check:vectors` · `check:comments` ·
 `check:size` · `check:questions` · `check:manifest-parity` · `check:page-globals` ·
-`check:dev-grant-absent` · `check:advisories` · `check:devlog`
+`check:dev-grant-absent` · `check:advisories` · `check:devlog` · `check:native-dialogs`
 
 Every one is an exported pure function over a root directory, unit tested in
 `scripts/tests/` against temp fixtures, with a CLI block guarded by `isInvokedDirectly` so the

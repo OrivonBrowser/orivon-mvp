@@ -94,6 +94,21 @@ describe('createOverlayView', () => {
     expect(onBlur).toHaveBeenCalledTimes(1)
   })
 
+  it('hands every key press to the host, and drops the one the host says to', () => {
+    const onKey = vi.fn((input: { key: string }) => input.key === 'Enter')
+    createOverlayView({ ...spec(), onKey })
+    const on = state.contents?.['on'] as ReturnType<typeof vi.fn>
+    const listener = on.mock.calls.find(([event]) => event === 'before-input-event')?.[1] as (event: { preventDefault: () => void }, input: unknown) => void
+    expect(listener).toBeTypeOf('function')
+    const event = { preventDefault: vi.fn() }
+    listener(event, { type: 'keyDown', key: 'Tab', isAutoRepeat: false })
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    listener(event, { type: 'keyDown', key: 'Enter', isAutoRepeat: true })
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)
+    listener(event, { type: 'keyUp', key: 'Enter', isAutoRepeat: false })
+    expect(onKey).toHaveBeenCalledTimes(2)
+  })
+
   it('reports a renderer that died to the host', () => {
     const onGone = vi.fn()
     createOverlayView({ ...spec(), onGone })

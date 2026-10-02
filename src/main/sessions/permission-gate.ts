@@ -33,7 +33,7 @@ export function notificationDecisions (): NotificationDecisions {
   return decisions
 }
 
-const externalLinks = createExternalLinks({ windowShowing, confirm: confirmExternalLink })
+const externalLinks = createExternalLinks({ windowShowing, confirm: async (_window, question, tab) => await confirmExternalLink({ contents: tab }, question) })
 let notificationsBlocked: () => boolean = () => false
 
 /**

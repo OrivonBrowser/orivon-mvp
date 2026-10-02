@@ -41,6 +41,8 @@ export interface ApplyResult {
    * doc. The popup redraws from `info` regardless; this is what lets it
    * also say WHY one row did not move. */
   readonly staleCapabilities: readonly CapabilityKind[]
+  /** Capabilities the person tried to turn on that nothing could grant: no manifest is loaded for the site, or it no longer declares them. Nothing changed for these, so a reload would not apply anything. */
+  readonly refusedCapabilities: readonly CapabilityKind[]
 }
 
 export type SiteInfoCommand =
@@ -138,15 +140,17 @@ export function registerSiteInfoIpc (
         return await collectSiteData(controller, origin, userDataPath, activeWebContents)
       case 'apply': {
         const staleCapabilities: CapabilityKind[] = []
+        const refusedCapabilities: CapabilityKind[] = []
         for (const change of command.changes) {
           if (change.on) {
             const result = await controller.turnOn(origin, change.capability, change.shownPatterns)
             if (result === 'stale') staleCapabilities.push(change.capability)
+            else if (result !== 'ok') refusedCapabilities.push(change.capability)
           } else {
             await controller.turnOff(origin, change.capability)
           }
         }
-        return { info: await controller.siteInfoFor(origin), staleCapabilities }
+        return { info: await controller.siteInfoFor(origin), staleCapabilities, refusedCapabilities }
       }
       case 'sitePermissions':
         return sitePermissions.view(origin)

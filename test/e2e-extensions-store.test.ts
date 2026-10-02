@@ -18,6 +18,7 @@ import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { evaluateRetrying, HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
+import { answeringWith, noNativeDialogs, stubNativeDialogs } from './question-support.js'
 import { closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
 import { parseRegistry } from '../src/main/extensions/registry.js'
 import { buildManifestCrx as buildCrx, makeRsaKeyPair } from './store-crx-support.js'
@@ -77,23 +78,21 @@ it('installs a publisher-signed fixture from the store, and refuses one with no 
       })
 
       // installFromStore(id) (no approvedManifest) goes through the
-      // ordinary install prompt (install-runner.ts's own doc on
-      // `installFromStoreCrx`'s `skipPrompt`), the real
-      // `dialog.showMessageBox` -- stubbed to always accept, this repo's
-      // hard rule that no native dialog may reach the screen in a test.
-      await app.evaluate(({ dialog }) => {
-        dialog.showMessageBox = (async () => ({ response: 0, checkboxChecked: false })) as unknown as typeof dialog.showMessageBox
-      })
+      // ordinary install question (install-runner.ts's own doc on
+      // `installFromStoreCrx`'s `skipPrompt`), drawn in the tab in front:
+      // the hook call below waits for the person, so the panel is answered
+      // while it runs. No native dialog may reach the screen in a test.
+      await stubNativeDialogs(app)
 
       const hookPresent = await waitFor(async () => await app!.evaluate(
         () => typeof (globalThis as unknown as { __orivonDevExtensionsStore?: unknown }).__orivonDevExtensionsStore === 'object'
       ))
       check('the dev-only store hook is present in this e2e build', hookPresent)
 
-      const validOutcome = await app.evaluate(async (_electron, id: string) => {
+      const validOutcome = await answeringWith(app, 'Add extension', app.evaluate(async (_electron, id: string) => {
         const store = (globalThis as unknown as { __orivonDevExtensionsStore: { installFromStore: (id: string) => Promise<{ installed: boolean, reason?: string }> } }).__orivonDevExtensionsStore
         return await store.installFromStore(id)
-      }, valid.id)
+      }, valid.id))
       check('the publisher-signed fixture installs', validOutcome.installed, JSON.stringify(validOutcome))
 
       const loaded = await app.evaluate(({ session }, id: string) => session.defaultSession.extensions.getExtension(id) !== null, valid.id)
@@ -107,20 +106,21 @@ it('installs a publisher-signed fixture from the store, and refuses one with no 
       check('the installed fixture is recorded with source store', entry?.source.kind === 'store', JSON.stringify(entry))
       check('its updater is the store one', entry?.updater.kind === 'store', JSON.stringify(entry?.updater))
 
-      const refusedOutcome = await app.evaluate(async (_electron, id: string) => {
+      const refusedOutcome = await answeringWith(app, 'Add extension', app.evaluate(async (_electron, id: string) => {
         const store = (globalThis as unknown as { __orivonDevExtensionsStore: { installFromStore: (id: string) => Promise<{ installed: boolean, reason?: string }> } }).__orivonDevExtensionsStore
         try {
           return await store.installFromStore(id)
         } catch (error) {
           return { installed: false, reason: String(error) }
         }
-      }, noPublisher.id)
+      }, noPublisher.id))
       check('a CRX with no publisher proof is refused', refusedOutcome.installed === false, JSON.stringify(refusedOutcome))
       const afterRefusal = parseRegistry(readFileSync(join(userData, 'extensions', 'registry.json'), 'utf8'))
       const nothingWritten = afterRefusal.entries.every((candidate) => candidate.id !== noPublisher.id)
       check('nothing was written to the registry for the refused CRX', nothingWritten, JSON.stringify(afterRefusal.entries.map((e) => e.id)))
       const notLoaded = await app.evaluate(({ session }, id: string) => session.defaultSession.extensions.getExtension(id) === null, noPublisher.id)
       check('the refused CRX did not load into the session either', notLoaded)
+      check('no native message box was opened', (await noNativeDialogs(app)).length === 0, JSON.stringify(await noNativeDialogs(app)))
 
       // A page at a non-store origin sees no chrome.webstorePrivate: the
       // vendored preload runs in every frame (a `frame`-type preload), and

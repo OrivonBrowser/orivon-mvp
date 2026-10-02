@@ -14,6 +14,7 @@ vi.mock('electron', () => ({
 vi.mock('../../sad-tab/sad-tab-controller.js', () => ({ syncSadTab: vi.fn(), watchActivations: vi.fn() }))
 
 const { crashedSignal } = await import('../signals/crashed.js')
+const { watchPageDialogs } = await import('../page-dialogs.js')
 const { syncSadTab, watchActivations } = await import('../../sad-tab/sad-tab-controller.js')
 const { troubleOf } = await import('../../sad-tab/sad-tab-state.js')
 
@@ -42,6 +43,40 @@ function rig (options: { shown?: boolean, isDashboardTab?: boolean, internalPage
 }
 
 beforeEach(() => { vi.mocked(syncSadTab).mockClear() })
+
+describe('the crashed signal -- a page blocked on its own dialog', () => {
+  const blockOnDialog = (wc: Rig['wc']): void => {
+    const mainFrame = { origin: 'https://page.example', detached: false }
+    Object.assign(wc, { ipc: { on: vi.fn() }, mainFrame })
+    wc.on('-run-dialog', () => {})
+    const waiting = (_target: unknown, spec: { cancelId: number }, options?: { signal?: AbortSignal }): Promise<unknown> =>
+      new Promise((resolve) => { options?.signal?.addEventListener('abort', () => { resolve({ response: spec.cancelId, checkboxChecked: false }) }) })
+    watchPageDialogs(wc as never, () => true, waiting as never)
+    wc.emit('-run-dialog', { frame: mainFrame, dialogType: 'confirm', messageText: 'wait', defaultPromptText: '' }, () => {})
+  }
+
+  it('is waiting for the person, not hung: its silence marks nothing', () => {
+    const { wc, record, emitState } = rig()
+    blockOnDialog(wc)
+
+    wc.emit('unresponsive')
+
+    expect(troubleOf(record)).toBeNull()
+    expect(emitState).not.toHaveBeenCalled()
+    expect(syncSadTab).not.toHaveBeenCalled()
+  })
+
+  it('is hung again once no dialog is open', async () => {
+    const { wc, record } = rig()
+    blockOnDialog(wc)
+    wc.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
+    await new Promise((resolve) => { setTimeout(resolve, 0) })
+
+    wc.emit('unresponsive')
+
+    expect(troubleOf(record)).not.toBeNull()
+  })
+})
 
 describe('the crashed signal', () => {
   it('watches tab activations through the shared lifecycle', () => {

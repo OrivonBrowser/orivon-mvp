@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { INTERNAL_COMMAND_CHANNEL, INTERNAL_EVENT_CHANNEL } from '../main/channels.js'
+import { inMainFrame } from './frame.js'
+import { installPageDialogs } from './page-dialogs.js'
 
 // Loaded ONLY by a tab the shell opened as one of its own pages (Settings,
 // History, ...; src/main/pages/). The shell names the page in an argument at
@@ -14,7 +16,9 @@ import { INTERNAL_COMMAND_CHANNEL, INTERNAL_EVENT_CHANNEL } from '../main/channe
 const PAGE_ARG = '--orivon-internal-page='
 const page = process.argv.find((argument) => argument.startsWith(PAGE_ARG))?.slice(PAGE_ARG.length)
 
-if (page !== undefined && location.protocol === 'orivon:' && location.hostname === page) {
+installPageDialogs()
+
+if (inMainFrame() && page !== undefined && location.protocol === 'orivon:' && location.hostname === page) {
   contextBridge.exposeInMainWorld('orivonInternal', {
     page,
     request: async (domain: string, command: unknown): Promise<unknown> =>

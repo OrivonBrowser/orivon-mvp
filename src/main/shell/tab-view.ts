@@ -9,10 +9,10 @@ import { faviconOnCommit } from '../browsing/favicon.js'
 import { knownIcon } from '../history/favicon-host.js'
 import type { TabRecord } from './tab-types.js'
 import { showContextMenu } from './context-menu.js'
-import { confirmLeavePage } from './leave-page-prompt.js'
+import { forgetNavigation, leaveAllowed } from './leave-page-prompt.js'
+import { watchPageDialogs } from './page-dialogs.js'
 import { windowOpenHandler } from './popups.js'
 import { keepsOpenerSession, openerCutNeeded, popupTargetIsApp } from './popup-opener.js'
-import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { DEFAULT_BACKGROUND } from './theme-colors.js'
 import { sheetBackdropOf } from './sheet-backdrop.js'
 import { recordViewBackground } from './view-background-test-hook.js'
@@ -21,6 +21,8 @@ import { repartitionView } from './tab-parking.js'
 import { parseInternalUrl } from '../pages/internal-pages.js'
 import { canViewSource } from '../page-tools/view-source.js'
 import { sitePopups } from '../site-settings/site-popups.js'
+import { refuseHeldNavigation, refuseHeldWindow } from './navigation-hold.js'
+import { loadServedAddresses } from './served-address.js'
 import { releaseOriginDocument, trackDocumentOrigin } from './tab-origin-liveness.js'
 import { watchLoadFailure } from './load-failure.js'
 import { trackInflightUrl } from './inflight-url.js'
@@ -54,7 +56,11 @@ export const EXIT_FULLSCREEN_WORLD_ID = 1001
  * `webviewTag` only for a registered app's tab (ADR-0039): the element is
  * inert everywhere else, and even there every attach is decided by
  * `../embed/embed-host.ts` against the live `web.embed` grant, so turning
- * the tag on grants nothing by itself. */
+ * the tag on grants nothing by itself.
+ *
+ * Neither `disableDialogs` nor `nodeIntegrationInSubFrames` is set: a page's
+ * `alert` and `confirm` are answered by `./page-dialogs.ts` from Electron's own
+ * dialog event, which Chromium raises per frame once its own checks pass. */
 export function tabWebPreferences (preload: string, partition: string | undefined, additionalArguments?: string[]): WebPreferences {
   return {
     preload,
@@ -275,18 +281,12 @@ export function wireView (id: string, record: TabRecord): void {
       event.preventDefault()
       return
     }
-    const { window } = record.host
-    if (window !== undefined && confirmLeavePage(window)) event.preventDefault()
+    if (leaveAllowed(wc)) event.preventDefault()
   })
-  // Chromium knows no `ipfs:` scheme and would offer a link to one to the
-  // OS; it loads here instead, from the URL its protocol serves it at.
-  wc.on('will-navigate', (event) => {
-    if (record.internalPage !== null) return
-    const served = BUILTIN_ADDRESSES.servedUrl(event.url)
-    if (served === undefined) return
-    event.preventDefault()
-    void wc.loadURL(served)
-  })
+  wc.on('did-start-navigation', (details) => { if (details.isMainFrame && !details.isSameDocument) forgetNavigation(wc) })
+  watchPageDialogs(wc, shown)
+  refuseHeldNavigation(wc)
+  loadServedAddresses(wc, () => record.internalPage !== null)
   wc.on('context-menu', (_event, params) => {
     const { window } = record.host
     if (window === undefined) return
@@ -304,7 +304,7 @@ export function wireView (id: string, record: TabRecord): void {
       page: { bare: () => record.internalPage !== null || record.isDashboardTab, viewSource: () => canViewSource(record, wc.getURL()), readable: () => readableNow(wc), reload: () => { record.host.reload(id) } },
       ...(services === undefined ? {} : { services }),
       runCommand,
-      ...(devtools?.allowed(wc) === true ? { inspect: (x: number, y: number) => { devtools.inspect(wc, window, x, y) } } : {})
+      ...(devtools?.allowed(wc) === true ? { inspect: (x: number, y: number) => { void devtools.inspect(wc, x, y) } } : {})
     })
   })
 
@@ -324,7 +324,7 @@ export function wireView (id: string, record: TabRecord): void {
     partitionFor: (url) => partitionForTarget(url),
     webPreferencesFor: (url) => tabWebPreferences(record.host.preloadPath, undefined, appTabArgsFor(url, record.host.broker)),
     isApp: (url) => popupTargetIsApp(url, record.host.broker),
-    popupBlocked: (details, from) => sitePopups.check(wc, from.url, details.url)
+    popupBlocked: (details, from) => refuseHeldWindow(wc, details.url) || sitePopups.check(wc, from.url, details.url)
   }, () => ({ url: wc.getURL(), partition: record.partition })))
   wireTabSignals(id, record)
 }

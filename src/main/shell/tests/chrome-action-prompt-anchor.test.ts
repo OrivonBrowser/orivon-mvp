@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { promptAnchor, promptAnchorReport } from '../actions/prompt-anchor.js'
+import { overlayBounds } from '../../overlays/overlay-bounds.js'
+import { crossingAnchor, promptAnchor, promptAnchorReport, TOOLBAR_OVERLAP } from '../actions/prompt-anchor.js'
 import { CHROME_ACTIONS, runChromeAction } from '../chrome-actions.js'
 import type { WindowContext } from '../window-context.js'
 import type { ShellWindow } from '../window-registry.js'
@@ -40,5 +41,23 @@ describe('the prompt.anchor chrome action', () => {
       runChromeAction('prompt.anchor', bad, contextOf(win))
     }
     expect(promptAnchor(win)).toEqual(good)
+  })
+})
+
+describe('crossingAnchor', () => {
+  const frame = { width: 1200, height: 800, area: { x: 0, y: 76, width: 1200, height: 724 } }
+  const limits = { min: 100, max: 460 }
+
+  it('has none until the chrome reports the pill', () => {
+    expect(crossingAnchor(windowOf())).toBeUndefined()
+  })
+
+  it('places an anchored overlay TOOLBAR_OVERLAP inside the pill, above the page area', () => {
+    const win = windowOf()
+    runChromeAction('prompt.anchor', { x: 120, y: 40, width: 600, height: 32 }, contextOf(win))
+    const rect = overlayBounds({ kind: 'anchor', width: 440, align: 'left' }, crossingAnchor(win), frame, 200, limits)
+    expect(rect.y).toBe(40 + 32 - TOOLBAR_OVERLAP)
+    expect(rect.y).toBeLessThan(frame.area.y)
+    expect(rect.x).toBe(120)
   })
 })

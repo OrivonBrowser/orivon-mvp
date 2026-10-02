@@ -5,6 +5,7 @@ import type { WebContentsView } from 'electron'
 import { markResponsive, markUnresponsive, troubleOf } from '../../sad-tab/sad-tab-state.js'
 import { syncSadTab, watchActivations } from '../../sad-tab/sad-tab-controller.js'
 import { DEFAULT_BACKGROUND, INTERNAL_PAGE_BACKGROUND, onThemeUpdated, resolveThemeColor } from '../theme-colors.js'
+import { hasPendingPageDialog } from '../page-dialogs.js'
 import { paintBacking } from '../tab-backing.js'
 import type { TabSignal } from '../tab-signals.js'
 import type { TabRecord } from '../tab-types.js'
@@ -68,6 +69,8 @@ export const crashedSignal: TabSignal = {
     wc.on('did-start-loading', () => { if (!wc.isDestroyed() && shown()) recovered() })
     wc.on('unresponsive', () => {
       if (wc.isDestroyed() || !shown() || (record.crashed !== undefined && record.crashed !== null)) return
+      // A page blocked on its own alert answers no input until the person has: that is waiting, not hanging.
+      if (hasPendingPageDialog(wc)) return
       markUnresponsive(record)
       sync()
     })
