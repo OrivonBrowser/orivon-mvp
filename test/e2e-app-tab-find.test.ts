@@ -9,7 +9,7 @@
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import type { ElectronApplication } from 'playwright'
 import { assertNoElectronSurvivors, closeElectron } from './launch-electron.mjs'
-import { pressKey } from './e2e-helpers.js'
+import { pressKey, waitForKeyboardAt } from './e2e-helpers.js'
 import { launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from './qa-helpers.js'
 import type { FixtureServer } from './qa-helpers.js'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
@@ -83,6 +83,7 @@ it('opens the browser find bar for a Ctrl+F the app did not use, and leaves one 
     // The page saw the key, so the browser did not take it.
     expect(await waitFor(async () => (await evaluateRetrying(plain, () => (window as unknown as { __seen: number }).__seen)) === 1)).toBe(true)
     expect(await waitFor(async () => await findShown(app))).toBe(true)
+    expect(await waitForKeyboardAt(app, 'overlay=find')).toBe(true)
     await pressKey(app, 'overlay=find', 'Escape')
     expect(await waitFor(async () => !(await findShown(app)))).toBe(true)
 

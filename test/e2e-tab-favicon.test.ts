@@ -52,6 +52,16 @@ async function navigate (app: ElectronApplication, from: string, url: string): P
   }, [from, url] as const)
 }
 
+/** Whether the tab showing `url` has COMMITTED it and finished loading. `getURL()` already reads a browser-started
+ * navigation before it commits, and a tab shows no icon while it loads, so neither the address nor a missing icon says
+ * the page has been left: Back from a page not yet committed would go to the entry before the one meant. */
+async function committedAt (app: ElectronApplication, url: string): Promise<boolean> {
+  return await app.evaluate(({ webContents }, target) => webContents.getAllWebContents().some((wc) => {
+    const history = wc.navigationHistory
+    return !wc.isLoading() && history.getEntryAtIndex(history.getActiveIndex())?.url === target
+  }), url)
+}
+
 async function openIconTab (app: ElectronApplication, chrome: Page): Promise<void> {
   await chrome.click('#new-tab')
   await clickAddressBarRetrying(chrome, `${origin}/icon`)
@@ -65,6 +75,7 @@ it('shows the icon again on returning to the page after a blank page, by address
     await openIconTab(app, chrome)
 
     await navigate(app, `${origin}/icon`, 'about:blank')
+    expect(await waitFor(async () => await committedAt(app, 'about:blank'))).toBe(true)
     expect(await waitFor(async () => !(await hasIcon(chrome)))).toBe(true)
 
     await clickAddressBarRetrying(chrome, `${origin}/icon`)
@@ -72,11 +83,14 @@ it('shows the icon again on returning to the page after a blank page, by address
     expect(await waitFor(async () => await hasIcon(chrome)), 'the icon is back after a blank page, by address').toBe(true)
 
     await navigate(app, `${origin}/icon`, 'about:blank')
+    expect(await waitFor(async () => await committedAt(app, 'about:blank'))).toBe(true)
     expect(await waitFor(async () => !(await hasIcon(chrome)))).toBe(true)
-    await app.evaluate(({ webContents }) => {
+    const wentBack = await app.evaluate(({ webContents }) => {
       const wc = webContents.getAllWebContents().find((candidate) => candidate.getURL() === 'about:blank' && candidate.navigationHistory.canGoBack())
       wc?.navigationHistory.goBack()
+      return wc !== undefined
     })
+    expect(wentBack, 'a tab at the blank page to go Back from').toBe(true)
     expect((await waitForTab(chrome, { address: `${origin}/icon` })).ok).toBe(true)
     expect(await waitFor(async () => await hasIcon(chrome)), 'the icon is back after a blank page, by Back').toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')

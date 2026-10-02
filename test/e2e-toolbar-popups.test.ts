@@ -6,7 +6,7 @@
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron } from './launch-electron.mjs'
-import { pressKey } from './e2e-helpers.js'
+import { pressKey, waitForKeyboardAt } from './e2e-helpers.js'
 import { distinctColours } from './qa-visual.js'
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from './qa-helpers.js'
 import type { FixtureServer } from './qa-helpers.js'
@@ -56,6 +56,7 @@ async function expectFindOpensOnTheTab (app: ElectronApplication): Promise<void>
   expect(await waitFor(async () => await tabFocused(app, server.origin))).toBe(true)
   await pressKey(app, server.origin, 'F', ['control'])
   expect(await waitFor(async () => await findShown(app))).toBe(true)
+  expect(await waitForKeyboardAt(app, 'overlay=find')).toBe(true)
   await pressKey(app, 'overlay=find', 'Escape')
   expect(await waitFor(async () => !(await findShown(app)))).toBe(true)
 }
@@ -68,6 +69,7 @@ it('Escape closes the key popup and the shield popup, and Ctrl+F then opens find
       await chrome.locator(button).click()
       expect(await waitFor(async () => await siteInfoShown(app))).toBe(true)
       expect(await waitFor(async () => (await shownPage(app)) !== undefined)).toBe(true)
+      expect(await waitForKeyboardAt(app, '/site-info/')).toBe(true)
       await pressKey(app, '/site-info/', 'Escape')
       expect(await waitFor(async () => !(await siteInfoShown(app)))).toBe(true)
       await expectFindOpensOnTheTab(app)
@@ -84,6 +86,7 @@ it('Escape closes the all-sites popup and gives the keyboard back to the page', 
     await ready(app, chrome)
     await chrome.locator('#permissions-btn').click()
     expect(await waitFor(async () => await permissionsShown(app))).toBe(true)
+    expect(await waitForKeyboardAt(app, '/permissions/')).toBe(true)
     await pressKey(app, '/permissions/', 'Escape')
     expect(await waitFor(async () => !(await permissionsShown(app)))).toBe(true)
     await expectFindOpensOnTheTab(app)
@@ -121,6 +124,7 @@ it('the other icon swaps the popup, after the first lost focus to the press and 
       expect(await waitFor(async () => (await shownPage(app)) === page)).toBe(true)
     }
     const closeAll = async (): Promise<void> => {
+      expect(await waitForKeyboardAt(app, '/site-info/')).toBe(true)
       await pressKey(app, '/site-info/', 'Escape')
       expect(await waitFor(async () => !(await siteInfoShown(app)))).toBe(true)
       await delay(400)
@@ -183,7 +187,10 @@ it('the all-sites popup reopens on screen after every way it can have been close
       'a click into the page': async () => {
         await app.evaluate(({ webContents }) => { webContents.getAllWebContents().find((wc) => wc.getType() === 'window' && /\/newtab\/|127\.0\.0\.1/.test(wc.getURL()))?.focus() })
       },
-      Escape: async () => { await pressKey(app, '/permissions/', 'Escape') },
+      Escape: async () => {
+        expect(await waitForKeyboardAt(app, '/permissions/')).toBe(true)
+        await pressKey(app, '/permissions/', 'Escape')
+      },
       'All site settings': async () => {
         await app.windows().find((w) => w.url().includes('/permissions/'))?.locator('#site-settings-link').click()
       },
