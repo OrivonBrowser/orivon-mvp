@@ -196,6 +196,35 @@ describe('a popup whose page is gone while it shows', () => {
   })
 })
 
+describe('focus when the popup that holds the keyboard is gone', () => {
+  it('goes back to the active tab when the popup crashes while shown', () => {
+    const tab = { isDestroyed: () => false, focus: vi.fn() }
+    const { popover } = setup(() => tab)
+    popover.toggle(ANCHOR, [], 'main')
+    last().handlers.get('render-process-gone')?.()
+    expect(tab.focus).toHaveBeenCalledTimes(1)
+  })
+
+  it('goes back to the active tab when the popup is destroyed while shown', () => {
+    const tab = { isDestroyed: () => false, focus: vi.fn() }
+    const { popover } = setup(() => tab)
+    popover.toggle(ANCHOR, [], 'main')
+    last().destroy()
+    last().handlers.get('destroyed')?.()
+    expect(tab.focus).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves focus alone when a click elsewhere had already closed the popup', () => {
+    const tab = { isDestroyed: () => false, focus: vi.fn() }
+    const { popover } = setup(() => tab)
+    popover.toggle(ANCHOR, [], 'main')
+    last().handlers.get('blur')?.()
+    last().destroy()
+    last().handlers.get('destroyed')?.()
+    expect(tab.focus).not.toHaveBeenCalled()
+  })
+})
+
 describe('a popup whose detaching throws', () => {
   it('still releases its contents and does not throw to the caller', () => {
     const detach = vi.fn(() => { throw new Error('window disposed') })

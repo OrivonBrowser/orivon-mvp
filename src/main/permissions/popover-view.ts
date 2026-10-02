@@ -240,7 +240,8 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
     // so the person's next click on its icon opens a new one instead of closing the dead one.
     const gone = (): void => {
       const wasShown = shown === popup
-      if (wasShown) hide()
+      // The popup held the keyboard, and its page is gone before it can hand it back.
+      if (wasShown) hide(true)
       // Not the echo of a click away: the next click on the icon is a request to open. A popup this module closed itself is that echo.
       if (wasShown || !closedHere.has(popup)) lastClosedAt = 0
       if (warmView === popup) {
@@ -292,7 +293,8 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
     }
   }
 
-  function hide (): void {
+  /** `focusTabAfter`: the popup's page is gone, so it cannot be asked whether it held the keyboard. */
+  function hide (focusTabAfter = false): void {
     if (shown === null) return
     const popup = shown
     const contents = shownContents
@@ -304,7 +306,7 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
     lastClosedKey = shownKey
     const alive = contents !== null && !contents.isDestroyed()
     // Read before the view leaves: a blur close finds it already false, and focus then stays where the person put it.
-    const hadFocus = alive && contents.isFocused()
+    const hadFocus = focusTabAfter || (alive && contents.isFocused())
     // A throw here (a window being disposed) must not skip the cleanup below nor reach the caller.
     try {
       contentView.removeChildView(popup)
@@ -364,7 +366,7 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
       if (key === lastClosedKey && Date.now() - lastClosedAt < REOPEN_DEBOUNCE_MS) return
       show(anchor, extraArgs, key)
     },
-    close: hide,
+    close: () => { hide() },
     isOpen: () => shown !== null,
     prewarm () { if (spec.warm === true) ensureWarmView() },
     restack () { if (shown !== null && contentsOf(shown) !== undefined) contentView.addChildView(shown) }
