@@ -1881,3 +1881,15 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** remove the view and its row code now (rec.); keep it for when the reading list lands; hide it while the root is empty.
 - **Who decides:** owner
 - **Blocks:** nothing
+
+### A347: A right-click menu scrolls when the desktop reports a short work area for the primary monitor **[AI-REC]**
+
+- **Question:** Right-click menus (page, tab, bookmarks bar, side panel) are native Electron menus. On Linux X11 Chromium bounds one
+  by the work area of the display under the pointer, and clips only the primary display's work area to the desktop's single
+  `_NET_WORKAREA` rectangle (`_GTK_WORKAREAS_D0` is never read). On a multi-monitor layout where that rectangle is short for the
+  primary, a menu taller than it scrolls, wherever the screen has room. Should Orivon draw its own menu in that case?
+- **Why it matters:** the page menu is 350 to 400 px tall, so a primary reported 328 or 344 px tall always shows scroll arrows.
+- **Options:** leave the menus native and say so in the compatibility matrix (rec.); draw page and tab menus as overlays sized
+  against the window, which loses the platform look, keyboard and accessibility behaviour and cannot extend past the window.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
