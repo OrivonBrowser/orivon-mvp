@@ -12,11 +12,12 @@ const APP_TAB_FLAG = '--orivon-app-tab'
  */
 export function installPageKeys (): void {
   if (!process.argv.includes(APP_TAB_FLAG) || window.top !== window) return
+  // Capture phase, so a page that stops the event from bubbling still reports it: only `defaultPrevented` is the page's answer.
   window.addEventListener('keydown', (event) => {
     if (!isFindChord(event, process.platform)) return
-    // The page's own handlers may sit after this one on `window`: read the verdict once they have all run.
+    // The page's own handlers run after this one: read the verdict once they have all run.
     setTimeout(() => {
       if (!event.defaultPrevented) ipcRenderer.send(PAGE_KEY_CHANNEL, { command: 'find.open' })
     }, 0)
-  })
+  }, true)
 }

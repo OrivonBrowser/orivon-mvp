@@ -20,6 +20,7 @@ const SHOTS_DIR = process.env.ORIVON_UI_SHOTS_DIR
 
 let server: FixtureServer
 const held: ServerResponse[] = []
+const heldImages: ServerResponse[] = []
 const requests = new Map<string, number>()
 const seen = (path: string): number => requests.get(path) ?? 0
 
@@ -32,6 +33,15 @@ beforeAll(async () => {
     if (request.url === '/hang') {
       // No headers at all: the navigation never commits.
       held.push(response)
+      return
+    }
+    if (request.url === '/slowimg') {
+      // Committed at once, but its load goes on until the image answers.
+      html(response, '<!doctype html><title>slowimg</title><p>waiting for an image</p><img src="/image-held" alt="">')
+      return
+    }
+    if (request.url === '/image-held') {
+      heldImages.push(response)
       return
     }
     if (request.url === '/slow') {
@@ -47,7 +57,7 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  for (const response of held) response.destroy()
+  for (const response of [...held, ...heldImages]) response.destroy()
   await server.close()
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
@@ -322,6 +332,33 @@ it('restarts a navigation that has not answered yet, and does not reload the pag
     await delay(300)
     expect(seen('/')).toBe(roots)
     expect(seen('/hang')).toBe(2)
+  } finally {
+    await closeElectron(app)
+  }
+}, QA_TEST_TIMEOUT_MS)
+
+it('restarts a navigation the page being left outlives, once that page finishes its own load', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    await visit(app, chrome, `${server.origin}/`)
+    const navigate = async (from: string, to: string): Promise<void> => {
+      const tab = app.windows().find((w) => w.url() === `${server.origin}${from}`)
+      expect(tab).toBeDefined()
+      void tab?.evaluate((next) => { location.href = next }, to).catch(() => {})
+    }
+    const hangs = seen('/hang')
+    await navigate('/', '/slowimg')
+    expect(await waitFor(() => seen('/image-held') === 1)).toBe(true)
+    await navigate('/slowimg', '/hang')
+    expect(await waitFor(() => seen('/hang') === hangs + 1)).toBe(true)
+    const shown = seen('/slowimg')
+
+    for (const response of heldImages) response.end()
+    await delay(500)
+    await mouseClick(chrome, '#reload')
+    expect(await waitFor(() => seen('/hang') === hangs + 2)).toBe(true)
+    await delay(300)
+    expect(seen('/slowimg')).toBe(shown)
   } finally {
     await closeElectron(app)
   }

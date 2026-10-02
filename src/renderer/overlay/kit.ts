@@ -83,10 +83,12 @@ export function shownPayload (message: unknown, type: 'show' | 'ready'): { paylo
 
 /**
  * Mounts `page` into `root` so that a page that throws, while mounting or on
- * a later show, leaves a small error state and never a blank overlay. The
- * error state replaces the page's nodes, so the next show clears the root and
- * builds the page again rather than staying broken for the rest of the
- * view's life (a menu view is kept warm across many opens).
+ * a later show, leaves a small error state and never a blank overlay. A view
+ * is kept warm across many opens, so one bad payload must not break it for
+ * good: after a throw in `shown`, the page's own nodes are set aside and put
+ * back for the next show (the page, with its listeners, stays the one
+ * mounted); after a throw in `mount` there is no page to put back, so the
+ * next show clears the root and mounts again.
  */
 export function mountPage (
   page: OverlayPage | undefined,
@@ -103,6 +105,7 @@ export function mountPage (
     return { shown: () => {} }
   }
   let mounted: { shown: (payload: unknown) => void } | undefined
+  let setAside: Node[] | undefined
   const build = (): void => {
     try {
       mounted = page.mount(root, overlay)
@@ -118,9 +121,12 @@ export function mountPage (
         root.replaceChildren()
         build()
         if (mounted === undefined) return
+      } else if (setAside !== undefined) {
+        root.replaceChildren(...setAside)
+        setAside = undefined
       }
       try { mounted.shown(payload) } catch (error) {
-        mounted = undefined
+        setAside = [...root.childNodes]
         fail(error)
       }
     }

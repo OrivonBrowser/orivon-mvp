@@ -7,6 +7,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron } from './launch-electron.mjs'
 import { pressKey } from './e2e-helpers.js'
+import { distinctColours } from './qa-visual.js'
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from './qa-helpers.js'
 import type { FixtureServer } from './qa-helpers.js'
 import { delay, popoverShown, waitFor } from './smoke-helpers.mjs'
@@ -151,3 +152,56 @@ it('the other icon swaps the popup, after the first lost focus to the press and 
     await closeElectron(app)
   }
 }, QA_TEST_TIMEOUT_MS)
+
+/** What a reopened all-sites popup must be: the topmost child of its window, with a real size, painting more than one colour. */
+async function expectPermissionsOnScreen (app: ElectronApplication, path: string): Promise<void> {
+  const top = await app.evaluate(({ BaseWindow }) => {
+    const view = BaseWindow.getAllWindows()[0]?.contentView.children.at(-1) as { webContents?: { getURL: () => string }, getBounds: () => { width: number, height: number } } | undefined
+    return view === undefined ? null : { url: view.webContents?.getURL() ?? '', bounds: view.getBounds() }
+  })
+  expect({ path, topmost: top?.url.includes('/permissions/') }).toEqual({ path, topmost: true })
+  expect(top?.bounds.width ?? 0).toBeGreaterThan(100)
+  expect(top?.bounds.height ?? 0).toBeGreaterThan(100)
+  const page = app.windows().find((w) => w.url().includes('/permissions/'))
+  expect(page).toBeDefined()
+  await page?.waitForSelector('#site-settings-link')
+  expect({ path, colours: distinctColours(await (page as NonNullable<typeof page>).screenshot()) > 3 }).toEqual({ path, colours: true })
+}
+
+it('the all-sites popup reopens on screen after every way it can have been closed', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    await ready(app, chrome)
+    const open = async (): Promise<void> => {
+      // Past the debounce that reads a toggle just after a blur close as that close's echo.
+      await delay(450)
+      await chrome.locator('#permissions-btn').click()
+      expect(await waitFor(async () => await permissionsShown(app))).toBe(true)
+    }
+    const closedBy: Record<string, () => Promise<void>> = {
+      'the button again': async () => { await chrome.locator('#permissions-btn').click() },
+      'a click into the page': async () => {
+        await app.evaluate(({ webContents }) => { webContents.getAllWebContents().find((wc) => wc.getType() === 'window' && /\/newtab\/|127\.0\.0\.1/.test(wc.getURL()))?.focus() })
+      },
+      Escape: async () => { await pressKey(app, '/permissions/', 'Escape') },
+      'All site settings': async () => {
+        await app.windows().find((w) => w.url().includes('/permissions/'))?.locator('#site-settings-link').click()
+      },
+      'the window losing focus': async () => {
+        await app.evaluate(({ BaseWindow }) => { BaseWindow.getAllWindows()[0]?.blur() })
+        await focusChrome(app)
+      }
+    }
+
+    await open()
+    await expectPermissionsOnScreen(app, 'first open')
+    for (const [path, close] of Object.entries(closedBy)) {
+      await close()
+      expect({ path, closed: await waitFor(async () => !(await permissionsShown(app))) }).toEqual({ path, closed: true })
+      await open()
+      await expectPermissionsOnScreen(app, path)
+    }
+  } finally {
+    await closeElectron(app)
+  }
+}, 90_000)

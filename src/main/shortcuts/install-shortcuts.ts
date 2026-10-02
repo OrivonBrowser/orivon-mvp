@@ -12,7 +12,7 @@ import { attachShortcuts } from './dispatcher.js'
 import type { ExtensionKeys } from './dispatcher.js'
 import type { CommandBus } from './command-bus.js'
 import type { CommandId } from './commands.js'
-import { installPageKeyIpc } from './page-key-ipc.js'
+import { defaultKeyStillBound, installPageKeyIpc } from './page-key-ipc.js'
 import type { ShortcutService } from './shortcut-service.js'
 
 /** Extensions' command keys, which start answering once the saved shortcuts are read: this is that moment. */
@@ -37,6 +37,7 @@ export function installShortcuts (app: Pick<App, 'on'>, service: ShortcutService
     }
   }
   installPageKeyIpc(ipcMain, {
+    stillBound: (id) => defaultKeyStillBound(service, id),
     tabOf: (contents) => {
       const owner = windows.findOwner(contents)
       if (owner === undefined) return null

@@ -45,17 +45,20 @@ describe('mountPage: a page that fails leaves an error state, never a blank over
     expect(showError).toHaveBeenCalledTimes(3)
   })
 
-  it('shows the error state when a show throws, and the next show builds the page again', () => {
+  it('shows the error state when a show throws, and the next show puts the same page back', () => {
     quiet()
-    const showError = vi.fn()
-    let built = 0
+    const pageNodes = ['title', 'list']
+    const fakeRoot = { childNodes: pageNodes as unknown[], replaceChildren (...nodes: unknown[]) { this.childNodes = nodes } }
+    const showError = vi.fn((r: { replaceChildren: (...nodes: unknown[]) => void }) => { r.replaceChildren('error') })
     const shown = vi.fn((payload: unknown) => { if (payload === 'bad') throw new Error('bad payload') })
-    const mount = vi.fn(() => { built += 1; return { shown } })
-    const mounted = mountPage({ mount }, root, overlay, showError)
+    const mount = vi.fn(() => ({ shown }))
+    const mounted = mountPage({ mount }, fakeRoot as unknown as HTMLElement, overlay, showError as unknown as (r: HTMLElement) => void)
     mounted.shown('bad')
     expect(showError).toHaveBeenCalledTimes(1)
+    expect(fakeRoot.childNodes).toEqual(['error'])
     mounted.shown('good')
-    expect(built).toBe(2)
+    expect(mount).toHaveBeenCalledTimes(1)
+    expect(fakeRoot.childNodes).toEqual(pageNodes)
     expect(shown).toHaveBeenLastCalledWith('good')
     expect(showError).toHaveBeenCalledTimes(1)
   })

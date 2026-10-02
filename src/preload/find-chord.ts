@@ -8,7 +8,7 @@ export interface ChordEvent {
   readonly repeat: boolean
 }
 
-/** The browser's default find key: Ctrl+F, or Cmd+F on macOS. Only the default binding: a rebound key is not told to the page. */
+/** The browser's default find key: Ctrl+F, or Cmd+F on macOS. Only the default binding; main answers only while that key is still bound to find. */
 export function isFindChord (event: ChordEvent, platform: string): boolean {
   if (event.key.toLowerCase() !== 'f' || event.isComposing || event.repeat || event.altKey || event.shiftKey) return false
   return platform === 'darwin' ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey

@@ -1,9 +1,12 @@
 // The one command a registered app's page may ask of the browser: the find bar, for a Ctrl+F the app left
 // unhandled. A browser key reaches an app's tab untouched (`yieldToApp` in commands.ts), so the page's preload
-// reports the press nobody took, and main decides here whether it is allowed to open anything.
+// reports the default key's press nobody took, and main decides here whether it is allowed to open anything.
 import type { IpcMainEvent, WebContents } from 'electron'
 import { PAGE_KEY_CHANNEL } from '../channels.js'
+import { parseBinding } from './accelerator.js'
+import { commandById } from './commands.js'
 import type { CommandId } from './commands.js'
+import type { ShortcutService } from './shortcut-service.js'
 
 /** What a page may ask for. Each entry is a command the browser also binds to a key the app was given first. */
 const PAGE_KEY_COMMANDS: ReadonlySet<string> = new Set<CommandId>(['find.open'])
@@ -24,6 +27,16 @@ export interface PageKeyTab {
 export interface PageKeyHost {
   /** The tab `contents` is in a window of this shell, or null when it is in none. */
   readonly tabOf: (contents: WebContents) => PageKeyTab | null
+  /** Whether the key the page reports for `command` (the browser's default one) is still bound to it: a person who rebound or cleared it has no such key. */
+  readonly stillBound: (command: CommandId) => boolean
+}
+
+/** Whether the browser's default key for `id` still runs it: a rebound or cleared command, or the key taken by another, does not. */
+export function defaultKeyStillBound (service: Pick<ShortcutService, 'platform' | 'commandFor'>, id: CommandId): boolean {
+  const def = commandById(id)
+  const text = service.platform === 'darwin' ? (def?.macDefault ?? def?.default) : def?.default
+  const chord = text === undefined ? null : parseBinding(text, service.platform)
+  return chord !== null && service.commandFor(chord) === id
 }
 
 type Listener = (event: IpcMainEvent, payload: unknown) => void
@@ -54,6 +67,7 @@ export function createPageKeyListener (host: PageKeyHost, allow: (key: number) =
     const tab = host.tabOf(event.sender)
     // The command acts on the window's tab in front, so only that tab may ask.
     if (tab === null || !tab.active || !tab.isAppTab || tab.suspended) return
+    if (!host.stillBound(command as CommandId)) return
     if (!allow(event.sender.id)) return
     tab.run(command as CommandId)
   }

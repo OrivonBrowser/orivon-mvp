@@ -24,16 +24,22 @@ document.addEventListener('keydown', (event) => {
 const OBSERVER = `window.__seen = 0
 document.addEventListener('keydown', (event) => { if (event.key.toLowerCase() === 'f' && event.ctrlKey) window.__seen += 1 })`
 
+/** Stops the press from bubbling to `window` without handling it: a page that did nothing with the key. */
+const STOPPER = `window.__seen = 0
+document.addEventListener('keydown', (event) => {
+  if (event.key.toLowerCase() === 'f' && event.ctrlKey) { window.__seen += 1; event.stopPropagation() }
+})`
+
 let server: FixtureServer
 
 beforeAll(async () => {
   server = await startServer((request, response) => {
-    if (request.url === '/handler.js' || request.url === '/observer.js') {
+    if (request.url === '/handler.js' || request.url === '/observer.js' || request.url === '/stopper.js') {
       response.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8' })
-      response.end(request.url === '/handler.js' ? HANDLER : OBSERVER)
+      response.end(request.url === '/handler.js' ? HANDLER : request.url === '/stopper.js' ? STOPPER : OBSERVER)
       return
     }
-    const script = request.url === '/handled' ? '/handler.js' : '/observer.js'
+    const script = request.url === '/handled' ? '/handler.js' : request.url === '/stopped' ? '/stopper.js' : '/observer.js'
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
     response.end(`<!doctype html><title>find fixture</title><script src="${script}"></script><body>some words to find</body>`)
   })
@@ -86,6 +92,19 @@ it('opens the browser find bar for a Ctrl+F the app did not use, and leaves one 
     // An absence cannot be polled for: settle past the preload's own hand-off, then read once.
     await delay(1000)
     expect(await findShown(app)).toBe(false)
+  } finally {
+    await closeElectron(app)
+  }
+}, QA_TEST_TIMEOUT_MS)
+
+it('opens the browser find bar when the app stops the press from bubbling but does not handle it', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    expect(await register(app, server.origin)).toBe(true)
+    const stopped = await visit(app, chrome, `${server.origin}/stopped`)
+    await pressKey(app, `${server.origin}/stopped`, 'F', ['control'])
+    expect(await waitFor(async () => (await evaluateRetrying(stopped, () => (window as unknown as { __seen: number }).__seen)) === 1)).toBe(true)
+    expect(await waitFor(async () => await findShown(app))).toBe(true)
   } finally {
     await closeElectron(app)
   }

@@ -294,7 +294,7 @@ export function wireView (id: string, record: TabRecord): void {
       openInWindow: (url) => { record.host.openWindow(url) },
       // A private window has no way back to the profile: it offers no second private session.
       ...(services === undefined || services.isPrivate ? {} : { openInPrivate: (url: string) => { services.profiles.openPrivate(url) } }),
-      page: { bare: () => record.internalPage !== null || record.isDashboardTab, viewSource: () => canViewSource(record, wc.getURL()), readable: () => readableNow(wc) },
+      page: { bare: () => record.internalPage !== null || record.isDashboardTab, viewSource: () => canViewSource(record, wc.getURL()), readable: () => readableNow(wc), reload: () => { record.host.reload(id) } },
       ...(services === undefined ? {} : { services }),
       runCommand,
       ...(devtools?.allowed(wc) === true ? { inspect: (x: number, y: number) => { devtools.inspect(wc, window, x, y) } } : {})

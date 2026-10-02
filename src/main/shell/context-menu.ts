@@ -61,7 +61,7 @@ export interface ContextMenuHost {
   /** Opens an address in a tab put in front: what a search of the selection does. */
   openInFront?: (url: string) => void
   /** Present for a tab's menu and absent for the chrome's, whose menu holds only edit items. `bare`: an internal page or the new-tab page. */
-  readonly page?: { readonly bare: () => boolean, readonly viewSource?: () => boolean, readonly readable?: () => boolean }
+  readonly page?: { readonly bare: () => boolean, readonly viewSource?: () => boolean, readonly readable?: () => boolean, readonly reload?: () => void }
   /** What the menu reads: the search engine and the spelling switch. Absent in tests. */
   readonly services?: Pick<ShellServices, 'settings'>
   /** Runs a command on the window: Save, Print, Screenshot, View Source, Picture in Picture. */
@@ -111,7 +111,7 @@ export function showContextMenu (wc: WebContents, params: ContextMenuParams, hos
       canGoForward: wc.navigationHistory.canGoForward(),
       back: onTab(() => { wc.navigationHistory.goBack() }),
       forward: onTab(() => { wc.navigationHistory.goForward() }),
-      reload: onTab(() => { wc.reload() })
+      reload: onTab(() => { if (host.page?.reload !== undefined) host.page.reload(); else wc.reload() })
     }
     actions.replaceMisspelling = (word) => { onTab(() => { wc.replaceMisspelling(word) })() }
     actions.addToDictionary = (word) => { onTab(() => { wc.session.addWordToSpellCheckerDictionary(word) })() }
