@@ -234,16 +234,25 @@ it('the all-sites popup reopens on screen after another overlay, a tab switch or
     const closedBy: Record<string, () => Promise<void>> = {
       // Pressed inside the popup, which holds the keyboard: the overlay host closes it, no blur first.
       'the find bar opening': async () => {
+        expect(await waitForKeyboardAt(app, '/permissions/')).toBe(true)
         await pressKey(app, '/permissions/', 'F', ['control'])
         expect(await waitFor(async () => await findShown(app))).toBe(true)
+        expect(await waitForKeyboardAt(app, 'overlay=find')).toBe(true)
         await pressKey(app, 'overlay=find', 'Escape')
         expect(await waitFor(async () => !(await findShown(app)))).toBe(true)
       },
-      'a new tab': async () => { await pressKey(app, '/permissions/', 'T', ['control']) },
-      'a tab switch': async () => { await pressKey(app, '/permissions/', 'Tab', ['control']) },
+      'a new tab': async () => {
+        expect(await waitForKeyboardAt(app, '/permissions/')).toBe(true)
+        await pressKey(app, '/permissions/', 'T', ['control'])
+      },
+      'a tab switch': async () => {
+        expect(await waitForKeyboardAt(app, '/permissions/')).toBe(true)
+        await pressKey(app, '/permissions/', 'Tab', ['control'])
+      },
       'the site card opening': async () => {
         await chrome.locator('#site-permissions-btn').click()
         expect(await waitFor(async () => await siteInfoShown(app))).toBe(true)
+        expect(await waitForKeyboardAt(app, '/site-info/')).toBe(true)
         await pressKey(app, '/site-info/', 'Escape')
         expect(await waitFor(async () => !(await siteInfoShown(app)))).toBe(true)
       },
@@ -291,6 +300,7 @@ it('the all-sites popup reopens on screen after its renderer crashed or its cont
       await openPermissions(app, chrome)
       await expectPermissionsOnScreen(app, path)
       expect({ path, rebuilt: (await permissionsContentsId(app)) !== before }).toEqual({ path, rebuilt: true })
+      expect(await waitForKeyboardAt(app, '/permissions/')).toBe(true)
       await pressKey(app, '/permissions/', 'Escape')
       expect(await waitFor(async () => !(await permissionsShown(app)))).toBe(true)
     }
