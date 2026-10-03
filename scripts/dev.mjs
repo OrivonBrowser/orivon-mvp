@@ -1,33 +1,41 @@
 /**
- * `npm run dev`, with ORIVON_WINDOW_NO_FOCUS=1 set (docs/development/setup.md
- * "The no-focus switch") so a dev-server launch does not steal the owner's
- * keyboard focus while they are working on something else, and
- * ORIVON_DEV_ORIGINS=1, developer mode (src/main/dev/dev-mode.ts): orivon-ports'
- * `.eth` names and Inspect Element. Only this script sets it: `npm start` is
- * what a run-from-source user runs, and it stays off there.
+ * `npm run dev`. It sets ORIVON_WINDOW_NO_FOCUS=1, so a dev launch does not
+ * steal keyboard focus (docs/development/setup.md "The no-focus switch"), and
+ * ORIVON_DEV_ORIGINS=1, developer mode (src/main/dev/dev-mode.ts): `.eth`
+ * names and Inspect Element. Only this script sets it, never `npm start`.
  *
- * Also ORIVON_INTRO=always, or off under --skip-intro: docs/development/setup.md
- * "The welcome screen", which says why and how the two spellings of the flag differ.
+ * Every launch runs on a fresh profile (scripts/dev-profile.mjs), so a dev
+ * launch never touches or hands over to the profile `npm start` and a packaged
+ * build use (setup.md "The dev profile"). ORIVON_INTRO is `always`, or `off` under
+ * --skip-intro (setup.md "The welcome screen"); every other argument after
+ * `npm run dev --` goes to Electron.
  *
- * NO `--watch`, deliberately -- owner, 2026-09-15. Consequence, stated here
- * so nobody re-adds the flag to "fix" it: a main-process or preload edit
- * does NOT appear until `npm run dev` is restarted, and a half-applied
- * change (renderer hot-reloaded, main stale) looks like a bug in the
- * feature -- restart before believing it. Why, in docs/development/setup.md.
+ * NO `--watch`, deliberately: a main-process or preload edit does NOT appear
+ * until `npm run dev` is restarted, and a half-applied change (renderer
+ * hot-reloaded, main stale) looks like a bug in the feature -- restart before
+ * believing it. Why, in setup.md.
  *
- * A plain `ORIVON_WINDOW_NO_FOCUS=1 electron-vite dev` in package.json would
- * be simpler, but that shell syntax is not portable to Windows' cmd.exe, a
- * supported run-from-source platform (Rule 8) -- same reasoning as
- * build-e2e.mjs's own ORIVON_ENABLE_DEV_GRANT, ported here. `electron-vite`
- * is resolved via node_modules/.bin (already on PATH from `npm run dev`
- * itself), not via npx; scripts/cli.mjs's `spawnCommandSync` is what makes
+ * A script, not `VAR=1 electron-vite dev` in package.json: that syntax fails in
+ * Windows' cmd.exe (Rule 8). `electron-vite` comes from node_modules/.bin, on
+ * PATH under npm, not npx; scripts/cli.mjs's `spawnCommandSync` is what makes
  * its .cmd shim launchable on Windows.
  */
 import { spawnCommandSync } from './cli.mjs'
+import { devSwitches, makeDevProfile, removeWhenDone, sweepDevProfiles } from './dev-profile.mjs'
 
-const skipIntro = process.argv.includes('--skip-intro') || process.env.npm_config_skip_intro === 'true'
+const passed = process.argv.slice(2)
+const skipIntro = passed.includes('--skip-intro') || process.env.npm_config_skip_intro === 'true'
 const intro = skipIntro ? 'off' : process.env.ORIVON_INTRO ?? 'always'
-const result = spawnCommandSync('electron-vite', ['dev'], {
+sweepDevProfiles()
+const { switches, profile } = devSwitches(passed, () => makeDevProfile())
+if (profile !== null) console.error(`[dev] fresh profile for this launch: ${profile}`)
+
+// Ctrl+C, or a closed terminal, reaches electron-vite and Electron on its own; this process outlives them to delete the profile.
+for (const signal of ['SIGINT', 'SIGHUP']) process.on(signal, () => {})
+const result = spawnCommandSync('electron-vite', ['dev', '--', ...switches], {
   env: { ...process.env, ORIVON_WINDOW_NO_FOCUS: '1', ORIVON_DEV_ORIGINS: '1', ORIVON_INTRO: intro }
 })
+if (profile !== null && !removeWhenDone(profile)) {
+  console.error(`[dev] kept ${profile}: a browser opened from this launch still runs on it. The next npm run dev deletes it`)
+}
 process.exit(result.status ?? 1)
