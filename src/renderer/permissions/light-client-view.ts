@@ -6,6 +6,7 @@ import type { LightClientView } from '../../main/verifier/status-view.js'
 
 const STATE_LABELS: Readonly<Record<LightClientView['state'], string>> = {
   off: 'Off',
+  waiting: 'Waiting',
   starting: 'Starting',
   syncing: 'Syncing',
   synced: 'Synced',

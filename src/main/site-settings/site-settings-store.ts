@@ -92,6 +92,13 @@ export class SiteSettingsStore {
     return [...this.sites].flatMap(([origin, kinds]) => [...kinds].map(([kind, value]) => ({ origin, kind, value })))
   }
 
+  /** Whether any site is stored as blocked for `kind`. */
+  hasBlock (kind: SiteKind): boolean {
+    this.load()
+    for (const kinds of this.sites.values()) if (kinds.get(kind) === 'block') return true
+    return false
+  }
+
   get size (): number {
     this.load()
     return this.sites.size

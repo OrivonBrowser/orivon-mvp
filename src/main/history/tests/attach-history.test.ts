@@ -102,4 +102,15 @@ describe('attachHistory', () => {
     expect(visit).not.toHaveBeenCalled()
     expect(titled).not.toHaveBeenCalled()
   })
+
+  it('keeps the first five title changes of a page and starts counting again on the next one', () => {
+    const { contents, titled } = attached()
+    contents.emit('did-navigate', {}, 'https://a.example/inbox', 200)
+    for (let i = 1; i <= 8; i++) contents.emit('page-title-updated', {}, `(${i}) Inbox`)
+    expect(titled.mock.calls.map((call) => call[1])).toEqual(['(1) Inbox', '(2) Inbox', '(3) Inbox', '(4) Inbox', '(5) Inbox'])
+    contents.emit('did-navigate', {}, 'https://a.example/sent', 200)
+    contents.emit('page-title-updated', {}, 'Sent')
+    expect(titled).toHaveBeenLastCalledWith('https://a.example/', 'Sent')
+    expect(titled).toHaveBeenCalledTimes(6)
+  })
 })

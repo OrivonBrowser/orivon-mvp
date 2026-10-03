@@ -3,22 +3,25 @@
 How code is written here. [`parallel-work.md`](parallel-work.md) covers where it is written and
 by whom.
 
-Four rules:
+Five rules:
 
 1. **Comments earn their place**, and rationale goes in the README, not the file header.
 2. **No source file over 500 lines**, or 800 for tests.
 3. **One implementation per idea**: search before writing a helper.
 4. **One home per fact**: a fact lives in one page and is linked from the others.
+5. **Cost follows change and use**: work per event is in proportion to what changed, and a
+   feature costs nothing before it is used.
 
 Written for a human contributor arriving cold and for a smaller model working here without
-holding the whole tree in its head. Both are served by the same four things: short files,
-honest comments, one implementation per idea, and one home per fact.
+holding the whole tree in its head. Both are served by the same five things: short files,
+honest comments, one implementation per idea, one home per fact, and a browser that stays
+light on the machine it runs on.
 
-**Read §Rules 1-4 to write code here. Everything below them is background**: why each rule is
+**Read §Rules 1-5 to write code here. Everything below them is background**: why each rule is
 shaped the way it is, and what is still open. It is there so a settled argument is not reopened,
 not because you need it to start.
 
-> The four rules and every exception stated with them are settled. §Status is what is still
+> The five rules and every exception stated with them are settled. §Status is what is still
 > open. No ADR was written: none of this is architecture, and the one structural piece,
 > `src/shared/`, is freely reversible while it is small.
 
@@ -266,6 +269,24 @@ and the others go stale while still reading as true.
 - **A change is recorded once per audience**: the page it governs states the behaviour, the
   decision log says who decided it, `CHANGELOG.md` gives it at most three lines, and the PR
   body carries the rest.
+
+## Rule 5: Cost follows change and use
+
+**Work done per event is in proportion to what changed, and a feature costs nothing before it
+is used.** A tab event, a network request and a frame each happen hundreds of times a minute, in
+every window, all day; a cost paid on each one is the browser's cost. What breaking this did,
+measured: [`performance-audit-2026-10-03.md`](../planning/performance-audit-2026-10-03.md).
+
+- **Per-event work touches what changed**, never every tab, window or bookmark: patch the one
+  element, send the one value, look up the one row.
+- **Nothing is written that has not changed.** Compare before a store write or an upsert.
+- **A feature the person has not used starts no process, timer or `webRequest` handler**, and
+  one that stops being used stops. A `webRequest` handler is registered through the owner's
+  handle (`src/main/sessions/web-request-owner.ts`) only while a setting or an extension needs it.
+- **A view out of sight is detached from its window**, never hidden with `setVisible(false)`: an
+  attached hidden view keeps painting.
+- **A change to a hot path runs `npm run perf:probe` before and after**, and its PR gives both
+  numbers.
 
 ---
 

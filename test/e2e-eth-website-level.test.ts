@@ -91,7 +91,7 @@ it('shows Website Level 2 for a .eth name, through a DNSLink too, Level 1 for an
         }
       })
       const running = app
-      const listening = await waitFor(async () => await running.evaluate(() => (globalThis as { __orivonDevEthFixtures?: { listening: boolean } }).__orivonDevEthFixtures?.listening === true), 20_000)
+      const listening = await waitFor(async () => await running.evaluate(() => { const seam = (globalThis as { __orivonDevEthFixtures?: { listening: boolean, start?: () => void } }).__orivonDevEthFixtures; seam?.start?.(); return seam?.listening === true }), 20_000)
       if (!listening) throw new Error('the verifier host never reported listening')
 
       await navigateToFixture(app, 'https://level.eth/', 'level fixture')

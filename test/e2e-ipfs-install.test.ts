@@ -41,7 +41,7 @@ it('installs an app served from a typed ipfs:// address, pins its CID, and asks 
       })
       const running = app
       await stubNativeDialogs(running)
-      const listening = await waitFor(async () => await running.evaluate(() => (globalThis as { __orivonDevEthFixtures?: { listening: boolean } }).__orivonDevEthFixtures?.listening === true), 20_000)
+      const listening = await waitFor(async () => await running.evaluate(() => { const seam = (globalThis as { __orivonDevEthFixtures?: { listening: boolean, start?: () => void } }).__orivonDevEthFixtures; seam?.start?.(); return seam?.listening === true }), 20_000)
       check('the verifier host is listening', listening)
       if (!listening) throw new Error('the verifier host never reported listening')
 

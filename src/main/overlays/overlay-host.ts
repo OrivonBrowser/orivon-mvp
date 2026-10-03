@@ -16,6 +16,9 @@ import type { OverlayAnchor, OverlayCloseReason, OverlayDef, OverlayHandler, Ove
 
 const DEFAULT_HEIGHT = { initial: 180, min: 120, max: 460 }
 
+/** How long a `warm` overlay's view stays after it closes, shown again or not, before its renderer is given back. */
+const IDLE_DESTROY_MS = 60_000
+
 /** Events sent before the page has said `ready` are held, up to this many, and delivered once it has. */
 const QUEUE_LIMIT = 32
 
@@ -60,6 +63,8 @@ interface Slot {
   lastBlurCloseAt: number
   /** A `never` overlay whose handler asked for the keyboard: it behaves as `take` until it closes. */
   focusTaken: boolean
+  /** Destroys a closed `warm` view once it has gone unused for `IDLE_DESTROY_MS`. */
+  idleTimer: ReturnType<typeof setTimeout> | null
 }
 
 async function showResult (handler: OverlayHandler, payload: unknown): Promise<OverlayReady> {
@@ -77,7 +82,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     if (slots.has(def.name)) throw new Error(`overlay "${def.name}" is declared twice`)
     slots.set(def.name, {
       def, handler: null, view: null, pageReady: false, awaitingReply: false, pending: null, queued: [], open: false,
-      anchor: undefined, height: def.height?.initial ?? DEFAULT_HEIGHT.initial, returnTo: undefined, lastBlurCloseAt: 0, focusTaken: false
+      anchor: undefined, height: def.height?.initial ?? DEFAULT_HEIGHT.initial, returnTo: undefined, lastBlurCloseAt: 0, focusTaken: false, idleTimer: null
     })
   }
   const adopted: Array<{ close: () => void, restack?: (() => void) | undefined }> = []
@@ -184,12 +189,36 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
   /** A dead renderer is not a destroyed webContents, so `ensureView` would keep handing it out: close the slot and drop the view, and the next show or prewarm builds a fresh one. */
   function discardView (slot: Slot): void {
     closeSlot(slot, 'request')
+    cancelIdle(slot)
     slot.view?.destroy()
     slot.view = null
     slot.pageReady = false
     slot.awaitingReply = false
     slot.pending = null
     slot.queued = []
+  }
+
+  function cancelIdle (slot: Slot): void {
+    if (slot.idleTimer === null) return
+    clearTimeout(slot.idleTimer)
+    slot.idleTimer = null
+  }
+
+  /** Starts the countdown that gives a closed `warm` view's renderer back; any show or prewarm in between starts it over. */
+  function armIdle (slot: Slot): void {
+    cancelIdle(slot)
+    if (slot.def.keep !== 'warm' || disposed || slot.open || slot.view === null) return
+    slot.idleTimer = setTimeout(() => {
+      slot.idleTimer = null
+      if (disposed || slot.open) return
+      slot.view?.destroy()
+      slot.view = null
+      slot.pageReady = false
+      slot.awaitingReply = false
+      slot.pending = null
+      slot.queued = []
+    }, IDLE_DESTROY_MS)
+    slot.idleTimer.unref()
   }
 
   function closeSlot (slot: Slot, reason: OverlayCloseReason): void {
@@ -212,6 +241,8 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
       view?.destroy()
       slot.view = null
       slot.pageReady = false
+    } else {
+      armIdle(slot)
     }
     if (slot.def.focus === 'take' || slot.focusTaken) restoreFocus(slot, reason)
     slot.focusTaken = false
@@ -239,6 +270,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
   function show (name: string, anchor?: OverlayAnchor, payload?: unknown): void {
     const slot = slots.get(name)
     if (slot === undefined || disposed) return
+    cancelIdle(slot)
     // Read before a replaced popup closes: focus inside it belongs to whatever that popup itself was going to give it back to.
     const chromeView = deps.context().window.chrome as Partial<WebContentsView> | undefined
     const focused = focusedContents([...openSlots().map((other) => other.view ?? undefined), chromeView?.webContents, deps.activeContents()])
@@ -305,7 +337,9 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     isOpen: (name) => slots.get(name)?.open === true,
     prewarm (name) {
       const slot = slots.get(name)
-      if (slot !== undefined && slot.def.keep === 'warm' && !disposed) ensureView(slot)
+      if (slot === undefined || slot.def.keep === 'fresh' || disposed) return
+      ensureView(slot)
+      armIdle(slot)
     },
     send,
     adopt: (panel, restackPanel) => { adopted.push({ close: () => { panel.close() }, restack: restackPanel }) },
@@ -335,7 +369,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
       for (const slot of slots.values()) {
         try { slot.handler?.disposed?.() } catch (error) { console.error('[overlay] disposed hook failed', error) }
       }
-      for (const slot of slots.values()) { slot.view?.destroy(); slot.view = null }
+      for (const slot of slots.values()) { cancelIdle(slot); slot.view?.destroy(); slot.view = null }
     }
   }
 }

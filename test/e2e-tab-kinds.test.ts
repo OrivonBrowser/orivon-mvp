@@ -91,7 +91,7 @@ for (const kind of KINDS) {
       const chrome = findChrome(app)
       const userData = await userDataOf(app)
       await stubNativeDialogs(app)
-      expect(await waitFor(async () => await app.evaluate(() => (globalThis as { __orivonDevEthFixtures?: { listening: boolean } }).__orivonDevEthFixtures?.listening === true), 20_000)).toBe(true)
+      expect(await waitFor(async () => await app.evaluate(() => { const seam = (globalThis as { __orivonDevEthFixtures?: { listening: boolean, start?: () => void } }).__orivonDevEthFixtures; seam?.start?.(); return seam?.listening === true }), 20_000)).toBe(true)
 
       if (kind.isApp) {
         const registered = await app.evaluate(async (_electron, request: DevGrantRequest) => {

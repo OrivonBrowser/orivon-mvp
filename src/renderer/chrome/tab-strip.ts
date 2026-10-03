@@ -9,18 +9,17 @@ import { placeAmongAll } from './tab-groups.js'
 /** What one line of a wheel that counts in lines scrolls the strip by. */
 const WHEEL_LINE_PX = 40
 
-function renderFavicon (tab: TabState): HTMLSpanElement {
-  const fav = document.createElement('span')
-  fav.className = 'fav'
-  if (tab.loading) {
-    fav.classList.add('loading')
-  } else if (tab.isNewTab) {
-    // The mark is the .newtab class's own background image (tabstrip.css) -- nothing goes inside it.
-    fav.classList.add('newtab')
-  } else {
-    fav.append(faviconElement(tab.favicon))
-  }
-  return fav
+/** One tab's element, its three parts, and what was last drawn into them. */
+interface TabEntry {
+  el: HTMLElement
+  fav: HTMLSpanElement
+  title: HTMLSpanElement
+  close: HTMLButtonElement
+  titleText: string
+  /** What the icon shows now: loading, the new-tab mark, the globe, a crash, or one favicon (`icon:` and its data URL). */
+  iconKey: string
+  /** What the tab's look was last computed from (`signatureOf`). */
+  signature: string
 }
 
 /** What a feature does to the strip's tab run once every tab is in it. */
@@ -35,6 +34,13 @@ export function createTabStrip (decorators: readonly TabDecorator[], finishers: 
   let dropMark: HTMLDivElement | null = null
   let renderDeferred = false
   let shownActiveId: string | null = null
+  /** One element per tab, kept across pushes: a push patches what differs instead of building the strip again. */
+  const entries = new Map<string, TabEntry>()
+  /** The tabs of the newest state, by id: handlers on a long-lived element read the tab here, never from the state they were built in. */
+  const latest = new Map<string, TabState>()
+  /** The unpinned tabs counted in `--tab-count` the last time it was written. */
+  let shownCount = -1
+  let measured: { nodes: HTMLElement[], hidden: boolean[], pinned: number } = { nodes: [], hidden: [], pinned: 0 }
 
   /** Which ends of the scrolling run have more tabs past them, for the edge fade: the scrollbar is hidden, so this
    * is the only sign that tabs lie out of view. */
@@ -63,97 +69,205 @@ export function createTabStrip (decorators: readonly TabDecorator[], finishers: 
     scroller.scrollLeft = next
   }
 
+  /** The tab element after `el` among `el`'s siblings, skipping what is not a tab (a group chip). */
+  function followingTab (el: Element): Element | null {
+    for (let next = el.nextElementSibling; next !== null; next = next.nextElementSibling) {
+      if (next.classList.contains('tab')) return next
+    }
+    return null
+  }
+
+  /** Puts the tabs `ids` in this order inside `parent`, the last one before `end`, and moves only a tab that does not
+   * already sit right before its successor. */
+  function arrange (parent: HTMLElement, ids: readonly string[], end: Element | null): void {
+    let next: Element | null = null
+    for (let at = ids.length - 1; at >= 0; at--) {
+      const el = entries.get(ids[at] ?? '')?.el
+      if (el === undefined) continue
+      if (el.parentElement !== parent || followingTab(el) !== next) parent.insertBefore(el, next ?? end)
+      next = el
+    }
+  }
+
+  function createEntry (id: string, row: HTMLElement, ctx: ChromeContext): TabEntry {
+    const { shell } = ctx
+    const el = document.createElement('div')
+    el.setAttribute('role', 'tab')
+    el.dataset['id'] = id
+    const fav = document.createElement('span')
+    fav.className = 'fav'
+    const title = document.createElement('span')
+    title.className = 'title'
+    const close = document.createElement('button')
+    close.className = 'close no-drag'
+    close.type = 'button'
+    close.append(closeIcon())
+    close.addEventListener('click', (e) => {
+      e.stopPropagation()
+      shell.closeTab(id)
+    })
+    el.append(fav, title, close)
+    el.addEventListener('click', () => shell.activateTab(id))
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      shell.showTabMenu(id)
+    })
+    // Every handler below reads the tab from `latest`: the element outlives the state it was made from.
+    const partnerId = (): string | null => latest.get(id)?.splitWith ?? null
+    makeTabDraggable(el, id, {
+      // A collapsed group's tabs take no room, so they are not places to drop on.
+      tabs: () => [...row.querySelectorAll<HTMLElement>('.tab')].filter((tabEl) => !tabEl.hidden),
+      isPinned: (tabEl) => tabEl.classList.contains('pinned'),
+      partnerOf: () => {
+        const partner = partnerId()
+        return partner === null ? null : entries.get(partner)?.el ?? null
+      },
+      stripHeight: () => row.getBoundingClientRect().height,
+      moveTab: (moved, index) => { shell.moveTab(moved, placeAmongAll(row, [moved, partnerId()], index)) },
+      dragStarted: (started) => { shell.beginTabDrag(started) },
+      hover: (hovered, x, y) => { shell.dragTab(hovered, x, y) },
+      dropTab: (dropped, x, y, clientX, clientY) => { shell.dropTab(dropped, x, y, clientX, clientY) },
+      // Let go in the strip, the order on screen is already the order main is about to confirm.
+      finished: (tornOut) => {
+        const newest = ctx.state()
+        if ((tornOut || renderDeferred) && newest !== null) renderTabs(newest, ctx)
+      },
+      dragEnded: () => { shell.endTabDrag() }
+    })
+    // Middle-click closes a tab. Guarded on mousedown too: Windows arms Blink's middle-click autoscroll on
+    // mousedown, before 'auxclick' fires, so preventDefault() there alone is too late on that platform.
+    el.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault() })
+    el.addEventListener('auxclick', (e) => {
+      if (e.button === 1) {
+        e.preventDefault()
+        shell.closeTab(id)
+      }
+    })
+    return { el, fav, title, close, titleText: '', iconKey: '', signature: '' }
+  }
+
+  /** Redraws the icon only when what it shows changed, so an unchanged icon keeps its `<img>`. */
+  function syncFavicon (entry: TabEntry, tab: TabState): void {
+    const key = tab.crashed !== null ? 'crashed' : tab.loading ? 'loading' : tab.isNewTab ? 'newtab' : tab.favicon === null ? 'globe' : `icon:${tab.favicon}`
+    if (key === entry.iconKey) return
+    entry.iconKey = key
+    const { fav } = entry
+    fav.className = 'fav'
+    if (tab.loading) {
+      fav.classList.add('loading')
+      fav.replaceChildren()
+    } else if (tab.isNewTab) {
+      // The mark is the .newtab class's own background image (tabstrip.css) -- nothing goes inside it.
+      fav.classList.add('newtab')
+      fav.replaceChildren()
+    } else {
+      fav.replaceChildren(faviconElement(tab.favicon))
+    }
+  }
+
+  /** What decides how a tab looks besides its icon: the tab's own fields and its place among the others. */
+  function signatureOf (tab: TabState, index: number, state: ShellState): string {
+    const fields: Partial<TabState> = { ...tab }
+    delete fields.favicon
+    const partner = tab.splitWith === null ? 0 : state.tabs.findIndex((other) => other.id === tab.splitWith) > index ? 1 : 2
+    const group = tab.group === undefined || tab.group === null ? null : state.groups?.find((candidate) => candidate.id === tab.group)
+    return JSON.stringify([fields, tab.id === state.activeTabId, partner, state.tabs[index + 1]?.pinned === false, group])
+  }
+
+  /** Puts everything the tab's look comes from back to its starting point, then lets the decorators draw theirs again. */
+  function restyle (entry: TabEntry, tab: TabState, index: number, state: ShellState, ctx: ChromeContext): void {
+    const { el } = entry
+    const isActive = tab.id === state.activeTabId
+    let classes = 'tab no-drag'
+    if (isActive) classes += ' active'
+    el.removeAttribute('title')
+    el.removeAttribute('aria-label')
+    delete el.dataset['group']
+    delete el.dataset['color']
+    el.hidden = false
+    el.setAttribute('aria-selected', String(isActive))
+    if (tab.splitWith !== null) {
+      // Joined tabs are one pill: the pane the person is not in is a shade lighter.
+      classes += state.tabs.findIndex((other) => other.id === tab.splitWith) > index ? ' joined joined-first' : ' joined joined-second'
+      el.title = 'Split view'
+    }
+    el.className = classes
+    const titleText = tab.title.length > 0 ? tab.title : 'New tab'
+    if (titleText !== entry.titleText) {
+      entry.titleText = titleText
+      entry.title.textContent = titleText
+      entry.close.setAttribute('aria-label', `Close ${titleText}`)
+    }
+    // What a decorator added besides the three parts the strip owns goes; a pinned tab's missing close button comes back.
+    for (const child of [...el.children]) {
+      if (child !== entry.fav && child !== entry.title && child !== entry.close) child.remove()
+    }
+    if (entry.close.parentElement !== el) el.append(entry.close)
+    syncFavicon(entry, tab)
+    runDecorators(decorators, el, tab, state, ctx)
+  }
+
   function renderTabs (state: ShellState, ctx: ChromeContext): void {
     if (tabrow === undefined || tabScroll === undefined || newTabBtn === undefined) return
     const row = tabrow
     const scroller = tabScroll
-    const { shell } = ctx
-    // A tab held by the pointer is not rebuilt under it; the strip is redrawn when it is let go.
+    latest.clear()
+    for (const tab of state.tabs) latest.set(tab.id, tab)
+    // A tab held by the pointer is not touched under it; the strip is redrawn when it is let go.
     if (isDraggingTab()) {
       renderDeferred = true
       return
     }
     renderDeferred = false
-    // Rebuilds the whole strip on every push rather than diffing -- simple, and tab counts are small enough
-    // that this never shows up as jank.
-    row.querySelectorAll('.tab').forEach((el) => { el.remove() })
-
-    for (const tab of state.tabs) {
-      const el = document.createElement('div')
-      // #tabrow is a drag region (index.html); without `no-drag` here, every click on a tab is consumed by
-      // the OS as a window drag instead of reaching this listener: a draggable area "ignores all pointer
-      // events" unless excluded.
-      el.className = 'tab no-drag'
-      el.classList.toggle('active', tab.id === state.activeTabId)
-      el.setAttribute('role', 'tab')
-      el.setAttribute('aria-selected', String(tab.id === state.activeTabId))
-      el.dataset['id'] = tab.id
-      if (tab.splitWith !== null) {
-        // Joined tabs are one pill: the pane the person is not in is a shade lighter.
-        el.classList.add('joined', state.tabs.findIndex((other) => other.id === tab.splitWith) > state.tabs.findIndex((other) => other.id === tab.id) ? 'joined-first' : 'joined-second')
-        el.title = 'Split view'
-      }
-
-      const title = document.createElement('span')
-      title.className = 'title'
-      title.textContent = tab.title.length > 0 ? tab.title : 'New tab'
-
-      const close = document.createElement('button')
-      close.className = 'close no-drag'
-      close.type = 'button'
-      close.setAttribute('aria-label', `Close ${title.textContent}`)
-      close.append(closeIcon())
-      close.addEventListener('click', (e) => {
-        e.stopPropagation()
-        shell.closeTab(tab.id)
-      })
-
-      el.append(renderFavicon(tab), title, close)
-      el.addEventListener('click', () => shell.activateTab(tab.id))
-      el.addEventListener('contextmenu', (e) => {
-        e.preventDefault()
-        shell.showTabMenu(tab.id)
-      })
-      makeTabDraggable(el, tab.id, {
-        // A collapsed group's tabs take no room, so they are not places to drop on.
-        tabs: () => [...row.querySelectorAll<HTMLElement>('.tab')].filter((tabEl) => !tabEl.hidden),
-        isPinned: (tabEl) => tabEl.classList.contains('pinned'),
-        partnerOf: () => tab.splitWith === null ? null : row.querySelector<HTMLElement>(`.tab[data-id="${tab.splitWith}"]`),
-        stripHeight: () => row.getBoundingClientRect().height,
-        moveTab: (id, index) => { shell.moveTab(id, placeAmongAll(row, [id, tab.splitWith], index)) },
-        dragStarted: (id) => { shell.beginTabDrag(id) },
-        hover: (id, x, y) => { shell.dragTab(id, x, y) },
-        dropTab: (id, x, y, clientX, clientY) => { shell.dropTab(id, x, y, clientX, clientY) },
-        // Let go in the strip, the order on screen is already the order main is about to confirm.
-        finished: (tornOut) => {
-          const latest = ctx.state()
-          if ((tornOut || renderDeferred) && latest !== null) renderTabs(latest, ctx)
-        },
-        dragEnded: () => { shell.endTabDrag() }
-      })
-      // Middle-click closes a tab. Guarded on mousedown too: Windows arms Blink's middle-click autoscroll on
-      // mousedown, before 'auxclick' fires, so preventDefault() there alone is too late on that platform.
-      el.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault() })
-      el.addEventListener('auxclick', (e) => {
-        if (e.button === 1) {
-          e.preventDefault()
-          shell.closeTab(tab.id)
-        }
-      })
-      runDecorators(decorators, el, tab, state, ctx)
-      // Pinned tabs stay put in front; the rest scroll in their own run, so the new-tab and search buttons
-      // never scroll away and nothing paints under the window buttons.
-      if (tab.pinned) scroller.before(el)
-      else scroller.append(el)
+    for (const [id, entry] of entries) {
+      if (latest.has(id)) continue
+      entry.el.remove()
+      entries.delete(id)
     }
-    scroller.style.setProperty('--tab-count', String(Math.max(1, scroller.childElementCount)))
+    const pinnedIds: string[] = []
+    const scrollIds: string[] = []
+    state.tabs.forEach((tab, index) => {
+      let entry = entries.get(tab.id)
+      if (entry === undefined) {
+        entry = createEntry(tab.id, row, ctx)
+        entries.set(tab.id, entry)
+      }
+      const signature = signatureOf(tab, index, state)
+      if (signature !== entry.signature) {
+        entry.signature = signature
+        restyle(entry, tab, index, state, ctx)
+      } else {
+        syncFavicon(entry, tab)
+      }
+      if (tab.pinned) pinnedIds.push(tab.id)
+      else scrollIds.push(tab.id)
+    })
+    // Pinned tabs stay put in front; the rest scroll in their own run, so the new-tab and search buttons
+    // never scroll away and nothing paints under the window buttons.
+    arrange(row, pinnedIds, scroller)
+    arrange(scroller, scrollIds, null)
+    if (scrollIds.length !== shownCount) {
+      shownCount = scrollIds.length
+      scroller.style.setProperty('--tab-count', String(Math.max(1, shownCount)))
+    }
     for (const finish of finishers) contained('tab strip finisher', () => { finish(scroller, state, ctx) })
-    const active = scroller.querySelector<HTMLElement>('.tab.active')
-    if (state.activeTabId !== shownActiveId && active !== null && typeof active.scrollIntoView === 'function') {
+    const activeChanged = state.activeTabId !== shownActiveId
+    const active = activeChanged && state.activeTabId !== null ? entries.get(state.activeTabId)?.el : undefined
+    if (active !== undefined && active.parentElement === scroller && typeof active.scrollIntoView === 'function') {
       active.scrollIntoView({ inline: 'nearest', block: 'nearest' })
     }
     shownActiveId = state.activeTabId
-    markOverflow()
+    if (activeChanged || layoutChanged(row, scroller)) markOverflow()
+  }
+
+  /** Whether what the scroller holds, or the room the pinned tabs take, differs from the last time it was measured. */
+  function layoutChanged (row: HTMLElement, scroller: HTMLElement): boolean {
+    const nodes = [...scroller.children] as HTMLElement[]
+    const hidden = nodes.map((node) => Boolean(node.hidden))
+    const pinned = [...row.children].filter((node) => node.classList.contains('tab')).length
+    const same = pinned === measured.pinned && nodes.length === measured.nodes.length && nodes.every((node, at) => node === measured.nodes[at] && hidden[at] === measured.hidden[at])
+    measured = { nodes, hidden, pinned }
+    return !same
   }
 
   function showDropMark (index: number): void {

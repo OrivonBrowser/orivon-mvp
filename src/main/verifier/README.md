@@ -53,16 +53,27 @@ document over Chromium's ordinary networking, so it reaches the verifier exactly
 and `src/main/embed/embed-host.ts`'s `configureEmbedSession` installs the identical stamp there,
 reusing `partition.ts` rather than copying it.
 
-**A request to a host the verifier serves waits until the host listens.** The host starts after the
-first page loads, and then forks, reads its config and binds, so an address typed in the first
-seconds would reach a closed port and leave the tab on the connection-refused page, for good.
+**The host runs only while `.eth` or an address is in use.** [`host-lifecycle.ts`](host-lifecycle.ts) starts it on the
+first request to a host the verifier serves, or when the address bar's text names one
+([`verifier-access.ts`](verifier-access.ts)'s `prewarmVerifier`, called from the omnibox), and puts it to sleep through
+`HostSupervisor.idle()` once no tab shows a verifier-served origin
+([`tab-on-verified-origin.ts`](tab-on-verified-origin.ts)) and nothing has asked for it for ten minutes. `idle()` is not
+`stop()`: it counts as no crash, shows no failure, restarts nothing, and a later `start()` forks a fresh process after the
+old one has exited. The light client refreshes the stored checkpoint only while it runs, and refuses one older than
+fourteen days, so two minutes after launch a newest checkpoint older than seven days starts the host once; the idle wait
+ends that run. With the light client switched off nothing starts at launch. The partition stamp and the listening gate
+stay registered on the default session whatever the host is doing: they are also what keeps `net.fetch` from crashing a
+session that holds an extension's network permission ([`../extensions/README.md`](../extensions/README.md)).
+
+**A request to a host the verifier serves waits until the host listens.** The host forks, reads its config and binds, so a
+request that finds it asleep would reach a closed port and leave the tab on the connection-refused page, for good.
 [`listening-gate.ts`](listening-gate.ts) is the wait: an `onBeforeRequest` handler on the default
-session starts the host at once if it has not started, then holds the request until the host
+session starts the host at once if it is not running, then holds the request until the host
 listens, reports it cannot serve, or `LISTEN_WAIT_MS` passes. The bound is about three times the
 slowest start measured, so a host that never answers still ends in the ordinary error. A restart
-holds requests again. `verifierContentAddress` waits the same way for a cache-served origin. An
-embed guest's session and an isolated context's session register their own handlers and do not
-wait: neither can be open before the host has started.
+and a wake after sleep hold requests again. `verifierContentAddress` waits the same way for a cache-served origin. An
+embed guest's session starts the host and waits for it from its own handler
+([`../embed/embed-host.ts`](../embed/embed-host.ts)).
 
 **The certificate check goes on every session, through `session-created`.** A partition without
 it cannot load any host the verifier serves.

@@ -22,7 +22,7 @@ function setup (settings = { memorySaver: true, sleepAfter: '15m', energySaver: 
       const found = [...fake.records].find(([, record]) => record.view.webContents === (contents as unknown))
       return found === undefined ? null : { window: { tabs: fake.tabs, window: { isDestroyed: () => false } }, tabId: found[0] }
     },
-    settings: () => settings, onBattery: () => false, now: () => clock, sleep,
+    settings: () => settings, onBattery: () => false, memoryLow: () => false, now: () => clock, sleep,
     onSettingChange: (listener) => { changed = listener; return () => {} },
     every: (run, ms) => { expect(ms).toBe(SWEEP_EVERY_MS); tick = run; return { stop: stopTimer } }
   })

@@ -40,6 +40,7 @@
     "qa": "node scripts/qa.mjs all",
     "qa:visual": "node scripts/qa.mjs visual",
     "qa:report": "node scripts/qa-report.mjs",
+    "perf:probe": "node scripts/perf-probe.mjs",
     "package:linux": "node scripts/build-ordinary.mjs && electron-builder --linux",
     "postinstall": "node scripts/check-no-native-modules.mjs && node scripts/install-electron.mjs",
     "check:advisories": "node scripts/check-advisories.mjs"

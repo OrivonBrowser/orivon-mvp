@@ -9,7 +9,7 @@ const SEAM_ENABLED = typeof __ORIVON_DEV_GRANT_ENABLED__ !== 'undefined' && __OR
 
 // `var`, not `let`/`const`: TypeScript requires it for a `declare global` augmentation.
 declare global {
-  var __orivonDevEthFixtures: { readonly fixtures: Readonly<Record<string, string>>, listening: boolean } | undefined
+  var __orivonDevEthFixtures: { readonly fixtures: Readonly<Record<string, string>>, listening: boolean, start?: () => void } | undefined
 }
 
 export interface EthTestSeam {
@@ -39,6 +39,12 @@ export function ethTestSeam (): EthTestSeam | undefined {
   const seam = parseEthTestSeam(process.env)
   if (seam !== undefined) globalThis.__orivonDevEthFixtures ??= { fixtures: seam.fixtures, listening: false }
   return seam
+}
+
+/** Test builds only: lets a suite start the verifier host before it opens an address, since an ordinary launch starts it only when something needs it. */
+export function exposeVerifierStart (start: () => void): void {
+  if (!SEAM_ENABLED || ethTestSeam() === undefined || globalThis.__orivonDevEthFixtures === undefined) return
+  globalThis.__orivonDevEthFixtures.start = start
 }
 
 /** Lets a test build's suite see when the verifier can answer, rather than guess with a delay. */

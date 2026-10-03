@@ -93,7 +93,7 @@ export interface SleepSettings {
 /** How long a tab may sit unused, or null while nothing puts tabs to sleep. The energy saver works on its own:
  * it asks for sleep on battery whether or not the memory saver is on, and never lengthens the wait. */
 export function delayFor (settings: SleepSettings, onBattery: boolean): number | null {
-  const base = settings.memorySaver ? SLEEP_AFTER_MS[settings.sleepAfter] ?? SLEEP_AFTER_MS['2h'] ?? null : null
+  const base = settings.memorySaver ? SLEEP_AFTER_MS[settings.sleepAfter] ?? SLEEP_AFTER_MS['30m'] ?? null : null
   if (settings.energySaver === 'battery' && onBattery) return base === null ? BATTERY_SLEEP_MS : Math.min(base, BATTERY_SLEEP_MS)
   return base
 }

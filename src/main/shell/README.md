@@ -226,3 +226,14 @@ headers: [`sign-in-identity-headers.ts`](sign-in-identity-headers.ts) rewrites t
 [`sign-in-identity-tab.ts`](sign-in-identity-tab.ts) swaps `navigator.userAgent`, and
 `../../preload/sign-in-identity.ts` deletes `navigator.userAgentData` at document start. The
 preload runs in a tab's main frame only, so a sign-in page in another site's iframe keeps it.
+
+**[`tab-visibility.ts`](tab-visibility.ts) tells each page whether the person can see it.** A tab that is not in
+front is detached from its window ([`pane-host.ts`](pane-host.ts)), and Electron never reports a detached view
+as hidden, so its page would read `visible` and run at full rate for ever. `PaneHost` announces every change
+of what is on screen through `TabLifecycle.shownChanged` (a tab in front, or the other pane of a split, is
+shown); the module adds the window's own state (minimized, hidden) and sends the answer on
+`TAB_VISIBILITY_CHANNEL` once per change and again after each main-frame navigation commits, because a new
+document starts out visible. The page's preload turns it into `document.visibilityState`
+([`../../preload/page-visibility.ts`](../../preload/page-visibility.ts)); the decision is in the
+[decision log](../../../docs/decisions/decision-log.md). Limits: subframes are not told, and Chromium's
+own throttling is not what slows a hidden page, only the page backing off when it reads `hidden`.

@@ -3,12 +3,16 @@
 import { mkdirSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
+import { writeFileAtomicAsync } from '../../broker/adapters/atomic-write.js'
 import { DebouncedWriter } from '../storage/debounced-writer.js'
 import { parseSession, SESSION_VERSION } from './session-types.js'
 import type { SavedSession, SavedWindow } from './session-types.js'
 
 /** What the store writes: asked for at write time, so a burst of changes costs one snapshot. */
+/** How long a change of titles alone may wait to be written: a page retitling itself twice a second is not a reason
+ * to rewrite the session twice a second, and a crash loses at most this much of the titles a restore shows. */
+export const TITLE_WRITE_DELAY_MS = 30_000
+
 export type SessionSource = () => readonly SavedWindow[]
 
 export interface SessionLog {
@@ -18,6 +22,8 @@ export interface SessionLog {
   attach: (source: SessionSource) => void
   /** The open windows changed: write them soon. */
   changed: () => void
+  /** Only titles changed: write them with the next change, or within TITLE_WRITE_DELAY_MS. */
+  titlesChanged: () => void
   /** The browser is ending in an orderly way: the next write says so. */
   finish: () => void
   flush: () => Promise<void>
@@ -30,7 +36,8 @@ export class SessionStore implements SessionLog {
   private clean = false
   /** A write is already waiting: changes until it runs need no timer of their own, so a page whose title never stops changing cannot postpone the write for ever. */
   private waiting = false
-  private readonly writer = new DebouncedWriter(async () => { this.writeNow() })
+  private titleTimer: ReturnType<typeof setTimeout> | null = null
+  private readonly writer = new DebouncedWriter(async () => { await this.writeNow() })
 
   constructor (private readonly filePath: string) {}
 
@@ -57,26 +64,41 @@ export class SessionStore implements SessionLog {
 
   changed (): void {
     if (this.source === null || this.waiting) return
+    this.dropTitleTimer()
     this.waiting = true
     this.writer.schedule()
   }
 
+  titlesChanged (): void {
+    if (this.source === null || this.waiting || this.titleTimer !== null) return
+    this.titleTimer = setTimeout(() => { this.titleTimer = null; this.changed() }, TITLE_WRITE_DELAY_MS)
+    this.titleTimer.unref?.()
+  }
+
   finish (): void {
+    this.dropTitleTimer()
     this.clean = true
     this.waiting = false
     this.writer.schedule()
+  }
+
+  private dropTitleTimer (): void {
+    if (this.titleTimer === null) return
+    clearTimeout(this.titleTimer)
+    this.titleTimer = null
   }
 
   async flush (): Promise<void> {
     await this.writer.flush()
   }
 
-  private writeNow (): void {
+  /** Off the main thread: the file and its directory are flushed to disk, which can take a slow disk a while. */
+  private async writeNow (): Promise<void> {
     this.waiting = false
     if (this.source === null) return
     try {
       mkdirSync(dirname(this.filePath), { recursive: true })
-      writeFileAtomic(this.filePath, JSON.stringify({ version: SESSION_VERSION, clean: this.clean, windows: this.source() }))
+      await writeFileAtomicAsync(this.filePath, JSON.stringify({ version: SESSION_VERSION, clean: this.clean, windows: this.source() }))
     } catch (error) {
       console.error('[orivon] failed to persist the session:', error)
       throw error
@@ -90,6 +112,7 @@ export class NullSessionStore implements SessionLog {
   previous (): SavedSession | null { return null }
   attach (): void {}
   changed (): void {}
+  titlesChanged (): void {}
   finish (): void {}
   async flush (): Promise<void> {}
 }
