@@ -80,7 +80,7 @@ interface WindowInfo { fullScreen: boolean, content: { width: number, height: nu
 /** The window's own view tree, read in the main process: which views exist,
  * where they sit and whether they are shown. The page cannot see any of it. */
 // A kept overlay (the menu, the omnibox) rests in the window hidden, so it is no sign of the chrome.
-const isChrome = (url: string): boolean => url.startsWith('file:') && url.split('?')[0].endsWith('/renderer/index.html')
+const isChrome = (url: string): boolean => url.startsWith('file:') && url.replace(/[?#].*$/, '').endsWith('/renderer/index.html')
 const isOverlay = (url: string): boolean => url.startsWith('file:') && url.includes('/renderer/overlay/')
 
 async function windowInfo (app: ElectronApplication): Promise<WindowInfo> {
