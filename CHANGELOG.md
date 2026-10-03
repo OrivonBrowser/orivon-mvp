@@ -255,6 +255,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **The browser's own pages keep up**: removing the default search engine gives the built-in default back, Clear data
+  empties the site-data list, History and Import notice history turned on, and Profiles and Extensions keep the keyboard.
 - **The keyboard goes to the page after Enter or Escape in the address bar**, a tab switch with the bar focused shows that
   tab's address, and "Leave" in a page's leave question runs Ctrl+Shift+R and the page menu's Back and Forward again.
 - **The address bar opens what is an address and searches what is not**: `münchen.de`, `nas:5000`, `LOCALHOST:3000` and

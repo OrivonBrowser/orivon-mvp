@@ -22,6 +22,16 @@ const PNG = 'data:image/png;base64,iVBORw0KGgo='
 const GIF = 'data:image/gif;base64,R0lGODlhAQAB'
 
 describe('the history service', () => {
+  it('tells its listeners when history is turned on or off, so the History page can say so', () => {
+    const { service, set } = setup()
+    const changes: string[] = []
+    service.onChange((change) => { changes.push(change) })
+    set('history.remember', false)
+    set('history.remember', true)
+    set('appearance.theme', 'dark')
+    expect(changes).toEqual(['entries', 'entries'])
+  })
+
   it('counts a typed address under the address its visit is kept at, and none that history does not keep', () => {
     const { service, store } = setup()
     const markTyped = vi.spyOn(store, 'markTyped')

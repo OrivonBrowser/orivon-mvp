@@ -37,7 +37,11 @@ export class HistoryService {
     private readonly problem: string | null = null,
     private readonly now: () => number = Date.now
   ) {
-    settings.onChange(({ key }) => { if (key === 'history.retentionDays') this.prune() })
+    settings.onChange(({ key }) => {
+      if (key === 'history.retentionDays') this.prune()
+      // Turning history on or off changes what the History page says about it.
+      else if (key === 'history.remember') this.notify('entries')
+    })
   }
 
   get remembering (): boolean {
