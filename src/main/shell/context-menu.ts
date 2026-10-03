@@ -6,6 +6,7 @@ import type { BaseWindow, ContextMenuParams, MenuItemConstructorOptions, WebCont
 import type { CommandId } from '../shortcuts/commands.js'
 import { engineLabelFor } from './context-menu-text.js'
 import { startNavigation } from './leave-page-prompt.js'
+import { downloadAsked } from '../downloads/asked-downloads.js'
 import type { ShellServices } from './shell-services.js'
 import {
   DEFAULT_CONTEXT, editableGroup, imageGroup, linkGroup, mediaGroup, pageGroup, selectionGroup, spellingGroup
@@ -106,7 +107,7 @@ export function showContextMenu (wc: WebContents, params: ContextMenuParams, hos
     context.fullAddresses = host.fullAddresses.on()
   }
   if (host.page !== undefined) {
-    actions.saveUrl = (url) => { onTab(() => { wc.downloadURL(url) })() }
+    actions.saveUrl = (url) => { onTab(() => { downloadAsked(wc, url) })() }
     actions.navigate = {
       canGoBack: wc.navigationHistory.canGoBack(),
       canGoForward: wc.navigationHistory.canGoForward(),

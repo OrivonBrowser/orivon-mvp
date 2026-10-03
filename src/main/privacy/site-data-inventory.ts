@@ -126,10 +126,15 @@ export async function inventory (
   })
 }
 
-/** Everything a clear for `site` must name: its disk origins, and both schemes of every host (cookie-only hosts have no port to read). */
-export function originsToClear (site: Pick<SiteSummary, 'hosts' | 'origins'>): string[] {
+const isIpLiteral = (host: string | undefined): boolean => host !== undefined && (host.includes(':') || /^\d{1,3}(\.\d{1,3}){3}$/.test(host))
+
+/** Everything a clear for `site` must name: its disk origins, and both schemes of every host (cookie-only hosts have no
+ * port to read). A site whose cookies all sit on its domain says nothing of the host it runs on, so the domain and its
+ * `www.` host are named too: storage is cleared by exact origin. */
+export function originsToClear (site: Pick<SiteSummary, 'hosts' | 'origins'> & { readonly domain?: string }): string[] {
   const out = new Set(site.origins)
-  for (const host of site.hosts) {
+  const named = isIpLiteral(site.domain) || site.domain === undefined ? [] : [site.domain, `www.${site.domain}`]
+  for (const host of new Set([...site.hosts, ...named])) {
     const printable = host.includes(':') ? `[${host}]` : host
     out.add(`http://${printable}`)
     out.add(`https://${printable}`)

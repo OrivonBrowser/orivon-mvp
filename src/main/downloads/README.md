@@ -3,7 +3,8 @@
 **What lives here.** Every download a tab makes, from the moment its save path is chosen to the row on
 `orivon://downloads`. `download-service.ts` holds the list and acts on it by id (pause, resume, cancel, retry,
 remove, open, show in folder, delete), `download-model.ts` decides what a file may be called and where it goes when
-its name is taken, `dangerous-file.ts` names the types that run code, `download-store.ts` keeps the list in
+its name is taken, `dangerous-file.ts` names the types that run code, `asked-downloads.ts` marks a download the person started from a
+menu so it counts as their own (Electron gives `downloadURL` no gesture), `download-store.ts` keeps the list in
 `<userData>/downloads.json` (or in memory, for a private session), `install-downloads.ts` puts the service on every
 session a tab can use, `folder-runner.ts` and `create-download-service.ts` are the parts that touch the machine
 (the folder, the file manager, the trash), `downloads-domain.ts` is what the Downloads and Settings pages may ask,

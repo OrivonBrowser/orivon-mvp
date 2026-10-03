@@ -8,6 +8,8 @@ export interface Upgrade {
   /** The `https:` address it was sent to. */
   readonly to: string
   readonly at: number
+  /** The web request it belongs to, which keeps its id through redirects; undefined when not known. */
+  readonly request?: number | undefined
 }
 
 /** How long after an upgrade a failed load of its target still counts as the upgrade failing. */
@@ -24,8 +26,9 @@ export const LOOP_WINDOW_MS = 5_000
 const NOT_ABOUT_HTTPS = new Set([-3, -21, -105, -106, -137])
 
 export interface UpgradeTracker {
-  /** An upgrade is about to happen: `loop` when this tab upgraded the same address moments ago. */
-  noteUpgrade: (contentsId: number, from: string, to: string) => 'upgrade' | 'loop'
+  /** An upgrade is about to happen: `loop` when this tab upgraded the same address moments ago in the same request, a
+   * server sending HTTPS back to HTTP. A new request for the address (a second click) is not a loop. */
+  noteUpgrade: (contentsId: number, from: string, to: string, request?: number) => 'upgrade' | 'loop'
   /** A main-frame load failed: the upgrade it ends, or null when it is not the upgraded address failing. */
   failed: (contentsId: number, failedUrl: string, errorCode: number) => Upgrade | null
   /** The tab committed a page: a load of the upgraded address that worked closes the upgrade. */
@@ -61,12 +64,13 @@ export function createUpgradeTracker (now: () => number = Date.now): UpgradeTrac
   }
 
   return {
-    noteUpgrade (contentsId, from, to) {
+    noteUpgrade (contentsId, from, to, request) {
       const at = now()
       const previous = byContents.get(contentsId)
       claimed.delete(contentsId)
-      byContents.set(contentsId, { from, to, at })
-      return previous !== undefined && previous.from === from && at - previous.at < LOOP_WINDOW_MS ? 'loop' : 'upgrade'
+      byContents.set(contentsId, { from, to, at, request })
+      const sameRequest = previous?.request === undefined || request === undefined || previous.request === request
+      return previous !== undefined && previous.from === from && sameRequest && at - previous.at < LOOP_WINDOW_MS ? 'loop' : 'upgrade'
     },
     failed (contentsId, failedUrl, errorCode) {
       const upgrade = byContents.get(contentsId)

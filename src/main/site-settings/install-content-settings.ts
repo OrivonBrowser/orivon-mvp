@@ -6,6 +6,7 @@
 // registration would silently replace) that reads its setting per request, so
 // a change takes effect on the next request without re-registering anything.
 import { session } from 'electron'
+import type { WebContents } from 'electron'
 import { isAppOrigin } from './app-origin.js'
 import { webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import type { ShellInstaller } from '../shell/shell-installers.js'
@@ -37,22 +38,33 @@ export const installContentSettings: ShellInstaller = {
     })
 
     sitePopups.bind(createPopupBlocker({ rules, interaction: tabInteraction, blocks: popupBlocks }))
+    // Where each tab's top frame is going: tells a request the new document sent from one its stylesheet sent.
+    const navigating = new WeakMap<WebContents, string>()
+    const watchNavigation = (contents: WebContents): void => {
+      const note = (details: { isMainFrame: boolean, isSameDocument: boolean, url: string }): void => {
+        if (details.isMainFrame && !details.isSameDocument) navigating.set(contents, details.url)
+      }
+      contents.on('did-start-navigation', note)
+      contents.on('did-redirect-navigation', note)
+    }
     services.tabLifecycle.subscribe({
-      tabCreated: (contents) => { sitePopups.watch(contents) },
-      viewReplaced: (_old, contents) => { sitePopups.watch(contents) }
+      tabCreated: (contents) => { sitePopups.watch(contents); watchNavigation(contents) },
+      viewReplaced: (_old, contents) => { sitePopups.watch(contents); watchNavigation(contents) }
     })
+    const pageOf = (details: Parameters<typeof requestPage>[0] & { webContents?: WebContents | undefined }): string | undefined =>
+      requestPage({ ...details, navigating: details.webContents === undefined ? undefined : navigating.get(details.webContents) })
 
     const owner = webRequestOwnerFor(session.defaultSession)
     // The owner matches a handler by address alone, so each one checks the kind of request it is about.
     owner.onHeadersReceived(CONTENT_ORDER, { urls: WEB, types: ['mainFrame', 'subFrame'] }, WEB_ADDRESS, (details, current) => {
       if (details.resourceType !== 'mainFrame' && details.resourceType !== 'subFrame') return current
       // A main frame's own address is the page; a frame's page is the top document it sits in.
-      const page = details.resourceType === 'mainFrame' ? details.url : requestPage(details)
+      const page = details.resourceType === 'mainFrame' ? details.url : pageOf(details)
       if (!rules.scriptsBlocked(page) || isPdf(current.responseHeaders)) return current
       return { ...current, responseHeaders: withScriptBlock(current.responseHeaders) }
     })
     owner.onBeforeRequest(CONTENT_ORDER, { urls: WEB, types: ['image'] }, WEB_ADDRESS, (details, current) => {
-      return details.resourceType === 'image' && rules.imagesBlocked(requestPage(details)) ? { cancel: true } : current
+      return details.resourceType === 'image' && rules.imagesBlocked(pageOf(details)) ? { cancel: true } : current
     })
 
     siteSound.bind((pageUrl) => rules.soundBlocked(pageUrl))

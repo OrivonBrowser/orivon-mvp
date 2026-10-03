@@ -36,7 +36,7 @@ export interface ClearDeps {
   /** The answers given per site: what a site may use, and what it may show. */
   readonly siteSettings: { readonly resetAll: () => void }
   /** The session ordinary websites run in. */
-  readonly websites: Pick<Session, 'clearData'>
+  readonly websites: Pick<Session, 'clearData' | 'clearStorageData'>
   /** The session of each app that holds permissions. */
   readonly appSessions: () => Promise<ReadonlyArray<Pick<Session, 'clearData'>>>
   readonly now: () => number
@@ -67,7 +67,13 @@ export async function clearBrowsingData (request: ClearRequest, deps: ClearDeps)
 
   if (request.history === 'all') await attempt('history', () => { deps.history.clear() })
   else if (request.history !== 'none') await attempt('history', () => { deps.history.removeRange(deps.now() - RANGE_MS[request.history as 'hour' | 'day' | 'week'], deps.now()) })
-  if (request.siteData) await attempt('siteData', async () => { await deps.websites.clearData({ dataTypes: [...SITE_DATA] }) })
+  if (request.siteData) {
+    await attempt('siteData', async () => {
+      await deps.websites.clearData({ dataTypes: [...SITE_DATA] })
+      // What a site keeps through the Cache API: `clearData` files it under the HTTP cache, which is a choice of its own.
+      await deps.websites.clearStorageData({ storages: ['cachestorage'] })
+    })
+  }
   if (request.cache) await attempt('cache', async () => { await deps.websites.clearData({ dataTypes: ['cache'] }) })
   if (request.zoomLevels) await attempt('zoomLevels', () => { deps.zoom.clear() })
   if (request.siteSettings) await attempt('siteSettings', () => { deps.siteSettings.resetAll() })

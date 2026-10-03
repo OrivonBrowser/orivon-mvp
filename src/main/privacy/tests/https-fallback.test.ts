@@ -90,6 +90,13 @@ describe('the upgrade tracker', () => {
     expect(tracker.noteUpgrade(1, FROM, TO)).toBe('loop')
   })
 
+  it('calls an upgrade a loop only within one request: a second click on the same address is a new one', () => {
+    const { tracker } = rig()
+    expect(tracker.noteUpgrade(1, FROM, TO, 10)).toBe('upgrade')
+    expect(tracker.noteUpgrade(1, FROM, TO, 11)).toBe('upgrade')
+    expect(tracker.noteUpgrade(1, FROM, TO, 11)).toBe('loop')
+  })
+
   it('does not call a second visit after the loop window a loop', () => {
     const { tracker, advance } = rig()
     tracker.noteUpgrade(1, FROM, TO)

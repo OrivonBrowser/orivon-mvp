@@ -1983,3 +1983,25 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   context already sets, re-measuring that a WebSocket still fails (rec.); leave it.
 - **Who decides:** research first
 - **Blocks:** nothing
+
+### A373: "Ask sites not to sell or share my data" sends the header but sets no `navigator.globalPrivacyControl` **[AI-REC]**
+
+- **Question:** The setting adds `Sec-GPC: 1` to requests; the Global Privacy Control spec also has pages read
+  `navigator.globalPrivacyControl`, which nothing in Orivon defines. Expose it in the tab's main world while the
+  setting is on?
+- **Why it matters:** a consent banner that checks only the property shows its "sell or share" opt-in as if no signal
+  were sent.
+- **Options:** define the property from the ordinary tab's preload, reading the setting when the page loads (rec.;
+  a change applies from the next load); leave the header alone.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A374: "JavaScript: Block" does not stop a page a service worker serves **[AI-REC]**
+
+- **Question:** The block is a policy header added to the response; a page a site's service worker answers from its
+  own cache never passes the network handlers, so its scripts run. Most installed web apps work that way.
+- **Why it matters:** the setting appears to work on the first load and not after the site installed its worker.
+- **Options:** clear the site's service workers when its JavaScript is set to Block, and on each load of a blocked
+  site (rec.); refuse service worker registration for a blocked site; say so in the setting's help.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing

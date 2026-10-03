@@ -255,6 +255,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **Site rules and saves act on the right thing**: Save image or link as is never held as a page-started download, a
+  CDN stylesheet's images follow the page's Images setting, and clearing site data also clears what sites cached.
 - **A page's prompt() gets what was typed**: an `undefined` default is empty, a long answer or default comes back whole,
   and an app's child process start fails with an error instead of waiting for ever when its host is refused.
 - **Popups and questions behave**: Enter right after typing in a page's prompt() answers it, F7 works again after its
