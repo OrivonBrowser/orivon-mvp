@@ -783,6 +783,15 @@
     every question in the question panel of a tab, and a view that is not a tab has no panel to draw in;
     nobody watches an offscreen document, and routing a popup's dialogs to the front tab would show
     another page's question under a popup's words.
+63. **`chrome.storage.managed` is empty and read-only.** `src/renderer/index.ts`'s `storage`
+    factory gives `managed` its own area: `get` answers `{}`, `getKeys` `[]`, `getBytesInUse` `0`,
+    every write is refused with Chrome's "This is a read-only store.", and `onChanged` never fires;
+    a call given a callback returns nothing, as in Chrome. `sync` still falls back to `local`.
+    Reason: upstream aliased `managed` to `local`, and uBlock Origin caches `managed.get()` into
+    `local` under `cachedManagedStorage` each time it reads its admin settings, so every start
+    copied its whole local store, the previous copy included, into itself. The value at least
+    doubled per start, until one profile held a single 908 MB value and the browser used 10 GB of
+    memory.
 
 `partition.ts` is reached only through the virtual specifier `src/main/extensions/
 electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and

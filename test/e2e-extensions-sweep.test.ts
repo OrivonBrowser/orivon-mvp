@@ -186,3 +186,26 @@ it('keeps chrome.devtools usable in a devtools_page, so panels.create calls back
     }
   })
 }, TEST_TIMEOUT_MS)
+
+it('keeps chrome.storage.managed empty and read-only in a real service worker, apart from local', async () => {
+  const fixtureUrl = await startFixtureServer()
+
+  await runPhase('extensions managed storage', async (check) => {
+    let app: Awaited<ReturnType<typeof launchElectron>> | undefined
+    let extensionId = ''
+    try {
+      app = await launchWithSweep((id) => { extensionId = id })
+      await navigateToFixture(app, fixtureUrl, 'sweep-fixture')
+      const pageWc = await openExtensionPage(app, extensionId, 'page.html')
+
+      const stored = await rpc(app, pageWc, 'chrome.storage.local.set', [{ managedProbe: 'local only' }])
+      check('chrome.storage.local.set resolves', stored.ok, JSON.stringify(stored))
+      const managed = await rpc(app, pageWc, 'chrome.storage.managed.get', [])
+      check('chrome.storage.managed.get answers {} while local holds an item', managed.ok && JSON.stringify(managed.result) === '{}', JSON.stringify(managed))
+      const written = await rpc(app, pageWc, 'chrome.storage.managed.set', [{ a: 1 }])
+      check('chrome.storage.managed.set is refused as read-only', !written.ok && /read-only/.test(String(written.error)), JSON.stringify(written))
+    } finally {
+      if (app !== undefined) await closeElectronApp(app)
+    }
+  })
+}, TEST_TIMEOUT_MS)
