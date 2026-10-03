@@ -15,8 +15,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 - **Tabs can be grouped**: name and colour a group from the tab menu, collapse it to one chip, drag it, move it to its own
   window, and get it back after a restart; a link opened from a member opens inside the group.
-- **Idle tabs go to sleep** (Settings > Performance): after 2 hours by default a tab frees its page and wakes where it was
-  when you open it; sound, pinned, typed-in and prompt-waiting tabs stay awake, and an energy saver sleeps sooner on battery.
+- **Idle tabs go to sleep** (Settings > Performance): after 30 minutes by default, and sooner when the computer is low on memory, a tab frees its page and wakes
+  where it was when you open it; sound, pinned, typed-in and prompt-waiting tabs stay awake, and an energy saver sleeps sooner on battery.
 - **Reader view** (F9, the book button in the address bar): an article opens in its own tab with your font, size, width and
   colours, and can be read aloud with the system's voices.
 - **A side panel** (Ctrl+Alt+B) beside the page, on the right or the left, resizable, lists bookmarks, history and downloads.

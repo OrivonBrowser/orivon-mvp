@@ -12,7 +12,8 @@
 | `sleep-signal.ts` | The tab signal that reads a sleeping tab's state from its record |
 | `sleep-command.ts` | `tab.sleep` and the tab menu's item: the hop to a neighbour and the refusal toasts |
 | `restore-asleep.ts` | `restoreAsleep`: a tab restored from the last session starts asleep |
-| `idle-sweep.ts` | The once-a-minute pass and the stamp of when a tab was last in front |
+| `idle-sweep.ts` | The once-a-minute pass, the stamp of when a tab was last in front, and the extra sleeps under memory pressure |
+| `memory-pressure.ts` | Pure: `isMemoryLow` over the system's memory figures |
 | `start-memory-saver.ts` | Wake on activation, the timer, the setting listener |
 | `install-memory-saver.ts` | The installer [`../shell/shell-installers.ts`](../shell/shell-installers.ts) runs: the power source, the test seam |
 
@@ -52,3 +53,13 @@ session's state; both are cut by closing the page.
 
 **The energy saver stands on its own.** On battery it asks for sleep after five minutes whether or not the memory saver is on, and it
 never lengthens a wait. The power source is read at each pass, because the OS events exist on some platforms only.
+
+**Memory pressure shortens the wait, never the rules.** While available memory is under a tenth of the total or under one
+gigabyte (whichever is more), each pass also offers the least recently used tabs that left the front at least five minutes ago, three
+at most, to `sleepTab`, which applies the same rules as every other caller. The reading is `available` on Linux, where `free` excludes
+the page cache and is always small, and `free` elsewhere; a reading that throws counts as not short.
+
+**The new-tab dashboard and the shell's own pages stay awake.** A sleeping tab's blank view is an ordinary page view in the default
+session, and waking loads the kept entries into it. The dashboard needs its own preload and expected-address argument, and an internal
+page needs the internal session, preload and navigation guard, so a woken one would come back broken. Making them sleep means
+rebuilding the view as the page's kind on waking, not a rule change.

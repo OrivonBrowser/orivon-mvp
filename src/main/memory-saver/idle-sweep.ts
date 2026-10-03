@@ -13,6 +13,8 @@ export interface SweepDeps {
   windows: () => readonly SweepWindow[]
   settings: () => SleepSettings
   onBattery: () => boolean
+  /** Whether the computer is short of memory now. A reading that throws counts as not short. */
+  memoryLow: () => boolean
   now: () => number
   sleep: (tabs: TabManager, id: string) => Promise<boolean>
 }
@@ -26,13 +28,30 @@ export function stampInFront (tabs: TabManager, id: string, now: number): void {
   }
 }
 
+/** Under memory pressure a tab out of front this long may sleep before its wait is over. */
+export const PRESSURE_MIN_IDLE_MS = 5 * 60_000
+/** The most tabs one pass puts to sleep because memory is short. */
+export const PRESSURE_SLEEPS_PER_PASS = 3
+
+function memoryShort (deps: SweepDeps): boolean {
+  try {
+    return deps.memoryLow()
+  } catch {
+    return false
+  }
+}
+
 /** One pass over every window: the tab in front is stamped, and each other tab idle for longer than the wait goes to
  * sleep, one at a time. A tab never seen in front is stamped now, so it is measured from the first pass that saw it.
- * Returns the ids put to sleep. */
+ * While memory is short, the least recently used tabs that left the front at least `PRESSURE_MIN_IDLE_MS` ago follow,
+ * `PRESSURE_SLEEPS_PER_PASS` at most, whatever the wait. Returns the ids put to sleep. */
 export async function sweepIdleTabs (deps: SweepDeps): Promise<string[]> {
   const slept: string[] = []
   const now = deps.now()
-  const delay = delayFor(deps.settings(), deps.onBattery())
+  const settings = deps.settings()
+  const delay = delayFor(settings, deps.onBattery())
+  const asked = new Set<string>()
+  const waiting: Array<{ tabs: TabManager, id: string, lastActiveAt: number }> = []
   for (const { tabs, window } of deps.windows()) {
     if (window.isDestroyed()) continue
     const active = tabs.getState().activeTabId
@@ -44,9 +63,20 @@ export async function sweepIdleTabs (deps: SweepDeps): Promise<string[]> {
         record.lastActiveAt = now
         continue
       }
-      if (delay === null || !dueToSleep(record.lastActiveAt, now, delay)) continue
+      if (delay === null || !dueToSleep(record.lastActiveAt, now, delay)) {
+        if (now - record.lastActiveAt >= PRESSURE_MIN_IDLE_MS) waiting.push({ tabs, id, lastActiveAt: record.lastActiveAt })
+        continue
+      }
+      asked.add(id)
       if (await deps.sleep(tabs, id)) slept.push(id)
     }
+  }
+  if (!settings.memorySaver || waiting.length === 0 || !memoryShort(deps)) return slept
+  let relieved = 0
+  for (const { tabs, id } of waiting.sort((a, b) => a.lastActiveAt - b.lastActiveAt)) {
+    if (relieved >= PRESSURE_SLEEPS_PER_PASS) break
+    if (asked.has(id)) continue
+    if (await deps.sleep(tabs, id)) { slept.push(id); relieved += 1 }
   }
   return slept
 }

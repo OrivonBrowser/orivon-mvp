@@ -18,7 +18,7 @@ describe('the layout, reading and accessibility settings', () => {
   })
 
   it.each([
-    ['sidePanel.side', 'right'], ['performance.memorySaver', true], ['performance.sleepAfter', '2h'], ['performance.keepAwake', ''],
+    ['sidePanel.side', 'right'], ['performance.memorySaver', true], ['performance.sleepAfter', '30m'], ['performance.keepAwake', ''],
     ['performance.energySaver', 'off'], ['reader.size', '18'], ['reader.width', 'medium'], ['reader.theme', 'auto'],
     ['accessibility.caretBrowsing', false], ['accessibility.caretAsk', true]
   ])('%s starts as %s', (key, expected) => {
