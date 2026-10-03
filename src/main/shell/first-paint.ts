@@ -3,18 +3,18 @@ import type { WebContents } from 'electron'
 
 /** How long a page may take before the caller stops waiting for it: a page that never loads (a dead
  * renderer, a load that fails) must not keep the page in front of it on the screen for good. */
-export const FIRST_PAINT_LIMIT_MS = 1500
+export const FIRST_PAINT_LIMIT_MS = 2000
 
 /** How long the page's background pictures may take to decode before the frames are waited on anyway: a picture
  * that never decodes (a broken file) must not hold the page in front for the whole of `FIRST_PAINT_LIMIT_MS`. */
 export const IMAGE_DECODE_LIMIT_MS = 800
 
 /** How long the page may take to report that its first content was presented, once its frames have run. */
-export const PRESENT_LIMIT_MS = 400
+export const PRESENT_LIMIT_MS = 600
 
 /** A page older than this when the script runs is not waited on for that report: one that loaded while it was
  * hidden never makes one, so waiting would hold the page in front for nothing. */
-export const FRESH_PAGE_MS = 1000
+export const FRESH_PAGE_MS = 3000
 
 /** Runs in the page. A view shows its flat colour until its first frame reaches the screen, and that frame is
  * late while a background picture is still decoding. So the script first decodes every `url(...)` its root, its

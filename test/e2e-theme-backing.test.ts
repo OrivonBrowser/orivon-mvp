@@ -188,8 +188,8 @@ for (const mode of ['light', 'dark'] as const) {
       // colour. The computed style cannot say (the wash sits over the layer's base), so the pixel is read, with
       // the picture layers taken off. It must equal the colour the shell painted the view with, or the view's
       // colour would step to a darker one in the frame before the picture.
-      // Only the tab in front can be captured: a view that is off the screen cannot paint, and its capture waits
-      // out its timeout.
+      // A view that is off the screen cannot paint, and its capture waits out its timeout; the page that was in front
+      // can still be captured for as long as the new tab holds it, so one or two pages are read.
       let read = 0
       for (const page of pages) {
         await page.evaluate(() => {
@@ -206,7 +206,7 @@ for (const mode of ['light', 'dark'] as const) {
         expect(Math.abs((png.data[1] ?? 0) - 0x42)).toBeLessThanOrEqual(2)
         expect(Math.abs((png.data[2] ?? 0) - 0x44)).toBeLessThanOrEqual(2)
       }
-      expect(read).toBe(1)
+      expect(read).toBeGreaterThanOrEqual(1)
     } finally {
       await closeElectron(app)
     }
@@ -270,7 +270,7 @@ it('a new tab keeps the page in front on the screen until its own page has been 
         const wc = webContents.fromId(newId)
         return wc?.executeJavaScript('(() => { const e = performance.getEntriesByName("first-contentful-paint")[0]; return e === undefined ? null : performance.now() - e.startTime })()') ?? null
       }, stamp.newId as number)
-      expect(sincePresented).not.toBeNull()
+      expect(sincePresented, `round ${String(round)}: the new page had reported no first content when the page in front left`).not.toBeNull()
       expect(asked - (stamp.oldGone as number)).toBeLessThanOrEqual((sincePresented as number) + PRESENTED_SLACK_MS)
       front = stamp.newId as number
       known = await dashboards()
