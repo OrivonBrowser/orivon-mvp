@@ -9,14 +9,15 @@ const { TabPanes } = await import('../tab-panes.js')
 
 const AREA = { x: 0, y: 40, width: 800, height: 560 }
 
-function setup (): {
+function setup (shell?: unknown): {
   panes: InstanceType<typeof TabPanes>
   children: string[]
   tab: (id: string, isDashboardTab: boolean) => void
   activate: (id: string) => void
+  pageGone: (id: string) => void
 } {
   const children: string[] = ['chrome']
-  const views = new Map<string, { name: string, webContents: { isDestroyed: () => boolean }, setBounds: ReturnType<typeof vi.fn> }>()
+  const views = new Map<string, { name: string, webContents: { isDestroyed: () => boolean } | undefined, setBounds: ReturnType<typeof vi.fn> }>()
   const records = new Map<string, { view: unknown, isDashboardTab: boolean }>()
   let active: string | null = null
   const contentView = {
@@ -39,7 +40,7 @@ function setup (): {
     area: () => AREA,
     isClosing: () => false,
     emitState: () => {},
-    shell: undefined
+    shell: shell as never
   })
   return {
     panes,
@@ -49,7 +50,9 @@ function setup (): {
       views.set(id, view)
       records.set(id, { view, isDashboardTab })
     },
-    activate: (id) => { active = id; panes.sync() }
+    activate: (id) => { active = id; panes.sync() },
+    // What Electron leaves on a view whose page has closed: no webContents at all.
+    pageGone: (id) => { const view = views.get(id); if (view !== undefined) view.webContents = undefined }
   }
 }
 
@@ -100,5 +103,19 @@ describe('TabPanes: a new-tab page coming to the screen', () => {
     activate('dash')
     expect(children).toEqual(['chrome', 'dash'])
     expect(painted).toHaveLength(1)
+  })
+})
+
+describe('TabPanes: telling the lifecycle which tabs are on screen', () => {
+  it('skips a tab whose page has already closed, rather than throwing out of the hide that closes it', () => {
+    const shownChanged = vi.fn()
+    const { panes, tab, activate, pageGone } = setup({ tabLifecycle: { shownChanged }, window: {} })
+    tab('kept', false)
+    tab('closing', false)
+    activate('closing')
+    pageGone('closing')
+    expect(() => { panes.hide('closing') }).not.toThrow()
+    const [, tabs] = shownChanged.mock.calls.at(-1) ?? []
+    expect((tabs as Array<{ shown: boolean }>).map((entry) => entry.shown)).toEqual([false])
   })
 })
