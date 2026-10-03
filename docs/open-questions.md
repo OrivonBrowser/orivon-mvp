@@ -1988,3 +1988,14 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   a change applies from the next load); leave the header alone.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
+
+### A375: The Linux package says Orivon opens HTML files, but a file handed in at launch is dropped **[OWNER]**
+
+- **Question:** `electron-builder.yml` lists `text/html` in the desktop entry's MimeType, so a file manager can offer
+  Orivon for `report.html` and run it with a `file:///` argument; the launch keeps only http(s) addresses, so nothing
+  opens. Open local files, or stop claiming the type?
+- **Why it matters:** a person who picks Orivon for HTML files sees a new tab or a focused window and no page.
+- **Options:** drop `text/html` from the package, keeping the http and https scheme handlers (rec.; `file:` stays
+  refused as it is in the address bar); open a local HTML file handed in at launch, which needs a rule for `file:`.
+- **Who decides:** owner
+- **Blocks:** nothing; check `xdg-settings` on a real package either way
