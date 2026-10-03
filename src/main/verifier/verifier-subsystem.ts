@@ -63,9 +63,9 @@ const listeners = new Set<() => void>()
 let enabledByPerson: () => boolean = () => true
 
 /** Lets the person's setting, and not only the environment, switch the light client off. Read when the host starts. */
-export function configureVerifier (options: { lightClientEnabled: () => boolean, windows: () => readonly TabsOfWindow[] }): void {
+export function configureVerifier (options: { lightClientEnabled: () => boolean, windows: () => readonly TabsOfWindow[], servedFromCache: (origin: string) => boolean }): void {
   enabledByPerson = options.lightClientEnabled
-  tabsOnVerifiedOrigin = () => anyTabOnVerifiedOrigin(options.windows())
+  tabsOnVerifiedOrigin = () => anyTabOnVerifiedOrigin(options.windows(), options.servedFromCache)
 }
 
 const lightClientSwitchedOff = (): boolean => process.env['ORIVON_ETH_LIGHT_CLIENT'] === 'off' || !enabledByPerson()
@@ -277,7 +277,7 @@ export const verifierSubsystem: Subsystem = {
     if (dev.secureOrigins !== '') app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', dev.secureOrigins)
     app.on('session-created', installCertificateCheck)
   },
-  afterReady: () => {
+  afterReady: (ctx) => {
     installCertificateCheck(session.defaultSession)
     installPartitionStamp(session.defaultSession)
     installListeningGate(session.defaultSession)
@@ -335,7 +335,8 @@ export const verifierSubsystem: Subsystem = {
       idle: () => { host.idle() },
       tabShowsVerifiedOrigin: () => tabsOnVerifiedOrigin(),
       checkpointAgeSeconds: usableCheckpointAge,
-      startDelayMs: verifierStartDelayMs
+      startDelayMs: verifierStartDelayMs,
+      privateSession: ctx.privateSession
     })
     startHost = () => { lifecycle.request() }
     provideVerifierAccess({ start: () => { startHost() }, ready: async () => { await listeningGate.whenSettled() } })

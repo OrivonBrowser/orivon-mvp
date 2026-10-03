@@ -50,7 +50,7 @@ async function launch (now = SHIPPED_AT_MS + DAY_MS) {
   const subsystem = await import('../verifier-subsystem.js')
   const access = await import('../verifier-access.js')
   await subsystem.verifierSubsystem.afterReady?.({} as never)
-  subsystem.configureVerifier({ lightClientEnabled: () => true, windows: () => tabs.open })
+  subsystem.configureVerifier({ lightClientEnabled: () => true, windows: () => tabs.open, servedFromCache: () => false })
   const gate = registered.beforeRequest[0]
   if (gate === undefined) throw new Error('the listening gate was not registered')
   return { ...subsystem, access, gate, request: async () => await gate({ url: 'https://vitalik.eth/' }, {}) }

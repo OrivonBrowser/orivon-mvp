@@ -57,11 +57,12 @@ reusing `partition.ts` rather than copying it.
 first request to a host the verifier serves, or when the address bar's text names one
 ([`verifier-access.ts`](verifier-access.ts)'s `prewarmVerifier`, called from the omnibox), and puts it to sleep through
 `HostSupervisor.idle()` once no tab shows a verifier-served origin
-([`tab-on-verified-origin.ts`](tab-on-verified-origin.ts)) and nothing has asked for it for ten minutes. `idle()` is not
+([`tab-on-verified-origin.ts`](tab-on-verified-origin.ts); an installed app served from its pin does not count) and nothing has asked for it for ten minutes. `idle()` is not
 `stop()`: it counts as no crash, shows no failure, restarts nothing, and a later `start()` forks a fresh process after the
 old one has exited. The light client refreshes the stored checkpoint only while it runs, and refuses one older than
 fourteen days, so two minutes after launch a newest checkpoint older than seven days starts the host once; the idle wait
-ends that run. With the light client switched off nothing starts at launch. The partition stamp and the listening gate
+ends that run. With the light client switched off, or in a private session, whose checkpoint is thrown away at its
+end, nothing starts at launch. The partition stamp and the listening gate
 stay registered on the default session whatever the host is doing: they are also what keeps `net.fetch` from crashing a
 session that holds an extension's network permission ([`../extensions/README.md`](../extensions/README.md)).
 

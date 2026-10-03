@@ -256,6 +256,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **A private session no longer renews the light client's checkpoint on its own**, so it reaches no Ethereum server
+  unless a `.eth` name is opened; an installed `.eth` app served from its pin no longer keeps the verifier running.
 - **Picture in picture finds a video inside a page's own element**, from the menu and from a right-click; a QR code
   is not offered for an address too long to carry, and a screenshot whose save dialog fails says so.
 - **A closed reader view reopens on its article's page**: Reopen and a restored session bring back the page it was

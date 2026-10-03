@@ -31,6 +31,7 @@ import { sweepPrivateDirs } from './launch/private-session.js'
 import { startLaunch } from './launch/start-launch.js'
 import { runUpdateCheck } from './self-update/update-check-runner.js'
 import { configureVerifier } from './verifier/verifier-subsystem.js'
+import { isOriginServedFromCacheSync } from '../loader/electron/serve.js'
 import type { Runtime } from './launch/start-launch.js'
 
 // Do not add `ozone-platform: x11` here without solving its GPU crash on
@@ -183,7 +184,7 @@ function boot (runtime: Runtime): void {
     }
     applyThemeSetting(shell.settings, nativeTheme)
     // The host starts only when a .eth address is needed, by which time the settings have been read: the person's choice reaches it.
-    configureVerifier({ lightClientEnabled: () => shell.settings.get('web3.lightClient'), windows: () => shell.windows.all() })
+    configureVerifier({ lightClientEnabled: () => shell.settings.get('web3.lightClient'), windows: () => shell.windows.all(), servedFromCache: isOriginServedFromCacheSync })
     shell.history.prune()
     startInternalPages(shell, ctx)
     // Another profile's own process can rename, add, remove or start one --
