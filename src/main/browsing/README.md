@@ -24,6 +24,7 @@ a path string.
 (`writeFileAtomicAsync`, `bookmarks.ts`'s own write), [`../../trust/`](../../trust/),
 [`../../loader/electron/resolve.ts`](../../loader/electron/resolve.ts),
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts),
+[`../../protocols/ipfs/names.ts`](../../protocols/ipfs/names.ts) (`canonicalCid`),
 [`../verifier/name-evidence.ts`](../verifier/name-evidence.ts) (types), `node:crypto`,
 `node:fs/promises`, `node:path`, `node:stream`.
 

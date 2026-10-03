@@ -101,14 +101,18 @@ function localDevNote (): HTMLParagraphElement {
 }
 
 /** What the provider said, in one line; the level list above shows the level itself. */
-function providerLine (judged: ProviderVerdict, displayed: number): string {
+function providerLine (judged: ProviderVerdict): string {
   switch (judged.status) {
     case 'off': return `Levels 3 and 4 need a Web3 Score provider, and none is chosen (Settings, Web3). What the levels mean: ${SCORES_PAGE}`
     case 'not-assessable': return `A Web3 Score provider judges only a page whose files Orivon checked (Level 2), so ${judged.address} was not asked.`
     case 'pending': return `Asking ${judged.address} for this page's score.`
     case 'unreachable': return `The Web3 Score provider did not answer, so Levels 3 and 4 stay unknown. ${judged.reason}`
     case 'no-score': return `${judged.provider.name} has no score for this page, so Levels 3 and 4 stay unknown.`
-    case 'judged': return `Level ${String(displayed)} is judged by ${judged.provider.name} (${judged.provider.address}), evaluated ${judged.evaluation.evaluated}. Not observed by this browser.`
+    case 'judged': {
+      const { level } = judged.evaluation.trustlessity
+      const claim = level >= 3 ? `Level ${String(level)} is judged by` : 'Levels 3 and 4 are judged not met by'
+      return `${claim} ${judged.provider.name} (${judged.provider.address}), evaluated ${judged.evaluation.evaluated}. Not observed by this browser.`
+    }
   }
 }
 
@@ -129,7 +133,7 @@ function levelSection (trust: SiteTrust): HTMLElement[] {
   const becauseText = overridden || judged !== undefined ? `Observed by this browser: Level ${String(level)}. ${because}` : because
   const disclaimer = overridden
     ? `Level ${String(displayed)} is a developer override (ORIVON_SCORE_LEVELS_FILE): not observed, and no provider judged it.`
-    : providerLine(trust.judged, displayed)
+    : providerLine(trust.judged)
   const summary = judged?.evaluation.summary
   return [
     paragraph('section-heading', `Website level ${String(displayed)}`),

@@ -48,7 +48,7 @@ function connectionLabel (connection: SiteTrust['connection']): string {
 function trustGlance (trust: SiteTrust | null): string {
   if (trust === null) return 'Web3 Score'
   const overridden = trust.levelOverride !== undefined || trust.deliveryOverride !== undefined
-  const judgedBy = !overridden && trust.judged.status === 'judged' && trust.level.level === 2 ? ` (judged by ${trust.judged.provider.name})` : ''
+  const judgedBy = trust.judgedShown && trust.judged.status === 'judged' ? ` (judged by ${trust.judged.provider.name})` : ''
   const glance = `Web3 Score · Website L${String(trust.displayedLevel)}${judgedBy} · Delivery D${String(trust.displayedDelivery)} · Connections ?`
   if (overridden) return `${glance} (developer override)`
   return trust.ddoc.status === 'local-dev' ? `${glance} (developer mode)` : glance

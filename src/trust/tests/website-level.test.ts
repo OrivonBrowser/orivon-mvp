@@ -64,4 +64,14 @@ describe('displayedLevel', () => {
     // An override may also just restate the observed level.
     expect(displayedLevel(1, 1)).toBe(1)
   })
+
+  it('is a provider\'s judged Level 3 or 4 over an observed Level 2, and never otherwise', () => {
+    expect(displayedLevel(2, undefined, 3)).toBe(3)
+    expect(displayedLevel(2, undefined, 4)).toBe(4)
+    expect(displayedLevel(2, undefined, 1)).toBe(2)
+    expect(displayedLevel(2, undefined, 2)).toBe(2)
+    expect(displayedLevel(2, undefined, 5)).toBe(2)
+    expect(displayedLevel(1, undefined, 4)).toBe(1)
+    expect(displayedLevel(2, 1, 4)).toBe(1)
+  })
 })

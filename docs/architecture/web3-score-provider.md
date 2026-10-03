@@ -165,10 +165,13 @@ What follows bounds this build of Orivon, not the standard.
   shown are the files the identifier names: an installed app's bundle hash, or the CID a `.eth`
   name or an `ipfs://` address resolved to. On a local origin in developer mode, the bundle hash
   in the tree that origin serves stands in, and the page says it is developer mode.
-- **Named, never merged into what was observed.** The shield and the Web3 Score page show the
-  judged level with the provider's name; the page keeps what Orivon itself observed beside it.
+- **Named, never merged into what was observed.** The shield and the Web3 Score page show a
+  judged Level 3 or 4 with the provider's name; the page keeps what Orivon itself observed beside
+  it. Levels 1 and 2 are observed, so a website evaluation at 1 or 2 only marks 3 and 4 as not
+  met, and the shown level stays the observed one.
 - **Never silences a grant warning.** A judged Level 4 leaves every capability warning in place
   (`ADR-0054`, which narrows `ADR-0037` to the developer override).
 - **Fetched with no credentials**, a 10 second limit per file, answers kept for 10 minutes, and
   "did not answer" kept for 1 minute. While a slow provider (a cold IPFS fetch) is still loading,
-  the page shows the lookup as under way.
+  the shield and the page show the lookup as under way and ask again every 2 seconds until it
+  answers.

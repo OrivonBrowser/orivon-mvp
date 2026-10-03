@@ -13,6 +13,9 @@ function originOf (url: string): string | null {
   }
 }
 
+/** How soon a shield whose provider was still being asked asks again. */
+const PENDING_RETRY_MS = 2_000
+
 /** What the address pill says about the active site: the Web3 Score shield and its mark, and the key for
  * the permissions this site has asked for. Both answers come from main a moment after the push that asked,
  * so each remembers what it asked to drop a stale response. */
@@ -22,6 +25,7 @@ export function createSiteBadges (): ChromeModule {
   let sitePermissionsBtn: HTMLButtonElement | undefined
   let shieldEl: SVGSVGElement | undefined
   let shieldRequestUrl: string | null = null
+  let pendingRetry: ReturnType<typeof setTimeout> | undefined
   let shieldOrigin: string | null = null
   let permissionsRequestUrl: string | null = null
   let connectionSecure = false
@@ -55,9 +59,17 @@ export function createSiteBadges (): ChromeModule {
       shieldOrigin = origin
       applyShield(null)
     }
+    askShield(url, ctx)
+  }
+
+  function askShield (url: string, ctx: ChromeContext): void {
     void ctx.shell.web3ScoreFor(url).then((score) => {
       if (shieldRequestUrl !== url) return // the active tab moved on; this answer is stale
       applyShield(score)
+      // A slow provider (a cold ipfs:// fetch) answers after the page has stopped pushing state.
+      if (score?.pending !== true) return
+      clearTimeout(pendingRetry)
+      pendingRetry = setTimeout(() => { if (shieldRequestUrl === url) askShield(url, ctx) }, PENDING_RETRY_MS)
     })
   }
 

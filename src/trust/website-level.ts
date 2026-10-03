@@ -22,13 +22,14 @@ function isScoreLevel (level: number): level is ScoreLevel {
 }
 
 /** The level to show: the override when one exists, then a provider's judged
- * level, then what this browser observed. A judged level counts only over
- * Level 2: it describes the files an identifier names, and only DDOC shows
- * those are the files served. Grant warnings read only the developer
- * override, never this, so a provider cannot silence one (ADR-0054). */
+ * Level 3 or 4, then what this browser observed. A judged level counts only
+ * over Level 2: it describes the files an identifier names, and only DDOC
+ * shows those are the files served. Levels 1 and 2 are observed, so a judged
+ * 1 or 2 only says 3 and 4 are not met. Grant warnings read only the
+ * developer override, never this, so a provider cannot silence one (ADR-0054). */
 export function displayedLevel (observed: ObservedLevel, override: ScoreLevel | undefined, judged?: number): ScoreLevel {
   if (override !== undefined) return override
-  return observed === 2 && judged !== undefined && isScoreLevel(judged) ? judged : observed
+  return observed === 2 && judged !== undefined && judged >= 3 && isScoreLevel(judged) ? judged : observed
 }
 
 /** A `.eth` site's content, as the verifier served it now or as an installed app's pin recorded it. */

@@ -67,6 +67,7 @@ let page: Page = bridge.initialPage
 let info: SiteInfo | null = null
 let trust: SiteTrust | null = null
 let trustFetched = false
+const PENDING_RETRY_MS = 2_000
 let data: SiteDataSnapshot | null = null
 /** Capability -> the switch's staged position, only for a row the person
  * has actually moved this open. Cleared on Confirm/Cancel. */
@@ -149,6 +150,14 @@ async function ensureTrust (): Promise<void> {
   if (trustFetched) return
   trustFetched = true
   trust = await bridge.trust()
+  if (trust?.judged.status === 'pending') setTimeout(() => { void refreshPendingTrust() }, PENDING_RETRY_MS)
+}
+
+/** The Web3 Score provider was still being asked: ask again until it answers, then repaint. */
+async function refreshPendingTrust (): Promise<void> {
+  trust = await bridge.trust()
+  renderCurrent()
+  if (trust?.judged.status === 'pending') setTimeout(() => { void refreshPendingTrust() }, PENDING_RETRY_MS)
 }
 
 async function openWeb3 (): Promise<void> {

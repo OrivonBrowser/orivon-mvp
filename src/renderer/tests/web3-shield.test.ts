@@ -9,7 +9,7 @@ import type { Web3Score } from '../../main/browsing/site-trust.js'
 // renderer module in this tree already follows.
 
 function score (overrides: Partial<Web3Score> = {}): Web3Score {
-  return { level: 1, overridden: false, judgedBy: undefined, delivery: 1, deliveryOverridden: false, localDev: false, ...overrides }
+  return { level: 1, overridden: false, judgedBy: undefined, pending: false, delivery: 1, deliveryOverridden: false, localDev: false, ...overrides }
 }
 
 describe('web3Mark', () => {

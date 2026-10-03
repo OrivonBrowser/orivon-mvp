@@ -11,7 +11,7 @@
 // stands in for an installed app's pin (src/main/dev/local-ddoc.ts).
 import { afterAll, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
-import { createServer, type Server } from 'node:http'
+import { createServer, type RequestListener, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -22,6 +22,9 @@ import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, nav
 
 const SCORED = 'sha256:' + '1a'.repeat(32)
 const UNSCORED = 'sha256:' + '2b'.repeat(32)
+// Its bucket answers after the shield's 3 s wait, once the page has stopped pushing state.
+const SLOW = 'sha256:' + '3c'.repeat(32)
+const SLOW_BUCKET_MS = 4_500
 const PROVIDER_NAME = 'E2E provider'
 
 const TEST_TIMEOUT_MS = ADDRESS_BAR_STABLE_TIMEOUT_MS * 2 + DEFAULT_ACTION_TIMEOUT_MS * 8 + APP_CLOSE_RACE_MS + 60_000
@@ -32,7 +35,7 @@ afterAll(async () => {
 
 const bucketOf = (id: string): string => createHash('sha256').update(id, 'utf8').digest('hex').slice(0, 2)
 
-async function listen (handler: Parameters<typeof createServer>[0]): Promise<{ server: Server, port: number }> {
+async function listen (handler: RequestListener): Promise<{ server: Server, port: number }> {
   const server = createServer(handler)
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
   return { server, port: (server.address() as AddressInfo).port }
@@ -49,9 +52,14 @@ async function startSite (title: string, bundleHash: string): Promise<{ server: 
   })
 }
 
+const bucketFile = (id: string, level: number): string => JSON.stringify({
+  standard: 'orivon-web3-score/1', subject: 'website', bucket: bucketOf(id), entries: [{ id, name: 'App', evaluated: '2026-10-03', trustlessity: { level } }]
+})
+
 async function startProvider (asked: string[]): Promise<{ server: Server, port: number }> {
   const files = new Map<string, string>([
     ['/score/provider.json', JSON.stringify({ standard: 'orivon-web3-score/1', name: PROVIDER_NAME, bucketHexChars: 2 })],
+    [`/score/website/${bucketOf(SLOW)}.json`, bucketFile(SLOW, 4)],
     [`/score/website/${bucketOf(SCORED)}.json`, JSON.stringify({
       standard: 'orivon-web3-score/1',
       subject: 'website',
@@ -70,8 +78,12 @@ async function startProvider (asked: string[]): Promise<{ server: Server, port: 
   return await listen((req, res) => {
     asked.push(req.url ?? '')
     const body = files.get(req.url ?? '')
-    if (body === undefined) res.writeHead(404).end()
-    else res.writeHead(200, { 'content-type': 'application/json' }).end(body)
+    const answer = (): void => {
+      if (body === undefined) res.writeHead(404).end()
+      else res.writeHead(200, { 'content-type': 'application/json' }).end(body)
+    }
+    if (req.url === `/score/website/${bucketOf(SLOW)}.json`) setTimeout(answer, SLOW_BUCKET_MS)
+    else answer()
   })
 }
 
@@ -82,7 +94,7 @@ function findPopup (app: ElectronApplication): Page | undefined {
 async function readScore (app: ElectronApplication, level: string): Promise<{ level: string | null, mark: string, label: string, heading: string, headings: string[], text: string }> {
   const chrome = findChrome(app)
   // The first answer can be the observed level while the provider is still being asked.
-  await waitFor(async () => await chrome.evaluate((want) => document.querySelector('#web3-score-btn .web3-shield')?.getAttribute('data-level') === want, level), 8_000)
+  await waitFor(async () => await chrome.evaluate((want: string) => document.querySelector('#web3-score-btn .web3-shield')?.getAttribute('data-level') === want, level), 8_000)
   const { level: painted, mark } = await readShield(chrome)
   const label = await chrome.evaluate(() => document.querySelector('#web3-score-btn')?.getAttribute('aria-label') ?? '')
   await chrome.click('#web3-score-btn')
@@ -108,6 +120,7 @@ it('the provider chosen in Settings judges a checked page, is named wherever its
     const provider = await startProvider(asked)
     const scored = await startSite('scored fixture', SCORED)
     const unscored = await startSite('unscored fixture', UNSCORED)
+    const slow = await startSite('slow fixture', SLOW)
     const address = `http://127.0.0.1:${String(provider.port)}/score`
     let app: ElectronApplication | undefined
     try {
@@ -137,12 +150,17 @@ it('the provider chosen in Settings judges a checked page, is named wherever its
       check(`its label names no provider (${plain.label})`, !plain.label.includes('judged'))
       check('its page says the provider has no score for it', plain.text.includes(`${PROVIDER_NAME} has no score for this page`))
 
-      const leaked = asked.filter((url) => url.includes(SCORED.slice(7)) || url.includes(UNSCORED.slice(7)))
+      await navigateToFixture(app, `http://127.0.0.1:${String(slow.port)}/`, 'slow fixture')
+      const late = await readScore(app, '4')
+      check(`a provider slower than the shield's wait still lands: Level 4 once it answers (${late.level})`, late.level === '4' && late.label.includes(`judged by ${PROVIDER_NAME}`))
+      check(`the open page shows it too (${late.heading})`, late.heading === 'Website level 4')
+
+      const leaked = asked.filter((url) => [SCORED, UNSCORED, SLOW].some((id) => url.includes(id.slice(7))))
       check(`the provider was asked only for its description and buckets (${asked.join(', ')})`, leaked.length === 0 && asked.every((url) => /^\/score\/(provider\.json|website\/[0-9a-f]{2}\.json)$/.test(url)))
-      expect([judged.level, plain.level, leaked.length]).toEqual(['3', '2', 0])
+      expect([judged.level, plain.level, late.level, leaked.length]).toEqual(['3', '2', '4', 0])
     } finally {
       if (app !== undefined) await closeElectronApp(app)
-      for (const { server } of [provider, scored, unscored]) await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+      for (const { server } of [provider, scored, unscored, slow]) await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
     }
   })
 }, TEST_TIMEOUT_MS)
