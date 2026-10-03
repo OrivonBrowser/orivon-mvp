@@ -80,9 +80,18 @@ export const installContentSettings: ShellInstaller = {
     siteSettings.onChange(applySound)
     siteContentBlocks.bind((pageUrl) => rules.scriptsBlocked(pageUrl) || rules.imagesBlocked(pageUrl) || rules.soundBlocked(pageUrl))
     siteSettings.onChange(() => { siteContentBlocks.changed() })
+    // A page a site's service worker answers from its own cache never reaches the script block above, so a site
+    // whose JavaScript is blocked has its workers taken off: its next page comes from the network, where the block
+    // applies, and with scripts blocked no worker is registered again.
+    const dropWorkers = (origin?: string): void => {
+      void session.defaultSession.clearStorageData({ ...(origin === undefined ? {} : { origin }), storages: ['serviceworkers'] })
+        .catch((error: unknown) => { console.error('[content-settings] a site\'s service workers could not be taken off:', error) })
+    }
+    siteSettings.onChange((origin) => { if (origin !== null && rules.scriptsBlocked(origin)) dropWorkers(origin) })
     settings.onChange(({ key }) => {
       if (key === 'sites.sound') applySound()
       if (key === 'sites.javascript' || key === 'sites.images' || key === 'sites.sound') siteContentBlocks.changed()
+      if (key === 'sites.javascript' && settings.get('sites.javascript') === 'block') dropWorkers()
     })
 
     services.downloads.onStart(createAutoDownloads({

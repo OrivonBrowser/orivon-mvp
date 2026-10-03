@@ -1995,13 +1995,3 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   a change applies from the next load); leave the header alone.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
-
-### A374: "JavaScript: Block" does not stop a page a service worker serves **[AI-REC]**
-
-- **Question:** The block is a policy header added to the response; a page a site's service worker answers from its
-  own cache never passes the network handlers, so its scripts run. Most installed web apps work that way.
-- **Why it matters:** the setting appears to work on the first load and not after the site installed its worker.
-- **Options:** clear the site's service workers when its JavaScript is set to Block, and on each load of a blocked
-  site (rec.); refuse service worker registration for a blocked site; say so in the setting's help.
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
