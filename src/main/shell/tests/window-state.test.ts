@@ -160,7 +160,7 @@ describe('createWindowState', () => {
 
     push([tab('a', 'https://A.example:8080/x', 'data:icon'), tab('b', 'orivon://settings/', 'data:other'), tab('c', 'https://c.example/')], 'a')
 
-    expect(setFavicon).toHaveBeenCalledExactlyOnceWith('a.example', 'data:icon')
+    expect(setFavicon).toHaveBeenCalledExactlyOnceWith('a.example:8080', 'data:icon')
   })
 
   it('does no icon work for a push that leaves a tab\'s icon as it was', () => {

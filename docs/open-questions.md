@@ -1913,14 +1913,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A363: A tab's icon is shared by every address on the same host **[AI-REC]**
-
-- **Question:** Tab icons are kept under the host name alone, so FreeTube on 127.0.0.1:9291 and any other page on 127.0.0.1 show the same icon. Should the key include the port?
-- **Why it matters:** local apps on different ports are different sites to the person, and each shows the icon of whichever loaded last.
-- **Options:** key by host and port (rec.); keep the host key for the history list only.
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
 ### A340: A question asked in a background tab waits with no sign **[OWNER]**
 
 - **Question:** A question for a tab that is not in front waits until its tab comes to the front, and nothing in the tab strip says so.

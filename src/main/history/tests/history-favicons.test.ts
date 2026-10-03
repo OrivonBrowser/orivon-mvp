@@ -94,6 +94,18 @@ describe('the favicons table', () => {
     expect(hosts(db)).toEqual(['a.example', 'b.example', 'bafy'])
   })
 
+  it('keeps two servers on one machine apart, each icon under its host and port, and forgets one with no page left', () => {
+    const db = database()
+    page(db, 'http://127.0.0.1:3000/a')
+    page(db, 'http://127.0.0.1:9291/b')
+    setHostFavicon(db, '127.0.0.1:3000', PNG)
+    setHostFavicon(db, '127.0.0.1:9291', GIF)
+    setHostFavicon(db, '127.0.0.1:5555', PNG)
+    pruneHostFavicons(db)
+    expect(hosts(db)).toEqual(['127.0.0.1:3000', '127.0.0.1:9291'])
+    expect(faviconsForHosts(db, ['127.0.0.1:3000', '127.0.0.1:9291'])).toEqual({ '127.0.0.1:3000': PNG, '127.0.0.1:9291': GIF })
+  })
+
   it('does not take a host for another that only begins the same way', () => {
     const db = database()
     page(db, 'https://a.example.org/')
