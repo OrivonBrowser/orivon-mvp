@@ -30,6 +30,7 @@ import { handleOpenUrl } from './os/open-url.js'
 import { sweepPrivateDirs } from './launch/private-session.js'
 import { startLaunch } from './launch/start-launch.js'
 import { runUpdateCheck } from './self-update/update-check-runner.js'
+import { scheduleUpdateChecks } from './self-update/update-schedule.js'
 import { configureVerifier } from './verifier/verifier-subsystem.js'
 import { isOriginServedFromCacheSync } from '../loader/electron/serve.js'
 import type { Runtime } from './launch/start-launch.js'
@@ -202,9 +203,14 @@ function boot (runtime: Runtime): void {
     installDownloads(app, { windows: shell.windows, downloads: shell.downloads, defaultSession: session.defaultSession, discardHeldAtQuit: runtime.isPrivate })
     installDownloadsPeek(shell)
     registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks)
-    // Looks for a newer release once a day when the person has said it may; installs nothing.
-    if (!runtime.isPrivate && shell.settings.get('updates.check')) {
-      void runUpdateCheck(app).catch((error) => { console.error('[orivon] the update check failed:', error) })
+    // Looks for a newer release once a day when the person has said it may, from the moment they say so; installs nothing.
+    if (!runtime.isPrivate) {
+      const stopUpdateChecks = scheduleUpdateChecks({
+        enabled: () => shell.settings.get('updates.check'),
+        onEnabledChange: (listener) => shell.settings.onChange((change) => { if (change.key === 'updates.check') listener() }),
+        run: async () => { await runUpdateCheck(app).catch((error: unknown) => { console.error('[orivon] the update check failed:', error) }) }
+      })
+      app.once('will-quit', stopUpdateChecks)
     }
     if (!runtime.isPrivate) {
       app.once('will-quit', () => { runtime.profiles.clearRunning(runtime.profileId) })

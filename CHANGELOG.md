@@ -256,6 +256,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **Looking for updates works once a day as it says**: a check made offline is tried again at the next start, the
+  setting applies when switched on, and a browser left open checks again the next day.
 - **A private session no longer renews the light client's checkpoint on its own**, so it reaches no Ethereum server
   unless a `.eth` name is opened; an installed `.eth` app served from its pin no longer keeps the verifier running.
 - **Picture in picture finds a video inside a page's own element**, from the menu and from a right-click; a QR code
