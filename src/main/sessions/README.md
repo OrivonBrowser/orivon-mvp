@@ -160,17 +160,26 @@ Electron keeps only the LAST registration.** A second `session.webRequest.onHead
 call for a session that already has one silently replaces it rather than adding to it, so two
 independent features registering directly on the same session would fight over which one runs.
 `webRequestOwnerFor(session)` is the one place that ever calls Electron's own
-`onBeforeRequest`/`onBeforeSendHeaders`/`onHeadersReceived`; every caller instead registers a
+`onBeforeRequest`/`onBeforeSendHeaders`/`onHeadersReceived` or one of the five observer events
+(`onSendHeaders`, `onResponseStarted`, `onBeforeRedirect`, `onCompleted`, `onErrorOccurred`); every caller instead registers a
 handler with an `order`, a `WebRequestFilter` and a URL predicate, and `web-request-compose.ts`'s
 pure logic runs them in order, threading each one's result to the next. Used for
 `session.defaultSession` today: the verifier's partition stamp (`../verifier/verifier-
 subsystem.ts`), the granted-origin CSP (`../install/granted-origin-csp.ts`), the Firefox
 request headers on Google's sign-in hosts (`../shell/sign-in-identity-headers.ts`) and the three
-`declarativeNetRequest` handlers (`../extensions/dnr-webrequest.ts`). The embed session
+`declarativeNetRequest` handlers (`../extensions/dnr-webrequest.ts`) and the extension `webRequest`
+dispatcher (`../extensions/web-request-dispatch.ts`). The embed session
 ([`../embed/embed-host.ts`](../embed/embed-host.ts)), the internal-pages session
 ([`../pages/internal-session.ts`](../pages/internal-session.ts)) and an isolated `WebContext`
 session (`web-context-host.ts`, above) register directly instead: each is the only thing that
 ever touches its own session's `webRequest`, so there is nothing there for an owner to arbitrate.
+
+**The five observer events fan out and answer nothing.** Electron's `onSendHeaders`,
+`onResponseStarted`, `onBeforeRedirect`, `onCompleted` and `onErrorOccurred` listeners take no
+callback, so there is no result to compose and no order to keep: every handler whose predicate
+matches the URL runs, and a handler that throws is logged while the rest still run. They share the
+add/remove and union-filter shape of the three answering events, and the Electron listener is
+unregistered when the last handler leaves.
 
 **Each registration returns a handle whose `remove()` takes that one handler back out.** Most
 callers never need it (the verifier's partition stamp and the granted-origin CSP watch every
