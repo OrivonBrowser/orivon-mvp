@@ -1872,14 +1872,17 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
-### A344: The main menu that opens once and then no longer opens is not reproduced **[RESEARCH]**
+### A344: The main menu that opens once and then no longer opens is not reproduced **[OWNER]**
 
-- **Question:** The owner saw the menu open once and then never again. A strict reopen check (topmost child, size, painted
-  pixels) after each close path (the button, a click in the page, Escape, a row, the window losing focus) passes. Which
-  button was it (the hamburger, or the tune icon beside it), how was the first one closed, and was it a dev or a built run?
-- **Why it matters:** the failure may sit in a path the check does not drive, and a menu that cannot reopen blocks the window.
-- **Options:** ask the owner for the three details (rec.); extend the check to a dev-server run; close the entry with the hardening alone.
-- **Who decides:** research first
+- **Question:** The owner saw the menu open once and then never again, on `npm run dev`. Driven here, every reopen worked. Against the
+  dev server with real pointer events under a window manager: open and close by the button, a quick click and a press held
+  700 ms. On a built run with real events: the dark scheme, every row, other toolbar popups, a resize, full screen and a
+  second window (an earlier run, whose logs were not kept). On a built run through Playwright: an app, pinned, split and
+  dead tab in front. The owner's desktop session is now Wayland (it was X11 before), so none of this ran on that path. Does the card open empty,
+  not at all, or behind something, and what does the terminal that runs `npm run dev` print at that moment?
+- **Why it matters:** a menu that cannot reopen blocks the window, and only the owner's session shows which path it takes.
+- **Options:** the owner pastes the terminal lines around it (rec.); try a Wayland compositor here; close it.
+- **Who decides:** owner
 - **Blocks:** nothing
 
 ### A345: Which action still flickers in light mode is not known **[OWNER]**
@@ -1922,6 +1925,22 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
+### A362: A split by dragging a tab, and a blank pane beside FreeTube, are not reproduced as reported **[RESEARCH]**
+
+- **Question:** On the owner's desktop a tab dragged onto the page edge no longer splits, and a tab split in beside FreeTube leaves a blank pane. Is the cause a page captured while hidden?
+- **Why it matters:** Headless (xvfb, openbox, real X pointer events, the real FreeTube build) both gestures split and lay out. One failing state was measured: a hidden tab whose capture is started, then split in, stays laid out at its old size (1280x724 in a 632x716 pane); a bounds change at once does not cure it, a one-pixel change 250 ms later does. Raw CDP captures and `webContents.capturePage` alone did not leave it, so the mechanism is unconfirmed, and no capture of a hidden page completes under xvfb.
+- **Options:** `captureTabPage` captures with `stayHidden` (the drag's preview of a tab behind gets no thumbnail); a pane whose page lays out at another size than its bounds is nudged after it goes on screen; a right-click does not start the capture. Settles it: the owner's launch output and a screenshot of the blank pane on a GPU, or `npm run dev` with `--disable-gpu`.
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A363: A tab's icon is shared by every address on the same host **[AI-REC]**
+
+- **Question:** Tab icons are kept under the host name alone, so FreeTube on 127.0.0.1:9291 and any other page on 127.0.0.1 show the same icon. Should the key include the port?
+- **Why it matters:** local apps on different ports are different sites to the person, and each shows the icon of whichever loaded last.
+- **Options:** key by host and port (rec.); keep the host key for the history list only.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
 ### A340: A question asked in a background tab waits with no sign **[OWNER]**
 
 - **Question:** A question for a tab that is not in front waits until its tab comes to the front, and nothing in the tab strip says so.
@@ -1950,4 +1969,12 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** find where Electron refuses the scheme on a subresource redirect and allow web-accessible files (rec.);
   answer such a redirect with the file's bytes from main; leave it.
 - **Who decides:** research first
+- **Blocks:** nothing
+
+### A361: The other toolbar popups still read a re-click by the clock **[AI-REC]**
+
+- **Question:** The main menu, the all-sites popup and the site-info popups judge a re-click by the press it completes (`d-0421`). The popups the chrome opens through `overlay.toggle` (downloads, tab search, extensions, the site-access chip, blocked pop-ups) still treat a toggle within 300 ms of their own blur-close as that close's echo, so a slow click on those buttons closes the popup on the press and opens it again on the release. Send the press from those buttons too?
+- **Why it matters:** a slow click on those buttons cannot close the popup they opened.
+- **Options:** have every button that toggles an overlay announce its press, with `onClick` helpers sharing one wiring (rec.); leave them on the clock.
+- **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing

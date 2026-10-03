@@ -21,7 +21,7 @@ export type { PopoverAnchor as PanelAnchor } from './popover-view.js'
 export interface PermissionsPanel {
   /** Clicking the tune icon again while the panel is open closes it, the
    * way every browser's own toolbar popup behaves. */
-  toggle: (anchor: PopoverAnchor, focusOrigin: string | undefined) => void
+  toggle: (anchor: PopoverAnchor, focusOrigin: string | undefined, pressedAt?: number) => void
   close: () => void
   isOpen: () => boolean
   restack: () => void
@@ -51,8 +51,8 @@ export function createPermissionsPanel (
   })
 
   return {
-    toggle (anchor, focusOrigin) {
-      popover.toggle(anchor, focusOrigin !== undefined ? [`--orivon-focus-origin=${focusOrigin}`] : [])
+    toggle (anchor, focusOrigin, pressedAt) {
+      popover.toggle(anchor, focusOrigin !== undefined ? [`--orivon-focus-origin=${focusOrigin}`] : [], undefined, pressedAt)
     },
     close: popover.close,
     isOpen: popover.isOpen,

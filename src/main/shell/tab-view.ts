@@ -176,7 +176,7 @@ export function wireView (id: string, record: TabRecord): void {
     // one-way rule exists to protect.
     if (record.isDashboardTab && originFromUrl(navigatedUrl) !== originFromUrl(record.host.dashboardUrl)) {
       record.isDashboardTab = false
-      // The dashboard's own dark wash (makeTabView's own doc) must not
+      // The dashboard's own pre-paint colour (makeTabView's own doc) must not
       // bleed through a site with no CSS background of its own -- and a
       // navigation with nothing to swap partitions over (the common case:
       // an ordinary site with no grants yet) reuses THIS SAME view below,
@@ -331,11 +331,15 @@ export function wireView (id: string, record: TabRecord): void {
 
 /** A snapshot of a page, for the floating preview a tear-off drag shows (tear-drag.ts). `null` for a gone or
  * already-destroyed webContents, or when the capture itself throws -- none of which are worth failing a drag
- * over; the caller (`TabManager.capturePage`) falls back to showing no thumbnail at all. */
+ * over; the caller (`TabManager.capturePage`) falls back to showing no thumbnail at all.
+ *
+ * A page behind the one in front is captured as it is, hidden (`stayHidden`): a capture that shows it for
+ * the length of the snapshot can still be in flight when a split puts that page on screen, and the pane is
+ * then laid out at the size the page had before. A hidden page gives an empty image, which is no thumbnail. */
 export async function captureTabPage (wc: WebContents | undefined): Promise<NativeImage | null> {
   if (wc === undefined) return null
   try {
-    return await wc.capturePage()
+    return await wc.capturePage(undefined, { stayHidden: true })
   } catch {
     return null
   }

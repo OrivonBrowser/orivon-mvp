@@ -364,6 +364,8 @@ it('switches to an open tab from its row and leaves no empty tab behind, and Alt
 it('searches for what follows a question mark, and the search key puts one in the field', async () => {
   const { app, chrome } = await launchShell({ seedProfile: async (dir: string) => { await seedPages(dir) } })
   try {
+    // The command lands in the address module, which starts after the chrome page exists: wait for it first.
+    expect(await waitFor(async () => (await chrome.evaluate(() => document.querySelector('#address')?.getAttribute('role') ?? null)) === 'combobox')).toBe(true)
     await chrome.evaluate(() => { (window as unknown as { orivonShell: { runCommand: (id: string) => void } }).orivonShell.runCommand('nav.focusSearch') })
     expect(await waitFor(async () => (await field(chrome)).value === '? ')).toBe(true)
     expect((await field(chrome)).focused).toBe(true)

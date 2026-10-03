@@ -75,7 +75,7 @@ it('builds no menu view at launch, builds one on the button\'s own hover, and re
     await chrome.click('#menu')
     expect(await waitFor(async () => !(await popoverShown(app, 'overlay=menu')))).toBe(true)
 
-    // Past REOPEN_DEBOUNCE_MS (overlay-host.ts): an immediate second toggle
+    // Past REOPEN_DEBOUNCE_MS (press-stamps.ts): an immediate second toggle
     // is read as this close's own echo, not fresh intent -- correct for a
     // real click-away, but this test's own explicit close needs to clear it
     // before reopening on purpose.
@@ -108,7 +108,7 @@ it('a click with no prior hover still opens the menu, building it then', async (
   }
 }, TEST_TIMEOUT_MS)
 
-it('a brand-new tab is painted the app\'s own dark wash before its page ever loads', async () => {
+it('a brand-new tab is painted the dashboard\'s own colour before its page ever loads', async () => {
   const app = await launchElectron({ appPath: '.', ...SILENT })
   try {
     const chrome = await readyChrome(app)
@@ -131,9 +131,9 @@ it('a brand-new tab is painted the app\'s own dark wash before its page ever loa
       return undefined
     }, before)
 
-    // theme-colors.ts's APP_DARK_WASH -- the same value in both themes, so
+    // theme-colors.ts's DASHBOARD_BACKGROUND -- the same value in both themes, so
     // this needs no assumption about which one the test machine is in.
-    expect(recorded).toBe('#0d0e14')
+    expect(recorded).toBe('#394244')
   } finally {
     await closeElectron(app)
     expect(await assertNoElectronSurvivors()).toEqual([])
@@ -195,3 +195,35 @@ it('reopens on screen after every way it can have been closed', async () => {
     expect(await assertNoElectronSurvivors()).toEqual([])
   }
 }, 90_000)
+
+it('a press held on the button while the menu is open closes it, and letting go does not reopen it', async () => {
+  const app = await launchElectron({ appPath: '.', ...SILENT })
+  try {
+    const chrome = await readyChrome(app)
+    await chrome.click('#menu')
+    expect(await waitFor(async () => await popoverShown(app, 'overlay=menu'))).toBe(true)
+    await menuPage(app)?.waitForSelector('.menu-row')
+
+    const box = await chrome.locator('#menu').boundingBox()
+    if (box === null) throw new Error('the menu button has no box')
+    await chrome.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await chrome.mouse.down()
+    // Stand-in for what a real press does on landing: the keyboard focus moves to the toolbar, so the menu loses it and
+    // closes. Playwright's mouse sends no such focus change; the real path is the XTest recipe in docs/development/testing.md.
+    await app.evaluate(({ webContents }) => { webContents.getAllWebContents().find((wc) => wc.getURL().endsWith('/renderer/index.html'))?.focus() })
+    expect(await waitFor(async () => !(await popoverShown(app, 'overlay=menu')))).toBe(true)
+    // Held well past the time a blur-close is taken to be the echo of the click that follows.
+    await new Promise((resolve) => { setTimeout(resolve, 700) })
+    await chrome.mouse.up()
+
+    // A refusal is an absence: wait it out, then read once.
+    await new Promise((resolve) => { setTimeout(resolve, ABSENCE_SETTLE_MS) })
+    expect(await popoverShown(app, 'overlay=menu')).toBe(false)
+
+    await chrome.click('#menu')
+    expect(await waitFor(async () => await popoverShown(app, 'overlay=menu'))).toBe(true)
+  } finally {
+    await closeElectron(app)
+    expect(await assertNoElectronSurvivors()).toEqual([])
+  }
+}, TEST_TIMEOUT_MS)

@@ -5,6 +5,7 @@
 import type { BaseWindow, View, WebContents, WebContentsView } from 'electron'
 import { OVERLAY_EVENT_CHANNEL } from '../channels.js'
 import type { Bounds } from '../shell/tab-types.js'
+import { isEchoOfClose } from '../shell/press-stamps.js'
 import { onThemeUpdated } from '../shell/theme-colors.js'
 import { recordPopoverShown } from '../shell/view-background-test-hook.js'
 import type { WindowContext } from '../shell/window-context.js'
@@ -14,9 +15,6 @@ import type { FocusTarget, OverlayViewHandle } from './overlay-view.js'
 import type { OverlayAnchor, OverlayCloseReason, OverlayDef, OverlayHandler, OverlayHost, OverlayReady } from './overlay-types.js'
 
 const DEFAULT_HEIGHT = { initial: 180, min: 120, max: 460 }
-
-/** Blur closes an overlay on the same mousedown a re-click on its own toolbar button uses to ask for it again, and that click's message reaches main only afterwards; a toggle this soon after our own blur-close is that echo, not fresh intent. */
-const REOPEN_DEBOUNCE_MS = 300
 
 /** Events sent before the page has said `ready` are held, up to this many, and delivered once it has. */
 const QUEUE_LIMIT = 32
@@ -292,11 +290,11 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
 
   return {
     show,
-    toggle (name, anchor, payload) {
+    toggle (name, anchor, payload, pressedAt) {
       const slot = slots.get(name)
       if (slot === undefined) return
       if (slot.open) { closeSlot(slot, 'request'); return }
-      if (Date.now() - slot.lastBlurCloseAt < REOPEN_DEBOUNCE_MS) return
+      if (isEchoOfClose(slot.lastBlurCloseAt, pressedAt, Date.now())) return
       show(name, anchor, payload)
     },
     close (name) {

@@ -31,11 +31,11 @@ describe('isDashboardUrl', () => {
 })
 
 describe('a tab view\'s backing while a navigation starts', () => {
-  it('goes white when a dashboard tab starts for a site, and back to the wash for the dashboard', () => {
+  it('goes white when a dashboard tab starts for a site, and back to the dashboard\'s colour for the dashboard', () => {
     const { wc, colours } = rig({ isDashboardTab: true })
     start(wc, 'https://example.com/')
     start(wc, DASHBOARD)
-    expect(colours).toEqual(['#FFFFFF', '#0d0e14'])
+    expect(colours).toEqual(['#FFFFFF', '#394244'])
   })
 
   it('ignores a subframe, a same-document change, a view that is not the tab\'s, and an internal page', () => {
@@ -49,12 +49,12 @@ describe('a tab view\'s backing while a navigation starts', () => {
     expect([colours, parked.colours, internal.colours]).toEqual([[], [], []])
   })
 
-  it('puts the wash back when a navigation never commits and the view still shows the dashboard, whichever way the tab got there', () => {
+  it('puts the dashboard\'s colour back when a navigation never commits and the view still shows the dashboard, whichever way the tab got there', () => {
     const dashboard = rig()
     dashboard.wc.url = DASHBOARD
     start(dashboard.wc, 'https://example.com/file.zip')
     dashboard.wc.emit('did-stop-loading')
-    expect(dashboard.colours).toEqual(['#FFFFFF', '#0d0e14'])
+    expect(dashboard.colours).toEqual(['#FFFFFF', '#394244'])
     const site = rig({ isDashboardTab: true })
     site.wc.url = 'https://example.com/'
     site.wc.emit('did-stop-loading')
@@ -66,8 +66,13 @@ describe('restingColor', () => {
   const record = (url: string, extra: Partial<TabRecord> = {}): TabRecord =>
     ({ isDashboardTab: false, internalPage: null, host: { dashboardUrl: DASHBOARD }, view: { webContents: { getURL: () => url, isDestroyed: () => false } }, ...extra }) as unknown as TabRecord
 
-  it('is the wash for a tab showing the dashboard, even one that left it and came back', () => {
-    expect(restingColor(record(DASHBOARD))).toBe('#0d0e14')
+  it('is the dashboard\'s colour for a tab showing the dashboard, even one that left it and came back', () => {
+    expect(restingColor(record(DASHBOARD))).toBe('#394244')
+  })
+
+  it('is the dashboard\'s colour for a dashboard tab that has no address yet, because it is shown before its load starts', () => {
+    expect(restingColor(record('', { isDashboardTab: true }))).toBe('#394244')
+    expect(restingColor(record(''))).toBe('#FFFFFF')
   })
 
   it('is the default for a site, even on a tab created as the dashboard', () => {
