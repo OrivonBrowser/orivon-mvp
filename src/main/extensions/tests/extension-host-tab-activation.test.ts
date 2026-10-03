@@ -35,6 +35,7 @@ vi.mock('orivon:crx-extensions', () => ({
     on = vi.fn()
     addTab = vi.fn()
     removeTab = vi.fn()
+    moveTab = vi.fn()
     selectTab = vi.fn()
     clearActiveTab = vi.fn()
     constructor (opts: any) {
@@ -66,7 +67,7 @@ const { session: mockedSession } = await import('electron')
 
 function buildShell (): {
   services: ShellServices
-  subscribed: { tabCreated: any, tabActivated: any, tabClosed: any, viewReplaced: any }
+  subscribed: { tabCreated: any, tabActivated: any, tabClosed: any, tabClosing: any, viewReplaced: any }
   findTab: ReturnType<typeof vi.fn>
   shellWindow: any
 } {
@@ -246,5 +247,44 @@ describe('extension-host: window-open policy for popups and MV2 background pages
       setWindowOpenHandler: tabSetHandler
     })
     expect(tabSetHandler).not.toHaveBeenCalled()
+  })
+})
+
+describe('extension-host: a tab handed to another window', () => {
+  beforeEach(() => {
+    capturedOptions = undefined
+    lastInstance = undefined
+    getExtension.mockReset()
+  })
+
+  it('is moved in the library, never removed and added again', () => {
+    getExtension.mockReturnValue(null)
+    createExtensionHost('preload.js')
+    const { subscribed } = buildShell()
+    const wc = { session: mockedSession.defaultSession, isDestroyed: () => false } as unknown as WebContents
+    const from = { id: 1 } as unknown as BaseWindow
+    const to = { id: 2 } as unknown as BaseWindow
+    subscribed.tabCreated(wc, from)
+
+    subscribed.tabClosing({ reason: 'moved', record: { view: { webContents: wc } } })
+    subscribed.tabClosed(wc)
+    subscribed.tabCreated(wc, to)
+
+    expect(lastInstance.removeTab).not.toHaveBeenCalled()
+    expect(lastInstance.addTab).toHaveBeenCalledTimes(1)
+    expect(lastInstance.moveTab).toHaveBeenCalledWith(wc, to)
+  })
+
+  it('is still removed when it is closed, and added when it is new', () => {
+    getExtension.mockReturnValue(null)
+    createExtensionHost('preload.js')
+    const { subscribed } = buildShell()
+    const wc = { session: mockedSession.defaultSession, isDestroyed: () => false } as unknown as WebContents
+    const win = { id: 1 } as unknown as BaseWindow
+    subscribed.tabCreated(wc, win)
+    subscribed.tabClosing({ reason: 'closed', record: { view: { webContents: wc } } })
+    subscribed.tabClosed(wc)
+    expect(lastInstance.removeTab).toHaveBeenCalledWith(wc)
+    expect(lastInstance.moveTab).not.toHaveBeenCalled()
   })
 })

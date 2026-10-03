@@ -117,6 +117,8 @@ export function buildHostImpl (getBridge: () => ShellBridge | undefined): HostIm
 
   removeWindow: (win) => { if (!win.isDestroyed()) win.close() },
 
+  windowOf: (wc) => getBridge()?.services.windows.all().find((w) => w.chrome.webContents === wc)?.window,
+
   navigateTab: async (wc, url) => {
     const target = extensionOpenedUrl(url, isLoadedExtension)
     if (target === undefined) return

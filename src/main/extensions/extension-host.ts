@@ -206,6 +206,10 @@ export function isExtensionTab (webContentsId: number): boolean {
   return contents !== undefined && trackedTabs.has(contents)
 }
 
+/** Tabs handed to another window alive: between their window's `tabClosed` and the other's `tabCreated`,
+ * still the same tab for the library. */
+const movingTabs = new Set<WebContents>()
+
 function notifyShell (wc: WebContents, run: (wc: WebContents) => void): void {
   shellInitiated.add(wc)
   try {
@@ -240,7 +244,15 @@ export function attachExtensionShell (ctx: SubsystemContext, services: ShellServ
   setTabCaptureMediaAppRefusalCheck(tabCaptureAppRefusal)
 
   services.tabLifecycle.subscribe({
+    tabClosing: (info) => {
+      const wc = info.record.view.webContents
+      if (info.reason === 'moved' && trackedTabs.has(wc)) movingTabs.add(wc)
+    },
     tabCreated: (wc, win) => {
+      if (movingTabs.delete(wc)) {
+        if (win !== undefined && !wc.isDestroyed()) notifyShell(wc, (t) => hostExtensions?.moveTab(t, win))
+        return
+      }
       // wc is freshly created here, in every case -- safe to read .session.
       if (win === undefined || wc.session !== session.defaultSession) return
       trackedTabs.add(wc)
@@ -268,7 +280,7 @@ export function attachExtensionShell (ctx: SubsystemContext, services: ShellServ
       if (found != null) hostExtensions?.clearActiveTab(found.window.window)
     },
     tabClosed: (wc) => {
-      if (!trackedTabs.has(wc)) return
+      if (!trackedTabs.has(wc) || movingTabs.has(wc)) return
       trackedTabs.delete(wc)
       // ElectronChromeExtensions.removeTab() itself reads wc.session to
       // validate its argument, which throws once wc is destroyed -- the

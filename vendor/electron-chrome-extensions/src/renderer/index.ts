@@ -672,6 +672,8 @@ export const injectExtensionAPIs = (extras: ReadonlyArray<() => void> = []) => {
             onUpdated: new ExtensionEvent('tabs.onUpdated'),
             onActivated: new ExtensionEvent('tabs.onActivated'),
             onReplaced: new ExtensionEvent('tabs.onReplaced'),
+            onDetached: new ExtensionEvent('tabs.onDetached'),
+            onAttached: new ExtensionEvent('tabs.onAttached'),
           }
           return api
         },

@@ -6,7 +6,7 @@
 - License: GPL-3.0 (see `LICENSE.md`, `LICENSE-GPL`, `LICENSE-PATRON.md`), combinable with
   Orivon's AGPL-3.0-only under GPLv3 §13
 - Vendored from: `packages/electron-chrome-extensions/src/` (no `spec/`, no build output)
-- Modified: by the Orivon project, as the patches below list; last modified 2026-09-30
+- Modified: by the Orivon project, as the patches below list; last modified 2026-10-03
 
 ## Patches
 
@@ -802,6 +802,26 @@
     crossing the context bridge arrives as a new function on every call, so upstream's
     `removeListener` never removed anything, and each repeated remove still lowered the shared
     count until the page unsubscribed the extension's other listeners from the event.
+65. **Windows and the active tab are per window.** `src/browser/api/tabs.ts`: `query` honours
+    `currentWindow` and `lastFocusedWindow`, and `currentWindow` and `getAllInWindow`'s current
+    window are the caller's own (the window of the tab it runs in, or the one a popup hangs under),
+    else the last focused one; `onActivated` clears `active` only on the tabs of the activated
+    tab's own window; a tab added is announced as activated only when it is the one in front of its
+    window (`observeTab` no longer activates every tab it sees); `onRemoved` announces a tab once,
+    so a tab closed through `chrome.tabs.remove()` is not reported again when its webContents is
+    destroyed, now with window id -1; `tab-moved` rebuilds the tab's details and fires
+    `tabs.onDetached` and `tabs.onAttached` (both added to the renderer's `chrome.tabs`).
+    `src/browser/store.ts`: `removeTab` clears the window's active tab when it was the removed one
+    (the old `TODO`), and the new `moveTab(tab, window)` (also on `ElectronChromeExtensions`)
+    re-homes a tracked tab without the `tab-removed` that wipes what an extension set for it.
+    `src/browser/impl.ts`: the optional `windowOf(contents)`; `src/browser/api/browser-action.ts`
+    answers `getState` with the active tab of the window the asking toolbar page belongs to, and a
+    click that names no tab acts on that window's active tab. Reason: with two windows,
+    `tabs.query({ active: true, currentWindow: true })` from a popup and every toolbar read the
+    other window's tab, a tab opened behind the front one became every extension's active tab, a
+    tab moved between windows kept its old window id and lost its badge, a page coming back into
+    a one-tab window left the window with no active tab, and one closed tab was reported closed
+    twice.
 
 `partition.ts` is reached only through the virtual specifier `src/main/extensions/
 electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and

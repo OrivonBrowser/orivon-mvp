@@ -255,6 +255,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **Two windows keep their own tabs apart for extensions**: `tabs.query({ currentWindow: true })` and each toolbar icon use the
+  window they belong to, a tab opened in the background does not become the active tab, a tab moved to another window keeps
+  its window id and badge, a page coming back into a window is its active tab again, and a tab an extension closes is reported once.
 - **Updating or reloading a disabled extension keeps it disabled**: "Update", Developer mode's "Reload" and a newer `.crx` or `.zip`
   write the new version and leave the extension switched off, as it was set.
 - **Extension events can be unsubscribed**: removing a `chrome.tabs`, `windows` or `webNavigation` listener really stops it,
