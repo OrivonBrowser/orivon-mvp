@@ -58,9 +58,9 @@ Background: [`.claude/skills/orivon-electron/SKILL.md`](../../.claude/skills/ori
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | Runs the app with hot reload. This is the one you want |
+| `npm run dev` | Runs the app with hot reload, on a fresh profile each launch (below). This is the one you want |
 | `npm run build` | Builds `main`, `preload` and `renderer` into `out/` |
-| `npm start` | Runs the built output, without the dev server |
+| `npm start` | Runs the built output, without the dev server, on your real profile, as a packaged build does |
 | `npm run typecheck` | `tsc --noEmit`. The compiler is the primary correctness check here |
 | `npm test` | Vitest, `environment: 'node'`. Unit tests only, no DOM |
 | `npm run check:natives` | **Rule 8.** Fails if any dependency needs a compiler. Also runs automatically on `postinstall` |
@@ -77,6 +77,20 @@ npm run smoke     # only if you touched src/main/
 
 **Reading `npm run smoke` output:** it prints a JSON result and a failure list. **Read those,
 not the exit code alone.**
+
+---
+
+## The dev profile
+
+Every `npm run dev` launch starts on a new, empty profile in the system temp directory, as a
+first run of the browser would, and deletes it when the launch ends (closing the window, or
+Ctrl+C). Nothing a dev launch does reaches the profile `npm start` and a packaged build use,
+and a dev launch runs beside an open Orivon instead of handing over to it. The console names
+the directory at start. Other profiles the launch makes live inside it, so while one of them
+is still open the directory is kept, and the next `npm run dev` deletes it.
+
+To keep a dev profile across launches, name one: `npm run dev -- --user-data-dir=<dir>`. A
+named directory is never deleted. To test on your real profile, use `npm start`.
 
 ---
 
@@ -208,7 +222,7 @@ picks when, and an unset variable means `once`.
 | `ORIVON_INTRO` | Behaviour |
 |---|---|
 | `once` | Shows until the person has clicked through, then never again for that profile: the click writes `<userData>/intro.json`. What `npm start` and a packaged build do |
-| `always` | Shows on every launch, and never writes `intro.json`, so a dev launch does not use up the showing a later `npm start` on the same profile is owed. What `npm run dev` does |
+| `always` | Shows on every launch, and never writes `intro.json`, so a launch on a profile that has passed it still shows it. What `npm run dev` does, which matters only on a profile named with `--user-data-dir`: its own fresh one has not passed it |
 | `off` | Never shows. `test/launch-electron.mjs` sets it for every smoke and e2e launch unless a test asks otherwise |
 
 Any other value is treated as `once`, with a line on the console.
