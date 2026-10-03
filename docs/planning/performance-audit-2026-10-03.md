@@ -173,7 +173,7 @@ host closes with its app's last document.
 | F3 | The toolbar updates tab elements in place, keyed by tab id | Toolbar CPU per push no longer rebuilds every tab |
 | F4 | Privacy and content-settings handlers registered only while a setting needs them | No main-process round trip per request at default settings |
 | F5 | `scripts/perf-probe.mjs` and `npm run perf:probe` | This measurement, repeatable |
-| F6 | The session file is written off the main thread (`writeFileAtomicAsync`), and a change of titles alone waits for the next other change or 30 s | No synchronous flush per title change |
+| F6 | The session file is written off the main thread (`writeFileAtomicAsync`); a page's first title at an address is written at once, its later titles alone with the next other change or within 30 s | No synchronous flush per title change |
 | F7 | History keeps the first five title changes of each page reached, as Chrome does | No history write per title change |
 
 ### Next: decided by the owner

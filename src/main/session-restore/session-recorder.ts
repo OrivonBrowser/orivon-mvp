@@ -83,19 +83,31 @@ export class SessionRecorder {
     shell.window.on('unmaximize', changed)
     let last = ''
     let lastTitles = ''
+    /** Per tab, the address whose first title has been written: a later title there is the page retitling itself. */
+    const titled = new Map<string, string>()
     shell.tabs.onStateChange(({ tabs, activeTabId }) => {
-      // Loading progress and favicons push state too, and none of it is in the file. Titles are, but a change of
-      // titles alone waits: a page that retitles itself twice a second would otherwise rewrite the file as often.
+      // Loading progress and favicons push state too, and none of it is in the file. Titles are: the first one a
+      // page takes at an address is written promptly (the address was written before the page had named itself),
+      // while later ones there wait, so a page retitling itself twice a second does not rewrite the file as often.
       const seen = JSON.stringify([activeTabId, tabs.map((tab) => [tab.url, tab.pinned, tab.group ?? null]), groupsFor(shell.tabs).list()])
       const titles = JSON.stringify(tabs.map((tab) => tab.title))
       if (seen !== last) {
         last = seen
         lastTitles = titles
         changed()
-      } else if (titles !== lastTitles) {
-        lastTitles = titles
-        this.deps.session.titlesChanged()
+        return
       }
+      if (titles === lastTitles) return
+      lastTitles = titles
+      let firstTitle = false
+      for (const tab of tabs) {
+        if (titled.get(tab.id) === tab.url) continue
+        titled.set(tab.id, tab.url)
+        firstTitle = true
+      }
+      for (const id of titled.keys()) if (!tabs.some((tab) => tab.id === id)) titled.delete(id)
+      if (firstTitle) changed()
+      else this.deps.session.titlesChanged()
     })
     changed()
   }

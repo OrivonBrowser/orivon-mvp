@@ -77,16 +77,23 @@ describe('the session recorder', () => {
     expect(session.changed).toHaveBeenCalledTimes(1)
   })
 
-  it('hands a change of titles alone to the slower title write, and an address change to the prompt one', () => {
+  it('writes a page\'s first title at an address promptly and its later ones through the slower title write', () => {
     const { windows, session } = setup(['a'])
-    windows[0]?.push({ activeTabId: 't', tabs: [{ url: 'https://a.example/', title: '(1) Inbox', pinned: false }] })
+    const push = (url: string, title: string): void => { windows[0]?.push({ activeTabId: 't', tabs: [{ id: 't', url, title, pinned: false }] }) }
+    push('https://a.example/', 'https://a.example/')
     session.changed.mockClear()
-    windows[0]?.push({ activeTabId: 't', tabs: [{ url: 'https://a.example/', title: '(2) Inbox', pinned: false }] })
-    expect(session.changed).not.toHaveBeenCalled()
-    expect(session.titlesChanged).toHaveBeenCalledTimes(1)
-    windows[0]?.push({ activeTabId: 't', tabs: [{ url: 'https://a.example/sent', title: 'Sent', pinned: false }] })
+    push('https://a.example/', '(1) Inbox')
     expect(session.changed).toHaveBeenCalledTimes(1)
-    expect(session.titlesChanged).toHaveBeenCalledTimes(1)
+    expect(session.titlesChanged).not.toHaveBeenCalled()
+    push('https://a.example/', '(2) Inbox')
+    push('https://a.example/', '(3) Inbox')
+    expect(session.changed).toHaveBeenCalledTimes(1)
+    expect(session.titlesChanged).toHaveBeenCalledTimes(2)
+    push('https://a.example/sent', 'https://a.example/sent')
+    expect(session.changed).toHaveBeenCalledTimes(2)
+    push('https://a.example/sent', 'Sent')
+    expect(session.changed).toHaveBeenCalledTimes(3)
+    expect(session.titlesChanged).toHaveBeenCalledTimes(2)
   })
 
   it('ignores a tab state that changes only in what the file does not hold', () => {
