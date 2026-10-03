@@ -1872,14 +1872,17 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
-### A344: The main menu that opens once and then no longer opens is not reproduced **[RESEARCH]**
+### A344: The main menu that opens once and then no longer opens is not reproduced **[OWNER]**
 
-- **Question:** The owner saw the menu open once and then never again. A strict reopen check (topmost child, size, painted
-  pixels) after each close path (the button, a click in the page, Escape, a row, the window losing focus) passes. Which
-  button was it (the hamburger, or the tune icon beside it), how was the first one closed, and was it a dev or a built run?
-- **Why it matters:** the failure may sit in a path the check does not drive, and a menu that cannot reopen blocks the window.
-- **Options:** ask the owner for the three details (rec.); extend the check to a dev-server run; close the entry with the hardening alone.
-- **Who decides:** research first
+- **Question:** The owner saw the menu open once and then never again, on `npm run dev`. Driven here, every reopen worked. Against the
+  dev server with real pointer events under a window manager: open and close by the button, a quick click and a press held
+  700 ms. On a built run with real events: the dark scheme, every row, other toolbar popups, a resize, full screen and a
+  second window (an earlier run, whose logs were not kept). On a built run through Playwright: an app, pinned, split and
+  dead tab in front. The owner's desktop session is now Wayland (it was X11 before), so none of this ran on that path. Does the card open empty,
+  not at all, or behind something, and what does the terminal that runs `npm run dev` print at that moment?
+- **Why it matters:** a menu that cannot reopen blocks the window, and only the owner's session shows which path it takes.
+- **Options:** the owner pastes the terminal lines around it (rec.); try a Wayland compositor here; close it.
+- **Who decides:** owner
 - **Blocks:** nothing
 
 ### A345: Which action still flickers in light mode is not known **[OWNER]**
@@ -1953,4 +1956,12 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Why it matters:** The report stands unexplained. What the live install did show was every real blocker's worker failing at load (fixed), which looks like "works after a restart" from outside.
 - **Options:** Get the extension id and the terminal output at the exit (rec.); wrap each `session.extensions` listener in `contain()`, which hides the cause; leave it.
 - **Who decides:** research first, with the owner's id and output
+- **Blocks:** nothing
+
+### A361: The other toolbar popups still read a re-click by the clock **[AI-REC]**
+
+- **Question:** The main menu, the all-sites popup and the site-info popups judge a re-click by the press it completes (`d-0421`). The popups the chrome opens through `overlay.toggle` (downloads, tab search, extensions, the site-access chip, blocked pop-ups) still treat a toggle within 300 ms of their own blur-close as that close's echo, so a slow click on those buttons closes the popup on the press and opens it again on the release. Send the press from those buttons too?
+- **Why it matters:** a slow click on those buttons cannot close the popup they opened.
+- **Options:** have every button that toggles an overlay announce its press, with `onClick` helpers sharing one wiring (rec.); leave them on the clock.
+- **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing

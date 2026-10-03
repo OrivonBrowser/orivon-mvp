@@ -17,6 +17,7 @@ import { app, WebContentsView, type BaseWindow, type View, type WebContents } fr
 import { join } from 'node:path'
 import { rendererEntryUrl, validatedDevServerUrl } from '../shell/renderer-entry.js'
 import { lockNavigation } from '../shell/lock-navigation.js'
+import { isEchoOfClose } from '../shell/press-stamps.js'
 import { SHELL_PARTITION } from '../shell/shell-session.js'
 import { onThemeUpdated, resolveThemeColor } from '../shell/theme-colors.js'
 import type { ThemeColorPair } from '../shell/theme-colors.js'
@@ -33,16 +34,6 @@ const MIN_HEIGHT = 120
 const GAP = 6
 const EDGE = 8
 const CORNER_RADIUS = 10
-
-/**
- * Blur closes this popup on the SAME mousedown that a re-click on its own
- * toolbar icon uses to ask for it again -- the click's IPC message arrives
- * at main only after that blur has already run. Without a debounce, a
- * second click meant to CLOSE an open popup instead closes it and
- * immediately reopens it. A toggle request landing within this window of
- * our own close is read as that echo, not as fresh intent.
- */
-const REOPEN_DEBOUNCE_MS = 300
 
 /** Where a popup's toolbar icon is, in the chrome view's own client
  * coordinates. The chrome view is pinned at 0,0 with the window's full
@@ -127,8 +118,9 @@ export interface PopoverSpec {
 
 export interface PopoverView {
   /** `extraArgs` are appended after the url argument verbatim, e.g. `--orivon-focus-origin=...` or `--orivon-site-info-page=web3`. Ignored by a `warm` popup, which takes no per-open argument.
-   * `key` names the toolbar icon asking: while the popup shows, another key swaps to that icon's content; just after a blur close, only the key that was showing is read as an echo. */
-  toggle: (anchor: PopoverAnchor, extraArgs: readonly string[], key?: string) => void
+   * `key` names the toolbar icon asking: while the popup shows, another key swaps to that icon's content; just after a blur close, only the key that was showing is read as an echo.
+   * `pressedAt` is the time, on main's clock, of the press this click completes (see ../shell/press-stamps.ts); a click without one is judged by the clock alone. */
+  toggle: (anchor: PopoverAnchor, extraArgs: readonly string[], key?: string, pressedAt?: number) => void
   close: () => void
   isOpen: () => boolean
   /** Builds a `warm` popup's view now, if it is not already built -- a no-op
@@ -353,17 +345,17 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
   }
 
   return {
-    toggle (anchor, extraArgs, key = '') {
+    toggle (anchor, extraArgs, key = '', pressedAt) {
       if (shown !== null) {
         const sameIcon = shownKey === key
         hide()
         if (!sameIcon) show(anchor, extraArgs, key)
         return
       }
-      // See REOPEN_DEBOUNCE_MS's own doc: a toggle arriving just after our
+      // See isEchoOfClose's own doc: a toggle arriving just after our
       // own blur-triggered hide is that hide's echo, not fresh intent -- when
       // it is the same icon. Another icon's click is fresh intent.
-      if (key === lastClosedKey && Date.now() - lastClosedAt < REOPEN_DEBOUNCE_MS) return
+      if (key === lastClosedKey && isEchoOfClose(lastClosedAt, pressedAt, Date.now())) return
       show(anchor, extraArgs, key)
     },
     close: () => { hide() },

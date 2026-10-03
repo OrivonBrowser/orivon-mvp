@@ -367,6 +367,15 @@ screenshot of each view (measured behaviour in the `orivon-electron` skill). An 
 in the main process raises a blocking error dialog, so no spec provokes one. Malformed calls to
 `window.orivon.*` are not covered yet.
 
+**Real pointer input, when a spec's synthetic input is not enough.** Playwright's mouse sends no
+window-manager focus change, so a bug that depends on what a real press does to focus (the main
+menu's hold-the-button reopen is one) needs real events. Write a short probe and run it under the
+headless runner: start `openbox` in its virtual display, launch the built e2e app with
+`launchElectron`, and drive the button with X11 XTest fake events (pointer move, button down, a
+pause, button up; Python `ctypes` over `libXtst.so.6` is enough). Read the outcome with
+`popoverShown`, and finish with `assertNoElectronSurvivors`. Nothing reaches the owner's screen. The
+probe is not part of the suite because it needs `openbox` and `libXtst`.
+
 ## Guards
 
 Thirteen checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,

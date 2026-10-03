@@ -323,7 +323,7 @@ it(
         check('it opened straight to the Web3 Score page', web3Heading)
 
         // Close it, then open the key -> the main page. Past
-        // popover-view.ts's REOPEN_DEBOUNCE_MS: a click landing inside
+        // press-stamps.ts's REOPEN_DEBOUNCE_MS: a click landing inside
         // this window right after the shield's own close would read as
         // that close's echo, not fresh intent.
         await chrome.click('#web3-score-btn')
