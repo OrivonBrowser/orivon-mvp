@@ -1925,7 +1925,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A350: A split by dragging a tab, and a blank pane beside FreeTube, are not reproduced as reported **[RESEARCH]**
+### A362: A split by dragging a tab, and a blank pane beside FreeTube, are not reproduced as reported **[RESEARCH]**
 
 - **Question:** On the owner's desktop a tab dragged onto the page edge no longer splits, and a tab split in beside FreeTube leaves a blank pane. Is the cause a page captured while hidden?
 - **Why it matters:** Headless (xvfb, openbox, real X pointer events, the real FreeTube build) both gestures split and lay out. One failing state was measured: a hidden tab whose capture is started, then split in, stays laid out at its old size (1280x724 in a 632x716 pane); a bounds change at once does not cure it, a one-pixel change 250 ms later does. Raw CDP captures and `webContents.capturePage` alone did not leave it, so the mechanism is unconfirmed, and no capture of a hidden page completes under xvfb.
@@ -1933,7 +1933,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A353: A tab's icon is shared by every address on the same host **[AI-REC]**
+### A363: A tab's icon is shared by every address on the same host **[AI-REC]**
 
 - **Question:** Tab icons are kept under the host name alone, so FreeTube on 127.0.0.1:9291 and any other page on 127.0.0.1 show the same icon. Should the key include the port?
 - **Why it matters:** local apps on different ports are different sites to the person, and each shows the icon of whichever loaded last.
