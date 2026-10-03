@@ -48,7 +48,7 @@ export function createAddressDisplay (): ChromeModule {
 
   return {
     name: 'addressDisplay',
-    init: () => {
+    init: (ctx) => {
       const input = must(document.querySelector<HTMLInputElement>('#address'), '#address missing')
       // The input and the display share one box, so the display is sized by the room the input has.
       const box = h('div', { className: 'address-field' })
@@ -77,10 +77,12 @@ export function createAddressDisplay (): ChromeModule {
       })
       // Tab and the shortcuts arrive with no press: they select too.
       input.addEventListener('focus', () => { if (!pressedWhileBlurred) input.select() })
-      // Escape gives the page's address back and hands the bar to the display. A key another feature already
-      // used (closing a list under the bar) is not also a request to leave it.
+      // Escape gives the page's address back, hands the bar to the display and the keyboard to the page. A key another
+      // feature already used (closing a list under the bar), or one an input method is composing with, is not a request to leave.
       input.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && !event.defaultPrevented) input.blur()
+        if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return
+        input.blur()
+        void ctx.shell.act('pane.leave', { to: 'page' })
       })
     },
     render

@@ -9,7 +9,7 @@ const view = {
 describe('isQuestionView', () => {
   it('accepts what main sends', () => {
     expect(isQuestionView(view)).toBe(true)
-    expect(isQuestionView({ ...view, kind: 'page-prompt', input: { initial: 'x' }, checkboxLabel: 'Stop', title: 't', detail: 'd', origin: 'https://a.example', focus: 0 })).toBe(true)
+    expect(isQuestionView({ ...view, kind: 'page-prompt', input: { initial: 'x', max: 100_000 }, checkboxLabel: 'Stop', title: 't', detail: 'd', origin: 'https://a.example', focus: 0 })).toBe(true)
   })
 
   it.each([

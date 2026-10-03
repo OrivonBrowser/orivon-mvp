@@ -5,11 +5,11 @@ import type { ClearRequest } from '../clear-data.js'
 const NOTHING: ClearRequest = { history: 'none', siteData: false, cache: false, zoomLevels: false, appData: false, siteSettings: false }
 const NOW = 10_000_000
 
-function setup (): { deps: Parameters<typeof clearBrowsingData>[1], history: Record<'clear' | 'removeRange', ReturnType<typeof vi.fn>>, zoom: { clear: ReturnType<typeof vi.fn> }, siteSettings: { resetAll: ReturnType<typeof vi.fn> }, websites: { clearData: ReturnType<typeof vi.fn> }, app: { clearData: ReturnType<typeof vi.fn> } } {
+function setup (): { deps: Parameters<typeof clearBrowsingData>[1], history: Record<'clear' | 'removeRange', ReturnType<typeof vi.fn>>, zoom: { clear: ReturnType<typeof vi.fn> }, siteSettings: { resetAll: ReturnType<typeof vi.fn> }, websites: { clearData: ReturnType<typeof vi.fn>, clearStorageData: ReturnType<typeof vi.fn> }, app: { clearData: ReturnType<typeof vi.fn> } } {
   const history = { clear: vi.fn(), removeRange: vi.fn() }
   const zoom = { clear: vi.fn() }
   const siteSettings = { resetAll: vi.fn() }
-  const websites = { clearData: vi.fn(async () => {}) }
+  const websites = { clearData: vi.fn(async () => {}), clearStorageData: vi.fn(async () => {}) }
   const app = { clearData: vi.fn(async () => {}) }
   return { deps: { history, zoom, siteSettings, websites, appSessions: async () => [app, app], now: () => NOW } as never, history, zoom, siteSettings, websites, app }
 }
@@ -42,6 +42,8 @@ describe('clearing browsing data', () => {
     expect(websites.clearData).toHaveBeenCalledTimes(1)
     expect(websites.clearData.mock.calls[0]?.[0]).toEqual({ dataTypes: expect.arrayContaining(['cookies', 'localStorage', 'indexedDB']) })
     expect(websites.clearData.mock.calls[0]?.[0].dataTypes).not.toContain('cache')
+    // What sites keep through the Cache API goes with them; the HTTP cache stays its own choice.
+    expect(websites.clearStorageData).toHaveBeenCalledWith({ storages: ['cachestorage'] })
 
     await clearBrowsingData({ ...NOTHING, cache: true }, deps)
     expect(websites.clearData).toHaveBeenLastCalledWith({ dataTypes: ['cache'] })

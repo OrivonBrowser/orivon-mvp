@@ -51,7 +51,8 @@ export function createDownloadsButton (): ChromeModule {
         order: 10,
         label: 'Downloads',
         icon: downloadIcon,
-        onClick: (el) => { void ctx.shell.act('overlay.toggle', { name: 'downloads', anchor: ctx.anchorFor(el) }) }
+        onClick: (el) => { void ctx.shell.act('overlay.toggle', { name: 'downloads', anchor: ctx.anchorFor(el) }) },
+        presses: 'downloads'
       })
       const ring = ringElement()
       arc = ring.arc

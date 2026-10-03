@@ -28,7 +28,16 @@ describe('bookmarks.edit', () => {
     bookmarkEdit({ anchor, add: true, toggle: true }, ctx)
     const saved = store.findByUrl('https://a.example/')
     expect(saved).toHaveLength(1)
-    expect(toggle).toHaveBeenCalledWith('bookmark-edit', anchor, { mode: 'added', id: saved[0]?.id })
+    expect(toggle).toHaveBeenCalledWith('bookmark-edit', anchor, { mode: 'added', id: saved[0]?.id }, undefined)
+  })
+
+  it('judges the star\'s click by the press it completes, so a held click that closed the bubble leaves it closed', () => {
+    const { ctx, store, toggle } = setup()
+    store.addUrl({ url: 'https://a.example/', title: 'A' })
+    const takePress = vi.fn(() => 1234)
+    bookmarkEdit({ anchor, add: true, toggle: true }, { ...ctx, takePress })
+    expect(takePress).toHaveBeenCalledWith('bookmark-edit')
+    expect(toggle.mock.calls[0]?.[3]).toBe(1234)
   })
 
   it('opens the bubble on a saved page without saving it again or removing it, titled for editing', () => {
@@ -37,7 +46,7 @@ describe('bookmarks.edit', () => {
     bookmarkEdit({ anchor, add: true, toggle: true }, ctx)
     bookmarkEdit({ anchor }, ctx)
     expect(store.findByUrl('https://a.example/')).toHaveLength(1)
-    expect(toggle).toHaveBeenCalledWith('bookmark-edit', anchor, { mode: 'edit', id: node.id })
+    expect(toggle).toHaveBeenCalledWith('bookmark-edit', anchor, { mode: 'edit', id: node.id }, undefined)
     expect(show).toHaveBeenCalledWith('bookmark-edit', anchor, { mode: 'edit', id: node.id })
   })
 

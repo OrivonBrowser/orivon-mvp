@@ -93,8 +93,10 @@ const KB_PER_MB = 1024
 /** "182 MB", "1.4 GB", "640 KB"; "-" for a page with no process. */
 export function formatMemory (kb: number | null): string {
   if (kb === null) return '-'
-  if (kb >= KB_PER_MB * KB_PER_MB) return `${(kb / (KB_PER_MB * KB_PER_MB)).toFixed(1)} GB`
-  if (kb >= KB_PER_MB) return `${Math.round(kb / KB_PER_MB)} MB`
+  // Each unit is judged on the figure as it will be written, so just under a unit reads "1.0 GB", not "1024 MB".
+  const mb = kb / KB_PER_MB
+  if (Math.round(mb) >= KB_PER_MB) return `${(mb / KB_PER_MB).toFixed(1)} GB`
+  if (Math.round(kb) >= KB_PER_MB) return `${Math.round(mb)} MB`
   return `${Math.round(kb)} KB`
 }
 

@@ -22,6 +22,34 @@ const PNG = 'data:image/png;base64,iVBORw0KGgo='
 const GIF = 'data:image/gif;base64,R0lGODlhAQAB'
 
 describe('the history service', () => {
+  it('has what remembers pages forget a cleared span, and everything on a clear', () => {
+    const forgotten = vi.fn()
+    const store = new SqliteHistoryStore(':memory:')
+    const service = new HistoryService(store, { get: (() => true) as never, onChange: () => () => {} } as never, null, () => 1000, forgotten)
+    service.removeRange(10, 20)
+    service.clear()
+    expect(forgotten.mock.calls).toEqual([[10, 20], [-Infinity, Infinity]])
+  })
+
+  it('tells its listeners when history is turned on or off, so the History page can say so', () => {
+    const { service, set } = setup()
+    const changes: string[] = []
+    service.onChange((change) => { changes.push(change) })
+    set('history.remember', false)
+    set('history.remember', true)
+    set('appearance.theme', 'dark')
+    expect(changes).toEqual(['entries', 'entries'])
+  })
+
+  it('counts a typed address under the address its visit is kept at, and none that history does not keep', () => {
+    const { service, store } = setup()
+    const markTyped = vi.spyOn(store, 'markTyped')
+    service.markTyped('https://vitalik.eth/')
+    service.markTyped('https://example.com/')
+    service.markTyped('about:blank')
+    expect(markTyped.mock.calls).toEqual([['ipfs://vitalik.eth/'], ['https://example.com/']])
+  })
+
   describe('site icons', () => {
     it('keeps what a tab offers, and offers the store an icon again only when it changed', () => {
       const { service, store } = setup()

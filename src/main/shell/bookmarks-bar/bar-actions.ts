@@ -37,7 +37,7 @@ export const barMove: ChromeAction = (payload, { services }) => {
 }
 
 /** `{ id, anchor, from? }`: the folder's menu, closed again by a second click and switched by a click on another folder. */
-export const barFolder: ChromeAction = (payload, { window, services }) => {
+export const barFolder: ChromeAction = (payload, { window, services, takePress }) => {
   const { id, anchor, from } = record(payload)
   const box = record(anchor)
   const start = asFrom(from)
@@ -45,7 +45,7 @@ export const barFolder: ChromeAction = (payload, { window, services }) => {
   if (typeof id !== 'string' || ![box['x'], box['y'], box['width'], box['height']].every(isNumber)) return
   if (services.bookmarks.node(id)?.kind !== 'folder') return
   const rect = { x: box['x'] as number, y: box['y'] as number, width: box['width'] as number, height: box['height'] as number }
-  const what = clickOnFolder(window, id)
+  const what = clickOnFolder(window, id, Date.now(), takePress?.('bookmark-folder'))
   if (what === 'close') window.overlays.close(FOLDER_OVERLAY)
   else if (what === 'show') window.overlays.show(FOLDER_OVERLAY, rect, start === undefined ? { id, anchor: rect } : { id, anchor: rect, from: start })
 }

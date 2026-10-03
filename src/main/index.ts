@@ -172,8 +172,10 @@ function boot (runtime: Runtime): void {
     // A refusal the person should read, drawn in the window they are using.
     publishShowNotice(ctx, ({ title, message }) => { void askQuestion({}, { kind: 'notice', title, message, buttons: ['OK'], cancelId: 0 }) })
     // Before the first window, so it opens in the chosen theme with the chosen
-    // bookmarks bar rather than changing after it is on screen.
-    await Promise.all([shell.settings.load(), shell.searchEngines.load(), shell.shortcutStore.load(), shell.windowState.load(), shell.zoomStore.load(), shell.session.load()])
+    // bookmarks bar rather than changing after it is on screen, and so a page
+    // starred in the first moments is added to the bookmarks on disk, not to an
+    // empty tree the file then replaces.
+    await Promise.all([shell.settings.load(), shell.searchEngines.load(), shell.shortcutStore.load(), shell.windowState.load(), shell.zoomStore.load(), shell.session.load(), shell.bookmarks.load()])
     seedClosedStack(shell.closedTabs, shell.session.previous())
     applyThemeSetting(shell.settings, nativeTheme)
     // The host starts only when a .eth address is needed, by which time the settings have been read: the person's choice reaches it.

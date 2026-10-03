@@ -128,7 +128,7 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     }),
     downloads: createDownloadService(userDataPath, runtime.isPrivate, settings),
     extensionsLoaded: createLoadedExtensions(session.defaultSession),
-    history: new HistoryService(openedHistory.store, settings, openedHistory.problem),
+    history: new HistoryService(openedHistory.store, settings, openedHistory.problem, Date.now, (from, to) => { closedTabs.forgetBetween(from, to) }),
     internalPages,
     isPrivate: runtime.isPrivate,
     kiosk,

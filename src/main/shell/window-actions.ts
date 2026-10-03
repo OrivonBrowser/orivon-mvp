@@ -118,7 +118,7 @@ export function shellActions (parts: WindowParts): ShellActions {
       panels.siteInfo.toggle(anchor, origin, page, pressedAt)
     },
     runCommand: (id) => { services.commands.run(id, entry) },
-    act: (name, payload) => runChromeAction(name, payload, { window: entry, services }),
+    act: (name, payload) => runChromeAction(name, payload, { window: entry, services, takePress: (button) => presses.take(button) }),
     // The anchor comes from the chrome page: only a rectangle of numbers places a view.
     openMenu: (anchor) => {
       const pressedAt = presses.take('menu')

@@ -1,6 +1,5 @@
 // Wires the downloads peek to the process: a started download asks the window's chrome to open it, since
 // only the chrome knows where its button is.
-import { OVERLAYS } from '../overlays/overlays.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import { sendChromeEvent } from '../shell/shell-events.js'
 import type { ShellWindow } from '../shell/window-registry.js'
@@ -15,7 +14,7 @@ export function installDownloadsPeek (services: ShellServices): void {
     showBubble: () => settings.get('downloads.showBubble'),
     buttonAllowed: () => settings.get('toolbar.downloads') !== 'never',
     windowOf: (info) => info.contents === undefined ? undefined : services.windows.findTab(info.contents)?.window,
-    popupOpen: (window) => OVERLAYS.some((def) => def.layer === 'popup' && window.overlays.isOpen(def.name)),
+    popupOpen: (window) => window.overlays.popupOpen(),
     peekOpen: (window) => window.overlays.isOpen(DOWNLOADS_PEEK_OVERLAY),
     requestPeek: (window) => { sendChromeEvent(window, DOWNLOADS_BUTTON_MODULE, { peek: true }) },
     closePeek: (window) => { window.overlays.close(DOWNLOADS_PEEK_OVERLAY) },

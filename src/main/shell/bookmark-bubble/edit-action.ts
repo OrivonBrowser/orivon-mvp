@@ -25,6 +25,7 @@ export const bookmarkEdit: ChromeAction = (payload, ctx) => {
     id,
     mode: mode as (typeof MODES)[number] | undefined,
     add: add === true,
-    toggle: toggle === true
+    toggle: toggle === true,
+    pressedAt: toggle === true ? ctx.takePress?.('bookmark-edit') : undefined
   })
 }

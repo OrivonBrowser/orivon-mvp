@@ -152,7 +152,10 @@ export function createAskQuestion (deps: AskQuestionDeps): AskQuestion {
           closed: () => { settle(cancel) }
         })
       }
-      if (kiosk || !needsToolbar(spec)) { show(); return }
+      // A tab that is not in front waits in its slot until it is, and the toolbar is checked for it then: waiting for the
+      // toolbar here would refuse its question while another tab holds the screen.
+      const inFront = place.window.tabs.getState().activeTabId === place.tabId
+      if (kiosk || !needsToolbar(spec) || !inFront) { show(); return }
       void toolbarInView(place.window, place.tabId, () => settled || placeGone(place)).then((ready) => {
         if (ready) show()
         else settle(cancel)

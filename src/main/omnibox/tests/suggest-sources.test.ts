@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Bookmark } from '../../browsing/bookmarks.js'
 import type { HistorySuggestion } from '../../history/history-store.js'
 import { engineSuggestions } from '../suggest-fetch.js'
+import { rank } from '../suggest.js'
 import { LATE_SOURCES, SUGGEST_SOURCES } from '../suggest-sources.js'
 import type { SuggestContext, SuggestTab } from '../suggest-sources.js'
 
@@ -62,8 +63,16 @@ describe('the suggestion sources', () => {
   it('shows a tab by the address the person sees, and a page with no title by its address', () => {
     const [row] = all('bafy', context({ tabs: [tab('t1', 'https://ipfs.orivon/bafy/', 'bafy page', { displayUrl: 'ipfs://bafy/' })] }))
     expect(row?.address).toBe('bafy')
+    expect(row?.url).toBe('ipfs://bafy/')
+    expect(row?.addressMatch).toEqual([[0, 4]])
     const [untitled] = all('exa', context({ history: [page('https://exa.com/', '')] }))
     expect(untitled?.title).toBe('exa.com')
+  })
+
+  it('folds a tab and the history row of the same protocol page into one row, the tab', () => {
+    const ctx = context({ tabs: [tab('t1', 'https://ipfs.orivon/bafy/', 'bafy page', { displayUrl: 'ipfs://bafy/' })], history: [page('ipfs://bafy/', 'bafy page')] })
+    const ranked = rank({ text: 'bafy', verbatim: null, autocomplete: false, rows: all('bafy', ctx) })
+    expect(ranked.rows.filter((row) => row.address === 'bafy').map((row) => row.kind)).toEqual(['tab'])
   })
 
   it('marks what matched, in the title and in the address', () => {

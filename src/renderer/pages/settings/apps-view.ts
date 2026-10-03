@@ -15,7 +15,8 @@ export function sizeWords (bytes: number): string {
   const units = ['KB', 'MB', 'GB']
   let value = bytes / KIB
   let unit = 0
-  while (value >= KIB && unit < units.length - 1) {
+  // Judged on the figure as it will be written, so a size just under a unit reads "1.0 MB", not "1024 KB".
+  while (unit < units.length - 1 && Number(value.toFixed(value < 10 ? 1 : 0)) >= KIB) {
     value /= KIB
     unit += 1
   }

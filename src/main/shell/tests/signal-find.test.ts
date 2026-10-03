@@ -11,8 +11,8 @@ vi.mock('../../find/find-window.js', () => {
 
 const { bars } = await import('../../find/find-window.js') as unknown as { bars: Map<unknown, { result: ReturnType<typeof vi.fn>, loading: ReturnType<typeof vi.fn> }> }
 
-function rig (options: { shown?: boolean, barOpen?: boolean, active?: boolean } = {}): { wc: EventEmitter, owner: ShellWindow, bar: { result: ReturnType<typeof vi.fn>, loading: ReturnType<typeof vi.fn> }, close: ReturnType<typeof vi.fn> } {
-  const wc = new EventEmitter()
+function rig (options: { shown?: boolean, barOpen?: boolean, active?: boolean } = {}): { wc: EventEmitter & { mainFrame: boolean }, owner: ShellWindow, bar: { result: ReturnType<typeof vi.fn>, loading: ReturnType<typeof vi.fn> }, close: ReturnType<typeof vi.fn> } {
+  const wc = Object.assign(new EventEmitter(), { mainFrame: true, isLoadingMainFrame (): boolean { return this.mainFrame } })
   const close = vi.fn()
   const owner = { overlays: { isOpen: () => options.barOpen ?? true, close }, tabs: { activeWebContents: () => options.active === false ? {} : wc } } as unknown as ShellWindow
   const bar = { result: vi.fn(), loading: vi.fn() }
@@ -39,6 +39,16 @@ describe('the find signal', () => {
     wc.emit('did-stop-loading')
 
     expect(bar.loading.mock.calls).toEqual([[wc, 'start'], [wc, 'stop']])
+  })
+
+  it('leaves the search alone while only a frame of the page loads', () => {
+    const { wc, bar } = rig()
+    wc.mainFrame = false
+
+    wc.emit('did-start-loading')
+    wc.emit('did-stop-loading')
+
+    expect(bar.loading).not.toHaveBeenCalled()
   })
 
   it('ignores a view that is swapped out of its tab', () => {

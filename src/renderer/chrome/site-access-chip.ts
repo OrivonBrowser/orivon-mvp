@@ -25,7 +25,8 @@ export function createSiteAccessChip (): ChromeModule {
         order: 10,
         label: 'Permissions on this page',
         icon: () => SITE_KIND_ICONS.camera(),
-        onClick: (el) => { void ctx.shell.act('overlay.toggle', { name: 'site-prompt', anchor: ctx.anchorFor(el), payload: { mode: 'review' } }) }
+        onClick: (el) => { void ctx.shell.act('overlay.toggle', { name: 'site-prompt', anchor: ctx.anchorFor(el), payload: { mode: 'review' } }) },
+        presses: 'site-prompt'
       })
       chip.hidden = true
       chip.setAttribute('aria-haspopup', 'dialog')

@@ -117,12 +117,16 @@ export class SqliteHistoryStore implements HistoryStore {
         trimDelete: this.db.prepare('DELETE FROM pages WHERE id IN (SELECT id FROM pages ORDER BY last_visit ASC, id ASC LIMIT ?)'),
         remove: this.db.prepare('DELETE FROM pages WHERE id = ?'),
         removeRangeDeleteVisits: this.db.prepare('DELETE FROM visits WHERE at >= ? AND at <= ?'),
+        // Run before the visits go, on the pages with a visit in [from, to] only: a page's count loses the visits
+        // removed and nothing else. An imported page carries its whole count on one visit row, so a recount of its
+        // rows would take every visit the other browser counted away.
         removeRangeUpdatePages: this.db.prepare(`
           UPDATE pages SET
-            visit_count = (SELECT COUNT(*) FROM visits WHERE page_id = pages.id),
-            last_visit = COALESCE((SELECT MAX(at) FROM visits WHERE page_id = pages.id), 0)
+            visit_count = MAX(0, visit_count - (SELECT COUNT(*) FROM visits WHERE page_id = pages.id AND at >= ? AND at <= ?)),
+            last_visit = COALESCE((SELECT MAX(at) FROM visits WHERE page_id = pages.id AND (at < ? OR at > ?)), 0)
+          WHERE id IN (SELECT DISTINCT page_id FROM visits WHERE at >= ? AND at <= ?)
         `),
-        removeRangeDeleteEmptyPages: this.db.prepare('DELETE FROM pages WHERE visit_count = 0'),
+        removeRangeDeleteEmptyPages: this.db.prepare('DELETE FROM pages WHERE last_visit = 0 AND NOT EXISTS (SELECT 1 FROM visits WHERE page_id = pages.id)'),
         // A page ends up with none of its visits left once [from, to] is removed exactly when it has a
         // visit inside that range and none outside it. Starting from the pages with a visit in range (the
         // visits_at index makes that narrow, however many pages exist in total) rather than scanning every
@@ -340,8 +344,8 @@ export class SqliteHistoryStore implements HistoryStore {
     const toDelete = (this.statements.removeRangeCountToDelete.get(from, to, from, to) as { n: number }).n
     const total = (this.statements.count.get() as { n: number }).n
     this.deleteRows(toDelete, total - toDelete, () => {
+      this.statements.removeRangeUpdatePages.run(from, to, from, to, from, to)
       this.statements.removeRangeDeleteVisits.run(from, to)
-      this.statements.removeRangeUpdatePages.run()
       this.statements.removeRangeDeleteEmptyPages.run()
       this.pruneIcons()
     })

@@ -5,7 +5,7 @@ import type { OverlayViewSpec } from '../overlay-view.js'
 import { CLOSE_LIKE_POPUP } from '../overlay-types.js'
 import type { OverlayDef } from '../overlay-types.js'
 
-const { views } = vi.hoisted(() => ({ views: [] as Array<{ onBlur: () => void }> }))
+const { views, placed } = vi.hoisted(() => ({ views: [] as Array<{ onBlur: () => void }>, placed: [] as Array<{ x: number, width: number }> }))
 
 vi.mock('../overlay-view.js', () => ({
   focusedContents: () => undefined,
@@ -16,7 +16,7 @@ vi.mock('../overlay-view.js', () => ({
       attach: () => {},
       detach: () => {},
       hide: () => {},
-      setBounds: () => {},
+      setBounds: (rect: { x: number, width: number }) => { placed.push(rect) },
       focusWhenReady: () => {},
       send: () => {},
       refreshBackground: () => {},
@@ -93,4 +93,65 @@ describe('createOverlayHost: a toggle that names its press', () => {
     host.toggle('a', ANCHOR)
     expect(host.isOpen('a')).toBe(true)
   })
+
+  it('leaves an overlay open on a toggle while its handler holds it, and closes it once it no longer does', () => {
+    let holding = true
+    const held = { ...DEF, name: 'held', attach: () => ({ request: () => undefined, holdsOnToggle: () => holding }) } as OverlayDef
+    const win = { getContentBounds: () => ({ x: 0, y: 0, width: 1200, height: 800 }), isFocused: () => true }
+    const host = createOverlayHost({
+      win: win as never,
+      contentView: {} as never,
+      dirname: '/app',
+      defs: [held],
+      context: () => ({ window: { chrome: { webContents: { id: 5 } } }, services: { windows: { all: () => [{ window: win }] } } }) as never,
+      area: () => ({ x: 0, y: 76, width: 1200, height: 724 }),
+      activeContents: () => undefined
+    })
+    host.show('held', ANCHOR)
+    host.toggle('held', ANCHOR)
+    expect(host.isOpen('held')).toBe(true)
+    holding = false
+    host.toggle('held', ANCHOR)
+    expect(host.isOpen('held')).toBe(false)
+  })
+
+  it('counts an adopted panel that is open as a popup, as well as its own popup overlays', () => {
+    const host = setup()
+    let panelOpen = false
+    host.adopt({ close: () => { panelOpen = false }, isOpen: () => panelOpen })
+    expect(host.popupOpen()).toBe(false)
+    panelOpen = true
+    expect(host.popupOpen()).toBe(true)
+    panelOpen = false
+    host.show('a', ANCHOR)
+    expect(host.popupOpen()).toBe(true)
+  })
+
+  it('places an open overlay under its anchor again when the anchor moves, and ignores a closed one', () => {
+    const host = setup()
+    host.reanchor('a', { x: 10, y: 10, width: 10, height: 10 })
+    expect(host.isOpen('a')).toBe(false)
+    host.show('a', ANCHOR)
+    expect(() => { host.reanchor('a', { x: 100, y: 40, width: 30, height: 30 }) }).not.toThrow()
+    expect(host.isOpen('a')).toBe(true)
+  })
+
+  it('places a sheet in the pane of the tab in front when the area is split', () => {
+    const sheet = { ...DEF, name: 'sheet', placement: { kind: 'area', at: 'center', width: 400 }, layer: 'bar', closeOn: { blur: false, tabSwitch: true, navigation: false, layout: false } } as OverlayDef
+    const win = { getContentBounds: () => ({ x: 0, y: 0, width: 1200, height: 800 }), isFocused: () => true }
+    const host = createOverlayHost({
+      win: win as never,
+      contentView: { addChildView: () => {} } as never,
+      dirname: '/app',
+      defs: [sheet],
+      context: () => ({ window: { chrome: { webContents: { id: 5 } } }, services: { windows: { all: () => [{ window: win }] } } }) as never,
+      area: () => ({ x: 0, y: 76, width: 1200, height: 724 }),
+      paneArea: () => ({ x: 600, y: 76, width: 600, height: 724 }),
+      activeContents: () => undefined
+    })
+    host.show('sheet')
+    expect(host.isOpen('sheet')).toBe(true)
+    expect(placed.at(-1)).toMatchObject({ x: 700, width: 400 })
+  })
 })
+

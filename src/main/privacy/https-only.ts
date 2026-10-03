@@ -3,8 +3,9 @@
 // there or is already answered some other way. Pure: no `electron` import.
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 
-/** Name endings no public certificate can cover: a network's own names. */
-const LOCAL_SUFFIXES = ['.local', '.localdomain', '.lan', '.internal', '.home.arpa']
+/** Name endings no public certificate can cover: a network's own names, the reserved ones and those routers and
+ * companies use that were never delegated (`.home`, `.corp`). */
+const LOCAL_SUFFIXES = ['.local', '.localdomain', '.lan', '.internal', '.home.arpa', '.home', '.corp', '.intranet', '.private']
 
 function ipv4Octets (host: string): number[] | null {
   const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)

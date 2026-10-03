@@ -79,9 +79,10 @@ const tabs: SuggestSource = (text, ctx) => {
     if (tab.current || tab.blank) continue
     const tier = matchTier(text, tab.title, stripAddress(tab.displayUrl))
     if (tier === 0) continue
+    // The address the tab shows, as history keeps it: the row then folds into that page's history row and fills the
+    // bar with `ipfs://...`, not the https URL such a page is served from. Switching goes by the tab's id.
     rows.push({
-      ...rowFor('tab', text, { url: tab.url, title: tab.title, favicon: tab.favicon }, tier + TAB_BONUS),
-      address: stripAddress(tab.displayUrl),
+      ...rowFor('tab', text, { url: tab.displayUrl, title: tab.title, favicon: tab.favicon }, tier + TAB_BONUS),
       tabId: tab.id,
       meta: TAB_META
     })

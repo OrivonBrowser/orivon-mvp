@@ -44,7 +44,7 @@ export function createNetHandlers (deps: NetHandlerDeps): NetHandlers {
     const target = upgradeTarget(details.url, (host) => deps.exemptions.has(host) || deps.isDevHost(host))
     if (target === null) return current
     const contentsId = details.webContentsId
-    if (contentsId !== undefined && deps.tracker.noteUpgrade(contentsId, details.url, target) === 'loop') {
+    if (contentsId !== undefined && deps.tracker.noteUpgrade(contentsId, details.url, target, details.id) === 'loop') {
       deps.loopDetected(details.webContents, details.url)
       return { cancel: true }
     }

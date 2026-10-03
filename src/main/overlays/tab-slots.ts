@@ -50,6 +50,8 @@ export interface TabSlots {
   tabActivated: (window: ShellWindow, tabId: string) => void
   /** The tab is gone: every ask of it ends `tab-closed`. */
   tabClosed: (window: ShellWindow, tabId: string) => void
+  /** What an ask hangs from has moved: each one shown in the window is placed under its anchor as it is now. */
+  anchorsMoved: (window: ShellWindow) => void
 }
 
 /** `defer` runs a function after the current synchronous turn; tests pass their own. */
@@ -165,6 +167,15 @@ export function createTabSlots (defer: (run: () => void) => void = queueMicrotas
       defer(() => { present(window, tabId) })
     },
 
+    anchorsMoved (window) {
+      for (const tab of tabsOf(window).values()) {
+        const ask = tab.shown?.ask
+        const anchor = ask?.anchor?.()
+        if (ask === undefined || anchor === undefined) continue
+        try { window.overlays.reanchor(ask.overlay, anchor) } catch (error) { console.error('[tab-slots] placing an ask again failed:', error) }
+      }
+    },
+
     tabClosed (window, tabId) {
       const tabs = tabsOf(window)
       const tab = tabs.get(tabId)
@@ -199,6 +210,9 @@ export const hasAsk = slots.hasAsk
 
 /** A def's `closed` hook forwards here so the slot knows its surface is gone. */
 export const slotClosed = slots.slotClosed
+
+/** The chrome reported that the address pill moved. */
+export const slotAnchorsMoved = slots.anchorsMoved
 
 /** What the shell's tab events call; a feature never does. */
 export const tabSlotEvents: Pick<TabSlots, 'tabActivated' | 'tabClosed'> = slots

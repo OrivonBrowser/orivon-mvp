@@ -80,7 +80,13 @@ export function createQuestionPanel (name: string, now: () => number = Date.now)
     // A key typed at the page when the question appears, or Tab, Tab, Enter at it, must not reach a guarded button: the keyboard has to be quiet for the guard's length too.
     const keys = createKeyQuiet(now)
     return {
-      key: keys.onKey,
+      key: (key) => {
+        // In a question with a text box the keys typed into it are the answer being written: only Tab, which moves
+        // the keyboard onto a button, or a held key restarts the wait. The guard from the drawing still stands.
+        const answeringInText = shownId !== null && heldQuestion(shownId)?.spec.input !== undefined
+        if (answeringInText && key.key !== 'Tab' && !key.isAutoRepeat) return false
+        return keys.onKey(key)
+      },
 
       show: (payload): QuestionView | undefined => {
         const entry = heldQuestion(idOf(payload))

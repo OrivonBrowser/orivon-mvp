@@ -256,6 +256,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **Site rules and saves act on the right thing**: Save image or link as is never held as a page-started download, a
+  CDN stylesheet's images follow the page's Images setting, and clearing site data also clears what sites cached.
+- **A page's prompt() gets what was typed**: an `undefined` default is empty, a long answer or default comes back whole,
+  and an app's child process start fails with an error instead of waiting for ever when its host is refused.
+- **Popups and questions behave**: Enter right after typing in a page's prompt() answers it, F7 works again after its
+  question was left in another tab, prompts follow the address bar on resize, and text boxes in popups have Cut/Copy/Paste.
+- **Data the browser keeps stays kept**: the identity seed is saved on a fresh profile, clearing history clears Recently closed,
+  a failed save is retried, re-importing adds no duplicate bookmarks, and an early star is not lost at start-up.
+- **The browser's own pages keep up**: removing the default search engine gives the built-in default back, Clear data
+  empties the site-data list, History and Import notice history turned on, and Profiles and Extensions keep the keyboard.
+- **The keyboard goes to the page after Enter or Escape in the address bar**, a tab switch with the bar focused shows that
+  tab's address, and "Leave" in a page's leave question runs Ctrl+Shift+R and the page menu's Back and Forward again.
+- **The address bar opens what is an address and searches what is not**: `münchen.de`, `nas:5000`, `LOCALHOST:3000` and
+  `[::1]:8080/api` open; `python3.12` and `3.14` are searched (no blank page, no IP address); `git ` with a space completes nothing.
+- **A slow click on the downloads, tab search, extensions or address-bar chip buttons closes their popup**, as on the
+  main menu, instead of closing it on the press and opening it again on release.
+- **A page that fails to load says so**: a sheet over the tab names why (no such server, refused, offline, blocked),
+  with the address, the error's name and Try again, instead of an empty white page.
 - **A tab that keeps changing its title no longer keeps the browser busy**: the session file is written off the main thread
   and a change of titles alone at most every 30 s, history keeps five titles per page, and the tab strip redraws only what changed.
 - **The Ethereum light client runs only while `.eth` is in use**: it starts when a `.eth` address is typed or opened and

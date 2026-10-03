@@ -193,7 +193,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // Read by an overlay's handler when it is first used, which is after `entry` exists.
   const overlays = createOverlayHost({
     win, contentView: win.contentView, dirname: import.meta.dirname, defs: OVERLAYS,
-    context: () => context, area: tabBounds, activeContents: () => tabs.activeWebContents()
+    context: () => context, area: tabBounds, paneArea: () => tabs.activePaneBounds(), activeContents: () => tabs.activeWebContents()
   })
   wireSidePanel(win, { adopt: overlays.adopt, area: tabBounds })
   const entry: ShellWindow = { window: win, chrome, tabs, overlays, shortcutsSuspended: () => fullscreen.tabId !== null, relayout: layoutAll }

@@ -46,6 +46,12 @@ export interface RequestPageFacts {
   readonly frame?: { readonly parent?: unknown, readonly top?: { readonly url: string } | null } | null
   readonly referrer?: string
   readonly webContents?: { readonly getURL: () => string } | undefined
+  /** Where the tab's top frame is going, or last went: its latest main-frame navigation, when one is known. */
+  readonly navigating?: string | undefined
+}
+
+const originOf = (url: string | undefined): string | undefined => {
+  try { return url === undefined ? undefined : new URL(url).origin } catch { return undefined }
 }
 
 /**
@@ -54,11 +60,14 @@ export interface RequestPageFacts {
  * while a navigation is under way. Every read can throw (a frame that navigated or died): that answer is "unknown".
  *
  * A request the top document sent is the exception: its referrer names that document, while the frame's
- * address can still be the page it is leaving for the first requests of a navigation.
+ * address can still be the page it is leaving for the first requests of a navigation. A request a stylesheet sent
+ * carries the stylesheet's address instead, so the referrer is taken first only when it is the page the tab is
+ * navigating to.
  */
 export function requestPage (details: RequestPageFacts): string | undefined {
+  const documentSent = (): boolean => details.navigating === undefined || originOf(details.referrer) === originOf(details.navigating)
   const reads: Array<() => string | undefined> = [
-    () => details.frame?.parent === null ? details.referrer : undefined,
+    () => details.frame?.parent === null && documentSent() ? details.referrer : undefined,
     () => details.frame?.top?.url,
     () => details.referrer,
     () => details.webContents?.getURL()

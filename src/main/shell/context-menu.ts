@@ -5,6 +5,8 @@ import { clipboard, Menu } from 'electron'
 import type { BaseWindow, ContextMenuParams, MenuItemConstructorOptions, WebContents } from 'electron'
 import type { CommandId } from '../shortcuts/commands.js'
 import { engineLabelFor } from './context-menu-text.js'
+import { startNavigation } from './leave-page-prompt.js'
+import { downloadAsked } from '../downloads/asked-downloads.js'
 import type { ShellServices } from './shell-services.js'
 import {
   DEFAULT_CONTEXT, editableGroup, imageGroup, linkGroup, mediaGroup, pageGroup, selectionGroup, spellingGroup
@@ -105,13 +107,14 @@ export function showContextMenu (wc: WebContents, params: ContextMenuParams, hos
     context.fullAddresses = host.fullAddresses.on()
   }
   if (host.page !== undefined) {
-    actions.saveUrl = (url) => { onTab(() => { wc.downloadURL(url) })() }
+    actions.saveUrl = (url) => { onTab(() => { downloadAsked(wc, url) })() }
     actions.navigate = {
       canGoBack: wc.navigationHistory.canGoBack(),
       canGoForward: wc.navigationHistory.canGoForward(),
-      back: onTab(() => { wc.navigationHistory.goBack() }),
-      forward: onTab(() => { wc.navigationHistory.goForward() }),
-      reload: onTab(() => { if (host.page?.reload !== undefined) host.page.reload(); else wc.reload() })
+      // Started as the toolbar's buttons start them, so "Leave" in the page's leave question runs them again.
+      back: onTab(() => { startNavigation(wc, () => { wc.navigationHistory.goBack() }) }),
+      forward: onTab(() => { startNavigation(wc, () => { wc.navigationHistory.goForward() }) }),
+      reload: onTab(() => { if (host.page?.reload !== undefined) host.page.reload(); else startNavigation(wc, () => { wc.reload() }) })
     }
     actions.replaceMisspelling = (word) => { onTab(() => { wc.replaceMisspelling(word) })() }
     actions.addToDictionary = (word) => { onTab(() => { wc.session.addWordToSpellCheckerDictionary(word) })() }

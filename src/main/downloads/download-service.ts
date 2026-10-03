@@ -4,6 +4,7 @@
 // goes through the ids kept here, so a page never names a path.
 import { basename, dirname, join } from 'node:path'
 import type { DownloadItem, WebContents } from 'electron'
+import { wasAsked } from './asked-downloads.js'
 import { isDangerousFile } from './dangerous-file.js'
 import { holdPath, isHoldPath, keepPath, released, restoreEntries, shouldHold } from './danger-hold.js'
 import { MAX_ADDRESS_LENGTH, boundedText, isActive, isSettled, safeFileName, storedAddress, summarise, uniquePath } from './download-model.js'
@@ -120,7 +121,9 @@ export class DownloadService {
     const referrer = storedAddress(pageAddress(contents))
     const suggested = safeFileName(item.getFilename())
     const mime = boundedText(item.getMimeType())
-    if ((contentsId !== undefined && this.runningIn(contentsId) >= this.maxRunning) || this.tooManyAutomatic(contentsId ?? NO_TAB, item.hasUserGesture(), url)) {
+    // A download the person started from a menu counts as their gesture: Electron gives it none.
+    const gesture = item.hasUserGesture() || wasAsked(contents, item.getURLChain()[0] ?? item.getURL())
+    if ((contentsId !== undefined && this.runningIn(contentsId) >= this.maxRunning) || this.tooManyAutomatic(contentsId ?? NO_TAB, gesture, url)) {
       this.refuse(event, { url, referrer, fileName: suggested, mime, contentsId: contentsId ?? NO_TAB })
       return
     }
@@ -147,7 +150,7 @@ export class DownloadService {
     else this.unlisted.set(entry.id, entry)
     item.on('updated', (_event, state) => { this.updated(entry.id, state) })
     item.once('done', (_event, state) => { this.done(entry.id, state) })
-    const info: StartInfo = { id: entry.id, item, contents, userGesture: item.hasUserGesture() }
+    const info: StartInfo = { id: entry.id, item, contents, userGesture: gesture }
     for (const listener of [...this.startListeners]) {
       try { listener(info) } catch (error) { console.error('[orivon] a download listener failed:', error) }
     }
