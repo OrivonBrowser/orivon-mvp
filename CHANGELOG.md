@@ -255,6 +255,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **uBlock Origin no longer grows its storage until the browser takes gigabytes of memory**: an extension's
+  `chrome.storage.managed` is now an empty, read-only store, as in Chrome, instead of a second name for its local storage.
 - **A page with no icon of its own shows the globe again**, as in Chrome, instead of an icon the tab or history remembered
   for its site; a remembered icon still comes back on a return after a blank or failed page.
 - **A port bundled against a pnpm-installed checkout gets a working `crypto`**: the shim bundler now finds its own

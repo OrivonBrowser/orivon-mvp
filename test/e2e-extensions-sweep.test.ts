@@ -186,3 +186,33 @@ it('keeps chrome.devtools usable in a devtools_page, so panels.create calls back
     }
   })
 }, TEST_TIMEOUT_MS)
+
+it('keeps chrome.storage.managed empty and read-only in a real service worker, apart from local', async () => {
+  const fixtureUrl = await startFixtureServer()
+
+  await runPhase('extensions managed storage', async (check) => {
+    let app: Awaited<ReturnType<typeof launchElectron>> | undefined
+    let extensionId = ''
+    try {
+      app = await launchWithSweep((id) => { extensionId = id })
+      await navigateToFixture(app, fixtureUrl, 'sweep-fixture')
+      const pageWc = await openExtensionPage(app, extensionId, 'page.html')
+
+      const stored = await rpc(app, pageWc, 'chrome.storage.local.set', [{ managedProbe: 'local only' }])
+      check('chrome.storage.local.set resolves', stored.ok, JSON.stringify(stored))
+      const managed = await rpc(app, pageWc, 'chrome.storage.managed.get', [])
+      check('chrome.storage.managed.get answers {} while local holds an item', managed.ok && JSON.stringify(managed.result) === '{}', JSON.stringify(managed))
+      const written = await rpc(app, pageWc, 'chrome.storage.managed.set', [{ a: 1 }])
+      check('chrome.storage.managed.set is refused as read-only', !written.ok && /read-only/.test(String(written.error)), JSON.stringify(written))
+      // The callback form, in the extension page itself: the refusal arrives as chrome.runtime.lastError, which is gone again afterwards.
+      const callbackSaw = await app.evaluate(async ({ webContents }, id: number) => await webContents.fromId(id)?.executeJavaScript(
+        'new Promise((resolve) => chrome.storage.managed.set({ a: 1 }, () => resolve(chrome.runtime.lastError?.message ?? "none")))'
+      ), pageWc)
+      check('a callback-style managed write sees the read-only lastError', callbackSaw === 'This is a read-only store.', String(callbackSaw))
+      const cleared = await app.evaluate(async ({ webContents }, id: number) => await webContents.fromId(id)?.executeJavaScript('chrome.runtime.lastError === undefined'), pageWc)
+      check('chrome.runtime.lastError is gone after the callback', cleared === true, String(cleared))
+    } finally {
+      if (app !== undefined) await closeElectronApp(app)
+    }
+  })
+}, TEST_TIMEOUT_MS)
