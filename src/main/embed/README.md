@@ -23,7 +23,7 @@ types, `policy/embed-origin.ts`'s document gate, `policy/address.ts`'s address c
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts) (which hostnames route to the
 verifier) and [`../verifier/partition.ts`](../verifier/partition.ts) (the same partition-stamp
 rule the default session applies, reused rather than copied -- it imports nothing itself, so
-this stays clear of `electron` and `src/loader/`); the top-level `channels.ts` and `registry.ts`.
+this stays clear of `electron` and `src/loader/`) and [`../verifier/verifier-access.ts`](../verifier/verifier-access.ts) (a guest's document request to a host the verifier serves waits for the verifier host, which sleeps when unused); the top-level `channels.ts` and `registry.ts`.
 
 **What it must never import.** [`../../renderer/`](../../renderer/) code (the repo-wide rule),
 and nothing under [`../../loader/`](../../loader/): a shown page is another site's document,

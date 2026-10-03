@@ -7,7 +7,7 @@ const ENDPOINTS = { executionRpcs: ['https://a.rpc', 'https://b.rpc'], consensus
 const ROOT = '0x' + 'a'.repeat(64)
 
 function facts (overrides: Partial<VerifierFacts>): VerifierFacts {
-  return { lightClient: { state: 'starting' }, checkpoint: { ok: true, checkpoint: { root: ROOT, timestamp: 0 }, source: 'this-install', ageSeconds: 3 * 3600 }, hostDown: undefined, switchedOff: false, endpoints: ENDPOINTS, ...overrides }
+  return { lightClient: { state: 'starting' }, checkpoint: { ok: true, checkpoint: { root: ROOT, timestamp: 0 }, source: 'this-install', ageSeconds: 3 * 3600 }, hostDown: undefined, hostAsleep: false, switchedOff: false, endpoints: ENDPOINTS, ...overrides }
 }
 
 describe('lightClientView', () => {
@@ -30,6 +30,19 @@ describe('lightClientView', () => {
 
   it('says it is switched off, whatever the last state reported', () => {
     expect(lightClientView(facts({ switchedOff: true, lightClient: { state: 'synced', block: 1, at: NOW } }), NOW)).toMatchObject({ state: 'off' })
+  })
+
+  it('says it is on and waiting, not stopped or failed, while the host sleeps', () => {
+    const view = lightClientView(facts({ hostAsleep: true, lightClient: { state: 'off' } }), NOW)
+    expect(view.state).toBe('waiting')
+    expect(view.summary).toBe('On, and waiting. It starts when a .eth address is opened, and stops again after ten minutes without one.')
+    expect(view.summary).not.toMatch(/Not running|not running|Failed/)
+  })
+
+  it('still says switched off, a real failure, or a checkpoint too old to start from, while the host sleeps', () => {
+    expect(lightClientView(facts({ hostAsleep: true, switchedOff: true }), NOW).summary).toMatch(/^Switched off/)
+    expect(lightClientView(facts({ hostAsleep: true, hostDown: 'the verifier host exited with code 1' }), NOW).state).toBe('down')
+    expect(lightClientView(facts({ hostAsleep: true, checkpoint: { ok: false, problem: 'too-old', source: 'release', ageSeconds: 20 * 86_400 } }), NOW).state).toBe('failed')
   })
 
   it('says the verifier is down before anything else, switched off or not', () => {

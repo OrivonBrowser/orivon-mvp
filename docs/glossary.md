@@ -151,7 +151,7 @@ hash against their CIDs. It is trusted for availability only.
 unproven hop: ordinary DNS can be forged on the path.
 
 **Light client**: a client that verifies Ethereum state from block headers and proofs rather than
-trusting an RPC's answer. Here, Helios, started at launch (`ADR-0031`).
+trusting an RPC's answer. Here, Helios, started when a `.eth` address is first needed and stopped after ten idle minutes (`ADR-0031`).
 
 **Checkpoint**: the recent finalized beacon block root the light client starts from and trusts.
 Shipped with each release, replaced by the newest one verified here, refused past 14 days.

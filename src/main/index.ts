@@ -176,8 +176,8 @@ function boot (runtime: Runtime): void {
     await Promise.all([shell.settings.load(), shell.searchEngines.load(), shell.shortcutStore.load(), shell.windowState.load(), shell.zoomStore.load(), shell.session.load()])
     seedClosedStack(shell.closedTabs, shell.session.previous())
     applyThemeSetting(shell.settings, nativeTheme)
-    // The light client starts after the first page loads, by which time the settings have been read: the person's choice reaches it.
-    configureVerifier({ lightClientEnabled: () => shell.settings.get('web3.lightClient') })
+    // The host starts only when a .eth address is needed, by which time the settings have been read: the person's choice reaches it.
+    configureVerifier({ lightClientEnabled: () => shell.settings.get('web3.lightClient'), windows: () => shell.windows.all() })
     shell.history.prune()
     startInternalPages(shell, ctx)
     // Another profile's own process can rename, add, remove or start one --
