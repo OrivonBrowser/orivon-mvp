@@ -49,6 +49,7 @@ export const TOAST_TEXT = {
   notReadable: { text: 'Reader view is not available for this page.', tone: 'info' },
   linkCopied: { text: 'Link copied', tone: 'ok' },
   linkCopyFailed: { text: 'Could not copy the link', tone: 'error' },
+  mailFailed: { text: 'Could not open your mail program', tone: 'error' },
   noAddress: { text: 'This page has no address to share', tone: 'info' }
 } as const satisfies Record<string, ToastText>
 

@@ -256,6 +256,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **Restart Orivon no longer reopens the page Orivon was started with**, and Email link says so when no mail program
+  opens.
 - **Looking for updates works once a day as it says**: a check made offline is tried again at the next start, the
   setting applies when switched on, and a browser left open checks again the next day.
 - **A private session no longer renews the light client's checkpoint on its own**, so it reaches no Ethereum server
