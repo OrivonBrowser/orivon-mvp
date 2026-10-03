@@ -93,5 +93,10 @@
     "vite": "~7.3.6",
     "vitest": "^4.1.11",
     "ws": "^8.22.0"
+  },
+  "overrides": {
+    "app-builder-lib": {
+      "@electron/get": "^5.1.0"
+    }
   }
 }
