@@ -7,8 +7,8 @@ certificate check each session applies, starting and restarting the verifier hos
 checkpoint ([`ADR-0031`](../../../docs/decisions/ADR-0031-helios-is-the-light-client.md)), what the
 host verified between runs, the per-site partition stamp, the gateway proxy check, and the
 wording of the status and a name's evidence for Settings and the site-info popover.
-The person can switch the light client off in Settings (`web3.lightClient`, read when the host starts,
-through `configureVerifier`); the environment switch still forces it off, and
+The person can switch the light client off in Settings (`web3.lightClient`, read once when Orivon
+starts, through `configureVerifier`, so a host that sleeps and wakes keeps that run's choice); the environment switch still forces it off, and
 [`web3-domain.ts`](web3-domain.ts) is what the Settings page reads.
 
 **Tied to Electron.** [`verifier-subsystem.ts`](verifier-subsystem.ts) is the one file that

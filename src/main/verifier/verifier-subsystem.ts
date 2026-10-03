@@ -62,9 +62,11 @@ const listeners = new Set<() => void>()
 /** Whether the person has the light client on. Set once the settings are read; until then it is on. */
 let enabledByPerson: () => boolean = () => true
 
-/** Lets the person's setting, and not only the environment, switch the light client off. Read when the host starts. */
+/** Lets the person's setting, and not only the environment, switch the light client off. Read once, here, at launch:
+ * the choice applies from Orivon's next start, as Settings says, however often the host sleeps and wakes before it. */
 export function configureVerifier (options: { lightClientEnabled: () => boolean, windows: () => readonly TabsOfWindow[], servedFromCache: (origin: string) => boolean }): void {
-  enabledByPerson = options.lightClientEnabled
+  const enabledAtLaunch = options.lightClientEnabled()
+  enabledByPerson = () => enabledAtLaunch
   tabsOnVerifiedOrigin = () => anyTabOnVerifiedOrigin(options.windows(), options.servedFromCache)
 }
 

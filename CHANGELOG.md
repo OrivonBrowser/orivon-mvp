@@ -256,6 +256,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **The light client switch applies at the next start, as Settings says**: switching it mid-run no longer changes the
+  status line at once while `.eth` pages keep verifying, nor takes effect when the verifier next wakes.
 - **Restart Orivon no longer reopens the page Orivon was started with**, and Email link says so when no mail program
   opens.
 - **Looking for updates works once a day as it says**: a check made offline is tried again at the next start, the
