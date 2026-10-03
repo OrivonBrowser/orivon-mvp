@@ -151,6 +151,18 @@ describe('HostSupervisor', () => {
     expect(hosts).toHaveLength(2)
   })
 
+  it('leaves a crashed host to its backoff: a start() while the restart waits forks nothing', () => {
+    const { supervisor, hosts, timers } = harness()
+    supervisor.start()
+    hosts[0]?.crash()
+    expect(timers).toHaveLength(1)
+    supervisor.start()
+    supervisor.start()
+    expect(hosts).toHaveLength(1)
+    timers[0]?.run()
+    expect(hosts).toHaveLength(2)
+  })
+
   it('does not restart once stopped', () => {
     const { supervisor, hosts, timers } = harness()
     supervisor.start()

@@ -75,7 +75,8 @@ export class HostSupervisor {
   }
 
   start (): void {
-    if (this.stopped || this.child !== undefined) return
+    // A crashed host comes back on its backoff timer only: a page asking meanwhile must not fork one at once.
+    if (this.stopped || this.child !== undefined || this.restartPending) return
     this.deps.events.starting?.()
     if (this.leaving !== undefined) {
       this.startAfterLeaving = true
