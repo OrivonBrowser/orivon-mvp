@@ -101,6 +101,8 @@ export function createSiteBadges (): ChromeModule {
       // The site-info popup's two entry points: the shield opens straight to the Web3 Score page, the key to
       // the main page. Both act on the active tab's own url; a click while there is none, or on the
       // dashboard, is a no-op -- there is no origin for either page to describe.
+      scoreBtn.addEventListener('pointerdown', (event) => { if (event.button === 0) ctx.shell.press('web3') })
+      permissionsBtn.addEventListener('pointerdown', (event) => { if (event.button === 0) ctx.shell.press('main') })
       scoreBtn.addEventListener('click', () => {
         const active = ctx.activeTab()
         if (!hasSite(active)) return

@@ -75,7 +75,7 @@ it('builds no menu view at launch, builds one on the button\'s own hover, and re
     await chrome.click('#menu')
     expect(await waitFor(async () => !(await popoverShown(app, 'overlay=menu')))).toBe(true)
 
-    // Past REOPEN_DEBOUNCE_MS (overlay-host.ts): an immediate second toggle
+    // Past REOPEN_DEBOUNCE_MS (press-stamps.ts): an immediate second toggle
     // is read as this close's own echo, not fresh intent -- correct for a
     // real click-away, but this test's own explicit close needs to clear it
     // before reopening on purpose.
@@ -208,7 +208,8 @@ it('a press held on the button while the menu is open closes it, and letting go 
     if (box === null) throw new Error('the menu button has no box')
     await chrome.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
     await chrome.mouse.down()
-    // What a real press does on landing: the keyboard focus moves to the toolbar, so the menu loses it and closes.
+    // Stand-in for what a real press does on landing: the keyboard focus moves to the toolbar, so the menu loses it and
+    // closes. Playwright's mouse sends no such focus change; the real path is the XTest recipe in docs/development/testing.md.
     await app.evaluate(({ webContents }) => { webContents.getAllWebContents().find((wc) => wc.getURL().endsWith('/renderer/index.html'))?.focus() })
     expect(await waitFor(async () => !(await popoverShown(app, 'overlay=menu')))).toBe(true)
     // Held well past the time a blur-close is taken to be the echo of the click that follows.

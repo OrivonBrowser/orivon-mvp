@@ -10,6 +10,7 @@ import type { PermissionsPanel } from '../permissions/permissions-panel.js'
 import type { SiteInfoPanel } from '../permissions/site-info-panel.js'
 import { isRect } from './actions/overlay.js'
 import { runChromeAction } from './chrome-actions.js'
+import { createPressStamps } from './press-stamps.js'
 import type { ShellServices } from './shell-services.js'
 import { splitZoneFor } from './split-drop.js'
 import { refreshStripLayouts, stripCentresFor } from './strip-centres.js'
@@ -54,6 +55,7 @@ function windowLabel (other: ShellWindow, position: number): string {
 export function shellActions (parts: WindowParts): ShellActions {
   const { entry, services, panels, closeOverlays, openWindow, topHeight, area } = parts
   const { tabs, window } = entry
+  const presses = createPressStamps()
 
   const showTabMenuFor = (id: string): void => {
     const { tabs: all } = tabs.getState()
@@ -96,6 +98,7 @@ export function shellActions (parts: WindowParts): ShellActions {
 
   return {
     openPermissions: (anchor, url) => {
+      const pressedAt = presses.take('permissions')
       // The chrome view sends the active TAB's url, not an origin -- same
       // `originFromUrl` tab-view.ts's own appTabArgsFor already uses for
       // the identical derivation. undefined (no tab, or the dashboard) and
@@ -104,19 +107,24 @@ export function shellActions (parts: WindowParts): ShellActions {
       const focusOrigin = url === undefined ? undefined : originFromUrl(url) ?? undefined
       panels.siteInfo.close() // only one popup open at a time
       closeOverlays()
-      panels.permissions.toggle(anchor, focusOrigin)
+      panels.permissions.toggle(anchor, focusOrigin, pressedAt)
     },
     openSiteInfo: (anchor, page, url) => {
+      const pressedAt = presses.take(page)
       const origin = url === undefined ? undefined : originFromUrl(url) ?? undefined
       if (origin === undefined) return // no canonical origin -- nothing this popup can show
       panels.permissions.close()
       closeOverlays()
-      panels.siteInfo.toggle(anchor, origin, page)
+      panels.siteInfo.toggle(anchor, origin, page, pressedAt)
     },
     runCommand: (id) => { services.commands.run(id, entry) },
     act: (name, payload) => runChromeAction(name, payload, { window: entry, services }),
     // The anchor comes from the chrome page: only a rectangle of numbers places a view.
-    openMenu: (anchor, pressedAt) => { if (isRect(anchor)) entry.overlays.toggle('menu', anchor, undefined, pressedAt) },
+    openMenu: (anchor) => {
+      const pressedAt = presses.take('menu')
+      if (isRect(anchor)) entry.overlays.toggle('menu', anchor, undefined, pressedAt)
+    },
+    press: (button) => { presses.note(button) },
     prewarmMenu: () => { entry.overlays.prewarm('menu') },
     dragTab: (id, point) => {
       const zone = point === null ? null : splitZoneFor(tabs.getState().activeTabId, id, area(), point, TAB_DRAG_SPLIT_SHARE)

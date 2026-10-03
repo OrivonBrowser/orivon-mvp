@@ -1874,14 +1874,14 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 ### A344: The main menu that opens once and then no longer opens is not reproduced **[OWNER]**
 
-- **Question:** The owner saw the menu open once and then never again, on `npm run dev`. Driven here with real pointer and key
-  events under a window manager, against the dev server, in the dark scheme, with and without the welcome screen: open and
-  close by the button, a click in the page, Escape, every row, the window losing focus to another program, a resize, full
-  screen, a second window, every toolbar popup in between, and an app, pinned, split and dead tab in front. Every reopen
-  works. Does the card open empty, not at all, or behind something, what does the terminal that runs `npm run dev` print at
-  that moment, and is the desktop session X11 or Wayland?
+- **Question:** The owner saw the menu open once and then never again, on `npm run dev`. Driven here, every reopen worked. Against the
+  dev server with real pointer events under a window manager: open and close by the button, a quick click and a press held
+  700 ms. On a built run with real events: the dark scheme, every row, other toolbar popups, a resize, full screen and a
+  second window (an earlier run, whose logs were not kept). On a built run through Playwright: an app, pinned, split and
+  dead tab in front. The owner's desktop session is now Wayland (it was X11 before), so none of this ran on that path. Does the card open empty,
+  not at all, or behind something, and what does the terminal that runs `npm run dev` print at that moment?
 - **Why it matters:** a menu that cannot reopen blocks the window, and only the owner's session shows which path it takes.
-- **Options:** the owner pastes the terminal lines around it and the session type (rec.); try a Wayland compositor here; close it.
+- **Options:** the owner pastes the terminal lines around it (rec.); try a Wayland compositor here; close it.
 - **Who decides:** owner
 - **Blocks:** nothing
 
@@ -1942,10 +1942,10 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first, with the owner's id and output
 - **Blocks:** nothing
 
-### A351: The permissions and site-info popups still read a re-click by the clock **[AI-REC]**
+### A361: The other toolbar popups still read a re-click by the clock **[AI-REC]**
 
-- **Question:** The main menu's button now tells main when its press landed, so a button held down for a second is not read as a new request. The all-sites popup and the site-info popup (the tune icon, the shield, the key) still treat a toggle within 300 ms of their own blur-close as that close's echo, which a slow click defeats: the popup closes on the press and opens again on the release. Move them to the press time too?
+- **Question:** The main menu, the all-sites popup and the site-info popups judge a re-click by the press it completes (`d-0421`). The popups the chrome opens through `overlay.toggle` (downloads, tab search, extensions, the site-access chip, blocked pop-ups) still treat a toggle within 300 ms of their own blur-close as that close's echo, so a slow click on those buttons closes the popup on the press and opens it again on the release. Send the press from those buttons too?
 - **Why it matters:** a slow click on those buttons cannot close the popup they opened.
-- **Options:** send the press time from every toolbar button that toggles a popup and judge it in one place (rec.); leave them on the clock.
+- **Options:** have every button that toggles an overlay announce its press, with `onClick` helpers sharing one wiring (rec.); leave them on the clock.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing

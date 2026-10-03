@@ -29,7 +29,7 @@ export interface SiteInfoPanel {
    * this popup on every active-tab and active-origin change first
    * (`../shell/window.ts`), so a toggle call always either opens fresh or
    * closes what is already showing the origin it was opened for. */
-  toggle: (anchor: PopoverAnchor, origin: string, page: SiteInfoPage) => void
+  toggle: (anchor: PopoverAnchor, origin: string, page: SiteInfoPage, pressedAt?: number) => void
   close: () => void
   isOpen: () => boolean
   restack: () => void
@@ -70,9 +70,9 @@ export function createSiteInfoPanel (
   })
 
   return {
-    toggle (anchor, origin, page) {
+    toggle (anchor, origin, page, pressedAt) {
       openOrigin = origin
-      popover.toggle(anchor, [`--orivon-site-info-page=${page}`, `--orivon-site-info-origin=${origin}`], page)
+      popover.toggle(anchor, [`--orivon-site-info-page=${page}`, `--orivon-site-info-origin=${origin}`], page, pressedAt)
     },
     close: popover.close,
     isOpen: popover.isOpen,

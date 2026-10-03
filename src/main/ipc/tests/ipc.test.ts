@@ -48,6 +48,7 @@ function actions (overrides: Partial<ShellActions> = {}): ShellActions {
     openSiteInfo: vi.fn(),
     runCommand: vi.fn(),
     openMenu: vi.fn(),
+    press: vi.fn(),
     prewarmMenu: vi.fn(),
     act: vi.fn(),
     beginTabDrag: vi.fn(),
@@ -115,19 +116,31 @@ describe('registerShellIpc -- openMenu', () => {
     expect(openMenu).not.toHaveBeenCalled()
     await dispatch({ type: 'openMenu', anchor })
 
-    expect(openMenu).toHaveBeenCalledExactlyOnceWith(anchor, undefined)
+    expect(openMenu).toHaveBeenCalledExactlyOnceWith(anchor)
+  })
+})
+
+describe('registerShellIpc -- press', () => {
+  it('tells the window which toolbar button went down, for the chrome view only', async () => {
+    const press = vi.fn()
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ press }))
+
+    await dispatch({ type: 'press', button: 'menu' }, OTHER_FRAME)
+    expect(press).not.toHaveBeenCalled()
+    await dispatch({ type: 'press', button: 'menu' })
+    await dispatch({ type: 'press', button: 'web3' })
+
+    expect(press).toHaveBeenNthCalledWith(1, 'menu')
+    expect(press).toHaveBeenNthCalledWith(2, 'web3')
   })
 
-  it('passes the time of the press the click completes, and nothing that is not a number', async () => {
-    const openMenu = vi.fn()
-    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ openMenu }))
-    const anchor = { x: 1, y: 2, width: 3, height: 4 }
+  it('ignores a button that is not one of the toolbar\'s', async () => {
+    const press = vi.fn()
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ press }))
 
-    await dispatch({ type: 'openMenu', anchor, pressedAt: 1_790_000_000_000 })
-    await dispatch({ type: 'openMenu', anchor, pressedAt: '1' } as never)
+    for (const button of [undefined, null, 7, '', 'extensions', '__proto__', { id: 'menu' }]) await dispatch({ type: 'press', button } as never)
 
-    expect(openMenu).toHaveBeenNthCalledWith(1, anchor, 1_790_000_000_000)
-    expect(openMenu).toHaveBeenNthCalledWith(2, anchor, undefined)
+    expect(press).not.toHaveBeenCalled()
   })
 })
 

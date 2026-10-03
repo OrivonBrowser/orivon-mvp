@@ -54,33 +54,42 @@ describe('createOverlayHost: a toggle that names its press', () => {
   it('a click held down for longer than the debounce is still the echo of the press that closed the overlay', () => {
     const host = setup()
     host.show('a', ANCHOR)
-    const pressedAt = Date.now()
     views[0]?.onBlur()
+    // The press is stamped when its message reaches main, a moment after the focus change that closed the overlay.
+    vi.advanceTimersByTime(8)
+    const pressedAt = Date.now()
     vi.advanceTimersByTime(1_000)
     host.toggle('a', ANCHOR, undefined, pressedAt)
     expect(host.isOpen('a')).toBe(false)
   })
 
-  it('a fresh press just after another close opens the overlay: the debounce is for the press that closed it, not for the clock', () => {
+  it('a quick second click after the close is a new request: its press came after the close', () => {
     const host = setup()
     host.show('a', ANCHOR)
     views[0]?.onBlur()
     vi.advanceTimersByTime(120)
-    host.toggle('a', ANCHOR, undefined, Date.now() - 40)
+    host.toggle('a', ANCHOR, undefined, Date.now() - 20)
     expect(host.isOpen('a')).toBe(true)
   })
 
-  it('a press time that is not a time, or lies in the future, falls back to the debounce', () => {
+  it('a press that came long after the close opens the overlay however soon the click follows', () => {
+    const host = setup()
+    host.show('a', ANCHOR)
+    views[0]?.onBlur()
+    vi.advanceTimersByTime(4_000)
+    host.toggle('a', ANCHOR, undefined, Date.now() - 30)
+    expect(host.isOpen('a')).toBe(true)
+  })
+
+  it('a click with no press (a key) keeps the debounce', () => {
     const host = setup()
     host.show('a', ANCHOR)
     views[0]?.onBlur()
     vi.advanceTimersByTime(100)
-    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Date.now() + 60_000]) {
-      host.toggle('a', ANCHOR, undefined, bad)
-      expect(host.isOpen('a')).toBe(false)
-    }
+    host.toggle('a', ANCHOR)
+    expect(host.isOpen('a')).toBe(false)
     vi.advanceTimersByTime(300)
-    host.toggle('a', ANCHOR, undefined, Date.now() - 20)
+    host.toggle('a', ANCHOR)
     expect(host.isOpen('a')).toBe(true)
   })
 })
