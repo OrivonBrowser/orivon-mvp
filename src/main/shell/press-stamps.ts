@@ -2,8 +2,9 @@
 // popup holds and closes it; the click arrives on release, and by then the popup is already gone. Telling that click
 // from a fresh request needs the time of the press, in the clock the close was stamped with: main's own, never the page's.
 
-/** The toolbar buttons whose presses main hears about: the main menu, the all-sites list, and the site-info shield and key. */
-export const PRESS_BUTTONS = ['menu', 'permissions', 'web3', 'main'] as const
+/** The toolbar buttons whose presses main hears about: the main menu, the all-sites list, the site-info shield and key,
+ * and the buttons that toggle an overlay, each named by the overlay it toggles. */
+export const PRESS_BUTTONS = ['menu', 'permissions', 'web3', 'main', 'downloads', 'extensions-menu', 'popups-blocked', 'site-prompt', 'tab-search'] as const
 export type PressButton = typeof PRESS_BUTTONS[number]
 
 export function isPressButton (value: unknown): value is PressButton {

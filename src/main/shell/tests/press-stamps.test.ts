@@ -47,8 +47,8 @@ describe('isEchoOfClose', () => {
 })
 
 describe('isPressButton', () => {
-  it('accepts the four buttons and nothing else', () => {
-    for (const ok of ['menu', 'permissions', 'web3', 'main']) expect(isPressButton(ok)).toBe(true)
-    for (const bad of ['', 'Menu', 'constructor', '__proto__', 1, null, undefined, {}, ['menu']]) expect(isPressButton(bad)).toBe(false)
+  it('accepts the toolbar buttons and the overlays a button toggles, and nothing else', () => {
+    for (const ok of ['menu', 'permissions', 'web3', 'main', 'downloads', 'extensions-menu', 'popups-blocked', 'site-prompt', 'tab-search']) expect(isPressButton(ok)).toBe(true)
+    for (const bad of ['', 'Menu', 'constructor', '__proto__', 'find', 'downloads-peek', 1, null, undefined, {}, ['menu']]) expect(isPressButton(bad)).toBe(false)
   })
 })

@@ -1949,11 +1949,3 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   answer such a redirect with the file's bytes from main; leave it.
 - **Who decides:** research first
 - **Blocks:** nothing
-
-### A361: The other toolbar popups still read a re-click by the clock **[AI-REC]**
-
-- **Question:** The main menu, the all-sites popup and the site-info popups judge a re-click by the press it completes (`d-0421`). The popups the chrome opens through `overlay.toggle` (downloads, tab search, extensions, the site-access chip, blocked pop-ups) still treat a toggle within 300 ms of their own blur-close as that close's echo, so a slow click on those buttons closes the popup on the press and opens it again on the release. Send the press from those buttons too?
-- **Why it matters:** a slow click on those buttons cannot close the popup they opened.
-- **Options:** have every button that toggles an overlay announce its press, with `onClick` helpers sharing one wiring (rec.); leave them on the clock.
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing

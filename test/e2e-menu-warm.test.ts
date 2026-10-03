@@ -227,3 +227,32 @@ it('a press held on the button while the menu is open closes it, and letting go 
     expect(await assertNoElectronSurvivors()).toEqual([])
   }
 }, TEST_TIMEOUT_MS)
+
+it('the same for a popup toggled by overlay name: a press held on the tab-search button closes it, and letting go does not reopen it', async () => {
+  const app = await launchElectron({ appPath: '.', ...SILENT })
+  const shown = async (): Promise<boolean> => await popoverShown(app, 'overlay=tab-search')
+  try {
+    const chrome = await readyChrome(app)
+    await chrome.click('#tab-search')
+    expect(await waitFor(shown)).toBe(true)
+
+    const box = await chrome.locator('#tab-search').boundingBox()
+    if (box === null) throw new Error('the tab-search button has no box')
+    await chrome.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await chrome.mouse.down()
+    // The focus change a real press makes on landing, as in the menu test above.
+    await app.evaluate(({ webContents }) => { webContents.getAllWebContents().find((wc) => wc.getURL().endsWith('/renderer/index.html'))?.focus() })
+    expect(await waitFor(async () => !(await shown()))).toBe(true)
+    await new Promise((resolve) => { setTimeout(resolve, 700) })
+    await chrome.mouse.up()
+
+    await new Promise((resolve) => { setTimeout(resolve, ABSENCE_SETTLE_MS) })
+    expect(await shown()).toBe(false)
+
+    await chrome.click('#tab-search')
+    expect(await waitFor(shown)).toBe(true)
+  } finally {
+    await closeElectron(app)
+    expect(await assertNoElectronSurvivors()).toEqual([])
+  }
+}, TEST_TIMEOUT_MS)

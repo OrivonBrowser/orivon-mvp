@@ -255,6 +255,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **A slow click on the downloads, tab search, extensions or address-bar chip buttons closes their popup**, as on the
+  main menu, instead of closing it on the press and opening it again on release.
 - **A page that fails to load says so**: a sheet over the tab names why (no such server, refused, offline, blocked),
   with the address, the error's name and Try again, instead of an empty white page.
 - **uBlock Origin no longer grows its storage until the browser takes gigabytes of memory**: an extension's
