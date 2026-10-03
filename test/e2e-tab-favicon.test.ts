@@ -1,21 +1,28 @@
 // A tab's icon comes back when the tab returns to a page whose icon it has shown, after a blank page or a page that
 // failed to load stood in between: the browser announces an icon only when the set of icons changes, so the strip
-// must remember what each site showed.
+// must remember what each site showed. A page whose own icons all fail shows the globe, whatever the tab remembers.
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './launch-electron.mjs'
 import { clickAddressBarRetrying } from './e2e-helpers.js'
-import { findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from './smoke-helpers.mjs'
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
 
 let server: Server
 let origin = ''
+let defaultIconAsks = 0
 
 beforeAll(async () => {
   server = createServer((request, response) => {
+    if (request.url === '/favicon.ico') {
+      defaultIconAsks++
+      response.statusCode = 404
+      response.end()
+      return
+    }
     if (request.url === '/fav.png') {
       response.setHeader('content-type', 'image/png')
       response.end(PNG)
@@ -111,6 +118,29 @@ it('shows the icon again on returning to the page after one that failed to load'
     expect((await waitForTab(chrome, { address: `${origin}/icon` })).ok).toBe(true)
     expect(await waitFor(async () => await hasIcon(chrome)), 'the icon is back after a failed load').toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('shows the globe on a page of the site that declares no icon, whose default /favicon.ico is missing', async () => {
+  const { app, chrome } = await launched()
+  try {
+    await openIconTab(app, chrome)
+    const asksBefore = defaultIconAsks
+
+    await clickAddressBarRetrying(chrome, `${origin}/plain`)
+    expect((await waitForTab(chrome, { address: `${origin}/plain` })).ok).toBe(true)
+    expect(await waitFor(() => defaultIconAsks > asksBefore), 'the page asked for its default icon').toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS))
+    expect(await hasIcon(chrome), 'the site\'s icon is not kept for a page whose own icon is missing').toBe(false)
+
+    await navigate(app, `${origin}/plain`, 'about:blank')
+    expect(await waitFor(async () => await committedAt(app, 'about:blank'))).toBe(true)
+    await clickAddressBarRetrying(chrome, `${origin}/plain`)
+    expect(await waitFor(async () => await committedAt(app, `${origin}/plain`))).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS))
+    expect(await hasIcon(chrome), 'a return after a blank page brings back the globe, not the site\'s earlier icon').toBe(false)
   } finally {
     await closeElectron(app)
   }
