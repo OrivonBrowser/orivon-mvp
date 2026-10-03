@@ -17,7 +17,9 @@ export const ENTER_SCRIPT = `(async () => {
     const h = Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0))
     return w * h
   }
-  const usable = [...document.querySelectorAll('video')].filter((v) => !v.disablePictureInPicture && v.readyState > 0 && seen(v) > 0)
+  // A video a page's own element keeps in its shadow root counts too.
+  const videos = (root) => [...root.querySelectorAll('video'), ...[...root.querySelectorAll('*')].flatMap((element) => element.shadowRoot ? videos(element.shadowRoot) : [])]
+  const usable = videos(document).filter((v) => !v.disablePictureInPicture && v.readyState > 0 && seen(v) > 0)
   const playing = usable.filter((v) => !v.paused && !v.ended)
   const pool = playing.length > 0 ? playing : usable
   pool.sort((a, b) => seen(b) - seen(a))
@@ -33,9 +35,21 @@ export const ENTER_SCRIPT = `(async () => {
 export function pointScript (x: number, y: number): string {
   const whole = (n: number): number => Number.isFinite(n) ? Math.round(n) : 0
   return `(async () => {
-  const video = document.elementsFromPoint(${String(whole(x))}, ${String(whole(y))}).find((element) => element instanceof HTMLVideoElement)
+  // A shadow root answers for its own elements, which the document only sees as their host; each root is asked once.
+  const asked = new Set()
+  const under = (root) => {
+    if (asked.has(root)) return undefined
+    asked.add(root)
+    for (const element of root.elementsFromPoint(${String(whole(x))}, ${String(whole(y))})) {
+      if (element instanceof HTMLVideoElement) return element
+      const inner = element.shadowRoot ? under(element.shadowRoot) : undefined
+      if (inner !== undefined) return inner
+    }
+    return undefined
+  }
+  const video = under(document)
   if (video === undefined) return false
-  if (document.pictureInPictureElement === video) {
+  if (video.getRootNode().pictureInPictureElement === video) {
     await document.exitPictureInPicture()
     return true
   }

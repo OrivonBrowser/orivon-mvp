@@ -256,6 +256,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **Picture in picture finds a video inside a page's own element**, from the menu and from a right-click; a QR code
+  is not offered for an address too long to carry, and a screenshot whose save dialog fails says so.
 - **A closed reader view reopens on its article's page**: Reopen and a restored session bring back the page it was
   read from, not an empty reader.
 - **Closing the tab in front leaves a collapsed group collapsed**: the nearest tab still shown comes to the front,
