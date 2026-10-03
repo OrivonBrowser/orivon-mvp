@@ -172,7 +172,7 @@ you disagree with one, the ADR is where the objections are already answered.
   red/orange/yellow/green, and a mark at the pill's right end names it: Web2 (Level 1), Web2.5
   (Levels 2-3) or Web3 (Level 4). Level 1 or 2 is what the machine
   observed: whether the site meets DDOC. Level 3 and above are the judgement of the provider the
-  person chose (any address Orivon opens, asked by hash bucket so it never learns the site),
+  person chose (any address Orivon opens, asked by hash bucket so a request never names the site),
   named, shown grey `?` when it has not judged, and kept apart from what was observed; a
   developer-only override can preview one, always named as an override. Only that override's
   Level 4 makes a site's own grants read without warnings. The evidence sits under the level,

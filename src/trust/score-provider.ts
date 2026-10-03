@@ -93,7 +93,8 @@ export function parseDescriptor (value: unknown): ProviderDescriptor | undefined
   const bucketHexChars = value['bucketHexChars']
   const about = optionalText(value, 'about', 2048)
   if (name === undefined || about === null) return undefined
-  if (typeof bucketHexChars !== 'number' || !Number.isInteger(bucketHexChars) || bucketHexChars < 1 || bucketHexChars > 4) return undefined
+  // Wider buckets would mostly hold one known site each, so the request would name it.
+  if (bucketHexChars !== 1 && bucketHexChars !== 2) return undefined
   return { name, bucketHexChars, about }
 }
 

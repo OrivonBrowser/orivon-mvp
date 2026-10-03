@@ -35,14 +35,14 @@ describe('scoreIdOf', () => {
 describe('parseDescriptor', () => {
   it('reads the name, the bucket width and the optional about address', () => {
     expect(parseDescriptor({ standard: SCORE_STANDARD, name: 'P', bucketHexChars: 2 })).toEqual({ name: 'P', bucketHexChars: 2, about: undefined })
-    expect(parseDescriptor({ standard: SCORE_STANDARD, name: 'P', bucketHexChars: 4, about: 'https://p.example', extra: 1 })).toEqual({ name: 'P', bucketHexChars: 4, about: 'https://p.example' })
+    expect(parseDescriptor({ standard: SCORE_STANDARD, name: 'P', bucketHexChars: 1, about: 'https://p.example', extra: 1 })).toEqual({ name: 'P', bucketHexChars: 1, about: 'https://p.example' })
   })
 
-  it('refuses another standard, a missing name and a bucket width outside 1 to 4', () => {
+  it('refuses another standard, a missing name, and a bucket width other than 1 or 2, past which a bucket would name the site', () => {
     expect(parseDescriptor({ standard: 'orivon-web3-score/2', name: 'P', bucketHexChars: 2 })).toBeUndefined()
     expect(parseDescriptor({ standard: SCORE_STANDARD, name: '', bucketHexChars: 2 })).toBeUndefined()
     expect(parseDescriptor({ standard: SCORE_STANDARD, name: 'x'.repeat(81), bucketHexChars: 2 })).toBeUndefined()
-    for (const bucketHexChars of [0, 5, 2.5, '2']) {
+    for (const bucketHexChars of [0, 3, 4, 2.5, '2']) {
       expect(parseDescriptor({ standard: SCORE_STANDARD, name: 'P', bucketHexChars })).toBeUndefined()
     }
     expect(parseDescriptor([])).toBeUndefined()

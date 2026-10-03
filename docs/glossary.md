@@ -120,7 +120,7 @@ shield opens leads with it too (`ADR-0006`).
 **Web3 Score provider**: an entity issuing judged scores, published at an address the person
 chooses in Settings: any address Orivon opens, `https://`, `ipfs://` or a `.eth` name among them.
 Never required for the automatic ladders. In this build the person chooses one, it need not be
-trustless, and Orivon asks it by hash bucket so it never learns which site was opened
+trustless, and Orivon asks it by hash bucket, so a request names a group of sites, never the site
 (`ADR-0054`, `docs/architecture/web3-score-provider.md`).
 
 **Evaluation**: a provider's judgement of one content identifier, a bundle hash or a CID: its

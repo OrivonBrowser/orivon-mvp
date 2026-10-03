@@ -42,7 +42,7 @@ Two kinds of file, both JSON in UTF-8, each at most 1 MiB.
 |---|---|---|
 | `standard` | yes | Exactly `orivon-web3-score/1` |
 | `name` | yes | 1 to 80 characters. Shown beside every level this provider judges |
-| `bucketHexChars` | yes | An integer, 1 to 4: how many hex characters name a bucket (16 to 65,536 buckets) |
+| `bucketHexChars` | yes | 1 or 2: how many hex characters name a bucket (16 or 256 buckets). A client refuses any other value, for the reason §What the provider learns gives |
 | `about` | no | An address where a person reads who runs the provider and how it judges |
 
 ### `P/<subject>/<bucket>.json`
@@ -151,10 +151,16 @@ does not know that value treats the provider as not answering.
 
 ## What the provider learns
 
-From one lookup, the provider learns the bucket: one in 2^(4 × `bucketHexChars`) of all
-identifiers, never which one. It also sees whatever any server sees of a request: the address it
-came from, and when. A provider that wants fewer people sharing each bucket raises
-`bucketHexChars`; a client never asks for the identifier itself.
+A client never asks for the identifier itself. From one lookup, the provider learns the bucket:
+one of 16 or 256, which every site whose identifier hashes there shares. It also sees whatever
+any server sees of a request: the address it came from, and when.
+
+A bucket hides a site only among the sites the provider can tell apart in it. The set of sites a
+client asks about is small and can be listed in advance (every `.eth` name's content hash is
+public), so at 4,096 buckets or more most buckets hold at most one known site and the request
+names it. That is why `bucketHexChars` stops at 2. Even at 256 buckets, a provider that knows only
+a few sites can guess which one a bucket means. At about 1 KB per evaluation, 256 files of 1 MiB
+hold about 250,000 evaluations.
 
 ## How Orivon uses an answer
 

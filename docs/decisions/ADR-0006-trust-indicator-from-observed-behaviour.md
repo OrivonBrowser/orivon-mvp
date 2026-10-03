@@ -342,7 +342,7 @@ own; the shield and the Web3 Score page keep the four level colours above.
 
 `ADR-0054` settles A250 and replaces the subscribed, signed feeds above with a lookup: the person
 chooses a provider at any address Orivon opens, and Orivon asks it for the bucket a page's
-identifier falls in, never the identifier itself, so the provider learns one bucket among
-thousands, not the site. Provider files are unsigned in this build (*provisional*, `ADR-0054`).
+identifier falls in, never the identifier itself, so a request names one of at most 256 groups
+of sites, not the site (a provider that knows few sites in a group can still guess). Provider files are unsigned in this build (*provisional*, `ADR-0054`).
 The display rule of the 2026-09-24 amendment stands unchanged: a judged level names its provider,
 sits apart from the observed evidence, and is grey `?` when the provider has no score.

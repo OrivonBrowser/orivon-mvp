@@ -12,8 +12,8 @@ opens, resolved by the address bar's own parser, so `https://`, `http://127.0.0.
 `.eth` name and every protocol Orivon adds later work with no change to the client. Empty, the
 default, asks nobody. For a page whose observed Website level is 2, Orivon fetches
 `<provider>/provider.json`, then `<provider>/website/<bucket>.json`, where the bucket is the first
-`bucketHexChars` hex characters of the SHA-256 of the page's identifier (`sha256:<bundle hash>`
-or `cid:<CID>`), and finds the identifier inside that file itself. The judged level is shown with
+`bucketHexChars` (1 or 2) hex characters of the SHA-256 of the page's identifier
+(`sha256:<bundle hash>` or `cid:<CID>`), and finds the identifier inside that file itself. The judged level is shown with
 the provider's name, beside what Orivon observed, and never silences a capability grant warning.
 The wire format is `docs/architecture/web3-score-provider.md`; a provider is built as a static
 site by [web3-score-manager](https://github.com/OrivonBrowser/web3-score-manager).
@@ -32,7 +32,7 @@ existed, and build step 7 needed real judged levels for the ports Orivon runs.
   built there.
 - **Download the provider's whole list** and look up locally, as `ADR-0006` described. Nothing
   leaks, but the download grows with the provider, and a provider with a million entries would
-  send every person all of them. A provider that wants this sets `bucketHexChars` low; the
+  send every person all of them. A provider that wants this sets `bucketHexChars` to 1; the
   standard does not need a second mode for it.
 - **A provider's Level 4 silences grant warnings, as the developer override does** (`ADR-0037`).
   Rejected: the override is a file only the person at the keyboard can write, while a provider is
@@ -40,10 +40,13 @@ existed, and build step 7 needed real judged levels for the ports Orivon runs.
   compromised provider could then remove every breadth warning from any site it named.
 
 ## Reasoning
-Buckets keep the property `ADR-0006` cared about, that the provider cannot list what a person
-opens, while keeping lookups small and every provider a set of static files that any host or IPFS
-can serve. The provider still sees each request's address and time, which the Settings help and
-the spec both say. Resolving the address with the address bar's parser is the one place Orivon
+Buckets keep most of the property `ADR-0006` cared about: no request names a site, only one of at
+most 256 groups that many sites share, while lookups stay small and every provider is a set of
+static files any host or IPFS can serve. The bucket width is capped at 2 hex characters by the
+client, not left to the provider: the sites a client asks about can be listed in advance, and at
+4,096 buckets or more most buckets hold one known site, so a provider choosing a wide bucket
+would learn the site. The provider still sees each request's address and time, and one that knows
+only a few sites can guess from a bucket; the Settings help and the spec both say so. Resolving the address with the address bar's parser is the one place Orivon
 already decides what an address means, so the provider setting gains each new protocol for free.
 
 ## Consequences
@@ -64,5 +67,6 @@ already decides what an address means, so the provider setting gains each new pr
   `src/main/browsing/score-provider-client.ts`); every published provider follows the standard,
   so changing the request shape means a version 2 that providers publish beside version 1.
 - **What would make us revisit:** a provider with enough entries that one bucket file outgrows
-  1 MiB at `bucketHexChars` 4, a signed-provider requirement from a real deployment, or a provider
-  whose request logs show buckets narrow enough to identify sites.
+  1 MiB at `bucketHexChars` 2 (about 250,000 evaluations), a signed-provider requirement from a
+  real deployment, or evidence that 256 buckets are narrow enough to identify the sites people
+  actually visit.
