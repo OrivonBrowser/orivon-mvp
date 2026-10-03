@@ -34,8 +34,11 @@ export interface OverlayDef {
   /** A popup closes the other popups; bars coexist below them. */
   readonly layer: 'popup' | 'bar'
   readonly closeOn: OverlayCloseOn
-  /** `fresh` destroys the view on close; `warm` keeps it for the next show. */
-  readonly keep: 'fresh' | 'warm'
+  /** What happens to the view when the overlay closes. `fresh` destroys it at once. `warm` keeps it for the next show and
+   * destroys it once it has stayed closed for a minute (a view prewarmed and never shown goes the same way); a show or a
+   * prewarm before then keeps it. `resident` keeps it for the life of the window: for an overlay the person types into
+   * the moment it opens, which must never wait for a renderer to start. */
+  readonly keep: 'fresh' | 'warm' | 'resident'
   /** Content height in px, clamped to the room left: initial 180, min 120, max 460 by default. */
   readonly height?: { initial?: number, min?: number, max?: number }
   /** Runs once per window, on first use. */

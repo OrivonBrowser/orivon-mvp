@@ -35,7 +35,7 @@ export const omniboxOverlay: OverlayDef = {
   layer: 'popup',
   // Blur is not a reason: the field loses it to this very view when a row is clicked, and the chrome closes on its own blur.
   closeOn: { blur: false, tabSwitch: true, navigation: true, layout: true },
-  keep: 'warm',
+  keep: 'resident',
   height: { initial: 44, min: 44, max: 320 },
   attach: (win) => createOmniboxOverlay(win)
 }
