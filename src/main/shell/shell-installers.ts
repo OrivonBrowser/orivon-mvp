@@ -11,6 +11,7 @@ import { installChoosers } from '../devices/install-choosers.js'
 import { installFocus } from '../focus/install-focus.js'
 import { installMemorySaver } from '../memory-saver/install-memory-saver.js'
 import { installTabSlots } from '../overlays/install-tab-slots.js'
+import { installTabVisibility } from './install-tab-visibility.js'
 import { installFormWatch } from '../passwords/install-form-watch.js'
 import { installPrivacyNet } from '../privacy/install-privacy-net.js'
 import { installReader } from '../reader/install-reader.js'
@@ -40,7 +41,8 @@ export const SHELL_INSTALLERS: readonly ShellInstaller[] = [
   installSidePanel,
   installSitePermissions,
   installTabGroups,
-  installTabSlots
+  installTabSlots,
+  installTabVisibility
 ]
 
 /** An installer that throws is logged and skipped: one feature failing to wire must not stop the others or the first window. */

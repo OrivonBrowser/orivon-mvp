@@ -13,8 +13,19 @@ export interface PaneView {
 export class PaneHost {
   private readonly shown = new Map<string, View>()
   private backdrop: View | null = null
+  private readonly changeListeners = new Set<() => void>()
 
   constructor (private readonly contentView: View) {}
+
+  /** Called after a change to which tabs are on screen (not after a pane is only resized). Returns the removal. */
+  onShownChange (listener: () => void): () => void {
+    this.changeListeners.add(listener)
+    return () => { this.changeListeners.delete(listener) }
+  }
+
+  private shownChanged (): void {
+    for (const listener of this.changeListeners) listener()
+  }
 
   /** Shows exactly these panes, sized, with `backdrop` behind them when there is one.
    *
@@ -27,10 +38,12 @@ export class PaneHost {
    * its place unless it is genuinely new to the screen or its view changed. */
   show (panes: readonly PaneView[], backdrop: PaneView | null = null): void {
     const wanted = new Map(panes.map((pane) => [pane.id, pane.view]))
+    let changed = false
     for (const [id, view] of this.shown) {
       if (wanted.get(id) === view) continue
       this.contentView.removeChildView(view)
       this.shown.delete(id)
+      changed = true
     }
     const nextBackdrop = backdrop?.view ?? null
     if (this.backdrop !== nextBackdrop) {
@@ -52,9 +65,11 @@ export class PaneHost {
         if (ordered) this.contentView.addChildView(pane.view, this.slotFor(panes, at, nextBackdrop))
         else this.contentView.addChildView(pane.view)
         this.shown.set(pane.id, pane.view)
+        changed = true
       }
       pane.view.setBounds(pane.bounds)
     })
+    if (changed) this.shownChanged()
   }
 
   /** Where in `contentView.children` the new pane `panes[at]` goes, so a split's panes keep the order
@@ -85,21 +100,28 @@ export class PaneHost {
 
   /** Takes a tab's view off the screen (it is going away, or being swapped for another). */
   hide (id: string): void {
+    if (this.release(id)) this.shownChanged()
+  }
+
+  /** `hide` without the announcement, for a view that `replace` puts another in the place of at once. Whether it took one off the screen. */
+  release (id: string): boolean {
     const view = this.shown.get(id)
-    if (view === undefined) return
+    if (view === undefined) return false
     this.contentView.removeChildView(view)
     this.shown.delete(id)
+    return true
   }
 
   /** Shows `view` for a pane that is on screen already under another view, in the same place. */
   replace (id: string, view: View, bounds: Bounds): void {
     const old = this.shown.get(id)
     const index = old === undefined ? -1 : this.contentView.children.indexOf(old)
-    this.hide(id)
+    this.release(id)
     // At the old view's place, never on top: a popover open above the pane stays above it.
     if (index === -1) this.contentView.addChildView(view)
     else this.contentView.addChildView(view, index)
     this.shown.set(id, view)
     view.setBounds(bounds)
+    this.shownChanged()
   }
 }

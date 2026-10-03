@@ -9,7 +9,7 @@ describe('SHELL_INSTALLERS', () => {
     expect(new Set(names).size).toBe(names.length)
     expect(names).toEqual([
       'auth', 'autofill', 'choosers', 'content-settings', 'focus', 'form-watch', 'memory-saver',
-      'privacy-net', 'questions', 'reader', 'side-panel', 'site-permissions', 'tab-groups', 'tab-slots'
+      'privacy-net', 'questions', 'reader', 'side-panel', 'site-permissions', 'tab-groups', 'tab-slots', 'tab-visibility'
     ])
   })
 

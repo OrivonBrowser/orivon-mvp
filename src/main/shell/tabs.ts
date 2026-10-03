@@ -89,7 +89,7 @@ export class TabManager {
       window: shell?.window,
       tabLifecycle: shell?.tabLifecycle,
       isShown: (id) => this.panes.isShown(id),
-      detachView: (view) => { this.panes.hide(this.panes.idOfView(view)) },
+      detachView: (view) => { this.panes.release(this.panes.idOfView(view)) },
       attachView: (id, view) => { this.panes.swap(id, view) },
       paneClicked: (id) => { this.panes.clicked(id) },
       openInSplit: (id, url) => { if (!this.atCapacity()) this.splits.split(id, this.createTab(url), 'right') },

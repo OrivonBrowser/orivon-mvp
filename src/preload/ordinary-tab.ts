@@ -6,6 +6,7 @@ import { installEmbedEventRelay } from './embed-event-relay.js'
 import { installFormWatch } from './form-watch.js'
 import { installManifestHintWatcher } from './manifest-hint.js'
 import { installPageKeys } from './page-keys.js'
+import { installPageVisibility } from './page-visibility.js'
 import { hideUserAgentDataOnSignInHosts } from './sign-in-identity.js'
 
 /**
@@ -22,6 +23,9 @@ export function exposeOrdinaryTabSurface (): void {
   // Google's sign-in hosts are shown Firefox's identity, which has no
   // navigator.userAgentData -- ./sign-in-identity.ts.
   hideUserAgentDataOnSignInHosts()
+  // A tab out of sight reads as hidden to its page, as in Chrome -- ./page-visibility.ts. First, so it is in
+  // place before any page script reads the state.
+  installPageVisibility()
   exposeOrivon()
   // ADR-0046: lets a real app tab's page reach its app's child host, gated
   // on the app-tab flag. Must run AFTER exposeOrivon() and BEFORE

@@ -23,6 +23,16 @@ export interface TabPanesHost {
 export class TabPanes extends PaneHost {
   constructor (private readonly deps: TabPanesHost) {
     super(deps.contentView)
+    this.onShownChange(() => { this.announce() })
+  }
+
+  /** Tells the lifecycle seam which of the window's tabs are on screen now (./tab-visibility.ts tells each page). */
+  private announce (): void {
+    const { deps } = this
+    const lifecycle = deps.shell?.tabLifecycle
+    if (lifecycle === undefined || deps.isClosing()) return
+    const tabs = [...deps.records()].flatMap(([id, record]) => record.view.webContents.isDestroyed() ? [] : [{ contents: record.view.webContents, shown: this.isShown(id) }])
+    lifecycle.shownChanged(deps.shell?.window, tabs)
   }
 
   /** Shows `view` for a tab whose view was swapped, in the tab's pane. */

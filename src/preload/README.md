@@ -4,7 +4,7 @@
 `permissions.ts`, `site-info.ts`, `overlay.ts`, `split-frame.ts`, `internal.ts`, `embed.ts`,
 `child-host.ts` and `extension-api.ts`), the
 app-tab wiring they share (`manifest-hint.ts`, `expose-shim-globals.ts`, `expose-fetch-route.ts`,
-`page-buffer.ts`, `embed-event-relay.ts`, `ordinary-tab.ts`), the sign-in form watcher (`form-watch.ts`, with
+`page-buffer.ts`, `embed-event-relay.ts`, `page-visibility.ts`, `ordinary-tab.ts`), the sign-in form watcher (`form-watch.ts`, with
 the decisions it makes in `login-fields.ts`), the app-tab key report (`page-keys.ts`, `find-chord.ts`), and
 `orivon-error.ts`, the plain-object error shape [`surface/`](surface/) and [`ports/`](ports/)
 share. The narrowest and most security-critical surface in the repository. Tied to Electron,
@@ -51,6 +51,7 @@ across this boundary.
 | `frame.ts` | every tab preload | `inMainFrame()`: a tab's preload runs in its top frame only (`nodeIntegrationInSubFrames` is off), and what it exposes asks here first, so a setting that ran it in a subframe would not hand that frame `window.orivon`. A preload that cannot tell which frame it is in counts as a subframe |
 | `newtab.ts` | only a fresh tab (`src/main/shell/tabs.ts`'s `createTab()` with no `url`) | Read-only bookmarks and navigate-this-tab; otherwise the same `exposeOrdinaryTabSurface()` as `app.ts` |
 | `embed-event-relay.ts` | `./ordinary-tab.ts`, so every ordinary tab | Nothing on `window`: turns the shell's notice that a page shown in a `<webview>` asked for a window or started a download (`EMBED_EVENT_CHANNEL`, ADR-0047) into a bubbling `orivon-popup` or `orivon-download` event on the element, dispatched in the main world so the page can read `detail`; idle until main sends, and a page cannot send on that channel |
+| `page-visibility.ts` | `./ordinary-tab.ts`, so every ordinary tab, top frame only; never an extension's own page | Nothing new on `window`: replaces the page's `Document.prototype` getters for `visibilityState`, `hidden`, `webkitVisibilityState` and `webkitHidden`, installed in the main world before the page's scripts, so a tab out of sight reads hidden and sees one `visibilitychange` per change, as in Chrome. The state is a closure; the shell's message (`TAB_VISIBILITY_CHANNEL`) reaches it through a per-document event name no page script is told. A page that tampers with it only fools itself |
 | `form-watch.ts`, `login-fields.ts` | `./ordinary-tab.ts`, so every ordinary tab, top frame only | Nothing on `window`: reports a page's password fields, the box a person focused and a submitted sign-in over `FORM_WATCH_CHANNEL`, and writes the account a person chose in Orivon's chooser into the page's own fields when main says so on `FORM_FILL_CHANNEL`; inert until main's config turns it on, and a page can neither ask it for a value nor trigger a fill |
 | `page-keys.ts`, `find-chord.ts` | `./ordinary-tab.ts`, top frame of an app tab only | Nothing on `window`: when a `Ctrl+F` (`Cmd+F` on macOS) reaches the end of the page's own handlers without `preventDefault`, sends `{ command: 'find.open' }` over `PAGE_KEY_CHANNEL`; `src/main/shortcuts/page-key-ipc.ts` accepts it only from the top frame of the tab in front, on a registered app's tab, at five a second |
 | `expose-fetch-route.ts`, `expose-shim-globals.ts`, `expose-child-host-connect.ts` | `./ordinary-tab.ts`, shared by `app.ts` and `newtab.ts`'s fallback | On an app tab only: the routed network path, `process`/`global`/`setImmediate`/`clearImmediate`/`Buffer`, and (ADR-0046) a registered-symbol bridge (`start`/`send`/`kill` closures, never the raw port -- T17) letting the page reach its app's child host with no new global; each closure applies `window.orivon`'s own page-caller check (ADR-0045), so an extension's script in the page cannot start, message or kill the app's children |
@@ -129,3 +130,12 @@ calls `process.nextTick` at module-evaluation time, only later, deep inside `rea
 path actually runs. The patch only has to land before THAT, which every line below the import
 already satisfies. Unpatched, that call throws `TypeError: process.nextTick is not a function`,
 wire-carried back to spawnSync's own caller as an unexplained spawn failure.
+
+**[`page-visibility.ts`](page-visibility.ts) answers for the tab's top frame only.** A view taken off its
+window is never told by Electron that it is hidden, so the shell sends the answer
+([`tab-visibility.ts`](../main/shell/tab-visibility.ts)) and this file makes the page's own visibility
+properties follow it; why the browser reports a background tab this way is in the
+[decision log](../../docs/decisions/decision-log.md). Known limit: a subframe keeps the browser's own answer
+(`visible`), because a tab's preload does not run in subframes, so an embedded player or widget that backs off
+on `document.hidden` still runs at full rate in a background tab. The state is also unset until the first message
+after a document loads, so a page's first scripts in a background tab can read `visible` for an instant.
