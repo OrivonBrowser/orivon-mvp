@@ -8,31 +8,35 @@ import { TAB_VISIBILITY_CHANNEL } from '../main/channels.js'
 //
 // Top frame only, as the rest of the ordinary-tab surface: a subframe keeps the browser's own answer.
 
-const PROPERTIES: readonly string[] = ['visibilityState', 'hidden', 'webkitVisibilityState', 'webkitHidden']
-
 /**
  * Runs in the page's MAIN world through contextBridge.executeInMainWorld, before the page's scripts, so it is
  * self-contained: it closes over nothing from this module. The flag lives in this closure; the only way to
  * change it is an event named by `channel`, a name made fresh for each document and told to no page script.
- * Each getter defers to the browser's own for any document but the page's, and while the tab is shown.
+ * Each getter defers to the browser's own for any document but the page's, and while the tab is shown. The
+ * four properties are named literally, one `defineProperty` each, so check:page-globals can read every call.
  */
-function installInMainWorld (channel: string, properties: readonly string[]): void {
+function installInMainWorld (channel: string): void {
   const proto = Document.prototype
   let hidden = false
-  const answers = new Set<string>()
-  for (const name of properties) {
+  /** The browser's own descriptor for `name` with only its getter replaced, or undefined where it has none. */
+  const answering = (name: string, whenHidden: unknown): PropertyDescriptor | undefined => {
     const native = Object.getOwnPropertyDescriptor(proto, name)
     const nativeGet = native?.get
-    if (native === undefined || nativeGet === undefined) continue
-    const isState = name.endsWith('State')
+    if (native === undefined || nativeGet === undefined) return undefined
     // A getter literal with a computed key is named `get <name>`, as the browser's own is.
-    const named = { get [name] (): unknown { return hidden && (this as unknown) === document ? (isState ? 'hidden' : true) : nativeGet.call(this) } }
+    const named = { get [name] (): unknown { return hidden && (this as unknown) === document ? whenHidden : nativeGet.call(this) } }
     const get = Object.getOwnPropertyDescriptor(named, name)?.get
-    if (get === undefined) continue
-    Object.defineProperty(proto, name, { ...native, get })
-    answers.add(name)
+    return get === undefined ? undefined : { ...native, get }
   }
-  if (answers.size === 0) return
+  const visibilityState = answering('visibilityState', 'hidden')
+  const hiddenFlag = answering('hidden', true)
+  const webkitVisibilityState = answering('webkitVisibilityState', 'hidden')
+  const webkitHidden = answering('webkitHidden', true)
+  if (visibilityState !== undefined) Object.defineProperty(proto, 'visibilityState', visibilityState)
+  if (hiddenFlag !== undefined) Object.defineProperty(proto, 'hidden', hiddenFlag)
+  if (webkitVisibilityState !== undefined) Object.defineProperty(proto, 'webkitVisibilityState', webkitVisibilityState)
+  if (webkitHidden !== undefined) Object.defineProperty(proto, 'webkitHidden', webkitHidden)
+  if (visibilityState === undefined && hiddenFlag === undefined && webkitVisibilityState === undefined && webkitHidden === undefined) return
   document.addEventListener(channel, (event) => {
     const next = (event as CustomEvent).detail === true
     if (next === hidden) return
@@ -56,7 +60,7 @@ function freshChannel (): string {
 export function installPageVisibility (): void {
   const channel = freshChannel()
   try {
-    contextBridge.executeInMainWorld({ func: installInMainWorld, args: [channel, PROPERTIES] })
+    contextBridge.executeInMainWorld({ func: installInMainWorld, args: [channel] })
   } catch (error) {
     console.error('[orivon] page visibility not installed', error)
     return

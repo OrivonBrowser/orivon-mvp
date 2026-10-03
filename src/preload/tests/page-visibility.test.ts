@@ -21,9 +21,12 @@ const { installPageVisibility } = await import('../page-visibility.js')
 
 const SETUP = `
   globalThis.Document = class Document extends EventTarget {}
-  for (const [name, value] of [['visibilityState', 'visible'], ['hidden', false], ['webkitVisibilityState', 'visible'], ['webkitHidden', false]]) {
-    Object.defineProperty(Document.prototype, name, { get: Object.getOwnPropertyDescriptor({ get [name] () { return value } }, name).get, set: undefined, enumerable: true, configurable: true })
-  }
+  const proto = Document.prototype
+  const nativeGet = (name, value) => Object.getOwnPropertyDescriptor({ get [name] () { return value } }, name).get
+  Object.defineProperty(proto, 'visibilityState', { get: nativeGet('visibilityState', 'visible'), set: undefined, enumerable: true, configurable: true })
+  Object.defineProperty(proto, 'hidden', { get: nativeGet('hidden', false), set: undefined, enumerable: true, configurable: true })
+  Object.defineProperty(proto, 'webkitVisibilityState', { get: nativeGet('webkitVisibilityState', 'visible'), set: undefined, enumerable: true, configurable: true })
+  Object.defineProperty(proto, 'webkitHidden', { get: nativeGet('webkitHidden', false), set: undefined, enumerable: true, configurable: true })
   globalThis.document = new Document()
   globalThis.seen = []
   document.addEventListener('visibilitychange', (event) => { seen.push([document.visibilityState, document.hidden, event.bubbles]) })
