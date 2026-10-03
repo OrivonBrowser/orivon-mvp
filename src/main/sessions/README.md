@@ -176,7 +176,12 @@ ever touches its own session's `webRequest`, so there is nothing there for an ow
 callers never need it (the verifier's partition stamp and the granted-origin CSP watch every
 request for the process's whole life), so most ignore the return value; `dnr-webrequest.ts` is
 the one that does not -- a person with no `declarativeNetRequest` extension loaded should not pay
-for a webRequest round trip that always has nothing to do. `remove()` re-registers Electron's own
+for a webRequest round trip that always has nothing to do. `handler-while-needed.ts` is that
+register-while-needed shape as a helper, used by the privacy controls
+([`../privacy/install-privacy-net.ts`](../privacy/install-privacy-net.ts)) and the per-site script
+and image blocks ([`../site-settings/install-content-settings.ts`](../site-settings/install-content-settings.ts)):
+each calls `sync()` at start and from its settings listeners, so a setting turned on registers its
+handler before the next request. `remove()` re-registers Electron's own
 listener from whatever handlers remain, the same `unionFilter` recomputation adding one already
 triggers; with nothing left for an event, that means calling Electron's `onXxx(null)` to actually
 unregister the listener, not registering it again with an empty `{ urls: [] }` filter -- Electron

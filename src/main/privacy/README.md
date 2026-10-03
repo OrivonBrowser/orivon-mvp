@@ -54,10 +54,14 @@ App data does not.
 run. Extension pages and `orivon:` pages are never filtered (the filters name `http` and `https`, and a request
 whose top document is not a web page is treated as first party), and an app's own partition is not covered.
 
-**Every handler reads its setting per request.** A choice in Settings therefore applies to the next request
-with no re-registration, and a handler whose setting is off returns what it was given, which the owner turns into
-a bare `{}` (headers untouched). Handlers register on the owner, never on `session.webRequest`: a second
-registration there would silently replace the owner's listener and silence the extensions'.
+**A handler is on the owner only while a setting needs it, and reads its setting per request.** The HTTPS upgrade is
+registered while `privacy.httpsOnly` is on, the request-header handler while a signal is on or third-party cookies are
+blocked, and the response-header handler while they are blocked; with every control at its default no request on the
+default session makes a round trip for them. `install-privacy-net.ts` re-evaluates this in the settings listener, so a
+control turned on is registered before the next request, and a handler that is registered still returns what it was
+given when its own setting has gone off, which the owner turns into a bare `{}` (headers untouched). Handlers register
+on the owner, never on `session.webRequest`: a second registration there would silently replace the owner's listener
+and silence the extensions'.
 
 **Third-party cookie blocking works on the wire, not in the page.** The `Cookie` request header is removed from a
 cross-site request and `Set-Cookie` from its response (the second found by the request id remembered at the

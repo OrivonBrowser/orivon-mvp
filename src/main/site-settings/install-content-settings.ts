@@ -3,10 +3,11 @@
 // off per site, sound silenced per site, and downloads a page starts on its
 // own asked about. Every request-level rule is a handler on the default
 // session's one web-request owner (never `session.webRequest`, which a second
-// registration would silently replace) that reads its setting per request, so
-// a change takes effect on the next request without re-registering anything.
+// registration would silently replace). The script and image handlers are on the
+// owner only while some rule can block that kind, and read the rule per request.
 import { session } from 'electron'
 import { isAppOrigin } from './app-origin.js'
+import { handlerWhileNeeded } from '../sessions/handler-while-needed.js'
 import { webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import type { ShellInstaller } from '../shell/shell-installers.js'
 import { applyMuted } from '../shell/signals/audio.js'
@@ -43,17 +44,25 @@ export const installContentSettings: ShellInstaller = {
     })
 
     const owner = webRequestOwnerFor(session.defaultSession)
+    // A kind can be blocked when its default is "block" or any site was told to block it.
+    const canBlock = (kind: 'javascript' | 'images'): boolean => settings.get(`sites.${kind}`) === 'block' || siteSettings.hasBlock(kind)
     // The owner matches a handler by address alone, so each one checks the kind of request it is about.
-    owner.onHeadersReceived(CONTENT_ORDER, { urls: WEB, types: ['mainFrame', 'subFrame'] }, WEB_ADDRESS, (details, current) => {
-      if (details.resourceType !== 'mainFrame' && details.resourceType !== 'subFrame') return current
-      // A main frame's own address is the page; a frame's page is the top document it sits in.
-      const page = details.resourceType === 'mainFrame' ? details.url : requestPage(details)
-      if (!rules.scriptsBlocked(page) || isPdf(current.responseHeaders)) return current
-      return { ...current, responseHeaders: withScriptBlock(current.responseHeaders) }
-    })
-    owner.onBeforeRequest(CONTENT_ORDER, { urls: WEB, types: ['image'] }, WEB_ADDRESS, (details, current) => {
-      return details.resourceType === 'image' && rules.imagesBlocked(requestPage(details)) ? { cancel: true } : current
-    })
+    const wanted = [
+      handlerWhileNeeded(() => canBlock('javascript'), () => owner.onHeadersReceived(CONTENT_ORDER, { urls: WEB, types: ['mainFrame', 'subFrame'] }, WEB_ADDRESS, (details, current) => {
+        if (details.resourceType !== 'mainFrame' && details.resourceType !== 'subFrame') return current
+        // A main frame's own address is the page; a frame's page is the top document it sits in.
+        const page = details.resourceType === 'mainFrame' ? details.url : requestPage(details)
+        if (!rules.scriptsBlocked(page) || isPdf(current.responseHeaders)) return current
+        return { ...current, responseHeaders: withScriptBlock(current.responseHeaders) }
+      })),
+      handlerWhileNeeded(() => canBlock('images'), () => owner.onBeforeRequest(CONTENT_ORDER, { urls: WEB, types: ['image'] }, WEB_ADDRESS, (details, current) => {
+        return details.resourceType === 'image' && rules.imagesBlocked(requestPage(details)) ? { cancel: true } : current
+      }))
+    ]
+    const syncHandlers = (): void => { for (const handler of wanted) handler.sync() }
+    syncHandlers()
+    settings.onChange(syncHandlers)
+    siteSettings.onChange(syncHandlers)
 
     siteSound.bind((pageUrl) => rules.soundBlocked(pageUrl))
     const applySound = (): void => {
