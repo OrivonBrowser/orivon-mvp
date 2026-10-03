@@ -14,6 +14,7 @@ vi.mock('../overlay-view.js', () => ({
       id: 100 + specs.length,
       attach: () => {},
       detach: () => {},
+      hide: () => {},
       setBounds: () => {},
       focusWhenReady: () => {},
       send: () => {},

@@ -1863,19 +1863,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
-### A344: The main menu that opens once and then no longer opens is not reproduced **[OWNER]**
-
-- **Question:** The owner saw the menu open once and then never again, on `npm run dev`. Driven here, every reopen worked. Against the
-  dev server with real pointer events under a window manager: open and close by the button, a quick click and a press held
-  700 ms. On a built run with real events: the dark scheme, every row, other toolbar popups, a resize, full screen and a
-  second window (an earlier run, whose logs were not kept). On a built run through Playwright: an app, pinned, split and
-  dead tab in front. The owner's desktop session is now Wayland (it was X11 before), so none of this ran on that path. Does the card open empty,
-  not at all, or behind something, and what does the terminal that runs `npm run dev` print at that moment?
-- **Why it matters:** a menu that cannot reopen blocks the window, and only the owner's session shows which path it takes.
-- **Options:** the owner pastes the terminal lines around it (rec.); try a Wayland compositor here; close it.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A345: Which action still flickers in light mode is not known **[OWNER]**
 
 - **Question:** The owner still sees a flicker in light mode. The code shows three candidates: the dashboard tab leaving
@@ -1975,5 +1962,13 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Question:** The main menu, the all-sites popup and the site-info popups judge a re-click by the press it completes (`d-0421`). The popups the chrome opens through `overlay.toggle` (downloads, tab search, extensions, the site-access chip, blocked pop-ups) still treat a toggle within 300 ms of their own blur-close as that close's echo, so a slow click on those buttons closes the popup on the press and opens it again on the release. Send the press from those buttons too?
 - **Why it matters:** a slow click on those buttons cannot close the popup they opened.
 - **Options:** have every button that toggles an overlay announce its press, with `onClick` helpers sharing one wiring (rec.); leave them on the clock.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A365: Maximising under a window manager is not shown to relayout the page area **[AI-REC]**
+
+- **Question:** Under openbox on a virtual X display, `win.maximize()` and `unmaximize()` were followed by no `resize` event for 1.5 s, and the tab view stayed the size the window had before (1272 x 720 in a 1280 x 800 window). Under a private GNOME Shell the same calls gave `maximize`, `move`, `resize` and a laid-out page. Does a window that a window manager maximises keep the old page area on X11, or is it this display?
+- **Why it matters:** a maximised window with a stale page area leaves a strip uncovered and puts a popup anchor where the toolbar no longer is.
+- **Options:** log `resize` and the content size on a real X11 session (rec.); call `layoutAll` on `maximize` and `unmaximize` as well; close it as the virtual display's.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing

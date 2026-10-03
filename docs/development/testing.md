@@ -376,6 +376,13 @@ pause, button up; Python `ctypes` over `libXtst.so.6` is enough). Read the outco
 `popoverShown`, and finish with `assertNoElectronSurvivors`. Nothing reaches the owner's screen. The
 probe is not part of the suite because it needs `openbox` and `libXtst`.
 
+**A page under Playwright is never hidden.** A debugger attached to a page keeps it shown, so a bug in whether a
+view's page is visible (a view removed from its window and added back stays hidden) cannot fail an ordinary spec, and `document.visibilityState` read through Playwright answers `visible`. Such a
+bug is seen by launching `electron-vite dev` itself under `openbox` (or a private `gnome-shell --headless` on its
+own D-Bus session, with `--ozone-platform=wayland`), driving the button with real pointer events, and reading the
+window's pixels from the compositor; the main process can log `visibilityState` and a `requestAnimationFrame`
+that never fires. A spec pins the cause it can see (the structure of the window's children) instead.
+
 ## Guards
 
 Thirteen checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,

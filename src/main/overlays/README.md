@@ -45,6 +45,16 @@ resize or the window closing dismisses them with every overlay, and showing a po
 for a panel that toggles itself straight after. `relayout()` closes an adopted panel every time, so
 its `close` must be idempotent.
 
+**A warm view is hidden in place, never removed from its window.** A `WebContentsView` taken out of the window with
+`removeChildView` and added back stays hidden on Electron 44 (X11 and Wayland alike): `document.visibilityState`
+reads `hidden` with the view attached, focused and sized, `requestAnimationFrame` never fires, and the card is
+blank from its second show on. `hide()` (`setVisible(false)`) and the next `attach` (`addChildView`, then
+`setVisible(true)`) do not have that effect, so a `keep: 'warm'` view stays a hidden child of its window between
+shows; a `fresh` view, or a warm one whose renderer died, is removed before it is destroyed. A page that has a
+debugger attached, which is every page under Playwright, reports itself visible after a removal all the same, so
+only a launch with no debugger shows the defect; `test/e2e-menu-warm.test.ts` pins the cause (the closed menu is
+still a child, hidden) instead, and the recipe for a real-pointer probe is in `docs/development/testing.md`.
+
 **A page's stylesheet is imported by its page.** `import './<name>.css'` in the page module is
 bundled into the overlay entry's one stylesheet, and every rule sits under
 `body[data-overlay='<name>']`. `src/renderer/overlay/surface.css` paints the page's own surface with

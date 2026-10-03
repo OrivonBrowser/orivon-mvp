@@ -26,9 +26,12 @@ export interface FocusTarget {
 /** The narrow surface the host drives; a test replaces the whole module with a fake. */
 export interface OverlayViewHandle {
   readonly id: number
-  /** Adds the view as `parent`'s topmost child; an existing child moves to the top. */
+  /** Adds the view as `parent`'s topmost child, or moves an existing child to the top, and shows it. */
   attach: (parent: View) => void
+  /** Takes the view off the window for good: a view about to be destroyed. */
   detach: (parent: View) => void
+  /** Takes the view off the screen but leaves it a child of its window, so the next `attach` only shows it again. */
+  hide: () => void
   setBounds: (bounds: Rectangle) => void
   /** Focuses the page once it can take it, unless `wanted()` is false by then. */
   focusWhenReady: (wanted: () => boolean) => void
@@ -100,8 +103,13 @@ export function createOverlayView (spec: OverlayViewSpec): OverlayViewHandle {
 
   return {
     id: contents.id,
-    attach: (parent) => { parent.addChildView(view) },
+    attach: (parent) => {
+      parent.addChildView(view)
+      view.setVisible(true)
+    },
     detach: (parent) => { parent.removeChildView(view) },
+    // A warm view is hidden in place, never removed: see README.md's Design notes for why.
+    hide: () => { view.setVisible(false) },
     setBounds: (bounds) => { view.setBounds(bounds) },
     focusWhenReady: (wanted) => {
       // A view that never held focus can never blur, so a blur-closed overlay would stay open forever.

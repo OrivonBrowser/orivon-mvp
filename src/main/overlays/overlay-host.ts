@@ -184,6 +184,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
   /** A dead renderer is not a destroyed webContents, so `ensureView` would keep handing it out: close the slot and drop the view, and the next show or prewarm builds a fresh one. */
   function discardView (slot: Slot): void {
     closeSlot(slot, 'request')
+    if (!disposed && slot.view !== null && !slot.view.isDestroyed()) slot.view.detach(deps.contentView)
     slot.view?.destroy()
     slot.view = null
     slot.pageReady = false
@@ -201,7 +202,11 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     slot.awaitingReply = false
     const view = slot.view
     if (view !== null && !view.isDestroyed()) {
-      if (!disposed) view.detach(deps.contentView)
+      if (!disposed) {
+        // A warm view stays in the window, hidden: see OverlayViewHandle.hide.
+        if (slot.def.keep === 'warm') view.hide()
+        else view.detach(deps.contentView)
+      }
       recordPopoverShown(view.id, false)
     }
     if (reason === 'blur') slot.lastBlurCloseAt = Date.now()
