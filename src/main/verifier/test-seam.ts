@@ -46,3 +46,10 @@ export function noteVerifierListening (listening: boolean): void {
   if (!SEAM_ENABLED || globalThis.__orivonDevEthFixtures === undefined) return
   globalThis.__orivonDevEthFixtures.listening = listening
 }
+
+/** Test builds only: how long the verifier host's start is held, so a suite can open an address before the host listens. Zero in an ordinary build. */
+export function verifierStartDelayMs (): number {
+  if (!SEAM_ENABLED) return 0
+  const delay = Number(process.env['ORIVON_TEST_VERIFIER_START_DELAY_MS'])
+  return Number.isFinite(delay) && delay > 0 ? delay : 0
+}

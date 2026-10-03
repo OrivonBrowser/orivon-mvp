@@ -2,10 +2,10 @@
 
 **What lives here.** `bundle.ts` (`fetchBundle`, the orchestration), `asset.ts` (the one-asset
 fetch and the bounded pool), `budget.ts` (the `Fetch` type, byte cap and idle deadline),
-`install-origin.ts` (T12/A46's public-unicast guard), `verifier-origin.ts` (the exception for
-hosts a protocol serves), `content-root.ts` (the root-CID request header), `update-check.ts` (the
-update-check interval and conditional-request validators) and `undeclared-assets.ts` (warning
-about subresources the manifest doesn't declare).
+`install-origin.ts` (T12/A46's public-unicast guard), `verifier-origin.ts` (the hosts a protocol
+serves, exempt from that guard and given a longer idle deadline), `content-root.ts` (the root-CID
+request header), `update-check.ts` (the update-check interval and conditional-request validators)
+and `undeclared-assets.ts` (warning about subresources the manifest doesn't declare).
 
 **What it depends on.** [`../../contracts/`](../../contracts/), [`../manifest/`](../manifest/)
 and [`../ddoc-declaration.ts`](../ddoc-declaration.ts). Value imports run one way into

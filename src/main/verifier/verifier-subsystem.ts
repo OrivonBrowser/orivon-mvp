@@ -1,8 +1,9 @@
 // Registers the verifier: the resolver rules sending every host a protocol
 // serves (a `.eth` name, an `ipfs://` address) to its loopback port, the
 // certificate check on every session, and the host process, started once
-// the first page has loaded so it never delays the window. Not critical:
-// without it every such load fails closed and nothing else changes.
+// the first page has loaded so it never delays the window, or at once by the
+// first request that needs it. Not critical: without it every such load
+// fails closed and nothing else changes.
 
 import { join } from 'node:path'
 import { app, session, utilityProcess } from 'electron'
@@ -26,7 +27,8 @@ import { HostSupervisor } from './host-supervisor.js'
 import { loopbackPort } from './loopback-port.js'
 import shippedCheckpoint from './mainnet-checkpoint.json'
 import { composeResolverRules } from './resolver-rules.js'
-import { ethTestSeam, noteVerifierListening } from './test-seam.js'
+import { ListeningGate } from './listening-gate.js'
+import { ethTestSeam, noteVerifierListening, verifierStartDelayMs } from './test-seam.js'
 import { VerifierStore } from './verifier-store.js'
 import { chooseNameEvidence } from './name-evidence.js'
 import type { NameEvidence } from './name-evidence.js'
@@ -38,6 +40,8 @@ import { unproxiedGateways } from './proxy-check.js'
 const START_FALLBACK_MS = 3_000
 /** Mounting may wait for the light client to sync, then resolve a name and follow its pointers. */
 const MOUNT_TIMEOUT_MS = 30_000
+/** How long a request to a verifier-served host waits for the host to listen: about three times the slowest start measured (3 s), so a host that never answers still ends in the ordinary error. */
+const LISTEN_WAIT_MS = 10_000
 
 let fingerprint: string | undefined
 let supervisor: HostSupervisor | undefined
@@ -45,6 +49,9 @@ let store: VerifierStore | undefined
 let lightClient: LightClientState = { state: 'off' }
 let checkpoint: CheckpointChoice | undefined
 let hostDown: string | undefined = 'not started yet'
+const listeningGate = new ListeningGate(LISTEN_WAIT_MS)
+/** Starts the host now if it has not started: a request that needs it must not wait for the first page or the fallback timer. */
+let startHost: () => void = () => {}
 const listeners = new Set<() => void>()
 /** Whether the person has the light client on. Set once the settings are read; until then it is on. */
 let enabledByPerson: () => boolean = () => true
@@ -110,6 +117,20 @@ function installPartitionStamp (target: Session): void {
     }
     const partition = requestPartition({ url: details.url, resourceType: details.resourceType, topUrl: frame?.top?.url })
     return { ...current, requestHeaders: withPartition(current.requestHeaders, PARTITION_HEADER, partition) }
+  })
+}
+
+/**
+ * Holds a request to a verifier-served host until the host listens, so a
+ * page opened in the first moments after launch loads instead of landing on
+ * the connection-refused page. Default session only, like the stamp above:
+ * the other sessions that reach the verifier register their own handlers.
+ */
+function installListeningGate (target: Session): void {
+  webRequestOwnerFor(target).onBeforeRequest(0, verifiedHostFilter(), targetsVerifiedHost, async (_details, current) => {
+    startHost()
+    await listeningGate.whenSettled()
+    return current
   })
 }
 
@@ -218,6 +239,8 @@ export async function verifierNameEvidence (origin: string, pin: PinRecord | nul
  */
 export async function verifierContentAddress (origin: string): Promise<ContentAddress | undefined> {
   if (!servedByVerifier(origin)) return undefined
+  startHost()
+  await listeningGate.whenSettled()
   if (supervisor === undefined) throw new Error('the verifier has not started')
   // The origin's own partition: the one a tab opening it uses.
   return contentAddressOf(await supervisor.request({ kind: 'mount', host: new URL(origin).hostname, partition: new URL(origin).origin }, MOUNT_TIMEOUT_MS))
@@ -252,20 +275,24 @@ export const verifierSubsystem: Subsystem = {
   afterReady: () => {
     installCertificateCheck(session.defaultSession)
     installPartitionStamp(session.defaultSession)
+    installListeningGate(session.defaultSession)
     const host = new HostSupervisor({
       fork: () => utilityProcess.fork(join(__dirname, 'verifier-host.js'), [], { serviceName: 'Orivon verifier' }),
       config: hostConfig,
       events: {
+        starting: () => { listeningGate.starting() },
         listening: (value) => {
           fingerprint = value
           hostDown = undefined
           noteVerifierListening(true)
+          listeningGate.listening()
           changed()
         },
         down: (reason) => {
           fingerprint = undefined
           hostDown = reason
           noteVerifierListening(false)
+          listeningGate.down()
           console.error(`[verifier] ${reason}`)
           changed()
         },
@@ -289,6 +316,14 @@ export const verifierSubsystem: Subsystem = {
       // debounce had not yet flushed, the same as a crash would.
       store?.flushSync()
     })
-    startAfterFirstPage(() => { host.start() })
+    let started = false
+    startHost = () => {
+      if (started) return
+      started = true
+      const delay = verifierStartDelayMs()
+      if (delay > 0) setTimeout(() => { host.start() }, delay)
+      else host.start()
+    }
+    startAfterFirstPage(startHost)
   }
 }

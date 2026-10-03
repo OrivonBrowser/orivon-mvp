@@ -23,7 +23,7 @@ Status and roadmap: `README.md`. What works today: `docs/planning/compatibility-
 | Opening a PR | `docs/development/pr-blueprint.md` |
 | Asking why, or who decided | `docs/decisions/decision-log.md` |
 | Hunting for a document | `docs/README.md` |
-| Running or porting a third-party app | `../orivon-ports/CLAUDE.md` |
+| Running or porting a third-party app. Use to get also instructions when user ask to port an APp | `../orivon-ports/CLAUDE.md` |
 
 ## The load-bearing idea
 
@@ -75,9 +75,9 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
 11. **A rule the owner states twice goes into the repository in the same session**: a hook, a
     guard or a line here, never only memory. Memory is keyed to the checkout path and stops
     loading after a move.
-12. If you create a PR, always ensure it has no merge conflicts and passes all tests
-13. Ask questions trough the tool, and never stop working until feedback/decision from owner is the only real bottleneck
-14. Merge PR's by yourself, unless owner decision is critical. This is preferred for faster development, 
+12. **If you create a PR, always ensure it has no merge conflicts and passes all tests**
+13. **Ask questions trough the tool** and never stop working until feedback/decision from owner is the only real bottleneck, owner may be sleeping, and his response should not be the reason for you to stop unless there is no other way around.
+14. **Merge session changes in a PR's by yourself**, unless owner decision is critical. Applies for orivon-ports operations as well. This is preferred for faster development. Most of the times if you wait for my approval to merge a PR to main you will end un in a conflict loop, since development goes so fast. If you don't merge it state it very clearly at the end of the prompt.
 
 ## Commands
 
@@ -121,3 +121,32 @@ no notification, no sound (`test/launch-electron.mjs` silences every launch).
 - Docs are Markdown, `kebab-case.md`, ASCII prose (`§` is open, A91). Code is TypeScript only.
 - Ported third-party apps live in `../orivon-ports`, and nothing here may depend on that
   checkout; the apps this repository's own tests serve live under `test/apps/`.
+
+## Tooling: what fires when (`.claude/settings.json`)
+
+Plugins are project-scoped and travel with the repo. Some are automatic; the rest must be invoked
+at the step named here. **Check this table at the start of every build step.**
+
+| Tool | Fires | Use it for |
+|---|---|---|
+| `typescript-lsp` | Automatic on `.ts` edits | Type errors across main, preload and renderer. Trust its diagnostics over your own reading of a type |
+| `security-guidance` | Automatic: on edits, when you stop, and on every `git commit` | Path traversal (T1), local-network reach (T12), secrets. Address or explicitly acknowledge every finding |
+| `hookify` rules in `.claude/hookify.*.local.md` | Automatic on edits and shell commands | Thirteen rules. **Block (8):** native modules (in code and in `package.json`), insecure `webPreferences`, non-TypeScript sources, an Electron launch that bypasses `scripts/run-headless.mjs` or could take focus, in-place branch switches (`git pull`/`checkout`/`switch`, `gh pr checkout`) and tree-wide discards (`reset --hard`, `clean -f`, `stash drop`). **Warn (5):** hardcoded storage paths, vision features not built yet, file-header essays, comments that narrate the change instead of the code, and live pages that narrate their own history (Rule 2). When the owner corrects the same thing twice, add a rule with `/hookify`. Start its `file_path` pattern with `^(?:.*/)?` before the directory name, because a repo-root anchor never matches the absolute path an edit passes, and the rule dies silently. There is no `not_regex_match` operator, and an unknown operator kills the whole rule (A55) |
+| `superpowers` | Process, automatic via its session hook | `brainstorming` before new work, `writing-plans` for anything multi-step, `test-driven-development` for every broker or policy function, `systematic-debugging` on any failure, `verification-before-completion` before claiming done |
+| `context7` (MCP) | **Manual: before writing code against Electron or webtorrent APIs** | `protocol.handle`, `utilityProcess`, `MessagePortMain`, `WebContentsView`, `session` partitions, `safeStorage`; webtorrent 3.x internals. Training data is stale for this stack (Electron 44), so check a signature live before trusting the remembered one |
+| `playwright` (MCP) | **Manual: the localhost fixture app** | Driving a real web page. The Electron e2e uses the `_electron` library, not this |
+| `claude-security` | **Manual: before packaging (step 10)** | Whole-repo multi-agent vulnerability scan with verified findings. Expensive: run it at milestones, not continuously |
+| `claude-md-management` | **Manual: `/revise-claude-md` at the end of any session that changed an assumption in this file** | Keeps this file true as the code moves |
+| `orivon-electron` (project skill) | **Manual: before writing or debugging any Electron or webtorrent code** | The renderer-bundling alias recipe, the `app.windows()`-not-`app.firstWindow()` rule, `MessagePortMain`'s silent failures, and why to check `electron.d.ts` before trusting any claim about `BaseWindow` options. Exists nowhere else |
+| `orivon-comments` (project skill) | **Manual: before writing or editing a comment in `src/`** | Where rationale goes when it is not a "you will break this line" comment, and how to handle a header over budget |
+| `adversarial-reviewer` (user skill) | **Manual: after each build step lands** | A multi-perspective hostile review; `docs/planning/audit-2026-08-25.md` is what one produces. Run it on the broker and the app loader at minimum |
+| `/code-review`, `/security-review`, `/simplify` | Manual | Per-diff review before each commit on the critical path |
+
+## Devlog capture
+
+`devlog/journal.md` feeds the Sunday team devlog (compiled by `/devlog`). At the end of any
+session where something notable happened (a milestone, a decision taken or reversed, a direction
+change, a worry the owner kept returning to), append a one-line bullet to the current week's
+section: **Done / results** for outcomes, **In my head** for thinking. Skip routine sessions.
+**25 words at most per bullet**; a result too big for that is two bullets
+(`.claude/commands/devlog.md` rule C).
