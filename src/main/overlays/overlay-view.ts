@@ -91,7 +91,9 @@ export function createOverlayView (spec: OverlayViewSpec): OverlayViewHandle {
   registerOverlayIpc(contents, url, spec.port)
   // Not from inside the native call that raised it: a window shrunk under an open popup blurs the popup while the resize is still running, and taking the view out of the window there kills the process.
   contents.on('blur', () => { setImmediate(spec.onBlur) })
-  contents.on('focus', spec.onFocus)
+  // Deferred too: a view attached before its first page commits takes focus as it commits, and focus given back
+  // from inside that change does not hold.
+  contents.on('focus', () => { setImmediate(spec.onFocus) })
   contents.on('render-process-gone', spec.onGone)
   // A text box in a popup (the find bar, a prompt, the bookmark bubble) gets the edit menu a tab's text box gets, and
   // nothing else: no page item, and nothing that opens a tab.
