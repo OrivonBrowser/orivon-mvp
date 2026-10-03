@@ -255,6 +255,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **A page that fails to load says so**: a sheet over the tab names why (no such server, refused, offline, blocked),
+  with the address, the error's name and Try again, instead of an empty white page.
 - **uBlock Origin no longer grows its storage until the browser takes gigabytes of memory**: an extension's
   `chrome.storage.managed` is now an empty, read-only store, as in Chrome, instead of a second name for its local storage.
 - **A page with no icon of its own shows the globe again**, as in Chrome, instead of an icon the tab or history remembered

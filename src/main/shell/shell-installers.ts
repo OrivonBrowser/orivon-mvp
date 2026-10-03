@@ -14,6 +14,7 @@ import { installTabSlots } from '../overlays/install-tab-slots.js'
 import { installFormWatch } from '../passwords/install-form-watch.js'
 import { installPrivacyNet } from '../privacy/install-privacy-net.js'
 import { installReader } from '../reader/install-reader.js'
+import { installLoadErrors } from '../sad-tab/install-load-errors.js'
 import { installQuestions } from './question/install-questions.js'
 import { installSidePanel } from '../side-panel/install-side-panel.js'
 import { installContentSettings } from '../site-settings/install-content-settings.js'
@@ -33,6 +34,7 @@ export const SHELL_INSTALLERS: readonly ShellInstaller[] = [
   installContentSettings,
   installFocus,
   installFormWatch,
+  installLoadErrors,
   installMemorySaver,
   installPrivacyNet,
   installQuestions,
