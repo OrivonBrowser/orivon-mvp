@@ -30,19 +30,25 @@ export function hasApiPermission (manifest: unknown, name: string): boolean {
   return Array.isArray(permissions) && permissions.includes(name)
 }
 
+/** `patterns` (an extension's explicit host permissions, already read out of its manifest) cover `url`. */
+function patternsCover (patterns: readonly string[], url: string | undefined): boolean {
+  if (url === undefined) return false
+  // No extension ever gets file access, so file: is never covered here --
+  // README.md's "allowFileAccess is never true" entry has why.
+  if (url.startsWith('file:')) return false
+  return matchesAnyHostPattern(patterns, url)
+}
+
 /** True when `manifest`'s own explicit host_permissions (plus MV2's
  * host-pattern entries in `permissions`) cover `url` -- never a
  * content_scripts match alone. `undefined` never matches -- a tab or
  * cookie with no resolvable URL yet (a still-loading tab, a malformed
  * cookie domain) carries nothing a host pattern could cover. */
 export function hasHostAccess (manifest: unknown, url: string | undefined): boolean {
-  if (url === undefined) return false
-  // No extension ever gets file access, so file: is never covered here --
-  // README.md's "allowFileAccess is never true" entry has why.
-  if (url.startsWith('file:')) return false
+  if (url === undefined || url.startsWith('file:')) return false
   const result = readExtensionManifest(manifest)
   if (!result.ok) return false
-  return matchesAnyHostPattern(result.facts.hostPermissions, url)
+  return patternsCover(result.facts.hostPermissions, url)
 }
 
 /** Chrome's own rule for chrome.cookies and the sensitive chrome.tabs
@@ -66,15 +72,23 @@ export const HOST_ACCESS_RULES: ReadonlyArray<HostAccessRule> = [
   revokedHostRule
 ]
 
-/** What `hasHostAccess` answers, after the rules above have had their say.
- * Every host-gated API call and event goes through this one function, so a
- * rule applies everywhere at once. */
-export function hostAccessFor (extensionId: string, manifest: unknown, url: string | undefined, tabId?: number): boolean {
+/** What `hasHostAccess` answers, after the rules above have had their say,
+ * for a caller that already holds the extension's host permissions: a request
+ * path asks this per URL and reads the manifest once, not once per question. */
+export function hostAccessForPatterns (extensionId: string, hostPermissions: readonly string[], url: string | undefined, tabId?: number): boolean {
   for (const rule of HOST_ACCESS_RULES) {
     const answer = rule({ extensionId, url, tabId })
     if (answer !== undefined) return answer
   }
-  return hasHostAccess(manifest, url)
+  return patternsCover(hostPermissions, url)
+}
+
+/** `hostAccessForPatterns` over an extension's own manifest. Every
+ * host-gated API call and event goes through one of the two, so a rule
+ * applies everywhere at once. */
+export function hostAccessFor (extensionId: string, manifest: unknown, url: string | undefined, tabId?: number): boolean {
+  const result = readExtensionManifest(manifest)
+  return hostAccessForPatterns(extensionId, result.ok ? result.facts.hostPermissions : [], url, tabId)
 }
 
 /** `hasApiOrHostAccess` through `hostAccessFor`. */
