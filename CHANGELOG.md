@@ -256,6 +256,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **Three ways the whole browser could quit are closed**: an app's helper page failing to load, a light-client
+  checkpoint the disk refuses to keep, and a profile file holding `null`.
 - **The light client switch applies at the next start, as Settings says**: switching it mid-run no longer changes the
   status line at once while `.eth` pages keep verifying, nor takes effect when the verifier next wakes.
 - **Restart Orivon no longer reopens the page Orivon was started with**, and Email link says so when no mail program

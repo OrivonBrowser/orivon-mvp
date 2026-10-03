@@ -256,8 +256,8 @@ export function wireView (id: string, record: TabRecord): void {
   // without going through closeTab(). Without this the id stays in the tab
   // map, and the NEXT emitState() -- fired by any OTHER tab's event -- calls
   // .getURL() on a destroyed native object and throws inside a main-process
-  // Electron callback. There is no top-level handler anywhere in this app,
-  // so that throw exits the whole process (electron/electron#19887).
+  // Electron callback, and index.ts's top-level handler exits the whole
+  // process on such a throw (electron/electron#19887).
   // Clearing the record here is what makes every `!isDestroyed()` guard
   // actually reachable rather than theatre. Only for the view the tab
   // shows: repartitionView() closes a swapped-out view after the record has

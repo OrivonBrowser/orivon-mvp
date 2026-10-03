@@ -324,7 +324,12 @@ export const verifierSubsystem: Subsystem = {
           changed()
         },
         checkpoint: (root, timestamp) => {
-          verifierStore().saveCheckpoint({ root, timestamp }, Math.floor(Date.now() / 1000))
+          try {
+            verifierStore().saveCheckpoint({ root, timestamp }, Math.floor(Date.now() / 1000))
+          } catch (error) {
+            // A full or read-only profile: the checkpoint is fetched again by a later run.
+            console.error('[verifier] could not keep the new checkpoint:', error)
+          }
           chooseNow()
           changed()
         },
