@@ -11,6 +11,7 @@ import { openBookmarkAllTabs, starCommand } from '../shell/bookmark-bubble/open-
 import { toggleBookmarksBar } from '../shell/bookmarks-bar/bar-visibility.js'
 import { moveToNewWindow } from '../shell/tab-move.js'
 import { goHome } from '../shell/home.js'
+import { startNavigation } from '../shell/leave-page-prompt.js'
 import { OMNIBOX_MODULE } from '../omnibox/omnibox-names.js'
 import { sendChromeEvent } from '../shell/shell-events.js'
 import { cascadeFrom } from '../shell/window-options.js'
@@ -75,7 +76,12 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'nav.back': if (active !== undefined) tabs.back(active.id); return
     case 'nav.forward': if (active !== undefined) tabs.forward(active.id); return
     case 'nav.reload': if (active !== undefined) tabs.reload(active.id); return
-    case 'nav.hardReload': tabs.activeWebContents()?.reloadIgnoringCache(); return
+    case 'nav.hardReload': {
+      // Through the shell's own start, so "Leave" in the page's leave question runs it again.
+      const page = tabs.activeWebContents()
+      if (page !== undefined) startNavigation(page, () => { page.reloadIgnoringCache() })
+      return
+    }
     case 'nav.home': goHome(tabs, services.settings, { newTab: false }); return
     case 'nav.stop': tabs.activeWebContents()?.stop(); return
     case 'focus.nextPane': cyclePane({ window: target, services }, 1); return

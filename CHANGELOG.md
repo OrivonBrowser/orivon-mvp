@@ -255,6 +255,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **The keyboard goes to the page after Enter or Escape in the address bar**, a tab switch with the bar focused shows that
+  tab's address, and "Leave" in a page's leave question runs Ctrl+Shift+R and the page menu's Back and Forward again.
 - **The address bar opens what is an address and searches what is not**: `münchen.de`, `nas:5000`, `LOCALHOST:3000` and
   `[::1]:8080/api` open; `python3.12` and `3.14` are searched (no blank page, no IP address); `git ` with a space completes nothing.
 - **A slow click on the downloads, tab search, extensions or address-bar chip buttons closes their popup**, as on the

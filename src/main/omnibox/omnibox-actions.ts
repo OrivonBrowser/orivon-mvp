@@ -121,6 +121,8 @@ function perform (ctx: WindowContext, outcome: Outcome): void {
   } else {
     tabs.createTab(outcome.target, outcome.disposition === 'tab')
   }
+  // The page in front, the one chosen unless it opened behind, takes the keyboard from the address bar.
+  tabs.activeWebContents()?.focus()
 }
 
 /** Activates the tab, in its own window, and leaves behind no empty new tab the choice was made from. */
