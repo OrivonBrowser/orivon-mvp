@@ -12,7 +12,6 @@ export interface TabPanesHost {
   readonly contentView: View
   readonly splits: SplitController
   readonly record: (id: string) => TabRecord | undefined
-  readonly records: () => Iterable<readonly [string, TabRecord]>
   readonly activeId: () => string | null
   readonly setActiveId: (id: string) => void
   readonly area: () => Bounds
@@ -49,11 +48,6 @@ export class TabPanes extends PaneHost {
   /** Shows `view` for a tab whose view was swapped, in the tab's pane. */
   swap (id: string, view: WebContentsView): void {
     this.replace(id, view, this.bounds(id))
-  }
-
-  idOfView (view: WebContentsView): string {
-    for (const [id, record] of this.deps.records()) if (record.view === view) return id
-    return ''
   }
 
   /** The tab holding the whole window (`HtmlFullscreen`'s answer, ../fullscreen.ts), only while still in front. */

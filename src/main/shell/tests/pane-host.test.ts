@@ -293,4 +293,41 @@ describe('PaneHost settling a pane whose page did not take its size', () => {
       expect(reads).toHaveBeenCalledTimes(3)
     } finally { vi.useRealTimers() }
   })
+  it('checks the view that replaces a pane like a pane just put on screen', async () => {
+    vi.useFakeTimers()
+    try {
+      const { host, view, reads } = withLayout([{ width: 100, height: 100 }, { width: 400, height: 300 }])
+      const { view: other } = setup()
+      host.show([pane(view)])
+      await vi.advanceTimersByTimeAsync(300)
+      expect(reads).toHaveBeenCalledTimes(1)
+      const next = other('A2')
+      host.replace('a', next as never, B(5))
+      await vi.advanceTimersByTimeAsync(300)
+      expect(reads).toHaveBeenCalledTimes(2)
+      expect(next.setBounds).toHaveBeenLastCalledWith({ ...B(5), width: 101 })
+    } finally { vi.useRealTimers() }
+  })
+
+  it('checks a pane of a split again on request, and a pane that fills the area never', async () => {
+    vi.useFakeTimers()
+    try {
+      const { host, view, reads } = withLayout([])
+      const { view: other } = setup()
+      host.show([pane(view)])
+      await vi.advanceTimersByTimeAsync(300)
+      expect(reads).toHaveBeenCalledTimes(1)
+      host.recheck('a')
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(reads).toHaveBeenCalledTimes(1)
+
+      host.show([pane(view), { id: 'b', view: other('B') as never, bounds: B(200) }])
+      await vi.advanceTimersByTimeAsync(300)
+      const before = reads.mock.calls.length
+      host.recheck('a')
+      await vi.advanceTimersByTimeAsync(300)
+      expect(reads.mock.calls.length).toBe(before + 1)
+      host.recheck('gone')
+    } finally { vi.useRealTimers() }
+  })
 })

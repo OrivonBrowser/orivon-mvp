@@ -49,7 +49,7 @@ const { TabManager } = await import('../tabs.js')
 const { TabLifecycle } = await import('../tab-lifecycle.js')
 const { TAB_SIGNALS, applyTabSignals, signalState, wireTabSignals } = await import('../tab-signals.js')
 
-const fakeContentView = { addChildView: vi.fn(), removeChildView: vi.fn() }
+const fakeContentView = { children: [] as unknown[], addChildView: vi.fn(), removeChildView: vi.fn() }
 const APP_CTX = { broker: { app: { isRegisteredSync: (origin: string) => origin === 'https://app.example' }, dropOrigin: async () => {} } } as unknown as SubsystemContext
 
 function newManager (shell?: Record<string, unknown>, ctx: SubsystemContext = {} as SubsystemContext): InstanceType<typeof TabManager> {

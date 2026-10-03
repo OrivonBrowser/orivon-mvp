@@ -185,16 +185,26 @@ export class PaneHost {
     this.held.delete(id)
   }
 
-  /** Shows `view` for a pane that is on screen already under another view, in the same place. */
+  /** Shows `view` for a pane that is on screen already under another view, in the same place: the old view's
+   * slot among `contentView`'s children, never on top, so a popover open above the pane stays above it and a
+   * split's panes keep their order. The new view's page is checked against the bounds like any pane put on screen. */
   replace (id: string, view: View, bounds: Bounds): void {
-    const old = this.shown.get(id)
+    const old = this.shown.get(id) ?? this.held.get(id)
     const index = old === undefined ? -1 : this.contentView.children.indexOf(old)
     this.hide(id)
-    // At the old view's place, never on top: a popover open above the pane stays above it.
     if (index === -1) this.contentView.addChildView(view)
     else this.contentView.addChildView(view, index)
     this.shown.set(id, view)
     this.placed.set(id, bounds)
     view.setBounds(bounds)
+    this.settle(id, view, SETTLE_TRIES)
+  }
+
+  /** A pane's page committed a new document, which can give it a fresh renderer view that lays itself out at a
+   * size other than the pane's: the same check as for a pane just put on screen. Only while there are two panes,
+   * where a view that is not the whole area can be told a size it already has. */
+  recheck (id: string): void {
+    const view = this.shown.get(id)
+    if (view !== undefined && this.shown.size > 1) this.settle(id, view, SETTLE_TRIES)
   }
 }

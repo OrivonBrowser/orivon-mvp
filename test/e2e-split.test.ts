@@ -2,28 +2,41 @@
 // its pane, with a divider that resizes, a pane that is the one the person is in,
 // and the gestures that make and unmake one. Read off the real window: which
 // views are in it, and where.
-import { createServer, type Server } from 'node:http'
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import pngjs from 'pngjs'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './launch-electron.mjs'
 import { clickAddressBarRetrying } from './e2e-helpers.js'
 import { delay, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
+import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
+import type { Manifest } from '../src/contracts/index.js'
+
+const { PNG } = pngjs
 
 let server: Server
+let appServer: Server
 let origin = ''
+let appOrigin = ''
+
+/** Every page is one green, with a link, so a pane that paints nothing is told from one that paints its page. */
+const PAGE_GREEN = [30, 140, 90]
+const page = (request: IncomingMessage, response: ServerResponse): void => {
+  response.setHeader('content-type', 'text/html')
+  response.end(`<!doctype html><title>Page ${request.url ?? ''}</title><body style="margin:0;height:100vh;background:rgb(${PAGE_GREEN.join(',')})"><p>${request.url ?? ''}</p><a id="go" href="${request.url ?? ''}-link">link</a></body>`)
+}
 
 beforeAll(async () => {
-  server = createServer((request, response) => {
-    response.setHeader('content-type', 'text/html')
-    response.end(`<!doctype html><title>Page ${request.url ?? ''}</title><body style="margin:0;height:100vh"><p>${request.url ?? ''}</p></body>`)
-  })
-  await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+  server = createServer(page)
+  appServer = createServer(page)
+  await Promise.all([server, appServer].map(async (each) => { await new Promise<void>((resolve) => { each.listen(0, '127.0.0.1', resolve) }) }))
   origin = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`
+  appOrigin = `http://127.0.0.1:${String((appServer.address() as AddressInfo).port)}`
 })
 
 afterAll(async () => {
-  await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+  await Promise.all([server, appServer].map(async (each) => { await new Promise<void>((resolve) => { each.close(() => { resolve() }) }) }))
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
@@ -413,3 +426,116 @@ it('lays a page out at its pane when it was captured behind the one in front and
     await closeElectron(app)
   }
 }, TEST_TIMEOUT_MS)
+
+/** Where a view's page is painted: the colour of the pixel at the middle of a screenshot of it. */
+async function paintedColour (pane: Page): Promise<number[]> {
+  const png = PNG.sync.read(await pane.screenshot({ timeout: 5000 }))
+  const at = (Math.floor(png.height / 2) * png.width + Math.floor(png.width / 2)) * 4
+  return [png.data[at] ?? 0, png.data[at + 1] ?? 0, png.data[at + 2] ?? 0]
+}
+
+const SITE_RESOLVER = '--host-resolver-rules=MAP *.test 127.0.0.1, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1'
+
+it('keeps the pane that was split in laid out, in its place and painted through every kind of navigation', async () => {
+  const app = await launchElectron({ appPath: '.', args: [SITE_RESOLVER] })
+  expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
+  const chrome = findChrome(app)
+  try {
+    const manifest: Manifest = { orivonApiVersion: 0, id: 'app.orivon.split-probe', name: 'split probe', version: '0.1.0', entry: 'index.html', capabilities: { net: { tcp: { connect: ['127.0.0.1:9'] } } } }
+    const granted = await app.evaluate(async (_electron, request: DevGrantRequest) => {
+      const hook = (globalThis as unknown as { __orivonDevGrant?: (r: DevGrantRequest) => Promise<unknown> }).__orivonDevGrant
+      if (typeof hook !== 'function') return false
+      await hook(request)
+      return true
+    }, { origin: appOrigin, manifest, capability: 'tcp.connect', patterns: ['127.0.0.1:9'] } satisfies DevGrantRequest)
+    expect(granted).toBe(true)
+    await app.evaluate(({ Menu }) => { (Menu.prototype as unknown as { popup: () => void }).popup = function (this: unknown) { (globalThis as unknown as { __menu: unknown }).__menu = this } })
+    const [, a, b] = await openTabs(chrome, '/a', '/b') as [string, string, string]
+    // A new tab keeps the page in front attached until its own page has drawn; the split starts once that is over.
+    expect(await waitFor(async () => (await layout(app)).filter((view) => view.url.startsWith('http')).length === 1)).toBe(true)
+    // /a is behind /b: it is the page the menu brings in, so its pane is the one that was split in.
+    await chrome.click(`.tab[data-id="${a}"]`, { button: 'right' })
+    expect(await waitFor(async () => await app.evaluate(() => (globalThis as unknown as { __menu?: unknown }).__menu !== undefined))).toBe(true)
+    await app.evaluate(() => {
+      const menu = (globalThis as unknown as { __menu: { items: Array<{ label: string, submenu?: { items: Array<{ label: string, click: () => void }> } }> } }).__menu
+      menu.items.find((item) => item.label === 'Split with')?.submenu?.items.find((entry) => entry.label === 'Page /b')?.click()
+    })
+    expect(await waitFor(async () => (await joined(chrome)).join() === [a, b].join())).toBe(true)
+    expect(await waitFor(async () => backdropAt(await layout(app)) !== undefined)).toBe(true)
+
+    const site = (name: string): string => origin.replace('127.0.0.1', `${name}.test`)
+    const leftPage = (part: string): Page | undefined => app.windows().find((candidate) => candidate.url().includes(part))
+    const failures: string[] = []
+
+    /** Waits for the left pane to show `part`, then reads everything the person sees of both panes. */
+    const settled = async (step: string, part: string, rightPart: string): Promise<void> => {
+      const shown = await waitFor(async () => {
+        const views = await layout(app)
+        return inWindow(views, part) !== undefined && inWindow(views, rightPart) !== undefined && await pagesFitTheirPanes(app, [part, rightPart])
+      }, 12_000)
+      const views = await layout(app)
+      const pageViews = views.filter((view) => view.url.startsWith('http'))
+      if (!shown) failures.push(`${step}: the panes ${part} and ${rightPart} are not both laid out at their bounds (${views.map((view) => `${view.url} ${JSON.stringify(view.bounds)}`).join('; ')})`)
+      const frame = views.findIndex((view) => view.url.includes('/split-frame/'))
+      if (frame !== 0) failures.push(`${step}: the backdrop is not the lowest view (index ${String(frame)})`)
+      const byStack = pageViews.map((view) => view.bounds.x)
+      if (byStack.length !== 2 || (byStack[0] ?? 0) > (byStack[1] ?? 0)) failures.push(`${step}: the panes are not stacked in the order they read: x ${byStack.join(', ')}`)
+      for (const each of [part, rightPart]) {
+        const view = leftPage(each)
+        if (view === undefined) { failures.push(`${step}: no page for ${each}`); continue }
+        const visibility = await view.evaluate(() => document.visibilityState).catch(() => 'unreadable')
+        if (visibility !== 'visible') failures.push(`${step}: ${each} is ${visibility}`)
+        const colour = await paintedColour(view).catch(() => [-1])
+        if (colour.join() !== PAGE_GREEN.join()) failures.push(`${step}: ${each} paints ${colour.join()}, not its page`)
+      }
+    }
+
+    // The pane that was split in is the one the person works in.
+    await leftPage(`${origin}/a`)?.mouse.click(120, 200)
+    expect(await waitFor(async () => await activeId(chrome) === a)).toBe(true)
+    await settled('after the split', `${origin}/a`, `${origin}/b`)
+
+    await clickAddressBarRetrying(chrome, `${origin}/c1`)
+    await settled('address bar, same site', `${origin}/c1`, `${origin}/b`)
+
+    await leftPage(`${origin}/c1`)?.click('#go')
+    await settled('link, same site', `${origin}/c1-link`, `${origin}/b`)
+
+    await leftPage(`${origin}/c1-link`)?.evaluate((target) => { location.href = target }, `${origin}/c2`)
+    await settled('script, same site', `${origin}/c2`, `${origin}/b`)
+
+    await clickAddressBarRetrying(chrome, `${site('two')}/c3`)
+    await settled('address bar, another site', `${site('two')}/c3`, `${origin}/b`)
+
+    await leftPage(`${site('two')}/c3`)?.evaluate((target) => { location.href = target }, `${site('three')}/c4`)
+    await settled('script, another site', `${site('three')}/c4`, `${origin}/b`)
+
+    await clickAddressBarRetrying(chrome, `${appOrigin}/c5`)
+    await settled('address bar, into an app', `${appOrigin}/c5`, `${origin}/b`)
+
+    await leftPage(`${appOrigin}/c5`)?.evaluate((target) => { location.href = target }, `${origin}/c6`)
+    await settled('script, out of an app', `${origin}/c6`, `${origin}/b`)
+
+    await leftPage(`${origin}/c6`)?.evaluate((target) => { location.href = target }, `${appOrigin}/c7`)
+    await settled('script, into an app', `${appOrigin}/c7`, `${origin}/b`)
+
+    // The other pane gets the same: one press makes it the pane the person is in.
+    await leftPage(`${origin}/b`)?.mouse.click(120, 200)
+    expect(await waitFor(async () => await activeId(chrome) === b)).toBe(true)
+    await clickAddressBarRetrying(chrome, `${appOrigin}/d1`)
+    await settled('the other pane, into an app', `${appOrigin}/c7`, `${appOrigin}/d1`)
+    await leftPage(`${appOrigin}/d1`)?.evaluate((target) => { location.href = target }, `${origin}/d2`)
+    await settled('the other pane, out of an app', `${appOrigin}/c7`, `${origin}/d2`)
+
+    // An address of the shell's own opens its page in a tab of its own, which takes the screen from the pair; the pair comes back whole.
+    await clickAddressBarRetrying(chrome, 'orivon://settings')
+    expect(await waitFor(async () => (await layout(app)).every((view) => !view.url.includes(`${origin}/`) && !view.url.includes('/split-frame/')))).toBe(true)
+    await chrome.click(`.tab[data-id="${a}"]`)
+    await settled('back from an internal page', `${appOrigin}/c7`, `${origin}/d2`)
+
+    expect(failures).toEqual([])
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, 240_000)

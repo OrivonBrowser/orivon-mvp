@@ -199,9 +199,10 @@ export interface TabViewHost {
   readonly tabLifecycle: TabLifecycle | undefined
   /** Whether the tab's view is on screen: it is the tab in front, or the other pane beside it. */
   isShown: (id: string) => boolean
-  /** Takes a view off the screen, and puts another in its place: what a tab moving to another session does. */
-  detachView: (view: WebContentsView) => void
+  /** Puts another view on screen in the place of the tab's current one: what a tab moving to another session does. */
   attachView: (id: string, view: WebContentsView) => void
+  /** The tab's page committed a new document: a pane's page is checked against its bounds again. */
+  paneCommitted: (id: string) => void
   /** The person pressed in the tab's page. In a split, that makes it the pane they are in. */
   paneClicked: (id: string) => void
   /** "Open Link in Split View": the link opens in a new tab beside this one. */

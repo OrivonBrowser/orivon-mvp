@@ -154,6 +154,7 @@ export function wireView (id: string, record: TabRecord): void {
     // actually fires.
     trackDocumentOrigin(wc, navigatedUrl, record.host.broker)
     if (!shown()) return
+    record.host.paneCommitted(id)
     // History's icon only while history is remembering: a private window reads nothing kept on disk.
     const history = record.host.services?.history
     faviconOnCommit(record, navigatedUrl, (address) => history?.remembering === true ? knownIcon(history, address) : null)

@@ -33,7 +33,6 @@ function setup (): {
     contentView: contentView as never,
     splits: { plan: (id: string | null) => ({ panes: id === null ? [] : [{ id, bounds: AREA }], frame: null }), groups: { partnerOf: () => null } } as never,
     record: (id: string) => records.get(id) as never,
-    records: () => records.entries() as never,
     activeId: () => active,
     setActiveId: (id: string) => { active = id },
     area: () => AREA,

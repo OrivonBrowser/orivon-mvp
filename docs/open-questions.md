@@ -1924,6 +1924,14 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
+### A364: A split-in pane that goes blank on a new address is not reproduced **[OWNER]**
+
+- **Question:** On the owner's Wayland session, with a GPU, a page split in beside another renders at first and goes blank once a new address is opened in it. Does it still, after a swapped pane keeps its place and a pane is checked after every document it commits, and what does `webContents.getOSProcessId()`, the view's bounds and `innerWidth` read in that pane when it is blank?
+- **Why it matters:** headless runs (xvfb with a window manager; a private GNOME Shell with software rendering, scale 1 and 1.25) kept the pane laid out and painted through address-bar, link, script, cross-site, into-app and out-of-app navigations, so the cause on the owner's GPU path is unmeasured.
+- **Options:** the owner runs the terminal lines around the blank pane and a screenshot (rec.); try `--disable-gpu` in `npm run dev` to split GPU from layout; close it.
+- **Who decides:** owner
+- **Blocks:** nothing
+
 ### A363: A tab's icon is shared by every address on the same host **[AI-REC]**
 
 - **Question:** Tab icons are kept under the host name alone, so FreeTube on 127.0.0.1:9291 and any other page on 127.0.0.1 show the same icon. Should the key include the port?

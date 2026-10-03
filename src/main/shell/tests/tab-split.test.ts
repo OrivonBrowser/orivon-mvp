@@ -48,9 +48,15 @@ vi.mock('electron', () => ({
   })
 }))
 
+// Only a cache-served origin moves a tab to a session of its own (tabs.test.ts mocks the registry the same way).
+const { served } = vi.hoisted(() => ({ served: new Set<string>() }))
+vi.mock('../../../loader/electron/serve.js', () => ({
+  isOriginServedFromCacheSync: (origin: string) => served.has(origin)
+}))
+
 const { TabManager } = await import('../tabs.js')
 
-beforeEach(() => { createdViews.length = 0 })
+beforeEach(() => { createdViews.length = 0; served.clear() })
 
 const AREA = { x: 0, y: 100, width: 1000, height: 600 }
 
@@ -67,7 +73,7 @@ interface Rig {
   onEmpty: ReturnType<typeof vi.fn>
 }
 
-function rig (): Rig {
+function rig (ctx: SubsystemContext = {} as SubsystemContext): Rig {
   const children: unknown[] = []
   // Electron 44's own `View`: re-adding a child already there reorders it to
   // the top instead of appending a duplicate; a fresh one goes at `index`,
@@ -95,7 +101,7 @@ function rig (): Rig {
     showNotice: () => {},
     hideNotice: () => {}
   })
-  manager = new TabManager(contentView as never, () => area.current, onEmpty, 'http://localhost:5999/newtab/', {} as SubsystemContext, {
+  manager = new TabManager(contentView as never, () => area.current, onEmpty, 'http://localhost:5999/newtab/', ctx, {
     window: { isDestroyed: () => false } as never,
     htmlFullscreenChanged: (id, entered) => { htmlFullscreen.changed(id, entered, manager.getState().activeTabId) },
     fullscreenTabId: () => htmlFullscreen.tabId,
@@ -368,6 +374,43 @@ describe('two tabs in a split', () => {
     expect((createdViews[0] as RecordedView).webContents.focus).toHaveBeenCalledTimes(1)
     expect((createdViews[1] as RecordedView).webContents.focus).not.toHaveBeenCalled()
     expect(manager.splits.focusOther('tab-not-here')).toBe(false)
+  })
+})
+
+describe('a pane whose tab moves to another session', () => {
+  it('has its new view in the old one\'s place among the window\'s views, and its partner untouched', () => {
+    served.add('https://app.example')
+    const { manager, children } = rig()
+    const a = manager.createTab('https://a.example/')
+    const b = manager.createTab('https://b.example/')
+    manager.splits.split(a, b, 'right')
+    const [viewA, viewB] = createdViews as [RecordedView, RecordedView]
+    expect(names(children)).toEqual(['backdrop', viewA.name, viewB.name])
+
+    manager.navigate(a, 'https://app.example/')
+
+    const swapped = createdViews[2] as RecordedView
+    expect(names(children)).toEqual(['backdrop', swapped.name, viewB.name])
+    expect(boundsOf(swapped)).toEqual(boundsOf(viewA))
+    expect(viewB.webContents.close).not.toHaveBeenCalled()
+  })
+
+  it('does the same for the pane that is not the one the person is in', () => {
+    served.add('https://app.example')
+    const { manager, children } = rig()
+    const a = manager.createTab('https://a.example/')
+    const b = manager.createTab('https://b.example/')
+    manager.splits.split(a, b, 'right')
+    const [viewA, viewB] = createdViews as [RecordedView, RecordedView]
+    expect(manager.getState().activeTabId).toBe(b)
+
+    manager.navigate(a, 'https://app.example/')
+    manager.navigate(b, 'https://app.example/')
+
+    const [, , swappedA, swappedB] = createdViews as [RecordedView, RecordedView, RecordedView, RecordedView]
+    expect(names(children)).toEqual(['backdrop', swappedA.name, swappedB.name])
+    expect(boundsOf(swappedB)).toEqual(boundsOf(viewB))
+    expect(viewA.webContents.close).toHaveBeenCalled()
   })
 })
 

@@ -114,7 +114,7 @@ vi.mock('../../../loader/electron/serve.js', () => ({
 const { TabManager } = await import('../tabs.js')
 const { fetchFaviconDataUrlCached } = await import('../../browsing/favicon.js')
 
-const fakeContentView = { addChildView: vi.fn(), removeChildView: vi.fn() }
+const fakeContentView = { children: [] as unknown[], addChildView: vi.fn(), removeChildView: vi.fn() }
 const fakeBounds = { x: 0, y: 0, width: 800, height: 600 }
 const fakeCtx = {} as SubsystemContext
 const DASHBOARD_URL = 'http://localhost:5999/newtab/'

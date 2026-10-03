@@ -87,7 +87,7 @@ vi.mock('../../../loader/electron/serve.js', () => ({
 
 const { TabManager } = await import('../tabs.js')
 
-const fakeContentView = { addChildView: vi.fn(), removeChildView: vi.fn() }
+const fakeContentView = { children: [] as unknown[], addChildView: vi.fn(), removeChildView: vi.fn() }
 const fakeBounds = { x: 0, y: 0, width: 800, height: 600 }
 
 function managerWith (registered: Set<string>): InstanceType<typeof TabManager> {
