@@ -38,7 +38,10 @@ start page, a `view-source:` page, a blob and `about:blank` are not recorded, be
 **A window is built into the file when the file is written, not when it changes.** Windows and tabs change
 many times a second while a page loads; the store asks the recorder for the current state at write time, and
 a change that leaves the addresses, titles, pinned tabs and front tab as they were is not reported at all.
-The write is throttled, not debounced, so a title that never stops changing still reaches the disk.
+The write is throttled, not debounced. A change of titles alone is written with the next other change or
+within 30 s (`TITLE_WRITE_DELAY_MS`), so a page that retitles itself twice a second (an unread count) does not
+rewrite the file twice a second, and its title still reaches the disk. The file and its directory are flushed
+to disk off the main thread (`writeFileAtomicAsync`).
 
 **The last window closing keeps the session; a quit freezes all of it.** On Linux and Windows the last window
 closing ends the browser, and by then its tabs are closed: the recorder saves the window in its `close`, with

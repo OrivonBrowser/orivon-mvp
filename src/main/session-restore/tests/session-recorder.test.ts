@@ -28,10 +28,11 @@ function fake (name: string): Fake {
   return { shell, base, name, push: (state) => { listener?.(state) } }
 }
 
-function fakeSession (): SessionLog & { source: SessionSource | null, changed: ReturnType<typeof vi.fn>, finish: ReturnType<typeof vi.fn> } {
+function fakeSession (): SessionLog & { source: SessionSource | null, changed: ReturnType<typeof vi.fn>, titlesChanged: ReturnType<typeof vi.fn>, finish: ReturnType<typeof vi.fn> } {
   const session = {
     source: null as SessionSource | null,
     changed: vi.fn(),
+    titlesChanged: vi.fn(),
     finish: vi.fn(),
     load: async () => {},
     previous: () => null,
@@ -74,6 +75,18 @@ describe('the session recorder', () => {
     session.changed.mockClear()
     windows[0]?.push({ activeTabId: 't', tabs: [{ url: 'https://a.example/', title: 'A', pinned: false, loading: true }] })
     expect(session.changed).toHaveBeenCalledTimes(1)
+  })
+
+  it('hands a change of titles alone to the slower title write, and an address change to the prompt one', () => {
+    const { windows, session } = setup(['a'])
+    windows[0]?.push({ activeTabId: 't', tabs: [{ url: 'https://a.example/', title: '(1) Inbox', pinned: false }] })
+    session.changed.mockClear()
+    windows[0]?.push({ activeTabId: 't', tabs: [{ url: 'https://a.example/', title: '(2) Inbox', pinned: false }] })
+    expect(session.changed).not.toHaveBeenCalled()
+    expect(session.titlesChanged).toHaveBeenCalledTimes(1)
+    windows[0]?.push({ activeTabId: 't', tabs: [{ url: 'https://a.example/sent', title: 'Sent', pinned: false }] })
+    expect(session.changed).toHaveBeenCalledTimes(1)
+    expect(session.titlesChanged).toHaveBeenCalledTimes(1)
   })
 
   it('ignores a tab state that changes only in what the file does not hold', () => {

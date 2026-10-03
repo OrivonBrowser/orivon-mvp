@@ -82,12 +82,20 @@ export class SessionRecorder {
     shell.window.on('maximize', changed)
     shell.window.on('unmaximize', changed)
     let last = ''
+    let lastTitles = ''
     shell.tabs.onStateChange(({ tabs, activeTabId }) => {
-      // Loading progress and favicons push state too, and none of it is in the file.
-      const seen = JSON.stringify([activeTabId, tabs.map((tab) => [tab.url, tab.title, tab.pinned, tab.group ?? null]), groupsFor(shell.tabs).list()])
-      if (seen === last) return
-      last = seen
-      changed()
+      // Loading progress and favicons push state too, and none of it is in the file. Titles are, but a change of
+      // titles alone waits: a page that retitles itself twice a second would otherwise rewrite the file as often.
+      const seen = JSON.stringify([activeTabId, tabs.map((tab) => [tab.url, tab.pinned, tab.group ?? null]), groupsFor(shell.tabs).list()])
+      const titles = JSON.stringify(tabs.map((tab) => tab.title))
+      if (seen !== last) {
+        last = seen
+        lastTitles = titles
+        changed()
+      } else if (titles !== lastTitles) {
+        lastTitles = titles
+        this.deps.session.titlesChanged()
+      }
     })
     changed()
   }
