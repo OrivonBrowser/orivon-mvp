@@ -24,10 +24,10 @@ export interface ThemeColorPair {
 export const APP_DARK_WASH = '#0d0e14'
 
 /** What the new-tab dashboard shows before its page has painted, the same in
- * both themes: the mean colour of its picture under its dark wash, so the
- * jump to the picture is small where a near-black base read as a black flash.
- * Literally the base colour under the picture in newtab/style.css's `html`
- * background, which is what the page paints once it is up. */
+ * both themes: the mean colour of its picture under its dark wash, so the step
+ * from this colour to the picture is small. It is what the page's own
+ * background composites to when no picture layer has decoded yet (the flat
+ * colour in newtab/style.css sits under the wash, so it is lighter there). */
 export const DASHBOARD_BACKGROUND = '#394244'
 
 /** Electron's own default: what a WebContentsView paints before anything

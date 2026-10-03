@@ -174,4 +174,56 @@ describe('PaneHost', () => {
 
     expect(children).toEqual(['X', 'A2', 'B', 'chrome', 'popover'])
   })
+
+  describe('hold', () => {
+    it('keeps the pane that leaves attached, puts the new pane under it, and takes the old off at release', () => {
+      const { host, children, view } = setup()
+      const contentView = (host as unknown as { contentView: { addChildView: (v: never) => void } }).contentView
+      contentView.addChildView(view('chrome') as never)
+      host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
+      contentView.addChildView(view('popover') as never)
+
+      host.hold()
+      host.show([{ id: 'b', view: view('B') as never, bounds: B(0) }])
+      expect(children).toEqual(['chrome', 'B', 'A', 'popover'])
+      expect(host.isShown('a')).toBe(false)
+      expect(host.isShown('b')).toBe(true)
+      expect(view('B').setBounds).toHaveBeenLastCalledWith(B(0))
+
+      host.release()
+      expect(children).toEqual(['chrome', 'B', 'popover'])
+    })
+
+    it('does not hold anything once released: the next change takes the old pane off at once', () => {
+      const { host, children, view } = setup()
+      host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
+      host.hold()
+      host.release()
+      host.show([{ id: 'b', view: view('B') as never, bounds: B(0) }])
+      expect(children).toEqual(['B'])
+    })
+
+    it('goes back to the held pane in place when it is wanted again, and does not take it off at release', () => {
+      const { host, children, view } = setup()
+      host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
+      host.hold()
+      host.show([{ id: 'b', view: view('B') as never, bounds: B(0) }])
+      host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
+      host.release()
+      expect(children).toEqual(['A'])
+      expect(host.isShown('a')).toBe(true)
+    })
+
+    it('takes a held pane off when its tab goes away, and a held backdrop at release', () => {
+      const { host, children, view } = setup()
+      host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }, { id: 'c', view: view('C') as never, bounds: B(100) }], { id: 'backdrop', view: view('X') as never, bounds: B(0) })
+      host.hold()
+      host.show([{ id: 'b', view: view('B') as never, bounds: B(0) }])
+      expect(children).toContain('X')
+      host.hide('a')
+      expect(children).not.toContain('A')
+      host.release()
+      expect(children).toEqual(['B'])
+    })
+  })
 })

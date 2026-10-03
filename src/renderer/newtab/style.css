@@ -40,17 +40,29 @@ html, body {
 /* The welcome screen's picture under a dark wash, in both themes: only the
    search box and tiles follow the OS scheme, so whatever sits on the picture
    itself (.wordmark, .tile-section-title) has fixed light colours below. The
-   wash is orivon-browser-v2's new-tab one. `fixed` keeps a tall bookmark grid
-   from scrolling or tiling the picture. The last two layers show until the
-   full picture has decoded: a tiny copy of it (small enough that the build
-   inlines it, so the first paint has it) and a flat colour, the picture's
-   mean under the wash, which the shell also paints the view with before this
-   page exists (theme-colors.ts's DASHBOARD_BACKGROUND). */
+   wash is orivon-browser-v2's new-tab one. The picture is a fixed layer behind
+   the page, so a tall bookmark grid neither scrolls nor tiles it. The page's
+   own background is the flat colour the shell paints the view with before this
+   page exists (theme-colors.ts's DASHBOARD_BACKGROUND), which is what shows
+   until the layer below paints. That layer carries a tiny copy of the picture
+   (small enough that the build inlines it, so the first paint has it) until the
+   full picture has decoded. The wash covers every layer beneath it, so the
+   layer's own base colour is the picture's mean before the wash (#768a86): under
+   the wash it composites to the same #394244, and no frame is darker than the
+   colour before it. */
 html {
+  background: #394244;
+}
+
+html::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
   background:
     linear-gradient(rgba(13, 14, 20, 0.58), rgba(13, 14, 20, 0.58)),
-    url('../assets/intro-background.webp') center / cover no-repeat fixed,
-    url('../assets/newtab-placeholder.webp') center / cover no-repeat fixed #394244;
+    url('../assets/intro-background.webp') center / cover no-repeat,
+    url('../assets/newtab-placeholder.webp') center / cover no-repeat #768a86;
 }
 
 button {

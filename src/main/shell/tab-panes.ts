@@ -2,6 +2,7 @@
 // press in a page chose. The tab collection decides which tab is in front;
 // this puts the plan (./split-controller.ts) on the window through PaneHost.
 import type { View, WebContentsView } from 'electron'
+import { whenPainted } from './first-paint.js'
 import { PaneHost } from './pane-host.js'
 import type { SplitController } from './split-controller.js'
 import type { Bounds, TabRecord, TabShell } from './tab-types.js'
@@ -21,6 +22,11 @@ export interface TabPanesHost {
 
 /** The window's PaneHost, plus the tab-aware calls that decide what it shows. */
 export class TabPanes extends PaneHost {
+  /** The tab whose new-tab page is drawing its first frame while the page that was in front stays on screen. */
+  private revealing: { readonly id: string, readonly view: WebContentsView } | null = null
+  /** Views whose page has drawn (or was given up on): a new-tab page is held for only once. */
+  private readonly drawn = new WeakSet<View>()
+
   constructor (private readonly deps: TabPanesHost) {
     super(deps.contentView)
   }
@@ -50,6 +56,7 @@ export class TabPanes extends PaneHost {
       const view = deps.record(id)?.view
       return view === undefined || view.webContents.isDestroyed() ? [] : [{ id, view, bounds }]
     })
+    this.holdForFirstPaint(panes)
     const backdrop = deps.shell?.backdrop
     if (plan.frame === null || backdrop === undefined) {
       this.show(panes)
@@ -57,6 +64,28 @@ export class TabPanes extends PaneHost {
     }
     this.show(panes, { id: 'backdrop', view: backdrop.view, bounds: plan.frame.area })
     backdrop.update(plan.frame)
+  }
+
+  /** A new-tab page coming to the screen: its view is created before its renderer has started, and shows its own
+   * colour until the page draws. Nothing is taken off the screen until it has drawn, so the person goes from the
+   * page they were on to the finished new tab, never through a blank one. Only a view that is new to the screen and
+   * has never drawn is held for, and only while it is still wanted: any other plan ends the wait. */
+  private holdForFirstPaint (panes: readonly { readonly id: string, readonly view: WebContentsView }[]): void {
+    if (this.revealing !== null && panes.every((pane) => pane.view !== this.revealing?.view)) this.finishReveal(this.revealing.view)
+    if (this.revealing !== null) return
+    const fresh = panes.find((pane) => !this.isShown(pane.id) && !this.drawn.has(pane.view) && this.deps.record(pane.id)?.isDashboardTab === true)
+    if (fresh === undefined) return
+    this.drawn.add(fresh.view)
+    if (!this.anyShown) return
+    this.revealing = { id: fresh.id, view: fresh.view }
+    this.hold()
+    void whenPainted(fresh.view.webContents).then(() => { this.finishReveal(fresh.view) })
+  }
+
+  private finishReveal (view: WebContentsView): void {
+    if (this.revealing?.view !== view) return
+    this.revealing = null
+    this.release()
   }
 
   /** Where a tab's view goes now: its pane, or the whole area. */

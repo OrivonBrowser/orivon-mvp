@@ -22,7 +22,7 @@ menu (and `context-menu.ts` the menu a page gets: `context-menu-groups.ts` holds
 `tear-drag.ts` is the floating preview a tab shows once torn out of its strip, and the mark it leaves on
 whichever window's strip it is dragged over. Split view: `split-model.ts` is the arithmetic and the groups
 of joined tabs, `split-controller.ts` plans which views show where, `pane-host.ts` puts them on screen in
-that order, `split-frame.ts` is the view behind two panes, and `split-drop.ts` says where a dragged tab
+that order (and, while a new-tab page draws its first frame, `first-paint.ts` tells `tab-panes.ts` when, so the page in front stays until then), `split-frame.ts` is the view behind two panes, and `split-drop.ts` says where a dragged tab
 would split the page. `intro-state.ts` and `intro-view.ts` are the welcome screen. `shell-installers.ts` runs each feature directory's installer at start, and `sheet-backdrop.ts` paints the shell's own surface colour behind a sheet that sits over a tab with no background of its own. `tab-backing.ts` picks a view's pre-paint colour when a navigation starts, and `window-backing.ts` keeps the window behind the views in the colour of the tab shown.
 `first-window.ts` decides what a cold start opens (the window's last place, the addresses on the command line, a kiosk's page) and `home.ts` is what Home opens.
 The rest answer what a page asks of its window: popups become tabs, HTML fullscreen, the
