@@ -567,10 +567,31 @@ export const injectExtensionAPIs = (extras: ReadonlyArray<() => void> = []) => {
             callback(value)
             return undefined
           }
+          const readOnly = 'This is a read-only store.'
+          // A callback learns of the refusal through chrome.runtime.lastError, set
+          // only while it runs and then put back as it was, as Chrome does.
           const refuse = (args: unknown[]): Promise<never> | undefined => {
             const callback = lastArgCallback(args)
-            if (callback === undefined) return Promise.reject(new Error('This is a read-only store.'))
-            callback()
+            if (callback === undefined) return Promise.reject(new Error(readOnly))
+            const runtime = (globalThis as { chrome?: { runtime?: object } }).chrome?.runtime
+            const before = runtime === undefined ? undefined : Object.getOwnPropertyDescriptor(runtime, 'lastError')
+            let shown = false
+            try {
+              if (runtime !== undefined) {
+                Object.defineProperty(runtime, 'lastError', { configurable: true, get: () => ({ message: readOnly }) })
+                shown = true
+              }
+            } catch {
+              console.error(`chrome.storage.managed: ${readOnly}`)
+            }
+            try {
+              callback()
+            } finally {
+              if (shown && runtime !== undefined) {
+                if (before === undefined) delete (runtime as { lastError?: unknown }).lastError
+                else Object.defineProperty(runtime, 'lastError', before)
+              }
+            }
             return undefined
           }
           const managed = {

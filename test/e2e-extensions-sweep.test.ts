@@ -204,6 +204,13 @@ it('keeps chrome.storage.managed empty and read-only in a real service worker, a
       check('chrome.storage.managed.get answers {} while local holds an item', managed.ok && JSON.stringify(managed.result) === '{}', JSON.stringify(managed))
       const written = await rpc(app, pageWc, 'chrome.storage.managed.set', [{ a: 1 }])
       check('chrome.storage.managed.set is refused as read-only', !written.ok && /read-only/.test(String(written.error)), JSON.stringify(written))
+      // The callback form, in the extension page itself: the refusal arrives as chrome.runtime.lastError, which is gone again afterwards.
+      const callbackSaw = await app.evaluate(async ({ webContents }, id: number) => await webContents.fromId(id)?.executeJavaScript(
+        'new Promise((resolve) => chrome.storage.managed.set({ a: 1 }, () => resolve(chrome.runtime.lastError?.message ?? "none")))'
+      ), pageWc)
+      check('a callback-style managed write sees the read-only lastError', callbackSaw === 'This is a read-only store.', String(callbackSaw))
+      const cleared = await app.evaluate(async ({ webContents }, id: number) => await webContents.fromId(id)?.executeJavaScript('chrome.runtime.lastError === undefined'), pageWc)
+      check('chrome.runtime.lastError is gone after the callback', cleared === true, String(cleared))
     } finally {
       if (app !== undefined) await closeElectronApp(app)
     }

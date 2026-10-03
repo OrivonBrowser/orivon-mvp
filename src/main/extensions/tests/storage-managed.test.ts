@@ -69,9 +69,10 @@ describe('chrome.storage.managed', () => {
     const local = fakeLocal({})
     const g = inject(local)
     await expect(g.chrome.storage.managed.set({ a: 1 })).rejects.toThrow('read-only')
-    const called = vi.fn()
-    expect(g.chrome.storage.managed.remove('a', called)).toBeUndefined()
-    expect(called).toHaveBeenCalledOnce()
+    const seen: unknown[] = []
+    expect(g.chrome.storage.managed.remove('a', () => { seen.push(g.chrome.runtime.lastError?.message) })).toBeUndefined()
+    expect(seen).toEqual(['This is a read-only store.'])
+    expect(g.chrome.runtime.lastError).toBeUndefined()
     expect(local.set).not.toHaveBeenCalled()
   })
 
