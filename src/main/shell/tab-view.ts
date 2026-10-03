@@ -176,7 +176,7 @@ export function wireView (id: string, record: TabRecord): void {
     // one-way rule exists to protect.
     if (record.isDashboardTab && originFromUrl(navigatedUrl) !== originFromUrl(record.host.dashboardUrl)) {
       record.isDashboardTab = false
-      // The dashboard's own dark wash (makeTabView's own doc) must not
+      // The dashboard's own pre-paint colour (makeTabView's own doc) must not
       // bleed through a site with no CSS background of its own -- and a
       // navigation with nothing to swap partitions over (the common case:
       // an ordinary site with no grants yet) reuses THIS SAME view below,

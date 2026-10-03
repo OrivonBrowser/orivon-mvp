@@ -16,7 +16,7 @@ import { guardInternalView } from '../pages/internal-tab.js'
 import type { TabRecord, TabViewHost } from './tab-types.js'
 import { appTabArgsFor, makeTabView, partitionForTarget, wireView } from './tab-view.js'
 import { paintBacking } from './tab-backing.js'
-import { APP_DARK_WASH, INTERNAL_PAGE_BACKGROUND, onThemeUpdated, resolveThemeColor } from './theme-colors.js'
+import { DASHBOARD_BACKGROUND, INTERNAL_PAGE_BACKGROUND, onThemeUpdated, resolveThemeColor } from './theme-colors.js'
 
 /** The safe fallback for a REJECTED navigation (a dangerous typed scheme,
  * a bad window.open() URL, empty input) -- never the dashboard. Keeping
@@ -113,7 +113,7 @@ export class TabFactory {
         // would make a transparent-background site look wrong in dark mode.
         // `exactOptionalPropertyTypes` refuses an explicit `undefined` for an
         // optional property, hence the spread rather than a ternary value.
-        ...(isDashboard ? { backgroundColor: APP_DARK_WASH } : {}),
+        ...(isDashboard ? { backgroundColor: DASHBOARD_BACKGROUND } : {}),
         target
       }
     )
