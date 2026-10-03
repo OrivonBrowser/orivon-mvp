@@ -1,0 +1,12 @@
+{
+  "manifest_version": 2,
+  "name": "Orivon E2E webRequest",
+  "version": "1.0.0",
+  "description": "Fixture extension for test/e2e-extensions-webrequest.test.ts: blocking onBeforeRequest, onBeforeSendHeaders and onHeadersReceived listeners, and observers that record what they see.",
+  "permissions": ["webRequest", "webRequestBlocking", "<all_urls>"],
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": true
+  },
+  "web_accessible_resources": ["web_accessible_resources/redirected.js"]
+}

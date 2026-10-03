@@ -1958,6 +1958,19 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first, with the owner's id and output
 - **Blocks:** nothing
 
+### A350: A page's `fetch()` cannot follow a `webRequest` redirect to the extension's own file **[RESEARCH]**
+
+- **Question:** How can a page's `fetch()` follow a blocking listener's redirect to the extension's own web-accessible
+  file? Electron 44 fails it with `ERR_UNSAFE_REDIRECT`; a `<script>` follows the same redirect. Measured with full uBlock
+  Origin, which answers most blocked `fetch()` calls with its neutered stand-in (77 of the 132 hosts on
+  adblock.turtlecute.org).
+- **Why it matters:** the page sees a failed request where Chrome gives it an empty success, which an anti-ad-block script
+  can notice. The request is still stopped, so an ad-block test page scores these as blocked.
+- **Options:** find where Electron refuses the scheme on a subresource redirect and allow web-accessible files (rec.);
+  answer such a redirect with the file's bytes from main; leave it.
+- **Who decides:** research first
+- **Blocks:** nothing
+
 ### A361: The other toolbar popups still read a re-click by the clock **[AI-REC]**
 
 - **Question:** The main menu, the all-sites popup and the site-info popups judge a re-click by the press it completes (`d-0421`). The popups the chrome opens through `overlay.toggle` (downloads, tab search, extensions, the site-access chip, blocked pop-ups) still treat a toggle within 300 ms of their own blur-close as that close's echo, so a slow click on those buttons closes the popup on the press and opens it again on the release. Send the press from those buttons too?
