@@ -200,7 +200,9 @@ it('resets the dashboard tab\'s background once it navigates to a plain site wit
     // The dashboard tab loads after the chrome view appears: wait for both it and its recorded colour.
     let id: number | undefined
     expect(await waitFor(async () => { id = await dashboardId(); return (await recordedBackground(id)) !== undefined })).toBe(true)
-    expect(await recordedBackground(id)).toBe('#394244')
+    // The dashboard's colour for the scheme the machine is in (theme-colors.ts; e2e-theme-backing.test.ts pins each).
+    const dark = await app.evaluate(({ nativeTheme }) => nativeTheme.shouldUseDarkColors)
+    expect(await recordedBackground(id)).toBe(dark ? '#0d0e14' : '#394244')
 
     await clickAddressBarRetrying(chrome, `${origin}/site`)
     expect((await waitForTab(chrome, { address: `${origin}/site` })).ok).toBe(true)

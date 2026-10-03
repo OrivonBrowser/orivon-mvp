@@ -84,6 +84,7 @@ function makeFakeWebContents (): FakeWebContents {
 }
 
 vi.mock('electron', () => ({
+  nativeTheme: { shouldUseDarkColors: false },
   WebContentsView: vi.fn().mockImplementation(function (this: RecordedView, options: RecordedView['options'] & { webContents?: FakeWebContents }) {
     this.options = options
     // An adopted popup arrives with Chromium's own webContents.

@@ -36,6 +36,7 @@ function makeFakeWebContents (): FakeContents {
 }
 
 vi.mock('electron', () => ({
+  nativeTheme: { shouldUseDarkColors: false },
   WebContentsView: vi.fn().mockImplementation(function (this: RecordedView) {
     this.webContents = makeFakeWebContents()
     this.setBounds = vi.fn()

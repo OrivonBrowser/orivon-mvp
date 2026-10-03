@@ -23,12 +23,11 @@ export interface ThemeColorPair {
  * backdrop (intro-view.ts), matching intro/style.css's page background. */
 export const APP_DARK_WASH = '#0d0e14'
 
-/** What the new-tab dashboard shows before its page has painted, the same in
- * both themes: the mean colour of its picture under its dark wash, so the step
- * from this colour to the picture is small. It is what the page's own
- * background composites to when no picture layer has decoded yet (the flat
- * colour in newtab/style.css sits under the wash, so it is lighter there). */
-export const DASHBOARD_BACKGROUND = '#394244'
+/** What the new-tab dashboard shows before its page has painted, and what the
+ * page itself starts on (newtab/style.css). Dark is the app's wash, the base
+ * colour under the picture. Light is the mean of the picture under its wash,
+ * so a new tab beside a light window does not open on a near-black frame. */
+export const DASHBOARD_BACKGROUND: ThemeColorPair = { light: '#394244', dark: APP_DARK_WASH }
 
 /** Electron's own default: what a WebContentsView paints before anything
  * ever calls `setBackgroundColor` on it. Named so putting a view back reads as

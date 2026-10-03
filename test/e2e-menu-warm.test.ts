@@ -131,9 +131,9 @@ it('a brand-new tab is painted the dashboard\'s own colour before its page ever 
       return undefined
     }, before)
 
-    // theme-colors.ts's DASHBOARD_BACKGROUND -- the same value in both themes, so
-    // this needs no assumption about which one the test machine is in.
-    expect(recorded).toBe('#394244')
+    // theme-colors.ts's DASHBOARD_BACKGROUND for the scheme the machine is in; e2e-theme-backing.test.ts pins each.
+    const dark = await app.evaluate(({ nativeTheme }) => nativeTheme.shouldUseDarkColors)
+    expect(recorded).toBe(dark ? '#0d0e14' : '#394244')
   } finally {
     await closeElectron(app)
     expect(await assertNoElectronSurvivors()).toEqual([])
