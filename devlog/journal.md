@@ -67,6 +67,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - New tab: the hold that kept the old page up is gone; dark is back as before, light has its own colour.
 - Main menu opened once, then stayed blank: a removed and re-added view stays hidden. Playwright's debugger masked it; warm overlays now hide in place.
 - Split panes went blank on new addresses: a view added back to a window stays hidden, which Playwright masks. Views now attach through one helper.
+- Tab dragging works on native Wayland: drop windows are found from where the pointer appears, and the preview lives inside the window.
 
 ### In my head
 - Explored what `child_process` can safely mean: a WASI program in the app's own tab, native `subprocess` still excluded (`docs/planning/child-process-design.md`).
