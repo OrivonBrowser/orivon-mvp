@@ -18,14 +18,14 @@
  * reimplementing the stripping) for its own verification build, so it is
  * proving the exact command a real build runs.
  */
-import { spawnSync } from 'node:child_process'
+import { spawnCommandSync } from './cli.mjs'
 
 const env = { ...process.env }
 delete env.ORIVON_ENABLE_DEV_GRANT
 
-const result = spawnSync(
-  process.platform === 'win32' ? 'npx.cmd' : 'npx',
+const result = spawnCommandSync(
+  'npx',
   ['electron-vite', 'build'],
-  { stdio: 'inherit', env }
+  { env }
 )
 process.exit(result.status ?? 1)

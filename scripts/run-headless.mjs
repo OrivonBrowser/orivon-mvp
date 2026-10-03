@@ -23,8 +23,7 @@
  */
 import { accessSync, constants } from 'node:fs'
 import { delimiter, join } from 'node:path'
-import { spawnSync } from 'node:child_process'
-import { isInvokedDirectly } from './cli.mjs'
+import { isInvokedDirectly, spawnCommandSync } from './cli.mjs'
 
 /**
  * True if `name` resolves to an executable file on PATH -- checked directly
@@ -50,16 +49,12 @@ function commandExists (name) {
  * @returns {{ file: string, args: string[], env: Record<string, string | undefined>, virtualDisplay: boolean, privateBus: boolean } | { refused: string }}
  */
 export function headlessLaunch ({ platform, env, has, command, args }) {
-  // npm's own Windows .cmd shim needs its exact name when spawned without a
-  // shell (same reasoning as build-e2e.mjs's npx.cmd) -- xvfb-run is
-  // Linux-only, so this only matters on the direct-run path below.
-  const resolved = platform === 'win32' && command === 'npx' ? 'npx.cmd' : command
   const virtualDisplay = platform === 'linux' && has('xvfb-run')
   const privateBus = env.ORIVON_PRIVATE_BUS === '1'
   if (privateBus && !(virtualDisplay && has('dbus-run-session'))) {
     return { refused: 'ORIVON_PRIVATE_BUS=1 needs xvfb-run and dbus-run-session on PATH; not running on the desktop session bus' }
   }
-  if (!virtualDisplay) return { file: resolved, args, env, virtualDisplay, privateBus }
+  if (!virtualDisplay) return { file: command, args, env, virtualDisplay, privateBus }
 
   // XVFB-RUN ALONE IS NOT ENOUGH ON A WAYLAND DESKTOP, and this is the whole
   // reason this block exists. `xvfb-run` creates an X server and sets DISPLAY.
@@ -78,14 +73,14 @@ export function headlessLaunch ({ platform, env, has, command, args }) {
   const childEnv = { ...env }
   delete childEnv.WAYLAND_DISPLAY
   if (childEnv.XDG_SESSION_TYPE === 'wayland') childEnv.XDG_SESSION_TYPE = 'x11'
-  if (!privateBus) return { file: 'xvfb-run', args: ['-a', resolved, ...args], env: childEnv, virtualDisplay, privateBus }
+  if (!privateBus) return { file: 'xvfb-run', args: ['-a', command, ...args], env: childEnv, virtualDisplay, privateBus }
 
   // Inside xvfb-run, so the bus daemon, and any service it starts, inherits
   // the virtual display rather than the desktop's. The desktop bus's address
   // is dropped too: dbus-run-session replaces it, and nothing may fall back.
   delete childEnv.DBUS_SESSION_BUS_ADDRESS
   childEnv.ORIVON_E2E_PRIVATE_BUS = '1'
-  return { file: 'xvfb-run', args: ['-a', 'dbus-run-session', '--', resolved, ...args], env: childEnv, virtualDisplay, privateBus }
+  return { file: 'xvfb-run', args: ['-a', 'dbus-run-session', '--', command, ...args], env: childEnv, virtualDisplay, privateBus }
 }
 
 if (isInvokedDirectly(import.meta.url)) {
@@ -102,10 +97,6 @@ if (isInvokedDirectly(import.meta.url)) {
   console.error(launch.virtualDisplay
     ? `[run-headless] using a virtual display (xvfb-run, Wayland stripped from the child env)${launch.privateBus ? ' and a private session bus' : ''}`
     : '[run-headless] no virtual display available -- running directly, relying on ORIVON_WINDOW_NO_FOCUS')
-  const result = spawnSync(launch.file, launch.args, { stdio: 'inherit', env: launch.env })
-  if (result.error !== undefined) {
-    console.error(`[run-headless] failed to launch ${launch.file}:`, result.error)
-    process.exit(1)
-  }
-  process.exit(result.status ?? 1)
+  const result = spawnCommandSync(launch.file, launch.args, { env: launch.env })
+  process.exit(result.error === undefined ? result.status ?? 1 : 1)
 }

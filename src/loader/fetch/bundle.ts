@@ -34,7 +34,7 @@ import type { ManifestValidators } from './update-check.js'
 
 export type { Fetch, FetchResponse } from './budget.js'
 export type { StagedAsset } from './asset.js'
-export { BUNDLE_TIMEOUT_MS, FETCH_IDLE_TIMEOUT_MS } from './budget.js'
+export { BUNDLE_TIMEOUT_MS, FETCH_IDLE_TIMEOUT_MS, VERIFIER_IDLE_TIMEOUT_MS } from './budget.js'
 
 export interface FetchBundleOk {
   readonly ok: true
