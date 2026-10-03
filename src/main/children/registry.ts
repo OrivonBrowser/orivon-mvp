@@ -67,31 +67,46 @@ export function createChildHostRegistry (
     })
   }
 
+  /** Every connect is answered: a refusal carries no port, which the page's bridge turns into a failed start
+   * instead of a child that waits for ever. */
+  function refuse (frame: PortDeliveryFrame | null): void {
+    try { frame?.postMessage(CHILD_HOST_PORT_CHANNEL, null) } catch { /* the frame is gone: nobody is waiting */ }
+  }
+
   async function connect (event: ControlEvent): Promise<void> {
     const origin = originFromSenderFrame(event.senderFrame)
     if (origin === null) return
     // A document that committed this origin outside the session it belongs in gets no host, as it
     // gets no broker call (../../broker/policy/origin.ts's isAttributedSession).
     const attributed = getAttributed()
-    if (attributed !== undefined && !isAttributedSession(event.senderFrame, event.sender, origin, attributed)) return
+    if (attributed !== undefined && !isAttributedSession(event.senderFrame, event.sender, origin, attributed)) { refuse(event.senderFrame); return }
     const broker = getBroker()
     if (!broker.app.isRegisteredSync(origin)) {
       // F2/F5: the app may have just been removed (or never finished
       // registering) while a host it built earlier -- with children still
       // running -- lives on; nothing else notices that on its own.
       void pool.close(origin)
+      refuse(event.senderFrame)
       return
     }
 
     const frame = event.senderFrame
     if (frame !== null) {
+      // A reloaded document asking while its frame's first connect is still building: that connect's answer, a port
+      // or a refusal, goes to the frame's document as it is then, so this one adds nothing.
       if (connecting.has(frame)) return
       connecting.add(frame)
     }
 
     try {
       watchForEmpty(origin)
-      const host = await pool.getOrCreate(origin)
+      let host: Awaited<ReturnType<typeof pool.getOrCreate>>
+      try {
+        host = await pool.getOrCreate(origin)
+      } catch (error) {
+        refuse(event.senderFrame)
+        throw error
+      }
 
       // RE-DERIVE, never reuse the origin from above: `getOrCreate` awaited the
       // host's first document load, which the calling frame could navigate

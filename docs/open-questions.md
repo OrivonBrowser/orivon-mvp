@@ -1949,3 +1949,37 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   answer such a redirect with the file's bytes from main; leave it.
 - **Who decides:** research first
 - **Blocks:** nothing
+
+### A370: Moving a tab to another window answers its open question as a cancel **[AI-REC]**
+
+- **Question:** A tab dragged out, or sent with Move Tab to New Window, ends every question it holds as `tab-closed`:
+  `confirm()` returns false, a permission ask ends as "not now", a sign-in is cancelled. Should the question move
+  with the tab and show again in its new window?
+- **Why it matters:** a person who moves a tab to read it beside another loses the answer they had not given yet.
+- **Options:** re-key the tab's asks to the new window and show them there (rec.; the panel, the site ask, the
+  sign-in and the chooser each hold the window); cancel and ask again in the new window; leave it as a cancel.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A371: Exported passwords that start with `-`, `+`, `=` or `@` carry a quote other password managers keep **[OWNER]**
+
+- **Question:** The export puts a leading `'` on any cell a spreadsheet would run as a formula (`d-0304`), the
+  password cell included. Orivon's own import removes it; Chrome, Firefox, Bitwarden and 1Password keep it, so such a
+  login no longer signs in there. About 1 in 61 passwords Orivon generates starts with `-`.
+- **Why it matters:** the export is how a person leaves for another browser or password manager.
+- **Options:** leave the password cell as it is and say so on the export's confirmation (rec.); escape only cells that
+  read as a formula after the sign; keep `d-0304` as it is.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A372: A web context's WebSocket listener may break the redirects its reach handler returns **[RESEARCH]**
+
+- **Question:** Every web context session gets an unfiltered `webRequest.onBeforeRequest` listener to cancel
+  WebSockets (`src/main/sessions/web-context-host.ts`). A listener puts the session behind Electron's proxying loader,
+  which measured on installed-app partitions handed a routed 302 to the page as the final response. Does a context's
+  `fetch()` of a redirecting granted host get the redirect's status instead of the final page?
+- **Why it matters:** an app reading a site through a web context would see redirects fail.
+- **Options:** measure a 302 in `test/e2e-web-context-network.test.ts`, then drop the listener for the dead proxy the
+  context already sets, re-measuring that a WebSocket still fails (rec.); leave it.
+- **Who decides:** research first
+- **Blocks:** nothing

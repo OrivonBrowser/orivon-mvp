@@ -255,6 +255,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **A page's prompt() gets what was typed**: an `undefined` default is empty, a long answer or default comes back whole,
+  and an app's child process start fails with an error instead of waiting for ever when its host is refused.
 - **Popups and questions behave**: Enter right after typing in a page's prompt() answers it, F7 works again after its
   question was left in another tab, prompts follow the address bar on resize, and text boxes in popups have Cut/Copy/Paste.
 - **Data the browser keeps stays kept**: the identity seed is saved on a fresh profile, clearing history clears Recently closed,

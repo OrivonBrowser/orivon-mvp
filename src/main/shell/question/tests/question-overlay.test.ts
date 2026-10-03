@@ -230,8 +230,20 @@ describe('the question handler', () => {
     const spec = normaliseSpec({ kind: 'page-prompt', message: 'Name?', buttons: ['OK'], cancelId: 0, input: { initial: '' } })
     const r = rig(spec)
     r.handler.show?.({ id: r.id })
-    r.handler.request({ id: r.id, button: 0, text: 'x'.repeat(5000) })
+    r.handler.request({ id: r.id, button: 0, text: 'x'.repeat(100_001) })
     expect(r.results).toEqual([])
+  })
+
+  it('takes an answer of some thousands of characters, and keeps a long default whole', () => {
+    const long = 'y'.repeat(5000)
+    const spec = normaliseSpec({ kind: 'page-prompt', message: 'Paste it', buttons: ['OK'], cancelId: 0, input: { initial: long } })
+    expect(spec.input?.initial).toBe(long)
+    const r = rig(spec)
+    r.handler.show?.({ id: r.id })
+    draw(r)
+    r.clock.now += GUARD_MS
+    r.handler.request({ id: r.id, button: 0, text: 'x'.repeat(5000) })
+    expect(r.results).toEqual([{ response: 0, checkboxChecked: false, text: 'x'.repeat(5000) }])
   })
 
   it('settles every question held for its window as a cancel when the window goes', () => {
