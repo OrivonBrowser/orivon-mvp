@@ -24,6 +24,7 @@ import { setTabUrlAccessCheck, setTabHostAccessCheck } from 'orivon:crx-extensio
 import { setTabCaptureInvocationRecorder } from 'orivon:crx-extensions-browser-action'
 import { setTabCaptureAppRefusalCheck, setTabCaptureConsumedCheck, setTabCaptureGrantRecorder, setTabCaptureInvocationCheck } from 'orivon:crx-extensions-tab-capture'
 import type { ShellServices } from '../shell/shell-services.js'
+import { setPageMenuItemsSource } from '../shell/page-menu-items.js'
 import type { SubsystemContext } from '../registry.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { mintTabCaptureGrant, wasTabCaptureGrantConsumed } from '../sessions/tab-capture-grants.js'
@@ -37,7 +38,7 @@ import { buildHostImpl, isExtensionActivatingTab, isLoadedExtension, shellInitia
 import { watchPinSetting } from './action-pins-runner.js'
 import { watchForMissedServiceWorkerPreload } from './extension-sw-preload-recovery.js'
 import { beginDnrReload, endDnrReload } from './extensions-dnr.js'
-import { createExtensionPageRecovery, RELOAD_AFTER_GRACE_MS } from './extension-pages-reload.js'
+import { createExtensionPageRecovery, RELOAD_AFTER_GRACE_MS, type ExtensionPageRecovery } from './extension-pages-reload.js'
 import { isExtensionOpened } from './extension-opened-pages.js'
 import { senderMatchesClaimedExtensionId } from './extension-sender-id-check.js'
 import { registerSandboxPageQuery } from './extension-sandbox-page-query.js'
@@ -62,6 +63,14 @@ export const EXTENSIONS_DEFAULT_PARTITION = 'orivon-extensions-default'
 
 let bridge: ShellBridge | undefined
 let hostExtensions: ElectronChromeExtensions | undefined
+let pageRecovery: ExtensionPageRecovery<WebContents> | undefined
+
+/** Brings back the open pages of an extension around a reload Orivon makes: a tab opened before it keeps a dead extension context until it is navigated again. */
+export const extensionPagesAroundReload = {
+  begin: (id: string): void => { pageRecovery?.begin(id) },
+  end: (id: string): void => { pageRecovery?.end(id) },
+  sweep: (id: string): void => { pageRecovery?.sweep(id, webContents.getAllWebContents()) }
+}
 
 /** The library's host; undefined until `createExtensionHost` has run. */
 export function extensionHost (): ElectronChromeExtensions | undefined {
@@ -151,25 +160,26 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
   // first worker opens on install is loaded while the extension is removed,
   // and its failure can be reported after the reload ends. Only tabs are
   // navigated again, never the extension's hidden offscreen document.
-  const pageRecovery = createExtensionPageRecovery<WebContents>({
+  const recovery = createExtensionPageRecovery<WebContents>({
     now: Date.now,
     graceMs: RELOAD_AFTER_GRACE_MS,
     isEligible: (wc, id) => bridge?.services.windows.findTab(wc) != null && isExtensionOpened(wc, id)
   })
   app.on('web-contents-created', (_event, wc) => {
     wc.on('did-fail-load', (_failEvent, errorCode, _description, url, isMainFrame) => {
-      if (isMainFrame) pageRecovery.pageFailed(wc, url, errorCode)
+      if (isMainFrame) recovery.pageFailed(wc, url, errorCode)
     })
   })
   watchForMissedServiceWorkerPreload(session.defaultSession, (id, phase) => {
     if (phase === 'start') {
       beginDnrReload(id)
-      pageRecovery.begin(id)
+      recovery.begin(id)
     } else {
       endDnrReload(id)
-      pageRecovery.end(id)
+      recovery.end(id)
     }
-  }, (id) => { pageRecovery.sweep(id, webContents.getAllWebContents()) })
+  }, (id) => { recovery.sweep(id, webContents.getAllWebContents()) })
+  pageRecovery = recovery
 
   installPopupPolicy(hostExtensions, { services: () => bridge?.services, isLoaded: isLoadedExtension })
 
@@ -206,6 +216,10 @@ export function isExtensionTab (webContentsId: number): boolean {
   return contents !== undefined && trackedTabs.has(contents)
 }
 
+/** Tabs handed to another window alive: between their window's `tabClosed` and the other's `tabCreated`,
+ * still the same tab for the library. */
+const movingTabs = new Set<WebContents>()
+
 function notifyShell (wc: WebContents, run: (wc: WebContents) => void): void {
   shellInitiated.add(wc)
   try {
@@ -238,9 +252,20 @@ export function attachExtensionShell (ctx: SubsystemContext, services: ShellServ
   // `setTabCaptureAppRefusalCheck`, read only by the vendored tab-capture.ts)
   // is not enough on its own.
   setTabCaptureMediaAppRefusalCheck(tabCaptureAppRefusal)
+  // What extensions add to a page's right-click menu: an ordinary tab's, never a granted app's.
+  setPageMenuItemsSource((wc, params) =>
+    hostExtensions === undefined || !trackedTabs.has(wc) || tabCaptureAppRefusal(wc) ? [] : hostExtensions.getContextMenuItems(wc, params))
 
   services.tabLifecycle.subscribe({
+    tabClosing: (info) => {
+      const wc = info.record.view.webContents
+      if (info.reason === 'moved' && trackedTabs.has(wc)) movingTabs.add(wc)
+    },
     tabCreated: (wc, win) => {
+      if (movingTabs.delete(wc)) {
+        if (win !== undefined && !wc.isDestroyed()) notifyShell(wc, (t) => hostExtensions?.moveTab(t, win))
+        return
+      }
       // wc is freshly created here, in every case -- safe to read .session.
       if (win === undefined || wc.session !== session.defaultSession) return
       trackedTabs.add(wc)
@@ -268,7 +293,7 @@ export function attachExtensionShell (ctx: SubsystemContext, services: ShellServ
       if (found != null) hostExtensions?.clearActiveTab(found.window.window)
     },
     tabClosed: (wc) => {
-      if (!trackedTabs.has(wc)) return
+      if (!trackedTabs.has(wc) || movingTabs.has(wc)) return
       trackedTabs.delete(wc)
       // ElectronChromeExtensions.removeTab() itself reads wc.session to
       // validate its argument, which throws once wc is destroyed -- the

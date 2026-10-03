@@ -6,6 +6,7 @@ import { rmSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { withRegistryLock, writeRegistry } from './registry-runner.js'
 import { clearPersistedRuleState } from './dnr/dnr-runner.js'
+import { deleteExtensionData } from './extension-data.js'
 import { restoreBaseManifest } from './effective-manifest-runner.js'
 import type { InstallContext } from './install-runner.js'
 
@@ -15,9 +16,10 @@ import type { InstallContext } from './install-runner.js'
  * that already reflects that install -- never a copy read before the
  * other's own write. */
 export async function uninstall (ctx: InstallContext, id: string): Promise<void> {
-  await withRegistryLock(ctx.userDataPath, (registry) => {
+  await withRegistryLock(ctx.userDataPath, async (registry) => {
     const entry = registry.find((candidate) => candidate.id === id)
     if (entry === undefined) return
+    await deleteExtensionData(ctx, id)
     ctx.session.extensions.removeExtension(id)
     rmSync(entry.path, { recursive: true, force: true })
     // Chrome clears an uninstalled extension's dynamic rules and enabled-

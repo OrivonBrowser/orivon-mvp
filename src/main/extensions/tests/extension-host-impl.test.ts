@@ -59,3 +59,16 @@ describe('buildHostImpl: pages the extension opens count as its own', () => {
     expect(tab.loadURL).toHaveBeenCalledWith(`chrome-extension://${ID}/options.html`)
   })
 })
+
+describe('buildHostImpl: windowOf', () => {
+  it('names the window whose chrome view is the page asked about', () => {
+    const chromeA = {}
+    const chromeB = {}
+    const winA = { id: 1 }
+    const winB = { id: 2 }
+    const bridge = { services: { windows: { all: () => [{ window: winA, chrome: { webContents: chromeA } }, { window: winB, chrome: { webContents: chromeB } }] } } } as unknown as ShellBridge
+    const host = buildHostImpl(() => bridge)
+    expect(host.windowOf?.(chromeB as WebContents)).toBe(winB)
+    expect(host.windowOf?.({} as WebContents)).toBeUndefined()
+  })
+})

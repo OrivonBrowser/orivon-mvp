@@ -43,6 +43,8 @@ export interface ExtensionApiContext {
   readonly held: (extensionId: string, permission: string) => boolean
   readonly tab: (tabId: unknown) => ResolvedTab | undefined
   readonly activeTab: (windowId?: unknown) => ResolvedTab | undefined
+  /** The window the call comes from: the one holding the tab it runs in, or the one an open popup hangs under. Undefined for a worker or a background page. */
+  readonly callerWindow: (event: ApiEvent) => ShellWindow | undefined
   /** The extension's host access covers the tab's current URL. */
   readonly canSee: (extensionId: string, contents: WebContents) => boolean
   /** The URL belongs to a registered app's origin: every data API keeps such

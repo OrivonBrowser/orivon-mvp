@@ -12,6 +12,7 @@ import { shellServices, whenShellServices } from '../extension-host.js'
 import { createBaseManifestCache, setBaseManifestSource } from '../base-manifest-source.js'
 import { readBaseManifestText } from '../effective-manifest-runner.js'
 import { getCachedStrippedPermissions, slotDirForLoadedExtension } from '../extensions-dnr.js'
+import { parentOf } from '../extension-popup-policy.js'
 import { installPermissionCheck, type PermissionHeld } from '../extension-permission-check.js'
 import type { ExtensionPrefsStore } from '../extension-prefs.js'
 import { installExtensionApis } from './api-context.js'
@@ -57,7 +58,8 @@ export function installApis (options: InstallApisOptions): PermissionHeld {
       const origin = originFromUrl(url)
       return origin !== null && ctx.broker?.app.hasGrantsSync(origin) === true
     },
-    webContentsFromId: (id) => webContents.fromId(id)
+    webContentsFromId: (id) => webContents.fromId(id),
+    popupParent: parentOf
   }, EXTENSION_APIS)
   return held
 }

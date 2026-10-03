@@ -66,6 +66,26 @@ describe('applyManifest', () => {
     })
   })
 
+  it('brings the extension\'s open pages back around a reload, in order, and does nothing when nothing reloads', async () => {
+    await withTempDir(async (root) => {
+      const { userDataPath, entry } = seed(root)
+      const fake = loadedSession(entry)
+      const prefs = createExtensionPrefsStore(null)
+      const order: string[] = []
+      const pages = { begin: () => { order.push('begin') }, end: () => { order.push('end') }, sweep: () => { order.push('sweep') } }
+      const originalRemove = fake.session.extensions.removeExtension.bind(fake.session.extensions)
+      fake.session.extensions.removeExtension = (id: string) => { order.push('remove'); originalRemove(id) }
+      const applier = createManifestApplier({ userDataPath, session: fake.session, prefs, isOpen: () => false, pages })
+
+      expect(await applier.applyManifest(ID, 'now')).toBe('unchanged')
+      expect(order).toEqual([])
+
+      prefs.update(ID, { granted: { permissions: ['history'], origins: [] } })
+      expect(await applier.applyManifest(ID, 'now')).toBe('applied')
+      expect(order).toEqual(['begin', 'remove', 'end', 'sweep'])
+    })
+  })
+
   it('goes back to the base manifest when the choice is taken back', async () => {
     await withTempDir(async (root) => {
       const { userDataPath, entry } = seed(root)

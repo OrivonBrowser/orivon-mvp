@@ -46,7 +46,8 @@ export function setupWindowOpenPolicy (contents: WebContents, deps: PopupPolicyD
   contents.setWindowOpenHandler(({ url }) => {
     const services = deps.services()
     if (services !== undefined) {
-      const win = services.windows.focused()?.window
+      // A popup's own page opens its tab beside the window the popup hangs under; a background page has no window of its own.
+      const win = parentOf(contents) ?? services.windows.focused()?.window
       const target = extensionOpenedUrl(url, deps.isLoaded)
       const shellWindow = win === undefined ? undefined : services.windows.all().find((w) => w.window === win)
       if (shellWindow !== undefined && target !== undefined) openExtensionTab(shellWindow.tabs, target)

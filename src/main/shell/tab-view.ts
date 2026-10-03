@@ -9,6 +9,7 @@ import { faviconOnCommit } from '../browsing/favicon.js'
 import { knownIcon } from '../history/favicon-host.js'
 import type { TabRecord } from './tab-types.js'
 import { showContextMenu } from './context-menu.js'
+import { pageMenuItems } from './page-menu-items.js'
 import { forgetNavigation, leaveAllowed } from './leave-page-prompt.js'
 import { watchPageDialogs } from './page-dialogs.js'
 import { windowOpenHandler } from './popups.js'
@@ -304,7 +305,8 @@ export function wireView (id: string, record: TabRecord): void {
       page: { bare: () => record.internalPage !== null || record.isDashboardTab, viewSource: () => canViewSource(record, wc.getURL()), readable: () => readableNow(wc), reload: () => { record.host.reload(id) } },
       ...(services === undefined ? {} : { services }),
       runCommand,
-      ...(devtools?.allowed(wc) === true ? { inspect: (x: number, y: number) => { void devtools.inspect(wc, x, y) } } : {})
+      ...(devtools?.allowed(wc) === true ? { inspect: (x: number, y: number) => { void devtools.inspect(wc, x, y) } } : {}),
+      extraItems: (menuParams) => pageMenuItems(wc, menuParams)
     })
   })
 

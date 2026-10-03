@@ -67,6 +67,27 @@ describe('search.query', () => {
     }
   })
 
+  it('searches in the window the call comes from, not the one in front of the person', async () => {
+    const own = { tabs: { createTab: vi.fn(), navigate: vi.fn() }, window: { id: 5 } }
+    const other = { tabs: { createTab: vi.fn(), navigate: vi.fn() }, window: { id: 6 } }
+    const found = { contents: { getURL: () => 'https://page.test/' }, window: own, id: 'own-tab' }
+    const shell = {
+      settings: { get: (key: string) => (key === 'search.engine' ? 'duckduckgo' : '') },
+      windows: { focused: () => other },
+      commands: { openWindow: vi.fn() },
+      internalPages: { pageOf: () => undefined }
+    }
+    const activeTab = vi.fn((windowId?: unknown) => (windowId === 5 ? found : undefined))
+    const fake = fakeContext(shell, { callerWindow: (() => own) as never, activeTab: activeTab as never })
+    installSearch(fake.ctx)
+    await fake.call('search.query', { text: 'x' })
+    expect(own.tabs.navigate).toHaveBeenCalledWith('own-tab', ENGINE_URL('x'))
+    await fake.call('search.query', { text: 'y', disposition: 'NEW_TAB' })
+    expect(own.tabs.createTab).toHaveBeenCalledWith(ENGINE_URL('y'))
+    expect(other.tabs.navigate).not.toHaveBeenCalled()
+    expect(other.tabs.createTab).not.toHaveBeenCalled()
+  })
+
   it('rejects a disposition together with a tab id, with Chrome\'s text', async () => {
     await expect(setup().call('search.query', { text: 'x', tabId: 42, disposition: 'NEW_TAB' })).rejects.toThrow(BOTH_ERROR)
   })
