@@ -7,7 +7,10 @@ import { SessionRecorder, snapshotWindow } from '../session-recorder.js'
 import type { SessionLog, SessionSource } from '../session-store.js'
 import type { SavedWindow } from '../session-types.js'
 
+let nextWindowId = 1
+
 class FakeBaseWindow extends EventEmitter {
+  readonly id = nextWindowId++
   destroyed = false
   isDestroyed (): boolean { return this.destroyed }
   getNormalBounds (): { x: number, y: number, width: number, height: number } { return { x: 1, y: 2, width: 800, height: 600 } }
@@ -142,6 +145,27 @@ describe('the session recorder', () => {
     expect(closed.size).toBe(0)
     recorder.beforeQuit()
     expect(session.finish).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the tab whose closing emptied the last window, rather than an empty window', () => {
+    const window = fake('a')
+    const session = fakeSession()
+    const closed = new ClosedStack()
+    const recorder = new SessionRecorder({ session, closed }, () => ({ bounds: { x: 0, y: 0, width: 800, height: 600 }, maximized: false, active: 0, tabs: [] }))
+    recorder.opened(window.shell)
+    const tab = { url: 'https://kept.example/', title: 'Kept', pinned: false }
+    closed.push({ kind: 'tab', tab, index: 0, windowKey: window.base.id })
+    recorder.closing(window.shell)
+    expect(session.source?.()).toEqual([expect.objectContaining({ active: 0, tabs: [tab] })])
+  })
+
+  it('puts the last window on the closed stack when another opens after it, as a browser that stays open without windows does', () => {
+    const { recorder, windows, closed } = setup(['a'])
+    recorder.closing(windows[0]?.shell as ShellWindow)
+    destroy(windows[0])
+    expect(closed.size).toBe(0)
+    recorder.opened(fake('later').shell)
+    expect(closed.list().map((entry) => entry.kind === 'window' ? entry.window.tabs[0]?.url : null)).toEqual(['https://a.example/'])
   })
 
   it('starts a session of its own when a window opens after the last one closed', () => {

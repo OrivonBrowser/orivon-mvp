@@ -256,6 +256,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **Closing the last tab keeps it for next time**: the session file holds that tab, not an empty window; on macOS the
+  last window closed can be reopened once another window opens.
 - **Sleeping tabs act like tabs**: the tab menu's Reload wakes one, Duplicate copies the pages behind it, and moving
   a group to a new window wakes only the tab put in front, the one that was in front before.
 - **Dragging a tab out no longer leaves a process behind**: the floating preview's page closes with the drag, and closed

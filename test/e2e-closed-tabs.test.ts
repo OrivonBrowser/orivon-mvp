@@ -278,6 +278,25 @@ it('offers the previous session\'s last window after a restart, and the file sai
   }
 }, TEST_TIMEOUT_MS * 2)
 
+it('keeps the tab whose closing closed the last window in the session file', async () => {
+  const { app, chrome } = await launched()
+  let dir = ''
+  try {
+    dir = await userDataOf(app)
+    await open(chrome, 'a', ['New Tab', 'page a'])
+    await close(chrome, 'New Tab')
+    await waitTitles(chrome, ['page a'])
+    await close(chrome, 'page a')
+    const file = join(dir, 'session.json')
+    const ended = async (): Promise<boolean> => { try { return (JSON.parse(await readFile(file, 'utf8')) as { clean: boolean }).clean } catch { return false } }
+    expect(await waitFor(ended, 15_000)).toBe(true)
+    const session = JSON.parse(await readFile(file, 'utf8')) as { windows: Array<{ tabs: Array<{ url: string }> }> }
+    expect(session.windows.map((window) => window.tabs.map((tab) => tab.url))).toEqual([[`${origin}/a`]])
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
 it('shows in the main menu what would come back, under History, and nothing when there is none', async () => {
   const { app, chrome } = await launched()
   try {

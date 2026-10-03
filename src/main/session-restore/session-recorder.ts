@@ -64,6 +64,8 @@ export class SessionRecorder {
   private readonly windows = new Set<ShellWindow>()
   /** The session as it was when the browser began to end: from then on the windows closing are part of it, not a change to it. */
   private frozen: SavedWindow[] | null = null
+  /** The last window, closed outright: where the browser lives on without windows (macOS), one opened later puts it on the closed stack. */
+  private lastClosed: SavedWindow | null = null
   private quitting = false
 
   constructor (private readonly deps: RecorderDeps, private readonly snapshot: (shell: ShellWindow) => SavedWindow | null = snapshotWindow) {
@@ -73,6 +75,8 @@ export class SessionRecorder {
   opened (shell: ShellWindow): void {
     if (this.quitting) return
     // A window opening after the last one closed (a resident app on macOS) starts a session of its own.
+    if (this.lastClosed !== null) this.deps.closed.push({ kind: 'window', window: this.lastClosed })
+    this.lastClosed = null
     this.frozen = null
     for (const other of this.windows) if (other.window.isDestroyed()) this.windows.delete(other)
     this.windows.add(shell)
@@ -121,10 +125,18 @@ export class SessionRecorder {
       this.windows.delete(shell)
       if (saved !== null && saved.tabs.length > 0) this.deps.closed.push({ kind: 'window', window: saved })
     } else if (saved !== null) {
-      // The last window closing usually ends the browser: the file keeps it as the session.
-      this.frozen = [saved]
+      // The last window closing usually ends the browser: the file keeps it as the session. One emptied by closing its
+      // last tab keeps that tab, which would otherwise end with the closed stack it is on.
+      const lastTab = saved.tabs.length > 0 ? undefined : this.lastTabClosedIn(shell)
+      this.frozen = [lastTab === undefined ? saved : { ...saved, active: 0, tabs: [lastTab] }]
+      this.lastClosed = saved.tabs.length > 0 ? saved : null
     }
     this.deps.session.changed()
+  }
+
+  private lastTabClosedIn (shell: ShellWindow): TabSnapshot | undefined {
+    const top = this.deps.closed.peek()
+    return top?.kind === 'tab' && top.windowKey === shell.window.id ? top.tab : undefined
   }
 
   /** The browser is quitting, and its windows are about to close one by one. */
