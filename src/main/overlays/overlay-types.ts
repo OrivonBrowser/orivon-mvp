@@ -64,6 +64,8 @@ export interface OverlayHandler {
   key?: (key: OverlayKey) => boolean
   /** Runs after the host has repositioned this open overlay: a window resize, a chrome height change or HTML fullscreen that did not close it. */
   moved?: () => void
+  /** True while what is open must not be closed by a toggle (an unanswered question a button shares a name with): the toggle then does nothing. */
+  holdsOnToggle?: () => boolean
   /** Runs once when the window is gone, whether or not the overlay was open: the place to drop a subscription to anything that outlives the window. */
   disposed?: () => void
 }
@@ -76,6 +78,10 @@ export interface OverlayHost {
   /** Without a name, closes every popup. */
   close: (name?: string) => void
   isOpen: (name: string) => boolean
+  /** Whether a popup is up: a popup-layer overlay, or a legacy panel the host adopted (the site-info and all-sites popups). */
+  popupOpen: () => boolean
+  /** The control an open overlay hangs from has moved (the address pill, after a resize): it is placed under it again. */
+  reanchor: (name: string, anchor: OverlayAnchor) => void
   prewarm: (name: string) => void
   send: (name: string, event: unknown) => void
 }

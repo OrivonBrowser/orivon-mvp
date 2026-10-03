@@ -255,6 +255,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **Popups and questions behave**: Enter right after typing in a page's prompt() answers it, F7 works again after its
+  question was left in another tab, prompts follow the address bar on resize, and text boxes in popups have Cut/Copy/Paste.
 - **Data the browser keeps stays kept**: the identity seed is saved on a fresh profile, clearing history clears Recently closed,
   a failed save is retried, re-importing adds no duplicate bookmarks, and an early star is not lost at start-up.
 - **The browser's own pages keep up**: removing the default search engine gives the built-in default back, Clear data

@@ -45,8 +45,13 @@ export const passwordFillPage: OverlayPage = {
       const el = h('li', { className: 'listbox-item', id: `pf-option-${String(index)}`, role: 'option' },
         h('span', { className: 'item-icon' }, icon), h('span', { className: 'item-title' }, title), h('span', { className: 'item-sub' }, sub))
       el.addEventListener('click', () => { choose(index) })
-      // Hover moves the selection, so Enter always does what the highlighted row says.
-      el.addEventListener('mousemove', () => { if (selected !== index) select(index, false) })
+      // Hover moves the selection, so Enter always does what the highlighted row says. Under a box main reads Enter,
+      // so it is told too.
+      el.addEventListener('mousemove', () => {
+        if (selected === index) return
+        select(index, false)
+        if (field) void overlay.request({ type: 'hover', index })
+      })
       return el
     }
 

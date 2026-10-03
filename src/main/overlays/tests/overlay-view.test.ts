@@ -3,18 +3,21 @@
 // preload that is gated on the exact address) for a view the host builds.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const { calls, theme, state } = vi.hoisted(() => ({
+const { calls, theme, state, menus } = vi.hoisted(() => ({
   calls: [] as string[],
   theme: { dark: false },
-  state: { options: null as unknown, contents: null as Record<string, ReturnType<typeof vi.fn> | number | { handle: ReturnType<typeof vi.fn> }> | null }
+  state: { options: null as unknown, contents: null as Record<string, ReturnType<typeof vi.fn> | number | { handle: ReturnType<typeof vi.fn> }> | null, view: null as unknown },
+  menus: [] as unknown[][]
 }))
 
 vi.mock('electron', () => ({
   app: { isPackaged: false },
   webContents: { getFocusedWebContents: () => null },
   nativeTheme: { get shouldUseDarkColors () { return theme.dark }, on: vi.fn() },
+  BaseWindow: { getAllWindows: () => [{ id: 1, contentView: { children: [state.view] } }] },
   WebContentsView: vi.fn().mockImplementation(function (this: Record<string, unknown>, options: unknown) {
     state.options = options
+    state.view = this
     this.webContents = state.contents = {
       id: 7,
       ipc: { handle: vi.fn() },
@@ -34,6 +37,7 @@ vi.mock('electron', () => ({
   })
 }))
 vi.mock('../../shell/shell-session.js', () => ({ SHELL_PARTITION: 'persist:orivon-shell' }))
+vi.mock('../../shell/context-menu.js', () => ({ showContextMenu: (...args: unknown[]) => { menus.push(args) } }))
 
 const { createOverlayView, overlayUrl } = await import('../overlay-view.js')
 
@@ -74,6 +78,18 @@ describe('createOverlayView', () => {
     createOverlayView(spec())
     expect(calls).toContain('radius:10')
     expect((state.contents?.['ipc'] as { handle: ReturnType<typeof vi.fn> }).handle).toHaveBeenCalledTimes(1)
+  })
+
+  it('gives a text box the edit menu, in the window the view sits in, and nothing on a right-click elsewhere', () => {
+    menus.length = 0
+    createOverlayView(spec())
+    const on = state.contents?.['on'] as ReturnType<typeof vi.fn>
+    const handler = on.mock.calls.find((call) => call[0] === 'context-menu')?.[1] as (event: unknown, params: unknown) => void
+    handler({}, { isEditable: false, selectionText: '' })
+    expect(menus).toHaveLength(0)
+    handler({}, { isEditable: true, selectionText: '' })
+    expect(menus).toHaveLength(1)
+    expect(menus[0]?.[2]).toMatchObject({ window: { id: 1 }, kiosk: true })
   })
 
   it('reports blur and focus to the host', () => {

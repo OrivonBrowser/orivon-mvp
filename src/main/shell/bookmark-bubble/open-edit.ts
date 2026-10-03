@@ -24,6 +24,8 @@ export interface OpenEdit {
   add?: boolean | undefined
   /** A second click on the star closes the bubble it opened. */
   toggle?: boolean | undefined
+  /** The time of the star's press this click completes, so a held click that closed the bubble does not reopen it. */
+  pressedAt?: number | undefined
 }
 
 /** The tab that may be bookmarked: one showing a site, as the star's own rule has it. */
@@ -73,7 +75,7 @@ export function openBookmarkEdit (ctx: WindowContext, options: OpenEdit): void {
   if (editPayload(services.bookmarks, mode, id) === undefined) return
   if (mode === 'edit' && takeAdded(window, id)) mode = 'added'
   const payload = { mode, id }
-  if (options.toggle === true) window.overlays.toggle(EDIT_OVERLAY, options.anchor, payload)
+  if (options.toggle === true) window.overlays.toggle(EDIT_OVERLAY, options.anchor, payload, options.pressedAt)
   else window.overlays.show(EDIT_OVERLAY, options.anchor, payload)
 }
 

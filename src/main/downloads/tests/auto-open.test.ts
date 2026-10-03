@@ -10,7 +10,7 @@ function rig (settings: Record<string, unknown> = { 'downloads.showBubble': true
   const open = new Set<string>()
   const window = {
     chrome: { webContents: { isDestroyed: () => false, send } },
-    overlays: { isOpen: (name: string) => open.has(name), close: vi.fn((name: string) => { open.delete(name) }) }
+    overlays: { isOpen: (name: string) => open.has(name), popupOpen: () => open.size > 0, close: vi.fn((name: string) => { open.delete(name) }) }
   } as unknown as ShellWindow
   let onStart: (info: StartInfo) => void = () => {}
   let onChange: (change: null) => void = () => {}
@@ -46,7 +46,7 @@ describe('installDownloadsPeek', () => {
     expect(none.send).not.toHaveBeenCalled()
   })
 
-  it('does not open over any open popup, the main menu included', () => {
+  it('does not open over any open popup, the main menu or the site-info popup included', () => {
     const { send, open, start } = rig()
     open.add('menu')
     start()

@@ -112,6 +112,21 @@ describe('requestSlot', () => {
   })
 })
 
+describe('anchorsMoved', () => {
+  it('places each shown ask under its anchor as it is now, and leaves an ask with no anchor where it is', () => {
+    const { slots } = slotsWithQueue()
+    const fake = fakeWindow()
+    const reanchors: Array<[string, unknown]> = []
+    ;(fake.window.overlays as unknown as { reanchor: (name: string, anchor: unknown) => void }).reanchor = (name, anchor) => { reanchors.push([name, anchor]) }
+    let x = 1
+    slots.requestSlot(ask(fake, { anchor: () => ({ x, y: 2, width: 3, height: 4 }) }).ask)
+    slots.requestSlot(ask(fake, { slot: 'center', overlay: 'sheet' }).ask)
+    x = 50
+    slots.anchorsMoved(fake.window)
+    expect(reanchors).toEqual([['site-prompt', { x: 50, y: 2, width: 3, height: 4 }]])
+  })
+})
+
 describe('slotClosed', () => {
   it('keeps the ask on a tab switch and shows it again when its tab is activated', () => {
     const { slots, flush } = slotsWithQueue()

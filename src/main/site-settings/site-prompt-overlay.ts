@@ -157,6 +157,10 @@ export function createSitePrompt ({ window, services, close, send }: OverlayWind
       return undefined
     },
 
+    // The site-access chip toggles this overlay to review a page's permissions: a click on it while a question is
+    // up must not end that question as "not now".
+    holdsOnToggle: () => current.mode === 'ask',
+
     // A resize moves the question under the person's pointer: the guard starts over.
     moved: () => {
       if (current.mode !== 'ask' || shownAt === null) return
