@@ -5,6 +5,7 @@
 // are the specification.
 import { app, clipboard, WebContentsView, type BaseWindow } from 'electron'
 import { join } from 'node:path'
+import { attachShown } from './attach-view.js'
 import { rendererEntryUrl, validatedDevServerUrl } from './renderer-entry.js'
 import { lockNavigation } from './lock-navigation.js'
 import type { SubsystemContext } from '../registry.js'
@@ -84,7 +85,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   const chromeBackground = windowBackgroundColor(services.profiles.isPrivate)
   chrome.setBackgroundColor(chromeBackground)
   recordViewBackground(chrome.webContents.id, chromeBackground)
-  win.contentView.addChildView(chrome)
+  attachShown(win.contentView, chrome)
   function applyChromeBackgroundForTheme (): void {
     const color = windowBackgroundColor(services.profiles.isPrivate)
     chrome.setBackgroundColor(color)

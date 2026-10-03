@@ -66,6 +66,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - ASGARDEX and The Lounge carry the first Web3 Score evaluations: both Level 3, held back by centralised APIs and IRC servers.
 - New tab: the hold that kept the old page up is gone; dark is back as before, light has its own colour.
 - Main menu opened once, then stayed blank: a removed and re-added view stays hidden. Playwright's debugger masked it; warm overlays now hide in place.
+- Split panes went blank on new addresses: a view added back to a window stays hidden, which Playwright masks. Views now attach through one helper.
 
 ### In my head
 - Explored what `child_process` can safely mean: a WASI program in the app's own tab, native `subprocess` still excluded (`docs/planning/child-process-design.md`).

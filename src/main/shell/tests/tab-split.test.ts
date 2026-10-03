@@ -19,7 +19,7 @@ interface FakeContents extends EventEmitter {
   close: ReturnType<typeof vi.fn>
   focus: ReturnType<typeof vi.fn>
 }
-interface RecordedView { webContents: FakeContents, setBounds: ReturnType<typeof vi.fn>, setBackgroundColor: ReturnType<typeof vi.fn>, name: string }
+interface RecordedView { webContents: FakeContents, setBounds: ReturnType<typeof vi.fn>, setVisible: ReturnType<typeof vi.fn>, setBackgroundColor: ReturnType<typeof vi.fn>, name: string }
 const createdViews: RecordedView[] = []
 
 function makeFakeWebContents (): FakeContents {
@@ -43,6 +43,7 @@ vi.mock('electron', () => ({
   WebContentsView: vi.fn().mockImplementation(function (this: RecordedView) {
     this.webContents = makeFakeWebContents()
     this.setBounds = vi.fn()
+    this.setVisible = vi.fn()
     this.setBackgroundColor = vi.fn()
     this.name = `view-${String(createdViews.length)}`
     createdViews.push(this)
@@ -66,7 +67,7 @@ interface Rig {
   children: unknown[]
   contentView: { children: unknown[], addChildView: ReturnType<typeof vi.fn>, removeChildView: ReturnType<typeof vi.fn> }
   area: { current: typeof AREA }
-  backdrop: { view: { name: string, setBounds: ReturnType<typeof vi.fn> }, update: ReturnType<typeof vi.fn> }
+  backdrop: { view: { name: string, setBounds: ReturnType<typeof vi.fn>, setVisible: ReturnType<typeof vi.fn> }, update: ReturnType<typeof vi.fn> }
   fullscreen: (id: string, entered: boolean) => void
   /** `HtmlFullscreen.tabId` itself (../fullscreen.ts), read the same way window.ts does: the one
    * place this rig's `fullscreen()` helper and `manager`'s own layout both ultimately read from. */
@@ -90,7 +91,7 @@ function rig (ctx: SubsystemContext = {} as SubsystemContext): Rig {
     removeChildView: vi.fn((view: unknown) => { const at = children.indexOf(view); if (at !== -1) children.splice(at, 1) })
   }
   const area = { current: AREA }
-  const backdrop = { view: { name: 'backdrop', setBounds: vi.fn() }, update: vi.fn() }
+  const backdrop = { view: { name: 'backdrop', setBounds: vi.fn(), setVisible: vi.fn() }, update: vi.fn() }
   const onEmpty = vi.fn()
   let manager!: InstanceType<typeof TabManager>
   // Wired the same way window.ts wires HtmlFullscreen and TabManager together,

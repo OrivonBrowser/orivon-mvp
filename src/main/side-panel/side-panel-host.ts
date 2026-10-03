@@ -5,6 +5,7 @@ import type { BaseWindow, WebContents, WebContentsView } from 'electron'
 import { dockBounds } from '../overlays/overlay-bounds.js'
 import type { OverlayHostHandle } from '../overlays/overlay-host.js'
 import { showToast } from '../page-tools/toast.js'
+import { attachShown } from '../shell/attach-view.js'
 import { contain } from '../shell/contain.js'
 import type { PageInsets } from '../shell/window-layout.js'
 import type { Bounds } from '../shell/tab-types.js'
@@ -352,7 +353,7 @@ export class PanelHost implements SidePanelHost {
     const { window } = this.window
     if (bounds === null || window.isDestroyed() || guest.view.webContents.isDestroyed()) return
     guest.view.setBounds(bounds)
-    window.contentView.addChildView(guest.view)
+    attachShown(window.contentView, guest.view)
   }
 
   private detachGuest (guest: PanelGuest): void {

@@ -28,7 +28,7 @@ describe('the window hook', () => {
     expect(host.isOpen()).toBe(true)
 
     const closed = vi.fn()
-    host.setGuest({ id: 'ext:a', title: 'A', view: { setBounds: () => {}, webContents: { isDestroyed: () => false } } as never, closed })
+    host.setGuest({ id: 'ext:a', title: 'A', view: { setBounds: () => {}, setVisible: () => {}, webContents: { isDestroyed: () => false } } as never, closed })
     sidePanelHook.closing?.(win.ctx)
     expect(closed).toHaveBeenCalledTimes(1)
   })

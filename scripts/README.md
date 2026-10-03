@@ -30,6 +30,7 @@ code it guards could be disabled by the change it exists to catch.
 | `worktree-gc.mjs` | **Not a guard.** Lists linked worktrees whose branch is merged into `origin/main`; `--remove` removes the clean ones (CLAUDE.md Rule 10) |
 | `install-electron.mjs` | **Not a guard.** Fetches Electron's binary on `postinstall`, because electron 44 no longer ships a postinstall hook of its own and electron-vite fails with a bare `Electron uninstall` without it. `ELECTRON_SKIP_BINARY_DOWNLOAD=1` opts out; `npm run install:electron` re-runs it alone |
 | `smoke.mjs` | The shell actually launches and works, driven with real clicks |
+| `probe-view-visibility.mjs` | **Not a guard.** Every view that is on screen is shown: launches the built shell with a debugger on its main process only (no Playwright, which would keep every page visible), switches, splits, sleeps, moves and opens panels, and reads each view's `visibilityState` and a `requestAnimationFrame` round trip. Exit 1 names the steps that left a view hidden |
 | `devlog-cron.sh` | The Sunday devlog job |
 
 **Reading `npm run smoke` output:** it prints a JSON result and a failure list. **Read those,

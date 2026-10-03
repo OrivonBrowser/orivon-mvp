@@ -67,9 +67,10 @@ export function fakeWindow (): FakeWindow {
   }
 }
 
-export function fakeGuestView (): { view: never, destroy: () => void, bounds: unknown[] } {
+export function fakeGuestView (): { view: never, destroy: () => void, bounds: unknown[], shown: boolean[] } {
   const bounds: unknown[] = []
+  const shown: boolean[] = []
   let destroyed = false
-  const view = { setBounds: (rect: unknown) => { bounds.push(rect) }, webContents: { isDestroyed: () => destroyed } }
-  return { view: view as never, destroy: () => { destroyed = true }, bounds }
+  const view = { setBounds: (rect: unknown) => { bounds.push(rect) }, setVisible: (visible: boolean) => { shown.push(visible) }, webContents: { isDestroyed: () => destroyed } }
+  return { view: view as never, destroy: () => { destroyed = true }, bounds, shown }
 }

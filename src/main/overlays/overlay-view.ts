@@ -5,6 +5,7 @@
 import { app, WebContentsView } from 'electron'
 import type { Rectangle, View, WebContents } from 'electron'
 import { join } from 'node:path'
+import { attachShown } from '../shell/attach-view.js'
 import { rendererEntryUrl, validatedDevServerUrl } from '../shell/renderer-entry.js'
 import { lockNavigation } from '../shell/lock-navigation.js'
 import { SHELL_PARTITION } from '../shell/shell-session.js'
@@ -103,10 +104,7 @@ export function createOverlayView (spec: OverlayViewSpec): OverlayViewHandle {
 
   return {
     id: contents.id,
-    attach: (parent) => {
-      parent.addChildView(view)
-      view.setVisible(true)
-    },
+    attach: (parent) => { attachShown(parent, view) },
     detach: (parent) => { parent.removeChildView(view) },
     // A warm view is hidden in place, never removed: see README.md's Design notes for why.
     hide: () => { view.setVisible(false) },

@@ -10,8 +10,8 @@ import { sidePanelPane } from '../side-panel-pane.js'
 let win: FakeWindow
 let host: PanelHost
 
-function view (url: string, focused: { value: boolean }): { webContents: Record<string, unknown>, setBounds: () => void } {
-  return { setBounds: () => {}, webContents: { isDestroyed: () => false, getURL: () => url, isFocused: () => focused.value, focus: vi.fn(() => { focused.value = true }) } }
+function view (url: string, focused: { value: boolean }): { webContents: Record<string, unknown>, setBounds: () => void, setVisible: () => void } {
+  return { setBounds: () => {}, setVisible: () => {}, webContents: { isDestroyed: () => false, getURL: () => url, isFocused: () => focused.value, focus: vi.fn(() => { focused.value = true }) } }
 }
 
 beforeEach(() => {

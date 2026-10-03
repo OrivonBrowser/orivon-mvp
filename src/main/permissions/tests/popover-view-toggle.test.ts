@@ -44,6 +44,7 @@ vi.mock('electron', () => ({
     this['setBackgroundColor'] = vi.fn()
     this['setBorderRadius'] = vi.fn()
     this['setBounds'] = vi.fn()
+    this['setVisible'] = vi.fn()
     views.push({ webContents, args: options.webPreferences.additionalArguments, view: this })
   }),
   nativeTheme: { shouldUseDarkColors: false, on: vi.fn(), removeListener: vi.fn() }
@@ -75,6 +76,23 @@ const last = (): FakeWebContents => {
 }
 
 afterEach(() => { views.length = 0 })
+
+describe('putting a popup into the window', () => {
+  it('makes the view visible when it is added, and again when it is restacked', () => {
+    const { popover } = setup()
+    popover.toggle(ANCHOR, ['--page=web3'], 'web3')
+    const first = views.at(-1)?.view as { setVisible: ReturnType<typeof vi.fn> }
+    expect(first.setVisible).toHaveBeenLastCalledWith(true)
+    popover.close()
+    first.setVisible.mockClear()
+
+    popover.toggle(ANCHOR, ['--page=main'], 'main')
+    popover.restack()
+
+    const shown = views.at(-1)?.view as { setVisible: ReturnType<typeof vi.fn> }
+    expect(shown.setVisible).toHaveBeenLastCalledWith(true)
+  })
+})
 
 describe('a toolbar icon\'s toggle while a popup it did not open is showing or just closed', () => {
   it('opens the other page at once when the blur already closed the popup', () => {

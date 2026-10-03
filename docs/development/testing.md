@@ -383,6 +383,17 @@ own D-Bus session, with `--ozone-platform=wayland`), driving the button with rea
 window's pixels from the compositor; the main process can log `visibilityState` and a `requestAnimationFrame`
 that never fires. A spec pins the cause it can see (the structure of the window's children) instead.
 
+`scripts/probe-view-visibility.mjs` is that recipe for every view put into a window, with no Playwright: it launches
+the built shell (build it first) on a throwaway profile with `--inspect` on the main process alone, which does
+not touch any page, drives tab switches, splits (the shortcut and the tab menu), navigations in a split pane, sleep and
+wake, a tab moved to a new window and the side panel through the chrome page's own `orivonShell` calls, and after each
+step reads every view's `getVisible()`, its page's `visibilityState` and a `requestAnimationFrame` round trip. Run it
+under `scripts/run-headless.mjs`, with `PROBE_ARGS=--ozone-platform=wayland` under a private compositor, and read its
+step list: a failure names the page that was on screen and hidden. It is not part of the unit suite or CI (it needs a
+built shell and a display); run it after a change to `pane-host.ts`, `attach-view.ts`, a tab swap or any place that
+puts a view into a window. `src/main/shell/tests/attach-sites.test.ts` is the part CI runs: no `addChildView`
+outside `attach-view.ts`.
+
 ## Guards
 
 Thirteen checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,

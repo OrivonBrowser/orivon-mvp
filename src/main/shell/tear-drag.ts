@@ -17,6 +17,7 @@
 import { BaseWindow, nativeTheme, screen, WebContentsView } from 'electron'
 import type { NativeImage } from 'electron'
 import { SHELL_EVENT_CHANNEL } from '../channels.js'
+import { attachShown } from './attach-view.js'
 import { refreshStripLayout, stripCentresFor } from './strip-centres.js'
 import { inTop, crossWindowTargetFor } from './tab-move.js'
 import { captureTabPage } from './tab-view.js'
@@ -195,7 +196,7 @@ export class TearDragController {
     // A transparent BaseWindow paints its child view's own background
     // opaque unless told otherwise (electron.d.ts's own note on `transparent`).
     this.view.setBackgroundColor('#00000000')
-    this.win.contentView.addChildView(this.view)
+    attachShown(this.win.contentView, this.view)
     this.view.setBounds({ x: 0, y: 0, width: this.size.width, height: this.size.height })
     // Never the drop target itself, and never able to take a click or a keystroke meant for whatever is under it.
     this.win.setIgnoreMouseEvents(true)

@@ -2,6 +2,7 @@
 // behind them, when there are two, a backdrop that draws the divider. Sizes and
 // stacks them; deciding which panes there are is the tab collection's.
 import type { View } from 'electron'
+import { attachShown, showAgain } from './attach-view.js'
 import type { Bounds } from './tab-types.js'
 
 export interface PaneView {
@@ -13,20 +14,28 @@ export interface PaneView {
 /** The size, in view pixels, the page in `view` lays itself out at; `null` when that cannot be read. */
 export type LayoutSizeOf = (view: View) => Promise<{ width: number, height: number } | null>
 
+/** Whether the page in `view` reads `visible`; `null` when that cannot be read. */
+export type PageShownOf = (view: View) => Promise<boolean | null>
+
 /** How long after a pane goes on screen its page's layout is checked, and the longest the check may be one pixel off. */
 const SETTLE_MS = 250
 const SETTLE_TOLERANCE_PX = 2
 const SETTLE_TRIES = 3
 const NUDGE_MS = 80
+/** A page that commits a document is left with its neighbour pane hidden about ten milliseconds later (measured on Electron 44). */
+const MEND_MS = 60
+const MEND_TRIES = 3
 
 export class PaneHost {
   private readonly shown = new Map<string, View>()
   private readonly placed = new Map<string, Bounds>()
   private readonly settling = new Map<string, ReturnType<typeof setTimeout>>()
+  private mending: ReturnType<typeof setTimeout> | undefined
   private backdrop: View | null = null
 
-  /** `layoutSizeOf`, when given, lets a pane that went on screen be checked against its bounds (`settle`). */
-  constructor (private readonly contentView: View, private readonly layoutSizeOf?: LayoutSizeOf) {}
+  /** `layoutSizeOf`, when given, lets a pane that went on screen be checked against its bounds (`settle`); `pageShownOf`, that
+   * each pane on screen is shown (`mend`). */
+  constructor (private readonly contentView: View, private readonly layoutSizeOf?: LayoutSizeOf, private readonly pageShownOf?: PageShownOf) {}
 
   /** Shows exactly these panes, sized, with `backdrop` behind them when there is one.
    *
@@ -51,7 +60,7 @@ export class PaneHost {
       // (toolbar) view is added to it once, first, before any pane ever is (window.ts) -- so
       // index 0 only ever displaces panes and popovers, never the chrome, and stays below all of
       // them regardless of how many times a backdrop comes and goes.
-      if (nextBackdrop !== null) this.contentView.addChildView(nextBackdrop, 0)
+      if (nextBackdrop !== null) attachShown(this.contentView, nextBackdrop, 0)
       this.backdrop = nextBackdrop
     }
     if (backdrop !== null) backdrop.view.setBounds(backdrop.bounds)
@@ -59,16 +68,48 @@ export class PaneHost {
     // its bounds, so where it lands among `contentView`'s children has never mattered. Once there is
     // a backdrop or a second pane the order matters, and a new pane goes where `slotFor` says.
     const ordered = panes.length > 1 || nextBackdrop !== null
+    let attached = false
     panes.forEach((pane, at) => {
       if (this.shown.get(pane.id) !== pane.view) {
-        if (ordered) this.contentView.addChildView(pane.view, this.slotFor(panes, at, nextBackdrop))
-        else this.contentView.addChildView(pane.view)
+        attached = true
+        attachShown(this.contentView, pane.view, ordered ? this.slotFor(panes, at, nextBackdrop) : undefined, this.onScreenOver(panes.slice(at + 1).map((other) => other.view)))
         this.shown.set(pane.id, pane.view)
         this.settle(pane.id, pane.view, SETTLE_TRIES)
       }
       this.placed.set(pane.id, pane.bounds)
       pane.view.setBounds(pane.bounds)
     })
+    if (attached && panes.length > 1) this.mend(MEND_TRIES)
+  }
+
+  /** Two panes side by side can leave one hidden while the other is shown: a page that commits a document, or a pane put
+   * below its neighbour, hides the page under it. Shortly after, each pane is asked whether its page is shown, and the
+   * panes beside one that is not are hidden and shown again. Costs one read per pane, only while there are two. */
+  private mend (tries: number): void {
+    const { pageShownOf } = this
+    clearTimeout(this.mending)
+    if (pageShownOf === undefined || tries === 0 || this.shown.size < 2) return
+    this.mending = setTimeout(() => {
+      const panes = [...this.shown]
+      void Promise.all(panes.map(async ([, view]) => await pageShownOf(view))).then((answers) => {
+        const now = [...this.shown]
+        if (now.length !== panes.length || now.some(([id, view], at) => panes[at]?.[0] !== id || panes[at]?.[1] !== view)) return
+        let mended = false
+        answers.forEach((shown, at) => {
+          if (shown !== false) return
+          const view = panes[at]?.[1]
+          if (view === undefined) return
+          showAgain(this.contentView, view, panes.filter(([, other]) => other !== view).map(([, other]) => other))
+          mended = true
+        })
+        if (mended) this.mend(tries - 1)
+      })
+    }, MEND_MS)
+  }
+
+  /** Of `views`, those on screen now: the ones a view put below them must be shown beside. */
+  private onScreenOver (views: readonly View[]): View[] {
+    return views.filter((view) => this.contentView.children.includes(view))
   }
 
   private forget (id: string): void {
@@ -145,12 +186,12 @@ export class PaneHost {
     const old = this.shown.get(id)
     const index = old === undefined ? -1 : this.contentView.children.indexOf(old)
     this.hide(id)
-    if (index === -1) this.contentView.addChildView(view)
-    else this.contentView.addChildView(view, index)
+    attachShown(this.contentView, view, index === -1 ? undefined : index, this.onScreenOver([...this.shown].filter(([other]) => other !== id).map(([, other]) => other)))
     this.shown.set(id, view)
     this.placed.set(id, bounds)
     view.setBounds(bounds)
     this.settle(id, view, SETTLE_TRIES)
+    this.mend(MEND_TRIES)
   }
 
   /** A pane's page committed a new document, which can give it a fresh renderer view that lays itself out at a
@@ -158,6 +199,8 @@ export class PaneHost {
    * where a view that is not the whole area can be told a size it already has. */
   recheck (id: string): void {
     const view = this.shown.get(id)
-    if (view !== undefined && this.shown.size > 1) this.settle(id, view, SETTLE_TRIES)
+    if (view === undefined || this.shown.size < 2) return
+    this.settle(id, view, SETTLE_TRIES)
+    this.mend(MEND_TRIES)
   }
 }

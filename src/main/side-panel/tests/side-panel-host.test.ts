@@ -206,6 +206,7 @@ describe('the guest slot', () => {
     host.setGuest({ id: entry.id, title: 'Notes', view: guest.view })
 
     expect(win.children).toContain(guest.view)
+    expect(guest.shown.at(-1)).toBe(true)
     expect(guest.bounds.at(-1)).toEqual(host.bodyBounds())
     expect(host.view()).toBe('ext:abcdef')
     expect(win.sent.at(-1)).toEqual({ type: 'view', view: 'ext:abcdef', guest: { id: 'ext:abcdef', title: 'Notes' } })

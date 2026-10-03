@@ -5,6 +5,7 @@
 // shell says how; Chrome, Firefox and Safari show the same notices. One per
 // window, like Chrome's one bubble: a newer message replaces the old.
 import { WebContentsView, type BaseWindow, type View } from 'electron'
+import { attachShown } from './attach-view.js'
 import { SHELL_PARTITION } from './shell-session.js'
 
 const NOTICE_WIDTH = 320
@@ -57,7 +58,7 @@ export function createWindowNotice (contentView: View, windowWidth: () => number
     if (attached !== view) {
       if (attached !== undefined) contentView.removeChildView(attached)
       // Added last, so it sits above the tab view that just filled the window.
-      contentView.addChildView(view)
+      attachShown(contentView, view)
       attached = view
     }
     layout()

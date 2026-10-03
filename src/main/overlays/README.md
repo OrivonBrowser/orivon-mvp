@@ -53,7 +53,7 @@ blank from its second show on. `hide()` (`setVisible(false)`) and the next `atta
 shows; a `fresh` view, or a warm one whose renderer died, is removed before it is destroyed. A page that has a
 debugger attached, which is every page under Playwright, reports itself visible after a removal all the same, so
 only a launch with no debugger shows the defect; `test/e2e-menu-warm.test.ts` pins the cause (the closed menu is
-still a child, hidden) instead, and the recipe for a real-pointer probe is in `docs/development/testing.md`.
+still a child, hidden) instead, and the recipe for a real-pointer probe is in `docs/development/testing.md`. Every view put into a window goes through `../shell/attach-view.ts`, which shows a view that was removed and added back; a warm view is kept in place all the same, because a hidden child shows with no tree change at all.
 
 **A page's stylesheet is imported by its page.** `import './<name>.css'` in the page module is
 bundled into the overlay entry's one stylesheet, and every rule sits under

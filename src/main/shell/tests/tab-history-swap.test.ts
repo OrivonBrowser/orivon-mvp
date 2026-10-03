@@ -37,6 +37,7 @@ interface RecordedView {
   options: { webPreferences?: Record<string, unknown> }
   webContents: FakeWebContents
   setBounds: ReturnType<typeof vi.fn>
+  setVisible: ReturnType<typeof vi.fn>
   setBackgroundColor: ReturnType<typeof vi.fn>
 }
 const createdViews: RecordedView[] = []
@@ -75,6 +76,7 @@ vi.mock('electron', () => ({
     this.options = options
     this.webContents = makeFakeWebContents()
     this.setBounds = vi.fn()
+    this.setVisible = vi.fn()
     this.setBackgroundColor = vi.fn()
     createdViews.push(this)
   })
