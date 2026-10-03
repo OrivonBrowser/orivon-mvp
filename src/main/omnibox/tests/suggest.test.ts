@@ -208,6 +208,8 @@ describe('rank', () => {
       const rows = [page('https://example.com/')]
       expect(rank({ text: 'exa', verbatim: verbatim('exa'), autocomplete: false, rows }).completion).toBeNull()
       expect(rank({ text: 'exa mple', verbatim: verbatim('exa'), autocomplete: true, rows }).completion).toBeNull()
+      expect(rank({ text: 'exa ', verbatim: verbatim('exa '), autocomplete: true, rows }).completion).toBeNull()
+      expect(rank({ text: ' exa', verbatim: verbatim(' exa'), autocomplete: true, rows }).completion).toBe('mple.com')
       expect(rank({ text: '?exa', verbatim: search('exa'), autocomplete: true, rows }).completion).toBeNull()
     })
 

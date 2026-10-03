@@ -3,6 +3,7 @@
 // holds what happened; this decides whether to write it down and how long to
 // keep it.
 import type { SettingsStore } from '../settings/settings-store.js'
+import { historyAddress } from './attach-history.js'
 import { MAX_IMPORTED_PAGES, selectImportRows } from './history-import.js'
 import type { HistoryEntry, HistoryImportRow, HistoryQuery, HistoryStore, HistorySuggestion } from './history-store.js'
 
@@ -72,10 +73,12 @@ export class HistoryService {
     return this.store.suggest(text, limit)
   }
 
-  /** Nothing is written down while history is off, a typed address included. */
+  /** Nothing is written down while history is off, a typed address included. Kept under the address the visit is
+   * recorded at, so a typed `.eth` name or `ipfs://` address, which loads from its served https URL, meets its visit. */
   markTyped (url: string): void {
-    if (!this.remembering) return
-    this.store.markTyped(url)
+    const address = historyAddress(url)
+    if (!this.remembering || address === null) return
+    this.store.markTyped(address)
   }
 
   /** Tabs report their icon on every state push, so an icon already kept is not offered to the store again. */

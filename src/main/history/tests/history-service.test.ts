@@ -22,6 +22,15 @@ const PNG = 'data:image/png;base64,iVBORw0KGgo='
 const GIF = 'data:image/gif;base64,R0lGODlhAQAB'
 
 describe('the history service', () => {
+  it('counts a typed address under the address its visit is kept at, and none that history does not keep', () => {
+    const { service, store } = setup()
+    const markTyped = vi.spyOn(store, 'markTyped')
+    service.markTyped('https://vitalik.eth/')
+    service.markTyped('https://example.com/')
+    service.markTyped('about:blank')
+    expect(markTyped.mock.calls).toEqual([['ipfs://vitalik.eth/'], ['https://example.com/']])
+  })
+
   describe('site icons', () => {
     it('keeps what a tab offers, and offers the store an icon again only when it changed', () => {
       const { service, store } = setup()

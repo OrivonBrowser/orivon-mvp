@@ -163,7 +163,8 @@ const byScore = (a: SuggestionRow, b: SuggestionRow): number => (b.score ?? 0) -
 /** The part of `text` to add, where the page supplying it is known: to the host first, and once the host is
  * typed in full and a slash after it, to the whole address. */
 function completionFor (text: string, address: string): string | null {
-  if (/\s/.test(text.trim()) || text.trim() === '') return null
+  // A space anywhere after the first character, a trailing one included, makes the text a phrase, not an address.
+  if (/\s/.test(text.trimStart()) || text.trim() === '') return null
   const typed = normalizeTerm(text.trim())
   if (typed === '') return null
   const lowerAddress = address.toLowerCase()

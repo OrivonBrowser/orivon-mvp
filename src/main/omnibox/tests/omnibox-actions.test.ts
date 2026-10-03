@@ -80,6 +80,15 @@ describe('the omnibox chrome actions', () => {
       expect(here.overlays.show).not.toHaveBeenCalled()
     })
 
+    it('takes away the rows of earlier text when the text grows too long to suggest for, so none of them can be picked', () => {
+      const { run, here, anchor } = setup({ history: [{ url: 'https://example.com/', title: 'Example' }] })
+      const { seq } = run('omnibox.query', { text: 'exa', typing: false, anchor }) as { seq: number }
+      expect(run('omnibox.query', { text: 'a'.repeat(2049), typing: false, anchor })).toBeUndefined()
+      expect(here.overlays.close).toHaveBeenCalledWith('omnibox')
+      expect(run('omnibox.pick', { index: 1, disposition: 'current', seq })).toBe(false)
+      expect(here.manager.navigate).not.toHaveBeenCalled()
+    })
+
     it('finishes the text only when it was typed', () => {
       const { run, anchor } = setup({ history: [{ url: 'https://example.com/', title: 'Example' }] })
       expect(run('omnibox.query', { text: 'exa', typing: true, anchor })).toMatchObject({ completion: 'mple.com' })
