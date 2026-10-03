@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import type { Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, mainOutput, profileDirOf } from './launch-electron.mjs'
-import { delay, waitFor } from './smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, delay, waitFor } from './smoke-helpers.mjs'
 import { bytesOf, clickLink, FILE_SIZE, launchDownloads, openInternalPage, removeDir, row, scratchDir, shellCalls, startServer, stubSystem, visitFiles } from './downloads-fixture.js'
 import type { DownloadServer } from './downloads-fixture.js'
 
@@ -96,6 +96,8 @@ it('pauses, resumes, cancels and retries a slow download', async () => {
     await page.locator('.download.is-progressing [data-action="cancel"]').click()
     await page.waitForSelector('.download.is-cancelled')
     expect(await page.locator('.download.is-cancelled .dl-status-text').textContent()).toBe('Cancelled')
+    // The row says Cancelled as soon as the cancel is asked for; the partial file goes once the download has ended.
+    await delay(ABSENCE_SETTLE_MS)
     expect(existsSync(join(dir, 'slow (1).bin'))).toBe(false)
 
     await page.locator('.download.is-cancelled [data-action="retry"]').click()
