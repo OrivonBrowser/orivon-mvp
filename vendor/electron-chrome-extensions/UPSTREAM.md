@@ -793,6 +793,15 @@
     copied its whole local store, the previous copy included, into itself. The value at least
     doubled per start, until one profile held a single 908 MB value and the browser used 10 GB of
     memory.
+64. **Event listeners are matched by a key the page holds.** `src/renderer/event.ts` keeps its
+    registrations per event name and per key (the callback itself when no key is given); a remove
+    for an unknown key does nothing, and the `crx-remove-listener` message goes out only when the
+    last registration of that event leaves. `src/renderer/index.ts`'s `ExtensionEvent` gives each
+    added callback a key, passes it with the callback, ignores a callback added twice, and answers
+    `hasListener` and `hasListeners` from its own record instead of throwing. Reason: a callback
+    crossing the context bridge arrives as a new function on every call, so upstream's
+    `removeListener` never removed anything, and each repeated remove still lowered the shared
+    count until the page unsubscribed the extension's other listeners from the event.
 
 `partition.ts` is reached only through the virtual specifier `src/main/extensions/
 electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and

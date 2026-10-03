@@ -255,6 +255,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **Extension events can be unsubscribed**: removing a `chrome.tabs`, `windows` or `webNavigation` listener really stops it,
+  repeated removals no longer silence the extension's other listeners, and `hasListener` answers instead of throwing.
+- **A failed save of an update check no longer quits the browser**: a store extension's check result that cannot be written is logged.
 - **A page's prompt() gets what was typed**: an `undefined` default is empty, a long answer or default comes back whole,
   and an app's child process start fails with an error instead of waiting for ever when its host is refused.
 - **Popups and questions behave**: Enter right after typing in a page's prompt() answers it, F7 works again after its
