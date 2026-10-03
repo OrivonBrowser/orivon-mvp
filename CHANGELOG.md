@@ -255,6 +255,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **Removing an extension forgets what it stored**: its `chrome.storage` and its pages' localStorage and IndexedDB are emptied, so
+  installing it again, even in the same session, starts clean.
+- **A permission you allow an extension with a background page applies without waiting for a restart**, and taking a permission
+  back reloads the extension's open tabs instead of leaving them without its APIs.
 - **An extension's right-click items show on pages**: what `chrome.contextMenus` adds (a translator, a block-element tool) is in
   the page's right-click menu, not only the toolbar icon's; Options focuses the options tab that is already open.
 - **Extension popups and notifications behave with several windows and events**: a link opened from a popup, and

@@ -50,6 +50,8 @@ export interface InstallContext {
   readonly prefs?: ExtensionPrefsStore
   /** This runtime is private or a guest: every install route refuses (install-private.ts). */
   readonly privateSession?: boolean
+  /** Empties the loaded extension's chrome.storage; an uninstall runs it first (extension-data.ts). */
+  readonly clearExtensionStorage?: (id: string) => Promise<void>
 }
 
 export type InstallOutcome =

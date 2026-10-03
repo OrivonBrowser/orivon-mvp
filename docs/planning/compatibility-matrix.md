@@ -696,7 +696,7 @@ is not the same as it doing anything: read the note, not just the symbol.
 | `history` | ✅ | `search` (24 hours by default), `addUrl`, `deleteUrl`, `deleteRange`, `deleteAll`, `onVisited` and `onVisitRemoved` over Orivon's history; `getVisits` returns one visit per address; `onVisitRemoved` covers the newest 200 pages; a registered app's pages are never listed or deleted (`api/history-api.ts`) |
 | `i18n` | ✅ | `getMessage` resolves the real `_locales` string; `getUILanguage` and `getAcceptLanguages` answer from the system locale (measured: `en-GB`) |
 | `idle` | ✅ | `queryState()` measured returning `"active"` |
-| `management` | ⚠️ | Only `getPermissionWarningsByManifest`/`getSelf`/`uninstallSelf` are real; `getAll` is not a function |
+| `management` | ⚠️ | Only `getPermissionWarningsByManifest` and `getSelf` are real; `uninstallSelf` rejects with "Unknown error." and removes nothing (measured: the extension stays loaded and registered); `getAll` is not a function |
 | `notifications` | ⚠️ | `create` builds an OS notification (measured with a stand-in class: `priority` and `requireInteraction` map to urgency and timeout, `buttons` are ignored); `clear`/`getAll`/`update` and three events present; `onPermissionLevelChanged` and `onShowSettings` are missing |
 | `offscreen` | ✅ | `createDocument`/`closeDocument`/`hasDocument`; one document per extension, in no window, with no `window.open` and no navigation off the extension |
 | `permissions` | ✅ | `contains`/`getAll`/`request`/`remove`, `addHostAccessRequest`/`removeHostAccessRequest` and `onAdded`/`onRemoved`; a request is asked in a sheet and `remove` takes a grant back (`permissions-api.ts`, `preload/extension-apis/permissions.ts`) |

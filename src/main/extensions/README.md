@@ -32,7 +32,7 @@ serves a manifest `sandbox.pages` document Chrome's own CSP `sandbox` directive,
 gets an opaque origin rather than only withholding `chrome.*` (UPSTREAM.md patch 40).
 
 **What it depends on.** `electron` (every file except `action-pins-runner.ts`, `action-pins.ts`, `base-manifest-source.ts`, `crx.ts`, `crx3-format.ts`,
-`details-optional.ts`, `dnr-action-options.ts`, `dnr-api.ts`, `dnr-match-log.ts`,
+`details-optional.ts`, `dnr-action-options.ts`, `extension-data.ts`, `dnr-api.ts`, `dnr-match-log.ts`,
 `effective-manifest.ts`, `electron-chrome-extensions-lib.d.ts`, `extension-commands.ts`,
 `extension-host-access.ts`, `extension-known-permissions.ts`, `extension-permission-check.ts`,
 `extension-prefs-runner.ts`, `extension-prefs.ts`, `extension-sender-id-check.ts`,
@@ -96,7 +96,7 @@ same exception, reached only through the virtual specifiers above).
 | File | Layer |
 |---|---|
 | `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts`, `extension-commands.ts`, `extension-action-anchor.ts`, `extension-pages-reload.ts`, `store-download-seam.ts`, `extension-prefs.ts`, `effective-manifest.ts`, `manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `extensions-detail-parts.ts`, `extensions-page-commands.ts`, `extension-permission-check.ts`, `install-private.ts`, `optional-permissions.ts`, `permission-nag-limit.ts`, `granted-host-rule.ts`, `granted-reconcile.ts`, `details-optional.ts`, `request-frames.ts` | The decision -- no `electron`, unit-tested under plain vitest |
-| `unpack-runner.ts`, `registry-runner.ts`, `install-runner.ts`, `install-store-runner.ts`, `install-lifecycle.ts`, `extensions-view-runner.ts`, `store-runner.ts`, `extension-prefs-runner.ts`, `effective-manifest-runner.ts`, `extension-page-open.ts` | The real I/O |
+| `unpack-runner.ts`, `registry-runner.ts`, `install-runner.ts`, `install-store-runner.ts`, `install-lifecycle.ts`, `extension-data.ts`, `extension-storage-clear.ts`, `extensions-view-runner.ts`, `store-runner.ts`, `extension-prefs-runner.ts`, `effective-manifest-runner.ts`, `extension-page-open.ts` | The real I/O |
 | `extension-commands-runner.ts`, `install-extension-commands.ts`, `shortcuts-page.ts` | The keys of extension commands: the table and what a key runs (fakes for everything it reaches), the real session, registry and shell behind it, and what the shortcuts page may ask |
 | `extension-install-prompt.ts`, `extensions-picker-runner.ts` | The install question, asked into the panel of the tab it belongs to through `askQuestion`, and the native file and folder pickers (`dialog.showOpenDialog`), parented to the extensions page's window |
 | `action-pins.ts`, `action-context-menu.ts`, `extensions-menu-model.ts`, `extensions-menu-names.ts`, `extensions-menu-points.ts`, `extensions-menu-deps.ts` | The decision for the toolbar's pins and the Extensions menu -- which extensions sit on the toolbar, the menu's rows and requests, the right-click template, and the slots a feature adds to the menu through |

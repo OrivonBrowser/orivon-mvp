@@ -41,6 +41,7 @@ function writeFolder (root: string): string {
 function fakeSession (failLoad = false): InstallContext['session'] {
   const loaded = new Map<string, string>()
   return {
+    clearStorageData: async () => {},
     extensions: {
       loadExtension: async (path: string) => {
         dnr.order.push('load')

@@ -14,7 +14,8 @@ import { readRegistry } from './registry-runner.js'
 import { installFromFile, installFromFolder, type InstallContext, type InstallOutcome, type InstallWhere } from './install-runner.js'
 import { setEnabled, uninstall } from './install-lifecycle.js'
 import { createExtensionInstallPrompt } from './extension-install-prompt.js'
-import { createExtensionHost } from './extension-host.js'
+import { clearChromeStorage } from './extension-storage-clear.js'
+import { createExtensionHost, extensionPagesAroundReload } from './extension-host.js'
 import { installExtensionPermissionWarningFilter } from './extension-known-permissions.js'
 import { startWebStore, type StoreApi } from './store-runner.js'
 import { PRIVATE_INSTALL_REASON } from './install-private.js'
@@ -117,7 +118,7 @@ export const extensionsSubsystem: Subsystem = {
     installDnrWebRequestHandlers(session.defaultSession, getDnrEngine, onRuleMatched, onTabNavigated)
 
     const prefs = createExtensionPrefsStore(ctx.privateSession ? null : prefsFilePath(userDataPath))
-    const manifests = createManifestApplier({ userDataPath, session: session.defaultSession, prefs, isOpen: extensionPageOpen })
+    const manifests = createManifestApplier({ userDataPath, session: session.defaultSession, prefs, isOpen: extensionPageOpen, pages: extensionPagesAroundReload })
     if (!ctx.privateSession) manifests.applyAtBoot()
     installApis({ host: hostExtensions, session: session.defaultSession, userDataPath, ctx, prefs })
     const commandKeys = installExtensionCommands({ ctx, prefs, userDataPath })
@@ -127,7 +128,7 @@ export const extensionsSubsystem: Subsystem = {
     // install route (the store page's included) is started.
     if (!ctx.privateSession) await loadEnabledExtensions(userDataPath)
 
-    const install: InstallContext = { userDataPath, session: session.defaultSession, prompt: createExtensionInstallPrompt(), prefs, privateSession: ctx.privateSession }
+    const install: InstallContext = { userDataPath, session: session.defaultSession, prompt: createExtensionInstallPrompt(), prefs, privateSession: ctx.privateSession, clearExtensionStorage: async (id) => { await clearChromeStorage(session.defaultSession, id) } }
     const preloadPath = join(import.meta.dirname, '../preload/web-store.js')
     const store = ctx.privateSession ? refusingStore : await startWebStore(install, preloadPath)
     installStoreTestHook(store)

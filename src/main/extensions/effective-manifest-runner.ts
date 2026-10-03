@@ -32,6 +32,8 @@ export interface ManifestApplierDeps {
   readonly prefs: ExtensionPrefsStore
   /** True while a webContents shows a page of this extension. */
   readonly isOpen: (extensionId: string) => boolean
+  /** Brings back the extension's open pages around a reload (extension-pages-reload.ts): `begin` before the remove, `end` and `sweep` once it is loaded again. */
+  readonly pages?: { readonly begin: (extensionId: string) => void, readonly end: (extensionId: string) => void, readonly sweep: (extensionId: string) => void }
   readonly wait?: (ms: number) => Promise<void>
   readonly pollMs?: number
   readonly maxWaitMs?: number
@@ -108,6 +110,7 @@ export function createManifestApplier (deps: ManifestApplierDeps): ManifestAppli
       writeFileAtomic(loadedPath, decided.next)
       if (!entry.enabled || deps.session.extensions.getExtension(id) == null) return 'applied'
       beginDnrReload(id)
+      deps.pages?.begin(id)
       try {
         deps.session.extensions.removeExtension(id)
         await deps.session.extensions.loadExtension(entry.path, { allowFileAccess: false })
@@ -120,6 +123,8 @@ export function createManifestApplier (deps: ManifestApplierDeps): ManifestAppli
         return 'failed'
       } finally {
         endDnrReload(id)
+        deps.pages?.end(id)
+        deps.pages?.sweep(id)
       }
     })
   }
