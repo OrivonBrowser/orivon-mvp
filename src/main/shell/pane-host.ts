@@ -194,12 +194,12 @@ export class PaneHost {
 
   /** Takes a tab's view off the screen (it is going away, or being swapped for another). */
   hide (id: string): void {
-    if (this.release(id)) this.shownChanged()
+    if (this.takeOff(id)) this.shownChanged()
   }
 
   /** `hide` without the announcement, for a view that `replace` puts another in the place of at once. Whether a pane
    * on screen left it: a held view was already off the plan. */
-  release (id: string): boolean {
+  takeOff (id: string): boolean {
     const view = this.shown.get(id) ?? this.held.get(id)
     if (view === undefined) return false
     const wasShown = this.shown.has(id)
@@ -213,7 +213,7 @@ export class PaneHost {
   replace (id: string, view: View, bounds: Bounds): void {
     const old = this.shown.get(id)
     const index = old === undefined ? -1 : this.contentView.children.indexOf(old)
-    this.release(id)
+    this.takeOff(id)
     // At the old view's place, never on top: a popover open above the pane stays above it.
     if (index === -1) this.contentView.addChildView(view)
     else this.contentView.addChildView(view, index)

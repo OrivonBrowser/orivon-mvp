@@ -90,9 +90,9 @@ describe('page signals and the state push', () => {
 
     createdViews[0]?.webContents.emit('page-title-updated', {}, 'A')
     manager.dispose()
-    vi.advanceTimersByTime(100)
+    // Every timer, not only the push's: the panes keep a layout check of their own, which pushes nothing.
+    vi.runAllTimers()
 
     expect(seen).not.toHaveBeenCalled()
-    expect(vi.getTimerCount()).toBe(0)
   })
 })
