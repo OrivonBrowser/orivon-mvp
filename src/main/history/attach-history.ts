@@ -27,6 +27,10 @@ export function historyAddress (url: string): string | null {
  * could have made by moving through it. */
 const IN_PAGE_INTERVAL_MS = 1000
 
+/** A load of the address this tab last recorded, this soon after, is the same visit again (a reload, a page that
+ * refreshes itself every few seconds), not a new one: it would add a row each time for as long as the tab is open. */
+const SAME_PAGE_AGAIN_MS = 30 * 60_000
+
 /** Title changes kept per page reached, as Chrome keeps: enough for a page that names itself late, while one that
  * keeps retitling itself (an unread count, a clock) is not written down twice a second for as long as it is open. */
 export const MAX_TITLES_PER_PAGE = 5
@@ -34,11 +38,16 @@ export const MAX_TITLES_PER_PAGE = 5
 export function attachHistory (contents: WebContents, history: HistoryService, host: HistoryHost, now: () => number = Date.now): void {
   let lastInPage = -Infinity
   let titlesKept = 0
+  let lastRecorded: { address: string, at: number } | null = null
   const visit = (url: string): void => {
     titlesKept = 0
     if (contents.isDestroyed() || !host.recordable(contents)) return
     const address = historyAddress(url)
-    if (address !== null) history.visit(address, contents.getTitle())
+    if (address === null) return
+    const at = now()
+    if (lastRecorded !== null && lastRecorded.address === address && at - lastRecorded.at < SAME_PAGE_AGAIN_MS) return
+    lastRecorded = { address, at }
+    history.visit(address, contents.getTitle())
   }
   contents.on('did-navigate', (_event, url, httpResponseCode) => {
     // An error page is not a page the person visited; 0 is a load with no response (a file, a cached page).
