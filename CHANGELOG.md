@@ -256,6 +256,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **Closing the tab in front leaves a collapsed group collapsed**: the nearest tab still shown comes to the front,
+  when a tab closes or the front tab goes to sleep.
 - **Closing the last tab keeps it for next time**: the session file holds that tab, not an empty window; on macOS the
   last window closed can be reopened once another window opens.
 - **Sleeping tabs act like tabs**: the tab menu's Reload wakes one, Duplicate copies the pages behind it, and moving

@@ -228,6 +228,29 @@ describe('closing tabs in bulk', () => {
   })
 })
 
+describe('the tab put in front when the one in front closes', () => {
+  it('is the left neighbour, or the nearest one a feature does not hide, left first', () => {
+    const manager = newManager()
+    const [a, x, y, c] = strip(manager, 4) as [string, string, string, string]
+    manager.activateTab(c)
+    manager.closeTab(c)
+    expect(manager.getState().activeTabId).toBe(y)
+
+    const [d] = strip(manager, 1) as [string]
+    manager.hidden = (id) => id === x || id === y
+    manager.activateTab(d)
+    manager.closeTab(d)
+    expect(manager.getState().activeTabId).toBe(a)
+
+    const [e] = strip(manager, 1) as [string]
+    manager.moveTab(e, 0)
+    manager.activateTab(e)
+    manager.hidden = (id) => id === a
+    manager.closeTab(e)
+    expect(manager.getState().activeTabId).toBe(x)
+  })
+})
+
 describe('opening a tab beside another', () => {
   it('duplicates the address into a foreground tab directly to the right of its source', () => {
     const manager = newManager()
