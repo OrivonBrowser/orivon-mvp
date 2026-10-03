@@ -256,6 +256,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **Dragging a tab out no longer leaves a process behind**: the floating preview's page closes with the drag, and closed
+  tabs and windows are no longer kept in memory by the tab-visibility reports.
 - **A second crash keeps the first one's windows**: windows still waiting to be restored stay in the session file until
   they are restored or the browser quits.
 - **Two local servers keep their own tab icons**: an icon is kept under the host and its port, not the host alone.

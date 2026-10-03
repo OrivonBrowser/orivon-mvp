@@ -7,7 +7,7 @@ import type { ElectronApplication, Locator, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './launch-electron.mjs'
 import { clickAddressBarRetrying, pressKey } from './e2e-helpers.js'
-import { delay, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, delay, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
 
 let server: Server
 let origin = ''
@@ -262,6 +262,9 @@ it('takes a tab out into a window of its own when it is dragged out of the windo
     const second = chromePages(app).find((page) => page !== chrome) as Page
     expect(await waitFor(async () => (await titles(second)).join() === 'Page /dragged')).toBe(true)
     expect(await titles(chrome)).not.toContain('Page /dragged')
+    // The floating preview ends with the drag, its page included.
+    await delay(ABSENCE_SETTLE_MS)
+    expect(await app.evaluate(({ webContents }) => webContents.getAllWebContents().filter((contents) => contents.getURL().startsWith('data:')).length)).toBe(0)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
