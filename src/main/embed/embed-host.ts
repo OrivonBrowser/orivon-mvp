@@ -16,6 +16,7 @@ import type { Broker } from '../../broker/broker-contracts.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { requestPartition, withPartition } from '../verifier/partition.js'
+import { holdForVerifier } from '../verifier/verifier-access.js'
 import { EMBED_EVENT_CHANNEL } from '../channels.js'
 import type { EmbedDownload, EmbedPopup } from '../../contracts/index.js'
 import { embedPartitionFor, guestRequestAllowed, hardenGuest, showsLocalPageOn } from './embed-guard.js'
@@ -99,7 +100,11 @@ function configureEmbedSession (embedSession: Session, appOrigin: string, broker
       // A callback Electron waits on is called exactly once: a rejection
       // refuses, the way every refusal here fails closed.
       .then((allowed) => !allowed, () => true)
-      .then((cancel) => { callback({ cancel }) })
+      .then(async (cancel) => {
+        // The verifier host sleeps when unused: a shown page that names one of its hosts waits for it to listen.
+        if (!cancel) await holdForVerifier(details.url).catch(() => {})
+        callback({ cancel })
+      })
   })
   // A shown page reaches the verifier (a `.eth` name, an `ipfs://` address)
   // the same ordinary way any tab does -- unlike an installed app's own

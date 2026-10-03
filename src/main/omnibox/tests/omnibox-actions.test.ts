@@ -3,6 +3,7 @@ import { CHROME_ACTIONS, runChromeAction } from '../../shell/chrome-actions.js'
 import { createOmniboxOverlay } from '../omnibox-overlay.js'
 import type { WindowContext } from '../../shell/window-context.js'
 import { SHELL_EVENT_CHANNEL } from '../../channels.js'
+import { provideVerifierAccess } from '../../verifier/verifier-access.js'
 
 interface FakeTab { id: string, url: string, displayUrl: string, title: string, favicon: null, isNewTab: boolean }
 
@@ -61,6 +62,19 @@ describe('the omnibox chrome actions', () => {
       run('omnibox.query', { text: 'exam', typing: false, anchor })
       expect(here.overlays.show).toHaveBeenCalledTimes(1)
       expect(here.overlays.send).toHaveBeenCalledWith('omnibox', expect.objectContaining({ type: 'rows', selected: 0 }))
+    })
+
+    it('starts the verifier host as soon as the text names a .eth host, and for no other text', () => {
+      const start = vi.fn()
+      provideVerifierAccess({ start, ready: async () => {} })
+      const { run, anchor } = setup()
+      run('omnibox.query', { text: 'exa', typing: true, anchor })
+      run('omnibox.query', { text: 'weather in rome', typing: true, anchor })
+      run('omnibox.query', { text: 'example.com', typing: true, anchor })
+      expect(start).not.toHaveBeenCalled()
+      run('omnibox.query', { text: 'vitalik.eth', typing: true, anchor })
+      expect(start).toHaveBeenCalledTimes(1)
+      provideVerifierAccess({ start: () => {}, ready: async () => {} })
     })
 
     it('hides it when nothing can be done with the text', () => {

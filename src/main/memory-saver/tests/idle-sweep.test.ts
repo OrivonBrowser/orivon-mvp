@@ -12,7 +12,7 @@ function setup (over: Partial<SweepDeps> = {}) {
   const sleep = vi.fn(async (_tabs: unknown, id: string) => { void id; return true })
   const deps: SweepDeps = {
     windows: () => [{ tabs: fake.tabs, window: { isDestroyed: () => false } }],
-    settings: () => settings, onBattery: () => false, now: () => 100 * MIN, sleep, ...over
+    settings: () => settings, onBattery: () => false, memoryLow: () => false, now: () => 100 * MIN, sleep, ...over
   }
   return { ...fake, deps, sleep }
 }
@@ -81,6 +81,91 @@ describe('sweepIdleTabs', () => {
     if (b !== undefined) b.lastActiveAt = 0
     expect(await sweepIdleTabs({ ...deps, windows: () => [{ tabs: deps.windows()[0]?.tabs as never, window: { isDestroyed: () => true } }] })).toEqual([])
     expect(sleep).not.toHaveBeenCalled()
+  })
+})
+
+describe('sweepIdleTabs under memory pressure', () => {
+  function crowded (over: Partial<SweepDeps> = {}) {
+    const fake = fakeTabs({ a: page(), b: page(), c: page(), d: page(), e: page(), f: page() })
+    fake.setActive('a')
+    const sleep = vi.fn(async (_tabs: unknown, id: string) => { void id; return true })
+    const deps: SweepDeps = {
+      windows: () => [{ tabs: fake.tabs, window: { isDestroyed: () => false } }],
+      settings: () => settings, onBattery: () => false, memoryLow: () => true, now: () => 100 * MIN, sleep, ...over
+    }
+    const leftFront = (id: string, minutesAgo: number): void => {
+      const record = fake.records.get(id)
+      if (record !== undefined) record.lastActiveAt = 100 * MIN - minutesAgo * MIN
+    }
+    return { ...fake, deps, sleep, leftFront }
+  }
+
+  it('sleeps the least recently used tabs first, three at most, before their wait is over', async () => {
+    const { deps, sleep, leftFront } = crowded()
+    leftFront('b', 6); leftFront('c', 9); leftFront('d', 7); leftFront('e', 14); leftFront('f', 8)
+    expect(await sweepIdleTabs(deps)).toEqual(['e', 'c', 'f'])
+    expect(sleep).toHaveBeenCalledTimes(3)
+  })
+
+  it('leaves a tab that left the front less than five minutes ago', async () => {
+    const { deps, sleep, leftFront } = crowded()
+    leftFront('b', 4); leftFront('c', 5); leftFront('d', 1)
+    expect(await sweepIdleTabs(deps)).toEqual(['c'])
+    expect(sleep).not.toHaveBeenCalledWith(expect.anything(), 'b')
+  })
+
+  it('counts only the tabs that did sleep, so a tab the rules keep awake does not use up a place', async () => {
+    const { deps, leftFront } = crowded({ sleep: vi.fn(async (_tabs: unknown, id: string) => id !== 'e') })
+    leftFront('b', 6); leftFront('c', 7); leftFront('d', 8); leftFront('e', 20); leftFront('f', 9)
+    expect(await sweepIdleTabs(deps)).toEqual(['f', 'd', 'c'])
+  })
+
+  it('does not ask again, in the same pass, for a tab whose wait was over and that the rules kept awake', async () => {
+    const sleep = vi.fn(async (_tabs: unknown, id: string) => id !== 'e')
+    const { deps, leftFront } = crowded({ sleep })
+    leftFront('e', 20); leftFront('b', 8)
+    await sweepIdleTabs(deps)
+    expect(sleep.mock.calls.filter((call) => call[1] === 'e')).toHaveLength(1)
+  })
+
+  it('does nothing extra while memory is normal', async () => {
+    const { deps, sleep, leftFront } = crowded({ memoryLow: () => false })
+    leftFront('b', 10); leftFront('c', 12)
+    expect(await sweepIdleTabs(deps)).toEqual([])
+    expect(sleep).not.toHaveBeenCalled()
+  })
+
+  it('does nothing extra while the memory saver is off', async () => {
+    const { deps, sleep, leftFront } = crowded({ settings: () => ({ ...settings, memorySaver: false }) })
+    leftFront('b', 10)
+    expect(await sweepIdleTabs(deps)).toEqual([])
+    expect(sleep).not.toHaveBeenCalled()
+  })
+
+  it('does not offer a tab twice when its wait is over too, and does not offer the tab in front or one already asleep', async () => {
+    const { deps, sleep, records, leftFront } = crowded()
+    leftFront('b', 30); leftFront('c', 40); leftFront('d', 10)
+    const asleep = records.get('c')
+    if (asleep !== undefined) asleep.sleeping = { url: '', title: '', favicon: null, entries: [], index: 0, at: 0 }
+    const a = records.get('a')
+    if (a !== undefined) a.lastActiveAt = 0
+    expect(await sweepIdleTabs(deps)).toEqual(['b', 'd'])
+    expect(sleep.mock.calls.map((call) => call[1])).toEqual(['b', 'd'])
+  })
+
+  it('keeps sweeping when the reading of memory throws', async () => {
+    const { deps, sleep, leftFront } = crowded({ memoryLow: () => { throw new Error('no reading') } })
+    leftFront('b', 10)
+    expect(await sweepIdleTabs(deps)).toEqual([])
+    expect(sleep).not.toHaveBeenCalled()
+  })
+
+  it('reads memory once per pass', async () => {
+    const memoryLow = vi.fn(() => true)
+    const { deps, leftFront } = crowded({ memoryLow })
+    leftFront('b', 8); leftFront('c', 9)
+    await sweepIdleTabs(deps)
+    expect(memoryLow).toHaveBeenCalledTimes(1)
   })
 })
 

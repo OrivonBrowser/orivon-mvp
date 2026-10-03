@@ -105,9 +105,9 @@ const SPECS = {
   'accessibility.caretBrowsing': { kind: 'bool', default: false },
   'accessibility.caretAsk': { kind: 'bool', default: true },
   'tabs.lastTabClosed': { kind: 'enum', options: ['closeWindow', 'newTab'], default: 'closeWindow' },
-  // Tabs that have not been used for a while go to sleep and wake when opened. 2 hours is provisional: what a person expects a browser to do with an idle tab is not yet measured.
+  // Tabs that have not been used for a while go to sleep and wake when opened. 30 minutes is provisional: what a person expects a browser to do with an idle tab is not yet measured.
   'performance.memorySaver': { kind: 'bool', default: true },
-  'performance.sleepAfter': { kind: 'enum', options: ['15m', '30m', '1h', '2h', '4h'], default: '2h', labels: { '15m': '15 minutes', '30m': '30 minutes', '1h': '1 hour', '2h': '2 hours', '4h': '4 hours' } },
+  'performance.sleepAfter': { kind: 'enum', options: ['15m', '30m', '1h', '2h', '4h'], default: '30m', labels: { '15m': '15 minutes', '30m': '30 minutes', '1h': '1 hour', '2h': '2 hours', '4h': '4 hours' } },
   // Sites that never go to sleep, one per line.
   'performance.keepAwake': { kind: 'text', default: '', maxLength: HOST_LIST_LENGTH, check: isHostList },
   'performance.energySaver': { kind: 'enum', options: ['off', 'battery'], default: 'off' },

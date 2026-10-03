@@ -1,7 +1,20 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ShellServices } from '../../shell/shell-services.js'
 
 const owner = { onBeforeRequest: vi.fn(), onBeforeSendHeaders: vi.fn(), onHeadersReceived: vi.fn() }
+/** How many handlers each event holds right now: a registration counts until its handle is removed. */
+const active = { onBeforeRequest: 0, onBeforeSendHeaders: 0, onHeadersReceived: 0 }
+beforeEach(() => {
+  for (const event of Object.keys(active) as Array<keyof typeof active>) {
+    active[event] = 0
+    owner[event].mockReset()
+    owner[event].mockImplementation(() => {
+      active[event] += 1
+      let removed = false
+      return { remove: () => { if (!removed) { removed = true; active[event] -= 1 } } }
+    })
+  }
+})
 const { clearStorageData } = vi.hoisted(() => ({ clearStorageData: vi.fn(async () => {}) }))
 vi.mock('electron', () => ({ session: { defaultSession: { name: 'default', clearStorageData } } }))
 vi.mock('../../sessions/web-request-owner.js', () => ({ webRequestOwnerFor: vi.fn(() => owner) }))
@@ -19,18 +32,18 @@ const SITE = 'https://shop.example'
 
 function rig (values: Record<string, string> = {}, windows: unknown[] = []) {
   const store = new SiteSettingsStore(null)
-  let settingsListener: ((change: { key: string }) => void) | undefined
+  const settingsListeners: Array<(change: { key: string }) => void> = []
   const onStart = vi.fn()
   const subscribe = vi.fn()
   const services = {
-    settings: { get: (key: string) => values[key] ?? (key === 'sites.popups' ? 'block' : key === 'sites.autoDownloads' ? 'ask' : 'allow'), onChange: (l: (change: { key: string }) => void) => { settingsListener = l; return () => {} } },
+    settings: { get: (key: string) => values[key] ?? (key === 'sites.popups' ? 'block' : key === 'sites.autoDownloads' ? 'ask' : 'allow'), onChange: (l: (change: { key: string }) => void) => { settingsListeners.push(l); return () => {} } },
     siteSettings: store,
     windows: { all: () => windows, findTab: () => null },
     tabLifecycle: { subscribe },
     downloads: { onStart }
   } as unknown as ShellServices
   installContentSettings.install({} as never, services, {} as never, {} as never)
-  return { store, subscribe, onStart, changeSetting: (key: string) => { settingsListener?.({ key }) } }
+  return { store, subscribe, onStart, values, changeSetting: (key: string) => { for (const listener of settingsListeners) listener({ key }) } }
 }
 
 type HeadersHandler = (details: unknown, current: { responseHeaders: Record<string, string[]> }) => { responseHeaders: Record<string, string[]> }
@@ -40,14 +53,65 @@ const headersHandler = (): HeadersHandler => owner.onHeadersReceived.mock.calls.
 const requestHandler = (): RequestHandler => owner.onBeforeRequest.mock.calls.at(-1)?.[3] as RequestHandler
 
 describe('the content-settings installer', () => {
-  it('registers on the default session\'s one owner, after the privacy controls, for web addresses only', () => {
+  it('registers nothing on the default session\'s one owner while no rule can block scripts or images', () => {
     rig()
     expect(webRequestOwnerFor).toHaveBeenCalledWith(expect.objectContaining({ name: 'default' }))
+    expect(owner.onHeadersReceived).not.toHaveBeenCalled()
+    expect(owner.onBeforeRequest).not.toHaveBeenCalled()
+  })
+
+  it('registers the script handler, after the privacy controls and for web addresses only, while scripts can be blocked', () => {
+    const { store, changeSetting, values } = rig()
+
+    store.set(SITE, 'javascript', 'block')
     expect(owner.onHeadersReceived).toHaveBeenCalledWith(30, { urls: ['http://*/*', 'https://*/*'], types: ['mainFrame', 'subFrame'] }, expect.any(Function), expect.any(Function))
-    expect(owner.onBeforeRequest).toHaveBeenCalledWith(30, { urls: ['http://*/*', 'https://*/*'], types: ['image'] }, expect.any(Function), expect.any(Function))
     const matches = owner.onHeadersReceived.mock.calls.at(-1)?.[2] as (url: string) => boolean
     expect(matches('https://a.example/')).toBe(true)
     expect(matches('orivon://settings/')).toBe(false)
+    expect(active).toEqual({ onBeforeRequest: 0, onBeforeSendHeaders: 0, onHeadersReceived: 1 })
+
+    store.forget(SITE, 'javascript')
+    expect(active.onHeadersReceived).toBe(0)
+
+    values['sites.javascript'] = 'block'
+    changeSetting('sites.javascript')
+    expect(active.onHeadersReceived).toBe(1)
+    values['sites.javascript'] = 'allow'
+    changeSetting('sites.javascript')
+    expect(active.onHeadersReceived).toBe(0)
+  })
+
+  it('registers the image handler, for images only, while images can be blocked', () => {
+    const { store, changeSetting, values } = rig()
+
+    store.set(SITE, 'images', 'block')
+    expect(owner.onBeforeRequest).toHaveBeenCalledWith(30, { urls: ['http://*/*', 'https://*/*'], types: ['image'] }, expect.any(Function), expect.any(Function))
+    expect(active).toEqual({ onBeforeRequest: 1, onBeforeSendHeaders: 0, onHeadersReceived: 0 })
+
+    store.clear()
+    expect(active.onBeforeRequest).toBe(0)
+
+    values['sites.images'] = 'block'
+    changeSetting('sites.images')
+    expect(active.onBeforeRequest).toBe(1)
+    values['sites.images'] = 'allow'
+    changeSetting('sites.images')
+    expect(active.onBeforeRequest).toBe(0)
+  })
+
+  it('keeps a handler while a site rule still blocks after the default is lifted, and ignores an allow rule', () => {
+    const { store, changeSetting, values } = rig({ 'sites.images': 'block' })
+    store.set(SITE, 'images', 'block')
+    values['sites.images'] = 'allow'
+    changeSetting('sites.images')
+    expect(active.onBeforeRequest).toBe(1)
+    store.set(SITE, 'images', 'allow')
+    expect(active.onBeforeRequest).toBe(0)
+  })
+
+  it('registers at launch for a default or a site rule already stored', () => {
+    rig({ 'sites.javascript': 'block', 'sites.images': 'block' })
+    expect(active).toEqual({ onBeforeRequest: 1, onBeforeSendHeaders: 0, onHeadersReceived: 1 })
   })
 
   it('follows tabs as they are created and their views replaced', () => {
@@ -78,6 +142,7 @@ describe('the content-settings installer', () => {
 
     it('hands the same headers back for a site that was not told to, and for a PDF', () => {
       const { store } = rig()
+      store.set('https://other.example', 'javascript', 'block')
       const current = { responseHeaders: { 'Content-Type': ['text/html'] } }
       expect(headersHandler()(page, current)).toBe(current)
       store.set(SITE, 'javascript', 'block')
@@ -105,12 +170,14 @@ describe('the content-settings installer', () => {
     })
 
     it('follows a changed default on the next response', () => {
-      const values: Record<string, string> = {}
-      rig(values)
+      const { values, changeSetting } = rig({ 'sites.javascript': 'block' })
       const current = { responseHeaders: {} }
-      expect(headersHandler()(page, current)).toBe(current)
-      values['sites.javascript'] = 'block'
       expect(headersHandler()(page, current)).not.toBe(current)
+      const handler = headersHandler()
+      values['sites.javascript'] = 'allow'
+      expect(handler(page, current)).toBe(current)
+      changeSetting('sites.javascript')
+      expect(active.onHeadersReceived).toBe(0)
     })
   })
 

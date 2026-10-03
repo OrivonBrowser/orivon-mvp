@@ -31,6 +31,9 @@ import { TabPanes } from './tab-panes.js'
 export type { TabState, TabsSnapshot, ShellState, Bounds } from './tab-types.js'
 import type { TabsSnapshot, Bounds, TabRecord, TabShell, TabViewHost } from './tab-types.js'
 
+/** How long a page signal waits for others before the state is pushed: a few frames, so a load's burst is one push. */
+const STATE_PUSH_DELAY_MS = 32
+
 export class TabManager {
   /** One record per tab: a second, parallel map is the leak class this avoids. */
   private readonly tabs = new Map<string, TabRecord>()
@@ -44,6 +47,8 @@ export class TabManager {
    * with the window already gone. */
   private disposed = false
   private readonly listeners = new Set<(state: TabsSnapshot) => void>()
+  /** The push a burst of page signals waits for: one per burst, however many tabs and signals made it. */
+  private pendingPush: ReturnType<typeof setTimeout> | null = null
   /** The narrow surface tab-view.ts's per-view wiring calls back through. */
   private readonly viewHost: TabViewHost
   private readonly panes: TabPanes
@@ -84,12 +89,12 @@ export class TabManager {
       window: shell?.window,
       tabLifecycle: shell?.tabLifecycle,
       isShown: (id) => this.panes.isShown(id),
-      detachView: (view) => { this.panes.hide(this.panes.idOfView(view)) },
+      detachView: (view) => { this.panes.takeOff(this.panes.idOfView(view)) },
       attachView: (id, view) => { this.panes.swap(id, view) },
       paneClicked: (id) => { this.panes.clicked(id) },
       openInSplit: (id, url) => { if (!this.atCapacity()) this.splits.split(id, this.createTab(url), 'right') },
       reload: (id) => { this.reload(id) },
-      emitState: () => { this.changed() },
+      emitState: () => { this.changedSoon() },
       // Which document declared the icon, and whether this record is still the one the map holds when the fetch lands.
       captureFavicon: async (id, record, favicons) => {
         await captureFaviconInto(record, favicons, () => record.view.webContents.getURL(), () => this.tabs.get(id) === record, () => { this.changed() })
@@ -182,6 +187,7 @@ export class TabManager {
   dispose (): void {
     if (this.disposed) return
     this.disposed = true
+    this.cancelPendingPush()
     this.listeners.clear()
     for (const id of [...this.tabs.keys()]) this.forgetTab(id, true)
   }
@@ -410,7 +416,25 @@ export class TabManager {
 
   /** Pushes the state to every listener: for a feature whose per-tab state just changed. */
   changed (): void {
+    // The push below carries everything a waiting one would.
+    this.cancelPendingPush()
     const state = this.getState()
     for (const listener of this.listeners) listener(state)
+  }
+
+  /** A page signal (a title, a loading flag, an address inside the page, an icon) pushes the state once its burst is over:
+   * a page load raises several in every tab, and each push rebuilds all tabs' state and sends it to the toolbar. */
+  private changedSoon (): void {
+    if (this.disposed || this.pendingPush !== null) return
+    this.pendingPush = setTimeout(() => {
+      this.pendingPush = null
+      if (!this.disposed) this.changed()
+    }, STATE_PUSH_DELAY_MS)
+  }
+
+  private cancelPendingPush (): void {
+    if (this.pendingPush === null) return
+    clearTimeout(this.pendingPush)
+    this.pendingPush = null
   }
 }

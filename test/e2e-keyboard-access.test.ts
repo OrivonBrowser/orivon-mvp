@@ -168,6 +168,8 @@ it('moves between tabs with the arrow keys, activates with Enter, closes with De
     await pressKey(app, CHROME, 'F6')
     await pressKey(app, CHROME, 'F6')
     await expectPane(chrome, 'tabs')
+    // A tab is named from a state push that follows its page's title by a moment: wait for the name, then read all.
+    expect(await waitFor(async () => (await whereInChrome(chrome)).label === 'c')).toBe(true)
     expect(await whereInChrome(chrome)).toMatchObject({ tab: true, label: 'c', tabIndexZero: 1 })
 
     await chrome.keyboard.press('ArrowLeft')

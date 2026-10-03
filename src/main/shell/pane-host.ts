@@ -25,12 +25,23 @@ export class PaneHost {
   private readonly placed = new Map<string, Bounds>()
   private readonly settling = new Map<string, ReturnType<typeof setTimeout>>()
   private backdrop: View | null = null
+  private readonly changeListeners = new Set<() => void>()
   /** While `holding`: the views of panes that left the plan but stay attached, under whatever is new, by pane id ('backdrop' for the backdrop). */
   private readonly held = new Map<string, View>()
   private holding = false
 
   /** `layoutSizeOf`, when given, lets a pane that went on screen be checked against its bounds (`settle`). */
   constructor (private readonly contentView: View, private readonly layoutSizeOf?: LayoutSizeOf) {}
+
+  /** Called after a change to which tabs are on screen (not after a pane is only resized). Returns the removal. */
+  onShownChange (listener: () => void): () => void {
+    this.changeListeners.add(listener)
+    return () => { this.changeListeners.delete(listener) }
+  }
+
+  private shownChanged (): void {
+    for (const listener of this.changeListeners) listener()
+  }
 
   /** Shows exactly these panes, sized, with `backdrop` behind them when there is one.
    *
@@ -43,17 +54,20 @@ export class PaneHost {
    * its place unless it is genuinely new to the screen or its view changed. */
   show (panes: readonly PaneView[], backdrop: PaneView | null = null): void {
     const wanted = new Map(panes.map((pane) => [pane.id, pane.view]))
+    let changed = false
     // A pane that is wanted again while its view is still attached under a hold goes back to being shown, in place.
     for (const [id, view] of this.held) {
       if (id === BACKDROP || wanted.get(id) !== view) continue
       this.held.delete(id)
       this.shown.set(id, view)
+      changed = true
     }
     for (const [id, view] of this.shown) {
       if (wanted.get(id) === view) continue
       if (this.holding) this.held.set(id, view)
       else this.contentView.removeChildView(view)
       this.forget(id)
+      changed = true
     }
     const nextBackdrop = backdrop?.view ?? null
     if (this.backdrop !== nextBackdrop) {
@@ -83,11 +97,13 @@ export class PaneHost {
         else if (ordered) this.contentView.addChildView(pane.view, this.slotFor(panes, at, nextBackdrop))
         else this.contentView.addChildView(pane.view)
         this.shown.set(pane.id, pane.view)
+        changed = true
         this.settle(pane.id, pane.view, SETTLE_TRIES)
       }
       this.placed.set(pane.id, pane.bounds)
       pane.view.setBounds(pane.bounds)
     })
+    if (changed) this.shownChanged()
   }
 
   private forget (id: string): void {
@@ -178,23 +194,32 @@ export class PaneHost {
 
   /** Takes a tab's view off the screen (it is going away, or being swapped for another). */
   hide (id: string): void {
+    if (this.takeOff(id)) this.shownChanged()
+  }
+
+  /** `hide` without the announcement, for a view that `replace` puts another in the place of at once. Whether a pane
+   * on screen left it: a held view was already off the plan. */
+  takeOff (id: string): boolean {
     const view = this.shown.get(id) ?? this.held.get(id)
-    if (view === undefined) return
+    if (view === undefined) return false
+    const wasShown = this.shown.has(id)
     this.contentView.removeChildView(view)
     this.forget(id)
     this.held.delete(id)
+    return wasShown
   }
 
   /** Shows `view` for a pane that is on screen already under another view, in the same place. */
   replace (id: string, view: View, bounds: Bounds): void {
     const old = this.shown.get(id)
     const index = old === undefined ? -1 : this.contentView.children.indexOf(old)
-    this.hide(id)
+    this.takeOff(id)
     // At the old view's place, never on top: a popover open above the pane stays above it.
     if (index === -1) this.contentView.addChildView(view)
     else this.contentView.addChildView(view, index)
     this.shown.set(id, view)
     this.placed.set(id, bounds)
     view.setBounds(bounds)
+    this.shownChanged()
   }
 }

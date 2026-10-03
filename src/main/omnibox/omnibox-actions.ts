@@ -8,6 +8,7 @@ import type { ChromeAction } from '../shell/chrome-actions.js'
 import { sendChromeEvent } from '../shell/shell-events.js'
 import type { WindowContext } from '../shell/window-context.js'
 import { parseOmniboxInput } from '../browsing/omnibox.js'
+import { prewarmVerifier } from '../verifier/verifier-access.js'
 import { OMNIBOX_MODULE, OMNIBOX_OVERLAY } from './omnibox-names.js'
 import { existingOmnibox, omniboxFor } from './omnibox-window.js'
 import type { Disposition, Outcome } from './omnibox-service.js'
@@ -45,6 +46,8 @@ export const omniboxQuery: ChromeAction = (payload, ctx) => {
   }
   const anchor = rectOf(payload['anchor'])
   if (anchor === undefined) return undefined
+  // A name typed here is about to be opened: the verifier host starts now rather than after Enter.
+  prewarmVerifier(payload['text'])
   const service = omniboxFor(ctx)
   const reply = service.query(payload['text'], payload['typing'] === true)
   const { overlays } = ctx.window

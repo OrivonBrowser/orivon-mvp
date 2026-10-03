@@ -39,7 +39,7 @@ export function prepareFaviconStatements (db: DatabaseSync): Statements {
   if (found === undefined) {
     found = {
       // Every offer refreshes `updated`, so what is trimmed is the icon of the site visited longest ago, not the one
-      // changed longest ago: a site seen every day keeps its icon. The store offers a host once per run.
+      // changed longest ago: a site seen every day keeps its icon. The store offers an unchanged icon again only after an hour.
       upsert: db.prepare(`
         INSERT INTO favicons (host, data, updated) VALUES (?, ?, ?)
         ON CONFLICT (host) DO UPDATE SET data = excluded.data, updated = excluded.updated`),
@@ -55,15 +55,25 @@ export function prepareFaviconStatements (db: DatabaseSync): Statements {
   return found
 }
 
-/** Keeps `dataUrl` as the icon of `host`, replacing the one it had, and notes that the site was seen now. Anything that is
- * not an image is refused. */
-export function setHostFavicon (db: DatabaseSync, host: string, dataUrl: string, now: () => number = Date.now): void {
+/** Keeps `dataUrl` as the icon of `host` and notes that the site was seen now, without trimming: a writer of many icons
+ * calls `trimFavicons` once afterward. Anything that is not an image is refused. */
+export function writeHostFavicon (db: DatabaseSync, host: string, dataUrl: string, now: () => number = Date.now): void {
   if (host === '' || dataUrl.length > MAX_HISTORY_FAVICON_CHARS) return
   const safe = sanitizeStoredFavicon(dataUrl)
   if (safe === null) return
-  const { upsert, trim } = prepareFaviconStatements(db)
-  upsert.run(host, safe, now())
-  trim.run(MAX_FAVICON_HOSTS)
+  prepareFaviconStatements(db).upsert.run(host, safe, now())
+}
+
+/** Drops the icons refreshed longest ago once there are more than the cap. */
+export function trimFavicons (db: DatabaseSync): void {
+  prepareFaviconStatements(db).trim.run(MAX_FAVICON_HOSTS)
+}
+
+/** Keeps `dataUrl` as the icon of `host`, replacing the one it had, and notes that the site was seen now. Anything that is
+ * not an image is refused. */
+export function setHostFavicon (db: DatabaseSync, host: string, dataUrl: string, now: () => number = Date.now): void {
+  writeHostFavicon(db, host, dataUrl, now)
+  trimFavicons(db)
 }
 
 /** The icon of each of `hosts` that has one. */

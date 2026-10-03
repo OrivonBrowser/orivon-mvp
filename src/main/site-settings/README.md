@@ -49,6 +49,11 @@ after the next page load, not before). A frame never asks. A `block` default for
 page's own, and a cross-origin frame (which Electron reports with an `embeddingOrigin`) never borrows its embedder's
 answer. It notes the allowance on the page's record so the chip can show it, but writes no store.
 
+**The script and image handlers are on the owner only while a rule can block that kind.** `install-content-settings.ts`
+registers the response-header handler while the `sites.javascript` default is `block` or any site is stored as blocked
+for JavaScript (`SiteSettingsStore.hasBlock`), and the image handler likewise, and re-evaluates on every settings and
+site-settings change. With no such rule an image or document request makes no round trip through the main process for them.
+
 **Camera and microphone are one question** when a page asks for both, and each is stored. Chromium reports both plain and
 system-exclusive MIDI as `midiSysex`, so that request carries the stronger wording and Allow covers both.
 

@@ -13,12 +13,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **`npm run perf:probe`** measures each process's CPU and memory through fixed scenes, to compare a change before and after.
 - **Web3 Score providers** (Settings > Web3): judged Levels 3 and 4, with a site's operations and connections, from any
   address Orivon opens, asked by hash bucket so a request names a group of sites, not the site. Build one with web3-score-manager.
 - **Tabs can be grouped**: name and colour a group from the tab menu, collapse it to one chip, drag it, move it to its own
   window, and get it back after a restart; a link opened from a member opens inside the group.
-- **Idle tabs go to sleep** (Settings > Performance): after 2 hours by default a tab frees its page and wakes where it was
-  when you open it; sound, pinned, typed-in and prompt-waiting tabs stay awake, and an energy saver sleeps sooner on battery.
+- **Idle tabs go to sleep** (Settings > Performance): after 30 minutes by default, and sooner when the computer is low on memory, a tab frees its page and wakes
+  where it was when you open it; sound, pinned, typed-in and prompt-waiting tabs stay awake, and an energy saver sleeps sooner on battery.
 - **Reader view** (F9, the book button in the address bar): an article opens in its own tab with your font, size, width and
   colours, and can be read aloud with the system's voices.
 - **A side panel** (Ctrl+Alt+B) beside the page, on the right or the left, resizable, lists bookmarks, history and downloads.
@@ -273,6 +274,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   main menu, instead of closing it on the press and opening it again on release.
 - **A page that fails to load says so**: a sheet over the tab names why (no such server, refused, offline, blocked),
   with the address, the error's name and Try again, instead of an empty white page.
+- **A tab that keeps changing its title no longer keeps the browser busy**: the session file is written off the main thread
+  and a change of titles alone at most every 30 s, history keeps five titles per page, and the tab strip redraws only what changed.
+- **The Ethereum light client runs only while `.eth` is in use**: it starts when a `.eth` address is typed or opened and
+  stops ten minutes after the last one; menus and panels left closed give their memory back after a minute.
+- **A background tab's page is told it is hidden**, as in Chrome, so a web app that slows down out of sight now does.
 - **uBlock Origin no longer grows its storage until the browser takes gigabytes of memory**: an extension's
   `chrome.storage.managed` is now an empty, read-only store, as in Chrome, instead of a second name for its local storage.
 - **A page with no icon of its own shows the globe again**, as in Chrome, instead of an icon the tab or history remembered

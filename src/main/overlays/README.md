@@ -80,7 +80,10 @@ The permissions and site-info popovers stay on that file.
 
 **The host builds nothing until asked.** Every window would otherwise carry a hidden renderer
 process nobody may open. `show` and `prewarm` build a view; a `fresh` overlay is destroyed on
-close and a `warm` one keeps its view, and its last reported height, for the next show.
+close and a `warm` one keeps its view, and its last reported height, for the next show, but
+destroys it after a minute closed (a prewarmed view never shown goes the same way). A `resident` one
+keeps its view for the life of the window: the address bar's suggestions are typed into the moment
+they open and never wait for a renderer to start.
 
 **A page asks for its first show, and is told the rest.** The page calls `ready` once mounted and
 the reply carries the show result that was waiting, so nothing is sent to a page that has no

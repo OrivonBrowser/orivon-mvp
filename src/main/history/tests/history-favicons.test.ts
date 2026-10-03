@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
-import { describe, expect, it } from 'vitest'
-import { MAX_FAVICON_HOSTS, MAX_HISTORY_FAVICON_CHARS, faviconsForHosts, pruneHostFavicons, setHostFavicon, withFavicons } from '../history-favicons.js'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { MAX_FAVICON_HOSTS, MAX_HISTORY_FAVICON_CHARS, faviconsForHosts, prepareFaviconStatements, pruneHostFavicons, setHostFavicon, withFavicons } from '../history-favicons.js'
 import { migrate } from '../history-schema.js'
 import { NullHistoryStore } from '../history-store.js'
 import type { HistoryStore } from '../history-store.js'
@@ -144,5 +144,70 @@ describe('icons in the store', () => {
     store.setFavicon('a.example', PNG)
     expect(store.faviconsFor(['a.example'])).toEqual({})
     expect(store.listOrdered()).toEqual([])
+  })
+})
+
+describe('icon writes in the store', () => {
+  afterEach(() => { vi.useRealTimers() })
+
+  const updatedOf = (store: SqliteHistoryStore, host: string): number | undefined => {
+    const db = (store as unknown as { db: DatabaseSync }).db
+    return (db.prepare('SELECT updated FROM favicons WHERE host = ?').get(host) as { updated: number } | undefined)?.updated
+  }
+
+  it('skips an icon identical to the one just written for the host', () => {
+    vi.useFakeTimers({ now: 1_000_000 })
+    const store = new SqliteHistoryStore(':memory:')
+    store.setFavicon('a.example', PNG)
+    store.flush()
+    vi.setSystemTime(1_000_000 + 5 * 60_000)
+    store.setFavicon('a.example', PNG)
+    store.flush()
+    expect(updatedOf(store, 'a.example')).toBe(1_000_000)
+  })
+
+  it('writes a different icon for the host at once', () => {
+    vi.useFakeTimers({ now: 1_000_000 })
+    const store = new SqliteHistoryStore(':memory:')
+    store.setFavicon('a.example', PNG)
+    store.flush()
+    vi.setSystemTime(1_000_100)
+    store.setFavicon('a.example', GIF)
+    store.flush()
+    expect(store.faviconsFor(['a.example'])).toEqual({ 'a.example': GIF })
+    expect(updatedOf(store, 'a.example')).toBe(1_000_100)
+  })
+
+  it('refreshes the time of an identical icon once an hour has passed', () => {
+    vi.useFakeTimers({ now: 1_000_000 })
+    const store = new SqliteHistoryStore(':memory:')
+    store.setFavicon('a.example', PNG)
+    store.flush()
+    vi.setSystemTime(1_000_000 + 61 * 60_000)
+    store.setFavicon('a.example', PNG)
+    store.flush()
+    expect(updatedOf(store, 'a.example')).toBe(1_000_000 + 61 * 60_000)
+  })
+
+  it('writes an icon again after the history forgot it', () => {
+    vi.useFakeTimers({ now: 1_000_000 })
+    const store = new SqliteHistoryStore(':memory:')
+    store.record('https://a.example/', 'A', 1)
+    store.setFavicon('a.example', PNG)
+    store.flush()
+    store.clear()
+    store.record('https://a.example/', 'A', 2)
+    store.setFavicon('a.example', PNG)
+    expect(store.faviconsFor(['a.example'])).toEqual({ 'a.example': PNG })
+  })
+
+  it('trims once per write of many icons, not once per icon', () => {
+    const store = new SqliteHistoryStore(':memory:')
+    const db = (store as unknown as { db: DatabaseSync }).db
+    const trim = vi.spyOn(prepareFaviconStatements(db).trim, 'run')
+    for (let n = 0; n < 40; n += 1) store.setFavicon(`h${n}.example`, icon(n))
+    store.flush()
+    expect(trim).toHaveBeenCalledTimes(1)
+    expect(Object.keys(store.faviconsFor(Array.from({ length: 40 }, (_, n) => `h${n}.example`)))).toHaveLength(40)
   })
 })

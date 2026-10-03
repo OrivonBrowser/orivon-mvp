@@ -62,8 +62,8 @@ describe('delayFor', () => {
     expect(SLEEP_AFTER_MS['4h']).toBe(14_400_000)
   })
 
-  it('falls back to two hours for a value it does not know', () => {
-    expect(delayFor({ ...on, sleepAfter: 'soon' }, false)).toBe(SLEEP_AFTER_MS['2h'])
+  it('falls back to thirty minutes for a value it does not know', () => {
+    expect(delayFor({ ...on, sleepAfter: 'soon' }, false)).toBe(SLEEP_AFTER_MS['30m'])
   })
 
   it('is nothing while the memory saver is off and the energy saver does not apply', () => {

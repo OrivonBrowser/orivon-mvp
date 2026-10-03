@@ -28,6 +28,12 @@ export interface TabClosingInfo {
   readonly window: BaseWindow | undefined
 }
 
+/** One tab's page, and whether its view is on its window's screen. */
+export interface TabShown {
+  readonly contents: WebContents
+  readonly shown: boolean
+}
+
 export interface TabLifecycleListener {
   tabCreated?: (contents: WebContents, window: BaseWindow | undefined) => void
   tabActivated?: (contents: WebContents) => void
@@ -37,6 +43,8 @@ export interface TabLifecycleListener {
   /** A navigation swapped this tab's WebContentsView for a fresh one
    * (tab-view.ts's repartitionView) -- same tab, new WebContents; the old
    * one is retired right after. */
+  /** Which of a window's tabs are on screen changed (tab-panes.ts); lists every tab the window holds. */
+  shownChanged?: (window: BaseWindow | undefined, tabs: readonly TabShown[]) => void
   viewReplaced?: (oldContents: WebContents, newContents: WebContents, window: BaseWindow | undefined) => void
 }
 
@@ -67,5 +75,9 @@ export class TabLifecycle {
 
   viewReplaced (oldContents: WebContents, newContents: WebContents, window: BaseWindow | undefined): void {
     for (const listener of this.listeners) listener.viewReplaced?.(oldContents, newContents, window)
+  }
+
+  shownChanged (window: BaseWindow | undefined, tabs: readonly TabShown[]): void {
+    for (const listener of this.listeners) listener.shownChanged?.(window, tabs)
   }
 }

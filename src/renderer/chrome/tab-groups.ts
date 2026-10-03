@@ -86,21 +86,40 @@ function chipFor (group: TabGroupState, count: number, ctx: ChromeContext): HTML
   return chip
 }
 
+/** The chips drawn into a strip's scroller last time, and the groups' looks they were made from. */
+const placedChips = new WeakMap<HTMLElement, { key: string, chips: HTMLElement[] }>()
+
 /** Draws each group's chip before its first tab and sizes the strip to what is shown. Runs at the end of every
- * strip redraw, so a strip redrawn after a drag has its chips too. */
+ * strip update; the chips are drawn again only when a group's look or its count changed, or the strip moved a tab
+ * away from the chip it follows. */
 export function placeGroupChips (scroller: HTMLElement, state: ShellState, ctx: ChromeContext): void {
-  scroller.querySelectorAll('.tab-group-chip').forEach((chip) => { chip.remove() })
-  let chips = 0
-  for (const group of state.groups ?? []) {
-    const first = scroller.querySelector<HTMLElement>(`.tab[data-group="${CSS.escape(group.id)}"]`)
-    if (first === null) continue
-    first.before(chipFor(group, memberCount(group, state), ctx))
-    chips += 1
+  const tabs = [...scroller.querySelectorAll<HTMLElement>('.tab')]
+  const firstOf = new Map<string, HTMLElement>()
+  for (const tab of tabs) {
+    const group = tab.dataset['group']
+    if (group !== undefined && !firstOf.has(group)) firstOf.set(group, tab)
   }
-  if (chips === 0 && scroller.querySelector('.tab[hidden]') === null) return
+  const wanted = (state.groups ?? []).flatMap((group) => {
+    const first = firstOf.get(group.id)
+    return first === undefined ? [] : [{ group, first, count: memberCount(group, state) }]
+  })
+  const key = JSON.stringify(wanted.map(({ group, count }) => [group.id, group.title, group.color, group.collapsed, count]))
+  const last = placedChips.get(scroller)
+  const intact = last !== undefined && last.key === key && last.chips.length === wanted.length &&
+    last.chips.every((chip, at) => chip.parentElement === scroller && chip.nextElementSibling === wanted[at]?.first)
+  if (!intact) {
+    scroller.querySelectorAll('.tab-group-chip').forEach((chip) => { chip.remove() })
+    const chips = wanted.map(({ group, first, count }) => {
+      const chip = chipFor(group, count, ctx)
+      first.before(chip)
+      return chip
+    })
+    placedChips.set(scroller, { key, chips })
+  }
   // The strip is as wide as its tabs want to be; a hidden tab wants none, and a chip about half a tab.
-  const shown = [...scroller.querySelectorAll('.tab')].filter((tab) => !(tab as HTMLElement).hidden).length
-  scroller.style.setProperty('--tab-count', String(Math.max(1, shown + chips * 0.5)))
+  const shown = tabs.filter((tab) => !tab.hidden).length
+  const width = String(Math.max(1, shown + wanted.length * 0.5))
+  if (scroller.style.getPropertyValue('--tab-count') !== width) scroller.style.setProperty('--tab-count', width)
 }
 
 /** Opens the bubble of a group the main process just made, once its chip is on screen. */

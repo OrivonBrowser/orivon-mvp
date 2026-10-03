@@ -90,7 +90,7 @@ it("refuses to frame served .eth content from another origin, though the site's 
         env: { ORIVON_TEST_ETH_FIXTURES: JSON.stringify({ 'framing.eth': `ipfs://${root}` }), ORIVON_TEST_IPFS_GATEWAYS: gateway.url }
       })
       const running = app
-      const listening = await waitFor(async () => await running.evaluate(() => (globalThis as { __orivonDevEthFixtures?: { listening: boolean } }).__orivonDevEthFixtures?.listening === true), 20_000)
+      const listening = await waitFor(async () => await running.evaluate(() => { const seam = (globalThis as { __orivonDevEthFixtures?: { listening: boolean, start?: () => void } }).__orivonDevEthFixtures; seam?.start?.(); return seam?.listening === true }), 20_000)
       if (!listening) throw new Error('the verifier host never reported listening')
 
       // Case A: a plain site's page frames the .eth site -- refused.

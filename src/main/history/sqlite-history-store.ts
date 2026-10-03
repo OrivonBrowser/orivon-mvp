@@ -12,7 +12,7 @@ import { DebouncedWriter } from '../storage/debounced-writer.js'
 import { MAX_TITLE_LENGTH, MAX_URL_LENGTH } from './history-store.js'
 import type { HistoryEntry, HistoryImportRow, HistoryQuery, HistoryStore, HistorySuggestion } from './history-store.js'
 import { dropFtsIndex, migrate, rebuildFtsIndex, rollback } from './history-schema.js'
-import { MAX_HISTORY_FAVICON_CHARS, faviconsForHosts, prepareFaviconStatements, pruneHostFavicons, setHostFavicon, withFavicons } from './history-favicons.js'
+import { MAX_FAVICON_HOSTS, MAX_HISTORY_FAVICON_CHARS, faviconsForHosts, prepareFaviconStatements, pruneHostFavicons, trimFavicons, withFavicons, writeHostFavicon } from './history-favicons.js'
 import { deletePagesByIds, MAX_IDS, pagesByIds, prepareIdStatements } from './history-ids.js'
 import { importHistoryRows } from './history-import.js'
 import { FTS_DENSITY_LIMIT, listPages, prepareListStatements } from './history-list.js'
@@ -21,6 +21,9 @@ import { listPagesOrdered, prepareOrderStatements } from './history-order.js'
 import { markPageTyped, suggestPages } from './history-suggest.js'
 
 const WRITE_DELAY_MS = 500
+/** An icon the store already wrote is offered to the file again only after this long, so the time that decides which
+ * sites keep their icon stays fresh for a site in use. */
+const FAVICON_REFRESH_MS = 60 * 60_000
 /** The most changes held while waiting to write; past it the oldest is written at once. */
 const MAX_QUEUED = 500
 /** The most pages kept. A page can make as many addresses as it likes, and the file must not grow with them: past this the
@@ -52,6 +55,8 @@ export class SqliteHistoryStore implements HistoryStore {
   private readonly queue: Change[] = []
   /** Addresses typed whose page was not in the history yet, with when they were typed: counted when it is. */
   private readonly typedWaiting = new Map<string, number>()
+  /** The icon last offered for each host and when, so the same icon offered again is not written again. */
+  private readonly offeredIcons = new Map<string, { readonly data: string, readonly at: number }>()
   private readonly writer = new DebouncedWriter(async () => { this.drain() }, WRITE_DELAY_MS)
   private readonly statements: {
     findPage: StatementSync
@@ -180,6 +185,7 @@ export class SqliteHistoryStore implements HistoryStore {
     if (this.closed || this.queue.length === 0) return
     const changes = this.queue.splice(0)
     const { findPage, insertPage, touchPage, insertVisit, setTitle } = this.statements
+    let iconsWritten = false
     try {
       this.db.exec('BEGIN')
       for (const change of changes) {
@@ -188,7 +194,8 @@ export class SqliteHistoryStore implements HistoryStore {
           continue
         }
         if (change.type === 'favicon') {
-          setHostFavicon(this.db, change.host, change.data, () => change.at)
+          writeHostFavicon(this.db, change.host, change.data, () => change.at)
+          iconsWritten = true
           continue
         }
         if (change.type === 'typed') {
@@ -208,10 +215,12 @@ export class SqliteHistoryStore implements HistoryStore {
         insertVisit.run(id, change.at)
         this.countWaitingTyped(change.url, change.at)
       }
+      if (iconsWritten) trimFavicons(this.db)
       this.db.exec('COMMIT')
       if (this.newPagesSinceCheck >= this.limits.checkEvery) this.trim()
     } catch (error) {
       rollback(this.db)
+      this.offeredIcons.clear()
       console.error('[orivon] history could not be written:', error)
     }
   }
@@ -272,7 +281,13 @@ export class SqliteHistoryStore implements HistoryStore {
   /** Queued with the visits, so an icon is one more row in their transaction and never a write of its own. */
   setFavicon (host: string, dataUrl: string): void {
     if (host === '' || dataUrl.length > MAX_HISTORY_FAVICON_CHARS) return
-    this.enqueue({ type: 'favicon', host, data: dataUrl, at: Date.now() })
+    const at = Date.now()
+    const offered = this.offeredIcons.get(host)
+    if (offered !== undefined && offered.data === dataUrl && at - offered.at < FAVICON_REFRESH_MS) return
+    this.offeredIcons.delete(host)
+    if (this.offeredIcons.size >= MAX_FAVICON_HOSTS) this.offeredIcons.delete(this.offeredIcons.keys().next().value as string)
+    this.offeredIcons.set(host, { data: dataUrl, at })
+    this.enqueue({ type: 'favicon', host, data: dataUrl, at })
   }
 
   faviconsFor (hosts: readonly string[]): Record<string, string> {
@@ -280,7 +295,7 @@ export class SqliteHistoryStore implements HistoryStore {
     return faviconsForHosts(this.db, hosts)
   }
 
-  pruneFavicons (): void { pruneHostFavicons(this.db) }
+  pruneFavicons (): void { this.pruneIcons() }
 
   listOrdered (query: HistoryQuery = {}): HistoryEntry[] {
     this.drain()
@@ -308,7 +323,7 @@ export class SqliteHistoryStore implements HistoryStore {
     const total = (this.statements.count.get() as { n: number }).n
     this.deleteRows(1, Math.max(total - 1, 0), () => {
       this.statements.remove.run(id)
-      pruneHostFavicons(this.db)
+      this.pruneIcons()
     })
     this.dropLog()
   }
@@ -319,7 +334,7 @@ export class SqliteHistoryStore implements HistoryStore {
     const total = (this.statements.count.get() as { n: number }).n
     this.deleteRows(wanted, Math.max(total - wanted, 0), () => {
       deletePagesByIds(this.db, ids)
-      pruneHostFavicons(this.db)
+      this.pruneIcons()
     })
     this.dropLog()
   }
@@ -332,7 +347,7 @@ export class SqliteHistoryStore implements HistoryStore {
       this.statements.removeRangeUpdatePages.run(from, to, from, to, from, to)
       this.statements.removeRangeDeleteVisits.run(from, to)
       this.statements.removeRangeDeleteEmptyPages.run()
-      pruneHostFavicons(this.db)
+      this.pruneIcons()
     })
     this.dropLog()
   }
@@ -344,11 +359,18 @@ export class SqliteHistoryStore implements HistoryStore {
     // Always the bulk path (remaining is 0), unless there was nothing to delete in the first place.
     this.deleteRows(total, 0, () => {
       this.db.exec('DELETE FROM visits; DELETE FROM pages;')
-      pruneHostFavicons(this.db)
+      this.pruneIcons()
     })
     this.dropLog()
     // Rewrites the file so the space the addresses were in is not left behind.
     this.db.exec('VACUUM')
+  }
+
+  /** Forgets the icons of sites with no page left. An icon deleted here must be written again when its site returns, so
+   * what was offered is forgotten too. */
+  private pruneIcons (): void {
+    pruneHostFavicons(this.db)
+    this.offeredIcons.clear()
   }
 
   /** Moves what the write-ahead log still holds of forgotten rows into the file, where they were overwritten, and empties the log. */
