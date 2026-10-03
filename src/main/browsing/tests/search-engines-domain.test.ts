@@ -62,6 +62,22 @@ describe('searchEnginesDomain', () => {
     expect(await call({ type: 'remove', id: 7 })).toEqual({ ok: false, reason: 'not-found' })
   })
 
+  it('gives the built-in default back when the engine that was the default is removed, and leaves another default alone', async () => {
+    await call({ type: 'add', ...fx })
+    const id = store.all().find((engine) => engine.keyword === 'fx')?.id ?? ''
+    await call({ type: 'makeDefault', id })
+    expect(await call({ type: 'remove', id })).toEqual({ ok: true })
+    expect(settings.isDefault('search.engine')).toBe(true)
+    expect(settings.isDefault('search.customUrl')).toBe(true)
+    expect((await call({ type: 'list' })).defaultId).not.toBeNull()
+
+    await call({ type: 'add', ...fx })
+    const other = store.all().find((engine) => engine.keyword === 'fx')?.id ?? ''
+    await call({ type: 'makeDefault', id: 'google' })
+    await call({ type: 'remove', id: other })
+    expect(settings.get('search.engine')).toBe('google')
+  })
+
   it('makes a built-in engine the default by choosing it', async () => {
     expect(await call({ type: 'makeDefault', id: 'google' })).toEqual({ ok: true })
     expect(settings.get('search.engine')).toBe('google')

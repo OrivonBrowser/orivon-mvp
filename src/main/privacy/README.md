@@ -74,12 +74,13 @@ depends on it, and the answer comes with those rules.
 
 **HTTPS-only upgrades main-frame navigations only.** Mixed content is Chromium's own rule. What is left alone:
 loopback, private and link-local addresses, single-label names and a network's own suffixes (`.local`, `.lan`,
-`.internal`, `.home.arpa`), `.localhost`, the names a protocol routes to the verifier (which includes the
-developer `.eth` names), and a host the person chose to continue to, until Orivon exits. A named host loses its
-port in the upgrade (it would point HTTPS at a plain-HTTP port), an IP address keeps its own. A load of the
+`.internal`, `.home.arpa`, and the never-delegated `.home`, `.corp`, `.intranet`, `.private`), `.localhost`, the
+names a protocol routes to the verifier (which includes the developer `.eth` names), a named host with an explicit
+port (port 443 is usually another service there), and a host the person chose to continue to, until Orivon exits.
+An IP address is upgraded with its own port. A load of the
 upgraded address that fails for any reason but a cancelled load or a name that does not resolve ends in the sheet; the
-same address upgraded twice within five seconds (a server that sends HTTPS back to HTTP) is cancelled and
-also ends in the sheet, so it cannot loop. "Continue" exempts the host and opens the address main stored for that
+same address upgraded twice within five seconds in one request (a server that sends HTTPS back to HTTP) is cancelled
+and also ends in the sheet, so it cannot loop; a new request for it, a second click, is upgraded again. "Continue" exempts the host and opens the address main stored for that
 tab; the sheet carries no address.
 
 **The sheet does not close on navigation.** The overlay host's own navigation close fires when the tab's

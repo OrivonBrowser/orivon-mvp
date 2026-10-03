@@ -1,4 +1,4 @@
-# `src/main/sad-tab/`: a tab whose page died or stopped answering
+# `src/main/sad-tab/`: a tab whose page died, stopped answering or failed to load
 
 **What lives here.** The card over such a tab and the decision about when it is up.
 `sad-tab-text.ts` is the fixed table of what the card says per reason. `sad-tab-state.ts` reads what
@@ -9,16 +9,23 @@ is wrong with a tab's page off its record (a crash is on the record, a hang is r
 [`../shell/signals/crashed.ts`](../shell/signals/crashed.ts), and the strip's warning icon is
 [`../../renderer/chrome/tab-crashed.ts`](../../renderer/chrome/tab-crashed.ts).
 
-**What it depends on.** [`../overlays/`](../overlays/) (`overlay-types.ts`); [`../shell/`](../shell/)
-(`window-registry.ts`, `tab-lifecycle.ts` and `tab-types.ts`, types only).
+The sheet over a page that failed to load is the second surface here. `load-error-watch.ts` follows each tab's
+main-frame loads and asks for the sheet through the tab's slot queue ([`../overlays/tab-slots.ts`](../overlays/tab-slots.ts)),
+`load-error-text.ts` is its fixed table per network error, `load-error-overlay.ts` declares it and runs Try again,
+and `install-load-errors.ts` wires the watcher to every tab. Its page is
+[`../../renderer/overlay/load-error/`](../../renderer/overlay/load-error/).
+
+**What it depends on.** [`../overlays/`](../overlays/) (`overlay-types.ts`, `tab-slots.ts`); [`../auth/`](../auth/) (`isCertError`, so a certificate failure is left to its own sheet); [`../privacy/`](../privacy/) (`upgradeTracker`, the failures HTTPS-only explains); [`../shell/`](../shell/)
+(`window-registry.ts`, `tab-lifecycle.ts`, `tab-types.ts` and `shell-installers.ts`, types only).
 
 **What it must never import.** The renderer, or a value from the rest of the shell: the shell lists this
-feature (`signals/crashed.ts`, `overlays/overlays.ts`), not the other way round.
+feature (`signals/crashed.ts`, `overlays/overlays.ts`, `shell-installers.ts`), not the other way round.
 
 **Owner stream.** `shell`.
 
 **Electron dependence.** Tied to Electron only at the edge: the signal listens for `render-process-gone`,
-`unresponsive` and `responsive`, and the card's Reload is `webContents.reload()`. The text table and the
+`unresponsive` and `responsive`, the load-error watcher for `did-start-navigation` and `did-fail-load`, and the
+card's Reload is `webContents.reload()`. The text table and the
 record reading need nothing of it.
 
 ## Design notes

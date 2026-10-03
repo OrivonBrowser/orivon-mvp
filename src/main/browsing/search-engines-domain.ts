@@ -64,6 +64,13 @@ export function searchEnginesDomain (store: SearchEngineStore, settings: Setting
     return { ok: true }
   }
 
+  /** An engine that is the default and is removed takes its place as the default with it: searches go to the built-in default. */
+  const dropDefault = (template: string): void => {
+    if (settings.get('search.engine') !== CUSTOM_SEARCH_ENGINE || settings.get('search.customUrl') !== template) return
+    settings.reset('search.engine')
+    settings.reset('search.customUrl')
+  }
+
   /** An engine that is the default and whose address changes keeps being the default at its new address. */
   const followDefault = (before: string, after: string): void => {
     if (settings.get('search.engine') === CUSTOM_SEARCH_ENGINE && settings.get('search.customUrl') === before && before !== after) settings.set('search.customUrl', after)
@@ -89,8 +96,13 @@ export function searchEnginesDomain (store: SearchEngineStore, settings: Setting
           if (result.ok && before !== undefined) followDefault(before, result.engine.template)
           return outcome(result)
         }
-        case 'remove':
-          return id === null ? { ok: false, reason: 'not-found' } : outcome(store.remove(id))
+        case 'remove': {
+          if (id === null) return { ok: false, reason: 'not-found' }
+          const gone = store.get(id)?.template
+          const result = store.remove(id)
+          if (result.ok && gone !== undefined) dropDefault(gone)
+          return outcome(result)
+        }
         case 'makeDefault':
           return id === null ? { ok: false, reason: 'not-found' } : makeDefault(id)
         default:

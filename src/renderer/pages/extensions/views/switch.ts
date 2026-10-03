@@ -10,5 +10,6 @@ export function enabledSwitch (ext: ExtensionRow, ctx: PageContext): HTMLElement
     onchange: () => { void ctx.request('setEnabled', { id: ext.id, enabled: input.checked }).then(ctx.refresh) }
   })
   input.setAttribute('aria-label', `${ext.name} is ${ext.enabled ? 'on' : 'off'}`)
+  input.dataset['focus'] = `${ext.id}:enabled`
   return h('label', { className: 'switch' }, input, h('span', { className: 'track' }))
 }

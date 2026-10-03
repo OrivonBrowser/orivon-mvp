@@ -50,9 +50,11 @@ export function buildLayout ({ entries, order, grouping, collapsed, now, locale 
     return sections
   }
   for (const session of groupBySession(entries)) {
+    // A session collapsed before older pages of it were loaded is still known by the key it had then, one of its pages.
+    const key = collapsed.has(session.key) ? session.key : session.entries.find((entry) => collapsed.has(entry.id))?.id ?? session.key
     sectionFor(session.end).push({
-      heading: { key: session.key, label: sessionLabel(session, now, locale), pages: session.entries.length },
-      collapsed: collapsed.has(session.key),
+      heading: { key, label: sessionLabel(session, now, locale), pages: session.entries.length },
+      collapsed: collapsed.has(key),
       entries: session.entries
     })
   }

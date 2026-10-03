@@ -9,14 +9,27 @@ export function createNavigation (): ChromeModule {
   let addressInput: HTMLInputElement | undefined
   /** True while the user is editing the address bar -- an incoming state push must not clobber what they are typing. */
   let addressFocused = false
+  /** The tab whose address the field was last given: an edit belongs to that tab. */
+  let shownTabId: string | null = null
+  /** While the field keeps an edit with the keyboard elsewhere (another app, the page): the page's address then. */
+  let awayFrom: string | undefined
 
-  function render (_state: ShellState, ctx: ChromeContext): void {
+  function render (state: ShellState, ctx: ChromeContext): void {
     if (backBtn === undefined || forwardBtn === undefined || addressInput === undefined) return
     const active = ctx.activeTab()
     backBtn.disabled = active === undefined || !active.canGoBack
     forwardBtn.disabled = active === undefined || !active.canGoForward
-    if (!addressFocused) {
-      addressInput.value = active === undefined || active.isNewTab ? '' : active.displayUrl
+    const address = active === undefined || active.isNewTab ? '' : active.displayUrl
+    // Another tab in front, or the page moved on while the keyboard was away: the edit no longer belongs here.
+    const switched = state.activeTabId !== shownTabId
+    const movedOn = awayFrom !== undefined && awayFrom !== address
+    shownTabId = state.activeTabId
+    if (!addressFocused || switched || movedOn) {
+      addressInput.value = address
+      if (awayFrom !== undefined) {
+        awayFrom = undefined
+        addressFocused = false
+      } else if (addressFocused) addressInput.select()
     }
   }
 
@@ -46,8 +59,17 @@ export function createNavigation (): ChromeModule {
         if (id !== null && id !== undefined) shell.reload(id)
       })
 
-      input.addEventListener('focus', () => { addressFocused = true })
+      input.addEventListener('focus', () => {
+        addressFocused = true
+        awayFrom = undefined
+      })
       input.addEventListener('blur', () => {
+        // The field is still the one the keyboard comes back to (Alt+Tab, a click into the page): the edit stays.
+        if (document.activeElement === input) {
+          const active = ctx.activeTab()
+          awayFrom = active === undefined || active.isNewTab ? '' : active.displayUrl
+          return
+        }
         addressFocused = false
         const state = ctx.state()
         if (state !== null) render(state, ctx)

@@ -31,12 +31,14 @@ export interface OverlayHostDeps {
   context: () => WindowContext
   /** The tab area, as the window lays it out now. */
   area: () => Bounds
+  /** The pane of the tab in front, when the area is split between two: where a bar or a sheet about that tab goes. */
+  paneArea?: () => Bounds
   activeContents: () => WebContents | undefined
 }
 
 export type OverlayHostHandle = OverlayHost & {
   /** Puts a legacy panel under the same close-all and relayout rules. `close` must be idempotent. `restack`, when given, lifts the panel's own view: the host calls it after the bars and before the popups, so a bar re-added on a state push never covers an open panel. */
-  adopt: (panel: { close: () => void }, restack?: () => void) => void
+  adopt: (panel: { close: () => void, isOpen?: () => boolean }, restack?: () => void) => void
   /** Closes the popup overlays but not the adopted panels: for a panel that toggles itself after. */
   closeOverlays: () => void
   tabSwitched: () => void
@@ -85,7 +87,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
       anchor: undefined, height: def.height?.initial ?? DEFAULT_HEIGHT.initial, returnTo: undefined, lastBlurCloseAt: 0, focusTaken: false, idleTimer: null
     })
   }
-  const adopted: Array<{ close: () => void, restack?: (() => void) | undefined }> = []
+  const adopted: Array<{ close: () => void, isOpen: () => boolean, restack?: (() => void) | undefined }> = []
   /** Open slots, oldest first: the order they were shown in. */
   let openOrder: Slot[] = []
   let disposed = false
@@ -95,7 +97,8 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
   function boundsFor (slot: Slot): Electron.Rectangle {
     const { width, height } = deps.win.getContentBounds()
     const limits = { min: slot.def.height?.min ?? DEFAULT_HEIGHT.min, max: slot.def.height?.max ?? DEFAULT_HEIGHT.max }
-    return overlayBounds(slot.def.placement, slot.anchor, { width, height, area: deps.area() }, slot.height, limits)
+    const area = slot.def.placement.kind === 'area' ? deps.paneArea?.() ?? deps.area() : deps.area()
+    return overlayBounds(slot.def.placement, slot.anchor, { width, height, area }, slot.height, limits)
   }
 
   function handlerFor (slot: Slot): OverlayHandler {
@@ -325,7 +328,10 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     toggle (name, anchor, payload, pressedAt) {
       const slot = slots.get(name)
       if (slot === undefined) return
-      if (slot.open) { closeSlot(slot, 'request'); return }
+      if (slot.open) {
+        if (slot.handler?.holdsOnToggle?.() !== true) closeSlot(slot, 'request')
+        return
+      }
       if (isEchoOfClose(slot.lastBlurCloseAt, pressedAt, Date.now())) return
       show(name, anchor, payload)
     },
@@ -335,6 +341,14 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
       if (slot !== undefined) closeSlot(slot, 'request')
     },
     isOpen: (name) => slots.get(name)?.open === true,
+    popupOpen: () => openSlots().some((slot) => slot.def.layer === 'popup') || adopted.some((panel) => panel.isOpen()),
+    reanchor (name, anchor) {
+      const slot = slots.get(name)
+      if (slot === undefined || !slot.open || !isAnchor(anchor)) return
+      slot.anchor = anchor
+      slot.view?.setBounds(boundsFor(slot))
+      try { slot.handler?.moved?.() } catch (error) { console.error('[overlay] moved hook failed', error) }
+    },
     prewarm (name) {
       const slot = slots.get(name)
       if (slot === undefined || slot.def.keep === 'fresh' || disposed) return
@@ -342,7 +356,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
       armIdle(slot)
     },
     send,
-    adopt: (panel, restackPanel) => { adopted.push({ close: () => { panel.close() }, restack: restackPanel }) },
+    adopt: (panel, restackPanel) => { adopted.push({ close: () => { panel.close() }, isOpen: () => panel.isOpen?.() === true, restack: restackPanel }) },
     closeOverlays: () => { closeOverlayPopups(undefined, 'request') },
     tabSwitched: () => {
       for (const slot of openSlots()) if (slot.def.closeOn.tabSwitch) closeSlot(slot, 'tab-switch')

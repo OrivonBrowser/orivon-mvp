@@ -28,7 +28,8 @@ export function createExtensionsButton (): ChromeModule {
         order: 5,
         label: 'Extensions',
         icon: puzzleIcon,
-        onClick: () => { toggle(ctx) }
+        onClick: () => { toggle(ctx) },
+        presses: MENU_OVERLAY
       })
       made.hidden = true
       made.setAttribute('aria-haspopup', 'menu')

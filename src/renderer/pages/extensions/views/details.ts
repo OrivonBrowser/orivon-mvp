@@ -7,6 +7,7 @@ import type { DetailsPayload } from '../state.js'
 import type { DetailSection, ExtensionView, PageContext } from '../types.js'
 import { pathFor } from '../router.js'
 import { removeButton } from './remove-button.js'
+import { redrawKeepingFocus } from '../../shared/keep-focus.js'
 import { enabledSwitch } from './switch.js'
 
 function backLink (ctx: PageContext): HTMLElement {
@@ -63,7 +64,7 @@ export function detailsView (sections: readonly DetailSection[]): ExtensionView 
           const body = section.render(reply.details, ctx)
           return body === null ? null : h('section', { className: 'card', id: `section-${section.id}` }, h('h2', { textContent: section.title }), body)
         })
-        replaceChildren(root, backLink(ctx), head(reply.details, ctx), h('div', { className: 'd-sections' }, ...cards))
+        redrawKeepingFocus(root, () => { replaceChildren(root, backLink(ctx), head(reply.details, ctx), h('div', { className: 'd-sections' }, ...cards)) })
       })
     }
   }

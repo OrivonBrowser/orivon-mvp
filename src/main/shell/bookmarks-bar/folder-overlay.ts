@@ -3,6 +3,7 @@
 // memory a click on another folder needs to switch menus instead of being taken for the echo of a dismissal.
 import { CLOSE_LIKE_POPUP } from '../../overlays/overlay-types.js'
 import type { OverlayDef } from '../../overlays/overlay-types.js'
+import { isEchoOfClose } from '../press-stamps.js'
 import type { ShellWindow } from '../window-registry.js'
 import { asAnchor } from '../bookmark-bubble/edit-action.js'
 import type { OverlayAnchor } from '../../overlays/overlay-types.js'
@@ -12,8 +13,6 @@ import { openAll, openBookmark } from './open-bookmark.js'
 
 export const FOLDER_OVERLAY = 'bookmark-folder'
 const MENU_WIDTH = 280
-/** The window in which a blur-close and the click that caused it are the same gesture (the host's own debounce). */
-const ECHO_MS = 300
 
 interface Memory {
   /** The folder the open menu was shown for. */
@@ -30,12 +29,13 @@ const memoryOf = (window: ShellWindow): Memory => {
   return memory
 }
 
-/** What a click on folder `id` should do: close its open menu, switch from another folder's menu, open, or nothing (the click that dismissed it). */
-export function clickOnFolder (window: ShellWindow, id: string, now: number = Date.now()): 'close' | 'show' | 'ignore' {
+/** What a click on folder `id` should do: close its open menu, switch from another folder's menu, open, or nothing (the
+ * click that dismissed it). `pressedAt` is the press the click completes, judged as the toolbar's popups judge theirs. */
+export function clickOnFolder (window: ShellWindow, id: string, now: number = Date.now(), pressedAt?: number): 'close' | 'show' | 'ignore' {
   const memory = memoryOf(window)
   if (window.overlays.isOpen(FOLDER_OVERLAY)) return memory.shown === id ? 'close' : 'show'
   const { dismissed } = memory
-  return dismissed !== null && dismissed.id === id && now - dismissed.at < ECHO_MS ? 'ignore' : 'show'
+  return dismissed !== null && dismissed.id === id && isEchoOfClose(dismissed.at, pressedAt, now) ? 'ignore' : 'show'
 }
 
 export const bookmarkFolderOverlay: OverlayDef = {

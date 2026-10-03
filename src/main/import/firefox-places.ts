@@ -111,11 +111,12 @@ export function readFirefoxBookmarks (db: DatabaseSync): SourceBookmarks {
   return { bar, other }
 }
 
-/** The pages visited, newest first. */
+/** The pages visited, newest first. A place Firefox keeps out of its own history (reached only in a frame, or only as
+ * a redirect on the way elsewhere) is `hidden`, with no visit counted, and is left out here as well. */
 export function readFirefoxHistory (db: DatabaseSync, { limit, sinceMs }: HistoryReadOptions): HistoryImportRow[] {
   const rows = db.prepare(`
     SELECT url, title, visit_count AS visits, last_visit_date / 1000 AS millis FROM moz_places
-    WHERE last_visit_date IS NOT NULL AND last_visit_date / 1000 >= ? ORDER BY last_visit_date DESC LIMIT ?
+    WHERE last_visit_date IS NOT NULL AND hidden = 0 AND visit_count > 0 AND last_visit_date / 1000 >= ? ORDER BY last_visit_date DESC LIMIT ?
   `).all(Math.max(sinceMs, 0), limit)
   const out: HistoryImportRow[] = []
   for (const row of rows) {

@@ -1556,18 +1556,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A308: A failed navigation leaves a blank view and says nothing **[AI-REC]**
-
-- **Question:** Typing an address that cannot be reached (an unresolvable name under the test resolver) leaves the
-  tab on an empty white view: the address bar and tab title show the address, nothing says the load failed. The
-  view's accessibility tree is empty, and `did-fail-load` is handled only for the welcome screen.
-- **Why it matters:** a person who mistypes an address, or opens a site that is down, cannot tell a failure from a
-  page that is still loading.
-- **Options:** an `orivon:` error page shown in the tab with the address, the failure and a retry (rec.); Chromium's
-  own error page, if the embedder can enable it; leave it.
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
 ### A309: The welcome screen's corner prism covers the brand logo **[OWNER]**
 
 - **Question:** `.brand-logo` is a 40 px circle at the top-left, but `.prism` (115 x 158 px, pinned to the window's
@@ -1963,10 +1951,48 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A361: The other toolbar popups still read a re-click by the clock **[AI-REC]**
+### A370: Moving a tab to another window answers its open question as a cancel **[AI-REC]**
 
-- **Question:** The main menu, the all-sites popup and the site-info popups judge a re-click by the press it completes (`d-0421`). The popups the chrome opens through `overlay.toggle` (downloads, tab search, extensions, the site-access chip, blocked pop-ups) still treat a toggle within 300 ms of their own blur-close as that close's echo, so a slow click on those buttons closes the popup on the press and opens it again on the release. Send the press from those buttons too?
-- **Why it matters:** a slow click on those buttons cannot close the popup they opened.
-- **Options:** have every button that toggles an overlay announce its press, with `onClick` helpers sharing one wiring (rec.); leave them on the clock.
+- **Question:** A tab dragged out, or sent with Move Tab to New Window, ends every question it holds as `tab-closed`:
+  `confirm()` returns false, a permission ask ends as "not now", a sign-in is cancelled. Should the question move
+  with the tab and show again in its new window?
+- **Why it matters:** a person who moves a tab to read it beside another loses the answer they had not given yet.
+- **Options:** re-key the tab's asks to the new window and show them there (rec.; the panel, the site ask, the
+  sign-in and the chooser each hold the window); cancel and ask again in the new window; leave it as a cancel.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A371: Exported passwords that start with `-`, `+`, `=` or `@` carry a quote other password managers keep **[OWNER]**
+
+- **Question:** The export puts a leading `'` on any cell a spreadsheet would run as a formula (`d-0304`), the
+  password cell included. Orivon's own import removes it; Chrome, Firefox, Bitwarden and 1Password keep it, so such a
+  login no longer signs in there. About 1 in 61 passwords Orivon generates starts with `-`.
+- **Why it matters:** the export is how a person leaves for another browser or password manager.
+- **Options:** leave the password cell as it is and say so on the export's confirmation (rec.); escape only cells that
+  read as a formula after the sign; keep `d-0304` as it is.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A372: A web context's WebSocket listener may break the redirects its reach handler returns **[RESEARCH]**
+
+- **Question:** Every web context session gets an unfiltered `webRequest.onBeforeRequest` listener to cancel
+  WebSockets (`src/main/sessions/web-context-host.ts`). A listener puts the session behind Electron's proxying loader,
+  which measured on installed-app partitions handed a routed 302 to the page as the final response. Does a context's
+  `fetch()` of a redirecting granted host get the redirect's status instead of the final page?
+- **Why it matters:** an app reading a site through a web context would see redirects fail.
+- **Options:** measure a 302 in `test/e2e-web-context-network.test.ts`, then drop the listener for the dead proxy the
+  context already sets, re-measuring that a WebSocket still fails (rec.); leave it.
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A373: "Ask sites not to sell or share my data" sends the header but sets no `navigator.globalPrivacyControl` **[AI-REC]**
+
+- **Question:** The setting adds `Sec-GPC: 1` to requests; the Global Privacy Control spec also has pages read
+  `navigator.globalPrivacyControl`, which nothing in Orivon defines. Expose it in the tab's main world while the
+  setting is on?
+- **Why it matters:** a consent banner that checks only the property shows its "sell or share" opt-in as if no signal
+  were sent.
+- **Options:** define the property from the ordinary tab's preload, reading the setting when the page loads (rec.;
+  a change applies from the next load); leave the header alone.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing

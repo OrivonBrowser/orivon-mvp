@@ -99,4 +99,14 @@ describe('readFirefoxHistory', () => {
     expect(await read(1)).toHaveLength(1)
     expect((await read(10, NOW - 2500)).map((row) => row.url)).toEqual(['https://b.test/', 'https://c.test/'])
   })
+
+  it('leaves out the places Firefox hides from its own history: framed pages and redirect hops', async () => {
+    makeFirefoxPlaces(path(), [
+      { url: 'https://seen.test/', title: 'Seen', visits: 3, at: NOW - 1000 },
+      { url: 'https://ads.test/frame', title: '', visits: 0, at: NOW - 900, hidden: true },
+      { url: 'https://t.test/redirect', title: '', visits: 0, at: NOW - 800 }
+    ]).close()
+    const rows = await withDatabaseCopy(path(), (db) => readFirefoxHistory(db, { limit: 10, sinceMs: 0 }))
+    expect(rows.map((row) => row.url)).toEqual(['https://seen.test/'])
+  })
 })

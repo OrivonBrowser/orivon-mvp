@@ -37,7 +37,13 @@ function rectOf (value: unknown): { x: number, y: number, width: number, height:
 /** `{ text, typing, anchor }`: the rows for the text, shown under the address bar or hidden when there are none.
  * Answers how many rows there are and what the text may be finished with. */
 export const omniboxQuery: ChromeAction = (payload, ctx) => {
-  if (!isRecord(payload) || typeof payload['text'] !== 'string' || payload['text'].length > MAX_QUERY_LENGTH) return undefined
+  if (!isRecord(payload) || typeof payload['text'] !== 'string') return undefined
+  if (payload['text'].length > MAX_QUERY_LENGTH) {
+    // Too long to suggest for (a pasted address of some kilobytes): the rows up belong to the earlier text, so they go.
+    existingOmnibox(ctx.window)?.reset()
+    ctx.window.overlays.close(OMNIBOX_OVERLAY)
+    return undefined
+  }
   const anchor = rectOf(payload['anchor'])
   if (anchor === undefined) return undefined
   // A name typed here is about to be opened: the verifier host starts now rather than after Enter.
@@ -118,6 +124,8 @@ function perform (ctx: WindowContext, outcome: Outcome): void {
   } else {
     tabs.createTab(outcome.target, outcome.disposition === 'tab')
   }
+  // The page in front, the one chosen unless it opened behind, takes the keyboard from the address bar.
+  tabs.activeWebContents()?.focus()
 }
 
 /** Activates the tab, in its own window, and leaves behind no empty new tab the choice was made from. */

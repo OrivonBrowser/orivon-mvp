@@ -37,6 +37,11 @@ describe('readChromiumHistory', () => {
     expect(rows.map((row) => row.url)).toEqual([0, 1, 2, 3, 4].map((index) => `https://p${String(index)}.test/`))
   })
 
+  it('leaves out the pages Chromium hides from its own history: those only ever loaded in a frame', async () => {
+    makeChromeHistory(join(dir, 'History'), [{ url: 'https://seen.test/', title: 'Seen', visits: 2, at: NOW - 2000 }, { url: 'https://ads.test/frame', title: '', visits: 0, at: NOW - 1000, hidden: true }], { wal: false }).close()
+    expect((await read(10)).map((row) => row.url)).toEqual(['https://seen.test/'])
+  })
+
   it('leaves out what was visited before the given time', async () => {
     makeChromeHistory(join(dir, 'History'), [{ url: 'https://a.test/', title: 'a', visits: 1, at: NOW - 10_000 }, { url: 'https://b.test/', title: 'b', visits: 1, at: NOW - 1000 }], { wal: false }).close()
     expect((await read(10, NOW - 5000)).map((row) => row.url)).toEqual(['https://b.test/'])

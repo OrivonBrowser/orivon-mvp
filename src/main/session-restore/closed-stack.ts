@@ -52,6 +52,14 @@ export class ClosedStack {
     return entry
   }
 
+  /** Forgets what was closed from `from` to `to`, both included: clearing history clears what was closed in that time. */
+  forgetBetween (from: number, to: number): void {
+    const kept = this.entries.filter((entry) => entry.at < from || entry.at > to)
+    if (kept.length === this.entries.length) return
+    this.entries.splice(0, this.entries.length, ...kept)
+    this.changed()
+  }
+
   /** An entry from anywhere in the stack, for a list that lets the person pick one. */
   take (id: number): ClosedEntry | undefined {
     const position = this.entries.findIndex((entry) => entry.id === id)

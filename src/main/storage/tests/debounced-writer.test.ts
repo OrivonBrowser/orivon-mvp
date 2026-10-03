@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DebouncedWriter, WRITE_DEBOUNCE_MS } from '../debounced-writer.js'
+import { DebouncedWriter, RETRY_DELAYS_MS, WRITE_DEBOUNCE_MS } from '../debounced-writer.js'
 
 beforeEach(() => { vi.useFakeTimers() })
 afterEach(() => { vi.useRealTimers() })
@@ -104,6 +104,31 @@ describe('DebouncedWriter', () => {
     await vi.advanceTimersByTimeAsync(WRITE_DEBOUNCE_MS)
     await expect(writer.flush()).resolves.toBeUndefined()
     expect(attempts).toBe(2)
+  })
+
+  it('tries a failed write again on its own, and once more when flushed with the change still not on disk', async () => {
+    let attempts = 0
+    let failing = true
+    const writer = new DebouncedWriter(async () => {
+      attempts += 1
+      if (failing) throw new Error('file busy')
+    })
+    writer.schedule()
+    const failed = expect(writer.flush()).rejects.toThrow('file busy')
+    await vi.advanceTimersByTimeAsync(WRITE_DEBOUNCE_MS)
+    await failed
+    expect(attempts).toBe(1)
+
+    await vi.advanceTimersByTimeAsync(RETRY_DELAYS_MS[0] + WRITE_DEBOUNCE_MS)
+    expect(attempts).toBe(2)
+
+    failing = false
+    await writer.flush()
+    expect(attempts).toBe(3)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(attempts).toBe(3)
+    await writer.flush()
+    expect(attempts).toBe(3)
   })
 
   it('flushAll waits for every writer and never rejects', async () => {

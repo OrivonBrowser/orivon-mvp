@@ -117,4 +117,15 @@ describe('the folder overlay', () => {
     expect(clickOnFolder(window, other.id, now)).toBe('show')
     expect(clickOnFolder(window, folder.id, now + 1000)).toBe('show')
   })
+
+  it('judges a click by the press it completes: held long, the press that dismissed the menu still does not reopen it', () => {
+    const { h, handler } = attached()
+    const window = h.ctx.window as ShellWindow
+    const folder = h.store.addFolder({ title: 'F', parent: 'bar' }) as NonNullable<ReturnType<typeof h.store.addFolder>>
+    const pressedAt = Date.now() - 10
+    handler.show?.({ id: folder.id })
+    handler.closed?.('blur')
+    expect(clickOnFolder(window, folder.id, pressedAt + 2000, pressedAt)).toBe('ignore')
+    expect(clickOnFolder(window, folder.id, Date.now() + 2000, Date.now() + 1000)).toBe('show')
+  })
 })

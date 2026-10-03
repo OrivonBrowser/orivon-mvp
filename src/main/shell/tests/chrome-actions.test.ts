@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { CHROME_ACTIONS, runChromeAction } from '../chrome-actions.js'
-import type { WindowContext } from '../window-context.js'
+import type { ChromeActionContext } from '../chrome-actions.js'
 
-function context (overlays?: { toggle: ReturnType<typeof vi.fn>, close: ReturnType<typeof vi.fn> }): WindowContext {
-  return { window: { overlays } as never, services: {} as never }
+function context (overlays?: { toggle: ReturnType<typeof vi.fn>, close: ReturnType<typeof vi.fn> }, takePress?: ChromeActionContext['takePress']): ChromeActionContext {
+  return { window: { overlays } as never, services: {} as never, ...(takePress === undefined ? {} : { takePress }) }
 }
 
 describe('runChromeAction', () => {
@@ -35,7 +35,7 @@ describe('overlay.toggle', () => {
 
     runChromeAction('overlay.toggle', { name: 'menu', anchor, payload: { a: 1 } }, context(overlays))
 
-    expect(overlays.toggle).toHaveBeenCalledWith('menu', anchor, { a: 1 })
+    expect(overlays.toggle).toHaveBeenCalledWith('menu', anchor, { a: 1 }, undefined)
   })
 
   it('toggles without an anchor when the chrome sent none', () => {
@@ -43,7 +43,20 @@ describe('overlay.toggle', () => {
 
     runChromeAction('overlay.toggle', { name: 'find' }, context(overlays))
 
-    expect(overlays.toggle).toHaveBeenCalledWith('find', undefined, undefined)
+    expect(overlays.toggle).toHaveBeenCalledWith('find', undefined, undefined, undefined)
+  })
+
+  it('hands on the press its button announced, once, and asks no stamp for an overlay no button toggles', () => {
+    const overlays = { toggle: vi.fn(), close: vi.fn() }
+    const takePress = vi.fn((button: string) => button === 'downloads' ? 1_234 : undefined)
+    const ctx = context(overlays, takePress)
+
+    runChromeAction('overlay.toggle', { name: 'downloads', anchor }, ctx)
+    runChromeAction('overlay.toggle', { name: 'tab-search', anchor }, ctx)
+    runChromeAction('overlay.toggle', { name: 'find' }, ctx)
+
+    expect(overlays.toggle.mock.calls).toEqual([['downloads', anchor, undefined, 1_234], ['tab-search', anchor, undefined, undefined], ['find', undefined, undefined, undefined]])
+    expect(takePress.mock.calls).toEqual([['downloads'], ['tab-search']])
   })
 
   it('refuses a payload that is not a name and a well-formed anchor', () => {

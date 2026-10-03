@@ -1,0 +1,10 @@
+/* The load-error sheet: a warning mark, the title, the address, the reason, the error's name and one button. */
+
+body[data-overlay='load-error'] .load-error { padding: 20px 22px 18px; }
+body[data-overlay='load-error'] .load-error-icon { display: block; margin-bottom: 10px; color: var(--wwarn-mark); }
+body[data-overlay='load-error'] .load-error-icon .icon { width: 32px; height: 32px; }
+body[data-overlay='load-error'] .sheet-title { margin: 0; }
+body[data-overlay='load-error'] .load-error-address { margin: 2px 0 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; word-break: normal; }
+body[data-overlay='load-error'] .load-error-text { margin: 10px 0 0; color: var(--wink); font-size: 13px; }
+body[data-overlay='load-error'] .load-error-name { margin: 6px 0 0; color: var(--wink-dim); font-size: 11px; letter-spacing: 0.02em; }
+body[data-overlay='load-error'] .btn-row { margin-top: 16px; }

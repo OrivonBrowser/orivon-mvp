@@ -49,7 +49,7 @@ export interface QuestionView {
   readonly cancelId: number
   readonly guarded: readonly number[]
   readonly focus: 'dialog' | number
-  readonly input: { readonly initial: string } | undefined
+  readonly input: { readonly initial: string, readonly max: number } | undefined
   readonly checkboxLabel: string | undefined
   readonly guardMs: number
 }
@@ -57,7 +57,8 @@ export interface QuestionView {
 /** A guarded button ignores clicks and keys for this long after the panel appears, so a click or key meant for the page cannot land on it. */
 export const GUARD_MS = 500
 export const MAX_BUTTONS = 4
-export const MAX_INPUT = 2000
+/** The longest text a question's box holds: what a page's own request may carry, so a page's default comes back whole. */
+export const MAX_INPUT = 100_000
 
 const MAX_LABEL = 60
 const MAX_TITLE = 120
@@ -154,7 +155,7 @@ export function viewOf (id: string, spec: QuestionSpec): QuestionView {
     cancelId: spec.cancelId,
     guarded: spec.guarded ?? [],
     focus: spec.focus ?? 'dialog',
-    input: spec.input,
+    input: spec.input === undefined ? undefined : { initial: spec.input.initial, max: MAX_INPUT },
     checkboxLabel: spec.checkboxLabel,
     guardMs: GUARD_MS
   }

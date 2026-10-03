@@ -1,5 +1,6 @@
 import type { ShellState, TabState } from '../../main/shell/tabs.js'
 import type { OverlayAnchor } from '../../main/overlays/overlay-types.js'
+import type { PressButton } from '../../main/shell/press-stamps.js'
 import type { OrivonShell } from '../../preload/shell.js'
 import { toolbarButton } from './toolbar-button.js'
 
@@ -15,6 +16,9 @@ export interface ToolbarButtonSpec {
   label: string
   icon: () => SVGSVGElement
   onClick: (el: HTMLButtonElement, event: MouseEvent) => void
+  /** The overlay this button toggles, if any: main then judges the click by the press it completes, so a press that
+   * closes the open overlay does not reopen it on release however long it is held (src/main/shell/press-stamps.ts). */
+  presses?: PressButton
 }
 
 export interface ChromeContext {
@@ -72,7 +76,7 @@ export function createChromeContext (shell: OrivonShell): { ctx: ChromeContext, 
     state: () => current,
     activeTab: () => current?.tabs.find((t) => t.id === current?.activeTabId),
     anchorFor,
-    toolbarButton
+    toolbarButton: (spec) => toolbarButton(spec, shell)
   }
   return { ctx, setState: (state) => { current = state } }
 }

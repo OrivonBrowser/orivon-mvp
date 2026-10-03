@@ -21,7 +21,7 @@ an `OverlayDef` to [`overlays.ts`](overlays.ts) and a page to
 `overlay-types.ts`, `overlay-bounds.ts` and `overlay-ipc.ts` need only its types. The types and
 the geometry are the part that survives a change of shell.
 
-**What it depends on.** `electron`, `../channels.ts`, `../shell/` (`renderer-entry.ts`,
+**What it depends on.** `electron`, `../channels.ts`, `../shell/` (`renderer-entry.ts`, `context-menu.ts`,
 `lock-navigation.ts`, `shell-session.ts`, `theme-colors.ts`, `view-background-test-hook.ts`,
 `window-context.ts` and the `Bounds` type). `overlays.ts` imports each feature's definition; nothing else here does.
 
@@ -43,7 +43,21 @@ stay on `../permissions/popover-view.ts` and are handed to the host with `adopt`
 resize or the window closing dismisses them with every overlay, and showing a popup closes them.
 `close()` with no name closes popups and adopted panels; `closeOverlays()` closes the popups alone,
 for a panel that toggles itself straight after. `relayout()` closes an adopted panel every time, so
-its `close` must be idempotent.
+its `close` must be idempotent. `popupOpen()` counts an adopted panel that is open as a popup, so a
+feature that must not open over one (the downloads peek) sees it.
+
+**A toggle leaves an overlay whose handler holds.** `holdsOnToggle()` true (the site prompt while it
+asks a question) makes a toggle of that name do nothing: a button that shares the name (the
+site-access chip opens the same overlay to review) must not end an unanswered question as a dismissal.
+
+**A bar or a sheet belongs to the pane in front.** An `area` placement (the find bar, a sheet, a card) is laid
+out in `paneArea()`, the pane of the tab in front when the window is split, so it sits over the page it is
+about; a dock and an anchored popup keep the whole tab area.
+
+**An anchored overlay follows its anchor.** `reanchor(name, anchor)` places an open overlay under the
+control again and runs its `moved` hook. Asks shown through `tab-slots.ts` are placed again whenever
+the chrome reports that the address pill moved (`slotAnchorsMoved`), so a prompt under the pill stays
+under it through a resize.
 
 **A page's stylesheet is imported by its page.** `import './<name>.css'` in the page module is
 bundled into the overlay entry's one stylesheet, and every rule sits under
@@ -95,10 +109,11 @@ on behaves as `take` until it closes.
 
 **Blur closes on the same mousedown that a re-click on the opener uses to ask again.** That click's
 message reaches main after the blur, and a button held down delays it by as long as it was held. The
-toolbar's menu button therefore announces its press (`press` command), main stamps it with its own clock,
+toolbar's menu button, and every toolbar button that toggles an overlay (the shared toolbar button's `presses`
+option, named by the overlay), therefore announces its press (`press` command), main stamps it with its own clock,
 and `toggle`'s `pressedAt` is that stamp: the toggle is the echo when the blur-close happened at or after
 the press, however long the press lasted, and a fresh request when the close was earlier. The page's clock
-is never compared with main's, which drift apart over a suspend. A toggle with no stamp (a key, an overlay
-opened from another button) is the echo when it comes within 300 ms of a blur-close. The rule is
+is never compared with main's, which drift apart over a suspend. A toggle with no stamp (a key, or a toggle main
+asked for itself) is the echo when it comes within 300 ms of a blur-close. The rule is
 `isEchoOfClose` in [`../shell/press-stamps.ts`](../shell/press-stamps.ts), shared with the popups in
 [`../permissions/`](../permissions/).

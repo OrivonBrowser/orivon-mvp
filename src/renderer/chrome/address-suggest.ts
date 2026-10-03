@@ -142,8 +142,9 @@ export function createAddressSuggest (): ChromeModule {
         typed = tab === undefined || tab.isNewTab ? '' : tab.displayUrl
         input.value = typed
         input.select()
-        // With nothing left to close, the bar goes back to showing the page's address.
+        // With nothing left to close, the bar goes back to showing the page's address, and the page takes the keyboard.
         input.blur()
+        void ctx.shell.act('pane.leave', { to: 'page' })
       }
 
       input.addEventListener('input', onInput)
@@ -166,7 +167,8 @@ export function createAddressSuggest (): ChromeModule {
       input.addEventListener('blur', () => {
         blurTimer = setTimeout(() => {
           blurTimer = undefined
-          if (document.activeElement !== input && (open || waiting)) settle(true)
+          // The field may stay the document's focused element while the keyboard went to the page or another app.
+          if ((document.activeElement !== input || !document.hasFocus()) && (open || waiting)) settle(true)
         }, BLUR_CLOSE_MS)
       })
       // Capture, so the value is read before the address bar's own submit blurs the field and puts the page's address back.

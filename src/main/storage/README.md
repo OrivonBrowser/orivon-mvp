@@ -22,4 +22,7 @@ reads the state fresh. `flush()` therefore waits for that pass, and for a deboun
 running behind the write, before it resolves.
 
 **A failed write rejects `flush()` and is otherwise the store's to report.** The writer swallows
-nothing that a caller waiting on `flush()` needs to hear, and prints nothing itself.
+nothing that a caller waiting on `flush()` needs to hear, and prints nothing itself. It does not give
+the change up: it writes again after 1, 5 and 30 seconds (`RETRY_DELAYS_MS`), and a `flush()` that
+finds the last write failed, the quit's included, makes one more attempt at once. A file held for a
+moment by a virus scanner or a sync client is then written once it is let go.

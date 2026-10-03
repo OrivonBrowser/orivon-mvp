@@ -5,6 +5,8 @@
 import { internalBridge } from '../shared/bridge.js'
 import { h, replaceChildren } from '../shared/dom.js'
 import { profilesIcon } from '../shared/icons.js'
+import { redrawKeepingFocus } from '../shared/keep-focus.js'
+import { initialOf } from '../shared/letter-tile.js'
 
 const bridge = internalBridge()
 
@@ -55,10 +57,12 @@ async function act (command: object): Promise<void> {
   await load()
 }
 
-function swatches (selected: string, choose: (color: string) => void): HTMLElement {
+/** `scope` keeps each row's swatches apart in their `data-focus` keys. */
+function swatches (selected: string, choose: (color: string) => void, scope: string): HTMLElement {
   const buttons = reply.colors.map((color) => {
     const button = h('button', { className: color === selected ? 'swatch selected' : 'swatch', type: 'button', title: color, onclick: () => { choose(color) } }, h('span', { className: 'dot mark' }))
     button.dataset['color'] = color
+    button.dataset['focus'] = `${scope}:color:${color}`
     button.setAttribute('role', 'radio')
     button.setAttribute('aria-checked', String(color === selected))
     button.setAttribute('aria-label', color)
@@ -70,8 +74,10 @@ function swatches (selected: string, choose: (color: string) => void): HTMLEleme
 function card (row: Row): HTMLElement {
   const name = h('input', { className: 'text name', type: 'text', value: row.name, maxLength: 40, disabled: reply.isPrivate })
   name.setAttribute('aria-label', `Name of the profile ${row.name}`)
+  name.dataset['focus'] = `${row.id}:name`
   name.addEventListener('change', () => { void act({ type: 'rename', id: row.id, name: name.value }) })
   const remove = h('button', { className: 'btn danger', type: 'button', textContent: 'Delete', disabled: reply.isPrivate || row.id === 'default' || row.current || row.running })
+  remove.dataset['focus'] = `${row.id}:remove`
   let armed = false
   remove.addEventListener('click', () => {
     if (!armed) {
@@ -83,22 +89,26 @@ function card (row: Row): HTMLElement {
     }
     void act({ type: 'remove', id: row.id })
   })
+  const open = h('button', { className: 'btn', type: 'button', textContent: row.running && !row.current ? 'Show' : 'Open', disabled: row.current && !reply.isPrivate, onclick: () => { void act({ type: 'open', id: row.id }) } })
+  open.dataset['focus'] = `${row.id}:open`
   const status = row.current ? 'This window' : row.running ? 'Open' : ''
-  const chip = h('span', { className: 'chip mark', textContent: row.name.slice(0, 1).toUpperCase() })
+  const chip = h('span', { className: 'chip mark', textContent: initialOf(row.name) })
   chip.dataset['color'] = row.color
   return h('article', { className: 'card profile', id: `profile-${row.id}` },
     h('div', { className: 'head' }, chip, name, status === '' ? null : h('span', { className: 'status', textContent: status })),
-    swatches(row.color, (color) => { if (!reply.isPrivate) void act({ type: 'color', id: row.id, color }) }),
+    swatches(row.color, (color) => { if (!reply.isPrivate) void act({ type: 'color', id: row.id, color }) }, row.id),
     h('div', { className: 'actions' },
-      h('button', { className: 'btn', type: 'button', textContent: row.running && !row.current ? 'Show' : 'Open', disabled: row.current && !reply.isPrivate, onclick: () => { void act({ type: 'open', id: row.id }) } }),
+      open,
       remove))
 }
 
 function renderCreate (): void {
   const name = h('input', { className: 'text', type: 'text', placeholder: 'Name of the new profile', maxLength: 40, disabled: reply.isPrivate, value: newName })
   name.setAttribute('aria-label', 'Name of the new profile')
+  name.dataset['focus'] = 'create:name'
   name.addEventListener('input', () => { newName = name.value })
   const button = h('button', { className: 'btn primary', type: 'button', textContent: 'Create profile', disabled: reply.isPrivate })
+  button.dataset['focus'] = 'create:button'
   button.addEventListener('click', () => {
     void act({ type: 'create', name: name.value, color: newColor }).then(() => { newName = ''; renderCreate() })
   })
@@ -106,12 +116,14 @@ function renderCreate (): void {
     h('h2', { textContent: 'New profile' }),
     h('p', { className: 'help', textContent: 'A profile is a separate browser: its own bookmarks, history, permissions and apps. Nothing is shared between profiles.' }),
     h('div', { className: 'row' }, name, button),
-    swatches(newColor, (color) => { newColor = color; renderCreate() }))
+    swatches(newColor, (color) => { newColor = color; redrawKeepingFocus(create, renderCreate) }, 'create'))
 }
 
 function render (): void {
-  replaceChildren(list, ...reply.profiles.map(card))
-  renderCreate()
+  redrawKeepingFocus(document, () => {
+    replaceChildren(list, ...reply.profiles.map(card))
+    renderCreate()
+  })
 }
 
 document.getElementById('app')?.append(

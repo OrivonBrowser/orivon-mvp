@@ -121,11 +121,17 @@ export function renderEmpty (view: EmptyView): HTMLElement {
 }
 
 /** Where the list is: each part but the last takes you there. While a search has the list it says so instead. */
-export function renderCrumbs (crumbs: readonly Crumb[], searching: boolean, count: number, go: (id: string) => void): HTMLElement {
+/** How many results a search found; `more` when main found more than it sent, so the count is a floor. */
+export function resultsLabel (count: number, more: boolean): string {
+  return `${count.toLocaleString()}${more ? '+' : ''} ${count === 1 ? 'result' : 'results'}`
+}
+
+/** `more`: main found more results than it sent, so the count is a floor. */
+export function renderCrumbs (crumbs: readonly Crumb[], searching: boolean, count: number, go: (id: string) => void, more = false): HTMLElement {
   const nav = h('nav', { className: 'crumbs' })
   nav.setAttribute('aria-label', 'Folder path')
   if (searching) {
-    nav.append(h('span', { className: 'crumb-here', textContent: 'Search results' }), h('span', { className: 'crumb-count', textContent: `${count.toLocaleString()}${count === 200 ? '+' : ''} ${count === 1 ? 'result' : 'results'}` }))
+    nav.append(h('span', { className: 'crumb-here', textContent: 'Search results' }), h('span', { className: 'crumb-count', textContent: resultsLabel(count, more) }))
     return nav
   }
   const parts: Array<Node | string> = []

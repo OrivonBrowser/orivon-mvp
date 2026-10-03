@@ -102,6 +102,14 @@ describe('requestPage', () => {
     expect(requestPage({ frame: { parent: null, top: { url: 'https://a.example/' } }, referrer: '', webContents: tab('https://c.example/') })).toBe('https://a.example/')
   })
 
+  it('takes the referrer only when it is the page the tab is navigating to: a stylesheet on another site sent the rest', () => {
+    const top = { parent: null, top: { url: 'https://news.example/story' } }
+    // A request the arriving document sent, while the frame still holds the page it is leaving.
+    expect(requestPage({ frame: { parent: null, top: { url: 'https://leaving.example/' } }, referrer: 'https://arriving.example/a', navigating: 'https://arriving.example/a', webContents: tab('https://leaving.example/') })).toBe('https://arriving.example/a')
+    // An image a stylesheet on a CDN draws: its referrer is the stylesheet, the page is the top frame.
+    expect(requestPage({ frame: top, referrer: 'https://cdn.example/site.css', navigating: 'https://news.example/story', webContents: tab('https://news.example/story') })).toBe('https://news.example/story')
+  })
+
   it('keeps the top frame\'s address for a request from a frame inside the page, whose referrer is that frame', () => {
     expect(requestPage({ frame: { parent: {}, top: { url: 'https://a.example/' } }, referrer: 'https://embedded.example/', webContents: tab('https://a.example/') })).toBe('https://a.example/')
   })

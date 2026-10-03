@@ -72,6 +72,11 @@ describe('isLocalOrPrivateHost', () => {
     expect(isLocalOrPrivateHost('localhost.example.com')).toBe(false)
   })
 
+  it('is true for the names routers and companies use that were never public: .home, .corp, .intranet, .private', () => {
+    for (const host of ['router.home', 'wiki.corp', 'portal.intranet', 'nas.private', 'printer.lan']) expect(isLocalOrPrivateHost(host), host).toBe(true)
+    expect(isLocalOrPrivateHost('home.example.com')).toBe(false)
+  })
+
   it('is not fooled by a number that is not an address', () => {
     expect(isLocalOrPrivateHost('10.0.0.256')).toBe(false)
   })

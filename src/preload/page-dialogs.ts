@@ -62,7 +62,8 @@ function wrapPrompt (askMain: (message: string, defaultText: string) => string |
   const native = page.prompt
   if (typeof native !== 'function') return
   page.prompt = new Proxy(native, {
-    apply: (_target, _self, args: unknown[]) => leaving() ? null : askMain(args.length > 0 ? text(args[0]) : '', args.length > 1 ? text(args[1]) : '')
+    // An argument given as `undefined` is a missing one, as the platform reads it: `prompt('a', undefined)` has no default.
+    apply: (_target, _self, args: unknown[]) => leaving() ? null : askMain(args[0] === undefined ? '' : text(args[0]), args[1] === undefined ? '' : text(args[1]))
   })
 }
 

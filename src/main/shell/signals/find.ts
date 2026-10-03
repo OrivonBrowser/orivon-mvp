@@ -13,8 +13,20 @@ export const findSignal: TabSignal = {
       return owner === undefined ? undefined : findWindowFor(owner)
     }
     wc.on('found-in-page', (_event, found) => { barFor()?.result(wc, found) })
-    wc.on('did-start-loading', () => { barFor()?.loading(wc, 'start') })
-    wc.on('did-stop-loading', () => { barFor()?.loading(wc, 'stop') })
+    // The loading events are the spinner's, raised for a frame's load too: only a new document in the tab itself
+    // restarts the search, so an ad or a player reloading in a frame does not send the bar back to the first match.
+    let documentLoading = false
+    wc.on('did-start-loading', () => {
+      const bar = barFor()
+      if (bar === undefined || !wc.isLoadingMainFrame()) return
+      documentLoading = true
+      bar.loading(wc, 'start')
+    })
+    wc.on('did-stop-loading', () => {
+      if (!documentLoading) return
+      documentLoading = false
+      barFor()?.loading(wc, 'stop')
+    })
     wc.on('before-input-event', (_event, input) => {
       if (input.type !== 'keyDown' || input.key !== 'Escape' || input.shift || input.control || input.alt || input.meta) return
       if (!shown()) return

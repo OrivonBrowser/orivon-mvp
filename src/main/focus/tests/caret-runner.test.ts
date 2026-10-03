@@ -7,7 +7,7 @@ vi.mock('../../overlays/tab-slots.js', () => ({ requestSlot: (ask: unknown) => r
 const showToast = vi.fn()
 vi.mock('../../page-tools/toast.js', () => ({ showToast: (...args: unknown[]) => { showToast(...args) } }))
 
-const { applyCaret, toggleCaret } = await import('../caret-runner.js')
+const { applyCaret, dropCaretAsk, toggleCaret } = await import('../caret-runner.js')
 
 function context (values: { on?: boolean, ask?: boolean }, activeTabId: string | null = 'a'): { ctx: WindowContext, set: ReturnType<typeof vi.fn> } {
   const state = { 'accessibility.caretBrowsing': values.on ?? false, 'accessibility.caretAsk': values.ask ?? true } as Record<string, boolean>
@@ -19,7 +19,11 @@ function context (values: { on?: boolean, ask?: boolean }, activeTabId: string |
   return { ctx, set }
 }
 
-beforeEach(() => { requestSlot.mockReset(); showToast.mockReset() })
+beforeEach(() => {
+  requestSlot.mockReset()
+  requestSlot.mockImplementation(() => ({ cancel: vi.fn() }))
+  showToast.mockReset()
+})
 
 describe('toggleCaret', () => {
   it('asks in a sheet over the tab in front, and sets nothing yet', () => {
@@ -38,6 +42,36 @@ describe('toggleCaret', () => {
     ;(requestSlot.mock.calls[0]?.[0] as { closed: () => void }).closed()
     toggleCaret(ctx)
     expect(requestSlot).toHaveBeenCalledTimes(2)
+  })
+
+  it('asks again in the tab in front when the sheet was left waiting in another tab, ending that one', () => {
+    const state = { active: 'a' }
+    const cancels: Array<ReturnType<typeof vi.fn>> = []
+    requestSlot.mockImplementation((ask: { closed: () => void }) => {
+      const cancel = vi.fn(() => { ask.closed() })
+      cancels.push(cancel)
+      return { cancel }
+    })
+    const ctx = {
+      window: { tabs: { getState: () => ({ activeTabId: state.active }) } },
+      services: { settings: { get: (key: string) => key === 'accessibility.caretAsk', set: vi.fn() } }
+    } as unknown as WindowContext
+    toggleCaret(ctx)
+    state.active = 'b'
+    toggleCaret(ctx)
+    expect(requestSlot.mock.calls.map((call) => (call[0] as { tabId: string }).tabId)).toEqual(['a', 'b'])
+    expect(cancels[0]).toHaveBeenCalledOnce()
+    toggleCaret(ctx)
+    expect(requestSlot).toHaveBeenCalledTimes(2)
+  })
+
+  it('ends the sheet for good when its tab is left, so F7 asks afresh', () => {
+    const { ctx } = context({})
+    const cancel = vi.fn()
+    requestSlot.mockImplementation(() => ({ cancel }))
+    toggleCaret(ctx)
+    dropCaretAsk(ctx.window)
+    expect(cancel).toHaveBeenCalledOnce()
   })
 
   it('turns on at once, with a toast, when it is not to ask', () => {

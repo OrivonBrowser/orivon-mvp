@@ -48,6 +48,13 @@ export class ImportState {
 
   constructor (private readonly bridge: OrivonInternal = internalBridge()) {
     bridge.onEvent((topic, payload) => {
+      if (topic === 'settings.changed') {
+        const change = payload as { key?: unknown, value?: unknown } | null
+        if (change?.key !== 'history.remember') return
+        this.historyOn = change.value !== false
+        this.changed()
+        return
+      }
       if (topic !== 'import.progress' || this.step !== 'running') return
       this.phase = payload === 'history' ? 'history' : 'bookmarks'
       this.changed()

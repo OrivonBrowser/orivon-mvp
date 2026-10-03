@@ -16,6 +16,7 @@ export function createBookmarkStar (): ChromeModule {
     name: 'bookmark-star',
     init: (ctx) => {
       star = must(document.querySelector<HTMLButtonElement>('#bookmark-toggle'), '#bookmark-toggle missing')
+      star.addEventListener('pointerdown', (event) => { if (event.button === 0) ctx.shell.press('bookmark-edit') })
       star.addEventListener('click', () => { if (hasSite(ctx.activeTab())) openBubble(ctx, { add: true, toggle: true }) })
     },
     render: (state) => {

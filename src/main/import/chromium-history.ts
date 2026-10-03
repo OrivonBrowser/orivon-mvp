@@ -15,7 +15,7 @@ export interface HistoryReadOptions {
 export function readChromiumHistory (db: DatabaseSync, { limit, sinceMs }: HistoryReadOptions): HistoryImportRow[] {
   const rows = db.prepare(`
     SELECT url, title, visit_count AS visits, last_visit_time / 1000 AS millis FROM urls
-    WHERE last_visit_time / 1000 >= ? ORDER BY last_visit_time DESC LIMIT ?
+    WHERE hidden = 0 AND last_visit_time / 1000 >= ? ORDER BY last_visit_time DESC LIMIT ?
   `).all(Math.max(sinceMs, 0) + WEBKIT_EPOCH_OFFSET_MS, limit)
   const out: HistoryImportRow[] = []
   for (const row of rows) {
