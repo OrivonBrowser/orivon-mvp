@@ -265,8 +265,9 @@ export class TabManager {
     return record
   }
 
-  /** Shows a tab another window let go of, at `index` (the end by default) -- its views' handlers read `record.host` when they run, so from here on they act for this window. */
-  giveTab (id: string, record: TabRecord, index?: number): void {
+  /** Shows a tab another window let go of, at `index` (the end by default) -- its views' handlers read `record.host` when they run, so from here on they act for this window.
+   * `activate` false leaves it behind the tab in front, asleep if it was, for a caller handing over several. */
+  giveTab (id: string, record: TabRecord, index?: number, activate = true): void {
     if (this.disposed) return
     record.host = this.viewHost
     this.tabs.set(id, record)
@@ -275,7 +276,8 @@ export class TabManager {
     this.afterMove?.(id)
     // takeTab()'s forgetTab() already said this tab closed; this says it is back.
     this.shell?.tabLifecycle?.tabCreated(record.view.webContents, this.viewHost.window)
-    this.activateTab(id)
+    if (activate) this.activateTab(id)
+    else this.changed()
   }
 
   /** Shared by closeTab() (user- or app-initiated), the webContents

@@ -41,7 +41,11 @@ export const installContentSettings: ShellInstaller = {
     sitePopups.bind(createPopupBlocker({ rules, interaction: tabInteraction, blocks: popupBlocks }))
     // Where each tab's top frame is going: tells a request the new document sent from one its stylesheet sent.
     const navigating = new WeakMap<WebContents, string>()
+    // A tab moved to another window is announced again with the same page.
+    const watched = new WeakSet<WebContents>()
     const watchNavigation = (contents: WebContents): void => {
+      if (watched.has(contents)) return
+      watched.add(contents)
       const note = (details: { isMainFrame: boolean, isSameDocument: boolean, url: string }): void => {
         if (details.isMainFrame && !details.isSameDocument) navigating.set(contents, details.url)
       }

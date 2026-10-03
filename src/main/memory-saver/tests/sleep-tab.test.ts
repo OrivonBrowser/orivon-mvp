@@ -12,7 +12,7 @@ vi.mock('../../shell/tab-parking.js', () => ({ closeParkedViews }))
 vi.mock('../../shell/tab-partition.js', () => ({ appTabViews: new WeakSet() }))
 vi.mock('../../overlays/tab-slots.js', () => ({ hasAsk: () => false }))
 
-const { sleepTab, sleepTabWhy, wakeTab } = await import('../sleep-tab.js')
+const { reloadOrWake, sleepTab, sleepTabWhy, wakeTab } = await import('../sleep-tab.js')
 const { snapshotOf } = await import('../../session-restore/tab-snapshot.js')
 
 beforeEach(() => {
@@ -157,6 +157,25 @@ describe('sleepTab', () => {
     if (record !== undefined) record.host = { ...record.host, isClosing: () => true }
     expect((await sleepTabWhy(tabs, 'a', env())).ok).toBe(false)
     expect(makeTabView).not.toHaveBeenCalled()
+  })
+})
+
+describe('reloadOrWake', () => {
+  it('wakes a sleeping tab, whose view has no page to reload, and reloads one that is awake', async () => {
+    const { tabs, records } = setup()
+    const reload = vi.fn()
+    ;(tabs as unknown as { reload: typeof reload }).reload = reload
+    await sleepTab(tabs, 'a', env())
+    const wc = { isDestroyed: () => false, loadURL: vi.fn(), navigationHistory: { restore: vi.fn(async () => {}) } }
+    const record = records.get('a')
+    if (record !== undefined) record.view = { webContents: wc } as never
+
+    reloadOrWake(tabs, 'a')
+    expect(wc.navigationHistory.restore).toHaveBeenCalled()
+    expect(reload).not.toHaveBeenCalled()
+
+    reloadOrWake(tabs, 'b')
+    expect(reload).toHaveBeenCalledWith('b')
   })
 })
 

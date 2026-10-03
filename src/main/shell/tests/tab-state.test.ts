@@ -172,6 +172,16 @@ describe('the strip with pinned tabs in it', () => {
     to.giveTab(y, plain as never, 0)
     expect(order(to)).toEqual([p, x, y, q, r])
   })
+
+  it('leaves a tab handed over behind the one in front when told not to show it', () => {
+    const from = newManager()
+    const to = newManager()
+    const [x] = strip(from, 2) as [string, string]
+    const [p] = strip(to, 1) as [string]
+    to.giveTab(x, from.takeTab(x) as never, undefined, false)
+    expect(order(to)).toEqual([p, x])
+    expect(to.getState().activeTabId).toBe(p)
+  })
 })
 
 describe('closing tabs in bulk', () => {
@@ -247,6 +257,18 @@ describe('opening a tab beside another', () => {
     // adds a third, duplicate entry.
     expect(copy.stop.mock.invocationCallOrder[0]).toBeLessThan(copy.navigationHistory.restore.mock.invocationCallOrder[0] ?? 0)
     expect(copy.reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('gives the copy of a sleeping tab the pages it kept, its own view having none', () => {
+    const manager = newManager()
+    const [a] = strip(manager, 1) as [string]
+    const record = manager.record(a)
+    if (record !== undefined) record.sleeping = { url: 'https://a.example/2', title: 'Two', favicon: null, entries: [{ url: 'https://a.example/1', title: 'One', pageState: 'secret' }, { url: 'https://a.example/2', title: 'Two', pageState: 'more' }] as never, index: 1, at: 0 }
+
+    duplicateTab(manager, a)
+
+    const copy = createdViews.at(-1)?.webContents as FakeContents
+    expect(copy.navigationHistory.restore).toHaveBeenCalledWith({ entries: [{ url: 'https://a.example/1', title: 'One' }, { url: 'https://a.example/2', title: 'Two' }], index: 1 })
   })
 
   it('has no history to give a copy of a tab that has only its one page', () => {

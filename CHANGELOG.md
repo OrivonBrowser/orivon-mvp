@@ -256,6 +256,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **Sleeping tabs act like tabs**: the tab menu's Reload wakes one, Duplicate copies the pages behind it, and moving
+  a group to a new window wakes only the tab put in front, the one that was in front before.
 - **Dragging a tab out no longer leaves a process behind**: the floating preview's page closes with the drag, and closed
   tabs and windows are no longer kept in memory by the tab-visibility reports.
 - **A second crash keeps the first one's windows**: windows still waiting to be restored stay in the session file until
