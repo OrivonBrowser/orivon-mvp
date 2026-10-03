@@ -9,7 +9,7 @@ import type { Web3Score } from '../../main/browsing/site-trust.js'
 // renderer module in this tree already follows.
 
 function score (overrides: Partial<Web3Score> = {}): Web3Score {
-  return { level: 1, overridden: false, delivery: 1, deliveryOverridden: false, localDev: false, ...overrides }
+  return { level: 1, overridden: false, judgedBy: undefined, pending: false, delivery: 1, deliveryOverridden: false, localDev: false, ...overrides }
 }
 
 describe('web3Mark', () => {
@@ -36,5 +36,10 @@ describe('shieldLabel', () => {
 
   it('names developer mode when the level rests on a local DDOC', () => {
     expect(shieldLabel(score({ level: 2, localDev: true }))).toBe('Website level 2 (Web2.5) (developer mode)')
+  })
+
+  it('names the provider whose judgement the level is, and developer mode beside it', () => {
+    expect(shieldLabel(score({ level: 3, judgedBy: 'Test provider' }))).toBe('Website level 3 (Web2.5), judged by Test provider')
+    expect(shieldLabel(score({ level: 3, judgedBy: 'Test provider', localDev: true }))).toBe('Website level 3 (Web2.5), judged by Test provider (developer mode)')
   })
 })

@@ -5,11 +5,13 @@
 `website-level.ts`), the Delivery level on that page's Connection-to-network scale
 (`delivery-ladder.ts`), the connection ladder built from the broker's per-app connection log (a
 different axis, still unwired: nothing observes per-app connections yet), operation scoring, and
-the same-host hash tree check (`ddoc.ts`). Click-through shows the level and, beneath it, **the
+the same-host hash tree check (`ddoc.ts`), and what a Web3 Score provider answers, read as
+[`web3-score-provider.md`](../../docs/architecture/web3-score-provider.md) defines it
+(`score-provider.ts`; fetched by `../main/browsing/score-provider-client.ts`). Click-through shows the level and, beneath it, **the
 actual evidence it rests on**
 ([`ADR-0006`](../../docs/decisions/ADR-0006-trust-indicator-from-observed-behaviour.md)). A
 developer-only override (`../main/dev/score-levels.ts`) can preview levels no automatic path
-reaches yet, always named as an override, never as observed or judged.
+reaches, always named as an override, never as observed or judged.
 
 **What it depends on.** [`src/contracts/`](../contracts/), and the broker's connection log
 *through a contract*, never by reaching into broker internals.

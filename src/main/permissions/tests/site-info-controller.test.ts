@@ -39,13 +39,16 @@ function installedAt (path: string, name: string): InstalledExtension {
   }
 }
 
+const LOCAL_HASH = 'sha256:' + 'e'.repeat(64)
+
 const NO_TRUST: SiteTrustSources = {
   isOriginServedFromCacheSync: () => false,
   pinCoverageFor: () => undefined,
   nameEvidenceFor: async () => undefined,
   levelOverrideFor: () => undefined,
   deliveryOverrideFor: () => undefined,
-  localDdocFor: async () => false
+  localDdocHashFor: async () => undefined,
+  providerVerdictFor: async () => ({ status: 'off' })
 }
 
 function fakeLoader (overrides: Partial<Loader> = {}): Loader {
@@ -150,7 +153,8 @@ describe('createSiteInfoController -- siteTrustFor', () => {
       nameEvidenceFor: async () => undefined,
       levelOverrideFor: () => undefined,
       deliveryOverrideFor: () => undefined,
-      localDdocFor: async () => false
+      localDdocHashFor: async () => undefined,
+      providerVerdictFor: async () => ({ status: 'off' })
     }
     const controller = createSiteInfoController(ctxWith(createBroker(baseDeps()), loader), trustSources)
 
@@ -212,7 +216,7 @@ describe('createSiteInfoController -- siteTrustFor', () => {
     const asked: string[] = []
     const controller = createSiteInfoController(ctxWith(createBroker(baseDeps()), fakeLoader()), {
       ...NO_TRUST,
-      localDdocFor: async (origin) => { asked.push(origin); return origin === LOCAL }
+      localDdocHashFor: async (origin) => { asked.push(origin); return origin === LOCAL ? LOCAL_HASH : undefined }
     })
 
     const trust = await controller.siteTrustFor(`${LOCAL}/app/`)
@@ -222,12 +226,37 @@ describe('createSiteInfoController -- siteTrustFor', () => {
     expect(trust?.displayedLevel).toBe(2)
   })
 
+  it('asks the provider about the page\'s identity only once DDOC holds, and shows its judgement', async () => {
+    const LOCAL = 'http://127.0.0.1:8875'
+    const asked: Array<string | undefined> = []
+    const sources = (hash: string | undefined): SiteTrustSources => ({
+      ...NO_TRUST,
+      localDdocHashFor: async () => hash,
+      providerVerdictFor: async (id, waitMs) => {
+        asked.push(id)
+        expect(waitMs).toBeGreaterThan(0)
+        return id === undefined
+          ? { status: 'not-assessable', address: 'http://127.0.0.1:7860/score' }
+          : { status: 'judged', provider: { name: 'Test provider', address: 'http://127.0.0.1:7860/score' }, evaluation: { id, name: 'App', version: undefined, evaluated: '2026-10-03', trustlessity: { level: 3, privacy: false }, summary: undefined, operations: [], connections: [], evidence: [] } }
+      }
+    })
+
+    const judged = await createSiteInfoController(ctxWith(createBroker(baseDeps()), fakeLoader()), sources(LOCAL_HASH)).siteTrustFor(LOCAL)
+    const unchecked = await createSiteInfoController(ctxWith(createBroker(baseDeps()), fakeLoader()), sources(undefined)).siteTrustFor(LOCAL)
+
+    expect(asked).toEqual([LOCAL_HASH, undefined])
+    expect(judged?.displayedLevel).toBe(3)
+    expect(judged?.judged.status).toBe('judged')
+    expect(unchecked?.displayedLevel).toBe(1)
+    expect(unchecked?.judged.status).toBe('not-assessable')
+  })
+
   it('never asks the local-DDOC source for a pinned origin: its pin is compared instead', async () => {
     const asked: string[] = []
     const loader = fakeLoader({ pinFor: async () => ({ schema: 1, origin: APP, bundleHash: 'a'.repeat(64), assets: [], version: '1.0.0', pinnedAt: 10 }) })
     const controller = createSiteInfoController(ctxWith(createBroker(baseDeps()), loader), {
       ...NO_TRUST,
-      localDdocFor: async (origin) => { asked.push(origin); return true }
+      localDdocHashFor: async (origin) => { asked.push(origin); return LOCAL_HASH }
     })
 
     const trust = await controller.siteTrustFor(APP)

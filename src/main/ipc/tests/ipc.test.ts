@@ -224,7 +224,7 @@ describe('registerShellIpc -- web3ScoreFor', () => {
         connection: 'secure', ddoc: { status: 'not-checked' }, pin: undefined, name: undefined,
         level: { level: 1, because: 'x', assessable: undefined },
         delivery: { level: 1, evidence: {} as never },
-        levelOverride: 4, displayedLevel: 4, deliveryOverride: undefined, displayedDelivery: 1
+        levelOverride: 4, judged: { status: 'off' }, judgedShown: false, displayedLevel: 4, deliveryOverride: undefined, displayedDelivery: 1
       } as never))
     })
     registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, siteInfo, actions())
@@ -232,7 +232,7 @@ describe('registerShellIpc -- web3ScoreFor', () => {
     const result = await dispatch({ type: 'web3ScoreFor', url: 'https://app.example/page' })
 
     expect(siteInfo.siteTrustFor).toHaveBeenCalledWith('https://app.example/page')
-    expect(result).toEqual({ level: 4, overridden: true, delivery: 1, deliveryOverridden: false, localDev: false })
+    expect(result).toEqual({ level: 4, overridden: true, judgedBy: undefined, pending: false, delivery: 1, deliveryOverridden: false, localDev: false })
   })
 
   it('is null when siteTrustFor has nothing to report', async () => {

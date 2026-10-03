@@ -15,6 +15,15 @@ export type PathTarget =
   | { readonly kind: 'ipns-key', readonly key: string }
   | { readonly kind: 'dnslink', readonly domain: string }
 
+/** A CID as CIDv1 in base32, whichever version and base it came in; undefined for anything else. */
+export function canonicalCid (text: string): string | undefined {
+  try {
+    return CID.parse(text).toV1().toString()
+  } catch {
+    return undefined
+  }
+}
+
 /** A key as a CIDv1 libp2p-key in base36, whichever of its forms it came in. */
 export function canonicalKey (name: string): string | undefined {
   let multihash: MultihashDigest | undefined

@@ -87,3 +87,10 @@ Rule 3 exists to prevent, and the one most likely to drift as a sixth surface is
   on the row itself) — `ADR-0006`'s own "a judged level is its provider's claim, never the
   machine's" would then need this decision to say how a named provider's Level 4 differs, if at
   all, from an unattributed one.
+
+## Amendment, 2026-10-03: a provider's Level 4 keeps every warning
+
+Weighed when a real provider was wired in (`ADR-0054`): a Level 4 judged by a Web3 Score provider
+does **not** remove grant warnings. Only the developer-only override does, because only the
+person at the keyboard can write it, while a provider is a remote party whose files are unsigned.
+The consent surfaces read `levelOverrideFor` alone, never the displayed level.

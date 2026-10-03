@@ -117,13 +117,15 @@ Score shield leads with it, coloured red/orange/yellow/green, a mark at the pill
 names it Web2 (Level 1), Web2.5 (Levels 2-3) or Web3 (Level 4), and the Web3 Score page the
 shield opens leads with it too (`ADR-0006`).
 
-**Web3 Score provider**: an entity issuing judged scores. The user may choose several. Never
-required for the automatic ladders. In this build a provider need not be trustless, and may run
-locally (`ADR-0006`); which provider ships is open (`open-questions.md` A250).
+**Web3 Score provider**: an entity issuing judged scores, published at an address the person
+chooses in Settings: any address Orivon opens, `https://`, `ipfs://` or a `.eth` name among them.
+Never required for the automatic ladders. In this build the person chooses one, it need not be
+trustless, and Orivon asks it by hash bucket, so a request names a group of sites, never the site
+(`ADR-0054`, `docs/architecture/web3-score-provider.md`).
 
-**Attestation**: a provider's signed statement over a content identifier, a bundle hash or a CID
-("hash X is Level 4").
-Verified locally and offline, so a provider cannot track users (`ADR-0006`).
+**Evaluation**: a provider's judgement of one content identifier, a bundle hash or a CID: its
+level on the subject's scale, and for a website its operations and connections. Unsigned in this
+build (*provisional*, `ADR-0054`).
 
 **Observed behaviour**: what the broker actually saw an app do. The basis of this version's
 indicator. Always reported as *observed*, never *guaranteed*.
