@@ -284,7 +284,8 @@ export class TabsAPI {
 
   private query(event: ExtensionEvent, info: chrome.tabs.QueryInfo = {}) {
     const isSet = (value: any) => typeof value !== 'undefined'
-    const currentWindowId = this.currentWindowId(event)
+    const wantsCurrentWindow = isSet(info.currentWindow) || info.windowId === TabsAPI.WINDOW_ID_CURRENT
+    const currentWindowId = wantsCurrentWindow ? this.currentWindowId(event) : undefined
 
     const filteredTabs = Array.from(this.ctx.store.tabs)
       .map(this.getTabDetails.bind(this))

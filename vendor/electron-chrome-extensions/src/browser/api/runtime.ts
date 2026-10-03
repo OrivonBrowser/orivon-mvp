@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
-import { ExtensionContext } from '../context'
-import { ExtensionEvent } from '../router'
+import type { ExtensionContext } from '../context'
+import type { ExtensionEvent } from '../router'
 import { getExtensionManifest } from './common'
 import type { BrowserActionAPI } from './browser-action'
 import type { OffscreenAPI } from './offscreen'
@@ -11,7 +11,7 @@ import type { OffscreenAPI } from './offscreen'
 interface RuntimeContext {
   contextId: string
   contextType: 'TAB' | 'POPUP' | 'BACKGROUND' | 'OFFSCREEN_DOCUMENT'
-  documentOrigin?: string
+  documentOrigin?: string | undefined
   documentUrl?: string
   frameId: number
   incognito: boolean
@@ -159,13 +159,13 @@ export class RuntimeAPI extends EventEmitter {
 
     const manifest = getExtensionManifest(extension)
 
-    if (manifest.options_ui) {
-      // Embedded option not support (!options_ui.open_in_new_tab)
-      const url = `chrome-extension://${extension.id}/${manifest.options_ui.page}`
-      await this.ctx.store.createTab({ url, active: true })
-    } else if (manifest.options_page) {
-      const url = `chrome-extension://${extension.id}/${manifest.options_page}`
-      await this.ctx.store.createTab({ url, active: true })
-    }
+    const page = manifest.options_ui ? manifest.options_ui.page : manifest.options_page
+    if (!page) return
+
+    // Embedded option not support (!options_ui.open_in_new_tab)
+    const url = `chrome-extension://${extension.id}/${page}`
+    // Orivon patch (UPSTREAM.md patch 67): the options page is one tab.
+    if (this.ctx.store.impl.activateTabShowing?.(url)) return
+    await this.ctx.store.createTab({ url, active: true })
   }
 }

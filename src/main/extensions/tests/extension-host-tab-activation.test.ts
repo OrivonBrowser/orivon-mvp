@@ -36,6 +36,7 @@ vi.mock('orivon:crx-extensions', () => ({
     addTab = vi.fn()
     removeTab = vi.fn()
     moveTab = vi.fn()
+    getContextMenuItems = vi.fn(() => [{ label: 'Translate' }])
     selectTab = vi.fn()
     clearActiveTab = vi.fn()
     constructor (opts: any) {
@@ -221,6 +222,29 @@ describe('extension-host: window-open policy for popups and MV2 background pages
     expect(once).toHaveBeenCalledWith('destroyed', expect.any(Function))
   })
 
+  it('opens what a popup\'s page opens in the window the popup hangs under, not the newest or the focused one', () => {
+    getExtension.mockReturnValue(null)
+    createExtensionHost('preload.js')
+    const older = { window: { id: 1 }, tabs: { openTrusted: vi.fn(() => undefined), activeWebContents: () => undefined } }
+    const newest = { window: { id: 2 }, tabs: { openTrusted: vi.fn(() => undefined), activeWebContents: () => undefined } }
+    const services = {
+      windows: { all: () => [older, newest], focused: () => newest, findTab: vi.fn() },
+      tabLifecycle: { subscribe: vi.fn() },
+      settings: { onChange: () => () => {} }
+    } as unknown as ShellServices
+    attachExtensionShell({} as unknown as SubsystemContext, services, {} as any)
+    getExtension.mockImplementation((id: string) => (id === 'abcdefghijklmnopabcdefghijklmnop' ? {} : null))
+
+    const onPopupCreated = lastInstance.on.mock.calls.find((call: any[]) => call[0] === 'browser-action-popup-created')?.[1]
+    const setWindowOpenHandler = vi.fn()
+    const popupPage = { setWindowOpenHandler, once: vi.fn() }
+    onPopupCreated({ browserWindow: { webContents: popupPage }, parent: older.window, isDestroyed: () => false, destroy: vi.fn() })
+    setWindowOpenHandler.mock.calls[0]?.[0]({ url: 'chrome-extension://abcdefghijklmnopabcdefghijklmnop/help.html' })
+
+    expect(older.tabs.openTrusted).toHaveBeenCalledTimes(1)
+    expect(newest.tabs.openTrusted).not.toHaveBeenCalled()
+  })
+
   it('sets the same policy on a background page\'s own webContents, never an ordinary tab\'s', () => {
     getExtension.mockReturnValue(null)
     createExtensionHost('preload.js')
@@ -286,5 +310,28 @@ describe('extension-host: a tab handed to another window', () => {
     subscribed.tabClosed(wc)
     expect(lastInstance.removeTab).toHaveBeenCalledWith(wc)
     expect(lastInstance.moveTab).not.toHaveBeenCalled()
+  })
+})
+
+describe('extension-host: what extensions add to a page\'s right-click menu', () => {
+  beforeEach(() => {
+    capturedOptions = undefined
+    lastInstance = undefined
+    getExtension.mockReset()
+  })
+
+  it('comes from the library for an ordinary tab, and from nowhere for a tab it does not track', async () => {
+    getExtension.mockReturnValue(null)
+    createExtensionHost('preload.js')
+    const { subscribed } = buildShell()
+    const { pageMenuItems } = await import('../../shell/page-menu-items.js')
+    const tracked = { session: mockedSession.defaultSession, isDestroyed: () => false, getURL: () => 'https://a.example/' } as unknown as WebContents
+    const untracked = { session: {}, isDestroyed: () => false, getURL: () => 'https://a.example/' } as unknown as WebContents
+    subscribed.tabCreated(tracked, { id: 1 } as unknown as BaseWindow)
+    const params = { x: 1, y: 2 } as never
+
+    expect(pageMenuItems(tracked, params)).toEqual([{ label: 'Translate' }])
+    expect(lastInstance.getContextMenuItems).toHaveBeenCalledWith(tracked, params)
+    expect(pageMenuItems(untracked, params)).toEqual([])
   })
 })

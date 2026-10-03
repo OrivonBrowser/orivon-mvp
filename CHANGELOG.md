@@ -255,6 +255,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **An extension's right-click items show on pages**: what `chrome.contextMenus` adds (a translator, a block-element tool) is in
+  the page's right-click menu, not only the toolbar icon's; Options focuses the options tab that is already open.
+- **Extension popups and notifications behave with several windows and events**: a link opened from a popup, and
+  `chrome.search.query`, use the popup's own window; two notifications without ids no longer replace each other.
+- **A new version starts from the rulesets its manifest enables**, and an extension update keeps its install date, so a shortcut
+  two extensions both suggest does not move to the other one.
 - **Two windows keep their own tabs apart for extensions**: `tabs.query({ currentWindow: true })` and each toolbar icon use the
   window they belong to, a tab opened in the background does not become the active tab, a tab moved to another window keeps
   its window id and badge, a page coming back into a window is its active tab again, and a tab an extension closes is reported once.

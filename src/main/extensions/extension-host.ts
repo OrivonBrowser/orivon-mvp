@@ -24,6 +24,7 @@ import { setTabUrlAccessCheck, setTabHostAccessCheck } from 'orivon:crx-extensio
 import { setTabCaptureInvocationRecorder } from 'orivon:crx-extensions-browser-action'
 import { setTabCaptureAppRefusalCheck, setTabCaptureConsumedCheck, setTabCaptureGrantRecorder, setTabCaptureInvocationCheck } from 'orivon:crx-extensions-tab-capture'
 import type { ShellServices } from '../shell/shell-services.js'
+import { setPageMenuItemsSource } from '../shell/page-menu-items.js'
 import type { SubsystemContext } from '../registry.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { mintTabCaptureGrant, wasTabCaptureGrantConsumed } from '../sessions/tab-capture-grants.js'
@@ -242,6 +243,9 @@ export function attachExtensionShell (ctx: SubsystemContext, services: ShellServ
   // `setTabCaptureAppRefusalCheck`, read only by the vendored tab-capture.ts)
   // is not enough on its own.
   setTabCaptureMediaAppRefusalCheck(tabCaptureAppRefusal)
+  // What extensions add to a page's right-click menu: an ordinary tab's, never a granted app's.
+  setPageMenuItemsSource((wc, params) =>
+    hostExtensions === undefined || !trackedTabs.has(wc) || tabCaptureAppRefusal(wc) ? [] : hostExtensions.getContextMenuItems(wc, params))
 
   services.tabLifecycle.subscribe({
     tabClosing: (info) => {

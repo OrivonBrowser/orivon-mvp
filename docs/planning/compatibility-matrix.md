@@ -687,7 +687,7 @@ is not the same as it doing anything: read the note, not just the symbol.
 | `alarms` | ✅ | `create` + `onAlarm` measured firing |
 | `bookmarks` | ✅ | The tree as Chrome shapes it (bar `1`, other `2`), search, create, update, move, remove and the four change events derived from the store; writes count against Chrome's quota; the reading root is never visible; `javascript:` and `data:` addresses are refused; `onChildrenReordered`, `onImportBegan` and `onImportEnded` never fire (`api/bookmarks-api.ts`) |
 | `commands` | ✅ | `getAll` with the live shortcut, `onCommand` and `onChanged` through the shortcut dispatcher; a command key counts as an invocation on that tab (`extension-commands-runner.ts`, `api/commands-api.ts`) |
-| `contextMenus` | ✅ | `create`/`remove`/`removeAll`/`onClicked` work; `update` is a no-op (`vendor/electron-chrome-extensions/src/renderer/index.ts`) |
+| `contextMenus` | ✅ | `create`/`remove`/`removeAll`/`onClicked` work; `update` is a no-op; an extension's items show in the right-click menu of an ordinary tab (not a granted app's, an Orivon page, the new-tab page or a kiosk) and in its toolbar icon's menu; the items live in memory, so an extension that creates them once, in `onInstalled`, loses them when it is disabled, reloaded or Orivon restarts (`vendor/electron-chrome-extensions/src/renderer/index.ts`, `src/main/shell/page-menu-items.ts`) |
 | `cookies` | ✅ | `get`/`getAll`/`set`/`remove`/`getAllCookieStores`/`onChanged`, gated on the `cookies` permission and per-URL host access |
 | `devtools.inspectedWindow`, `devtools.network`, `devtools.panels` | ✅ | Native to Electron |
 | `dns` | ⚠️ | `chrome.dns.resolve` exists as a real function, not exercised in measurement; dev-channel-only in real Chrome too |

@@ -38,6 +38,7 @@ function fakeCtx (tab: any): any {
     session: { extensions: { on: vi.fn() } },
     store: {
       on: vi.fn(),
+      impl: {},
       getTabById: (id: number) => (id === tab.id ? tab : undefined),
       getActiveTabOfCurrentWindow: () => tab,
       tabToWindow: new Map(),

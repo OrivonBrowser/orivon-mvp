@@ -822,6 +822,18 @@
     tab moved between windows kept its old window id and lost its badge, a page coming back into
     a one-tab window left the window with no active tab, and one closed tab was reported closed
     twice.
+66. **A notification keeps its own id and registry entry.** `src/browser/api/notifications.ts`: a
+    `create` with no id gets `crypto.randomUUID()` instead of the shared `'guid'`, and a
+    notification's `close` handler acts only while the registry still holds that notification, so
+    one replaced under the same id neither removes its replacement's entry nor reports an
+    `onClosed` nobody caused. Reason: two id-less notifications replaced each other, and the
+    asynchronous `close` of a replaced one deleted the entry of the notification that replaced it,
+    after which `clear` could no longer close that one.
+67. **`chrome.runtime.openOptionsPage()` shows the open options tab.** `src/browser/impl.ts`: the
+    optional `activateTabShowing(url)`, true when a tab already shows `url` and was brought to the
+    front; `src/browser/api/runtime.ts`'s `openOptionsPage` asks it before opening a tab. The file
+    also takes type-only imports and `documentOrigin?: string | undefined`, so the root tsconfig
+    accepts it when a unit test imports it. Reason: every call opened another options tab.
 
 `partition.ts` is reached only through the virtual specifier `src/main/extensions/
 electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and
@@ -829,8 +841,8 @@ electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file'
 tsconfig (verbatimModuleSyntax, exactOptionalPropertyTypes) are therefore not patched: nothing in
 `src/` opens it directly, and `vendor/tsconfig.json`'s own, looser check already covers it as
 authored. `browser/index.ts`, `router.ts`, `api/cookies.ts`, `api/tabs.ts`, `api/web-navigation.ts`,
-`api/windows.ts`, `store.ts`, `api/browser-action.ts`, `popup.ts` and `api/notifications.ts` are
-the exceptions: patches 13-14, 16-20 and 21-31 above make them satisfy the root tsconfig too, so
+`api/windows.ts`, `store.ts`, `api/browser-action.ts`, `popup.ts`, `api/runtime.ts` and
+`api/notifications.ts` are the exceptions: patches 13-14, 16-20, 21-31 and 67 above make them satisfy the root tsconfig too, so
 `src/main/extensions/tests/` can unit-test the sender-id, permission and host-access patches
 directly against the real files, instead of only against a same-shaped local fake. `context.ts`
 and `api/common.ts`/`impl.ts` sit on the same import path and needed no patch of their own: measured,

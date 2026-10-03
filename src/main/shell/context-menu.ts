@@ -2,7 +2,7 @@
 // clicked decides which groups show. Electron shows no menu at all unless one
 // is built.
 import { clipboard, Menu } from 'electron'
-import type { BaseWindow, ContextMenuParams, MenuItemConstructorOptions, WebContents } from 'electron'
+import type { BaseWindow, ContextMenuParams, MenuItem, MenuItemConstructorOptions, WebContents } from 'electron'
 import type { CommandId } from '../shortcuts/commands.js'
 import { engineLabelFor } from './context-menu-text.js'
 import { startNavigation } from './leave-page-prompt.js'
@@ -73,6 +73,8 @@ export interface ContextMenuHost {
   readonly fullAddresses?: { readonly on: () => boolean, readonly toggle: () => void }
   /** Opens developer tools at a point of the page. Absent where they are not allowed: the menu then has no Inspect. */
   readonly inspect?: (x: number, y: number) => void
+  /** What a feature adds below the page's own items, for a tab's menu: a kiosk and a bare page get none. */
+  readonly extraItems?: (params: ContextMenuParams) => readonly MenuItem[]
 }
 
 export function showContextMenu (wc: WebContents, params: ContextMenuParams, host: ContextMenuHost): void {
@@ -138,6 +140,8 @@ export function showContextMenu (wc: WebContents, params: ContextMenuParams, hos
     }
   }
   const template = contextMenuTemplate(params, actions, host.inspect !== undefined, context)
-  if (template.length === 0) return
-  Menu.buildFromTemplate(template).popup({ window: host.window, ...(params.frame !== null ? { frame: params.frame } : {}) })
+  const extra = host.page === undefined || kiosk || context.bare ? [] : host.extraItems?.(params) ?? []
+  if (template.length === 0 && extra.length === 0) return
+  const items: Array<MenuItemConstructorOptions | MenuItem> = extra.length === 0 || template.length === 0 ? [...template, ...extra] : [...template, { type: 'separator' }, ...extra]
+  Menu.buildFromTemplate(items).popup({ window: host.window, ...(params.frame !== null ? { frame: params.frame } : {}) })
 }

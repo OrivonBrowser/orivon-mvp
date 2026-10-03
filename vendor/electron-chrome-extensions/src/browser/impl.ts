@@ -29,6 +29,12 @@ export interface ChromeExtensionImpl {
    */
   windowOf?(contents: Electron.WebContents): Electron.BaseWindow | undefined
 
+  /**
+   * Orivon patch (UPSTREAM.md patch 67): when a tab already shows `url`, brings it to the front
+   * and answers true. `chrome.runtime.openOptionsPage()` asks before it opens a tab.
+   */
+  activateTabShowing?(url: string): boolean
+
   requestPermissions?(
     extension: Electron.Extension,
     permissions: chrome.permissions.Permissions,

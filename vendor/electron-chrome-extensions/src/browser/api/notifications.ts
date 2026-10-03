@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { app, Notification } from 'electron'
 import type { Extension } from 'electron'
 import type { ExtensionContext } from '../context'
@@ -85,7 +86,7 @@ export class NotificationsAPI {
     let opts: chrome.notifications.NotificationOptions
 
     if (typeof arg1 === 'object') {
-      id = 'guid' // TODO: generate uuid
+      id = randomUUID()
       opts = arg1 as chrome.notifications.NotificationOptions
     } else if (typeof arg1 === 'string') {
       id = arg1
@@ -147,6 +148,9 @@ export class NotificationsAPI {
     })
 
     notification.once('close', () => {
+      // Orivon patch (UPSTREAM.md patch 66): a notification replaced under the same id closes
+      // after its replacement is registered, and must neither remove that entry nor be reported.
+      if (this.registry.get(notificationId) !== notification) return
       const byUser = true // TODO
       this.ctx.router.sendEvent(extension.id, 'notifications.onClosed', id, byUser)
       this.registry.delete(notificationId)
