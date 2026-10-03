@@ -93,6 +93,30 @@ describe('the question handler', () => {
     expect(r.results).toEqual([{ response: 0, checkboxChecked: false }])
   })
 
+  it('takes the letters typed into a question\'s own text box as its answer, so Enter right after them answers', () => {
+    const r = rig(normaliseSpec({ kind: 'confirm', message: 'Your name?', buttons: ['OK', 'Cancel'], cancelId: 1, guarded: [0], input: { initial: '' } }))
+    r.handler.show?.({ id: r.id })
+    draw(r)
+    r.clock.now += GUARD_MS
+    for (const key of ['A', 'd', 'a']) {
+      r.handler.key?.({ key, isAutoRepeat: false })
+      r.clock.now += 50
+    }
+    r.handler.key?.({ key: 'Enter', isAutoRepeat: false })
+    r.handler.request({ id: r.id, button: 0, text: 'Ada' })
+    expect(r.results).toEqual([{ response: 0, checkboxChecked: false, text: 'Ada' }])
+  })
+
+  it('still waits after a Tab in a question with a text box', () => {
+    const r = rig(normaliseSpec({ kind: 'confirm', message: 'Your name?', buttons: ['OK', 'Cancel'], cancelId: 1, guarded: [0], input: { initial: '' } }))
+    r.handler.show?.({ id: r.id })
+    draw(r)
+    r.clock.now += GUARD_MS
+    r.handler.key?.({ key: 'Tab', isAutoRepeat: false })
+    r.handler.request({ id: r.id, button: 0, text: 'x' })
+    expect(r.results).toEqual([])
+  })
+
   it('lets one Enter on the focused button answer, once the keys before it have been quiet', () => {
     const r = rig()
     r.handler.show?.({ id: r.id })
