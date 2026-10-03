@@ -11,12 +11,12 @@ import { dirname, join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import type { Session } from 'electron'
 import { createDnrEngine, type DnrEngine } from './dnr/dnr-engine.js'
-import { loadStaticRulesets, parseRuleResources, readDynamicRules, readEnabledRulesetOverride } from './dnr/dnr-runner.js'
+import { loadStaticRulesets, parseRuleResources, readBadgeCountMode, readDynamicRules, readEnabledRulesetOverride } from './dnr/dnr-runner.js'
 import { buildActionAccess } from './dnr/host-permissions.js'
 import { readExtensionManifest } from '../../broker/policy/extension-manifest.js'
 import { readRegistry } from './registry-runner.js'
 import type { InstalledExtension } from './registry.js'
-import { clearExtensionMatchLog } from './dnr-match-log.js'
+import { clearExtensionMatchLog, setDisplayActionCountAsBadgeText } from './dnr-match-log.js'
 
 /** Chrome requires either permission for `chrome.declarativeNetRequest` to
  * exist at all; `declarativeNetRequestFeedback` alone (no base permission)
@@ -66,6 +66,8 @@ function loadExtensionIntoEngine(engine: DnrEngine, entry: InstalledExtension): 
   engine.setActionAccess(entry.id, buildActionAccess(entry.stripped.permissions, hostAccessPatternsFor(entry)))
 
   const slotDir = slotDirFor(entry)
+  const badgeCount = readBadgeCountMode(slotDir)
+  if (badgeCount !== undefined) setDisplayActionCountAsBadgeText(entry.id, badgeCount)
   const resources = parseRuleResources(entry.stripped.declarativeNetRequest)
   const enabledOverride = readEnabledRulesetOverride(slotDir)
   try {

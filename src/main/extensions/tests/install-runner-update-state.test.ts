@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { join } from 'node:path'
 import { writeFileSync } from 'node:fs'
 import { installFromFolder } from '../install-runner.js'
@@ -39,6 +39,31 @@ describe('what an update or reinstall keeps of the entry it replaces', () => {
       const second = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)
       expect(second.installed && second.entry.enabled).toBe(true)
       expect(loaded.size).toBe(1)
+    })
+  })
+})
+
+describe('the install date of an extension that updates', () => {
+  afterEach(() => { vi.useRealTimers() })
+
+  it('stays the first install\'s, so the order that decides who gets a shared shortcut holds', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const source = writeFixtureFolder(root, FIXTURE_MANIFEST)
+      const { session } = fakeSession()
+      vi.useFakeTimers({ now: 1_000_000, toFake: ['Date'] })
+      const first = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)
+      expect(first.installed).toBe(true)
+
+      vi.setSystemTime(2_000_000)
+      writeFileSync(join(source, 'manifest.json'), JSON.stringify({ ...FIXTURE_MANIFEST, version: '2.0.0' }))
+      const second = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)
+      expect(second.installed).toBe(true)
+      if (!second.installed) return
+
+      expect(second.entry.installedAt).toBe(1_000_000)
+      expect(second.entry.updatedAt).toBe(2_000_000)
+      expect(readRegistry(userDataPath)[0]).toMatchObject({ installedAt: 1_000_000, updatedAt: 2_000_000 })
     })
   })
 })

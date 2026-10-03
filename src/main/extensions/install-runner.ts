@@ -29,6 +29,7 @@ import { reconcileGrants } from './granted-reconcile.js'
 import type { ExtensionPrefsStore } from './extension-prefs.js'
 import { readBaseManifestText, restoreBaseManifest, writeBaseManifest } from './effective-manifest-runner.js'
 import { refusePrivateInstall } from './install-private.js'
+import { takeEnabledRulesetOverride, writeEnabledRulesetOverride } from './dnr/dnr-runner.js'
 import { generateId } from '../../../vendor/electron-chrome-web-store/src/browser/id.js'
 
 // resolveSlotKey moved to registry-runner.ts (key.pub is persisted
@@ -179,6 +180,9 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
   if (ctx.prefs !== undefined) reconcileGrants(ctx.prefs, id, manifest)
   const loadedText = ctx.prefs === undefined ? baseText : manifestText(effectiveManifest(manifest, ctx.prefs.get(id)))
 
+  // Set when the update drops the enabled-ruleset choice below, for a failed load to put back.
+  let droppedRulesetChoice: string[] | null = null
+
   const asideDir = existsSync(targetDir) ? `${targetDir}.old-${randomBytes(6).toString('hex')}` : undefined
   if (asideDir !== undefined) renameSync(targetDir, asideDir)
 
@@ -194,6 +198,7 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
    * cleaned up. */
   async function restoreAsideOnFailure (): Promise<void> {
     restoreBaseManifest(slotDir, previousBase)
+    if (droppedRulesetChoice !== null) writeEnabledRulesetOverride(slotDir, droppedRulesetChoice)
     if (asideDir === undefined) {
       rmSync(targetDir, { recursive: true, force: true })
       const previous = previousInSlot[0]
@@ -224,13 +229,16 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
     name: facts.name,
     version: facts.version,
     enabled,
-    installedAt: now,
+    installedAt: replaced?.installedAt ?? now,
     updatedAt: now,
     source: pending.source,
     updater: pending.updater,
     path: targetDir,
     stripped
   }
+
+  // A new version starts from the rulesets its manifest enables; the dynamic rules stay.
+  if (enabled && replaced !== undefined && replaced.version !== facts.version) droppedRulesetChoice = takeEnabledRulesetOverride(slotDir)
 
   if (enabled) {
     // Handed to the declarativeNetRequest service BEFORE loadExtension: the

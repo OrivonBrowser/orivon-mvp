@@ -78,7 +78,7 @@ describe('install-runner and the declarativeNetRequest service', () => {
     })
   })
 
-  it('uninstall clears the slot\'s persisted dynamic rules and enabled-ruleset choice, but keeps key.pub', async () => {
+  it('uninstall clears the slot\'s persisted dynamic rules, enabled-ruleset and badge-count choices, but keeps key.pub', async () => {
     await withTempDir(async (root) => {
       const ctx = { userDataPath: join(root, 'u'), session: fakeSession(), prompt: ALWAYS_ALLOW }
       const outcome = await installFromFolder(ctx, writeFolder(root))
@@ -87,13 +87,16 @@ describe('install-runner and the declarativeNetRequest service', () => {
       const slotDir = dirname(outcome.entry.path)
       const dynamic = join(slotDir, 'dnr-dynamic.json')
       const enabled = join(slotDir, 'dnr-enabled-rulesets.json')
+      const badge = join(slotDir, 'dnr-badge-count.json')
       writeFileSync(dynamic, '[]')
       writeFileSync(enabled, '[]')
+      writeFileSync(badge, 'true')
 
       await uninstall(ctx, outcome.entry.id)
 
       expect(existsSync(dynamic)).toBe(false)
       expect(existsSync(enabled)).toBe(false)
+      expect(existsSync(badge)).toBe(false)
       expect(existsSync(join(slotDir, 'key.pub'))).toBe(true)
     })
   })
@@ -104,6 +107,57 @@ describe('install-runner and the declarativeNetRequest service', () => {
       const outcome = await installFromFolder(ctx, writeFolder(root))
       if (!outcome.installed) throw new Error('install refused')
       await expect(uninstall(ctx, outcome.entry.id)).resolves.toBeUndefined()
+    })
+  })
+})
+
+describe('install-runner and the rulesets an update enables', () => {
+  async function installed (root: string, version: string, ctx: InstallContext, folder: string): Promise<{ slotDir: string }> {
+    writeFileSync(join(folder, 'manifest.json'), JSON.stringify({ ...MANIFEST, version }))
+    const outcome = await installFromFolder(ctx, folder)
+    if (!outcome.installed) throw new Error('install refused')
+    return { slotDir: dirname(outcome.entry.path) }
+  }
+
+  it('drops the enabled-ruleset choice when the version changes, and keeps the dynamic rules', async () => {
+    await withTempDir(async (root) => {
+      const ctx = { userDataPath: join(root, 'u'), session: fakeSession(), prompt: ALWAYS_ALLOW }
+      const folder = writeFolder(root)
+      const { slotDir } = await installed(root, '1.0.0', ctx, folder)
+      writeFileSync(join(slotDir, 'dnr-enabled-rulesets.json'), '["old"]')
+      writeFileSync(join(slotDir, 'dnr-dynamic.json'), '[]')
+
+      await installed(root, '2.0.0', ctx, folder)
+
+      expect(existsSync(join(slotDir, 'dnr-enabled-rulesets.json'))).toBe(false)
+      expect(existsSync(join(slotDir, 'dnr-dynamic.json'))).toBe(true)
+    })
+  })
+
+  it('keeps the choice on a reinstall of the same version', async () => {
+    await withTempDir(async (root) => {
+      const ctx = { userDataPath: join(root, 'u'), session: fakeSession(), prompt: ALWAYS_ALLOW }
+      const folder = writeFolder(root)
+      const { slotDir } = await installed(root, '1.0.0', ctx, folder)
+      writeFileSync(join(slotDir, 'dnr-enabled-rulesets.json'), '["old"]')
+
+      await installed(root, '1.0.0', ctx, folder)
+
+      expect(readFileSync(join(slotDir, 'dnr-enabled-rulesets.json'), 'utf8')).toBe('["old"]')
+    })
+  })
+
+  it('puts the choice back when the new version fails to load', async () => {
+    await withTempDir(async (root) => {
+      const folder = writeFolder(root)
+      const { slotDir } = await installed(root, '1.0.0', { userDataPath: join(root, 'u'), session: fakeSession(), prompt: ALWAYS_ALLOW }, folder)
+      writeFileSync(join(slotDir, 'dnr-enabled-rulesets.json'), '["old"]')
+
+      const failing = { userDataPath: join(root, 'u'), session: fakeSession(true), prompt: ALWAYS_ALLOW }
+      writeFileSync(join(folder, 'manifest.json'), JSON.stringify({ ...MANIFEST, version: '2.0.0' }))
+      await expect(installFromFolder(failing, folder)).rejects.toThrow('boom')
+
+      expect(readFileSync(join(slotDir, 'dnr-enabled-rulesets.json'), 'utf8')).toBe('["old"]')
     })
   })
 })
