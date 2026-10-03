@@ -92,8 +92,11 @@ export function placeBookmarks (store: BookmarkSink, source: SourceBookmarks, fo
     return { total, imported, known: 0, target: 'bar' }
   }
   // Something imported by an earlier run may sit at the top of the bar or of Other bookmarks, where an empty store puts it.
-  const bar = pruneKnown(store, ['bar'], usable.bar)
-  const other = pruneKnown(store, ['other'], usable.other)
+  // Or in an earlier run's folder: flat when one side of the source was empty then, else in its two sub-folders.
+  const earlier = store.children('bar').filter((node) => node.kind === 'folder' && node.title === folderTitle)
+  const inEarlier = (side: string): string[] => earlier.flatMap((wrapper) => [wrapper.id, ...store.children(wrapper.id).filter((node) => node.kind === 'folder' && node.title === side).map((node) => node.id)])
+  const bar = pruneKnown(store, inEarlier('Bookmarks bar'), pruneKnown(store, ['bar'], usable.bar))
+  const other = pruneKnown(store, inEarlier('Other bookmarks'), pruneKnown(store, ['other'], usable.other))
   const contents: BookmarkTreeInput[] = bar.length > 0 && other.length > 0
     ? [{ kind: 'folder', title: 'Bookmarks bar', children: bar }, { kind: 'folder', title: 'Other bookmarks', children: other }]
     : [...bar, ...other]

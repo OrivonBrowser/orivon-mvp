@@ -35,7 +35,9 @@ export class HistoryService {
     private readonly store: HistoryStore,
     private readonly settings: Pick<SettingsStore, 'get' | 'onChange'>,
     private readonly problem: string | null = null,
-    private readonly now: () => number = Date.now
+    private readonly now: () => number = Date.now,
+    /** History was cleared from `from` to `to`: what else remembers pages visited then (the recently closed tabs) forgets them too. */
+    private readonly forgotten: (from: number, to: number) => void = () => {}
   ) {
     settings.onChange(({ key }) => {
       if (key === 'history.retentionDays') this.prune()
@@ -137,12 +139,14 @@ export class HistoryService {
   removeRange (from: number, to: number): void {
     this.store.removeRange(from, to)
     this.offeredIcons.clear()
+    this.forgotten(from, to)
     this.notify('entries')
   }
 
   clear (): void {
     this.store.clear()
     this.offeredIcons.clear()
+    this.forgotten(-Infinity, Infinity)
     this.notify('entries')
   }
 

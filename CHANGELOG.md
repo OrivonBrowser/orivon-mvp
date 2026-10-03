@@ -255,6 +255,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **Data the browser keeps stays kept**: the identity seed is saved on a fresh profile, clearing history clears Recently closed,
+  a failed save is retried, re-importing adds no duplicate bookmarks, and an early star is not lost at start-up.
 - **The browser's own pages keep up**: removing the default search engine gives the built-in default back, Clear data
   empties the site-data list, History and Import notice history turned on, and Profiles and Extensions keep the keyboard.
 - **The keyboard goes to the page after Enter or Escape in the address bar**, a tab switch with the bar focused shows that

@@ -170,12 +170,10 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
     if (key === 'appearance.bookmarksBar') onBookmarksChanged()
   })
   const stopWatchingParts = watchStateParts(context, pushState)
-  // Loading is non-blocking -- no bookmarks bar for one frame on a slow
-  // disk beats delaying the whole window on a non-essential feature. It
-  // goes through onBookmarksChanged, not pushState: a profile that HAS
-  // bookmarks grows the chrome by a row the moment they land. The store
-  // reads its file once for every window, so a later window's call settles
-  // at once.
+  // The process loads the store before its first window (index.ts), so this
+  // settles at once; it goes through onBookmarksChanged, not pushState, so a
+  // window made before the load (a test's) still grows the chrome by a row
+  // when the bookmarks land.
   void bookmarks.load().then(onBookmarksChanged)
 
   return {

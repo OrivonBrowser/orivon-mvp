@@ -57,6 +57,20 @@ describe('placeBookmarks into a store that has bookmarks', () => {
     expect(second.tree.nodes.size).toBe(before)
   })
 
+  it('adds no copy of the pages an earlier run put in its folder when the source\'s other bookmarks went from empty to full, or back', () => {
+    const sink = filled()
+    placeBookmarks(sink, { bar: [page('A'), folder('News', page('B'))], other: [] }, 'Imported from Chrome')
+    const grown = placeBookmarks(sink, { bar: [page('A'), folder('News', page('B'))], other: [page('C')] }, 'Imported from Chrome')
+    expect(grown).toMatchObject({ imported: 1, known: 2 })
+    const pages = (): number => [...sink.tree.nodes.values()].filter((node) => node.kind === 'url').length
+    expect(pages()).toBe(4)
+
+    const shrunk = filled()
+    placeBookmarks(shrunk, { bar: [page('A')], other: [page('C')] }, 'Imported from Chrome')
+    const again = placeBookmarks(shrunk, { bar: [page('A')], other: [] }, 'Imported from Chrome')
+    expect(again).toMatchObject({ imported: 0, known: 1 })
+  })
+
   it('adds only the new pages to the same folder when the source has grown', () => {
     const sink = filled()
     placeBookmarks(sink, { bar: [page('A')], other: [] }, 'Imported from Chrome')

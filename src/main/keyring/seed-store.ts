@@ -8,7 +8,8 @@
 // wiring over Electron's own `safeStorage`.
 
 import { randomBytes } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 
 /** The one shape this file needs from Electron's `safeStorage` -- the
@@ -131,6 +132,8 @@ export class SeedStore {
 
   async #writeSeed (seed: Uint8Array): Promise<void> {
     const ciphertext = await this.#safeStorage.encryptStringAsync(Buffer.from(seed).toString('hex'))
+    // A fresh profile has no directory for the seed yet; without it the write fails and every start gets a new identity.
+    mkdirSync(dirname(this.#path), { recursive: true, mode: 0o700 })
     writeFileAtomic(this.#path, JSON.stringify({ version: FILE_VERSION, ciphertext: ciphertext.toString('base64') }))
   }
 
