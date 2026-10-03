@@ -2,19 +2,22 @@
 // listener per event per session -- a second `session.webRequest.onXxx(...)`
 // call for a session that already has one SILENTLY REPLACES it, with no
 // warning -- so any two features that each called Electron's own
-// `onBeforeRequest`/`onBeforeSendHeaders`/`onHeadersReceived` directly on
-// the same session would fight over which one actually runs, and whoever
-// registered last would win. `webRequestOwnerFor(session)` is the one place
-// that ever calls those three methods on a session it covers; everyone else
-// registers a handler with it instead, and ./web-request-compose.ts is what
-// actually combines them. See README.md's Design notes for which sessions
-// still register directly (never this one), and for why each handler also
+// `onBeforeRequest`/`onBeforeSendHeaders`/`onHeadersReceived` (or one of the
+// five observer events) directly on the same session would fight over which
+// one actually runs, and whoever registered last would win.
+// `webRequestOwnerFor(session)` is the one place that ever calls those
+// methods on a session it covers; everyone else registers a handler with it
+// instead, and ./web-request-compose.ts is what actually combines the three
+// that answer. See README.md's Design notes for which sessions still
+// register directly (never this one), and for why each handler also
 // declares a `WebRequestFilter` rather than leaving Electron's own listener
 // unfiltered.
 
 import type { Session, WebRequestFilter } from 'electron'
 import type {
-  CallbackResponse, OnBeforeRequestListenerDetails, OnBeforeSendHeadersListenerDetails, OnHeadersReceivedListenerDetails
+  CallbackResponse, OnBeforeRedirectListenerDetails, OnBeforeRequestListenerDetails, OnBeforeSendHeadersListenerDetails,
+  OnCompletedListenerDetails, OnErrorOccurredListenerDetails, OnHeadersReceivedListenerDetails,
+  OnResponseStartedListenerDetails, OnSendHeadersListenerDetails
 } from 'electron'
 import { composeWebRequest } from './web-request-compose.js'
 import type { OrderedHandler } from './web-request-compose.js'
@@ -47,6 +50,9 @@ export type BeforeRequestHandler = OrderedHandler<OnBeforeRequestListenerDetails
 export type BeforeSendHeadersHandler = OrderedHandler<OnBeforeSendHeadersListenerDetails, RequestHeadersResult>['run']
 export type HeadersReceivedHandler = OrderedHandler<OnHeadersReceivedListenerDetails, ResponseHeadersResult>['run']
 
+/** An observer event's handler: it sees the request and answers nothing. */
+export type ObserverHandler<Details> = (details: Details) => void
+
 /** Returned by each registration call, for a caller whose own need to see
  * an event comes and goes (`../extensions/dnr-webrequest.ts`: dNR must see
  * every URL while any loaded extension holds a `declarativeNetRequest*`
@@ -66,7 +72,16 @@ export interface WebRequestOwner {
   readonly onBeforeRequest: (order: number, filter: WebRequestFilter, matches: (url: string) => boolean, run: BeforeRequestHandler) => WebRequestHandlerHandle
   readonly onBeforeSendHeaders: (order: number, filter: WebRequestFilter, matches: (url: string) => boolean, run: BeforeSendHeadersHandler) => WebRequestHandlerHandle
   readonly onHeadersReceived: (order: number, filter: WebRequestFilter, matches: (url: string) => boolean, run: HeadersReceivedHandler) => WebRequestHandlerHandle
+  /** The five events that only report. Every matching handler runs, in no
+   * particular order, and none can change the request. */
+  readonly onSendHeaders: ObserverRegistration<OnSendHeadersListenerDetails>
+  readonly onResponseStarted: ObserverRegistration<OnResponseStartedListenerDetails>
+  readonly onBeforeRedirect: ObserverRegistration<OnBeforeRedirectListenerDetails>
+  readonly onCompleted: ObserverRegistration<OnCompletedListenerDetails>
+  readonly onErrorOccurred: ObserverRegistration<OnErrorOccurredListenerDetails>
 }
+
+export type ObserverRegistration<Details> = (filter: WebRequestFilter, matches: (url: string) => boolean, run: ObserverHandler<Details>) => WebRequestHandlerHandle
 
 function logHandlerError (event: string, error: unknown, order: number): void {
   console.error(`[web-request-owner] a ${event} handler (order ${String(order)}) failed; passing the request through as the previous handler left it`, error)
@@ -99,15 +114,19 @@ interface Registered<Details, Result> extends OrderedHandler<Details, Result> {
   readonly filter: WebRequestFilter
 }
 
+interface RegisteredObserver<Details> {
+  readonly filter: WebRequestFilter
+  readonly matches: (url: string) => boolean
+  readonly run: ObserverHandler<Details>
+}
+
 /** Pushes `entry` onto `list`, re-registers Electron's own listener via
  * `reRegister` (the new union may need a broader filter now), and returns
- * the handle that later takes it back out -- the one add/remove shape all
- * three events share (`onBeforeRequest`/`onBeforeSendHeaders`/
- * `onHeadersReceived` below), so there is exactly one place this logic is
- * written. */
-function addHandler<Details, Result> (
-  list: Array<Registered<Details, Result>>,
-  entry: Registered<Details, Result>,
+ * the handle that later takes it back out -- the one add/remove shape every
+ * event shares, so there is exactly one place this logic is written. */
+function addHandler<Entry extends { readonly filter: WebRequestFilter }> (
+  list: Entry[],
+  entry: Entry,
   reRegister: () => void
 ): WebRequestHandlerHandle {
   list.push(entry)
@@ -121,6 +140,39 @@ function addHandler<Details, Result> (
       }
     }
   }
+}
+
+/** Registers (or, with `null`, unregisters) one observer event's Electron listener. */
+type ObserverRegistrar<Details> = (registration: { filter: WebRequestFilter, listener: (details: Details) => void } | null) => void
+
+/** One observer event's list and its Electron listener: registered with the
+ * union filter while any handler exists, unregistered when none does. A
+ * throwing handler is logged and the rest still run. */
+function makeObserverEvent<Details extends { readonly url: string }> (
+  event: string,
+  register: ObserverRegistrar<Details>
+): ObserverRegistration<Details> {
+  const list: Array<RegisteredObserver<Details>> = []
+  const reRegister = (): void => {
+    if (list.length === 0) {
+      register(null)
+      return
+    }
+    register({
+      filter: unionFilter(list.map((h) => h.filter)),
+      listener: (details) => {
+        for (const handler of list.slice()) {
+          if (!handler.matches(details.url)) continue
+          try {
+            handler.run(details)
+          } catch (error) {
+            console.error(`[web-request-owner] an ${event} handler failed`, error)
+          }
+        }
+      }
+    })
+  }
+  return (filter, matches, run) => addHandler(list, { filter, matches, run }, reRegister)
 }
 
 function makeOwner (target: Session): WebRequestOwner {
@@ -185,7 +237,28 @@ function makeOwner (target: Session): WebRequestOwner {
     })
   }
 
+  const { webRequest } = target
   return {
+    onSendHeaders: makeObserverEvent<OnSendHeadersListenerDetails>('onSendHeaders', (r) => {
+      if (r === null) webRequest.onSendHeaders(null)
+      else webRequest.onSendHeaders(r.filter, r.listener)
+    }),
+    onResponseStarted: makeObserverEvent<OnResponseStartedListenerDetails>('onResponseStarted', (r) => {
+      if (r === null) webRequest.onResponseStarted(null)
+      else webRequest.onResponseStarted(r.filter, r.listener)
+    }),
+    onBeforeRedirect: makeObserverEvent<OnBeforeRedirectListenerDetails>('onBeforeRedirect', (r) => {
+      if (r === null) webRequest.onBeforeRedirect(null)
+      else webRequest.onBeforeRedirect(r.filter, r.listener)
+    }),
+    onCompleted: makeObserverEvent<OnCompletedListenerDetails>('onCompleted', (r) => {
+      if (r === null) webRequest.onCompleted(null)
+      else webRequest.onCompleted(r.filter, r.listener)
+    }),
+    onErrorOccurred: makeObserverEvent<OnErrorOccurredListenerDetails>('onErrorOccurred', (r) => {
+      if (r === null) webRequest.onErrorOccurred(null)
+      else webRequest.onErrorOccurred(r.filter, r.listener)
+    }),
     onBeforeRequest (order, filter, matches, run) {
       return addHandler(beforeRequest, { order, matches, run, filter }, registerBeforeRequest)
     },

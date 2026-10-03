@@ -113,6 +113,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   `orivon.net.listen`; `https.createServer` still refuses.
 - **Content blockers.** MV3 blockers such as uBlock Origin Lite block ads and trackers: Orivon applies their
   `declarativeNetRequest` rules itself, with Firefox's matcher, and shows each one's per-tab count on its badge.
+- **Full uBlock Origin blocks**: Orivon serves extensions' `chrome.webRequest` listeners itself, blocking ones included
+  for MV2 extensions, so blockers built on it cancel, redirect and rewrite requests as in Chrome.
 - **Chrome extensions.** Install from the Chrome Web Store, a `.crx`/`.zip` file or a folder, and manage them at
   `orivon://extensions`, which always says who updates each one. Content scripts, service workers, toolbar buttons,
   popups and options pages work on every website and on apps holding permissions, whose `window.orivon` refuses extension code.
@@ -248,6 +250,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - **The subsystem registry, the parallel-work system and the human entry path**: README,
   ARCHITECTURE, CONTRIBUTING and a README in every directory.
 - **AGPL-3.0-only licence.**
+- **`npm run dev` starts on a fresh profile every launch** and deletes it at the end, so it behaves as a first run and runs
+  beside an open Orivon; `npm start` keeps your real profile. `npm run dev -- --user-data-dir=<dir>` keeps one across launches.
 
 ### Fixed
 
@@ -256,6 +260,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - **A port bundled against a pnpm-installed checkout gets a working `crypto`**: the shim bundler now finds its own
   dependencies by their real paths, so The Lounge's server no longer crashes on `createHash is not a function`.
 - **`npm run check:advisories` runs on Windows**: it spawns `npm audit` through the same `.cmd`-aware launcher.
+- **`npm run dev -- <switch>` passes the switch to Electron**, as `npm run dev -- --password-store=basic` needs; it was dropped.
 - **`npm run dev` and `npm start` start on Windows again**: Node refuses to spawn an npm `.cmd` shim without a shell, so the
   launch and build scripts exited 1 with nothing on screen; they now run the shim through cmd.exe and print a failed launch.
 - **An app opened from `ipfs://` or a `.eth` name asks for its grants again over slow gateways**: its install gave up when a

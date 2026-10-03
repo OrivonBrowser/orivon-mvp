@@ -60,6 +60,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - The browser asks every question in a panel inside the tab, not an OS window: grants, installs, alert/confirm/prompt, leaving a page.
 - FreeTube plays video: a cleanup closed routed sockets mid-read under garbage collection. AdBlock and uBlock Origin Lite now run too.
 - 35 reported bugs worked: tab drops, window moves, reload, popups, bookmark folders, print, .eth pages, sign-in loop; two native crashes fixed.
+- Full uBlock Origin now blocks: Orivon serves extensions' webRequest listeners itself; the ad-block test page went from 10 to 90 of 132.
 - The Lounge is pinned on IPFS from our own node and runs end to end from ipfs:// in Orivon; thelounge.orivonstack.eth comes next.
 
 ### In my head

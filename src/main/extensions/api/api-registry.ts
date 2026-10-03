@@ -3,6 +3,7 @@
 // once before the first extension loads.
 import { actionUserSettingsApi } from '../action-pins-runner.js'
 import { permissionsApi } from '../permissions-api.js'
+import { webRequestApi } from '../web-request-api.js'
 import type { ExtensionApiModule } from './api-types.js'
 import { bookmarksApi } from './bookmarks-api.js'
 import { commandsApi } from './commands-api.js'
@@ -18,5 +19,6 @@ export const EXTENSION_APIS: readonly ExtensionApiModule[] = [
   permissionsApi,
   runtimeApi,
   searchApi,
-  topSitesApi
+  topSitesApi,
+  webRequestApi
 ]

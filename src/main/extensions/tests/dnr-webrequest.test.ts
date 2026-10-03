@@ -12,13 +12,11 @@ vi.mock('../extensions-dnr.js', () => ({
 import {
   applyRequestHeaders,
   applyResponseHeaders,
-  frameIdOf,
-  initiatorOf,
   installDnrWebRequestHandlers,
-  parentFrameIdOf,
   toHttpsUrl,
   toScopedRequest,
 } from '../dnr-webrequest.js'
+import { frameIdOf, initiatorOf, parentFrameIdOf } from '../request-frames.js'
 
 function fakeSession(): { session: Session, webRequest: Record<'onBeforeRequest' | 'onBeforeSendHeaders' | 'onHeadersReceived', ReturnType<typeof vi.fn>> } {
   const webRequest = {
