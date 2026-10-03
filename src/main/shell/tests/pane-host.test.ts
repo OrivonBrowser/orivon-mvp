@@ -174,4 +174,123 @@ describe('PaneHost', () => {
 
     expect(children).toEqual(['X', 'A2', 'B', 'chrome', 'popover'])
   })
+
+  describe('hold', () => {
+    it('keeps the pane that leaves attached, puts the new pane under it, and takes the old off at release', () => {
+      const { host, children, view } = setup()
+      const contentView = (host as unknown as { contentView: { addChildView: (v: never) => void } }).contentView
+      contentView.addChildView(view('chrome') as never)
+      host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
+      contentView.addChildView(view('popover') as never)
+
+      host.hold()
+      host.show([{ id: 'b', view: view('B') as never, bounds: B(0) }])
+      expect(children).toEqual(['chrome', 'B', 'A', 'popover'])
+      expect(host.isShown('a')).toBe(false)
+      expect(host.isShown('b')).toBe(true)
+      expect(view('B').setBounds).toHaveBeenLastCalledWith(B(0))
+
+      host.release()
+      expect(children).toEqual(['chrome', 'B', 'popover'])
+    })
+
+    it('does not hold anything once released: the next change takes the old pane off at once', () => {
+      const { host, children, view } = setup()
+      host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
+      host.hold()
+      host.release()
+      host.show([{ id: 'b', view: view('B') as never, bounds: B(0) }])
+      expect(children).toEqual(['B'])
+    })
+
+    it('goes back to the held pane in place when it is wanted again, and does not take it off at release', () => {
+      const { host, children, view } = setup()
+      host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
+      host.hold()
+      host.show([{ id: 'b', view: view('B') as never, bounds: B(0) }])
+      host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
+      host.release()
+      expect(children).toEqual(['A'])
+      expect(host.isShown('a')).toBe(true)
+    })
+
+    it('takes a held pane off when its tab goes away, and a held backdrop at release', () => {
+      const { host, children, view } = setup()
+      host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }, { id: 'c', view: view('C') as never, bounds: B(100) }], { id: 'backdrop', view: view('X') as never, bounds: B(0) })
+      host.hold()
+      host.show([{ id: 'b', view: view('B') as never, bounds: B(0) }])
+      expect(children).toContain('X')
+      host.hide('a')
+      expect(children).not.toContain('A')
+      host.release()
+      expect(children).toEqual(['B'])
+    })
+  })
+})
+
+describe('PaneHost settling a pane whose page did not take its size', () => {
+  const pane = (view: unknown, bounds = B(0)) => ({ id: 'a', view: view as never, bounds })
+  const withLayout = (sizes: Array<{ width: number, height: number } | null>): { host: PaneHost, view: { name: string, setBounds: ReturnType<typeof vi.fn> }, reads: ReturnType<typeof vi.fn> } => {
+    const { host: plain, view } = setup()
+    const reads = vi.fn(async () => await Promise.resolve(sizes.shift() ?? { width: 100, height: 100 }))
+    const contentView = (plain as unknown as { contentView: never }).contentView
+    return { host: new PaneHost(contentView, reads), view: view('A'), reads }
+  }
+
+  it('makes the view one pixel wider and puts it back when the page lays out at another size', async () => {
+    vi.useFakeTimers()
+    try {
+      const { host, view, reads } = withLayout([{ width: 400, height: 300 }])
+      host.show([pane(view)])
+      expect(reads).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(300)
+      expect(reads).toHaveBeenCalledTimes(1)
+      expect(view.setBounds).toHaveBeenLastCalledWith({ ...B(0), width: 101 })
+      await vi.advanceTimersByTimeAsync(300)
+      expect(view.setBounds).toHaveBeenLastCalledWith(B(0))
+      expect(reads).toHaveBeenCalledTimes(2)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('leaves a pane alone whose page lays out at its size, and one it cannot read', async () => {
+    vi.useFakeTimers()
+    try {
+      const { host, view } = withLayout([{ width: 101, height: 99 }])
+      host.show([pane(view)])
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(view.setBounds).toHaveBeenCalledTimes(1)
+      const unread = withLayout([null])
+      unread.host.show([pane(unread.view)])
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(unread.view.setBounds).toHaveBeenCalledTimes(1)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('does not check a pane that was already on screen, or one taken off before the check', async () => {
+    vi.useFakeTimers()
+    try {
+      const { host, view, reads } = withLayout([])
+      host.show([pane(view)])
+      await vi.advanceTimersByTimeAsync(300)
+      host.show([pane(view, B(50))])
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(reads).toHaveBeenCalledTimes(1)
+      host.hide('a')
+      host.show([pane(view)])
+      host.hide('a')
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(reads).toHaveBeenCalledTimes(1)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('gives up after a few tries when the page never takes the size', async () => {
+    vi.useFakeTimers()
+    try {
+      const wrong = { width: 400, height: 300 }
+      const { host, view, reads } = withLayout([wrong, wrong, wrong, wrong, wrong])
+      host.show([pane(view)])
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(reads).toHaveBeenCalledTimes(3)
+    } finally { vi.useRealTimers() }
+  })
 })

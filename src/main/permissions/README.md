@@ -13,7 +13,7 @@
 
 Both popups share their `WebContentsView` lifecycle through `popover-view.ts`: it closes a popup on blur, on Escape
 (each page asks main to close it over its own channel) and when another popup opens, hands the keyboard back to the tab in front
-when the popup held it, and keys a toggle by the icon that asked, so the key and the shield swap one page for the other. Rows take an
+when the popup held it, and keys a toggle by the icon that asked, so the key and the shield swap one page for the other. A re-click on the icon that opened it is judged by the stamped press it completes (`../shell/press-stamps.ts`), so a slow click closes the popup and leaves it closed. Rows take an
 optional displayed Website level; at Level 4 their warnings are gone
 ([`ADR-0037`](../../../docs/decisions/ADR-0037-a-level-4-site-s-grants-are-shown-without-warnings.md)).
 
@@ -31,7 +31,7 @@ types), [`../../loader/`](../../loader/) (`index.ts`, `manifest/manifest.ts`),
 `extensionNamesForOrigin` (`site-info-controller.ts` only -- the extensions disclosure,
 `docs/planning/extensions-exploration.md`),
 [`../sessions/notification-decisions.ts`](../sessions/notification-decisions.ts),
-`../shell/renderer-entry.ts`, `../shell/lock-navigation.ts`, `../shell/shell-session.ts`,
+`../shell/renderer-entry.ts`, `../shell/lock-navigation.ts`, `../shell/press-stamps.ts`, `../shell/shell-session.ts`,
 `../shell/theme-colors.ts`, `../shell/view-background-test-hook.ts`,
 `../ipc/permissions-ipc.ts`, `../ipc/site-info-ipc.ts`, the top-level
 `channels.ts`/`registry.ts`, `node:fs/promises`, `node:path`.

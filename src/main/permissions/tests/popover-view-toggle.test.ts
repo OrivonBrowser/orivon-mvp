@@ -122,6 +122,47 @@ describe('a toolbar icon\'s toggle while a popup it did not open is showing or j
   })
 })
 
+describe('a click judged by the press it completes', () => {
+  afterEach(() => { vi.useRealTimers() })
+
+  it('a button held for longer than the debounce still closes the popup and leaves it closed', () => {
+    vi.useFakeTimers()
+    const { popover, attached } = setup()
+    popover.toggle(ANCHOR, [], 'main')
+    last().handlers.get('blur')?.()
+    vi.advanceTimersByTime(8)
+    const pressedAt = Date.now()
+    vi.advanceTimersByTime(900)
+    popover.toggle(ANCHOR, [], 'main', pressedAt)
+    expect(views).toHaveLength(1)
+    expect(attached()).toBe(0)
+  })
+
+  it('a second click whose press came after the close opens the popup again', () => {
+    vi.useFakeTimers()
+    const { popover, attached } = setup()
+    popover.toggle(ANCHOR, [], 'main')
+    last().handlers.get('blur')?.()
+    vi.advanceTimersByTime(150)
+    popover.toggle(ANCHOR, [], 'main', Date.now() - 20)
+    expect(views).toHaveLength(2)
+    expect(attached()).toBe(1)
+  })
+
+  it('a click with no press keeps the debounce', () => {
+    vi.useFakeTimers()
+    const { popover } = setup()
+    popover.toggle(ANCHOR, [], 'main')
+    last().handlers.get('blur')?.()
+    vi.advanceTimersByTime(100)
+    popover.toggle(ANCHOR, [], 'main')
+    expect(views).toHaveLength(1)
+    vi.advanceTimersByTime(300)
+    popover.toggle(ANCHOR, [], 'main')
+    expect(views).toHaveLength(2)
+  })
+})
+
 describe('focus when a popup closes', () => {
   it('goes back to the active tab when the popup held it', () => {
     const tab = { isDestroyed: () => false, focus: vi.fn() }

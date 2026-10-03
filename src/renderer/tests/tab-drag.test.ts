@@ -106,6 +106,18 @@ describe('a tab held by the pointer', () => {
     expect(dragStarted).toHaveBeenCalledExactlyOnceWith('tab-1')
   })
 
+  it.each([1, 2])('starts no drag, so no capture of the page, when it is pressed with button %i and moved', async (button) => {
+    vi.stubGlobal('window', { addEventListener: vi.fn(), innerWidth: 800 })
+    const { makeTabDraggable } = await import('../tab-drag.js')
+    const dragStarted = vi.fn()
+    const tab = fakeTab()
+    makeTabDraggable(tab.el, 'tab-1', { ...host(vi.fn()), dragStarted })
+
+    tab.fire('pointerdown', { button })
+    tab.fire('pointermove', { clientX: 60, clientY: 10 })
+    expect(dragStarted).not.toHaveBeenCalled()
+  })
+
   it('gives main a point only once the tab is torn out, matching the .torn class', async () => {
     vi.stubGlobal('window', { addEventListener: vi.fn(), innerWidth: 800 })
     const { makeTabDraggable } = await import('../tab-drag.js')

@@ -71,7 +71,8 @@ export interface OverlayHandler {
 /** `ShellWindow.overlays`. */
 export interface OverlayHost {
   show: (name: string, anchor?: OverlayAnchor, payload?: unknown) => void
-  toggle: (name: string, anchor?: OverlayAnchor, payload?: unknown) => void
+  /** `pressedAt`, when the toggle is the click of a press the person made, is that press's time on main's clock (see ../shell/press-stamps.ts): the toggle is then the echo of a blur-close that happened at or after it, however long the button was held. */
+  toggle: (name: string, anchor?: OverlayAnchor, payload?: unknown, pressedAt?: number) => void
   /** Without a name, closes every popup. */
   close: (name?: string) => void
   isOpen: (name: string) => boolean

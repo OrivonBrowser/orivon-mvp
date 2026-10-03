@@ -18,6 +18,9 @@ export function createCluster (): ChromeModule {
   }
 
   function wireMenu (menuBtn: HTMLButtonElement, ctx: ChromeContext): void {
+    // A press on this button takes the focus the open menu holds and closes it; main stamps the press so the click that
+    // follows reads as that same gesture however long the button was held. A key has no press.
+    menuBtn.addEventListener('pointerdown', (event) => { if (event.button === 0) ctx.shell.press('menu') })
     menuBtn.addEventListener('click', () => { ctx.shell.openMenu(ctx.anchorFor(menuBtn)) })
     // Builds the menu's (kept-warm) view ahead of the click that usually follows a hover or a keyboard
     // tab-stop, so opening it then costs no more than attaching an already-live view -- never at window
@@ -50,6 +53,7 @@ export function createCluster (): ChromeModule {
       // The all-sites popup: always the full list, scrolled to whichever app the CURRENT tab is when there is
       // one. A URL that belongs to no app is harmless -- settings/main.ts finds no card to scroll to and
       // renders the list unscrolled, which is the ordinary open.
+      permissionsBtn.addEventListener('pointerdown', (event) => { if (event.button === 0) shell.press('permissions') })
       permissionsBtn.addEventListener('click', () => {
         const active = ctx.activeTab()
         shell.openPermissions(ctx.anchorFor(permissionsBtn), hasSite(active) ? active.url : undefined)

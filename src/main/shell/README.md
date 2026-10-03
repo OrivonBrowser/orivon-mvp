@@ -17,12 +17,12 @@ the `{ window, services }` pair a hook or an overlay handler receives.
 live-document counter. `tab-order.ts` is where a tab sits in the strip, `tab-move.ts` moves one between windows keeping the
 same page (and is where a dragged tab's cross-window target -- which window's strip, and where in it -- is
 worked out from the tab centres `strip-centres.ts` reads off the target window's chrome page, shared by the actual move and by `tear-drag.ts`'s own mark), `tab-menu.ts` is its right-click
-menu (and `context-menu.ts` the menu a page gets: `context-menu-groups.ts` holds one function per group, `context-menu-text.ts` cleans what a page controls before it reaches a label, `paste-and-go.ts` is the address bar's clipboard submit), and `window-actions.ts` is what the chrome's buttons and menus ask of their window, and `chrome-actions.ts`
+menu (and `context-menu.ts` the menu a page gets: `context-menu-groups.ts` holds one function per group, `context-menu-text.ts` cleans what a page controls before it reaches a label, `paste-and-go.ts` is the address bar's clipboard submit), and `window-actions.ts` is what the chrome's buttons and menus ask of their window (`press-stamps.ts` stamps, with main's clock, the press on a popup's button so the click that follows is judged by it), and `chrome-actions.ts`
 (with `actions/`) is where a chrome module's own call to main lands.
 `tear-drag.ts` is the floating preview a tab shows once torn out of its strip, and the mark it leaves on
 whichever window's strip it is dragged over. Split view: `split-model.ts` is the arithmetic and the groups
 of joined tabs, `split-controller.ts` plans which views show where, `pane-host.ts` puts them on screen in
-that order, `split-frame.ts` is the view behind two panes, and `split-drop.ts` says where a dragged tab
+that order (and, while a new-tab page draws its first frame, `first-paint.ts` tells `tab-panes.ts` when, so the page in front stays until then), `split-frame.ts` is the view behind two panes, and `split-drop.ts` says where a dragged tab
 would split the page. `intro-state.ts` and `intro-view.ts` are the welcome screen. `shell-installers.ts` runs each feature directory's installer at start, and `sheet-backdrop.ts` paints the shell's own surface colour behind a sheet that sits over a tab with no background of its own. `tab-backing.ts` picks a view's pre-paint colour when a navigation starts, and `window-backing.ts` keeps the window behind the views in the colour of the tab shown.
 `first-window.ts` decides what a cold start opens (the window's last place, the addresses on the command line, a kiosk's page) and `home.ts` is what Home opens.
 The rest answer what a page asks of its window: popups become tabs, HTML fullscreen, the
