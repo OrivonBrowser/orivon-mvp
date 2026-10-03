@@ -216,11 +216,14 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
   }
 
   const now = Date.now()
+  const replaced = previousInSlot.find((existing) => existing.id === id)
+  // An update or reinstall keeps the person's choice: a disabled extension is written and registered, never loaded.
+  const enabled = replaced?.enabled ?? true
   const entry: InstalledExtension = {
     id,
     name: facts.name,
     version: facts.version,
-    enabled: true,
+    enabled,
     installedAt: now,
     updatedAt: now,
     source: pending.source,
@@ -229,47 +232,48 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
     stripped
   }
 
-  // Handed to the declarativeNetRequest service BEFORE loadExtension: the
-  // registry write below only lands after the load resolves, so its own
-  // 'extension-loaded' listener would otherwise find no entry (a fresh
-  // install) or the previous one (an update). extensions-dnr.ts has the
-  // full account.
-  registerPendingDnrInstall(entry)
-  // Parked before the load because the extension's worker starts during it and asks once.
-  const replaced = previousInSlot.find((existing) => existing.id === id)
-  registerPendingInstalled(id, replaced === undefined ? { reason: 'install' } : { reason: 'update', previousVersion: replaced.version })
+  if (enabled) {
+    // Handed to the declarativeNetRequest service BEFORE loadExtension: the
+    // registry write below only lands after the load resolves, so its own
+    // 'extension-loaded' listener would otherwise find no entry (a fresh
+    // install) or the previous one (an update). extensions-dnr.ts has the
+    // full account.
+    registerPendingDnrInstall(entry)
+    // Parked before the load because the extension's worker starts during it and asks once.
+    registerPendingInstalled(id, replaced === undefined ? { reason: 'install' } : { reason: 'update', previousVersion: replaced.version })
 
-  let loaded: Awaited<ReturnType<Session['extensions']['loadExtension']>>
-  try {
-    loaded = await ctx.session.extensions.loadExtension(targetDir, { allowFileAccess: false })
-  } catch (error) {
-    // Left in place, the pending entry would be taken for the previous
-    // version that restoreAsideOnFailure may reload under this same id.
-    clearPendingDnrInstall(id)
-    clearPendingInstalled(id)
-    await restoreAsideOnFailure()
-    throw error
-  }
-
-  // Belt and suspenders on top of resolveInstallKey's own canonicalization:
-  // Electron derives its own id from the manifest `key` this function just
-  // wrote, independently of the `id` this function computed for its own
-  // slot/registry bookkeeping above. The two must agree, or the copy just
-  // loaded is rolled back the same way a failed load is -- an id that
-  // slipped past canonicalization some other way must never be registered
-  // under a name it does not actually run as.
-  if (loaded.id !== id) {
-    clearPendingDnrInstall(id)
-    clearPendingInstalled(id)
-    ctx.session.extensions.removeExtension(loaded.id)
-    // Loading under an installed extension's id replaced it in the session: load that one back.
-    const displaced = readRegistry(ctx.userDataPath).find((existing) => existing.id === loaded.id && existing.enabled)
-    if (displaced !== undefined) {
-      await ctx.session.extensions.loadExtension(displaced.path, { allowFileAccess: false })
-        .catch((error: unknown) => { console.error('[extensions] could not reload the extension a refused install displaced', displaced.id, error) })
+    let loaded: Awaited<ReturnType<Session['extensions']['loadExtension']>>
+    try {
+      loaded = await ctx.session.extensions.loadExtension(targetDir, { allowFileAccess: false })
+    } catch (error) {
+      // Left in place, the pending entry would be taken for the previous
+      // version that restoreAsideOnFailure may reload under this same id.
+      clearPendingDnrInstall(id)
+      clearPendingInstalled(id)
+      await restoreAsideOnFailure()
+      throw error
     }
-    await restoreAsideOnFailure()
-    return { installed: false, reason: 'install refused: the loaded extension\'s id does not match its resolved key' }
+
+    // Belt and suspenders on top of resolveInstallKey's own canonicalization:
+    // Electron derives its own id from the manifest `key` this function just
+    // wrote, independently of the `id` this function computed for its own
+    // slot/registry bookkeeping above. The two must agree, or the copy just
+    // loaded is rolled back the same way a failed load is -- an id that
+    // slipped past canonicalization some other way must never be registered
+    // under a name it does not actually run as.
+    if (loaded.id !== id) {
+      clearPendingDnrInstall(id)
+      clearPendingInstalled(id)
+      ctx.session.extensions.removeExtension(loaded.id)
+      // Loading under an installed extension's id replaced it in the session: load that one back.
+      const displaced = readRegistry(ctx.userDataPath).find((existing) => existing.id === loaded.id && existing.enabled)
+      if (displaced !== undefined) {
+        await ctx.session.extensions.loadExtension(displaced.path, { allowFileAccess: false })
+          .catch((error: unknown) => { console.error('[extensions] could not reload the extension a refused install displaced', displaced.id, error) })
+      }
+      await restoreAsideOnFailure()
+      return { installed: false, reason: 'install refused: the loaded extension\'s id does not match its resolved key' }
+    }
   }
 
   // Re-reads the registry inside the lock rather than reusing the `registry`

@@ -255,6 +255,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **Updating or reloading a disabled extension keeps it disabled**: "Update", Developer mode's "Reload" and a newer `.crx` or `.zip`
+  write the new version and leave the extension switched off, as it was set.
 - **Extension events can be unsubscribed**: removing a `chrome.tabs`, `windows` or `webNavigation` listener really stops it,
   repeated removals no longer silence the extension's other listeners, and `hasListener` answers instead of throwing.
 - **A failed save of an update check no longer quits the browser**: a store extension's check result that cannot be written is logged.
