@@ -1,7 +1,7 @@
 // What is on screen for the tabs: which views show, where, and which pane a
 // press in a page chose. The tab collection decides which tab is in front;
 // this puts the plan (./split-controller.ts) on the window through PaneHost.
-import type { View, WebContentsView } from 'electron'
+import type { View, WebContents, WebContentsView } from 'electron'
 import { PaneHost } from './pane-host.js'
 import type { LayoutSizeOf, PageShownOf } from './pane-host.js'
 import type { SplitController } from './split-controller.js'
@@ -11,6 +11,7 @@ export interface TabPanesHost {
   readonly contentView: View
   readonly splits: SplitController
   readonly record: (id: string) => TabRecord | undefined
+  readonly records: () => Iterable<readonly [string, TabRecord]>
   readonly activeId: () => string | null
   readonly setActiveId: (id: string) => void
   readonly area: () => Bounds
@@ -48,6 +49,28 @@ const pageShown: PageShownOf = async (view) => {
 export class TabPanes extends PaneHost {
   constructor (private readonly deps: TabPanesHost) {
     super(deps.contentView, pageLayoutSize, pageShown)
+    this.onShownChange(() => { this.announce() })
+  }
+
+  /** Tells the lifecycle seam which of the window's tabs are on screen now (./tab-visibility.ts tells each page). */
+  private announce (): void {
+    const { deps } = this
+    const lifecycle = deps.shell?.tabLifecycle
+    if (lifecycle === undefined || deps.isClosing()) return
+    // Runs inside the hide that closes a tab: what it announces is advice to the pages, and a fault in it must
+    // never end that close, nor the browser with it (an uncaught throw in main exits).
+    try {
+      const tabs: Array<{ contents: WebContents, shown: boolean }> = []
+      for (const [id, record] of deps.records()) {
+        // A tab on its way out can have no page left: Electron leaves a closed view's webContents undefined.
+        const contents = record.view.webContents as WebContents | undefined
+        if (contents === undefined || contents.isDestroyed()) continue
+        tabs.push({ contents, shown: this.isShown(id) })
+      }
+      lifecycle.shownChanged(deps.shell?.window, tabs)
+    } catch (error) {
+      console.error('[tabs] could not say which tabs are on screen', error)
+    }
   }
 
   /** Shows `view` for a tab whose view was swapped, in the tab's pane. */

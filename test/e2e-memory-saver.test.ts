@@ -239,8 +239,10 @@ it('keeps a tab awake that plays sound, is pinned, holds typed input or is on a 
     expect(await activeId(chrome)).toBe(form)
     if (SHOTS !== undefined) await themed(toastPage(app) as Page, 'toast-unsaved')
 
-    // A site on the list, and its idle tab: the pass leaves it, and the command says so.
+    // A site on the list, and its idle tab: the pass leaves it, and the command says so. Loading outranks a kept
+    // site among the reasons, and the address shows before the load stops, so the load is waited out first.
     const kept = await openTab(chrome, '/p/kept')
+    expect(await waitFor(async () => await app.evaluate(({ webContents }, url) => webContents.getAllWebContents().some((wc) => wc.getURL() === url && !wc.isLoading()), `${origin}/p/kept`))).toBe(true)
     expect(await sleepNow(app, { [kept]: 60 * MIN, [tone]: 60 * MIN, [pinned]: 60 * MIN, [form]: 60 * MIN })).toEqual([])
     await runCommand(chrome, 'tab.sleep')
     expect(await waitForToast(app, 'This site is set to stay awake.')).toBe(true)

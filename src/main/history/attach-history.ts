@@ -27,9 +27,15 @@ export function historyAddress (url: string): string | null {
  * could have made by moving through it. */
 const IN_PAGE_INTERVAL_MS = 1000
 
+/** Title changes kept per page reached, as Chrome keeps: enough for a page that names itself late, while one that
+ * keeps retitling itself (an unread count, a clock) is not written down twice a second for as long as it is open. */
+export const MAX_TITLES_PER_PAGE = 5
+
 export function attachHistory (contents: WebContents, history: HistoryService, host: HistoryHost, now: () => number = Date.now): void {
   let lastInPage = -Infinity
+  let titlesKept = 0
   const visit = (url: string): void => {
+    titlesKept = 0
     if (contents.isDestroyed() || !host.recordable(contents)) return
     const address = historyAddress(url)
     if (address !== null) history.visit(address, contents.getTitle())
@@ -45,7 +51,8 @@ export function attachHistory (contents: WebContents, history: HistoryService, h
     visit(url)
   })
   contents.on('page-title-updated', (_event, title) => {
-    if (contents.isDestroyed() || !host.recordable(contents)) return
+    if (titlesKept >= MAX_TITLES_PER_PAGE || contents.isDestroyed() || !host.recordable(contents)) return
+    titlesKept += 1
     const address = historyAddress(contents.getURL())
     if (address !== null) history.titled(address, title)
   })

@@ -2,6 +2,7 @@
 // client is off when a run switches it off, that the verifier is not running
 // when its process dies, and recovers once the shell restarts it; and, with
 // the client on but every beacon API unreachable, it says it failed and why.
+// The verifier host runs only once a .eth address is needed, so each run types one.
 // Hermetic: HERMETIC_RESOLVER makes every mainnet name unresolvable, which is
 // what forces the failure without contacting anything.
 import { afterAll, expect, it } from 'vitest'
@@ -34,6 +35,13 @@ async function lightClient (panel: Page): Promise<{ state: string, summary: stri
   }))
 }
 
+/** Types a .eth name into the address bar without pressing Enter, which is what starts the verifier host ahead of the request. */
+async function typeEthAddress (app: ElectronApplication): Promise<void> {
+  const chrome = findChrome(app)
+  await chrome.click('#address')
+  await chrome.fill('#address', 'status-check.eth')
+}
+
 async function verifierPid (app: ElectronApplication): Promise<number | undefined> {
   return await app.evaluate(({ app: electronApp }) => electronApp.getAppMetrics().find((m) => m.type === 'Utility' && m.name === 'Orivon verifier')?.pid)
 }
@@ -42,6 +50,11 @@ it('shows the light client off, down when its process dies, and back once it res
   await runPhase('light-client-off', async (check) => {
     const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
     try {
+      await waitFor(() => app.windows().length === 2)
+      await waitForAddressBarStable(findChrome(app))
+      const idleBefore = await verifierPid(app) === undefined
+      check('no verifier host runs before a .eth address is opened', idleBefore)
+      await typeEthAddress(app)
       const panel = await openPermissions(app)
       const off = await waitFor(async () => (await lightClient(panel)).state === 'Off', 15_000)
       check(`switched off for the test run, Settings says Off (${JSON.stringify(await lightClient(panel))})`, off)
@@ -55,7 +68,7 @@ it('shows the light client off, down when its process dies, and back once it res
       check(`killing it shows Not running, pushed while the panel is open (${JSON.stringify(await lightClient(panel))})`, down)
       const back = await waitFor(async () => (await lightClient(panel)).state === 'Off' && await verifierPid(app) !== undefined, 15_000)
       check('the shell restarts it, and Settings recovers', back)
-      expect([off, down, back]).toEqual([true, true, true])
+      expect([off, idleBefore, down, back]).toEqual([true, true, true, true])
     } finally {
       await closeElectronApp(app, APP_CLOSE_RACE_MS)
     }
@@ -77,10 +90,15 @@ it('shows the light client failed, and why, when no beacon API can be reached', 
     const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env: { ORIVON_ETH_LIGHT_CLIENT: 'on' }, seedProfile: seedFreshCheckpoint })
     try {
       const panel = await openPermissions(app)
-      const failed = await waitFor(async () => (await lightClient(panel)).state === 'Failed', 45_000)
-      const shown = await lightClient(panel)
+      const waiting = await waitFor(async () => (await lightClient(panel)).state === 'Waiting', 15_000)
+      const waitingShown = await lightClient(panel)
+      check(`before any .eth address, Settings says Waiting and that it is on, not failed or stopped (${JSON.stringify(waitingShown)})`, waiting && /^On, and waiting/.test(waitingShown.summary) && await verifierPid(app) === undefined)
+      await typeEthAddress(app)
+      const opened = await openPermissions(app)
+      const failed = await waitFor(async () => (await lightClient(opened)).state === 'Failed', 45_000)
+      const shown = await lightClient(opened)
       check(`Settings says Failed with a reason and a retry (${JSON.stringify(shown)})`, failed && /Failed: .+\. Trying again/.test(shown.summary))
-      expect(failed).toBe(true)
+      expect([waiting, failed]).toEqual([true, true])
     } finally {
       await closeElectronApp(app, APP_CLOSE_RACE_MS)
     }

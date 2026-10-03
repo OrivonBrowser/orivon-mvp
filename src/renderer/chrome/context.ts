@@ -35,8 +35,10 @@ export interface ChromeModule {
   event?: (payload: unknown, ctx: ChromeContext) => void
 }
 
-/** Adds to a tab's element after the strip built it. The strip is rebuilt on every push, so a decorator
- * re-adds what it draws each time. */
+/** Adds to a tab's element. The element lives as long as its tab; the strip returns it to its plain look and calls
+ * every decorator again whenever the tab, its place among the others, its group or the active tab changes, so a
+ * decorator draws everything it owns each time, from the tab, `state.tabs`, `state.groups` and `state.activeTabId`
+ * alone. It leaves the tab's icon (`.fav`) to the strip, except to replace its content. */
 export type TabDecorator = (el: HTMLElement, tab: TabState, state: ShellState, ctx: ChromeContext) => void
 
 // TS control-flow narrowing does not persist into closures (event listener callbacks, functions declared

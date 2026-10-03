@@ -9,7 +9,7 @@ regression check, not a guard, it drives a real Electron app, and it is owned by
 stream rather than `packaging` ([`parallel-work.md`](../docs/development/parallel-work.md)).
 It lives here because `npm run smoke` is where people look for it.
 
-**What it depends on.** `node:*` builtins — plus, for `smoke.mjs` only, `playwright` via
+**What it depends on.** `node:*` builtins — plus, for `smoke.mjs` and `perf-probe.mjs` only, `playwright` via
 [`test/launch-electron.mjs`](../test/launch-electron.mjs), and, for `install-electron.mjs`
 only, the `electron` package's own `install.js`.
 
@@ -31,6 +31,7 @@ code it guards could be disabled by the change it exists to catch.
 | `install-electron.mjs` | **Not a guard.** Fetches Electron's binary on `postinstall`, because electron 44 no longer ships a postinstall hook of its own and electron-vite fails with a bare `Electron uninstall` without it. `ELECTRON_SKIP_BINARY_DOWNLOAD=1` opts out; `npm run install:electron` re-runs it alone |
 | `smoke.mjs` | The shell actually launches and works, driven with real clicks |
 | `probe-view-visibility.mjs` | **Not a guard.** Every view that is on screen is shown: launches the built shell with a debugger on its main process only (no Playwright, which would keep every page visible), switches, splits, sleeps, moves and opens panels, and reads each view's `visibilityState` and a `requestAnimationFrame` round trip. Exit 1 names the steps that left a view hidden |
+| `perf-probe.mjs` | **Not a guard.** `npm run perf:probe`: per-process CPU and memory of the built app through fixed scenes (idle, 10 and 31 tabs, a retitling tab, a 300-image load), for comparing a hot-path change before and after. Linux only; loopback only unless `--light-client` |
 | `devlog-cron.sh` | The Sunday devlog job |
 
 **Reading `npm run smoke` output:** it prints a JSON result and a failure list. **Read those,

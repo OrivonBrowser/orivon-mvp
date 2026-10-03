@@ -7,8 +7,8 @@ import type { CheckpointChoice } from './checkpoint.js'
 import type { LightClientState } from '../../protocols/verifier-host/protocol.js'
 
 export interface LightClientView {
-  /** One word for the badge: off, starting, syncing, synced, failed. */
-  readonly state: LightClientState['state'] | 'down'
+  /** One word for the badge: off, waiting, starting, syncing, synced, failed, down. `waiting`: on, with no host running until a .eth address needs it. */
+  readonly state: LightClientState['state'] | 'down' | 'waiting'
   /** The sentence under it. */
   readonly summary: string
   readonly checkpoint: string
@@ -26,6 +26,8 @@ export interface VerifierFacts {
   readonly lightClient: LightClientState
   readonly checkpoint: CheckpointChoice | undefined
   readonly hostDown: string | undefined
+  /** No host process is running and nothing has failed: it has not been needed yet, or it slept after going unused. */
+  readonly hostAsleep: boolean
   readonly switchedOff: boolean
   readonly endpoints: {
     readonly executionRpcs: readonly string[]
@@ -69,6 +71,7 @@ function summaryOf (facts: VerifierFacts, now: number): { state: LightClientView
   if (facts.hostDown !== undefined) return { state: 'down', summary: `The verifier is not running: ${facts.hostDown}.` }
   if (facts.switchedOff) return { state: 'off', summary: 'Switched off. No .eth name can be verified, so none loads.' }
   if (facts.checkpoint !== undefined && !facts.checkpoint.ok) return { state: 'failed', summary: 'Not started: it needs a recent checkpoint to start from.' }
+  if (facts.hostAsleep) return { state: 'waiting', summary: 'On, and waiting. It starts when a .eth address is opened, and stops again after ten minutes without one.' }
   const s = facts.lightClient
   switch (s.state) {
     case 'off': return { state: 'off', summary: 'Not running.' }

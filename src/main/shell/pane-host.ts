@@ -32,10 +32,21 @@ export class PaneHost {
   private readonly settling = new Map<string, ReturnType<typeof setTimeout>>()
   private mending: ReturnType<typeof setTimeout> | undefined
   private backdrop: View | null = null
+  private readonly changeListeners = new Set<() => void>()
 
   /** `layoutSizeOf`, when given, lets a pane that went on screen be checked against its bounds (`settle`); `pageShownOf`, that
    * each pane on screen is shown (`mend`). */
   constructor (private readonly contentView: View, private readonly layoutSizeOf?: LayoutSizeOf, private readonly pageShownOf?: PageShownOf) {}
+
+  /** Called after a change to which tabs are on screen (not after a pane is only resized). Returns the removal. */
+  onShownChange (listener: () => void): () => void {
+    this.changeListeners.add(listener)
+    return () => { this.changeListeners.delete(listener) }
+  }
+
+  private shownChanged (): void {
+    for (const listener of this.changeListeners) listener()
+  }
 
   /** Shows exactly these panes, sized, with `backdrop` behind them when there is one.
    *
@@ -48,10 +59,12 @@ export class PaneHost {
    * its place unless it is genuinely new to the screen or its view changed. */
   show (panes: readonly PaneView[], backdrop: PaneView | null = null): void {
     const wanted = new Map(panes.map((pane) => [pane.id, pane.view]))
+    let changed = false
     for (const [id, view] of this.shown) {
       if (wanted.get(id) === view) continue
       this.contentView.removeChildView(view)
       this.forget(id)
+      changed = true
     }
     const nextBackdrop = backdrop?.view ?? null
     if (this.backdrop !== nextBackdrop) {
@@ -74,12 +87,14 @@ export class PaneHost {
         attached = true
         attachShown(this.contentView, pane.view, ordered ? this.slotFor(panes, at, nextBackdrop) : undefined, this.onScreenOver(panes.slice(at + 1).map((other) => other.view)))
         this.shown.set(pane.id, pane.view)
+        changed = true
         this.settle(pane.id, pane.view, SETTLE_TRIES)
       }
       this.placed.set(pane.id, pane.bounds)
       pane.view.setBounds(pane.bounds)
     })
     if (attached && panes.length > 1) this.mend(MEND_TRIES)
+    if (changed) this.shownChanged()
   }
 
   /** Two panes side by side can leave one hidden while the other is shown: a page that commits a document, or a pane put
@@ -173,10 +188,17 @@ export class PaneHost {
 
   /** Takes a tab's view off the screen (it is going away, or being swapped for another). */
   hide (id: string): void {
+    if (this.takeOff(id)) this.shownChanged()
+  }
+
+  /** `hide` without the announcement, for a view that `replace` puts another in the place of at once. Whether a pane
+   * was on screen. */
+  takeOff (id: string): boolean {
     const view = this.shown.get(id)
-    if (view === undefined) return
+    if (view === undefined) return false
     this.contentView.removeChildView(view)
     this.forget(id)
+    return true
   }
 
   /** Shows `view` for a pane that is on screen already under another view, in the same place: the old view's
@@ -185,13 +207,14 @@ export class PaneHost {
   replace (id: string, view: View, bounds: Bounds): void {
     const old = this.shown.get(id)
     const index = old === undefined ? -1 : this.contentView.children.indexOf(old)
-    this.hide(id)
+    this.takeOff(id)
     attachShown(this.contentView, view, index === -1 ? undefined : index, this.onScreenOver([...this.shown].filter(([other]) => other !== id).map(([, other]) => other)))
     this.shown.set(id, view)
     this.placed.set(id, bounds)
     view.setBounds(bounds)
     this.settle(id, view, SETTLE_TRIES)
     this.mend(MEND_TRIES)
+    this.shownChanged()
   }
 
   /** A pane's page committed a new document, which can give it a fresh renderer view that lays itself out at a

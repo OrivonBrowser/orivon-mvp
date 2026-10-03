@@ -1,5 +1,6 @@
 // Registered in `../shell/shell-installers.ts`: starts the memory saver once the shell's services exist.
 import { powerMonitor } from 'electron'
+import { isMemoryLow } from './memory-pressure.js'
 import type { ShellInstaller } from '../shell/shell-installers.js'
 import type { SettingKey } from '../settings/schema.js'
 import { sleepTab } from './sleep-tab.js'
@@ -26,6 +27,15 @@ function onBattery (): boolean {
   }
 }
 
+/** Whether the computer is short of memory; a platform that cannot say reads as not short. */
+function memoryLow (): boolean {
+  try {
+    return isMemoryLow(process.getSystemMemoryInfo())
+  } catch {
+    return false
+  }
+}
+
 export const installMemorySaver: ShellInstaller = {
   name: 'memory-saver',
   install: (_app, services) => {
@@ -41,6 +51,7 @@ export const installMemorySaver: ShellInstaller = {
       findTab: (contents) => services.windows.findTab(contents),
       settings: read,
       onBattery,
+      memoryLow,
       now: () => Date.now(),
       sleep: async (tabs, id) => await sleepTab(tabs, id),
       onSettingChange: (listener) => settings.onChange((change) => { if (KEYS.includes(change.key)) listener() }),

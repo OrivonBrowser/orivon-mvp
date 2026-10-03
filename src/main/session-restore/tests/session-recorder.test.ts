@@ -28,10 +28,11 @@ function fake (name: string): Fake {
   return { shell, base, name, push: (state) => { listener?.(state) } }
 }
 
-function fakeSession (): SessionLog & { source: SessionSource | null, changed: ReturnType<typeof vi.fn>, finish: ReturnType<typeof vi.fn> } {
+function fakeSession (): SessionLog & { source: SessionSource | null, changed: ReturnType<typeof vi.fn>, titlesChanged: ReturnType<typeof vi.fn>, finish: ReturnType<typeof vi.fn> } {
   const session = {
     source: null as SessionSource | null,
     changed: vi.fn(),
+    titlesChanged: vi.fn(),
     finish: vi.fn(),
     load: async () => {},
     previous: () => null,
@@ -74,6 +75,25 @@ describe('the session recorder', () => {
     session.changed.mockClear()
     windows[0]?.push({ activeTabId: 't', tabs: [{ url: 'https://a.example/', title: 'A', pinned: false, loading: true }] })
     expect(session.changed).toHaveBeenCalledTimes(1)
+  })
+
+  it('writes a page\'s first title at an address promptly and its later ones through the slower title write', () => {
+    const { windows, session } = setup(['a'])
+    const push = (url: string, title: string): void => { windows[0]?.push({ activeTabId: 't', tabs: [{ id: 't', url, title, pinned: false }] }) }
+    push('https://a.example/', 'https://a.example/')
+    session.changed.mockClear()
+    push('https://a.example/', '(1) Inbox')
+    expect(session.changed).toHaveBeenCalledTimes(1)
+    expect(session.titlesChanged).not.toHaveBeenCalled()
+    push('https://a.example/', '(2) Inbox')
+    push('https://a.example/', '(3) Inbox')
+    expect(session.changed).toHaveBeenCalledTimes(1)
+    expect(session.titlesChanged).toHaveBeenCalledTimes(2)
+    push('https://a.example/sent', 'https://a.example/sent')
+    expect(session.changed).toHaveBeenCalledTimes(2)
+    push('https://a.example/sent', 'Sent')
+    expect(session.changed).toHaveBeenCalledTimes(3)
+    expect(session.titlesChanged).toHaveBeenCalledTimes(2)
   })
 
   it('ignores a tab state that changes only in what the file does not hold', () => {

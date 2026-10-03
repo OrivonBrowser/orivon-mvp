@@ -2,12 +2,14 @@
 // signals, third-party cookie blocking and HTTPS-only as handlers on the
 // default session's one web-request owner (never on `session.webRequest`,
 // which a second registration would silently replace), the warning sheet's
-// wiring, the storage-access answer and secure DNS. Every handler reads its
-// setting per request, so a change in Settings takes effect on the next request.
+// wiring, the storage-access answer and secure DNS. A handler is on the owner only
+// while a setting needs it, and still reads its setting per request: a change in
+// Settings registers or removes it before the next request.
 import { session } from 'electron'
 import type { ShellInstaller } from '../shell/shell-installers.js'
 import { isDevEthName } from '../dev/eth-resolver.js'
 import { requestSlot } from '../overlays/tab-slots.js'
+import { handlerWhileNeeded } from '../sessions/handler-while-needed.js'
 import { webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import { siteAsks } from '../sessions/site-asks.js'
 import { upgradeTracker } from './https-fallback.js'
@@ -43,9 +45,22 @@ export const installPrivacyNet: ShellInstaller = {
     })
 
     const owner = webRequestOwnerFor(session.defaultSession)
-    owner.onBeforeRequest(HTTPS_ORDER, { urls: ['http://*/*'], types: ['mainFrame'] }, PLAIN_ADDRESS, handlers.beforeRequest)
-    owner.onBeforeSendHeaders(PRIVACY_ORDER, WEB, WEB_ADDRESS, handlers.beforeSendHeaders)
-    owner.onHeadersReceived(PRIVACY_ORDER, WEB, WEB_ADDRESS, handlers.headersReceived)
+    const { settings } = services
+    const blockingCookies = (): boolean => settings.get('privacy.cookies') === 'blockThirdParty'
+    const wanted = [
+      handlerWhileNeeded(
+        () => settings.get('privacy.httpsOnly') === true,
+        () => owner.onBeforeRequest(HTTPS_ORDER, { urls: ['http://*/*'], types: ['mainFrame'] }, PLAIN_ADDRESS, handlers.beforeRequest)
+      ),
+      handlerWhileNeeded(
+        () => settings.get('privacy.globalPrivacyControl') === true || settings.get('privacy.doNotTrack') === true || blockingCookies(),
+        () => owner.onBeforeSendHeaders(PRIVACY_ORDER, WEB, WEB_ADDRESS, handlers.beforeSendHeaders)
+      ),
+      handlerWhileNeeded(blockingCookies, () => owner.onHeadersReceived(PRIVACY_ORDER, WEB, WEB_ADDRESS, handlers.headersReceived))
+    ]
+    const syncHandlers = (): void => { for (const handler of wanted) handler.sync() }
+    syncHandlers()
+    settings.onChange(syncHandlers)
 
     services.tabLifecycle.subscribe({
       tabCreated: (contents) => { sheets.watch(contents) },

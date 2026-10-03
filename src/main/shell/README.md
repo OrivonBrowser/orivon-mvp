@@ -235,7 +235,18 @@ the same turn. A pane put *below* a pane that is on screen is not helped by that
 hidden and shown again in a later turn, which `attachShown` does for the views it is given in `above`. A page that
 commits a document in a split can hide the pane beside it about ten milliseconds later; `pane-host.ts` therefore asks
 each pane's page whether it is `visible` shortly after a pane goes on screen or commits, and hides and shows the
-panes beside one that is not. A tab that is not in front is taken out of the window and reads `hidden`, which is
-wanted. Playwright keeps every page it drives visible, so no spec sees any of this: `scripts/probe-view-visibility.mjs`
+panes beside one that is not. A tab that is not in front is taken out of the window, which is wanted: Electron then
+reports its page `visible`, and `tab-visibility.ts` (below) tells the page it is hidden instead. Playwright keeps every page it drives visible, so no spec sees any of this: `scripts/probe-view-visibility.mjs`
 reads it with a debugger on the main process only, and `tests/attach-sites.test.ts` fails for an `addChildView` outside
 `attach-view.ts`.
+
+**[`tab-visibility.ts`](tab-visibility.ts) tells each page whether the person can see it.** A tab that is not in
+front is detached from its window ([`pane-host.ts`](pane-host.ts)), and Electron never reports a detached view
+as hidden, so its page would read `visible` and run at full rate for ever. `PaneHost` announces every change
+of what is on screen through `TabLifecycle.shownChanged` (a tab in front, or the other pane of a split, is
+shown); the module adds the window's own state (minimized, hidden) and sends the answer on
+`TAB_VISIBILITY_CHANNEL` once per change and again after each main-frame navigation commits, because a new
+document starts out visible. The page's preload turns it into `document.visibilityState`
+([`../../preload/page-visibility.ts`](../../preload/page-visibility.ts)); the decision is in the
+[decision log](../../../docs/decisions/decision-log.md). Limits: subframes are not told, and Chromium's
+own throttling is not what slows a hidden page, only the page backing off when it reads `hidden`.

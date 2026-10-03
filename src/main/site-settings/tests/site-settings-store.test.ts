@@ -17,6 +17,17 @@ afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: tru
 const SITE = 'https://chat.example'
 
 describe('SiteSettingsStore', () => {
+  it('says whether any site is blocked for a kind', () => {
+    const store = new SiteSettingsStore(null)
+    expect(store.hasBlock('images')).toBe(false)
+    store.set(SITE, 'images', 'allow')
+    store.set(SITE, 'javascript', 'block')
+    expect(store.hasBlock('images')).toBe(false)
+    expect(store.hasBlock('javascript')).toBe(true)
+    store.forget(SITE, 'javascript')
+    expect(store.hasBlock('javascript')).toBe(false)
+  })
+
   it('remembers an answer per site and kind, and forgets one on request', () => {
     const store = new SiteSettingsStore(null)
     store.set(SITE, 'camera', 'allow')

@@ -14,6 +14,7 @@ import { sendChromeEvent } from './shell-events.js'
 import { readStateParts, watchStateParts } from './shell-state-parts.js'
 import type { ShellServices } from './shell-services.js'
 import type { TabManager } from './tabs.js'
+import type { TabsSnapshot } from './tab-types.js'
 import type { WindowContext } from './window-context.js'
 import type { WindowLayout } from './window-layout.js'
 
@@ -45,6 +46,41 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
   function rememberIcon (address: string, icon: string): void {
     const host = faviconHost(address)
     if (host !== null) history.setFavicon(host, icon)
+  }
+
+  /** What each tab last showed for its icon, so a title or a loading flag, which push state far more often than an
+   * icon changes, does no icon work. A tab with no icon has no entry. */
+  const offeredIcons = new Map<string, { readonly url: string, readonly displayUrl: string, readonly favicon: string }>()
+  /** Set by a bookmarks change: the next push offers every tab's icon again, since a page starred just now may be
+   * waiting for an icon its tab has shown for a while. */
+  let offerAllIcons = false
+
+  /** Star a page the instant it opens and its favicon has not arrived yet, so the bookmark is saved iconless. The fetch
+   * lands moments later and pushes state: this is where that late icon reaches the bookmark it belongs to.
+   * fillMissingFavicon never overwrites an icon already stored, and deliberately does not notify listeners, so this
+   * cannot push state from inside a state push. Returns whether a bookmark took an icon. */
+  function offerIcons (list: TabsSnapshot['tabs']): boolean {
+    const all = offerAllIcons
+    offerAllIcons = false
+    let filled = false
+    const open = new Set<string>()
+    for (const tab of list) {
+      open.add(tab.id)
+      if (tab.favicon === null) {
+        offeredIcons.delete(tab.id)
+        continue
+      }
+      const before = offeredIcons.get(tab.id)
+      const changed = before === undefined || before.favicon !== tab.favicon || before.url !== tab.url || before.displayUrl !== tab.displayUrl
+      if (!changed && !all) continue
+      if (bookmarks.fillMissingFavicon(tab.url, tab.favicon)) filled = true
+      if (changed) {
+        offeredIcons.set(tab.id, { url: tab.url, displayUrl: tab.displayUrl, favicon: tab.favicon })
+        rememberIcon(tab.displayUrl, tab.favicon)
+      }
+    }
+    for (const id of offeredIcons.keys()) if (!open.has(id)) offeredIcons.delete(id)
+    return filled
   }
 
   /** Previous push's active tab, so pushState() can tell a genuine tab
@@ -84,17 +120,7 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
     if (chrome.webContents.isDestroyed()) return
     const state = tabs.getState()
 
-    // Star a page the instant it opens and its favicon has not arrived yet,
-    // so the bookmark is saved iconless. The fetch lands moments later and
-    // pushes state -- this is where that late icon reaches the bookmark it
-    // belongs to. fillMissingFavicon never overwrites an icon already
-    // stored, and deliberately does not notify listeners, so this cannot
-    // push state from inside a state push.
-    let iconFilled = false
-    for (const tab of state.tabs) {
-      if (tab.favicon !== null && bookmarks.fillMissingFavicon(tab.url, tab.favicon)) iconFilled = true
-      if (tab.favicon !== null) rememberIcon(tab.displayUrl, tab.favicon)
-    }
+    const iconFilled = offerIcons(state.tabs)
     const switched = state.activeTabId !== lastActiveTabId
     if (switched) {
       lastActiveTabId = state.activeTabId
@@ -139,6 +165,7 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
   let laidOutHeight = layout.chromeHeight()
   function onBookmarksChanged (): void {
     if (win.isDestroyed()) return
+    offerAllIcons = true
     const height = layout.chromeHeight()
     if (height !== laidOutHeight) {
       laidOutHeight = height

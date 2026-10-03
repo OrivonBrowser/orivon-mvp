@@ -18,7 +18,7 @@ window they are given. The ranking, the sources, the service and the first row t
 
 **What it depends on.** [`../overlays/`](../overlays/) (`overlay-types.ts`); [`../shell/`](../shell/) (the window
 context, the chrome actions, the tab state); [`../history/`](../history/) and [`../browsing/`](../browsing/) (types
-and the address classifier); [`../pages/`](../pages/) (own pages and the names other browsers give them are opened before anything is classified); [`../page-tools/`](../page-tools/) (`view-source.ts`).
+and the address classifier); [`../pages/`](../pages/) (own pages and the names other browsers give them are opened before anything is classified); [`../page-tools/`](../page-tools/) (`view-source.ts`); [`../verifier/verifier-access.ts`](../verifier/verifier-access.ts) (`prewarmVerifier`: a typed `.eth` name starts the verifier host before Enter).
 
 **What it must never import.** The renderer, or a network module other than `suggest-net.ts`: what is typed leaves
 the process only through `suggest-fetch.ts`, and only while every guard in its `mayRequest` holds.

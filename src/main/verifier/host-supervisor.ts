@@ -14,6 +14,8 @@ export interface HostProcess {
 export interface SupervisorEvents {
   /** The host process is being forked, the first time and after every restart. */
   starting?: () => void
+  /** The host was put to sleep by `idle()`: not a failure, and nothing restarts it. */
+  idle?: () => void
   listening: (fingerprint: string) => void
   down: (reason: string) => void
   status: (status: LightClientState) => void
@@ -56,6 +58,12 @@ export class HostSupervisor {
   private backoff = FIRST_BACKOFF_MS
   private startedAt = 0
   private stopped = false
+  /** The child `idle()` has told to exit and that has not yet: a fresh one waits for it, so two never share the port. */
+  private leaving: HostProcess | undefined
+  private startAfterLeaving = false
+  /** Counts the restarts `idle()` cancels: a restart timer started under an older number does nothing. */
+  private generation = 0
+  private restartPending = false
   /** Why the running host said it could not serve, kept as the reason for its exit. */
   private failure: string | undefined
   private readonly setTimer: (callback: () => void, ms: number) => unknown
@@ -67,8 +75,13 @@ export class HostSupervisor {
   }
 
   start (): void {
-    if (this.stopped || this.child !== undefined) return
+    // A crashed host comes back on its backoff timer only: a page asking meanwhile must not fork one at once.
+    if (this.stopped || this.child !== undefined || this.restartPending) return
     this.deps.events.starting?.()
+    if (this.leaving !== undefined) {
+      this.startAfterLeaving = true
+      return
+    }
     const child = this.deps.fork()
     this.child = child
     this.startedAt = this.now()
@@ -76,6 +89,7 @@ export class HostSupervisor {
       // The host runs every untrusted parser this app has; a message it
       // posts is checked structurally, never merely cast, before anything
       // here acts on it.
+      if (this.child !== child) return
       if (!isFromHost(message)) { console.error('[verifier] dropped a malformed message from the host:', message); return }
       this.receive(message)
     })
@@ -111,6 +125,28 @@ export class HostSupervisor {
   stop (): void {
     this.stopped = true
     this.child?.kill()
+  }
+
+  /** Puts the host to sleep: the process exits, nothing counts as a crash, no restart follows, and a later `start()`
+   * forks a fresh one with the backoff reset. `stop()` stays the permanent end. */
+  idle (): void {
+    if (this.stopped) return
+    const child = this.child
+    if (child === undefined && !this.restartPending) return
+    this.generation += 1
+    this.restartPending = false
+    this.backoff = FIRST_BACKOFF_MS
+    this.failure = undefined
+    this.starting = undefined
+    this.child = undefined
+    for (const [id, pending] of this.pending) {
+      this.pending.delete(id)
+      pending.reject(new Error('the verifier host is idle'))
+    }
+    this.deps.events.idle?.()
+    if (child === undefined) return
+    this.leaving = child
+    child.kill()
   }
 
   /** Rejects when the host is down, exits first, or does not answer in time: a reply that never comes is the failure to expect. */
@@ -160,6 +196,14 @@ export class HostSupervisor {
   }
 
   private exited (child: HostProcess, exit: string): void {
+    if (this.leaving === child) {
+      this.leaving = undefined
+      if (this.startAfterLeaving) {
+        this.startAfterLeaving = false
+        this.start()
+      }
+      return
+    }
     if (this.child !== child) return
     this.child = undefined
     const reason = this.failure ?? exit
@@ -173,6 +217,12 @@ export class HostSupervisor {
     if (this.now() - this.startedAt >= STABLE_AFTER_MS) this.backoff = FIRST_BACKOFF_MS
     const delay = this.backoff
     this.backoff = Math.min(this.backoff * 2, MAX_BACKOFF_MS)
-    this.setTimer(() => { this.start() }, delay)
+    const generation = this.generation
+    this.restartPending = true
+    this.setTimer(() => {
+      if (generation !== this.generation) return
+      this.restartPending = false
+      this.start()
+    }, delay)
   }
 }

@@ -1,9 +1,9 @@
 // Registers the verifier: the resolver rules sending every host a protocol
 // serves (a `.eth` name, an `ipfs://` address) to its loopback port, the
-// certificate check on every session, and the host process, started once
-// the first page has loaded so it never delays the window, or at once by the
-// first request that needs it. Not critical: without it every such load
-// fails closed and nothing else changes.
+// certificate check on every session, and the host process, started by the
+// first request that needs it (or an address typed that names one) and put to
+// sleep once nothing has needed it for a while. Not critical: without it
+// every such load fails closed and nothing else changes.
 
 import { join } from 'node:path'
 import { app, session, utilityProcess } from 'electron'
@@ -28,16 +28,18 @@ import { loopbackPort } from './loopback-port.js'
 import shippedCheckpoint from './mainnet-checkpoint.json'
 import { composeResolverRules } from './resolver-rules.js'
 import { ListeningGate } from './listening-gate.js'
-import { ethTestSeam, noteVerifierListening, verifierStartDelayMs } from './test-seam.js'
+import { ethTestSeam, exposeVerifierStart, noteVerifierListening, verifierStartDelayMs } from './test-seam.js'
 import { VerifierStore } from './verifier-store.js'
 import { chooseNameEvidence } from './name-evidence.js'
 import type { NameEvidence } from './name-evidence.js'
 import { checkpointProblem, lightClientView } from './status-view.js'
 import type { LightClientView } from './status-view.js'
 import { unproxiedGateways } from './proxy-check.js'
+import { HostLifecycle } from './host-lifecycle.js'
+import { anyTabOnVerifiedOrigin } from './tab-on-verified-origin.js'
+import type { TabsOfWindow } from './tab-on-verified-origin.js'
+import { provideVerifierAccess } from './verifier-access.js'
 
-/** Started this long after ready at the latest, if no page has finished loading by then. */
-const START_FALLBACK_MS = 3_000
 /** Mounting may wait for the light client to sync, then resolve a name and follow its pointers. */
 const MOUNT_TIMEOUT_MS = 30_000
 /** How long a request to a verifier-served host waits for the host to listen: about three times the slowest start measured (3 s), so a host that never answers still ends in the ordinary error. */
@@ -48,17 +50,22 @@ let supervisor: HostSupervisor | undefined
 let store: VerifierStore | undefined
 let lightClient: LightClientState = { state: 'off' }
 let checkpoint: CheckpointChoice | undefined
-let hostDown: string | undefined = 'not started yet'
+let hostDown: string | undefined
+/** No host process runs and nothing failed: it has not been needed yet, or it slept after going unused. */
+let hostAsleep = true
 const listeningGate = new ListeningGate(LISTEN_WAIT_MS)
-/** Starts the host now if it has not started: a request that needs it must not wait for the first page or the fallback timer. */
+/** Asks for the host: starts it if it is not running and restarts its idle wait. */
 let startHost: () => void = () => {}
+/** Whether any open tab shows an origin the verifier serves; set once the shell's windows exist. */
+let tabsOnVerifiedOrigin: () => boolean = () => false
 const listeners = new Set<() => void>()
 /** Whether the person has the light client on. Set once the settings are read; until then it is on. */
 let enabledByPerson: () => boolean = () => true
 
 /** Lets the person's setting, and not only the environment, switch the light client off. Read when the host starts. */
-export function configureVerifier (options: { lightClientEnabled: () => boolean }): void {
+export function configureVerifier (options: { lightClientEnabled: () => boolean, windows: () => readonly TabsOfWindow[] }): void {
   enabledByPerson = options.lightClientEnabled
+  tabsOnVerifiedOrigin = () => anyTabOnVerifiedOrigin(options.windows())
 }
 
 const lightClientSwitchedOff = (): boolean => process.env['ORIVON_ETH_LIGHT_CLIENT'] === 'off' || !enabledByPerson()
@@ -197,15 +204,11 @@ async function hostConfig (): Promise<HostConfig> {
   }
 }
 
-function startAfterFirstPage (start: () => void): void {
-  let started = false
-  const once = (): void => {
-    if (started) return
-    started = true
-    start()
-  }
-  app.once('web-contents-created', (_event, contents) => { contents.once('did-finish-load', once) })
-  setTimeout(once, START_FALLBACK_MS).unref()
+/** The age of the newest checkpoint the light client could start from; undefined while it is off or none can start it. */
+function usableCheckpointAge (): number | undefined {
+  if (lightClientSwitchedOff()) return undefined
+  const choice = chooseNow()
+  return choice.ok ? choice.ageSeconds : undefined
 }
 
 /**
@@ -250,8 +253,10 @@ export async function verifierContentAddress (origin: string): Promise<ContentAd
 export function verifierView (): LightClientView {
   return lightClientView({
     lightClient,
-    checkpoint,
+    // A sleeping host reports no newer checkpoint, so the one it would start from is chosen again at the age it has now.
+    checkpoint: hostAsleep || checkpoint === undefined ? chooseNow() : checkpoint,
     hostDown,
+    hostAsleep: hostAsleep && hostDown === undefined,
     switchedOff: lightClientSwitchedOff(),
     endpoints: DEFAULT_ENDPOINTS
   }, Date.now())
@@ -280,16 +285,32 @@ export const verifierSubsystem: Subsystem = {
       fork: () => utilityProcess.fork(join(__dirname, 'verifier-host.js'), [], { serviceName: 'Orivon verifier' }),
       config: hostConfig,
       events: {
-        starting: () => { listeningGate.starting() },
+        starting: () => {
+          hostAsleep = false
+          listeningGate.starting()
+          changed()
+        },
+        idle: () => {
+          fingerprint = undefined
+          hostDown = undefined
+          hostAsleep = true
+          lightClient = { state: 'off' }
+          noteVerifierListening(false)
+          // Whoever asks next starts it, and waits for it to listen.
+          listeningGate.starting()
+          changed()
+        },
         listening: (value) => {
           fingerprint = value
           hostDown = undefined
+          hostAsleep = false
           noteVerifierListening(true)
           listeningGate.listening()
           changed()
         },
         down: (reason) => {
           fingerprint = undefined
+          hostAsleep = false
           hostDown = reason
           noteVerifierListening(false)
           listeningGate.down()
@@ -309,21 +330,24 @@ export const verifierSubsystem: Subsystem = {
       }
     })
     supervisor = host
+    const lifecycle = new HostLifecycle({
+      start: () => { host.start() },
+      idle: () => { host.idle() },
+      tabShowsVerifiedOrigin: () => tabsOnVerifiedOrigin(),
+      checkpointAgeSeconds: usableCheckpointAge,
+      startDelayMs: verifierStartDelayMs
+    })
+    startHost = () => { lifecycle.request() }
+    provideVerifierAccess({ start: () => { startHost() }, ready: async () => { await listeningGate.whenSettled() } })
+    exposeVerifierStart(() => { startHost() })
+    lifecycle.refreshAtLaunch()
     app.on('will-quit', () => {
+      lifecycle.dispose()
       host.stop()
       // Blocking on purpose: nothing after `will-quit` can be awaited, so an
       // async write here would race process exit and lose whatever the
       // debounce had not yet flushed, the same as a crash would.
       store?.flushSync()
     })
-    let started = false
-    startHost = () => {
-      if (started) return
-      started = true
-      const delay = verifierStartDelayMs()
-      if (delay > 0) setTimeout(() => { host.start() }, delay)
-      else host.start()
-    }
-    startAfterFirstPage(startHost)
   }
 }

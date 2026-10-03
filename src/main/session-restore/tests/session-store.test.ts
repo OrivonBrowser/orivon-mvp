@@ -2,8 +2,8 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { NullSessionStore, SessionStore } from '../session-store.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { NullSessionStore, SessionStore, TITLE_WRITE_DELAY_MS } from '../session-store.js'
 import type { SavedWindow } from '../session-types.js'
 
 let dir: string
@@ -49,6 +49,26 @@ describe('the session store', () => {
     for (let n = 0; n < 50; n++) store.changed()
     await store.flush()
     expect(reads).toBe(1)
+  })
+
+  it('writes a change of titles alone only after its delay, and folds it into a sooner change', async () => {
+    const store = new SessionStore(file)
+    await store.load()
+    let reads = 0
+    store.attach(() => { reads++; return [] })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      for (let n = 0; n < 20; n++) store.titlesChanged()
+      vi.advanceTimersByTime(TITLE_WRITE_DELAY_MS - 1)
+      expect(existsSync(file)).toBe(false)
+      store.changed()
+      vi.advanceTimersByTime(TITLE_WRITE_DELAY_MS)
+    } finally {
+      vi.useRealTimers()
+    }
+    await store.flush()
+    expect(reads).toBe(1)
+    expect(existsSync(file)).toBe(true)
   })
 
   it('writes nothing until something is attached', async () => {

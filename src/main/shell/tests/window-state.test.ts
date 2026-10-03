@@ -163,6 +163,53 @@ describe('createWindowState', () => {
     expect(setFavicon).toHaveBeenCalledExactlyOnceWith('a.example', 'data:icon')
   })
 
+  it('does no icon work for a push that leaves a tab\'s icon as it was', () => {
+    const { push, fillMissingFavicon, setFavicon } = setup()
+    const tabs = [tab('a', 'https://a.example/', 'data:icon'), tab('b', 'https://b.example/', 'data:other')]
+
+    for (let n = 0; n < 20; n += 1) push(tabs, 'a')
+
+    expect(fillMissingFavicon).toHaveBeenCalledTimes(2)
+    expect(setFavicon).toHaveBeenCalledTimes(2)
+  })
+
+  it('offers the icon of a tab that changed it, or that moved to another page', () => {
+    const { push, fillMissingFavicon, setFavicon } = setup()
+    push([tab('a', 'https://a.example/', 'data:icon')], 'a')
+
+    push([tab('a', 'https://a.example/', 'data:new')], 'a')
+    expect(setFavicon).toHaveBeenLastCalledWith('a.example', 'data:new')
+
+    push([tab('a', 'https://a.example/other', 'data:new')], 'a')
+    expect(fillMissingFavicon).toHaveBeenLastCalledWith('https://a.example/other', 'data:new')
+    expect(fillMissingFavicon).toHaveBeenCalledTimes(3)
+  })
+
+  it('offers an icon again to the bookmarks once they change, without telling the history', () => {
+    const { push, changeBookmarks, fillMissingFavicon, setFavicon } = setup()
+    push([tab('a', 'https://a.example/', 'data:icon')], 'a')
+    fillMissingFavicon.mockClear()
+    setFavicon.mockClear()
+
+    changeBookmarks(76)
+    expect(fillMissingFavicon).toHaveBeenCalledExactlyOnceWith('https://a.example/', 'data:icon')
+    expect(setFavicon).not.toHaveBeenCalled()
+
+    push([tab('a', 'https://a.example/', 'data:icon')], 'a')
+    expect(fillMissingFavicon).toHaveBeenCalledTimes(1)
+  })
+
+  it('forgets a closed tab, so its id shown again is offered afresh', () => {
+    const { push, setFavicon } = setup()
+    push([tab('a', 'https://a.example/', 'data:icon')], 'a')
+    push([tab('b', 'https://b.example/')], 'b')
+    setFavicon.mockClear()
+
+    push([tab('a', 'https://a.example/', 'data:icon'), tab('b', 'https://b.example/')], 'a')
+
+    expect(setFavicon).toHaveBeenCalledExactlyOnceWith('a.example', 'data:icon')
+  })
+
   it('ends every subscription it made when stopped', () => {
     const { stop, unsubscribed } = setup()
 

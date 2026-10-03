@@ -49,8 +49,9 @@ its `close` must be idempotent.
 `removeChildView` and added back stays hidden on Electron 44 (X11 and Wayland alike): `document.visibilityState`
 reads `hidden` with the view attached, focused and sized, `requestAnimationFrame` never fires, and the card is
 blank from its second show on. `hide()` (`setVisible(false)`) and the next `attach` (`addChildView`, then
-`setVisible(true)`) do not have that effect, so a `keep: 'warm'` view stays a hidden child of its window between
-shows; a `fresh` view, or a warm one whose renderer died, is removed before it is destroyed. A page that has a
+`setVisible(true)`) do not have that effect, so a view kept for the next show (`warm` or `resident`) stays a hidden child of its window
+between shows; a `fresh` view, a warm one whose renderer died and a warm one whose renderer is given back after a
+minute closed are removed before they are destroyed. A page that has a
 debugger attached, which is every page under Playwright, reports itself visible after a removal all the same, so
 only a launch with no debugger shows the defect; `test/e2e-menu-warm.test.ts` pins the cause (the closed menu is
 still a child, hidden) instead, and the recipe for a real-pointer probe is in `docs/development/testing.md`. Every view put into a window goes through `../shell/attach-view.ts`, which shows a view that was removed and added back; a warm view is kept in place all the same, because a hidden child shows with no tree change at all.
@@ -76,7 +77,10 @@ The permissions and site-info popovers stay on that file.
 
 **The host builds nothing until asked.** Every window would otherwise carry a hidden renderer
 process nobody may open. `show` and `prewarm` build a view; a `fresh` overlay is destroyed on
-close and a `warm` one keeps its view, and its last reported height, for the next show.
+close and a `warm` one keeps its view, and its last reported height, for the next show, but
+destroys it after a minute closed (a prewarmed view never shown goes the same way). A `resident` one
+keeps its view for the life of the window: the address bar's suggestions are typed into the moment
+they open and never wait for a renderer to start.
 
 **A page asks for its first show, and is told the rest.** The page calls `ready` once mounted and
 the reply carries the show result that was waiting, so nothing is sent to a page that has no

@@ -380,15 +380,22 @@ describe('muting', () => {
     const seen = vi.fn()
     manager.onStateChange(seen)
 
-    first.isCurrentlyAudible.mockReturnValue(true)
-    first.emit('audio-state-changed', { audible: true })
-    expect(seen).toHaveBeenCalledTimes(1)
-    expect(manager.getState().tabs[0]?.audible).toBe(true)
+    vi.useFakeTimers()
+    try {
+      first.isCurrentlyAudible.mockReturnValue(true)
+      first.emit('audio-state-changed', { audible: true })
+      vi.advanceTimersByTime(100)
+      expect(seen).toHaveBeenCalledTimes(1)
+      expect(manager.getState().tabs[0]?.audible).toBe(true)
 
-    manager.navigate(id, 'https://news.example/')
-    seen.mockClear()
-    first.emit('audio-state-changed', { audible: false })
-    expect(seen).not.toHaveBeenCalled()
+      manager.navigate(id, 'https://news.example/')
+      seen.mockClear()
+      first.emit('audio-state-changed', { audible: false })
+      vi.advanceTimersByTime(100)
+      expect(seen).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('pins and unpins through the command\'s own toggle', () => {

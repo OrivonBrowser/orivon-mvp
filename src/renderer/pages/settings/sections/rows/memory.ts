@@ -7,13 +7,14 @@ export const memoryRows: readonly Row[] = [
   {
     id: 'memory-saver',
     label: 'Memory saver',
-    help: 'Tabs you have not used for a while go to sleep. They wake when you open them.',
+    help: 'Tabs you have not used for a while go to sleep, sooner when the computer is low on memory. They wake when you open them.',
     keywords: ['memory', 'sleep', 'discard', 'suspend', 'tabs', 'battery', 'performance', 'ram', 'idle', 'unload'],
     control: { type: 'toggle', key: 'performance.memorySaver' }
   },
   {
     id: 'sleep-after',
     label: 'Put tabs to sleep after',
+    help: 'Tabs sleep after this long out of view, 30 minutes by default. When the computer is low on memory, tabs unused for 5 minutes or more can sleep sooner.',
     keywords: ['memory', 'sleep', 'discard', 'suspend', 'tabs', 'minutes', 'hours', 'idle', 'delay'],
     control: { type: 'choice', key: 'performance.sleepAfter' },
     visible: (state) => state.value('performance.memorySaver') === true
