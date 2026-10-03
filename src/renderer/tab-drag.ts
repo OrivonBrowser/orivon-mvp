@@ -6,7 +6,7 @@
 //
 // A drag has three outcomes. Let go in the strip: the tab takes its new place.
 // Let go beyond the strip's reach: the tab goes to another window or a window of
-// its own, and main decides which from where on the screen it landed. Escape:
+// its own, and main decides which from where it landed. Escape:
 // nothing changes.
 
 /** How far the pointer moves before a press becomes a drag, so a click is still a click. */

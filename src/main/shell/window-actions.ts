@@ -12,9 +12,8 @@ import { isRect } from './actions/overlay.js'
 import { runChromeAction } from './chrome-actions.js'
 import { createPressStamps } from './press-stamps.js'
 import type { ShellServices } from './shell-services.js'
-import { splitZoneFor } from './split-drop.js'
-import { refreshStripLayouts, stripCentresFor } from './strip-centres.js'
-import { dropTab, inTop, moveToNewWindow, moveToWindow } from './tab-move.js'
+import { tabDragActions } from './tab-drag-actions.js'
+import { moveToNewWindow, moveToWindow } from './tab-move.js'
 import { closeOthers, closeToRight, duplicateTab, newTabToRight, tabMenuFlags, toggleMute, togglePin } from './tab-commands.js'
 import { sleepBackgroundTab } from '../memory-saver/sleep-command.js'
 import { showTabMenu, tabMenuTemplate } from './tab-menu.js'
@@ -25,13 +24,6 @@ import { cascadeFrom } from './window-options.js'
 import type { ShellWindowOptions } from './window-options.js'
 import type { Bounds } from './tab-types.js'
 import type { ShellWindow } from './window-registry.js'
-
-/** How close to a page's edge a dragged tab has to be for it to split, WHILE a drag is under way -- narrower
- * than `zoneAt`'s own default share (split-model.ts), used for a plain drop, so a tab is easy to tear off
- * rather than getting caught by a wide edge band on the way to open space. */
-const TAB_DRAG_SPLIT_SHARE = 0.12
-/** How long a drop waits for the strip of the window it lands in to report where its tabs are. */
-const STRIP_READ_MS = 150
 
 export interface WindowParts {
   readonly entry: ShellWindow
@@ -126,46 +118,7 @@ export function shellActions (parts: WindowParts): ShellActions {
     },
     press: (button) => { presses.note(button) },
     prewarmMenu: () => { entry.overlays.prewarm('menu') },
-    dragTab: (id, point) => {
-      const zone = point === null ? null : splitZoneFor(tabs.getState().activeTabId, id, area(), point, TAB_DRAG_SPLIT_SHARE)
-      tabs.splits.setPreview(zone)
-      // point === null: the pointer is back inside the strip, which happens on every in-strip
-      // pointermove of a drag that has not (or not yet) torn out -- never a reason to tear down the
-      // floating preview or throw away the capture `beginTabDrag` started; `endTabDrag` is the only
-      // thing that does that, once the drag genuinely ends. tick()'s own poll already hides the
-      // preview when the real cursor is back over this window's own strip.
-      if (point !== null) services.tearDrag.update(entry, id, zone !== null, topHeight)
-    },
-    // The dragged tab stays where it is in the stack: dragging a background tab onto the page in
-    // front is how a split is made. A background tab's view is detached, so its capture comes back
-    // empty and the floating preview shows the tab's title instead.
-    beginTabDrag: (id) => { services.tearDrag.prewarm(entry, id) },
-    endTabDrag: () => { services.tearDrag.clear() },
-    dropTab: (id, screenPoint, client) => {
-      tabs.splits.setPreview(null)
-      services.tearDrag.clear()
-      const active = tabs.getState().activeTabId
-      const zone = splitZoneFor(active, id, area(), client, TAB_DRAG_SPLIT_SHARE)
-      if (zone !== null && active !== null) {
-        tabs.splits.split(active, id, zone)
-        return
-      }
-      // Not a split: over another window's strip, moves there; over this window's own top rows (strip and
-      // toolbar), stays where it was, matching the floating preview parking there instead of following the
-      // pointer (tear-drag.ts's own tick()); anywhere else -- this window's own page, or outside every
-      // window -- opens a window of its own, the floating preview's own promise. `dropTab` (tab-move.ts)
-      // decides which, from `screenPoint` alone. A strip whose layout was not read yet (a drop with no
-      // hover over it) is read first: the slot is the one under the pointer, not a share of the width.
-      const windows = services.windows.all()
-      const unread = windows.filter((other) => other !== entry && !other.window.isDestroyed() && inTop(other.window.getBounds(), screenPoint, topHeight) && stripCentresFor(other) === null)
-      if (unread.length === 0) {
-        dropTab(entry, id, screenPoint, windows, openWindow, topHeight)
-        return
-      }
-      void refreshStripLayouts(unread, STRIP_READ_MS).then(() => {
-        if (!window.isDestroyed()) dropTab(entry, id, screenPoint, services.windows.all(), openWindow, topHeight)
-      })
-    },
+    ...tabDragActions(parts),
     showTabMenu: showTabMenuFor
   }
 }

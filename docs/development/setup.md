@@ -205,6 +205,7 @@ Settings shows what it is doing.
 | `ORIVON_ETH_LIGHT_CLIENT=off` | Keeps the light client from starting, so the run contacts no Ethereum server and every real `.eth` name fails closed. `test/launch-electron.mjs` sets it for every smoke and e2e launch unless a test asks otherwise |
 | `ORIVON_LIVE_ETH=1` | Runs `src/protocols/verifier-host/light-client/tests/live-ens.test.ts`, which resolves real names through the light client against mainnet. Skipped otherwise |
 | `ORIVON_TEST_ETH_FIXTURES`, `ORIVON_TEST_IPFS_GATEWAYS`, `ORIVON_TEST_DOH` | Test builds only (`npm run test:e2e` builds one): `.eth` names mapped to content with no light client, and the gateway and DNS-over-HTTPS endpoints to fetch it from. An ordinary build contains none of this (`npm run check:dev-grant-absent`) |
+| `ORIVON_TEST_LOCAL_POINTER=1` | Test builds only: treats the pointer's screen position as unknown, as on a native Wayland session, so a tab drag runs the in-window preview and the arrival-based drop on a virtual X display (`src/main/shell/local-pointer.ts`). An ordinary build contains none of this |
 
 Each release ships a checkpoint for the light client, refreshed with
 `node scripts/refresh-eth-checkpoint.mjs --write` before tagging: it refuses unless two beacon APIs

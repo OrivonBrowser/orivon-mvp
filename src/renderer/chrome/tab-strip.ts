@@ -1,6 +1,7 @@
 import type { ShellState, TabState } from '../../main/shell/tabs.js'
 import { closeIcon, faviconElement } from '../icons.js'
 import { isDraggingTab, makeTabDraggable } from '../tab-drag.js'
+import { createArrivalWatch } from './drag-arrival.js'
 import type { ChromeContext, ChromeModule, TabDecorator } from './context.js'
 import { must } from './context.js'
 import { contained, runDecorators } from './contain.js'
@@ -32,6 +33,7 @@ export function createTabStrip (decorators: readonly TabDecorator[], finishers: 
   let tabScroll: HTMLDivElement | undefined
   let newTabBtn: HTMLButtonElement | undefined
   let dropMark: HTMLDivElement | null = null
+  let arrival: ReturnType<typeof createArrivalWatch> | null = null
   let renderDeferred = false
   let shownActiveId: string | null = null
   /** One element per tab, kept across pushes: a push patches what differs instead of building the strip again. */
@@ -313,10 +315,11 @@ export function createTabStrip (decorators: readonly TabDecorator[], finishers: 
       newTabBtn.addEventListener('click', () => shell.newTab())
     },
     render: renderTabs,
-    event: (payload) => {
-      const event = payload as { type?: string, index?: number }
+    event: (payload, ctx) => {
+      const event = payload as { type?: string, index?: number, on?: boolean }
       if (event.type === 'dragMark' && typeof event.index === 'number') showDropMark(event.index)
       else if (event.type === 'dragMarkClear' && dropMark !== null) dropMark.hidden = true
+      else if (event.type === 'tabDrag') (arrival ??= createArrivalWatch(document, ctx.shell.tabDragArrived)).listen(event.on === true)
     }
   }
 }

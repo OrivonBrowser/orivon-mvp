@@ -823,7 +823,7 @@ the reference set, and whether this build has it.
 | Audio-playing indicator | ✅ | A speaker badge on the tab from `audio-state-changed`; a muted tab keeps it, and a pinned tab shows it as a mark on its icon (`src/renderer/chrome/tab-badges.ts`) |
 | Duplicate tab | ✅ | `tab.duplicate` and the tab menu open a copy, with its back and forward list, right of its source; not offered for the new-tab page or a shell page (`src/main/shell/tab-commands.ts`, `tab-history.ts`) |
 | Drag to reorder | ✅ | `tab-drag.ts`, `tab-order.ts`; a pinned tab stays in the leading run, and a split refuses a pinned tab |
-| Tear off into a new window | ✅ | `tear-drag.ts` |
+| Tear off into a new window | ✅ | `tear-drag.ts`; on a native Wayland session, where a window cannot read the screen, the preview is a view inside the window the drag started in and the target is found from where the pointer shows up (`tab-drag-actions.ts`, `local-tab-drag.ts`); the compositor places the new window |
 | Move tab to another open window | ✅ | `tab-menu.ts`, `tab-move.ts` |
 | Tab groups (named/coloured) | ✅ | `tab.group` and the tab menu add a tab to a new or an existing group; a chip heads each group and opens a bubble to name, colour, collapse, move or close it; groups are per window and are kept in `session.json`, never in a private window (`src/main/tab-groups/`, `src/renderer/chrome/tab-groups.ts`) |
 | Vertical tabs | ❌ | Tab strip is horizontal only |
