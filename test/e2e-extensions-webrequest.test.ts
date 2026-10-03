@@ -63,6 +63,19 @@ fetch('/wr-echo').then((r) => r.text().then((body) => { window.__echo = { body, 
 </script>
 </body>`
 
+// The extension's addListener calls reach the main process over IPC after its background page has run them, so
+// this page asks for a URL the extension cancels until one is refused: from then on its listeners are in force.
+const WARMUP_HTML = `<!doctype html>
+<title>webrequest-warmup</title>
+<script>
+(async () => {
+  for (let n = 0; n < 200; n++) {
+    try { await fetch('/wr-ads/ping?' + n) } catch { window.__wrActive = true; return }
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+})()
+</script>`
+
 interface Seen { readonly url: string, readonly headers: IncomingHttpHeaders }
 
 function startFixtureServer (seen: Seen[]): Promise<{ server: Server, origin: string }> {
@@ -72,6 +85,9 @@ function startFixtureServer (seen: Seen[]): Promise<{ server: Server, origin: st
     if (url === '/') {
       res.writeHead(200, { 'content-type': 'text/html' })
       res.end(PAGE_HTML)
+    } else if (url === '/warmup') {
+      res.writeHead(200, { 'content-type': 'text/html' })
+      res.end(WARMUP_HTML)
     } else if (url.startsWith('/wr-ads/')) {
       res.writeHead(200, { 'content-type': 'application/javascript' })
       res.end('window.__adRan = true;')
@@ -148,6 +164,11 @@ it('serves an MV2 extension\'s blocking and observing webRequest listeners from 
       }, extensionId), 20_000)
       check('the extension\'s background page loaded', backgroundReady)
 
+      const warmup = await navigateToFixture(app, `${started.origin}/warmup`, 'webrequest-warmup')
+      const active = await waitFor(async () => await evaluateRetrying(warmup, () => (window as unknown as { __wrActive?: boolean }).__wrActive === true), 20_000).catch(() => false)
+      check('the extension\'s listeners came into force (a /wr-ads/ request was refused)', active)
+      seen.splice(0)
+
       const view = await navigateToFixture(app, fixtureUrl, 'webrequest-fixture')
       const pageRan = await waitFor(async () => await evaluateRetrying(view, () => Boolean((window as unknown as { __pageRan?: boolean }).__pageRan)))
       check('the fixture page\'s own script ran', pageRan)
@@ -155,13 +176,13 @@ it('serves an MV2 extension\'s blocking and observing webRequest listeners from 
       const flag = async (name: string): Promise<boolean> => await view.evaluate((n: string) => Boolean((window as unknown as Record<string, unknown>)[n]), name)
 
       // ---- blocking onBeforeRequest: cancel ----
-      const adBlocked = await waitFor(async () => await flag('__adBlocked')).then(() => true).catch(() => false)
+      const adBlocked = await waitFor(async () => await flag('__adBlocked')).catch(() => false)
       check('onBeforeRequest cancelled /wr-ads/x.js (its onerror fired)', adBlocked)
       check('the cancelled script never ran', !(await flag('__adRan')))
-      check('the cancelled request never reached the server', !seen.some((entry) => entry.url.startsWith('/wr-ads/')))
+      check('the cancelled request never reached the server', !seen.some((entry) => entry.url.startsWith('/wr-ads/x.js')))
 
       // ---- blocking onBeforeRequest: redirect to the extension's own web-accessible resource ----
-      const redirected = await waitFor(async () => await flag('__redirected')).then(() => true).catch(() => false)
+      const redirected = await waitFor(async () => await flag('__redirected')).catch(() => false)
       check('onBeforeRequest redirected /wr-redirect to the extension\'s web-accessible script, which ran', redirected,
         JSON.stringify({ loaded: await flag('__redirectLoaded'), notRedirected: await flag('__notRedirected') }))
 
@@ -182,11 +203,11 @@ it('serves an MV2 extension\'s blocking and observing webRequest listeners from 
       const seenAll = await waitFor(async () => {
         const log = await readLog()
         return ['onSendHeaders', 'onResponseStarted', 'onCompleted', 'onErrorOccurred'].every((event) => log.some((entry) => entry.event === event))
-      }).then(() => true).catch(() => false)
+      }).catch(() => false)
       const log = await readLog()
       check('onSendHeaders, onResponseStarted, onCompleted and onErrorOccurred were all observed', seenAll, JSON.stringify(log.map((entry) => entry.event)))
 
-      const adError = log.find((entry) => entry.event === 'onErrorOccurred' && entry.url.includes('/wr-ads/'))
+      const adError = log.find((entry) => entry.event === 'onErrorOccurred' && entry.url.includes('/wr-ads/x.js'))
       check('onErrorOccurred reported the cancelled request as blocked by the client', adError?.error?.includes('ERR_BLOCKED_BY_CLIENT') === true, JSON.stringify(adError))
       const echoDone = log.find((entry) => entry.event === 'onCompleted' && entry.url.includes('/wr-echo'))
       check('onCompleted reported /wr-echo with status 200, type xmlhttprequest and the tab\'s id', echoDone?.statusCode === 200 && echoDone.type === 'xmlhttprequest' && echoDone.tabId === tabId, JSON.stringify({ echoDone, tabId }))

@@ -549,14 +549,70 @@ export const injectExtensionAPIs = (extras: ReadonlyArray<() => void> = []) => {
       storage: {
         factory: (base) => {
           const local = base && base.local
+          // Orivon patch (UPSTREAM.md, patch 63): `managed` is Chrome's
+          // read-only policy store, empty while no policy is set -- never
+          // `local`. An extension that caches `managed.get()` into `local`
+          // (uBlock Origin's `cachedManagedStorage`) would otherwise copy its
+          // whole local store, the previous copy included, into itself on
+          // every start. Self-contained: this factory runs as source text in
+          // the extension's own realm.
+          const lastArgCallback = (args: unknown[]): ((...values: unknown[]) => void) | undefined => {
+            const last = args[args.length - 1]
+            return typeof last === 'function' ? last as (...values: unknown[]) => void : undefined
+          }
+          // As Chrome does: a call given a callback returns nothing, one without returns a promise.
+          const answer = (args: unknown[], value: unknown): Promise<unknown> | undefined => {
+            const callback = lastArgCallback(args)
+            if (callback === undefined) return Promise.resolve(value)
+            callback(value)
+            return undefined
+          }
+          const readOnly = 'This is a read-only store.'
+          // A callback learns of the refusal through chrome.runtime.lastError, set
+          // only while it runs and then put back as it was, as Chrome does.
+          const refuse = (args: unknown[]): Promise<never> | undefined => {
+            const callback = lastArgCallback(args)
+            if (callback === undefined) return Promise.reject(new Error(readOnly))
+            const runtime = (globalThis as { chrome?: { runtime?: object } }).chrome?.runtime
+            const before = runtime === undefined ? undefined : Object.getOwnPropertyDescriptor(runtime, 'lastError')
+            let shown = false
+            try {
+              if (runtime !== undefined) {
+                Object.defineProperty(runtime, 'lastError', { configurable: true, get: () => ({ message: readOnly }) })
+                shown = true
+              }
+            } catch {
+              console.error(`chrome.storage.managed: ${readOnly}`)
+            }
+            try {
+              callback()
+            } finally {
+              if (shown && runtime !== undefined) {
+                if (before === undefined) delete (runtime as { lastError?: unknown }).lastError
+                else Object.defineProperty(runtime, 'lastError', before)
+              }
+            }
+            return undefined
+          }
+          const managed = {
+            get: (...args: unknown[]) => answer(args, {}),
+            getKeys: (...args: unknown[]) => answer(args, []),
+            getBytesInUse: (...args: unknown[]) => answer(args, 0),
+            set: (...args: unknown[]) => refuse(args),
+            remove: (...args: unknown[]) => refuse(args),
+            clear: (...args: unknown[]) => refuse(args),
+            setAccessLevel: (...args: unknown[]) => refuse(args),
+            onChanged: { addListener: () => {}, removeListener: () => {}, hasListener: () => false, hasListeners: () => false },
+          } as unknown as chrome.storage.StorageArea
           return {
             ...base,
-            // TODO: provide a backend for browsers to opt-in to. Spread
-            // conditionally, not `managed: local, sync: local` -- under
+            // TODO: provide a sync backend for browsers to opt-in to. Spread
+            // conditionally, not `sync: local` -- under
             // `exactOptionalPropertyTypes`, an optional property may be
             // omitted but never explicitly set to `undefined`, and `local`
             // is `undefined` whenever `base.local` itself is.
-            ...(local === undefined ? {} : { managed: local, sync: local }),
+            managed,
+            ...(local === undefined ? {} : { sync: local }),
           }
         },
       },
