@@ -256,6 +256,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **A second crash keeps the first one's windows**: windows still waiting to be restored stay in the session file until
+  they are restored or the browser quits.
 - **Two local servers keep their own tab icons**: an icon is kept under the host and its port, not the host alone.
 - **Site rules and saves act on the right thing**: Save image or link as is never held as a page-started download, a
   CDN stylesheet's images follow the page's Images setting, and clearing site data also clears what sites cached.

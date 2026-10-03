@@ -20,6 +20,9 @@ export interface SessionLog {
   /** The session the file held when the browser started, or null: none, unreadable, or a private session. */
   previous: () => SavedSession | null
   attach: (source: SessionSource) => void
+  /** Windows of a run that ended in a crash and are still offered back: written beside the open ones until an orderly
+   * end, so a second crash before they are restored does not lose them. */
+  carry: (windows: SessionSource) => void
   /** The open windows changed: write them soon. */
   changed: () => void
   /** Only titles changed: write them with the next change, or within TITLE_WRITE_DELAY_MS. */
@@ -33,6 +36,7 @@ export class SessionStore implements SessionLog {
   private found: SavedSession | null = null
   private loading: Promise<void> | null = null
   private source: SessionSource | null = null
+  private carried: SessionSource = () => []
   private clean = false
   /** A write is already waiting: changes until it runs need no timer of their own, so a page whose title never stops changing cannot postpone the write for ever. */
   private waiting = false
@@ -60,6 +64,10 @@ export class SessionStore implements SessionLog {
 
   attach (source: SessionSource): void {
     this.source = source
+  }
+
+  carry (windows: SessionSource): void {
+    this.carried = windows
   }
 
   changed (): void {
@@ -98,7 +106,8 @@ export class SessionStore implements SessionLog {
     if (this.source === null) return
     try {
       mkdirSync(dirname(this.filePath), { recursive: true })
-      await writeFileAtomicAsync(this.filePath, JSON.stringify({ version: SESSION_VERSION, clean: this.clean, windows: this.source() }))
+      const windows = this.clean ? this.source() : [...this.source(), ...this.carried()]
+      await writeFileAtomicAsync(this.filePath, JSON.stringify({ version: SESSION_VERSION, clean: this.clean, windows }))
     } catch (error) {
       console.error('[orivon] failed to persist the session:', error)
       throw error
@@ -109,6 +118,7 @@ export class SessionStore implements SessionLog {
 /** A private session writes nothing and remembers nothing of an earlier one. */
 export class NullSessionStore implements SessionLog {
   async load (): Promise<void> {}
+  carry (): void {}
   previous (): SavedSession | null { return null }
   attach (): void {}
   changed (): void {}

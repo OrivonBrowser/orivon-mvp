@@ -176,7 +176,11 @@ function boot (runtime: Runtime): void {
     // starred in the first moments is added to the bookmarks on disk, not to an
     // empty tree the file then replaces.
     await Promise.all([shell.settings.load(), shell.searchEngines.load(), shell.shortcutStore.load(), shell.windowState.load(), shell.zoomStore.load(), shell.session.load(), shell.bookmarks.load()])
-    seedClosedStack(shell.closedTabs, shell.session.previous())
+    const seeded = seedClosedStack(shell.closedTabs, shell.session.previous())
+    // The windows of a run that crashed stay in the session file while they wait on the stack to be restored.
+    if (shell.session.previous()?.clean === false) {
+      shell.session.carry(() => shell.closedTabs.list().flatMap((entry) => entry.kind === 'window' && seeded.includes(entry.id) ? [entry.window] : []))
+    }
     applyThemeSetting(shell.settings, nativeTheme)
     // The host starts only when a .eth address is needed, by which time the settings have been read: the person's choice reaches it.
     configureVerifier({ lightClientEnabled: () => shell.settings.get('web3.lightClient'), windows: () => shell.windows.all() })

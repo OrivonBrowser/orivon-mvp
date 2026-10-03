@@ -62,8 +62,9 @@ describe('optionsFor', () => {
 describe('seedClosedStack', () => {
   it('puts the previous windows on the stack, the last one on top, and skips one with no tab', () => {
     const stack = new ClosedStack()
-    seedClosedStack(stack, session([saved(['https://a.example/']), saved([]), saved(['https://b.example/'])]))
+    const ids = seedClosedStack(stack, session([saved(['https://a.example/']), saved([]), saved(['https://b.example/'])]))
     expect(stack.list().map((entry) => entry.kind === 'window' && entry.window.tabs[0]?.url)).toEqual(['https://b.example/', 'https://a.example/'])
+    expect(ids).toEqual(stack.list().map((entry) => entry.id).reverse())
   })
 
   it('does nothing without a previous session', () => {

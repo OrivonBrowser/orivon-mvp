@@ -37,6 +37,7 @@ function fakeSession (): SessionLog & { source: SessionSource | null, changed: R
     load: async () => {},
     previous: () => null,
     attach: (source: SessionSource) => { session.source = source },
+    carry: () => {},
     flush: async () => {}
   }
   return session
