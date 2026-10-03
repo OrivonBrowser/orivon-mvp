@@ -1077,14 +1077,15 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** packaging (build step 10)
 
-### A253: Light client runs from launch on one keyless HTTPS beacon API **[OWNER]**
+### A253: The light client's consensus side has one keyless HTTPS beacon API **[OWNER]**
 
-- **Question:** Start Helios at launch (current) or on the first `.eth` navigation? What backs up
-  `ethereum-beacon-api.publicnode.com`, the only keyless HTTPS beacon API found?
-- **Why it matters:** from launch it costs ~20 MB/hour and 150-200 MB of memory, `.eth` used or
-  not; the consensus side has no failover.
-- **Options:** launch or lazy start (a few seconds' sync); a second HTTPS beacon API, or plain-HTTP
-  Nimbus, safe since the client verifies what it receives.
+- **Question:** What backs up `ethereum-beacon-api.publicnode.com`, the only keyless HTTPS beacon
+  API found? When the light client runs is settled (`d-0422`: on `.eth` use, plus a launch refresh
+  of a checkpoint over 7 days old).
+- **Why it matters:** the consensus side has no failover, so that one endpoint being down fails
+  every `.eth` name and every checkpoint refresh.
+- **Options:** a second HTTPS beacon API, or plain-HTTP Nimbus, safe since the client verifies what
+  it receives.
 - **Who decides:** owner
 - **Blocks:** packaging (build step 10)
 

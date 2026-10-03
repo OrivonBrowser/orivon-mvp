@@ -13,6 +13,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **`npm run perf:probe`** measures each process's CPU and memory through fixed scenes, to compare a change before and after.
 - **Web3 Score providers** (Settings > Web3): judged Levels 3 and 4, with a site's operations and connections, from any
   address Orivon opens, asked by hash bucket so a request names a group of sites, not the site. Build one with web3-score-manager.
 - **Tabs can be grouped**: name and colour a group from the tab menu, collapse it to one chip, drag it, move it to its own
@@ -255,6 +256,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **A tab that keeps changing its title no longer keeps the browser busy**: the session file is written off the main thread
+  and a change of titles alone at most every 30 s, history keeps five titles per page, and the tab strip redraws only what changed.
+- **The Ethereum light client runs only while `.eth` is in use**: it starts when a `.eth` address is typed or opened and
+  stops ten minutes after the last one; menus and panels left closed give their memory back after a minute.
+- **A background tab's page is told it is hidden**, as in Chrome, so a web app that slows down out of sight now does.
 - **uBlock Origin no longer grows its storage until the browser takes gigabytes of memory**: an extension's
   `chrome.storage.managed` is now an empty, read-only store, as in Chrome, instead of a second name for its local storage.
 - **A page with no icon of its own shows the globe again**, as in Chrome, instead of an icon the tab or history remembered
