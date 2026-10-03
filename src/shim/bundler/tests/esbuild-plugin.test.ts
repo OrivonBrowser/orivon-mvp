@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import esbuild from 'esbuild'
 import { existsSync } from 'node:fs'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -152,8 +152,8 @@ describe('orivonShimPlugin', () => {
     const runner = join(dir, 'outside', 'run.mjs')
     writeFileSync(entry, "import fs from 'node:fs'\nimport net from 'net'\nglobalThis.probe = [fs, net]\n")
     writeFileSync(runner, `
-      import { build } from ${JSON.stringify(esbuildMain())}
-      import { orivonShimPlugin, virtualRoot } from ${JSON.stringify(PLUGIN_PATH)}
+      import { build } from ${JSON.stringify(pathToFileURL(esbuildMain()).href)}
+      import { orivonShimPlugin, virtualRoot } from ${JSON.stringify(pathToFileURL(PLUGIN_PATH).href)}
       const built = await build({ entryPoints: [${JSON.stringify(entry)}], bundle: true, platform: 'node', format: 'esm', write: false, metafile: true, logLevel: 'silent', plugins: [orivonShimPlugin()] })
       console.log(JSON.stringify({ virtualRoot, inputs: Object.keys(built.metafile.inputs).filter((i) => i.includes('src/shim/')) }))
     `)

@@ -1882,15 +1882,13 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A345: Does the new tab's flat dark-grey stage still read as a flicker **[OWNER]**
+### A345: Which action still flickers in light mode is not known **[OWNER]**
 
-- **Question:** A new tab shows a flat `#394244` (the mean of the dashboard picture) for 230 ms (light) to 370 ms (dark)
-  while its renderer starts, then the picture; the window behind it never shows white. Does that still read as a flicker
-  on the owner's screen, in the owner's scheme? If so, which removal: a spare dashboard view kept warm and shown once it
-  has painted, or the previous page held under the new view until the dashboard paints?
-- **Why it matters:** the colour is a judgement call; only the owner's eye can say whether a dark stage on a light page
-  is acceptable. Either removal changes tab creation (pane host, tab factory), so it is not built until needed.
-- **Options:** accept the flat colour; warm spare dashboard view; hold the previous page under the new view.
+- **Question:** The owner still sees a flicker in light mode. The code shows three candidates: the dashboard tab leaving
+  for a site (now painted white when the navigation starts), the strip a resize or a maximise exposes (now the shown
+  tab's colour), and the split pane's frame view, which has no pre-paint colour. Which action is it, and does it remain?
+- **Why it matters:** a settled screenshot cannot catch a frame that lasts a moment, so only the owner's eye can say.
+- **Options:** open a new tab, leave it for a site, return to it, resize or maximise, switch tabs, split; name the one.
 - **Who decides:** owner
 - **Blocks:** nothing
 

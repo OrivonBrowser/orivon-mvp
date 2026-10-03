@@ -20,16 +20,14 @@
  * supported run-from-source platform (Rule 8) -- same reasoning as
  * build-e2e.mjs's own ORIVON_ENABLE_DEV_GRANT, ported here. `electron-vite`
  * is resolved via node_modules/.bin (already on PATH from `npm run dev`
- * itself), not via npx -- npm's own .cmd shim needs its exact name on
- * Windows, same as npx.cmd elsewhere in this repo.
+ * itself), not via npx; scripts/cli.mjs's `spawnCommandSync` is what makes
+ * its .cmd shim launchable on Windows.
  */
-import { spawnSync } from 'node:child_process'
+import { spawnCommandSync } from './cli.mjs'
 
-const command = process.platform === 'win32' ? 'electron-vite.cmd' : 'electron-vite'
 const skipIntro = process.argv.includes('--skip-intro') || process.env.npm_config_skip_intro === 'true'
 const intro = skipIntro ? 'off' : process.env.ORIVON_INTRO ?? 'always'
-const result = spawnSync(command, ['dev'], {
-  stdio: 'inherit',
+const result = spawnCommandSync('electron-vite', ['dev'], {
   env: { ...process.env, ORIVON_WINDOW_NO_FOCUS: '1', ORIVON_DEV_ORIGINS: '1', ORIVON_INTRO: intro }
 })
 process.exit(result.status ?? 1)

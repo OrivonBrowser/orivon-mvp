@@ -51,6 +51,6 @@ describe('headlessLaunch', () => {
     expect(headlessLaunch({ platform: 'darwin', env: DESKTOP, has: having(), command: 'npx', args: ['vitest'] }))
       .toEqual({ file: 'npx', args: ['vitest'], env: DESKTOP, virtualDisplay: false, privateBus: false })
     expect(headlessLaunch({ platform: 'win32', env: {}, has: having(), command: 'npx', args: [] }))
-      .toMatchObject({ file: 'npx.cmd' })
+      .toMatchObject({ file: 'npx' })
   })
 })
