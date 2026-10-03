@@ -710,7 +710,8 @@ is not the same as it doing anything: read the note, not just the symbol.
 | `search` | ✅ | `query` opens the default engine's results in the current tab, a new tab or a new window (`api/search-api.ts`) |
 | `sidePanel` | ⚠️ | Every method resolves as a no-op; no panel surface opens |
 | `storage.local` | ✅ | Native to Electron |
-| `storage.sync`, `storage.managed` | ⚠️ | Alias `local`; no real multi-device sync or policy delivery |
+| `storage.sync` | ⚠️ | Alias `local`; no real multi-device sync |
+| `storage.managed` | ⚠️ | Empty and read-only, as in Chrome with no policy set; no policy delivery |
 | `storage.session` | ✅ | Measured round-tripping in a service worker/popup/options/tab; present as a real function in an MV3 isolated content script, absent in MV2's |
 | `system.cpu`, `system.display`, `system.memory`, `system.storage` | ✅ | `system.cpu.getInfo()` measured returning real hardware data (actual CPU model, core count, per-core usage) |
 | `tabCapture` | ✅ | `getMediaStreamId`/`getCapturedTabs`/`onStatusChanged`; needs the extension invoked on that tab, by its toolbar icon, its row in the Extensions menu or its command key; only an http(s) tab of no app holding grants; the tab is muted locally while captured |

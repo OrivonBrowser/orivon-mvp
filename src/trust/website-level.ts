@@ -1,10 +1,11 @@
 // The Website level of the canonical Web3 scores page, as far as this
 // browser can observe it: Level 1 or Level 2. Level 3 and above are judged,
-// and only a Web3 Score provider may give them; a developer-only override
-// (`../main/dev/score-levels.ts`) can stand in for one, for previewing the
-// UI. `displayedLevel` below is the one place "observed, or overridden" is
-// decided -- every caller shows that, and names the override when one
-// applies, never claiming an override as observed (ADR-0006).
+// and only a Web3 Score provider may give them (`score-provider.ts`); a
+// developer-only override (`../main/dev/score-levels.ts`) can stand in for
+// one, for previewing the UI. `displayedLevel` below is the one place
+// "observed, judged or overridden" is decided -- every caller shows that, and
+// names the provider or the override, never claiming either as observed
+// (ADR-0006).
 
 import type { DdocVerdict } from './ddoc.js'
 
@@ -16,11 +17,19 @@ export type ObservedLevel = 1 | 2
  * reads `WebsiteLevel.level` directly can never claim one either. */
 export type ScoreLevel = ObservedLevel | 3 | 4
 
-/** The level to show: the override when one exists, otherwise what this
- * browser actually observed. Pure so every surface (shield, panel, consent
- * dialog) computes it the same way, from the same two facts. */
-export function displayedLevel (observed: ObservedLevel, override: ScoreLevel | undefined): ScoreLevel {
-  return override ?? observed
+function isScoreLevel (level: number): level is ScoreLevel {
+  return level === 1 || level === 2 || level === 3 || level === 4
+}
+
+/** The level to show: the override when one exists, then a provider's judged
+ * Level 3 or 4, then what this browser observed. A judged level counts only
+ * over Level 2: it describes the files an identifier names, and only DDOC
+ * shows those are the files served. Levels 1 and 2 are observed, so a judged
+ * 1 or 2 only says 3 and 4 are not met. Grant warnings read only the
+ * developer override, never this, so a provider cannot silence one (ADR-0054). */
+export function displayedLevel (observed: ObservedLevel, override: ScoreLevel | undefined, judged?: number): ScoreLevel {
+  if (override !== undefined) return override
+  return observed === 2 && judged !== undefined && judged >= 3 && isScoreLevel(judged) ? judged : observed
 }
 
 /** A `.eth` site's content, as the verifier served it now or as an installed app's pin recorded it. */

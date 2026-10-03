@@ -33,21 +33,28 @@ function rig (): Rig {
 
 describe('a window\'s backing follows the active tab', () => {
   it('takes the shown tab\'s resting colour', () => {
-    expect(rig().colours).toEqual(['#0d0e14'])
+    expect(rig().colours).toEqual(['#394244'])
+  })
+
+  it('takes the dashboard\'s colour for a new dashboard tab at the moment it is shown, before its load has an address', () => {
+    const { colours, record, change } = rig()
+    ;(record.view.webContents as unknown as { getURL: () => string }).getURL = () => ''
+    change('t1')
+    expect(colours).toEqual(['#394244'])
   })
 
   it('does not throw when the active tab\'s view has no webContents, and keeps the colour it had', () => {
     const { colours, record, change } = rig()
     ;(record.view as unknown as { webContents?: object | undefined }).webContents = undefined
     expect(() => { change('t1') }).not.toThrow()
-    expect(colours).toEqual(['#0d0e14'])
+    expect(colours).toEqual(['#394244'])
   })
 
   it('does not throw when the webContents is destroyed, and keeps the colour it had', () => {
     const { colours, record, change } = rig()
     ;(record.view.webContents as unknown as { isDestroyed: () => boolean }).isDestroyed = () => true
     expect(() => { change('t1') }).not.toThrow()
-    expect(colours).toEqual(['#0d0e14'])
+    expect(colours).toEqual(['#394244'])
   })
 })
 

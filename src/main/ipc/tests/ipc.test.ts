@@ -48,6 +48,7 @@ function actions (overrides: Partial<ShellActions> = {}): ShellActions {
     openSiteInfo: vi.fn(),
     runCommand: vi.fn(),
     openMenu: vi.fn(),
+    press: vi.fn(),
     prewarmMenu: vi.fn(),
     act: vi.fn(),
     beginTabDrag: vi.fn(),
@@ -116,6 +117,30 @@ describe('registerShellIpc -- openMenu', () => {
     await dispatch({ type: 'openMenu', anchor })
 
     expect(openMenu).toHaveBeenCalledExactlyOnceWith(anchor)
+  })
+})
+
+describe('registerShellIpc -- press', () => {
+  it('tells the window which toolbar button went down, for the chrome view only', async () => {
+    const press = vi.fn()
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ press }))
+
+    await dispatch({ type: 'press', button: 'menu' }, OTHER_FRAME)
+    expect(press).not.toHaveBeenCalled()
+    await dispatch({ type: 'press', button: 'menu' })
+    await dispatch({ type: 'press', button: 'web3' })
+
+    expect(press).toHaveBeenNthCalledWith(1, 'menu')
+    expect(press).toHaveBeenNthCalledWith(2, 'web3')
+  })
+
+  it('ignores a button that is not one of the toolbar\'s', async () => {
+    const press = vi.fn()
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ press }))
+
+    for (const button of [undefined, null, 7, '', 'extensions', '__proto__', { id: 'menu' }]) await dispatch({ type: 'press', button } as never)
+
+    expect(press).not.toHaveBeenCalled()
   })
 })
 
@@ -199,7 +224,7 @@ describe('registerShellIpc -- web3ScoreFor', () => {
         connection: 'secure', ddoc: { status: 'not-checked' }, pin: undefined, name: undefined,
         level: { level: 1, because: 'x', assessable: undefined },
         delivery: { level: 1, evidence: {} as never },
-        levelOverride: 4, displayedLevel: 4, deliveryOverride: undefined, displayedDelivery: 1
+        levelOverride: 4, judged: { status: 'off' }, judgedShown: false, displayedLevel: 4, deliveryOverride: undefined, displayedDelivery: 1
       } as never))
     })
     registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, siteInfo, actions())
@@ -207,7 +232,7 @@ describe('registerShellIpc -- web3ScoreFor', () => {
     const result = await dispatch({ type: 'web3ScoreFor', url: 'https://app.example/page' })
 
     expect(siteInfo.siteTrustFor).toHaveBeenCalledWith('https://app.example/page')
-    expect(result).toEqual({ level: 4, overridden: true, delivery: 1, deliveryOverridden: false, localDev: false })
+    expect(result).toEqual({ level: 4, overridden: true, judgedBy: undefined, pending: false, delivery: 1, deliveryOverridden: false, localDev: false })
   })
 
   it('is null when siteTrustFor has nothing to report', async () => {

@@ -79,6 +79,8 @@ const SPECS = {
   'updates.check': { kind: 'bool', default: false },
   // Whether `.eth` names are proven by a light client that runs on this computer. Read when Orivon starts.
   'web3.lightClient': { kind: 'bool', default: true },
+  // Where judged Web3 Score levels are read (docs/architecture/web3-score-provider.md). Empty asks nobody.
+  'web3.scoreProvider': { kind: 'text', default: '', maxLength: 2048, check: isEmptyOrAddress },
   // Every tab's page can be inspected unless the person turns it off; where the tools open is theirs too.
   'developer.tools': { kind: 'bool', default: true },
   'developer.dock': { kind: 'enum', options: ['right', 'bottom', 'undocked'], default: 'right' },

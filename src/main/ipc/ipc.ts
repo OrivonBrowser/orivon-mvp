@@ -23,6 +23,8 @@ import { isCommandId } from '../shortcuts/commands.js'
 import type { CommandId } from '../shortcuts/commands.js'
 import type { SiteInfoPage } from '../permissions/site-info-panel.js'
 import { isInternalPageId } from '../pages/internal-pages.js'
+import { isPressButton } from '../shell/press-stamps.js'
+import type { PressButton } from '../shell/press-stamps.js'
 
 export type ShellCommand =
   | { type: 'newTab'; url?: string }
@@ -77,6 +79,9 @@ export type ShellCommand =
   | { type: 'openSiteInfo'; url?: string; anchor: PanelAnchor; page: SiteInfoPage }
   /** Opens, or closes, the main menu under the toolbar's menu button. Same `anchor` contract as `openPermissions`. */
   | { type: 'openMenu'; anchor: PanelAnchor }
+  /** A pointer went down on a toolbar button that opens a popup. Main stamps the moment with its own clock, so the click
+   * that follows is judged against the press however long the button was held (../shell/press-stamps.ts). */
+  | { type: 'press'; button: PressButton }
   /** The toolbar's menu button was hovered or focused: builds its (kept-warm)
    * view ahead of the click that usually follows, so opening it costs no
    * more than attaching an already-live view. Never fired at window
@@ -124,6 +129,7 @@ export interface ShellActions {
   openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => void
   runCommand: (id: CommandId) => void
   openMenu: (anchor: PanelAnchor) => void
+  press: (button: PressButton) => void
   prewarmMenu: () => void
   act: (name: string, payload: unknown) => unknown
   beginTabDrag: (id: string) => void
@@ -214,6 +220,9 @@ export function registerShellIpc (
         return
       case 'openMenu':
         actions.openMenu(command.anchor)
+        return
+      case 'press':
+        if (isPressButton(command.button)) actions.press(command.button)
         return
       case 'prewarmMenu':
         actions.prewarmMenu()

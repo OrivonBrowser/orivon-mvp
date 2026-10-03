@@ -94,4 +94,11 @@ shows a text box asks for the keyboard from its handler (`takeFocus`) on the fir
 on behaves as `take` until it closes.
 
 **Blur closes on the same mousedown that a re-click on the opener uses to ask again.** That click's
-message reaches main after the blur, so a toggle within 300 ms of a blur-close is read as its echo.
+message reaches main after the blur, and a button held down delays it by as long as it was held. The
+toolbar's menu button therefore announces its press (`press` command), main stamps it with its own clock,
+and `toggle`'s `pressedAt` is that stamp: the toggle is the echo when the blur-close happened at or after
+the press, however long the press lasted, and a fresh request when the close was earlier. The page's clock
+is never compared with main's, which drift apart over a suspend. A toggle with no stamp (a key, an overlay
+opened from another button) is the echo when it comes within 300 ms of a blur-close. The rule is
+`isEchoOfClose` in [`../shell/press-stamps.ts`](../shell/press-stamps.ts), shared with the popups in
+[`../permissions/`](../permissions/).

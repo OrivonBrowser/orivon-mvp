@@ -386,3 +386,9 @@ hr {
 .data-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .data-actions .btn-secondary { border-color: var(--wdanger); color: var(--wdanger); }
 .data-actions .btn-secondary:hover { background: color-mix(in srgb, var(--wdanger) 10%, transparent); }
+
+/* --- Web3 Score page: a provider's judgement ---------------------------- */
+
+.judged-summary { margin: 0; font-size: 12px; line-height: 1.45; }
+.part-list .rung-label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.part-note { color: var(--wink-dim); font-size: 11px; line-height: 1.4; }

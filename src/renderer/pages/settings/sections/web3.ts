@@ -5,6 +5,13 @@ export const web3: Section = {
   title: 'Web3',
   rows: [
     {
+      id: 'web3-score-provider',
+      label: 'Web3 Score provider',
+      help: 'Where Orivon reads judged Web3 Score levels, such as whether a site\'s code is open source. Any address Orivon opens works: https://, ipfs:// or a .eth name. Orivon asks for a group of scores named by the start of a hash, one of at most 256, so the provider learns the group, never the site, though one that scores only a few sites can guess. Empty asks nobody.',
+      keywords: ['web3 score', 'score', 'provider', 'trustlessity', 'judged', 'level', 'privacy'],
+      control: { type: 'text', key: 'web3.scoreProvider', placeholder: 'None', problem: 'Enter an address, like https://example.com/score' }
+    },
+    {
       id: 'web3-light-client',
       label: 'Verify .eth names on this computer',
       help: 'A light client proves what a .eth name points to before its page loads, so nobody has to be trusted to say. Turn it off and no .eth name loads. It is read when Orivon starts.',

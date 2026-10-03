@@ -172,8 +172,8 @@ for (const kind of KINDS) {
   }, TEST_TIMEOUT_MS)
 }
 
-// The dashboard's own dark wash (tab-factory.ts, theme-colors.ts's
-// APP_DARK_WASH) must not bleed through a site with no CSS background of
+// The dashboard's own pre-paint colour (tab-factory.ts, theme-colors.ts's
+// DASHBOARD_BACKGROUND) must not bleed through a site with no CSS background of
 // its own once the SAME tab navigates there -- the common case, since a
 // site with no grants yet needs no partition swap and so never gets a
 // freshly built, colourless view. capturePage() throws UnknownVizError
@@ -200,7 +200,7 @@ it('resets the dashboard tab\'s background once it navigates to a plain site wit
     // The dashboard tab loads after the chrome view appears: wait for both it and its recorded colour.
     let id: number | undefined
     expect(await waitFor(async () => { id = await dashboardId(); return (await recordedBackground(id)) !== undefined })).toBe(true)
-    expect(await recordedBackground(id)).toBe('#0d0e14')
+    expect(await recordedBackground(id)).toBe('#394244')
 
     await clickAddressBarRetrying(chrome, `${origin}/site`)
     expect((await waitForTab(chrome, { address: `${origin}/site` })).ok).toBe(true)

@@ -62,6 +62,8 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - 35 reported bugs worked: tab drops, window moves, reload, popups, bookmark folders, print, .eth pages, sign-in loop; two native crashes fixed.
 - Full uBlock Origin now blocks: Orivon serves extensions' webRequest listeners itself; the ad-block test page went from 10 to 90 of 132.
 - The Lounge is pinned on IPFS from our own node and runs end to end from ipfs:// in Orivon; thelounge.orivonstack.eth comes next.
+- Web3 Score is real: a provider chosen in Settings, any protocol, asked by hash bucket; web3-score-manager builds providers as static sites.
+- ASGARDEX and The Lounge carry the first Web3 Score evaluations: both Level 3, held back by centralised APIs and IRC servers.
 
 ### In my head
 - Explored what `child_process` can safely mean: a WASI program in the app's own tab, native `subprocess` still excluded (`docs/planning/child-process-design.md`).
@@ -70,5 +72,6 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Direction: the wallet moves from OUT to IN; explored as three provider layers behind one registry, mnemonic first, reads through Helios (`docs/planning/wallet-system-exploration.md`).
 - Decided native modules, spawn and fork run only as WebAssembly under the broker; native machine code never runs for an app (ADR-0040).
 - TIM's DNS hijacks Orivon's three IPFS gateways; the DoH fallback already routes around it, but a cold first load still takes ~47 s.
+- Privacy check: a provider choosing 65,536 buckets could name each site visited; capped at 256, and the docs now say what remains.
 
 ### Non-repo

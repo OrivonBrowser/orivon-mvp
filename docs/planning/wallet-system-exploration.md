@@ -664,9 +664,10 @@ The second half is the wallet's path:
 8. **The site's level in the prompt.** The consent code sees only the dev override today;
    `SiteInfoController.siteTrustFor` computes the real `displayedLevel` and is not published on
    `SubsystemContext`. Publish a `trustLevelFor(origin)` (or pass the controller) so the connect
-   prompt and `connect-policy.ts` read the level the shield shows. With no score provider yet
-   (A250), Level 3 and 4 are unreachable for a real site, so the Level-4 branch is dormant until
-   one exists. Say so in the README rather than pretending it is exercised.
+   prompt and `connect-policy.ts` read the level the shield shows. A provider's judged Level 4
+   shows on the shield but never removes a warning (`ADR-0054`), so anything the connect prompt
+   relaxes at Level 4 must read the developer override alone, as the grant prompts do; for a real
+   site that branch stays dormant. Say so in the README rather than pretending it is exercised.
 9. **Browser UI.** `src/main/channels.ts` (`WALLET_COMMAND_CHANNEL`), `src/main/ipc/wallet-ipc.ts`
    with the sender check `settings-ipc.ts` performs, `src/preload/wallet.ts` exposing
    `orivonWallet`, `src/renderer/wallet/`, the `#identity` button in `src/renderer/index.html`

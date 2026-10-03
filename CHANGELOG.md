@@ -13,6 +13,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **Web3 Score providers** (Settings > Web3): judged Levels 3 and 4, with a site's operations and connections, from any
+  address Orivon opens, asked by hash bucket so a request names a group of sites, not the site. Build one with web3-score-manager.
 - **Tabs can be grouped**: name and colour a group from the tab menu, collapse it to one chip, drag it, move it to its own
   window, and get it back after a restart; a link opened from a member opens inside the group.
 - **Idle tabs go to sleep** (Settings > Performance): after 30 minutes by default, and sooner when the computer is low on memory, a tab frees its page and wakes
@@ -248,14 +250,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - **The subsystem registry, the parallel-work system and the human entry path**: README,
   ARCHITECTURE, CONTRIBUTING and a README in every directory.
 - **AGPL-3.0-only licence.**
+- **`npm run dev` starts on a fresh profile every launch** and deletes it at the end, so it behaves as a first run and runs
+  beside an open Orivon; `npm start` keeps your real profile. `npm run dev -- --user-data-dir=<dir>` keeps one across launches.
 
 ### Fixed
 
+- **uBlock Origin no longer grows its storage until the browser takes gigabytes of memory**: an extension's
+  `chrome.storage.managed` is now an empty, read-only store, as in Chrome, instead of a second name for its local storage.
 - **A page with no icon of its own shows the globe again**, as in Chrome, instead of an icon the tab or history remembered
   for its site; a remembered icon still comes back on a return after a blank or failed page.
 - **A port bundled against a pnpm-installed checkout gets a working `crypto`**: the shim bundler now finds its own
   dependencies by their real paths, so The Lounge's server no longer crashes on `createHash is not a function`.
 - **`npm run check:advisories` runs on Windows**: it spawns `npm audit` through the same `.cmd`-aware launcher.
+- **`npm run dev -- <switch>` passes the switch to Electron**, as `npm run dev -- --password-store=basic` needs; it was dropped.
 - **`npm run dev` and `npm start` start on Windows again**: Node refuses to spawn an npm `.cmd` shim without a shell, so the
   launch and build scripts exited 1 with nothing on screen; they now run the shim through cmd.exe and print a failed launch.
 - **An app opened from `ipfs://` or a `.eth` name asks for its grants again over slow gateways**: its install gave up when a
