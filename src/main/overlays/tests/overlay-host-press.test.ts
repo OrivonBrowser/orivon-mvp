@@ -5,7 +5,7 @@ import type { OverlayViewSpec } from '../overlay-view.js'
 import { CLOSE_LIKE_POPUP } from '../overlay-types.js'
 import type { OverlayDef } from '../overlay-types.js'
 
-const { views } = vi.hoisted(() => ({ views: [] as Array<{ onBlur: () => void }> }))
+const { views, placed } = vi.hoisted(() => ({ views: [] as Array<{ onBlur: () => void }>, placed: [] as Array<{ x: number, width: number }> }))
 
 vi.mock('../overlay-view.js', () => ({
   focusedContents: () => undefined,
@@ -15,7 +15,7 @@ vi.mock('../overlay-view.js', () => ({
       id: 100 + views.length,
       attach: () => {},
       detach: () => {},
-      setBounds: () => {},
+      setBounds: (rect: { x: number, width: number }) => { placed.push(rect) },
       focusWhenReady: () => {},
       send: () => {},
       refreshBackground: () => {},
@@ -134,4 +134,23 @@ describe('createOverlayHost: a toggle that names its press', () => {
     expect(() => { host.reanchor('a', { x: 100, y: 40, width: 30, height: 30 }) }).not.toThrow()
     expect(host.isOpen('a')).toBe(true)
   })
+
+  it('places a sheet in the pane of the tab in front when the area is split', () => {
+    const sheet = { ...DEF, name: 'sheet', placement: { kind: 'area', at: 'center', width: 400 }, layer: 'bar', closeOn: { blur: false, tabSwitch: true, navigation: false, layout: false } } as OverlayDef
+    const win = { getContentBounds: () => ({ x: 0, y: 0, width: 1200, height: 800 }), isFocused: () => true }
+    const host = createOverlayHost({
+      win: win as never,
+      contentView: { addChildView: () => {} } as never,
+      dirname: '/app',
+      defs: [sheet],
+      context: () => ({ window: { chrome: { webContents: { id: 5 } } }, services: { windows: { all: () => [{ window: win }] } } }) as never,
+      area: () => ({ x: 0, y: 76, width: 1200, height: 724 }),
+      paneArea: () => ({ x: 600, y: 76, width: 600, height: 724 }),
+      activeContents: () => undefined
+    })
+    host.show('sheet')
+    expect(host.isOpen('sheet')).toBe(true)
+    expect(placed.at(-1)).toMatchObject({ x: 700, width: 400 })
+  })
 })
+

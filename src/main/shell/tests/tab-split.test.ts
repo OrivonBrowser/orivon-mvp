@@ -553,3 +553,27 @@ describe('a split asked for in a full window', () => {
     expect(withs[tabs[0] as string]).toBeNull()
   })
 })
+
+describe('a press in the other pane', () => {
+  it('brings that tab in front the way a strip click does, so what waits for the tab is told', async () => {
+    const { TabLifecycle } = await import('../tab-lifecycle.js')
+    const lifecycle = new TabLifecycle()
+    const activated: unknown[] = []
+    lifecycle.subscribe({ tabActivated: (contents) => { activated.push(contents) } })
+    const contentView = { children: [] as unknown[], addChildView: vi.fn(), removeChildView: vi.fn() }
+    const manager = new TabManager(contentView as never, () => AREA, vi.fn(), 'http://localhost:5999/newtab/', {} as SubsystemContext, {
+      window: { isDestroyed: () => false } as never,
+      tabLifecycle: lifecycle
+    } as never)
+    const a = manager.createTab('https://a.example/')
+    const b = manager.createTab('https://b.example/')
+    manager.activateTab(a)
+    expect(manager.splits.split(a, b, 'right')).toBe(true)
+    const other = manager.getState().activeTabId === a ? b : a
+    activated.length = 0
+    ;(manager as unknown as { viewHost: { paneClicked: (id: string) => void } }).viewHost.paneClicked(other)
+    expect(manager.getState().activeTabId).toBe(other)
+    expect(activated).toEqual([(createdViews[other === a ? 0 : 1] as unknown as { webContents: unknown }).webContents])
+  })
+})
+

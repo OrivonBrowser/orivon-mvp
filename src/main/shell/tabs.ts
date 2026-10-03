@@ -135,7 +135,13 @@ export class TabManager {
       record: (id) => this.tabs.get(id),
       records: () => this.tabs,
       activeId: () => this.activeId,
-      setActiveId: (id) => { this.activeId = id },
+      // A press in the other pane brings that tab in front as a click on it in the strip does: what waits for its tab
+      // (a question, the find bar, a crashed page's card) shows, and what counts the tab in front hears of it.
+      setActiveId: (id) => {
+        this.activeId = id
+        const contents = this.tabs.get(id)?.view.webContents
+        if (contents !== undefined && !contents.isDestroyed()) this.shell?.tabLifecycle?.tabActivated(contents)
+      },
       area: getTabBounds,
       isClosing: () => this.disposed,
       emitState: () => { this.changed() },
@@ -386,6 +392,11 @@ export class TabManager {
     // A page's own event can land while it is being torn down, when the view no longer has a webContents at all.
     const wc: Electron.WebContents | undefined = this.tabs.get(id)?.view.webContents
     return wc === undefined || wc.isDestroyed() ? undefined : wc
+  }
+
+  /** The pane of the tab in front: the whole tab area unless the window is split. */
+  activePaneBounds (): Bounds {
+    return this.activeId === null ? this.panes.bounds('') : this.panes.bounds(this.activeId)
   }
 
   /** The active tab's own webContents -- the site-info popup's Cookies and

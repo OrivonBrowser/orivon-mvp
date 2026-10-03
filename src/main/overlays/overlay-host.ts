@@ -28,6 +28,8 @@ export interface OverlayHostDeps {
   context: () => WindowContext
   /** The tab area, as the window lays it out now. */
   area: () => Bounds
+  /** The pane of the tab in front, when the area is split between two: where a bar or a sheet about that tab goes. */
+  paneArea?: () => Bounds
   activeContents: () => WebContents | undefined
 }
 
@@ -90,7 +92,8 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
   function boundsFor (slot: Slot): Electron.Rectangle {
     const { width, height } = deps.win.getContentBounds()
     const limits = { min: slot.def.height?.min ?? DEFAULT_HEIGHT.min, max: slot.def.height?.max ?? DEFAULT_HEIGHT.max }
-    return overlayBounds(slot.def.placement, slot.anchor, { width, height, area: deps.area() }, slot.height, limits)
+    const area = slot.def.placement.kind === 'area' ? deps.paneArea?.() ?? deps.area() : deps.area()
+    return overlayBounds(slot.def.placement, slot.anchor, { width, height, area }, slot.height, limits)
   }
 
   function handlerFor (slot: Slot): OverlayHandler {

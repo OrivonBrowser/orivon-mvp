@@ -50,6 +50,10 @@ feature that must not open over one (the downloads peek) sees it.
 asks a question) makes a toggle of that name do nothing: a button that shares the name (the
 site-access chip opens the same overlay to review) must not end an unanswered question as a dismissal.
 
+**A bar or a sheet belongs to the pane in front.** An `area` placement (the find bar, a sheet, a card) is laid
+out in `paneArea()`, the pane of the tab in front when the window is split, so it sits over the page it is
+about; a dock and an anchored popup keep the whole tab area.
+
 **An anchored overlay follows its anchor.** `reanchor(name, anchor)` places an open overlay under the
 control again and runs its `moved` hook. Asks shown through `tab-slots.ts` are placed again whenever
 the chrome reports that the address pill moved (`slotAnchorsMoved`), so a prompt under the pill stays
