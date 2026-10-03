@@ -52,11 +52,12 @@ export function paintMark (el: HTMLElement, level: ScoreLevel | null): void {
 }
 
 /** The tooltip/`aria-label` text: the Website level, and anything that
- * makes it less than observed (ADR-0006). The popup's own connection row
- * carries the fuller glance. */
+ * makes it less than observed, a provider's judgement included (ADR-0006).
+ * The popup's own connection row carries the fuller glance. */
 export function shieldLabel (score: Web3Score | null): string {
   if (score === null) return 'Web3 Score'
   const base = `Website level ${String(score.level)} (${web3Mark(score.level)})`
   if (score.overridden) return `${base} (developer override)`
-  return score.localDev ? `${base} (developer mode)` : base
+  const judged = score.judgedBy === undefined ? base : `${base}, judged by ${score.judgedBy}`
+  return score.localDev ? `${judged} (developer mode)` : judged
 }

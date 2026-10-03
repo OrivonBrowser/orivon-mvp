@@ -42,13 +42,14 @@ function connectionLabel (connection: SiteTrust['connection']): string {
 
 /** One short line naming the displayed Website level and Delivery level;
  * per-app connections are never observed, so they stay `?`
- * (`src/trust/README.md`). Names a developer override, or a DDOC counted
- * only in developer mode, rather than letting either read as observed
- * (ADR-0006). */
+ * (`src/trust/README.md`). Names a developer override, a provider's
+ * judgement, or a DDOC counted only in developer mode, rather than letting
+ * any of them read as observed (ADR-0006). */
 function trustGlance (trust: SiteTrust | null): string {
   if (trust === null) return 'Web3 Score'
   const overridden = trust.levelOverride !== undefined || trust.deliveryOverride !== undefined
-  const glance = `Web3 Score · Website L${String(trust.displayedLevel)} · Delivery D${String(trust.displayedDelivery)} · Connections ?`
+  const judgedBy = !overridden && trust.judged.status === 'judged' && trust.level.level === 2 ? ` (judged by ${trust.judged.provider.name})` : ''
+  const glance = `Web3 Score · Website L${String(trust.displayedLevel)}${judgedBy} · Delivery D${String(trust.displayedDelivery)} · Connections ?`
   if (overridden) return `${glance} (developer override)`
   return trust.ddoc.status === 'local-dev' ? `${glance} (developer mode)` : glance
 }

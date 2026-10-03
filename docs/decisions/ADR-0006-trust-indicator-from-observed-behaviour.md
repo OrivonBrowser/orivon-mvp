@@ -337,3 +337,12 @@ own; the shield and the Web3 Score page keep the four level colours above.
   users rely on; removing one later reads as a regression.
 - **What would make us revisit:** a real score provider emerging (adds judged levels); or
   trustless resolution landing (adds D4 and site L2).
+
+## Amendment, 2026-10-03: providers are asked by hash bucket
+
+`ADR-0054` settles A250 and replaces the subscribed, signed feeds above with a lookup: the person
+chooses a provider at any address Orivon opens, and Orivon asks it for the bucket a page's
+identifier falls in, never the identifier itself, so the provider learns one bucket among
+thousands, not the site. Provider files are unsigned in this build (*provisional*, `ADR-0054`).
+The display rule of the 2026-09-24 amendment stands unchanged: a judged level names its provider,
+sits apart from the observed evidence, and is grey `?` when the provider has no score.

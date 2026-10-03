@@ -9,22 +9,23 @@ operation), `bookmark-file.ts` (reading and writing the file, pure),
 `search-engines.ts` (the built-in engines, their keywords and suggestion addresses, and the template rule), `search-resolve.ts` and
 `search-current.ts` (which engine a typed search goes to, pure), `search-engine-store.ts` (the engines a person keeps in
 `search-engines.json`; its rules are in `search-engine-rules.ts` and the starting site engines in `site-engines.ts`),
-`favicon-cache.ts` (the icons already fetched), `bookmark-types.ts` (the node, bar item and import shapes, types only), and `site-trust.ts` (the Web3 Score page and the
-toolbar shield's data). `site-trust.ts` is pure: its caller,
+`favicon-cache.ts` (the icons already fetched), `bookmark-types.ts` (the node, bar item and import shapes, types only), `site-trust.ts` (the Web3 Score page and the
+toolbar shield's data), and `score-provider-client.ts` (asks the chosen Web3 Score provider, `ADR-0054`). `site-trust.ts` is pure: its caller,
 [`../permissions/site-info-controller.ts`](../permissions/site-info-controller.ts), hands it the
 pin, pin coverage, a `.eth` name's evidence and the developer overrides, so it never reaches for
 the loader, the verifier or `../dev/` itself.
 
-**Tied to Electron.** `favicon.ts` is the one file that imports `electron`, and only dynamically:
-outside a real Electron process the package's entry point is a path string.
+**Tied to Electron.** `favicon.ts` and `score-provider-client.ts` import `electron`, only
+dynamically and only for `net.fetch`: outside a real Electron process the package's entry point is
+a path string.
 
 **What it depends on.** [`../../broker/policy/`](../../broker/policy/) (`address.ts`,
 `origin.ts`; `pin.ts`, `connect.ts` types), [`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts)
 (`writeFileAtomicAsync`, `bookmarks.ts`'s own write), [`../../trust/`](../../trust/),
 [`../../loader/electron/resolve.ts`](../../loader/electron/resolve.ts),
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts),
-[`../verifier/name-evidence.ts`](../verifier/name-evidence.ts) (types), `node:fs/promises`,
-`node:path`, `node:stream`.
+[`../verifier/name-evidence.ts`](../verifier/name-evidence.ts) (types), `node:crypto`,
+`node:fs/promises`, `node:path`, `node:stream`.
 
 **What it must never import.** [`../shell/tabs.ts`](../shell/tabs.ts): `favicon.ts` has no
 dependency on tab-collection state, which keeps it importable under plain vitest.

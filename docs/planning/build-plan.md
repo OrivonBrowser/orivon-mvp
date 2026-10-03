@@ -217,11 +217,11 @@ connection log, operation scoring. Click-through shows the actual evidence, not 
 (`ADR-0006`).
 
 **Judged score levels are part of this step:** site L4's "open source" half, site L5 and
-operation depth, read from a Web3 Score provider's attestation over the bundle hash. The
-provider need not be trustless in this build, and may run locally. Each judged level names the
-provider that issued it, is shown apart from the observed evidence, and falls back to grey `?`
-when no attestation matches the current hash. Which provider ships is open
-(`open-questions.md` A250).
+operation depth, read from a Web3 Score provider's evaluation of the bundle hash or CID. The
+person chooses the provider in Settings, any address Orivon opens, and it need not be trustless
+in this build. Each judged level names the provider that issued it, is shown apart from the
+observed evidence, and falls back to grey `?` when the provider has no score for the current
+hash (`ADR-0054`, `docs/architecture/web3-score-provider.md`).
 
 **8. Telemetry.** Collection, first-run disclosure showing the literal JSON with
 [Keep on] / [Turn off] buttons and no preselected default, in-product "what has been sent"

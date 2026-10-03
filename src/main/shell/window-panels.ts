@@ -9,7 +9,7 @@ import { notificationDecisions } from '../sessions/permission-gate.js'
 import { createSiteInfoController } from '../permissions/site-info-controller.js'
 import type { SiteInfoController } from '../permissions/site-info-controller.js'
 import { deliveryLevelOverrideFor, scoreLevelOverrideFor } from '../dev/score-levels.js'
-import { localDdocFor } from '../dev/local-ddoc.js'
+import { localDdocHashFor } from '../dev/local-ddoc.js'
 import { createPermissionsPanel } from '../permissions/permissions-panel.js'
 import { createSiteInfoPanel } from '../permissions/site-info-panel.js'
 import { openCertificate } from '../auth/certificate-open.js'
@@ -52,9 +52,9 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, dirnam
   // rather than imported by the controller itself, so it stays testable
   // against a fake session (that file's own doc).
   // `scoreLevelOverrideFor`/`deliveryLevelOverrideFor` (`../dev/score-levels.ts`)
-  // and `localDdocFor` (`../dev/local-ddoc.ts`) are developer-only: no-ops
+  // and `localDdocHashFor` (`../dev/local-ddoc.ts`) are developer-only: no-ops
   // outside developer mode.
-  const siteInfoController = createSiteInfoController(ctx, { isOriginServedFromCacheSync, pinCoverageFor, nameEvidenceFor: verifierNameEvidence, levelOverrideFor: scoreLevelOverrideFor, deliveryOverrideFor: deliveryLevelOverrideFor, localDdocFor })
+  const siteInfoController = createSiteInfoController(ctx, { isOriginServedFromCacheSync, pinCoverageFor, nameEvidenceFor: verifierNameEvidence, levelOverrideFor: scoreLevelOverrideFor, deliveryOverrideFor: deliveryLevelOverrideFor, localDdocHashFor, providerVerdictFor: services.scoreProvider.verdictFor })
 
   // The permissions surface is a panel inside this window rather than a
   // second one -- ./permissions-panel.ts.

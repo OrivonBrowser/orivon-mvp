@@ -1,19 +1,19 @@
 import type { SiteTrust } from '../../main/browsing/site-trust.js'
 import type { DdocVerdict } from '../../trust/ddoc.js'
+import type { ProviderVerdict, ScorePart } from '../../trust/score-provider.js'
 import { backIcon } from './icons.js'
 
 // The Web3 Score page. It leads with the Website level of the canonical Web3
-// scores page, as far as this browser observes it: Level 1 or 2, decided by
-// whether DDOC holds. Levels 3 and 4 are judgements only a Web3 Score
-// provider may give, so they show as grey "?" and none is ever claimed --
-// unless a developer-only override (`../../main/dev/score-levels.ts`) stands
-// in for one, always named as an override, never as observed or judged
-// (ADR-0006). Beneath the level sits the evidence it rests on: a `.eth`
-// name's chain, the Delivery level (the same automatic-vs-override split,
-// on the canonical Connection-to-network scale), the pin. Connections and
-// operations render as grey "Not observed yet": the broker keeps no
-// connection log (src/trust/README.md), and claiming otherwise would be
-// exactly the overclaim this page exists to prevent.
+// scores page: Level 1 or 2 as this browser observes it, decided by whether
+// DDOC holds, and Levels 3 and 4 only as the chosen Web3 Score provider
+// judges them, named as that provider's claim. With no judgement they show
+// as grey "?" -- unless a developer-only override (`../../main/dev/score-
+// levels.ts`) stands in, always named as an override (ADR-0006). Beneath the
+// level sits the evidence it rests on: a `.eth` name's chain, the Delivery
+// level (the same automatic-vs-override split, on the canonical
+// Connection-to-network scale), the pin. Connections and operations are the
+// provider's judgement or grey "Not observed yet": the broker keeps no
+// connection log (src/trust/README.md).
 //
 // "Delivery" keeps that name rather than "Connection", which
 // `../../trust/connection-ladder.ts` already owns for a different,
@@ -100,30 +100,80 @@ function localDevNote (): HTMLParagraphElement {
   return p
 }
 
+/** What the provider said, in one line; the level list above shows the level itself. */
+function providerLine (judged: ProviderVerdict, displayed: number): string {
+  switch (judged.status) {
+    case 'off': return `Levels 3 and 4 need a Web3 Score provider, and none is chosen (Settings, Web3). What the levels mean: ${SCORES_PAGE}`
+    case 'not-assessable': return `A Web3 Score provider judges only a page whose files Orivon checked (Level 2), so ${judged.address} was not asked.`
+    case 'pending': return `Asking ${judged.address} for this page's score.`
+    case 'unreachable': return `The Web3 Score provider did not answer, so Levels 3 and 4 stay unknown. ${judged.reason}`
+    case 'no-score': return `${judged.provider.name} has no score for this page, so Levels 3 and 4 stay unknown.`
+    case 'judged': return `Level ${String(displayed)} is judged by ${judged.provider.name} (${judged.provider.address}), evaluated ${judged.evaluation.evaluated}. Not observed by this browser.`
+  }
+}
+
 function levelSection (trust: SiteTrust): HTMLElement[] {
   const { level, because, assessable } = trust.level
   const displayed = trust.displayedLevel
   const overridden = trust.levelOverride !== undefined
+  const judged = !overridden && trust.judged.status === 'judged' && level === 2 ? trust.judged : undefined
   const list = document.createElement('ul')
   list.className = 'rung-list level-list'
   LEVEL_LABELS.forEach((label, index) => {
     const n = index + 1
-    list.append(rungItem(`L${String(n)}`, label, rungState(n, displayed, 2), `level-${String(n)}`))
+    list.append(rungItem(`L${String(n)}`, label, rungState(n, displayed, judged === undefined ? 2 : 4), `level-${String(n)}`))
   })
   const assessed = assessable === undefined
     ? 'Nothing: this page has neither a CID nor a bundle hash.'
     : `${assessable.kind === 'cid' ? 'CID' : 'Bundle hash'} ${assessable.value}`
-  const becauseText = overridden ? `Observed by this browser: Level ${String(level)}. ${because}` : because
+  const becauseText = overridden || judged !== undefined ? `Observed by this browser: Level ${String(level)}. ${because}` : because
   const disclaimer = overridden
     ? `Level ${String(displayed)} is a developer override (ORIVON_SCORE_LEVELS_FILE): not observed, and no provider judged it.`
-    : `Levels 3 and 4 need a Web3 Score provider, and none is configured. What the levels mean: ${SCORES_PAGE}`
+    : providerLine(trust.judged, displayed)
+  const summary = judged?.evaluation.summary
   return [
     paragraph('section-heading', `Website level ${String(displayed)}`),
     list,
-    trust.ddoc.status === 'local-dev' ? localDevNote() : paragraph('level-because', becauseText),
+    ...(trust.ddoc.status !== 'local-dev'
+      ? [paragraph('level-because', becauseText)]
+      : overridden || judged !== undefined ? [localDevNote(), paragraph('level-because', `Observed by this browser: Level ${String(level)}.`)] : [localDevNote()]),
     paragraph('disclaimer', disclaimer),
+    ...(summary === undefined ? [] : [paragraph('judged-summary', summary)]),
     paragraph('assessable', `A provider would assess: ${assessed}`)
   ]
+}
+
+/** Operations run 1 to 5, Level 4 and up green; connections run 1 to 3, coloured as the Delivery scale is. */
+function partColour (level: number, scale: 'operation' | 'connection'): string {
+  if (scale === 'operation') return `level-${String(Math.min(level, 4))}`
+  return level <= 1 ? 'level-1' : level === 2 ? 'level-3' : 'level-4'
+}
+
+function partList (parts: readonly ScorePart[], scale: 'operation' | 'connection'): HTMLUListElement {
+  const list = document.createElement('ul')
+  list.className = 'rung-list part-list'
+  for (const part of parts) {
+    const privacy = part.trustlessity.privacy ? ' + Privacy' : ''
+    const item = rungItem(`L${String(part.trustlessity.level)}`, `${part.name}${privacy}`, 'met', partColour(part.trustlessity.level, scale))
+    if (part.note !== undefined) {
+      const note = document.createElement('span')
+      note.className = 'part-note'
+      note.textContent = part.note
+      item.querySelector('.rung-label')?.append(note)
+    }
+    list.append(item)
+  }
+  return list
+}
+
+/** The provider's operations and connections, when it judged this page and listed any. */
+function judgedParts (trust: SiteTrust): HTMLElement[] {
+  if (trust.judged.status !== 'judged' || trust.levelOverride !== undefined || trust.level.level !== 2) return []
+  const { provider, evaluation } = trust.judged
+  const sections: HTMLElement[] = []
+  if (evaluation.operations.length > 0) sections.push(document.createElement('hr'), paragraph('section-heading', `Operations, judged by ${provider.name}`), partList(evaluation.operations, 'operation'))
+  if (evaluation.connections.length > 0) sections.push(document.createElement('hr'), paragraph('section-heading', `Connections, judged by ${provider.name}`), partList(evaluation.connections, 'connection'))
+  return sections
 }
 
 function deliverySection (trust: SiteTrust): HTMLElement[] {
@@ -210,6 +260,7 @@ export function renderWeb3Page (container: HTMLElement, trust: SiteTrust | null,
     container.append(evidenceList(rows))
   }
 
+  container.append(...judgedParts(trust))
   container.append(document.createElement('hr'))
 
   const unknownRows: Array<[string, string]> = [['Connections', 'Not observed yet'], ['Operations', 'Not observed yet']]

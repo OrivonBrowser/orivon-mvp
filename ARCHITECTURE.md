@@ -171,13 +171,15 @@ you disagree with one, the ADR is where the objections are already answered.
   Score shield and the Web3 Score page it opens lead with the canonical Website level, coloured
   red/orange/yellow/green, and a mark at the pill's right end names it: Web2 (Level 1), Web2.5
   (Levels 2-3) or Web3 (Level 4). Level 1 or 2 is what the machine
-  observed: whether the site meets DDOC. Level 3 and above are a named provider's judgement,
-  shown grey `?` when no provider has judged, and kept apart from what was observed; a
-  developer-only override can preview one before a provider exists, always named as an override.
-  At Level 4, a site's own grants read without warnings, on every consent surface. The evidence
-  sits under the level, never behind it
+  observed: whether the site meets DDOC. Level 3 and above are the judgement of the provider the
+  person chose (any address Orivon opens, asked by hash bucket so it never learns the site),
+  named, shown grey `?` when it has not judged, and kept apart from what was observed; a
+  developer-only override can preview one, always named as an override. Only that override's
+  Level 4 makes a site's own grants read without warnings. The evidence sits under the level,
+  never behind it
   ([`ADR-0006`](docs/decisions/ADR-0006-trust-indicator-from-observed-behaviour.md),
-  [`ADR-0037`](docs/decisions/ADR-0037-a-level-4-site-s-grants-are-shown-without-warnings.md)).
+  [`ADR-0037`](docs/decisions/ADR-0037-a-level-4-site-s-grants-are-shown-without-warnings.md),
+  [`ADR-0054`](docs/decisions/ADR-0054-a-web3-score-provider-is-any-address-asked-by-hash-bucket.md)).
 
 **How the API behaves**
 

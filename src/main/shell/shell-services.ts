@@ -7,6 +7,9 @@ import { BookmarkStore } from '../browsing/bookmarks.js'
 import { SearchEngineStore } from '../browsing/search-engine-store.js'
 import { InternalPageRegistry } from '../pages/internal-registry.js'
 import { SettingsStore } from '../settings/settings-store.js'
+import { isDevEthName } from '../dev/eth-resolver.js'
+import { createScoreProviderClient, netFetchJson } from '../browsing/score-provider-client.js'
+import type { ScoreProviderClient } from '../browsing/score-provider-client.js'
 import { SHELL_PARTITION } from './shell-session.js'
 import { isShellUiPage } from './shell-ui-page.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
@@ -69,6 +72,8 @@ export interface ShellServices {
   readonly searchEngines: SearchEngineStore
   readonly session: SessionLog
   readonly settings: SettingsStore
+  /** The Web3 Score provider the person chose, with one cache for every window. */
+  readonly scoreProvider: ScoreProviderClient
   /** What the person told each site it may do; a private session keeps it in memory. */
   readonly siteSettings: SiteSettingsStore
   readonly shortcuts: ShortcutService
@@ -132,6 +137,7 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     searchEngines: new SearchEngineStore(join(userDataPath, 'search-engines.json'), { readOnly: runtime.isPrivate }),
     session: runtime.isPrivate || kiosk ? new NullSessionStore() : new SessionStore(join(userDataPath, 'session.json')),
     settings,
+    scoreProvider: createScoreProviderClient({ providerAddress: () => settings.get('web3.scoreProvider'), isDevEthName, fetchJson: netFetchJson }),
     siteSettings: new SiteSettingsStore(runtime.isPrivate ? null : join(userDataPath, 'site-settings.json')),
     shortcuts: new ShortcutService(shortcutStore, platform),
     shortcutStore,

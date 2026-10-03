@@ -6,7 +6,8 @@
 // `pinCoverageFor` and the verifier's evidence for a `.eth` name, so this
 // file takes what those return rather than reaching for them itself.
 // Connections and operations stay unobserved: the broker keeps no
-// connection log (`src/trust/README.md`), and the popover says so.
+// connection log (`src/trust/README.md`). A Web3 Score provider's verdict is
+// added afterwards by `withProviderVerdict`, judged, never observed.
 
 import { deliveryLadder } from '../../trust/delivery-ladder.js'
 import type { DeliveryLadderResult, DeliveryLevel, PinCoverageEvidence } from '../../trust/delivery-ladder.js'
@@ -14,6 +15,8 @@ import { ddocVerdict } from '../../trust/ddoc.js'
 import type { DdocVerdict, PublishedTree } from '../../trust/ddoc.js'
 import { displayedLevel, websiteLevel } from '../../trust/website-level.js'
 import type { ScoreLevel, WebsiteLevel } from '../../trust/website-level.js'
+import { scoreIdOf } from '../../trust/score-provider.js'
+import type { ProviderVerdict } from '../../trust/score-provider.js'
 import type { PinRecord } from '../../broker/policy/pin.js'
 import type { EvidenceRow, NameEvidence } from '../verifier/name-evidence.js'
 
@@ -34,8 +37,10 @@ export interface SiteTrust {
    * when this origin has none. Never folded into `level` above -- `level.level` stays exactly
    * what this browser observed. */
   readonly levelOverride: ScoreLevel | undefined
-  /** `level.level`, or `levelOverride` when one exists -- what every surface should actually
-   * show (`../../trust/website-level.js`'s `displayedLevel`). */
+  /** What the chosen Web3 Score provider said about this page's content identity. */
+  readonly judged: ProviderVerdict
+  /** `level.level`, a judged level over it, or `levelOverride` -- what every surface should
+   * actually show (`../../trust/website-level.js`'s `displayedLevel`). */
   readonly displayedLevel: ScoreLevel
   /** The same override mechanism, for the Delivery level (`../../trust/delivery-ladder.js`). */
   readonly deliveryOverride: DeliveryLevel | undefined
@@ -50,6 +55,8 @@ export interface SiteTrust {
 export interface Web3Score {
   readonly level: ScoreLevel
   readonly overridden: boolean
+  /** The provider whose judgement `level` is, when it is one. */
+  readonly judgedBy: string | undefined
   readonly delivery: DeliveryLevel
   readonly deliveryOverridden: boolean
   /** The level rests on a DDOC counted only because a local origin is running in developer mode. */
@@ -58,9 +65,11 @@ export interface Web3Score {
 
 export function web3Score (trust: SiteTrust | null): Web3Score | null {
   if (trust === null) return null
+  const overridden = trust.levelOverride !== undefined
   return {
     level: trust.displayedLevel,
-    overridden: trust.levelOverride !== undefined,
+    overridden,
+    judgedBy: !overridden && trust.level.level === 2 && trust.judged.status === 'judged' ? trust.judged.provider.name : undefined,
     delivery: trust.displayedDelivery,
     deliveryOverridden: trust.deliveryOverride !== undefined,
     localDev: trust.ddoc.status === 'local-dev'
@@ -87,7 +96,7 @@ export function web3Score (trust: SiteTrust | null): Web3Score | null {
  * `deliveryLadder` in `delivery-ladder.js`).
  *
  * `levelOverride`/`deliveryOverride` come from `../dev/score-levels.ts`, and
- * `localDevTree` from `../dev/local-ddoc.ts`, read by the caller so this
+ * `localDevHash` from `../dev/local-ddoc.ts`, read by the caller so this
  * function stays free of `devModeEnabled()` -- matching every other optional
  * fact here, supplied rather than fetched.
  */
@@ -101,7 +110,7 @@ export function buildSiteTrust (
   name?: NameEvidence,
   levelOverride?: ScoreLevel,
   deliveryOverride?: DeliveryLevel,
-  localDevTree = false
+  localDevHash?: string
 ): SiteTrust {
   const connection: ConnectionState = servedFromCache ? 'cached' : origin.startsWith('https://') ? 'secure' : 'insecure'
 
@@ -120,8 +129,8 @@ export function buildSiteTrust (
     ...(pinCoverage !== undefined ? { pinCoverage } : {})
   })
 
-  const ddoc = ddocVerdict(pin, published, localDevTree)
-  const level = websiteLevel(name?.content, ddoc, pin?.bundleHash, servedFromCache)
+  const ddoc = ddocVerdict(pin, published, localDevHash !== undefined)
+  const level = websiteLevel(name?.content, ddoc, pin?.bundleHash ?? localDevHash, servedFromCache)
   return {
     connection,
     level,
@@ -130,8 +139,21 @@ export function buildSiteTrust (
     ddoc,
     name: name === undefined ? undefined : { line: name.line, rows: name.rows },
     levelOverride,
+    judged: { status: 'off' },
     displayedLevel: displayedLevel(level.level, levelOverride),
     deliveryOverride,
     displayedDelivery: deliveryOverride ?? delivery.level
   }
+}
+
+/** The page's content identity, in the form a Web3 Score provider files it under, when DDOC holds:
+ * a judged level describes the files an identifier names, and only Level 2 shows those were served. */
+export function providerIdFor (trust: SiteTrust): string | undefined {
+  const { level, assessable } = trust.level
+  return level === 2 && assessable !== undefined ? scoreIdOf(assessable) : undefined
+}
+
+export function withProviderVerdict (trust: SiteTrust, judged: ProviderVerdict): SiteTrust {
+  const judgedLevel = judged.status === 'judged' ? judged.evaluation.trustlessity.level : undefined
+  return { ...trust, judged, displayedLevel: displayedLevel(trust.level.level, trust.levelOverride, judgedLevel) }
 }

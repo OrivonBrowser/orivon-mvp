@@ -1066,15 +1066,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** packaging (build step 10) and any distribution
 
-### A250: Who provides this build's Web3 Score judged levels? **[OWNER]**
-
-- **Question:** Is the judged-level provider (d-0106) an Orivon feed, a third party, or a local
-  judge -- and if local, a person or a model, with what attestation keying?
-- **Why it matters:** ADR-0006 allows a local, non-trustless provider but names none.
-- **Options:** an Orivon-run feed; a third party; a local judge.
-- **Who decides:** owner
-- **Blocks:** build step 7
-
 ### A252: Any web page reaches loopback services with no prompt **[OWNER]**
 
 - **Question:** Electron 44 disables `LocalNetworkAccessChecks`, so any page can fetch

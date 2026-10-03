@@ -13,6 +13,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **Web3 Score providers** (Settings > Web3): judged Levels 3 and 4, with a site's operations and connections, from any
+  address Orivon opens, asked by hash bucket so the provider never learns the site. Build one with web3-score-manager.
 - **Tabs can be grouped**: name and colour a group from the tab menu, collapse it to one chip, drag it, move it to its own
   window, and get it back after a restart; a link opened from a member opens inside the group.
 - **Idle tabs go to sleep** (Settings > Performance): after 2 hours by default a tab frees its page and wakes where it was

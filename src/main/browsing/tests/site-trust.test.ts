@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { buildSiteTrust, web3Score } from '../site-trust.js'
+import { buildSiteTrust, providerIdFor, web3Score, withProviderVerdict } from '../site-trust.js'
+import type { ProviderVerdict } from '../../../trust/score-provider.js'
 import type { PinRecord } from '../../../broker/policy/pin.js'
 import type { NameEvidence } from '../../verifier/name-evidence.js'
 
@@ -11,6 +12,7 @@ import type { NameEvidence } from '../../verifier/name-evidence.js'
 // reach into another stream's internals).
 
 const ORIGIN = 'https://app.example'
+const LOCAL_HASH = 'sha256:' + 'c'.repeat(64)
 
 function pin (overrides: Partial<PinRecord> = {}): PinRecord {
   return { schema: 1, origin: ORIGIN, bundleHash: 'a'.repeat(64), assets: [], version: '1.0.0', pinnedAt: 1_000, ...overrides }
@@ -91,7 +93,7 @@ describe('buildSiteTrust -- DDOC', () => {
   })
 
   it('local-dev, Website Level 2, for an unpinned local origin serving a tree in developer mode; Delivery stays Level 1', () => {
-    const trust = buildSiteTrust('http://127.0.0.1:8875', null, false, undefined, undefined, 2_000, undefined, undefined, undefined, true)
+    const trust = buildSiteTrust('http://127.0.0.1:8875', null, false, undefined, undefined, 2_000, undefined, undefined, undefined, LOCAL_HASH)
     expect(trust.ddoc).toEqual({ status: 'local-dev' })
     expect(trust.level.level).toBe(2)
     expect(trust.displayedLevel).toBe(2)
@@ -145,17 +147,17 @@ describe('web3Score -- the toolbar shield IPC\'s reply, the smallest slice of Si
 
   it('carries the displayed level and delivery, and whether each is overridden', () => {
     const trust = buildSiteTrust(ORIGIN, null, false, undefined, undefined, 2_000, undefined, 4, 3)
-    expect(web3Score(trust)).toEqual({ level: 4, overridden: true, delivery: 3, deliveryOverridden: true, localDev: false })
+    expect(web3Score(trust)).toEqual({ level: 4, overridden: true, judgedBy: undefined, delivery: 3, deliveryOverridden: true, localDev: false })
   })
 
   it('overridden is false on each axis when nothing was overridden', () => {
     const trust = buildSiteTrust(ORIGIN, null, false, undefined, undefined, 2_000)
-    expect(web3Score(trust)).toEqual({ level: 1, overridden: false, delivery: 1, deliveryOverridden: false, localDev: false })
+    expect(web3Score(trust)).toEqual({ level: 1, overridden: false, judgedBy: undefined, delivery: 1, deliveryOverridden: false, localDev: false })
   })
 
   it('localDev names a level that rests on a developer-mode local DDOC', () => {
-    const trust = buildSiteTrust('http://127.0.0.1:8875', null, false, undefined, undefined, 2_000, undefined, undefined, undefined, true)
-    expect(web3Score(trust)).toEqual({ level: 2, overridden: false, delivery: 1, deliveryOverridden: false, localDev: true })
+    const trust = buildSiteTrust('http://127.0.0.1:8875', null, false, undefined, undefined, 2_000, undefined, undefined, undefined, LOCAL_HASH)
+    expect(web3Score(trust)).toEqual({ level: 2, overridden: false, judgedBy: undefined, delivery: 1, deliveryOverridden: false, localDev: true })
   })
 })
 
@@ -175,5 +177,50 @@ describe('buildSiteTrust -- displayed level and delivery, observed unless overri
     // The observed values are untouched -- an override is never folded into them.
     expect(trust.level.level).toBe(1)
     expect(trust.delivery.level).toBe(1)
+  })
+})
+
+describe('a Web3 Score provider\'s verdict', () => {
+  const tree = { bundleHash: 'sha256:' + 'c'.repeat(64), assets: [{ path: '/.well-known/orivon.json', leaf: 'sha256:' + 'd'.repeat(64) }] }
+  const installed = (): ReturnType<typeof buildSiteTrust> => buildSiteTrust(ORIGIN, pin(tree), true, undefined, { bundleHash: tree.bundleHash, leaves: tree.assets }, 2_000)
+  const judged = (level: number): ProviderVerdict => ({
+    status: 'judged',
+    provider: { name: 'Test provider', address: 'http://127.0.0.1:7860/score' },
+    evaluation: { id: tree.bundleHash, name: 'App', version: undefined, evaluated: '2026-10-03', trustlessity: { level, privacy: false }, summary: undefined, operations: [], connections: [], evidence: [] }
+  })
+
+  it('asks about the bundle hash of an installed site whose DDOC holds, and about nothing at Level 1', () => {
+    expect(providerIdFor(installed())).toBe(tree.bundleHash)
+    expect(providerIdFor(buildSiteTrust(ORIGIN, pin(tree), true, undefined, undefined, 2_000))).toBeUndefined()
+    expect(providerIdFor(buildSiteTrust(ORIGIN, null, false, undefined, undefined, 2_000))).toBeUndefined()
+  })
+
+  it('asks about the declared hash of a local origin in developer mode', () => {
+    expect(providerIdFor(buildSiteTrust('http://127.0.0.1:8875', null, false, undefined, undefined, 2_000, undefined, undefined, undefined, LOCAL_HASH))).toBe(LOCAL_HASH)
+  })
+
+  it('shows the judged level over DDOC, names the provider, and leaves the observed level alone', () => {
+    const trust = withProviderVerdict(installed(), judged(3))
+    expect(trust.displayedLevel).toBe(3)
+    expect(trust.level.level).toBe(2)
+    expect(web3Score(trust)).toMatchObject({ level: 3, overridden: false, judgedBy: 'Test provider' })
+  })
+
+  it('never lifts a page whose DDOC does not hold, whatever the verdict says', () => {
+    const trust = withProviderVerdict(buildSiteTrust(ORIGIN, pin(tree), true, undefined, undefined, 2_000), judged(4))
+    expect(trust.displayedLevel).toBe(1)
+    expect(web3Score(trust)?.judgedBy).toBeUndefined()
+  })
+
+  it('gives way to a developer override, which is named instead', () => {
+    const trust = withProviderVerdict(buildSiteTrust(ORIGIN, pin(tree), true, undefined, { bundleHash: tree.bundleHash, leaves: tree.assets }, 2_000, undefined, 1), judged(4))
+    expect(trust.displayedLevel).toBe(1)
+    expect(web3Score(trust)).toMatchObject({ overridden: true, judgedBy: undefined })
+  })
+
+  it('keeps the observed level for every verdict that is not a judgement', () => {
+    for (const verdict of [{ status: 'off' }, { status: 'pending', address: 'x' }, { status: 'unreachable', address: 'x', reason: 'down' }, { status: 'no-score', provider: { name: 'P', address: 'x' } }] as const) {
+      expect(withProviderVerdict(installed(), verdict).displayedLevel).toBe(2)
+    }
   })
 })

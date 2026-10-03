@@ -12,10 +12,11 @@ import { buildSiteInfo } from './site-info.js'
 import type { SiteInfo } from './site-info.js'
 import { turnOffCapability, turnOnCapability } from './site-switches.js'
 import type { TurnOnResult } from './site-switches.js'
-import { buildSiteTrust } from '../browsing/site-trust.js'
+import { buildSiteTrust, providerIdFor, withProviderVerdict } from '../browsing/site-trust.js'
 import type { SiteTrust } from '../browsing/site-trust.js'
 import type { DeliveryLevel, PinCoverageEvidence } from '../../trust/delivery-ladder.js'
 import type { ScoreLevel } from '../../trust/website-level.js'
+import type { ProviderVerdict } from '../../trust/score-provider.js'
 import type { PinRecord } from '../../broker/policy/pin.js'
 import type { NameEvidence } from '../verifier/name-evidence.js'
 import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
@@ -48,9 +49,14 @@ export interface SiteTrustSources {
   readonly levelOverrideFor: (origin: string) => ScoreLevel | undefined
   /** The same, for the Delivery level. */
   readonly deliveryOverrideFor: (origin: string) => DeliveryLevel | undefined
-  /** Whether a local origin in developer mode serves a readable DDOC hash tree (`../dev/local-ddoc.ts`). */
-  readonly localDdocFor: (origin: string) => Promise<boolean>
+  /** The bundle hash of the DDOC hash tree a local origin serves in developer mode (`../dev/local-ddoc.ts`). */
+  readonly localDdocHashFor: (origin: string) => Promise<string | undefined>
+  /** The chosen Web3 Score provider's verdict (`../browsing/score-provider-client.ts`). */
+  readonly providerVerdictFor: (id: string | undefined, waitMs: number) => Promise<ProviderVerdict>
 }
+
+/** How long the popover and shield wait on a provider before showing the lookup as under way. */
+const PROVIDER_WAIT_MS = 3_000
 
 export interface StorageDeclaration {
   readonly filesQuotaBytes: number | undefined
@@ -118,14 +124,15 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
       if (loader === undefined || origin === null) return null
       const [pin, published] = await Promise.all([loader.pinFor(origin), loader.ddocFor(origin)])
       const servedFromCache = trustSources.isOriginServedFromCacheSync(origin)
-      const [name, localDevTree] = await Promise.all([
+      const [name, localDevHash] = await Promise.all([
         trustSources.nameEvidenceFor(origin, pin, servedFromCache),
-        pin === null ? trustSources.localDdocFor(origin) : false
+        pin === null ? trustSources.localDdocHashFor(origin) : undefined
       ])
-      return buildSiteTrust(
+      const trust = buildSiteTrust(
         origin, pin, servedFromCache, trustSources.pinCoverageFor(origin), published, Date.now(), name,
-        trustSources.levelOverrideFor(origin), trustSources.deliveryOverrideFor(origin), localDevTree
+        trustSources.levelOverrideFor(origin), trustSources.deliveryOverrideFor(origin), localDevHash
       )
+      return withProviderVerdict(trust, await trustSources.providerVerdictFor(providerIdFor(trust), PROVIDER_WAIT_MS))
     },
 
     async storageDeclarationFor (url) {
