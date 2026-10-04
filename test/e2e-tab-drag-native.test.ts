@@ -104,9 +104,9 @@ async function endDrag (chrome: Page, id: string): Promise<void> {
   }, id)
 }
 
-/** The catcher over the window whose chrome is `chrome`: the one as wide as its content. */
+/** The catcher over the window whose chrome is `chrome`: the one as wide as its content. The chrome view is wider than the window while a tab is pressed, but its document keeps the window's width. */
 async function catcherOver (app: ElectronApplication, chrome: Page): Promise<Page> {
-  const width = await chrome.evaluate(() => window.innerWidth)
+  const width = await chrome.evaluate(() => document.body.clientWidth)
   let found: Page | undefined
   await waitFor(async () => {
     for (const page of catcherPages(app)) {
@@ -323,6 +323,40 @@ it('ignores a drop carrying a nonce that is not the drag\'s, and one on a strip 
     await dragEvent(second, 'drop', nonce, at)
     await endDrag(first, dragged)
     expect(await waitFor(async () => (await tabIds(second)).includes(dragged))).toBe(true)
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('keeps a narrow window\'s toolbar narrow while a pressed tab makes the chrome view wider than the window', async () => {
+  const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env: { ORIVON_TEST_LOCAL_POINTER: '1' } })
+  try {
+    expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
+    const chrome = findChrome(app)
+    const read = async (): Promise<{ identity: string, view: number, root: number }> => await chrome.evaluate(() => ({
+      identity: getComputedStyle(document.querySelector('#identity') as Element).display,
+      view: window.innerWidth,
+      root: document.body.clientWidth
+    }))
+    // Wide, the placeholder shows: its hiding below is the narrow layout's doing.
+    expect((await read()).identity).not.toBe('none')
+    await app.evaluate(({ BaseWindow }) => { BaseWindow.getAllWindows()[0]?.setContentSize(500, 400) })
+    // The narrow layout follows the resize a moment after the view's own width does.
+    await waitFor(async () => { const now = await read(); return now.view === 500 && now.identity === 'none' })
+    expect(await read()).toMatchObject({ view: 500, root: 500, identity: 'none' })
+
+    const id = (await tabIds(chrome))[0] as string
+    await chrome.evaluate((tabId: string) => {
+      const tab = document.querySelector(`#tabrow .tab[data-id="${tabId}"]`) as HTMLElement
+      const box = tab.getBoundingClientRect()
+      tab.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, buttons: 1, clientX: box.left + 20, clientY: box.top + 10 }))
+    }, id)
+    await waitFor(async () => (await read()).view > 500)
+    expect(await read()).toMatchObject({ view: 1000, root: 500, identity: 'none' })
+
+    await chrome.evaluate(() => { window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 0 })) })
+    await waitFor(async () => { const now = await read(); return now.view === 500 && now.identity === 'none' })
+    expect(await read()).toMatchObject({ view: 500, root: 500, identity: 'none' })
   } finally {
     await closeElectron(app)
   }

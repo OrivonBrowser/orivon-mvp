@@ -351,7 +351,7 @@ browser-action-list::part(badge) {
 /* A narrow window (it stops at 500px, window-frame.ts's MIN_WINDOW_WIDTH): the address field is the only
    part of the row that gives way, so the two placeholders in the cluster go, the gaps tighten, and the
    extension buttons stop at one whole button (two leave the field about 64px wide at the minimum). */
-@media (max-width: 640px) {
+@container (max-width: 640px) {
   .toolbar { padding: 0 8px; }
   .bookmarkbtn { margin: 0 4px; }
   .toolbar-cluster { margin-left: 4px; }

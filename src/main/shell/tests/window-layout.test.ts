@@ -88,13 +88,13 @@ describe('createWindowLayout: page insets', () => {
 })
 
 describe('createWindowLayout: reaching the chrome', () => {
-  it('lays the chrome over more than the window height, from the same corner and at the same width, while a tab is pressed, and back after', () => {
+  it('lays the chrome over more than the window width and height, from the same corner, while a tab is pressed, and back after', () => {
     const { layout, chrome } = setup()
 
     layout.reachChrome(true)
     const reaching = chrome.setBounds.mock.calls.at(-1)?.[0] as { x: number, y: number, width: number, height: number }
     expect(reaching).toMatchObject({ x: 0, y: 0 })
-    expect(reaching.width).toBe(1000)
+    expect(reaching.width).toBeGreaterThan(1000)
     expect(reaching.height).toBeGreaterThan(700)
 
     layout.layoutChrome()
@@ -120,7 +120,10 @@ describe('createWindowLayout: reaching the chrome', () => {
     }
   })
 
-  it('never moves the chrome\'s corner or width, which would lay its page out again', () => {
-    expect(chromeRect({ width: 800, height: 600 }, CHROME_TOP_ROWS, true)).toMatchObject({ x: 0, y: 0, width: 800 })
+  it('never moves the chrome\'s corner, which would lay its page out again, and reaches past the right and bottom edges only', () => {
+    const rect = chromeRect({ width: 800, height: 600 }, CHROME_TOP_ROWS, true)
+    expect(rect).toMatchObject({ x: 0, y: 0 })
+    expect(rect.width).toBeGreaterThan(800)
+    expect(rect.height).toBeGreaterThan(600)
   })
 })

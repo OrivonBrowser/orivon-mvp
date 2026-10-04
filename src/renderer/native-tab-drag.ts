@@ -9,7 +9,7 @@ import { holdStrip, placerFor } from './tab-drag.js'
 export interface NativeDragShell {
   prepareTabDrag: (id: string) => Promise<string | null>
   warmDropCatchers: () => void
-  /** Main makes the chrome view taller while a tab is pressed, so a drag's first motion lands inside it. */
+  /** Main makes the chrome view wider and taller while a tab is pressed, so a drag's first motion lands inside it. */
   reachChrome: (on: boolean) => void
   startNativeTabDrag: (id: string, nonce: string) => void
   dropNativeTab: (nonce: string, index: number | null, below: boolean) => void
@@ -37,6 +37,8 @@ export interface NativeDragHost {
 
 /** Set on the chrome's root while a pressed tab must not start a drag (`reachable`); styles/tabstrip.css switches dragging off under it. */
 const BLOCK_CLASS = 'tab-drag-blocked'
+/** The longest the root keeps the width of a released press if the view's return to it goes unnoticed. */
+const UNPIN_AFTER_MS = 700
 /** How far a press moves before the drop catchers are made ready. */
 const PULL_PX = 3
 /** How long after a drag ends an Escape key-up still counts as its cancel (measured at 100 to 200 ms). */
@@ -79,6 +81,30 @@ export function createNativeTabDrag (type: string, shell: NativeDragShell, host:
   let pressed: { readonly id: string, readonly x: number, readonly y: number, pulled: boolean } | null = null
   let prepared: Prepared | null = null
   let ended: { readonly nonce: string, readonly at: number } | null = null
+
+  /** The width the root keeps while main makes the view wider than the window (`reachChrome`), so the strip does not move. */
+  let pinned: { readonly width: number, released: boolean } | null = null
+  function pinRoot (): void {
+    if (pinned !== null) {
+      pinned.released = false
+      return
+    }
+    pinned = { width: window.innerWidth, released: false }
+    document.documentElement.style.width = `${String(pinned.width)}px`
+  }
+  function unpin (): void {
+    pinned = null
+    document.documentElement.style.removeProperty('width')
+  }
+  /** The press is over. The root keeps its width until the view is back to it (or a moment passes), since a wider root
+   * for the frames in between would show the strip stretched. */
+  function unpinRoot (): void {
+    const held = pinned
+    if (held === null) return
+    held.released = true
+    setTimeout(() => { if (pinned === held && held.released) unpin() }, UNPIN_AFTER_MS)
+  }
+  window.addEventListener('resize', () => { if (pinned?.released === true && window.innerWidth <= pinned.width) unpin() })
 
   function discard (): void {
     prepared?.chip.remove()
@@ -148,6 +174,7 @@ export function createNativeTabDrag (type: string, shell: NativeDragShell, host:
     if (source === null) {
       discard()
       shell.reachChrome(false)
+      unpinRoot()
     }
   }, true)
 
@@ -174,6 +201,7 @@ export function createNativeTabDrag (type: string, shell: NativeDragShell, host:
     holdStrip(false)
     unblock()
     shell.reachChrome(false)
+    unpinRoot()
     ended = { nonce: finished.nonce, at: performance.now() }
     shell.endNativeTabDrag(finished.nonce)
     host.finished()
@@ -197,7 +225,9 @@ export function createNativeTabDrag (type: string, shell: NativeDragShell, host:
       if (event.button !== 0 || (event.target as HTMLElement).closest('.close, .tab-audio') !== null) return
       pressed = { id, x: event.clientX, y: event.clientY, pulled: false }
       // The browser starts a drag only when the motion that began it lies inside this view, which a quick flick out
-      // of the strip would not: main makes the view taller than the window, behind the pages, until the press ends.
+      // of the strip would not: main makes the view wider and taller than the window until the press ends, and the
+      // root's width is pinned first so that the strip is not laid out again under the pointer.
+      pinRoot()
       shell.reachChrome(true)
       discard()
       const tab: Prepared = { id, chip: chipOf(el), image: null }

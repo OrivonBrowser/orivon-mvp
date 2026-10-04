@@ -50,6 +50,6 @@
 }
 
 /* A narrow window has no room for it; the Downloads page stays one key away. */
-@media (max-width: 640px) {
+@container (max-width: 640px) {
   #downloads { display: none; }
 }
