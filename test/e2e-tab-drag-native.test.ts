@@ -341,8 +341,9 @@ it('keeps a narrow window\'s toolbar narrow while a pressed tab makes the chrome
     // Wide, the placeholder shows: its hiding below is the narrow layout's doing.
     expect((await read()).identity).not.toBe('none')
     await app.evaluate(({ BaseWindow }) => { BaseWindow.getAllWindows()[0]?.setContentSize(500, 400) })
-    expect(await waitFor(async () => (await read()).view === 500)).toBe(true)
-    expect((await read()).identity).toBe('none')
+    // The narrow layout follows the resize a moment after the view's own width does.
+    await waitFor(async () => { const now = await read(); return now.view === 500 && now.identity === 'none' })
+    expect(await read()).toMatchObject({ view: 500, root: 500, identity: 'none' })
 
     const id = (await tabIds(chrome))[0] as string
     await chrome.evaluate((tabId: string) => {
@@ -350,12 +351,12 @@ it('keeps a narrow window\'s toolbar narrow while a pressed tab makes the chrome
       const box = tab.getBoundingClientRect()
       tab.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, buttons: 1, clientX: box.left + 20, clientY: box.top + 10 }))
     }, id)
-    expect(await waitFor(async () => (await read()).view > 500)).toBe(true)
-    expect(await read()).toMatchObject({ identity: 'none', root: 500 })
+    await waitFor(async () => (await read()).view > 500)
+    expect(await read()).toMatchObject({ view: 1000, root: 500, identity: 'none' })
 
     await chrome.evaluate(() => { window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 0 })) })
-    expect(await waitFor(async () => (await read()).view === 500)).toBe(true)
-    expect((await read()).identity).toBe('none')
+    await waitFor(async () => { const now = await read(); return now.view === 500 && now.identity === 'none' })
+    expect(await read()).toMatchObject({ view: 500, root: 500, identity: 'none' })
   } finally {
     await closeElectron(app)
   }
