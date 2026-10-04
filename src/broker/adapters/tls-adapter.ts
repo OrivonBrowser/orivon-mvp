@@ -16,7 +16,8 @@ import type { ConnectionOptions, PeerCertificate as NodePeerCertificate, TLSSock
 import { isIP } from 'node:net'
 import type { SecureHandshake } from '../../contracts/index.js'
 import type { DialedSecureSocket, DialSecure, SecureDialOptions, SecureDialTarget } from '../broker-contracts.js'
-import { DIAL_TIMEOUT_MS, destroySocket } from './node-adapters.js'
+import { DIAL_STAGGER_MS, DIAL_TIMEOUT_MS, destroySocket } from './node-adapters.js'
+import { raceAddresses } from './staggered-dial.js'
 import { errnoOf, fail } from '../errors.js'
 import { toPeerCertificate } from './tls-peer-certificate.js'
 import { socketReadable, socketWritable } from './socket-streams.js'
@@ -105,12 +106,11 @@ function handshakeOf (socket: TLSSocket): SecureHandshake {
  * 'secureConnect'; with `false` it connects and reports the code on
  * `authorizationError` instead.
  *
- * Mirrors ./node-adapters.ts's `dialOne` structure deliberately -- same
- * timeout race, same abort wiring -- because this is that function's sibling
+ * Mirrors ./node-adapters.ts's `dialOne` structure deliberately -- same abort
+ * wiring, the same race above it -- because this is that function's sibling
  * for a secured connection, not a new pattern.
  */
 function dialOneSecure (connectOptions: ConnectionOptions, signal: AbortSignal): Promise<DialedSecureSocket> {
-  const where = `${String(connectOptions.host)}:${String(connectOptions.port)}`
   return new Promise((resolve, reject) => {
     let socket: TLSSocket
     try {
@@ -122,19 +122,12 @@ function dialOneSecure (connectOptions: ConnectionOptions, signal: AbortSignal):
       reject(fail('invalid', 'the TLS credentials or trust anchors could not be loaded', undefined, errnoOf(error)))
       return
     }
-    const onAbort = (): void => { socket.destroy() }
-    signal.addEventListener('abort', onAbort, { once: true })
-    let timer: NodeJS.Timeout
-    const settle = (): void => {
-      clearTimeout(timer)
-      signal.removeEventListener('abort', onAbort)
-    }
-    timer = setTimeout(() => {
-      settle()
+    const onAbort = (): void => {
       socket.destroy()
-      reject(fail('timeout', `connecting to ${where} exceeded ${String(DIAL_TIMEOUT_MS)}ms`))
-    }, DIAL_TIMEOUT_MS)
-    timer.unref()
+      reject(fail('revoked', 'the dial was abandoned'))
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    const settle = (): void => { signal.removeEventListener('abort', onAbort) }
 
     // Raw, not wrapped in an OrivonError -- matching dialOne's own division
     // of labour: ../io-errors.ts's mapTlsError is the caller's job, the one
@@ -176,25 +169,23 @@ function isConnectFailure (error: unknown): boolean {
  * Builds a `DialSecure`. `base` exists only for tests -- see `DialTlsOptions`'s
  * own doc for why production never supplies one.
  *
- * `target.addresses`, when present, are tried in order, like dialTcp's, but
- * only past a connect-level failure: a handshake or verification failure
- * means the server answered, and the next address would answer the same.
+ * `target.addresses`, when present, are raced like dialTcp's, but a failure
+ * past the connect (a handshake or verification failure) ends the race: the
+ * server answered, and the next address would answer the same.
  */
 export function createDialTls (base: DialTlsOptions = {}): DialSecure {
-  return async (target, options, signal) => {
-    if (signal.aborted) throw fail('revoked', 'the grant authorising this connection was withdrawn')
-    let lastError: unknown = fail('unreachable', 'no address to connect to')
-    for (const address of target.addresses ?? [target.host]) {
-      try {
-        return await dialOneSecure(connectOptionsFor(address, target, options, base), signal)
-      } catch (error) {
-        lastError = error
-        if (signal.aborted) throw fail('revoked', 'the grant authorising this connection was withdrawn')
-        if (!isConnectFailure(error)) break
-      }
+  return async (target, options, signal) => await raceAddresses(
+    target.addresses ?? [target.host],
+    (address, attemptSignal) => dialOneSecure(connectOptionsFor(address, target, options, base), attemptSignal),
+    {
+      signal,
+      deadlineMs: DIAL_TIMEOUT_MS,
+      staggerMs: DIAL_STAGGER_MS,
+      timeoutError: () => fail('timeout', `connecting to ${target.host}:${String(target.port)} exceeded ${String(DIAL_TIMEOUT_MS)}ms`),
+      isFatal: (error) => !isConnectFailure(error),
+      discard: async (dialed) => { await dialed.destroy('aborted') }
     }
-    throw lastError
-  }
+  )
 }
 
 /**
