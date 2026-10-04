@@ -296,8 +296,8 @@ export interface TabRecord {
   lastActiveAt?: number
   /** What a tab put to sleep keeps; its view is blank meanwhile. Absent reads as null. */
   sleeping?: SleepingTab | null
-  /** Set on a reader tab: the id of the tab it was made from. Absent reads as null. */
-  reader?: { source: string } | null
+  /** Set on a reader tab: the id of the tab it was made from, and the address of the page it was read from. Absent reads as null. */
+  reader?: { source: string, address?: string } | null
   /** The main frame's address while a navigation has started and not yet committed, failed or stopped (inflight-url.ts). Absent when none is in flight. */
   inflightUrl?: string
 }

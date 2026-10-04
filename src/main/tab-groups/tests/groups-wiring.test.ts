@@ -75,6 +75,16 @@ describe('the wiring of a window and the process', () => {
     expect(strip.shape()).toBe(`a:${id} b:${id} x:-`)
   })
 
+  it('tells the strip which tabs a collapsed group hides', () => {
+    const strip = fakeStrip(['a', 'x', 'b'], { hook: false })
+    const id = groupOf(strip, ['x'])
+    tabGroupsHook.opened?.(strip.ctx, {} as never)
+    const hidden = (strip.tabs as unknown as { hidden: (tab: string) => boolean }).hidden
+    expect(['a', 'x', 'b'].map(hidden)).toEqual([false, false, false])
+    groupsFor(strip.tabs).update(id, { collapsed: true })
+    expect(['a', 'x', 'b'].map(hidden)).toEqual([false, true, false])
+  })
+
   it('takes a tab that moves to another window out of its group', () => {
     let listener: TabLifecycleListener | undefined
     installTabGroups.install({} as never, { tabLifecycle: { subscribe: (added: TabLifecycleListener) => { listener = added } } } as unknown as ShellServices, {} as never, {} as never)

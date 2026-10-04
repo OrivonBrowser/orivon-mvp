@@ -13,6 +13,7 @@ import { setExtensionsMenuDeps } from './extensions-menu-deps.js'
 import { optionsPageUrl } from './extensions-menu-model.js'
 import { extensionOpenedUrl } from './extension-url-policy.js'
 import { openExtensionTab } from './extension-opened-pages.js'
+import { activateTabShowing } from './extension-options-tab.js'
 import { readExtensionFacts } from './extensions-view-runner.js'
 
 const USER_SETTINGS_EVENT = 'action.onUserSettingsChanged'
@@ -60,7 +61,8 @@ function install (ctx: ExtensionApiContext): void {
       const url = optionsPageUrl(id, manifestOf(id))
       const target = url === undefined ? undefined : extensionOpenedUrl(url, isLoaded)
       const tabs = focusedTabs()
-      if (target !== undefined && tabs !== undefined) openExtensionTab(tabs, target)
+      if (target === undefined || activateTabShowing(ctx.shell()?.windows.all() ?? [], target)) return
+      if (tabs !== undefined) openExtensionTab(tabs, target)
     },
     togglePin: () => { ctx.prefs.update(id, { pinned: !pinned(id) }) },
     manage: () => { focusedTabs()?.openInternal('extensions', `/details?id=${id}`) },

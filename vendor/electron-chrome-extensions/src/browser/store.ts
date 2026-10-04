@@ -127,7 +127,12 @@ export class ExtensionStore extends EventEmitter {
     this.tabs.delete(tab)
     this.tabToWindow.delete(tab)
 
-    // TODO: clear active tab
+    // Orivon patch (UPSTREAM.md patch 65): a removed tab is no longer its window's active one,
+    // so a tab added next (a replacement view, a parked page coming back) becomes it.
+    if (this.windowToActiveTab.get(win) === tab) {
+      this.windowToActiveTab.delete(win)
+      this.emit('active-tab-changed', undefined, win)
+    }
 
     // Clear window if it has no remaining tabs
     const windowHasTabs = Array.from(this.tabs).find((tab) => this.tabToWindow.get(tab) === win)
@@ -140,6 +145,34 @@ export class ExtensionStore extends EventEmitter {
     }
 
     this.emit('tab-removed', tabId)
+  }
+
+  /**
+   * Orivon patch (UPSTREAM.md patch 65): a tracked tab goes to another window and stays the same
+   * tab, unlike removeTab then addTab, which also drops what an extension set for it (its badge).
+   */
+  moveTab(tab: Electron.WebContents, window: Electron.BaseWindow) {
+    const from = this.tabToWindow.get(tab)
+    if (!this.tabs.has(tab) || !from || from === window) return
+
+    this.tabToWindow.set(tab, window)
+    this.addWindow(window)
+
+    if (this.windowToActiveTab.get(from) === tab) {
+      this.windowToActiveTab.delete(from)
+      this.emit('active-tab-changed', undefined, from)
+    }
+
+    const fromHasTabs = Array.from(this.tabs).find((other) => this.tabToWindow.get(other) === from)
+    if (!fromHasTabs) {
+      this.windows.delete(from)
+    }
+
+    if (!this.getActiveTabFromWindow(window)) {
+      this.setActiveTab(tab)
+    }
+
+    this.emit('tab-moved', tab, from, window)
   }
 
   async createTab(details: chrome.tabs.CreateProperties) {

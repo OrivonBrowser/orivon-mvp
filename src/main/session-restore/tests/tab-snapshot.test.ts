@@ -55,6 +55,12 @@ describe('snapshotOf', () => {
     expect(snapshotOf(recordOf({ internalPage: 'private' }), wcOf({ url: 'orivon://private/' }))).toBeNull()
   })
 
+  it('writes a reader tab down as the page it was read from, its article being in memory only', () => {
+    expect(snapshotOf(recordOf({ internalPage: 'reader', reader: { source: 't1', address: 'https://news.example/story' } }), wcOf({ url: 'orivon://reader/', title: 'Story' })))
+      .toEqual({ url: 'https://news.example/story', title: 'Story', pinned: false })
+    expect(snapshotOf(recordOf({ internalPage: 'reader' }), wcOf({ url: 'orivon://reader/' }))).toBeNull()
+  })
+
   it('caps the title and refuses an oversize address instead of cutting it', () => {
     expect(snapshotOf(recordOf(), wcOf({ title: 'x'.repeat(1000) }))?.title).toHaveLength(MAX_TITLE_LENGTH)
     expect(snapshotOf(recordOf(), wcOf({ url: `https://a.example/${'x'.repeat(MAX_URL_LENGTH)}` }))).toBeNull()
@@ -94,9 +100,9 @@ describe('sanitizeSnapshot', () => {
     expect(kept?.index).toBe(1)
   })
 
-  it('accepts an internal page that exists and refuses one that does not, a path without a slash, or the private start page', () => {
+  it('accepts an internal page that exists and refuses one that does not, a path without a slash, the private start page or a reader page, which has no article to show', () => {
     expect(sanitizeSnapshot({ url: 'x', internal: { page: 'history', path: '/' } })).toMatchObject({ internal: { page: 'history', path: '/' }, url: 'orivon://history/' })
-    for (const internal of [{ page: 'nope', path: '/' }, { page: 'settings', path: 'x' }, { page: 'settings', path: 4 }, { page: 'private', path: '/' }, { page: 'settings', path: `/${'x'.repeat(3000)}` }]) {
+    for (const internal of [{ page: 'nope', path: '/' }, { page: 'settings', path: 'x' }, { page: 'settings', path: 4 }, { page: 'private', path: '/' }, { page: 'reader', path: '/' }, { page: 'settings', path: `/${'x'.repeat(3000)}` }]) {
       expect(sanitizeSnapshot({ url: 'https://a.example/', internal }), JSON.stringify(internal)).toBeNull()
     }
   })

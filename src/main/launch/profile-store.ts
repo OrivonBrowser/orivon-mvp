@@ -74,7 +74,9 @@ export class ProfileStore {
     if (dir === null) return null
     let stored: Partial<Profile> = {}
     try {
-      stored = JSON.parse(readFileSync(join(dir, PROFILE_FILE), 'utf8')) as Partial<Profile>
+      const parsed: unknown = JSON.parse(readFileSync(join(dir, PROFILE_FILE), 'utf8'))
+      // A file that holds `null`, a number or a list is damaged too.
+      if (typeof parsed === 'object' && parsed !== null) stored = parsed as Partial<Profile>
     } catch {
       // No file (the default profile before it is renamed) or a damaged one: what a profile with none looks like.
       if (id !== DEFAULT_PROFILE_ID && !existsSync(dir)) return null

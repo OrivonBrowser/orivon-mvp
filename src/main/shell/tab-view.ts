@@ -9,6 +9,7 @@ import { faviconOnCommit } from '../browsing/favicon.js'
 import { knownIcon } from '../history/favicon-host.js'
 import type { TabRecord } from './tab-types.js'
 import { showContextMenu } from './context-menu.js'
+import { pageMenuItems } from './page-menu-items.js'
 import { forgetNavigation, leaveAllowed } from './leave-page-prompt.js'
 import { watchPageDialogs } from './page-dialogs.js'
 import { windowOpenHandler } from './popups.js'
@@ -255,8 +256,8 @@ export function wireView (id: string, record: TabRecord): void {
   // without going through closeTab(). Without this the id stays in the tab
   // map, and the NEXT emitState() -- fired by any OTHER tab's event -- calls
   // .getURL() on a destroyed native object and throws inside a main-process
-  // Electron callback. There is no top-level handler anywhere in this app,
-  // so that throw exits the whole process (electron/electron#19887).
+  // Electron callback, and index.ts's top-level handler exits the whole
+  // process on such a throw (electron/electron#19887).
   // Clearing the record here is what makes every `!isDestroyed()` guard
   // actually reachable rather than theatre. Only for the view the tab
   // shows: repartitionView() closes a swapped-out view after the record has
@@ -304,7 +305,8 @@ export function wireView (id: string, record: TabRecord): void {
       page: { bare: () => record.internalPage !== null || record.isDashboardTab, viewSource: () => canViewSource(record, wc.getURL()), readable: () => readableNow(wc), reload: () => { record.host.reload(id) } },
       ...(services === undefined ? {} : { services }),
       runCommand,
-      ...(devtools?.allowed(wc) === true ? { inspect: (x: number, y: number) => { void devtools.inspect(wc, x, y) } } : {})
+      ...(devtools?.allowed(wc) === true ? { inspect: (x: number, y: number) => { void devtools.inspect(wc, x, y) } } : {}),
+      extraItems: (menuParams) => pageMenuItems(wc, menuParams)
     })
   })
 

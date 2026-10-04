@@ -131,6 +131,8 @@ export class TearDragController {
   private destroyWindow (): void {
     if (this.timer !== null) clearInterval(this.timer)
     this.timer = null
+    // A BaseWindow does not close the views it holds: the preview's page would live on in a renderer of its own.
+    if (this.view !== null && !this.view.webContents.isDestroyed()) this.view.webContents.close()
     if (this.win !== null && !this.win.isDestroyed()) this.win.destroy()
     this.win = null
     this.view = null

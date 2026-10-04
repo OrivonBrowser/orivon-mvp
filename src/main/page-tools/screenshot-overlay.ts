@@ -47,7 +47,7 @@ export function screenshotOverlayFor (deps: PageToolDeps): OverlayDef {
           if (page === undefined) return
           const area = choice.area === 'full' && !fullPageAvailable(page.wc) ? 'visible' : choice.area
           await takeScreenshot(window, page.wc, { ...choice, area }, deps)
-        })
+        }).catch((error: unknown) => { console.error('[page-tools] the screenshot failed', error) })
         return undefined
       }
     })

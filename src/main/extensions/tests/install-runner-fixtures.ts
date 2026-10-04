@@ -35,12 +35,15 @@ export function fakeSession (): {
   session: InstallContext['session']
   loaded: Map<string, string>
   removedIds: string[]
+  clearedStorage: unknown[]
   setFailNextLoad: (error: Error) => void
 } {
   const loaded = new Map<string, string>() // id -> path
   const removedIds: string[] = []
+  const clearedStorage: unknown[] = []
   let failNextLoad: Error | undefined
   const session = {
+    clearStorageData: async (options: unknown) => { clearedStorage.push(options) },
     extensions: {
       loadExtension: async (path: string) => {
         if (failNextLoad !== undefined) {
@@ -59,7 +62,7 @@ export function fakeSession (): {
       }
     }
   } as unknown as InstallContext['session']
-  return { session, loaded, removedIds, setFailNextLoad: (error) => { failNextLoad = error } }
+  return { session, loaded, removedIds, clearedStorage, setFailNextLoad: (error) => { failNextLoad = error } }
 }
 
 export const ALWAYS_ALLOW: InstallContext['prompt'] = async () => true

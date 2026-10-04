@@ -2,14 +2,12 @@
 // copy the link or save the picture. What to copy is the address main stored at show time, never a field the page sends.
 import { CLOSE_LIKE_POPUP } from '../overlays/overlay-types.js'
 import type { OverlayDef } from '../overlays/overlay-types.js'
-import { QR_OVERLAY } from './qr-open.js'
+import { MAX_QR_ADDRESS, QR_OVERLAY } from './qr-open.js'
 import { saveQrPng } from './qr-download.js'
 import type { QrSaveDeps } from './qr-download.js'
 import type { SettingsStore } from '../settings/settings-store.js'
 
 const SHEET_WIDTH = 300
-/** An address longer than this is not something a clipboard write or a sheet should carry. */
-const MAX_ADDRESS = 32768
 
 export interface QrDeps extends Omit<QrSaveDeps, 'downloadsDir'> {
   writeClipboard: (text: string) => void
@@ -30,7 +28,7 @@ function asCommand (command: unknown): QrCommand | undefined {
 function asAddress (payload: unknown): string | undefined {
   if (typeof payload !== 'object' || payload === null) return undefined
   const { url } = payload as Record<string, unknown>
-  return typeof url === 'string' && url.length > 0 && url.length <= MAX_ADDRESS ? url : undefined
+  return typeof url === 'string' && url.length > 0 && url.length <= MAX_QR_ADDRESS ? url : undefined
 }
 
 export function qrOverlayFor (deps: QrDeps): OverlayDef {

@@ -28,6 +28,7 @@ function fakeDeps (over: Partial<ExtensionApiDeps> = {}) {
     held: () => true,
     isAppOrigin: (url) => url.startsWith('https://app.example'),
     webContentsFromId: () => undefined,
+    popupParent: () => undefined,
     ...over
   }
   return { deps, handlers, sendEvent }
@@ -163,5 +164,33 @@ describe('createApiContext: onShell', () => {
     const run = vi.fn()
     createApiContext(fakeDeps({ onShell }).deps, MODULE).onShell(run)
     expect(onShell).toHaveBeenCalledWith(run)
+  })
+})
+
+describe('createApiContext: callerWindow', () => {
+  const winA = { id: 1 }
+  const winB = { id: 2 }
+  const shellA = { window: winA }
+  const shellB = { window: winB }
+  const sender = {}
+  const frameEvent = { type: 'frame', sender, extension: { id: ID, manifest: {} } } as never
+
+  function ctxWith (found: object | null, popupParent: object | undefined) {
+    const windows = { findTab: vi.fn(() => found), focused: vi.fn(() => shellB), all: vi.fn(() => [shellA, shellB]) }
+    return createApiContext(fakeDeps({ shell: () => ({ windows }) as never, popupParent: () => popupParent as never }).deps, MODULE)
+  }
+
+  it('is the window an open popup hangs under, whichever window was opened last', () => {
+    expect(ctxWith(null, winA).callerWindow(frameEvent)).toBe(shellA)
+  })
+
+  it('is the window holding the tab the call runs in', () => {
+    expect(ctxWith({ window: shellA, tabId: 't' }, undefined).callerWindow(frameEvent)).toBe(shellA)
+  })
+
+  it('is undefined for a worker, a page with no window of its own, or before any window', () => {
+    expect(ctxWith(null, undefined).callerWindow(frameEvent)).toBeUndefined()
+    expect(ctxWith(null, winA).callerWindow({ type: 'service-worker', sender: undefined, extension: { id: ID, manifest: {} } })).toBeUndefined()
+    expect(createApiContext(fakeDeps().deps, MODULE).callerWindow(frameEvent)).toBeUndefined()
   })
 })

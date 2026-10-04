@@ -2,7 +2,7 @@
 // Electron- or shell-specific a module may need is reached through a
 // dependency passed in here, so a module's own unit test supplies a fake
 // context and never touches this file.
-import type { Session, WebContents } from 'electron'
+import type { BaseWindow, Session, WebContents } from 'electron'
 import type { ElectronChromeExtensions } from 'orivon:crx-extensions'
 import type { ShellServices } from '../../shell/shell-services.js'
 import type { ExtensionsApi } from '../extensions-subsystem.js'
@@ -24,6 +24,8 @@ export interface ExtensionApiDeps {
   readonly isAppOrigin: (url: string) => boolean
   /** `webContents.fromId`, injected so this file needs no electron runtime. */
   readonly webContentsFromId: (id: number) => WebContents | undefined
+  /** The shell window the open popup holding `contents` hangs under. */
+  readonly popupParent: (contents: WebContents) => BaseWindow | undefined
 }
 
 function liveTab (deps: ExtensionApiDeps, contents: WebContents | undefined): ResolvedTab | undefined {
@@ -63,6 +65,14 @@ export function createApiContext (deps: ExtensionApiDeps, module: ExtensionApiMo
         ? windows.all().find((entry) => !entry.window.isDestroyed() && entry.window.id === windowId)
         : windows.focused()
       return target === undefined ? undefined : liveTab(deps, target.tabs.activeWebContents())
+    },
+    callerWindow: (event) => {
+      const windows = deps.shell()?.windows
+      if (windows === undefined || event.type !== 'frame') return undefined
+      const sender = event.sender as WebContents | undefined
+      if (sender === undefined) return undefined
+      const parent = deps.popupParent(sender)
+      return parent === undefined ? windows.findTab(sender)?.window : windows.all().find((entry) => entry.window === parent)
     },
     canSee: (extensionId, contents) => {
       const manifest = deps.session.extensions.getExtension(extensionId)?.manifest

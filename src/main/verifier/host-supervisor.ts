@@ -91,7 +91,12 @@ export class HostSupervisor {
       // here acts on it.
       if (this.child !== child) return
       if (!isFromHost(message)) { console.error('[verifier] dropped a malformed message from the host:', message); return }
-      this.receive(message)
+      // A handler that throws here (a checkpoint the disk refused) would otherwise end the browser.
+      try {
+        this.receive(message)
+      } catch (error) {
+        console.error(`[verifier] acting on the host's ${message.type} message failed:`, error)
+      }
     })
     child.on('exit', (code) => { this.exited(child, `the verifier host exited with code ${String(code)}`) })
 

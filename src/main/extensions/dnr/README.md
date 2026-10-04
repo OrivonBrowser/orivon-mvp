@@ -60,15 +60,18 @@ function), because a large extension lists dozens and parsing them all stalls th
 file.** `<userData>/extensions/<slot>/dnr-dynamic.json` holds the extension's dynamic rules;
 `dnr-enabled-rulesets.json`, alongside it, holds
 the static-ruleset ids the extension last chose via `updateEnabledRulesets` (absent until the
-first call, per-ruleset `enabled` from the manifest until then). Both live at the *slot* level
+first call, per-ruleset `enabled` from the manifest until then; an update to another version
+deletes it, so the new version starts from the rulesets its manifest enables, as Chrome does);
+`dnr-badge-count.json` holds whether the extension last put the blocked count on its badge
+(`setExtensionActionOptions`), restored when the extension loads. All three live at the *slot* level
 (`<userData>/extensions/<slot>/`), not the versioned load directory
 (`<userData>/extensions/<slot>/<version>/`) `install-runner.ts` deletes on uninstall -- the same
 level `<slot>/key.pub` already persists at across an uninstall, for the same reason
 (`../README.md`'s slot design: an id installed again into the same slot should stay recognizable).
-Unlike `key.pub`, `install-runner.ts`'s `uninstall` deletes both of these two files
+Unlike `key.pub`, `install-runner.ts`'s `uninstall` deletes all three files
 (`clearPersistedRuleState`, below), matching Chrome's own behavior of clearing an extension's
-dynamic rules and enabled-ruleset choice on uninstall: a reinstall into the same slot starts with
-neither, the same as a fresh install into a slot that never held one.
+dynamic rules and choices on uninstall: a reinstall into the same slot starts with
+none of them, the same as a fresh install into a slot that never held one.
 
 **`evaluate()` gates `redirect`/`modifyHeaders` on host permission through a predicate the
 caller supplies, not through any notion of "permissions" of its own.** Chrome's

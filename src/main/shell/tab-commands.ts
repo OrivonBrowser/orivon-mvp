@@ -1,7 +1,7 @@
 // What the tab menu and the tab commands do to one tab or to the others around it. Each takes the tab's id:
 // the menu acts on the tab that was right-clicked, a command on the one in front.
 import { applyMuted } from './signals/audio.js'
-import { carryHistory } from './tab-history.js'
+import { carryHistory, restoreHistory } from './tab-history.js'
 import { setPinned } from './tab-pin.js'
 import type { TabMenuModel } from './tab-menu.js'
 import type { TabState } from './tab-types.js'
@@ -96,5 +96,10 @@ export function duplicateTab (tabs: TabManager, id: string): void {
   const tab = tabs.getState().tabs.find((candidate) => candidate.id === id)
   if (tab === undefined || tab.isNewTab || tab.isInternal) return
   const created = openBeside(tabs, id, tab.url)
-  if (created !== undefined) carryHistory(tabs.liveWebContents(id), tabs.liveWebContents(created))
+  if (created === undefined) return
+  // A sleeping tab's view never loaded: its pages are the ones it kept when it went to sleep.
+  const kept = tabs.record(id)?.sleeping
+  const copy = tabs.liveWebContents(created)
+  if (kept == null) carryHistory(tabs.liveWebContents(id), copy)
+  else if (kept.entries.length > 1 && copy !== undefined) restoreHistory(copy, kept.entries, kept.index)
 }

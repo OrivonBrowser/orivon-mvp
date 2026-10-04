@@ -24,6 +24,11 @@ describe('decideUpdateNotice', () => {
       expect(result.shouldCheck).toBe(false)
     })
 
+    it('is due when the last check is in the future, a clock that was set back since', () => {
+      const result = decideUpdateNotice({ currentVersion: '1.0.0', now: NOW, lastCheckedAt: NOW + 1000 })
+      expect(result.shouldCheck).toBe(true)
+    })
+
     it('is due exactly at the interval boundary', () => {
       const result = decideUpdateNotice({
         currentVersion: '1.0.0',
@@ -247,14 +252,16 @@ describe('checkForUpdate (async orchestrator, network fetch injected)', () => {
     const fetchLatestRelease = vi.fn<() => Promise<ReleaseInfo | null>>().mockResolvedValue(null)
     const result = await checkForUpdate({ currentVersion: '1.0.0', now: NOW, fetchLatestRelease })
     expect(result.checkedNow).toBe(true)
+    expect(result.reached).toBe(true)
     expect(result.shouldNotify).toBe(false)
     expect(result.release).toBeNull()
   })
 
-  it('a fetch that REJECTS is caught, not thrown -- treated the same as no release found', async () => {
+  it('a fetch that REJECTS is caught, not thrown, and says the source was not reached, so it is not recorded as a check', async () => {
     const fetchLatestRelease = vi.fn<() => Promise<ReleaseInfo | null>>().mockRejectedValue(new Error('offline'))
     const result = await checkForUpdate({ currentVersion: '1.0.0', now: NOW, fetchLatestRelease })
     expect(result.checkedNow).toBe(true)
+    expect(result.reached).toBe(false)
     expect(result.shouldNotify).toBe(false)
     expect(result.release).toBeNull()
   })

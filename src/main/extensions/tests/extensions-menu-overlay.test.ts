@@ -60,7 +60,7 @@ function rig (options: { pinNew?: boolean, enabled?: string[], withAction?: stri
         activeWebContents: () => contents
       }
     },
-    services: { settings: { get: () => options.pinNew ?? true }, internalPages: { publish: published } },
+    services: { settings: { get: () => options.pinNew ?? true }, internalPages: { publish: published }, windows: { all: () => [] } },
     send: vi.fn(),
     close
   } as unknown as OverlayWindow

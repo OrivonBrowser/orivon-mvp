@@ -26,6 +26,8 @@ declare module 'orivon:crx-extensions' {
       createWindow?(details: CreateWindowDetails): Promise<Electron.BaseWindow>
       removeWindow?(window: Electron.BaseWindow): void
       navigateTab?(tab: Electron.WebContents, url: string): void | Promise<void>
+      windowOf?(contents: Electron.WebContents): Electron.BaseWindow | undefined
+      activateTabShowing?(url: string): boolean
     }
     interface Options extends Impl {
       license: 'GPL-3.0' | 'Patron-License-2020-11-19'
@@ -39,7 +41,11 @@ declare module 'orivon:crx-extensions' {
     static fromSession (session: Electron.Session): ElectronChromeExtensions | undefined
     static handleCRXProtocol (session: Electron.Session): void
     addTab (tab: Electron.WebContents, window: Electron.BaseWindow): void
+    /** UPSTREAM.md patch 65: a tracked tab now shows in `window`, and stays the same tab. */
+    moveTab (tab: Electron.WebContents, window: Electron.BaseWindow): void
     removeTab (tab: Electron.WebContents): void
+    /** The items `chrome.contextMenus` gives a right-click in `webContents`. */
+    getContextMenuItems (webContents: Electron.WebContents, params: Electron.ContextMenuParams): Electron.MenuItem[]
     selectTab (tab: Electron.WebContents): void
     /** Tells the library no tracked tab is the visible one in `window` right
      * now -- ExtensionStore.clearActiveTab's own doc. */

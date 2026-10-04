@@ -74,7 +74,7 @@ export function sanitizeSnapshot (raw: unknown): TabSnapshot | null {
   const internal = asObject(candidate['internal'])
   if (internal !== null) {
     const { page, path } = internal
-    if (!isInternalPageId(page) || page === 'private' || typeof path !== 'string' || path.length > MAX_INTERNAL_PATH_LENGTH || !path.startsWith('/')) return null
+    if (!isInternalPageId(page) || page === 'private' || page === 'reader' || typeof path !== 'string' || path.length > MAX_INTERNAL_PATH_LENGTH || !path.startsWith('/')) return null
     const address = parseInternalUrl(internalUrl(page, path))
     if (address?.page !== page) return null
     return { url: internalUrl(address.page, address.path), title, pinned, internal: address, ...cleanGroupIndex(candidate['group']) }
@@ -125,6 +125,11 @@ export function snapshotOf (record: TabRecord, wc: WebContents): TabSnapshot | n
   }
   if (record.isDashboardTab || wc.isDestroyed()) return null
   const title = wc.getTitle()
+  // A reader tab's article is held in memory with the tab: what comes back is the page it was read from.
+  if (record.internalPage === 'reader') {
+    const address = record.reader?.address
+    return address === undefined ? null : sanitizeSnapshot({ url: address, title, pinned })
+  }
   if (record.internalPage !== null) {
     const address = parseInternalUrl(wc.getURL()) ?? openedFrom.get(record)?.internal ?? { page: record.internalPage, path: '/' }
     return sanitizeSnapshot({ url: internalUrl(address.page, address.path), title, pinned, internal: address })

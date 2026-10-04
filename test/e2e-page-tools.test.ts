@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
+import { pointScript } from '../src/main/page-tools/pip.js'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './launch-electron.mjs'
 import { clickAddressBarRetrying, pressKey } from './e2e-helpers.js'
 import { ABSENCE_SETTLE_MS, delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, popoverShown, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
@@ -48,6 +49,21 @@ setInterval(() => { ctx.fillStyle = 'hsl(' + (n++ * 7 % 360) + ',70%,50%)'; ctx.
 const v = document.getElementById('v'); v.srcObject = canvas.captureStream(15); v.play().catch(() => {})
 </script></body>`
 
+// The video sits in the shadow root of the page's own element, which the document sees only as the element.
+const SHADOW_PAGE = `<!doctype html><title>Fixture: shadow video</title><body style="margin:0"><video-card></video-card>
+<script>
+customElements.define('video-card', class extends HTMLElement {
+  connectedCallback () {
+    const root = this.attachShadow({ mode: 'open' })
+    root.innerHTML = '<video id="v" muted autoplay playsinline width="320" height="180" style="display:block"></video>'
+    const canvas = document.createElement('canvas'); canvas.width = 320; canvas.height = 180
+    const ctx = canvas.getContext('2d'); let n = 0
+    setInterval(() => { ctx.fillStyle = 'hsl(' + (n++ * 7 % 360) + ',70%,50%)'; ctx.fillRect(0, 0, 320, 180) }, 60)
+    const v = root.getElementById('v'); v.srcObject = canvas.captureStream(15); v.play().catch(() => {})
+  }
+})
+</script></body>`
+
 let server: Server
 let origin = ''
 let outDir = ''
@@ -58,6 +74,7 @@ beforeAll(async () => {
     const url = request.url ?? '/'
     if (url === '/doc.pdf') { response.setHeader('content-type', 'application/pdf'); response.end(pdfBytes()); return }
     if (url === '/pic.png') { response.setHeader('content-type', 'image/png'); response.end(PNG); return }
+    if (url === '/shadow') { response.setHeader('content-type', 'text/html'); response.end(SHADOW_PAGE); return }
     if (url === '/novideo') { response.setHeader('content-type', 'text/html'); response.end('<!doctype html><title>No video</title><p>text only</p>'); return }
     response.setHeader('content-type', 'text/html')
     response.end(PAGE)
@@ -468,6 +485,29 @@ it('Picture in picture, from More tools, pops the page\'s video out and a second
     await fromMenu(app, chrome, 'Picture in picture', true)
     expect(await waitFor(async () => !(await inPip()))).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('Picture in picture pops out a video inside a page element\'s shadow root, from More tools and from the point right-clicked', async () => {
+  const { app, chrome } = await launched(`${origin}/shadow`)
+  try {
+    const inPage = async (code: string): Promise<unknown> => await app.evaluate(async ({ webContents }, [part, script]) => {
+      const wc = webContents.getAllWebContents().find((c) => c.getURL().startsWith(part as string))
+      return await wc?.mainFrame.executeJavaScript(script as string, true)
+    }, [`${origin}/shadow`, code])
+    const inPip = async (): Promise<boolean> => await inPage('document.pictureInPictureElement !== null') === true
+    expect(await waitFor(async () => await inPage('(document.querySelector("video-card")?.shadowRoot?.getElementById("v")?.readyState ?? 0) > 1') === true)).toBe(true)
+    await fromMenu(app, chrome, 'Picture in picture', true)
+    expect(await waitFor(inPip)).toBe(true)
+    await fromMenu(app, chrome, 'Picture in picture', true)
+    expect(await waitFor(async () => !(await inPip()))).toBe(true)
+    // The right-click item's script, aimed at the middle of the video, finds it through the element and puts it back the second time.
+    expect(await inPage(pointScript(160, 90))).toBe(true)
+    expect(await waitFor(inPip)).toBe(true)
+    expect(await inPage(pointScript(160, 90))).toBe(true)
+    expect(await waitFor(async () => !(await inPip()))).toBe(true)
   } finally {
     await closeElectron(app)
   }

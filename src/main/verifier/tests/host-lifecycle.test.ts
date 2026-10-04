@@ -45,6 +45,14 @@ describe('HostLifecycle', () => {
       expect(start).not.toHaveBeenCalled()
     })
 
+    it('renews nothing at launch in a private session, which keeps no checkpoint', () => {
+      const { lifecycle, start, state } = setup({ privateSession: true })
+      state.age = 8 * DAY
+      lifecycle.refreshAtLaunch()
+      vi.advanceTimersByTime(REFRESH_DELAY_MS * 3)
+      expect(start).not.toHaveBeenCalled()
+    })
+
     it('puts the host it started for the checkpoint to sleep ten minutes later', () => {
       const { lifecycle, idle, state } = setup()
       state.age = REFRESH_WHEN_OLDER_THAN_SECONDS + 1

@@ -77,22 +77,19 @@ async function writeState (path: string, state: PersistedState): Promise<void> {
 async function fetchLatestGithubRelease (): Promise<ReleaseInfo | null> {
   const { net } = await import('electron')
 
-  let response: Awaited<ReturnType<typeof net.fetch>>
-  try {
-    response = await net.fetch(RELEASES_API, {
-      headers: {
-        accept: 'application/vnd.github+json',
-        'user-agent': `${GITHUB_REPO}-update-check`
-      },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
-    })
-  } catch {
-    return null // offline, DNS failure, timeout -- silently skip this check
-  }
+  // Offline, a DNS failure or a timeout rejects: the source was not reached, and the check is not recorded.
+  const response = await net.fetch(RELEASES_API, {
+    headers: {
+      accept: 'application/vnd.github+json',
+      'user-agent': `${GITHUB_REPO}-update-check`
+    },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+  })
 
   // A repository with no releases yet -- true for this one today -- 404s.
-  // That is "nothing to report", not an error.
-  if (!response.ok) return null
+  // That is "nothing to report", not an error. Any other refusal (a rate limit, a server error) is not an answer.
+  if (response.status === 404) return null
+  if (!response.ok) throw new Error(`the release source answered ${String(response.status)}`)
 
   let body: unknown
   try {
@@ -171,7 +168,8 @@ export async function runUpdateCheck (app: App, now: number = Date.now()): Promi
     fetchLatestRelease: fetchLatestGithubRelease
   })
 
-  if (!result.checkedNow) return // throttled: state is unchanged, nothing to persist
+  // Throttled, or the source was not reached: state is unchanged, so the next run tries again.
+  if (!result.checkedNow || !result.reached) return
 
   const nextState: PersistedState = {
     lastCheckedAt: now,

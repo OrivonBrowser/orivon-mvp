@@ -272,9 +272,10 @@ export function createChildHostPool (
       // ready ping at `document-start`, well before `loadURL`'s own promise
       // settles on `did-finish-load` -- awaiting `loadURL` first would race
       // it and, having missed it, time out for good (measured live).
+      // Awaited together, so a failed load never leaves the ready wait to reject later with nothing listening, which
+      // would end the browser.
       const ready = waitForReady(webContents)
-      await webContents.loadURL(wellKnownUrl(origin))
-      await ready
+      await Promise.all([webContents.loadURL(wellKnownUrl(origin)), ready])
     } catch (error) {
       if (!webContents.isDestroyed()) webContents.close()
       throw error

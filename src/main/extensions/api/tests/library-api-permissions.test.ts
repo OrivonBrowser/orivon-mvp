@@ -57,7 +57,8 @@ function setup () {
     prefs: createExtensionPrefsStore(null),
     held: () => true,
     isAppOrigin: () => false,
-    webContentsFromId: () => undefined
+    webContentsFromId: () => undefined,
+    popupParent: () => undefined
   }, [bookmarksApi, historyApi, topSitesApi, searchApi])
   const frame = (id: string) => ({ type: 'frame', sender: { session }, senderFrame: { url: `chrome-extension://${id}/p.html`, origin: `chrome-extension://${id}` } })
   return { router, frame }

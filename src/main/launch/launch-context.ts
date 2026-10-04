@@ -42,12 +42,14 @@ export function flagsFor (launch: { kind: 'profile', id: string } | { kind: 'pri
   return launch.kind === 'profile' ? [`${PROFILE_FLAG}${launch.id}`] : [PRIVATE_FLAG, `${PRIVATE_DIR_FLAG}${launch.dir}`]
 }
 
+const ADDRESS_ARGUMENT = /^https?:\/\//i
+
 /** The http and https addresses on a command line, for a second launch to open. Never a scheme the address bar would refuse. */
 export function urlsFromArgv (argv: readonly string[], limit = 8): string[] {
   const urls: string[] = []
   for (const argument of argv) {
     if (urls.length >= limit) break
-    if (!/^https?:\/\//i.test(argument)) continue
+    if (!ADDRESS_ARGUMENT.test(argument)) continue
     try {
       urls.push(new URL(argument).toString())
     } catch {
@@ -55,4 +57,9 @@ export function urlsFromArgv (argv: readonly string[], limit = 8): string[] {
     }
   }
   return urls
+}
+
+/** A command line without the addresses on it: starting the browser again opens none of them a second time. */
+export function withoutAddresses (argv: readonly string[]): string[] {
+  return argv.filter((argument) => !ADDRESS_ARGUMENT.test(argument))
 }

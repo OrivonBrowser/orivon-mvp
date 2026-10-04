@@ -496,7 +496,12 @@ export class BrowserActionAPI {
     this.onUpdate()
   }
 
-  private getState() {
+  /** Orivon patch (UPSTREAM.md patch 65): the window a toolbar page belongs to, when the host says. */
+  private windowOfSender(sender: Electron.WebContents): Electron.BaseWindow | undefined {
+    return this.ctx.store.impl.windowOf?.(sender)
+  }
+
+  private getState(event?: ExtensionEvent) {
     // Get state without icon data.
     const actions = this.visibleActions().map(([id, details]) => {
       const { icon, tabs, ...rest } = details
@@ -521,7 +526,11 @@ export class BrowserActionAPI {
       }
     })
 
-    const activeTab = this.ctx.store.getActiveTabOfCurrentWindow()
+    // Orivon patch (UPSTREAM.md patch 65): each toolbar shows its own window's active tab.
+    const ownWindow = event?.type === 'frame' ? this.windowOfSender(event.sender) : undefined
+    const activeTab = ownWindow
+      ? this.ctx.store.getActiveTabFromWindow(ownWindow)
+      : this.ctx.store.getActiveTabOfCurrentWindow()
     return { activeTabId: activeTab?.id, actions }
   }
 
@@ -565,7 +574,7 @@ export class BrowserActionAPI {
         // `true`: this call only ever reaches here once the guard above
         // has confirmed it came from the real chrome view over
         // crx-msg-remote, i.e. a genuine toolbar click.
-        this.activateClick(details, true)
+        this.activateClick(details, true, this.windowOfSender(sender))
         break
       case 'contextmenu':
         this.activateContextMenu(details)
@@ -575,7 +584,11 @@ export class BrowserActionAPI {
     }
   }
 
-  private activateClick(details: ActivateDetails, recordInvocation: boolean = false) {
+  private activateClick(
+    details: ActivateDetails,
+    recordInvocation: boolean = false,
+    ownWindow?: Electron.BaseWindow,
+  ) {
     const { extensionId, tabId, anchorRect, alignment } = details
 
     if (this.popup) {
@@ -589,8 +602,13 @@ export class BrowserActionAPI {
       }
     }
 
+    // Orivon patch (UPSTREAM.md patch 65): with no tab named, the clicked toolbar's own window.
     const tab =
-      tabId >= 0 ? this.ctx.store.getTabById(tabId) : this.ctx.store.getActiveTabOfCurrentWindow()
+      tabId >= 0
+        ? this.ctx.store.getTabById(tabId)
+        : ownWindow
+          ? this.ctx.store.getActiveTabFromWindow(ownWindow)
+          : this.ctx.store.getActiveTabOfCurrentWindow()
     if (!tab) {
       throw new Error(`Unable to get active tab`)
     }

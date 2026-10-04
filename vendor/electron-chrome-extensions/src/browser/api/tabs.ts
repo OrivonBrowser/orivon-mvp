@@ -1,3 +1,4 @@
+import { BrowserWindow } from 'electron'
 import type { ExtensionContext } from '../context'
 import type { ExtensionEvent } from '../router'
 import {
@@ -92,7 +93,11 @@ export class TabsAPI {
     handle('tabs.goForward', this.goForward.bind(this))
     handle('tabs.goBack', this.goBack.bind(this))
 
-    this.ctx.store.on('tab-added', this.observeTab.bind(this))
+    this.ctx.store.on('tab-added', (tab: TabContents) => {
+      this.observeTab(tab)
+      this.announceIfActive(tab)
+    })
+    this.ctx.store.on('tab-moved', this.onMoved.bind(this))
   }
 
   /** Every webContents this instance has already attached its own
@@ -156,7 +161,6 @@ export class TabsAPI {
     })
 
     this.onCreated(tabId)
-    this.onActivated(tabId)
 
     d(`Observing tab[${tabId}][${tab.getType()}] ${tab.getURL()}`)
   }
@@ -218,8 +222,21 @@ export class TabsAPI {
     return filterTabDetails(event, this.getTabDetails(tab))
   }
 
+  /** Orivon patch (UPSTREAM.md patch 65): the window a call is made from -- the window of the tab
+   * it comes from, or the one a popup hangs under -- else the last focused one, as for a
+   * background page. */
+  private currentWindowId(event: ExtensionEvent): number | undefined {
+    if (event.type === 'frame') {
+      const own =
+        this.ctx.store.tabToWindow.get(event.sender) ??
+        BrowserWindow.fromWebContents(event.sender)?.getParentWindow()
+      if (own && !own.isDestroyed()) return own.id
+    }
+    return this.ctx.store.lastFocusedWindowId
+  }
+
   private getAllInWindow(event: ExtensionEvent, windowId: number = TabsAPI.WINDOW_ID_CURRENT) {
-    if (windowId === TabsAPI.WINDOW_ID_CURRENT) windowId = this.ctx.store.lastFocusedWindowId!
+    if (windowId === TabsAPI.WINDOW_ID_CURRENT) windowId = this.currentWindowId(event)!
 
     const tabs = Array.from(this.ctx.store.tabs).filter((tab) => {
       if (tab.isDestroyed()) return false
@@ -267,6 +284,8 @@ export class TabsAPI {
 
   private query(event: ExtensionEvent, info: chrome.tabs.QueryInfo = {}) {
     const isSet = (value: any) => typeof value !== 'undefined'
+    const wantsCurrentWindow = isSet(info.currentWindow) || info.windowId === TabsAPI.WINDOW_ID_CURRENT
+    const currentWindowId = wantsCurrentWindow ? this.currentWindowId(event) : undefined
 
     const filteredTabs = Array.from(this.ctx.store.tabs)
       .map(this.getTabDetails.bind(this))
@@ -281,8 +300,14 @@ export class TabsAPI {
         if (isSet(info.discarded) && info.discarded !== tab.discarded) return false
         if (isSet(info.autoDiscardable) && info.autoDiscardable !== tab.autoDiscardable)
           return false
-        // if (isSet(info.currentWindow)) return false
-        // if (isSet(info.lastFocusedWindow)) return false
+        // Orivon patch (UPSTREAM.md patch 65): both window filters.
+        if (isSet(info.currentWindow) && info.currentWindow !== (tab.windowId === currentWindowId))
+          return false
+        if (
+          isSet(info.lastFocusedWindow) &&
+          info.lastFocusedWindow !== (tab.windowId === this.ctx.store.lastFocusedWindowId)
+        )
+          return false
         if (isSet(info.frozen) && info.frozen !== tab.frozen) return false
         if (isSet(info.groupId) && info.groupId !== tab.groupId) return false
         if (isSet(info.status) && info.status !== tab.status) return false
@@ -309,7 +334,7 @@ export class TabsAPI {
         }
         if (isSet(info.windowId)) {
           if (info.windowId === TabsAPI.WINDOW_ID_CURRENT) {
-            if (this.ctx.store.lastFocusedWindowId !== tab.windowId) return false
+            if (currentWindowId !== tab.windowId) return false
           } else if (info.windowId !== tab.windowId) {
             return false
           }
@@ -457,9 +482,11 @@ export class TabsAPI {
   }
 
   onRemoved(tabId: number) {
-    const details = this.ctx.store.tabDetailsCache.has(tabId)
-      ? this.ctx.store.tabDetailsCache.get(tabId)
-      : null
+    // Orivon patch (UPSTREAM.md patch 65): announced once. A tab removed through
+    // chrome.tabs.remove() is destroyed right after, and its `destroyed` handler comes here
+    // again with the details already gone.
+    if (!this.ctx.store.tabDetailsCache.has(tabId)) return
+    const details = this.ctx.store.tabDetailsCache.get(tabId)
     this.ctx.store.tabDetailsCache.delete(tabId)
 
     const windowId = details ? details.windowId : WindowsAPI.WINDOW_ID_NONE
@@ -486,14 +513,42 @@ export class TabsAPI {
 
     this.ctx.store.setActiveTab(tab)
 
-    // invalidate cache since 'active' has changed
+    // invalidate cache since 'active' has changed -- in this tab's own window only
     this.ctx.store.tabDetailsCache.forEach((tabInfo, cacheTabId) => {
-      tabInfo.active = tabId === cacheTabId
+      if (cacheTabId === tabId) tabInfo.active = true
+      else if (tabInfo.windowId === win?.id) tabInfo.active = false
     })
 
     this.ctx.router.broadcastEvent('tabs.onActivated', {
       tabId,
       windowId: win?.id,
+    })
+  }
+
+  /** Orivon patch (UPSTREAM.md patch 65): a tab just added is announced as activated only when
+   * it is the one in front of its window (the window's first, or the one that took the place of
+   * the front tab); a tab opened behind the front one leaves that one active. */
+  private announceIfActive(tab: TabContents) {
+    if (this.ctx.store.getActiveTabFromWebContents(tab) !== tab) return
+    this.ctx.router.broadcastEvent('tabs.onActivated', {
+      tabId: tab.id,
+      windowId: this.ctx.store.tabToWindow.get(tab)?.id,
+    })
+  }
+
+  /** Orivon patch (UPSTREAM.md patch 65): a tab handed to another window keeps its id, so its
+   * details are rebuilt for the new window and `onDetached`/`onAttached` say where it went. */
+  private onMoved(tab: TabContents, from: Electron.BaseWindow, to: Electron.BaseWindow) {
+    const cached = this.ctx.store.tabDetailsCache.get(tab.id)
+    if (!cached) return
+    this.createTabDetails(tab)
+    this.ctx.router.broadcastEvent('tabs.onDetached', tab.id, {
+      oldWindowId: from.id,
+      oldPosition: 0,
+    })
+    this.ctx.router.broadcastEvent('tabs.onAttached', tab.id, {
+      newWindowId: to.id,
+      newPosition: 0,
     })
   }
 }
