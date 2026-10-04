@@ -136,6 +136,9 @@ it('saves a page from the star and Mod+D, edits its name and folder as they chan
     expect(await waitFor(async () => !(await overlayOpen(app)))).toBe(true)
     expect((await waitForTab(chrome, { bookmarked: true })).ok).toBe(true)
 
+    // The star's save is on disk (writes are debounced) before Mod+D is pressed.
+    expect(await fileWhere(app, (roots) => roots.bar.filter((node) => node.url !== undefined).length === 1)).toBe(true)
+
     // Mod+D on the saved page opens "Edit bookmark" and changes nothing; a new name and Enter renames it.
     await key(app, 'a', 'D', ['control'])
     bubble = await overlayPage(app)
