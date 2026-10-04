@@ -50,7 +50,7 @@ async function launch (now = SHIPPED_AT_MS + DAY_MS) {
   const subsystem = await import('../verifier-subsystem.js')
   const access = await import('../verifier-access.js')
   await subsystem.verifierSubsystem.afterReady?.({} as never)
-  subsystem.configureVerifier({ lightClientEnabled: () => true, windows: () => tabs.open })
+  subsystem.configureVerifier({ lightClientEnabled: () => true, windows: () => tabs.open, servedFromCache: () => false })
   const gate = registered.beforeRequest[0]
   if (gate === undefined) throw new Error('the listening gate was not registered')
   return { ...subsystem, access, gate, request: async () => await gate({ url: 'https://vitalik.eth/' }, {}) }
@@ -160,6 +160,17 @@ describe('the verifier subsystem', () => {
     const view = verifierView()
     expect(view.state).toBe('waiting')
     expect(view.summary).toMatch(/^On, and waiting/)
+  })
+
+  it('keeps the light client choice it was started with when the setting changes, as Settings says it applies at the next start', async () => {
+    vi.resetModules()
+    vi.setSystemTime(SHIPPED_AT_MS + DAY_MS)
+    const subsystem = await import('../verifier-subsystem.js')
+    await subsystem.verifierSubsystem.afterReady?.({} as never)
+    let enabled = true
+    subsystem.configureVerifier({ lightClientEnabled: () => enabled, windows: () => tabs.open, servedFromCache: () => false })
+    enabled = false
+    expect(subsystem.verifierView()).toMatchObject({ state: 'waiting', summary: expect.stringMatching(/^On, and waiting/) })
   })
 
   it('says the light client is on and waiting before any .eth address was opened', async () => {

@@ -10,7 +10,7 @@
 import type { ExtensionRouterHandle } from 'orivon:crx-extensions'
 import { getCachedStrippedPermissions, getDnrEngine, slotDirForLoadedExtension } from './extensions-dnr.js'
 import { parseActionOptions } from './dnr-action-options.js'
-import { writeDynamicRules, writeEnabledRulesetOverride } from './dnr/dnr-runner.js'
+import { writeBadgeCountMode, writeDynamicRules, writeEnabledRulesetOverride } from './dnr/dnr-runner.js'
 import {
   extensionIdsWithBadgeTextEnabled,
   getActionCount,
@@ -145,6 +145,13 @@ export function registerDnrApiHandlers(
     }
   }
 
+  function persistBadgeCountMode(extensionId: string, enabled: boolean): void {
+    const slotDir = slotDirForLoadedExtension(userDataPath, extensionId)
+    if (slotDir !== undefined) {
+      writeBadgeCountMode(slotDir, enabled)
+    }
+  }
+
   handle(
     'declarativeNetRequest.updateDynamicRules',
     (event, options: unknown) => {
@@ -216,6 +223,7 @@ export function registerDnrApiHandlers(
       }
       if (options.displayActionCountAsBadgeText !== undefined) {
         setDisplayActionCountAsBadgeText(event.extension.id, options.displayActionCountAsBadgeText)
+        persistBadgeCountMode(event.extension.id, options.displayActionCountAsBadgeText)
       }
       if (update !== undefined) {
         incrementActionCount(event.extension.id, update.tabId, update.increment)

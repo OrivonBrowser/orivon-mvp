@@ -66,6 +66,24 @@ describe('attachHistory', () => {
     expect(visit).toHaveBeenCalledTimes(3)
   })
 
+  it('records a page that reloads itself once, while the person going back to it later is a new visit', () => {
+    const contents = new FakeContents()
+    const visit = vi.fn()
+    const clock = { now: 10_000 }
+    attachHistory(contents as unknown as WebContents, { visit, titled: vi.fn() } as unknown as HistoryService, { recordable: () => true }, () => clock.now)
+    for (let n = 0; n < 100; n += 1) {
+      clock.now += 5000
+      contents.emit('did-navigate', {}, 'https://status.example/board', 200)
+    }
+    expect(visit).toHaveBeenCalledTimes(1)
+    contents.emit('did-navigate', {}, 'https://status.example/other', 200)
+    contents.emit('did-navigate', {}, 'https://status.example/board', 200)
+    expect(visit).toHaveBeenCalledTimes(3)
+    clock.now += 31 * 60_000
+    contents.emit('did-navigate', {}, 'https://status.example/board', 200)
+    expect(visit).toHaveBeenCalledTimes(4)
+  })
+
   it('does not record an error page, a page that is not one to return to, or one in no tab', () => {
     const { contents, visit } = attached()
     contents.emit('did-navigate', {}, 'https://a.example/missing', 404)

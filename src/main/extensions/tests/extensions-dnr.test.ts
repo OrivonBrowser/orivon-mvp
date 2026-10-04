@@ -9,7 +9,7 @@
 // not; this suite is exactly the case that does).
 import { describe, expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { Session } from 'electron'
 import {
@@ -23,6 +23,8 @@ import {
   registerPendingDnrInstall,
 } from '../extensions-dnr.js'
 import { installFromFolder, type InstallContext } from '../install-runner.js'
+import { isDisplayActionCountAsBadgeTextEnabled } from '../dnr-match-log.js'
+import { writeBadgeCountMode } from '../dnr/dnr-runner.js'
 import type { InstalledExtension } from '../registry.js'
 import { generateId } from '../../../../vendor/electron-chrome-web-store/src/browser/id.js'
 import type { DnrRequest } from '../dnr/types.js'
@@ -269,6 +271,28 @@ describe('a recovery reload does not look like a real unload to the dNR service'
       expect(active).toBe(false)
       expect(engine.evaluate(blockRequest('http://x.example/ads/blocked.js')).cancel).toBeUndefined()
       expect(getCachedStrippedPermissions(outcome.entry.id)).toEqual([])
+    })
+  })
+})
+
+describe('the badge-count choice an extension made', () => {
+  it('is back after the extension is unloaded and loaded again, as an update does', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const { session } = fakeSession()
+      attachExtensionsDnr(session, userDataPath)
+      const outcome = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, writeDnrFixture(root, 1))
+      expect(outcome.installed).toBe(true)
+      if (!outcome.installed) return
+      const id = outcome.entry.id
+      expect(isDisplayActionCountAsBadgeTextEnabled(id)).toBe(false)
+
+      writeBadgeCountMode(dirname(outcome.entry.path), true)
+      session.extensions.removeExtension(id)
+      expect(isDisplayActionCountAsBadgeTextEnabled(id)).toBe(false)
+      await session.extensions.loadExtension(outcome.entry.path, { allowFileAccess: false })
+
+      expect(isDisplayActionCountAsBadgeTextEnabled(id)).toBe(true)
     })
   })
 })

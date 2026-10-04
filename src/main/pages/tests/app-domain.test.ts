@@ -12,6 +12,12 @@ describe('the app domain', () => {
     expect(app.quit).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps the command line\'s switches and drops the address it was started with', () => {
+    const app = { relaunch: vi.fn(), quit: vi.fn() }
+    appDomain(app, false, ['/usr/bin/orivon', '--orivon-profile=work', 'https://x.example/', '--no-sandbox']).handle({ type: 'relaunch' }, CALLER)
+    expect(app.relaunch).toHaveBeenCalledWith({ args: ['--orivon-profile=work', '--no-sandbox'] })
+  })
+
   it('does not, in a private session, which cannot be started again', () => {
     const app = { relaunch: vi.fn(), quit: vi.fn() }
     expect(appDomain(app, true).handle({ type: 'relaunch' }, CALLER)).toEqual({ ok: false, reason: 'private' })

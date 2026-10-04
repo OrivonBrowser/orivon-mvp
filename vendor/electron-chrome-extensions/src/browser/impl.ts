@@ -22,6 +22,19 @@ export interface ChromeExtensionImpl {
    */
   navigateTab?(tab: Electron.WebContents, url: string): void | Promise<void>
 
+  /**
+   * Orivon patch (UPSTREAM.md patch 65): the window a toolbar's own page (a
+   * `<browser-action-list>` host) belongs to, so each window's toolbar shows and acts on that
+   * window's active tab.
+   */
+  windowOf?(contents: Electron.WebContents): Electron.BaseWindow | undefined
+
+  /**
+   * Orivon patch (UPSTREAM.md patch 67): when a tab already shows `url`, brings it to the front
+   * and answers true. `chrome.runtime.openOptionsPage()` asks before it opens a tab.
+   */
+  activateTabShowing?(url: string): boolean
+
   requestPermissions?(
     extension: Electron.Extension,
     permissions: chrome.permissions.Permissions,

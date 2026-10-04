@@ -1900,14 +1900,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A363: A tab's icon is shared by every address on the same host **[AI-REC]**
-
-- **Question:** Tab icons are kept under the host name alone, so FreeTube on 127.0.0.1:9291 and any other page on 127.0.0.1 show the same icon. Should the key include the port?
-- **Why it matters:** local apps on different ports are different sites to the person, and each shows the icon of whichever loaded last.
-- **Options:** key by host and port (rec.); keep the host key for the history list only.
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
 ### A340: A question asked in a background tab waits with no sign **[OWNER]**
 
 - **Question:** A question for a tab that is not in front waits until its tab comes to the front, and nothing in the tab strip says so.
@@ -1999,3 +1991,14 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** the owner repeats the split and the new addresses and reports a blank pane with the terminal lines around it (rec.); `node scripts/probe-view-visibility.mjs` is the check that reads it, for a session that can run it; close it if every pane paints.
 - **Who decides:** owner
 - **Blocks:** nothing
+
+### A375: The Linux package says Orivon opens HTML files, but a file handed in at launch is dropped **[OWNER]**
+
+- **Question:** `electron-builder.yml` lists `text/html` in the desktop entry's MimeType, so a file manager can offer
+  Orivon for `report.html` and run it with a `file:///` argument; the launch keeps only http(s) addresses, so nothing
+  opens. Open local files, or stop claiming the type?
+- **Why it matters:** a person who picks Orivon for HTML files sees a new tab or a focused window and no page.
+- **Options:** drop `text/html` from the package, keeping the http and https scheme handlers (rec.; `file:` stays
+  refused as it is in the address bar); open a local HTML file handed in at launch, which needs a rule for `file:`.
+- **Who decides:** owner
+- **Blocks:** nothing; check `xdg-settings` on a real package either way

@@ -236,6 +236,29 @@ describe('showContextMenu -- a tab\'s menu against a chrome menu', () => {
     expect(labels(lastTemplate())).toEqual(['Back', 'Forward', 'Reload'])
   })
 
+  it('adds what a feature offers below the page\'s own items, after a separator', () => {
+    buildFromTemplate.mockClear()
+    const added = { label: 'Translate selection', type: 'normal' }
+    showContextMenu(tabContents() as never, params({}), { window: {} as never, openInNewTab: vi.fn(), page: { bare: () => false }, runCommand: vi.fn(), extraItems: () => [added as never] })
+    const items = lastTemplate()
+    expect(items.at(-1)).toBe(added)
+    expect(items.at(-2)?.type).toBe('separator')
+  })
+
+  it('adds nothing on a bare page, in a kiosk, or for a menu that is not a tab\'s', () => {
+    const extraItems = vi.fn(() => [{ label: 'X', type: 'normal' } as never])
+    const base = { window: {} as never, openInNewTab: vi.fn(), extraItems }
+    buildFromTemplate.mockClear()
+    showContextMenu(tabContents() as never, params({}), { ...base, page: { bare: () => true } })
+    expect(labels(lastTemplate())).toEqual(['Back', 'Forward', 'Reload'])
+    showContextMenu(tabContents() as never, params({ linkURL: 'https://example.com/' }), { ...base, kiosk: true, page: { bare: () => false } })
+    expect(labels(lastTemplate())).not.toContain('X')
+    buildFromTemplate.mockClear()
+    showContextMenu(tabContents() as never, params({}), base)
+    expect(buildFromTemplate).not.toHaveBeenCalled()
+    expect(extraItems).not.toHaveBeenCalled()
+  })
+
   it('saves a link through the tab\'s downloadURL', () => {
     buildFromTemplate.mockClear()
     const wc = tabContents()

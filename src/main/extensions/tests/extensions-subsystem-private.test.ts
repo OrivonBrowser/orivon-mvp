@@ -10,7 +10,7 @@ const installApis = vi.fn()
 let published: any
 
 vi.mock('electron', () => ({ session: { defaultSession: { extensions: { loadExtension } } } }))
-vi.mock('../extension-host.js', () => ({ createExtensionHost: () => ({ getRouter: () => ({}) }) }))
+vi.mock('../extension-host.js', () => ({ createExtensionHost: () => ({ getRouter: () => ({}) }), extensionPagesAroundReload: {} }))
 vi.mock('../extensions-dnr.js', () => ({ attachExtensionsDnr: vi.fn(), getDnrEngine: vi.fn() }))
 vi.mock('../dnr-api.js', () => ({ registerDnrApiHandlers: () => ({ onRuleMatched: vi.fn(), onTabNavigated: vi.fn() }) }))
 vi.mock('../dnr-webrequest.js', () => ({ installDnrWebRequestHandlers: vi.fn() }))

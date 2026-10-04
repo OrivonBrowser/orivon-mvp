@@ -309,6 +309,12 @@ export class ElectronChromeExtensions extends EventEmitter {
     this.ctx.store.addTab(tab, window)
   }
 
+  /** Orivon patch (UPSTREAM.md patch 65): a tracked tab now shows in `window`. */
+  moveTab(tab: Electron.WebContents, window: Electron.BaseWindow) {
+    this.checkWebContentsArgument(tab)
+    this.ctx.store.moveTab(tab, window)
+  }
+
   /** Remove webContents from being tracked as a tab. */
   removeTab(tab: Electron.WebContents) {
     this.checkWebContentsArgument(tab)

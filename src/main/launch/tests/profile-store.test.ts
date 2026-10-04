@@ -66,6 +66,8 @@ describe('the profile list', () => {
     await mkdir(join(home, 'profiles', '0123456789ab'), { recursive: true })
     await writeFile(join(home, 'profiles', '0123456789ab', 'profile.json'), '{not json')
     expect(store().list()[1]).toMatchObject({ id: '0123456789ab', name: 'Profile', color: 'blue' })
+    await writeFile(join(home, 'profiles', '0123456789ab', 'profile.json'), 'null')
+    expect(store().list()[1]).toMatchObject({ id: '0123456789ab', name: 'Profile', color: 'blue' })
   })
 })
 

@@ -23,6 +23,8 @@ export interface LifecycleDeps {
   checkpointAgeSeconds: () => number | undefined
   /** Holds a start back this long (test builds only); zero otherwise. */
   startDelayMs: () => number
+  /** A private session renews no checkpoint at launch: it would reach the network for a file thrown away at its end. */
+  privateSession?: boolean
   now?: () => number
 }
 
@@ -56,6 +58,7 @@ export class HostLifecycle {
 
   /** After the quiet delay, starts the host for one run if the checkpoint is old enough to need renewing. */
   refreshAtLaunch (): void {
+    if (this.deps.privateSession === true) return
     this.launchTimer = setTimeout(() => {
       this.launchTimer = undefined
       const age = this.deps.checkpointAgeSeconds()

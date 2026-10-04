@@ -62,10 +62,12 @@ const listeners = new Set<() => void>()
 /** Whether the person has the light client on. Set once the settings are read; until then it is on. */
 let enabledByPerson: () => boolean = () => true
 
-/** Lets the person's setting, and not only the environment, switch the light client off. Read when the host starts. */
-export function configureVerifier (options: { lightClientEnabled: () => boolean, windows: () => readonly TabsOfWindow[] }): void {
-  enabledByPerson = options.lightClientEnabled
-  tabsOnVerifiedOrigin = () => anyTabOnVerifiedOrigin(options.windows())
+/** Lets the person's setting, and not only the environment, switch the light client off. Read once, here, at launch:
+ * the choice applies from Orivon's next start, as Settings says, however often the host sleeps and wakes before it. */
+export function configureVerifier (options: { lightClientEnabled: () => boolean, windows: () => readonly TabsOfWindow[], servedFromCache: (origin: string) => boolean }): void {
+  const enabledAtLaunch = options.lightClientEnabled()
+  enabledByPerson = () => enabledAtLaunch
+  tabsOnVerifiedOrigin = () => anyTabOnVerifiedOrigin(options.windows(), options.servedFromCache)
 }
 
 const lightClientSwitchedOff = (): boolean => process.env['ORIVON_ETH_LIGHT_CLIENT'] === 'off' || !enabledByPerson()
@@ -277,7 +279,7 @@ export const verifierSubsystem: Subsystem = {
     if (dev.secureOrigins !== '') app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', dev.secureOrigins)
     app.on('session-created', installCertificateCheck)
   },
-  afterReady: () => {
+  afterReady: (ctx) => {
     installCertificateCheck(session.defaultSession)
     installPartitionStamp(session.defaultSession)
     installListeningGate(session.defaultSession)
@@ -322,7 +324,12 @@ export const verifierSubsystem: Subsystem = {
           changed()
         },
         checkpoint: (root, timestamp) => {
-          verifierStore().saveCheckpoint({ root, timestamp }, Math.floor(Date.now() / 1000))
+          try {
+            verifierStore().saveCheckpoint({ root, timestamp }, Math.floor(Date.now() / 1000))
+          } catch (error) {
+            // A full or read-only profile: the checkpoint is fetched again by a later run.
+            console.error('[verifier] could not keep the new checkpoint:', error)
+          }
           chooseNow()
           changed()
         },
@@ -335,7 +342,8 @@ export const verifierSubsystem: Subsystem = {
       idle: () => { host.idle() },
       tabShowsVerifiedOrigin: () => tabsOnVerifiedOrigin(),
       checkpointAgeSeconds: usableCheckpointAge,
-      startDelayMs: verifierStartDelayMs
+      startDelayMs: verifierStartDelayMs,
+      privateSession: ctx.privateSession
     })
     startHost = () => { lifecycle.request() }
     provideVerifierAccess({ start: () => { startHost() }, ready: async () => { await listeningGate.whenSettled() } })

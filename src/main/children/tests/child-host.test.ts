@@ -241,6 +241,27 @@ describe('createChildHostPool', () => {
     expect(recovered.close).not.toHaveBeenCalled()
   })
 
+  it('a failed load leaves no readiness wait to reject later with nothing listening', async () => {
+    vi.useFakeTimers()
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+    try {
+      const failing = fakeWebContents()
+      failing.loadURL = vi.fn(async () => { throw new Error('load failed') })
+      failing.ipc = { once: vi.fn() } // the closed host never reports ready
+      lastWebContents.current = failing
+      const pool = createChildHostPool(() => stubBroker())
+      await expect(pool.getOrCreate('https://app.example')).rejects.toThrow('load failed')
+      await vi.advanceTimersByTimeAsync(10_000)
+      vi.useRealTimers()
+      await new Promise((resolve) => { setTimeout(resolve, 10) })
+      expect(unhandled).not.toHaveBeenCalled()
+    } finally {
+      process.off('unhandledRejection', unhandled)
+      vi.useRealTimers()
+    }
+  })
+
   it('F5: postPagePort never throws when the host\'s frame is gone -- logs instead', async () => {
     const pool = createChildHostPool(() => stubBroker())
     const contents = fakeWebContents()

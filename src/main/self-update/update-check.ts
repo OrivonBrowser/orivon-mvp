@@ -62,7 +62,8 @@ export interface UpdateNoticeDecision {
  */
 export function decideUpdateNotice (input: DecideUpdateNoticeInput): UpdateNoticeDecision {
   const checkIntervalMs = input.checkIntervalMs ?? DEFAULT_CHECK_INTERVAL_MS
-  const shouldCheck = input.lastCheckedAt === undefined ||
+  // A last check in the future is a clock that was set back since: due now, not when the clock catches up.
+  const shouldCheck = input.lastCheckedAt === undefined || input.now < input.lastCheckedAt ||
     input.now - input.lastCheckedAt >= checkIntervalMs
 
   const nothingToNotify: UpdateNoticeDecision = { shouldCheck, shouldNotify: false, notifyVersion: null }
@@ -108,7 +109,8 @@ export interface ReleaseInfo {
   readonly url: string
 }
 
-/** Returns null on any failure (offline, no releases yet, bad response) -- never throws by contract, but see checkForUpdate's own safety net below. */
+/** Answers null when the source has nothing to report (no release yet, a response it cannot read); rejects when the
+ * source could not be reached (offline, a timeout, a server error), which does not count as a check. */
 export type FetchLatestRelease = () => Promise<ReleaseInfo | null>
 
 export interface CheckForUpdateInput {
@@ -123,6 +125,8 @@ export interface CheckForUpdateInput {
 export interface CheckForUpdateResult {
   /** Whether a network attempt actually happened this call (vs. throttled). */
   readonly checkedNow: boolean
+  /** Whether that attempt reached the source: a check that did not is not recorded as one. */
+  readonly reached: boolean
   readonly shouldNotify: boolean
   readonly notifyVersion: string | null
   readonly release: ReleaseInfo | null
@@ -146,19 +150,17 @@ export async function checkForUpdate (input: CheckForUpdateInput): Promise<Check
     ...(input.checkIntervalMs !== undefined ? { checkIntervalMs: input.checkIntervalMs } : {})
   })
   if (!gate.shouldCheck) {
-    return { checkedNow: false, shouldNotify: false, notifyVersion: null, release: null }
+    return { checkedNow: false, reached: false, shouldNotify: false, notifyVersion: null, release: null }
   }
 
-  // Defensive even though FetchLatestRelease's contract says "never throws":
-  // the real implementation below is careful to honour that, but this
-  // orchestrator must not let a THIRD-PARTY-INJECTED implementation (e.g. in
-  // a future caller) take the app down over a background, best-effort check.
-  const release = await input.fetchLatestRelease().catch(() => null)
+  // A rejection is a source not reached, never a failure of this best-effort, background check.
+  let reached = true
+  const release = await input.fetchLatestRelease().catch(() => { reached = false; return null })
 
   const final = decideUpdateNotice({
     ...base,
     ...(release !== null ? { latestVersion: release.version } : {})
   })
 
-  return { checkedNow: true, shouldNotify: final.shouldNotify, notifyVersion: final.notifyVersion, release }
+  return { checkedNow: true, reached, shouldNotify: final.shouldNotify, notifyVersion: final.notifyVersion, release }
 }

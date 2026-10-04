@@ -29,6 +29,9 @@ const FIXTURE_ADDRESS: Rect = { x: 240, y: 44, width: 260, height: 24 }
 const CONSENT_ORIGIN_LINE: Rect = { x: 188, y: 78, width: 240, height: 20 }
 const PAGE_QUESTION_ORIGIN: Rect = { x: 190, y: 78, width: 240, height: 20 }
 
+/** Settings > Web3's line saying how old the light client's shipped checkpoint is: it reads a day more each day. */
+const CHECKPOINT_AGE: Rect = { x: 700, y: 586, width: 440, height: 24 }
+
 const MANIFEST = JSON.stringify({
   orivonApiVersion: 0,
   id: 'app.orivon.fixture.visual-consent',
@@ -340,7 +343,8 @@ for (const scheme of SCHEMES) {
         check('the key and the Web2 pill stay away from a Settings page', !(await chrome.locator('#site-permissions-btn').isVisible()) && !(await chrome.locator('#web3-mark').isVisible()))
         await state(check, app, `settings-web3-${scheme}`, {
           expected: 'orivon://settings/web3 is open with Web3 selected in the navigation. A light-client row shows its switch OFF and greyed out, labelled "Off for this run" because this run forces it off; the state row below it is a full sentence beginning with a capital letter, not a "code: value" pair. No key button sits in the address field.',
-          action: 'Opened orivon://settings/web3 in a run that forces the light client off.'
+          action: 'Opened orivon://settings/web3 in a run that forces the light client off.',
+          ignore: [CHECKPOINT_AGE]
         })
 
         const profiles = await openInternal(app, chrome, 'profiles')

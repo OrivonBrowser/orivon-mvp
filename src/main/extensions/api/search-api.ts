@@ -31,7 +31,7 @@ export function parseQuery (properties: unknown): Request {
 }
 
 export function installSearch (ctx: ExtensionApiContext): void {
-  ctx.handle('search.query', (_event: ApiEvent, properties) => {
+  ctx.handle('search.query', (event: ApiEvent, properties) => {
     const { text, disposition, tabId } = parseQuery(properties)
     const shell = ctx.shell() ?? fail('Search is not available yet.')
     const url = searchUrlFor(shell.settings.get('search.engine'), shell.settings.get('search.customUrl'), text)
@@ -43,7 +43,8 @@ export function installSearch (ctx: ExtensionApiContext): void {
       found.window.tabs.navigate(found.id, url)
       return
     }
-    const target = shell.windows.focused()
+    const caller = ctx.callerWindow(event)
+    const target = caller ?? shell.windows.focused()
     if (disposition === 'NEW_WINDOW' || target === undefined) {
       shell.commands.openWindow({ first: (tabs) => { tabs.createTab(url) } })
       return
@@ -52,7 +53,7 @@ export function installSearch (ctx: ExtensionApiContext): void {
       target.tabs.createTab(url)
       return
     }
-    const current = ctx.activeTab()
+    const current = ctx.activeTab(caller?.window.id)
     if (current !== undefined && ordinary(current.contents)) current.window.tabs.navigate(current.id, url)
     else target.tabs.createTab(url)
   })

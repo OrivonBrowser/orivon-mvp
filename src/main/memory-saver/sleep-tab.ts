@@ -70,6 +70,12 @@ export function putToSleep (tabs: TabManager, id: string, record: TabRecord, kep
   return true
 }
 
+/** The tab menu's Reload: a sleeping tab's view never loaded a page to reload, so it wakes instead. */
+export function reloadOrWake (tabs: TabManager, id: string): void {
+  if (tabs.record(id)?.sleeping != null) wakeTab(tabs, id)
+  else tabs.reload(id)
+}
+
 /** Brings a sleeping tab back on the view it has now: its history returns and its page loads, scrolled and filled as
  * it was. A tab that is not asleep is left alone. */
 export function wakeTab (tabs: TabManager, id: string): void {

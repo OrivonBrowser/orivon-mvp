@@ -119,6 +119,16 @@ describe('the content-settings installer', () => {
     expect(subscribe).toHaveBeenCalledWith(expect.objectContaining({ tabCreated: expect.any(Function), viewReplaced: expect.any(Function) }))
   })
 
+  it('listens to a page once however often its tab is announced, as a tab moved between windows is', () => {
+    const { subscribe } = rig()
+    const { tabCreated } = subscribe.mock.calls[0]?.[0] as { tabCreated: (contents: unknown) => void }
+    const on = vi.fn()
+    const contents = { on }
+    tabCreated(contents)
+    tabCreated(contents)
+    expect(on.mock.calls.filter(([event]) => event === 'did-start-navigation')).toHaveLength(1)
+  })
+
   describe('JavaScript', () => {
     const page = { resourceType: 'mainFrame', url: `${SITE}/cart` }
 

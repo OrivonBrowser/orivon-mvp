@@ -32,6 +32,7 @@ vi.mock('../extensions-dnr.js', () => ({
 vi.mock('../dnr/dnr-runner.js', () => ({
   writeDynamicRules: vi.fn(),
   writeEnabledRulesetOverride: vi.fn(),
+  writeBadgeCountMode: vi.fn(),
 }))
 
 const { registerDnrApiHandlers } = await import('../dnr-api.js')
@@ -173,6 +174,24 @@ describe('registerDnrApiHandlers', () => {
     onRuleMatched(7, { extensionId: 'ext-1', rulesetId: '_session', ruleId: 2, actionType: 'block' })
     expect(badgeHost.setBadgeText).toHaveBeenNthCalledWith(1, 'ext-1', 7, '1')
     expect(badgeHost.setBadgeText).toHaveBeenNthCalledWith(2, 'ext-1', 7, '2')
+  })
+
+  it('remembers the badge-count choice in the extension\'s slot, so it outlives a restart and an update', async () => {
+    registryEntries = [extensionEntry('ext-1', ['declarativeNetRequest'])]
+    const { slotDirForLoadedExtension } = await import('../extensions-dnr.js')
+    const { writeBadgeCountMode } = await import('../dnr/dnr-runner.js')
+    vi.mocked(slotDirForLoadedExtension).mockReturnValue('/userdata/extensions/slot')
+    const router = fakeRouter()
+    registerDnrApiHandlers(router as any, fakeBadgeHost(), '/userdata')
+    const call = router.handlers.get('declarativeNetRequest.setExtensionActionOptions')!.callback
+    call({ extension: { id: 'ext-1' } }, { displayActionCountAsBadgeText: true })
+    expect(writeBadgeCountMode).toHaveBeenLastCalledWith('/userdata/extensions/slot', true)
+    call({ extension: { id: 'ext-1' } }, { displayActionCountAsBadgeText: false })
+    expect(writeBadgeCountMode).toHaveBeenLastCalledWith('/userdata/extensions/slot', false)
+    vi.mocked(writeBadgeCountMode).mockClear()
+    call({ extension: { id: 'ext-1' } }, { tabUpdate: { tabId: 1, increment: 1 } })
+    expect(writeBadgeCountMode).not.toHaveBeenCalled()
+    vi.mocked(slotDirForLoadedExtension).mockReturnValue(undefined)
   })
 
   it('rejects a setExtensionActionOptions argument of the wrong shape, and keeps counts numeric', () => {

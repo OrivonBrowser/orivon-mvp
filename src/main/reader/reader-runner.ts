@@ -75,7 +75,7 @@ export async function toggleReader (tabs: ReaderTabs, deps: ReaderDeps): Promise
   // Kept under the reader tab's record, which goes with the tab if it is moved to another window.
   const entry = deps.articles.set(record, article, linkTable(article), activeId)
   // Beside an article that is in a group, the reader tab is in that group too, as a tab opened to its right is.
-  record.reader = { source: activeId }
+  record.reader = { source: activeId, address: tab.url }
   record.groupId = tabs.record(activeId)?.groupId ?? null
   placeBeside(tabs, readerId, activeId)
   if (existing !== undefined) deps.publish('reader.changed', undefined)

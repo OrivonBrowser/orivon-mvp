@@ -12,6 +12,7 @@ import { extensionsMenuDeps } from './extensions-menu-deps.js'
 import type { ExtensionsMenuDeps } from './extensions-menu-deps.js'
 import { buildRows, anchorFrom, asRequest, fallbackAnchor, isExtensionId, siteHost } from './extensions-menu-model.js'
 import { openExtensionTab } from './extension-opened-pages.js'
+import { activateTabShowing } from './extension-options-tab.js'
 import type { MenuPayload, Rect } from './extensions-menu-model.js'
 import { EXTENSIONS_BUTTON_MODULE, EXTENSIONS_MENU_OVERLAY, EXTENSION_STORE_URL } from './extensions-menu-names.js'
 import { EXTENSION_MENU_REQUESTS, EXTENSION_MENU_ROW_PARTS } from './extensions-menu-points.js'
@@ -62,7 +63,7 @@ export function createExtensionsMenu (win: OverlayWindow, deps: ExtensionsMenuDe
   function open (target: string | undefined): void {
     if (target === undefined) return
     win.close()
-    openExtensionTab(window.tabs, target)
+    if (!activateTabShowing(services.windows.all(), target)) openExtensionTab(window.tabs, target)
   }
 
   async function run (type: string, body: Record<string, unknown>): Promise<unknown> {

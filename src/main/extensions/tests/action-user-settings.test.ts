@@ -53,7 +53,7 @@ function rig (): Rig {
   ])
   const services = {
     settings: { get: () => pinNew.value, onChange: (listener: (change: { key: string }) => void) => { settingListeners.push(listener); return () => {} } },
-    windows: { focused: () => ({ tabs }) }
+    windows: { focused: () => ({ tabs }), all: () => [] }
   } as unknown as ShellServices
   const ctx = {
     handle: (name: string, run: (event: ApiEvent) => unknown) => { handlers.set(name, run) },

@@ -55,6 +55,10 @@ function enabledRulesetsPath(slotDir: string): string {
   return join(slotDir, 'dnr-enabled-rulesets.json')
 }
 
+function badgeCountPath(slotDir: string): string {
+  return join(slotDir, 'dnr-badge-count.json')
+}
+
 function readJsonArray(path: string): unknown[] | null {
   if (!existsSync(path)) {
     return null
@@ -93,8 +97,31 @@ export function writeEnabledRulesetOverride(slotDir: string, enabledIds: readonl
   writeFileAtomic(enabledRulesetsPath(slotDir), JSON.stringify(enabledIds))
 }
 
+/** Whether the extension last turned the blocked count on as its badge, `undefined` when it never chose. Chrome keeps
+ * the choice across restarts and updates. */
+export function readBadgeCountMode(slotDir: string): boolean | undefined {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(badgeCountPath(slotDir), 'utf8'))
+    return typeof parsed === 'boolean' ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+export function writeBadgeCountMode(slotDir: string, enabled: boolean): void {
+  writeFileAtomic(badgeCountPath(slotDir), JSON.stringify(enabled))
+}
+
+/** Forgets the enabled-ruleset choice, so the manifest's own `enabled` flags apply again; returns
+ * what was saved, `null` when nothing was. Chrome keeps the choice across restarts, not across an update. */
+export function takeEnabledRulesetOverride(slotDir: string): string[] | null {
+  const saved = readEnabledRulesetOverride(slotDir)
+  rmSync(enabledRulesetsPath(slotDir), { force: true })
+  return saved
+}
+
 /**
- * Deletes `slotDir`'s persisted dynamic rules and enabled-ruleset choice --
+ * Deletes `slotDir`'s persisted dynamic rules, enabled-ruleset choice and badge-count choice --
  * `install-runner.ts`'s `uninstall` calls this, matching Chrome's own
  * behavior of clearing an extension's dynamic rules on uninstall
  * (`README.md`'s Design notes on where these two files live). Never touches
@@ -105,6 +132,7 @@ export function writeEnabledRulesetOverride(slotDir: string, enabledIds: readonl
 export function clearPersistedRuleState(slotDir: string): void {
   rmSync(dynamicRulesPath(slotDir), { force: true })
   rmSync(enabledRulesetsPath(slotDir), { force: true })
+  rmSync(badgeCountPath(slotDir), { force: true })
 }
 
 /**

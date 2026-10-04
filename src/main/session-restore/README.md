@@ -48,7 +48,13 @@ to disk off the main thread (`writeFileAtomicAsync`).
 closing ends the browser, and by then its tabs are closed: the recorder saves the window in its `close`, with
 its tabs alive, and from then on the file is left alone. A quit freezes every window first (the recorder's
 listener runs ahead of the one that holds the quit while stores flush) and sets `clean`. A window closing
-while others stay open leaves the session and goes on the closed stack instead.
+while others stay open leaves the session and goes on the closed stack instead. A last window emptied by closing
+its last tab keeps that tab in the file, taken from the top of the closed stack. Where the browser stays open
+without windows (macOS), a window opened later puts the last one on the closed stack.
+
+**After a crash, the crashed run's windows stay in the file until they are restored or the browser quits.** They wait
+on the closed stack (`seedClosedStack`), and the store writes them after the open windows (`carry`) while the
+session is unclean, so a second crash before they are restored offers them again.
 
 **A private session writes nothing.** Its store is a null store and `session.json` is not among the files a
 private session copies. The closed stack is in memory in every case, so reopening works in a private window and

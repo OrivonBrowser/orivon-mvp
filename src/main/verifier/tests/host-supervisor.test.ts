@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import type { HostConfig } from '../../../protocols/verifier-host/protocol.js'
 import { HostSupervisor } from '../host-supervisor.js'
@@ -75,6 +75,22 @@ describe('HostSupervisor', () => {
     hosts[0]?.answer({ type: 'ipns-sequence', key: 'k51', sequence: '7' })
     hosts[0]?.answer({ type: 'failed', stage: 'listen', message: 'EADDRINUSE' })
     expect(log).toEqual(['listening sha256/x', 'status syncing', `checkpoint ${root} 5`, 'ipns k51 7', 'down the verifier host could not listen on its port: EADDRINUSE'])
+  })
+
+  it('logs a handler that throws instead of letting it out of the message callback, where it would end the browser', () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const hosts: FakeHost[] = []
+    const supervisor = new HostSupervisor({
+      fork: () => { const h = new FakeHost(); hosts.push(h); return h },
+      config: () => CONFIG,
+      events: { starting: () => {}, listening: () => {}, down: () => {}, status: () => {}, idle: () => {}, ipnsSequence: () => {}, checkpoint: () => { throw new Error('ENOSPC') } },
+      setTimer: () => {},
+      now: () => 0
+    })
+    supervisor.start()
+    expect(() => { hosts[0]?.answer({ type: 'checkpoint', root: `0x${'ab'.repeat(32)}`, timestamp: 5 }) }).not.toThrow()
+    expect(errors).toHaveBeenCalledWith(expect.stringContaining('checkpoint'), expect.any(Error))
+    errors.mockRestore()
   })
 
   it('drops a message that is not one of the shapes the host may ever post, instead of acting on it', () => {
