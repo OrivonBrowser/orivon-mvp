@@ -45,5 +45,6 @@ export async function emailLinkCommand (target: ShellWindow, deps: ShareDeps, ta
     await deps.openExternal(url)
   } catch (error) {
     console.error('[os] could not open the mail program', error)
+    showToast(target, 'mailFailed')
   }
 }

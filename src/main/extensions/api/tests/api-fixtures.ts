@@ -21,6 +21,7 @@ export function fakeContext (shell: Record<string, unknown>, over: Partial<Exten
     session: { extensions: { getAllExtensions: () => [{ id: EXT }], on: () => {} } },
     tab: () => undefined,
     activeTab: () => undefined,
+    callerWindow: () => undefined,
     ...over
   } as unknown as ExtensionApiContext
   const event = (id = EXT): ApiEvent => ({ type: 'frame', sender: undefined, extension: { id, manifest: {} } })

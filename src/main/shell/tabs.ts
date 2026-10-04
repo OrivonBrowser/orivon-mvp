@@ -61,6 +61,8 @@ export class TabManager {
   afterMove?: (id: string) => void
   /** Called when a page opened a tab (a link, a popup, "Open in new tab"); `opener` is the tab that was in front. */
   afterOpen?: (id: string, opener: string | null) => void
+  /** Set by a feature that hides tabs in the strip (a collapsed group): the tab in front leaving puts the nearest one not hidden in front. */
+  hidden?: (id: string) => boolean
 
   constructor (
     contentView: View,
@@ -265,8 +267,9 @@ export class TabManager {
     return record
   }
 
-  /** Shows a tab another window let go of, at `index` (the end by default) -- its views' handlers read `record.host` when they run, so from here on they act for this window. */
-  giveTab (id: string, record: TabRecord, index?: number): void {
+  /** Shows a tab another window let go of, at `index` (the end by default) -- its views' handlers read `record.host` when they run, so from here on they act for this window.
+   * `activate` false leaves it behind the tab in front, asleep if it was, for a caller handing over several. */
+  giveTab (id: string, record: TabRecord, index?: number, activate = true): void {
     if (this.disposed) return
     record.host = this.viewHost
     this.tabs.set(id, record)
@@ -275,7 +278,8 @@ export class TabManager {
     this.afterMove?.(id)
     // takeTab()'s forgetTab() already said this tab closed; this says it is back.
     this.shell?.tabLifecycle?.tabCreated(record.view.webContents, this.viewHost.window)
-    this.activateTab(id)
+    if (activate) this.activateTab(id)
+    else this.changed()
   }
 
   /** Shared by closeTab() (user- or app-initiated), the webContents
@@ -311,7 +315,7 @@ export class TabManager {
     if (this.disposed) return
 
     if (this.activeId === id) {
-      const fallback = this.order[Math.max(0, idx - 1)]
+      const fallback = this.fallbackFor(idx)
       this.activeId = null
       if (fallback !== undefined) {
         this.activateTab(fallback)
@@ -329,6 +333,20 @@ export class TabManager {
     // The tab beside it now has the whole area.
     if (partner !== null) this.panes.sync()
     this.changed()
+  }
+
+  /** The tab to put in front once the one at `at` has left: its left neighbour, or the nearest one not hidden, left first. */
+  private fallbackFor (at: number): string | undefined {
+    const near = this.order[Math.max(0, at - 1)]
+    const hidden = this.hidden
+    if (hidden === undefined || near === undefined || !hidden(near)) return near
+    for (let distance = 1; distance <= this.order.length; distance += 1) {
+      const left = this.order[at - distance]
+      if (left !== undefined && !hidden(left)) return left
+      const right = this.order[at + distance - 1]
+      if (right !== undefined && !hidden(right)) return right
+    }
+    return near
   }
 
   activateTab (id: string): void {

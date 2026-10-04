@@ -41,8 +41,11 @@ export function optionsFor (saved: SavedWindow, displays: Displays): ShellWindow
 }
 
 /** The windows the previous session had become the first entries of the closed stack, the last one on top. */
-export function seedClosedStack (stack: ClosedStack, previous: SavedSession | null): void {
+/** Answers the ids of the entries it put on the stack. */
+export function seedClosedStack (stack: ClosedStack, previous: SavedSession | null): number[] {
+  const ids: number[] = []
   for (const window of previous?.windows ?? []) {
-    if (window.tabs.length > 0) stack.push({ kind: 'window', window })
+    if (window.tabs.length > 0) ids.push(stack.push({ kind: 'window', window }).id)
   }
+  return ids
 }

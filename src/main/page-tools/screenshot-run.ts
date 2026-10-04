@@ -33,11 +33,19 @@ export async function takeScreenshot (window: ShellWindow, wc: CaptureContents, 
     }
     return
   }
-  const chosen = await deps.pickSave(window.window, {
-    title: 'Save screenshot',
-    defaultPath: join(deps.downloadsDir(), screenshotName(deps.now())),
-    filters: [{ name: 'PNG image', extensions: ['png'] }]
-  })
+  let chosen: string | undefined
+  try {
+    chosen = await deps.pickSave(window.window, {
+      title: 'Save screenshot',
+      defaultPath: join(deps.downloadsDir(), screenshotName(deps.now())),
+      filters: [{ name: 'PNG image', extensions: ['png'] }]
+    })
+  } catch (error) {
+    // A window closed under the dialog, or a dialog that could not open.
+    console.error('[page-tools] the save dialog failed', error)
+    showToast(window, 'shotFailed')
+    return
+  }
   if (chosen === undefined) return
   const path = withExtension(chosen, 'png')
   try {

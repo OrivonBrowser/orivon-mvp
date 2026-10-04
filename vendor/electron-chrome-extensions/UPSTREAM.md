@@ -6,7 +6,7 @@
 - License: GPL-3.0 (see `LICENSE.md`, `LICENSE-GPL`, `LICENSE-PATRON.md`), combinable with
   Orivon's AGPL-3.0-only under GPLv3 §13
 - Vendored from: `packages/electron-chrome-extensions/src/` (no `spec/`, no build output)
-- Modified: by the Orivon project, as the patches below list; last modified 2026-09-30
+- Modified: by the Orivon project, as the patches below list; last modified 2026-10-03
 
 ## Patches
 
@@ -793,6 +793,47 @@
     copied its whole local store, the previous copy included, into itself. The value at least
     doubled per start, until one profile held a single 908 MB value and the browser used 10 GB of
     memory.
+64. **Event listeners are matched by a key the page holds.** `src/renderer/event.ts` keeps its
+    registrations per event name and per key (the callback itself when no key is given); a remove
+    for an unknown key does nothing, and the `crx-remove-listener` message goes out only when the
+    last registration of that event leaves. `src/renderer/index.ts`'s `ExtensionEvent` gives each
+    added callback a key, passes it with the callback, ignores a callback added twice, and answers
+    `hasListener` and `hasListeners` from its own record instead of throwing. Reason: a callback
+    crossing the context bridge arrives as a new function on every call, so upstream's
+    `removeListener` never removed anything, and each repeated remove still lowered the shared
+    count until the page unsubscribed the extension's other listeners from the event.
+65. **Windows and the active tab are per window.** `src/browser/api/tabs.ts`: `query` honours
+    `currentWindow` and `lastFocusedWindow`, and `currentWindow` and `getAllInWindow`'s current
+    window are the caller's own (the window of the tab it runs in, or the one a popup hangs under),
+    else the last focused one; `onActivated` clears `active` only on the tabs of the activated
+    tab's own window; a tab added is announced as activated only when it is the one in front of its
+    window (`observeTab` no longer activates every tab it sees); `onRemoved` announces a tab once,
+    so a tab closed through `chrome.tabs.remove()` is not reported again when its webContents is
+    destroyed, now with window id -1; `tab-moved` rebuilds the tab's details and fires
+    `tabs.onDetached` and `tabs.onAttached` (both added to the renderer's `chrome.tabs`).
+    `src/browser/store.ts`: `removeTab` clears the window's active tab when it was the removed one
+    (the old `TODO`), and the new `moveTab(tab, window)` (also on `ElectronChromeExtensions`)
+    re-homes a tracked tab without the `tab-removed` that wipes what an extension set for it.
+    `src/browser/impl.ts`: the optional `windowOf(contents)`; `src/browser/api/browser-action.ts`
+    answers `getState` with the active tab of the window the asking toolbar page belongs to, and a
+    click that names no tab acts on that window's active tab. Reason: with two windows,
+    `tabs.query({ active: true, currentWindow: true })` from a popup and every toolbar read the
+    other window's tab, a tab opened behind the front one became every extension's active tab, a
+    tab moved between windows kept its old window id and lost its badge, a page coming back into
+    a one-tab window left the window with no active tab, and one closed tab was reported closed
+    twice.
+66. **A notification keeps its own id and registry entry.** `src/browser/api/notifications.ts`: a
+    `create` with no id gets `crypto.randomUUID()` instead of the shared `'guid'`, and a
+    notification's `close` handler acts only while the registry still holds that notification, so
+    one replaced under the same id neither removes its replacement's entry nor reports an
+    `onClosed` nobody caused. Reason: two id-less notifications replaced each other, and the
+    asynchronous `close` of a replaced one deleted the entry of the notification that replaced it,
+    after which `clear` could no longer close that one.
+67. **`chrome.runtime.openOptionsPage()` shows the open options tab.** `src/browser/impl.ts`: the
+    optional `activateTabShowing(url)`, true when a tab already shows `url` and was brought to the
+    front; `src/browser/api/runtime.ts`'s `openOptionsPage` asks it before opening a tab. The file
+    also takes type-only imports and `documentOrigin?: string | undefined`, so the root tsconfig
+    accepts it when a unit test imports it. Reason: every call opened another options tab.
 
 `partition.ts` is reached only through the virtual specifier `src/main/extensions/
 electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and
@@ -800,8 +841,8 @@ electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file'
 tsconfig (verbatimModuleSyntax, exactOptionalPropertyTypes) are therefore not patched: nothing in
 `src/` opens it directly, and `vendor/tsconfig.json`'s own, looser check already covers it as
 authored. `browser/index.ts`, `router.ts`, `api/cookies.ts`, `api/tabs.ts`, `api/web-navigation.ts`,
-`api/windows.ts`, `store.ts`, `api/browser-action.ts`, `popup.ts` and `api/notifications.ts` are
-the exceptions: patches 13-14, 16-20 and 21-31 above make them satisfy the root tsconfig too, so
+`api/windows.ts`, `store.ts`, `api/browser-action.ts`, `popup.ts`, `api/runtime.ts` and
+`api/notifications.ts` are the exceptions: patches 13-14, 16-20, 21-31 and 67 above make them satisfy the root tsconfig too, so
 `src/main/extensions/tests/` can unit-test the sender-id, permission and host-access patches
 directly against the real files, instead of only against a same-shaped local fake. `context.ts`
 and `api/common.ts`/`impl.ts` sit on the same import path and needed no patch of their own: measured,

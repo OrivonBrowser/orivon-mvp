@@ -13,6 +13,7 @@ import type { SubsystemContext } from '../registry.js'
 import { extensionOpenedUrl } from './extension-url-policy.js'
 import { applyOrivonTabDetails } from './extension-tab-details.js'
 import { markExtensionOpened, openExtensionTab } from './extension-opened-pages.js'
+import { activateTabShowing } from './extension-options-tab.js'
 
 export interface ShellBridge { ctx: SubsystemContext, services: ShellServices }
 
@@ -116,6 +117,10 @@ export function buildHostImpl (getBridge: () => ShellBridge | undefined): HostIm
   },
 
   removeWindow: (win) => { if (!win.isDestroyed()) win.close() },
+
+  activateTabShowing: (url) => activateTabShowing(getBridge()?.services.windows.all() ?? [], url),
+
+  windowOf: (wc) => getBridge()?.services.windows.all().find((w) => w.chrome.webContents === wc)?.window,
 
   navigateTab: async (wc, url) => {
     const target = extensionOpenedUrl(url, isLoadedExtension)

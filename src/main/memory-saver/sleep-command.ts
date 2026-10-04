@@ -29,13 +29,13 @@ function tell (window: ShellWindow, verdict: SleepVerdict): void {
   if (code !== null) showToast(window, code)
 }
 
-/** The tab the window falls back to when `id` goes to sleep: the nearest one, never the tab it is joined to. */
-export function neighbourOf (ids: readonly string[], id: string, partner: string | null): string | undefined {
+/** The tab the window falls back to when `id` goes to sleep: the nearest one `hidden` does not hide, never the tab it is joined to. */
+export function neighbourOf (ids: readonly string[], id: string, partner: string | null, hidden: (id: string) => boolean = () => false): string | undefined {
   const at = ids.indexOf(id)
   if (at === -1) return undefined
-  const others = ids.map((other, position) => ({ other, distance: Math.abs(position - at), before: position < at }))
+  const others = ids.map((other, position) => ({ other, distance: Math.abs(position - at), before: position < at, hidden: hidden(other) }))
     .filter(({ other }) => other !== id && other !== partner)
-  others.sort((a, b) => a.distance - b.distance || Number(b.before) - Number(a.before))
+  others.sort((a, b) => Number(a.hidden) - Number(b.hidden) || a.distance - b.distance || Number(b.before) - Number(a.before))
   return others[0]?.other
 }
 
@@ -50,7 +50,7 @@ export async function sleepFrontTab (window: ShellWindow, id: string, env: Sleep
   const { tabs } = window
   const wc = tabs.liveWebContents(id)
   const partner = tabs.splits.groups.partnerOf(id)
-  const next = neighbourOf(tabs.ids(), id, partner)
+  const next = neighbourOf(tabs.ids(), id, partner, tabs.hidden)
   const facts = gatherFacts(tabs, id, env)
   if (wc === undefined || facts === null) return
   // As if it were already behind: what is left to ask is whether its own page may go.

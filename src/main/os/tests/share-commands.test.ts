@@ -76,8 +76,9 @@ describe('Email link', () => {
 
   it('does not throw when the mail program cannot be started', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const { window, deps } = setup('a', { openExternal: async () => { throw new Error('no handler') } })
+    const { window, deps, toasts } = setup('a', { openExternal: async () => { throw new Error('no handler') } })
     await expect(emailLinkCommand(window, deps)).resolves.toBeUndefined()
+    expect(toasts()).toEqual(['mailFailed'])
     log.mockRestore()
   })
 })

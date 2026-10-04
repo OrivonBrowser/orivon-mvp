@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { faviconHost } from '../favicon-host.js'
 
 describe('faviconHost', () => {
-  it('is the lower-cased host, without a port or a path', () => {
-    expect(faviconHost('https://Docs.Example.com:8443/a/b?q=1#x')).toBe('docs.example.com')
-    expect(faviconHost('http://127.0.0.1:3000/')).toBe('127.0.0.1')
+  it('is the lower-cased host, with a port that is not the usual one and without a path: two servers on one machine are two sites', () => {
+    expect(faviconHost('https://Docs.Example.com:8443/a/b?q=1#x')).toBe('docs.example.com:8443')
+    expect(faviconHost('http://127.0.0.1:3000/')).toBe('127.0.0.1:3000')
+    expect(faviconHost('http://127.0.0.1:9291/app')).not.toBe(faviconHost('http://127.0.0.1:3000/'))
+    expect(faviconHost('https://docs.example.com:443/')).toBe('docs.example.com')
   })
 
   it('names the site of a dweb address the way the person sees it', () => {

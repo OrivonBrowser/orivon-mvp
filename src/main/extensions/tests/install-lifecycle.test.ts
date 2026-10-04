@@ -23,6 +23,50 @@ describe('uninstall / setEnabled', () => {
     })
   })
 
+  it('uninstall empties chrome.storage while the extension is still loaded, then its web storage', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const source = writeFixtureFolder(root, FIXTURE_MANIFEST)
+      const { session, loaded, clearedStorage } = fakeSession()
+      const outcome = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)
+      expect(outcome.installed).toBe(true)
+      if (!outcome.installed) return
+      const stillLoaded: boolean[] = []
+
+      await uninstall({
+        userDataPath,
+        session,
+        prompt: ALWAYS_ALLOW,
+        clearExtensionStorage: async (id) => { stillLoaded.push(loaded.has(id)) }
+      }, outcome.entry.id)
+
+      expect(stillLoaded).toEqual([true])
+      expect(clearedStorage).toEqual([{ origin: `chrome-extension://${outcome.entry.id}` }])
+      expect(readRegistry(userDataPath)).toEqual([])
+    })
+  })
+
+  it('uninstall goes on when the extension has no chrome.storage to empty', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const source = writeFixtureFolder(root, FIXTURE_MANIFEST)
+      const { session, loaded } = fakeSession()
+      const outcome = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)
+      expect(outcome.installed).toBe(true)
+      if (!outcome.installed) return
+
+      await uninstall({
+        userDataPath,
+        session,
+        prompt: ALWAYS_ALLOW,
+        clearExtensionStorage: async () => { throw new Error('chrome.storage is undefined') }
+      }, outcome.entry.id)
+
+      expect(loaded.has(outcome.entry.id)).toBe(false)
+      expect(readRegistry(userDataPath)).toEqual([])
+    })
+  })
+
   it('setEnabled(false) unloads from the session and flips the registry flag; setEnabled(true) reloads it', async () => {
     await withTempDir(async (root) => {
       const userDataPath = join(root, 'userData')

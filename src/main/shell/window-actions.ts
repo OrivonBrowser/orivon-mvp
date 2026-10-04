@@ -16,6 +16,7 @@ import { tabDragActions } from './tab-drag-actions.js'
 import { moveToNewWindow, moveToWindow } from './tab-move.js'
 import { closeOthers, closeToRight, duplicateTab, newTabToRight, tabMenuFlags, toggleMute, togglePin } from './tab-commands.js'
 import { sleepBackgroundTab } from '../memory-saver/sleep-command.js'
+import { reloadOrWake } from '../memory-saver/sleep-tab.js'
 import { showTabMenu, tabMenuTemplate } from './tab-menu.js'
 import { groupLabel } from '../tab-groups/group-label.js'
 import { groupsFor } from '../tab-groups/groups-model.js'
@@ -70,7 +71,7 @@ export function shellActions (parts: WindowParts): ShellActions {
       otherWindows: others.map((other, position) => ({ label: windowLabel(other, position), move: () => { moveToWindow(entry, id, other) } }))
     }, {
       newTabRight: () => { newTabToRight(tabs, id) },
-      reload: () => { tabs.reload(id) },
+      reload: () => { reloadOrWake(tabs, id) },
       duplicate: () => { duplicateTab(tabs, id) },
       togglePin: () => { togglePin(tabs, id) },
       toggleMute: () => { toggleMute(tabs, id) },

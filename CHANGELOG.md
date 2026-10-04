@@ -256,8 +256,51 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **Three ways the whole browser could quit are closed**: an app's helper page failing to load, a light-client
+  checkpoint the disk refuses to keep, and a profile file holding `null`.
+- **The light client switch applies at the next start, as Settings says**: switching it mid-run no longer changes the
+  status line at once while `.eth` pages keep verifying, nor takes effect when the verifier next wakes.
+- **Restart Orivon no longer reopens the page Orivon was started with**, and Email link says so when no mail program
+  opens.
+- **Looking for updates works once a day as it says**: a check made offline is tried again at the next start, the
+  setting applies when switched on, and a browser left open checks again the next day.
+- **A private session no longer renews the light client's checkpoint on its own**, so it reaches no Ethereum server
+  unless a `.eth` name is opened; an installed `.eth` app served from its pin no longer keeps the verifier running.
+- **Picture in picture finds a video inside a page's own element**, from the menu and from a right-click; a QR code
+  is not offered for an address too long to carry, and a screenshot whose save dialog fails says so.
+- **A closed reader view reopens on its article's page**: Reopen and a restored session bring back the page it was
+  read from, not an empty reader.
+- **Closing the tab in front leaves a collapsed group collapsed**: the nearest tab still shown comes to the front,
+  when a tab closes or the front tab goes to sleep.
+- **Closing the last tab keeps it for next time**: the session file holds that tab, not an empty window; on macOS the
+  last window closed can be reopened once another window opens.
+- **Sleeping tabs act like tabs**: the tab menu's Reload wakes one, Duplicate copies the pages behind it, and moving
+  a group to a new window wakes only the tab put in front, the one that was in front before.
+- **Dragging a tab out no longer leaves a process behind**: the floating preview's page closes with the drag, and closed
+  tabs and windows are no longer kept in memory by the tab-visibility reports.
+- **A second crash keeps the first one's windows**: windows still waiting to be restored stay in the session file until
+  they are restored or the browser quits.
+- **Two local servers keep their own tab icons**: an icon is kept under the host and its port, not the host alone.
 - **Site rules and saves act on the right thing**: Save image or link as is never held as a page-started download, a
   CDN stylesheet's images follow the page's Images setting, and clearing site data also clears what sites cached.
+- **Removing an extension forgets what it stored**: its `chrome.storage` and its pages' localStorage and IndexedDB are emptied, so
+  installing it again, even in the same session, starts clean.
+- **A permission you allow an extension with a background page applies without waiting for a restart**, and taking a permission
+  back reloads the extension's open tabs instead of leaving them without its APIs.
+- **An extension's right-click items show on pages**: what `chrome.contextMenus` adds (a translator, a block-element tool) is in
+  the page's right-click menu, not only the toolbar icon's; Options focuses the options tab that is already open.
+- **Extension popups and notifications behave with several windows and events**: a link opened from a popup, and
+  `chrome.search.query`, use the popup's own window; two notifications without ids no longer replace each other.
+- **A new version starts from the rulesets its manifest enables**, and an extension update keeps its install date, so a shortcut
+  two extensions both suggest does not move to the other one.
+- **Two windows keep their own tabs apart for extensions**: `tabs.query({ currentWindow: true })` and each toolbar icon use the
+  window they belong to, a tab opened in the background does not become the active tab, a tab moved to another window keeps
+  its window id and badge, a page coming back into a window is its active tab again, and a tab an extension closes is reported once.
+- **Updating or reloading a disabled extension keeps it disabled**: "Update", Developer mode's "Reload" and a newer `.crx` or `.zip`
+  write the new version and leave the extension switched off, as it was set.
+- **Extension events can be unsubscribed**: removing a `chrome.tabs`, `windows` or `webNavigation` listener really stops it,
+  repeated removals no longer silence the extension's other listeners, and `hasListener` answers instead of throwing.
+- **A failed save of an update check no longer quits the browser**: a store extension's check result that cannot be written is logged.
 - **A page's prompt() gets what was typed**: an `undefined` default is empty, a long answer or default comes back whole,
   and an app's child process start fails with an error instead of waiting for ever when its host is refused.
 - **Popups and questions behave**: Enter right after typing in a page's prompt() answers it, F7 works again after its

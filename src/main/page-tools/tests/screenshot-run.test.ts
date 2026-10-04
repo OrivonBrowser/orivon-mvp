@@ -94,6 +94,15 @@ describe('takeScreenshot', () => {
     expect(deps.pickSave).not.toHaveBeenCalled()
   })
 
+  it('says so when the save dialog fails, rather than leaving the failure unhandled', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { window, toasts } = fakeWindow()
+    const deps = fakeDeps('/out/shot.png')
+    deps.pickSave.mockRejectedValue(new Error('the window closed'))
+    await expect(takeScreenshot(window, contents(), { area: 'visible', to: 'save' }, deps)).resolves.toBeUndefined()
+    expect(toasts()).toEqual(['shotFailed'])
+  })
+
   it('says so when the file cannot be written', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const { window, toasts } = fakeWindow()

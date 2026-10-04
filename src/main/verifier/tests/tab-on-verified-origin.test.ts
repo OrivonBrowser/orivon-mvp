@@ -21,6 +21,12 @@ describe('anyTabOnVerifiedOrigin', () => {
     expect(anyTabOnVerifiedOrigin([])).toBe(false)
   })
 
+  it('leaves out an installed app served from its pin, which needs no host', () => {
+    const windows = [windowOf({ a: 'https://app.eth/inbox' })]
+    expect(anyTabOnVerifiedOrigin(windows, (origin) => origin === 'https://app.eth')).toBe(false)
+    expect(anyTabOnVerifiedOrigin(windows, (origin) => origin === 'https://other.eth')).toBe(true)
+  })
+
   it('does not take a page that merely mentions a name for one on it', () => {
     expect(anyTabOnVerifiedOrigin([windowOf({ a: 'https://example.com/vitalik.eth', b: 'http://vitalik.eth/' })])).toBe(false)
   })

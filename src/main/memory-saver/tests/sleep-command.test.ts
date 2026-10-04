@@ -48,6 +48,11 @@ describe('neighbourOf', () => {
     expect(neighbourOf(['a'], 'a', null)).toBeUndefined()
     expect(neighbourOf(['a'], 'z', null)).toBeUndefined()
   })
+
+  it('passes over a tab a collapsed group hides, unless none other is left', () => {
+    expect(neighbourOf(['a', 'x', 'y', 'c'], 'c', null, (id) => id === 'x' || id === 'y')).toBe('a')
+    expect(neighbourOf(['x', 'c'], 'c', null, (id) => id === 'x')).toBe('x')
+  })
 })
 
 describe('sleepBackgroundTab', () => {

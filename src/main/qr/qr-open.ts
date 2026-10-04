@@ -4,11 +4,14 @@ import type { TabState } from '../shell/tab-types.js'
 import type { ShellWindow } from '../shell/window-registry.js'
 
 export const QR_OVERLAY = 'qr'
+/** An address longer than this is not something a clipboard write or a sheet should carry. */
+export const MAX_QR_ADDRESS = 32768
 
 /** The address to encode for `tab`, or undefined for a tab that is not showing a page: the new-tab page and the
- * shell's own pages have no address worth handing to another device. */
+ * shell's own pages have no address worth handing to another device, and one too long for the sheet is refused here
+ * rather than opening it empty. */
 export function qrAddressFor (tab: Pick<TabState, 'isNewTab' | 'isInternal' | 'displayUrl'> | undefined): string | undefined {
-  if (tab === undefined || tab.isNewTab || tab.isInternal || tab.displayUrl === '') return undefined
+  if (tab === undefined || tab.isNewTab || tab.isInternal || tab.displayUrl === '' || tab.displayUrl.length > MAX_QR_ADDRESS) return undefined
   return tab.displayUrl
 }
 

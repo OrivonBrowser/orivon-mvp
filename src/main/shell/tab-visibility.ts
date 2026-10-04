@@ -22,7 +22,8 @@ export function startTabVisibility (lifecycle: TabLifecycle): () => void {
   const covers = new WeakMap<BaseWindow, Cover>()
   /** What each page was last told; a page nobody has told is visible. */
   const told = new WeakMap<WebContents, boolean>()
-  const detach: Array<() => void> = []
+  /** Undoes for the stop, each dropped when its page or window goes away: one held after that would keep it alive. */
+  const detach = new Set<() => void>()
   const watchedPages = new WeakSet<WebContents>()
 
   /** `force` repeats the answer to a document that has just loaded, which starts out visible whatever it was told before. */
@@ -46,7 +47,9 @@ export function startTabVisibility (lifecycle: TabLifecycle): () => void {
     watchedPages.add(contents)
     const onCommit = (): void => { report(contents, true) }
     contents.on('did-navigate', onCommit)
-    detach.push(() => { if (!contents.isDestroyed()) contents.off('did-navigate', onCommit) })
+    const undo = (): void => { if (!contents.isDestroyed()) contents.off('did-navigate', onCommit) }
+    detach.add(undo)
+    contents.once('destroyed', () => { detach.delete(undo) })
   }
 
   const watchWindow = (window: BaseWindow): void => {
@@ -59,11 +62,13 @@ export function startTabVisibility (lifecycle: TabLifecycle): () => void {
       if (event === 'show' || event === 'restore') cover.hidden = false
       for (const contents of tabsOf.get(window) ?? []) report(contents, false)
     }
-    for (const event of WINDOW_EVENTS) {
+    const undos = WINDOW_EVENTS.map((event) => {
       const listener = (): void => { onChange(event) }
       window.on(event as 'show', listener)
-      detach.push(() => { if (!window.isDestroyed()) window.off(event as 'show', listener) })
-    }
+      return (): void => { if (!window.isDestroyed()) window.off(event as 'show', listener) }
+    })
+    for (const undo of undos) detach.add(undo)
+    window.once('closed', () => { for (const undo of undos) detach.delete(undo) })
   }
 
   const unsubscribe = lifecycle.subscribe({
@@ -93,6 +98,7 @@ export function startTabVisibility (lifecycle: TabLifecycle): () => void {
   })
   return () => {
     unsubscribe()
-    for (const undo of detach.splice(0)) undo()
+    for (const undo of detach) undo()
+    detach.clear()
   }
 }

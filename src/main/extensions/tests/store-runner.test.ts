@@ -36,7 +36,8 @@ vi.mock('../registry-runner.js', () => ({
   patchStoreUpdater: vi.fn()
 }))
 
-const { buildWebStoreHost } = await import('../store-runner.js')
+const { buildWebStoreHost, recordUpdateCheck } = await import('../store-runner.js')
+const { patchStoreUpdater } = await import('../registry-runner.js')
 
 const STORE_ENTRY: InstalledExtension = {
   id: 'abcdefghijklmnopabcdefghijklmnop',
@@ -136,5 +137,28 @@ describe('buildWebStoreHost().uninstall', () => {
     expect(seenMessage).toBe(`Remove ${STORE_ENTRY.name}?`)
     expect(seenAccept).toBe('Remove')
     expect(uninstallMock).toHaveBeenCalledWith(expect.anything(), STORE_ENTRY.id)
+  })
+})
+
+describe('recordUpdateCheck', () => {
+  const check = { extensionId: STORE_ENTRY.id, checkedAt: 7 }
+
+  it('notes the outcome on the entry', () => {
+    vi.mocked(patchStoreUpdater).mockResolvedValueOnce(undefined)
+    recordUpdateCheck('/userData', { ...check, to: '2.0.0' } as Parameters<typeof recordUpdateCheck>[1])
+    expect(patchStoreUpdater).toHaveBeenCalledWith('/userData', STORE_ENTRY.id, { lastCheckedAt: 7, lastResult: 'update to 2.0.0 available' })
+  })
+
+  it('logs a failed registry write instead of leaving the rejection unhandled', async () => {
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(patchStoreUpdater).mockRejectedValueOnce(new Error('EROFS'))
+    recordUpdateCheck('/userData', check as Parameters<typeof recordUpdateCheck>[1])
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    process.off('unhandledRejection', unhandled)
+    expect(unhandled).not.toHaveBeenCalled()
+    expect(log).toHaveBeenCalled()
+    log.mockRestore()
   })
 })

@@ -134,14 +134,26 @@ export const injectExtensionAPIs = (extras: ReadonlyArray<() => void> = []) => {
       return canvas.toDataURL()
     }
 
+    // Orivon patch (UPSTREAM.md patch 64): the page keeps each registration's key, because a
+    // callback passed through the context bridge never matches the one passed to remove it.
+    let listenerKeySeq = 0
+
     class ExtensionEvent<T extends Function> implements chrome.events.Event<T> {
+      private keys = new Map<T, string>()
+
       constructor(private name: string) {}
 
       addListener(callback: T) {
-        electron.addExtensionListener(extensionId, this.name, callback)
+        if (this.keys.has(callback)) return
+        const key = `${this.name}#${++listenerKeySeq}`
+        this.keys.set(callback, key)
+        electron.addExtensionListener(extensionId, this.name, callback, key)
       }
       removeListener(callback: T) {
-        electron.removeExtensionListener(extensionId, this.name, callback)
+        const key = this.keys.get(callback)
+        if (key === undefined) return
+        this.keys.delete(callback)
+        electron.removeExtensionListener(extensionId, this.name, callback, key)
       }
 
       getRules(callback: (rules: chrome.events.Rule[]) => void): void
@@ -150,7 +162,7 @@ export const injectExtensionAPIs = (extras: ReadonlyArray<() => void> = []) => {
         throw new Error('Method not implemented.')
       }
       hasListener(callback: T): boolean {
-        throw new Error('Method not implemented.')
+        return this.keys.has(callback)
       }
       removeRules(ruleIdentifiers?: string[] | undefined, callback?: (() => void) | undefined): void
       removeRules(callback?: (() => void) | undefined): void
@@ -164,7 +176,7 @@ export const injectExtensionAPIs = (extras: ReadonlyArray<() => void> = []) => {
         throw new Error('Method not implemented.')
       }
       hasListeners(): boolean {
-        throw new Error('Method not implemented.')
+        return this.keys.size > 0
       }
     }
 
@@ -660,6 +672,8 @@ export const injectExtensionAPIs = (extras: ReadonlyArray<() => void> = []) => {
             onUpdated: new ExtensionEvent('tabs.onUpdated'),
             onActivated: new ExtensionEvent('tabs.onActivated'),
             onReplaced: new ExtensionEvent('tabs.onReplaced'),
+            onDetached: new ExtensionEvent('tabs.onDetached'),
+            onAttached: new ExtensionEvent('tabs.onAttached'),
           }
           return api
         },

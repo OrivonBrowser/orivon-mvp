@@ -71,6 +71,21 @@ describe('the session store', () => {
     expect(existsSync(file)).toBe(true)
   })
 
+  it('keeps writing the windows a crashed run left behind until the session ends in an orderly way', async () => {
+    const store = new SessionStore(file)
+    await store.load()
+    store.attach(() => [saved('https://open.example/')])
+    store.carry(() => [saved('https://crashed.example/')])
+    store.changed()
+    await store.flush()
+    const urls = (): Promise<string[]> => readFile(file, 'utf8').then((text) => (JSON.parse(text) as { windows: SavedWindow[] }).windows.map((window) => window.tabs[0]?.url ?? ''))
+    expect(await urls()).toEqual(['https://open.example/', 'https://crashed.example/'])
+
+    store.finish()
+    await store.flush()
+    expect(await urls()).toEqual(['https://open.example/'])
+  })
+
   it('writes nothing until something is attached', async () => {
     const store = new SessionStore(file)
     await store.load()

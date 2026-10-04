@@ -203,4 +203,16 @@ describe('startTabVisibility', () => {
     expect(a.send).not.toHaveBeenCalled()
     expect(win.listenerCount('hide')).toBe(0)
   })
+
+  it('lets go of a page and a window once they are gone, rather than holding them until a stop that never comes', () => {
+    const { show, stop, win, a } = setup()
+    show({ a: true })
+    a.emit('destroyed')
+    win.emit('closed')
+    const pageOff = vi.spyOn(a, 'off')
+    const windowOff = vi.spyOn(win, 'off')
+    stop()
+    expect(pageOff).not.toHaveBeenCalled()
+    expect(windowOff).not.toHaveBeenCalled()
+  })
 })

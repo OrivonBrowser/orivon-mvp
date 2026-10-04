@@ -7,8 +7,8 @@ certificate check each session applies, starting and restarting the verifier hos
 checkpoint ([`ADR-0031`](../../../docs/decisions/ADR-0031-helios-is-the-light-client.md)), what the
 host verified between runs, the per-site partition stamp, the gateway proxy check, and the
 wording of the status and a name's evidence for Settings and the site-info popover.
-The person can switch the light client off in Settings (`web3.lightClient`, read when the host starts,
-through `configureVerifier`); the environment switch still forces it off, and
+The person can switch the light client off in Settings (`web3.lightClient`, read once when Orivon
+starts, through `configureVerifier`, so a host that sleeps and wakes keeps that run's choice); the environment switch still forces it off, and
 [`web3-domain.ts`](web3-domain.ts) is what the Settings page reads.
 
 **Tied to Electron.** [`verifier-subsystem.ts`](verifier-subsystem.ts) is the one file that
@@ -57,11 +57,12 @@ reusing `partition.ts` rather than copying it.
 first request to a host the verifier serves, or when the address bar's text names one
 ([`verifier-access.ts`](verifier-access.ts)'s `prewarmVerifier`, called from the omnibox), and puts it to sleep through
 `HostSupervisor.idle()` once no tab shows a verifier-served origin
-([`tab-on-verified-origin.ts`](tab-on-verified-origin.ts)) and nothing has asked for it for ten minutes. `idle()` is not
+([`tab-on-verified-origin.ts`](tab-on-verified-origin.ts); an installed app served from its pin does not count) and nothing has asked for it for ten minutes. `idle()` is not
 `stop()`: it counts as no crash, shows no failure, restarts nothing, and a later `start()` forks a fresh process after the
 old one has exited. The light client refreshes the stored checkpoint only while it runs, and refuses one older than
 fourteen days, so two minutes after launch a newest checkpoint older than seven days starts the host once; the idle wait
-ends that run. With the light client switched off nothing starts at launch. The partition stamp and the listening gate
+ends that run. With the light client switched off, or in a private session, whose checkpoint is thrown away at its
+end, nothing starts at launch. The partition stamp and the listening gate
 stay registered on the default session whatever the host is doing: they are also what keeps `net.fetch` from crashing a
 session that holds an extension's network permission ([`../extensions/README.md`](../extensions/README.md)).
 

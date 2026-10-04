@@ -19,6 +19,12 @@ describe('qrAddressFor', () => {
     expect(qrAddressFor(tab({ isInternal: true, displayUrl: 'orivon://settings/' }) as never)).toBeUndefined()
     expect(qrAddressFor(tab({ displayUrl: '' }) as never)).toBeUndefined()
   })
+
+  it('refuses an address too long for the sheet to carry, rather than opening it empty', () => {
+    const long = `data:text/plain,${'x'.repeat(40_000)}`
+    expect(qrAddressFor(tab({ displayUrl: long }) as never)).toBeUndefined()
+    expect(qrAvailable(windowWith([tab({ displayUrl: long })]))).toBe(false)
+  })
 })
 
 describe('openQr', () => {

@@ -95,6 +95,17 @@ export function buildWebStoreHost (ctx: InstallContext): WebStoreHost {
   }
 }
 
+/** Notes an update check's outcome on its entry. A lost note is harmless, and this runs with
+ * nobody waiting on it, so a failed registry write is logged: left as a rejection it would be
+ * unhandled, and the main process exits on those. */
+export function recordUpdateCheck (userDataPath: string, result: UpdateCheckResult): void {
+  const lastResult = result.error !== undefined
+    ? `check failed: ${result.error}`
+    : result.to !== undefined ? `update to ${result.to} available` : 'up to date'
+  patchStoreUpdater(userDataPath, result.extensionId, { lastCheckedAt: result.checkedAt, lastResult })
+    .catch((error: unknown) => { console.error(`[extensions] could not note the update check of ${result.extensionId}:`, error) })
+}
+
 /** `state.session` is the default session for both the store's own IPC and
  * every extension Orivon loads, so an update check's
  * `session.extensions.getAllExtensions()` already sees what Orivon
@@ -102,12 +113,7 @@ export function buildWebStoreHost (ctx: InstallContext): WebStoreHost {
 export async function startWebStore (ctx: InstallContext, preloadPath: string): Promise<StoreApi> {
   const host = buildWebStoreHost(ctx)
 
-  const onUpdateCheck = (result: UpdateCheckResult): void => {
-    const lastResult = result.error !== undefined
-      ? `check failed: ${result.error}`
-      : result.to !== undefined ? `update to ${result.to} available` : 'up to date'
-    void patchStoreUpdater(ctx.userDataPath, result.extensionId, { lastCheckedAt: result.checkedAt, lastResult })
-  }
+  const onUpdateCheck = (result: UpdateCheckResult): void => { recordUpdateCheck(ctx.userDataPath, result) }
 
   await installChromeWebStore({
     session: ctx.session,

@@ -10,13 +10,14 @@ export interface TabsOfWindow {
   readonly window: { isDestroyed: () => boolean }
 }
 
-/** A sleeping tab has a blank page and so shows nothing: waking it asks for the host again. */
-export function anyTabOnVerifiedOrigin (windows: readonly TabsOfWindow[]): boolean {
+/** A sleeping tab has a blank page and so shows nothing: waking it asks for the host again. An installed app served
+ * from its pin (`servedFromCache`) shares the name but needs no host. */
+export function anyTabOnVerifiedOrigin (windows: readonly TabsOfWindow[], servedFromCache: (origin: string) => boolean = () => false): boolean {
   for (const { tabs, window } of windows) {
     if (window.isDestroyed()) continue
     for (const id of tabs.ids()) {
-      const contents = tabs.liveWebContents(id)
-      if (contents !== undefined && servedByVerifier(contents.getURL())) return true
+      const url = tabs.liveWebContents(id)?.getURL()
+      if (url !== undefined && servedByVerifier(url) && !servedFromCache(new URL(url).origin)) return true
     }
   }
   return false

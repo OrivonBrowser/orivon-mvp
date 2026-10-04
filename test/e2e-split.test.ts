@@ -471,7 +471,9 @@ it('keeps the pane that was split in laid out, in its place and painted through 
     const settled = async (step: string, part: string, rightPart: string): Promise<void> => {
       const shown = await waitFor(async () => {
         const views = await layout(app)
-        return inWindow(views, part) !== undefined && inWindow(views, rightPart) !== undefined && await pagesFitTheirPanes(app, [part, rightPart])
+        // A view swapped in (out of an app) is laid out before Playwright has a page for it.
+        return inWindow(views, part) !== undefined && inWindow(views, rightPart) !== undefined &&
+          leftPage(part) !== undefined && leftPage(rightPart) !== undefined && await pagesFitTheirPanes(app, [part, rightPart])
       }, 12_000)
       const views = await layout(app)
       const pageViews = views.filter((view) => view.url.startsWith('http'))
