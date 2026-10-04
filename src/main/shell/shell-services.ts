@@ -40,14 +40,19 @@ import { NullSessionStore, SessionStore } from '../session-restore/session-store
 import type { SessionLog } from '../session-restore/session-store.js'
 import { createLoadedExtensions } from '../extensions/loaded-extensions.js'
 import type { LoadedExtensions } from '../extensions/loaded-extensions.js'
-import { LocalTabDrag } from './local-tab-drag.js'
-import { TearDragController } from './tear-drag.js'
+import { DropCatcher } from './drop-catcher.js'
+import { NativeTabDrag } from './native-tab-drag.js'
+import { imageToDataUrl, previewSizeFor, TearDragController } from './tear-drag.js'
+import { captureTabPage } from './tab-view.js'
 import { WindowRegistry } from './window-registry.js'
 import type { SubsystemContext } from '../registry.js'
 import { TabLifecycle } from './tab-lifecycle.js'
 import { KIOSK_FLAG } from '../window-state/kiosk.js'
 import { FileWindowStateStore, NullWindowStateStore } from '../window-state/window-state-store.js'
 import type { WindowStateStore } from '../window-state/window-state-store.js'
+
+/** How long a press on a tab waits for its page's capture before the drag image is the tab itself. */
+const THUMBNAIL_WAIT_MS = 400
 
 export interface ShellServices {
   readonly bookmarks: BookmarkStore
@@ -82,9 +87,9 @@ export interface ShellServices {
   /** The floating preview a tab shows once dragged out of its strip, and the mark it leaves on whichever
    * window's strip it is over -- one for the whole process, since only one tab can be mid-drag (tear-drag.ts). */
   readonly tearDrag: TearDragController
-  /** The same drag where screen positions are unknown (a native Wayland session): a preview inside the source
-   * window and the target found from where the pointer first appears over another window (local-tab-drag.ts). */
-  readonly localDrag: LocalTabDrag
+  /** The same drag where screen positions are unknown (a native Wayland session): the browser's own drag and
+   * drop, with a catcher over every window's page (native-tab-drag.ts). */
+  readonly nativeDrag: NativeTabDrag
   /** Every window's tab lifecycle, mirrored here (tab-lifecycle.ts) -- one
    * instance for the whole process, so a subscriber (the extension host)
    * hears every window, not just the one it happened to attach to first. */
@@ -146,7 +151,17 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     shortcuts: new ShortcutService(shortcutStore, platform),
     shortcutStore,
     tearDrag: new TearDragController(() => windows.all()),
-    localDrag: new LocalTabDrag(() => windows.all()),
+    nativeDrag: new NativeTabDrag({
+      windows: () => windows.all(),
+      clock: { after: (ms, fn) => { const timer = setTimeout(fn, ms); return () => { clearTimeout(timer) } } },
+      catcher: (window, hooks) => new DropCatcher(window.window, window.chrome, import.meta.dirname, hooks),
+      thumbnail: async (source, tabId) => {
+        const { width, height } = source.window.getContentBounds()
+        // A page that is not on screen may never answer a capture.
+        const image = await Promise.race([captureTabPage(source.tabs.liveWebContents(tabId)), new Promise<null>((resolve) => { setTimeout(resolve, THUMBNAIL_WAIT_MS, null) })])
+        return imageToDataUrl(image, previewSizeFor(width, height))
+      }
+    }),
     tabLifecycle,
     windows,
     windowState: runtime.isPrivate ? new NullWindowStateStore() : new FileWindowStateStore(join(userDataPath, 'window-state.json')),

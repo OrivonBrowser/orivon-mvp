@@ -20,6 +20,8 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 
 ### Done / results
 
+- Wayland tab drags are now the browser's own drag and drop: the drag image follows outside the window and the other window marks the slot.
+
 ### In my head
 
 ### Non-repo

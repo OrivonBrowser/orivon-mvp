@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { COMMAND_CHANNEL, SHELL_EVENT_CHANNEL, STATE_CHANNEL } from '../main/channels.js'
+import { COMMAND_CHANNEL, NATIVE_TAB_DRAG_ARGUMENT, SHELL_EVENT_CHANNEL, STATE_CHANNEL, TAB_DRAG_TYPE } from '../main/channels.js'
 import type { ShellCommand } from '../main/ipc/ipc.js'
 import type { ShellEvent } from '../main/shell/shell-events.js'
 import type { ShellState } from '../main/shell/tabs.js'
@@ -82,9 +82,22 @@ export interface OrivonShell {
   /** The drag ended without a tear-out: let go inside the strip, or cancelled outright. Releases
    * the capture `beginTabDrag` started, whether or not it was ever shown. */
   endTabDrag: () => void
-  /** Another window is dragging a tab and the pointer was just seen over this chrome (main asked with a
-   * `tabDrag` event): where, in this window's content area. */
-  tabDragArrived: (x: number, y: number) => void
+  /** The data type a dragged tab carries when tabs are dragged by the browser's own drag and drop (a native Wayland
+   * session), else null: the strip then drags with the pointer. */
+  nativeTabDragType: string | null
+  /** The pointer is down on a tab: its page as a data URL for the drag image, null when there is none. */
+  prepareTabDrag: (id: string) => Promise<string | null>
+  /** The pointer is pulling a tab: every window gets its drop catcher ready. */
+  warmDropCatchers: () => void
+  /** The browser started the drag of a tab, which carries only `nonce`. */
+  startNativeTabDrag: (id: string, nonce: string) => void
+  /** The drag was dropped on this chrome: the place in the strip (null: nothing to do), and whether it was over the
+   * chrome below the strip and toolbar. */
+  dropNativeTab: (nonce: string, index: number | null, below: boolean) => void
+  /** The drag ended in the window it began in, taken or not. */
+  endNativeTabDrag: (nonce: string) => void
+  /** Escape was seen just after the drag ended. */
+  cancelNativeTabDrag: (nonce: string) => void
   /** Asks main for the right-click menu of a tab. */
   showTabMenu: (id: string) => void
   onState: (listener: (state: ShellState) => void) => () => void
@@ -156,7 +169,13 @@ const api: OrivonShell = {
   dragTab: (id: string, x?: number, y?: number) => { send(x === undefined || y === undefined ? { type: 'dragTab', id } : { type: 'dragTab', id, x, y }) },
   dropTab: (id: string, x: number, y: number, clientX: number, clientY: number) => { send({ type: 'dropTab', id, x, y, clientX, clientY }) },
   endTabDrag: () => { send({ type: 'endTabDrag' }) },
-  tabDragArrived: (x: number, y: number) => { send({ type: 'tabDragArrived', x, y }) },
+  nativeTabDragType: process.argv.includes(NATIVE_TAB_DRAG_ARGUMENT) ? TAB_DRAG_TYPE : null,
+  prepareTabDrag: async (id: string) => await request<string | null>({ type: 'prepareTabDrag', id }),
+  warmDropCatchers: () => { send({ type: 'warmDropCatchers' }) },
+  startNativeTabDrag: (id: string, nonce: string) => { send({ type: 'startNativeTabDrag', id, nonce }) },
+  dropNativeTab: (nonce: string, index: number | null, below: boolean) => { send({ type: 'dropNativeTab', nonce, index, below }) },
+  endNativeTabDrag: (nonce: string) => { send({ type: 'endNativeTabDrag', nonce }) },
+  cancelNativeTabDrag: (nonce: string) => { send({ type: 'cancelNativeTabDrag', nonce }) },
   showTabMenu: (id: string) => { send({ type: 'tabMenu', id }) },
 
   /** Subscribes to shell state pushes from main. Returns an unsubscribe

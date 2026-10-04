@@ -255,6 +255,7 @@ export default defineConfig({
           'site-info': resolve(root, 'src/preload/site-info.ts'),
           overlay: resolve(root, 'src/preload/overlay.ts'),
           'split-frame': resolve(root, 'src/preload/split-frame.ts'),
+          'drop-catcher': resolve(root, 'src/preload/drop-catcher.ts'),
           embed: resolve(root, 'src/preload/embed.ts'),
           'child-host': resolve(root, 'src/preload/child-host.ts'),
           'extension-api': resolve(root, 'src/preload/extension-api.ts'),
@@ -306,7 +307,8 @@ export default defineConfig({
           'page-tasks': resolve(root, 'src/renderer/pages/tasks/index.html'),
           'site-info': resolve(root, 'src/renderer/site-info/index.html'),
           overlay: resolve(root, 'src/renderer/overlay/index.html'),
-          'split-frame': resolve(root, 'src/renderer/split-frame/index.html')
+          'split-frame': resolve(root, 'src/renderer/split-frame/index.html'),
+          'drop-catcher': resolve(root, 'src/renderer/drop-catcher/index.html')
         }
       }
     },
