@@ -15,6 +15,7 @@
 
 import { app, WebContentsView, type BaseWindow, type View, type WebContents } from 'electron'
 import { join } from 'node:path'
+import { attachShown } from '../shell/attach-view.js'
 import { rendererEntryUrl, validatedDevServerUrl } from '../shell/renderer-entry.js'
 import { lockNavigation } from '../shell/lock-navigation.js'
 import { isEchoOfClose } from '../shell/press-stamps.js'
@@ -266,7 +267,7 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
     // and clicks into the page both blur this webContents, which hides the
     // popup below -- so it can never be left stranded under a view that was
     // attached after it.
-    contentView.addChildView(popup)
+    attachShown(contentView, popup)
     popup.setBounds(popoverBounds(win, anchor, spec.align, INITIAL_HEIGHT, maxHeight))
     recordPopoverShown(popup.webContents.id, true)
     spec.onShow?.(popup.webContents)
@@ -361,6 +362,6 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
     close: () => { hide() },
     isOpen: () => shown !== null,
     prewarm () { if (spec.warm === true) ensureWarmView() },
-    restack () { if (shown !== null && contentsOf(shown) !== undefined) contentView.addChildView(shown) }
+    restack () { if (shown !== null && contentsOf(shown) !== undefined) attachShown(contentView, shown) }
   }
 }

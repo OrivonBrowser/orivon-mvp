@@ -2,7 +2,8 @@ import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
 import type { TabRecord } from '../tab-types.js'
 
-vi.mock('electron', () => ({ nativeTheme: { shouldUseDarkColors: false, on: () => {}, removeListener: () => {} } }))
+const theme = vi.hoisted(() => ({ shouldUseDarkColors: false, on: () => {}, removeListener: () => {} }))
+vi.mock('electron', () => ({ nativeTheme: theme }))
 
 const { watchBacking } = await import('../tab-backing.js')
 const { isDashboardUrl, restingColor } = await import('../sheet-backdrop.js')
@@ -38,6 +39,17 @@ describe('a tab view\'s backing while a navigation starts', () => {
     expect(colours).toEqual(['#FFFFFF', '#394244'])
   })
 
+  it('takes the dashboard\'s dark colour under the dark theme', () => {
+    theme.shouldUseDarkColors = true
+    try {
+      const { wc, colours } = rig({ isDashboardTab: true })
+      start(wc, DASHBOARD)
+      expect(colours).toEqual(['#0d0e14'])
+    } finally {
+      theme.shouldUseDarkColors = false
+    }
+  })
+
   it('ignores a subframe, a same-document change, a view that is not the tab\'s, and an internal page', () => {
     const { wc, colours } = rig({ isDashboardTab: true })
     start(wc, 'https://example.com/', { isMainFrame: false })
@@ -66,8 +78,15 @@ describe('restingColor', () => {
   const record = (url: string, extra: Partial<TabRecord> = {}): TabRecord =>
     ({ isDashboardTab: false, internalPage: null, host: { dashboardUrl: DASHBOARD }, view: { webContents: { getURL: () => url, isDestroyed: () => false } }, ...extra }) as unknown as TabRecord
 
-  it('is the dashboard\'s colour for a tab showing the dashboard, even one that left it and came back', () => {
+  it('is the dashboard\'s colour for a tab showing the dashboard, even one that left it and came back, in each theme', () => {
     expect(restingColor(record(DASHBOARD))).toBe('#394244')
+    theme.shouldUseDarkColors = true
+    try {
+      expect(restingColor(record(DASHBOARD))).toBe('#0d0e14')
+      expect(restingColor(record('', { isDashboardTab: true }))).toBe('#0d0e14')
+    } finally {
+      theme.shouldUseDarkColors = false
+    }
   })
 
   it('is the dashboard\'s colour for a dashboard tab that has no address yet, because it is shown before its load starts', () => {

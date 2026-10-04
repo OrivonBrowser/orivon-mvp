@@ -1852,19 +1852,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
-### A344: The main menu that opens once and then no longer opens is not reproduced **[OWNER]**
-
-- **Question:** The owner saw the menu open once and then never again, on `npm run dev`. Driven here, every reopen worked. Against the
-  dev server with real pointer events under a window manager: open and close by the button, a quick click and a press held
-  700 ms. On a built run with real events: the dark scheme, every row, other toolbar popups, a resize, full screen and a
-  second window (an earlier run, whose logs were not kept). On a built run through Playwright: an app, pinned, split and
-  dead tab in front. The owner's desktop session is now Wayland (it was X11 before), so none of this ran on that path. Does the card open empty,
-  not at all, or behind something, and what does the terminal that runs `npm run dev` print at that moment?
-- **Why it matters:** a menu that cannot reopen blocks the window, and only the owner's session shows which path it takes.
-- **Options:** the owner pastes the terminal lines around it (rec.); try a Wayland compositor here; close it.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A345: Which action still flickers in light mode is not known **[OWNER]**
 
 - **Question:** The owner still sees a flicker in light mode. The code shows three candidates: the dashboard tab leaving
@@ -1987,6 +1974,22 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** define the property from the ordinary tab's preload, reading the setting when the page loads (rec.;
   a change applies from the next load); leave the header alone.
 - **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A365: Maximising under a window manager is not shown to relayout the page area **[AI-REC]**
+
+- **Question:** Under openbox on a virtual X display, `win.maximize()` and `unmaximize()` were followed by no `resize` event for 1.5 s, and the tab view stayed the size the window had before (1272 x 720 in a 1280 x 800 window). Under a private GNOME Shell the same calls gave `maximize`, `move`, `resize` and a laid-out page. Does a window that a window manager maximises keep the old page area on X11, or is it this display?
+- **Why it matters:** a maximised window with a stale page area leaves a strip uncovered and puts a popup anchor where the toolbar no longer is.
+- **Options:** log `resize` and the content size on a real X11 session (rec.); call `layoutAll` on `maximize` and `unmaximize` as well; close it as the virtual display's.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A366: Does a split pane stay painted on the owner's GPU session? **[OWNER]**
+
+- **Question:** With two tabs split (the tab menu's "Split with"), does each pane stay painted when a new address is opened in either, and when the panes are swapped or stacked, on `npm run dev` under the owner's Wayland session with its GPU?
+- **Why it matters:** the defect was reproduced and fixed without a GPU, on X11 and Wayland. A GPU compositor may order native view changes differently, and only that session shows it.
+- **Options:** the owner repeats the split and the new addresses and reports a blank pane with the terminal lines around it (rec.); `node scripts/probe-view-visibility.mjs` is the check that reads it, for a session that can run it; close it if every pane paints.
+- **Who decides:** owner
 - **Blocks:** nothing
 
 ### A375: The Linux package says Orivon opens HTML files, but a file handed in at launch is dropped **[OWNER]**

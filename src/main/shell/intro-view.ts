@@ -4,6 +4,7 @@
 // to #leaving and then #entered, which is all this watches. Whether a launch
 // shows it at all is ./intro-state.ts.
 import { app, WebContentsView, type BaseWindow } from 'electron'
+import { attachShown } from './attach-view.js'
 import type { IntroPlan } from './intro-state.js'
 import { rendererEntryUrl, validatedDevServerUrl } from './renderer-entry.js'
 import type { TabManager } from './tabs.js'
@@ -36,7 +37,7 @@ export function showIntro (win: BaseWindow, tabs: Pick<TabManager, 'onStateChang
   function onResize (): void { setImmediate(() => { if (open) layout() }) }
   // Switching tabs re-adds that tab's view, which would stack it above this one.
   function keepOnTop (): void {
-    if (open && win.contentView.children.at(-1) !== view) win.contentView.addChildView(view)
+    if (open && win.contentView.children.at(-1) !== view) attachShown(win.contentView, view)
   }
 
   function dismiss (): void {
@@ -74,7 +75,7 @@ export function showIntro (win: BaseWindow, tabs: Pick<TabManager, 'onStateChang
   })
 
   layout()
-  win.contentView.addChildView(view)
+  attachShown(win.contentView, view)
   win.on('resize', onResize)
   // A window closed during the welcome screen: its view is not a child of a
   // window any more, and nothing else would close it.

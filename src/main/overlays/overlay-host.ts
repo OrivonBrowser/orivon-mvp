@@ -193,6 +193,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
   function discardView (slot: Slot): void {
     closeSlot(slot, 'request')
     cancelIdle(slot)
+    if (!disposed && slot.view !== null && !slot.view.isDestroyed()) slot.view.detach(deps.contentView)
     slot.view?.destroy()
     slot.view = null
     slot.pageReady = false
@@ -214,6 +215,8 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     slot.idleTimer = setTimeout(() => {
       slot.idleTimer = null
       if (disposed || slot.open) return
+      // A closed warm view is still a hidden child of the window: take it out before its renderer goes.
+      if (slot.view !== null && !slot.view.isDestroyed()) slot.view.detach(deps.contentView)
       slot.view?.destroy()
       slot.view = null
       slot.pageReady = false
@@ -233,7 +236,11 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     slot.awaitingReply = false
     const view = slot.view
     if (view !== null && !view.isDestroyed()) {
-      if (!disposed) view.detach(deps.contentView)
+      if (!disposed) {
+        // A view kept for the next show (`warm`, `resident`) stays in the window, hidden: see OverlayViewHandle.hide.
+        if (slot.def.keep === 'fresh') view.detach(deps.contentView)
+        else view.hide()
+      }
       recordPopoverShown(view.id, false)
     }
     if (reason === 'blur') slot.lastBlurCloseAt = Date.now()

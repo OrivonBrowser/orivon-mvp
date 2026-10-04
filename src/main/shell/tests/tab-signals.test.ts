@@ -17,7 +17,7 @@ interface FakeContents extends EventEmitter {
   ipc: { on: ReturnType<typeof vi.fn> }
   close: ReturnType<typeof vi.fn>
 }
-interface RecordedView { webContents: FakeContents, setBounds: ReturnType<typeof vi.fn>, setBackgroundColor: ReturnType<typeof vi.fn> }
+interface RecordedView { webContents: FakeContents, setBounds: ReturnType<typeof vi.fn>, setVisible: ReturnType<typeof vi.fn>, setBackgroundColor: ReturnType<typeof vi.fn> }
 const createdViews: RecordedView[] = []
 
 function makeFakeWebContents (): FakeContents {
@@ -39,6 +39,7 @@ vi.mock('electron', () => ({
   WebContentsView: vi.fn().mockImplementation(function (this: RecordedView) {
     this.webContents = makeFakeWebContents()
     this.setBounds = vi.fn()
+    this.setVisible = vi.fn()
     this.setBackgroundColor = vi.fn()
     createdViews.push(this)
   })
@@ -49,7 +50,7 @@ const { TabManager } = await import('../tabs.js')
 const { TabLifecycle } = await import('../tab-lifecycle.js')
 const { TAB_SIGNALS, applyTabSignals, signalState, wireTabSignals } = await import('../tab-signals.js')
 
-const fakeContentView = { addChildView: vi.fn(), removeChildView: vi.fn() }
+const fakeContentView = { children: [] as unknown[], addChildView: vi.fn(), removeChildView: vi.fn() }
 const APP_CTX = { broker: { app: { isRegisteredSync: (origin: string) => origin === 'https://app.example' }, dropOrigin: async () => {} } } as unknown as SubsystemContext
 
 function newManager (shell?: Record<string, unknown>, ctx: SubsystemContext = {} as SubsystemContext): InstanceType<typeof TabManager> {

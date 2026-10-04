@@ -113,7 +113,7 @@ export class TabFactory {
         // would make a transparent-background site look wrong in dark mode.
         // `exactOptionalPropertyTypes` refuses an explicit `undefined` for an
         // optional property, hence the spread rather than a ternary value.
-        ...(isDashboard ? { backgroundColor: DASHBOARD_BACKGROUND } : {}),
+        ...(isDashboard ? { backgroundColor: resolveThemeColor(DASHBOARD_BACKGROUND) } : {}),
         target
       }
     )

@@ -59,6 +59,17 @@ control again and runs its `moved` hook. Asks shown through `tab-slots.ts` are p
 the chrome reports that the address pill moved (`slotAnchorsMoved`), so a prompt under the pill stays
 under it through a resize.
 
+**A warm view is hidden in place, never removed from its window.** A `WebContentsView` taken out of the window with
+`removeChildView` and added back stays hidden on Electron 44 (X11 and Wayland alike): `document.visibilityState`
+reads `hidden` with the view attached, focused and sized, `requestAnimationFrame` never fires, and the card is
+blank from its second show on. `hide()` (`setVisible(false)`) and the next `attach` (`addChildView`, then
+`setVisible(true)`) do not have that effect, so a view kept for the next show (`warm` or `resident`) stays a hidden child of its window
+between shows; a `fresh` view, a warm one whose renderer died and a warm one whose renderer is given back after a
+minute closed are removed before they are destroyed. A page that has a
+debugger attached, which is every page under Playwright, reports itself visible after a removal all the same, so
+only a launch with no debugger shows the defect; `test/e2e-menu-warm.test.ts` pins the cause (the closed menu is
+still a child, hidden) instead, and the recipe for a real-pointer probe is in `docs/development/testing.md`. Every view put into a window goes through `../shell/attach-view.ts`, which shows a view that was removed and added back; a warm view is kept in place all the same, because a hidden child shows with no tree change at all.
+
 **A page's stylesheet is imported by its page.** `import './<name>.css'` in the page module is
 bundled into the overlay entry's one stylesheet, and every rule sits under
 `body[data-overlay='<name>']`. `src/renderer/overlay/surface.css` paints the page's own surface with

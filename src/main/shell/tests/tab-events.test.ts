@@ -13,10 +13,11 @@ const { askQuestion, buildFromTemplate, adoptedViews } = vi.hoisted(() => ({
   adoptedViews: [] as Array<{ options: Record<string, unknown> }>
 }))
 vi.mock('electron', () => ({
-  WebContentsView: vi.fn().mockImplementation(function (this: { options: Record<string, unknown>, webContents: unknown, setBounds: unknown, setBackgroundColor: unknown }, options: Record<string, unknown>) {
+  WebContentsView: vi.fn().mockImplementation(function (this: { options: Record<string, unknown>, webContents: unknown, setBounds: unknown, setVisible: unknown, setBackgroundColor: unknown }, options: Record<string, unknown>) {
     this.options = options
     this.webContents = options['webContents'] ?? fakeContents()
     this.setBounds = vi.fn()
+    this.setVisible = vi.fn()
     this.setBackgroundColor = vi.fn()
     adoptedViews.push(this)
   }),
@@ -70,8 +71,8 @@ function fakeHost (overrides: Partial<Host> = {}): Host & Record<string, unknown
     dashboardUrl: 'http://localhost:5999/newtab/',
     window: { isDestroyed: () => false } as never,
     isShown: () => true,
-    detachView: vi.fn(),
     attachView: vi.fn(),
+    paneCommitted: vi.fn(),
     paneClicked: vi.fn(),
     openInSplit: vi.fn(),
     devtools: undefined,

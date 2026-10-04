@@ -31,6 +31,7 @@ interface RecordedView {
   options: { webPreferences?: Record<string, unknown> }
   webContents: FakeWebContents
   setBounds: ReturnType<typeof vi.fn>
+  setVisible: ReturnType<typeof vi.fn>
   setBackgroundColor: ReturnType<typeof vi.fn>
 }
 const createdViews: RecordedView[] = []
@@ -51,10 +52,12 @@ function makeFakeWebContents (): FakeWebContents {
 }
 
 vi.mock('electron', () => ({
+  nativeTheme: { shouldUseDarkColors: false },
   WebContentsView: vi.fn().mockImplementation(function (this: RecordedView, options: RecordedView['options']) {
     this.options = options
     this.webContents = makeFakeWebContents()
     this.setBounds = vi.fn()
+    this.setVisible = vi.fn()
     this.setBackgroundColor = vi.fn()
     createdViews.push(this)
   })
@@ -62,7 +65,7 @@ vi.mock('electron', () => ({
 
 const { TabManager } = await import('../tabs.js')
 
-const fakeContentView = { addChildView: vi.fn(), removeChildView: vi.fn() }
+const fakeContentView = { children: [] as unknown[], addChildView: vi.fn(), removeChildView: vi.fn() }
 const fakeBounds = { x: 0, y: 0, width: 800, height: 600 }
 const fakeCtx = {} as SubsystemContext
 const DASHBOARD_URL = 'http://localhost:5999/newtab/'

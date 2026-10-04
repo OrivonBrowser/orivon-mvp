@@ -6,12 +6,19 @@ const B = (x: number) => ({ x, y: 0, width: 100, height: 100 })
 /** Electron 44's own `View`: re-adding a child already there reorders it to
  * the top instead of appending a duplicate (electron.d.ts's own doc comment
  * on `addChildView`); a fresh one goes at `index`, the end by default. */
-function setup (): { host: PaneHost, children: string[], view: (name: string) => { name: string, setBounds: ReturnType<typeof vi.fn> } } {
+interface FakeView { name: string, setBounds: ReturnType<typeof vi.fn>, setVisible: ReturnType<typeof vi.fn>, getVisible: () => boolean }
+
+function setup (): { host: PaneHost, children: string[], view: (name: string) => FakeView } {
   const children: string[] = []
-  const views = new Map<string, { name: string, setBounds: ReturnType<typeof vi.fn> }>()
-  const view = (name: string): { name: string, setBounds: ReturnType<typeof vi.fn> } => {
+  const shownFlag = new Map<string, boolean>()
+  const views = new Map<string, FakeView>()
+  const view = (name: string): FakeView => {
     let found = views.get(name)
-    if (found === undefined) { found = { name, setBounds: vi.fn() }; views.set(name, found) }
+    if (found === undefined) {
+      const made: FakeView = { name, setBounds: vi.fn(), setVisible: vi.fn((visible: boolean) => { shownFlag.set(name, visible) }), getVisible: () => shownFlag.get(name) ?? true }
+      views.set(name, made)
+      found = made
+    }
     return found
   }
   const contentView = {
@@ -174,63 +181,11 @@ describe('PaneHost', () => {
 
     expect(children).toEqual(['X', 'A2', 'B', 'chrome', 'popover'])
   })
-
-  describe('hold', () => {
-    it('keeps the pane that leaves attached, puts the new pane under it, and takes the old off at release', () => {
-      const { host, children, view } = setup()
-      const contentView = (host as unknown as { contentView: { addChildView: (v: never) => void } }).contentView
-      contentView.addChildView(view('chrome') as never)
-      host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
-      contentView.addChildView(view('popover') as never)
-
-      host.hold()
-      host.show([{ id: 'b', view: view('B') as never, bounds: B(0) }])
-      expect(children).toEqual(['chrome', 'B', 'A', 'popover'])
-      expect(host.isShown('a')).toBe(false)
-      expect(host.isShown('b')).toBe(true)
-      expect(view('B').setBounds).toHaveBeenLastCalledWith(B(0))
-
-      host.release()
-      expect(children).toEqual(['chrome', 'B', 'popover'])
-    })
-
-    it('does not hold anything once released: the next change takes the old pane off at once', () => {
-      const { host, children, view } = setup()
-      host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
-      host.hold()
-      host.release()
-      host.show([{ id: 'b', view: view('B') as never, bounds: B(0) }])
-      expect(children).toEqual(['B'])
-    })
-
-    it('goes back to the held pane in place when it is wanted again, and does not take it off at release', () => {
-      const { host, children, view } = setup()
-      host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
-      host.hold()
-      host.show([{ id: 'b', view: view('B') as never, bounds: B(0) }])
-      host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
-      host.release()
-      expect(children).toEqual(['A'])
-      expect(host.isShown('a')).toBe(true)
-    })
-
-    it('takes a held pane off when its tab goes away, and a held backdrop at release', () => {
-      const { host, children, view } = setup()
-      host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }, { id: 'c', view: view('C') as never, bounds: B(100) }], { id: 'backdrop', view: view('X') as never, bounds: B(0) })
-      host.hold()
-      host.show([{ id: 'b', view: view('B') as never, bounds: B(0) }])
-      expect(children).toContain('X')
-      host.hide('a')
-      expect(children).not.toContain('A')
-      host.release()
-      expect(children).toEqual(['B'])
-    })
-  })
 })
 
 describe('PaneHost settling a pane whose page did not take its size', () => {
   const pane = (view: unknown, bounds = B(0)) => ({ id: 'a', view: view as never, bounds })
-  const withLayout = (sizes: Array<{ width: number, height: number } | null>): { host: PaneHost, view: { name: string, setBounds: ReturnType<typeof vi.fn> }, reads: ReturnType<typeof vi.fn> } => {
+  const withLayout = (sizes: Array<{ width: number, height: number } | null>): { host: PaneHost, view: FakeView, reads: ReturnType<typeof vi.fn> } => {
     const { host: plain, view } = setup()
     const reads = vi.fn(async () => await Promise.resolve(sizes.shift() ?? { width: 100, height: 100 }))
     const contentView = (plain as unknown as { contentView: never }).contentView
@@ -291,6 +246,158 @@ describe('PaneHost settling a pane whose page did not take its size', () => {
       host.show([pane(view)])
       await vi.advanceTimersByTimeAsync(5000)
       expect(reads).toHaveBeenCalledTimes(3)
+    } finally { vi.useRealTimers() }
+  })
+  it('checks the view that replaces a pane like a pane just put on screen', async () => {
+    vi.useFakeTimers()
+    try {
+      const { host, view, reads } = withLayout([{ width: 100, height: 100 }, { width: 400, height: 300 }])
+      const { view: other } = setup()
+      host.show([pane(view)])
+      await vi.advanceTimersByTimeAsync(300)
+      expect(reads).toHaveBeenCalledTimes(1)
+      const next = other('A2')
+      host.replace('a', next as never, B(5))
+      await vi.advanceTimersByTimeAsync(300)
+      expect(reads).toHaveBeenCalledTimes(2)
+      expect(next.setBounds).toHaveBeenLastCalledWith({ ...B(5), width: 101 })
+    } finally { vi.useRealTimers() }
+  })
+
+  it('checks a pane of a split again on request, and a pane that fills the area never', async () => {
+    vi.useFakeTimers()
+    try {
+      const { host, view, reads } = withLayout([])
+      const { view: other } = setup()
+      host.show([pane(view)])
+      await vi.advanceTimersByTimeAsync(300)
+      expect(reads).toHaveBeenCalledTimes(1)
+      host.recheck('a')
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(reads).toHaveBeenCalledTimes(1)
+
+      host.show([pane(view), { id: 'b', view: other('B') as never, bounds: B(200) }])
+      await vi.advanceTimersByTimeAsync(300)
+      const before = reads.mock.calls.length
+      host.recheck('a')
+      await vi.advanceTimersByTimeAsync(300)
+      expect(reads.mock.calls.length).toBe(before + 1)
+      host.recheck('gone')
+    } finally { vi.useRealTimers() }
+  })
+})
+
+describe('PaneHost putting a view into the window', () => {
+  it('shows every view it attaches: a pane, the backdrop, and the view that replaces a pane', () => {
+    const { host, view } = setup()
+    host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }, { id: 'b', view: view('B') as never, bounds: B(100) }], { id: 'backdrop', view: view('X') as never, bounds: B(0) })
+    for (const name of ['A', 'B', 'X']) expect(view(name).setVisible).toHaveBeenLastCalledWith(true)
+
+    host.replace('a', view('A2') as never, B(0))
+    expect(view('A2').setVisible).toHaveBeenLastCalledWith(true)
+  })
+
+  it('shows a view again that was taken out of the window and comes back', () => {
+    const { host, view } = setup()
+    host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
+    host.show([{ id: 'b', view: view('B') as never, bounds: B(0) }])
+    view('A').setVisible.mockClear()
+
+    host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
+
+    expect(view('A').setVisible).toHaveBeenCalledWith(true)
+  })
+
+  it('hides and shows the pane over a pane put below it, in a later turn', () => {
+    vi.useFakeTimers()
+    try {
+      const { host, view } = setup()
+      host.show([{ id: 'b', view: view('B') as never, bounds: B(100) }])
+      view('B').setVisible.mockClear()
+
+      host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }, { id: 'b', view: view('B') as never, bounds: B(100) }])
+      expect(view('B').setVisible).not.toHaveBeenCalled()
+
+      vi.advanceTimersByTime(1)
+      expect(view('B').setVisible.mock.calls).toEqual([[false], [true]])
+      expect(view('A').setVisible.mock.calls).toEqual([[true]])
+    } finally { vi.useRealTimers() }
+  })
+})
+
+describe('PaneHost mending a pane whose page is hidden', () => {
+  const MEND_MS = 60
+  const withReads = (reads: Record<string, boolean | null>): { host: PaneHost, view: (name: string) => FakeView, asked: ReturnType<typeof vi.fn> } => {
+    const { host: plain, view } = setup()
+    const asked = vi.fn(async (shown: { name: string }) => await Promise.resolve(reads[shown.name] ?? true))
+    return { host: new PaneHost((plain as unknown as { contentView: never }).contentView, undefined, asked as never), view, asked }
+  }
+  const twoPanes = (view: (name: string) => FakeView): Array<{ id: string, view: never, bounds: ReturnType<typeof B> }> => [{ id: 'a', view: view('A') as never, bounds: B(0) }, { id: 'b', view: view('B') as never, bounds: B(100) }]
+
+  it('hides and shows the panes beside a pane whose page reads hidden, and asks again', async () => {
+    vi.useFakeTimers()
+    try {
+      const reads: Record<string, boolean | null> = { A: false }
+      const { host, view, asked } = withReads(reads)
+      host.show(twoPanes(view))
+      await vi.advanceTimersByTimeAsync(1)
+      view('B').setVisible.mockClear()
+
+      await vi.advanceTimersByTimeAsync(MEND_MS)
+      expect(asked).toHaveBeenCalledTimes(2)
+      expect(view('B').setVisible.mock.calls).toEqual([[false], [true]])
+      expect(view('A').setVisible.mock.calls.filter(([visible]) => visible === false)).toEqual([])
+
+      reads['A'] = true
+      view('B').setVisible.mockClear()
+      await vi.advanceTimersByTimeAsync(MEND_MS)
+      expect(asked).toHaveBeenCalledTimes(4)
+      expect(view('B').setVisible).not.toHaveBeenCalled()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('leaves panes alone whose pages read visible, or cannot be read', async () => {
+    vi.useFakeTimers()
+    try {
+      const { host, view, asked } = withReads({ A: null })
+      host.show(twoPanes(view))
+      await vi.advanceTimersByTimeAsync(1)
+      view('A').setVisible.mockClear()
+      view('B').setVisible.mockClear()
+      await vi.advanceTimersByTimeAsync(MEND_MS)
+      expect(asked).toHaveBeenCalledTimes(2)
+      expect(view('A').setVisible).not.toHaveBeenCalled()
+      expect(view('B').setVisible).not.toHaveBeenCalled()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('gives up after a few tries, and does not ask when there is one pane', async () => {
+    vi.useFakeTimers()
+    try {
+      const { host, view, asked } = withReads({ A: false })
+      host.show(twoPanes(view))
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(asked).toHaveBeenCalledTimes(6)
+
+      asked.mockClear()
+      host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(asked).not.toHaveBeenCalled()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('asks again after a pane commits a document', async () => {
+    vi.useFakeTimers()
+    try {
+      const { host, view, asked } = withReads({})
+      host.show(twoPanes(view))
+      await vi.advanceTimersByTimeAsync(2000)
+      asked.mockClear()
+
+      host.recheck('b')
+      await vi.advanceTimersByTimeAsync(MEND_MS)
+
+      expect(asked).toHaveBeenCalledTimes(2)
     } finally { vi.useRealTimers() }
   })
 })

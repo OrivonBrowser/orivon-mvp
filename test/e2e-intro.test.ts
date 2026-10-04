@@ -78,10 +78,8 @@ it('once, on a fresh profile: shows over the whole window, stays on top of a new
     const dashboard = dashboardPage(app)
     if (dashboard === undefined) throw new Error('the dashboard tab is gone')
     // The background picture is a real, decodable file at the built path.
-    // It is a layer of the root's ::before, under the wash and over a small inlined placeholder.
     const decoded = await dashboard.evaluate(async () => {
-      const layers = getComputedStyle(document.documentElement, '::before').backgroundImage
-      const url = [...layers.matchAll(/url\("?([^")]+)"?\)/g)].map((match) => match[1]).find((found) => found?.includes('intro-background') === true)
+      const url = /url\("?([^")]+)"?\)/.exec(getComputedStyle(document.documentElement).backgroundImage)?.[1]
       if (url === undefined) return 'no background-image url'
       const image = new Image()
       image.src = url

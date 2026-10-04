@@ -4,7 +4,7 @@
 import type { WebContents, WebContentsView } from 'electron'
 import type { TabRecord } from './tab-types.js'
 import { isDashboardUrl, sheetBackdropOf } from './sheet-backdrop.js'
-import { DASHBOARD_BACKGROUND, DEFAULT_BACKGROUND } from './theme-colors.js'
+import { DASHBOARD_BACKGROUND, DEFAULT_BACKGROUND, resolveThemeColor } from './theme-colors.js'
 import { recordViewBackground } from './view-background-test-hook.js'
 
 /** Paints a view and records the colour for the e2e hook. A view torn down has no webContents, and gets nothing. */
@@ -23,11 +23,11 @@ export function watchBacking (view: WebContentsView, record: TabRecord, shown: (
   wc.on('did-start-navigation', (details) => {
     if (!details.isMainFrame || details.isSameDocument || !shown()) return
     if (record.internalPage !== null || sheetBackdropOf(view) !== undefined) return
-    paintBacking(view, isDashboardUrl(details.url, record.host.dashboardUrl) ? DASHBOARD_BACKGROUND : DEFAULT_BACKGROUND)
+    paintBacking(view, isDashboardUrl(details.url, record.host.dashboardUrl) ? resolveThemeColor(DASHBOARD_BACKGROUND) : DEFAULT_BACKGROUND)
   })
   // A navigation that never commits (a download, a 204) leaves the old document: the colour it was painted for comes back.
   wc.on('did-stop-loading', () => {
     if (!shown() || !isDashboardUrl(wc.getURL(), record.host.dashboardUrl) || sheetBackdropOf(view) !== undefined) return
-    paintBacking(view, DASHBOARD_BACKGROUND)
+    paintBacking(view, resolveThemeColor(DASHBOARD_BACKGROUND))
   })
 }

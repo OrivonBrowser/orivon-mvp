@@ -30,7 +30,7 @@ function makeFakeWebContents (): EventEmitter {
 vi.mock('electron', () => ({
   WebContentsView: vi.fn().mockImplementation(function (this: { webContents: EventEmitter }) {
     this.webContents = makeFakeWebContents()
-    Object.assign(this, { setBounds: vi.fn(), setBackgroundColor: vi.fn() })
+    Object.assign(this, { setBounds: vi.fn(), setVisible: vi.fn(), setBackgroundColor: vi.fn() })
     createdViews.push(this)
   })
 }))

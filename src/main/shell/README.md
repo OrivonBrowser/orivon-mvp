@@ -19,10 +19,10 @@ same page (and is where a dragged tab's cross-window target -- which window's st
 worked out from the tab centres `strip-centres.ts` reads off the target window's chrome page, shared by the actual move and by `tear-drag.ts`'s own mark), `tab-menu.ts` is its right-click
 menu (and `context-menu.ts` the menu a page gets: `page-menu-items.ts` is where the extension host adds its items, `context-menu-groups.ts` holds one function per group, `context-menu-text.ts` cleans what a page controls before it reaches a label, `paste-and-go.ts` is the address bar's clipboard submit), and `window-actions.ts` is what the chrome's buttons and menus ask of their window (`press-stamps.ts` stamps, with main's clock, the press on a popup's button so the click that follows is judged by it), and `chrome-actions.ts`
 (with `actions/`) is where a chrome module's own call to main lands.
-`tear-drag.ts` is the floating preview a tab shows once torn out of its strip, and the mark it leaves on
+`attach-view.ts` is the one way a view goes into a window. `tear-drag.ts` is the floating preview a tab shows once torn out of its strip, and the mark it leaves on
 whichever window's strip it is dragged over. Split view: `split-model.ts` is the arithmetic and the groups
 of joined tabs, `split-controller.ts` plans which views show where, `pane-host.ts` puts them on screen in
-that order (and, while a new-tab page draws its first frame, `first-paint.ts` tells `tab-panes.ts` when, so the page in front stays until then), `split-frame.ts` is the view behind two panes, and `split-drop.ts` says where a dragged tab
+that order, `split-frame.ts` is the view behind two panes, and `split-drop.ts` says where a dragged tab
 would split the page. `intro-state.ts` and `intro-view.ts` are the welcome screen. `shell-installers.ts` runs each feature directory's installer at start, and `sheet-backdrop.ts` paints the shell's own surface colour behind a sheet that sits over a tab with no background of its own. `tab-backing.ts` picks a view's pre-paint colour when a navigation starts, and `window-backing.ts` keeps the window behind the views in the colour of the tab shown.
 `first-window.ts` decides what a cold start opens (the window's last place, the addresses on the command line, a kiosk's page) and `home.ts` is what Home opens.
 The rest answer what a page asks of its window: popups become tabs, HTML fullscreen, the
@@ -226,6 +226,19 @@ headers: [`sign-in-identity-headers.ts`](sign-in-identity-headers.ts) rewrites t
 [`sign-in-identity-tab.ts`](sign-in-identity-tab.ts) swaps `navigator.userAgent`, and
 `../../preload/sign-in-identity.ts` deletes `navigator.userAgentData` at document start. The
 preload runs in a tab's main frame only, so a sign-in page in another site's iframe keeps it.
+
+**[`attach-view.ts`](attach-view.ts): a view goes into a window through `attachShown`, never a bare `addChildView`.** On
+Electron 44 (X11 and Wayland alike) a `WebContentsView` that left a window and is added back stays hidden: its page
+reads `visibilityState` `hidden` and never runs `requestAnimationFrame`, though it is attached, sized and focused. It
+shows once the window's children change again, which `attachShown` does by adding a marker `View` and taking it out in
+the same turn. A pane put *below* a pane that is on screen is not helped by that: it shows when the pane above it is
+hidden and shown again in a later turn, which `attachShown` does for the views it is given in `above`. A page that
+commits a document in a split can hide the pane beside it about ten milliseconds later; `pane-host.ts` therefore asks
+each pane's page whether it is `visible` shortly after a pane goes on screen or commits, and hides and shows the
+panes beside one that is not. A tab that is not in front is taken out of the window, which is wanted: Electron then
+reports its page `visible`, and `tab-visibility.ts` (below) tells the page it is hidden instead. Playwright keeps every page it drives visible, so no spec sees any of this: `scripts/probe-view-visibility.mjs`
+reads it with a debugger on the main process only, and `tests/attach-sites.test.ts` fails for an `addChildView` outside
+`attach-view.ts`.
 
 **[`tab-visibility.ts`](tab-visibility.ts) tells each page whether the person can see it.** A tab that is not in
 front is detached from its window ([`pane-host.ts`](pane-host.ts)), and Electron never reports a detached view

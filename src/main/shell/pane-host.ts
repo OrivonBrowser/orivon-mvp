@@ -2,6 +2,7 @@
 // behind them, when there are two, a backdrop that draws the divider. Sizes and
 // stacks them; deciding which panes there are is the tab collection's.
 import type { View } from 'electron'
+import { attachShown, showAgain } from './attach-view.js'
 import type { Bounds } from './tab-types.js'
 
 export interface PaneView {
@@ -13,25 +14,29 @@ export interface PaneView {
 /** The size, in view pixels, the page in `view` lays itself out at; `null` when that cannot be read. */
 export type LayoutSizeOf = (view: View) => Promise<{ width: number, height: number } | null>
 
+/** Whether the page in `view` reads `visible`; `null` when that cannot be read. */
+export type PageShownOf = (view: View) => Promise<boolean | null>
+
 /** How long after a pane goes on screen its page's layout is checked, and the longest the check may be one pixel off. */
 const SETTLE_MS = 250
 const SETTLE_TOLERANCE_PX = 2
 const SETTLE_TRIES = 3
 const NUDGE_MS = 80
-const BACKDROP = 'backdrop'
+/** A page that commits a document is left with its neighbour pane hidden about ten milliseconds later (measured on Electron 44). */
+const MEND_MS = 60
+const MEND_TRIES = 3
 
 export class PaneHost {
   private readonly shown = new Map<string, View>()
   private readonly placed = new Map<string, Bounds>()
   private readonly settling = new Map<string, ReturnType<typeof setTimeout>>()
+  private mending: ReturnType<typeof setTimeout> | undefined
   private backdrop: View | null = null
   private readonly changeListeners = new Set<() => void>()
-  /** While `holding`: the views of panes that left the plan but stay attached, under whatever is new, by pane id ('backdrop' for the backdrop). */
-  private readonly held = new Map<string, View>()
-  private holding = false
 
-  /** `layoutSizeOf`, when given, lets a pane that went on screen be checked against its bounds (`settle`). */
-  constructor (private readonly contentView: View, private readonly layoutSizeOf?: LayoutSizeOf) {}
+  /** `layoutSizeOf`, when given, lets a pane that went on screen be checked against its bounds (`settle`); `pageShownOf`, that
+   * each pane on screen is shown (`mend`). */
+  constructor (private readonly contentView: View, private readonly layoutSizeOf?: LayoutSizeOf, private readonly pageShownOf?: PageShownOf) {}
 
   /** Called after a change to which tabs are on screen (not after a pane is only resized). Returns the removal. */
   onShownChange (listener: () => void): () => void {
@@ -55,34 +60,20 @@ export class PaneHost {
   show (panes: readonly PaneView[], backdrop: PaneView | null = null): void {
     const wanted = new Map(panes.map((pane) => [pane.id, pane.view]))
     let changed = false
-    // A pane that is wanted again while its view is still attached under a hold goes back to being shown, in place.
-    for (const [id, view] of this.held) {
-      if (id === BACKDROP || wanted.get(id) !== view) continue
-      this.held.delete(id)
-      this.shown.set(id, view)
-      changed = true
-    }
     for (const [id, view] of this.shown) {
       if (wanted.get(id) === view) continue
-      if (this.holding) this.held.set(id, view)
-      else this.contentView.removeChildView(view)
+      this.contentView.removeChildView(view)
       this.forget(id)
       changed = true
     }
     const nextBackdrop = backdrop?.view ?? null
     if (this.backdrop !== nextBackdrop) {
-      if (this.backdrop !== null) {
-        if (this.holding) this.held.set(BACKDROP, this.backdrop)
-        else this.contentView.removeChildView(this.backdrop)
-      }
+      if (this.backdrop !== null) this.contentView.removeChildView(this.backdrop)
       // At index 0, the bottom: `contentView` is the window's own content view, and the chrome
       // (toolbar) view is added to it once, first, before any pane ever is (window.ts) -- so
       // index 0 only ever displaces panes and popovers, never the chrome, and stays below all of
       // them regardless of how many times a backdrop comes and goes.
-      if (nextBackdrop !== null) {
-        if (this.held.get(BACKDROP) === nextBackdrop) this.held.delete(BACKDROP)
-        this.contentView.addChildView(nextBackdrop, 0)
-      }
+      if (nextBackdrop !== null) attachShown(this.contentView, nextBackdrop, 0)
       this.backdrop = nextBackdrop
     }
     if (backdrop !== null) backdrop.view.setBounds(backdrop.bounds)
@@ -90,12 +81,11 @@ export class PaneHost {
     // its bounds, so where it lands among `contentView`'s children has never mattered. Once there is
     // a backdrop or a second pane the order matters, and a new pane goes where `slotFor` says.
     const ordered = panes.length > 1 || nextBackdrop !== null
+    let attached = false
     panes.forEach((pane, at) => {
       if (this.shown.get(pane.id) !== pane.view) {
-        const underHeld = this.lowestHeld()
-        if (underHeld !== undefined) this.contentView.addChildView(pane.view, underHeld)
-        else if (ordered) this.contentView.addChildView(pane.view, this.slotFor(panes, at, nextBackdrop))
-        else this.contentView.addChildView(pane.view)
+        attached = true
+        attachShown(this.contentView, pane.view, ordered ? this.slotFor(panes, at, nextBackdrop) : undefined, this.onScreenOver(panes.slice(at + 1).map((other) => other.view)))
         this.shown.set(pane.id, pane.view)
         changed = true
         this.settle(pane.id, pane.view, SETTLE_TRIES)
@@ -103,7 +93,38 @@ export class PaneHost {
       this.placed.set(pane.id, pane.bounds)
       pane.view.setBounds(pane.bounds)
     })
+    if (attached && panes.length > 1) this.mend(MEND_TRIES)
     if (changed) this.shownChanged()
+  }
+
+  /** Two panes side by side can leave one hidden while the other is shown: a page that commits a document, or a pane put
+   * below its neighbour, hides the page under it. Shortly after, each pane is asked whether its page is shown, and the
+   * panes beside one that is not are hidden and shown again. Costs one read per pane, only while there are two. */
+  private mend (tries: number): void {
+    const { pageShownOf } = this
+    clearTimeout(this.mending)
+    if (pageShownOf === undefined || tries === 0 || this.shown.size < 2) return
+    this.mending = setTimeout(() => {
+      const panes = [...this.shown]
+      void Promise.all(panes.map(async ([, view]) => await pageShownOf(view))).then((answers) => {
+        const now = [...this.shown]
+        if (now.length !== panes.length || now.some(([id, view], at) => panes[at]?.[0] !== id || panes[at]?.[1] !== view)) return
+        let mended = false
+        answers.forEach((shown, at) => {
+          if (shown !== false) return
+          const view = panes[at]?.[1]
+          if (view === undefined) return
+          showAgain(this.contentView, view, panes.filter(([, other]) => other !== view).map(([, other]) => other))
+          mended = true
+        })
+        if (mended) this.mend(tries - 1)
+      })
+    }, MEND_MS)
+  }
+
+  /** Of `views`, those on screen now: the ones a view put below them must be shown beside. */
+  private onScreenOver (views: readonly View[]): View[] {
+    return views.filter((view) => this.contentView.children.includes(view))
   }
 
   private forget (id: string): void {
@@ -161,33 +182,6 @@ export class PaneHost {
     return base === -1 ? undefined : base + 1
   }
 
-  /** From now until `release`, a pane that leaves the plan stays attached, and a pane that joins it is
-   * attached under those: the page in front keeps the screen while the new page's renderer starts, and
-   * the new view still paints below it (a detached view does not). Used for a page that has not painted
-   * yet; the caller releases once it has. */
-  hold (): void {
-    this.holding = true
-  }
-
-  /** Ends `hold`: takes off the screen the views it kept. The panes that joined stay where they went in. */
-  release (): void {
-    this.holding = false
-    for (const view of this.held.values()) this.contentView.removeChildView(view)
-    this.held.clear()
-  }
-
-  private lowestHeld (): number | undefined {
-    if (this.held.size === 0) return undefined
-    const siblings = this.contentView.children
-    const at = [...this.held.values()].map((view) => siblings.indexOf(view)).filter((index) => index !== -1)
-    return at.length === 0 ? undefined : Math.min(...at)
-  }
-
-  /** Whether any pane is on screen now (a held one is not). */
-  get anyShown (): boolean {
-    return this.shown.size > 0
-  }
-
   isShown (id: string): boolean {
     return this.shown.has(id)
   }
@@ -198,28 +192,38 @@ export class PaneHost {
   }
 
   /** `hide` without the announcement, for a view that `replace` puts another in the place of at once. Whether a pane
-   * on screen left it: a held view was already off the plan. */
+   * was on screen. */
   takeOff (id: string): boolean {
-    const view = this.shown.get(id) ?? this.held.get(id)
+    const view = this.shown.get(id)
     if (view === undefined) return false
-    const wasShown = this.shown.has(id)
     this.contentView.removeChildView(view)
     this.forget(id)
-    this.held.delete(id)
-    return wasShown
+    return true
   }
 
-  /** Shows `view` for a pane that is on screen already under another view, in the same place. */
+  /** Shows `view` for a pane that is on screen already under another view, in the same place: the old view's
+   * slot among `contentView`'s children, never on top, so a popover open above the pane stays above it and a
+   * split's panes keep their order. The new view's page is checked against the bounds like any pane put on screen. */
   replace (id: string, view: View, bounds: Bounds): void {
     const old = this.shown.get(id)
     const index = old === undefined ? -1 : this.contentView.children.indexOf(old)
     this.takeOff(id)
-    // At the old view's place, never on top: a popover open above the pane stays above it.
-    if (index === -1) this.contentView.addChildView(view)
-    else this.contentView.addChildView(view, index)
+    attachShown(this.contentView, view, index === -1 ? undefined : index, this.onScreenOver([...this.shown].filter(([other]) => other !== id).map(([, other]) => other)))
     this.shown.set(id, view)
     this.placed.set(id, bounds)
     view.setBounds(bounds)
+    this.settle(id, view, SETTLE_TRIES)
+    this.mend(MEND_TRIES)
     this.shownChanged()
+  }
+
+  /** A pane's page committed a new document, which can give it a fresh renderer view that lays itself out at a
+   * size other than the pane's: the same check as for a pane just put on screen. Only while there are two panes,
+   * where a view that is not the whole area can be told a size it already has. */
+  recheck (id: string): void {
+    const view = this.shown.get(id)
+    if (view === undefined || this.shown.size < 2) return
+    this.settle(id, view, SETTLE_TRIES)
+    this.mend(MEND_TRIES)
   }
 }

@@ -42,7 +42,7 @@ export function restingColor (record: TabRecord): string {
   const wc: WebContents | undefined = record.view.webContents
   const address = wc === undefined || wc.isDestroyed() ? null : wc.getURL()
   // A dashboard tab is shown before its load starts and has no address yet: it already holds the dashboard's colour.
-  if (address !== null && (isDashboardUrl(address, record.host.dashboardUrl) || (address === '' && record.isDashboardTab))) return DASHBOARD_BACKGROUND
+  if (address !== null && (isDashboardUrl(address, record.host.dashboardUrl) || (address === '' && record.isDashboardTab))) return resolveThemeColor(DASHBOARD_BACKGROUND)
   return record.internalPage !== null ? sheetColor() : DEFAULT_BACKGROUND
 }
 

@@ -40,29 +40,27 @@ html, body {
 /* The welcome screen's picture under a dark wash, in both themes: only the
    search box and tiles follow the OS scheme, so whatever sits on the picture
    itself (.wordmark, .tile-section-title) has fixed light colours below. The
-   wash is orivon-browser-v2's new-tab one. The picture is a fixed layer behind
-   the page, so a tall bookmark grid neither scrolls nor tiles it. The page's
-   own background is the flat colour the shell paints the view with before this
-   page exists (theme-colors.ts's DASHBOARD_BACKGROUND), which is what shows
-   until the layer below paints. That layer carries a tiny copy of the picture
-   (small enough that the build inlines it, so the first paint has it) until the
-   full picture has decoded. The wash covers every layer beneath it, so the
-   layer's own base colour is the picture's mean before the wash (#768a86): under
-   the wash it composites to the same #394244, and no frame is darker than the
-   colour before it. */
+   wash is orivon-browser-v2's new-tab one. `fixed` keeps a tall bookmark grid
+   from scrolling or tiling the picture. */
 html {
-  background: #394244;
-}
-
-html::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: -1;
   background:
     linear-gradient(rgba(13, 14, 20, 0.58), rgba(13, 14, 20, 0.58)),
-    url('../assets/intro-background.webp') center / cover no-repeat,
-    url('../assets/newtab-placeholder.webp') center / cover no-repeat #768a86;
+    url('../assets/intro-background.webp') center / cover no-repeat fixed #0d0e14;
+}
+
+/* Beside a light window a near-black first frame reads as a flash. Under a
+   light scheme the page is #394244 (the mean of the picture under its wash)
+   until the picture has decoded, the colour the shell backs the view with
+   (main's theme-colors.ts, DASHBOARD_BACKGROUND): the root's own colour is that,
+   which is also what shows while the page's tiles are not yet painted, and a
+   lighter base layer under the wash composites to it. */
+@media (prefers-color-scheme: light) {
+  html {
+    background:
+      linear-gradient(rgba(13, 14, 20, 0.58), rgba(13, 14, 20, 0.58)),
+      url('../assets/intro-background.webp') center / cover no-repeat fixed,
+      linear-gradient(#768a86, #768a86) #394244;
+  }
 }
 
 button {

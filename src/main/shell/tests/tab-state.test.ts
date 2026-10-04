@@ -20,7 +20,7 @@ interface FakeContents extends EventEmitter {
   focus: ReturnType<typeof vi.fn>
   close: ReturnType<typeof vi.fn>
 }
-interface RecordedView { webContents: FakeContents, setBounds: ReturnType<typeof vi.fn>, setBackgroundColor: ReturnType<typeof vi.fn> }
+interface RecordedView { webContents: FakeContents, setBounds: ReturnType<typeof vi.fn>, setVisible: ReturnType<typeof vi.fn>, setBackgroundColor: ReturnType<typeof vi.fn> }
 const createdViews: RecordedView[] = []
 
 function makeFakeWebContents (): FakeContents {
@@ -44,9 +44,11 @@ function makeFakeWebContents (): FakeContents {
 }
 
 vi.mock('electron', () => ({
+  nativeTheme: { shouldUseDarkColors: false },
   WebContentsView: vi.fn().mockImplementation(function (this: RecordedView) {
     this.webContents = makeFakeWebContents()
     this.setBounds = vi.fn()
+    this.setVisible = vi.fn()
     this.setBackgroundColor = vi.fn()
     createdViews.push(this)
   })

@@ -34,6 +34,7 @@ vi.mock('electron', () => ({
     this.setBackgroundColor = vi.fn((color: string) => { calls.push(`background:${color}`) })
     this.setBorderRadius = vi.fn((radius: number) => { calls.push(`radius:${String(radius)}`) })
     this.setBounds = vi.fn()
+    this.setVisible = vi.fn((visible: boolean) => { calls.push(`visible:${String(visible)}`) })
   })
 }))
 vi.mock('../../shell/shell-session.js', () => ({ SHELL_PARTITION: 'persist:orivon-shell' }))
@@ -164,5 +165,18 @@ describe('createOverlayView', () => {
     wanted = false
     ;(contents.once.mock.calls[0]?.[1] as () => void)()
     expect(contents.focus).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows an attached view, and hides one without taking it out of its window', () => {
+    const view = createOverlayView(spec())
+    const parent = { addChildView: vi.fn(() => { calls.push('add') }), removeChildView: vi.fn(() => { calls.push('remove') }) }
+    calls.length = 0
+    view.attach(parent as never)
+    view.hide()
+    view.attach(parent as never)
+    expect(calls).toEqual(['add', 'visible:true', 'visible:false', 'add', 'visible:true'])
+    expect(parent.removeChildView).not.toHaveBeenCalled()
+    view.detach(parent as never)
+    expect(parent.removeChildView).toHaveBeenCalledTimes(1)
   })
 })

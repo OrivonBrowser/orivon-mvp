@@ -58,6 +58,7 @@ vi.mock('electron', () => ({
     this.setBackgroundColor = vi.fn((color: string) => { calls.push(`setBackgroundColor:${color}`) })
     this.setBorderRadius = vi.fn()
     this.setBounds = vi.fn()
+    this.setVisible = vi.fn()
   }),
   get nativeTheme () {
     return {

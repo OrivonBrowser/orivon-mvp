@@ -114,8 +114,6 @@ export function repartitionView (
   const oldPartition = record.partition
   const wasShown = host.isShown(id)
 
-  if (wasShown) host.detachView(oldView)
-
   const appTabArgs = appTabArgsFor(target, host.broker)
   const parked = takeParkedView(record, nextPartition, appTabArgs, target)
   const newView = parked ?? makeTabView(host.preloadPath, nextPartition, appTabArgs, { target })

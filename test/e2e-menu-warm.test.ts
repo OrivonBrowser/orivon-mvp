@@ -131,9 +131,9 @@ it('a brand-new tab is painted the dashboard\'s own colour before its page ever 
       return undefined
     }, before)
 
-    // theme-colors.ts's DASHBOARD_BACKGROUND -- the same value in both themes, so
-    // this needs no assumption about which one the test machine is in.
-    expect(recorded).toBe('#394244')
+    // theme-colors.ts's DASHBOARD_BACKGROUND for the scheme the machine is in; e2e-theme-backing.test.ts pins each.
+    const dark = await app.evaluate(({ nativeTheme }) => nativeTheme.shouldUseDarkColors)
+    expect(recorded).toBe(dark ? '#0d0e14' : '#394244')
   } finally {
     await closeElectron(app)
     expect(await assertNoElectronSurvivors()).toEqual([])
@@ -189,6 +189,46 @@ it('reopens on screen after every way it can have been closed', async () => {
       expect({ path, closed: await waitFor(async () => !(await shown())) }).toEqual({ path, closed: true })
       await open()
       await expectMenuOnScreen(app, path)
+    }
+  } finally {
+    await closeElectron(app)
+    expect(await assertNoElectronSurvivors()).toEqual([])
+  }
+}, 90_000)
+
+/** The menu's view among the window's children: whether it is still one, whether it is shown, whether it is the topmost. */
+function menuInWindow (app: Awaited<ReturnType<typeof launchElectron>>): Promise<{ present: boolean, visible: boolean, topmost: boolean }> {
+  return app.evaluate(({ BaseWindow }) => {
+    const children = BaseWindow.getAllWindows()[0]?.contentView.children ?? []
+    const menu = children.find((child) => (child as { webContents?: { getURL: () => string } }).webContents?.getURL().includes('overlay=menu') === true)
+    return { present: menu !== undefined, visible: menu?.getVisible() === true, topmost: menu !== undefined && children.at(-1) === menu }
+  })
+}
+
+// A view taken out of its window and added back stays hidden, so its page never paints again. A page under a debugger
+// (Playwright's) reports itself visible all the same, so this pins the cause: the closed menu is never removed.
+it('stays in the window, hidden, while closed, and reopens on screen after the window is maximized and restored', async () => {
+  const app = await launchElectron({ appPath: '.', ...SILENT })
+  try {
+    const chrome = await readyChrome(app)
+    const shown = async (): Promise<boolean> => await popoverShown(app, 'overlay=menu')
+    await chrome.click('#menu')
+    expect(await waitFor(shown)).toBe(true)
+    await expectMenuOnScreen(app, 'first open')
+    expect(await menuInWindow(app)).toEqual({ present: true, visible: true, topmost: true })
+
+    for (const step of ['maximize', 'unmaximize', 'maximize'] as const) {
+      await chrome.click('#menu')
+      expect(await waitFor(async () => !(await shown()))).toBe(true)
+      expect({ step, ...(await menuInWindow(app)) }).toMatchObject({ step, present: true, visible: false })
+
+      await app.evaluate(({ BaseWindow }, action) => { BaseWindow.getAllWindows()[0]?.[action]() }, step)
+      // No window manager under the headless display may honour it; the reopen below holds either way.
+      await new Promise((resolve) => { setTimeout(resolve, 600) })
+      await chrome.click('#menu')
+      expect(await waitFor(shown)).toBe(true)
+      await expectMenuOnScreen(app, step)
+      expect({ step, ...(await menuInWindow(app)) }).toEqual({ step, present: true, visible: true, topmost: true })
     }
   } finally {
     await closeElectron(app)

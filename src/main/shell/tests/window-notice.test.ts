@@ -5,6 +5,7 @@ interface FakeNoticeView {
   options: { webPreferences?: Record<string, unknown> }
   setBounds: ReturnType<typeof vi.fn>
   setBackgroundColor: ReturnType<typeof vi.fn>
+  setVisible: ReturnType<typeof vi.fn>
   webContents: EventEmitter & { loadURL: ReturnType<typeof vi.fn>, close: ReturnType<typeof vi.fn>, isDestroyed: () => boolean }
 }
 const created: FakeNoticeView[] = []
@@ -16,6 +17,7 @@ vi.mock('electron', async () => {
       this.options = options
       this.setBounds = vi.fn()
       this.setBackgroundColor = vi.fn()
+      this.setVisible = vi.fn()
       this.webContents = Object.assign(new Emitter(), { loadURL: vi.fn(async () => {}), close: vi.fn(), isDestroyed: () => false })
       created.push(this)
     })
@@ -79,6 +81,21 @@ describe('createWindowNotice', () => {
 
     finishLoad(view)
     expect(contentView.addChildView).toHaveBeenCalledWith(view)
+  })
+
+  // A view taken out of a window and added back stays hidden until it is shown again.
+  it('shows a notice view again each time it is put back after being taken down', () => {
+    const notice = createWindowNotice(contentView as never, () => 1000)
+    showLoaded(notice, NOTICES.fullscreen)
+    const view = created[0] as FakeNoticeView
+    expect(view.setVisible).toHaveBeenLastCalledWith(true)
+    vi.advanceTimersByTime(4_000)
+    view.setVisible.mockClear()
+
+    showLoaded(notice, NOTICES.fullscreen)
+
+    expect(contentView.addChildView).toHaveBeenLastCalledWith(view)
+    expect(view.setVisible).toHaveBeenLastCalledWith(true)
   })
 
   it('has one wording for each way a page can take over the screen', () => {

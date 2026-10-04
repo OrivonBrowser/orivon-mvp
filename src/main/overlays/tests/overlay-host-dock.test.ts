@@ -14,6 +14,7 @@ vi.mock('../overlay-view.js', () => ({
       id: view.id,
       attach: () => { view.log.push('attach') },
       detach: () => { view.log.push('detach') },
+      hide: () => { view.log.push('hide') },
       setBounds: (bounds: unknown) => { view.bounds = bounds },
       focusWhenReady: () => {},
       send: () => {},

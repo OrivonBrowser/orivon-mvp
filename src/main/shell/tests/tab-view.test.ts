@@ -195,8 +195,8 @@ describe('appTabFlagChanged -- a registered app and an ordinary site can share a
 // here -- see makeTabView's own doc.
 describe('makeTabView: an explicit backgroundColor is set on the view before it is ever shown', () => {
   it('sets it when the caller passes one (the dashboard / an internal page)', () => {
-    const view = makeTabView('preload.js', undefined, undefined, { backgroundColor: '#394244' })
-    expect((view as unknown as { setBackgroundColor: (c: string) => void }).setBackgroundColor).toHaveBeenCalledWith('#394244')
+    const view = makeTabView('preload.js', undefined, undefined, { backgroundColor: '#0d0e14' })
+    expect((view as unknown as { setBackgroundColor: (c: string) => void }).setBackgroundColor).toHaveBeenCalledWith('#0d0e14')
   })
 
   it('leaves an ordinary tab (no colour passed) at Electron\'s own default', () => {
