@@ -211,7 +211,7 @@ describe('a tab pulled with the browser\'s own drag and drop', () => {
     expect(shell.cancelNativeTabDrag).toHaveBeenCalledExactlyOnceWith(nonce)
   })
 
-  it('ends a drag the browser dropped without a dragend, at the first pointer event that reaches the page again', async () => {
+  it('cancels a drag the browser dropped without a dragend, at the first pointer event that reaches the page again', async () => {
     const { shell, host, begin, window, isDraggingTab } = await setup()
     const { tab, dt } = await begin(1)
     const nonce = dt.data.get(TYPE) ?? ''
@@ -220,12 +220,16 @@ describe('a tab pulled with the browser\'s own drag and drop', () => {
 
     window.fire('pointerup', { clientX: 304, clientY: 22 })
     expect(shell.endNativeTabDrag).toHaveBeenCalledExactlyOnceWith(nonce)
+    expect(shell.cancelNativeTabDrag).toHaveBeenCalledExactlyOnceWith(nonce)
+    expect(vi.mocked(shell.endNativeTabDrag).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(shell.cancelNativeTabDrag).mock.invocationCallOrder[0] ?? 0)
     expect(host.finished).toHaveBeenCalledTimes(1)
     expect(isDraggingTab()).toBe(false)
 
     tab.fire('dragend')
     window.fire('pointermove')
+    window.fire('keyup', { key: 'Escape' })
     expect(shell.endNativeTabDrag).toHaveBeenCalledTimes(1)
+    expect(shell.cancelNativeTabDrag).toHaveBeenCalledTimes(1)
   })
 
   it('reports no Escape when no drag has ended', async () => {

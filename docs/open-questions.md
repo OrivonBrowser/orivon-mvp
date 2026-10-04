@@ -2002,8 +2002,8 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 ### A376: A tab drag that starts with the pointer already below the chrome gets no `dragend` **[RESEARCH]**
 
-- **Question:** On Wayland the browser's own tab drag (`native-tab-drag.ts`) never delivers `dragend` when its first motion past the drag threshold lands outside the chrome view, such as a fast flick down from the strip. Measured under mutter 46: a jump to the toolbar still inside the chrome works, a jump 14 px past its bottom edge does not, with and without the drop catcher. The chrome ends such a drag at its next pointer event, and the tab then opens a window of its own wherever it was let go. Is there a way to keep the drag alive?
-- **Why it matters:** a person who flicks a tab towards another window's strip gets a new window instead of the move.
+- **Question:** On Wayland the browser's own tab drag (`native-tab-drag.ts`) never delivers `dragend` when its first motion past the drag threshold lands outside the chrome view, such as a fast flick down from the strip. Measured under mutter 46: a jump to the toolbar still inside the chrome works, a jump 14 px past its bottom edge does not, with and without the drop catcher. No drag image is drawn, and the chrome cancels such a drag at its next pointer event, so the tab stays where it was. Is there a way to keep the drag alive?
+- **Why it matters:** a fast flick out of the strip, the quickest way to tear a tab off, does nothing; the person has to drag more slowly.
 - **Options:** read the Chromium source for why the Wayland drag session ends (rec.); keep the recovery and say so in the docs; start the drag only while the pointer is inside the chrome, which needs a way to refuse the first motion.
 - **Who decides:** research first
 - **Blocks:** nothing

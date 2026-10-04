@@ -159,9 +159,16 @@ export function createNativeTabDrag (type: string, shell: NativeDragShell, host:
   }
 
   // While the browser's drag runs, no pointer event reaches the page. One that does means the drag ended without a
-  // `dragend` (measured on Wayland: a drag that starts with the pointer already out of the chrome view), and
-  // this is where it is over for the person: their button is up, or they are moving the pointer again.
-  for (const type of ['pointermove', 'pointerup', 'pointerdown']) window.addEventListener(type, finish, true)
+  // `dragend` (measured on Wayland: a drag that starts with the pointer already out of the chrome view). No drag
+  // image was drawn, so the person saw nothing move: the drag ends as cancelled, and the tab stays where it was.
+  function lost (): void {
+    const nonce = source?.nonce
+    if (nonce === undefined) return
+    finish()
+    shell.cancelNativeTabDrag(nonce)
+    ended = null
+  }
+  for (const type of ['pointermove', 'pointerup', 'pointerdown']) window.addEventListener(type, lost, true)
 
   function attach (el: HTMLElement, id: string): void {
     el.draggable = true
