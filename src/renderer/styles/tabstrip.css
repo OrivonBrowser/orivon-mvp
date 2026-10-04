@@ -47,6 +47,7 @@
   border-radius: 1px;
   background: var(--waccent);
   pointer-events: none;
+  z-index: 5; /* above the active tab, whose box it overlaps when the line sits at its edge */
 }
 
 /* The empty tail after the new-tab button (index.html): an untagged descendant of #tabrow's own .drag
