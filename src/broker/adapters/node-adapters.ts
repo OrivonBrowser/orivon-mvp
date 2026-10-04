@@ -18,6 +18,7 @@ import type { Resolver } from '../policy/connect.js'
 import { fail, isOrivonErrorLike } from '../errors.js'
 import type { LookupAddress } from '../../contracts/index.js'
 import { socketReadable, socketWritable } from './socket-streams.js'
+import { raceAddresses } from './staggered-dial.js'
 
 export { nodeFs } from './node-fs-adapter.js'
 
@@ -124,22 +125,29 @@ export function destroySocket (
 }
 
 /**
- * How long ONE dial attempt may run before it is abandoned. Node's own
+ * How long one whole dial may run, across every address it tries. Node's own
  * `net.connect` has no timeout, and the only other bound in the path is
  * ipc.ts's `withTimeout`, which answers the CALLER but by its own doc does
  * not cancel the work -- so without this a connect to a blackholed address
  * held an fd and a per-origin in-flight slot for the OS SYN timeout (~130s on
- * Linux), and `dialTcp` walks its addresses sequentially, serialising that
- * cost per address.
+ * Linux). One bound for the whole dial, not one per address: the renderer's
+ * own `net` budget (preload/surface/control-call.ts) must outlast this, and
+ * a per-address bound multiplies past it.
  *
  * AI recommendation, not an owner decision: the value is not specified
  * anywhere in contracts/ or handle-contracts.md, and putting it in LIMITS
  * would be a src/contracts/ change that has to merge on its own.
  *
- * EXPORTED so ./tls-adapter.ts's own dial-and-handshake attempt reuses this
- * exact bound rather than a second copy of 30_000 that could drift from it.
+ * EXPORTED so ./tls-adapter.ts's dial-and-handshake race reuses this exact
+ * bound rather than a second copy of 30_000 that could drift from it.
  */
 export const DIAL_TIMEOUT_MS = 30_000
+
+/**
+ * How long one address's attempt runs alone before the next address starts
+ * beside it. Node's own `autoSelectFamily` default (250 ms).
+ */
+export const DIAL_STAGGER_MS = 250
 
 /**
  * One dial attempt. `readable`/`writable` are real WHATWG streams
@@ -154,19 +162,12 @@ export const DIAL_TIMEOUT_MS = 30_000
 function dialOne (address: string, port: number, signal: AbortSignal): Promise<DialedSocket> {
   return new Promise((resolve, reject) => {
     const socket = netConnect({ host: address, port })
-    const onAbort = (): void => { socket.destroy() }
-    signal.addEventListener('abort', onAbort, { once: true })
-    let timer: NodeJS.Timeout
-    const settle = (): void => {
-      clearTimeout(timer)
-      signal.removeEventListener('abort', onAbort)
-    }
-    timer = setTimeout(() => {
-      settle()
+    const onAbort = (): void => {
       socket.destroy()
-      reject(fail('timeout', `connecting to ${address}:${port} exceeded ${String(DIAL_TIMEOUT_MS)}ms`))
-    }, DIAL_TIMEOUT_MS)
-    timer.unref()
+      reject(fail('revoked', 'the dial was abandoned'))
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    const settle = (): void => { signal.removeEventListener('abort', onAbort) }
 
     socket.once('error', (error: NodeJS.ErrnoException) => {
       settle()
@@ -196,27 +197,21 @@ function dialOne (address: string, port: number, signal: AbortSignal): Promise<D
 }
 
 /**
- * `Dial` over real TCP. Tries `addresses` in order, first success wins --
- * connect.ts hands over more than one literal so the caller can implement
- * its own fallback strategy across them (its header, and Node 24's default
- * `autoSelectFamily: true`). A SEQUENTIAL fallback rather than a parallel
- * happy-eyeballs race: simpler, and worth revisiting if connect latency to
- * dual-stack hosts ever matters.
+ * `Dial` over real TCP. Races `addresses` (families interleaved, a new one
+ * every DIAL_STAGGER_MS or as soon as one fails), first success wins, all
+ * bounded by one DIAL_TIMEOUT_MS. See README.md's Design notes for why.
  */
-export const dialTcp: Dial = async (addresses, port, signal) => {
-  if (signal.aborted) throw fail('revoked', 'the grant authorising this connection was withdrawn')
-
-  let lastError: unknown
-  for (const address of addresses) {
-    try {
-      return await dialOne(address, port, signal)
-    } catch (error) {
-      lastError = error
-      if (signal.aborted) throw fail('revoked', 'the grant authorising this connection was withdrawn')
-    }
+export const dialTcp: Dial = async (addresses, port, signal) => await raceAddresses(
+  addresses,
+  (address, attemptSignal) => dialOne(address, port, attemptSignal),
+  {
+    signal,
+    deadlineMs: DIAL_TIMEOUT_MS,
+    staggerMs: DIAL_STAGGER_MS,
+    timeoutError: () => fail('timeout', `connecting to port ${String(port)} exceeded ${String(DIAL_TIMEOUT_MS)}ms`),
+    discard: async (dialed) => { await dialed.destroy('aborted') }
   }
-  throw isOrivonErrorLike(lastError) ? lastError : fail('unreachable', 'could not connect to any resolved address')
-}
+)
 
 /** How many ports to try inside the granted ranges before giving up. Matches bindUdp's own bound. */
 const LISTEN_BIND_ATTEMPTS = 64

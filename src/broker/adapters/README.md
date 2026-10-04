@@ -26,6 +26,14 @@ engine would replace this directory and leave [`../handles/`](../handles/) and
 
 ## Design notes
 
+**One deadline bounds a whole dial, and the addresses race.** `dialTcp` and `createDialTls` hand
+their resolved addresses to `staggered-dial.ts`, which alternates the families, starts the next
+address 250 ms after the last (at once when one fails), and stops everything at the first
+success or at one 30 s deadline. A deadline per address multiplies: four addresses that drop
+packets would cost 120 s, past the renderer's 35 s budget for a `net` call, and the app would
+get a bare transport timeout instead of the broker's `timeout`. A TLS dial stops at a failure
+past the connect, because the next address would answer the same.
+
 **`nodeFs.readFile` copies rather than views its buffer.** A Node Buffer can be a window into a
 shared pool slab, and structured clone (the path this value takes to the renderer) sends a
 view's whole backing `ArrayBuffer`, so a view could hand the page bytes it never read.

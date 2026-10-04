@@ -92,6 +92,25 @@ describe('dialTcp / dialOne against a real local TCP server', () => {
     await dialed.destroy('closed')
   })
 
+  it('falls through a refused first address to the listening one', async () => {
+    await listen()
+
+    const dialed = await dialTcp(['::1', '127.0.0.1'], port, neverAborts())
+
+    expect(dialed.remoteAddress).toBe('127.0.0.1')
+    await dialed.destroy('closed')
+  })
+
+  it('rejects revoked when the signal aborts mid-dial', async () => {
+    await listen()
+    const controller = new AbortController()
+
+    const dial = dialTcp(['127.0.0.1'], port, controller.signal).catch((error: unknown) => error)
+    controller.abort()
+
+    expect(await dial).toMatchObject({ code: 'revoked' })
+  })
+
   it("destroy('closed') sends a clean FIN -- the peer sees a graceful end, not an error", async () => {
     await listen()
     const dialed = await dialTcp(['127.0.0.1'], port, neverAborts())
