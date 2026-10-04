@@ -1,7 +1,7 @@
 // The sheet F7 shows before it turns caret browsing on. The page can answer only "turn it on" (with whether to stop
 // asking) or "cancel"; what the setting becomes is decided here.
 import { CARET_ASK_SETTING, CARET_CONFIRM_OVERLAY } from './caret.js'
-import { setCaret } from './caret-runner.js'
+import { dropCaretAsk, setCaret } from './caret-runner.js'
 import { slotClosed } from '../overlays/tab-slots.js'
 import type { OverlayDef } from '../overlays/overlay-types.js'
 
@@ -11,7 +11,7 @@ export const caretConfirmOverlay: OverlayDef = {
   surface: 'panel',
   focus: 'take',
   layer: 'bar',
-  // Only leaving its tab dismisses it: a page navigating or the window resizing leaves it be.
+  // Only leaving its tab dismisses it, for good (`closed` below): a page navigating or the window resizing leaves it be.
   closeOn: { blur: false, tabSwitch: true, navigation: false, layout: false },
   keep: 'fresh',
   height: { initial: 220, min: 200, max: 320 },
@@ -30,6 +30,10 @@ export const caretConfirmOverlay: OverlayDef = {
       }
       return undefined
     },
-    closed: (reason) => { slotClosed(win.window, CARET_CONFIRM_OVERLAY, reason) }
+    closed: (reason) => {
+      slotClosed(win.window, CARET_CONFIRM_OVERLAY, reason)
+      // A tab switch only hides a slot's ask; this one is about every tab, so it ends instead of coming back later.
+      if (reason === 'tab-switch') dropCaretAsk(win.window)
+    }
   })
 }

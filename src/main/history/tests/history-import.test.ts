@@ -50,6 +50,19 @@ describe('importHistoryRows', () => {
     store.close()
   })
 
+  it('keeps an imported page\'s count through a removal that leaves its visit alone, as the retention prune at every start does', () => {
+    const store = new SqliteHistoryStore(':memory:')
+    store.importPages([row('https://often.test/', 9000, { visitCount: 300 })])
+    store.record('https://often.test/', 'Often', 10_000)
+    store.record('https://old.test/', 'Old', 1000)
+    store.removeRange(0, 5000)
+    expect(store.list().map((entry) => [entry.url, entry.visitCount, entry.lastVisit])).toEqual([['https://often.test/', 301, 10_000]])
+    // A removal that takes one of its visits takes that one only.
+    store.removeRange(9500, 10_500)
+    expect(store.list().map((entry) => [entry.url, entry.visitCount, entry.lastVisit])).toEqual([['https://often.test/', 300, 9000]])
+    store.close()
+  })
+
   it('merges into a page that is already there: the later time, the sum of the visits, the title it has', () => {
     const store = new SqliteHistoryStore(':memory:')
     store.record('https://a.test/', 'Mine', 3000)

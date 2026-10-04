@@ -180,7 +180,9 @@ export function registerShellIpc (
         tabs.activateTab(command.id)
         return
       case 'navigate':
+        // The address bar's Enter: the page it leads to takes the keyboard, as after a click into it.
         tabs.navigate(command.id, command.input)
+        if (tabs.getState().activeTabId === command.id) tabs.liveWebContents(command.id)?.focus()
         return
       case 'back':
         tabs.back(command.id)

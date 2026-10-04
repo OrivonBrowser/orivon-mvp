@@ -15,7 +15,7 @@ export function isQuestionView (value: unknown): value is QuestionView {
     typeof cancelId === 'number' && Array.isArray(guarded) && guarded.every((index) => typeof index === 'number') &&
     (focus === 'dialog' || typeof focus === 'number') && typeof guardMs === 'number' && typeof value['warning'] === 'boolean' &&
     optionalString(value['title']) && optionalString(value['detail']) && optionalString(value['origin']) && optionalString(value['checkboxLabel']) &&
-    (input === undefined || (isRecord(input) && typeof input['initial'] === 'string'))
+    (input === undefined || (isRecord(input) && typeof input['initial'] === 'string' && typeof input['max'] === 'number'))
 }
 
 /** The kinds a page can raise: drawn as the page's own words, never as the browser's. */

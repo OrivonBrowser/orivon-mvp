@@ -1,4 +1,5 @@
 import { GAP } from '../../overlays/overlay-bounds.js'
+import { slotAnchorsMoved } from '../../overlays/tab-slots.js'
 import type { OverlayAnchor } from '../../overlays/overlay-types.js'
 import type { ChromeAction } from '../chrome-actions.js'
 import type { ShellWindow } from '../window-registry.js'
@@ -19,7 +20,10 @@ function isAnchor (value: unknown): value is OverlayAnchor {
  * asking the chrome at that moment. The payload is the rectangle; anything else is ignored. */
 export const promptAnchorReport: ChromeAction = (payload, { window }) => {
   if (!isAnchor(payload)) return
+  const before = reported.get(window)
   reported.set(window, { x: payload.x, y: payload.y, width: payload.width, height: payload.height })
+  // A prompt already under the pill follows it: a window resized or a button shown beside the pill moves it.
+  if (before !== undefined) slotAnchorsMoved(window)
 }
 
 /** Where the address pill is, as the chrome last reported it, or undefined before the first report. */

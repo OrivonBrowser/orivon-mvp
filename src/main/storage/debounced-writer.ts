@@ -6,6 +6,9 @@
 /** Batches rapid changes into one write instead of one per change. */
 export const WRITE_DEBOUNCE_MS = 300
 
+/** After a failed write, when to try again: a file held for a moment by a scanner or a sync client is let go soon. */
+export const RETRY_DELAYS_MS = [1_000, 5_000, 30_000] as const
+
 export class DebouncedWriter {
   // Every writer ever constructed, so quit can flush them all without holding
   // a reference to any. A writer whose store is gone flushes to nothing.
@@ -21,6 +24,10 @@ export class DebouncedWriter {
   // write's completion starts another pass over the now-current state instead
   // of the caller starting a second, concurrent write.
   private rerunRequested = false
+  // The last write failed, so the file is behind the store until a write succeeds.
+  private dirty = false
+  private failures = 0
+  private retryTimer: ReturnType<typeof setTimeout> | null = null
 
   /** `writeNow` reads the store's current state when it starts and writes it. */
   constructor (
@@ -40,6 +47,7 @@ export class DebouncedWriter {
 
   /** A change is waiting to be written. */
   schedule (): void {
+    this.cancelRetry()
     if (this.writeTimer !== null) clearTimeout(this.writeTimer)
     // Created once per burst and reused across however many times the timer
     // is reset, rather than replaced on each change: a caller already
@@ -68,7 +76,19 @@ export class DebouncedWriter {
    * the write that settles this call failed, so a failed write is never
    * reported as landed. Resolves at once when nothing is pending. */
   async flush (): Promise<void> {
+    // A change whose write failed is still not on disk: one more attempt, now, rather than reporting it landed.
+    if (this.pendingWrite === null && this.dirty) {
+      this.schedule()
+      if (this.writeTimer !== null) clearTimeout(this.writeTimer)
+      this.writeTimer = null
+      this.runWrite()
+    }
     await this.pendingWrite
+  }
+
+  private cancelRetry (): void {
+    if (this.retryTimer !== null) clearTimeout(this.retryTimer)
+    this.retryTimer = null
   }
 
   /** Starts a write, unless one is already running -- then it only records
@@ -100,7 +120,19 @@ export class DebouncedWriter {
       this.runWrite()
       return
     }
+    this.dirty = error !== null
+    this.failures = error === null ? 0 : this.failures + 1
     this.settleWrite(error)
+    // A failed write is tried again a few times on its own, so a change is not left off the disk until the next one.
+    const delay = error === null ? undefined : RETRY_DELAYS_MS[this.failures - 1]
+    if (delay !== undefined && this.writeTimer === null && this.pendingWrite === null) {
+      this.retryTimer = setTimeout(() => {
+        this.retryTimer = null
+        if (this.dirty && this.pendingWrite === null) this.schedule()
+      }, delay)
+      // A retry still waiting must not keep a quitting process alive: the quit's own flush makes the last attempt.
+      this.retryTimer.unref?.()
+    }
   }
 
   /** The only place `pendingWrite` is resolved or rejected. `writeTimer` may

@@ -1,9 +1,10 @@
 import type { ChromeAction } from '../chrome-actions.js'
+import { isPressButton } from '../press-stamps.js'
 
 /** The two calls of the overlay host these actions use. Declared here, structurally, so the actions do not
  * depend on the host's module: a window with no overlay host ignores them. */
 export interface OverlayControls {
-  toggle: (name: string, anchor?: OverlayRect, payload?: unknown) => void
+  toggle: (name: string, anchor?: OverlayRect, payload?: unknown, pressedAt?: number) => void
   close: (name?: string) => void
 }
 
@@ -25,13 +26,16 @@ function nameOf (payload: unknown): string | undefined {
 }
 
 /** `{ name, anchor?, payload? }`: opens the overlay, or closes it if it is already open. `anchor` is the
- * chrome-side rectangle of the control that asked; the overlay's own handler validates `payload`. */
-export const overlayToggle: ChromeAction = (payload, { window }) => {
+ * chrome-side rectangle of the control that asked; the overlay's own handler validates `payload`. A button that
+ * announced its press is judged by it, so the click that ends a press which closed the overlay does not reopen it. */
+export const overlayToggle: ChromeAction = (payload, { window, takePress }) => {
   const name = nameOf(payload)
   if (name === undefined) return
   const { anchor, payload: forwarded } = payload as { anchor?: unknown, payload?: unknown }
-  if (anchor === undefined) controlsOf(window)?.toggle(name, undefined, forwarded)
-  else if (isRect(anchor)) controlsOf(window)?.toggle(name, anchor, forwarded)
+  const rect = anchor === undefined ? undefined : isRect(anchor) ? anchor : null
+  if (rect === null) return
+  const pressedAt = isPressButton(name) ? takePress?.(name) : undefined
+  controlsOf(window)?.toggle(name, rect, forwarded, pressedAt)
 }
 
 /** `{ name }`: closes that overlay. */

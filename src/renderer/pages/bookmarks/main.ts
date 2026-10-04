@@ -113,6 +113,8 @@ const rowActions: RowActions = {
 }
 
 function render (focus = false): void {
+  // The folder shown may not be the one the address names: it was deleted elsewhere and the page fell back.
+  if (location.pathname !== pathForFolder(state.current)) history.replaceState(null, '', pathForFolder(state.current))
   const active = document.activeElement as HTMLElement | null
   const listHadFocus = bodyHost.contains(active) && active?.closest('form') === null
   const treeHadFocus = treeHost.contains(active)
@@ -126,7 +128,7 @@ function render (focus = false): void {
   }))
   const searching = state.results !== null
   const rows = listed()
-  replaceChildren(crumbsHost, state.loaded ? renderCrumbs(state.crumbs, searching, rows.length, (id) => { void go(id) }) : null)
+  replaceChildren(crumbsHost, state.loaded ? renderCrumbs(state.crumbs, searching, rows.length, (id) => { void go(id) }, state.moreResults) : null)
   const view = { selected: state.selected, query: state.query, searching, focusId: state.focusId, shown: state.shown }
   if (!state.loaded) replaceChildren(bodyHost, renderSkeleton())
   else if (rows.length === 0) {

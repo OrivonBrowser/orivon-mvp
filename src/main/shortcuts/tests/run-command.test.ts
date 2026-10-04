@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { leaveAllowed } from '../../shell/leave-page-prompt.js'
 import type { ShellWindow } from '../../shell/window-registry.js'
 import { COMMANDS } from '../commands.js'
 import { runCommand } from '../run-command.js'
@@ -178,6 +179,16 @@ describe('runCommand', () => {
     expect(calls['forward']).toHaveBeenCalledWith('a')
     expect(calls['reload']).toHaveBeenCalledWith('a')
     expect(calls['reloadIgnoringCache']).toHaveBeenCalledTimes(1)
+  })
+
+  it('runs a hard reload again when the page asked "Leave this page?" and the person chose Leave', async () => {
+    const { target, deps, calls } = harness([tab('a')], 'a')
+    const page = { reloadIgnoringCache: calls['reloadIgnoringCache'], isDestroyed: () => false }
+    ;(target.tabs as unknown as { activeWebContents: () => unknown }).activeWebContents = () => page
+    runCommand('nav.hardReload', target, deps)
+    expect(leaveAllowed(page as never, (() => Promise.resolve({ response: 0 })) as never)).toBe(false)
+    await new Promise((resolve) => { setTimeout(resolve, 0) })
+    expect(calls['reloadIgnoringCache']).toHaveBeenCalledTimes(2)
   })
 
   it('asks the chrome to take the address bar', () => {

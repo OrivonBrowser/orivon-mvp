@@ -175,8 +175,9 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   extensions.prefs.onChange(() => { services.internalPages.publish('extensions.changed', undefined, ['extensions']) })
   extensions.commandKeys.onChange(() => { services.internalPages.publish('extensions.changed', undefined, ['extensions']) })
   onVerifierChange(() => { services.internalPages.publish('web3.changed', verifierView(), ['settings']) })
-  // Reaches 'extensions' too: it reads and writes 'extensions.developerMode' through this same domain.
-  services.settings.onChange((change) => { services.internalPages.publish('settings.changed', change, ['settings', 'extensions']) })
+  // Reaches 'extensions' too: it reads and writes 'extensions.developerMode' through this same domain. And 'import',
+  // whose history box follows 'history.remember'.
+  services.settings.onChange((change) => { services.internalPages.publish('settings.changed', change, ['settings', 'extensions', 'import']) })
   services.searchEngines.onChange(() => { services.internalPages.publish('searchEngines.changed', undefined, ['settings']) })
   services.shortcuts.onChange(() => { services.internalPages.publish('shortcuts.changed', services.shortcuts.rows(), ['settings']) })
   // Every grant/revoke, from every surface (install, the site-info popover, a

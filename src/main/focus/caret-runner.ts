@@ -6,8 +6,13 @@ import type { WindowContext } from '../shell/window-context.js'
 import type { ShellWindow } from '../shell/window-registry.js'
 import { caretAppliesTo, CARET_ASK_SETTING, CARET_CONFIRM_OVERLAY, CARET_SETTING, caretPlan } from './caret.js'
 
-/** A window with its sheet up or waiting: a second press must not queue a second sheet behind it. */
-const asking = new WeakSet<ShellWindow>()
+/** A window's sheet up or waiting, and its tab: a second press there must not queue a second sheet behind it. */
+const asking = new WeakMap<ShellWindow, { readonly tabId: string, readonly cancel: () => void }>()
+
+/** The person left the tab the sheet was asked in: caret browsing is for every tab, so the question goes with it. */
+export function dropCaretAsk (window: ShellWindow): void {
+  asking.get(window)?.cancel()
+}
 
 /** Changes the setting and says so. The setting's listener (install-focus.ts) puts it on the tabs. */
 export function setCaret ({ window, services }: WindowContext, on: boolean): void {
@@ -24,9 +29,23 @@ export function toggleCaret (ctx: WindowContext): void {
     return
   }
   const tabId = window.tabs.getState().activeTabId
-  if (tabId === null || asking.has(window)) return
-  asking.add(window)
-  requestSlot({ window, tabId, slot: 'center', overlay: CARET_CONFIRM_OVERLAY, payload: null, closed: () => { asking.delete(window) } })
+  if (tabId === null) return
+  const held = asking.get(window)
+  if (held?.tabId === tabId) return
+  held?.cancel()
+  let entry: { tabId: string, cancel: () => void } | undefined
+  let ended = false
+  const handle = requestSlot({
+    window, tabId, slot: 'center', overlay: CARET_CONFIRM_OVERLAY, payload: null,
+    closed: () => {
+      ended = true
+      if (entry !== undefined && asking.get(window) === entry) asking.delete(window)
+    }
+  })
+  // Refused at once (the tab's queue is full): nothing is waiting, and a later press asks again.
+  if (ended) return
+  entry = { tabId, cancel: () => { handle.cancel() } }
+  asking.set(window, entry)
 }
 
 /** Puts the setting on every tab of every window. A tab made or returned later gets it from the tab signal. */

@@ -13,13 +13,21 @@ export interface ClientCertificateDeps {
   readonly now: () => number
 }
 
-function hostOf (url: string): string {
+/** The server a value names, by host and port: a full address, or `host:port` as Electron passes the asking server. */
+export function serverOf (value: string): { readonly hostname: string, readonly port: string } | null {
+  const text = /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `https://${value}`
   try {
-    return new URL(url).host
+    const url = new URL(text)
+    const port = url.port !== '' ? url.port : url.protocol === 'http:' ? '80' : '443'
+    return url.hostname === '' ? null : { hostname: url.hostname, port }
   } catch {
-    return url
+    return null
   }
 }
+
+/** How the chooser names a server: its host, and its port when it is not the usual one for https. */
+const nameOf = (server: { hostname: string, port: string } | null, raw: string): string =>
+  server === null ? raw : server.port === '443' ? server.hostname : `${server.hostname}:${server.port}`
 
 /** One row of the chooser for one certificate; its id is its place in the list Electron handed over. */
 export function certificateItem (certificate: Certificate, index: number, deps: Pick<ClientCertificateDeps, 'formatDate' | 'now'>): ChooserItem {
@@ -49,8 +57,10 @@ export function handleSelectClientCertificate (
     callback()
     return
   }
-  const host = hostOf(url)
-  const pageHost = hostOf(contents?.getURL() ?? '')
+  const server = serverOf(url)
+  const page = serverOf(contents?.getURL() ?? '')
+  const host = nameOf(server, url)
+  const samePage = server !== null && page !== null && server.hostname === page.hostname && server.port === page.port
   // Expired certificates go last; each keeps the place Electron gave it, which is what comes back.
   const items = list.map((certificate, index) => certificateItem(certificate, index, deps))
   items.sort((a, b) => Number(a.expired === true) - Number(b.expired === true))
@@ -59,7 +69,7 @@ export function handleSelectClientCertificate (
     origin: host,
     line: 'This site asks you to identify yourself with a certificate.',
     // A page on another site can embed a request to this one; once chosen, the identity is kept for the session.
-    ...(pageHost !== host ? { warning: `This request comes from ${host}, not from the page you are on.` } : {}),
+    ...(samePage ? {} : { warning: `This request comes from ${host}, not from the page you are on.` }),
     preselect: false,
     confirm: 'Use certificate',
     empty: 'No certificates are installed on this computer.',

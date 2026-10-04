@@ -52,6 +52,17 @@ describe('SeedStore -- first launch', () => {
     expect(console.error).not.toHaveBeenCalled()
   })
 
+  it('makes the directory the seed lives in on a fresh profile, and reads the same seed back on the next start', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const nested = join(dir, 'identity', 'seed.json')
+    const first = await new SeedStore(nested, workingSafeStorage()).resolve()
+    expect(first.persistent).toBe(true)
+    expect(readdirSync(join(dir, 'identity'))).toEqual(['seed.json'])
+    const again = await new SeedStore(nested, workingSafeStorage()).resolve()
+    expect(Buffer.from(again.seed).equals(Buffer.from(first.seed))).toBe(true)
+    expect(console.error).not.toHaveBeenCalled()
+  })
+
   it('generates a session-only seed, writes nothing, when no keyring backend is reachable', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const store = new SeedStore(path, unreachableSafeStorage())

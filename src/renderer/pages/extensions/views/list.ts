@@ -3,6 +3,7 @@
 import { internalBridge } from '../../shared/bridge.js'
 import { h, replaceChildren } from '../../shared/dom.js'
 import { puzzleIcon } from '../../shared/icons.js'
+import { redrawKeepingFocus } from '../../shared/keep-focus.js'
 import { letterTile } from '../../shared/letter-tile.js'
 import type { ExtensionRow, InstallReply } from '../state.js'
 import type { CardBadge, ExtensionView, PageContext } from '../types.js'
@@ -25,6 +26,7 @@ function card (ext: ExtensionRow, ctx: PageContext, badges: readonly CardBadge[]
     onclick: (event: MouseEvent) => { event.preventDefault(); ctx.navigate(href) }
   })
   details.setAttribute('aria-label', `Details of ${ext.name}`)
+  details.dataset['focus'] = `${ext.id}:details`
   return h('section', { className: ext.enabled ? 'ext-card' : 'ext-card off' },
     h('div', { className: 'ext-row' },
       icon,
@@ -60,6 +62,7 @@ function actions (ctx: PageContext, redraw: () => void): HTMLElement {
     onchange: () => { void internalBridge().request('settings', { type: 'set', key: 'extensions.developerMode', value: devInput.checked }) }
   })
   devInput.setAttribute('aria-label', 'Developer mode')
+  devInput.dataset['focus'] = 'developer-mode'
   const after = (outcome: InstallReply): void => {
     message = outcome.installed || outcome.reason === 'cancelled' ? null : (outcome.reason ?? 'That could not be installed.')
     redraw()
@@ -81,11 +84,13 @@ export function listView (badges: readonly CardBadge[]): ExtensionView {
       }
       if (root.childElementCount === 0) replaceChildren(root, skeleton())
       void ctx.request<{ rows: readonly ExtensionRow[] }>('list').then(({ rows }) => {
-        replaceChildren(root,
-          actions(ctx, redraw),
-          message === null ? null : h('div', { className: 'banner error', role: 'alert', textContent: message }),
-          rows.length === 0 ? emptyState() : h('div', { className: 'ext-list' }, ...rows.map((ext) => card(ext, ctx, badges))),
-          h('a', { className: 'store-link link-btn', href: 'https://chromewebstore.google.com/category/extensions', target: '_blank', rel: 'noopener', textContent: 'Get more extensions from the Chrome Web Store' }))
+        redrawKeepingFocus(root, () => {
+          replaceChildren(root,
+            actions(ctx, redraw),
+            message === null ? null : h('div', { className: 'banner error', role: 'alert', textContent: message }),
+            rows.length === 0 ? emptyState() : h('div', { className: 'ext-list' }, ...rows.map((ext) => card(ext, ctx, badges))),
+            h('a', { className: 'store-link link-btn', href: 'https://chromewebstore.google.com/category/extensions', target: '_blank', rel: 'noopener', textContent: 'Get more extensions from the Chrome Web Store' }))
+        })
       })
     }
   }

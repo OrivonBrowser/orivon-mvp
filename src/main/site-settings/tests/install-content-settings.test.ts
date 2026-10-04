@@ -15,7 +15,8 @@ beforeEach(() => {
     })
   }
 })
-vi.mock('electron', () => ({ session: { defaultSession: { name: 'default' } } }))
+const { clearStorageData } = vi.hoisted(() => ({ clearStorageData: vi.fn(async () => {}) }))
+vi.mock('electron', () => ({ session: { defaultSession: { name: 'default', clearStorageData } } }))
 vi.mock('../../sessions/web-request-owner.js', () => ({ webRequestOwnerFor: vi.fn(() => owner) }))
 vi.mock('../../../loader/electron/serve.js', () => ({ isOriginServedFromCacheSync: () => false }))
 
@@ -54,7 +55,7 @@ const requestHandler = (): RequestHandler => owner.onBeforeRequest.mock.calls.at
 describe('the content-settings installer', () => {
   it('registers nothing on the default session\'s one owner while no rule can block scripts or images', () => {
     rig()
-    expect(webRequestOwnerFor).toHaveBeenCalledWith({ name: 'default' })
+    expect(webRequestOwnerFor).toHaveBeenCalledWith(expect.objectContaining({ name: 'default' }))
     expect(owner.onHeadersReceived).not.toHaveBeenCalled()
     expect(owner.onBeforeRequest).not.toHaveBeenCalled()
   })
@@ -126,6 +127,17 @@ describe('the content-settings installer', () => {
       store.set(SITE, 'javascript', 'block')
       const result = headersHandler()(page, { responseHeaders: { 'Content-Security-Policy': ["default-src 'self'"], 'Content-Type': ['text/html'] } })
       expect(result.responseHeaders['Content-Security-Policy']).toEqual(["default-src 'self'", SCRIPT_BLOCK_POLICY])
+    })
+
+    it('takes the service workers off a site told to block JavaScript, and off every site when blocking becomes the default', () => {
+      clearStorageData.mockClear()
+      const { store, changeSetting } = rig({ 'sites.javascript': 'block' })
+      store.set(SITE, 'javascript', 'block')
+      expect(clearStorageData).toHaveBeenCalledWith({ origin: SITE, storages: ['serviceworkers'] })
+      store.set('https://allowed.example', 'javascript', 'allow')
+      expect(clearStorageData).toHaveBeenCalledTimes(1)
+      changeSetting('sites.javascript')
+      expect(clearStorageData).toHaveBeenLastCalledWith({ storages: ['serviceworkers'] })
     })
 
     it('hands the same headers back for a site that was not told to, and for a PDF', () => {

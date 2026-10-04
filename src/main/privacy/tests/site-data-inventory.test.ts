@@ -78,5 +78,8 @@ describe('what a clear of a site must name', () => {
 
   it('brackets an IPv6 host', () => {
     expect(originsToClear({ hosts: ['::1'], origins: [] })).toContain('http://[::1]')
+    // Cookies on the domain alone: the www host the site runs on is cleared too.
+    expect(originsToClear({ domain: 'example.com', hosts: ['example.com'], origins: [] }).sort()).toEqual(['http://example.com', 'http://www.example.com', 'https://example.com', 'https://www.example.com'])
+    expect(originsToClear({ domain: '10.0.0.5', hosts: ['10.0.0.5'], origins: [] }).sort()).toEqual(['http://10.0.0.5', 'https://10.0.0.5'])
   })
 })

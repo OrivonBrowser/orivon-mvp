@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Certificate, WebContents } from 'electron'
 import type { ShellWindow } from '../../shell/window-registry.js'
-import { certificateItem, handleSelectClientCertificate } from '../client-certificate.js'
+import { certificateItem, handleSelectClientCertificate, serverOf } from '../client-certificate.js'
 import type { ChooserSpec } from '../chooser-store.js'
 
 const NOW = Date.UTC(2026, 9, 1)
@@ -66,6 +66,31 @@ describe('handleSelectClientCertificate', () => {
     expect(s.specs[0]?.items.map((item) => [item.id, item.title])).toEqual([['1', 'Alice'], ['0', 'Bob']])
     await s.done
     expect(s.callback).toHaveBeenCalledWith(LIST[0])
+  })
+
+  it('reads the server as Electron names it, host and port, as well as a full address', () => {
+    expect(serverOf('intranet.example:443')).toEqual({ hostname: 'intranet.example', port: '443' })
+    expect(serverOf('10.0.0.5:8443')).toEqual({ hostname: '10.0.0.5', port: '8443' })
+    expect(serverOf('[::1]:443')).toEqual({ hostname: '[::1]', port: '443' })
+    expect(serverOf('https://mtls.test:8443/path')).toEqual({ hostname: 'mtls.test', port: '8443' })
+    expect(serverOf('https://intranet.example/')).toEqual({ hostname: 'intranet.example', port: '443' })
+  })
+
+  it('names the server Electron passes as host:port, with no warning for the page\'s own server on the usual port', () => {
+    PAGE.url = 'https://intranet.example/login'
+    try {
+      const specs: ChooserSpec[] = []
+      handleSelectClientCertificate({
+        findTab: () => ({ window: WINDOW, tabId: 't' }),
+        ask: async (_window, _tab, spec) => { specs.push(spec); return null },
+        formatDate: () => 'date',
+        now: () => NOW
+      }, { preventDefault: () => {} }, TAB, 'intranet.example:443', LIST, vi.fn())
+      expect(specs[0]?.origin).toBe('intranet.example')
+      expect(specs[0]?.warning).toBeUndefined()
+    } finally {
+      PAGE.url = 'https://mtls.test:8443/'
+    }
   })
 
   it('warns when the request comes from another site than the page the person is on', () => {

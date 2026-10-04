@@ -64,6 +64,8 @@ describe('the task manager number formats', () => {
     expect(formatMemory(182 * 1024)).toBe('182 MB')
     expect(formatMemory(1.4 * 1024 * 1024)).toBe('1.4 GB')
     expect(formatMemory(640)).toBe('640 KB')
+    expect(formatMemory(1023.6)).toBe('1 MB')
+    expect(formatMemory(1024 * 1024 - 100)).toBe('1.0 GB')
     expect(formatMemory(null)).toBe('-')
   })
 

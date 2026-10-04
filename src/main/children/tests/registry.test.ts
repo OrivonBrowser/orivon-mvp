@@ -71,10 +71,13 @@ describe('createChildHostRegistry.connect', () => {
   it('refuses a document that committed its origin outside the session it belongs in, as the broker does', async () => {
     const pool = fakePool(host)
     const registry = createChildHostRegistry(() => fakeBroker(new Set([APP_ORIGIN])), pool, fakeTracker(), () => () => false)
+    const frame = fakeFrame(APP_ORIGIN)
 
-    await registry.connect(event(fakeFrame(APP_ORIGIN)))
+    await registry.connect(event(frame))
 
     expect(pool.getOrCreate).not.toHaveBeenCalled()
+    // Answered with no port, so the page's start fails instead of waiting for ever.
+    expect(frame.postMessage).toHaveBeenCalledWith(CHILD_HOST_PORT_CHANNEL, null)
   })
 
   it('connects a document attributed to its origin\'s session', async () => {
@@ -89,11 +92,13 @@ describe('createChildHostRegistry.connect', () => {
   it('refuses a frame whose origin is not a registered app', async () => {
     const pool = fakePool(host)
     const registry = createChildHostRegistry(() => fakeBroker(new Set()), pool, fakeTracker())
+    const frame = fakeFrame(APP_ORIGIN)
 
-    await registry.connect(event(fakeFrame(APP_ORIGIN)))
+    await registry.connect(event(frame))
 
     expect(pool.getOrCreate).not.toHaveBeenCalled()
     expect(host.postPagePort).not.toHaveBeenCalled()
+    expect(frame.postMessage).toHaveBeenCalledWith(CHILD_HOST_PORT_CHANNEL, null)
   })
 
   it('connects a registered app: the host gets one port, the frame the other', async () => {
@@ -204,6 +209,7 @@ describe('createChildHostRegistry.connect', () => {
     const frame = fakeFrame(APP_ORIGIN)
 
     await expect(registry.connect(event(frame))).rejects.toThrow('host build failed')
+    expect(frame.postMessage).toHaveBeenCalledWith(CHILD_HOST_PORT_CHANNEL, null)
     // The failure did not strand the frame: a retry is not refused as a
     // duplicate in-flight connect.
     await expect(registry.connect(event(frame))).rejects.toThrow('host build failed')

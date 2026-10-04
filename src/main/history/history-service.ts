@@ -3,6 +3,7 @@
 // holds what happened; this decides whether to write it down and how long to
 // keep it.
 import type { SettingsStore } from '../settings/settings-store.js'
+import { historyAddress } from './attach-history.js'
 import { MAX_IMPORTED_PAGES, selectImportRows } from './history-import.js'
 import type { HistoryEntry, HistoryImportRow, HistoryQuery, HistoryStore, HistorySuggestion } from './history-store.js'
 
@@ -34,9 +35,15 @@ export class HistoryService {
     private readonly store: HistoryStore,
     private readonly settings: Pick<SettingsStore, 'get' | 'onChange'>,
     private readonly problem: string | null = null,
-    private readonly now: () => number = Date.now
+    private readonly now: () => number = Date.now,
+    /** History was cleared from `from` to `to`: what else remembers pages visited then (the recently closed tabs) forgets them too. */
+    private readonly forgotten: (from: number, to: number) => void = () => {}
   ) {
-    settings.onChange(({ key }) => { if (key === 'history.retentionDays') this.prune() })
+    settings.onChange(({ key }) => {
+      if (key === 'history.retentionDays') this.prune()
+      // Turning history on or off changes what the History page says about it.
+      else if (key === 'history.remember') this.notify('entries')
+    })
   }
 
   get remembering (): boolean {
@@ -72,10 +79,12 @@ export class HistoryService {
     return this.store.suggest(text, limit)
   }
 
-  /** Nothing is written down while history is off, a typed address included. */
+  /** Nothing is written down while history is off, a typed address included. Kept under the address the visit is
+   * recorded at, so a typed `.eth` name or `ipfs://` address, which loads from its served https URL, meets its visit. */
   markTyped (url: string): void {
-    if (!this.remembering) return
-    this.store.markTyped(url)
+    const address = historyAddress(url)
+    if (!this.remembering || address === null) return
+    this.store.markTyped(address)
   }
 
   /** Tabs report their icon on every state push, so an icon already kept is not offered to the store again. */
@@ -130,12 +139,14 @@ export class HistoryService {
   removeRange (from: number, to: number): void {
     this.store.removeRange(from, to)
     this.offeredIcons.clear()
+    this.forgotten(from, to)
     this.notify('entries')
   }
 
   clear (): void {
     this.store.clear()
     this.offeredIcons.clear()
+    this.forgotten(-Infinity, Infinity)
     this.notify('entries')
   }
 

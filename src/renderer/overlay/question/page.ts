@@ -53,7 +53,8 @@ export const questionPage: OverlayPage = {
         })
       }
       if (view.input !== undefined) {
-        text = h('input', { type: 'text', className: 'q-input', value: view.input.initial })
+        // As long as main takes an answer: longer, OK would be refused with nothing on screen to say why.
+        text = h('input', { type: 'text', className: 'q-input', value: view.input.initial, maxLength: view.input.max })
         text.setAttribute('aria-label', view.message)
         text.addEventListener('keydown', (event) => {
           if (event.key !== 'Enter') return

@@ -13,6 +13,7 @@ import { extensionPermissionPage } from './extension-permission/page.js'
 import { extensionsMenuPage } from './extensions-menu/page.js'
 import { findPage } from './find/page.js'
 import { httpsWarningPage } from './https-warning/page.js'
+import { loadErrorPage } from './load-error/page.js'
 import { menuPage } from './menu/page.js'
 import { omniboxPage } from './omnibox/page.js'
 import { passwordFillPage } from './password-fill/page.js'
@@ -45,6 +46,7 @@ export const OVERLAY_PAGES: Readonly<Record<string, OverlayPage>> = {
   'extensions-menu': extensionsMenuPage,
   find: findPage,
   'https-warning': httpsWarningPage,
+  'load-error': loadErrorPage,
   menu: menuPage,
   omnibox: omniboxPage,
   'password-fill': passwordFillPage,

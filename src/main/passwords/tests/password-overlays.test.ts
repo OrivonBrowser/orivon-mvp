@@ -413,6 +413,20 @@ describe('the chooser under a focused box', () => {
     expect(sent).toEqual([{ type: 'select', index: 0 }, { type: 'select', index: 1 }, { type: 'select', index: 1 }, { type: 'select', index: 0 }])
   })
 
+  it('takes the row the pointer highlighted as the one Enter fills, and ignores a row that is not there', async () => {
+    const r = rig()
+    const { handler } = attach(passwordSuggestOverlay, r)
+    await ready(r)
+    handler.show?.(undefined)
+    const forms = formsFor(r.window, r.services)
+    await handler.request({ type: 'hover', index: 7 })
+    expect(forms.keyFor('t1', 'Enter')).toBe(false)
+    await handler.request({ type: 'hover', index: 1 })
+    expect(forms.keyFor('t1', 'Enter')).toBe(true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(r.sends[0]).toMatchObject({ type: 'fill' })
+  })
+
   it('leaves the keys of another tab to its page', async () => {
     const r = rig()
     const { handler } = attach(passwordSuggestOverlay, r)

@@ -70,7 +70,7 @@ export const COMMANDS = [
   { id: 'nav.focusSearch', label: 'Search the web', category: 'navigation', default: 'Mod+K', aliases: ['Mod+E'], yieldToApp: true },
   { id: 'zoom.in', label: 'Zoom in', category: 'navigation', default: 'Mod+=', aliases: ['Mod++'], repeatable: true },
   { id: 'zoom.out', label: 'Zoom out', category: 'navigation', default: 'Mod+-', repeatable: true },
-  { id: 'zoom.reset', label: 'Actual size', category: 'navigation', default: 'Mod+0' },
+  { id: 'zoom.reset', label: 'Reset zoom', category: 'navigation', default: 'Mod+0' },
   { id: 'history.open', label: 'History', category: 'navigation', default: 'Mod+H' },
   { id: 'privacy.clearData', label: 'Clear browsing data', category: 'navigation', default: 'Mod+Shift+Delete' },
   { id: 'downloads.open', label: 'Downloads', category: 'navigation', default: 'Mod+J', yieldToApp: true },

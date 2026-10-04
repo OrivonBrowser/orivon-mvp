@@ -18,9 +18,14 @@ export function sourceOf (battery: Pick<BatteryLike, 'charging'> | null): PowerS
   return battery.charging ? 'mains' : 'battery'
 }
 
+/** The one badge: a redraw of the section moves it rather than subscribing to the battery again. */
+let kept: HTMLElement | undefined
+
 /** The badge, kept current while the page is open. */
 export function renderPowerBadge (): HTMLElement {
+  if (kept !== undefined) return kept
   const badge = h('span', { className: 'badge', role: 'status' })
+  kept = badge
   const show = (source: PowerSource): void => {
     const { text, tone } = powerBadge(source)
     badge.className = tone === '' ? 'badge' : `badge ${tone}`

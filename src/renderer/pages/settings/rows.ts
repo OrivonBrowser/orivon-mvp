@@ -1,6 +1,7 @@
 // Draws one row and its control. A control changes a setting through the
 // state, which asks main; main's answer, not the control, decides what the
 // value is.
+import { armEnded } from '../shared/armed.js'
 import { h } from '../shared/dom.js'
 import { renderApps } from './apps-view.js'
 import { renderClearData } from './clear-data.js'
@@ -60,7 +61,8 @@ function renderText (control: Extract<Control, { type: 'text' }>, state: Setting
   return h('div', { className: 'text-control' }, input, problem)
 }
 
-function renderAction (control: Extract<Control, { type: 'action' }>, state: SettingsState): HTMLElement {
+/** A button that runs `control`, after a second click when it has a `confirm` label. */
+export function renderAction (control: Extract<Control, { type: 'action' }>, state: SettingsState): HTMLElement {
   const button = h('button', { className: control.danger === true ? 'btn danger' : 'btn', type: 'button', textContent: control.label })
   let disarm: ReturnType<typeof setTimeout> | undefined
   button.addEventListener('click', () => {
@@ -71,14 +73,18 @@ function renderAction (control: Extract<Control, { type: 'action' }>, state: Set
         disarm = undefined
         button.textContent = control.label
         button.classList.remove('armed')
+        // A redraw held back while this waited for its second click runs now.
+        armEnded()
       }, 4000)
       return
     }
+    const wasArmed = disarm !== undefined
     if (disarm !== undefined) clearTimeout(disarm)
     disarm = undefined
     button.textContent = control.label
     button.classList.remove('armed')
     void control.run(state)
+    if (wasArmed) armEnded()
   })
   return button
 }

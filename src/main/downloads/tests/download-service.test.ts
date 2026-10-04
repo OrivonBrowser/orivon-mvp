@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { AUTOMATIC_WINDOW_MS, MAX_AUTOMATIC_PER_WINDOW, MAX_RUNNING_PER_TAB } from '../download-service.js'
 import type { DownloadEntry } from '../download-types.js'
+import { downloadAsked } from '../asked-downloads.js'
 import { fakeContents, FakeItem } from './fake-item.js'
 import { DIR, harness, item } from './service-harness.js'
 
@@ -136,6 +137,20 @@ describe('downloads nobody asked for', () => {
     expect(event.preventDefault).toHaveBeenCalledTimes(20 - MAX_AUTOMATIC_PER_WINDOW)
     expect(service.list().filter((entry) => entry.state === 'completed')).toHaveLength(MAX_AUTOMATIC_PER_WINDOW)
     expect(service.list().filter((entry) => entry.reason === 'flood')).toHaveLength(1)
+  })
+
+  it('takes a download the person started from a menu as theirs: never refused for the rate, and marked as a gesture', () => {
+    const { service, event } = harness()
+    const tab = Object.assign(fakeContents(7), { downloadURL: vi.fn() })
+    const gestures: boolean[] = []
+    service.onStart((info) => { gestures.push(info.userGesture) })
+    for (let count = 0; count < MAX_AUTOMATIC_PER_WINDOW + 3; count += 1) {
+      const url = `https://a.example/menu${String(count)}.png`
+      downloadAsked(tab as never, url)
+      service.track(new FakeItem(`menu${String(count)}.png`, [url], undefined, 1, false).asItem(), tab as never, event)
+    }
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(gestures.every((gesture) => gesture)).toBe(true)
   })
 
   it('lets the page start again once the window has passed, and never counts a download the person asked for', () => {

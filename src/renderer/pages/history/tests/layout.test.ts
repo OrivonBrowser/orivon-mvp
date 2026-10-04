@@ -45,6 +45,14 @@ describe('buildLayout', () => {
     expect(sections[0]?.blocks[0]?.entries).toBe(ENTRIES)
   })
 
+  it('keeps a session collapsed when older pages of it are loaded under it, under the key it was collapsed by', () => {
+    const first = [entry(14, at(28, 15, 40)), entry(13, at(28, 15, 20))]
+    const key = buildLayout({ ...base, grouping: 'session', entries: first })[0]?.blocks[0]?.heading?.key as number
+    const more = [...first, entry(12, at(28, 15, 5)), entry(11, at(28, 14, 50))]
+    const folded = buildLayout({ ...base, grouping: 'session', collapsed: new Set([key]), entries: more })
+    expect(folded[0]?.blocks[0]).toMatchObject({ collapsed: true, heading: { key, pages: 4 } })
+  })
+
   it('marks a collapsed session, and the keys skip its rows', () => {
     const open = buildLayout({ ...base, grouping: 'session', entries: ENTRIES })
     const key = open[0]?.blocks[0]?.heading?.key as number

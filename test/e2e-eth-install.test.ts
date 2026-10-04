@@ -12,7 +12,7 @@ import { afterAll, expect, it } from 'vitest'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
-import { evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from './smoke-helpers.mjs'
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
 import { startFixtureGateway } from './apps/ipfs-gateway/gateway.mjs'
 import { originHash } from '../src/broker/grants/origin-hash.js'
@@ -80,11 +80,14 @@ it('installs a .eth app from verified IPFS content, pins its CID, and opens it f
       await clickAddressBarRetrying(chrome, `${ORIGIN}/`)
       const reopened = await waitForTab(chrome, { address: SHOWN, title: 'eth app' })
       // The tab already showed this address and title before the reload, and installing swaps
-      // its view, so poll whichever view shows it until the script's mark is there.
+      // its view, so poll the newest page at that address until the script's mark is there. Read
+      // from main: Playwright does not always attach to a view swapped in this late.
       let ran: string | null = null
       await waitFor(async () => {
-        const view = findViewShowing(running, chrome, `${ORIGIN}/`)
-        ran = view === undefined ? null : await evaluateRetrying(view, () => document.body.dataset['app'] ?? null).catch(() => null)
+        ran = await running.evaluate(async ({ webContents }, url) => {
+          const newest = webContents.getAllWebContents().filter((contents) => !contents.isDestroyed() && contents.getURL() === url).sort((a, b) => b.id - a.id)[0]
+          return newest === undefined ? null : await newest.executeJavaScript('document.body.dataset.app ?? null') as string | null
+        }, `${ORIGIN}/`).catch(() => null)
         return ran === 'ran'
       }, 10_000)
       check(`with the gateway gone, it opens from its pin and its script runs (${String(ran)})`, reopened.ok && ran === 'ran')

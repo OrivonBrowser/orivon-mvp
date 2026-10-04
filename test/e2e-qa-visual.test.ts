@@ -193,8 +193,10 @@ for (const scheme of SCHEMES) {
         const failed = await waitForTab(chrome, { address: 'http://unresolvable.invalid/' })
         check('the address bar keeps the address that failed', failed.ok, `address bar shows ${await chrome.inputValue('#address')}`)
         check('back is enabled, so the person can leave the failed page', await waitFor(async () => await chrome.isEnabled('#back')))
+        check('a sheet over the tab says the load failed', await waitFor(async () => await popoverShown(app, 'overlay=load-error')))
+        expect(await popupSized(app, 'overlay=load-error')).toBe(true)
         await state(check, app, `navigation-failure-${scheme}`, {
-          expected: 'Today a blank white view under the tab strip, with the failed address in the address bar and its host as the tab title: the shell draws no failure message (docs/open-questions.md, a failed navigation). A message or error page here means that was fixed: update this expectation and re-record the baseline.',
+          expected: 'A sheet in the middle of the tab area, in this colour scheme: a warning mark, "This site can\'t be reached", the failed address, a sentence saying no server answers to this name, the small name ERR_NAME_NOT_RESOLVED and a filled "Try again" button. The failed address stays in the address bar and its host is the tab title; nothing on the sheet is cut.',
           action: 'Typed http://unresolvable.invalid/ under a resolver that answers nothing but loopback.'
         })
       })

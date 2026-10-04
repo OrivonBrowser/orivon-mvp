@@ -65,6 +65,19 @@ describe('ImportState', () => {
     expect(state.canImport).toBe(true)
   })
 
+  it('follows history being turned on or off in Settings while the page is open', async () => {
+    const { state, push } = setup({ detect: { ...DETECTED, historyOn: false } })
+    await state.detect()
+    state.tick('bookmarks', false)
+    state.tick('history', true)
+    expect(state.canImport).toBe(false)
+    push('settings.changed', { key: 'history.remember', value: true })
+    expect(state.canImport).toBe(true)
+    push('settings.changed', { key: 'appearance.theme', value: 'dark' })
+    push('settings.changed', { key: 'history.remember', value: false })
+    expect(state.canImport).toBe(false)
+  })
+
   it('sends what was chosen and ticked, follows the progress and ends on the result', async () => {
     const { state, request, push } = setup({ detect: DETECTED, run: { result: RESULT } })
     await state.detect()

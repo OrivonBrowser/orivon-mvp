@@ -93,6 +93,30 @@ describe('the question handler', () => {
     expect(r.results).toEqual([{ response: 0, checkboxChecked: false }])
   })
 
+  it('takes the letters typed into a question\'s own text box as its answer, so Enter right after them answers', () => {
+    const r = rig(normaliseSpec({ kind: 'confirm', message: 'Your name?', buttons: ['OK', 'Cancel'], cancelId: 1, guarded: [0], input: { initial: '' } }))
+    r.handler.show?.({ id: r.id })
+    draw(r)
+    r.clock.now += GUARD_MS
+    for (const key of ['A', 'd', 'a']) {
+      r.handler.key?.({ key, isAutoRepeat: false })
+      r.clock.now += 50
+    }
+    r.handler.key?.({ key: 'Enter', isAutoRepeat: false })
+    r.handler.request({ id: r.id, button: 0, text: 'Ada' })
+    expect(r.results).toEqual([{ response: 0, checkboxChecked: false, text: 'Ada' }])
+  })
+
+  it('still waits after a Tab in a question with a text box', () => {
+    const r = rig(normaliseSpec({ kind: 'confirm', message: 'Your name?', buttons: ['OK', 'Cancel'], cancelId: 1, guarded: [0], input: { initial: '' } }))
+    r.handler.show?.({ id: r.id })
+    draw(r)
+    r.clock.now += GUARD_MS
+    r.handler.key?.({ key: 'Tab', isAutoRepeat: false })
+    r.handler.request({ id: r.id, button: 0, text: 'x' })
+    expect(r.results).toEqual([])
+  })
+
   it('lets one Enter on the focused button answer, once the keys before it have been quiet', () => {
     const r = rig()
     r.handler.show?.({ id: r.id })
@@ -206,8 +230,20 @@ describe('the question handler', () => {
     const spec = normaliseSpec({ kind: 'page-prompt', message: 'Name?', buttons: ['OK'], cancelId: 0, input: { initial: '' } })
     const r = rig(spec)
     r.handler.show?.({ id: r.id })
-    r.handler.request({ id: r.id, button: 0, text: 'x'.repeat(5000) })
+    r.handler.request({ id: r.id, button: 0, text: 'x'.repeat(100_001) })
     expect(r.results).toEqual([])
+  })
+
+  it('takes an answer of some thousands of characters, and keeps a long default whole', () => {
+    const long = 'y'.repeat(5000)
+    const spec = normaliseSpec({ kind: 'page-prompt', message: 'Paste it', buttons: ['OK'], cancelId: 0, input: { initial: long } })
+    expect(spec.input?.initial).toBe(long)
+    const r = rig(spec)
+    r.handler.show?.({ id: r.id })
+    draw(r)
+    r.clock.now += GUARD_MS
+    r.handler.request({ id: r.id, button: 0, text: 'x'.repeat(5000) })
+    expect(r.results).toEqual([{ response: 0, checkboxChecked: false, text: 'x'.repeat(5000) }])
   })
 
   it('settles every question held for its window as a cancel when the window goes', () => {

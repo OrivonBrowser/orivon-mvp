@@ -127,6 +127,17 @@ describe('askQuestion', () => {
     await answer
   })
 
+  it('lets a question from a tab behind wait for its tab while another tab holds the screen, instead of refusing it', async () => {
+    const r = rig({ chromeVisible: false, active: 'other' })
+    const answer = r.ask({ contents: r.contents }, CONSENT)
+    await vi.advanceTimersByTimeAsync(6000)
+    expect(r.tabs.exitHtmlFullscreen).not.toHaveBeenCalled()
+    let settled = false
+    void answer.then(() => { settled = true })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(settled).toBe(false)
+  })
+
   it('gives up as a cancel when the toolbar never comes into view', async () => {
     const r = rig({ chromeVisible: false })
     const answer = r.ask({ contents: r.contents }, CONSENT)

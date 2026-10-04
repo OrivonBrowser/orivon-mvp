@@ -20,6 +20,7 @@ export function createTabSearchButton (): ChromeModule {
       button.setAttribute('aria-haspopup', 'listbox')
       button.append(chevronDownIcon())
       const self = button
+      button.addEventListener('pointerdown', (event) => { if (event.button === 0) ctx.shell.press('tab-search') })
       button.addEventListener('click', () => {
         void ctx.shell.act('overlay.toggle', { name: 'tab-search', anchor: ctx.anchorFor(self) })
       })

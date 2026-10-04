@@ -82,8 +82,10 @@ extension are outside the rule.
 view is created and a tab outlives its site, so `install-content-settings.ts` adds a second `Content-Security-Policy:
 script-src 'none'` header to the page's document and to every frame in it (policies intersect, so it can only remove
 what a script may do, and the page's own policy is kept). It covers inline handlers and `javascript:` addresses; it
-applies to a response served from the HTTP cache too. A service worker already installed keeps serving, but the page's
-scripts do not run. Images are cancelled at the request. Both settings are the top-level site's and take effect on the
+applies to a response served from the HTTP cache too. A page a service worker answers from its own cache never passes
+the header, so a site's service workers are taken off when its JavaScript is blocked (every site's, when blocking
+becomes the default): its next page comes from the network, and with scripts blocked no worker registers again.
+Images are cancelled at the request. Both settings are the top-level site's and take effect on the
 next load, in the default session only: a tab in an app's own partition is never touched.
 
 **A site's sound is composed with the tab's mute, never replaced by it.** `mutedFor` in `signals/audio.ts` is the tab's

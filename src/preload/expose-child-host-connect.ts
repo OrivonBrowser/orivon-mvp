@@ -68,12 +68,21 @@ export interface ChildrenPageBridge {
   kill: (childId: string) => void
 }
 
+/** Longer than main's own wait for a new host to be ready, so a slow build is never cut short here. */
+const HOST_ANSWER_TIMEOUT_MS = 15_000
+
 /** The one IPC round trip this whole bridge ever makes (F6: at most once
  * per document -- everything after the first `start()` reuses it, or, once
  * it fails, retries fresh rather than replaying a cached rejection forever). */
 function requestHostPort (): Promise<MessagePort> {
   return new Promise((resolve, reject) => {
+    // Main answers every connect, with no port when it refuses; this only covers an answer that never comes.
+    const timer = setTimeout(() => {
+      ipcRenderer.removeListener(CHILD_HOST_PORT_CHANNEL, onPort)
+      reject(new Error('orivon: the child host did not answer'))
+    }, HOST_ANSWER_TIMEOUT_MS)
     const onPort = (event: IpcRendererEvent): void => {
+      clearTimeout(timer)
       const port = event.ports[0]
       if (port === undefined) { reject(new Error('orivon: the child host handshake carried no port')); return }
       resolve(port)

@@ -9,6 +9,7 @@
 // itself one, landing back on this same tab) can redraw the whole section at
 // any time. A local variable would reset to the defaults on every redraw,
 // silently discarding whatever the person had chosen a moment before.
+import type { SiteDataPart } from './site-data/site-data-part.js'
 import type { ClearRequest, HistoryRange } from '../../../main/privacy/clear-data.js'
 import { h } from '../shared/dom.js'
 import { armEnded } from '../shared/armed.js'
@@ -107,7 +108,10 @@ export function renderClearData (state: SettingsState): HTMLElement {
       return
     }
     rearm()
-    void state.privacy.clear(chosen)
+    void state.privacy.clear(chosen).then(() => {
+      // The "Sites that store data" list and its total read what was just deleted: they are read again.
+      if (chosen.siteData || chosen.cache) void state.part<SiteDataPart>('siteData').reload()
+    })
   })
 
   return h('div', { className: 'clear-data' },

@@ -155,6 +155,12 @@ export function createBookmarksBar (): ChromeModule {
       more.setAttribute('aria-label', 'More bookmarks')
       more.setAttribute('aria-haspopup', 'menu')
       bar.addEventListener('click', onClick)
+      // A folder and the chevron open a menu a press can close: main judges their click by this press (press-stamps.ts).
+      bar.addEventListener('pointerdown', (event) => {
+        const target = event.target instanceof Element ? event.target : null
+        const opensMenu = target?.closest('.bmmore') !== null || target?.closest<HTMLElement>('.bmitem')?.dataset['kind'] === 'folder'
+        if (event.button === 0 && target !== null && opensMenu) ctxRef?.shell.press('bookmark-folder')
+      })
       bar.addEventListener('keydown', onKeydown)
       bar.addEventListener('focusin', () => { roving(document.activeElement) })
       // A middle press would start Chromium's autoscroll before the release that opens the tab.

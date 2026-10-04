@@ -72,6 +72,25 @@ describe('parseOmniboxInput', () => {
       })
     })
 
+    it('an internationalised domain typed in its own letters is a URL, in punycode', () => {
+      expect(parseOmniboxInput('münchen.de')).toEqual({ kind: 'url', url: 'https://xn--mnchen-3ya.de/' })
+      expect(parseOmniboxInput('bücher.de/x')).toEqual({ kind: 'url', url: 'https://xn--bcher-kva.de/x' })
+      expect(parseOmniboxInput('пример.рф').kind).toBe('url')
+    })
+
+    it('a one-word machine name with a port, a capitalised localhost and a bracketed IPv6 with a path are URLs', () => {
+      expect(parseOmniboxInput('nas:5000')).toEqual({ kind: 'url', url: 'http://nas:5000/' })
+      expect(parseOmniboxInput('LOCALHOST:3000')).toEqual({ kind: 'url', url: 'http://localhost:3000/' })
+      expect(parseOmniboxInput('Localhost')).toEqual({ kind: 'url', url: 'https://localhost/' })
+      expect(parseOmniboxInput('[::1]:8080/api')).toEqual({ kind: 'url', url: 'http://[::1]:8080/api' })
+    })
+
+    it('a word alone, a dotted word ending in a number and a decimal are searches, never a blank page or an IP address', () => {
+      for (const text of ['nas', 'python3.12', 'v1.2', '3.14', '1.5', 'es2015.1']) {
+        expect(parseOmniboxInput(text, () => false, (q) => `S:${q}`), text).toEqual({ kind: 'search', url: `S:${text}` })
+      }
+    })
+
     it('a punycode/IDN domain is a URL', () => {
       expect(parseOmniboxInput('xn--exmple-cua.com')).toEqual({
         kind: 'url',

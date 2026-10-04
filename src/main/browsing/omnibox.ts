@@ -28,17 +28,20 @@ function hasDangerousScheme (input: string): boolean {
 
 /**
  * True if `input` (no scheme) looks like something with a host: a domain
- * name, an IPv4 literal, or `host:port` / `[ipv6]:port` forms. Used to
- * decide bare (schemeless) input between a URL and a search query.
+ * name (an internationalised one included), an IPv4 literal, a one-word
+ * machine name with a port, or `host:port` / `[ipv6]:port` forms, each
+ * optionally followed by a path. Used to decide bare (schemeless) input
+ * between a URL and a search query.
  */
 function looksLikeHost (input: string): boolean {
-  // Bracketed IPv6, optionally with a port: [::1] or [::1]:8080
-  if (/^\[[0-9a-fA-F:]+\](:\d+)?$/.test(input)) return true
+  // Bracketed IPv6, optionally with a port and a path: [::1], [::1]:8080, [::1]:8080/api
+  if (/^\[[0-9a-fA-F:.]+\](:\d+)?([/?#].*)?$/.test(input)) return true
 
   // Strip an optional trailing :port and an optional path/query for the
   // host-shape check below.
   const withoutPath = input.split(/[/?#]/)[0] ?? ''
-  const hostPart = withoutPath.replace(/:\d+$/, '')
+  const hasPort = /:\d+$/.test(withoutPath)
+  const hostPart = withoutPath.replace(/:\d+$/, '').toLowerCase()
 
   if (hostPart.length === 0) return false
 
@@ -51,15 +54,19 @@ function looksLikeHost (input: string): boolean {
   // IPv4 literal.
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostPart)) return true
 
-  // A domain: at least one dot, and every label is alphanumeric/hyphen
-  // (this also accepts punycode `xn--` labels, which are ordinary
-  // alphanumeric-hyphen strings).
-  if (hostPart.includes('.')) {
-    const labels = hostPart.split('.')
-    return labels.every((label) => label.length > 0 && /^[a-zA-Z0-9-]+$/.test(label))
-  }
+  // Every label is letters (of any script: the URL parser turns them into
+  // punycode), digits or hyphens.
+  const labels = hostPart.split('.')
+  if (!labels.every((label) => label.length > 0 && /^[\p{L}\p{N}\p{M}-]+$/u.test(label))) return false
 
-  return false
+  // One word is a machine on the local network only when a port says so
+  // (`nas:5000`); alone it is a search.
+  if (labels.length === 1) return hasPort
+
+  // A last label of digits alone is not a domain: the URL parser reads it as
+  // an IPv4 shorthand (`3.14` would open 3.0.0.14) or refuses the host
+  // (`python3.12`), so the text is a search.
+  return !/^\d+$/.test(labels[labels.length - 1] ?? '')
 }
 
 /** `searchUrl` turns a query into the URL that searches for it. */
@@ -116,7 +123,7 @@ export function parseOmniboxInput (
     try {
       return { kind: 'url', url: new URL(scheme + trimmed).toString() }
     } catch {
-      return { kind: 'reject', reason: 'invalid-url' }
+      // Host-shaped, but no URL (a label the URL parser refuses): the person typed text, so it is a search.
     }
   }
 

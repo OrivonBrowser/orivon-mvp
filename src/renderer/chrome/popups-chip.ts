@@ -23,7 +23,8 @@ export function createPopupsChip (): ChromeModule {
         order: 12,
         label: POPUPS_LABEL,
         icon: () => blockedSiteKindIcon('popups'),
-        onClick: (el) => { void ctx.shell.act('overlay.toggle', { name: 'popups-blocked', anchor: ctx.anchorFor(el) }) }
+        onClick: (el) => { void ctx.shell.act('overlay.toggle', { name: 'popups-blocked', anchor: ctx.anchorFor(el) }) },
+        presses: 'popups-blocked'
       })
       chip.hidden = true
       chip.setAttribute('aria-haspopup', 'dialog')

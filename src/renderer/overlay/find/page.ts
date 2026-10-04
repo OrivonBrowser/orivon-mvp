@@ -67,7 +67,8 @@ export const findPage: OverlayPage = {
 
     input.addEventListener('input', search)
     input.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter') return
+      // The Enter that ends an input method's composition only commits the text.
+      if (event.key !== 'Enter' || event.isComposing) return
       event.preventDefault()
       step(!event.shiftKey)
     })

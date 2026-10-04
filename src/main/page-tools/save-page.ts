@@ -1,6 +1,7 @@
 // Save page as: a web page is written with its resources (a folder beside `.html`) or as one
 // `.mhtml` file, by the extension typed; anything else the tab shows (an image, a PDF, plain text)
 // is downloaded as the file it is. A path only ever comes from the save dialog.
+import { downloadAsked } from '../downloads/asked-downloads.js'
 import { join } from 'node:path'
 import type { ShellWindow } from '../shell/window-registry.js'
 import type { PageToolDeps } from './deps.js'
@@ -82,7 +83,7 @@ async function downloadTo (wc: SaveContents, url: string, path: string): Promise
     }
     wc.session.on('will-download', onItem)
     try {
-      wc.downloadURL(url)
+      downloadAsked(wc, url)
     } catch {
       clearTimeout(startTimer)
       wc.session.removeListener('will-download', onItem)

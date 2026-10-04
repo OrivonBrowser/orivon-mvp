@@ -104,6 +104,12 @@ function chooserHandler (win: OverlayWindow, mode: ChooserView['mode']): Overlay
           close()
           services.commands.run('passwords.open', window)
           return undefined
+        case 'hover': {
+          // Under a box, Enter is read here: the row the pointer highlighted is the one it fills.
+          const index = command['index']
+          if (mode === 'field' && typeof index === 'number' && Number.isInteger(index) && index >= 0 && index < choices.length) selected = index
+          return undefined
+        }
         default:
           return undefined
       }
