@@ -44,6 +44,7 @@ export function fakeWindow (): FakeWindow {
       toggle: vi.fn()
     },
     tabs: { activeWebContents: () => ({ focus: activeFocus, isDestroyed: () => false }), openInternal: vi.fn() },
+    chromeHeight: () => 76,
     shortcutsSuspended: () => state.fullscreen,
     relayout
   }

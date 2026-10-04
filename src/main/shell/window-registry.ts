@@ -12,6 +12,8 @@ export interface ShellWindow {
   readonly tabs: TabManager
   /** Orivon HTML shown above the page: the main menu and every feature's overlay. */
   readonly overlays: OverlayHost
+  /** Where the chrome's own rows end and the tabs' pages begin; the chrome view can be taller for a moment (window-layout.ts's `reachChrome`). */
+  readonly chromeHeight: () => number
   /** A page in this window holds the screen (HTML fullscreen), so the browser's keys wait. */
   readonly shortcutsSuspended: () => boolean
   /** Lays the chrome, the tabs and the overlays out again: what a feature that changes the page area calls. */

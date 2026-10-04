@@ -57,6 +57,7 @@ function actions (overrides: Partial<ShellActions> = {}): ShellActions {
     endTabDrag: vi.fn(),
     prepareTabDrag: vi.fn(async () => null),
     warmDropCatchers: vi.fn(),
+    reachChrome: vi.fn(),
     startNativeTabDrag: vi.fn(),
     dropNativeTab: vi.fn(),
     endNativeTabDrag: vi.fn(),
@@ -366,6 +367,18 @@ describe('registerShellIpc -- dragging a tab over the page', () => {
     await dispatch({ type: 'cancelNativeTabDrag', nonce: {} })
     expect(endNativeTabDrag.mock.calls).toEqual([['n1']])
     expect(cancelNativeTabDrag.mock.calls).toEqual([['n1']])
+  })
+
+  it('lets only the chrome grow its own view, and only with a boolean', async () => {
+    const reachChrome = vi.fn()
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ reachChrome }))
+
+    await dispatch({ type: 'reachChrome', on: true })
+    await dispatch({ type: 'reachChrome', on: false })
+    await dispatch({ type: 'reachChrome', on: 1 })
+    await dispatch({ type: 'reachChrome' })
+    await dispatch({ type: 'reachChrome', on: true }, OTHER_FRAME)
+    expect(reachChrome.mock.calls).toEqual([[true], [false]])
   })
 
   it('answers a press on a tab with the drag image the actions found, and nothing for a tab id that is not a string', async () => {

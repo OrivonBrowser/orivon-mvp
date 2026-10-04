@@ -11,7 +11,8 @@ function makeParts (window: unknown): WindowParts {
     closeOverlays: vi.fn(),
     openWindow: vi.fn(),
     topHeight: 0,
-    area: () => ({ x: 0, y: 0, width: 0, height: 0 })
+    area: () => ({ x: 0, y: 0, width: 0, height: 0 }),
+    reachChrome: vi.fn()
   }
 }
 

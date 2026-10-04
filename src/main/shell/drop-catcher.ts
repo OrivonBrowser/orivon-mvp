@@ -55,10 +55,10 @@ export class DropCatcher implements Catcher {
   private shown = false
   private idle: ReturnType<typeof setTimeout> | null = null
 
-  /** `chrome` is the window's chrome view: the catcher covers what lies below it. */
+  /** `chromeHeight` is where the window's chrome ends: the catcher covers what lies below it. */
   constructor (
     private readonly window: BaseWindow,
-    private readonly chrome: WebContentsView,
+    private readonly chromeHeight: () => number,
     private readonly dirname: string,
     private readonly hooks: CatcherHooks
   ) {}
@@ -75,7 +75,7 @@ export class DropCatcher implements Catcher {
     this.view = view
     this.clearIdle()
     const content = this.window.getContentBounds()
-    const top = this.chrome.getBounds().height
+    const top = this.chromeHeight()
     this.origin = { x: 0, y: top }
     view.setBounds({ x: 0, y: top, width: content.width, height: Math.max(0, content.height - top) })
     attachShown(this.window.contentView, view)

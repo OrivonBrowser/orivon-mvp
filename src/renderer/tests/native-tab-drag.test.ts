@@ -55,8 +55,10 @@ function transfer (types: string[] = [], data = '') {
 
 async function setup (options: { thumbnail?: string | null, pinned?: boolean } = {}) {
   vi.resetModules()
-  const document = Object.assign(new Listeners(), { body: { append: vi.fn() } })
-  const window = new Listeners()
+  const root = new Set<string>()
+  const documentElement = { classList: { toggle: (name: string, on: boolean): void => { if (on) root.add(name); else root.delete(name) }, remove: (name: string): void => { root.delete(name) } } }
+  const document = Object.assign(new Listeners(), { body: { append: vi.fn() }, documentElement })
+  const window = Object.assign(new Listeners(), { innerWidth: 700, innerHeight: 76 })
   const frames: Array<() => void> = []
   vi.stubGlobal('document', document)
   vi.stubGlobal('window', window)
@@ -66,6 +68,7 @@ async function setup (options: { thumbnail?: string | null, pinned?: boolean } =
   const shell: NativeDragShell = {
     prepareTabDrag: vi.fn(async () => options.thumbnail ?? null),
     warmDropCatchers: vi.fn(),
+    reachChrome: vi.fn(),
     startNativeTabDrag: vi.fn(),
     dropNativeTab: vi.fn(),
     endNativeTabDrag: vi.fn(),
@@ -96,7 +99,7 @@ async function setup (options: { thumbnail?: string | null, pinned?: boolean } =
     tab.fire('dragstart', { dataTransfer: dt, clientX: tab.left + 40, clientY: 12 })
     return { tab, dt }
   }
-  return { tabs, shell, host, marks, window, document, frames, drag, pointer, begin, isDraggingTab }
+  return { tabs, shell, host, marks, window, document, root, frames, drag, pointer, begin, isDraggingTab }
 }
 
 afterEach(() => { vi.unstubAllGlobals() })
@@ -134,11 +137,64 @@ describe('a tab pulled with the browser\'s own drag and drop', () => {
     expect(shell.warmDropCatchers).toHaveBeenCalledTimes(1)
   })
 
+  it('has main reach the chrome past the window while a tab is pressed, and give it back at a click or at the drag\'s end', async () => {
+    const { tabs, shell, pointer, window, begin } = await setup()
+    const tab = tabs[0] as FakeTab
+    tab.fire('pointerdown', pointer(40))
+    expect(shell.reachChrome).toHaveBeenCalledExactlyOnceWith(true)
+    window.fire('pointerup')
+    expect(shell.reachChrome).toHaveBeenLastCalledWith(false)
+
+    vi.mocked(shell.reachChrome).mockClear()
+    const dragged = await begin(1)
+    expect(shell.reachChrome).toHaveBeenCalledExactlyOnceWith(true)
+    window.fire('pointercancel')
+    expect(shell.reachChrome).toHaveBeenCalledTimes(1)
+    dragged.tab.fire('dragend')
+    expect(shell.reachChrome).toHaveBeenLastCalledWith(false)
+  })
+
+  it('keeps a pressed tab from starting a drag while the pointer is outside the chrome view, and lets it once it is back', async () => {
+    const { tabs, root, pointer, window } = await setup()
+    ;(tabs[1] as FakeTab).fire('pointerdown', pointer(140))
+
+    window.fire('pointermove', pointer(142, 40))
+    expect(root.has('tab-drag-blocked')).toBe(false)
+    window.fire('pointermove', pointer(142, 90))
+    expect(root.has('tab-drag-blocked')).toBe(true)
+    window.fire('pointermove', pointer(142, 60))
+    expect(root.has('tab-drag-blocked')).toBe(false)
+
+    for (const [x, y] of [[-3, 20], [0, 20], [20, 0], [699, 20], [700, 20], [20, 75], [20, 76]] as const) {
+      window.fire('pointermove', pointer(x, y))
+      expect(root.has('tab-drag-blocked'), `${String(x)},${String(y)}`).toBe(true)
+    }
+    window.fire('pointerup')
+    expect(root.has('tab-drag-blocked')).toBe(false)
+  })
+
+  it('blocks nothing for a pointer that is not pressing a tab, or once a drag runs', async () => {
+    const { tabs, root, pointer, window, begin } = await setup()
+    window.fire('pointermove', pointer(142, 90))
+    expect(root.has('tab-drag-blocked')).toBe(false)
+
+    ;(tabs[0] as FakeTab).fire('pointerdown', pointer(40))
+    window.fire('pointermove', pointer(142, 90, { buttons: 0 }))
+    expect(root.has('tab-drag-blocked')).toBe(false)
+    window.fire('pointerup')
+
+    const { tab } = await begin(1)
+    window.fire('pointermove', pointer(142, 90))
+    expect(root.has('tab-drag-blocked')).toBe(false)
+    tab.fire('dragend')
+  })
+
   it('prepares nothing for a press on the close button or with another button', async () => {
     const { tabs, shell, pointer } = await setup()
     ;(tabs[0] as FakeTab).fire('pointerdown', pointer(40, 10, { target: { closest: () => ({}) } }))
     ;(tabs[0] as FakeTab).fire('pointerdown', pointer(40, 10, { button: 2 }))
     expect(shell.prepareTabDrag).not.toHaveBeenCalled()
+    expect(shell.reachChrome).not.toHaveBeenCalled()
   })
 
   it('carries only a nonce, hides the tab a frame after the drag begins, and holds the strip', async () => {

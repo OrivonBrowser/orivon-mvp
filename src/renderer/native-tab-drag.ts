@@ -9,6 +9,8 @@ import { holdStrip, placerFor } from './tab-drag.js'
 export interface NativeDragShell {
   prepareTabDrag: (id: string) => Promise<string | null>
   warmDropCatchers: () => void
+  /** Main makes the chrome view taller while a tab is pressed, so a drag's first motion lands inside it. */
+  reachChrome: (on: boolean) => void
   startNativeTabDrag: (id: string, nonce: string) => void
   dropNativeTab: (nonce: string, index: number | null, below: boolean) => void
   endNativeTabDrag: (nonce: string) => void
@@ -33,6 +35,8 @@ export interface NativeDragHost {
   finished: () => void
 }
 
+/** Set on the chrome's root while a pressed tab must not start a drag (`reachable`); styles/tabstrip.css switches dragging off under it. */
+const BLOCK_CLASS = 'tab-drag-blocked'
 /** How far a press moves before the drop catchers are made ready. */
 const PULL_PX = 3
 /** How long after a drag ends an Escape key-up still counts as its cancel (measured at 100 to 200 ms). */
@@ -139,8 +143,23 @@ export function createNativeTabDrag (type: string, shell: NativeDragShell, host:
   })
   window.addEventListener('pointerup', () => {
     pressed = null
+    unblock()
     // The press was a click: nothing was dragged. A drag has started by now and keeps what it prepared.
-    if (source === null) discard()
+    if (source === null) {
+      discard()
+      shell.reachChrome(false)
+    }
+  }, true)
+
+  /** Whether the browser would start a drag from a pointer here: it refuses one whose first motion lies outside the
+   * chrome view, and then refuses every later drag of this view too. A point on the view's edge counts as outside. */
+  function reachable (event: PointerEvent): boolean {
+    return event.clientX >= 1 && event.clientY >= 1 && event.clientX < window.innerWidth - 1 && event.clientY < window.innerHeight - 1
+  }
+  const unblock = (): void => { document.documentElement.classList.remove(BLOCK_CLASS) }
+  window.addEventListener('pointermove', (event) => {
+    if (pressed === null || source !== null || event.buttons !== 1) return
+    document.documentElement.classList.toggle(BLOCK_CLASS, !reachable(event))
   }, true)
 
   /** The drag is over, however it ended: the strip is whole again and main is told. */
@@ -153,14 +172,16 @@ export function createNativeTabDrag (type: string, shell: NativeDragShell, host:
     discard()
     host.showMark(null, [])
     holdStrip(false)
+    unblock()
+    shell.reachChrome(false)
     ended = { nonce: finished.nonce, at: performance.now() }
     shell.endNativeTabDrag(finished.nonce)
     host.finished()
   }
 
   // While the browser's drag runs, no pointer event reaches the page. One that does means the drag ended without a
-  // `dragend` (measured on Wayland: a drag that starts with the pointer already out of the chrome view). No drag
-  // image was drawn, so the person saw nothing move: the drag ends as cancelled, and the tab stays where it was.
+  // `dragend` (the browser refuses a drag that began outside the chrome view). No drag image was drawn, so the
+  // person saw nothing move: the drag ends as cancelled, and the tab stays where it was.
   function lost (): void {
     const nonce = source?.nonce
     if (nonce === undefined) return
@@ -175,6 +196,9 @@ export function createNativeTabDrag (type: string, shell: NativeDragShell, host:
     el.addEventListener('pointerdown', (event) => {
       if (event.button !== 0 || (event.target as HTMLElement).closest('.close, .tab-audio') !== null) return
       pressed = { id, x: event.clientX, y: event.clientY, pulled: false }
+      // The browser starts a drag only when the motion that began it lies inside this view, which a quick flick out
+      // of the strip would not: main makes the view taller than the window, behind the pages, until the press ends.
+      shell.reachChrome(true)
       discard()
       const tab: Prepared = { id, chip: chipOf(el), image: null }
       prepared = tab

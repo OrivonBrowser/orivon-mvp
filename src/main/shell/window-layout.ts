@@ -24,13 +24,33 @@ export interface WindowLayoutDeps {
   readonly kiosk?: boolean
 }
 
+/** While a tab is pressed the chrome view grows downward by this many window heights (see `chromeRect`). */
+const REACH_WINDOWS = 1
+/** A press nobody released (the window lost the pointer) gives the chrome its own size back after this long. */
+const REACH_LIMIT_MS = 30_000
+
 export interface WindowLayout {
   chromeHeight: () => number
   layoutChrome: () => void
   tabBounds: () => Bounds
+  /** Makes the chrome view taller, under the pages, or gives it its own size back. */
+  reachChrome: (on: boolean) => void
+}
+
+/** The chrome view's rectangle in a window of `content` size. Normally the top rows. `reach` makes it taller, and
+ * nothing else: the browser starts a drag of the chrome's page only when the pointer event that began it lies inside
+ * the view, so a quick flick out of the tab strip would begin outside it and be refused without a `dragend`. Its
+ * corner and width stay put, since a move of either would lay the strip out again under the pointer and pick another
+ * tab to drag. The view lies under the pages, which cover what it adds. */
+export function chromeRect (content: { width: number, height: number }, rows: number, reach: boolean): Bounds {
+  if (!reach) return { x: 0, y: 0, width: content.width, height: rows }
+  return { x: 0, y: 0, width: content.width, height: content.height * (1 + REACH_WINDOWS) }
 }
 
 export function createWindowLayout ({ win, chrome, fullscreenTabId, bookmarksBarShown, pageInsets, kiosk = false }: WindowLayoutDeps): WindowLayout {
+  let reach = false
+  let reachTimer: ReturnType<typeof setTimeout> | null = null
+
   function chromeHeight (): number {
     if (kiosk) return 0
     return bookmarksBarShown() ? CHROME_HEIGHT : CHROME_TOP_ROWS
@@ -40,7 +60,7 @@ export function createWindowLayout ({ win, chrome, fullscreenTabId, bookmarksBar
     if (win.isDestroyed()) return
     const bounds = win.getContentBounds()
     chrome.setVisible(!kiosk && fullscreenTabId() === null)
-    chrome.setBounds({ x: 0, y: 0, width: bounds.width, height: chromeHeight() })
+    chrome.setBounds(chromeRect(bounds, chromeHeight(), reach))
   }
 
   // A destroyed window has no bounds to give. Its tabs' `destroyed` events
@@ -55,5 +75,14 @@ export function createWindowLayout ({ win, chrome, fullscreenTabId, bookmarksBar
     return { x: left, y: top, width: Math.max(0, bounds.width - left - right), height: bounds.height - top }
   }
 
-  return { chromeHeight, layoutChrome, tabBounds }
+  function reachChrome (on: boolean): void {
+    if (reachTimer !== null) clearTimeout(reachTimer)
+    reachTimer = null
+    if (on) reachTimer = setTimeout(() => { reachChrome(false) }, REACH_LIMIT_MS)
+    if (reach === on) return
+    reach = on
+    layoutChrome()
+  }
+
+  return { chromeHeight, layoutChrome, tabBounds, reachChrome }
 }

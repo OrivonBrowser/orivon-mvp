@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { BOOKMARKS_BAR_HEIGHT, CHROME_HEIGHT, CHROME_TOP_ROWS, createWindowLayout } from '../window-layout.js'
+import { BOOKMARKS_BAR_HEIGHT, CHROME_HEIGHT, CHROME_TOP_ROWS, chromeRect, createWindowLayout } from '../window-layout.js'
 
 function setup (options: { fullscreen?: string | null, bar?: boolean, destroyed?: boolean, kiosk?: boolean } = {}): { layout: ReturnType<typeof createWindowLayout>, chrome: { setVisible: ReturnType<typeof vi.fn>, setBounds: ReturnType<typeof vi.fn> }, state: { fullscreen: string | null, bar: boolean, destroyed: boolean } } {
   const state = { fullscreen: options.fullscreen ?? null, bar: options.bar ?? false, destroyed: options.destroyed ?? false }
@@ -84,5 +84,43 @@ describe('createWindowLayout: page insets', () => {
 
   it('never goes negative in a window narrower than its insets', () => {
     expect(insetSetup({ left: 700, right: 700 }).tabBounds().width).toBe(0)
+  })
+})
+
+describe('createWindowLayout: reaching the chrome', () => {
+  it('lays the chrome over more than the window height, from the same corner and at the same width, while a tab is pressed, and back after', () => {
+    const { layout, chrome } = setup()
+
+    layout.reachChrome(true)
+    const reaching = chrome.setBounds.mock.calls.at(-1)?.[0] as { x: number, y: number, width: number, height: number }
+    expect(reaching).toMatchObject({ x: 0, y: 0 })
+    expect(reaching.width).toBe(1000)
+    expect(reaching.height).toBeGreaterThan(700)
+
+    layout.layoutChrome()
+    expect(chrome.setBounds.mock.calls.at(-1)?.[0]).toEqual(reaching)
+
+    layout.reachChrome(false)
+    expect(chrome.setBounds.mock.calls.at(-1)?.[0]).toEqual({ x: 0, y: 0, width: 1000, height: CHROME_TOP_ROWS })
+  })
+
+  it('does nothing twice, and gives the chrome its size back by itself when no one lets go', () => {
+    vi.useFakeTimers()
+    try {
+      const { layout, chrome } = setup()
+      layout.reachChrome(true)
+      layout.reachChrome(true)
+      expect(chrome.setBounds).toHaveBeenCalledTimes(1)
+
+      vi.advanceTimersByTime(60_000)
+      expect(chrome.setBounds).toHaveBeenCalledTimes(2)
+      expect(chrome.setBounds.mock.calls.at(-1)?.[0]).toEqual({ x: 0, y: 0, width: 1000, height: CHROME_TOP_ROWS })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('never moves the chrome\'s corner or width, which would lay its page out again', () => {
+    expect(chromeRect({ width: 800, height: 600 }, CHROME_TOP_ROWS, true)).toMatchObject({ x: 0, y: 0, width: 800 })
   })
 })
