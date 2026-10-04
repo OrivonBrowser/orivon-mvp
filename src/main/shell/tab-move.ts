@@ -63,13 +63,18 @@ export function crossWindowTargetFor (
   const target = windows.filter((candidate) => candidate !== from && !candidate.window.isDestroyed() && inTop(candidate.window.getBounds(), point, topHeight)).at(-1)
   if (target === undefined) return null
   const bounds = target.window.getBounds()
+  return { window: target, index: stripSlot(target, () => point.x - target.window.getContentBounds().x, (point.x - bounds.x) / bounds.width, pinned) }
+}
+
+/** The place in `target`'s strip for a tab let go `contentX()` pixels from the left of its content area: the number
+ * of the strip's tabs whose centre is left of it. `share` (how far across the window, 0 to 1) stands in when the
+ * centres of the tabs now in the strip are not known. A pinned tab lands in the pinned run, and any other outside
+ * it, as `giveTab` will place it. */
+export function stripSlot (target: ShellWindow, contentX: () => number, share: number, pinned: boolean): number {
   const tabs = target.tabs.getState().tabs
   const centres = stripCentresFor(target)
-  const wanted = centres === null
-    ? Math.round(((point.x - bounds.x) / bounds.width) * tabs.length)
-    : dropIndex(centres, point.x - target.window.getContentBounds().x)
-  // A pinned tab lands in the pinned run, and any other outside it, as `giveTab` will place it.
-  return { window: target, index: clampToRun(wanted, pinned, tabs.filter((tab) => tab.pinned).length, tabs.length) }
+  const wanted = centres === null ? Math.round(share * tabs.length) : dropIndex(centres, contentX())
+  return clampToRun(wanted, pinned, tabs.filter((tab) => tab.pinned).length, tabs.length)
 }
 
 /** A tab was let go outside its own strip, at `point` (screen coordinates): into another window's

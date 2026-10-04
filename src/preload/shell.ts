@@ -82,6 +82,9 @@ export interface OrivonShell {
   /** The drag ended without a tear-out: let go inside the strip, or cancelled outright. Releases
    * the capture `beginTabDrag` started, whether or not it was ever shown. */
   endTabDrag: () => void
+  /** Another window is dragging a tab and the pointer was just seen over this chrome (main asked with a
+   * `tabDrag` event): where, in this window's content area. */
+  tabDragArrived: (x: number, y: number) => void
   /** Asks main for the right-click menu of a tab. */
   showTabMenu: (id: string) => void
   onState: (listener: (state: ShellState) => void) => () => void
@@ -153,6 +156,7 @@ const api: OrivonShell = {
   dragTab: (id: string, x?: number, y?: number) => { send(x === undefined || y === undefined ? { type: 'dragTab', id } : { type: 'dragTab', id, x, y }) },
   dropTab: (id: string, x: number, y: number, clientX: number, clientY: number) => { send({ type: 'dropTab', id, x, y, clientX, clientY }) },
   endTabDrag: () => { send({ type: 'endTabDrag' }) },
+  tabDragArrived: (x: number, y: number) => { send({ type: 'tabDragArrived', x, y }) },
   showTabMenu: (id: string) => { send({ type: 'tabMenu', id }) },
 
   /** Subscribes to shell state pushes from main. Returns an unsubscribe

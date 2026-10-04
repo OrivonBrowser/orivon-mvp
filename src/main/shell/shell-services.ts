@@ -40,6 +40,7 @@ import { NullSessionStore, SessionStore } from '../session-restore/session-store
 import type { SessionLog } from '../session-restore/session-store.js'
 import { createLoadedExtensions } from '../extensions/loaded-extensions.js'
 import type { LoadedExtensions } from '../extensions/loaded-extensions.js'
+import { LocalTabDrag } from './local-tab-drag.js'
 import { TearDragController } from './tear-drag.js'
 import { WindowRegistry } from './window-registry.js'
 import type { SubsystemContext } from '../registry.js'
@@ -81,6 +82,9 @@ export interface ShellServices {
   /** The floating preview a tab shows once dragged out of its strip, and the mark it leaves on whichever
    * window's strip it is over -- one for the whole process, since only one tab can be mid-drag (tear-drag.ts). */
   readonly tearDrag: TearDragController
+  /** The same drag where screen positions are unknown (a native Wayland session): a preview inside the source
+   * window and the target found from where the pointer first appears over another window (local-tab-drag.ts). */
+  readonly localDrag: LocalTabDrag
   /** Every window's tab lifecycle, mirrored here (tab-lifecycle.ts) -- one
    * instance for the whole process, so a subscriber (the extension host)
    * hears every window, not just the one it happened to attach to first. */
@@ -142,6 +146,7 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     shortcuts: new ShortcutService(shortcutStore, platform),
     shortcutStore,
     tearDrag: new TearDragController(() => windows.all()),
+    localDrag: new LocalTabDrag(() => windows.all()),
     tabLifecycle,
     windows,
     windowState: runtime.isPrivate ? new NullWindowStateStore() : new FileWindowStateStore(join(userDataPath, 'window-state.json')),

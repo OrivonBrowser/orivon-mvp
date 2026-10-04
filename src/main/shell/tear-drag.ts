@@ -28,10 +28,10 @@ const MAX_PREVIEW_WIDTH = 480
 const PREVIEW_SHARE = 1 / 3
 /** The least time between two reads of a strip's layout whose last read no longer fits its tabs. */
 const STRIP_READ_RETRY_MS = 250
-const CHIP_WIDTH = 168
-const CHIP_HEIGHT = 32
+export const CHIP_WIDTH = 168
+export const CHIP_HEIGHT = 32
 /** Offset from the real cursor, so the preview trails it rather than sitting exactly under it (and hiding it). */
-const CURSOR_OFFSET = 16
+export const CURSOR_OFFSET = 16
 
 /** How big the floating thumbnail is: about a third of the source window's own page, capped so a very wide
  * window does not produce an oversized ghost. Pure, so the sizing rule is tested without a window. */
@@ -45,7 +45,7 @@ function escapeHtml (text: string): string {
   return text.replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char] ?? char))
 }
 
-function thumbnailHtml (dataUrl: string, width: number, height: number): string {
+export function thumbnailHtml (dataUrl: string, width: number, height: number): string {
   return `<!doctype html><html><head><meta charset="utf-8"><style>
 html,body{margin:0;background:transparent;overflow:hidden}
 img{display:block;width:${String(width)}px;height:${String(height)}px;object-fit:cover;border-radius:10px;opacity:0.88;box-shadow:0 8px 24px rgba(0,0,0,0.35)}
@@ -59,7 +59,7 @@ const CHIP_SURFACE_LIGHT = '#f2f2f7'
 const CHIP_INK_DARK = '#e6e7e8'
 const CHIP_INK_LIGHT = 'rgba(0, 0, 0, 0.90)'
 
-function chipHtml (title: string, dark: boolean): string {
+export function chipHtml (title: string, dark: boolean): string {
   const surface = dark ? CHIP_SURFACE_DARK : CHIP_SURFACE_LIGHT
   const ink = dark ? CHIP_INK_DARK : CHIP_INK_LIGHT
   return `<!doctype html><html><head><meta charset="utf-8"><style>
@@ -272,7 +272,7 @@ export class TearDragController {
   }
 }
 
-function imageToDataUrl (image: NativeImage | null, size: { width: number, height: number }): string | null {
+export function imageToDataUrl (image: NativeImage | null, size: { width: number, height: number }): string | null {
   // Empty, not just absent, is also "nothing to draw": a detached view (a background tab, caught
   // before beginTabDrag's own activateTab call takes effect, or a tab that never painted) captures
   // to a zero-sized image rather than throwing -- render()'s own chip fallback is for both.

@@ -55,6 +55,7 @@ function actions (overrides: Partial<ShellActions> = {}): ShellActions {
     dragTab: vi.fn(),
     dropTab: vi.fn(),
     endTabDrag: vi.fn(),
+    tabDragArrived: vi.fn(),
     showTabMenu: vi.fn(),
     ...overrides
   }
@@ -329,6 +330,19 @@ describe('registerShellIpc -- dragging a tab over the page', () => {
     await dispatch({ type: 'endTabDrag' }, OTHER_FRAME)
 
     expect(endTabDrag).toHaveBeenCalledOnce()
+  })
+
+  it('takes the place the pointer first appeared over the chrome, only as two finite numbers from the chrome view', async () => {
+    const tabDragArrived = vi.fn()
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ tabDragArrived }))
+
+    await dispatch({ type: 'tabDragArrived', x: 150, y: 20 })
+    await dispatch({ type: 'tabDragArrived', x: 'left', y: 20 })
+    await dispatch({ type: 'tabDragArrived', x: Number.NaN, y: 20 })
+    await dispatch({ type: 'tabDragArrived', x: 150 })
+    await dispatch({ type: 'tabDragArrived', x: 150, y: 20 }, OTHER_FRAME)
+
+    expect(tabDragArrived.mock.calls).toEqual([[{ x: 150, y: 20 }]])
   })
 })
 

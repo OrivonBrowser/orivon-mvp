@@ -1992,6 +1992,30 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
+### A367: Should a tab drag on Wayland become a native drag and drop? **[OWNER]**
+
+- **Question:** On Wayland the tab drag has no live feedback outside the source window (only the cursor) and no insertion mark in another window before the release. A native HTML drag and drop would give both: the compositor draws the drag image anywhere and each window sees `dragenter`/`dragover` in its own coordinates (measured on X11 and Wayland). Is that worth building?
+- **Why it matters:** every Wayland tab drag would become an HTML drag, so each window needs a transparent catcher view over its page (a page under the pointer lists the drag's type, though `getData` is empty unless it accepts), the payload must be a nonce, a Wayland drop needs one pointer motion after entering a window, and the in-strip feel changes.
+- **Options:** keep the arrival rule (rec.: it works today with pointer capture and no page ever sees the drag); native drag and drop for Wayland only, once a person asks for the mark or the ghost outside the window.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A368: Window and cursor positions that are wrong on Wayland, outside the tab drag **[AI-REC]**
+
+- **Question:** On a native Wayland session Electron ignores the position asked for a window and reports each at one fixed place. Still asking for one: `cascadeFrom` (New window, the tab menu's Move to new window, a group's window, history's Open all), restoring the last window place at start, and the side panel edge's `screenX` deltas (steady unless the window moves mid-drag). None produces a wrong result for the person: the compositor places the window.
+- **Why it matters:** a new window does not sit down and right of the one it came from, and the last place is not restored; the code reads as if it were.
+- **Options:** leave them, they cost nothing (rec.); skip the position where `pointerIsLocal()` so the code says what happens.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A369: Is a pointer arrival seen on every Wayland compositor? **[RESEARCH]**
+
+- **Question:** The release over another window is found from that window's chrome seeing the pointer appear (`pointerover`) when the button is let go under pointer capture. It was measured on mutter 46 only. Do KDE's compositor, wlroots ones and Weston deliver it the same way?
+- **Why it matters:** a compositor that sends the target window nothing until its next motion would turn every cross-window drop into a window of its own.
+- **Options:** run the private-compositor harness against one compositor of each family (rec.); widen the wait if one is late.
+- **Who decides:** research first
+- **Blocks:** nothing
+
 ### A375: The Linux package says Orivon opens HTML files, but a file handed in at launch is dropped **[OWNER]**
 
 - **Question:** `electron-builder.yml` lists `text/html` in the desktop entry's MimeType, so a file manager can offer

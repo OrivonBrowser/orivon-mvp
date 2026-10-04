@@ -47,7 +47,7 @@ vi.mock('electron', () => ({
 }))
 
 const { TabManager } = await import('../tabs.js')
-const { crossWindowTargetFor, dropTab, moveToNewWindow, moveToWindow } = await import('../tab-move.js')
+const { crossWindowTargetFor, dropTab, moveToNewWindow, moveToWindow, stripSlot } = await import('../tab-move.js')
 const { rememberStripLayout, parseStripLayout, centresOf } = await import('../strip-centres.js')
 const { placeAmongAll } = await import('../../../renderer/chrome/tab-groups.js')
 
@@ -312,6 +312,21 @@ describe('crossWindowTargetFor', () => {
     rememberStripLayout(target.entry, { ids: [...tabIds.slice(0, 2), 'gone'], centres: [125, 367, 609] })
     const found = crossWindowTargetFor(from.entry, { x: 100 + 650, y: 110 }, [target.entry, from.entry], 80)
     expect(found?.index).toBe(Math.round((650 / 1200) * 3))
+  })
+
+  it('gives a slot from a place in the window\'s content area alone, the one a drop at that screen place gets', () => {
+    const { from, target, tabIds } = threeTabTarget()
+    rememberStripLayout(target.entry, { ids: tabIds, centres: [125, 367, 609] })
+    for (const x of [100, 300, 600, 650]) {
+      expect(stripSlot(target.entry, () => x, 0, false)).toBe(crossWindowTargetFor(from.entry, { x: 100 + x, y: 110 }, [target.entry, from.entry], 80)?.index)
+    }
+  })
+
+  it('goes by the share given when the centres are not known, and keeps a tab within its run', () => {
+    const { target } = threeTabTarget()
+    expect(stripSlot(target.entry, () => 0, 0.5, false)).toBe(2)
+    expect(stripSlot(target.entry, () => 0, 0.99, false)).toBe(3)
+    expect(stripSlot(target.entry, () => 0, 0.99, true)).toBe(0)
   })
 
   it('refuses a layout that is not one', () => {

@@ -103,6 +103,9 @@ export type ShellCommand =
   /** The drag ended without a tear-out: let go inside the strip, or cancelled. Releases the
    * capture `tabDragStart` began, whether or not it was ever shown as a floating preview. */
   | { type: 'endTabDrag' }
+  /** While a tab is dragged from another window and screen positions are unknown (local-pointer.ts): the first
+   * place the pointer was seen over this chrome, in this window's content area. */
+  | { type: 'tabDragArrived'; x: number; y: number }
   /** The right-click menu of a tab, which main shows (it lists the other windows). */
   | { type: 'tabMenu'; id: string }
 
@@ -136,6 +139,7 @@ export interface ShellActions {
   dragTab: (id: string, at: { x: number, y: number } | null) => void
   dropTab: (id: string, screen: { x: number, y: number }, client: { x: number, y: number }) => void
   endTabDrag: () => void
+  tabDragArrived: (point: { x: number, y: number }) => void
   showTabMenu: (id: string) => void
 }
 
@@ -245,6 +249,9 @@ export function registerShellIpc (
         return
       case 'endTabDrag':
         actions.endTabDrag()
+        return
+      case 'tabDragArrived':
+        if ([command.x, command.y].every(Number.isFinite)) actions.tabDragArrived({ x: command.x, y: command.y })
         return
       case 'tabMenu':
         if (typeof command.id === 'string') actions.showTabMenu(command.id)
