@@ -16,7 +16,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 
 ---
 
-## Week of 2026-09-28
+## Week of 2026-10-05
 
 ### Done / results
 
@@ -71,12 +71,5 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Wayland tab drags are now the browser's own drag and drop: the drag image follows outside the window and the other window marks the slot.
 
 ### In my head
-- Explored what `child_process` can safely mean: a WASI program in the app's own tab, native `subprocess` still excluded (`docs/planning/child-process-design.md`).
-- WASM compatibility explored: JSPI works in Electron 44, so a WASI host over orivon.* needs no contracts change; no port needs it yet (docs/planning/wasm-compatibility.md).
-- Audited how AI sessions spend their budget: most goes to very long sessions and a 700 KB questions file. Handoff written for Opus 5.5.
-- Direction: the wallet moves from OUT to IN; explored as three provider layers behind one registry, mnemonic first, reads through Helios (`docs/planning/wallet-system-exploration.md`).
-- Decided native modules, spawn and fork run only as WebAssembly under the broker; native machine code never runs for an app (ADR-0040).
-- TIM's DNS hijacks Orivon's three IPFS gateways; the DoH fallback already routes around it, but a cold first load still takes ~47 s.
-- Privacy check: a provider choosing 65,536 buckets could name each site visited; capped at 256, and the docs now say what remains.
 
 ### Non-repo
