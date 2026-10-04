@@ -108,6 +108,9 @@ html, body {
   font-size: 12.5px;
   user-select: none;
 }
+/* The chrome's narrow layout follows the root's width, not the view's: while a tab is pressed on Wayland the view is
+   wider than the window and the root keeps the window's width (native-tab-drag.ts), so a media query would flip. */
+body { container-type: inline-size; }
 /* No bookmarks -> no bookmarks bar, and the chrome is one row shorter
    (styles/bookmarks.css hides the row itself). main.ts sets
    data-bookmarks from the same ShellState push that main sizes this view

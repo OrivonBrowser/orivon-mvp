@@ -327,3 +327,36 @@ it('ignores a drop carrying a nonce that is not the drag\'s, and one on a strip 
     await closeElectron(app)
   }
 }, TEST_TIMEOUT_MS)
+
+it('keeps a narrow window\'s toolbar narrow while a pressed tab makes the chrome view wider than the window', async () => {
+  const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env: { ORIVON_TEST_LOCAL_POINTER: '1' } })
+  try {
+    expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
+    const chrome = findChrome(app)
+    const read = async (): Promise<{ identity: string, view: number, root: number }> => await chrome.evaluate(() => ({
+      identity: getComputedStyle(document.querySelector('#identity') as Element).display,
+      view: window.innerWidth,
+      root: document.body.clientWidth
+    }))
+    // Wide, the placeholder shows: its hiding below is the narrow layout's doing.
+    expect((await read()).identity).not.toBe('none')
+    await app.evaluate(({ BaseWindow }) => { BaseWindow.getAllWindows()[0]?.setContentSize(500, 400) })
+    expect(await waitFor(async () => (await read()).view === 500)).toBe(true)
+    expect((await read()).identity).toBe('none')
+
+    const id = (await tabIds(chrome))[0] as string
+    await chrome.evaluate((tabId: string) => {
+      const tab = document.querySelector(`#tabrow .tab[data-id="${tabId}"]`) as HTMLElement
+      const box = tab.getBoundingClientRect()
+      tab.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, buttons: 1, clientX: box.left + 20, clientY: box.top + 10 }))
+    }, id)
+    expect(await waitFor(async () => (await read()).view > 500)).toBe(true)
+    expect(await read()).toMatchObject({ identity: 'none', root: 500 })
+
+    await chrome.evaluate(() => { window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 0 })) })
+    expect(await waitFor(async () => (await read()).view === 500)).toBe(true)
+    expect((await read()).identity).toBe('none')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
