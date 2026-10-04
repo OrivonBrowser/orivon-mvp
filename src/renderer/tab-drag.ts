@@ -1,8 +1,9 @@
-// Dragging a tab in the strip. Pointer events with the pointer captured, not
-// HTML drag and drop: an HTML drag hands its payload to whatever page is under
-// the pointer, which could read what was dragged, and pointer capture keeps
-// events coming to this view while the pointer is over the page or outside the
-// window (measured), which is what lets a tab be dragged out.
+// Dragging a tab in the strip where the pointer's place on the screen is known (X11, Windows, macOS). Pointer
+// events with the pointer captured, not HTML drag and drop: an HTML drag tells the page under the pointer what it
+// holds, and pointer capture keeps events coming to this view while the pointer is over the page or outside the
+// window (measured), which is what lets a tab be dragged out. Where that place is unknown (a native Wayland
+// session) the browser's own drag and drop carries the tab instead (native-tab-drag.ts): its payload is a nonce
+// and a transparent catcher over each page keeps the page out of the drag.
 //
 // A drag has three outcomes. Let go in the strip: the tab takes its new place.
 // Let go beyond the strip's reach: the tab goes to another window or a window of
@@ -35,6 +36,29 @@ export function clampToRun (index: number, pinned: boolean, count: number, lengt
 /** Whether the pointer is far enough out of the strip (above or below it, or outside the window) that letting go takes the tab out. */
 export function isTornOut (pointer: { x: number, y: number }, view: { width: number, stripHeight: number }): boolean {
   return pointer.y > view.stripHeight + TEAR_DISTANCE_PX || pointer.y < -TEAR_DISTANCE_PX || pointer.x < 0 || pointer.x > view.width
+}
+
+/** Where a held tab (or the tabs held together) can be put among the others: `others` are the strip's tabs but the
+ * held ones, `natural` their boxes before anything moves, `firstAt` the place the held ones started at, and `placeAt`
+ * the place a pointer at `x` would drop them on, kept within the run of their kind. */
+export interface Placer {
+  readonly others: HTMLElement[]
+  readonly natural: DOMRect[]
+  readonly firstAt: number
+  readonly placeAt: (x: number) => number
+}
+
+/** `all` is the strip's tabs in order, `held` the ones moved together (none: a tab arriving from elsewhere, pinned or not as `pinned` says). */
+export function placerFor (all: readonly HTMLElement[], held: readonly HTMLElement[], pinned: boolean, isPinned: (el: HTMLElement) => boolean = () => false): Placer {
+  const others = all.filter((tab) => !held.includes(tab))
+  const natural = others.map((tab) => tab.getBoundingClientRect())
+  const pinnedOthers = others.filter(isPinned).length
+  return {
+    others,
+    natural,
+    firstAt: held.length === 0 ? others.length : all.indexOf(held[0] as HTMLElement),
+    placeAt: (x) => clampToRun(dropIndex(natural.map((box) => box.left + box.width / 2), x), pinned, pinnedOthers, others.length)
+  }
 }
 
 export interface TabDragHost {
@@ -141,15 +165,14 @@ export function makeTabDraggable (el: HTMLElement, id: string, host: TabDragHost
   // instead, and the strip is redrawn from main's word once the tab is let go.
   const begin = (): void => {
     const all = host.tabs()
-    others = all.filter((tab) => !group.includes(tab))
-    natural = others.map((tab) => tab.getBoundingClientRect())
+    const placer = placerFor(all, group, host.isPinned?.(el) === true, host.isPinned)
+    others = placer.others
+    natural = placer.natural
+    firstAt = placer.firstAt
+    placeAt = placer.placeAt
     elLeft = el.getBoundingClientRect().left
     const rects = group.map((member) => member.getBoundingClientRect())
     groupWidth = Math.max(...rects.map((rect) => rect.right)) - Math.min(...rects.map((rect) => rect.left))
-    firstAt = all.indexOf(group[0] ?? el)
-    const pinned = host.isPinned?.(el) === true
-    const pinnedOthers = others.filter((tab) => host.isPinned?.(tab) === true).length
-    placeAt = (x) => clampToRun(dropIndex(natural.map((box) => box.left + box.width / 2), x), pinned, pinnedOthers, others.length)
     target = firstAt
     active = true
     dragging = true

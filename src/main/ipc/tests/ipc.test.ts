@@ -55,7 +55,12 @@ function actions (overrides: Partial<ShellActions> = {}): ShellActions {
     dragTab: vi.fn(),
     dropTab: vi.fn(),
     endTabDrag: vi.fn(),
-    tabDragArrived: vi.fn(),
+    prepareTabDrag: vi.fn(async () => null),
+    warmDropCatchers: vi.fn(),
+    startNativeTabDrag: vi.fn(),
+    dropNativeTab: vi.fn(),
+    endNativeTabDrag: vi.fn(),
+    cancelNativeTabDrag: vi.fn(),
     showTabMenu: vi.fn(),
     ...overrides
   }
@@ -332,17 +337,45 @@ describe('registerShellIpc -- dragging a tab over the page', () => {
     expect(endTabDrag).toHaveBeenCalledOnce()
   })
 
-  it('takes the place the pointer first appeared over the chrome, only as two finite numbers from the chrome view', async () => {
-    const tabDragArrived = vi.fn()
-    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ tabDragArrived }))
+  it('hands a native drag to the actions only as a bounded nonce and, for a drop, a whole place or none', async () => {
+    const startNativeTabDrag = vi.fn()
+    const dropNativeTab = vi.fn()
+    const endNativeTabDrag = vi.fn()
+    const cancelNativeTabDrag = vi.fn()
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ startNativeTabDrag, dropNativeTab, endNativeTabDrag, cancelNativeTabDrag }))
 
-    await dispatch({ type: 'tabDragArrived', x: 150, y: 20 })
-    await dispatch({ type: 'tabDragArrived', x: 'left', y: 20 })
-    await dispatch({ type: 'tabDragArrived', x: Number.NaN, y: 20 })
-    await dispatch({ type: 'tabDragArrived', x: 150 })
-    await dispatch({ type: 'tabDragArrived', x: 150, y: 20 }, OTHER_FRAME)
+    await dispatch({ type: 'startNativeTabDrag', id: 't1', nonce: 'n1' })
+    await dispatch({ type: 'startNativeTabDrag', id: 't1', nonce: '' })
+    await dispatch({ type: 'startNativeTabDrag', id: 7, nonce: 'n1' })
+    await dispatch({ type: 'startNativeTabDrag', id: 't1', nonce: 'x'.repeat(65) })
+    await dispatch({ type: 'startNativeTabDrag', id: 't1', nonce: 'n1' }, OTHER_FRAME)
+    expect(startNativeTabDrag.mock.calls).toEqual([['t1', 'n1']])
 
-    expect(tabDragArrived.mock.calls).toEqual([[{ x: 150, y: 20 }]])
+    await dispatch({ type: 'dropNativeTab', nonce: 'n1', index: 2, below: false })
+    await dispatch({ type: 'dropNativeTab', nonce: 'n1', index: null, below: false })
+    await dispatch({ type: 'dropNativeTab', nonce: 'n1', index: null, below: true })
+    await dispatch({ type: 'dropNativeTab', nonce: 'n1', index: -1, below: false })
+    await dispatch({ type: 'dropNativeTab', nonce: 'n1', index: 1.5, below: false })
+    await dispatch({ type: 'dropNativeTab', nonce: 'n1', index: 'two', below: false })
+    await dispatch({ type: 'dropNativeTab', nonce: 5, index: 1, below: false })
+    expect(dropNativeTab.mock.calls).toEqual([['n1', 2, false], ['n1', null, false], ['n1', null, true]])
+
+    await dispatch({ type: 'endNativeTabDrag', nonce: 'n1' })
+    await dispatch({ type: 'endNativeTabDrag' })
+    await dispatch({ type: 'cancelNativeTabDrag', nonce: 'n1' })
+    await dispatch({ type: 'cancelNativeTabDrag', nonce: {} })
+    expect(endNativeTabDrag.mock.calls).toEqual([['n1']])
+    expect(cancelNativeTabDrag.mock.calls).toEqual([['n1']])
+  })
+
+  it('answers a press on a tab with the drag image the actions found, and nothing for a tab id that is not a string', async () => {
+    const prepareTabDrag = vi.fn(async () => 'data:image/png;base64,AA==')
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ prepareTabDrag }))
+
+    expect(await dispatch({ type: 'prepareTabDrag', id: 't1' })).toBe('data:image/png;base64,AA==')
+    expect(await dispatch({ type: 'prepareTabDrag', id: 4 })).toBeNull()
+    expect(await dispatch({ type: 'prepareTabDrag', id: 't1' }, OTHER_FRAME)).toBeUndefined()
+    expect(prepareTabDrag.mock.calls).toEqual([['t1']])
   })
 })
 

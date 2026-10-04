@@ -1,17 +1,18 @@
 # `src/renderer/`: the browser chrome UI
 
-**What lives here.** Ten entries, plain vanilla-TS pages with no framework. Tied to Electron,
+**What lives here.** Eleven entries, plain vanilla-TS pages with no framework. Tied to Electron,
 entirely.
 
 | Entry | What it is |
 |---|---|
-| (top level) | The chrome view: `main.ts` starts the modules in [`chrome/`](chrome/) (tab strip, navigation, site badges, the toolbar cluster, the bookmarks bar; each a `ChromeModule`), and the tab drag helper here (`tab-drag.ts`), in its own `WebContentsView` above the active tab |
+| (top level) | The chrome view: `main.ts` starts the modules in [`chrome/`](chrome/) (tab strip, navigation, site badges, the toolbar cluster, the bookmarks bar; each a `ChromeModule`), and the tab drag helpers here (`tab-drag.ts`, the pointer-capture drag, and `native-tab-drag.ts`, the browser's own drag and drop that a native Wayland session uses), in its own `WebContentsView` above the active tab |
 | [`chrome/`](chrome/) | The chrome view's features, one file each, and the three toolbar slots a feature puts a button in |
 | [`newtab/`](newtab/) | The new-tab dashboard: ordinary content in a fresh tab's own view (`src/main/shell/tabs.ts`'s `createTab()`), not part of the chrome |
 | [`permissions/`](permissions/) | The all-sites permissions popup: every app and its grants, revoke-only |
 | [`site-info/`](site-info/) | The per-site popup: connection row, this site's switches and permission selects, its Web3 Score and site data pages |
 | [`intro/`](intro/) | The welcome screen, a full-window view over the shell (`src/main/shell/intro-view.ts`) |
 | [`overlay/`](overlay/) | The one page every overlay shows: the main menu, and a page per feature that shows Orivon HTML above the page (`src/main/overlays/`) |
+| [`drop-catcher/`](drop-catcher/) | The empty transparent page of the view laid over a window's page while a tab is dragged (`src/main/shell/drop-catcher.ts`); its preload does the listening |
 | [`split-frame/`](split-frame/) | The view behind the two panes of a split: the divider, the ring round the pane in use, and where a dragged tab would go |
 | [`pages/`](pages/) | The shell's own pages, each a tab (`orivon://settings`, `history`, `downloads`, `bookmarks`, `import`, `about`, `tasks`, `profiles`, `private`, `extensions`), on the tokens and controls in `pages/shared/` |
 

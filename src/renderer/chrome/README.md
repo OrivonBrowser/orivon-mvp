@@ -7,8 +7,7 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 |---|---|
 | `context.ts` | `ChromeModule`, `ChromeContext`, `TabDecorator`; the state every module reads; `must`, `hasSite`, `anchorFor` |
 | `modules.ts` | `CHROME_MODULES` and `TAB_DECORATORS`, one line per feature, and `dispatchShellEvent` |
-| `tab-strip.ts` | the tabs (pinned ones in front, the rest in one scrolling run, `#tab-scroll`), the new-tab button, the empty tail, the cross-window drop mark. One element per tab, kept while the tab lives: a push patches the tabs that changed, moves an element only when the order changed, and runs the decorators on a changed tab only |
-| `drag-arrival.ts` | while another window drags a tab and screen positions are unknown, reports the first place the pointer shows up over this chrome (`tabDragArrived`) |
+| `tab-strip.ts` | the tabs (pinned ones in front, the rest in one scrolling run, `#tab-scroll`), the new-tab button, the empty tail, the drop mark (another window's tab, or a native drag's slot). One element per tab, kept while the tab lives: a push patches the tabs that changed, moves an element only when the order changed, and runs the decorators on a changed tab only |
 | `tab-badges.ts` | a tab's pinned look, tooltip, accessible name and speaker badge (a tab its site silenced reads "Muted by site settings" and the badge does nothing); a `TabDecorator` |
 | `tab-crashed.ts` | a crashed tab's mark; a `TabDecorator` |
 | `contain.ts` | `contained` and `runDecorators`: one feature's throw is logged and the rest run |

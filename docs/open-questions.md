@@ -1992,14 +1992,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
-### A367: Should a tab drag on Wayland become a native drag and drop? **[OWNER]**
-
-- **Question:** On Wayland the tab drag has no live feedback outside the source window (only the cursor) and no insertion mark in another window before the release. A native HTML drag and drop would give both: the compositor draws the drag image anywhere and each window sees `dragenter`/`dragover` in its own coordinates (measured on X11 and Wayland). Is that worth building?
-- **Why it matters:** every Wayland tab drag would become an HTML drag, so each window needs a transparent catcher view over its page (a page under the pointer lists the drag's type, though `getData` is empty unless it accepts), the payload must be a nonce, a Wayland drop needs one pointer motion after entering a window, and the in-strip feel changes.
-- **Options:** keep the arrival rule (rec.: it works today with pointer capture and no page ever sees the drag); native drag and drop for Wayland only, once a person asks for the mark or the ghost outside the window.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A368: Window and cursor positions that are wrong on Wayland, outside the tab drag **[AI-REC]**
 
 - **Question:** On a native Wayland session Electron ignores the position asked for a window and reports each at one fixed place. Still asking for one: `cascadeFrom` (New window, the tab menu's Move to new window, a group's window, history's Open all), restoring the last window place at start, and the side panel edge's `screenX` deltas (steady unless the window moves mid-drag). None produces a wrong result for the person: the compositor places the window.
@@ -2008,10 +2000,18 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A369: Is a pointer arrival seen on every Wayland compositor? **[RESEARCH]**
+### A376: A tab drag that starts with the pointer already below the chrome gets no `dragend` **[RESEARCH]**
 
-- **Question:** The release over another window is found from that window's chrome seeing the pointer appear (`pointerover`) when the button is let go under pointer capture. It was measured on mutter 46 only. Do KDE's compositor, wlroots ones and Weston deliver it the same way?
-- **Why it matters:** a compositor that sends the target window nothing until its next motion would turn every cross-window drop into a window of its own.
+- **Question:** On Wayland the browser's own tab drag (`native-tab-drag.ts`) never delivers `dragend` when its first motion past the drag threshold lands outside the chrome view, such as a fast flick down from the strip. Measured under mutter 46: a jump to the toolbar still inside the chrome works, a jump 14 px past its bottom edge does not, with and without the drop catcher. The chrome ends such a drag at its next pointer event, and the tab then opens a window of its own wherever it was let go. Is there a way to keep the drag alive?
+- **Why it matters:** a person who flicks a tab towards another window's strip gets a new window instead of the move.
+- **Options:** read the Chromium source for why the Wayland drag session ends (rec.); keep the recovery and say so in the docs; start the drag only while the pointer is inside the chrome, which needs a way to refuse the first motion.
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A377: Do other Wayland compositors behave as mutter 46 does for the native tab drag? **[RESEARCH]**
+
+- **Question:** The native tab drag rests on mutter 46 measurements: no `dragend` outcome tells Escape from a release over nothing except a `keyup` Escape 100 to 200 ms later, a drop needs one real motion after entering a window, and the drag image is drawn at the requested offset. Do KDE's compositor, wlroots ones and Weston do the same?
+- **Why it matters:** a compositor with a later or missing Escape key-up turns every cancel into a window of its own (the wait is 300 ms, provisional); one that drops the motion rule loses nothing, one that adds a rule loses drops.
 - **Options:** run the private-compositor harness against one compositor of each family (rec.); widen the wait if one is late.
 - **Who decides:** research first
 - **Blocks:** nothing

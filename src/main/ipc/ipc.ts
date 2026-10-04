@@ -103,9 +103,20 @@ export type ShellCommand =
   /** The drag ended without a tear-out: let go inside the strip, or cancelled. Releases the
    * capture `tabDragStart` began, whether or not it was ever shown as a floating preview. */
   | { type: 'endTabDrag' }
-  /** While a tab is dragged from another window and screen positions are unknown (local-pointer.ts): the first
-   * place the pointer was seen over this chrome, in this window's content area. */
-  | { type: 'tabDragArrived'; x: number; y: number }
+  /** The pointer is down on a tab where tabs are dragged by the browser's own drag and drop (local-pointer.ts):
+   * answered with the tab's page as a data URL for the drag image, or null. */
+  | { type: 'prepareTabDrag'; id: string }
+  /** The pointer is pulling a tab: every window's drop catcher is made ready. */
+  | { type: 'warmDropCatchers' }
+  /** The browser started the drag of a tab; `nonce` is all the drag carries. */
+  | { type: 'startNativeTabDrag'; id: string; nonce: string }
+  /** The drag was dropped on this chrome. `index` is the place in the strip (null: nothing to do), `below` that it
+   * was over the part of the chrome below the tab strip and toolbar. */
+  | { type: 'dropNativeTab'; nonce: string; index: number | null; below: boolean }
+  /** The drag has ended in the window it began in, taken or not. */
+  | { type: 'endNativeTabDrag'; nonce: string }
+  /** Escape was seen just after the drag ended. */
+  | { type: 'cancelNativeTabDrag'; nonce: string }
   /** The right-click menu of a tab, which main shows (it lists the other windows). */
   | { type: 'tabMenu'; id: string }
 
@@ -126,6 +137,11 @@ function isFromChrome (event: IpcMainInvokeEvent, chromeWebContents: WebContents
     event.senderFrame.url === chromeUrl
 }
 
+/** A drag's nonce: the chrome's random id for it, which main only compares. */
+function isNonce (value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 64
+}
+
 /** What the chrome's commands do that is the window's own business rather than the tab collection's. */
 export interface ShellActions {
   openPermissions: (anchor: PanelAnchor, url?: string) => void
@@ -139,7 +155,12 @@ export interface ShellActions {
   dragTab: (id: string, at: { x: number, y: number } | null) => void
   dropTab: (id: string, screen: { x: number, y: number }, client: { x: number, y: number }) => void
   endTabDrag: () => void
-  tabDragArrived: (point: { x: number, y: number }) => void
+  prepareTabDrag: (id: string) => Promise<string | null>
+  warmDropCatchers: () => void
+  startNativeTabDrag: (id: string, nonce: string) => void
+  dropNativeTab: (nonce: string, index: number | null, below: boolean) => void
+  endNativeTabDrag: (nonce: string) => void
+  cancelNativeTabDrag: (nonce: string) => void
   showTabMenu: (id: string) => void
 }
 
@@ -250,8 +271,22 @@ export function registerShellIpc (
       case 'endTabDrag':
         actions.endTabDrag()
         return
-      case 'tabDragArrived':
-        if ([command.x, command.y].every(Number.isFinite)) actions.tabDragArrived({ x: command.x, y: command.y })
+      case 'prepareTabDrag':
+        return typeof command.id === 'string' ? actions.prepareTabDrag(command.id) : null
+      case 'warmDropCatchers':
+        actions.warmDropCatchers()
+        return
+      case 'startNativeTabDrag':
+        if (typeof command.id === 'string' && isNonce(command.nonce)) actions.startNativeTabDrag(command.id, command.nonce)
+        return
+      case 'dropNativeTab':
+        if (isNonce(command.nonce) && (command.index === null || (Number.isInteger(command.index) && command.index >= 0))) actions.dropNativeTab(command.nonce, command.index, command.below === true)
+        return
+      case 'endNativeTabDrag':
+        if (isNonce(command.nonce)) actions.endNativeTabDrag(command.nonce)
+        return
+      case 'cancelNativeTabDrag':
+        if (isNonce(command.nonce)) actions.cancelNativeTabDrag(command.nonce)
         return
       case 'tabMenu':
         if (typeof command.id === 'string') actions.showTabMenu(command.id)

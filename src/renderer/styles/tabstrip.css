@@ -176,3 +176,8 @@
   color: var(--wink);
   background: var(--whover-strong);
 }
+/* The tab being dragged by the browser's own drag and drop (native-tab-drag.ts): its place stays as a gap while the drag image is out. */
+.tab.drag-source { opacity: 0; }
+/* The tab as the drag image (native-tab-drag.ts), kept out of sight until the browser draws it. A tab in the strip has no background of its own, so this one is given the active tab's. */
+.tab-drag-chip { background: var(--wsurface); color: var(--wink); border-radius: 8px; opacity: 0.92; }
+.tab-drag-chip .close { display: none; }
