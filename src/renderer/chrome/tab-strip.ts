@@ -1,7 +1,7 @@
 import type { ShellState, TabState } from '../../main/shell/tabs.js'
 import { closeIcon, faviconElement } from '../icons.js'
 import { isDraggingTab, makeTabDraggable } from '../tab-drag.js'
-import { createArrivalWatch } from './drag-arrival.js'
+import { createNativeTabDrag } from '../native-tab-drag.js'
 import type { ChromeContext, ChromeModule, TabDecorator } from './context.js'
 import { must } from './context.js'
 import { contained, runDecorators } from './contain.js'
@@ -33,7 +33,8 @@ export function createTabStrip (decorators: readonly TabDecorator[], finishers: 
   let tabScroll: HTMLDivElement | undefined
   let newTabBtn: HTMLButtonElement | undefined
   let dropMark: HTMLDivElement | null = null
-  let arrival: ReturnType<typeof createArrivalWatch> | null = null
+  /** Set when tabs are dragged by the browser's own drag and drop (native-tab-drag.ts), else they drag with the pointer (tab-drag.ts). */
+  let native: ReturnType<typeof createNativeTabDrag> | null = null
   let renderDeferred = false
   let shownActiveId: string | null = null
   /** One element per tab, kept across pushes: a push patches what differs instead of building the strip again. */
@@ -69,6 +70,11 @@ export function createTabStrip (decorators: readonly TabDecorator[], finishers: 
     if (next === scroller.scrollLeft) return
     event.preventDefault()
     scroller.scrollLeft = next
+  }
+
+  /** The tabs of the row that take room: a collapsed group's are hidden. */
+  function shownTabs (row: ParentNode): HTMLElement[] {
+    return [...row.querySelectorAll<HTMLElement>('.tab')].filter((tabEl) => !tabEl.hidden)
   }
 
   /** The tab element after `el` among `el`'s siblings, skipping what is not a tab (a group chip). */
@@ -116,9 +122,10 @@ export function createTabStrip (decorators: readonly TabDecorator[], finishers: 
     })
     // Every handler below reads the tab from `latest`: the element outlives the state it was made from.
     const partnerId = (): string | null => latest.get(id)?.splitWith ?? null
-    makeTabDraggable(el, id, {
+    if (native !== null) native.attach(el, id)
+    else makeTabDraggable(el, id, {
       // A collapsed group's tabs take no room, so they are not places to drop on.
-      tabs: () => [...row.querySelectorAll<HTMLElement>('.tab')].filter((tabEl) => !tabEl.hidden),
+      tabs: () => shownTabs(row),
       isPinned: (tabEl) => tabEl.classList.contains('pinned'),
       partnerOf: () => {
         const partner = partnerId()
@@ -272,7 +279,8 @@ export function createTabStrip (decorators: readonly TabDecorator[], finishers: 
     return !same
   }
 
-  function showDropMark (index: number): void {
+  /** Draws the line before the tab at `index` among the tabs but the `held` ones (a tab being dragged in this strip). */
+  function showDropMark (index: number, held: readonly string[] = []): void {
     const row = tabrow
     if (row === undefined) return
     dropMark ??= (() => {
@@ -284,7 +292,7 @@ export function createTabStrip (decorators: readonly TabDecorator[], finishers: 
     // The index is a place in the state's tab order, which is the order of the `.tab` elements; a tab hidden in
     // a collapsed group takes no room, so the line goes before the next tab shown (as `placeAmongAll` reads
     // it), or after the last one.
-    const tabs = [...row.querySelectorAll<HTMLElement>('.tab')]
+    const tabs = [...row.querySelectorAll<HTMLElement>('.tab')].filter((tab) => !held.includes(tab.dataset['id'] ?? ''))
     const before = tabs.slice(Math.max(0, index)).find((tab) => !tab.hidden)
     const rowLeft = row.getBoundingClientRect().left
     // The row itself never scrolls (only the run of unpinned tabs inside it does), and a tab's viewport rect
@@ -298,7 +306,8 @@ export function createTabStrip (decorators: readonly TabDecorator[], finishers: 
 
   return {
     name: 'tab-strip',
-    init: ({ shell }) => {
+    init: (ctx) => {
+      const { shell } = ctx
       tabrow = must(document.querySelector<HTMLDivElement>('#tabrow'), '#tabrow missing')
       tabScroll = must(document.querySelector<HTMLDivElement>('#tab-scroll'), '#tab-scroll missing')
       tabScroll.addEventListener('scroll', markOverflow, { passive: true })
@@ -313,13 +322,38 @@ export function createTabStrip (decorators: readonly TabDecorator[], finishers: 
       }
       newTabBtn = must(document.querySelector<HTMLButtonElement>('#new-tab'), '#new-tab missing')
       newTabBtn.addEventListener('click', () => shell.newTab())
+      const row = tabrow
+      if (typeof shell.nativeTabDragType === 'string') {
+        native = createNativeTabDrag(shell.nativeTabDragType, shell, {
+          tabs: () => shownTabs(row),
+          isPinned: (tabEl) => tabEl.classList.contains('pinned'),
+          partnerOf: (tabEl) => {
+            const partner = latest.get(tabEl.dataset['id'] ?? '')?.splitWith ?? null
+            return partner === null ? null : entries.get(partner)?.el ?? null
+          },
+          stateIndex: (held, target) => placeAmongAll(row, held, target),
+          showMark: (index, held) => {
+            if (index === null) {
+              if (dropMark !== null) dropMark.hidden = true
+            } else {
+              showDropMark(index, held)
+            }
+          },
+          stripBottom: () => row.getBoundingClientRect().bottom,
+          toolbarBottom: () => document.querySelector('#toolbar')?.getBoundingClientRect().bottom ?? row.getBoundingClientRect().bottom,
+          finished: () => {
+            const newest = ctx.state()
+            if (renderDeferred && newest !== null) renderTabs(newest, ctx)
+          }
+        })
+      }
     },
     render: renderTabs,
-    event: (payload, ctx) => {
-      const event = payload as { type?: string, index?: number, on?: boolean }
+    event: (payload) => {
+      const event = payload as { type?: string, index?: number, on?: boolean, pinned?: boolean }
       if (event.type === 'dragMark' && typeof event.index === 'number') showDropMark(event.index)
       else if (event.type === 'dragMarkClear' && dropMark !== null) dropMark.hidden = true
-      else if (event.type === 'tabDrag') (arrival ??= createArrivalWatch(document, ctx.shell.tabDragArrived)).listen(event.on === true)
+      else if (event.type === 'nativeTabDrag') native?.setTarget(event.on === true, event.pinned === true)
     }
   }
 }

@@ -38,6 +38,8 @@ import type { ShellServices } from './shell-services.js'
 import { resolveCurrent } from '../browsing/search-current.js'
 import { bookmarksBarShown as barShown } from './bookmarks-bar/bar-visibility.js'
 import { SHELL_PARTITION } from './shell-session.js'
+import { NATIVE_TAB_DRAG_ARGUMENT } from '../channels.js'
+import { pointerIsLocal } from './local-pointer.js'
 
 /** The new-tab page's own URL: the dev server's nested path, or the built file. */
 export function resolveDashboardUrl (): string {
@@ -68,7 +70,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
       sandbox: true,
       nodeIntegration: false,
       webSecurity: true,
-      additionalArguments: [`--orivon-shell-url=${chromeUrl}`]
+      additionalArguments: [`--orivon-shell-url=${chromeUrl}`, ...(pointerIsLocal() ? [NATIVE_TAB_DRAG_ARGUMENT] : [])]
     }
   })
   // Set BEFORE addChildView: a freshly created WebContentsView defaults to

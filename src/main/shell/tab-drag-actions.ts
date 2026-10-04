@@ -1,16 +1,14 @@
-// What the chrome's tab drag asks of its window: a preview while the tab is out of its strip, and where the tab goes
-// when it is let go. Two ways to work out where, by what the platform tells a window about the screen:
-// - screen positions known (X11, Windows, macOS): a floating preview window follows the cursor (tear-drag.ts) and
-//   the drop is read from screen coordinates (tab-move.ts's `dropTab`);
-// - not known (a native Wayland session, local-pointer.ts): the preview is a view inside the window and the drop is
-//   read from positions inside the windows involved (local-tab-drag.ts, local-drop.ts).
+// What the chrome's tab drag asks of its window, in one of two ways, by what the platform tells a window about the screen:
+// - screen positions known (X11, Windows, macOS): the chrome drags with pointer capture, a floating preview window
+//   follows the cursor (tear-drag.ts) and the drop is read from screen coordinates (tab-move.ts's `dropTab`);
+// - not known (a native Wayland session, local-pointer.ts): the browser's own drag and drop carries the tab, and
+//   native-tab-drag.ts holds the drag while this file says what each outcome does to the window.
 import type { ShellActions } from '../ipc/ipc.js'
-import { planLocalDrop } from './local-drop.js'
-import type { Arrival } from './local-drop.js'
-import { pointerIsLocal } from './local-pointer.js'
 import { splitZoneFor } from './split-drop.js'
 import { refreshStripLayouts, stripCentresFor } from './strip-centres.js'
-import { dropTab, inTop, moveToNewWindow, moveToWindow, stripSlot } from './tab-move.js'
+import type { NativeDragOps } from './native-tab-drag.js'
+import type { NativeOutcome } from './native-drag-plan.js'
+import { dropTab, inTop, moveToNewWindow, moveToWindow } from './tab-move.js'
 import type { WindowParts } from './window-actions.js'
 import type { ShellWindow } from './window-registry.js'
 
@@ -21,48 +19,13 @@ const TAB_DRAG_SPLIT_SHARE = 0.12
 /** How long a drop waits for the strip of the window it lands in to report where its tabs are. */
 const STRIP_READ_MS = 150
 
-export type TabDragActions = Pick<ShellActions, 'beginTabDrag' | 'dragTab' | 'dropTab' | 'endTabDrag' | 'tabDragArrived'>
+export type TabDragActions = Pick<ShellActions, 'beginTabDrag' | 'dragTab' | 'dropTab' | 'endTabDrag' | 'prepareTabDrag' | 'warmDropCatchers' | 'startNativeTabDrag' | 'dropNativeTab' | 'endNativeTabDrag' | 'cancelNativeTabDrag'>
 
 export function tabDragActions (parts: WindowParts): TabDragActions {
   const { entry, services, openWindow, topHeight, area } = parts
   const { tabs, window } = entry
-  const local = (): boolean => pointerIsLocal()
 
   const splitZone = (id: string, point: { x: number, y: number }) => splitZoneFor(tabs.getState().activeTabId, id, area(), point, TAB_DRAG_SPLIT_SHARE)
-
-  /** A tab let go where screen positions are unknown. Whatever is decided from this window alone is done at once;
-   * a drop that may be over another window's strip waits for that window to say the pointer arrived there. */
-  const dropWhereLocal = (id: string, client: { x: number, y: number }): void => {
-    const { localDrag } = services
-    const decide = (arrival: Arrival<ShellWindow> | null) => planLocalDrop({
-      client,
-      content: window.getContentBounds(),
-      topHeight,
-      zone: splitZone(id, client),
-      arrival,
-      slotOf: (target, x) => stripSlot(target, () => x, x / Math.max(1, target.window.getContentBounds().width), tabs.record(id)?.pinned === true)
-    })
-    const now = decide(null)
-    const active = tabs.getState().activeTabId
-    if (now.kind === 'split' && active !== null) {
-      localDrag.finish()
-      tabs.splits.split(active, id, now.zone)
-      return
-    }
-    void localDrag.settle().then(async (arrival) => {
-      const live = arrival !== null && !arrival.window.window.isDestroyed() ? arrival : null
-      if (live !== null && stripCentresFor(live.window) === null) await refreshStripLayouts([live.window], STRIP_READ_MS)
-      localDrag.finish()
-      if (window.isDestroyed()) return
-      const plan = decide(live)
-      if (plan.kind === 'move') moveToWindow(entry, id, plan.window, plan.index)
-      else if (plan.kind === 'window') {
-        // The compositor places a new window; a position asked for here would only be echoed back unchanged.
-        const own = window.getBounds()
-        moveToNewWindow(entry, id, openWindow, { width: own.width, height: own.height })
-      }
-    })
-  }
 
   /** A tab let go where screen positions are known. */
   const dropWhereGlobal = (id: string, screenPoint: { x: number, y: number }): void => {
@@ -83,14 +46,35 @@ export function tabDragActions (parts: WindowParts): TabDragActions {
     })
   }
 
+  /** What a native drag's outcome does to the window it began in. */
+  const applyNative = (id: string, outcome: NativeOutcome<ShellWindow>): void => {
+    switch (outcome.kind) {
+      case 'none':
+        return
+      case 'reorder':
+        tabs.moveTab(id, outcome.index)
+        return
+      case 'move':
+        moveToWindow(entry, id, outcome.window, outcome.index)
+        return
+      case 'split': {
+        const active = tabs.getState().activeTabId
+        if (active !== null) tabs.splits.split(active, id, outcome.zone)
+        return
+      }
+      case 'window': {
+        // The compositor places a new window; a position asked for here would only be echoed back unchanged.
+        const own = window.getBounds()
+        moveToNewWindow(entry, id, openWindow, { width: own.width, height: own.height })
+      }
+    }
+  }
+
   return {
     // The dragged tab stays where it is in the stack: dragging a background tab onto the page in
     // front is how a split is made. A background tab's view is detached, so its capture comes back
     // empty and the preview shows the tab's title instead.
-    beginTabDrag: (id) => {
-      if (local()) services.localDrag.begin(entry, id)
-      else services.tearDrag.prewarm(entry, id)
-    },
+    beginTabDrag: (id) => { services.tearDrag.prewarm(entry, id) },
     dragTab: (id, point) => {
       const zone = point === null ? null : splitZone(id, point)
       tabs.splits.setPreview(zone)
@@ -98,24 +82,12 @@ export function tabDragActions (parts: WindowParts): TabDragActions {
       // pointermove of a drag that has not (or not yet) torn out -- never a reason to tear down the
       // preview or throw away the capture `beginTabDrag` started; `endTabDrag` is the only thing that
       // does that, once the drag genuinely ends. The floating preview's own poll hides it when the real
-      // cursor is back over this window's strip; the preview inside the window is hidden here.
-      if (local()) {
-        if (point === null) services.localDrag.hide()
-        else services.localDrag.update(entry, id, point, zone !== null, topHeight)
-      } else if (point !== null) {
-        services.tearDrag.update(entry, id, zone !== null, topHeight)
-      }
+      // cursor is back over this window's strip.
+      if (point !== null) services.tearDrag.update(entry, id, zone !== null, topHeight)
     },
-    endTabDrag: () => {
-      if (local()) services.localDrag.ended()
-      else services.tearDrag.clear()
-    },
+    endTabDrag: () => { services.tearDrag.clear() },
     dropTab: (id, screenPoint, client) => {
       tabs.splits.setPreview(null)
-      if (local()) {
-        dropWhereLocal(id, client)
-        return
-      }
       services.tearDrag.clear()
       const active = tabs.getState().activeTabId
       const zone = splitZone(id, client)
@@ -125,7 +97,20 @@ export function tabDragActions (parts: WindowParts): TabDragActions {
       }
       dropWhereGlobal(id, screenPoint)
     },
-    // The first position another window's chrome saw the pointer at, while a tab is dragged from a window.
-    tabDragArrived: (point) => { services.localDrag.arrived(entry, point) }
+    prepareTabDrag: async (id) => tabs.record(id) === undefined ? null : await services.nativeDrag.thumbnail(entry, id),
+    warmDropCatchers: () => { services.nativeDrag.warm() },
+    startNativeTabDrag: (id, nonce) => {
+      if (tabs.record(id) === undefined) return
+      const ops: NativeDragOps = {
+        pinned: tabs.record(id)?.pinned === true,
+        splitZone: (point) => splitZone(id, point),
+        setSplitPreview: (zone) => { tabs.splits.setPreview(zone) },
+        apply: (outcome) => { applyNative(id, outcome) }
+      }
+      services.nativeDrag.start(entry, nonce, ops)
+    },
+    dropNativeTab: (nonce, index, below) => { services.nativeDrag.dropped(entry, nonce, index, below) },
+    endNativeTabDrag: (nonce) => { services.nativeDrag.ended(entry, nonce) },
+    cancelNativeTabDrag: (nonce) => { services.nativeDrag.cancelled(entry, nonce) }
   }
 }

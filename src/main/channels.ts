@@ -192,3 +192,12 @@ export const PAGE_DIALOG_CHANNEL = 'orivon-page-dialog'
 
 /** Main -> a tab's top frame: `hidden`, a boolean, whether the tab is out of the person's sight (behind another tab, or its window minimized or hidden). The ordinary-tab preload turns it into the page's `document.visibilityState` and a `visibilitychange` event (src/preload/page-visibility.ts). */
 export const TAB_VISIBILITY_CHANNEL = 'orivon-tab:visibility'
+
+/** A drop catcher's view -> main: where a dragged tab is over the page, and where it was dropped (src/main/shell/drop-catcher.ts). */
+export const DROP_CATCHER_CHANNEL = 'orivon-drop-catcher:report'
+
+/** The one data type a dragged tab carries, holding a random nonce and nothing else: a page under a drag is told which types it holds, so the tab's id or address never goes in. Chrome and catcher both match on it. */
+export const TAB_DRAG_TYPE = 'application/x-orivon-tab-drag'
+
+/** The chrome view's launch argument when tabs are dragged by the browser's own drag and drop (src/main/shell/local-pointer.ts decides). The shell preload reads it into `nativeTabDragType`. */
+export const NATIVE_TAB_DRAG_ARGUMENT = '--orivon-native-tab-drag'

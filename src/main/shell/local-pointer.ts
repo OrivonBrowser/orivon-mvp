@@ -1,7 +1,8 @@
 // Whether a pointer's screen position can be trusted here. On a native Wayland session it cannot: the compositor
 // tells a client nothing about where its windows are or where the pointer is outside them, so Electron reports
-// every window at one fixed place and the global cursor at (0, 0). Tab dragging then works from positions inside
-// each window only (local-tab-drag.ts). Tied to Electron: the platform is the one Chromium resolved at start.
+// every window at one fixed place and the global cursor at (0, 0). Tab dragging then uses the browser's own drag and
+// drop (native-tab-drag.ts), which hands each window its own coordinates. Tied to Electron: the platform is the one
+// Chromium resolved at start.
 import { app } from 'electron'
 
 declare const __ORIVON_DEV_GRANT_ENABLED__: boolean | undefined
