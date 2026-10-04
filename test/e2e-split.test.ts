@@ -464,7 +464,7 @@ it('keeps the pane that was split in laid out, in its place and painted through 
     expect(await waitFor(async () => backdropAt(await layout(app)) !== undefined)).toBe(true)
 
     const site = (name: string): string => origin.replace('127.0.0.1', `${name}.test`)
-    const leftPage = (part: string): Page | undefined => app.windows().find((candidate) => candidate.url().includes(part))
+    const leftPage = (part: string): Page | undefined => app.windows().find((candidate) => !candidate.isClosed() && candidate.url().includes(part))
     const failures: string[] = []
 
     /** Waits for the left pane to show `part`, then reads everything the person sees of both panes. */
@@ -483,8 +483,10 @@ it('keeps the pane that was split in laid out, in its place and painted through 
       const byStack = pageViews.map((view) => view.bounds.x)
       if (byStack.length !== 2 || (byStack[0] ?? 0) > (byStack[1] ?? 0)) failures.push(`${step}: the panes are not stacked in the order they read: x ${byStack.join(', ')}`)
       for (const each of [part, rightPart]) {
-        const view = leftPage(each)
-        if (view === undefined) { failures.push(`${step}: no page for ${each}`); continue }
+        // Leaving an app swaps in a view for the same address, so the page found above may have closed since.
+        let view = undefined as Page | undefined
+        await waitFor(async () => { view = leftPage(each); return view !== undefined && !view.isClosed() }, 5_000)
+        if (view === undefined || view.isClosed()) { failures.push(`${step}: no page for ${each}`); continue }
         const visibility = await view.evaluate(() => document.visibilityState).catch(() => 'unreadable')
         if (visibility !== 'visible') failures.push(`${step}: ${each} is ${visibility}`)
         const colour = await paintedColour(view).catch(() => [-1])
