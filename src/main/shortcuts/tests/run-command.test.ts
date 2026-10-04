@@ -38,6 +38,7 @@ function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: bo
       ...calls
     },
     overlays: { show: calls['overlayShow'], toggle: calls['overlayToggle'], isOpen: () => false, close: vi.fn(), send: vi.fn() },
+    chromeHeight: () => 76,
     shortcutsSuspended: () => false
   } as unknown as ShellWindow
   const bookmarks = { has: vi.fn(() => false), add: vi.fn(), remove: vi.fn(), children: vi.fn(() => []), findByUrl: vi.fn((): Array<{ id: string, added: number }> => []), addUrl: vi.fn(() => ({ id: 'made', added: 1 })) }

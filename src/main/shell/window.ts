@@ -132,7 +132,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     hideNotice: () => { notice.hide() }
   })
 
-  const { chromeHeight, layoutChrome, tabBounds } = createWindowLayout({
+  const { chromeHeight, layoutChrome, tabBounds, reachChrome } = createWindowLayout({
     win, chrome, fullscreenTabId: () => fullscreen.tabId, bookmarksBarShown, kiosk, pageInsets: () => sidePanelInsets(win)
   })
 
@@ -198,7 +198,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     context: () => context, area: tabBounds, paneArea: () => tabs.activePaneBounds(), activeContents: () => tabs.activeWebContents()
   })
   wireSidePanel(win, { adopt: overlays.adopt, area: tabBounds })
-  const entry: ShellWindow = { window: win, chrome, tabs, overlays, shortcutsSuspended: () => fullscreen.tabId !== null, relayout: layoutAll }
+  const entry: ShellWindow = { window: win, chrome, tabs, overlays, chromeHeight, shortcutsSuspended: () => fullscreen.tabId !== null, relayout: layoutAll }
 
   const context: WindowContext = { window: entry, services }
   const panels = createWindowPanels({ ctx, win, services, tabs, overlays, dirname: import.meta.dirname })
@@ -244,7 +244,8 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     closeOverlays: overlays.closeOverlays,
     openWindow: (options) => { createShellWindow(ctx, services, options) },
     topHeight: CHROME_TOP_ROWS,
-    area: tabBounds
+    area: tabBounds,
+    reachChrome
   }))
   const forgetWindow = services.windows.add(entry)
   win.on('close', () => {

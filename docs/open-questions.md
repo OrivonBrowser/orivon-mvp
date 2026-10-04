@@ -1987,11 +1987,11 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A376: A tab drag that starts with the pointer already below the chrome gets no `dragend` **[RESEARCH]**
+### A378: Can a quick flick out of the window's side or top start a native tab drag? **[RESEARCH]**
 
-- **Question:** On Wayland the browser's own tab drag (`native-tab-drag.ts`) never delivers `dragend` when its first motion past the drag threshold lands outside the chrome view, such as a fast flick down from the strip. Measured under mutter 46: a jump to the toolbar still inside the chrome works, a jump 14 px past its bottom edge does not, with and without the drop catcher. No drag image is drawn, and the chrome cancels such a drag at its next pointer event, so the tab stays where it was. Is there a way to keep the drag alive?
-- **Why it matters:** a fast flick out of the strip, the quickest way to tear a tab off, does nothing; the person has to drag more slowly.
-- **Options:** read the Chromium source for why the Wayland drag session ends (rec.); keep the recovery and say so in the docs; start the drag only while the pointer is inside the chrome, which needs a way to refuse the first motion.
+- **Question:** The browser starts a drag of the chrome only when the pointer event that began it lies inside the chrome view (`WebContentsViewAura::StartDragging`). A tab press makes the view taller, which covers a flick down, but a flick past the window's left, right or top edge begins outside it, so the pressed tab starts no drag until the pointer is back over the chrome. Widening the view lays the strip out again under the pointer and picks another tab; moving its corner does the same.
+- **Why it matters:** a tab at the end of the strip, flicked sideways toward a window beside it, does nothing; only a slower drag works.
+- **Options:** keep the strip's layout fixed while the view widens, by pinning the root's width in CSS for the length of the press (rec., measure first); give the view negative margins and shift the strip by the same amount; leave it.
 - **Who decides:** research first
 - **Blocks:** nothing
 

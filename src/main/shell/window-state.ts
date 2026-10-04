@@ -25,7 +25,7 @@ export interface WindowStateDeps {
   readonly services: ShellServices
   readonly context: WindowContext
   readonly fullscreen: HtmlFullscreen
-  readonly layout: WindowLayout
+  readonly layout: Pick<WindowLayout, 'chromeHeight' | 'layoutChrome' | 'tabBounds'>
   readonly bookmarksBarShown: () => boolean
   readonly overlays: OverlayHostHandle
   /** Dismisses the site-info popover alone: it describes one origin. */

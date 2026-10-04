@@ -154,7 +154,7 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     nativeDrag: new NativeTabDrag({
       windows: () => windows.all(),
       clock: { after: (ms, fn) => { const timer = setTimeout(fn, ms); return () => { clearTimeout(timer) } } },
-      catcher: (window, hooks) => new DropCatcher(window.window, window.chrome, import.meta.dirname, hooks),
+      catcher: (window, hooks) => new DropCatcher(window.window, window.chromeHeight, import.meta.dirname, hooks),
       thumbnail: async (source, tabId) => {
         const { width, height } = source.window.getContentBounds()
         // A page that is not on screen may never answer a capture.

@@ -25,6 +25,7 @@ async function pressInWindow (state: { destroyed: boolean, disposed: boolean }):
   await store.load()
   const owner = {
     window: { isDestroyed: () => state.destroyed },
+    chromeHeight: () => 76,
     shortcutsSuspended: () => false,
     tabs: { findTabIdByWebContents: () => null, record: () => undefined, isDisposed: () => state.disposed }
   }

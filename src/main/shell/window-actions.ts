@@ -37,6 +37,8 @@ export interface WindowParts {
   readonly topHeight: number
   /** The area the tabs' pages share, in window coordinates. */
   readonly area: () => Bounds
+  /** Makes the chrome view taller while a tab is pressed, or gives it its own size back. */
+  readonly reachChrome: (on: boolean) => void
 }
 
 function windowLabel (other: ShellWindow, position: number): string {

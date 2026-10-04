@@ -19,10 +19,10 @@ const TAB_DRAG_SPLIT_SHARE = 0.12
 /** How long a drop waits for the strip of the window it lands in to report where its tabs are. */
 const STRIP_READ_MS = 150
 
-export type TabDragActions = Pick<ShellActions, 'beginTabDrag' | 'dragTab' | 'dropTab' | 'endTabDrag' | 'prepareTabDrag' | 'warmDropCatchers' | 'startNativeTabDrag' | 'dropNativeTab' | 'endNativeTabDrag' | 'cancelNativeTabDrag'>
+export type TabDragActions = Pick<ShellActions, 'beginTabDrag' | 'dragTab' | 'dropTab' | 'endTabDrag' | 'prepareTabDrag' | 'warmDropCatchers' | 'reachChrome' | 'startNativeTabDrag' | 'dropNativeTab' | 'endNativeTabDrag' | 'cancelNativeTabDrag'>
 
 export function tabDragActions (parts: WindowParts): TabDragActions {
-  const { entry, services, openWindow, topHeight, area } = parts
+  const { entry, services, openWindow, topHeight, area, reachChrome } = parts
   const { tabs, window } = entry
 
   const splitZone = (id: string, point: { x: number, y: number }) => splitZoneFor(tabs.getState().activeTabId, id, area(), point, TAB_DRAG_SPLIT_SHARE)
@@ -99,6 +99,7 @@ export function tabDragActions (parts: WindowParts): TabDragActions {
     },
     prepareTabDrag: async (id) => tabs.record(id) === undefined ? null : await services.nativeDrag.thumbnail(entry, id),
     warmDropCatchers: () => { services.nativeDrag.warm() },
+    reachChrome,
     startNativeTabDrag: (id, nonce) => {
       if (tabs.record(id) === undefined) return
       const ops: NativeDragOps = {

@@ -89,6 +89,8 @@ export interface OrivonShell {
   prepareTabDrag: (id: string) => Promise<string | null>
   /** The pointer is pulling a tab: every window gets its drop catcher ready. */
   warmDropCatchers: () => void
+  /** The pointer is down on a tab (`on`) or let go: the chrome view is taller meanwhile. */
+  reachChrome: (on: boolean) => void
   /** The browser started the drag of a tab, which carries only `nonce`. */
   startNativeTabDrag: (id: string, nonce: string) => void
   /** The drag was dropped on this chrome: the place in the strip (null: nothing to do), and whether it was over the
@@ -172,6 +174,7 @@ const api: OrivonShell = {
   nativeTabDragType: process.argv.includes(NATIVE_TAB_DRAG_ARGUMENT) ? TAB_DRAG_TYPE : null,
   prepareTabDrag: async (id: string) => await request<string | null>({ type: 'prepareTabDrag', id }),
   warmDropCatchers: () => { send({ type: 'warmDropCatchers' }) },
+  reachChrome: (on: boolean) => { send({ type: 'reachChrome', on }) },
   startNativeTabDrag: (id: string, nonce: string) => { send({ type: 'startNativeTabDrag', id, nonce }) },
   dropNativeTab: (nonce: string, index: number | null, below: boolean) => { send({ type: 'dropNativeTab', nonce, index, below }) },
   endNativeTabDrag: (nonce: string) => { send({ type: 'endNativeTabDrag', nonce }) },

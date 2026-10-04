@@ -108,6 +108,8 @@ export type ShellCommand =
   | { type: 'prepareTabDrag'; id: string }
   /** The pointer is pulling a tab: every window's drop catcher is made ready. */
   | { type: 'warmDropCatchers' }
+  /** The pointer is down on a tab (`on`), or let go: the chrome view is taller for the press. */
+  | { type: 'reachChrome'; on: boolean }
   /** The browser started the drag of a tab; `nonce` is all the drag carries. */
   | { type: 'startNativeTabDrag'; id: string; nonce: string }
   /** The drag was dropped on this chrome. `index` is the place in the strip (null: nothing to do), `below` that it
@@ -157,6 +159,7 @@ export interface ShellActions {
   endTabDrag: () => void
   prepareTabDrag: (id: string) => Promise<string | null>
   warmDropCatchers: () => void
+  reachChrome: (on: boolean) => void
   startNativeTabDrag: (id: string, nonce: string) => void
   dropNativeTab: (nonce: string, index: number | null, below: boolean) => void
   endNativeTabDrag: (nonce: string) => void
@@ -275,6 +278,9 @@ export function registerShellIpc (
         return typeof command.id === 'string' ? actions.prepareTabDrag(command.id) : null
       case 'warmDropCatchers':
         actions.warmDropCatchers()
+        return
+      case 'reachChrome':
+        if (typeof command.on === 'boolean') actions.reachChrome(command.on)
         return
       case 'startNativeTabDrag':
         if (typeof command.id === 'string' && isNonce(command.nonce)) actions.startNativeTabDrag(command.id, command.nonce)

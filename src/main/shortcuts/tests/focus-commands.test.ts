@@ -17,6 +17,7 @@ function harness (chromeFocused: boolean, settings: Record<string, boolean> = {}
     chrome: { webContents: { focus: chromeFocus, send, isFocused: () => chromeFocused, isDestroyed: () => false } },
     tabs: { getState: () => ({ tabs: [], activeTabId: null }), activeWebContents: () => ({ focus: pageFocus }) },
     overlays: { show: shown, toggle: vi.fn(), isOpen: () => false, close: vi.fn(), send: vi.fn() },
+    chromeHeight: () => 76,
     shortcutsSuspended: () => false
   } as unknown as ShellWindow
   const deps = { services: { kiosk: false, settings: { get: (key: string) => settings[key], set } } as unknown as ShellServices, openWindow: vi.fn(), displays: () => [], quit: vi.fn() } satisfies CommandDeps
