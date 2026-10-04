@@ -104,9 +104,9 @@ async function endDrag (chrome: Page, id: string): Promise<void> {
   }, id)
 }
 
-/** The catcher over the window whose chrome is `chrome`: the one as wide as its content. */
+/** The catcher over the window whose chrome is `chrome`: the one as wide as its content. The chrome view is wider than the window while a tab is pressed, but its document keeps the window's width. */
 async function catcherOver (app: ElectronApplication, chrome: Page): Promise<Page> {
-  const width = await chrome.evaluate(() => window.innerWidth)
+  const width = await chrome.evaluate(() => document.body.clientWidth)
   let found: Page | undefined
   await waitFor(async () => {
     for (const page of catcherPages(app)) {

@@ -56,7 +56,8 @@ function transfer (types: string[] = [], data = '') {
 async function setup (options: { thumbnail?: string | null, pinned?: boolean } = {}) {
   vi.resetModules()
   const root = new Set<string>()
-  const documentElement = { classList: { toggle: (name: string, on: boolean): void => { if (on) root.add(name); else root.delete(name) }, remove: (name: string): void => { root.delete(name) } } }
+  const style = new Map<string, string>()
+  const documentElement = { style: { get width (): string { return style.get('width') ?? '' }, set width (value: string) { style.set('width', value) }, removeProperty: (name: string): void => { style.delete(name) } }, classList: { toggle: (name: string, on: boolean): void => { if (on) root.add(name); else root.delete(name) }, remove: (name: string): void => { root.delete(name) } } }
   const document = Object.assign(new Listeners(), { body: { append: vi.fn() }, documentElement })
   const window = Object.assign(new Listeners(), { innerWidth: 700, innerHeight: 76 })
   const frames: Array<() => void> = []
@@ -99,7 +100,7 @@ async function setup (options: { thumbnail?: string | null, pinned?: boolean } =
     tab.fire('dragstart', { dataTransfer: dt, clientX: tab.left + 40, clientY: 12 })
     return { tab, dt }
   }
-  return { tabs, shell, host, marks, window, document, root, frames, drag, pointer, begin, isDraggingTab }
+  return { tabs, shell, host, marks, window, document, root, style, frames, drag, pointer, begin, isDraggingTab }
 }
 
 afterEach(() => { vi.unstubAllGlobals() })
@@ -154,6 +155,61 @@ describe('a tab pulled with the browser\'s own drag and drop', () => {
     expect(shell.reachChrome).toHaveBeenLastCalledWith(false)
   })
 
+  it('pins the root\'s width before main widens the view, and unpins it once the view is back to it', async () => {
+    const { tabs, shell, pointer, window, style } = await setup()
+    const widthAtReach: Array<string | undefined> = []
+    vi.mocked(shell.reachChrome).mockImplementation((on) => { if (on) widthAtReach.push(style.get('width')) })
+    ;(tabs[0] as FakeTab).fire('pointerdown', pointer(40))
+    expect(widthAtReach).toEqual(['700px'])
+
+    window.innerWidth = 1400
+    window.fire('resize')
+    expect(style.get('width')).toBe('700px')
+    window.fire('pointerup')
+    window.fire('resize')
+    expect(style.get('width')).toBe('700px')
+    window.innerWidth = 700
+    window.fire('resize')
+    expect(style.has('width')).toBe(false)
+  })
+
+  it('unpins the root at the drag\'s end, and after a moment if the view is never seen back', async () => {
+    vi.useFakeTimers()
+    try {
+      const { tabs, pointer, window, style, begin } = await setup()
+      ;(tabs[0] as FakeTab).fire('pointerdown', pointer(40))
+      window.fire('pointerup')
+      vi.advanceTimersByTime(699)
+      expect(style.get('width')).toBe('700px')
+      vi.advanceTimersByTime(1)
+      expect(style.has('width')).toBe(false)
+
+      const { tab } = await begin(1)
+      expect(style.get('width')).toBe('700px')
+      tab.fire('dragend')
+      window.innerWidth = 700
+      window.fire('resize')
+      expect(style.has('width')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the first pinned width when a tab is pressed again before the view is back', async () => {
+    const { tabs, pointer, window, style } = await setup()
+    ;(tabs[0] as FakeTab).fire('pointerdown', pointer(40))
+    window.fire('pointerup')
+    window.innerWidth = 1400
+    ;(tabs[1] as FakeTab).fire('pointerdown', pointer(140))
+    expect(style.get('width')).toBe('700px')
+    window.innerWidth = 700
+    window.fire('resize')
+    expect(style.get('width')).toBe('700px')
+    window.fire('pointerup')
+    window.fire('resize')
+    expect(style.has('width')).toBe(false)
+  })
+
   it('keeps a pressed tab from starting a drag while the pointer is outside the chrome view, and lets it once it is back', async () => {
     const { tabs, root, pointer, window } = await setup()
     ;(tabs[1] as FakeTab).fire('pointerdown', pointer(140))
@@ -190,11 +246,12 @@ describe('a tab pulled with the browser\'s own drag and drop', () => {
   })
 
   it('prepares nothing for a press on the close button or with another button', async () => {
-    const { tabs, shell, pointer } = await setup()
+    const { tabs, shell, pointer, style } = await setup()
     ;(tabs[0] as FakeTab).fire('pointerdown', pointer(40, 10, { target: { closest: () => ({}) } }))
     ;(tabs[0] as FakeTab).fire('pointerdown', pointer(40, 10, { button: 2 }))
     expect(shell.prepareTabDrag).not.toHaveBeenCalled()
     expect(shell.reachChrome).not.toHaveBeenCalled()
+    expect(style.has('width')).toBe(false)
   })
 
   it('carries only a nonce, hides the tab a frame after the drag begins, and holds the strip', async () => {

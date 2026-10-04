@@ -24,7 +24,7 @@ export interface WindowLayoutDeps {
   readonly kiosk?: boolean
 }
 
-/** While a tab is pressed the chrome view grows downward by this many window heights (see `chromeRect`). */
+/** While a tab is pressed the chrome view grows to the right by this many window widths, and downward by this many window heights (see `chromeRect`). */
 const REACH_WINDOWS = 1
 /** A press nobody released (the window lost the pointer) gives the chrome its own size back after this long. */
 const REACH_LIMIT_MS = 30_000
@@ -33,18 +33,19 @@ export interface WindowLayout {
   chromeHeight: () => number
   layoutChrome: () => void
   tabBounds: () => Bounds
-  /** Makes the chrome view taller, under the pages, or gives it its own size back. */
+  /** Makes the chrome view wider and taller, under the pages, or gives it its own size back. */
   reachChrome: (on: boolean) => void
 }
 
-/** The chrome view's rectangle in a window of `content` size. Normally the top rows. `reach` makes it taller, and
- * nothing else: the browser starts a drag of the chrome's page only when the pointer event that began it lies inside
- * the view, so a quick flick out of the tab strip would begin outside it and be refused without a `dragend`. Its
- * corner and width stay put, since a move of either would lay the strip out again under the pointer and pick another
- * tab to drag. The view lies under the pages, which cover what it adds. */
+/** The chrome view's rectangle in a window of `content` size. Normally the top rows. `reach` makes it wider and taller
+ * past the right and bottom edges: the browser starts a drag of the chrome's page only when the pointer event that
+ * began it lies inside the view, so a quick flick out of the tab strip would begin outside it and be refused without a
+ * `dragend`. Its corner stays put, since a move of it would lay the strip out again under the pointer and pick another
+ * tab to drag, so a flick past the left or top edge is not covered. The page keeps the width it had (native-tab-drag.ts),
+ * so the strip does not move. The view lies under the pages, which cover what it adds below the chrome. */
 export function chromeRect (content: { width: number, height: number }, rows: number, reach: boolean): Bounds {
   if (!reach) return { x: 0, y: 0, width: content.width, height: rows }
-  return { x: 0, y: 0, width: content.width, height: content.height * (1 + REACH_WINDOWS) }
+  return { x: 0, y: 0, width: content.width * (1 + REACH_WINDOWS), height: content.height * (1 + REACH_WINDOWS) }
 }
 
 export function createWindowLayout ({ win, chrome, fullscreenTabId, bookmarksBarShown, pageInsets, kiosk = false }: WindowLayoutDeps): WindowLayout {

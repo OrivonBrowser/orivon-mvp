@@ -22,8 +22,8 @@ function setup (width = 1200): { module: ReturnType<typeof createSidePanelButton
   let given: ToolbarButtonSpec | undefined
   const runCommand = vi.fn()
   const listeners = new Map<string, () => void>()
-  vi.stubGlobal('window', { innerWidth: width, addEventListener: (type: string, listener: () => void) => { listeners.set(type, listener) } })
-  vi.stubGlobal('document', { documentElement: { dataset: { platform: 'linux' } } })
+  vi.stubGlobal('window', { addEventListener: (type: string, listener: () => void) => { listeners.set(type, listener) } })
+  vi.stubGlobal('document', { body: { clientWidth: width }, documentElement: { dataset: { platform: 'linux' } } })
   const ctx = { shell: { runCommand }, toolbarButton: (made: ToolbarButtonSpec) => { given = made; return button } } as unknown as ChromeContext
   const module = createSidePanelButton()
   module.init(ctx)
@@ -78,7 +78,7 @@ describe('the side panel button', () => {
     expect(button['disabled']).toBe(true)
     expect(button['title']).toBe('Widen the window to use the side panel')
 
-    vi.stubGlobal('window', { innerWidth: 1000, addEventListener: () => {} })
+    vi.stubGlobal('document', { body: { clientWidth: 1000 }, documentElement: { dataset: { platform: 'linux' } } })
     module.render?.(state({ open: false, side: 'right', minWindow: 760 }), ctx)
     expect(button['disabled']).toBe(false)
   })

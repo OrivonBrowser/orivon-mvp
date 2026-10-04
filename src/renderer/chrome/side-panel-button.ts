@@ -18,7 +18,8 @@ export function createSidePanelButton (): ChromeModule {
       drawnSide = side
       button.replaceChildren(side === 'left' ? panelLeftIcon() : panelRightIcon())
     }
-    const narrow = window.innerWidth < (panel?.minWindow ?? 0)
+    // The body's width, not the view's: the view is wider than the window while a tab is pressed (native-tab-drag.ts).
+    const narrow = document.body.clientWidth < (panel?.minWindow ?? 0)
     button.disabled = narrow
     const shown = panel?.open === true && !narrow
     button.setAttribute('aria-pressed', String(shown))

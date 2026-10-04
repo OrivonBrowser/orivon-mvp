@@ -1987,11 +1987,11 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A378: Can a quick flick out of the window's side or top start a native tab drag? **[RESEARCH]**
+### A378: Can a quick flick out of the window's left or top edge start a native tab drag? **[RESEARCH]**
 
-- **Question:** The browser starts a drag of the chrome only when the pointer event that began it lies inside the chrome view (`WebContentsViewAura::StartDragging`). A tab press makes the view taller, which covers a flick down, but a flick past the window's left, right or top edge begins outside it, so the pressed tab starts no drag until the pointer is back over the chrome. Widening the view lays the strip out again under the pointer and picks another tab; moving its corner does the same.
-- **Why it matters:** a tab at the end of the strip, flicked sideways toward a window beside it, does nothing; only a slower drag works.
-- **Options:** keep the strip's layout fixed while the view widens, by pinning the root's width in CSS for the length of the press (rec., measure first); give the view negative margins and shift the strip by the same amount; leave it.
+- **Question:** The browser starts a drag of the chrome only when the pointer event that began it lies inside the chrome view (`WebContentsViewAura::StartDragging`). A tab press makes the view wider and taller to the right and below, which covers a flick down and to the right. A flick past the left or top edge begins outside it, so the pressed tab starts no drag until the pointer is back over the chrome. Moving the view's corner out there and shifting the page by the same amount, so nothing moves on screen, was measured: no `dragstart` in 4 of 4 presses, since the browser looks for the dragged element at the press's old point in the new layout.
+- **Why it matters:** a tab at the start of the strip, flicked left toward a window beside it, does nothing; only a slower drag works.
+- **Options:** leave it (rec.: down and right cover the usual flicks); keep a draggable stand-in at the press's old point while the page is shifted (not measured, and the view's move may show the strip shifted for a frame); a different route to the drag.
 - **Who decides:** research first
 - **Blocks:** nothing
 
