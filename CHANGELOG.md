@@ -271,6 +271,8 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Fixed
 
+- **A tab on an `ipfs://` or `.eth` page shows the page's icon on a slow connection**: the icon was fetched with a 5 s budget
+  and the globe stayed for good when the gateways took longer; icons on those hosts now get 60 s.
 - **Three ways the whole browser could quit are closed**: an app's helper page failing to load, a light-client
   checkpoint the disk refuses to keep, and a profile file holding `null`.
 - **The light client switch applies at the next start, as Settings says**: switching it mid-run no longer changes the
