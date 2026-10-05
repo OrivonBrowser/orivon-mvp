@@ -41,7 +41,7 @@ it('keeps the new build out of a link into the app and out of its service worker
       b: updateApp({ version: '1.0.1', build: 'B', net: true, domain: 'app.eth' }),
       c: updateApp({ version: '2.0.0', build: 'C', net: true, domain: 'other.eth' })
     }, { b: 3, c: 3 })
-    const linking = createServer((_req, res) => { res.writeHead(200, { 'content-type': 'text/html' }).end(`<!doctype html><meta charset="utf-8"><title>link page</title><body><a id="go" href="${ORIGIN}/">go</a></body>`) })
+    const linking = createServer((_req, res) => { res.writeHead(200, { 'content-type': 'text/html' }).end(`<!doctype html><meta charset="utf-8"><title>link page</title><body><a id="go" href="${ORIGIN}/">go</a> <a id="go-shown" href="ipfs://app.eth/">go</a></body>`) })
     await new Promise<void>((resolve) => { linking.listen(0, '127.0.0.1', resolve) })
     const linkingUrl = `http://127.0.0.1:${String((linking.address() as AddressInfo).port)}/`
     const asked = (cid: string): boolean => rig.gateway.requests.some((request) => request.includes(cid))
@@ -69,6 +69,13 @@ it('keeps the new build out of a link into the app and out of its service worker
       await answerQuestionIfAsked(app)
       await delay(2_000)
       check('the page shown is build B', (await buildsAt(app, `${ORIGIN}/`)).join() === 'B')
+
+      // The same link written as the address bar shows it.
+      const again = await navigateToFixture(app, linkingUrl, 'link page')
+      await again.click('#go-shown')
+      check('a link written ipfs://app.eth/ opens the app at build B', (await waitForTab(findChrome(app), { address: SHOWN, title: 'update fixture B' })).ok)
+      await delay(2_000)
+      check('that page is build B too', (await buildsAt(app, `${ORIGIN}/`)).join() === 'B')
       for (const path of ['index.html', 'app.js', 'sw.js']) {
         check(`the gateway was never asked for build C's ${path}`, !asked(rig.gateway.blockOf('c', path)))
       }

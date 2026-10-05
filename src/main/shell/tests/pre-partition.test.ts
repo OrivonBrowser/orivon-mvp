@@ -40,6 +40,16 @@ describe('repartitionBeforeCommit', () => {
     expect(repartitionView).toHaveBeenCalledWith('tab-1', expect.anything(), 'https://app.eth/', 'persist:app-1')
   })
 
+  it.each(['ipfs://app.eth/', 'ipns://app.eth/'])('stops a link written as %s and loads the address it is served at', async (shown) => {
+    partitionChanged.mockReturnValue({ to: 'persist:app-1' })
+    const { fire } = rig()
+    const event = fire('will-navigate', { url: shown })
+    expect(event.preventDefault).toHaveBeenCalled()
+    expect(partitionChanged).toHaveBeenCalledWith('https://app.eth/', undefined)
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(repartitionView).toHaveBeenCalledWith('tab-1', expect.anything(), 'https://app.eth/', 'persist:app-1')
+  })
+
   it('leaves a navigation that stays in the tab\'s partition, or leaves for the open web', () => {
     partitionChanged.mockReturnValue(undefined)
     expect(rig().fire('will-navigate').preventDefault).not.toHaveBeenCalled()

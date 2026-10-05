@@ -1,5 +1,6 @@
 // Tied to Electron through the events of the `WebContents` it wires.
 import type { WebContents } from 'electron'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { isNavigationHeld } from './navigation-hold.js'
 import { partitionChanged } from './tab-partition.js'
 import { repartitionView } from './tab-parking.js'
@@ -28,9 +29,11 @@ export function repartitionBeforeCommit (wc: WebContents, id: string, record: Ta
   const handle = (event: NavigationEvent): void => {
     if (!event.isMainFrame || event.defaultPrevented || !shown() || record.isDashboardTab || record.internalPage !== null) return
     if (isNavigationHeld(wc)) return
-    const swap = partitionChanged(event.url, record.partition)
+    // A link written the way the address bar shows an address (`ipfs://app.eth/`) loads at the URL
+    // that scheme is served at (`./served-address.ts`), and that URL is the one whose partition counts.
+    const url = BUILTIN_ADDRESSES.servedUrl(event.url) ?? event.url
+    const swap = partitionChanged(url, record.partition)
     if (swap?.to === undefined) return
-    const { url } = event
     const nextPartition = swap.to
     event.preventDefault()
     // Not in the event: a view closed from inside its own navigation event is not safe to close.
