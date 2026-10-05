@@ -169,6 +169,8 @@ export interface Capabilities {
    * its own in v0. See `capability-api.ts`'s `OrivonSecrets`.
    */
   readonly secrets?: SecretsCapability
+  /** What the person's Web3 Score provider says about other sites (ADR-0058). Presence-only, like `media`. */
+  readonly trust?: TrustCapability
   /**
    * Schemes the shell may route to this app, e.g. `["magnet"]`. Declaration
    * alone never wins the default: routing requires its own user prompt, first
@@ -449,6 +451,8 @@ export interface ClipboardCapability {
  */
 export interface SecretsCapability {}
 
+export interface TrustCapability { readonly score?: true }
+
 /**
  * One capability actually granted to one origin.
  *
@@ -493,3 +497,4 @@ export type CapabilityKind =
   | 'media.screen'
   | 'clipboard.read'
   | 'secrets'
+  | 'trust.score'

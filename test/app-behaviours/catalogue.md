@@ -126,3 +126,4 @@ has a line, so a capability cannot land without that decision.
 | `media.screen` | not covered: a contract entry with no implementation behind it |
 | `clipboard.read` | not covered: a contract entry with no implementation behind it |
 | `secrets` | not covered: no spec drives `orivon.secrets` from an app's page |
+| `trust.score` | not covered: a contract entry with no implementation behind it |

@@ -177,6 +177,12 @@ export function describeCapabilityGrant (capability: CapabilityKind, patterns: r
       // identity" or "the keyring" itself, either of which would overstate
       // what crosses the boundary.
       return { warning: false, message: 'Encrypt its own data with a key your system keyring protects' }
+    case 'trust.score':
+      return {
+        warning: false,
+        message: 'See what your Web3 Score provider says about other sites',
+        explanation: 'The provider you chose is asked about sites this app names. It sees which group of sites each one falls in, as when Orivon checks a site for you. With no provider chosen, nothing is asked.'
+      }
     case 'media.camera':
     case 'media.microphone':
     case 'media.screen':
