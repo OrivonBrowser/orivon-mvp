@@ -338,9 +338,10 @@ export async function readShield (chrome: ReturnType<typeof findChrome>): Promis
  * rename, say), so that degrades to a slow, reported failure, never a
  * second silent hang.
  */
-export async function closeElectronApp (app: ElectronApplication, raceMs = APP_CLOSE_RACE_MS): Promise<void> {
+export async function closeElectronApp (app: ElectronApplication, raceMs = APP_CLOSE_RACE_MS, options: { keepProfile?: boolean } = {}): Promise<void> {
   await closeElectron(app, {
     raceMs,
+    ...(options.keepProfile === true ? { keepProfile: true } : {}),
     // Ignores the callback's own (deliberately minimal, see TeardownApp's
     // own header in launch-electron.mjs) parameter and closes over `app`
     // directly instead -- it is the same object, typed here as the real
