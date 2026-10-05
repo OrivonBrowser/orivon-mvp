@@ -14,7 +14,7 @@ import type { CapabilityKind, Manifest, Pattern } from '../../contracts/index.js
 
 const CAPABILITY_KINDS: readonly CapabilityKind[] = [
   'tcp.connect', 'tcp.listen.local', 'tcp.listen.network', 'udp.bind.local', 'udp.bind.network',
-  'udp.send', 'https.connect', 'fs', 'id', 'web.context', 'web.embed', 'secrets',
+  'udp.send', 'https.connect', 'fs', 'id', 'web.context', 'web.embed', 'secrets', 'trust.score',
   'media.camera', 'media.microphone', 'media.screen'
   // clipboard.read (ADR-0032) has no app door, so it is not one of these.
 ]

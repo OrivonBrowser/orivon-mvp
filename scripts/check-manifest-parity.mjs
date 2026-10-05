@@ -54,7 +54,8 @@ export const PARITY_MAP = [
   // but it stays here rather than being omitted, so the day a field IS
   // added to either side, this check catches the drift immediately instead
   // of needing to be remembered.
-  { interfaceName: 'SecretsCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'SECRETS_CAPABILITY_KEYS' }
+  { interfaceName: 'SecretsCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'SECRETS_CAPABILITY_KEYS' },
+  { interfaceName: 'TrustCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'TRUST_CAPABILITY_KEYS' }
 ]
 
 /**

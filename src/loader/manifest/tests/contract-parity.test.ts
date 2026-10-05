@@ -11,6 +11,7 @@ import type {
   NetCapability,
   TcpCapability,
   UdpCapability,
+  TrustCapability,
   WebCapability
 } from '../../../contracts/index.js'
 
@@ -34,8 +35,9 @@ type FullManifest = Omit<Full<Manifest>, 'capabilities'> & {
   // 'clipboard' (ADR-0032) has no app door and 'secrets' (ADR-0033) has no
   // fields, so a kitchen-sink manifest naming them would fail the round-trip
   // or prove nothing.
-  readonly capabilities: Omit<Full<Capabilities>, 'net' | 'fs' | 'id' | 'web' | 'media' | 'clipboard' | 'secrets'> & {
+  readonly capabilities: Omit<Full<Capabilities>, 'net' | 'fs' | 'id' | 'web' | 'media' | 'clipboard' | 'secrets' | 'trust'> & {
     readonly media: Full<MediaCapability>
+    readonly trust: Full<TrustCapability>
     readonly net: Omit<Full<NetCapability>, 'tcp' | 'udp' | 'https'> & {
       readonly tcp: Full<TcpCapability>
       readonly udp: Full<UdpCapability>
@@ -62,6 +64,7 @@ const KITCHEN_SINK: FullManifest = {
   assets: ['style.css', 'script.js'],
   consentGranularity: 'per-capability',
   crossOriginIsolated: true,
+  domain: 'kitchen-sink.example.com',
   capabilities: {
     protocols: ['magnet'],
     net: {
@@ -73,7 +76,8 @@ const KITCHEN_SINK: FullManifest = {
     fs: { quotaBytes: 104857600 },
     id: { curves: ['secp256k1'] },
     web: { contexts: ['https://kitchen-sink.example'], embed: { origins: ['*'] } },
-    media: { camera: true, microphone: true, screen: true }
+    media: { camera: true, microphone: true, screen: true },
+    trust: { score: true }
   }
 }
 

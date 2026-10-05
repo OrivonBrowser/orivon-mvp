@@ -361,6 +361,8 @@ export interface Broker {
   readonly embed: BrokerEmbedMethods
   /** `BrokerSecretsMethods` -- ./secrets-contracts.js, alongside `Keychain`. ADR-0033. */
   readonly secrets: BrokerSecretsMethods
+  /** ADR-0058, `orivon.trust`'s broker half: only the grant check. The lookup runs in `src/main/`, which the broker never imports. */
+  readonly trust: { requireScoreGrant(origin: string): void }
   /**
    * Registers -- or replaces -- an origin's manifest. Called once per app
    * session, before any capability call for that origin. Existing grants are

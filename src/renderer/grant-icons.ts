@@ -150,6 +150,7 @@ const BUILDERS: Record<GrantIconKind, () => SVGSVGElement> = {
   'web.context': appWindowIcon,
   'web.embed': appWindowIcon,
   secrets: lockKeyholeIcon,
+  'trust.score': globeIcon,
   'media.camera': cameraIcon,
   'media.microphone': micIcon,
   'media.screen': screenShareIcon,

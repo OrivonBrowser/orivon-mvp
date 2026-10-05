@@ -20,6 +20,10 @@ with this folder's.
 other capability lives in. `control-call.ts` is a leaf both import, which is how `net.ts` shares
 `call()` without a cycle back through `orivon.ts`.
 
+**`TIMEOUT_MS.trust` is longer than any other plain request.** `orivon.trust.websiteScore` can wait on a `.eth` name the
+verifier takes up to 25 s to prove and then on two provider files at 10 s each, so its budget must exceed their 45 s: a
+shorter one would answer `timeout` where the broker answers `level: null`.
+
 **Why the streams are built in the main world.** `contextBridge` copies a stream built in the
 isolated world as a dead, frozen object, so `main-world-socket.ts`'s `installOrivon` runs in the
 page and builds real streams over proxied closures

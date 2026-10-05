@@ -57,6 +57,8 @@ export function patternSetFromCapabilities (capabilities: Capabilities): Pattern
   if (capabilities.fs !== undefined) set.fs = []
   if (capabilities.id !== undefined) set.id = []
   if (capabilities.secrets !== undefined) set.secrets = []
+  // `trust.score` (ADR-0058) is presence-only too, and `trust: {}` declares nothing.
+  if (capabilities.trust?.score === true) set['trust.score'] = []
 
   // ADR-0032, ADR-0055: each declared flag is its own kind with no patterns
   // ("which camera" is not an app's to choose). Mapped so that a manifest

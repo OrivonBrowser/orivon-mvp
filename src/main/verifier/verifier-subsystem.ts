@@ -241,14 +241,26 @@ export async function verifierNameEvidence (origin: string, pin: PinRecord | nul
  * Where an origin's bundle is served from, for the loader: undefined for
  * any origin no protocol serves, and a throw when its name cannot be
  * verified now.
+ *
+ * Mounted in `partition` when given, the origin's own otherwise (the one a tab
+ * opening it uses). A caller that is not that origin passes a partition of its
+ * own, so what it asks never warms a name for anyone else (A256).
  */
-export async function verifierContentAddress (origin: string): Promise<ContentAddress | undefined> {
+export async function verifierContentAddress (origin: string, partition?: string): Promise<ContentAddress | undefined> {
   if (!servedByVerifier(origin)) return undefined
   startHost()
   await listeningGate.whenSettled()
   if (supervisor === undefined) throw new Error('the verifier has not started')
-  // The origin's own partition: the one a tab opening it uses.
-  return contentAddressOf(await supervisor.request({ kind: 'mount', host: new URL(origin).hostname, partition: new URL(origin).origin }, MOUNT_TIMEOUT_MS))
+  return contentAddressOf(await supervisor.request({ kind: 'mount', host: new URL(origin).hostname, partition: partition ?? new URL(origin).origin }, MOUNT_TIMEOUT_MS))
+}
+
+/** The content CID a `.eth` host names, proven now in `partition`; undefined when it does not resolve. Never throws. */
+export async function verifierEthContentCid (host: string, partition: string): Promise<string | undefined> {
+  try {
+    return (await verifierContentAddress(`https://${host}`, partition))?.cid
+  } catch {
+    return undefined
+  }
 }
 
 /** The light client's state in words, for the Settings section and the site-info popover. */

@@ -3,7 +3,7 @@
 // parser, so every protocol Orivon opens is a protocol a provider can live on.
 import { createHash } from 'node:crypto'
 import { MAX_SCORE_FILE_BYTES, SCORE_STANDARD, findEvaluation, parseDescriptor } from '../../trust/score-provider.js'
-import type { ProviderVerdict } from '../../trust/score-provider.js'
+import type { ProviderDescriptor, ProviderVerdict } from '../../trust/score-provider.js'
 import { readCapped } from './favicon.js'
 import { parseOmniboxInput } from './omnibox.js'
 
@@ -24,6 +24,8 @@ export interface ScoreProviderClient {
   /** The verdict on a website identifier (`sha256:…` or `cid:…`), `undefined` for a page with none.
    * Past `waitMs` it answers `pending` and the lookup carries on, kept for the next ask. Never throws. */
   readonly verdictFor: (id: string | undefined, waitMs?: number) => Promise<ProviderVerdict>
+  /** The chosen provider's own name; its address when its description cannot be read; undefined with none chosen. Never throws. */
+  readonly providerName: () => Promise<string | undefined>
 }
 
 const ANSWER_KEPT_MS = 10 * 60_000
@@ -65,15 +67,26 @@ export function createScoreProviderClient (deps: ScoreProviderDeps): ScoreProvid
     return answer
   }
 
-  async function lookup (address: string, id: string): Promise<ProviderVerdict> {
+  type Described =
+    | { readonly kind: 'unreachable', readonly verdict: ProviderVerdict }
+    | { readonly kind: 'described', readonly base: string, readonly descriptor: ProviderDescriptor }
+
+  async function describe (address: string): Promise<Described> {
     const base = providerBase(address, deps.isDevEthName)
-    if (base === undefined) return { status: 'unreachable', address, reason: 'It is not an address Orivon can open.' }
+    if (base === undefined) return { kind: 'unreachable', verdict: { status: 'unreachable', address, reason: 'It is not an address Orivon can open.' } }
     const descriptorUrl = `${base}/provider.json`
     const fetched = await cachedFetch(descriptorUrl)
-    if (fetched.kind === 'missing') return { status: 'unreachable', address, reason: `${descriptorUrl} does not exist.` }
-    if (fetched.kind === 'failed') return { status: 'unreachable', address, reason: fetched.reason }
+    if (fetched.kind === 'missing') return { kind: 'unreachable', verdict: { status: 'unreachable', address, reason: `${descriptorUrl} does not exist.` } }
+    if (fetched.kind === 'failed') return { kind: 'unreachable', verdict: { status: 'unreachable', address, reason: fetched.reason } }
     const descriptor = parseDescriptor(fetched.body)
-    if (descriptor === undefined) return { status: 'unreachable', address, reason: `${descriptorUrl} is not an ${SCORE_STANDARD} provider description.` }
+    if (descriptor === undefined) return { kind: 'unreachable', verdict: { status: 'unreachable', address, reason: `${descriptorUrl} is not an ${SCORE_STANDARD} provider description.` } }
+    return { kind: 'described', base, descriptor }
+  }
+
+  async function lookup (address: string, id: string): Promise<ProviderVerdict> {
+    const described = await describe(address)
+    if (described.kind === 'unreachable') return described.verdict
+    const { base, descriptor } = described
     const provider = { name: descriptor.name, address }
     const bucket = bucketOf(id, descriptor.bucketHexChars)
     const bucketUrl = `${base}/website/${bucket}.json`
@@ -86,6 +99,16 @@ export function createScoreProviderClient (deps: ScoreProviderDeps): ScoreProvid
   }
 
   return {
+    async providerName () {
+      const address = deps.providerAddress().trim()
+      if (address === '') return undefined
+      try {
+        const described = await describe(address)
+        return described.kind === 'described' ? described.descriptor.name : address
+      } catch {
+        return address
+      }
+    },
     async verdictFor (id, waitMs) {
       const address = deps.providerAddress().trim()
       if (address === '') return { status: 'off' }
