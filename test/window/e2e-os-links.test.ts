@@ -83,29 +83,24 @@ async function runToExit (args: string[], userData: string, timeoutMs = 20_000):
   })
 }
 
-interface Recorded { clipboard: string[], opened: string[], setDefault: string[], isDefault: string[], registered: boolean, accept: boolean }
+interface Recorded { clipboard: string[], opened: string[], setDefault: string[], isDefault: string[] }
 
 /** Replaces, in the main process, everything that would reach the machine, and records what was asked of it. */
 async function stubSystem (app: App): Promise<void> {
   await app.evaluate(({ app: electron, clipboard, shell }) => {
     const g = globalThis as unknown as { __os: Recorded }
-    g.__os = { clipboard: [], opened: [], setDefault: [], isDefault: [], registered: false, accept: true }
+    g.__os = { clipboard: [], opened: [], setDefault: [], isDefault: [] }
     clipboard.writeText = ((text: string) => { g.__os.clipboard.push(text) }) as typeof clipboard.writeText
     shell.openExternal = (async (url: string) => { g.__os.opened.push(url) }) as typeof shell.openExternal
     electron.setAsDefaultProtocolClient = ((protocol: string) => {
       g.__os.setDefault.push(protocol)
-      if (g.__os.accept) g.__os.registered = true
-      return g.__os.accept
+      return false
     }) as typeof electron.setAsDefaultProtocolClient
-    electron.isDefaultProtocolClient = ((protocol: string) => { g.__os.isDefault.push(protocol); return g.__os.registered }) as typeof electron.isDefaultProtocolClient
+    electron.isDefaultProtocolClient = ((protocol: string) => { g.__os.isDefault.push(protocol); return false }) as typeof electron.isDefaultProtocolClient
   })
 }
 
 const recorded = async (app: App): Promise<Recorded> => await app.evaluate(() => (globalThis as unknown as { __os: Recorded }).__os)
-
-async function setRecorded (app: App, change: Partial<Pick<Recorded, 'registered' | 'accept'>>): Promise<void> {
-  await app.evaluate((_electron, values) => { Object.assign((globalThis as unknown as { __os: Recorded }).__os, values) }, change)
-}
 
 async function runCommand (chrome: Page, id: string): Promise<void> {
   await chrome.evaluate((command) => { (window as unknown as { orivonShell: { runCommand: (id: string) => void } }).orivonShell.runCommand(command) }, id)

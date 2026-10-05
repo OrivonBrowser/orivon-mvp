@@ -54,7 +54,7 @@ function isAddressList (value: unknown): value is string[] {
   return value.every((entry) => typeof entry === 'string' && urlsFromArgv([entry]).length === 1)
 }
 
-/** The request the running browser was sent, checked as input from another process: anything malformed is read as a plain `open` of the addresses on the command line, today's behaviour. */
+/** The request the running browser was sent, checked as input from another process: anything malformed is read as a plain `open` of the addresses on the command line. */
 export function readLaunchRequest (data: unknown, argv: readonly string[]): LaunchRequest {
   const record = typeof data === 'object' && data !== null ? data as Record<string, unknown> : undefined
   const kind = record?.['kind']

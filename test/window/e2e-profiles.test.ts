@@ -8,8 +8,8 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
-import { privatePeer } from '../support/private-peer.js'
-import type { PrivatePeer } from '../support/private-peer.js'
+import { privatePeer } from './private-peer.js'
+import type { PrivatePeer } from './private-peer.js'
 import { delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor } from '../support/smoke-helpers.mjs'
 
 const leftBehind: string[] = []

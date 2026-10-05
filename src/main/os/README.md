@@ -11,12 +11,14 @@ written (`site-shortcut-runner.ts`), and the sheet that asks for it (`shortcut-o
 `shortcut-real.ts`). `menu-state.ts` says when the main menu greys those rows. `default-browser-test-seam.ts` is the
 recording host a test build uses in place of the system.
 
-**Tied to Electron, in the runners.** `default-browser-runner.ts`, `share-runner.ts`, `shortcut-real.ts`,
-`windows-taskbar-real.ts` and `install-launcher-menu.ts` import `electron`; every other file takes what it needs
-through a host interface, so a unit test never touches the machine.
+**Tied to Electron, in the runners and the installers.** `default-browser-runner.ts`, `share-runner.ts`,
+`shortcut-real.ts`, `windows-taskbar-real.ts`, `install-launcher-menu.ts` and `install-default-browser-ask.ts` import
+`electron` or a module bound to it; every other file takes what it needs through a host interface, so a unit test
+never touches the machine. `createDefaultBrowserCheck` and `askPlace` are the parts of the ask that a test drives.
 
 **What it depends on.** [`../shell/`](../shell/) (`ShellWindow`, `ShellServices`, `TabState`, the installer and
-window-hook types, and the question panel in [`../shell/question/`](../shell/question/)), [`../overlays/`](../overlays/)
+window-hook types, the question panel in [`../shell/question/`](../shell/question/), and `intro-view.ts`'s `isIntroShowing`, since the ask
+waits for the welcome screen), [`../overlays/`](../overlays/)
 (`OverlayDef`), [`../startup/restore-overlay.ts`](../startup/restore-overlay.ts) (the ask waits for the restore bar to
 go), [`../page-tools/toast.ts`](../page-tools/toast.ts), [`../launch/launch-context.ts`](../launch/launch-context.ts)
 and [`../launch/peer-spawn.ts`](../launch/peer-spawn.ts) (the command that starts Orivon again, one home for it),

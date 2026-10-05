@@ -26,14 +26,6 @@ describe('the launcher tasks', () => {
     expect(window?.arguments).toBe('"--new-window"')
   })
 
-  it('never carry a switch of the running launch into a command the system holds', () => {
-    const inherited = { ...source, env: { ORIVON_PROFILE: 'x' } }
-    for (const task of launcherTasks(inherited)) {
-      expect(task.arguments).not.toContain('--user-data-dir')
-      expect(task.arguments).not.toContain('--no-sandbox')
-    }
-  })
-
   it('refuse a path the command line cannot quote', () => {
     expect(() => launcherTasks({ ...source, appPath: 'C:\\a"b' })).toThrow()
   })

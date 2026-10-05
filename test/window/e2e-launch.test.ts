@@ -14,8 +14,8 @@ import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
 import { clickAddressBarRetrying, pressKey } from '../support/e2e-helpers.js'
-import { privatePeer } from '../support/private-peer.js'
-import type { PrivatePeer } from '../support/private-peer.js'
+import { privatePeer } from './private-peer.js'
+import type { PrivatePeer } from './private-peer.js'
 import { ABSENCE_SETTLE_MS, bookmarkUrls, delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 let server: Server
@@ -54,6 +54,8 @@ function seedProfile (home: string): void {
   writeFileSync(join(home, 'profiles', PROFILE, 'profile.json'), JSON.stringify({ version: 1, name: 'Work', color: 'green', created: 1 }))
 }
 
+/** Whether a browser holds the single-instance lock on this directory: Chromium keeps it as a link named SingletonLock, which dangles, so only a listing sees it. */
+const lockHeld = (dir: string): boolean => readdirSync(dir).includes('SingletonLock')
 const windowCount = async (app: ElectronApplication): Promise<number> => await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows().length)
 const userDataOf = async (app: ElectronApplication): Promise<string> => await app.evaluate(({ app: electron }) => electron.getPath('userData'))
 
@@ -123,6 +125,7 @@ it('hands a second start of a running profile over to it, with the address it wa
     expect(await waitFor(async () => (await tabIds(chrome)).length === 1)).toBe(true)
     const before = 1
 
+    expect(lockHeld(dir)).toBe(true)
     const { code } = await runToExit([`${origin}/from-elsewhere`], dir)
 
     expect(code).toBe(0)
@@ -212,7 +215,7 @@ it.skipIf(process.platform !== 'linux')('hands --new-private-window to the runni
   }
 }, TEST_TIMEOUT_MS)
 
-it('runs as a private session when --new-private-window starts a browser that is not yet running, and leaves the profile unlocked', async () => {
+it('runs as a private session when --new-private-window starts a browser that is not yet running, leaves the profile unlocked and removes its directory when it ends', async () => {
   let home = ''
   const { app } = await launched(['--new-private-window'], (dir) => { home = dir })
   let dir = ''
@@ -221,9 +224,13 @@ it('runs as a private session when --new-private-window starts a browser that is
     scratch.push(dir)
     expect(dir.startsWith(join(tmpdir(), 'orivon-private-'))).toBe(true)
     expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://private')))).toBe(true)
-    // The profile was not claimed: a start of it is not handed over to this process.
+    // The profile was not claimed: its lock is free, so a start of it runs as a browser of its own instead of handing over to this process.
+    expect(lockHeld(home)).toBe(false)
     expect(existsSync(join(home, '.orivon-running'))).toBe(false)
     expect(mainOutput(app)).not.toContain('uncaught exception')
+    // Ending the session ends the process, so the call may never answer.
+    await app.evaluate(({ app: electron }) => { electron.quit() }).catch(() => {})
+    expect(await waitFor(() => !existsSync(dir), 15_000)).toBe(true)
   } finally {
     await closeElectron(app)
     if (dir !== '') rmSync(dir, { recursive: true, force: true })

@@ -18,7 +18,7 @@ function fakeWindow (overrides: { focused?: boolean, minimized?: boolean } = {})
 }
 
 const open = (urls: string[]): LaunchRequest => ({ kind: 'open', urls })
-const actions = (create: (options: ShellWindowOptions) => void, openPrivate: (url: string | undefined) => boolean = () => true, kiosk = false): Parameters<typeof answerLaunch>[2] => ({ create, openPrivate, kiosk })
+const actions = (create: (options: ShellWindowOptions) => void, openPrivate: (urls: readonly string[]) => boolean = () => true, kiosk = false): Parameters<typeof answerLaunch>[2] => ({ create, openPrivate, kiosk })
 
 describe('answering an open request', () => {
   it('shows and focuses an already-focused window, and opens the urls in it, without creating one', () => {
@@ -93,14 +93,14 @@ describe('answering a window request', () => {
 })
 
 describe('answering a private request', () => {
-  it('starts a private session with the first address, and opens no window here', () => {
+  it('starts a private session with every address, and opens no window here', () => {
     const create = vi.fn()
     const openPrivate = vi.fn(() => true)
     const target = fakeWindow()
 
     answerLaunch({ kind: 'private', urls: ['https://a.example/', 'https://b.example/'] }, target, actions(create, openPrivate))
 
-    expect(openPrivate).toHaveBeenCalledWith('https://a.example/')
+    expect(openPrivate).toHaveBeenCalledWith(['https://a.example/', 'https://b.example/'])
     expect(create).not.toHaveBeenCalled()
     expect(target.window.focus).not.toHaveBeenCalled()
   })

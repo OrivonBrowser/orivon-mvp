@@ -34,7 +34,7 @@ export function renderDefaultBrowser (state: SettingsState): HTMLElement {
         onclick: () => { void part.makeDefault() }
       })
       return part.handedOff
-        ? h('span', { className: 'default-browser-handoff' }, h('span', { className: 'muted', textContent: 'Finish in Windows Settings: choose Orivon for web links.' }), button)
+        ? h('span', { className: 'default-browser-handoff' }, h('span', { className: 'muted', textContent: windows ? 'Finish in Windows Settings: choose Orivon for web links.' : 'Confirm in the system\'s prompt to make Orivon the default.' }), button)
         : button
     }
   }

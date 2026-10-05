@@ -64,6 +64,8 @@ describe('the weekly default-browser check', () => {
     const spec = (s.asked.mock.calls[0] as [AskPlace, { buttons: string[], cancelId: number, guarded: number[], kind: string }])[1]
     expect(spec.buttons).toEqual(['Make default', 'Not now'])
     expect(spec).toMatchObject({ kind: 'notice', cancelId: 1, guarded: [0] })
+    // A prompt that appears unprompted must not put a key meant for the page on the button that changes the system.
+    expect((spec as { focus?: unknown }).focus).toBe('dialog')
     expect(s.written).toEqual([{ firstSeenAt: NOW - 8 * DAY_MS, lastAskedAt: NOW, stopped: false }])
     expect(s.host.setDefault).not.toHaveBeenCalled()
   })

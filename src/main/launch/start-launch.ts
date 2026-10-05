@@ -1,7 +1,7 @@
 // The first thing the browser does, before it reads any data: work out which
 // browser this process is, point it at that browser's directory, and step aside
-// if that browser is already running (a second start of the same profile only
-// asks the first to show itself). Runs before anything asks for the data
+// if that browser is already running (a second start of the same profile hands the first what it asks for: a window,
+// a private session or its addresses). Runs before anything asks for the data
 // directory, because a store that had already read the default directory
 // could not be moved.
 import { existsSync } from 'node:fs'
@@ -25,6 +25,8 @@ export interface Runtime {
   readonly isPrivate: boolean
   /** The profile this is: `default`, an id, or `private` for a session. */
   readonly profileId: string
+  /** The private directory this process made for itself, which nothing else will remove when it ends. Absent when another browser made it or this is a profile. */
+  readonly madeDir?: string
   /** The switches of this launch that a process it starts must have too, or it would look for its data somewhere else. */
   readonly inherit: readonly string[]
 }
@@ -52,6 +54,7 @@ export function startLaunch (app: LaunchApp, argv: readonly string[], env: NodeJ
   let launched: Launch = launch
   let dir = home
   let profileId = 'default'
+  let madeDir: string | undefined
   if (launch.kind === 'profile') {
     // A profile is made in the browser, never by a typo on a command line.
     if (!existsSync(join(launch.dir, 'profile.json'))) return fail(`there is no profile "${launch.id}"`)
@@ -62,7 +65,8 @@ export function startLaunch (app: LaunchApp, argv: readonly string[], env: NodeJ
     if (launch.dir !== null && (dirname(resolve(launch.dir)) !== resolve(tmp) || !isPrivateDirName(basename(launch.dir)) || !existsSync(launch.dir))) {
       return fail('that is not the directory of a private session')
     }
-    dir = launch.dir ?? createPrivateDir(home, home, tmp)
+    if (launch.dir === null) madeDir = createPrivateDir(home, home, tmp)
+    dir = launch.dir ?? madeDir ?? home
     profileId = 'private'
     markPrivate(dir, process.pid)
   }
@@ -83,6 +87,7 @@ export function startLaunch (app: LaunchApp, argv: readonly string[], env: NodeJ
       const sessionDir = createPrivateDir(dir, home, tmp)
       launched = { kind: 'private', home, dir: sessionDir }
       dir = sessionDir
+      madeDir = sessionDir
       profileId = 'private'
       markPrivate(dir, process.pid)
       app.setPath('userData', dir)
@@ -95,5 +100,5 @@ export function startLaunch (app: LaunchApp, argv: readonly string[], env: NodeJ
   // Chromium's own command line as well: a launcher can take a switch back off argv once it has taken effect, and a
   // peer started with the sandbox where this one runs without it aborts on a machine that has none.
   if (!inherit.includes('--no-sandbox') && app.commandLine.hasSwitch('no-sandbox')) inherit.push('--no-sandbox')
-  return { launch: launched, dir, profiles, source, isPrivate: launched.kind === 'private', profileId, inherit }
+  return { launch: launched, dir, profiles, source, isPrivate: launched.kind === 'private', profileId, inherit, ...(madeDir === undefined ? {} : { madeDir }) }
 }

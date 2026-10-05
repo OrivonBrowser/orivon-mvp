@@ -69,8 +69,8 @@ cat /tmp/orivon-deb-inspect/usr/share/applications/*.desktop
 #   MimeType=x-scheme-handler/http;x-scheme-handler/https;
 # (no text/html), and:
 #   Categories=Network;WebBrowser;
-#   Actions=NewWindow;NewPrivateWindow;
-# followed by a [Desktop Action NewWindow] and a [Desktop Action NewPrivateWindow] section whose Exec
+#   Actions=new-window;new-private-window;
+# followed by a [Desktop Action new-window] and a [Desktop Action new-private-window] section whose Exec
 # lines run /opt/Orivon/orivon with --new-window and --new-private-window. The AppImage's own entry
 # (Exec=AppRun) carries no actions: they sit under `deb:` in electron-builder.yml, not `linux:`.
 ```

@@ -30,7 +30,7 @@ import type { LaunchRequest } from './launch/launch-request.js'
 import { canOfferDefault } from './os/default-browser.js'
 import { defaultBrowserHost } from './os/default-browser-runner.js'
 import { handleOpenUrl } from './os/open-url.js'
-import { sweepPrivateDirs } from './launch/private-session.js'
+import { removeAfterExit, removePrivateDir, sweepPrivateDirs } from './launch/private-session.js'
 import { startLaunch } from './launch/start-launch.js'
 import { runUpdateCheck } from './self-update/update-check-runner.js'
 import { scheduleUpdateChecks } from './self-update/update-schedule.js'
@@ -134,6 +134,10 @@ function boot (runtime: Runtime): void {
     requested.push(request)
     void startedUp.then(() => { for (const waiting of requested.splice(0)) opener(waiting) })
   }
+  // A private session nobody started from another browser removes its own directory once its process is gone: Chromium
+  // writes more as it quits, so a removal from inside would be undone. The sweep at a later start removes what is left.
+  const madeDir = runtime.madeDir
+  if (madeDir !== undefined) process.once('exit', () => { if (!removeAfterExit(madeDir, process.pid)) removePrivateDir(madeDir) })
   if (!runtime.isPrivate) {
     app.on('second-instance', (_event, argv, _workingDirectory, data) => { queueLaunch(readLaunchRequest(data, argv)) })
     // macOS hands a clicked link to the running app as an event; it joins the same queue.
@@ -226,7 +230,7 @@ function boot (runtime: Runtime): void {
     opener = (request) => {
       answerLaunch(request, shell.windows.focused(), {
         create: (options) => { createShellWindow(ctx, shell, options) },
-        openPrivate: (url) => shell.profiles.openPrivate(url),
+        openPrivate: (urls) => shell.profiles.openPrivate(urls),
         kiosk: shell.kiosk
       })
     }

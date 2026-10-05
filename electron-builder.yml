@@ -218,15 +218,16 @@ deb:
   # The installed entry's right-click menu in a dock or taskbar (a freedesktop "desktop action").
   # Under `deb`, never `linux`: electron-builder merges `linux.desktop` into the AppImage's
   # entry too, whose `Exec` is AppRun, and an action naming /opt/Orivon would launch nothing there.
-  # The two names and the `orivon.desktop` file name are what a pinned launcher keys on.
+  # The ids are the conventional ones, so GNOME treats `new-window` as the app's own new-window action rather than
+  # adding a second "New Window" item. They and the `orivon.desktop` file name are what a pinned launcher keys on.
   desktop:
     entry:
-      Actions: "NewWindow;NewPrivateWindow;"
+      Actions: "new-window;new-private-window;"
     desktopActions:
-      NewWindow:
+      new-window:
         Name: New Window
         Exec: /opt/Orivon/orivon --new-window
-      NewPrivateWindow:
+      new-private-window:
         Name: New Private Window
         Exec: /opt/Orivon/orivon --new-private-window
 

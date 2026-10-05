@@ -47,7 +47,9 @@ function questionFor (stoppable: boolean): QuestionSpec {
     message: 'Links you click in other programs will open in Orivon.',
     buttons: stoppable ? ['Make default', 'Not now', 'Don\'t ask again'] : ['Make default', 'Not now'],
     cancelId: NOT_NOW,
-    guarded: [MAKE_DEFAULT]
+    guarded: [MAKE_DEFAULT],
+    // The question appears while the person may be typing: a key meant for the page must land on no button.
+    focus: 'dialog'
   }
 }
 

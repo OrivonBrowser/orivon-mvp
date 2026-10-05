@@ -109,6 +109,18 @@ describe('makeDefaultBrowser', () => {
     expect(h.setDefault).not.toHaveBeenCalled()
   })
 
+  it('registers on macOS, where the system asks the person to confirm, and says the choice is theirs while it is not yet the default', async () => {
+    const asked = host({ platform: 'darwin' })
+    asked.setDefault.mockImplementation(() => true)
+    asked.isDefault.mockImplementation(async () => false)
+    expect(await makeDefaultBrowser(asked, async () => {})).toEqual({ state: 'can-set', ok: false, handedOff: true })
+    expect(asked.setDefault.mock.calls).toEqual([['http'], ['https']])
+    expect(asked.openSettings).not.toHaveBeenCalled()
+
+    const accepted = host({ platform: 'darwin' })
+    expect(await makeDefaultBrowser(accepted, async () => {})).toEqual({ state: 'default', ok: true, handedOff: false })
+  })
+
   it('does not hand over on Windows when Orivon already is the default, and reports a settings page that would not open as no hand-over', async () => {
     const already = host({ platform: 'win32', registered: { value: true } })
     expect(await makeDefaultBrowser(already, async () => {})).toEqual({ state: 'default', ok: true, handedOff: false })

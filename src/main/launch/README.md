@@ -38,8 +38,10 @@ an address, or a file or a `mailto:` that is not one, only brings the open windo
 in it. The request travels as the single-instance lock's additional data, and the running profile checks it as it
 would any input from another process, reading anything malformed as a plain open of the addresses on the command
 line. The second exits with status 0. A first start of a profile with `--new-private-window` has nothing to hand
-over to: it releases the lock and runs as a private session, leaving the profile free for the next start; its
-directory is removed by the sweep at a later start, since no process is left to remove it. A private session started
+over to: it releases the lock and runs as a private session, leaving the profile free for the next start. A
+private session that made its own directory has a small program of its own remove it once the process has ended (on
+Linux and macOS; Chromium writes as it quits, so a removal from inside would be undone), and the sweep at a later
+start removes what is left, which on Windows is everything. A private session started
 with `--orivon-private` has a directory of its own and takes no lock, so no second start reaches it.
 
 **The activation token does not cross.** The desktop gives a launched program a token so the window it raises may

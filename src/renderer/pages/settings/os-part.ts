@@ -1,6 +1,7 @@
 // What Settings knows about the computer: whether Orivon is its default browser, and the state of a press of
 // "Make default". The facts are main's; this part keeps the last answer and redraws when it changes, and reads
-// it again when the person comes back to the page: they may have chosen in the system's own settings meanwhile.
+// it again when the person comes back to the page (it shows again, or the window is focused again): they may have
+// chosen in the system's own settings meanwhile.
 import type { OrivonInternal } from '../shared/bridge.js'
 import type { SettingsPart } from './settings-parts.js'
 
@@ -23,10 +24,19 @@ function reasonOf (reply: unknown): UnavailableWhy | undefined {
   return REASONS.find((known) => known === reason)
 }
 
-/** Calls `listener` each time the page becomes visible again. */
-function onPageVisible (listener: () => void): void {
-  if (typeof document === 'undefined') return
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) listener() })
+/** Where the person's return can be heard: a hidden page shown again, or the window focused again. */
+export interface ReturnSources {
+  readonly document: Pick<Document, 'addEventListener' | 'hidden'>
+  readonly window: Pick<Window, 'addEventListener'>
+}
+
+/** Calls `listener` each time the person comes back to the page. The system's settings or a confirmation alert usually
+ * leaves the page visible, so a window focus counts as much as the page becoming visible. */
+export function onPageReturn (listener: () => void, sources?: ReturnSources): void {
+  const where = sources ?? (typeof document === 'undefined' || typeof window === 'undefined' ? undefined : { document, window })
+  if (where === undefined) return
+  where.document.addEventListener('visibilitychange', () => { if (!where.document.hidden) listener() })
+  where.window.addEventListener('focus', () => { listener() })
 }
 
 export class OsPart implements SettingsPart {
@@ -41,7 +51,7 @@ export class OsPart implements SettingsPart {
   handedOff = false
   private watching = false
 
-  constructor (private readonly bridge: OrivonInternal, private readonly notify: () => void, private readonly onReturn: (listener: () => void) => void = onPageVisible) {}
+  constructor (private readonly bridge: OrivonInternal, private readonly notify: () => void, private readonly onReturn: (listener: () => void) => void = onPageReturn) {}
 
   async load (): Promise<void> {
     this.take(await this.bridge.request('os', { type: 'defaultBrowser' }))

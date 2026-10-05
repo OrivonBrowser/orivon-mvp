@@ -248,13 +248,13 @@ add the lines yourself. For an entry whose `Exec` runs `electron-vite preview`, 
 
 ```ini
 Exec=electron-vite preview --skipBuild
-Actions=NewWindow;NewPrivateWindow;
+Actions=new-window;new-private-window;
 
-[Desktop Action NewWindow]
+[Desktop Action new-window]
 Name=New Window
 Exec=electron-vite preview --skipBuild -- --new-window
 
-[Desktop Action NewPrivateWindow]
+[Desktop Action new-private-window]
 Name=New Private Window
 Exec=electron-vite preview --skipBuild -- --new-private-window
 ```

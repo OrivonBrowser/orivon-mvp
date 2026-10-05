@@ -56,7 +56,7 @@ export const SETTLE_MS = 1000
 export interface MakeDefaultResult extends DefaultBrowserAnswer {
   /** True when Orivon is the default browser afterwards. */
   readonly ok: boolean
-  /** The choice was left to the person, in the system's own settings: the answer is read again when they return. */
+  /** The choice was left to the person, in the system's own settings or its confirmation: the answer is read again when they return. */
   readonly handedOff: boolean
 }
 
@@ -82,7 +82,10 @@ export async function makeDefaultBrowser (host: DefaultBrowserHost, wait: (ms: n
   }
   await wait(SETTLE_MS)
   const after = await readDefaultBrowser(host)
-  return { ...after, ok: after.state === 'default', handedOff: false }
+  const ok = after.state === 'default'
+  // macOS answers the registration with a confirmation the person gives later, so a read-back that still shows
+  // another browser means the choice is theirs, not that the system refused.
+  return { ...after, ok, handedOff: host.platform === 'darwin' && after.state === 'can-set' }
 }
 
 const programPath = (path: string): string => path.trim().replace(/^"|"$/g, '').replace(/\//g, '\\').toLowerCase()

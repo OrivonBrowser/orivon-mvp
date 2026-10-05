@@ -8,7 +8,7 @@ import type { ShellWindowOptions } from './window-options.js'
 export interface LaunchActions {
   /** Opens a window, which shows itself once ready rather than being shown here before it can paint. */
   readonly create: (options: ShellWindowOptions) => void
-  readonly openPrivate: (url: string | undefined) => boolean
+  readonly openPrivate: (urls: readonly string[]) => boolean
   /** A kiosk has no chrome to reach a second window or a private session from: it only shows what it has. */
   readonly kiosk: boolean
 }
@@ -25,7 +25,7 @@ export function answerLaunch (request: LaunchRequest, focused: ShellWindow | und
     return
   }
   if (!kiosk && request.kind === 'private') {
-    openPrivate(request.urls[0])
+    openPrivate(request.urls)
     return
   }
   if (focused === undefined) {

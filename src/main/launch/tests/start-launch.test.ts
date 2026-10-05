@@ -72,6 +72,19 @@ describe('a first start of a profile', () => {
     expect(existsSync(join(home, '.orivon-running'))).toBe(false)
   })
 
+  it('names the private directory it made, since no other process is left to remove it, and none for a directory it was given or for a profile', () => {
+    const cold = run(fakeApp(true).app, '--new-private-window')
+    expect(cold?.madeDir).toBe(cold?.dir)
+    const bare = run(fakeApp(false).app, '--orivon-private')
+    expect(bare?.madeDir).toBe(bare?.dir)
+    const given = join(tmp, 'orivon-private-abc123')
+    mkdirSync(given)
+    const named = run(fakeApp(false).app, '--orivon-private', `--orivon-private-dir=${given}`)
+    expect(named?.dir).toBe(given)
+    expect(named?.madeDir).toBeUndefined()
+    expect(run(fakeApp(true).app)?.madeDir).toBeUndefined()
+  })
+
   it('named a private session on the command line takes no lock at all', () => {
     const { app, calls } = fakeApp(false)
     const runtime = run(app, '--orivon-private')

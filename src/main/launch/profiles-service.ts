@@ -88,14 +88,14 @@ export class ProfilesService {
 
   /** Starts a private session: a fresh directory holding this profile's settings, and a process of its own for it. Deleted when it ends.
    * A shortcut calls this from an event handler, where a throw would end the browser: a failure is reported, not raised.
-   * `url` is opened in it when it is an http or https address; anything else is dropped rather than passed on. */
-  openPrivate (url?: string): boolean {
+   * `url`, one address or several, is opened in it where it is an http or https address; anything else is dropped rather than passed on. */
+  openPrivate (url?: string | readonly string[]): boolean {
     if (this.kiosk) return false
     let dir: string | null = null
     try {
       const made = createPrivateDir(this.runtime.dir, this.runtime.launch.home)
       dir = made
-      const address = url === undefined ? [] : urlsFromArgv([url])
+      const address = url === undefined ? [] : urlsFromArgv(typeof url === 'string' ? [url] : url)
       const child = this.spawn(this.runtime.source, [...this.runtime.inherit, ...flagsFor({ kind: 'private', dir: made }), ...address])
       child.once('exit', () => { removePrivateDir(made) })
       child.once('error', () => { removePrivateDir(made) })

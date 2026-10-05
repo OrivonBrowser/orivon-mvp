@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { OsPart } from '../settings/os-part.js'
+import { onPageReturn, OsPart } from '../settings/os-part.js'
 import { SETTINGS_PARTS } from '../settings/settings-parts.js'
 import type { OrivonInternal } from '../shared/bridge.js'
 
@@ -127,5 +127,40 @@ describe('coming back to the page', () => {
     await p.load()
     await p.load()
     expect(onReturn).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('onPageReturn', () => {
+  function sources (hidden: boolean): { sources: Parameters<typeof onPageReturn>[1], fire: (target: 'document' | 'window', type: string) => void } {
+    const handlers: Record<string, Array<() => void>> = {}
+    const target = (name: string): { addEventListener: (type: string, handler: () => void) => void } => ({
+      addEventListener: (type, handler) => { (handlers[`${name}:${type}`] ??= []).push(handler) }
+    })
+    const doc = { ...target('document'), hidden }
+    return {
+      sources: { document: doc as never, window: target('window') as never },
+      fire: (name, type) => { for (const handler of handlers[`${name}:${type}`] ?? []) handler() }
+    }
+  }
+
+  it('calls back when the page is shown again, and not when it is hidden', () => {
+    const calls = vi.fn()
+    const shown = sources(false)
+    onPageReturn(calls, shown.sources)
+    shown.fire('document', 'visibilitychange')
+    expect(calls).toHaveBeenCalledTimes(1)
+    const hidden = sources(true)
+    const none = vi.fn()
+    onPageReturn(none, hidden.sources)
+    hidden.fire('document', 'visibilitychange')
+    expect(none).not.toHaveBeenCalled()
+  })
+
+  it('calls back when the window is focused again, which is how a return from the system\'s settings or a confirmation alert shows', () => {
+    const calls = vi.fn()
+    const s = sources(false)
+    onPageReturn(calls, s.sources)
+    s.fire('window', 'focus')
+    expect(calls).toHaveBeenCalledTimes(1)
   })
 })
