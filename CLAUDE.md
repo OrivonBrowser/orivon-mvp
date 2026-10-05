@@ -18,7 +18,7 @@ Status and roadmap: `README.md`. What works today: `docs/planning/compatibility-
 | Editing in a directory | its `README.md`: what it may depend on and must never import |
 | Writing code | `docs/development/code-guidelines.md` §Rules, nothing else |
 | Adding a test or a `check:*` guard | `test/README.md` (where a spec goes), then `docs/development/testing.md` |
-| **Adding or changing a capability or an `orivon.*` member, porting an app, or fixing a bug an app reported** | `test/app-behaviours/README.md`: a catalogue row and an e2e spec are required, and CI fails without them |
+| **Adding or changing a capability or an `orivon.*` member, porting an app, or fixing a bug an app reported** | `test/app-behaviours/README.md`: a catalogue row and an e2e spec are required; CI fails a capability kind with no catalogue line |
 | Changing UI, a flow, or broker, IPC, preload, natives, filesystem or network code | the `orivon-qa` skill |
 | Starting a build step, or syncing `main` | `docs/development/parallel-work.md` §If you are an agent |
 | Opening a PR | `docs/development/pr-blueprint.md` |

@@ -65,7 +65,7 @@ describe('checkTestPaths', () => {
 })
 
 describe('checkLayout', () => {
-  const README = '| Folder | Proves |\n|---|---|\n| `alpha/` | a |\n| [`apps/`](apps/), `fixtures/` | b |\n'
+  const README = '# t\n\n## Layout\n\n| Folder | Proves |\n|---|---|\n| `alpha/` | a |\n| [`apps/`](apps/), `fixtures/` | b |\n'
 
   it('passes when every folder has a row and every row has a folder', () => {
     expect(checkLayout(['test/alpha/e2e-a.test.ts', 'test/apps/x/y.js', 'test/fixtures/z.html', 'test/README.md'], README)).toEqual([])
@@ -80,5 +80,22 @@ describe('checkLayout', () => {
 
   it('does not count a helper or the README at the top of test/ as a spec', () => {
     expect(checkLayout(['test/alpha/e2e-a.test.ts', 'test/vitest.e2e.config.ts', 'test/README.md', 'test/apps/a', 'test/fixtures/b'], README)).toEqual([])
+  })
+})
+
+describe('review cases', () => {
+  it('matches a glob whose star follows a dot', () => {
+    const files = { 'test/support/launch-electron.mjs': 'x', 'docs/a.md': 'see test/support/launch-electron.* and test/support/nothing.*' }
+    expect(run(files).dangling.map((d) => d.token)).toEqual(['test/support/nothing.*'])
+  })
+
+  it('skips a template path, where a ${...} follows the token', () => {
+    expect(findTokens('test/e2e-${name}.test.ts')).toEqual([])
+  })
+
+  it('takes Layout rows only from the table under ## Layout', () => {
+    const readme = '# t\n\n## Layout\n\n| Folder | x |\n|---|---|\n| `alpha/` | a |\n\n## Elsewhere\n\n| `beta/` | b |\n\n```\n| `gamma/` | c |\n```\n'
+    expect(checkLayout(['test/alpha/x.ts', 'test/beta/y.ts', 'test/gamma/z.ts'], readme).join('\n')).toMatch(/test\/beta\/ has no row[\s\S]*test\/gamma\/ has no row/)
+    expect(checkLayout(['test/alpha/x.ts'], readme)).toEqual([])
   })
 })

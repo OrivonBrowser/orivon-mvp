@@ -7,7 +7,7 @@
  * It also keeps `test/` ordered: no spec sits directly in `test/`, every folder under it has a row in the
  * Layout table of `test/README.md`, and every row names a folder that exists.
  *
- * A token followed by `<` or `{` is a placeholder and is skipped. History (CHANGELOG, decisions, the
+ * A token followed by `<`, `{` or `$` is a placeholder and is skipped. History (CHANGELOG, decisions, the
  * open-questions and readability logs, the devlog, most of docs/planning) is exempt: it says what was true
  * when it was written (CLAUDE.md Rule 2). Imports `node:*` only.
  */
@@ -40,7 +40,7 @@ export function findTokens (text) {
   text.split('\n').forEach((line, i) => {
     for (const match of line.matchAll(TOKEN)) {
       const after = line[match.index + match[0].length]
-      if (after === '<' || after === '{') continue
+      if (after === '<' || after === '{' || after === '$') continue
       const trimmed = match[0].replace(/[./+@-]+$/, '')
       const token = trimmed.slice(match[1].length)
       if (!token.startsWith('test/')) continue
@@ -64,8 +64,9 @@ export function pathSet (files) {
 }
 
 function globToRegExp (glob) {
-  const escaped = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`^${escaped.replace(/\*\*\//g, '(?:.*/)?').replace(/\*\*/g, '.*').replace(/(?<![.)])\*/g, '[^/]*')}$`)
+  const marked = glob.replace(/\*\*\//g, '\u0001').replace(/\*\*/g, '\u0002').replace(/\*/g, '\u0003')
+  const escaped = marked.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`^${escaped.replace(/\u0001/g, '(?:.*/)?').replace(/\u0002/g, '.*').replace(/\u0003/g, '[^/]*')}$`)
 }
 
 /**
@@ -101,7 +102,9 @@ export function checkLayout (files, readme) {
   }
   const folders = new Set(files.filter((file) => /^test\/[^/]+\//.test(file)).map((file) => file.split('/')[1]))
   const rows = new Set()
-  for (const line of readme.split('\n')) {
+  const start = readme.indexOf('\n## Layout')
+  const section = start === -1 ? '' : readme.slice(start + 1).split(/\n## /)[0]
+  for (const line of section.split('\n')) {
     if (!line.startsWith('|')) continue
     const first = line.split('|')[1] ?? ''
     for (const m of first.matchAll(/`([\w.-]+)\/`/g)) rows.add(m[1])

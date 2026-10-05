@@ -139,14 +139,10 @@ export function findSuiteSwitches (source) {
 export function capabilityKinds (manifestSource) {
   const start = manifestSource.indexOf('export type CapabilityKind')
   if (start === -1) return []
-  const kinds = []
-  for (const line of manifestSource.slice(start).split('\n').slice(1)) {
-    const trimmed = line.trim()
-    const member = /^\|\s*'([^']+)'/.exec(trimmed)
-    if (member !== null) kinds.push(member[1])
-    else if (trimmed !== '' && !/^(\/\*|\*|\/\/)/.test(trimmed)) break
-  }
-  return kinds
+  const rest = manifestSource.slice(start + 'export type CapabilityKind'.length)
+  const end = rest.search(/\n(?:export|declare|interface|type|const|function)\b|\n\}/)
+  const body = (end === -1 ? rest : rest.slice(0, end)).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+  return [...body.matchAll(/'([^']+)'|"([^"]+)"/g)].map((m) => m[1] ?? m[2])
 }
 
 /**
@@ -179,7 +175,7 @@ export function checkCoverage ({ kinds, coverage, ids }) {
     lines.set(line.kind, line)
     if (!kinds.includes(line.kind)) problems.push(`${CATALOGUE}:${line.line}: \`${line.kind}\` is not a capability kind in ${CONTRACT}`)
     if (line.covered && line.ids.length === 0) problems.push(`${CATALOGUE}:${line.line}: \`${line.kind}\` names no row and is not marked "not covered: <reason>"`)
-    for (const id of line.ids) if (!ids.has(id)) problems.push(`${CATALOGUE}:${line.line}: \`${line.kind}\` names \`${id}\`, which is not a row of this page`)
+    for (const id of line.ids) if (!ids.has(id)) problems.push(`${CATALOGUE}:${line.line}: \`${line.kind}\` names \`${id}\`, which is not a proven row of this page`)
   }
   for (const kind of kinds) {
     if (!lines.has(kind)) problems.push(`${CONTRACT} declares the capability \`${kind}\` and ${CATALOGUE} has no line for it under ${COVERAGE_HEADING}: add the rows an app can now count on, or "not covered: <reason>"`)
@@ -231,7 +227,12 @@ export function checkCatalogue (root) {
   const known = new Set(entries.map((entry) => entry.id))
   let contract = null
   try { contract = readFileSync(join(root, CONTRACT), 'utf8') } catch (err) { problems.push(`could not read ${CONTRACT}: ${err.code ?? err.message}`) }
-  if (contract !== null) problems.push(...checkCoverage({ kinds: capabilityKinds(contract), coverage: parseCoverage(text), ids: known }))
+  if (contract !== null) {
+    const kinds = capabilityKinds(contract)
+    if (kinds.length === 0) problems.push(`${CONTRACT} declares no capability kind (no \`export type CapabilityKind\` union): this guard cannot check coverage`)
+    const proven = new Set(entries.filter((entry) => entry.covered).map((entry) => entry.id))
+    problems.push(...checkCoverage({ kinds, coverage: parseCoverage(text), ids: proven }))
+  }
 
   let workflow = ''
   try { workflow = readFileSync(join(root, CI_WORKFLOW), 'utf8') } catch { /* reported below, when a spec needs it */ }

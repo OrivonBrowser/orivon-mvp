@@ -10,8 +10,9 @@ const HEADER = '| Id | Behaviour | Apps | Ports | Proven by |\n|---|---|---|---|
 const row = (id: string, proven: string, behaviour = 'It works.'): string => `| \`${id}\` | ${behaviour} | wallets | - | ${proven} |\n`
 const spec = (name: string): string => `[\`test/${name}\`](../../test/${name})`
 
-/** A contract that declares no capability kind, so a catalogue under test needs no coverage table. */
-const NO_KINDS = 'export type CapabilityKind = never\n'
+/** The contract a fixture gets unless it brings its own: one kind, which the default coverage table covers. */
+const DEFAULT_CONTRACT = "export type CapabilityKind =\n  | 'fs'\n\nexport interface Next {}\n"
+const DEFAULT_COVERAGE = '\n## Capability coverage\n\n| Capability | Rows |\n|---|---|\n| `fs` | not covered: a fixture |\n'
 const kindsOf = (...kinds: string[]): string => `export type CapabilityKind =\n${kinds.map((kind) => `  /** doc */\n  | '${kind}'`).join('\n')}\n\nexport interface Next {}\n`
 
 const WORKFLOW = [
@@ -30,7 +31,8 @@ const WORKFLOW = [
 /** A scratch repository holding a catalogue, a workflow and the given files. */
 const fixture = (catalogue: string, files: Record<string, string> = {}, workflow = WORKFLOW): string => {
   const root = mkdtempSync(join(tmpdir(), 'orivon-behaviours-'))
-  const all: Record<string, string> = { [CATALOGUE]: catalogue, [CI_WORKFLOW]: workflow, [CONTRACT]: NO_KINDS, ...files }
+  const withCoverage = catalogue.includes('## Capability coverage') ? catalogue : catalogue + DEFAULT_COVERAGE
+  const all: Record<string, string> = { [CATALOGUE]: withCoverage, [CI_WORKFLOW]: workflow, [CONTRACT]: DEFAULT_CONTRACT, ...files }
   for (const [path, body] of Object.entries(all)) {
     mkdirSync(join(root, dirname(path)), { recursive: true })
     writeFileSync(join(root, path), body)
@@ -225,6 +227,16 @@ describe('capabilityKinds', () => {
   })
 })
 
+describe('capabilityKinds edge cases', () => {
+  it('reads members on the declaration line, several to a line, double-quoted, and past a comment without stars', () => {
+    expect(capabilityKinds("export type CapabilityKind = 'a' | 'b'\n  /** a doc\n     with no leading star\n  */\n  | \"c\"\n  // line comment 'not-a-kind'\n  | 'd' | 'e'\n\nexport interface Next {}\n")).toEqual(['a', 'b', 'c', 'd', 'e'])
+  })
+
+  it('finds nothing in a source with no such type', () => {
+    expect(capabilityKinds('export type Renamed = "x"\n')).toEqual([])
+  })
+})
+
 describe('parseCoverage', () => {
   it('reads each backticked kind with the ids that prove it, or its not-covered reason', () => {
     const text = '# t\n\n## Capability coverage\n\n| Capability | Rows |\n|---|---|\n| `fs` | `a-b`, `c-d` |\n| `id` | not covered: nothing relies on `x-y` yet |\n'
@@ -263,6 +275,17 @@ describe('capability coverage in checkCatalogue', () => {
   it('does not read the coverage table as catalogue rows', () => {
     const root = fixture(rows + table(['| `fs` | `a-b` |']), { ...proving, [CONTRACT]: kindsOf('fs') })
     expect(checkCatalogue(root).entries.map((entry) => entry.id)).toEqual(['a-b'])
+  })
+
+  it('fails a line that cites a row which is itself not covered', () => {
+    const catalogue = rows + row('shaky', 'not covered: nothing proves it') + table(['| `fs` | `shaky` |'])
+    const root = fixture(catalogue, { ...proving, [CONTRACT]: kindsOf('fs') })
+    expect(checkCatalogue(root).problems.join('\n')).toContain('names `shaky`, which is not a proven row')
+  })
+
+  it('fails a contract it cannot read any capability kind from', () => {
+    const root = fixture(rows, { ...proving, [CONTRACT]: 'export type Renamed = "x"\n' })
+    expect(checkCatalogue(root).problems.join('\n')).toContain('declares no capability kind')
   })
 
   it('fails when the contract cannot be read', () => {

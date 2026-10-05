@@ -20,7 +20,7 @@ window on the owner's screen, silent audio) is in `orivon-electron` and CLAUDE.m
 | `npm run test:e2e` | every e2e spec, each leaving evidence on failure | CI, on every PR. Not locally: the development machine is shared and has crashed under load (`.claude/hookify.machine-load.local.md`) |
 | `npm run smoke` | the real shell once, JSON failure list | when `src/main/` changed |
 
-One spec: `node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/<file> -t "<name>"`
+One spec: `node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/<area>/<file> -t "<name>"`
 (after `node scripts/build-e2e.mjs`). Never launch Electron any other way.
 
 | Spec | Proves |

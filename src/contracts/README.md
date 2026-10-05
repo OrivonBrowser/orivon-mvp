@@ -7,7 +7,7 @@ types. Seven files, and reading them in order (`errors` -> `handles` -> `manifes
 **Changing it.** Beyond the own-PR rule: a change an app would feel needs a line under `### Changed for apps` in
 `CHANGELOG.md`, the snapshot rewritten (`node scripts/app-behaviours/check-contracts-surface.mjs --update`), and
 for a new capability kind its line and rows in [`test/app-behaviours/`](../../test/app-behaviours/README.md).
-CI fails without them.
+CI fails the missing changelog line, the stale snapshot and a capability kind with no coverage line.
 
 **What it depends on.** Its own siblings, and nothing else. `ReadableStream`,
 `WritableStream` and `Uint8Array` are ambient globals here, so they need no import at all.
