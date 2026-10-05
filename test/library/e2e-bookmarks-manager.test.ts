@@ -92,7 +92,8 @@ async function managerPage (app: ElectronApplication): Promise<Page> {
 
 /** Opens the manager with its own shortcut, as a person would. */
 async function openWithShortcut (app: ElectronApplication): Promise<Page> {
-  expect(await waitFor(() => app.windows().some((w) => w.url().includes('/newtab/')))).toBe(true)
+  // Read where pressKey looks, in main: Playwright can list the page before its webContents has committed the address.
+  expect(await waitFor(async () => await app.evaluate(({ webContents }) => webContents.getAllWebContents().some((contents) => contents.getURL().includes('/newtab/') && !contents.isLoading())))).toBe(true)
   await pressKey(app, '/newtab/', 'O', ['control', 'shift'])
   return await managerPage(app)
 }
