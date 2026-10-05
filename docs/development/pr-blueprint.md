@@ -285,7 +285,7 @@ exactly one `ux:`**, plus a flag if it applies.
 > **`ux:` has three values, because `## What changes for the user` answers for two audiences.**
 > Precedence, highest first: **`ux:visible`** if any part is visible to a person using Orivon;
 > **`ux:dev`** if not, but it changes what an app developer can write against: a capability, an
-> error, anything in `src/contracts/`, and any row of [`app-behaviours.md`](app-behaviours.md)
+> error, anything in `src/contracts/`, and any row of [`app-behaviours/catalogue.md`](../../test/app-behaviours/catalogue.md)
 > rewritten or removed (either also takes a line under `### Changed for apps` in `CHANGELOG.md`, and
 > a **Dev:** sentence that names the ports to recheck); **`ux:none`** only when neither is true,
 > which should be rare and is worth a second look when you reach for it. *The third value is
@@ -377,7 +377,7 @@ regardless of size: no ceiling, and never the three-section collapse.
 reason, as [`code-guidelines.md`](code-guidelines.md) §Status. No CI check parses the PR
 body, no workflow requires a label. One rule is enforced from the changed files instead of the
 body: `check:app-behaviours -- --base` fails a pull request that rewrites or removes a row of
-[`app-behaviours.md`](app-behaviours.md), and `check:contracts-surface -- --base` one that changes
+[`app-behaviours/catalogue.md`](../../test/app-behaviours/catalogue.md), and `check:contracts-surface -- --base` one that changes
 the public surface of `src/contracts/`, with no line under `### Changed for apps` in `CHANGELOG.md`.
 
 The template is doing the work, and it does it by being **already in the box** rather than by

@@ -119,10 +119,10 @@ follow from it:
   tab is in fullscreen from the tab's own events, watched from the `fullscreen` grant onward, so
   the gate notes a grant before answering it (`ADR-0026`).
 
-The notification measurement is the last phase of `test/e2e-site-permissions.test.ts`, which
+The notification measurement is the last phase of `test/sites/e2e-site-permissions.test.ts`, which
 runs only on a private session bus
 ([`setup.md`](../../../docs/development/setup.md)):
-`ORIVON_PRIVATE_BUS=1 node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-site-permissions.test.ts`.
+`ORIVON_PRIVATE_BUS=1 node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/sites/e2e-site-permissions.test.ts`.
 
 **`web-context-host.ts` reinstalls deny-everything handlers on isolated-context sessions.** They
 are the only thing keeping every name above away from a document running another site's script;
@@ -152,7 +152,7 @@ ICE/STUN/TURN dial does not (A41). A context has no reason to use WebRTC, so it 
 `setWebRTCIPHandlingPolicy('disable_non_proxied_udp')`, and `session.setProxy` pointed at
 `http://127.0.0.1:9`, where nothing answers. A request `protocol.handle` answers never reaches
 proxy resolution, so the proxy sees only what those handlers did not intercept.
-`test/e2e-web-context-network.test.ts` proves a granted `fetch()` still gets a real response
+`test/capabilities/e2e-web-context-network.test.ts` proves a granted `fetch()` still gets a real response
 with both belts active.
 
 **[`web-request-owner.ts`](web-request-owner.ts): one owner per (session, event), because

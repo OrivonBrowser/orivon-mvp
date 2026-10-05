@@ -20,7 +20,7 @@ window on the owner's screen, silent audio) is in `orivon-electron` and CLAUDE.m
 | `npm run test:e2e` | every e2e spec, each leaving evidence on failure | CI, on every PR. Not locally: the development machine is shared and has crashed under load (`.claude/hookify.machine-load.local.md`) |
 | `npm run smoke` | the real shell once, JSON failure list | when `src/main/` changed |
 
-One spec: `node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/<file> -t "<name>"`
+One spec: `node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/<area>/<file> -t "<name>"`
 (after `node scripts/build-e2e.mjs`). Never launch Electron any other way.
 
 | Spec | Proves |
@@ -33,7 +33,7 @@ One spec: `node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e
 
 ## Which QA after which change
 
-1. **Look first.** Open the specs for the area (`ls test/e2e-*`, grep the flow) before changing behaviour.
+1. **Look first.** Open the specs for the area (the folder for it in `test/README.md`'s layout table, then grep the flow) before changing behaviour.
    An existing spec is the statement of what the flow must do.
 2. **UI change** (`src/renderer/`, popups, internal pages): `npm run qa:visual`, then read the
    screenshots (below). A baseline mismatch after an intended change is expected: look at the new
@@ -133,7 +133,7 @@ until shown otherwise.
 
 ## Known limits
 
-- A question is the question panel, an overlay page: drive it with `test/question-support.ts` (read the
+- A question is the question panel, an overlay page: drive it with `test/support/question-support.ts` (read the
   text, press the real button after the guard) and assert `noNativeDialogs`. Leave this page is still
   a native `dialog.showMessageBoxSync`: specs replace it and the screenshots cannot show it.
 - `capturePage()` fails under this machine's GPU-less xvfb; screenshots go through Playwright's own
@@ -143,7 +143,7 @@ until shown otherwise.
   `ffmpeg -f x11grab -framerate 30 -video_size <window size> -i $DISPLAY` before the action, stop it after,
   read the frames with PIL, and read the colours the main process holds in the same run (the dev
   `__orivonDevViewBackgrounds` hook, the window's `getBackgroundColor()`) on a 1 ms timer. Delete the
-  spec afterwards; `test/e2e-theme-backing.test.ts` keeps the colours as assertions, not the frames.
+  spec afterwards; `test/window/e2e-theme-backing.test.ts` keeps the colours as assertions, not the frames.
 - An uncaught exception in the main process raises a blocking error dialog, so no spec provokes one.
 - A control hidden by `opacity` is not audited: hover-revealed buttons make that mostly intended.
 - Malformed calls to `window.orivon.*` from a page are not yet covered; they need the page-script

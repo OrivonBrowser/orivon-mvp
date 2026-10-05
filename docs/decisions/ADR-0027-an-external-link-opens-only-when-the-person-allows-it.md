@@ -24,7 +24,7 @@ Measured in Electron 44: the request reaches only the session's request handler,
 `openExternal` with the target in `details.externalURL`, and it arrives whether or not the page
 was clicked. Once the handler grants it, Electron itself hands the URL to the OS's handler for the
 scheme (`xdg-open` on Linux); the gate never calls `shell.openExternal`, so nothing launches but
-the URL the person was shown. `test/e2e-site-permissions.test.ts` asserts that Cancel launches
+the URL the person was shown. `test/sites/e2e-site-permissions.test.ts` asserts that Cancel launches
 nothing and that Allow hands the OS handler exactly the URL the dialog displayed.
 
 ## Alternatives considered

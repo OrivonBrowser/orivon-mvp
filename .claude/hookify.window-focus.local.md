@@ -10,7 +10,7 @@ action: block
 
 Never open a window on the owner's screen or take focus from them. Every Electron launch goes
 through `node scripts/run-headless.mjs <command>`, which uses a virtual display.
-`ORIVON_WINDOW_NO_FOCUS=1` (the default in `test/launch-electron.mjs`) only stops focus theft; a
+`ORIVON_WINDOW_NO_FOCUS=1` (the default in `test/support/launch-electron.mjs`) only stops focus theft; a
 window still appears without the virtual display. Use instead:
 
 - `npm run smoke` / `npm run test:e2e`: already wrapped.

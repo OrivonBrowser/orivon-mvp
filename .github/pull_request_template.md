@@ -88,6 +88,8 @@
 
 - **Streams:** <!-- every stream this PR touched, from the ownership map -->
 - **Paths touched:** <!-- and confirmation they are yours -->
+- **App behaviours:** <!-- a new or changed capability, a port, or a bug an app reported needs a catalogue row and
+                           an e2e spec: test/app-behaviours/README.md. Say which rows, or "none". -->
 - **Contracts:** <!-- which types from src/contracts/ this depends on, and whether any changed.
                      If any changed: STOP -- that belongs in its own PR, merged first, with no
                      implementation and the contracts-change label. src/shared/ is the same. -->
@@ -127,6 +129,7 @@ npm run typecheck && npm test
 npm run check:natives && npm run check:contracts && npm run check:vectors && npm run check:secrets
 npm run check:comments && npm run check:size && npm run check:questions && npm run check:devlog
 npm run check:manifest-parity && npm run check:dev-grant-absent && npm run check:advisories
+npm run check:test-paths && npm run check:app-behaviours && npm run check:contracts-surface
 npm run smoke     # only if you touched src/main/
 ```
 

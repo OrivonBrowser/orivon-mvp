@@ -58,7 +58,7 @@ Block mean something; not remembering Not now keeps a dismissal from becoming a 
 - Electron's check handler is a boolean, so `Notification.permission` reads `'denied'` for a site
   nobody has decided yet, not `'default'`. A page that calls `requestPermission()` still gets
   asked; a page that reads `permission` first and gives up on `'denied'` never asks. Measured
-  on a real page (2026-09-23, `test/e2e-site-permissions.test.ts` under a private session bus):
+  on a real page (2026-09-23, `test/sites/e2e-site-permissions.test.ts` under a private session bus):
   an undecided site reads `'denied'` from both `Notification.permission` and the Permissions API,
   `requestPermission()` still reaches the prompt, and a remembered Allow reads `'granted'` after a
   restart. Whether to report `'default'` instead is `docs/open-questions.md` A243.

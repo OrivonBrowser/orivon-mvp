@@ -31,7 +31,7 @@ Every task's requirements implicitly include all of these.
 - **Docs are Markdown, `kebab-case.md`.** Match the surrounding corpus's prose style.
 - **Never launch Electron directly.** `ELECTRON_RUN_AS_NODE=1` is set in this machine's ambient
   shell and makes Electron run as plain Node with no windows, failing silently. Use
-  `test/launch-electron.mjs`, and read `.claude/skills/orivon-electron/SKILL.md` first.
+  `test/support/launch-electron.mjs`, and read `.claude/skills/orivon-electron/SKILL.md` first.
 - **`src/contracts/` imports nothing.** No `electron`, no `node:*`, no third-party types, not
   even `import type`. Enforced by Task 1's guard.
 - **Node `>=22.12.0`** per `package.json` `engines`.
@@ -1089,7 +1089,7 @@ Run: `npm run smoke`
 Expected: PASS. This builds and drives the real shell with real clicks. **Read the JSON result
 and the failure list it prints, never trusting the exit code alone** (`CLAUDE.md` traps). A window
 must actually appear; if nothing does, check `ELECTRON_RUN_AS_NODE` is being stripped by
-`test/launch-electron.mjs`.
+`test/support/launch-electron.mjs`.
 
 - [ ] **Step 9: Commit**
 
@@ -1333,7 +1333,7 @@ Must contain, concretely:
 - **Install and run:** `git clone`, `npm install`, `npm run dev`.
 - **The `ELECTRON_RUN_AS_NODE` trap**, in full and prominently. On a machine where it is set in
   the ambient shell, the Electron binary runs as plain Node, with no window and no `MessagePortMain`,
-  and **it does not fail loudly.** Never launch Electron directly; use `test/launch-electron.mjs`,
+  and **it does not fail loudly.** Never launch Electron directly; use `test/support/launch-electron.mjs`,
   which strips it and verifies the launch is real. This costs hours if discovered by debugging.
 - **Every script in `package.json`**, one line each: `dev`, `build`, `start`, `typecheck`,
   `test`, `check:natives`, `check:contracts`, `smoke`.

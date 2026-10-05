@@ -44,13 +44,13 @@
 // phoning out.
 //
 // Launch config, waiting/polling and chrome-state readers live in
-// test/smoke-helpers.mjs (split out 2026-08-28, code-guidelines.md Rule 2,
+// test/support/smoke-helpers.mjs (split out 2026-08-28, code-guidelines.md Rule 2,
 // when the chrome restyle's bookmark scenarios would have pushed this file
 // past its 800-line test ceiling) -- this file is scenarios, that one is
 // plumbing.
 import { createServer } from 'node:http'
 import { runBookmarksJourney } from './smoke-bookmarks.mjs'
-import { closeElectron, launchElectron } from '../test/launch-electron.mjs'
+import { closeElectron, launchElectron } from '../test/support/launch-electron.mjs'
 import {
   ABSENCE_SETTLE_MS,
   activeTabFaviconSrc,
@@ -68,7 +68,7 @@ import {
   tabViews,
   waitFor,
   waitForTab
-} from '../test/smoke-helpers.mjs'
+} from '../test/support/smoke-helpers.mjs'
 
 /** Where the omnibox sends non-address input (src/main/omnibox.ts). Only used
  * to build the expected URL -- the resolver rule blackholes everything that

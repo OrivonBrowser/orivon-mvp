@@ -47,7 +47,7 @@ The fix gated isolation on `isRegisteredSync`. That gate was wrong in two direct
    [`delivery-provenance.ts`](../../src/main/browsing/delivery-provenance.ts) already say in comments that
    these are two separate registries. A pin served from cache but absent from the broker's
    registry got no partition, so its tab landed on the default session where its handler does not
-   exist, and the page could not load. `test/e2e-serve-from-cache.test.ts` failed exactly there:
+   exist, and the page could not load. `test/app-loading/e2e-serve-from-cache.test.ts` failed exactly there:
    *"fixture tab failed to navigate against the registered handler"*.
 2. **Wrong axis.** Installation and consent are independent. An app can be loaded this session
    with nothing granted to it, and an origin can hold grants restored from disk before anything
@@ -89,7 +89,7 @@ The fix gated isolation on `isRegisteredSync`. That gate was wrong in two direct
 
 ## Verification
 
-`test/e2e-serve-from-cache.test.ts` passes unchanged; it is the case this restores.
+`test/app-loading/e2e-serve-from-cache.test.ts` passes unchanged; it is the case this restores.
 `e2e-session-partitions` and `e2e-redirect-partition` were rewritten to grant their fixture
 origins, because two ungranted localhost fixtures now correctly share the default session and
 there would otherwise be no partition to observe. Full e2e suite: 17 files, 42 tests, all

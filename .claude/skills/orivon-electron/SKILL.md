@@ -16,7 +16,7 @@ the Electron binary run as plain Node — no windows, no `require('electron')`, 
 `MessagePortMain`. It does not fail loudly; it fails in ways that look like unrelated bugs, such
 as a module-format error that has nothing to do with module formats.
 
-**Never launch Electron directly.** Go through `test/launch-electron.mjs` (or
+**Never launch Electron directly.** Go through `test/support/launch-electron.mjs` (or
 `spike/launch.mjs`'s `launchElectron()` for a spike gate), which strips the variable and asserts
 `MessageChannelMain` exists before returning. New Electron-launching code must do the same:
 strip `ELECTRON_RUN_AS_NODE` before spawning, or a test can produce a confident, completely
@@ -418,7 +418,7 @@ down correctly.
 
 - **Playwright's `_electron.launch` adds `--no-sandbox` on Linux** unless the launch passes
   `chromiumSandbox: true`, and hides it from `process.argv` (`app.commandLine.hasSwitch` still
-  sees it). `launchElectron({ sandbox: true })` in `test/launch-electron.mjs` passes it.
+  sees it). `launchElectron({ sandbox: true })` in `test/support/launch-electron.mjs` passes it.
 - **Electron runs no `service-worker` session preload under `--no-sandbox`.** An extension's
   worker then lacks everything electron-chrome-extensions injects (`tabs` events, `windows`,
   `action`), and real extensions die at start. Extension e2e tests launch sandboxed (A289).
@@ -433,7 +433,7 @@ down correctly.
 
 ## Screenshots, hidden views and dead renderers (measured on Electron 44 under xvfb)
 
-What `test/qa-evidence.mjs` and `test/qa-visual.ts` rely on, each measured here:
+What `test/support/qa-evidence.mjs` and `test/support/qa-visual.ts` rely on, each measured here:
 
 - **`webContents.capturePage()` throws `UnknownVizError`** with no GPU. **Playwright's
   `page.screenshot()` works** on every `WebContentsView` (the chrome view and each tab view, at their own

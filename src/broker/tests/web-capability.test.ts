@@ -14,7 +14,7 @@
 //     sockets answer to, not a second mechanism.
 // The host itself is a fake here -- the real Electron implementation
 // (src/main/web-context-host.ts) is exercised against fakes in its own
-// test file, and end to end in test/e2e-web-context.test.ts.
+// test file, and end to end in test/capabilities/e2e-web-context.test.ts.
 
 import { describe, expect, it, vi } from 'vitest'
 import { LIMITS } from '../../contracts/index.js'

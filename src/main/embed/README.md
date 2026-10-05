@@ -40,7 +40,7 @@ object the first time it configures it. `did-attach-webview` gets no origin of i
 new guest `WebContents`; it looks `guest.session` up in that same map. This works only because
 Electron hands back the SAME `Session` object from `session.fromPartition(partition)` and from
 the attached guest's own `webContents.session` -- proven, not assumed, by
-[`../../../test/e2e-embed.test.ts`](../../../test/e2e-embed.test.ts)'s `inEmbedPartition` check,
+[`../../../test/capabilities/e2e-embed.test.ts`](../../../test/capabilities/e2e-embed.test.ts)'s `inEmbedPartition` check,
 which is also this design's regression guard. Keying on the guest's session rather than queuing
 origins per embedder needs no ordering assumption at all: two `<webview>`s attaching on the same
 or different tabs, in any order or interleaving, each resolve to the app whose grant configured
@@ -66,7 +66,7 @@ embed session's `onBeforeRequest` cancels a top-frame or subframe document reque
 grant, and Chromium reports it to the guest as a failed navigation that never leaves the page
 it was showing. Electron's `<webview>` fires no `did-fail-load` for that case, measured in
 Electron 44; the element's `loadURL()` promise rejects instead, and
-[`../../../test/e2e-embed.test.ts`](../../../test/e2e-embed.test.ts) asserts exactly that. A
+[`../../../test/capabilities/e2e-embed.test.ts`](../../../test/capabilities/e2e-embed.test.ts) asserts exactly that. A
 `file:` URL is refused the same way: `onBeforeRequest` sees it, so no second gate is needed.
 
 **A local pattern is asked of the broker, with the app origin the partition was configured for.**

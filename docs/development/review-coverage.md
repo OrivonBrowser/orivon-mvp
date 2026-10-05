@@ -168,7 +168,7 @@ see in the PR itself.
 | Mechanism | Scope | Outcome |
 |---|---|---|
 | Self-review, with a bundling probe | The two new module targets, as an ESM default import and as a CommonJS `require()` bundled by esbuild | Found that `require()` gets a shim module's namespace, where an unbuilt member is `undefined` rather than refused by name, in every shim module: A287, and the shim README corrected |
-| Negative run of the opt-in e2e | `test/e2e-napi-rs-package.test.ts` with `crossOriginIsolated: false` | Fails, so the check depends on the isolation Orivon serves |
+| Negative run of the opt-in e2e | `test/node-runtime/e2e-napi-rs-package.test.ts` with `crossOriginIsolated: false` | Fails, so the check depends on the isolation Orivon serves |
 | Review before merge, inline | The branch against `main` | No defect in the branch's own code. CI's one failure was a flake in `setImmediate`'s tests, which waited a fixed 10 ms for a MessageChannel task; they now wait on a sentinel immediate |
 
 ### `stream/extensions`: Chrome extensions (2026-09-29)
@@ -186,7 +186,7 @@ see in the PR itself.
 | Mechanism | Scope | Outcome |
 |---|---|---|
 | Conductor hand-review of each diff under `src/main/`, `src/shim/` and `src/protocols/` | The branch against `main` | `hardenGuest` forces a guest's partition and drops any `session`, so looking an attaching guest up by its session cannot credit it to another app; no defect |
-| `/code-review`, high effort | The same diff | Nine findings, all acted on: a refused successful reply kept its handles; the fallback error said retryable; a 304 let a copy cached before the change stay frameable; a redirect carried a directive browsers ignore there; a decision id in the security model and history in test comments (Rule 2); two tests left ports open; no end-to-end check that Chromium enforces the header, now `test/e2e-eth-framing.test.ts`; plain-text replies stay without it, and the decision says which responses carry it |
+| `/code-review`, high effort | The same diff | Nine findings, all acted on: a refused successful reply kept its handles; the fallback error said retryable; a 304 let a copy cached before the change stay frameable; a redirect carried a directive browsers ignore there; a decision id in the security model and history in test comments (Rule 2); two tests left ports open; no end-to-end check that Chromium enforces the header, now `test/web3/e2e-eth-framing.test.ts`; plain-text replies stay without it, and the decision says which responses carry it |
 | Security review (the `security-review` method, applied to the branch diff by an agent) | The same diff | No exploitable finding. Fixed a leak of the same class (a successful reply that fails to encode kept its handles); scoped "only its own origin" to what the verifier serves, a `web.embed` grant still showing the site; filed A295 (whether a `<webview>`'s own `webpreferences` attribute reaches the guest) |
 | Gate, smoke and e2e, headless | The branch | Typecheck, unit, the 12 guards and smoke pass; e2e passes, 64 of 65 files with 4 opt-in skipped, the files on ports the unrelated local server holds run as port-swapped copies; the one failure is FreeTube's live playback, which reaches the real network |
 
@@ -216,7 +216,7 @@ see in the PR itself.
 | `security-review` skill | The same diff | One MEDIUM, fixed: a same-origin `<object>` document got no granted-app CSP (webRequest reports it as `object`), reopening the inline-script route; `object-src 'none'` added. Service-worker-served documents getting no Orivon CSP is stated in T22, T52 and ADR-0045 |
 | Gate, smoke and e2e, headless | The branch | Typecheck, unit, the 12 guards and smoke pass; e2e passes except the three port-collision files and `e2e-freetube-live-origin`, whose live-network playback check also fails on `main` |
 | Two review agents in parallel (session change, `window.orivon` filter), each finding verified before a fix | This branch against `stream/extensions` | The filter credited a call to the page by its eval origin, which a `//# sourceURL=` comment forges at any eval depth: extension code run from a timer passed with the app's grants. Attribution now reads a real script's URL only; the reviewer's own one-line fix was shown bypassable first. Also: a cache-served app's network document got no CSP in the default session (A296 files the wider question), the one-time partition cleanup could clear installed apps' data when the pin listing failed, and developer tools and a popup's opener survived a move between two granted apps. All fixed with tests |
-| Headless e2e | `test/e2e-extensions-orivon-filter.test.ts`, with both forged-sourceURL shapes and a `CallSite`-patching extension added | Pass. V8 refuses to replace `CallSite` methods from the main world at all |
+| Headless e2e | `test/extensions/e2e-extensions-orivon-filter.test.ts`, with both forged-sourceURL shapes and a `CallSite`-patching extension added | Pass. V8 refuses to replace `CallSite` methods from the main world at all |
 
 ### `stream/shell-ext-fixes`: link opens, paint, live pages, tab-capture extensions, popups, sandbox pages (2026-09-29)
 
@@ -224,7 +224,7 @@ see in the PR itself.
 |---|---|---|
 | Three review agents in parallel (shell correctness, extensions correctness, security), each finding traced end to end before it was reported | The batch after the `stream/ext-sessions` merge | About thirty findings, all fixed with a test: a modifier-click inside a cache-served app opening it in the default session with its grants (HIGH); the tab-capture `media` carve-out granting microphone and camera (HIGH); an extension forging its own toolbar invocation; an offscreen window keeping the app alive and opening raw windows; per-extension capture bookkeeping; a popup closed by any iframe navigation; a regex a manifest could make backtrack on the main thread; a recursive profiles watcher; Settings and History redraws losing state; the dashboard's dark background under plain sites |
 | A verification agent over every fix | The fix commits | Found a crash on closing a captured tab or one an extension was clicked on (fixed, e2e now strict), a doubled-slash sandbox-path bypass, desktop capture through an extension iframe, a geometric shift-click window loop, History losing "Show more" past 500 entries; all fixed with tests. A doubled-slash sandbox page still answers `chrome.tabs.query` from a source outside the vendored library (A303) |
-| Opt-in real-extension e2e, and the owner's Volume Master copy | `test/e2e-extensions-real.test.ts`, `test/e2e-extensions-offscreen-capture.test.ts` | Pass; the MetaMask popup check failed in 2 of 6 runs, the contention flake the test already retries |
+| Opt-in real-extension e2e, and the owner's Volume Master copy | `test/extensions/e2e-extensions-real.test.ts`, `test/extensions/e2e-extensions-offscreen-capture.test.ts` | Pass; the MetaMask popup check failed in 2 of 6 runs, the contention flake the test already retries |
 | Gate, smoke and e2e, headless | The branch after merging `main` | Typecheck, 8840 unit tests, the 12 guards and smoke pass; e2e 72 files pass with the opt-in real extensions and Volume Master, the 4 failing are the files on ports the unrelated local server holds and FreeTube's live-network playback |
 
 ### `stream/natives`: threads, synchronous calls in Workers, the child host, safer sockets (2026-09-29)
@@ -301,7 +301,7 @@ In all, 61 findings, 61 confirmed, none refuted.
 | Mechanism | Scope | Outcome |
 |---|---|---|
 | `/code-review` at medium effort | The branch against `main` | No findings |
-| The new TLS checks run against the bundle built before the fix | `test/e2e-the-lounge-real.test.ts` step j | The trusted-only check failed with the old text, as reported; the rest passed |
+| The new TLS checks run against the bundle built before the fix | `test/ported-apps/e2e-the-lounge-real.test.ts` step j | The trusted-only check failed with the old text, as reported; the rest passed |
 | `/code-review` at medium effort | The Settings switch redraw fix | One finding, fixed: the control a redraw refocuses was unsettled, so it held later pushes; a new `e2e-settings-live` spec fails without the fix |
 
 ### `stream/b5-extensions`: the Extensions menu and pinning, optional permissions, command keys, the library APIs, `declarativeNetRequest` (2026-10-01)

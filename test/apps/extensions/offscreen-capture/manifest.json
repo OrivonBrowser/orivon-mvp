@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Orivon E2E Offscreen Capture",
   "version": "1.0.0",
-  "description": "Fixture extension for test/e2e-extensions-offscreen-capture.test.ts: exercises chrome.offscreen, chrome.runtime.getContexts and chrome.tabCapture.",
+  "description": "Fixture extension for test/extensions/e2e-extensions-offscreen-capture.test.ts: exercises chrome.offscreen, chrome.runtime.getContexts and chrome.tabCapture.",
   "action": {
     "default_popup": "popup.html",
     "default_icon": "icon.png"

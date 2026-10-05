@@ -10,7 +10,7 @@ stream rather than `packaging` ([`parallel-work.md`](../docs/development/paralle
 It lives here because `npm run smoke` is where people look for it.
 
 **What it depends on.** `node:*` builtins — plus, for `smoke.mjs` and `perf-probe.mjs` only, `playwright` via
-[`test/launch-electron.mjs`](../test/launch-electron.mjs), and, for `install-electron.mjs`
+[`test/support/launch-electron.mjs`](../test/support/launch-electron.mjs), and, for `install-electron.mjs`
 only, the `electron` package's own `install.js`.
 
 **What it must never import.** Anything under [`src/`](../src/). A guard that depended on the
@@ -29,10 +29,10 @@ code it guards could be disabled by the change it exists to catch.
 | `check-comments.mjs` | **Rule 1.** No source file opens with more than 25 lines of comment, and no comment block in `.github/workflows/*.yml` or a root `*.config.ts` runs over 10 lines. `--exemptions` lists every file that opted out and why |
 | `check-page-globals.mjs` | **ADR-0021.** A global Orivon installs on an app's window carries the platform's own descriptor, so an app can replace it. Reads an omitted `writable` as the lock it is; `// orivon:locked-global -- <why>` opts one out |
 | `check-native-dialogs.mjs` | A question to the person is asked through `askQuestion`, in the tab's own window. Fails on `dialog.showMessageBox`, `showMessageBoxSync` or `showErrorBox` in `src/` (bracket, destructured and aliased forms included) outside the question panel's fallback and the start-up failure box; the OS file pickers are not matched |
-| `check-contracts-surface.mjs` | `test/snapshots/contracts-surface.txt` is `src/contracts/` without its comments, so exports, capability kinds, error codes and `LIMITS` are on record. `--update` rewrites it; `--base <ref>` fails a changed file section with no line naming `` `contracts/<file>` `` under *Changed for apps* in `CHANGELOG.md` |
 | `check-questions.mjs` | No question ID is used twice across `docs/open-questions.md` and `docs/decisions/resolved-questions.md`, and no open entry runs past 12 lines |
 | `check-devlog.mjs` | No devlog bullet over 25 words (`.claude/commands/devlog.md` rule C), in the journal and in every update compiled since that rule |
-| `check-app-behaviours.mjs` | Every entry of [`app-behaviours.md`](../docs/development/app-behaviours.md) is proven by an e2e spec that CI runs and whose test is titled `[app:<id>]`, and no spec names an id the page lacks. `--base <ref>` also fails a change to an entry with no line under *Changed for apps* in `CHANGELOG.md` |
+| [`app-behaviours/`](app-behaviours/README.md) | **Not one script:** the two guards of the app-behaviour suite, `check-app-behaviours.mjs` (catalogue, specs and capability coverage agree; a changed row needs a changelog record) and `check-contracts-surface.mjs` (the snapshot of `src/contracts/`), with their tests |
+| `check-test-paths.mjs` | Every `test/...` path a tracked file names exists (a spec, a helper, a folder, a glob that matches something, a `../test/` link that resolves from its own folder), so a moved spec cannot leave a dead mention. History (CHANGELOG, decisions, devlog, most of `docs/planning/`) is exempt |
 | `worktree-gc.mjs` | **Not a guard.** Lists linked worktrees whose branch is merged into `origin/main`; `--remove` removes the clean ones (CLAUDE.md Rule 10) |
 | `install-electron.mjs` | **Not a guard.** Fetches Electron's binary on `postinstall`, because electron 44 no longer ships a postinstall hook of its own and electron-vite fails with a bare `Electron uninstall` without it. `ELECTRON_SKIP_BINARY_DOWNLOAD=1` opts out; `npm run install:electron` re-runs it alone |
 | `smoke.mjs` | The shell actually launches and works, driven with real clicks |

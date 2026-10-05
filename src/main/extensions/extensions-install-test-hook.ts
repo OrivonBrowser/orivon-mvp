@@ -4,7 +4,7 @@
 // same seam for the same reason: no real native file/folder picker exists
 // for a headless e2e run to click through). A caller still goes through the
 // real finishInstall path (install-runner.ts), consent prompt included --
-// an e2e test answers the question in the panel (test/question-support.ts)
+// an e2e test answers the question in the panel (test/support/question-support.ts)
 // rather than this hook skipping it, so the install path under test is the
 // same one a person's own "Add extension" click runs.
 // Gated on the same compiled-in flag as the developer grant, so an ordinary

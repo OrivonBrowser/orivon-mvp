@@ -16,7 +16,7 @@ standing framing, which this directory does not change.
 **Status: the app works.** Served by a plain static file server at its own URL, granted
 per-origin, with nothing installed to disk: search, channels, watch metadata, thumbnails **and
 video playback** all work, reaching live YouTube through the broker. Proven by
-`test/e2e-freetube-live-origin.test.ts`.
+`test/ported-apps/e2e-freetube-live-origin.test.ts`.
 
 Opening its URL raises the real consent prompt, and accepting it is the last step -- see §Consent
 without installing. Playback still depends on YouTube serving a stream at
@@ -125,7 +125,7 @@ round it for the same reason: a routed `fetch` reaches only a granted host, and 
 one.
 
 The header does not stand in MSE playback's way: `media-src` admits `blob:`, the URL MSE hands the
-`<video>`. `test/e2e-freetube-app.test.ts` asserts it against a live `<video>` element under the
+`<video>`. `test/ported-apps/e2e-freetube-app.test.ts` asserts it against a live `<video>` element under the
 installed app's own served CSP. `lib/playback.js` also refuses a route-3 stream over 16 MiB, a
 limit of its own (`ROUTED_FETCH_BODY_CAP`): the routed `fetch` itself has no body cap.
 
@@ -170,7 +170,7 @@ rather than a prompt, and checks instead of showing a window:
 
 ```bash
 node scripts/build-e2e.mjs
-node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-freetube-app.test.ts
+node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/ported-apps/e2e-freetube-app.test.ts
 ```
 
 That pins the real files from this directory, grants the manifest's own capabilities through the

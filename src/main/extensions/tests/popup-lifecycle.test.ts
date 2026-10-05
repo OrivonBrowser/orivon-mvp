@@ -6,9 +6,9 @@ import { EventEmitter } from 'node:events'
 // fakes stand in for BrowserWindow/nativeTheme/the parent BaseWindow so
 // this suite can control focus, size-event and window-event timing
 // directly, deterministically, and without a real display. The e2e
-// equivalent (test/e2e-extensions-popup-lifecycle.test.ts) measured this
+// equivalent (test/extensions/e2e-extensions-popup-lifecycle.test.ts) measured this
 // directly: under bare xvfb-run OR under a real window manager
-// (test/with-window-manager.mjs), a synthetic setPosition()/setSize() on a
+// (test/support/with-window-manager.mjs), a synthetic setPosition()/setSize() on a
 // BaseWindow does not reliably produce a native 'move'/'resize' event at
 // all -- an environment limitation of the virtual display, not of this
 // code, and not something an e2e assertion can be pinned to. This suite

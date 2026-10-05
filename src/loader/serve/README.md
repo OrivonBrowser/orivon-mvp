@@ -52,7 +52,7 @@ handler in an app's markup does not run, whoever wrote it.
   `media-src`. Every request it admits reaches this app's own `protocol.handle`, workers
   included, and `fetchThirdParty` re-authorises it, still refusing loopback and private
   addresses (measured). A native WebSocket is the one thing the handler cannot re-check, and
-  `https:` does not admit `wss:` (measured, `test/e2e-served-csp.test.ts`).
+  `https:` does not admit `wss:` (measured, `test/app-loading/e2e-served-csp.test.ts`).
 - **No `form-action`.** Restricting it would also refuse a form-post sign-in's redirects, and
   would bound nothing: top-level navigation is not governed by CSP (A42).
 - **`object-src 'none'`.** `default-src 'self'` alone still admits a same-origin

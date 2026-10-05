@@ -64,7 +64,7 @@
   browsing session (the partition stamp; the T22 CSP once granted apps move in), which silence
   Chromium's dNR; static rulesets never load; and uBOL's rule count exceeds the dynamic and
   session caps it would have to be squeezed into.
-- **2026-09-29, package 4 wiring, real extensions (`test/e2e-extensions-real.test.ts`, uBOL Lite
+- **2026-09-29, package 4 wiring, real extensions (`test/extensions/e2e-extensions-real.test.ts`, uBOL Lite
   2026.926, Dark Reader 4.9.133, Bitwarden 2026.9.2, MetaMask 13.50.0), before/after:**
 
   | Extension | Before | After |
@@ -91,7 +91,7 @@
   feature-detecting them; none of them enforce anything yet. The `enumerable: false` MetaMask
   attempt (UPSTREAM.md patch 11) was measured NOT to fix the LavaMoat crash by itself. The
   `chrome.runtime.openOptionsPage()`/`chrome.tabs.create()`-to-`chrome-extension:` crash
-  (`test/e2e-extensions-toolbar.test.ts`'s own header) is now a confirmed SIGSEGV (exitCode 139
+  (`test/extensions/e2e-extensions-toolbar.test.ts`'s own header) is now a confirmed SIGSEGV (exitCode 139
   on `render-process-gone`), still unfixed; the popup's own preload was ruled out as the cause.
   `crx-msg`'s sender-id spoof (UPSTREAM.md patch 9) is fixed and unit-tested.
 
@@ -118,7 +118,7 @@
   it to non-configurable/non-writable after injection stops the throw, measured 0 occurrences
   across a run that previously threw it in both the popup and the worker every time. The
   `chrome.runtime.openOptionsPage()`/`chrome.tabs.create()`-to-`chrome-extension:` SIGSEGV is gone
-  sandboxed (`test/e2e-extensions-toolbar.test.ts` now asserts it directly): Chromium's real
+  sandboxed (`test/extensions/e2e-extensions-toolbar.test.ts` now asserts it directly): Chromium's real
   namespace sandbox, not the popup's own preload or extension-host.ts's URL policy, was the actual
   precondition the crash needed. An occasional popup-open failure remained under the four-
   extension launch specifically (a stray `ERR_FAILED (-2)` on one popup's navigation, or a popup

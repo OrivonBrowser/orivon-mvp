@@ -77,12 +77,12 @@ spike/results/
 # source. .githooks/pre-commit IS tracked and has no absolute paths.
 .githooks/pre-push
 
-# test/freetube-fixture.ts's own asPage script, written next to the real app
+# test/support/freetube-fixture.ts's own asPage script, written next to the real app
 # so its plain static server can serve it -- always cleaned up, but ignored
 # too in case a crashed run left it behind.
 test/apps/freetube/__as-page-script.js
-# test/fixture-as-page.ts's own copy of the same, for test/apps/fixture/.
+# test/capabilities/fixture-as-page.ts's own copy of the same, for test/apps/fixture/.
 test/apps/fixture/__as-page-script.js
 
-# Failure evidence and state captures written by the e2e suite (test/qa-evidence.mjs)
+# Failure evidence and state captures written by the e2e suite (test/support/qa-evidence.mjs)
 qa-artifacts/

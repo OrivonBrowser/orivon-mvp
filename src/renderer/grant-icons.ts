@@ -11,7 +11,7 @@
 //
 // Never innerHTML (security-model.md T1/T10/T12/T17); `aria-hidden`, no
 // `<title>` -- the row's own text carries the accessible name, and
-// `test/e2e-site-permissions.test.ts` reads `.permission-message`'s exact
+// `test/sites/e2e-site-permissions.test.ts` reads `.permission-message`'s exact
 // textContent, which an icon must never add to.
 
 import type { CapabilityKind } from '../contracts/index.js'

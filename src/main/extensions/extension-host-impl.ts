@@ -29,7 +29,7 @@ export const shellInitiated = new Set<WebContents>()
 /** True for the duration of a `chrome.tabs.create`/`chrome.tabs.update({active:true})`
  * call's own `activateTab` -- extension-host.ts's `tabActivated` reads this to skip
  * closing an open popup: a tab switch the EXTENSION itself just made (querying tabs,
- * then opening one from its own popup, per test/e2e-extensions-toolbar.test.ts) must not
+ * then opening one from its own popup, per test/extensions/e2e-extensions-toolbar.test.ts) must not
  * close the very popup that asked for it, unlike a tab switch the PERSON makes by
  * clicking the tab strip. `createTab` and `selectTab` below are the only two ways an
  * extension can activate a tab, and neither recurses into the other. */

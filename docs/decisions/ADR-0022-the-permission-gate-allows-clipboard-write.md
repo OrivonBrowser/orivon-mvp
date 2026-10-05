@@ -72,7 +72,7 @@ ledger keeps that line intact: no app gained a power a plain website does not al
   running another site's script, and deleting them as duplication reopens exactly that.
 - The security argument rests on Chromium's activation rule, which is upstream behaviour this
   project does not control. It is asserted against a real page in
-  `test/e2e-clipboard-write.test.ts` rather than assumed.
+  `test/capabilities/e2e-clipboard-write.test.ts` rather than assumed.
 - A page can overwrite the clipboard with something other than what the person expected to copy.
   That was already true through `execCommand`; this does not add it, and nothing here detects it.
 

@@ -107,7 +107,7 @@ same exception, reached only through the virtual specifiers above).
 | `dnr/`, `dnr-api.ts`, `dnr-action-options.ts`, `dnr-match-log.ts`, `dnr-webrequest.ts`, `extensions-dnr.ts` | `declarativeNetRequest`, applied by Orivon rather than Electron ([`ADR-0051`](../../../docs/decisions/ADR-0051-orivon-applies-extensions-declarativenetrequest-rules-itself.md)): the Electron-free engine and its disk reads (`dnr/README.md`), the `chrome.declarativeNetRequest` handlers and badge counts, and the handlers registered on the session's one `webRequest` owner |
 | `web-request/`, `web-request-api.ts`, `web-request-dispatch.ts` | `chrome.webRequest`, served by Orivon rather than Electron: the Electron-free filter, visibility, details and merge rules (`web-request/README.md`), the three router handlers an extension registers listeners through, and the dispatcher that sends each request to the page holding a listener, through the session's one webRequest owner |
 | `extensions-subsystem.ts` | Registers everything into the running app via `../registry.ts`, including the Chrome Web Store (`store-runner.ts`) |
-| `store-test-hook.ts` | Test builds only -- exposes the store methods on `globalThis` for `test/e2e-extensions-store.test.ts` |
+| `store-test-hook.ts` | Test builds only -- exposes the store methods on `globalThis` for `test/extensions/e2e-extensions-store.test.ts` |
 | `extensions-domain.ts` | The `orivon://extensions` page's `InternalDomain` -- validates every request, wires the pieces above to what the page asks |
 
 ## Design notes

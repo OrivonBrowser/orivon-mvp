@@ -113,7 +113,7 @@ export async function installFromStoreCrx (
 }
 
 /**
- * The e2e-only entry point `test/e2e-extensions-store.test.ts` drives
+ * The e2e-only entry point `test/extensions/e2e-extensions-store.test.ts` drives
  * (through `store-test-hook.ts`'s dev-only `globalThis` hook -- no
  * `chrome.webstorePrivate` page exists in that suite to trigger the real
  * flow from) and the seam that lets it point at a fixture server instead of
