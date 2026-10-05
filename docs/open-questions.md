@@ -2022,3 +2022,43 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   refused as it is in the address bar); open a local HTML file handed in at launch, which needs a rule for `file:`.
 - **Who decides:** owner
 - **Blocks:** nothing; check `xdg-settings` on a real package either way
+
+### A380: An embedded page cannot share a screen, even with `allow="display-capture"` **[AI-REC]**
+
+- **Question:** Screen sharing needs the tab's preload in the frame that asks, and a tab's preload runs in the top frame only (ADR-0052), so a meeting widget a site embeds in an iframe is refused. Run the preload in subframes, or accept?
+- **Why it matters:** embedded meeting widgets (an iframe API, a support chat) fail to share while their own sites work; most meeting products run in the top frame.
+- **Options:** accept until a person or an app needs it (rec.: subframes would run every preload module in every frame, ad frames included, and reopen ADR-0052); turn on `nodeIntegrationInSubFrames` for tabs with a frame-aware preload audit.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A381: Stop sharing cannot end a screen or window share the page has copied **[AI-REC]**
+
+- **Question:** Electron 44 gives main no way to end a screen or window capture, so Stop ends the tracks the preload handed the page and their clones; a page that copied a track through a frame the preload does not reach keeps capturing. Accept, or reload the page on Stop?
+- **Why it matters:** a person who presses Stop expects the share to end; closing or reloading the tab always ends it, and Wayland and macOS show their own indicator.
+- **Options:** accept and keep closing the tab as the hard stop (rec.: only a page working against the person keeps a hidden copy, and it was granted the share); reload the page on Stop (ends a call with it); ask Electron for a stop in `setDisplayMediaRequestHandler` (settles it).
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A382: The backstop for an unexpected capture grant reloads the tab; should it end the renderer? **[RESEARCH]**
+
+- **Question:** If a granted `media` request turns out not to be the display call (the display handler did not run), the tab is reloaded. Whether the page receives a frame before the reload is not measured; ending the renderer would leave less time. The ticket rules should make the case unreachable.
+- **Why it matters:** the backstop is the last line if a page wins a race the rules missed; a frame of the entire screen is the cost.
+- **Options:** keep the reload (rec. until measured); end the renderer, which also ends other tabs that share its process; measure first with a beacon from the page.
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A383: Screen sharing on Wayland, Windows and macOS is written but not measured end to end **[RESEARCH]**
+
+- **Question:** Linux X11 is measured end to end. On Wayland the picker hands a window or screen to the desktop portal, and only the portal round trip is measured, not an accepted share; Windows (system audio) and macOS (Screen Recording permission) follow Electron's documentation.
+- **Why it matters:** the owner's own desktop is GNOME on Wayland; a share that fails there fails for the person most likely to try it first.
+- **Options:** a manual share on a real GNOME Wayland desktop and on Windows and macOS before release (rec.); a headless portal backend that accepts by itself (none installed here).
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A384: A shared tab in the background tells its page it is hidden **[AI-REC]**
+
+- **Question:** A tab being shared keeps painting when the person switches away (its view stays in the window, not visible), but its page reads `document.visibilityState === 'hidden'`, so a page that pauses when hidden pauses in the share. Report it visible while shared?
+- **Why it matters:** a shared slide deck or video that stops animating is a broken share, and the cause is invisible to the person.
+- **Options:** report visible while the tab is shared, as a captured tab in Chrome reads (rec.); leave it, since frames still arrive.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing

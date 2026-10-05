@@ -7,7 +7,7 @@
 | `sleep-rules.ts` | Pure: `canSleep` over the facts, `hostKept`, `delayFor` (memory saver, wait, energy saver), `dueToSleep` |
 | `sleep-facts.ts` | Gathers the facts from a live tab; `SleepEnv` is what a test stands in |
 | `unsaved-input.ts` | The one question asked of the page, in an isolated world with a timeout |
-| `media-in-use.ts` | Which pages use a camera, microphone, screen share or chosen device; provisional, nothing marks a page until a camera, microphone or device grant exists |
+| `media-in-use.ts` | Which pages use a camera, microphone, screen share or chosen device; a screen share marks its page while it runs, a camera or microphone grant marks nothing yet (provisional) |
 | `sleep-tab.ts` | `sleepTab`, `sleepTabWhy`, `wakeTab`, `putToSleep`: the view swap |
 | `sleep-signal.ts` | The tab signal that reads a sleeping tab's state from its record |
 | `sleep-command.ts` | `tab.sleep` and the tab menu's item: the hop to a neighbour and the refusal toasts |
