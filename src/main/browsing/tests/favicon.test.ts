@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Resolver } from '../../../broker/policy/connect.js'
 import type { FaviconTarget } from '../favicon.js'
 import { MAX_FAVICON_BYTES } from '../favicon-format.js'
+import { FAVICON_TIMEOUT_MS, faviconTimeoutMs, VERIFIED_FAVICON_TIMEOUT_MS } from '../favicon-timeout.js'
 
 // fetchFaviconDataUrlCached dynamically imports 'electron' for net.request (see
 // favicon.ts's file header for why net.request, not net.fetch) -- mocked
@@ -290,6 +291,21 @@ function streamOf (chunks: Uint8Array[]): ReadableStream<Uint8Array> {
     }
   })
 }
+
+describe('faviconTimeoutMs', () => {
+  it('gives a host the verifier serves, whose content is checked block by block, longer than an ordinary host', () => {
+    for (const url of ['https://bafybeigy2kmabi5bwda52cjjpsxlfs46fp4i6j4hfi76dgiz3n6qvt6ppm.ipfs.orivon/a/icon.png', 'https://vitalik.eth/favicon.ico', 'https://docs.example.ipns.orivon/x.png']) {
+      expect(faviconTimeoutMs(url), url).toBe(VERIFIED_FAVICON_TIMEOUT_MS)
+    }
+    expect(VERIFIED_FAVICON_TIMEOUT_MS).toBeGreaterThan(FAVICON_TIMEOUT_MS)
+  })
+
+  it('keeps the short budget for every other host, and for what is not a URL', () => {
+    for (const url of ['https://example.com/favicon.ico', 'http://127.0.0.1:8080/icon.png', 'https://eth.example.com/icon.png', 'https://ipfs.orivon.example/icon.png', 'not a url']) {
+      expect(faviconTimeoutMs(url), url).toBe(FAVICON_TIMEOUT_MS)
+    }
+  })
+})
 
 describe('readCapped', () => {
   it('returns null for a null body', async () => {
