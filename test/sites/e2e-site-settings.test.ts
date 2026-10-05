@@ -298,7 +298,7 @@ it('sets a kind the site never asked about from "Add a permission", lists it in 
     await popup.click('.add-permission')
     await popup.waitForSelector('.more-list')
     const kinds = await popup.locator('.more-list .perm-select').evaluateAll((selects) => selects.map((select) => (select as HTMLElement).dataset['kind']))
-    expect(kinds).toEqual(['camera', 'microphone', 'location', 'clipboardRead', 'midi', 'idle', 'windowManagement', 'notifications', 'popups', 'javascript', 'images', 'sound', 'autoDownloads'])
+    expect(kinds).toEqual(['camera', 'microphone', 'location', 'clipboardRead', 'midi', 'idle', 'windowManagement', 'notifications', 'popups', 'javascript', 'images', 'sound', 'autoDownloads', 'screenShare'])
     expect(await popup.locator('.add-permission').getAttribute('aria-expanded')).toBe('true')
     await shootBoth(app, 'popover-add-permission', popup)
     await popup.selectOption('.perm-select[data-kind="location"]', 'allow')
