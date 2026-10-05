@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { readLaunchRequest, requestFromArgv } from '../launch-request.js'
+import { atStartup, readLaunchRequest, requestFromArgv } from '../launch-request.js'
 
 const SOURCE = ['/usr/lib/electron', '/home/p/orivon']
 const PACKAGED = ['/opt/Orivon/orivon']
@@ -39,6 +39,18 @@ describe('requestFromArgv', () => {
   it('keeps at most eight addresses', () => {
     const many = Array.from({ length: 12 }, (_, index) => `https://h${String(index)}.example/`)
     expect(requestFromArgv([...PACKAGED, ...many], true).urls).toHaveLength(8)
+  })
+})
+
+describe('atStartup', () => {
+  it('turns a new window with no address into a bring-forward, since the first window is that window', () => {
+    expect(atStartup({ kind: 'window', urls: [] })).toEqual({ kind: 'open', urls: [] })
+  })
+
+  it('leaves what has an address or is a private session as it is', () => {
+    expect(atStartup({ kind: 'window', urls: ['https://a.example/'] })).toEqual({ kind: 'window', urls: ['https://a.example/'] })
+    expect(atStartup({ kind: 'open', urls: ['https://a.example/'] })).toEqual({ kind: 'open', urls: ['https://a.example/'] })
+    expect(atStartup({ kind: 'private', urls: [] })).toEqual({ kind: 'private', urls: [] })
   })
 })
 

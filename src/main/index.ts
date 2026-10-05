@@ -25,7 +25,7 @@ import { chromeUserAgent } from './shell/user-agent.js'
 import { planIntro } from './shell/intro-state.js'
 import { firstWindowOptions } from './shell/first-window.js'
 import { seedClosedStack } from './session-restore/restore.js'
-import { readLaunchRequest } from './launch/launch-request.js'
+import { atStartup, readLaunchRequest } from './launch/launch-request.js'
 import type { LaunchRequest } from './launch/launch-request.js'
 import { canOfferDefault } from './os/default-browser.js'
 import { defaultBrowserHost } from './os/default-browser-runner.js'
@@ -128,10 +128,11 @@ function boot (runtime: Runtime): void {
   // The ask can arrive while this one is still starting, so it waits for it. A private session takes no lock, so no second start reaches it.
   let opener: (request: LaunchRequest) => void = () => {}
   let markStarted: () => void = () => {}
-  const startedUp = new Promise<void>((resolve) => { markStarted = resolve })
+  let started = false
+  const startedUp = new Promise<void>((resolve) => { markStarted = () => { started = true; resolve() } })
   const requested: LaunchRequest[] = []
   const queueLaunch = (request: LaunchRequest): void => {
-    requested.push(request)
+    requested.push(started ? request : atStartup(request))
     void startedUp.then(() => { for (const waiting of requested.splice(0)) opener(waiting) })
   }
   // A private session nobody started from another browser removes its own directory once its process is gone: Chromium

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
-import { PROFILE_ID, flagsFor, parseLaunch, urlsFromArgv, withoutAddresses } from '../launch-context.js'
+import { PROFILE_ID, flagsFor, parseLaunch, switchesOf, urlsFromArgv, withoutAddresses } from '../launch-context.js'
 
 const HOME = '/home/person/.config/orivon'
 const parse = (...argv: string[]): ReturnType<typeof parseLaunch> => parseLaunch(['/usr/bin/orivon', '--no-sandbox', ...argv], HOME)
@@ -31,6 +31,21 @@ describe('parseLaunch', () => {
   it('refuses a launch that asks to be two things', () => {
     expect(parse('--orivon-private', '--orivon-profile=a1b2c3d4e5f6').ok).toBe(false)
     expect(parse('--orivon-profile=a1b2c3d4e5f6', '--orivon-profile=b1b2c3d4e5f6').ok).toBe(false)
+  })
+})
+
+describe('a launch that has a link after the end of the switches', () => {
+  it('is not changed by anything that link carries', () => {
+    expect(parseLaunch(['/opt/Orivon/orivon', '--', '--orivon-private'], HOME)).toEqual({ ok: true, launch: { kind: 'default', home: HOME, dir: HOME } })
+    expect(parseLaunch(['/opt/Orivon/orivon', '--', '--orivon-profile=../evil'], HOME)).toEqual({ ok: true, launch: { kind: 'default', home: HOME, dir: HOME } })
+    expect(parseLaunch(['/opt/Orivon/orivon', '--orivon-private', '--', '--orivon-private-dir=/etc'], HOME)).toEqual({ ok: true, launch: { kind: 'private', home: HOME, dir: null } })
+  })
+})
+
+describe('switchesOf', () => {
+  it('is the command line up to the first `--`, and the whole of it when there is none', () => {
+    expect(switchesOf(['a', '--no-sandbox', '--', '--user-data-dir=/x', '--'])).toEqual(['a', '--no-sandbox'])
+    expect(switchesOf(['a', '--no-sandbox'])).toEqual(['a', '--no-sandbox'])
   })
 })
 

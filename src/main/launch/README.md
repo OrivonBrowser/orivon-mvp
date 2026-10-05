@@ -37,7 +37,8 @@ loaded, and a check would fail the build that started to.
 an address, or a file or a `mailto:` that is not one, only brings the open window forward, opening the web addresses
 in it. The request travels as the single-instance lock's additional data, and the running profile checks it as it
 would any input from another process, reading anything malformed as a plain open of the addresses on the command
-line. The second exits with status 0. A first start of a profile with `--new-private-window` has nothing to hand
+line. A request that reaches a browser still starting waits for its first window; a new window with no address then
+only brings that window forward, so one launch never shows two. The second exits with status 0. A first start of a profile with `--new-private-window` has nothing to hand
 over to: it releases the lock and runs as a private session, leaving the profile free for the next start. A
 private session that made its own directory has a small program of its own remove it once the process has ended (on
 Linux and macOS; Chromium writes as it quits, so a removal from inside would be undone), and the sweep at a later
@@ -48,6 +49,10 @@ with `--orivon-private` has a directory of its own and takes no lock, so no seco
 take the focus. In this Electron the token is consumed before the main script runs, and the running browser's
 `second-instance` argv holds none, so a private session started from a launcher action cannot be passed one
 (`docs/open-questions.md` A386).
+
+**Nothing after `--` is a switch.** The installer's link command ends the switches with `--`, so a link that carries
+`--no-sandbox` or `--orivon-private` is only a link. Every reader of the command line (the launch, the switches a peer
+inherits, the request) stops at the first `--`, as Chromium does.
 
 **A peer is told only where its data is.** The data directory and sandbox switches of this launch are passed on and
 nothing else: a debugger's port on the first process would be taken by the second.

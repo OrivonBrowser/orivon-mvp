@@ -33,8 +33,10 @@ export function renderDefaultBrowser (state: SettingsState): HTMLElement {
         disabled: part.busy,
         onclick: () => { void part.makeDefault() }
       })
-      return part.handedOff
-        ? h('span', { className: 'default-browser-handoff' }, h('span', { className: 'muted', textContent: windows ? 'Finish in Windows Settings: choose Orivon for web links.' : 'Confirm in the system\'s prompt to make Orivon the default.' }), button)
+      // Windows' Settings stay open while the person chooses, so its words hold after a return; a system prompt does not.
+      const handoff = part.handedOff && (windows || !part.returnedUndecided)
+      return handoff
+        ? h('span', { className: 'default-browser-handoff' }, h('span', { className: 'muted', textContent: windows ? 'Choose Orivon for web links in Windows Settings. The button opens them again.' : 'Confirm in the system\'s prompt to make Orivon the default.' }), button)
         : button
     }
   }
