@@ -11,9 +11,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './support/launch-electron.mjs'
-import { clickAddressBarRetrying, pressKey } from './support/e2e-helpers.js'
-import { bookmarkUrls, delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from './support/smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
+import { clickAddressBarRetrying, pressKey } from '../support/e2e-helpers.js'
+import { bookmarkUrls, delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 let server: Server
 let origin = ''
@@ -94,7 +94,7 @@ it('refuses to start for a launch it cannot understand, and creates nothing', as
   seedProfile(home)
 
   const cases: Array<[string[], RegExp]> = [
-    [['--orivon-profile=../evil'], /is not the id of a profile/],
+    [['--orivon-profile=../../evil'], /is not the id of a profile/],
     [['--orivon-profile=deadbeef0000'], /there is no profile/],
     [['--orivon-private', `--orivon-profile=${PROFILE}`], /cannot also be a profile/],
     [['--orivon-private', '--orivon-private-dir=/etc'], /not the directory of a private session/],

@@ -11,10 +11,10 @@
 // it is ever attached -- checked here for a brand-new tab via the e2e-only
 // view-background-test-hook.ts.
 import { expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron, launchElectron } from './support/launch-electron.mjs'
-import { pressKey } from './support/e2e-helpers.js'
-import { distinctColours } from './support/qa-visual.js'
-import { ABSENCE_SETTLE_MS, findChrome, HERMETIC_RESOLVER, popoverShown, waitFor } from './support/smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron, launchElectron } from '../support/launch-electron.mjs'
+import { pressKey } from '../support/e2e-helpers.js'
+import { distinctColours } from '../support/qa-visual.js'
+import { ABSENCE_SETTLE_MS, findChrome, HERMETIC_RESOLVER, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 45_000
 

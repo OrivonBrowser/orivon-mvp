@@ -175,7 +175,7 @@ it('closes an open browserAction popup the way Chrome does, and keeps window.clo
 
       // ---- focus moving to the page closes it ----
       // Excludes the main menu's own warm, kept-alive-while-hidden overlay
-      // (test/e2e-menu-warm.test.ts) in addition to the chrome view and the popup itself -- it lingers in
+      // (test/window/e2e-menu-warm.test.ts) in addition to the chrome view and the popup itself -- it lingers in
       // app.windows() long after it last showed, and is not the page a
       // person's click would actually focus.
       await openPopup()

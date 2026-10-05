@@ -14,8 +14,8 @@
 // That half is not machine-checkable here, by design -- see this repo's PR
 // for what was and was not verified.
 import { afterAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './support/launch-electron.mjs'
-import { delay, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
+import { delay, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
 
 afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])

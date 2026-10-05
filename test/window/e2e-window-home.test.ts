@@ -7,10 +7,10 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { pressKey } from './support/e2e-helpers.js'
-import { closeElectron, assertNoElectronSurvivors, mainOutput } from './support/launch-electron.mjs'
-import { html, launchShell, startServer, visit, type FixtureServer } from './support/qa-helpers.js'
-import { ABSENCE_SETTLE_MS, activeTabInfo, delay, evaluateRetrying, findViewShowing, popoverShown, tabIds, waitFor, waitForTab } from './support/smoke-helpers.mjs'
+import { pressKey } from '../support/e2e-helpers.js'
+import { closeElectron, assertNoElectronSurvivors, mainOutput } from '../support/launch-electron.mjs'
+import { html, launchShell, startServer, visit, type FixtureServer } from '../support/qa-helpers.js'
+import { ABSENCE_SETTLE_MS, activeTabInfo, delay, evaluateRetrying, findViewShowing, popoverShown, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 const SHOTS_DIR = process.env['ORIVON_UI_SHOTS_DIR']
 const TEST_TIMEOUT_MS = 90_000

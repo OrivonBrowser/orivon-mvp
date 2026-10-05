@@ -314,7 +314,7 @@ no option therefore sees light pages under a theme main chose on its own. `launc
 and the desktop's own theme cannot leak in; without it a launch is unchanged. `setScheme(app, scheme)`
 ([`e2e-helpers.ts`](../../test/support/e2e-helpers.ts)) flips `nativeTheme` at run time. `e2e-qa-visual` takes
 every state once per scheme (`ORIVON_QA_SCHEMES=light` or `dark` narrows it, and each scheme has its
-own baseline), and [`e2e-theme-backing`](../../test/e2e-theme-backing.test.ts) reads the colours a view
+own baseline), and [`e2e-theme-backing`](../../test/window/e2e-theme-backing.test.ts) reads the colours a view
 and the window hold at the moments a navigation starts.
 
 **Failure evidence, for every e2e spec.** [`launch-electron.mjs`](../../test/support/launch-electron.mjs)

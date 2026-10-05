@@ -143,7 +143,7 @@ until shown otherwise.
   `ffmpeg -f x11grab -framerate 30 -video_size <window size> -i $DISPLAY` before the action, stop it after,
   read the frames with PIL, and read the colours the main process holds in the same run (the dev
   `__orivonDevViewBackgrounds` hook, the window's `getBackgroundColor()`) on a 1 ms timer. Delete the
-  spec afterwards; `test/e2e-theme-backing.test.ts` keeps the colours as assertions, not the frames.
+  spec afterwards; `test/window/e2e-theme-backing.test.ts` keeps the colours as assertions, not the frames.
 - An uncaught exception in the main process raises a blocking error dialog, so no spec provokes one.
 - A control hidden by `opacity` is not audited: hover-revealed buttons make that mostly intended.
 - Malformed calls to `window.orivon.*` from a page are not yet covered; they need the page-script

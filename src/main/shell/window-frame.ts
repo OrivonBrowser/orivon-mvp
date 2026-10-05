@@ -188,7 +188,7 @@ export function showWhenReady ({ win, initialBounds, kiosk }: WindowFrame, optio
       // The one thing a real launch under a virtual display CAN check --
       // there is no window manager there to take OS focus FROM, so
       // isFocused() cannot tell showInactive() apart from show(). See
-      // test/e2e-window-no-focus.test.ts, which asserts this line runs
+      // test/window/e2e-window-no-focus.test.ts, which asserts this line runs
       // instead. Do not remove as "stray debug output". Only the launch's
       // first window can reach this branch (`skipFocus` above) -- a second
       // window opened under the same switch still takes focus.

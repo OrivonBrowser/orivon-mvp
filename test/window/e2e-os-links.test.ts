@@ -13,10 +13,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './support/launch-electron.mjs'
-import { clickAddressBarRetrying } from './support/e2e-helpers.js'
-import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from './support/question-support.js'
-import { ABSENCE_SETTLE_MS, delay, findChrome, HERMETIC_RESOLVER, popoverShown, tabIds, waitFor, waitForTab } from './support/smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
+import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
+import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
+import { ABSENCE_SETTLE_MS, delay, findChrome, HERMETIC_RESOLVER, popoverShown, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 120_000
 const SHOTS_DIR = process.env.ORIVON_UI_SHOTS_DIR

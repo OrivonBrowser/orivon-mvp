@@ -3,16 +3,16 @@
 // for the tab in front would still open, as an empty card, so each open reads the rows the page really holds.
 //
 // RUN THIS WITH:
-//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-menu-states.test.ts
+//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/window/e2e-menu-states.test.ts
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import type { ElectronApplication, Page } from 'playwright'
-import { assertNoElectronSurvivors, closeElectron } from './support/launch-electron.mjs'
-import { pressKey } from './support/e2e-helpers.js'
-import { launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from './support/qa-helpers.js'
-import type { FixtureServer } from './support/qa-helpers.js'
-import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
-import type { Grant, Manifest } from '../src/contracts/index.js'
-import { popoverShown, waitFor } from './support/smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
+import { pressKey } from '../support/e2e-helpers.js'
+import { launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from '../support/qa-helpers.js'
+import type { FixtureServer } from '../support/qa-helpers.js'
+import type { DevGrantRequest } from '../../src/main/dev/dev-grant.js'
+import type { Grant, Manifest } from '../../src/contracts/index.js'
+import { popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 
 /** The menu lists nineteen rows today; this is only the point below which the card is plainly not the menu. */
 const AT_LEAST_ROWS = 15

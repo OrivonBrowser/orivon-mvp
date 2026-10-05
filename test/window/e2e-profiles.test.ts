@@ -7,8 +7,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './support/launch-electron.mjs'
-import { delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor } from './support/smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
+import { delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor } from '../support/smoke-helpers.mjs'
 
 const leftBehind: string[] = []
 const peerPids: number[] = []
@@ -119,12 +119,12 @@ it('refuses a path, the default profile, and a profile that is not there, from t
     await page.waitForSelector('.profile')
     const ask = async (command: object): Promise<unknown> => await page.evaluate(async (c) => await (window as unknown as { orivonInternal: { request: (d: string, c: unknown) => Promise<unknown> } }).orivonInternal.request('profiles', c), command)
     expect(await ask({ type: 'remove', id: 'default' })).toEqual({ ok: false, reason: 'default-profile' })
-    expect(await ask({ type: 'remove', id: '../..' })).toEqual({ ok: false, reason: 'unknown-profile' })
+    expect(await ask({ type: 'remove', id: '../../..' })).toEqual({ ok: false, reason: 'unknown-profile' })
     expect(await ask({ type: 'remove', id: '0123456789ab' })).toEqual({ ok: false, reason: 'unknown-profile' })
-    expect(await ask({ type: 'rename', id: '../..', name: 'x' })).toEqual({ ok: false, reason: 'unknown-profile' })
+    expect(await ask({ type: 'rename', id: '../../..', name: 'x' })).toEqual({ ok: false, reason: 'unknown-profile' })
     expect(await ask({ type: 'create', name: '', color: 'blue' })).toEqual({ ok: false, reason: 'invalid-name' })
     expect(await ask({ type: 'create', name: 'x', color: 'plaid' })).toEqual({ ok: false, reason: 'invalid-color' })
-    expect(await ask({ type: 'open', id: '../..' })).toEqual({ ok: false })
+    expect(await ask({ type: 'open', id: '../../..' })).toEqual({ ok: false })
     expect(await ask({ type: 'open', id: 'default' })).toEqual({ ok: false })
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
