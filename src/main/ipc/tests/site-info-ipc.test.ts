@@ -43,7 +43,7 @@ function tabWithCookies (url = `${ORIGIN}/`): { tab: import('electron').WebConte
   return { tab, remove, flushStore }
 }
 
-const EMPTY_INFO: SiteInfo = { origin: ORIGIN, displayOrigin: ORIGIN, claimedName: undefined, asked: false, capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite: [] }
+const EMPTY_INFO: SiteInfo = { origin: ORIGIN, displayOrigin: ORIGIN, claimedName: undefined, homeDomain: undefined, asked: false, capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite: [] }
 
 function fakeController (overrides: Partial<SiteInfoController> = {}): SiteInfoController {
   return {

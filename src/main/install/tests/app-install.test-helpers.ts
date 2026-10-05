@@ -92,7 +92,9 @@ export function fakeLoader (
     // suite exercises it -- resolves null (never pinned) rather than
     // throwing, so a test that does not care about it need not stub it.
     pinFor: async () => null,
-    ddocFor: async () => undefined
+    ddocFor: async () => undefined,
+    manifestFor: async () => undefined,
+    manifestAt: async () => ({ kind: 'website' as const })
   }
 }
 

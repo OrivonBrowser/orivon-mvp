@@ -10,7 +10,7 @@ operation), `bookmark-file.ts` (reading and writing the file, pure),
 `search-current.ts` (which engine a typed search goes to, pure), `search-engine-store.ts` (the engines a person keeps in
 `search-engines.json`; its rules are in `search-engine-rules.ts` and the starting site engines in `site-engines.ts`),
 `favicon-cache.ts` (the icons already fetched), `bookmark-types.ts` (the node, bar item and import shapes, types only), `site-trust.ts` (the Web3 Score page and the
-toolbar shield's data), and `score-provider-client.ts` (asks the chosen Web3 Score provider, `ADR-0054`). `site-trust.ts` is pure: its caller,
+toolbar shield's data), `site-home.ts` (where the content shown says it lives, which decides whether a judged level counts, `ADR-0055`), and `score-provider-client.ts` (asks the chosen Web3 Score provider, `ADR-0054`). `site-trust.ts` is pure: its caller,
 [`../permissions/site-info-controller.ts`](../permissions/site-info-controller.ts), hands it the
 pin, pin coverage, a `.eth` name's evidence and the developer overrides, so it never reaches for
 the loader, the verifier or `../dev/` itself.

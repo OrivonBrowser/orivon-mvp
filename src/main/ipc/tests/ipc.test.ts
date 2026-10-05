@@ -231,7 +231,7 @@ describe('registerShellIpc -- web3ScoreFor', () => {
         connection: 'secure', ddoc: { status: 'not-checked' }, pin: undefined, name: undefined,
         level: { level: 1, because: 'x', assessable: undefined },
         delivery: { level: 1, evidence: {} as never },
-        levelOverride: 4, judged: { status: 'off' }, judgedShown: false, displayedLevel: 4, deliveryOverride: undefined, displayedDelivery: 1
+        levelOverride: 4, judged: { status: 'off' }, judgedShown: false, binding: 'not-applicable', homeDomain: undefined, judgedElsewhere: false, homePending: false, displayedLevel: 4, deliveryOverride: undefined, displayedDelivery: 1
       } as never))
     })
     registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, siteInfo, actions())

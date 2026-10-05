@@ -41,6 +41,8 @@ import { parseManifest } from './manifest/manifest.js'
 import { checkRecord, checkedRecently, loadCheckRecord, pinnedManifestLeaf, saveCheckRecord, validatorsForPin } from './fetch/update-check.js'
 import type { LoadInstalled, LoadRejected, LoadResult } from './load-result.js'
 import { pinnedToRoot } from './fetch/content-root.js'
+import { fetchManifestAtRoot } from './fetch/manifest-at-root.js'
+import type { ManifestAtRoot } from './fetch/manifest-at-root.js'
 
 export type { Fetch, FetchResponse } from './fetch/bundle.js'
 export type { LoadInstalled, LoadNeedsCapabilityPrompt, LoadNeedsReconsent, LoadNeedsRollbackChoice, LoadRejected, LoadResult, LoadUpToDate } from './load-result.js'
@@ -220,7 +222,19 @@ export interface Loader {
 
   /** The hash tree the site published with its pinned bundle, or `undefined` when it published none readable. Same read-only stance as `pinFor`. */
   ddocFor(origin: string): Promise<DdocDeclaration | undefined>
+
+  /** The manifest the pin holds for `origin`: no network call. `undefined` when never pinned or the stored manifest no longer matches the pin. */
+  manifestFor(origin: string): Promise<Manifest | undefined>
+
+  /**
+   * The manifest of the content `cid` names, read through `origin`'s own content-addressed
+   * route and nothing else of the bundle. Kept per (origin, CID) once the read has an answer,
+   * an app or a website; a failed read is asked again.
+   */
+  manifestAt(origin: string, cid: string): Promise<ManifestAtRoot>
 }
+
+const MAX_REMEMBERED_ROOT_MANIFESTS = 64
 
 /**
  * The pinned manifest itself -- decideUpdate's `previouslyDeclaredPatterns`
@@ -450,5 +464,22 @@ export function createLoader (options: CreateLoaderOptions): Loader {
     return parseDdocDeclaration(await options.storage.readDdoc(origin))
   }
 
-  return { load, reconsider, installFetched, pinFor, ddocFor }
+  async function manifestFor (origin: string): Promise<Manifest | undefined> {
+    return await pinnedManifest(options.storage, origin, await pinFor(origin))
+  }
+
+  const rootManifests = new Map<string, Promise<ManifestAtRoot>>()
+  async function manifestAt (origin: string, cid: string): Promise<ManifestAtRoot> {
+    const key = `${origin} ${cid}`
+    const known = rootManifests.get(key)
+    if (known !== undefined) return await known
+    const asked = fetchManifestAtRoot(options.fetch, options.resolve, origin, cid)
+    rootManifests.set(key, asked)
+    if (rootManifests.size > MAX_REMEMBERED_ROOT_MANIFESTS) rootManifests.delete(rootManifests.keys().next().value as string)
+    const answer = await asked
+    if (answer.kind === 'unread') rootManifests.delete(key)
+    return answer
+  }
+
+  return { load, reconsider, installFetched, pinFor, ddocFor, manifestFor, manifestAt }
 }

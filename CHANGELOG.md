@@ -24,8 +24,8 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
-- **A manifest `domain` field** names the one ENS name or DNS host an app calls home; the loader parses it
-  (ADR-0055). Update behaviour that uses it lands with the app-update work.
+- **A manifest `domain` field** names the one ENS name or DNS host an app calls home. A provider's judged level shows
+  only at that name; elsewhere the page shows the observed level and says why, and the install question names the home.
 - **`test/` is ordered by area**, with a Layout table in `test/README.md`; a spec left at its top, a folder with no
   row and a dead `test/` path in any tracked file now fail CI, and a new capability kind needs a catalogue line.
 - **An app-behaviour catalogue** names what a working app relies on, one row each, and each row is proven by an

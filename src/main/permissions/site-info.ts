@@ -50,6 +50,8 @@ export interface SiteInfo {
   readonly origin: string
   readonly displayOrigin: string
   readonly claimedName: string | undefined
+  /** The `domain` the app's manifest names as its home, when it names one. */
+  readonly homeDomain: string | undefined
   /** True when the site has asked for at least one Orivon capability or
    * picked a file/folder -- what the toolbar key's visibility switches on. */
   readonly asked: boolean
@@ -124,6 +126,7 @@ export function buildSiteInfo (
     origin,
     displayOrigin: formatOriginForDisplay(origin),
     claimedName: manifest.name,
+    homeDomain: manifest.domain,
     asked: capabilityRows.length > 0 || pickedPathRows.length > 0,
     capabilityRows,
     pickedPathRows,

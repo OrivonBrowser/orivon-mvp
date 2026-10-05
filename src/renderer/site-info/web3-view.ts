@@ -2,6 +2,7 @@ import type { SiteTrust } from '../../main/browsing/site-trust.js'
 import type { DdocVerdict } from '../../trust/ddoc.js'
 import type { ProviderVerdict, ScorePart } from '../../trust/score-provider.js'
 import { backIcon } from './icons.js'
+import { judgedElsewhereNote } from '../../trust/domain-binding.js'
 
 // The Web3 Score page. It leads with the Website level of the canonical Web3
 // scores page: Level 1 or 2 as this browser observes it, decided by whether
@@ -120,7 +121,7 @@ function levelSection (trust: SiteTrust): HTMLElement[] {
   const { level, because, assessable } = trust.level
   const displayed = trust.displayedLevel
   const overridden = trust.levelOverride !== undefined
-  const judged = !overridden && trust.judged.status === 'judged' && level === 2 ? trust.judged : undefined
+  const judged = !overridden && trust.judged.status === 'judged' && level === 2 && !trust.judgedElsewhere ? trust.judged : undefined
   const list = document.createElement('ul')
   list.className = 'rung-list level-list'
   LEVEL_LABELS.forEach((label, index) => {
@@ -133,7 +134,9 @@ function levelSection (trust: SiteTrust): HTMLElement[] {
   const becauseText = overridden || judged !== undefined ? `Observed by this browser: Level ${String(level)}. ${because}` : because
   const disclaimer = overridden
     ? `Level ${String(displayed)} is a developer override (ORIVON_SCORE_LEVELS_FILE): not observed, and no provider judged it.`
-    : providerLine(trust.judged)
+    : trust.judgedElsewhere && trust.judged.status === 'judged'
+      ? judgedElsewhereNote(trust.judged.provider.name, trust.binding, trust.homeDomain)
+      : trust.homePending ? 'Reading the manifest of this page to see where it says it lives.' : providerLine(trust.judged)
   const summary = judged?.evaluation.summary
   return [
     paragraph('section-heading', `Website level ${String(displayed)}`),
@@ -172,7 +175,7 @@ function partList (parts: readonly ScorePart[], scale: 'operation' | 'connection
 
 /** The provider's operations and connections, when it judged this page and listed any. */
 function judgedParts (trust: SiteTrust): HTMLElement[] {
-  if (trust.judged.status !== 'judged' || trust.levelOverride !== undefined || trust.level.level !== 2) return []
+  if (trust.judged.status !== 'judged' || trust.levelOverride !== undefined || trust.level.level !== 2 || trust.judgedElsewhere) return []
   const { provider, evaluation } = trust.judged
   const sections: HTMLElement[] = []
   if (evaluation.operations.length > 0) sections.push(document.createElement('hr'), paragraph('section-heading', `Operations, judged by ${provider.name}`), partList(evaluation.operations, 'operation'))

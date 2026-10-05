@@ -175,6 +175,12 @@ What follows bounds this build of Orivon, not the standard.
   judged Level 3 or 4 with the provider's name; the page keeps what Orivon itself observed beside
   it. Levels 1 and 2 are observed, so a website evaluation at 1 or 2 only marks 3 and 4 as not
   met, and the shown level stays the observed one.
+- **Only at the domain the manifest names.** A manifest is a leaf of the content address, so a
+  judgement of the content covers the `domain` its manifest names (`capability-api.md`, `domain`),
+  and the level counts only at that host (`ADR-0055`). The same files under another name, a
+  manifest with no `domain` or one that could not be read show the observed level, and the Web3
+  Score page says why. Content with no manifest at all, a website, is judged wherever it is shown.
+  Nothing in the file format changes.
 - **Never silences a grant warning.** A judged Level 4 leaves every capability warning in place
   (`ADR-0054`, which narrows `ADR-0037` to the developer override).
 - **Fetched with no credentials**, a 10 second limit per file, answers kept for 10 minutes, and

@@ -13,6 +13,7 @@ import type { SiteInfo } from './site-info.js'
 import { turnOffCapability, turnOnCapability } from './site-switches.js'
 import type { TurnOnResult } from './site-switches.js'
 import { buildSiteTrust, providerIdFor, withProviderVerdict } from '../browsing/site-trust.js'
+import { readHome } from '../browsing/site-home.js'
 import type { SiteTrust } from '../browsing/site-trust.js'
 import type { DeliveryLevel, PinCoverageEvidence } from '../../trust/delivery-ladder.js'
 import type { ScoreLevel } from '../../trust/website-level.js'
@@ -31,7 +32,7 @@ export interface SiteSummary {
 }
 
 const EMPTY_SITE_INFO = (origin: string, extensionsOnSite: readonly string[] = []): SiteInfo => ({
-  origin, displayOrigin: origin, claimedName: undefined, asked: false, capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite
+  origin, displayOrigin: origin, claimedName: undefined, homeDomain: undefined, asked: false, capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite
 })
 
 /** The loader-adjacent facts `../browsing/site-trust.js` needs but does not
@@ -132,7 +133,9 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
         origin, pin, servedFromCache, trustSources.pinCoverageFor(origin), published, Date.now(), name,
         trustSources.levelOverrideFor(origin), trustSources.deliveryOverrideFor(origin), localDevHash
       )
-      return withProviderVerdict(trust, await trustSources.providerVerdictFor(providerIdFor(trust), PROVIDER_WAIT_MS))
+      const verdict = await trustSources.providerVerdictFor(providerIdFor(trust), PROVIDER_WAIT_MS)
+      const home = await readHome(loader, origin, pin, trust.level.assessable?.kind === 'cid' ? name?.content?.cid : undefined, verdict, PROVIDER_WAIT_MS)
+      return withProviderVerdict(trust, verdict, home)
     },
 
     async storageDeclarationFor (url) {

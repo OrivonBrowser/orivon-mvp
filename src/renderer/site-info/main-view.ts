@@ -6,6 +6,7 @@ import { paintShield, web3Shield } from '../web3-shield.js'
 import { grantIcon } from '../grant-icons.js'
 import { renderSitePermissions } from './permissions-view.js'
 import type { PermissionsCallbacks, PermissionsModel } from './permissions-view.js'
+import { homeLine, originHost } from '../../trust/domain-binding.js'
 
 // The site-info popup's main page -- Chrome's own layout (a connection
 // row, then one switch per permission the site actually asked for), with
@@ -90,6 +91,13 @@ export function renderMainPage (
     claim.className = 'site-claim'
     claim.textContent = `Claims to be "${info.claimedName}".`
     header.append(claim)
+  }
+  const home = homeLine(originHost(info.origin), info.homeDomain)
+  if (home !== undefined) {
+    const homeEl = document.createElement('div')
+    homeEl.className = 'site-claim site-home'
+    homeEl.textContent = home
+    header.append(homeEl)
   }
   container.append(header)
 

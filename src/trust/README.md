@@ -5,7 +5,8 @@
 `website-level.ts`), the Delivery level on that page's Connection-to-network scale
 (`delivery-ladder.ts`), the connection ladder built from the broker's per-app connection log (a
 different axis, still unwired: nothing observes per-app connections yet), operation scoring, and
-the same-host hash tree check (`ddoc.ts`), and what a Web3 Score provider answers, read as
+the same-host hash tree check (`ddoc.ts`), whether a judged level counts at the address it is shown at
+(`domain-binding.ts`, `ADR-0055`), and what a Web3 Score provider answers, read as
 [`web3-score-provider.md`](../../docs/architecture/web3-score-provider.md) defines it
 (`score-provider.ts`; fetched by `../main/browsing/score-provider-client.ts`). Click-through shows the level and, beneath it, **the
 actual evidence it rests on**
