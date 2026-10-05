@@ -787,7 +787,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Question:** Electron 44 enforces no CORS on `protocol.handle` responses, so
   `src/loader/reach/cors.ts` and `web-context-host.ts`'s wrapper change nothing. Keep them?
 - **Why it matters:** If a later Electron enforces CORS, worker `fetch` and XHR keep working.
-- **Options:** keep; re-run `test/e2e-served-csp.test.ts` on every Electron upgrade, adding tests
+- **Options:** keep; re-run `test/app-loading/e2e-served-csp.test.ts` on every Electron upgrade, adding tests
   that fail without the headers once enforcement arrives (rec.).
 - **Who decides:** research first
 - **Blocks:** nothing

@@ -3,7 +3,7 @@
 // hop is authorised afresh against the live grant, redirect:'manual' works,
 // connect-src is re-checked and Authorization is dropped cross-origin -- but
 // that loader applies no redirect cap to a protocol.handle response
-// (measured, test/e2e-served-csp.test.ts). This file supplies the cap.
+// (measured, test/app-loading/e2e-served-csp.test.ts). This file supplies the cap.
 
 /** Redirects one chain may take through the handler: the Fetch standard's own limit. */
 export const MAX_REACH_REDIRECTS = 20

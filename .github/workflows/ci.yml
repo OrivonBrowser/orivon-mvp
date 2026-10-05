@@ -199,7 +199,7 @@ jobs:
           ORIVON_ORDINARY_BUILD: '1'
         run: >-
           xvfb-run -a node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts
-          test/e2e-loopback-grant.test.ts
+          test/app-loading/e2e-loopback-grant.test.ts
 
       - name: Upload failure evidence
         if: failure()

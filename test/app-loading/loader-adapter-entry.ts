@@ -13,10 +13,10 @@
 // Electron main process.
 
 import { app } from 'electron'
-import { electronFetch, netFetch } from '../src/loader/electron/fetch.js'
-import { electronResolveHost } from '../src/loader/electron/resolve.js'
-import { ByteBudget, fetchWithBudget } from '../src/loader/fetch/budget.js'
-import type { Fetch, FetchResponse } from '../src/loader/fetch/budget.js'
+import { electronFetch, netFetch } from '../../src/loader/electron/fetch.js'
+import { electronResolveHost } from '../../src/loader/electron/resolve.js'
+import { ByteBudget, fetchWithBudget } from '../../src/loader/fetch/budget.js'
+import type { Fetch, FetchResponse } from '../../src/loader/fetch/budget.js'
 
 /** What a real Response carries beyond FetchResponse's minimal structural
  * shape -- read here only for this probe's own reporting; production code

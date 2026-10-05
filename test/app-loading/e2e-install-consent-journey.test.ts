@@ -30,10 +30,10 @@
 // That half is e2e-app-loader-journey.test.ts's assertion 2, through a
 // real dial and a real echo server.
 import { describe, expect, it } from 'vitest'
-import { createBroker } from '../src/broker/index.js'
-import { baseDeps, manifestWith } from '../src/broker/tests/index.test-helpers.js'
-import { requestInstallConsent } from '../src/main/consent/install-consent.js'
-import type { InstallConsentPrompt } from '../src/main/consent/install-consent.js'
+import { createBroker } from '../../src/broker/index.js'
+import { baseDeps, manifestWith } from '../../src/broker/tests/index.test-helpers.js'
+import { requestInstallConsent } from '../../src/main/consent/install-consent.js'
+import type { InstallConsentPrompt } from '../../src/main/consent/install-consent.js'
 
 const ORIGIN = 'https://install-consent-journey-e2e.orivon.test'
 /** An address literal, matching test/apps/fixture's own manifest convention (its README:

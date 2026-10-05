@@ -20,7 +20,7 @@
 // (src/shim/orivon-global.ts's `getOrivon()` is the ONLY place that
 // happens, inside the imported module, not here).
 
-import { connect } from '../src/shim/net/net.js'
+import { connect } from '../../src/shim/net/net.js'
 
 // A151 (docs/open-questions.md), CLOSED: this file used to call
 // installGlobals() itself here, worked around the fact that nothing in

@@ -30,18 +30,18 @@
 //      crash or a hang, neither of which any unit test would show.
 import { afterAll, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
-import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './support/launch-electron.mjs'
-import { findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from './support/smoke-helpers.mjs'
+import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
+import { findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 import {
   ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase,
   waitForAddressBarStable
-} from './support/e2e-helpers.js'
-import { originFromUrl } from '../src/broker/policy/origin.js'
-import { partitionFor } from '../src/broker/grants/origin-hash.js'
-import { bundleTree } from '../src/broker/policy/bundle-hash.js'
-import type { BundleEntry } from '../src/broker/policy/bundle-hash.js'
-import { fromBundleTree } from '../src/broker/policy/pin.js'
-import { nodeLoaderStorage } from '../src/loader/cache/node-storage.js'
+} from '../support/e2e-helpers.js'
+import { originFromUrl } from '../../src/broker/policy/origin.js'
+import { partitionFor } from '../../src/broker/grants/origin-hash.js'
+import { bundleTree } from '../../src/broker/policy/bundle-hash.js'
+import type { BundleEntry } from '../../src/broker/policy/bundle-hash.js'
+import { fromBundleTree } from '../../src/broker/policy/pin.js'
+import { nodeLoaderStorage } from '../../src/loader/cache/node-storage.js'
 
 const PINNED_TITLE = 'destination (from cache)'
 const REAL_SERVER_TITLE = 'destination (from the real server -- should never be the final title)'

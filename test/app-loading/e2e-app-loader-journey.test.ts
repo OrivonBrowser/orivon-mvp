@@ -50,7 +50,7 @@
 // the shim reported for every real denial; they now pin the fixed one.
 //
 // RUN THIS WITH: npm run test:e2e, or directly:
-//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/e2e-app-loader-journey.test.ts
+//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/app-loading/e2e-app-loader-journey.test.ts
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { createServer as createHttpServer } from 'node:http'
 import type { Server as HttpServer } from 'node:http'
@@ -58,15 +58,15 @@ import { createServer as createNetServer } from 'node:net'
 import type { AddressInfo, Server as NetServer, Socket } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import esbuild from 'esbuild'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase } from './support/e2e-helpers.js'
-import { shimEsbuildPlugin } from '../src/shim/tests/support/shim-esbuild-plugin.js'
-import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
-import type { Grant, Manifest } from '../src/contracts/index.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { closeElectronApp, navigateToFixture, runPhase } from '../support/e2e-helpers.js'
+import { shimEsbuildPlugin } from '../../src/shim/tests/support/shim-esbuild-plugin.js'
+import type { DevGrantRequest } from '../../src/main/dev/dev-grant.js'
+import type { Grant, Manifest } from '../../src/contracts/index.js'
 import type { ShimRoundTripFailure, ShimRoundTripResult } from './app-loader-journey-shim-entry.js'
 
-const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url))
+const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url))
 const FIXTURE_APP_ID = 'app.orivon.loader-journey-e2e'
 
 function manifestFor (echoPort: number): Manifest {

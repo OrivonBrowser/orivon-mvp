@@ -13,15 +13,15 @@
 // Hermetic: everything it touches is loopback; the native dialog methods are
 // replaced with recorders only to prove none was opened.
 //
-// RUN THIS WITH: node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-consent-navigation-hold.test.ts
+// RUN THIS WITH: node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-loading/e2e-consent-navigation-hold.test.ts
 import { afterAll, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { ElectronApplication } from 'playwright'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { ABSENCE_SETTLE_MS, delay, findChrome, findViewShowing, HERMETIC_RESOLVER, tabIds, waitFor } from './support/smoke-helpers.mjs'
-import { APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './support/e2e-helpers.js'
-import { answerQuestion, noNativeDialogs, stubNativeDialogs, waitQuestion } from './support/question-support.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { ABSENCE_SETTLE_MS, delay, findChrome, findViewShowing, HERMETIC_RESOLVER, tabIds, waitFor } from '../support/smoke-helpers.mjs'
+import { APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
+import { answerQuestion, noNativeDialogs, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
 
 afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])

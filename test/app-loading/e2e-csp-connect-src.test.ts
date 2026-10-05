@@ -32,17 +32,17 @@
 // See the granted-host check below for the full account.
 //
 // RUN THIS WITH: npm run test:e2e, or directly:
-//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/e2e-csp-connect-src.test.ts
+//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/app-loading/e2e-csp-connect-src.test.ts
 import { afterAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { evaluateRetrying, HERMETIC_RESOLVER } from './support/smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase } from './support/e2e-helpers.js'
-import { bundleTree } from '../src/broker/policy/bundle-hash.js'
-import type { BundleEntry } from '../src/broker/policy/bundle-hash.js'
-import { fromBundleTree } from '../src/broker/policy/pin.js'
-import { nodeLoaderStorage } from '../src/loader/cache/node-storage.js'
-import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
-import type { Grant, Manifest } from '../src/contracts/index.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { evaluateRetrying, HERMETIC_RESOLVER } from '../support/smoke-helpers.mjs'
+import { closeElectronApp, navigateToFixture, runPhase } from '../support/e2e-helpers.js'
+import { bundleTree } from '../../src/broker/policy/bundle-hash.js'
+import type { BundleEntry } from '../../src/broker/policy/bundle-hash.js'
+import { fromBundleTree } from '../../src/broker/policy/pin.js'
+import { nodeLoaderStorage } from '../../src/loader/cache/node-storage.js'
+import type { DevGrantRequest } from '../../src/main/dev/dev-grant.js'
+import type { Grant, Manifest } from '../../src/contracts/index.js'
 
 // `.test` -- IANA-reserved, never resolvable -- same convention as
 // e2e-serve-from-cache.test.ts and spike/adr7-probe/'s own PROBE_ORIGIN.

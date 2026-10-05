@@ -51,7 +51,7 @@ image that answered 404. The queue is FIFO, and a request that waited is re-auth
 dials. Both numbers are provisional.
 
 **The third-party reach path, in order** (`../serve/serve.ts`'s `fetchThirdParty`). The platform
-facts are measured in `test/e2e-served-csp.test.ts`.
+facts are measured in `test/app-loading/e2e-served-csp.test.ts`.
 
 1. **Redirect cap** ([`redirects.ts`](redirects.ts)). The page's loader follows a 3xx back
    through this handler, so each hop is authorised afresh, but it applies no cap to a

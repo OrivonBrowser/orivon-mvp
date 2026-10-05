@@ -16,19 +16,19 @@
 // outer values.
 //
 // RUN THIS WITH: npm run test:e2e, or directly:
-//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/e2e-served-csp.test.ts
+//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/app-loading/e2e-served-csp.test.ts
 import { afterAll, expect, it } from 'vitest'
 import { createServer } from 'node:net'
 import type { Server } from 'node:net'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { evaluateRetrying, HERMETIC_RESOLVER } from './support/smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase, waitForTcpReady } from './support/e2e-helpers.js'
-import { bundleTree } from '../src/broker/policy/bundle-hash.js'
-import type { BundleEntry } from '../src/broker/policy/bundle-hash.js'
-import { fromBundleTree } from '../src/broker/policy/pin.js'
-import { nodeLoaderStorage } from '../src/loader/cache/node-storage.js'
-import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
-import type { Grant, Manifest } from '../src/contracts/index.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { evaluateRetrying, HERMETIC_RESOLVER } from '../support/smoke-helpers.mjs'
+import { closeElectronApp, navigateToFixture, runPhase, waitForTcpReady } from '../support/e2e-helpers.js'
+import { bundleTree } from '../../src/broker/policy/bundle-hash.js'
+import type { BundleEntry } from '../../src/broker/policy/bundle-hash.js'
+import { fromBundleTree } from '../../src/broker/policy/pin.js'
+import { nodeLoaderStorage } from '../../src/loader/cache/node-storage.js'
+import type { DevGrantRequest } from '../../src/main/dev/dev-grant.js'
+import type { Grant, Manifest } from '../../src/contracts/index.js'
 
 const ORIGIN = 'https://served-csp-e2e.orivon.test'
 const WSS_PROBE_PORT = 8893

@@ -72,7 +72,7 @@ export interface FetchResponse {
  * follows a cross-origin hop silently defeats fetch/bundle.ts's origin
  * confinement, with nothing downstream to catch it. electron/fetch.ts's
  * `netFetch` checks every hop (`redirectRefusal`) before taking it, proven
- * against a real redirecting server in test/e2e-loader-adapter.test.ts.
+ * against a real redirecting server in test/app-loading/e2e-loader-adapter.test.ts.
  *
  * `headers` are extra request headers, lower-case names; today only the
  * manifest's conditional-request validators (update-check.ts).

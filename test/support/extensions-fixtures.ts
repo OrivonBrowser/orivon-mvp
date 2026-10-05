@@ -61,7 +61,7 @@ export function seedExtensions (userDataDir: string): readonly InstalledExtensio
 /** A plain, single-page HTTP origin on an EPHEMERAL port -- never a fixed
  * one: 8875/8876/8885 are held by another process on this machine (this
  * repository's local notes). Mirrors
- * test/e2e-session-partitions.test.ts's own `startOriginServer`. */
+ * test/app-loading/e2e-session-partitions.test.ts's own `startOriginServer`. */
 export async function startFixtureServer (): Promise<{ server: Server, origin: string }> {
   const server = createServer((_req, res) => {
     res.writeHead(200, { 'content-type': 'text/html' })

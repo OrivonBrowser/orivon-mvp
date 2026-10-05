@@ -119,7 +119,7 @@ function toFetchResponse (url: string, response: IncomingMessage): FetchResponse
  * passed -- exported separately so a test can exercise its redirect handling
  * against a real server without also having to satisfy that guard, which no
  * local test server can ever pass (T12/A46 refuses every loopback literal).
- * See test/e2e-loader-adapter.test.ts.
+ * See test/app-loading/e2e-loader-adapter.test.ts.
  *
  * `net.request`, not `net.fetch`: `net.fetch` offers only `redirect:
  * 'error'` (every redirect fails, including the `/index.html` -> `/` hop

@@ -34,22 +34,22 @@
 // `onInstalled` would once a real https install completes.
 //
 // RUN THIS WITH: npm run test:e2e, or directly:
-//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/e2e-serve-from-cache.test.ts
+//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/app-loading/e2e-serve-from-cache.test.ts
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createServer, type Server } from 'node:http'
 import type { ElectronApplication, Page } from 'playwright'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { HERMETIC_RESOLVER, evaluateRetrying, findChrome, findViewShowing, tabIds, waitFor, waitForTab } from './support/smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './support/e2e-helpers.js'
-import { DEFAULT_ACTION_TIMEOUT_MS } from './support/launch-electron.mjs'
-import { bundleTree } from '../src/broker/policy/bundle-hash.js'
-import type { BundleEntry } from '../src/broker/policy/bundle-hash.js'
-import { fromBundleTree } from '../src/broker/policy/pin.js'
-import { appRootDirectoryName } from '../src/loader/cache/storage.js'
-import { nodeLoaderStorage } from '../src/loader/cache/node-storage.js'
-import { partitionFor } from '../src/broker/grants/origin-hash.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { HERMETIC_RESOLVER, evaluateRetrying, findChrome, findViewShowing, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
+import { DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
+import { bundleTree } from '../../src/broker/policy/bundle-hash.js'
+import type { BundleEntry } from '../../src/broker/policy/bundle-hash.js'
+import { fromBundleTree } from '../../src/broker/policy/pin.js'
+import { appRootDirectoryName } from '../../src/loader/cache/storage.js'
+import { nodeLoaderStorage } from '../../src/loader/cache/node-storage.js'
+import { partitionFor } from '../../src/broker/grants/origin-hash.js'
 
 // `.test` is the IANA-reserved, never-resolvable TLD -- same convention as
 // spike/adr7-probe/'s own PROBE_ORIGIN, and it means HERMETIC_RESOLVER's

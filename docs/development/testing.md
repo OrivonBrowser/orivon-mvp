@@ -163,7 +163,7 @@ isolation, the e2e would test only the allow path, and every user journey is a h
 broker regression that skipped the check entirely would pass every test while the product
 appeared to work perfectly. Do not drop it.
 
-**It lives in [`test/e2e-app-loader-journey.test.ts`](../../test/e2e-app-loader-journey.test.ts)**,
+**It lives in [`test/app-loading/e2e-app-loader-journey.test.ts`](../../test/app-loading/e2e-app-loader-journey.test.ts)**,
 and the refusal goes through the real shim (`src/shim/net/net.ts`), not only the raw capability
 API. One link is substituted, and the file's header says exactly where: the fixture is served
 from loopback, and [`install-origin.ts`](../../src/loader/fetch/install-origin.ts) refuses a loopback
@@ -173,13 +173,13 @@ round trip is enabled separately, through `src/main/dev/dev-grant.ts`'s develope
 acting on the same broker the launched shell's IPC uses. That path
 (`src/main/install/grant-without-install.ts`, loopback in every build) has its own test, on an
 ordinary build with no developer mode,
-[`test/e2e-loopback-grant.test.ts`](../../test/e2e-loopback-grant.test.ts). `ORIVON_DEV_ORIGINS=1`,
+[`test/app-loading/e2e-loopback-grant.test.ts`](../../test/app-loading/e2e-loopback-grant.test.ts). `ORIVON_DEV_ORIGINS=1`,
 paired with `ORIVON_ETH_NAMES_FILE`, turns on the fake `.eth` names
 (`src/main/dev/eth-resolver.ts`) and grants them the same way -- both halves are covered in
 [`test/e2e-eth-secure-context.test.ts`](../../test/e2e-eth-secure-context.test.ts), which asserts
 a `.eth` tab is a secure context and so keeps `crypto.subtle`, `crypto.randomUUID`, service
 workers and `navigator.clipboard`. See [setup.md](setup.md) for what the two variables do. Consent gating itself is proven separately, in
-[`test/e2e-install-consent-journey.test.ts`](../../test/e2e-install-consent-journey.test.ts).
+[`test/app-loading/e2e-install-consent-journey.test.ts`](../../test/app-loading/e2e-install-consent-journey.test.ts).
 
 The raw capability API has its own boundary suites, one file per transport, because Rule 2 caps
 a test at 800 lines: [`e2e-capability-boundary.test.ts`](../../test/capabilities/e2e-capability-boundary.test.ts)
