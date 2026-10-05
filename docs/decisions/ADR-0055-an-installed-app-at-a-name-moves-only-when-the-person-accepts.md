@@ -61,9 +61,9 @@ minutes.
   republished with one. Ports gain a `domain` and a `<upstream>.<build>` version.
 - With the provider setting cleared every update is a notice (case 1); a profile that never chose
   reads the official provider (`d-0484`). With DNSLink or the light client off every update is
-  unverified. An app reached at an IPNS key is never verified either, whatever its manifest names:
-  no manifest can name a `.orivon` host, so the update's notice says the app is reached at a key
-  and offers Trust & Force only.
+  unverified. An app reached at an `ipns://` address, a key or a DNSLink name, is never verified
+  either, whatever its manifest names: no manifest can name a `.orivon` host, so the update's
+  notice says the app is reached at an `ipns://` address and offers Trust & Force only.
 - Trust & Force hands over grants and data guarded only by its confirmation.
 - A service worker's update fetch does not bypass the cache-served partition: the boundary
   end-to-end spec measures that it reaches neither the gateway nor the new build.

@@ -21,7 +21,7 @@ export interface UpdateTrustFacts {
   readonly pointersVerified: boolean
 }
 
-export type UnverifiedReason = 'no-provider' | 'no-score' | 'provider-unreachable' | 'lower-level' | 'not-newer' | 'other-home' | 'key-address' | 'unproven-name'
+export type UnverifiedReason = 'no-provider' | 'no-score' | 'provider-unreachable' | 'lower-level' | 'not-newer' | 'other-home' | 'scheme-address' | 'unproven-name'
 
 export type UpdateTrust =
   | { readonly verified: true, readonly level: number }
@@ -44,8 +44,8 @@ export function updateTrust (facts: UpdateTrustFacts): UpdateTrust {
   if (missing !== undefined) reasons.push(missing)
   if (facts.verdict.status === 'judged' && facts.pinnedVerdict.status === 'judged' && facts.verdict.evaluation.trustlessity.level < facts.pinnedVerdict.evaluation.trustlessity.level) reasons.push('lower-level')
   if (facts.versionOrder !== 1) reasons.push('not-newer')
-  // A manifest cannot name a `.orivon` host (src/loader/manifest/domain.ts), so no update at a key can have a bound home.
-  if (facts.originHost.endsWith('.orivon')) reasons.push('key-address')
+  // A manifest cannot name a `.orivon` host (src/loader/manifest/domain.ts), so no update at an ipns:// key or DNSLink name can have a bound home.
+  if (facts.originHost.endsWith('.orivon')) reasons.push('scheme-address')
   else if (facts.newDomain !== facts.originHost) reasons.push('other-home')
   if (!facts.pointersVerified) reasons.push('unproven-name')
   if (reasons.length > 0 || facts.verdict.status !== 'judged') return { verified: false, reasons }
@@ -61,7 +61,7 @@ export function reasonText (reason: UnverifiedReason, newDomain: string | undefi
     case 'lower-level': return 'The provider rates this version lower than the one you are using.'
     case 'not-newer': return 'This version is not newer than the newest one you have installed.'
     case 'other-home': return newDomain === undefined ? 'This version\'s manifest names no home.' : `This version's manifest names ${newDomain} as its home, not this address.`
-    case 'key-address': return 'This app is reached at a key, which no manifest can name as its home, so an update here is never verified.'
+    case 'scheme-address': return 'This app is reached at an ipns:// address, which no manifest can name as its home, so an update here is never verified.'
     case 'unproven-name': return 'The name reached this version through a DNS record, which is not proven.'
   }
 }

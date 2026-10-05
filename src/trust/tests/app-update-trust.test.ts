@@ -43,11 +43,17 @@ describe('updateTrust', () => {
     expect(updateTrust(holding(overrides as Partial<UpdateTrustFacts>))).toEqual({ verified: false, reasons: [reason] })
   })
 
-  it('is never verified at a key address, whatever the manifest names, and says why', () => {
+  it('is never verified at an ipns:// address, whatever the manifest names, and says why', () => {
     const key = 'k51qzi5uqu5dlvj2baxnqndepeb86cbk3ng7n3i46uzyxzyqj2xjonzllnv0v8.ipns.orivon'
-    expect(updateTrust(holding({ originHost: key, newDomain: 'app.eth' }))).toEqual({ verified: false, reasons: ['key-address'] })
-    expect(updateTrust(holding({ originHost: key, newDomain: undefined }))).toEqual({ verified: false, reasons: ['key-address'] })
-    expect(reasonText('key-address', 'app.eth')).toMatch(/reached at a key/)
+    expect(updateTrust(holding({ originHost: key, newDomain: 'app.eth' }))).toEqual({ verified: false, reasons: ['scheme-address'] })
+    expect(updateTrust(holding({ originHost: key, newDomain: undefined }))).toEqual({ verified: false, reasons: ['scheme-address'] })
+    expect(reasonText('scheme-address', 'app.eth')).toMatch(/ipns:\/\/ address/)
+  })
+
+  it('says the same of a DNSLink name, which is served under .orivon too, without calling it a key', () => {
+    const dnslink = 'example-com.ipns.orivon'
+    expect(updateTrust(holding({ originHost: dnslink, newDomain: 'example.com', pointersVerified: false }))).toEqual({ verified: false, reasons: ['scheme-address', 'unproven-name'] })
+    expect(reasonText('scheme-address', 'example.com')).not.toMatch(/key/)
   })
 
   it('lists every reason that fails, in a fixed order', () => {
