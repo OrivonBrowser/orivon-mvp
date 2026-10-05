@@ -21,6 +21,7 @@ import type { OrivonErrorCode } from '../../contracts/errors.js'
 import type { FileStat, LookupAddress, SecureHandshake, SendRefusal } from '../../contracts/handles.js'
 import type { BindScope, CapabilityRequest, SecureConnectOptions } from '../../contracts/capability-api.js'
 import type { ResponseEnvelope } from '../../contracts/ipc.js'
+import type { WebsiteScore } from '../../contracts/trust.js'
 
 /**
  * What surface/orivon.ts's fsOpen bridge closure resolves to (A184) --
@@ -226,6 +227,8 @@ export interface MainWorldBridge {
   secretsAvailable: () => Promise<boolean>
   secretsEncrypt: (plaintext: Uint8Array) => Promise<Uint8Array>
   secretsDecrypt: (ciphertext: Uint8Array) => Promise<Uint8Array>
+  /** ADR-0058: plain request/reply carrying a string in and two plain fields out. */
+  trustWebsiteScore: (address: string) => Promise<WebsiteScore>
   /** ADR-0019 -- resolves a `MainWorldWebContextBridge`, `fsOpen`'s own shape of counterpart (a plain object of MORE proxied closures, no native stream). `./main-world-socket.ts`'s own `buildWebContext` wraps it the same way `buildFile` wraps `fsOpen`'s. Takes `origin` folded into `opts`, unlike the public `openContext(origin, options?)` two-argument shape `installOrivon` builds, which merges them back in before calling this. */
   webOpenContext: (opts: { origin: string, width?: number, height?: number }) => Promise<MainWorldWebContextBridge>
   /** ADR-0039 -- plain request/reply, `idPublicKey`'s own shape: no main-world wrapping needed. */

@@ -80,6 +80,7 @@ export function stubBroker (
     secretsAvailable: (origin: string) => Promise<boolean>
     secretsEncrypt: (origin: string, plaintext: Uint8Array) => Promise<Uint8Array>
     secretsDecrypt: (origin: string, ciphertext: Uint8Array) => Promise<Uint8Array>
+    trustRequireScoreGrant: (origin: string) => void
     registerApp: (origin: string, manifest: Manifest) => Promise<void>
     versionFloorFor: (origin: string) => Promise<string>
     rollbackAcknowledgedVersionFor: (origin: string) => Promise<string | undefined>
@@ -247,6 +248,13 @@ export function stubBroker (
       decrypt: async (origin, ciphertext) => {
         calls.push({ method: 'secrets.decrypt', origin, args: ciphertext })
         return await (overrides.secretsDecrypt?.(origin, ciphertext) ?? notStubbed())
+      }
+    },
+    trust: {
+      requireScoreGrant: (origin) => {
+        calls.push({ method: 'trust.requireScoreGrant', origin, args: undefined })
+        if (overrides.trustRequireScoreGrant === undefined) notStubbedSync()
+        else overrides.trustRequireScoreGrant(origin)
       }
     },
     registerApp: async (origin, manifest) => {

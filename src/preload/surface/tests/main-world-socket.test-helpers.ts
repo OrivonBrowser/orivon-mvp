@@ -190,6 +190,7 @@ export function fakeBridge (
   secretsAvailable: () => Promise<boolean>
   secretsEncrypt: (plaintext: Uint8Array) => Promise<Uint8Array>
   secretsDecrypt: (ciphertext: Uint8Array) => Promise<Uint8Array>
+  trustWebsiteScore: (address: string) => Promise<{ provider: string | null, level: 1 | 2 | 3 | 4 | null }>
   webOpenContext: (opts: { origin: string, width?: number, height?: number }) => Promise<MainWorldWebContextBridge>
   webSetEmbedScript: (source: string) => Promise<void>
   netConnect: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
@@ -225,6 +226,7 @@ export function fakeBridge (
     secretsAvailable: async () => false,
     secretsEncrypt: async () => new Uint8Array(),
     secretsDecrypt: async () => new Uint8Array(),
+    trustWebsiteScore: async () => ({ provider: null, level: null }),
     // Present so this fake still satisfies installOrivon's bridge shape --
     // no test in this file drives web.openContext (main-world-socket-web.
     // test.ts, this lane's own sibling, does).
