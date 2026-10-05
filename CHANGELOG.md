@@ -28,12 +28,15 @@ public surface of `src/contracts/` (named `contracts/<file>`).
   (declare `"trust": { "score": true }`) and `orivon.trust.websiteScore(address)`, which answers with the Web3 Score
   provider the person chose and the level it judged for that content. Apps that show a mark per site may declare it
   and must treat a `null` level, a `denied` rejection and a `limit` rejection as "use what you ship". Recheck: none; no
-  port declares it yet, and the loader does not accept the field until the implementation lands.
+  port declares it yet.
 
 ### Added
 
 - **A manifest `domain` field** names the one ENS name or DNS host an app calls home; the loader parses it
   (ADR-0056). Update behaviour that uses it lands with the app-update work.
+- **A page can ask the Web3 Score provider the person chose** (`orivon.trust.websiteScore`, behind a declared `trust.score`
+  grant): the provider's name and the level it judged for an `ipfs://` address or a `.eth` name, from caches and a verifier
+  partition of the page's own, limited to 128 lookups refilling at 2 a second.
 - **`test/` is ordered by area**, with a Layout table in `test/README.md`; a spec left at its top, a folder with no
   row and a dead `test/` path in any tracked file now fail CI, and a new capability kind needs a catalogue line.
 - **An app-behaviour catalogue** names what a working app relies on, one row each, and each row is proven by an
