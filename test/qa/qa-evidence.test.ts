@@ -2,10 +2,10 @@
 // Electron launches. What a real launch records is proven in
 // e2e-qa-evidence.test.ts; this covers the bookkeeping a real run cannot reach.
 //
-// Run: npx vitest run --config test/vitest.e2e.config.ts test/qa-evidence.test.ts
+// Run: npx vitest run --config test/vitest.e2e.config.ts test/qa/qa-evidence.test.ts
 
 import { describe, expect, it, vi } from 'vitest'
-import { attachCollectors, bundleFor, collected, errorsSince, holdEvidence, mark } from './support/qa-evidence.mjs'
+import { attachCollectors, bundleFor, collected, errorsSince, holdEvidence, mark } from '../support/qa-evidence.mjs'
 
 type Handler = (...args: unknown[]) => void
 

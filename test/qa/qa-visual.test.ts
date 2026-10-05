@@ -1,14 +1,14 @@
 // The deterministic parts of qa-visual.ts, with synthetic PNGs and no
 // Electron: if these lie, every visual verdict downstream lies with them.
 //
-// Run: npx vitest run --config test/vitest.e2e.config.ts test/qa-visual.test.ts
+// Run: npx vitest run --config test/vitest.e2e.config.ts test/qa/qa-visual.test.ts
 
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import pngjs from 'pngjs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { applyAllowlist, baselineDir, compareBaseline, diffPngs, distinctColours } from './support/qa-visual'
+import { applyAllowlist, baselineDir, compareBaseline, diffPngs, distinctColours } from '../support/qa-visual'
 
 const { PNG } = pngjs
 

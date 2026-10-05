@@ -300,11 +300,11 @@ last run. All three launch Electron headless, like `test:e2e`.
 
 | Spec | Proves |
 |---|---|
-| [`e2e-qa-audit`](../../test/e2e-qa-audit.test.ts) | Every layout-audit rule fires on a page broken on purpose, and none on a clean one |
-| [`e2e-qa-visual`](../../test/e2e-qa-visual.test.ts) | Eleven shell states in light and in dark: layout audit clean, no shell errors, something painted, each shown view's backing colour equal to the one its page paints, and under `qa` the pixel baseline matched |
-| [`e2e-qa-journey`](../../test/e2e-qa-journey.test.ts) | A bookmark starred in the toolbar is on disk, survives a relaunch on the same profile, and so does removing it |
-| [`e2e-qa-adversarial`](../../test/e2e-qa-adversarial.test.ts) | Corrupt profile files, tab churn, a killed renderer and an abandoned load leave the shell working and consistent |
-| [`e2e-qa-evidence`](../../test/e2e-qa-evidence.test.ts) | The failure bundle holds what the page logged and threw, a dead renderer, the main log and real pixels |
+| [`e2e-qa-audit`](../../test/qa/e2e-qa-audit.test.ts) | Every layout-audit rule fires on a page broken on purpose, and none on a clean one |
+| [`e2e-qa-visual`](../../test/qa/e2e-qa-visual.test.ts) | Eleven shell states in light and in dark: layout audit clean, no shell errors, something painted, each shown view's backing colour equal to the one its page paints, and under `qa` the pixel baseline matched |
+| [`e2e-qa-journey`](../../test/qa/e2e-qa-journey.test.ts) | A bookmark starred in the toolbar is on disk, survives a relaunch on the same profile, and so does removing it |
+| [`e2e-qa-adversarial`](../../test/qa/e2e-qa-adversarial.test.ts) | Corrupt profile files, tab churn, a killed renderer and an abandoned load leave the shell working and consistent |
+| [`e2e-qa-evidence`](../../test/qa/e2e-qa-evidence.test.ts) | The failure bundle holds what the page logged and threw, a dead renderer, the main log and real pixels |
 
 **Colour schemes.** Playwright pins every page it attaches to `prefers-color-scheme: light` unless the
 launch passes `colorScheme: null`, while the shell's own colours follow `nativeTheme`; a launch with

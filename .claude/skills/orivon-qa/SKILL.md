@@ -33,7 +33,7 @@ One spec: `node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e
 
 ## Which QA after which change
 
-1. **Look first.** Open the specs for the area (`ls test/e2e-*`, grep the flow) before changing behaviour.
+1. **Look first.** Open the specs for the area (the folder for it in `test/README.md`'s layout table, then grep the flow) before changing behaviour.
    An existing spec is the statement of what the flow must do.
 2. **UI change** (`src/renderer/`, popups, internal pages): `npm run qa:visual`, then read the
    screenshots (below). A baseline mismatch after an intended change is expected: look at the new

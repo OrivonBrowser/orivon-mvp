@@ -3,14 +3,14 @@
 // one clean page, and asserts that every rule fires on the first and none on
 // the second, so a green visual run cannot come from an audit that sees nothing.
 //
-// Run: node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-qa-audit.test.ts
+// Run: node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/qa/e2e-qa-audit.test.ts
 
 import pngjs from 'pngjs'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { runPhase } from './support/e2e-helpers.js'
-import { assertNoElectronSurvivors, closeElectron } from './support/launch-electron.mjs'
-import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './support/qa-helpers.js'
-import { auditLayout, applyAllowlist } from './support/qa-visual.js'
+import { runPhase } from '../support/e2e-helpers.js'
+import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
+import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from '../support/qa-helpers.js'
+import { auditLayout, applyAllowlist } from '../support/qa-visual.js'
 
 const { PNG } = pngjs
 
