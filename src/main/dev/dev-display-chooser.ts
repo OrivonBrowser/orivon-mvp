@@ -2,7 +2,7 @@
 // from Node code already in the process (Playwright's `evaluate()`), and compiled out of an ordinary build: the same
 // flag and reasoning as ./dev-grant.ts. scripts/check-dev-grant-absent.mjs looks for `__orivonDevDisplayChooser`.
 import type { WebContents } from 'electron'
-import { bindDisplayChooser } from '../display-capture/bindings.js'
+import { bindDisplayChooser, shareRegistry } from '../display-capture/bindings.js'
 import type { ChooseDisplaySource, DisplayChoice, DisplayHints } from '../display-capture/types.js'
 
 declare const __ORIVON_DEV_GRANT_ENABLED__: boolean | undefined
@@ -70,13 +70,35 @@ export function createDevChooser (deps: DevChooserDeps): DevChooser {
   }
 }
 
-declare global {
-  var __orivonDevDisplayChooser: Pick<DevChooser, 'use' | 'calls' | 'reset'> | undefined
+/** A running share, as a spec reads it. */
+export interface DevShare {
+  readonly id: string
+  readonly kind: string
+  readonly label: string
+  readonly origin: string
+  readonly audio: boolean
 }
 
-/** Exposes the stand-in on `globalThis` in a build that carries the seam. `use` binds it over any real picker. */
+export interface DevDisplayHook extends Pick<DevChooser, 'use' | 'calls' | 'reset'> {
+  /** The shares the registry holds now. */
+  shares: () => DevShare[]
+  /** The registry's Stop, as the indicators call it. */
+  stop: (id: string) => void
+}
+
+declare global {
+  var __orivonDevDisplayChooser: DevDisplayHook | undefined
+}
+
+/** Exposes the stand-in, and the registry's list and Stop, on `globalThis` in a build that carries the seam. `use` binds the stand-in over any real picker. */
 export function exposeDisplayChooserForTests (deps: DevChooserDeps): void {
   if (!SEAM_ENABLED) return
   const { use, calls, reset } = createDevChooser(deps)
-  globalThis.__orivonDevDisplayChooser = { use, calls, reset }
+  globalThis.__orivonDevDisplayChooser = {
+    use,
+    calls,
+    reset,
+    shares: () => shareRegistry().list().map(({ id, kind, label, origin, audio }) => ({ id, kind, label, origin, audio })),
+    stop: (id) => { shareRegistry().stop(id) }
+  }
 }
