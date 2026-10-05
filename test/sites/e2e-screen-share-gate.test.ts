@@ -208,3 +208,27 @@ it('shares a tab as a browser surface, ends when the tab is not captured any mor
     await closeElectron(app)
   }
 }, E2E_TIMEOUT_MS)
+
+it('shares a screen twenty times in a row, each stopped before the next, and the page\'s own request never overtakes the preload\'s arm message', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    const view = await visit(app, chrome, `${origins.a}/`)
+    expect(await waitFor(async () => (await app.evaluate(() => (globalThis as unknown as { __orivonDevDisplayChooser?: unknown }).__orivonDevDisplayChooser)) !== undefined)).toBe(true)
+    await useChooser(app, { kind: 'screen' })
+    const outcomes: string[] = []
+    for (let index = 0; index < 20; index++) {
+      await run(view, `window.__r = {}; window.share('round', { video: true })`)
+      const outcome = await result(view, 'round', 30_000)
+      const live = typeof outcome === 'object' && outcome !== null && (outcome as { state?: string }).state === 'live'
+      outcomes.push(live ? 'ok' : JSON.stringify(outcome))
+      const [running] = await shares(app)
+      if (running !== undefined) await stopShare(app, running.id)
+      expect(await waitFor(async () => (await shares(app)).length === 0, 10_000)).toBe(true)
+    }
+    console.log(`screen shares: ${String(outcomes.filter((outcome) => outcome === 'ok').length)} of 20 started`)
+    expect(outcomes.filter((outcome) => outcome !== 'ok')).toEqual([])
+    expect(mainOutput(app)).not.toMatch(/reached no display handler/)
+  } finally {
+    await closeElectron(app)
+  }
+}, E2E_TIMEOUT_MS)

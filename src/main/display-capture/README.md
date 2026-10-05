@@ -38,7 +38,9 @@ fakes.
 **[`display-tickets.ts`](display-tickets.ts) holds a request until it has heard from the preload, whichever arrives first.** The
 preload's `arm` message and Electron's `media` request travel on different paths and can arrive in either order, so a request
 is held while a ticket is open and allowed only when the ticket is armed with its nonce, the preload said its call was made,
-and no second request arrived for the quiet window. Two requests, a wrong nonce, a rejected call, the page ending or the
+and no second request arrived for the quiet window after the later of the last request and the called message. A request
+that arrived before the arm message is held too, but only if it was within `EARLY_SLACK_MS` of it: the preload's own request
+can overtake its arm message by a moment, while a page's request sent earlier cannot be told from it by anything else. Two requests, a wrong nonce, a rejected call, the page ending or the
 ticket's timeout deny everything held. A request with no open ticket is refused at once, which is what ends a legacy
 `getUserMedia({ chromeMediaSource })` call: Electron gives it the same request as `getDisplayMedia`.
 
