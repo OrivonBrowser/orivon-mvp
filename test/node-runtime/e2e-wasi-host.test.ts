@@ -144,7 +144,7 @@ const READ_BACK_SCRIPT = `
  * report on a page-global. The injection itself and the final read are
  * plain DOM manipulation and a plain global read, neither a window.orivon
  * call, so they stay safe to drive through evaluateRetrying/waitForPageGlobal
- * directly -- mirrors test/e2e-freetube-app.test.ts's runPinnedCheck shape.
+ * directly -- mirrors test/ported-apps/e2e-freetube-app.test.ts's runPinnedCheck shape.
  */
 async function runPinnedCheck<T> (
   view: Awaited<ReturnType<typeof navigateToFixture>>,

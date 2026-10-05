@@ -17,14 +17,14 @@
 // and must not gate CI on its network-dependent checks.
 //
 // RUN THIS WITH:
-//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/e2e-freetube-app.test.ts
+//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/ported-apps/e2e-freetube-app.test.ts
 import { afterAll, expect, it } from 'vitest'
 
 
-import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './support/launch-electron.mjs'
-import { evaluateRetrying, findChrome, findViewShowing, waitFor, waitForTab } from './support/smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './support/e2e-helpers.js'
-import { FREETUBE_ORIGIN as ORIGIN, grantAndServe, pinRealApp } from './support/freetube-fixture.js'
+import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
+import { evaluateRetrying, findChrome, findViewShowing, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
+import { FREETUBE_ORIGIN as ORIGIN, grantAndServe, pinRealApp } from '../support/freetube-fixture.js'
 
 afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])

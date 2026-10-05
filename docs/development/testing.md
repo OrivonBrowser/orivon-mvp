@@ -230,10 +230,10 @@ addons built outside the repository run against the WASI and addon hosts in opt-
 same way: `ORIVON_WASIP2_STD_PROGRAM`, `ORIVON_WASIP2_TOKIO_PROGRAM` and `ORIVON_NAPI_RS_ADDON`,
 each test's header naming what to build.
 
-[`e2e-the-lounge-real.test.ts`](../../test/e2e-the-lounge-real.test.ts) runs The Lounge's upstream server,
+[`e2e-the-lounge-real.test.ts`](../../test/ported-apps/e2e-the-lounge-real.test.ts) runs The Lounge's upstream server,
 unmodified, in a forked Worker of an app (the real consent prompt, the launcher creating the account with
 upstream's own command, the server on `127.0.0.1:9000`, its page in a `<webview>`) against
-[`irc-fake-server.mjs`](../../test/irc-fake-server.mjs): a network connect, messages both ways, a link opening
+[`irc-fake-server.mjs`](../../test/ported-apps/irc-fake-server.mjs): a network connect, messages both ways, a link opening
 a tab, the scrollback read back from SQLite after a relaunch on the same profile, and a second tab finding the
 port held. It skips unless `orivon-ports` (`ORIVON_PORTS_ROOT`, default the sibling checkout) holds the
 built app, and unless the build is the ordinary one (`ORIVON_ORDINARY_BUILD=1`), as `e2e-freetube-real`

@@ -18,19 +18,19 @@
 // e2e-app-state-restart.test.ts.
 //
 // RUN THIS WITH:
-//   cd ../orivon-ports && node src/cli.ts build freetube
+//   cd ../../orivon-ports && node src/cli.ts build freetube
 //   cd -  &&  node scripts/build-ordinary.mjs
-//   ORIVON_ORDINARY_BUILD=1 npx vitest run --config test/vitest.e2e.config.ts test/e2e-freetube-real.test.ts
+//   ORIVON_ORDINARY_BUILD=1 npx vitest run --config test/vitest.e2e.config.ts test/ported-apps/e2e-freetube-real.test.ts
 import { afterAll, expect, it } from 'vitest'
 import type { ChildProcess } from 'node:child_process'
 import type { Page } from 'playwright'
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './support/launch-electron.mjs'
-import { findChrome, tabViews, waitFor } from './support/smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, asPage, clickAddressBarRetrying, closeElectronApp, killChild, runPhase, waitForAddressBarStable } from './support/e2e-helpers.js'
-import { PORT_APP_FREETUBE_REAL, startOwnServer } from './support/freetube-fixture.js'
-import { answerEveryQuestion, stubNativeDialogs } from './support/question-support.js'
+import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
+import { findChrome, tabViews, waitFor } from '../support/smoke-helpers.mjs'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, asPage, clickAddressBarRetrying, closeElectronApp, killChild, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
+import { PORT_APP_FREETUBE_REAL, startOwnServer } from '../support/freetube-fixture.js'
+import { answerEveryQuestion, stubNativeDialogs } from '../support/question-support.js'
 
 const ORDINARY_BUILD = process.env['ORIVON_ORDINARY_BUILD'] === '1'
 

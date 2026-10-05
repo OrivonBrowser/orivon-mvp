@@ -10,19 +10,19 @@
 // loopback IRC addresses it may dial).
 //
 // RUN THIS WITH:
-//   cd ../orivon-ports && ORIVON_MVP_ROOT=<this checkout> node src/cli.ts build the-lounge --rebuild
+//   cd ../../orivon-ports && ORIVON_MVP_ROOT=<this checkout> node src/cli.ts build the-lounge --rebuild
 //   node scripts/build-ordinary.mjs
-//   ORIVON_ORDINARY_BUILD=1 npx vitest run --config test/vitest.e2e.config.ts test/e2e-the-lounge-real.test.ts
+//   ORIVON_ORDINARY_BUILD=1 npx vitest run --config test/vitest.e2e.config.ts test/ported-apps/e2e-the-lounge-real.test.ts
 import { afterAll, expect, it } from 'vitest'
 import type { ChildProcess } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { assertNoElectronSurvivors, closeElectron, launchElectron, profileDirOf } from './support/launch-electron.mjs'
-import { HERMETIC_RESOLVER, findChrome, tabIds, waitFor } from './support/smoke-helpers.mjs'
-import { APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, killChild, runPhase, waitForAddressBarStable } from './support/e2e-helpers.js'
-import { startOwnServer } from './support/freetube-fixture.js'
+import { assertNoElectronSurvivors, closeElectron, launchElectron, profileDirOf } from '../support/launch-electron.mjs'
+import { HERMETIC_RESOLVER, findChrome, tabIds, waitFor } from '../support/smoke-helpers.mjs'
+import { APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, killChild, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
+import { startOwnServer } from '../support/freetube-fixture.js'
 import { startFakeIrc } from './irc-fake-server.mjs'
-import { generateSelfSignedFixture } from '../src/broker/adapters/tests/tls-adapter.test-helpers.js'
+import { generateSelfSignedFixture } from '../../src/broker/adapters/tests/tls-adapter.test-helpers.js'
 import {
   ACCOUNT, BUILT, CHANNEL, IRC_PORT, IRC_TLS_PORT, LOUNGE_URL, NICK, ORIGIN, PORTS_ROOT, SERVE_PORT, STATIC_ROOT,
   answerConsent, collectPageLogs, typeInto, filesEnding, launcherView, launcherViews, logOf, loungePage, promptsSeen, statusOf, within

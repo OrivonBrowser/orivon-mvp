@@ -1430,7 +1430,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 ### B5: Where FreeTube's storage assertions belong, and what they assert **[AI-REC]**
 
-- **Question:** `test/e2e-freetube-real.test.ts` asserts nedb files at the app's fs root, a claim
+- **Question:** `test/ported-apps/e2e-freetube-real.test.ts` asserts nedb files at the app's fs root, a claim
   about a bundle built in `orivon-ports` (ADR-0020). Move those checks there? Its IndexedDB
   check also passes on `localforage`, a name the failing build never uses (`NeDB`).
 - **Why it matters:** CI never checks out `orivon-ports`, so the coupling fails unseen.
