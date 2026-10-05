@@ -17,7 +17,13 @@ const BACKDROP = APP_DARK_WASH
 const TRANSPARENT = '#00000000'
 const ERR_ABORTED = -3
 
-export function showIntro (win: BaseWindow, tabs: Pick<TabManager, 'onStateChange' | 'activeWebContents'>, plan: IntroPlan): void {
+const covered = new WeakSet<BaseWindow>()
+
+/** True while the welcome screen is over `win`: it holds the keyboard, and nothing under it may take it. */
+export function introCovers (win: BaseWindow): boolean { return covered.has(win) }
+
+/** `focusAddressBar` gives the keyboard to the address bar: where it goes on entering, when a new tab is in front. */
+export function showIntro (win: BaseWindow, tabs: Pick<TabManager, 'onStateChange' | 'activeWebContents' | 'getState'>, plan: IntroPlan, focusAddressBar: () => void): void {
   const view = new WebContentsView({
     webPreferences: { partition: SHELL_PARTITION, sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true }
   })
@@ -26,6 +32,7 @@ export function showIntro (win: BaseWindow, tabs: Pick<TabManager, 'onStateChang
   // dashboard behind it, and only then becomes see-through for the fade-out.
   view.setBackgroundColor(BACKDROP)
   let open = true
+  covered.add(win)
 
   function layout (): void {
     if (win.isDestroyed()) return
@@ -43,6 +50,7 @@ export function showIntro (win: BaseWindow, tabs: Pick<TabManager, 'onStateChang
   function dismiss (): void {
     if (!open) return
     open = false
+    covered.delete(win)
     if (!win.isDestroyed()) {
       win.removeListener('resize', onResize)
       win.contentView.removeChildView(view)
@@ -69,8 +77,9 @@ export function showIntro (win: BaseWindow, tabs: Pick<TabManager, 'onStateChang
       void plan.onEntered()
     } else if (hash === '#entered') {
       dismiss()
-      // The dashboard's search box already asked for focus while it was covered.
-      tabs.activeWebContents()?.focus()
+      const { activeTabId, tabs: all } = tabs.getState()
+      if (all.find((tab) => tab.id === activeTabId)?.isNewTab === true) focusAddressBar()
+      else tabs.activeWebContents()?.focus()
     }
   })
 

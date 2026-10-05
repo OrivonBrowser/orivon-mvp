@@ -16,6 +16,8 @@ export interface TabOpenerHost {
   atCapacity: () => boolean
   activeId: () => string | null
   records: () => Iterable<readonly [string, TabRecord]>
+  /** A tab opened on the start page, in front: where the keyboard goes is decided for it (./new-tab-focus.ts). Absent in tests. */
+  freshTabInFront?: (id: string, contents: WebContents) => void
 }
 
 export class TabOpener {
@@ -39,7 +41,10 @@ export class TabOpener {
    * -- a caller that uses the id (a split's partner) checks atCapacity() first. */
   createTab (url?: string, active = true, loadOptions?: LoadURLOptions): string {
     if (this.host.atCapacity()) return this.host.activeId() ?? ''
-    return this.addAndShow(this.factory.content(url), active, loadOptions)
+    const built = this.factory.content(url)
+    const id = this.addAndShow(built, active, loadOptions)
+    if (url === undefined && active) this.host.freshTabInFront?.(id, built.record.view.webContents)
+    return id
   }
 
   /** A same-origin blob: URL a no-guest popup open wants (popups.ts's own doc), directly in
