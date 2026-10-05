@@ -16,7 +16,7 @@ registry), [`../site-settings/`](../site-settings/) (the `screenShare` kind, the
 signals) and [`../memory-saver/media-in-use.ts`](../memory-saver/media-in-use.ts).
 
 **What it must never import.** The renderer, or [`../consent/`](../consent/) directly: an app's media grants reach
-the gate through `bindings.ts`, bound by the app door's installer.
+the gate through `bindings.ts`, bound by the app door's installer in [`../media-grants/`](../media-grants/).
 
 **Owner stream.** `shell`.
 

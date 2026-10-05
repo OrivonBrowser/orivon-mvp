@@ -8,9 +8,15 @@ describe('SHELL_INSTALLERS', () => {
     const names = SHELL_INSTALLERS.map((installer) => installer.name)
     expect(new Set(names).size).toBe(names.length)
     expect(names).toEqual([
-      'auth', 'autofill', 'choosers', 'content-settings', 'focus', 'form-watch', 'load-errors', 'memory-saver',
-      'privacy-net', 'questions', 'reader', 'side-panel', 'site-permissions', 'tab-groups', 'tab-slots', 'tab-visibility'
+      'auth', 'autofill', 'choosers', 'content-settings', 'focus', 'form-watch', 'load-errors', 'media-grants',
+      'memory-saver', 'privacy-net', 'questions', 'reader', 'side-panel', 'site-permissions', 'tab-groups', 'tab-slots', 'tab-visibility'
     ])
+  })
+
+  it('registers the app media asker before the per-site asker, which refuses every app origin', () => {
+    const names = SHELL_INSTALLERS.map((installer) => installer.name)
+    expect(names.indexOf('media-grants')).toBeGreaterThanOrEqual(0)
+    expect(names.indexOf('media-grants')).toBeLessThan(names.indexOf('site-permissions'))
   })
 
   it('runs every reserved installer without touching the app, the services or the context', () => {

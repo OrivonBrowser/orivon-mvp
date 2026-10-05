@@ -27,9 +27,9 @@ describe('an app declaring media', () => {
   it('is asked about all three at install, and holds all three once the person accepts', async () => {
     const broker = createBroker(baseDeps())
     await broker.registerApp(APP, MANIFEST)
-    const consent = vi.fn(async () => true)
-    await requestInstallConsent(broker, consent, APP, MANIFEST)
-    expect(consent.mock.calls[0]?.[2]).toEqual(['media.camera', 'media.microphone', 'media.screen'])
+    const asked: Array<readonly string[]> = []
+    await requestInstallConsent(broker, async (_origin, _manifest, capabilities) => { asked.push(capabilities); return true }, APP, MANIFEST)
+    expect(asked).toEqual([['media.camera', 'media.microphone', 'media.screen']])
     for (const kind of ['media.camera', 'media.microphone', 'media.screen'] as const) expect(broker.app.heldSync(APP, kind)).toBe(true)
   })
 
