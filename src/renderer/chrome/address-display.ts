@@ -3,6 +3,7 @@ import type { ShellState } from '../../main/shell/tabs.js'
 import { h } from '../pages/shared/dom.js'
 import { warningIcon } from '../pages/shared/icons.js'
 import { formatAddress } from './address-format.js'
+import { createAddressSelect } from './address-select.js'
 import type { ChromeContext, ChromeModule } from './context.js'
 import { must } from './context.js'
 
@@ -66,17 +67,18 @@ export function createAddressDisplay (): ChromeModule {
         input.select()
       })
 
-      // The first press on the unfocused bar selects the whole address; a second places the caret.
-      let pressedWhileBlurred = false
-      input.addEventListener('mousedown', () => { pressedWhileBlurred = document.activeElement !== input })
+      // The first press on the bar selects the whole address and a second places the caret; Tab and the shortcuts select
+      // too. A window refocus is not an entry: it keeps the caret where it was (address-select.ts).
+      const entry = createAddressSelect()
+      input.addEventListener('blur', () => { entry.blur(document.activeElement === input) })
+      input.addEventListener('mousedown', () => { entry.pointerDown(document.activeElement === input) })
       input.addEventListener('mouseup', (event) => {
-        if (!pressedWhileBlurred) return
-        pressedWhileBlurred = false
+        if (!entry.pointerUp(input.selectionStart === input.selectionEnd)) return
         event.preventDefault()
         input.select()
       })
-      // Tab and the shortcuts arrive with no press: they select too.
-      input.addEventListener('focus', () => { if (!pressedWhileBlurred) input.select() })
+      input.addEventListener('focus', () => { if (entry.focus()) input.select() })
+      input.addEventListener('keydown', () => { entry.keyDown() })
       // Escape gives the page's address back, hands the bar to the display and the keyboard to the page. A key another
       // feature already used (closing a list under the bar), or one an input method is composing with, is not a request to leave.
       input.addEventListener('keydown', (event) => {
