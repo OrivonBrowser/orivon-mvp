@@ -11,12 +11,19 @@
  * already expects it, and keeps it idempotent: electron's own install.js exits
  * early once the binary matches the installed version.
  *
+ * The same hook then turns the binary's `grantFileProtocolExtraPrivileges` fuse off
+ * (`disableFileProtocolFuse`), the way a packaged build has it off: ADR-0059.
+ *
  * Set ELECTRON_SKIP_BINARY_DOWNLOAD=1 to opt out. Nothing in this repo does:
  * the unit suite reaches Electron's own lazy downloader through
  * test/support/launch-electron.mjs, so a skip here only moves the download later.
  */
 import { spawnSync } from 'node:child_process'
+import { chmod, copyFile, mkdir, realpath, rename, rm, stat } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { dirname, join, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { isInvokedDirectly } from './cli.mjs'
 
 const SKIP = 'ELECTRON_SKIP_BINARY_DOWNLOAD'
@@ -56,6 +63,102 @@ export function electronInstallPlan (env, resolve = resolveInstaller) {
   return { action: 'install', installer }
 }
 
+/**
+ * The Electron executable the installer put in place, or `undefined` when `path.txt` is missing.
+ *
+ * @param {string} installer Path of electron's `install.js`.
+ * @returns {string | undefined}
+ */
+export function electronBinaryPath (installer) {
+  const base = dirname(installer)
+  try {
+    const relative = readFileSync(join(base, 'path.txt'), 'utf8').trim()
+    return relative === '' ? undefined : join(base, 'dist', relative)
+  } catch {
+    return undefined
+  }
+}
+
+/** The file that holds the fuse wire, and where a copy of it can sit and still be that file. */
+function fuseTargets (binary, platform) {
+  if (platform === 'darwin' && binary.includes('.app')) {
+    const file = join(dirname(binary), '..', 'Frameworks', 'Electron Framework.framework', 'Electron Framework')
+    const app = `${binary.split('.app')[0]}.app`
+    // @electron/fuses reads a path that names an .app as "the bundle", so the copy lives beside it.
+    const tmpDir = join(dirname(app), '.fuse-tmp')
+    return { file, tmp: join(tmpDir, 'Electron Framework'), tmpDir, app }
+  }
+  return { file: binary, tmp: `${binary}.fuse-tmp`, tmpDir: undefined, app: undefined }
+}
+
+async function flipWithFuses (path) {
+  const { flipFuses, FuseV1Options, FuseVersion } = await import('@electron/fuses')
+  await flipFuses(path, { version: FuseVersion.V1, [FuseV1Options.GrantFileProtocolExtraPrivileges]: false })
+}
+
+async function currentFileFuse (path) {
+  const { getCurrentFuseWire, FuseV1Options } = await import('@electron/fuses')
+  return (await getCurrentFuseWire(path))[FuseV1Options.GrantFileProtocolExtraPrivileges]
+}
+
+/**
+ * Turns the binary's file-protocol fuse off, writing a new file and renaming it over `binary`: a
+ * worktree's `node_modules` is a hard-linked copy of another checkout's, so a write in place would
+ * change that checkout's binary too (and fail with ETXTBSY while it runs). macOS and Windows are
+ * provisional (docs/open-questions.md A394).
+ *
+ * @param {object} options
+ * @param {string} options.binary The Electron executable.
+ * @param {string} options.checkoutRoot The checkout this script belongs to; a binary outside it is refused.
+ * @param {NodeJS.Platform} [options.platform]
+ * @param {(path: string) => Promise<void>} [options.flip] Turns the fuse off in the file at `path`.
+ * @param {(path: string) => Promise<number>} [options.read] The fuse's state byte in the file at `path`.
+ * @returns {Promise<{ status: 'already-off' | 'flipped' | 'refused' | 'failed', reason?: string }>}
+ */
+export async function disableFileProtocolFuse ({
+  binary, checkoutRoot, platform = process.platform, flip = flipWithFuses, read = currentFileFuse
+}) {
+  const { file, tmp, tmpDir, app } = fuseTargets(binary, platform)
+  try {
+    const [realFile, realRoot] = await Promise.all([realpath(file), realpath(checkoutRoot)])
+    if (!realFile.startsWith(realRoot + sep)) {
+      return {
+        status: 'refused',
+        reason: `the Electron binary is outside this checkout (${realFile}); flipping it would change a binary other checkouts share`
+      }
+    }
+    if (await read(file) === 48) return { status: 'already-off' }
+
+    const before = await stat(file)
+    try {
+      if (tmpDir !== undefined) await mkdir(tmpDir, { recursive: true })
+      await copyFile(file, tmp)
+      await chmod(tmp, before.mode & 0o7777)
+      await flip(tmp)
+      await rename(tmp, file)
+    } catch (error) {
+      await rm(tmp, { force: true })
+      throw error
+    } finally {
+      if (tmpDir !== undefined) await rm(tmpDir, { recursive: true, force: true })
+    }
+    if ((await stat(file)).ino === before.ino && platform !== 'win32') {
+      return { status: 'failed', reason: 'the binary kept its inode, so it was not replaced' }
+    }
+    if (app !== undefined) resignDarwin(app)
+    return { status: 'flipped' }
+  } catch (error) {
+    return { status: 'failed', reason: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+function resignDarwin (app) {
+  const result = spawnSync('codesign', [
+    '--sign', '-', '--force', '--preserve-metadata=entitlements,requirements,flags,runtime', '--deep', app
+  ])
+  if (result.status !== 0) throw new Error(`ad-hoc codesign failed: ${result.stderr?.toString() ?? ''}`)
+}
+
 if (isInvokedDirectly(import.meta.url)) {
   const plan = electronInstallPlan(process.env)
 
@@ -77,5 +180,19 @@ if (isInvokedDirectly(import.meta.url)) {
     }
 
     console.log('Electron binary: ready.')
+
+    const binary = electronBinaryPath(plan.installer)
+    if (binary !== undefined) {
+      const checkoutRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
+      const { status, reason } = await disableFileProtocolFuse({ binary, checkoutRoot })
+      if (status === 'refused' || status === 'failed') {
+        console.warn(
+          `\nElectron binary: the file-protocol fuse stays on (${reason}).` +
+          '\nOrivon opens no local files until `npm run install:electron` turns it off.\n'
+        )
+      } else {
+        console.log(`Electron binary: file-protocol fuse off (${status}).`)
+      }
+    }
   }
 }

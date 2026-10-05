@@ -60,6 +60,7 @@
     { "prefix": "src/main/ipc", "run": ["@core"] },
     { "prefix": "src/main/keyring", "run": ["sites"] },
     { "prefix": "src/main/launch", "run": ["window"] },
+    { "prefix": "src/main/local-files", "run": ["sites"] },
     { "prefix": "src/main/memory-saver", "run": ["tabs"] },
     { "prefix": "src/main/omnibox", "run": ["toolbar"] },
     { "prefix": "src/main/os", "run": ["window"] },

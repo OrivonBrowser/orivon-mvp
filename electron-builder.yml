@@ -110,9 +110,9 @@ electronFuses:
   # App code loads only from app.asar, and the asar's header hash is checked first.
   onlyLoadAppFromAsar: true
   enableEmbeddedAsarIntegrityValidation: true
-  # grantFileProtocolExtraPrivileges keeps Electron's default (on): every renderer entry
-  # is a file:// page in a packaged build, and turning it off stops file:// fetch and
-  # service workers, which is untested here.
+  # A file:// page gets no more reach than a web page does (ADR-0059): the shell's own
+  # pages load from orivon-shell:, so nothing needs the extra privileges.
+  grantFileProtocolExtraPrivileges: false
 
 # --- Cross-platform URL-scheme registration -----------------------------------------
 # `schemes: [http, https]`, not a custom `orivon://` scheme -- Orivon is applying to be
