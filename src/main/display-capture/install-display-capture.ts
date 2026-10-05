@@ -45,6 +45,16 @@ function watchPage (contents: WebContents, ended: () => void): () => void {
   }
 }
 
+/** Calls `ended` once when the tab is destroyed or its renderer is lost: Chromium keeps capturing a tab across its navigations. */
+function watchTab (contents: WebContents, ended: () => void): () => void {
+  const events = ['render-process-gone', 'destroyed'] as const
+  const listener = (): void => { ended() }
+  for (const event of events) contents.on(event as 'destroyed', listener)
+  return () => {
+    for (const event of events) contents.removeListener(event as 'destroyed', listener)
+  }
+}
+
 export const installDisplayCapture: ShellInstaller = {
   name: 'display-capture',
   install: (app, services, ctx) => {
@@ -61,6 +71,7 @@ export const installDisplayCapture: ShellInstaller = {
       now: () => Date.now(),
       newId: () => randomUUID(),
       watch: watchPage,
+      watchTab,
       isBeingCaptured: (contents) => !contents.isDestroyed() && contents.isBeingCaptured(),
       sendStop: (requester, nonce) => {
         if (!requester.isDestroyed()) requester.mainFrame.send(DISPLAY_CAPTURE_STOP_CHANNEL, { nonce })

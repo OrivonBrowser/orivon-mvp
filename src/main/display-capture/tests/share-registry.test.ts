@@ -12,11 +12,13 @@ function setup (): {
   registry: ReturnType<typeof createShareRegistry>
   deps: ShareRegistryDeps
   watchers: Map<unknown, Array<() => void>>
+  tabWatchers: Map<unknown, Array<() => void>>
   capturing: Set<unknown>
   tick: () => void
   pollers: () => number
 } {
   const watchers = new Map<unknown, Array<() => void>>()
+  const tabWatchers = new Map<unknown, Array<() => void>>()
   const capturing = new Set<unknown>()
   let counter = 0
   let polling: (() => void) | undefined
@@ -30,6 +32,12 @@ function setup (): {
       watchers.set(contents, list)
       return () => { watchers.set(contents, (watchers.get(contents) ?? []).filter((fn) => fn !== ended)) }
     },
+    watchTab: (contents, ended) => {
+      const list = tabWatchers.get(contents) ?? []
+      list.push(ended)
+      tabWatchers.set(contents, list)
+      return () => { tabWatchers.set(contents, (tabWatchers.get(contents) ?? []).filter((fn) => fn !== ended)) }
+    },
     isBeingCaptured: (contents) => capturing.has(contents),
     sendStop: vi.fn(),
     markInUse: vi.fn(),
@@ -41,7 +49,7 @@ function setup (): {
       return () => { polling = undefined; pollers-- }
     }
   }
-  return { registry: createShareRegistry(deps), deps, watchers, capturing, tick: () => { polling?.() }, pollers: () => pollers }
+  return { registry: createShareRegistry(deps), deps, watchers, tabWatchers, capturing, tick: () => { polling?.() }, pollers: () => pollers }
 }
 
 describe('the share registry', () => {
@@ -95,10 +103,17 @@ describe('the share registry', () => {
   })
 
   it('ends a tab share when the tab it shows goes away', () => {
+    const { registry, tabWatchers } = setup()
+    registry.start({ requester, origin: 'https://a.example', choice: TAB, audio: false, nonce: 'n' })
+    tabWatchers.get(shown)?.[0]?.()
+    expect(registry.list()).toEqual([])
+  })
+
+  it('does not watch the shown tab for loading another document: Chromium keeps capturing it', () => {
     const { registry, watchers } = setup()
     registry.start({ requester, origin: 'https://a.example', choice: TAB, audio: false, nonce: 'n' })
-    watchers.get(shown)?.[0]?.()
-    expect(registry.list()).toEqual([])
+    expect(watchers.get(shown) ?? []).toEqual([])
+    expect(registry.list()).toHaveLength(1)
   })
 
   it('keeps the requester marked in use until its last share ends', () => {
@@ -140,11 +155,11 @@ describe('the share registry', () => {
   })
 
   it('stops watching the contents of a share that ended', () => {
-    const { registry, watchers } = setup()
+    const { registry, watchers, tabWatchers } = setup()
     registry.start({ requester, origin: 'https://a.example', choice: TAB, audio: false, nonce: 'n' })
     registry.tracksEnded(requester, 'n')
     expect(watchers.get(requester)).toEqual([])
-    expect(watchers.get(shown)).toEqual([])
+    expect(tabWatchers.get(shown)).toEqual([])
   })
 
   it('survives a listener that throws', () => {

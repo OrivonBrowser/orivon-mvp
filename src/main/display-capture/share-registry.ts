@@ -13,6 +13,8 @@ export interface ShareRegistryDeps {
   newId: () => string
   /** Calls `ended` once when `contents` loads another document, is destroyed or loses its renderer. Returns the removal. */
   watch: (contents: WebContents, ended: () => void) => () => void
+  /** Calls `ended` once when the tab a share shows is destroyed or loses its renderer; loading another document does not end it. */
+  watchTab: (contents: WebContents, ended: () => void) => () => void
   /** Whether Chromium is capturing `contents` now; false for a destroyed tab. */
   isBeingCaptured: (contents: WebContents) => boolean
   /** Tells the requester's top frame to stop the tracks it handed out for the share with this nonce. */
@@ -100,7 +102,7 @@ export function createShareRegistry (deps: ShareRegistryDeps): ShareHost {
       entries.set(id, entry)
       entry.unwatch.push(deps.watch(requester, () => { end(id) }))
       if (share.captured !== undefined) {
-        entry.unwatch.push(deps.watch(share.captured, () => { end(id) }))
+        entry.unwatch.push(deps.watchTab(share.captured, () => { end(id) }))
         stopPolling ??= deps.every(poll, CAPTURE_POLL_MS)
       }
       deps.markInUse(requester)
