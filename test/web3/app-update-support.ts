@@ -124,6 +124,15 @@ export async function buildsAt (app: ElectronApplication, url: string): Promise<
   }, url)
 }
 
+/** True once a tab at `url` has finished loading and runs as an app tab: the reload that follows a first install has ended and the page holds `orivon`. */
+export async function runsAsApp (app: ElectronApplication, url: string): Promise<boolean> {
+  return await app.evaluate(async ({ webContents }, address) => {
+    const tab = webContents.getAllWebContents().find((contents) => !contents.isDestroyed() && contents.getURL() === address)
+    if (tab === undefined || tab.isLoading()) return false
+    return await tab.executeJavaScript('typeof window.orivon === "object"').catch(() => false) as boolean
+  }, url)
+}
+
 /** Opens `url` in a new tab, the way the shell's own new-tab command does. */
 export async function openTab (app: ElectronApplication, url: string): Promise<void> {
   await findChrome(app).evaluate((address: string) => { (window as unknown as { orivonShell: { newTab: (u: string) => void } }).orivonShell.newTab(address) }, url)

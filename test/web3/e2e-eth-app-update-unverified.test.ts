@@ -10,7 +10,7 @@ import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetryi
 import { BUILTIN_ADDRESSES } from '../../src/protocols/builtin.js'
 import { answerAccepting, answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
 import { updateApp } from '../apps/app-update/site.mjs'
-import { buildsAt, eventually, launchPhase, pinOf, profileOf, quietOf, startRig } from './app-update-support.js'
+import { buildsAt, eventually, launchPhase, pinOf, profileOf, quietOf, runsAsApp, startRig } from './app-update-support.js'
 
 const ORIGIN = 'https://app.eth'
 const SHOWN = BUILTIN_ADDRESSES.displayUrl(`${ORIGIN}/`)
@@ -22,14 +22,9 @@ afterAll(async () => {
 
 const popupOf = (app: ElectronApplication) => app.windows().find((w) => w.url().includes('/site-info/'))
 
-/** A click that lands while the tab is still reloading after an install opens nothing, so the click is repeated once before the popover counts as not opening. */
 async function openKey (app: ElectronApplication) {
-  let opened = false
-  for (let attempt = 0; attempt < 2 && !opened; attempt += 1) {
-    await findChrome(app).click('#site-permissions-btn')
-    opened = await waitFor(() => popupOf(app) !== undefined, 5_000)
-  }
-  if (!opened) throw new Error('the site popover did not open')
+  await findChrome(app).click('#site-permissions-btn')
+  if (!await waitFor(() => popupOf(app) !== undefined, 5_000)) throw new Error('the site popover did not open')
   const popup = popupOf(app)!
   await popup.waitForSelector('.site-header')
   return popup
@@ -120,7 +115,7 @@ it('tells the person about an unverified version and keeps the old one, takes it
       const shield = await readShield(findChrome(app))
       check(`build B under another name shows Level 2, not the judged 3 (${String(shield.level)})`, shield.level === '2')
       await answerAccepting(app)
-      await eventually(async () => await findChrome(app).evaluate(() => document.querySelector('#site-permissions-btn')?.getAttribute('aria-label') !== null))
+      check('the tab has reloaded and runs as the app', await eventually(async () => await runsAsApp(app, 'https://evil.eth/')))
       popup = await openKey(app)
       check('the key says so too', (await popup.textContent('.site-home'))?.includes('This app names app.eth as its home.') === true)
       check('and offers to open it', (await popup.textContent('.link-button'))?.includes('Open app.eth') === true)
