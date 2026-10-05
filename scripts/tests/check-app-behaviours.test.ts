@@ -79,15 +79,26 @@ describe('findTests', () => {
       'it(`tpl`, () => {})'
     ].join('\n')
     expect(findTests(source)).toEqual([
-      { title: 'plain', modifiers: '', line: 1 },
-      { title: 'gated', modifiers: '.skipIf(!ORDINARY_BUILD)', line: 3 },
-      { title: 'off', modifiers: '.skip', line: 6 },
-      { title: 'tpl', modifiers: '', line: 7 }
+      { title: 'plain', modifiers: '', line: 1, dynamic: false },
+      { title: 'gated', modifiers: '.skipIf(!ORDINARY_BUILD)', line: 3, dynamic: false },
+      { title: 'off', modifiers: '.skip', line: 6, dynamic: false },
+      { title: 'tpl', modifiers: '', line: 7, dynamic: false }
     ])
   })
 
   it('keeps a nested call inside a skipIf condition as one modifier', () => {
     expect(findTests("it.skipIf(!existsSync(join(a, 'b')))('x', () => {})")[0]?.modifiers).toBe(".skipIf(!existsSync(join(a, 'b')))")
+  })
+
+  it('does not count a call inside a comment or a string, or flags an interpolating title', () => {
+    const source = [
+      "// it('[app:a] in a line comment', () => {})",
+      "/* it('[app:b] in a block comment', () => {}) */",
+      "const text = \"it('[app:c] in a string', () => {})\"",
+      "it('[app:d] real', () => {})",
+      "it(`[app:e] ${x ? 'a' : 'b'} templated`, () => {})"
+    ].join('\n')
+    expect(findTests(source).map((t) => [t.title.slice(0, 9), t.dynamic])).toEqual([['[app:d] r', false], ['[app:e] $', true]])
   })
 
   it('finds a suite-level switch', () => {
@@ -101,6 +112,7 @@ describe('jobText', () => {
     expect(jobText(WORKFLOW)).not.toContain('e2e-plain')
     expect(jobText(WORKFLOW)).not.toContain('other:')
     expect(jobText('jobs:\n  e2e:\n')).toBe('')
+    expect(jobText('jobs:\n  e2e-ordinary:\n    steps:\n      # test/e2e-x.test.ts\n      - run: x # test/e2e-y.test.ts\n')).not.toMatch(/e2e-[xy]\.test/)
   })
 })
 
@@ -132,6 +144,20 @@ describe('checkCatalogue', () => {
     expect(checkCatalogue(runs)).toMatchObject({ ok: true })
     const absent = fixture(HEADER + row('a-b', spec('e2e-plain.test.ts')), { 'test/e2e-plain.test.ts': gated })
     expect(checkCatalogue(absent).problems.join()).toContain('does not run test/e2e-plain.test.ts')
+  })
+
+  it('does not let a commented-out, interpolated or unit-only test stand as proof', () => {
+    const catalogue = HEADER + row('a-b', spec('e2e-plain.test.ts'))
+    const commented = fixture(catalogue, { 'test/e2e-plain.test.ts': "// it('[app:a-b] gone', () => {})\n" })
+    expect(checkCatalogue(commented).problems.join()).toContain('no test is titled with [app:a-b]')
+    const templated = fixture(catalogue, { 'test/e2e-plain.test.ts': "it(`[app:a-b] ${'x'}`, () => {})\n" })
+    expect(checkCatalogue(templated).problems.join()).toContain('interpolates')
+  })
+
+  it('lists a unit test beside the e2e spec without asking it for a marker', () => {
+    const rowBoth = HEADER + row('a-b', `${spec('e2e-plain.test.ts')}, [\`unit\`](../../src/x/tests/unit.test.ts)`)
+    const root = fixture(rowBoth, { 'test/e2e-plain.test.ts': PROVING('a-b'), 'src/x/tests/unit.test.ts': "it('plain unit', () => {})\n" })
+    expect(checkCatalogue(root)).toMatchObject({ ok: true })
   })
 
   it('fails a marker the catalogue lacks, anywhere under test/, src/ or scripts/tests/', () => {
@@ -168,6 +194,13 @@ describe('findUnrecordedChanges', () => {
     expect(findUnrecordedChanges({ baseCatalogue: base, headCatalogue: head, baseChangelog: log([]), headChangelog: recorded })).toEqual([])
     const stale = log(['- **`edit`**: already there.'])
     expect(findUnrecordedChanges({ baseCatalogue: base, headCatalogue: head, baseChangelog: stale, headChangelog: stale }).map((u) => u.id)).toEqual(['edit', 'drop'])
+  })
+
+  it('names a row that was proven and is now not covered', () => {
+    const proven = HEADER + row('keep', spec('e2e-a.test.ts'), 'Stays.')
+    const weakened = HEADER + row('keep', 'not covered: the spec went', 'Stays.')
+    expect(findUnrecordedChanges({ baseCatalogue: proven, headCatalogue: weakened, baseChangelog: log([]), headChangelog: log([]) }))
+      .toEqual([{ id: 'keep', why: 'no longer proven' }])
   })
 
   it('needs no record for a new entry, or for a changed port list or proof', () => {

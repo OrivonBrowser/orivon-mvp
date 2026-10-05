@@ -62,7 +62,7 @@ async function tabUrl (app: ElectronApplication, prefix: string): Promise<string
   return await app.evaluate(({ webContents }, start) => webContents.getAllWebContents().find((wc) => wc.getURL().startsWith(start))?.getURL(), prefix)
 }
 
-it('[app:consent-question-names-the-origin] holds a page where it is while its question is open, then lets the tab become the app with its history intact', async () => {
+it('[app:consent-question-holds-the-page] holds a page where it is while its question is open, then lets the tab become the app with its history intact', async () => {
   await runPhase('consent-navigation-hold', async (check) => {
     const { server, origin, requests } = await startFixture()
     let app: ElectronApplication | undefined

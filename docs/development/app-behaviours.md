@@ -25,7 +25,7 @@ Ports are named only where the compatibility pages already name them.
 
 | Id | Behaviour | Apps that rely on it | Ports | Proven by |
 |---|---|---|---|---|
-| `consent-question-names-the-origin` | The first visit to an origin that declares capabilities opens a question in the tab's own window naming the origin, with Allow and Deny; the page waits for the answer | every app that declares a capability | all | [`e2e-consent-navigation-hold`](../../test/e2e-consent-navigation-hold.test.ts), [`e2e-ipfs-install`](../../test/e2e-ipfs-install.test.ts) |
+| `consent-question-holds-the-page` | The first visit to an origin that declares capabilities opens a question in the tab's own window, and the page waits where it is until the person answers; an app opened from an `ipfs://` address asks before it runs | every app that declares a capability | all | [`e2e-consent-navigation-hold`](../../test/e2e-consent-navigation-hold.test.ts), [`e2e-ipfs-install`](../../test/e2e-ipfs-install.test.ts) |
 | `loopback-manifest-hint-grants-the-origin` | A page on a loopback origin that links its manifest with `<link rel="orivon-manifest">` is asked about, and on Allow the grants attach to that origin on the shared session, with nothing installed | an app served by a plain static server | FreeTube, The Lounge | [`e2e-loopback-grant`](../../test/e2e-loopback-grant.test.ts) (the `e2e-ordinary` CI job) |
 | `granted-capabilities-are-reported` | `orivon.app.grants()` lists nothing before the person allows, and lists what was allowed after | apps that adapt to what they were granted | ASGARDEX, FreeTube | [`e2e-site-info`](../../test/e2e-site-info.test.ts) |
 | `declined-capability-is-refused` | A capability the person turned off is refused to the page's own calls, and `requestGrant` resolves false on Deny | apps that run with less than they declared | ASGARDEX | [`e2e-site-info`](../../test/e2e-site-info.test.ts) |
@@ -92,7 +92,7 @@ Ports are named only where the compatibility pages already name them.
 | `forked-child-ends-with-last-page` | A forked child outlives the tab that started it and ends when the app's last page closes | ported Node servers | The Lounge | [`e2e-child-host`](../../test/e2e-child-host.test.ts) |
 | `node-sqlite-in-worker` | `node:sqlite` in a forked child opens a real database file in the app's files | apps with an embedded database | The Lounge | [`e2e-sqlite`](../../test/e2e-sqlite.test.ts) |
 | `webview-shows-local-pattern` | An app granted `web.embed` for a loopback pattern shows that page in a `<webview>` and talks to it | apps that serve their own UI | The Lounge | [`e2e-embed-local`](../../test/e2e-embed-local.test.ts) |
-| `webview-popup-opens-tab` | A link in an embedded page reaches the app as an `orivon-popup` event, which the app opens as a tab | apps that embed a site | The Lounge | [`e2e-embed-events`](../../test/e2e-embed-events.test.ts) |
+| `webview-popup-reaches-the-app` | A window request or a download from a page shown in a `<webview>` reaches the app as one bubbling event, and nothing opens and no file is written until the app decides | apps that embed a site | The Lounge | [`e2e-embed-events`](../../test/e2e-embed-events.test.ts) |
 | `web-context-open-evaluate-close` | `orivon.web.openContext` opens a hidden page on a granted origin, `evaluate` runs in it, and `close` ends it | apps that need a site's own scripts | FreeTube | [`e2e-web-context`](../../test/e2e-web-context.test.ts) |
 
 ## Names and addresses

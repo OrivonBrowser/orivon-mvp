@@ -145,36 +145,42 @@ const SCENARIOS: Scenario[] = [
   { label: 'middle-click a target=_blank link', sel: '#blank-middle', clickOptions: { button: 'middle' }, expectActivates: false }
 ]
 
-for (const scenario of SCENARIOS) {
-  it(`${scenario.sel === '#blank' ? '[app:target-blank-link-opens-tab] ' : ''}${scenario.label} opens a tab without crashing, ${scenario.expectActivates ? 'activating' : 'staying in the background'}`, async () => {
-    const { app, chrome, exited } = await launched()
-    let crashed = false
-    try {
-      await clickAddressBarRetrying(chrome, `${ORIGIN_A}/`)
-      expect((await waitForTab(chrome, { address: `${ORIGIN_A}/` })).ok).toBe(true)
-      const view = findViewShowing(app, chrome, `${ORIGIN_A}/`)
-      if (view === undefined) throw new Error('no view showing the fixture page')
-      const before = await tabIds(chrome)
-      const activeBefore = (await activeTabInfo(chrome)).activeId
+async function runScenario (scenario: Scenario): Promise<void> {
+  const { app, chrome, exited } = await launched()
+  let crashed = false
+  try {
+    await clickAddressBarRetrying(chrome, `${ORIGIN_A}/`)
+    expect((await waitForTab(chrome, { address: `${ORIGIN_A}/` })).ok).toBe(true)
+    const view = findViewShowing(app, chrome, `${ORIGIN_A}/`)
+    if (view === undefined) throw new Error('no view showing the fixture page')
+    const before = await tabIds(chrome)
+    const activeBefore = (await activeTabInfo(chrome)).activeId
 
-      await view.click(scenario.sel, scenario.clickOptions)
-      await new Promise((resolve) => setTimeout(resolve, 1500))
+    await view.click(scenario.sel, scenario.clickOptions)
+    await new Promise((resolve) => setTimeout(resolve, 1500))
 
-      const code = exited()
-      if (code !== null) {
-        crashed = true
-        console.error(`${scenario.label}: main process exited with code ${code}\n` + mainOutput(app))
-      } else {
-        const newTab = await waitFor(async () => (await tabIds(chrome)).length > before.length, 3000).catch(() => false)
-        expect(newTab, `${scenario.label}: expected a new tab to open`).toBe(true)
-        const activeAfter = (await activeTabInfo(chrome)).activeId
-        expect(activeAfter !== activeBefore, `${scenario.label}: expected activates=${String(scenario.expectActivates)}`).toBe(scenario.expectActivates)
-      }
-    } finally {
-      if (!crashed) await closeElectron(app)
+    const code = exited()
+    if (code !== null) {
+      crashed = true
+      console.error(`${scenario.label}: main process exited with code ${code}\n` + mainOutput(app))
+    } else {
+      const newTab = await waitFor(async () => (await tabIds(chrome)).length > before.length, 3000).catch(() => false)
+      expect(newTab, `${scenario.label}: expected a new tab to open`).toBe(true)
+      const activeAfter = (await activeTabInfo(chrome)).activeId
+      expect(activeAfter !== activeBefore, `${scenario.label}: expected activates=${String(scenario.expectActivates)}`).toBe(scenario.expectActivates)
     }
-    expect(crashed, `${scenario.label}: main process should not have exited`).toBe(false)
-  }, 60_000)
+  } finally {
+    if (!crashed) await closeElectron(app)
+  }
+  expect(crashed, `${scenario.label}: main process should not have exited`).toBe(false)
+}
+
+const BLANK = SCENARIOS.find((scenario) => scenario.sel === '#blank')
+if (BLANK === undefined) throw new Error('the target=_blank scenario is missing')
+it('[app:target-blank-link-opens-tab] left-click a target=_blank link opens a tab without crashing, activating', async () => { await runScenario(BLANK) }, 60_000)
+
+for (const scenario of SCENARIOS.filter((candidate) => candidate !== BLANK)) {
+  it(`${scenario.label} opens a tab without crashing, ${scenario.expectActivates ? 'activating' : 'staying in the background'}`, async () => { await runScenario(scenario) }, 60_000)
 }
 
 const NEW_WINDOW_SCENARIOS = [

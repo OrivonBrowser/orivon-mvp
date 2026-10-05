@@ -82,7 +82,9 @@ jobs:
       # A changed or removed entry needs a line under "Changed for apps" in CHANGELOG.md.
       - name: A changed app behaviour has a changelog record
         if: github.event_name == 'pull_request'
-        run: npm run check:app-behaviours -- --base origin/${{ github.base_ref }}
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: npm run check:app-behaviours -- --base "origin/$BASE_REF"
 
       # test/snapshots/contracts-surface.txt is src/contracts/ without its comments; a change to it is a change
       # apps feel, and takes the same changelog record.
@@ -91,7 +93,9 @@ jobs:
 
       - name: A changed contracts surface has a changelog record
         if: github.event_name == 'pull_request'
-        run: npm run check:contracts-surface -- --base origin/${{ github.base_ref }}
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: npm run check:contracts-surface -- --base "origin/$BASE_REF"
 
       # A field src/contracts/manifest.ts documents must not be refused by the
       # loader's allowlist; the script reads both sides from their source.

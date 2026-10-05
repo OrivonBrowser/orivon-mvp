@@ -26,7 +26,7 @@ it('[app:indexeddb-survives-restart] [app:localstorage-survives-restart] [app:no
   const first = await launchShell()
   const profile = profileDirOf(first.app)
   if (profile === undefined) throw new Error('the launcher did not report a profile directory')
-  let live: ElectronApplication = first.app
+  let live: ElectronApplication | undefined = first.app
   try {
     await runPhase('app state across a restart', async (check) => {
       await grantApp(first.app, server.origin, MANIFEST, [{ capability: 'fs', patterns: [] }])
@@ -62,6 +62,7 @@ it('[app:indexeddb-survives-restart] [app:localstorage-survives-restart] [app:no
       check('[app:non-extractable-cryptokey-survives-restart] the key was created non-extractable', written.extractable === false)
       check('[app:atomic-write-by-rename] renaming a temporary file over an existing one succeeds', written.renamed === 'renamed', written.renamed)
       await closeElectron(first.app, { keepProfile: true })
+      live = undefined
 
       const second = await launchShell({ reuseProfile: profile })
       live = second.app
@@ -101,7 +102,7 @@ it('[app:indexeddb-survives-restart] [app:localstorage-survives-restart] [app:no
       check('[app:app-files-survive-restart] [app:atomic-write-by-rename] the app file written by temp file then rename over an existing one holds the new contents', read.file === 'new contents', read.file)
     })
   } finally {
-    await closeElectron(live)
+    if (live !== undefined) await closeElectron(live)
     await rm(profile, { recursive: true, force: true })
   }
 }, QA_TEST_TIMEOUT_MS * 2)

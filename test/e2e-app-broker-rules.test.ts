@@ -33,7 +33,7 @@ beforeAll(async () => {
   echo = createTcpServer((socket) => { sockets.add(socket); socket.on('error', () => {}); socket.pipe(socket) })
   busy = createTcpServer((socket) => { sockets.add(socket); socket.on('error', () => {}) })
   const fixture = generateSelfSignedFixture()
-  tls = createTlsServer({ key: fixture.key, cert: fixture.cert }, (socket) => { socket.on('error', () => {}); socket.end('hello over tls') })
+  tls = createTlsServer({ key: fixture.key, cert: fixture.cert }, (socket) => { sockets.add(socket); socket.on('error', () => {}); socket.end('hello over tls') })
 })
 afterAll(async () => {
   await server.close()
@@ -165,7 +165,7 @@ it('[app:tcp-connect-to-granted-loopback-port] [app:wildcard-host-never-reaches-
       check('[app:concurrent-sockets-limit-holds] with concurrentSockets 2, a third socket is refused: limit', codeOf(outcomes['third']) === 'limit', show('third'))
       check('[app:concurrent-sockets-limit-holds] and a socket opens again once one is closed', outcomes['afterClose']?.ok === true, show('afterClose'))
       check('[app:second-listener-gets-eaddrinuse] listening on a port another program holds fails with EADDRINUSE', /EADDRINUSE/.test(`${show('listenBusy')}`), show('listenBusy'))
-      check('[app:fs-quota-refuses-past-limit] a write that would pass the 1024-byte quota is refused, and the earlier 600-byte file is intact', outcomes['quotaFirst']?.ok === true && outcomes['quotaSecond']?.ok === false && outcomes['quotaKept']?.value === 600, `${show('quotaFirst')} ${show('quotaSecond')} ${show('quotaKept')}`)
+      check('[app:fs-quota-refuses-past-limit] a write that would pass the 1024-byte quota is refused as limit, and the earlier 600-byte file is intact', outcomes['quotaFirst']?.ok === true && codeOf(outcomes['quotaSecond']) === 'limit' && outcomes['quotaKept']?.value === 600, `${show('quotaFirst')} ${show('quotaSecond')} ${show('quotaKept')}`)
       check('[app:fs-confined-to-app-root] a path that climbs out of the app root is refused: denied', codeOf(outcomes['outside']) === 'denied', show('outside'))
       check('[app:tls-self-signed-refused-unless-opted-out] a self-signed server is refused by default: unreachable with a platform code', /^unreachable\//.test(codeOf(outcomes['tlsDefault'])), show('tlsDefault'))
       check('[app:tls-self-signed-refused-unless-opted-out] and reached, unauthorized, when the app sets rejectUnauthorized false', outcomes['tlsOptOut']?.ok === true && (outcomes['tlsOptOut']?.value as { got?: string, authorized?: boolean } | undefined)?.got === 'hello over tls' && (outcomes['tlsOptOut']?.value as { authorized?: boolean } | undefined)?.authorized === false, show('tlsOptOut'))

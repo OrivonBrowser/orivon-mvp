@@ -29,6 +29,7 @@ const SCANNED_EXT = /\.(ts|tsx|mjs|js)$/
 /** The guard's own test writes marker-shaped text into scratch fixtures. */
 const SELF_TEST = 'scripts/tests/check-app-behaviours.test.ts'
 const NOT_COVERED = /^not covered:\s*\S/
+const E2E_SPEC = /^test\/e2e-[^/]+\.test\.ts$/
 
 /**
  * @typedef {{ id: string, behaviour: string, apps: string, ports: string, provenBy: string,
@@ -64,7 +65,7 @@ export function parseCatalogue (text) {
     const covered = !NOT_COVERED.test(provenBy)
     const specs = [...provenBy.matchAll(/\]\(([^)\s]+\.test\.ts)\)/g)].map((m) => posix.normalize(posix.join(posix.dirname(CATALOGUE), m[1])))
     if (covered && specs.length === 0) problems.push(`${CATALOGUE}:${line}: \`${id}\` names no spec and is not marked "not covered: <reason>"`)
-    if (covered && !specs.some((spec) => /^test\/e2e-[^/]+\.test\.ts$/.test(spec))) {
+    if (covered && !specs.some((spec) => E2E_SPEC.test(spec))) {
       problems.push(`${CATALOGUE}:${line}: \`${id}\` is proven by no e2e spec; a unit test never proves an app behaviour alone, since it cannot see a broken wiring`)
     }
     entries.push({ id, behaviour, apps, ports, provenBy, specs, covered, line })
@@ -72,17 +73,51 @@ export function parseCatalogue (text) {
   return { entries, problems }
 }
 
+/** Which characters of `source` are code: false inside a comment, a string or a template. */
+export function codeMask (source) {
+  const mask = new Array(source.length).fill(true)
+  const blank = (from, to) => { for (let k = from; k < to && k < mask.length; k++) mask[k] = false }
+  let i = 0
+  while (i < source.length) {
+    const c = source[i]
+    const next = source[i + 1]
+    if (c === '/' && next === '*') {
+      const end = source.indexOf('*/', i + 2)
+      const to = end === -1 ? source.length : end + 2
+      blank(i, to)
+      i = to
+    } else if (c === '/' && next === '/') {
+      let to = i
+      while (to < source.length && source[to] !== '\n') to++
+      blank(i, to)
+      i = to
+    } else if (c === '\'' || c === '"' || c === '`') {
+      let j = i + 1
+      while (j < source.length && source[j] !== c) j += source[j] === '\\' ? 2 : 1
+      blank(i, j + 1)
+      i = j + 1
+    } else {
+      i++
+    }
+  }
+  return mask
+}
+
 /**
  * Every `it(` / `test(` call in a spec whose title is a literal, with the modifier chain between the
- * name and the call (`.skipIf(!X)`, `.skip`, ...) and the line the title sits on.
- * @returns {Array<{ title: string, modifiers: string, line: number }>}
+ * name and the call (`.skipIf(!X)`, `.skip`, ...) and the line the title sits on. A call inside a comment or
+ * a string is not a test. `dynamic` is set for a template title that interpolates, which no one can read
+ * a fixed id from.
+ * @returns {Array<{ title: string, modifiers: string, line: number, dynamic: boolean }>}
  */
 export function findTests (source) {
   const found = []
-  const head = /\b(?:it|test)((?:\.\w+(?:\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\))?)*)\(\s*(['"`])((?:(?!\2)[^\\]|\\.)*)\2/g
+  const mask = codeMask(source)
+  const head = /\b(?:it|test)((?:\.\w+(?:\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\))?)*)\(\s*([\'"`])((?:(?!\2)[^\\]|\\.)*)\2/g
   for (const match of source.matchAll(head)) {
+    if (!mask[match.index]) continue
     const titleAt = match.index + match[0].length - match[3].length - 1
-    found.push({ title: match[3], modifiers: match[1], line: source.slice(0, titleAt).split('\n').length })
+    found.push({ title: match[3], modifiers: match[1], line: source.slice(0, titleAt).split('\n').length, dynamic: match[2] === '`' && match[3].includes('${') })
   }
   return found
 }
@@ -97,7 +132,7 @@ function markersOf (title) {
   return [...title.matchAll(MARKER)].map((m) => m[1])
 }
 
-/** The text of the `ORDINARY_JOB` job in a workflow, or '' when it has none. */
+/** The text of the `ORDINARY_JOB` job in a workflow with its comments removed, or '' when it has none. */
 export function jobText (workflow, job = ORDINARY_JOB) {
   const lines = workflow.split('\n')
   const start = lines.findIndex((line) => line === `  ${job}:`)
@@ -106,7 +141,7 @@ export function jobText (workflow, job = ORDINARY_JOB) {
   for (let i = start + 1; i < lines.length; i++) {
     if (/^ {2}[\w-]+:/.test(lines[i])) { end = i; break }
   }
-  return lines.slice(start, end).join('\n')
+  return lines.slice(start, end).map((line) => line.replace(/(^|\s)#.*$/, '$1')).join('\n')
 }
 
 function walk (root, rel, out) {
@@ -155,6 +190,8 @@ export function checkCatalogue (root) {
         problems.push(`${CATALOGUE}:${entry.line}: \`${entry.id}\` names ${spec}, which does not exist`)
         continue
       }
+      // A unit test listed beside the e2e spec is context for a reader, not proof, and carries no marker.
+      if (!E2E_SPEC.test(spec)) continue
       for (const word of findSuiteSwitches(source)) {
         problems.push(`${spec}: ${word} switches off tests CI would otherwise run; \`${entry.id}\` cannot rest on it`)
       }
@@ -164,6 +201,10 @@ export function checkCatalogue (root) {
         continue
       }
       for (const test of proving) {
+        if (test.dynamic) {
+          problems.push(`${spec}:${test.line}: the test for \`${entry.id}\` has a title that interpolates; give the proving test a plain string title, so dropping it cannot go unseen`)
+          continue
+        }
         if (test.modifiers === '') continue
         if (test.modifiers === ORDINARY_GATE) {
           if (!ordinaryJob.includes(spec)) {
@@ -208,8 +249,9 @@ export function changedSection (changelog) {
 /**
  * The entries a pull request changed or removed without a record: an id whose behaviour sentence differs
  * from the base, or that is gone, and that no line added under `### Changed for apps` names in backticks.
- * A new entry, or a change to who relies on it or what proves it, needs no record.
- * @returns {{ id: string, why: 'changed' | 'removed' }[]}
+ * A row that was proven and is now `not covered` needs one too. A new entry, or a change to who relies on
+ * it or to which spec proves it, needs none.
+ * @returns {{ id: string, why: 'changed' | 'removed' | 'no longer proven' }[]}
  */
 export function findUnrecordedChanges ({ baseCatalogue, headCatalogue, baseChangelog, headChangelog }) {
   const base = parseCatalogue(baseCatalogue).entries
@@ -219,7 +261,11 @@ export function findUnrecordedChanges ({ baseCatalogue, headCatalogue, baseChang
   const unrecorded = []
   for (const before of base) {
     const after = head.get(before.id)
-    const why = after === undefined ? 'removed' : after.behaviour.replace(/\s+/g, ' ') !== before.behaviour.replace(/\s+/g, ' ') ? 'changed' : null
+    const why = after === undefined
+      ? 'removed'
+      : after.behaviour.replace(/\s+/g, ' ') !== before.behaviour.replace(/\s+/g, ' ')
+        ? 'changed'
+        : before.covered && !after.covered ? 'no longer proven' : null
     if (why !== null && !added.includes(`\`${before.id}\``)) unrecorded.push({ id: before.id, why })
   }
   return unrecorded
