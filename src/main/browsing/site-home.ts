@@ -6,6 +6,7 @@ import type { PinRecord } from '../../broker/policy/pin.js'
 import type { Loader } from '../../loader/index.js'
 import type { ProviderVerdict } from '../../trust/score-provider.js'
 import type { HomeFacts } from '../../trust/domain-binding.js'
+import type { ManifestAtRoot } from '../../loader/fetch/manifest-at-root.js'
 import { homeAt } from './site-trust.js'
 import type { Home } from './site-trust.js'
 
@@ -26,12 +27,21 @@ export async function readHome (source: HomeSource, origin: string, pin: PinReco
     const pinned = await source.manifestFor(origin).catch(() => undefined)
     return homeAt(origin, pinned === undefined ? { kind: 'unread' } : { kind: 'app', domain: pinned.domain })
   }
-  if (liveCid === undefined || !judgedAbove2(verdict)) return homeAt(origin, { kind: 'website' })
+  if (liveCid === undefined) return homeAt(origin, { kind: 'website' })
+  return await readHomeAtRoot(source.manifestAt, origin, liveCid, verdict, waitMs)
+}
 
+/**
+ * The home of the content `cid` names, seen from `origin`: the manifest at that root, read only
+ * when `verdict` is a judged Level 3 or 4. The page lookup (`page-score-lookup.ts`) asks the same
+ * question about an address that is not open in a tab, so both surfaces bind a judged level alike.
+ */
+export async function readHomeAtRoot (manifestAt: HomeSource['manifestAt'], origin: string, cid: string, verdict: ProviderVerdict, waitMs: number): Promise<Home> {
+  if (!judgedAbove2(verdict)) return homeAt(origin, { kind: 'website' })
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<'late'>((resolve) => { timer = setTimeout(() => { resolve('late') }, waitMs) })
   try {
-    const read = await Promise.race([source.manifestAt(origin, liveCid), timeout])
+    const read: ManifestAtRoot | 'late' = await Promise.race([manifestAt(origin, cid), timeout])
     if (read === 'late') return homeAt(origin, { kind: 'unread' }, true)
     const facts: HomeFacts = read.kind === 'app' ? { kind: 'app', domain: read.manifest.domain } : read.kind === 'website' ? { kind: 'website' } : { kind: 'unread' }
     return homeAt(origin, facts)

@@ -182,7 +182,8 @@ function boot (runtime: Runtime): void {
       providerAddress: () => shell.settings.get('web3.scoreProvider'),
       isDevEthName,
       fetchJson: netFetchJson,
-      resolveEthContent: verifierEthContentCid
+      resolveEthContent: verifierEthContentCid,
+      manifestAt: async (origin, cid) => await ctx.loader?.manifestAt(origin, cid) ?? { kind: 'unread', reason: 'the loader is not running' }
     }).websiteScore)
     // A refusal the person should read, drawn in the window they are using.
     publishShowNotice(ctx, ({ title, message }) => { void askQuestion({}, { kind: 'notice', title, message, buttons: ['OK'], cancelId: 0 }) })

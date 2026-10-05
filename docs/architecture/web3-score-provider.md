@@ -204,7 +204,12 @@ What follows bounds this build of Orivon, not the standard.
   the level it judged for the content an `ipfs://` address or a `.eth` name (bare or over `https`) names,
   for a page that declared and was granted `trust.score` (`ADR-0058`). Without the grant it rejects
   `denied`. The level is the provider's raw judgement for that content, 1 to 4, with none of the shield's
-  display rules applied: the page applies those itself. Any address that names no content (a web address,
+  display rules applied: the page applies those itself, except the one that decides whether a judged
+  level belongs to the address at all. A Level 3 or 4 is answered only where the shield would count it
+  (`ADR-0056`): the content's manifest names the host asked about, or the content has no manifest (a
+  website). A name that points at an app's judged content without being the app's home, a manifest that
+  names no home or cannot be read, and an `ipfs://` address of an app (no manifest names a `.orivon`
+  host) answer `level: null`. Any address that names no content (a web address,
   a name that does not resolve, content the provider has not evaluated), a provider that does not answer,
   and a provider description that cannot be read all answer `level: null`, naming the provider by its
   address in the last case; with no provider chosen it answers `provider: null` and asks nothing.

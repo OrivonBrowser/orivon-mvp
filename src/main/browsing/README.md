@@ -47,6 +47,14 @@ resolved in the caller's own verifier partition for the same reason (A256). Each
 `limit`. Every other failure, a provider that is down, a name that does not resolve, an address that names no
 content, answers `level: null`, because none of them is the page's fault.
 
+**A page's score answers the question the shield answers, through the same code.** A judged Level 3 or 4 describes a
+CID, and any name can point at that CID, so `page-score-lookup.ts` reads the manifest at the resolved root with
+`site-home.ts`'s `readHomeAtRoot` and `domain-binding.ts`'s rules (`ADR-0056`) before it answers a level: a name the
+manifest does not name, a manifest with no home or one that cannot be read, and an app's `ipfs://` address all answer
+`level: null`, and a verified absence of a manifest (a website) keeps the level. Only the manifest read is not the
+caller's own: it goes through `Loader.manifestAt` in the name's own partition, and only for a name the provider judged
+3 or 4 (A392).
+
 **A keyword is the first word of a search, never an address.** `search-resolve.ts` takes `<keyword> <terms>` only when
 something follows the keyword, so `w` alone and `w.com` are parsed as before and a keyword cannot stand in for a host.
 The tab's Enter and the dropdown's first row both call `resolveCurrent`, so the row never names an engine Enter would
