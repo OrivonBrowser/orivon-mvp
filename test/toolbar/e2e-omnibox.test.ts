@@ -11,9 +11,10 @@ import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { SqliteHistoryStore } from '../../src/main/history/sqlite-history-store.js'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
+import { runCommand } from '../support/auth-support.js'
 import { html, launchShell, startServer } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
-import { activeTabInfo, delay, popoverShown, tabIds, waitFor } from '../support/smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, activeTabInfo, delay, popoverShown, tabIds, waitFor } from '../support/smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 120_000
 const SHOTS_DIR = process.env.ORIVON_UI_SHOTS_DIR
@@ -411,6 +412,42 @@ it('offers no history in a private window, only the tabs open in it', async () =
     // Nothing finishes the text: a private session remembers no address.
     expect((await field(chrome)).value).toBe('127')
     expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('the first keystroke builds the dropdown without the keyboard leaving the field', async () => {
+  const { app, chrome } = await launchShell({ seedProfile: async (dir: string) => { await seedPages(dir) } })
+  try {
+    // Every webContents that takes the keyboard, by the address it has when it does: a view that is still blank is named too.
+    await app.evaluate(({ app: electronApp, webContents }) => {
+      const log: string[] = []
+      ;(globalThis as unknown as { __focusLog: string[] }).__focusLog = log
+      const watch = (wc: Electron.WebContents): void => { wc.on('focus', () => { log.push(wc.getURL() === '' ? 'blank' : wc.getURL()) }) }
+      for (const wc of webContents.getAllWebContents()) watch(wc)
+      electronApp.on('web-contents-created', (_event, wc) => { watch(wc) })
+    })
+    expect(await waitFor(async () => (await chrome.evaluate(() => document.querySelector('#address')?.getAttribute('role') ?? null)) === 'combobox')).toBe(true)
+    await runCommand(chrome, 'nav.focusAddress')
+    expect(await waitFor(async () => (await field(chrome)).focused)).toBe(true)
+    await delay(ABSENCE_SETTLE_MS)
+    await app.evaluate(() => { (globalThis as unknown as { __focusLog: string[] }).__focusLog.length = 0 })
+
+    // The first query of the window builds the overlay: its page commits while the dropdown is being asked for.
+    await chrome.keyboard.type('a', { delay: 25 })
+    await waitForRows(app, 1)
+    await delay(ABSENCE_SETTLE_MS)
+    const taken = await app.evaluate(() => (globalThis as unknown as { __focusLog: string[] }).__focusLog)
+    expect(taken.filter((url) => url === 'blank' || url.includes('overlay=omnibox'))).toEqual([])
+    const chromeFocused = await app.evaluate(({ webContents }) => webContents.getAllWebContents().find((wc) => wc.getURL().includes('/renderer/index.html'))?.isFocused() === true)
+    expect(chromeFocused).toBe(true)
+    expect(await field(chrome)).toMatchObject({ focused: true })
+    expect((await field(chrome)).value.startsWith('a')).toBe(true)
+
+    // The rest of what is typed lands after the first letter, and the first letter is still there.
+    await chrome.keyboard.type('bc', { delay: 25 })
+    expect(await waitFor(async () => (await field(chrome)).value.startsWith('abc'))).toBe(true)
   } finally {
     await closeElectron(app)
   }

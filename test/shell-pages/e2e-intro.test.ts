@@ -10,7 +10,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, expect, it } from 'vitest'
 import { closeElectronApp } from '../support/e2e-helpers.js'
 import { assertNoElectronSurvivors, closeElectron, launchElectron } from '../support/launch-electron.mjs'
-import { ABSENCE_SETTLE_MS, findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, findChrome, HERMETIC_RESOLVER, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 
 afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
@@ -75,6 +75,14 @@ it('once, on a fresh profile: shows over the whole window, stays on top of a new
     await intro.keyboard.press('Enter')
     expect(await waitFor(() => introPage(app) === undefined && windowCount(app) === 3)).toBe(true)
 
+    // Entering gives the keyboard to the address bar: the new tab in front is a start page, and the bar is where a person types.
+    const chrome = findChrome(app)
+    const barActive = (): Promise<boolean> => chrome.evaluate(() => document.activeElement?.id === 'address')
+    expect(await waitFor(async () => (await focusedUrls()).some((url) => url.includes('/renderer/index.html')) && await barActive())).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS))
+    expect((await focusedUrls()).some((url) => url.includes('/newtab/'))).toBe(false)
+    expect(await barActive()).toBe(true)
+
     const dashboard = dashboardPage(app)
     if (dashboard === undefined) throw new Error('the dashboard tab is gone')
     // The background picture is a real, decodable file at the built path.
@@ -91,6 +99,22 @@ it('once, on a fresh profile: shows over the whole window, stays on top of a new
     const seenFile = join(await userDataDir(app), 'intro.json')
     expect(await waitFor(() => existsSync(seenFile))).toBe(true)
     expect(JSON.parse(await readFile(seenFile, 'utf8'))).toEqual({ seen: true })
+
+    // The first letter typed builds the dropdown, and its page does not take the keyboard from the field.
+    await app.evaluate(({ app: electronApp, webContents }) => {
+      const log: string[] = []
+      ;(globalThis as unknown as { __focusLog: string[] }).__focusLog = log
+      const watch = (wc: Electron.WebContents): void => { wc.on('focus', () => { log.push(wc.getURL() === '' ? 'blank' : wc.getURL()) }) }
+      for (const wc of webContents.getAllWebContents()) watch(wc)
+      electronApp.on('web-contents-created', (_event, wc) => { watch(wc) })
+    })
+    await chrome.keyboard.type('a', { delay: 25 })
+    expect(await waitFor(() => popoverShown(app, 'overlay=omnibox'))).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS))
+    const taken = await app.evaluate(() => (globalThis as unknown as { __focusLog: string[] }).__focusLog)
+    expect(taken.filter((url) => url === 'blank' || url.includes('overlay=omnibox'))).toEqual([])
+    expect((await focusedUrls()).some((url) => url.includes('/renderer/index.html'))).toBe(true)
+    expect(await barActive()).toBe(true)
   } finally {
     // Two tabs are open here, and closing the app under them throws in main (A259).
     await closeElectronApp(app)

@@ -10,8 +10,8 @@ export interface AddressSelect {
   focus: () => boolean
   /** A press began on the field; `fieldActive` is whether it was already the active element. */
   pointerDown: (fieldActive: boolean) => void
-  /** The press ended; `collapsed` is whether it left a caret. True: select everything now. */
-  pointerUp: (collapsed: boolean) => boolean
+  /** The press ended; `dragged` is whether the pointer moved far enough to be dragging out a range. True: select everything now. */
+  pointerUp: (dragged: boolean) => boolean
   /** A key was pressed in the field. */
   keyDown: () => void
 }
@@ -29,8 +29,8 @@ export function createAddressSelect (): AddressSelect {
       firstPress = !fieldActive || kept
       kept = false
     },
-    pointerUp: (collapsed) => {
-      const wanted = pressPending && firstPress && collapsed
+    pointerUp: (dragged) => {
+      const wanted = pressPending && firstPress && !dragged
       pressPending = false
       firstPress = false
       return wanted

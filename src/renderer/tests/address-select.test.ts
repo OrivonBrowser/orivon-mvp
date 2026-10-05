@@ -23,7 +23,7 @@ describe('createAddressSelect', () => {
     const select = createAddressSelect()
     select.pointerDown(false)
     expect(select.focus()).toBe(false)
-    expect(select.pointerUp(true)).toBe(true)
+    expect(select.pointerUp(false)).toBe(true)
   })
 
   it('selects on the first press after a window refocus, where the field is already the active element', () => {
@@ -31,23 +31,23 @@ describe('createAddressSelect', () => {
     select.blur(true)
     expect(select.focus()).toBe(false)
     select.pointerDown(true)
-    expect(select.pointerUp(true)).toBe(true)
+    expect(select.pointerUp(false)).toBe(true)
   })
 
   it('places a caret on a second press', () => {
     const select = createAddressSelect()
     select.pointerDown(false)
     select.focus()
-    select.pointerUp(true)
+    select.pointerUp(false)
     select.pointerDown(true)
-    expect(select.pointerUp(true)).toBe(false)
+    expect(select.pointerUp(false)).toBe(false)
   })
 
   it('keeps the range a first press dragged out', () => {
     const select = createAddressSelect()
     select.pointerDown(false)
     select.focus()
-    expect(select.pointerUp(false)).toBe(false)
+    expect(select.pointerUp(true)).toBe(false)
   })
 
   it('does not treat a press after typing as a first press', () => {
@@ -56,13 +56,13 @@ describe('createAddressSelect', () => {
     select.focus()
     select.keyDown()
     select.pointerDown(true)
-    expect(select.pointerUp(true)).toBe(false)
+    expect(select.pointerUp(false)).toBe(false)
   })
 
   it('forgets a press that ended on a drag, so the next focus is judged on its own', () => {
     const select = createAddressSelect()
     select.pointerDown(false)
-    select.pointerUp(false)
+    select.pointerUp(true)
     select.blur(false)
     expect(select.focus()).toBe(true)
   })
