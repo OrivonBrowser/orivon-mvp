@@ -11,7 +11,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { isInvokedDirectly } from './cli.mjs'
 
-const STARTUP_TIMEOUT_MS = 120_000
+// A native launch renders in about 10 s; an Intel build under Rosetta, translating Electron cold, can take minutes.
+const STARTUP_TIMEOUT_MS = 300_000
+const PROBE_TIMEOUT_MS = 5_000
 const SHELL_PAGE = /app\.asar\/out\/renderer\/index\.html/
 const RENDERED = "document.readyState === 'complete' && document.body !== null && document.body.childElementCount > 0"
 
@@ -35,17 +37,20 @@ export function shellTarget (targets) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-/** One Runtime.evaluate over a page's DevTools socket. */
-async function evaluate (wsUrl, expression) {
-  const socket = new WebSocket(wsUrl)
-  await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = () => reject(new Error(`no DevTools connection to ${wsUrl}`)) })
-  try {
-    const reply = new Promise((resolve) => { socket.onmessage = (event) => resolve(JSON.parse(String(event.data))) })
-    socket.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression, returnByValue: true } }))
-    return (await reply).result?.result?.value
-  } finally {
-    socket.close()
-  }
+/**
+ * One Runtime.evaluate over a page's DevTools socket. Bounded: a page that reloads or crashes mid-call
+ * closes the socket, and a stalled one never answers; either would otherwise hang past the deadline.
+ */
+function evaluate (wsUrl, expression) {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(wsUrl)
+    const fail = (why) => { clearTimeout(timer); socket.close(); reject(new Error(why)) }
+    const timer = setTimeout(() => fail('no DevTools answer in time'), PROBE_TIMEOUT_MS)
+    socket.onopen = () => socket.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression, returnByValue: true } }))
+    socket.onmessage = (event) => { clearTimeout(timer); socket.close(); resolve(JSON.parse(String(event.data)).result?.result?.value) }
+    socket.onerror = () => fail(`DevTools connection to ${wsUrl} failed`)
+    socket.onclose = () => fail('DevTools connection closed before an answer')
+  })
 }
 
 const exited = (child) => child.exitCode !== null || child.signalCode !== null
@@ -68,7 +73,8 @@ async function waitForShell (child, output, deadline) {
     if (exited(child)) throw new Error(`the app exited (${child.exitCode ?? child.signalCode}) before its shell page rendered`)
     const port = devToolsPort(output())
     if (port !== undefined) {
-      const targets = await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json()).catch(() => [])
+      const targets = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) })
+        .then((r) => r.json()).catch(() => [])
       const shell = shellTarget(targets)
       if (shell !== undefined && await evaluate(shell.webSocketDebuggerUrl, RENDERED).catch(() => false) === true) return shell.url
     }
