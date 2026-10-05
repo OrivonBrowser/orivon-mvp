@@ -21,6 +21,8 @@ custom search template's check), [`../storage/`](../storage/) (the debounced wri
 **Only a choice that differs from the default is written.** A default that improves later then
 reaches everyone who never touched it, and "changed from default" is a fact of the file rather than a
 comparison against a copy of the defaults the page would have to carry.
+The Web3 Score provider is such a default, an address (`DEFAULT_SCORE_PROVIDER`): a profile that
+never chose reads it, one that cleared the setting keeps the empty value and asks nobody.
 
 **Every value is validated where it enters, and again where it is read from disk.** The Settings page
 is trusted UI, but the store does not take its word: an unknown key or a value the schema refuses is

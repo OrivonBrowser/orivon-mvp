@@ -7,7 +7,7 @@ export const web3: Section = {
     {
       id: 'web3-score-provider',
       label: 'Web3 Score provider',
-      help: 'Where Orivon reads judged Web3 Score levels, such as whether a site\'s code is open source. Any address Orivon opens works: https://, ipfs:// or a .eth name. Orivon asks for a group of scores named by the start of a hash, one of at most 256, so the provider learns the group, never the site, though one that scores only a few sites can guess. Empty asks nobody.',
+      help: 'Where Orivon reads judged Web3 Score levels, such as whether a site\'s code is open source. Any address Orivon opens works: https://, ipfs:// or a .eth name. Orivon asks for a group of scores named by the start of a hash, one of at most 256, so the provider learns the group, never the site, though one that scores only a few sites can guess. New profiles use Orivon\'s own provider; empty asks nobody.',
       keywords: ['web3 score', 'score', 'provider', 'trustlessity', 'judged', 'level', 'privacy'],
       control: { type: 'text', key: 'web3.scoreProvider', placeholder: 'None', problem: 'Enter an address, like https://example.com/score' }
     },

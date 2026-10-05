@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { SETTINGS, describeSettings, isSettingKey, validateSetting } from '../schema.js'
+import { DEFAULT_SCORE_PROVIDER, SETTINGS, describeSettings, isSettingKey, validateSetting } from '../schema.js'
 import type { SettingSpec } from '../schema.js'
 
 describe('validateSetting', () => {
@@ -54,5 +54,14 @@ describe('the settings schema', () => {
     expect(validateSetting(SETTINGS['search.customUrl'], 'https://search.example/?q=%s')).toBe('https://search.example/?q=%s')
     expect(validateSetting(SETTINGS['search.customUrl'], 'https://%s.example/')).toBeUndefined()
     expect(validateSetting(SETTINGS['search.customUrl'], 'http://search.example/?q=%s')).toBeUndefined()
+  })
+})
+
+describe('the Web3 Score provider setting', () => {
+  it('defaults to the official provider, an address the setting itself accepts, and lets a person clear it', () => {
+    expect(DEFAULT_SCORE_PROVIDER).toBe('ipns://k51qzi5uqu5dli7gc98gxy6jlbarijipfrw1x8z2wfyre3rvhssxvzeummkaff/score')
+    expect(SETTINGS['web3.scoreProvider'].default).toBe(DEFAULT_SCORE_PROVIDER)
+    expect(validateSetting(SETTINGS['web3.scoreProvider'], DEFAULT_SCORE_PROVIDER)).toBe(DEFAULT_SCORE_PROVIDER)
+    expect(validateSetting(SETTINGS['web3.scoreProvider'], '')).toBe('')
   })
 })
