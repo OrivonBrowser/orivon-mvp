@@ -32,3 +32,29 @@ the gate through `bindings.ts`, bound by the app door's installer.
 
 **Electron dependence.** Tied to Electron. `types.ts`, `bindings.ts` and the ticket rules are pure and tested with
 fakes.
+
+## Design notes
+
+**[`display-tickets.ts`](display-tickets.ts) holds a request until it has heard from the preload, whichever arrives first.** The
+preload's `arm` message and Electron's `media` request travel on different paths and can arrive in either order, so a request
+is held while a ticket is open and allowed only when the ticket is armed with its nonce, the preload said its call was made,
+and no second request arrived for the quiet window. Two requests, a wrong nonce, a rejected call, the page ending or the
+ticket's timeout deny everything held. A request with no open ticket is refused at once, which is what ends a legacy
+`getUserMedia({ chromeMediaSource })` call: Electron gives it the same request as `getDisplayMedia`.
+
+**A grant the display handler did not follow ends the page's document.** The display handler runs inside the call that
+grants the request, so a ticket still waiting for it right after the grant means the granted request was not a display
+request. `end-unexpected-capture.ts` reloads the tab: provisional, and ending the page's renderer instead is the open
+alternative.
+
+**A tab that is not showing in a window cannot be shared.** Chromium refuses to capture the view of a background tab and the
+page's call fails with `AbortError`; the preload tells main when its call failed after the display handler answered, so the
+registry never keeps a share that has no track. The gate does not check that a picked tab is showing: the picker has to
+offer only tabs that are.
+
+**The permission check names the page as its own embedder.** Electron sets `embeddingOrigin` for a top frame too, so only an
+embedder that is a different origin refuses the `display-capture` check.
+
+**A tab share's end is read from `isBeingCaptured()` and from the tracks the preload reports.** A browser under automation
+that records its views (Playwright's screencast) keeps `isBeingCaptured()` true, so the end-to-end spec proves the share's
+end through the preload's report; the registry's own poll is unit-tested.

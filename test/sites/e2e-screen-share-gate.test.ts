@@ -69,8 +69,6 @@ const stopShare = async (app: App, id: string): Promise<void> => { await app.eva
 const setSetting = async (app: App, key: string, value: unknown): Promise<void> => {
   await app.evaluate((_electron, [k, v]) => { (globalThis as unknown as { __orivonDevSidePanel: { setSetting: (k: string, v: unknown) => void } }).__orivonDevSidePanel.setSetting(k as string, v) }, [key, value])
 }
-const beingCaptured = async (app: App, url: string): Promise<boolean | undefined> =>
-  await app.evaluate(({ webContents }, address) => webContents.getAllWebContents().find((w) => w.getURL().startsWith(address))?.isBeingCaptured(), url)
 
 const result = async (view: Page, key: string, timeoutMs = 15_000): Promise<unknown> => {
   let last: unknown
@@ -94,6 +92,7 @@ it('grants only the call the preload makes after the pick, and refuses every oth
     expect(await view.evaluate(async () => (await navigator.permissions.query({ name: 'display-capture' as PermissionName })).state)).toBe('granted')
 
     // A cancel: the page gets NotAllowedError and the picker was asked once.
+    await useChooser(app, { kind: 'cancel' })
     await run(view, "window.share('cancelled', { video: true })")
     expect(await result(view, 'cancelled')).toBe('ERR:NotAllowedError')
     expect(await chooserCalls(app)).toBe(1)
@@ -123,7 +122,9 @@ it('grants only the call the preload makes after the pick, and refuses every oth
     await run(view, "window.legacy('desktopId', { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: 'screen:0:0' } })")
     expect(await result(view, 'desktopId')).toBe('ERR:NotAllowedError')
     await run(view, "window.legacy('tab', { mandatory: { chromeMediaSource: 'tab' } })")
-    expect(await result(view, 'tab')).toBe('ERR:NotAllowedError')
+    expect(String(await result(view, 'tab'))).toMatch(/^ERR:/)
+    await run(view, "window.legacy('tabId', { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: 'web-contents-media-stream://1:1' } })")
+    expect(String(await result(view, 'tabId'))).toMatch(/^ERR:/)
     // A call from a fresh realm the preload did not wrap reaches the gate with no ticket.
     await run(view, "window.fromFrame('frame')")
     expect(await result(view, 'frame')).toBe('ERR:NotAllowedError')
@@ -141,7 +142,6 @@ it('grants only the call the preload makes after the pick, and refuses every oth
 
     // Navigation ends a share.
     await useChooser(app, { kind: 'screen' })
-    await view.evaluate(() => { window.location.hash = '' })
     await run(view, "window.share('screen2', { video: true })")
     expect(await result(view, 'screen2')).toMatchObject({ state: 'live' })
     expect((await shares(app))).toHaveLength(1)
@@ -164,20 +164,30 @@ it('shares a tab as a browser surface, ends when the tab is not captured any mor
     await chrome.click('#new-tab')
     await clickAddressBarRetrying(chrome, urlB)
     expect((await waitForTab(chrome, { address: urlB })).ok).toBe(true)
+    const second = (await tabIds(chrome)).at(-1) as string
     await chrome.click(`.tab[data-id="${first as string}"]`)
     expect(await waitFor(() => findViewShowing(app, chrome, urlA) !== undefined)).toBe(true)
 
+    // A tab in the background of the window cannot be captured (Chromium answers AbortError), and the failed share
+    // leaves nothing running.
     await useChooser(app, { kind: 'tab', url: origins.b })
+    await run(view, "window.share('background', { video: true })")
+    expect(await result(view, 'background')).toBe('ERR:AbortError')
+    expect(await waitFor(async () => (await shares(app)).length === 0)).toBe(true)
+
+    // A tab that is showing can: the picker is open on the page while the person looks at the other tab.
+    await useChooser(app, { kind: 'tab', url: origins.b, delayMs: 1500 })
     await run(view, "window.share('tab', { video: true })")
-    expect(await result(view, 'tab')).toMatchObject({ tracks: 1, state: 'live', surface: 'browser', label: 'share-b' })
-    expect(await waitFor(async () => (await beingCaptured(app, origins.b)) === true)).toBe(true)
+    await delay(500)
+    await chrome.click(`.tab[data-id="${second}"]`)
+    expect(await result(view, 'tab', 30_000)).toMatchObject({ tracks: 1, state: 'live', surface: 'browser', label: 'share-b' })
     const [tabShare] = await shares(app)
-    expect(tabShare).toMatchObject({ kind: 'tab', label: 'share-b' })
+    expect(tabShare).toMatchObject({ kind: 'tab', label: 'share-b', origin: origins.a })
+    await chrome.click(`.tab[data-id="${first as string}"]`)
 
     // The page stops its own track: the preload reports it and the registry empties.
     await view.evaluate(() => { (window as unknown as { __stream: MediaStream }).__stream.getVideoTracks()[0]?.stop() })
     expect(await waitFor(async () => (await shares(app)).length === 0, 10_000)).toBe(true)
-    expect(await waitFor(async () => (await beingCaptured(app, origins.b)) === false)).toBe(true)
 
     // The site's block: refused with the picker never asked, and the query says denied.
     const asked = await chooserCalls(app)

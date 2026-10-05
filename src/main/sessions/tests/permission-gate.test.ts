@@ -516,5 +516,22 @@ describe('permissionGateSubsystem', () => {
       }
       expect(answers).toEqual([{}, { video: 'a' }])
     })
+
+    it('does not log the throw Electron makes when an answer carries no stream: the page\'s call just fails', () => {
+      permissionGateSubsystem.beforeReady?.()
+      void permissionGateSubsystem.afterReady?.({} as never)
+      const handler = fakeDefaultSession.setDisplayMediaRequestHandler.mock.calls.at(-1)?.[0] as (request: object, callback: (streams: object) => void) => void
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      try {
+        expect(() => { handler({}, () => { throw new Error('Video was requested, but no video stream was provided') }) }).not.toThrow()
+        expect(error).not.toHaveBeenCalled()
+        bindDisplayMediaHandler(((_request: object, callback: (streams: object) => void) => { callback({ video: 'v' }) }) as never)
+        handler({}, () => { throw new Error('refused') })
+        expect(error).toHaveBeenCalledOnce()
+      } finally {
+        bindDisplayMediaHandler(undefined)
+        error.mockRestore()
+      }
+    })
   })
 })

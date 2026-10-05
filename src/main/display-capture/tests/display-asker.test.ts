@@ -98,6 +98,10 @@ describe('the display asker: checks', () => {
     expect(asker.check?.(tab(), 'display-capture', 'https://frame.example', { isMainFrame: true, embeddingOrigin: ORIGIN })).toBe(false)
   })
 
+  it('answers for the top frame whose embedder Electron names as the page itself', () => {
+    expect(setup().asker.check?.(tab(), 'display-capture', `${ORIGIN}/`, { isMainFrame: true, embeddingOrigin: `${ORIGIN}/` })).toBe(true)
+  })
+
   it('refuses an origin that is not the one the tab committed', () => {
     expect(setup().asker.check?.(tab(), 'display-capture', 'https://other.example', MAIN)).toBe(false)
   })

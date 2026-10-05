@@ -48,8 +48,9 @@ export function createDisplayAsker (deps: DisplayAskerDeps): SiteAsker {
 
     check (contents, permission, requestingOrigin, details) {
       if (permission !== 'display-capture' || contents === null || !deps.isTab(contents)) return undefined
+      // Electron names the embedding page even for the top frame, so only an embedder that is another origin refuses.
       const embedding = field(details, 'embeddingOrigin', isString)
-      if ((details as { isMainFrame?: unknown } | null)?.isMainFrame !== true || embedding !== undefined) return false
+      if ((details as { isMainFrame?: unknown } | null)?.isMainFrame !== true || (embedding !== undefined && originFromUrl(embedding) !== originFromUrl(requestingOrigin))) return false
       const origin = deps.mainFrameOrigin(contents)
       return origin !== null && originFromUrl(requestingOrigin) === origin && deps.mayAsk(contents, origin)
     },

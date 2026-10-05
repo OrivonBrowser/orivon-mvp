@@ -110,6 +110,9 @@ async function share (options: ShareOptions): Promise<ShareResult> {
   try {
     stream = await request
   } catch (error) {
+    // Main may already have started the share when it answered the request, and Chromium can still fail to start the
+    // capture (a tab it cannot capture): no track will ever end for it, so main is told there is none.
+    ipcRenderer.send(DISPLAY_CAPTURE_CHANNEL, { type: 'tracks-ended', nonce })
     return errorOf(error)
   }
   const record: ShareRecord = { nonce, tracks: new Set() }

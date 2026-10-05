@@ -14,13 +14,18 @@ export function bindDisplayMediaHandler (handler: DisplayMediaHandler | undefine
 
 /** What `denyByDefault` installs on every session. A handler that throws answers like none. */
 export function handleDisplayMedia (request: DisplayMediaRequestHandlerHandlerRequest, callback: (streams: Streams) => void): void {
-  if (bound === undefined) { callback({}); return }
   let answered = false
   const answer = (streams: Streams): void => {
     if (answered) return
     answered = true
-    callback(streams)
+    try {
+      callback(streams)
+    } catch (error) {
+      // Electron reports an answer with no stream by throwing here, and the page's call then fails with AbortError.
+      if (Object.keys(streams).length > 0) console.error('[display-media] the answer was refused:', error)
+    }
   }
+  if (bound === undefined) { answer({}); return }
   try {
     bound(request, answer)
   } catch (error) {

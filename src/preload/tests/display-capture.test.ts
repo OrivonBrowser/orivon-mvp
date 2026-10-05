@@ -101,6 +101,7 @@ describe('the call this world makes for the page', () => {
     await vi.advanceTimersByTimeAsync(10)
     expect(bridge.send).toHaveBeenCalledWith(DISPLAY_CAPTURE_CHANNEL, { type: 'called', nonce: 'nonce-1', rejectedEarly: true })
     expect(result).toEqual({ ok: false, name: 'TypeError', message: 'bad constraints' })
+    expect(bridge.send).toHaveBeenCalledWith(DISPLAY_CAPTURE_CHANNEL, { type: 'tracks-ended', nonce: 'nonce-1' })
   })
 
   it.each([
