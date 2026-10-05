@@ -9,10 +9,10 @@ import { join } from 'node:path'
 import { deflateSync } from 'node:zlib'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { SqliteHistoryStore } from '../src/main/history/sqlite-history-store.js'
-import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './support/launch-electron.mjs'
-import { clickAddressBarRetrying } from './support/e2e-helpers.js'
-import { delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from './support/smoke-helpers.mjs'
+import { SqliteHistoryStore } from '../../src/main/history/sqlite-history-store.js'
+import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
+import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
+import { delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 90_000
 const SHOTS_DIR = process.env['ORIVON_UI_SHOTS_DIR']

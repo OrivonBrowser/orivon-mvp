@@ -12,9 +12,9 @@ import { join } from 'node:path'
 import { deflateSync, crc32 } from 'node:zlib'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput, profileDirOf } from './support/launch-electron.mjs'
-import { pressKey } from './support/e2e-helpers.js'
-import { delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor } from './support/smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput, profileDirOf } from '../support/launch-electron.mjs'
+import { pressKey } from '../support/e2e-helpers.js'
+import { delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor } from '../support/smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 120_000
 const SHOTS_DIR = process.env.ORIVON_UI_SHOTS_DIR

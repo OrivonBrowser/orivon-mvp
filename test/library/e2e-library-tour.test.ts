@@ -8,11 +8,11 @@ import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { SqliteHistoryStore } from '../src/main/history/sqlite-history-store.js'
-import { assertNoElectronSurvivors, closeElectron, launchElectron } from './support/launch-electron.mjs'
+import { SqliteHistoryStore } from '../../src/main/history/sqlite-history-store.js'
+import { assertNoElectronSurvivors, closeElectron, launchElectron } from '../support/launch-electron.mjs'
 import { clickLink, openInternalPage, removeDir, scratchDir, startServer, stubSystem, visitFiles } from './downloads-fixture.js'
 import type { DownloadServer } from './downloads-fixture.js'
-import { delay, findChrome, HERMETIC_RESOLVER, popoverShown, waitFor } from './support/smoke-helpers.mjs'
+import { delay, findChrome, HERMETIC_RESOLVER, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 
 const SHOTS_DIR = process.env.ORIVON_UI_SHOTS_DIR
 const TEST_TIMEOUT_MS = 180_000
