@@ -18,9 +18,9 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
-- `contracts/manifest`: a manifest may carry `domain`, the one ENS name or DNS host the app calls home. A malformed
-  value rejects the manifest; absence is allowed. Ports set it to the name they are published under, and recheck it
-  spells a lower-case host with no scheme, port or path.
+- **`contracts/manifest.ts`**: a manifest may carry `domain`, the one ENS name or DNS host the app calls home; a
+  malformed value rejects the manifest and absence is allowed. Apps published under a name set `domain` to that name,
+  as a lower-case host with no scheme, port or path. Recheck: every port.
 
 ### Added
 
