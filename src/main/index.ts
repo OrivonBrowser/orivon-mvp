@@ -17,7 +17,7 @@ import { internalSession } from './pages/internal-session.js'
 import { installHistory } from './history/install-history.js'
 import { installDownloads } from './downloads/install-downloads.js'
 import { installDownloadsPeek } from './downloads/auto-open.js'
-import { createSubsystemContext, criticalFailureMessage, publishShowNotice, publishWindowForSender, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
+import { createSubsystemContext, criticalFailureMessage, publishShowNotice, publishWebsiteScore, publishWindowForSender, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
 import { subsystems } from './subsystems.js'
 import { DebouncedWriter } from './storage/debounced-writer.js'
 import { devOnlySwitches } from './shell/dev-switches.js'
@@ -31,7 +31,10 @@ import { sweepPrivateDirs } from './launch/private-session.js'
 import { startLaunch } from './launch/start-launch.js'
 import { runUpdateCheck } from './self-update/update-check-runner.js'
 import { scheduleUpdateChecks } from './self-update/update-schedule.js'
-import { configureVerifier } from './verifier/verifier-subsystem.js'
+import { configureVerifier, verifierEthContentCid } from './verifier/verifier-subsystem.js'
+import { createPageScoreLookup } from './browsing/page-score-lookup.js'
+import { netFetchJson } from './browsing/score-provider-client.js'
+import { isDevEthName } from './dev/eth-resolver.js'
 import { isOriginServedFromCacheSync } from '../loader/electron/serve.js'
 import type { Runtime } from './launch/start-launch.js'
 
@@ -171,6 +174,13 @@ function boot (runtime: Runtime): void {
     // for the thunks that read ctx.windowForSender only when a real dialog
     // is about to show one.
     publishWindowForSender(ctx, (sender) => shell.windows.findTab(sender)?.window.window)
+    // Read lazily by the control channel, which was wired before the settings it reads existed (ADR-0058).
+    publishWebsiteScore(ctx, createPageScoreLookup({
+      providerAddress: () => shell.settings.get('web3.scoreProvider'),
+      isDevEthName,
+      fetchJson: netFetchJson,
+      resolveEthContent: verifierEthContentCid
+    }).websiteScore)
     // A refusal the person should read, drawn in the window they are using.
     publishShowNotice(ctx, ({ title, message }) => { void askQuestion({}, { kind: 'notice', title, message, buttons: ['OK'], cancelId: 0 }) })
     // Before the first window, so it opens in the chosen theme with the chosen

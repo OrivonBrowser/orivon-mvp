@@ -25,7 +25,7 @@ import type { Broker } from '../broker/broker-contracts.js'
 import type { Loader, LoadResult } from '../loader/index.js'
 import type { GrantedWithoutInstall } from './install/grant-without-install.js'
 import type { DialogCaller } from './consent/request-grant.js'
-import type { CapabilityRequest } from '../contracts/index.js'
+import type { CapabilityRequest, WebsiteScore } from '../contracts/index.js'
 import type { ExtensionsApi } from './extensions/extensions-subsystem.js'
 
 export interface SubsystemContext {
@@ -124,6 +124,12 @@ export interface SubsystemContext {
    */
   readonly showNotice: ((notice: { readonly title: string, readonly message: string }) => void) | undefined
   /**
+   * `orivon.trust.websiteScore`'s lookup (ADR-0058), which asks the person's Web3 Score provider through the shell's
+   * settings and network stack. Published in `main/index.ts` once the shell exists, so a reader treats `undefined` as
+   * routine early in startup and reads it at the moment of the call, as `../broker/transport/ipc.ts` does.
+   */
+  readonly websiteScore: ((origin: string, address: string) => Promise<WebsiteScore>) | undefined
+  /**
    * Whether the WebContents making a call is attributed to the origin it
    * claims -- `isAttributedSession`'s (`../broker/policy/origin.js`)
    * injected other half. Every renderer-reachable broker channel
@@ -188,6 +194,7 @@ const senderAttributedSlot = createPublishedSlot<(sender: unknown, origin: strin
 const extensionsSlot = createPublishedSlot<ExtensionsApi>('extensions', 'a second one could load into a different session than the one every extension actually runs in')
 const windowForSenderSlot = createPublishedSlot<(sender: WebContents) => BaseWindow | undefined>('windowForSender', 'a second one could disagree about which window currently holds a given tab')
 
+const websiteScoreSlot = createPublishedSlot<(origin: string, address: string) => Promise<WebsiteScore>>('websiteScore', 'a second one would keep a second set of per-caller caches, and a page could tell them apart')
 const showNoticeSlot = createPublishedSlot<(notice: { readonly title: string, readonly message: string }) => void>('showNotice', 'a second one could draw a message somewhere the first does not')
 
 class SubsystemContextImpl implements SubsystemContext {
@@ -229,6 +236,10 @@ class SubsystemContextImpl implements SubsystemContext {
 
   get showNotice (): ((notice: { readonly title: string, readonly message: string }) => void) | undefined {
     return showNoticeSlot.get(this)
+  }
+
+  get websiteScore (): ((origin: string, address: string) => Promise<WebsiteScore>) | undefined {
+    return websiteScoreSlot.get(this)
   }
 }
 
@@ -286,6 +297,11 @@ export function publishWindowForSender (ctx: SubsystemContext, windowForSender: 
 /** The one sanctioned way to set `ctx.showNotice` -- see `publishBroker`'s own doc; same guarantee, same reason. */
 export function publishShowNotice (ctx: SubsystemContext, showNotice: (notice: { readonly title: string, readonly message: string }) => void): void {
   showNoticeSlot.publish(ctx, showNotice)
+}
+
+/** The one sanctioned way to set `ctx.websiteScore` -- see `publishBroker`'s own doc; same guarantee, same reason. */
+export function publishWebsiteScore (ctx: SubsystemContext, websiteScore: (origin: string, address: string) => Promise<WebsiteScore>): void {
+  websiteScoreSlot.publish(ctx, websiteScore)
 }
 
 export interface Subsystem {

@@ -10,7 +10,8 @@ operation), `bookmark-file.ts` (reading and writing the file, pure),
 `search-current.ts` (which engine a typed search goes to, pure), `search-engine-store.ts` (the engines a person keeps in
 `search-engines.json`; its rules are in `search-engine-rules.ts` and the starting site engines in `site-engines.ts`),
 `favicon-cache.ts` (the icons already fetched), `bookmark-types.ts` (the node, bar item and import shapes, types only), `site-trust.ts` (the Web3 Score page and the
-toolbar shield's data), and `score-provider-client.ts` (asks the chosen Web3 Score provider, `ADR-0054`). `site-trust.ts` is pure: its caller,
+toolbar shield's data), `score-provider-client.ts` (asks the chosen Web3 Score provider, `ADR-0054`) and `page-score-lookup.ts` (what
+`orivon.trust.websiteScore` answers, `ADR-0058`). `site-trust.ts` is pure: its caller,
 [`../permissions/site-info-controller.ts`](../permissions/site-info-controller.ts), hands it the
 pin, pin coverage, a `.eth` name's evidence and the developer overrides, so it never reaches for
 the loader, the verifier or `../dev/` itself.
@@ -25,6 +26,8 @@ a path string.
 [`../../loader/electron/resolve.ts`](../../loader/electron/resolve.ts),
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts),
 [`../../protocols/ipfs/names.ts`](../../protocols/ipfs/names.ts) (`canonicalCid`),
+[`../../broker/transport/token-bucket.ts`](../../broker/transport/token-bucket.ts) and `../../broker/errors.ts`
+(`page-score-lookup.ts`'s rate limit and its `limit` refusal),
 [`../verifier/name-evidence.ts`](../verifier/name-evidence.ts) (types), `node:crypto`,
 `node:fs/promises`, `node:path`, `node:stream`.
 
@@ -34,6 +37,14 @@ dependency on tab-collection state, which keeps it importable under plain vitest
 **Owner stream.** `shell`. Maintenance only.
 
 ## Design notes
+
+**A page's score lookups share nothing with the shell's, or with another page's.** `page-score-lookup.ts` keeps one
+`createScoreProviderClient` per calling origin (the sixteen most recent) and never uses `services.scoreProvider`:
+one cache for everyone would let a page time an answer to learn which sites the person had opened. A `.eth` name is
+resolved in the caller's own verifier partition for the same reason (A256). Each origin also has a token bucket
+(128 lookups, refilling 2 a second): Explore asks about some sixty sites on one load, a page that loops is refused
+`limit`. Every other failure, a provider that is down, a name that does not resolve, an address that names no
+content, answers `level: null`, because none of them is the page's fault.
 
 **A keyword is the first word of a search, never an address.** `search-resolve.ts` takes `<keyword> <terms>` only when
 something follows the keyword, so `w` alone and `w.com` are parsed as before and a keyword cannot stand in for a host.
