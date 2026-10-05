@@ -135,10 +135,21 @@ describe('opening the panel', () => {
   })
 
   it('answers a choice with nothing to show by clearing the guest slot', () => {
-    const s = setup({ manifest: {} })
+    const s = setup()
+    s.options.set(EXT, { tabId: 1, enabled: false })
+    s.driver.republish()
     s.driver.chosen(s.win, `ext:${EXT}`)
     expect(s.pages).toHaveLength(0)
     expect(s.host.setGuest).toHaveBeenCalledWith(null)
+  })
+
+  it('leaves a choice of an entry it did not list to whoever did', () => {
+    const s = setup()
+    s.driver.republish()
+    s.driver.chosen(s.win, 'ext:guestview')
+    s.driver.chosen(s.win, 'history')
+    expect(s.pages).toHaveLength(0)
+    expect(s.host.setGuest).not.toHaveBeenCalled()
   })
 
   it('closes a page again, without announcing it, when the panel closed while it loaded', async () => {
@@ -176,6 +187,19 @@ describe('opening the panel', () => {
     page.events.destroyed()
     expect(s.host.close).toHaveBeenCalled()
     expect(s.fired.map((entry) => entry.name)).toEqual(['onOpened', 'onClosed'])
+  })
+
+  it('closes the panel when the page destroys itself before it was shown, and announces nothing', async () => {
+    const s = setup()
+    s.driver.republish()
+    s.host.open(`ext:${EXT}`)
+    const page = s.pages[0] as FakePage
+    page.events.destroyed()
+    page.finish()
+    await s.settle()
+    expect(s.host.close).toHaveBeenCalled()
+    expect(s.host.isOpen()).toBe(false)
+    expect(s.fired).toEqual([])
   })
 
   it('releases the guest when the page\'s renderer dies', async () => {

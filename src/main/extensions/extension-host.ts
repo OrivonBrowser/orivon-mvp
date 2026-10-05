@@ -49,7 +49,7 @@ import { sidePanelWindowOf } from './side-panel-pages.js'
 
 /** The session's extensions emitter takes one `extension-unloaded` listener from each extension subsystem: the
  * vendored library's eight, the invocation ledger, the dNR engine, the bookmarks and manifest APIs, the command
- * keys and the loaded-extensions feed, which is past Node's warning line of ten. Set here, before the first of them
+ * keys, the side panel and the loaded-extensions feed, which is past Node's warning line of ten. Set here, before the first of them
  * attaches, and above the count with room for a subsystem to come, not unlimited: a listener added per extension or
  * per navigation still warns. */
 export const EXTENSIONS_LISTENER_ROOM = 32

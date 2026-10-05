@@ -106,6 +106,8 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
     return state
   }
   let published = '[]'
+  /** The entries this driver put in the picker: a choice of any other entry is someone else's to answer. */
+  let listed = new Set<string>()
 
   const entries = (except?: string): PanelGuestEntry[] => {
     const fronts = deps.windows().map((window) => deps.frontTab(window))
@@ -123,6 +125,7 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
   /** `except`: an extension that is going away and may still be listed as loaded while its unload is announced. */
   const republish = (except?: string): void => {
     const next = entries(except)
+    listed = new Set(next.map((entry) => entry.id))
     const key = JSON.stringify(next)
     if (key === published) return
     published = key
@@ -152,7 +155,11 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
     const events: PanelPageEvents = {
       gone: () => { if (state.shown?.page === page) host.setGuest(null) },
       destroyed: () => {
-        if (state.loading?.page === page) state.loading = undefined
+        if (state.loading?.page === page) {
+          state.loading = undefined
+          // A page that closes itself before it is shown takes the panel with it: nothing would answer for the entry.
+          if (host.view() === `${ENTRY_PREFIX}${extensionId}`) host.close()
+        }
         // The page closed itself: the panel closes with it, as a page's `window.close()` closes a panel.
         if (state.shown?.page === page) { host.close(); guestClosed(state, page) }
       }
@@ -183,7 +190,7 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
 
   const chosen = (window: ShellWindow, entryId: string): void => {
     const host = deps.hostOf(window)
-    if (host === undefined || !entryId.startsWith(ENTRY_PREFIX)) return
+    if (host === undefined || !listed.has(entryId)) return
     const extensionId = entryId.slice(ENTRY_PREFIX.length)
     const url = deps.options.panelFor(extensionId, deps.frontTab(window))
     if (url === undefined) {

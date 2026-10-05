@@ -7,6 +7,7 @@
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-side-panel.test.ts
 import { afterAll, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
@@ -18,6 +19,7 @@ import { openExtensionPage, rpc, seedFixture, waitRecovered } from './extensions
 
 const TEST_TIMEOUT_MS = 300_000
 const NAME = 'Orivon E2E Side Panel'
+const SHOTS = process.env['ORIVON_SHOTS_DIR']
 const servers: Server[] = []
 
 afterAll(async () => {
@@ -60,6 +62,18 @@ async function viewBounds (app: ElectronApplication, part: string): Promise<Rect
     const found = win?.contentView.children.find((child) => (child as unknown as { webContents?: { getURL: () => string } }).webContents?.getURL().startsWith(wanted) === true)
     return found === undefined ? null : found.getBounds()
   }, part)
+}
+
+/** With ORIVON_SHOTS_DIR set, photographs `page` in both colour schemes. */
+async function shoot (page: Page, name: string): Promise<void> {
+  if (SHOTS === undefined) return
+  mkdirSync(SHOTS, { recursive: true })
+  for (const scheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: scheme })
+    await delay(350)
+    await page.screenshot({ path: join(SHOTS, `side-panel-${name}-${scheme}.png`) })
+  }
+  await page.emulateMedia({ colorScheme: null })
 }
 
 async function windowId (app: ElectronApplication): Promise<number> {
@@ -109,7 +123,8 @@ it('shows, drives and closes an extension\'s side panel the way the extension as
 
       const isOpen = async (): Promise<boolean> => await panel<boolean>(live, 'isOpen')
       const viewNow = async (): Promise<string> => await panel<string>(live, 'view')
-      const panelShows = async (file: string): Promise<boolean> => await waitFor(() => pageOf(live, id, file) !== undefined)
+      const panelShows = async (file: string): Promise<boolean> =>
+        await waitFor(async () => pageOf(live, id, file) !== undefined && (await viewBounds(live, `chrome-extension://${id}/${file}`)) !== null)
       const closePanel = async (): Promise<void> => {
         await panel(live, 'close')
         await waitFor(async () => !(await isOpen()) && pageOf(live, id, 'panel.html') === undefined)
@@ -139,6 +154,8 @@ it('shows, drives and closes an extension\'s side panel the way the extension as
       const placed = await viewBounds(live, `chrome-extension://${id}/panel.html`)
       check('the page sits at the panel body', JSON.stringify(body) === JSON.stringify(placed), JSON.stringify({ body, placed }))
       check('the extension heard onOpened', (await events()).includes('onOpened'), JSON.stringify(await events()))
+      await shoot(overlay, 'header')
+      await shoot(pageOf(live, id, 'panel.html') as Page, 'guest')
 
       // 2. The page sees its own window.
       const panelPage = pageOf(live, id, 'panel.html') as Page
