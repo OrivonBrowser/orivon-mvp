@@ -20,6 +20,7 @@ import { closeElectronApp } from '../support/e2e-helpers.js'
 import { answerQuestion, noNativeDialogs, stubNativeDialogs } from '../support/question-support.js'
 import { seedExtensions } from '../support/extensions-fixtures.js'
 import { parseRegistry } from '../../src/main/extensions/registry.js'
+import { parsePrefsFile } from '../../src/main/extensions/extension-prefs.js'
 import type { InstalledExtension } from '../../src/main/extensions/registry.js'
 
 afterAll(async () => {
@@ -175,11 +176,13 @@ it('lists installed extensions with their updater sentence, toggles one off, rem
       await page.locator('button', { hasText: 'Install from file' }).click()
       await answerQuestion(app, 'Add extension')
       expect(await waitFor(async () => (await page.locator('.ext-name', { hasText: 'Orivon E2E From File' }).count()) === 1)).toBe(true)
-      // The installed manifest is kept beside the loaded copy; with no choice made they are the same bytes, and no prefs file exists yet.
+      // The installed manifest is kept beside the loaded copy; with no choice made they are the same bytes, and the install itself recorded that the extension is not on the toolbar.
       const installed = registryOf(userData).find((entry) => entry.name === 'Orivon E2E From File')
       if (installed === undefined) throw new Error('the installed extension is not in the registry')
       expect(readFileSync(join(dirname(installed.path), 'manifest.base.json'), 'utf8')).toBe(readFileSync(join(installed.path, 'manifest.json'), 'utf8'))
-      expect(existsSync(join(userData, 'extensions', 'prefs.json'))).toBe(false)
+      const prefsFile = join(userData, 'extensions', 'prefs.json')
+      expect(await waitFor(() => existsSync(prefsFile))).toBe(true)
+      expect(parsePrefsFile(readFileSync(prefsFile, 'utf8')).get(installed.id)?.pinned).toBe(false)
       expect(await noNativeDialogs(app)).toEqual([])
     } finally {
       rmSync(zipDir, { recursive: true, force: true })
@@ -190,7 +193,7 @@ it('lists installed extensions with their updater sentence, toggles one off, rem
     const settings = app.windows().find((w) => w.url().startsWith('orivon://settings')) as Page
     await settings.waitForSelector('#row-apps-extensions-pin-new')
     expect(await settings.locator('.group-label').allTextContents()).toEqual(['Extensions', 'Apps'])
-    expect(await settings.locator('#row-apps-extensions-pin-new input[type="checkbox"]').isChecked()).toBe(true)
+    expect(await settings.locator('#row-apps-extensions-pin-new input[type="checkbox"]').isChecked()).toBe(false)
     await shoot(settings, 'settings-apps')
     await settings.fill('input.search', 'addons')
     await waitFor(async () => (await settings.locator('.hit').count()) === 3)

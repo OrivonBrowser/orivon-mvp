@@ -15,7 +15,7 @@ import { installFromFile, installFromFolder, type InstallContext, type InstallOu
 import { setEnabled, uninstall } from './install-lifecycle.js'
 import { createExtensionInstallPrompt } from './extension-install-prompt.js'
 import { clearChromeStorage } from './extension-storage-clear.js'
-import { createExtensionHost, extensionPagesAroundReload } from './extension-host.js'
+import { createExtensionHost, extensionPagesAroundReload, shellServices } from './extension-host.js'
 import { installExtensionPermissionWarningFilter } from './extension-known-permissions.js'
 import { startWebStore, type StoreApi } from './store-runner.js'
 import { PRIVATE_INSTALL_REASON } from './install-private.js'
@@ -128,7 +128,7 @@ export const extensionsSubsystem: Subsystem = {
     // install route refuses; the store page's hook still starts (below).
     if (!ctx.privateSession) await loadEnabledExtensions(userDataPath)
 
-    const install: InstallContext = { userDataPath, session: session.defaultSession, prompt: createExtensionInstallPrompt(), prefs, privateSession: ctx.privateSession, clearExtensionStorage: async (id) => { await clearChromeStorage(session.defaultSession, id) } }
+    const install: InstallContext = { userDataPath, session: session.defaultSession, prompt: createExtensionInstallPrompt(), prefs, privateSession: ctx.privateSession, pinInstalled: () => shellServices()?.settings.get('extensions.pinInstalled') === true, clearExtensionStorage: async (id) => { await clearChromeStorage(session.defaultSession, id) } }
     const preloadPath = join(import.meta.dirname, '../preload/web-store.js')
     // Started in every runtime: a store tab in a private window must never reach the native
     // `chrome.webstorePrivate`. In a private one installs are denied inside it.
