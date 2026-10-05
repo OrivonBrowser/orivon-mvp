@@ -39,6 +39,11 @@ test the page's own classes.
 **`zlib` is gzip/deflate only**: `browserify-zlib` predates brotli. Why each polyfill package was
 chosen: [`shim-dependency-review.md`](../../docs/planning/shim-dependency-review.md) §Status.
 
+**Breaking an app.** What a working app relies on is a row of
+[`test/app-behaviours/catalogue.md`](../../test/app-behaviours/catalogue.md), proven by an end-to-end spec, so a
+change here that breaks one fails a test that names it. A new or changed capability needs its row and spec
+([README](../../test/app-behaviours/README.md)); CI fails without them.
+
 **What it depends on.** [`src/contracts/`](../contracts/), and
 [`src/shim-electron/unimplemented.ts`](../shim-electron/unimplemented.ts)'s `refusingProxy`, the
 one import across the two sibling packages (`unimplemented.ts` says why not `src/shared/`;

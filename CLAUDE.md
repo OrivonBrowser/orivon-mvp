@@ -17,7 +17,8 @@ Status and roadmap: `README.md`. What works today: `docs/planning/compatibility-
 | Writing against the API | `src/contracts/`: the product surface in seven files |
 | Editing in a directory | its `README.md`: what it may depend on and must never import |
 | Writing code | `docs/development/code-guidelines.md` §Rules, nothing else |
-| Adding a test or a `check:*` guard | `docs/development/testing.md` |
+| Adding a test or a `check:*` guard | `test/README.md` (where a spec goes), then `docs/development/testing.md` |
+| **Adding or changing a capability or an `orivon.*` member, porting an app, or fixing a bug an app reported** | `test/app-behaviours/README.md`: a catalogue row and an e2e spec are required, and CI fails without them |
 | Changing UI, a flow, or broker, IPC, preload, natives, filesystem or network code | the `orivon-qa` skill |
 | Starting a build step, or syncing `main` | `docs/development/parallel-work.md` §If you are an agent |
 | Opening a PR | `docs/development/pr-blueprint.md` |
@@ -85,7 +86,7 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
 |---|---|
 | `npm run typecheck` | After any `.ts` change; it covers `test/` as well as `src/` |
 | `npm test` | Unit tests (Vitest) |
-| `npm run check:<name>` | The fifteen guards in `docs/development/testing.md` §Guards; CI runs each |
+| `npm run check:<name>` | The sixteen guards in `docs/development/testing.md` §Guards; CI runs each |
 | `npm run smoke` | The real shell launches and works. Read its JSON failure list, not the exit code |
 | `npm run test:e2e` | The Electron end-to-end suite; a failed spec leaves its evidence in `qa-artifacts/latest/` |
 | `npm run qa`, `qa:visual`, `qa:report` | Before calling a UI, flow or boundary change done; `orivon-qa` says which, and how to read the screenshots |

@@ -4,6 +4,9 @@
  * that holds it. It keeps documentation, CI and scripts honest when specs move, and nothing else checks
  * Markdown links into `test/`.
  *
+ * It also keeps `test/` ordered: no spec sits directly in `test/`, every folder under it has a row in the
+ * Layout table of `test/README.md`, and every row names a folder that exists.
+ *
  * A token followed by `<` or `{` is a placeholder and is skipped. History (CHANGELOG, decisions, the
  * open-questions and readability logs, the devlog, most of docs/planning) is exempt: it says what was true
  * when it was written (CLAUDE.md Rule 2). Imports `node:*` only.
@@ -87,18 +90,52 @@ export function checkTestPaths (root, files, read = (file) => { try { return rea
   return { ok: dangling.length === 0, dangling }
 }
 
+/**
+ * The ordering rules for `test/`, from the tracked file list and the README's text.
+ * @returns {string[]} one message per violation
+ */
+export function checkLayout (files, readme) {
+  const problems = []
+  for (const file of files) {
+    if (/^test\/[^/]+\.test\.ts$/.test(file)) problems.push(`${file}: a spec belongs in a folder of its area under test/, not at its top; see the Layout table in test/README.md`)
+  }
+  const folders = new Set(files.filter((file) => /^test\/[^/]+\//.test(file)).map((file) => file.split('/')[1]))
+  const rows = new Set()
+  for (const line of readme.split('\n')) {
+    if (!line.startsWith('|')) continue
+    const first = line.split('|')[1] ?? ''
+    for (const m of first.matchAll(/`([\w.-]+)\/`/g)) rows.add(m[1])
+  }
+  for (const folder of [...folders].sort()) {
+    if (!rows.has(folder)) problems.push(`test/${folder}/ has no row in the Layout table of test/README.md: say what it proves, or put its files in an existing area`)
+  }
+  for (const row of [...rows].sort()) {
+    if (!folders.has(row)) problems.push(`the Layout table of test/README.md names ${row}/, which does not exist`)
+  }
+  return problems
+}
+
 export function trackedFiles (root) {
   return execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).split('\0').filter((file) => file !== '')
 }
 
 if (isInvokedDirectly(import.meta.url)) {
   const root = process.cwd()
-  const { ok, dangling } = checkTestPaths(root, trackedFiles(root))
+  const files = trackedFiles(root)
+  const { ok, dangling } = checkTestPaths(root, files)
+  let readme = ''
+  try { readme = readFileSync(join(root, 'test/README.md'), 'utf8') } catch { /* every folder then lacks a row */ }
+  const layout = checkLayout(files, readme)
   if (!ok) {
     console.error('\nPaths under test/ that do not exist (a spec moved, or a path was mistyped):\n')
     for (const { file, line, token } of dangling) console.error(`  ${file}:${line}  ${token}`)
     console.error('\nFix the path, or write a placeholder as test/<area>/<file>.\n')
-    process.exit(1)
   }
-  console.log('Every path under test/ named in a tracked file exists.')
+  if (layout.length > 0) {
+    console.error('\ntest/ is not ordered:\n')
+    for (const problem of layout) console.error(`  ${problem}`)
+    console.error('')
+  }
+  if (!ok || layout.length > 0) process.exit(1)
+  console.log('Every path under test/ named in a tracked file exists, and test/ is ordered as its README says.')
 }

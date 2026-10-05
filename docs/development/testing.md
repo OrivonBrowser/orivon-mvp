@@ -398,66 +398,49 @@ outside `attach-view.ts`.
 
 ## Guards
 
-Fifteen checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
+Sixteen checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
 and CI's `check` job runs all of them; [`../../scripts/README.md`](../../scripts/README.md) says
 what each one enforces.
 
 `check:natives` · `check:contracts` · `check:secrets` · `check:vectors` · `check:comments` ·
 `check:size` · `check:questions` · `check:manifest-parity` · `check:page-globals` ·
 `check:dev-grant-absent` · `check:advisories` · `check:devlog` · `check:native-dialogs` ·
-`check:app-behaviours` · `check:contracts-surface` (§App behaviours)
+`check:test-paths` · `check:app-behaviours` · `check:contracts-surface` (the last two: §App behaviours)
 
-Every one is an exported pure function over a root directory, unit tested in
-`scripts/tests/` against temp fixtures, with a CLI block guarded by `isInvokedDirectly` so the
-test can import it without running it. Follow that shape if you add another, and add the CI step
-in the same change: `scripts/tests/check-scripts-in-ci.test.ts` fails the unit suite if a
-`check:*` script exists with no step to run it.
+Every one is an exported pure function over a root directory, unit tested against temp fixtures
+(`scripts/tests/`, or `tests/` beside a guard that has its own folder under `scripts/`), with a CLI block
+guarded by `isInvokedDirectly` so the test can import it without running it. Follow that shape if you add
+another, and add the CI step in the same change: `scripts/tests/check-scripts-in-ci.test.ts` fails the unit
+suite if a `check:*` script exists with no step to run it.
 
 A guard imports `node:*` builtins and nothing from `src/` -- one that depended on the code it
 guards could be disabled by the change it exists to catch.
 
 ---
 
+## Where a spec lives
+
+`test/` is a list of areas, one folder each, and [`../../test/README.md`](../../test/README.md) says what each
+proves and where the shared harness (`test/support/`) is. A spec goes in the folder of the area it proves; a
+new area is a new folder and a new row in that table. `check:test-paths` fails a `*.test.ts` left at the top
+of `test/`, a folder with no row, and any mention of a `test/` path that does not exist.
+
+---
+
 ## App behaviours
 
-[`app-behaviours.md`](app-behaviours.md) lists what a working app relies on, one behaviour to an
-entry, each tied to the e2e spec that proves it. The suites above are grouped by what Orivon built;
-this page is grouped by what an app needs, so a change that breaks an app turns a test red whose name
-says which behaviour went, whichever file the change was in. `check:app-behaviours` keeps the page and the
-specs in step.
+What a working app relies on, behaviour by behaviour, is kept in [`../../test/app-behaviours/`](../../test/app-behaviours/README.md):
+a catalogue of rows, each proven by an end-to-end spec whose test is titled `[app:<id>]`, and a table that
+gives every capability kind a line. The suites above are grouped by what Orivon built; the catalogue is
+grouped by what an app needs, so a change that breaks an app turns a test red whose name says which behaviour
+went, whichever file the change was in.
 
-**A failing `[app:<id>]` test means an app that relies on that behaviour is broken.** Read the entry,
-which names the apps and ports that rely on it, then do one of two things:
-
-- Fix the change. Most of the time the behaviour should not have moved.
-- Change the behaviour on purpose: edit the entry's sentence, add a line under `### Changed for apps` in
-  [`CHANGELOG.md`](../../CHANGELOG.md) (`` - **`<id>`**: what changed. Apps that <do Y> must now <do Z>.
-  Recheck: <ports>. ``), and put the same in the PR's **Dev:** line. CI fails a pull request that changes or
-  removes an entry's sentence with no such line. Never edit the test until it passes, and never skip it.
-
-**Adding an entry.** When a port, a user or a fix shows an app relying on something no entry covers:
-
-1. State the behaviour generically and observably ("data an app writes to IndexedDB survives a browser
-   restart"), never as one app's feature. Name an app or port only if a tracked file already names it.
-2. Find the e2e spec that proves it through the real shell. A unit test may stand beside it but never
-   proves an entry alone: it exercises a function in isolation, cannot see a wiring that broke, and is
-   edited in the same pull request as the code it tests. Where none exists, write a small generic spec:
-   the smallest page that shows the behaviour, loopback only, `startServer` on port 0, several
-   behaviours to a launch, waiting on state and never on the clock.
-3. Put `[app:<id>]` in the title of the `it` that proves it (several ids may share a title). It carries
-   no modifier, or `skipIf(!ORDINARY_BUILD)` for a spec that needs the build without the developer-only
-   hooks; that spec must be in the `e2e-ordinary` job of `ci.yml`. A skipped or narrowed test proves nothing, so
-   the guard refuses it.
-4. Watch it fail: break the behaviour in the code, see the test go red, restore it.
-5. Add the row. A behaviour no spec proves yet is `not covered: <reason>`, and the reason is the debt.
-
-**The contracts surface.** [`test/app-behaviours/contracts-surface.txt`](../../test/app-behaviours/contracts-surface.txt)
-is `src/contracts/` with its comments removed: every export, capability kind, error code and `LIMITS`
-value an app can write against. `check:contracts-surface` fails when it and the source disagree, so a
-change to a contract file shows up in the same diff as a change to the snapshot
-(`node scripts/app-behaviours/check-contracts-surface.mjs --update` rewrites it). Rewording a comment changes nothing.
-A pull request that changes a file's section needs a line under `### Changed for apps` that names
-`` `contracts/<file>` ``, the same record a changed behaviour takes.
+**You must add or change a row, and a spec, when you add a capability, port an app, fix a bug an app
+reported, or change what an app can count on.** Its README says exactly when, how to add one, and what a
+failing `[app:<id>]` test means. `check:app-behaviours` keeps the catalogue, the specs and the capability
+table in step; `check:contracts-surface` keeps a snapshot of `src/contracts/`. Like the first, on pull
+requests it demands a line under `### Changed for apps` in [`CHANGELOG.md`](../../CHANGELOG.md) for a change
+an app would feel.
 
 ---
 

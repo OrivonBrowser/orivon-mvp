@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkTestPaths, findTokens, isExempt, pathSet } from '../check-test-paths.mjs'
+import { checkLayout, checkTestPaths, findTokens, isExempt, pathSet } from '../check-test-paths.mjs'
 
 /** `files` as a map of path to text; the checker reads from it and never touches a disk. */
 const run = (files: Record<string, string>) => checkTestPaths('/nowhere', Object.keys(files), (file) => files[file] ?? null)
@@ -61,5 +61,24 @@ describe('checkTestPaths', () => {
   it('skips history, generated files and non-text files', () => {
     const files = { 'test/a.ts': 'x', 'CHANGELOG.md': 'test/gone.ts', 'src/runtime.generated.json': 'test/gone.ts', 'logo.png': 'test/gone.ts' }
     expect(run(files).ok).toBe(true)
+  })
+})
+
+describe('checkLayout', () => {
+  const README = '| Folder | Proves |\n|---|---|\n| `alpha/` | a |\n| [`apps/`](apps/), `fixtures/` | b |\n'
+
+  it('passes when every folder has a row and every row has a folder', () => {
+    expect(checkLayout(['test/alpha/e2e-a.test.ts', 'test/apps/x/y.js', 'test/fixtures/z.html', 'test/README.md'], README)).toEqual([])
+  })
+
+  it('flags a spec at the top of test/, a folder with no row, and a row with no folder', () => {
+    const problems = checkLayout(['test/e2e-loose.test.ts', 'test/alpha/e2e-a.test.ts', 'test/beta/x.ts', 'test/apps/x/y.js'], README).join('\n')
+    expect(problems).toContain('test/e2e-loose.test.ts: a spec belongs in a folder')
+    expect(problems).toContain('test/beta/ has no row')
+    expect(problems).toContain('names fixtures/, which does not exist')
+  })
+
+  it('does not count a helper or the README at the top of test/ as a spec', () => {
+    expect(checkLayout(['test/alpha/e2e-a.test.ts', 'test/vitest.e2e.config.ts', 'test/README.md', 'test/apps/a', 'test/fixtures/b'], README)).toEqual([])
   })
 })

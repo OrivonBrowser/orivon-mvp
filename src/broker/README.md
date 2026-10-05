@@ -5,6 +5,11 @@ reaches the page. **This is the product**: everything else in the repository exi
 can be reached from a web page
 ([`ADR-0002`](../../docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md)).
 
+**Breaking an app.** What a working app relies on is a row of
+[`test/app-behaviours/catalogue.md`](../../test/app-behaviours/catalogue.md), proven by an end-to-end spec, so a
+change here that breaks one fails a test that names it. A new or changed capability needs its row and spec
+([README](../../test/app-behaviours/README.md)); CI fails without them.
+
 **What it depends on.** [`src/contracts/`](../contracts/) and `electron`.
 
 **What it must never import.** [`src/shim/`](../shim/), [`src/loader/`](../loader/), or any
