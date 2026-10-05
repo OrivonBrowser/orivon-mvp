@@ -86,7 +86,51 @@ workflow runs the same build and launch, and keeps the packages for seven days a
 artifacts instead of attaching them. Actions > Release > Run workflow does the same on demand.
 
 The job that writes to the release only downloads the packages and uploads them. The jobs that
-run `npm ci` hold a read-only token, so no dependency's install script can alter a release.
+run `npm ci` or Kubo hold a read-only token, so no dependency's install script can alter a release.
+
+### On IPFS
+
+Every release is also one folder on IPFS. Its address is in the release notes, under "On IPFS",
+and in the `ipfs.json` attached to it:
+
+```json
+{ "cid": "bafy...", "add": "ipfs add -r --cid-version=1 ...", "files": [{ "name": "orivon_0.1.0_amd64.deb", "sha256": "..." }] }
+```
+
+- **The workflow** computes the CID with [`scripts/pin-releases.sh`](../../scripts/pin-releases.sh)
+  `manifest`, using Kubo at a pinned version and checksum, in a job with a read-only token. It
+  only hashes: nothing is uploaded to IPFS from CI.
+- **A pinning node** runs `pin-releases.sh sync` on a timer. It reads the public releases list,
+  downloads the files of the newest three releases, checks each against its SHA-256, adds them
+  with the same flags, and refuses a release whose files add up to any other CID. It pins what
+  it keeps, unpins older releases, and publishes the set under the IPNS name
+  `k51qzi5uqu5dkhm6spg3gbtdjoj15qhwg77uqwg7j33xwun8jc9cdpeh9gnl8p`: one folder per pinned
+  release, plus `releases.json`, which lists every release by CID, pinned or not.
+- **Anyone can pin a release too.** The CID depends only on the files and the flags in
+  `pin-releases.sh`, so `pin-releases.sh sync` (or `ipfs add` with those flags) on any Kubo node
+  reproduces it. Changing the flags changes every CID from the next release on.
+
+The Orivon node runs it from a systemd timer every 15 minutes:
+
+```ini
+# orivon-release-pinner.service
+[Service]
+Type=oneshot
+User=<a user that can reach the Kubo API>
+Environment=IPFS_API=/ip4/127.0.0.1/tcp/5001 KEEP=3
+ExecStart=/path/to/pin-releases.sh sync
+
+# orivon-release-pinner.timer
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target
+```
+
+`journalctl -u orivon-release-pinner` shows each run: a line per release pinned, refused or
+unpinned, and per new index.
 
 ## Windows and macOS
 

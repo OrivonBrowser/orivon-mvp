@@ -23,6 +23,8 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 - **Packages for Linux, Windows and macOS on every GitHub release**: a deb and an AppImage, a Windows installer and a dmg each
   for Apple silicon and Intel, each launched by CI before it is attached. Windows and macOS packages are not signed with a
   bought certificate, so the system asks once before the first run.
+- **Every release is on IPFS** as one folder, `ipfs://<cid>` in its notes, pinned by the Orivon node with the two before it
+  and listed under one IPNS name; anyone can reproduce the CID and pin it.
 - **`test/` is ordered by area**, with a Layout table in `test/README.md`; a spec left at its top, a folder with no
   row and a dead `test/` path in any tracked file now fail CI, and a new capability kind needs a catalogue line.
 - **An app-behaviour catalogue** names what a working app relies on, one row each, and each row is proven by an
