@@ -33,6 +33,8 @@ export interface PanelGuest {
 
 export interface SidePanelHost {
   isOpen: () => boolean
+  /** Whether this window could show a panel now: not stopped, not a kiosk, wide enough. A caller that must not fail silently asks first. */
+  canShow: () => boolean
   open: (viewId?: string) => void
   close: () => void
   toggle: (viewId?: string) => void
@@ -62,7 +64,7 @@ const changeListeners = new WeakMap<BaseWindow, Set<() => void>>()
 watchGuestEntries(() => { for (const host of everyHost) host.entriesChanged() })
 
 const NOBODY: SidePanelHost = {
-  isOpen: () => false, open: () => {}, close: () => {}, toggle: () => {}, view: () => 'bookmarks', width: () => 0, side: () => 'right',
+  isOpen: () => false, canShow: () => false, open: () => {}, close: () => {}, toggle: () => {}, view: () => 'bookmarks', width: () => 0, side: () => 'right',
   bodyBounds: () => null, setGuest: (guest) => { try { guest?.closed?.() } catch { /* nothing holds it */ } }, onChange: () => () => {}
 }
 
@@ -138,6 +140,7 @@ export class PanelHost implements SidePanelHost {
   }
 
   isOpen = (): boolean => this.wanted && this.room()
+  canShow = (): boolean => !this.stopped && this.room()
   view = (): string => this.current
   width = (): number => clampWidth(this.shownWidth, this.contentWidth())
   side = (): PanelSide => this.ctx.services.settings.get('sidePanel.side') === 'left' ? 'left' : 'right'
@@ -237,6 +240,8 @@ export class PanelHost implements SidePanelHost {
     if (this.stopped) { guest?.closed?.(); return }
     if (guest === null) {
       this.release()
+      // An entry chosen while nothing answers for it (no panel for the front tab) would otherwise leave a blank body.
+      this.fallBack()
       this.window.overlays.send(SIDE_PANEL_OVERLAY, { type: 'view', view: this.current, guest: null })
       this.notify()
       return
