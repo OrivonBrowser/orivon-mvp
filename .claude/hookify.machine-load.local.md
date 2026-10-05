@@ -17,6 +17,6 @@ than once. Before running this:
 - Lower its priority and width: `nice -n 15`, and `npx vitest run --maxWorkers=2`.
 - Run only the test files you touched while working; the whole unit suite once at the end.
 - The whole e2e suite runs in CI on the pull request. Locally, run named e2e files only.
-- Keep one subagent working at a time per session: the editor carries every agent's stream, and
-  three at once beside other sessions has crashed it. Never two of yours running tests.
+- Subagents may work in parallel, but their heavy commands queue: never two of yours running
+  tests at once.
 - Check `uptime` and `free -m` first: with a 1-minute load above 8 or under 5 GB available, wait.

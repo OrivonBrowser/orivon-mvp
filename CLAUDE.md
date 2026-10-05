@@ -111,9 +111,9 @@ no notification, no sound (`test/support/launch-electron.mjs` silences every lau
 - Launch Electron only through `smoke`, `test:e2e` or `node scripts/run-headless.mjs <command>`.
 - `ELECTRON_RUN_AS_NODE=1` is set in this shell; the `orivon-electron` skill says what it breaks.
 - No in-place branch switch or tree-wide discard: work in a worktree.
-- The machine is shared with the owner's editor, which carries every agent's stream and crashes
-  under load: run one subagent at a time, and every heavy command through
-  `~/.claude/orivon-fleet/bin/heavy` (a hook refuses it otherwise).
+- The machine is shared with the owner's editor and crashes under load: subagents may run in
+  parallel, and every heavy command goes through `~/.claude/orivon-fleet/bin/heavy` (a hook
+  refuses it otherwise), which runs them one at a time.
 - A path in angle brackets resolves in the gitignored `.claude/local-paths.md`; a
   machine-absolute path never goes into a tracked file.
 
