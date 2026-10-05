@@ -1,0 +1,195 @@
+name: Release
+
+# Packages Orivon for Linux (deb, AppImage), Windows (NSIS installer) and macOS (dmg, Apple
+# silicon and Intel), installs or mounts each package and launches it. Publishing a GitHub
+# release attaches the packages to it, named by the release tag (v1.2.0 packages as 1.2.0).
+# A pull request that touches packaging runs the same jobs without publishing. Each release
+# also gets an ipfs.json and its CID in its description, and a pinning node puts it on IPFS
+# (scripts/pin-releases.sh).
+on:
+  release:
+    types: [published]
+  pull_request:
+    paths:
+      - electron-builder.yml
+      - build/**
+      - scripts/smoke-packaged.mjs
+      - scripts/pin-releases.sh
+      - .github/workflows/release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  KUBO_VERSION: v0.43.1
+  KUBO_SHA256: 3f2bf974ab2a3ec6d997fac7d8cb46f59983a7cddd0b55ef998e6ce379155fb2
+
+jobs:
+  package:
+    name: package (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            files: |
+              release/*.deb
+              release/*.AppImage
+          - os: windows-latest
+            platform: win
+            files: release/Orivon-Setup-*.exe
+          - os: macos-latest
+            platform: mac
+            files: release/*.dmg
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      # The app rejects a light-client checkpoint over 14 days old, so a fresh install of a release
+      # shipping one verifies no .eth name. Refresh it before tagging (release-checklist.md).
+      - name: The shipped .eth checkpoint is under 14 days old
+        if: github.event_name == 'release'
+        run: >-
+          node -e "const c = require('./src/main/verifier/mainnet-checkpoint.json');
+          const days = (Date.now() / 1000 - c.timestamp) / 86400;
+          console.log('checkpoint age: ' + days.toFixed(1) + ' days');
+          if (days > 14) { console.error('refresh it: node scripts/refresh-eth-checkpoint.mjs --write'); process.exit(1) }"
+
+      - run: npm ci
+
+      # package.json stays 0.0.0 in git; the release tag is the version a package carries.
+      - name: Take the version from the release tag
+        if: github.event_name == 'release'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: npm version "${TAG#v}" --no-git-tag-version --allow-same-version
+
+      # electron-builder skips all macOS signing on a pull request unless told otherwise, and
+      # an unsigned arm64 app does not launch. The signature is ad hoc: no secret is involved.
+      - name: Package
+        env:
+          CSC_FOR_PULL_REQUEST: 'true'
+        run: npm run package:${{ matrix.platform }}
+
+      # The deb's postinstall loads an AppArmor profile that lets Chromium's sandbox use the user
+      # namespaces Ubuntu 24.04 restricts; the AppImage runs as a person runs it, no extra switch.
+      - name: Install the deb and launch it, then the AppImage
+        if: matrix.platform == 'linux'
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb ./release/*.deb
+          node scripts/run-headless.mjs node scripts/smoke-packaged.mjs /opt/Orivon/orivon
+          chmod +x release/*.AppImage
+          node scripts/run-headless.mjs node scripts/smoke-packaged.mjs release/*.AppImage
+
+      - name: Install with the NSIS installer and launch it
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem release/Orivon-Setup-*.exe | Select-Object -First 1
+          # The installer process alone: -Wait would also wait on an app it launched.
+          (Start-Process -FilePath $installer.FullName -ArgumentList '/S' -PassThru).WaitForExit()
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter Orivon.exe | Select-Object -First 1
+          if (-not $exe) { throw "the installer put no Orivon.exe under $env:LOCALAPPDATA\Programs" }
+          node scripts/run-headless.mjs node scripts/smoke-packaged.mjs $exe.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Check the signature, mount each dmg and launch it
+        if: matrix.platform == 'mac'
+        run: |
+          for dmg in release/*.dmg; do
+            mount="$RUNNER_TEMP/$(basename "$dmg" .dmg)"
+            hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$dmg"
+            codesign --verify --deep --strict --verbose=2 "$mount/Orivon.app"
+            node scripts/run-headless.mjs node scripts/smoke-packaged.mjs "$mount/Orivon.app/Contents/MacOS/Orivon"
+            # A helper of the Intel build, run under Rosetta, can hold the volume a few seconds longer.
+            hdiutil detach "$mount" || { sleep 5; hdiutil detach -force "$mount"; }
+          done
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: orivon-${{ matrix.platform }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+          retention-days: 7
+
+  # The CID of the release's files as one directory, with the same Kubo and flags a pinning node
+  # uses to add them, so the node can refuse files that do not add up to it.
+  manifest:
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: packages
+          merge-multiple: true
+
+      - name: Install Kubo
+        run: |
+          curl -fsSL -o kubo.tar.gz "https://github.com/ipfs/kubo/releases/download/$KUBO_VERSION/kubo_${KUBO_VERSION}_linux-amd64.tar.gz"
+          echo "$KUBO_SHA256  kubo.tar.gz" | sha256sum -c -
+          tar -xzf kubo.tar.gz
+          sudo install kubo/ipfs /usr/local/bin/ipfs
+          ipfs init --empty-repo >/dev/null
+
+      - name: Write ipfs.json
+        run: |
+          scripts/pin-releases.sh manifest packages > ipfs.json
+          cat ipfs.json
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: orivon-ipfs
+          path: ipfs.json
+          if-no-files-found: error
+          retention-days: 7
+
+  # Its own job so the token that can write to the release never runs npm install's scripts or a
+  # downloaded binary. It needs every package job, so a release gets all three systems or nothing.
+  publish:
+    if: github.event_name == 'release'
+    needs: [package, manifest]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: packages
+          merge-multiple: true
+
+      - name: Attach the packages and ipfs.json to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" packages/* --clobber --repo "$GITHUB_REPOSITORY"
+
+      # Replaces the section a previous run wrote: a re-run rebuilds the packages, and their CID with them.
+      - name: Write the release's CID into its description
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          cid=$(jq -r .cid packages/ipfs.json)
+          # Notes edited on github.com end their lines with CRLF.
+          body=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body | sed $'/^### On IPFS\r\\{0,1\\}$/,$d')
+          printf '%s\n\n### On IPFS\n\nThe same files, as one folder: `ipfs://%s`. Open it in Orivon, or run `ipfs get %s`. The Orivon node pins it within about 15 minutes, with the two releases before it.\n' \
+            "$body" "$cid" "$cid" > notes.md
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md

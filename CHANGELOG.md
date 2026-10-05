@@ -28,7 +28,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
   (declare `"trust": { "score": true }`) and `orivon.trust.websiteScore(address)`, which answers with the Web3 Score
   provider the person chose and the level it judged for that content. Apps that show a mark per site may declare it
   and must treat a `null` level, a `denied` rejection and a `limit` rejection as "use what you ship". Recheck: none; no
-  port declares it yet, and the loader does not accept the field until the implementation lands.
+  port declares it yet.
 
 ### Added
 
@@ -39,8 +39,16 @@ public surface of `src/contracts/` (named `contracts/<file>`).
   a running browser with no address (or `--new-window`, `--new-private-window`) now opens a window or a private session.
 - **An extension's side panel** (`chrome.sidePanel`): its page is listed in the panel's view picker, opens from its toolbar
   button, its `_execute_side_panel` key or `open()` after the person's input, and follows the tab in front.
+- **Packages for Linux, Windows and macOS on every GitHub release**: a deb and an AppImage, a Windows installer and a dmg each
+  for Apple silicon and Intel, each launched by CI before it is attached. Windows and macOS packages are not signed with a
+  bought certificate, so the system asks once before the first run.
+- **Every release is on IPFS** as one folder, `ipfs://<cid>` in its description, pinned by the Orivon node with the two
+  before it; anyone can reproduce the CID and pin it.
 - **A manifest `domain` field** names the one ENS name or DNS host an app calls home; the loader parses it
   (ADR-0056). Update behaviour that uses it lands with the app-update work.
+- **A page can ask the Web3 Score provider the person chose** (`orivon.trust.websiteScore`, behind a declared `trust.score`
+  grant): the provider's name and the level it judged for an `ipfs://` address or a `.eth` name, from caches and a verifier
+  partition of the page's own, limited to 128 lookups refilling at 2 a second.
 - **`test/` is ordered by area**, with a Layout table in `test/README.md`; a spec left at its top, a folder with no
   row and a dead `test/` path in any tracked file now fail CI, and a new capability kind needs a catalogue line.
 - **An app-behaviour catalogue** names what a working app relies on, one row each, and each row is proven by an

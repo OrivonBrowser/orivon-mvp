@@ -148,10 +148,11 @@ describe('exposeOrivon -- the fail-closed fallback covers BOTH "absent" and "thr
       fs: { readFile: AnyCall, writeFile: AnyCall, mkdir: AnyCall, readdir: AnyCall, stat: AnyCall, rm: AnyCall, rename: AnyCall, open: AnyCall, userSelected: AnyCall }
       id: { publicKey: AnyCall, sign: AnyCall }
       secrets: { available: AnyCall, encrypt: AnyCall, decrypt: AnyCall }
+      trust: { websiteScore: AnyCall }
       net: { lookup: AnyCall }
       web: { openContext: AnyCall, setEmbedScript: AnyCall }
     }
-    const { app, fs, id, secrets, net, web } = surface as unknown as FallbackSurface
+    const { app, fs, id, secrets, trust, net, web } = surface as unknown as FallbackSurface
 
     const calls: Array<Promise<unknown>> = [
       app.manifest(), app.grants(), app.requestGrant({ capability: 'net' }),
@@ -159,6 +160,7 @@ describe('exposeOrivon -- the fail-closed fallback covers BOTH "absent" and "thr
       fs.stat('/a'), fs.rm('/a'), fs.rename('/a', '/b'), fs.open('/a', 'r'), fs.userSelected(),
       id.publicKey({ curve: 'p256' }), id.sign({ curve: 'p256', payload: new Uint8Array() }),
       secrets.available(), secrets.encrypt(new Uint8Array()), secrets.decrypt(new Uint8Array()),
+      trust.websiteScore('ipfs://bafy'),
       net.lookup({ hostname: 'x.example' }),
       web.openContext('https://example.com'), web.setEmbedScript('x')
     ]

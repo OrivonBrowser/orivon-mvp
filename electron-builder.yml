@@ -1,18 +1,16 @@
-# electron-builder configuration. Linux (deb + AppImage) is what is built and tested.
-# The `win` and `mac` blocks further down register Orivon with the system as a browser
-# and have never been built: nothing in CI packages them. Code signing is not configured
-# for any platform, and avoiding the certificates is the reason Windows and macOS users
-# run from source today (docs/planning/build-plan.md "Platform policy").
+# electron-builder configuration: Linux (deb + AppImage), Windows (an NSIS installer) and
+# macOS (a dmg each for Apple silicon and Intel). `npm run package:linux|win|mac` builds one
+# system on that system; .github/workflows/release.yml builds all three on each GitHub
+# release, launches each package, and attaches them to the release
+# (docs/development/packaging.md).
 #
-# BUILT. A real `electron-builder` invocation was run for the first time 2026-09-03
-# (see docs/development/packaging.md), producing real `deb`/`AppImage` artefacts in
-# `release/` from a real `npm install --save-dev electron-builder` and a real `npm run
-# build`. That run found this file had been checked by eye against the wrong schema
-# generation -- see the CORRECTED note under `npmRebuild` below for what changed and why
-# -- so treat the schema shape here as verified against an installed electron-builder,
-# not merely eyeballed against docs. Not every claim in this file has been independently
-# confirmed against that build's actual output yet; docs/development/packaging.md's
-# "Known gaps" section is the honest list of what is and isn't.
+# No certificate is bought: Windows packages are unsigned, so SmartScreen warns on first
+# run, and macOS packages are ad-hoc signed (`mac.identity` below), so Gatekeeper asks the
+# person to allow the app once. The schema here is electron-builder 26.x's, checked against
+# the installed node_modules/app-builder-lib/scheme.json.
+# The `win` and `mac` blocks also register Orivon with the system as a browser: `protocols`
+# below, and build/installer.nsh for the Windows registry entries. Whether a built package
+# lists Orivon as a browser on Windows and macOS is unverified (*provisional*).
 
 appId: com.orivonstack.orivon
 # Reverse-DNS of orivonstack.com, the project's actual registered domain (already used
@@ -26,11 +24,9 @@ directories:
   output: release
   # Already gitignored (.gitignore "Electron / packaging" section) -- verified, not
   # assumed, before writing this key.
-  # buildResources (icon source, etc.) is left at its default, `build/`. RESOLVED
-  # 2026-09-16: `build/icon.png` is now a real 512x512 app icon, generated from the
-  # owner's own logo -- electron-builder picks it up from that default location with no
-  # key here, and derives the smaller sizes itself. The note this replaces said no icon
-  # had been designed and packaged builds therefore shipped the stock Electron one.
+  # buildResources (icon source, etc.) is left at its default, `build/`. `build/icon.png`
+  # is the 512x512 app icon; electron-builder derives every system's icon formats and
+  # sizes from it (the Windows .ico, the macOS .icns, the Linux sizes).
 
 # --- Contents of app.asar ----------------------------------------------------------
 # An allowlist, not a blocklist subtracted from `**/*`. This repo also contains spike/,
@@ -64,13 +60,13 @@ npmRebuild: false
 # every platform right now, today, whether or not this flag is ever touched --
 # `node_modules/@electron/rebuild` and `node_modules/node-gyp` both exist already.
 # `npmRebuild: false` is the ONLY thing stopping that dormant `node-gyp` from actually
-# running at packaging time. On a machine with no C/C++ toolchain -- exactly the
-# Windows/macOS run-from-source path Rule 8 (CLAUDE.md) exists to protect -- a real
-# `node-gyp` invocation fails outright.
+# running at packaging time. On a machine with no C/C++ toolchain -- the Windows and
+# macOS runners that build releases, and the run-from-source path Rule 8 (CLAUDE.md)
+# exists to protect -- a real `node-gyp` invocation fails outright.
 #
 # `npm run check:natives` CANNOT see a regression here: its scope is install-time
 # scripts (Rule 8's literal wording), not electron-builder's packaging-time behaviour.
-# A future contributor deleting or flipping this line to add Windows/macOS packaging
+# A future contributor deleting or flipping this line
 # will not get an error from any automated check -- see docs/open-questions.md A49 for
 # the open question this leaves about what Rule 8 is actually meant to guarantee.
 #
@@ -92,6 +88,8 @@ publish: null
 # channel keyed to a GitHub token. v0 checks and notifies instead (a separate,
 # already-scoped build step) -- this key exists so that decision cannot be silently
 # undone by a future contributor passing `--publish` without reading either doc.
+# The release workflow attaches packages with `gh release upload`, which writes no
+# update metadata.
 
 # --- Electron fuses ------------------------------------------------------------------
 # Toggles written into the packaged Electron binary after packing and before signing
@@ -133,6 +131,14 @@ protocols:
     - http
     - https
 
+extraResources:
+  - from: build/icon.png
+    to: icon.png
+# The icon src/main/shell/window-frame.ts hands to BaseWindow, copied into every
+# system's resources folder (process.resourcesPath) so a packaged build can load it; a
+# run from source reads the repo's build/icon.png. Best-effort for the window itself:
+# GNOME's dock keys off the .desktop entry instead (StartupWMClass=orivon below).
+
 linux:
   target:
     - deb
@@ -147,17 +153,6 @@ linux:
   # first-run "install desktop entry" flow that closes its integration gap is a
   # separate, already-scoped piece of work -- this file only has to not make it
   # impossible, which an allowlisted `files` and a correct `linux.desktop` block do not.
-
-  extraResources:
-    - from: build/icon.png
-      to: icon.png
-  # The icon src/main/window.ts hands to BaseWindow, copied into resources/ so a packaged
-  # build can load it (process.resourcesPath); a run from source reads the repo's
-  # build/icon.png. Best-effort for the window itself: GNOME's dock keys off the .desktop
-  # entry instead (StartupWMClass=orivon below, written by electron-builder from this same
-  # build/icon.png), which is what actually decides the icon a taskbar shows. The
-  # resources/ path is read from electron-builder's schema, not yet observed in a real
-  # package -- check it on the next `package:linux`.
 
   category: "Network;WebBrowser;"
   # freedesktop.org Categories=. Two values, not one: WebBrowser is the specific
@@ -174,7 +169,7 @@ linux:
   description: >-
     Orivon reaches the network and filesystem under user-granted, per-app capabilities,
     so that ordinary web frontends delivered from a URL can do what today requires a
-    native install. Pre-alpha; nothing is released yet.
+    native install. Pre-alpha.
   # Reuses README.md's own tagline rather than writing new marketing copy for a second
   # place it can drift out of sync.
 
@@ -231,24 +226,43 @@ deb:
         Name: New Private Window
         Exec: /opt/Orivon/orivon --new-private-window
 
-# --- Windows and macOS: registration as a browser (never built) ------------------------
+appImage:
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+# --- Windows and macOS: packages, and registration as a browser --------------------------
 # Only an installed package registers Orivon as a browser (src/main/os/default-browser.ts).
 win:
   target:
-    - nsis
+    - target: nsis
+      arch:
+        - x64
 
 nsis:
-  # A per-user install writes the registry entries under HKCU, where Windows reads a user's
-  # default apps from; build/installer.nsh writes them with SHCTX, so a machine-wide install
-  # would write HKLM instead.
+  # A per-user install needs no administrator and lets the person choose the folder. It writes
+  # the browser's registry entries under HKCU, where Windows reads a user's default apps from;
+  # build/installer.nsh writes them with SHCTX, so a machine-wide install would write HKLM.
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
   include: build/installer.nsh
+  artifactName: ${productName}-Setup-${version}-${arch}.${ext}
 
 mac:
   target:
-    - dmg
+    - target: dmg
+      arch:
+        - arm64
+        - x64
   category: public.app-category.productivity
   # `protocols` above becomes CFBundleURLTypes (http, https). No document types are declared:
-  # opening a local file in Orivon is not offered (docs/open-questions.md A375).
+  # opening a local file in Orivon is not offered yet (A375).
+  # Ad-hoc signing ("-"), not none: Apple silicon refuses to launch an unsigned binary,
+  # and packaging rewrites the Electron binary (fuses, name, Info.plist), so its own
+  # signature no longer holds. Hardened runtime is off because it rejects an ad-hoc app
+  # loading the Electron framework; it matters only for notarization, which needs a
+  # bought Developer ID certificate.
+  identity: "-"
+  hardenedRuntime: false
+
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}
