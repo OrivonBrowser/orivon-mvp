@@ -3,7 +3,9 @@ name: Release
 # Packages Orivon for Linux (deb, AppImage), Windows (NSIS installer) and macOS (dmg, Apple
 # silicon and Intel), installs or mounts each package and launches it. Publishing a GitHub
 # release attaches the packages to it, named by the release tag (v1.2.0 packages as 1.2.0).
-# A pull request that touches packaging runs the same jobs without publishing.
+# A pull request that touches packaging runs the same jobs without publishing. Each release
+# also gets an ipfs.json and its CID in its description, and a pinning node puts it on IPFS
+# (scripts/pin-releases.sh).
 on:
   release:
     types: [published]
@@ -12,11 +14,16 @@ on:
       - electron-builder.yml
       - build/**
       - scripts/smoke-packaged.mjs
+      - scripts/pin-releases.sh
       - .github/workflows/release.yml
   workflow_dispatch:
 
 permissions:
   contents: read
+
+env:
+  KUBO_VERSION: v0.43.1
+  KUBO_SHA256: 3f2bf974ab2a3ec6d997fac7d8cb46f59983a7cddd0b55ef998e6ce379155fb2
 
 jobs:
   package:
@@ -119,11 +126,46 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Its own job so the token that can write to the release never runs npm install's scripts.
-  # It needs every package job, so a release gets all three systems or nothing.
+  # The CID of the release's files as one directory, with the same Kubo and flags a pinning node
+  # uses to add them, so the node can refuse files that do not add up to it.
+  manifest:
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: packages
+          merge-multiple: true
+
+      - name: Install Kubo
+        run: |
+          curl -fsSL -o kubo.tar.gz "https://github.com/ipfs/kubo/releases/download/$KUBO_VERSION/kubo_${KUBO_VERSION}_linux-amd64.tar.gz"
+          echo "$KUBO_SHA256  kubo.tar.gz" | sha256sum -c -
+          tar -xzf kubo.tar.gz
+          sudo install kubo/ipfs /usr/local/bin/ipfs
+          ipfs init --empty-repo >/dev/null
+
+      - name: Write ipfs.json
+        run: |
+          scripts/pin-releases.sh manifest packages > ipfs.json
+          cat ipfs.json
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: orivon-ipfs
+          path: ipfs.json
+          if-no-files-found: error
+          retention-days: 7
+
+  # Its own job so the token that can write to the release never runs npm install's scripts or a
+  # downloaded binary. It needs every package job, so a release gets all three systems or nothing.
   publish:
     if: github.event_name == 'release'
-    needs: package
+    needs: [package, manifest]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -133,8 +175,21 @@ jobs:
           path: packages
           merge-multiple: true
 
-      - name: Attach the packages to the release
+      - name: Attach the packages and ipfs.json to the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
         run: gh release upload "$TAG" packages/* --clobber --repo "$GITHUB_REPOSITORY"
+
+      # Replaces the section a previous run wrote: a re-run rebuilds the packages, and their CID with them.
+      - name: Write the release's CID into its description
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          cid=$(jq -r .cid packages/ipfs.json)
+          # Notes edited on github.com end their lines with CRLF.
+          body=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body | sed $'/^### On IPFS\r\\{0,1\\}$/,$d')
+          printf '%s\n\n### On IPFS\n\nThe same files, as one folder: `ipfs://%s`. Open it in Orivon, or run `ipfs get %s`. The Orivon node pins it within about 15 minutes, with the two releases before it.\n' \
+            "$body" "$cid" "$cid" > notes.md
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
