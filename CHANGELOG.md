@@ -24,6 +24,9 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **An installed app at a name moves to new content only when you accept.** Orivon notices a moved name on a visit and in
+  an open tab, fetches only the new manifest, and asks "switch to the new version?" when a Web3 Score provider has judged
+  it; otherwise it says why and the key icon offers Trust & Force update. The version you run keeps running meanwhile.
 - **A manifest `domain` field** names the one ENS name or DNS host an app calls home. A provider's judged level shows
   only at that name; elsewhere the page shows the observed level and says why, and the install question names the home.
 - **`test/` is ordered by area**, with a Layout table in `test/README.md`; a spec left at its top, a folder with no
@@ -32,6 +35,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
   end-to-end spec whose test is titled with the row's id, so a change that breaks an app fails a test that says which.
 
 - **`npm run perf:probe`** measures each process's CPU and memory through fixed scenes, to compare a change before and after.
+- **New profiles read Orivon's own Web3 Score provider** (Settings > Web3); clear the field to ask nobody. A profile that chose one keeps it.
 - **Web3 Score providers** (Settings > Web3): judged Levels 3 and 4, with a site's operations and connections, from any
   address Orivon opens, asked by hash bucket so a request names a group of sites, not the site. Build one with web3-score-manager.
 - **Tabs can be grouped**: name and colour a group from the tab menu, collapse it to one chip, drag it, move it to its own

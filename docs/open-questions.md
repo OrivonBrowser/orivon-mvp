@@ -929,10 +929,11 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A236: The update check sees a release only when the manifest changes **[OWNER]**
+### A236: The update check at a plain host sees a release only when the manifest changes **[OWNER]**
 
-- **Question:** A 304 ends the conditional check (d-0088), so files shipped under a byte-identical
-  manifest are never picked up. Is "bump `version` every release" a publisher requirement?
+- **Question:** At an https host a 304 ends the conditional check (d-0088), so files shipped under a
+  byte-identical manifest are never picked up there. Is "bump `version` every release" a publisher
+  requirement? (At a name the bundle hash is compared, `ADR-0055`.)
 - **Why it matters:** A publisher who does not change the manifest never ships an update.
 - **Options:** state the requirement; a daily unconditional check; compare the published hash-tree
   root (ADR-0029) with the pin, a cheaper backstop.
@@ -2022,3 +2023,35 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   refused as it is in the address bar); open a local HTML file handed in at launch, which needs a rule for `file:`.
 - **Who decides:** owner
 - **Blocks:** nothing; check `xdg-settings` on a real package either way
+
+### A389: Is "an evaluation for the exact CID" the right bar for a verified update? **[OWNER]**
+
+- **Question:** An update at a name is verified when the chosen provider has an evaluation for exactly
+  the new CID (any level, no lower than the pinned one's), the version is newer, the manifest's
+  `domain` is the origin's host and the pointers verify (`ADR-0055`). Level 3 or more, or no
+  default provider, would change that.
+- **Why it matters:** the bar decides whether a person is asked "switch?" or told to Trust & Force.
+- **Options:** keep it (rec.: it is what a provider can claim today, and means evaluated, not safe);
+  require Level 3 (fails FreeTube, judged Level 2); revisit when the Security score has levels.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A390: Plain `.eth` websites follow their name with no prompt **[AI-REC]**
+
+- **Question:** Only an installed app is held at its pin and asked about; a `.eth` site that is not an
+  app follows the name live, as a website does. Should a website be offered the same choice?
+- **Why it matters:** a name owner can change what a bookmarked `.eth` website shows, as on any site.
+- **Options:** keep it (rec.: a website has no grants or data to protect and no version to compare);
+  hold websites at a pin too, which breaks every site whose content changes daily.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A391: One key holds the provider and Explore's name **[OWNER]**
+
+- **Question:** The official provider and the Explore catalogue publish from the same server, so one
+  compromise could pass an app's update as verified under its own name (`security-model.md` T81).
+- **Why it matters:** "verified" is only as independent as the provider is from the publisher.
+- **Options:** a separate provider key held elsewhere (rec.); accept it while the apps are the
+  project's own; a second provider the person adds.
+- **Who decides:** owner
+- **Blocks:** nothing

@@ -58,8 +58,9 @@ minutes.
 ## Consequences
 - An app published without `domain` shows its observed Level 2, not the judged level, until it is
   republished with one. Ports gain a `domain` and a `<upstream>.<build>` version.
-- With no default provider every update is a notice (case 1). With DNSLink or the light client off
-  every update is unverified.
+- With the provider setting cleared every update is a notice (case 1); a profile that never chose
+  reads the official provider (`d-0484`). With DNSLink or the light client off every update is
+  unverified.
 - Trust & Force hands over grants and data guarded only by its confirmation.
 - A service worker's update fetch may bypass the cache-served partition; the boundary end-to-end
   spec settles it and `security-model.md` T81 names the result.
