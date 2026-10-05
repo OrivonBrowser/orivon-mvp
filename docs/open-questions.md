@@ -1996,16 +1996,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A375: Should Orivon open local HTML and PDF files handed to it? **[OWNER]**
-
-- **Question:** The Linux entry no longer lists `text/html`, so a file manager does not offer Orivon for `report.html`,
-  and a file or a `mailto:` handed to a running Orivon opens nothing (only a web address does). Should Orivon open a
-  local HTML or PDF file, which needs a rule for `file:` that the address bar refuses today?
-- **Why it matters:** a person who double-clicks a saved page expects the browser they chose to show it.
-- **Options:** keep refusing `file:` (rec.); open a local file handed in at launch in a tab marked as a local file.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A380: Does the first-start dropdown still fail after the keyboard fixes? **[OWNER]**
 
 - **Question:** The owner saw the address text hidden after "Enter Orivon" and no dropdown on the first start (probably `npm run dev`, X11 or Wayland). The overlay no longer joins the window before its page commits, and a new tab starts with the keyboard in the bar. Does a first start still show hidden text or no dropdown?

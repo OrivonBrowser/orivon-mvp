@@ -93,7 +93,7 @@ only the two scheme handlers is unmeasured (`docs/open-questions.md` A387).
 (`schemes: [http, https]`) is what electron-builder documents as producing the `.desktop` file's
 `MimeType=` line (`x-scheme-handler/http;x-scheme-handler/https;`), and `linux.category` supplies
 `Categories=Network;WebBrowser;`. The package does not list `text/html`: a browser that claims it is offered
-every saved page, and Orivon opens no local file (`docs/open-questions.md` A375). Both are
+every saved page, and this build opens no local file yet (A375 in `docs/decisions/resolved-questions.md`). Both are
 freedesktop.org conventions `xdg-settings` and desktop menus rely on.
 
 The runtime half is application code in `src/main/os/`: only an installed package registers, and only when
