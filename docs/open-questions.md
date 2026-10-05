@@ -2068,7 +2068,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
-### A392: A page's score lookup reads a judged name's manifest in the name's own partition **[AI-REC]**
+### A395: A page's score lookup reads a judged name's manifest in the name's own partition **[AI-REC]**
 
 - **Question:** `orivon.trust.websiteScore` reads the manifest of a name the provider judged Level 3 or 4 through the loader, whose requests the verifier serves from that name's own partition, not the caller's.
 - **Why it matters:** a page that times the read learns whether the person has that name warm, the leak A256 closed for the name's resolution (`ADR-0058`). The stamp strips any partition a main-process request sets.

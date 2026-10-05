@@ -75,7 +75,7 @@ what a page can make the provider see, and Explore's own load (about 60 sites) f
 - A judged level 3 or 4 is answered only where the shield would count it (`ADR-0056`): the lookup
   reads the manifest at the resolved root through the same code and answers `level: null` for a
   name that is not the manifest's home. The read goes through the name's own origin, so it is made
-  in that name's own verifier partition and not the caller's (A392).
+  in that name's own verifier partition and not the caller's (A395).
 - Adding a member to `src/contracts/` is a change every app feels; this one is additive.
 
 ## Reversibility
