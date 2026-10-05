@@ -353,7 +353,8 @@ window.share = (options) => navigator.mediaDevices.getDisplayMedia(options).then
         await state(check, app, `screen-share-picker-${scheme}`, {
           expected: 'A sheet floats over the page, centred in the page area: the title "Choose what to share with <127.0.0.1 origin>", three segments Tab, Window and Entire screen with Tab selected, a grid of two cards each with a pale picture area (a plain icon, no screenshot) and a label, the first marked "This tab" and the second selected with the accent colour, then Cancel and a filled Share button. Text, cards and buttons are fully inside the sheet and readable in this colour scheme.',
           action: 'Pressed Share on a loopback page that calls getDisplayMedia, with a second tab open, and chose the second card.',
-          ignore: [FIXTURE_ADDRESS, { x: 300, y: 150, width: 560, height: 60 }, { x: 300, y: 330, width: 560, height: 40 }]
+          // The origin in the title and on the second card change with the port; the first card's thumbnail is a live capture of the page behind.
+          ignore: [FIXTURE_ADDRESS, { x: 336, y: 296, width: 372, height: 18 }, { x: 545, y: 506, width: 190, height: 18 }, { x: 346, y: 377, width: 182, height: 103 }]
         })
         await picker.keyboard.press('Escape').catch(() => {})
         expect(await waitFor(() => app.windows().every((page) => !page.url().includes('overlay=screen-share-picker')))).toBe(true)

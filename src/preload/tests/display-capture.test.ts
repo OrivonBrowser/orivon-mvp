@@ -72,6 +72,16 @@ describe('the screen-share wrapper installer', () => {
   })
 })
 
+describe('the wrapper in the page\'s world', () => {
+  it('does nothing, and does not throw, in a document with no MediaDevices (an error page, a blank page)', async () => {
+    vi.stubGlobal('window', { addEventListener: vi.fn() })
+    const { share, cloneEvent } = await install()
+    const wrap = (bridge.executeInMainWorld.mock.calls.at(-1)?.[0] as { func: (share: Share, cloneEvent: string) => void }).func
+    vi.stubGlobal('MediaDevices', undefined)
+    expect(() => { wrap(share, cloneEvent) }).not.toThrow()
+  })
+})
+
 describe('the call this world makes for the page', () => {
   it('asks main to pick, arms the ticket in the same step as the real call, and says the call was made after a turn of the event loop', async () => {
     vi.useFakeTimers()

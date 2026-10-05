@@ -153,6 +153,8 @@ function onStop (_event: unknown, payload: unknown): void {
  * module. `shareInOtherWorld` is the function above; `cloneEvent` is a name made fresh for each document.
  */
 function wrapInMainWorld (shareInOtherWorld: (options: ShareOptions) => Promise<ShareResult>, cloneEvent: string): void {
+  // `MediaDevices` is exposed to secure contexts only: an error page and a blank page have none, and nothing to wrap.
+  if (typeof MediaDevices === 'undefined') return
   const devices = MediaDevices.prototype
   const nativeGetDisplayMedia = devices.getDisplayMedia
   const trackProto = MediaStreamTrack.prototype
