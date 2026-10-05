@@ -34,7 +34,11 @@ export const shellInitiated = new Set<WebContents>()
  * clicking the tab strip. `createTab` and `selectTab` below are the only two ways an
  * extension can activate a tab, and neither recurses into the other. */
 let tabActivationFromExtension = false
-let lastActivationFromExtensionAt = Number.NEGATIVE_INFINITY
+
+/** Who activated a tab, and where: the extension (when the library names it) and the window the tab is in. */
+interface Activation { extensionId: string | undefined, window: BaseWindow }
+let activating: Activation | undefined
+let lastActivation: (Activation & { at: number }) | undefined
 
 export function isExtensionActivatingTab (): boolean {
   return tabActivationFromExtension
@@ -44,9 +48,14 @@ export function isExtensionActivatingTab (): boolean {
  * asked for it loses focus a moment after `activateTab` returns, not inside it. */
 export const EXTENSION_FOCUS_HANDOVER_MS = 500
 
-/** Whether an extension activated a tab within the last `EXTENSION_FOCUS_HANDOVER_MS`, or is doing so now. */
-export function extensionJustActivatedTab (now: number = Date.now()): boolean {
-  return tabActivationFromExtension || now - lastActivationFromExtensionAt < EXTENSION_FOCUS_HANDOVER_MS
+/** Whether `popup`'s own extension activated a tab in the popup's window within the last
+ * `EXTENSION_FOCUS_HANDOVER_MS`, or is doing so now. An activation by another extension, or in another window,
+ * is not the popup's own: its loss of focus is the person's. */
+export function extensionJustActivatedTab (popup: { extensionId: string, parent: BaseWindow }, now: number = Date.now()): boolean {
+  const own = (activation: Activation | undefined): activation is Activation =>
+    activation !== undefined && activation.extensionId === popup.extensionId && activation.window === popup.parent
+  if (tabActivationFromExtension && own(activating)) return true
+  return own(lastActivation) && now - lastActivation.at < EXTENSION_FOCUS_HANDOVER_MS
 }
 
 /** `session.defaultSession.extensions.getExtension` answers `null` for an id
@@ -56,12 +65,26 @@ export function isLoadedExtension (id: string): boolean {
   return session.defaultSession.extensions.getExtension(id) != null
 }
 
+/** Runs `activate`, which activates a tab, as the extension's own doing (see `tabActivationFromExtension`). */
+function activatingTab<T> (by: Activation, activate: () => T): T {
+  tabActivationFromExtension = true
+  activating = by
+  try {
+    return activate()
+  } finally {
+    tabActivationFromExtension = false
+    activating = undefined
+    lastActivation = { ...by, at: Date.now() }
+  }
+}
+
 function windowFor (bridge: ShellBridge, windowId: number | undefined): BaseWindow | undefined {
   if (windowId !== undefined) return bridge.services.windows.all().find((w) => w.window.id === windowId)?.window
   return bridge.services.windows.focused()?.window
 }
 
-export function buildHostImpl (getBridge: () => ShellBridge | undefined): HostImpl {
+/** `callerOf` names the extension whose `chrome.tabs` call is running, when one is. */
+export function buildHostImpl (getBridge: () => ShellBridge | undefined, callerOf: () => string | undefined = () => undefined): HostImpl {
   return {
   createTab: async (details) => {
     const bridge = getBridge()
@@ -74,15 +97,11 @@ export function buildHostImpl (getBridge: () => ShellBridge | undefined): HostIm
     if (details.url !== undefined && target === undefined) {
       throw new Error(`extensions: refused to open ${details.url}`)
     }
-    tabActivationFromExtension = true
-    try {
+    return activatingTab<[WebContents, BaseWindow]>({ extensionId: callerOf(), window: win }, () => {
       const opened = openExtensionTab(shellWindow.tabs, target)
       if (opened === undefined) throw new Error('extensions: tab capacity reached')
       return [opened[1], win]
-    } finally {
-      tabActivationFromExtension = false
-      lastActivationFromExtensionAt = Date.now()
-    }
+    })
   },
 
   // The library calls selectTab/removeTab for an extension-initiated
@@ -96,13 +115,7 @@ export function buildHostImpl (getBridge: () => ShellBridge | undefined): HostIm
     if (shellInitiated.has(wc)) return
     const found = getBridge()?.services.windows.findTab(wc)
     if (found == null) return
-    tabActivationFromExtension = true
-    try {
-      found.window.tabs.activateTab(found.tabId)
-    } finally {
-      tabActivationFromExtension = false
-      lastActivationFromExtensionAt = Date.now()
-    }
+    activatingTab({ extensionId: callerOf(), window: found.window.window }, () => { found.window.tabs.activateTab(found.tabId) })
   },
 
   removeTab: (wc) => {

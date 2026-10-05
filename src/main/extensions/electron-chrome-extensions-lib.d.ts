@@ -115,6 +115,9 @@ declare module 'orivon:crx-extensions-partition' {
 }
 
 declare module 'orivon:crx-extensions-router' {
+  /** UPSTREAM.md patch 68: the extension whose API call is running, read from inside the callbacks that call
+   * makes (`createTab`, `selectTab`), which are not told who asked. */
+  export function callingExtensionId (): string | undefined
   interface FrameSenderEvent { type: 'frame', sender: Electron.WebContents }
   interface OtherSenderEvent { type: 'service-worker' }
   type RemoteMessageSenderEvent = FrameSenderEvent | OtherSenderEvent
@@ -191,8 +194,11 @@ declare module 'orivon:crx-extensions-browser-action' {
     mount (parent: Electron.BaseWindow, view: Electron.WebContentsView): void
     unmount (parent: Electron.BaseWindow, view: Electron.WebContentsView): void
     place (parent: Electron.BaseWindow, view: Electron.WebContentsView, placement: PopupPlacement): void
-    /** True while a loss of focus must not close the popup. */
-    keepOpenOnBlur? (): boolean
+    /** True while a loss of focus must not close the popup: the embedder is moving focus for this popup's
+     * own extension. */
+    keepOpenOnBlur? (popup: { extensionId: string, parent: Electron.BaseWindow }): boolean
+    /** How long that hand-over lasts; the popup takes the keyboard back after it. */
+    focusHandoverMs?: number | undefined
   }
   export function setPopupHost (host: PopupHost | undefined): void
   /** UPSTREAM.md patch 69: where `chrome.action.openPopup()` anchors the popup, in `window`'s

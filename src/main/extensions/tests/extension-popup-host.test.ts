@@ -171,9 +171,17 @@ describe('the panel the overlay host adopts', () => {
 })
 
 describe('keepOpenOnBlur', () => {
-  it('is passed through to the library when given, and absent when not', () => {
+  const popup = { extensionId: 'ext', parent: {} as never }
+
+  it('is passed through to the library when given, with the popup it asks about, and absent when not', () => {
     expect(createExtensionPopupHost({ focusTab }).host.keepOpenOnBlur).toBeUndefined()
     const keep = vi.fn(() => true)
-    expect(createExtensionPopupHost({ focusTab, keepOpenOnBlur: keep }).host.keepOpenOnBlur?.()).toBe(true)
+    expect(createExtensionPopupHost({ focusTab, keepOpenOnBlur: keep }).host.keepOpenOnBlur?.(popup)).toBe(true)
+    expect(keep).toHaveBeenCalledWith(popup)
+  })
+
+  it('names the hand-over the library waits out before the popup takes the keyboard back', () => {
+    expect(createExtensionPopupHost({ focusTab }).host.focusHandoverMs).toBeUndefined()
+    expect(createExtensionPopupHost({ focusTab, focusHandoverMs: 500 }).host.focusHandoverMs).toBe(500)
   })
 })

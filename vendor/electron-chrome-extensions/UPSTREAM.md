@@ -833,7 +833,7 @@
     `PopupView` builds a `WebContentsView` (same `webPreferences`, patch 35's colour through
     `setBackgroundColor`, rounded corners) and exposes `view` and `webContents` in place of the
     `BrowserWindow` it used to open; it never adds the view to a window itself.
-    `setPopupHost({ mount, unmount, place, keepOpenOnBlur? })`, re-exported by
+    `setPopupHost({ mount, unmount, place, keepOpenOnBlur?, focusHandoverMs? })`, re-exported by
     `src/browser/api/browser-action.ts`, is where the embedder attaches the view, sets its bounds
     in the window's content coordinates (`PopupPlacement`: anchor rectangle, alignment, size) and
     gives the keyboard back when it leaves; with no host set, the view is added on top of the
@@ -843,7 +843,14 @@
     move, resize, minimise or close, the page being destroyed) runs the idempotent `destroy` a
     macrotask later, because taking a view out of a window from inside the native call that
     reported the resize kills the process; `destroy` closes DevTools, unmounts and closes the page.
-    `keepOpenOnBlur` lets the embedder say a loss of focus is its own doing. `popupParentOf(
+    `keepOpenOnBlur(popup)` lets the embedder say a loss of focus is its own doing for that popup's
+    extension and window; once `focusHandoverMs` has passed the popup takes the keyboard back, so
+    the next click elsewhere blurs and closes it. With no preferred size reported, the page's
+    content (its scroll extent, not only its box) is measured after half a second and again while
+    it still renders. A window destroyed under the popup is never reached for a size, a placement
+    or a mount. `src/browser/router.ts` exports `callingExtensionId()`, the extension whose API call
+    is running (an `AsyncLocalStorage` the router enters around each handler), for the embedder's
+    `createTab` and `selectTab`, which are not told who asked. `popupParentOf(
     contents)` (a `WeakMap` the popup fills) answers the window a popup page hangs under, which
     `src/browser/api/tabs.ts`'s `currentWindowId` now asks before `BrowserWindow.fromWebContents`,
     since a view has no window of its own; `getOpenPopup` reads `popup.webContents`. Reason: a

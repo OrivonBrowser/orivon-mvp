@@ -11,7 +11,9 @@ export interface PopupHostDeps {
   /** Gives the keyboard to the page in front in `window`. */
   readonly focusTab: (window: BaseWindow) => void
   /** True while the shell is moving focus for the popup's own extension, which must not close the popup. */
-  readonly keepOpenOnBlur?: () => boolean
+  readonly keepOpenOnBlur?: (popup: { extensionId: string, parent: BaseWindow }) => boolean
+  /** How long that hand-over lasts: the popup takes the keyboard back after it. */
+  readonly focusHandoverMs?: number | undefined
 }
 
 /** The panel shape the overlay host adopts: lifted above the bars on every restack, and never closed by it. */
@@ -27,11 +29,13 @@ export interface ExtensionPopupHost {
   readonly panelFor: (window: BaseWindow) => ExtensionPopupPanel
 }
 
-export function createExtensionPopupHost ({ focusTab, keepOpenOnBlur }: PopupHostDeps): ExtensionPopupHost {
+export function createExtensionPopupHost (deps: PopupHostDeps): ExtensionPopupHost {
   const open = new WeakMap<BaseWindow, WebContentsView>()
 
   const host: PopupHost = {
-    ...(keepOpenOnBlur === undefined ? {} : { keepOpenOnBlur }),
+    ...(deps.keepOpenOnBlur === undefined ? {} : { keepOpenOnBlur: deps.keepOpenOnBlur }),
+    // Read when a popup asks, not when the host is built: the shared host is wired later.
+    get focusHandoverMs () { return deps.focusHandoverMs },
     mount: (parent, view) => {
       attachShown(parent.contentView, view)
       open.set(parent, view)
@@ -48,7 +52,7 @@ export function createExtensionPopupHost ({ focusTab, keepOpenOnBlur }: PopupHos
         // The window is closing: its views go with it.
         return
       }
-      if (hadKeyboard) focusTab(parent)
+      if (hadKeyboard) deps.focusTab(parent)
     },
     place: (parent, view, { anchorRect, alignment, size }) => {
       const { width, height } = parent.getContentBounds()
@@ -76,7 +80,8 @@ export function createExtensionPopupHost ({ focusTab, keepOpenOnBlur }: PopupHos
 let wired: PopupHostDeps | undefined
 const shared = createExtensionPopupHost({
   focusTab: (window) => { wired?.focusTab(window) },
-  keepOpenOnBlur: () => wired?.keepOpenOnBlur?.() === true
+  keepOpenOnBlur: (popup) => wired?.keepOpenOnBlur?.(popup) === true,
+  get focusHandoverMs () { return wired?.focusHandoverMs }
 })
 
 /** The one host the library's popups use, and the panel a window hands its overlay host (`../shell/window-panels.ts`). */

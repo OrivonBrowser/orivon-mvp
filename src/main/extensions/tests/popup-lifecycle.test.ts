@@ -199,6 +199,50 @@ describe('PopupView: never stays at its smallest size (UPSTREAM.md patches 35 an
   })
 })
 
+describe('PopupView: sizes it measures (UPSTREAM.md patch 68)', () => {
+  it('measures again while no preferred size has arrived, so a page that renders late is not left at its loading size', async () => {
+    vi.useFakeTimers()
+    try {
+      const popup = makePopup(fakeParent())
+      pageOf(popup).measured = { width: 210, height: 130 }
+      await popup.whenReady()
+      await vi.advanceTimersByTimeAsync(600)
+      pageOf(popup).measured = { width: 320, height: 480 }
+      await vi.advanceTimersByTimeAsync(1200)
+      expect(host.place).toHaveBeenLastCalledWith(expect.anything(), popup.view, expect.objectContaining({ size: { width: 320, height: 480 } }))
+      expect(host.mount).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the size its page reported before the load ended', async () => {
+    vi.spyOn(FakeWebContents.prototype, 'loadURL').mockImplementationOnce(async function (this: FakeWebContents) {
+      this.emit('preferred-size-changed', {}, { width: 111, height: 222 })
+    })
+    const popup = makePopup(fakeParent())
+    await popup.whenReady()
+    expect(popup.view.getBounds()).toMatchObject({ width: 111, height: 222 })
+  })
+})
+
+describe('PopupView: its window closing under it (UPSTREAM.md patch 68)', () => {
+  it('touches neither the host nor the view for a size or a load that finishes after the window is gone', async () => {
+    const parent = fakeParent()
+    const popup = makePopup(parent)
+    parent.isDestroyed = () => true
+    parent.emit('closed')
+    host.place.mockClear()
+    host.mount.mockClear()
+    pageOf(popup).emit('preferred-size-changed', {}, { width: 111, height: 222 })
+    await popup.whenReady()
+    expect(host.place).not.toHaveBeenCalled()
+    expect(host.mount).not.toHaveBeenCalled()
+    await macrotask()
+    expect(popup.isDestroyed()).toBe(true)
+  })
+})
+
 describe('PopupView: closing (UPSTREAM.md patches 34 and 68)', () => {
   async function open (): Promise<{ parent: FakeParent, popup: InstanceType<typeof PopupView> }> {
     const parent = fakeParent()
@@ -241,17 +285,67 @@ describe('PopupView: closing (UPSTREAM.md patches 34 and 68)', () => {
     const shell = Object.assign(new EventEmitter(), { isFocused: () => true })
     baseWindows = [shell]
     let keep = true
-    setPopupHost({ ...host, keepOpenOnBlur: () => keep })
+    const keepOpenOnBlur = vi.fn(() => keep)
+    setPopupHost({ ...host, keepOpenOnBlur })
     const other = makePopup(fakeParent())
     await other.whenReady()
     pageOf(other).emit('blur')
     await macrotask()
     expect(other.isDestroyed()).toBe(false)
+    expect(keepOpenOnBlur).toHaveBeenCalledWith({ extensionId: 'a'.repeat(32), parent: other.parent })
     keep = false
     pageOf(other).emit('blur')
     await macrotask()
     expect(other.isDestroyed()).toBe(true)
     expect(popup.isDestroyed()).toBe(false)
+  })
+
+  describe('after a blur the host kept it open for', () => {
+    const shell = Object.assign(new EventEmitter(), { isFocused: () => true })
+    let keep = true
+
+    async function keptOpen (): Promise<InstanceType<typeof PopupView>> {
+      baseWindows = [shell]
+      keep = true
+      setPopupHost({ ...host, keepOpenOnBlur: () => keep, focusHandoverMs: 20 })
+      const popup = makePopup(fakeParent())
+      await popup.whenReady()
+      pageOf(popup).focused = false
+      pageOf(popup).emit('blur')
+      await macrotask()
+      expect(popup.isDestroyed()).toBe(false)
+      return popup
+    }
+    const later = async (ms: number): Promise<void> => await new Promise((resolve) => setTimeout(resolve, ms))
+
+    it('takes the keyboard back once the hand-over is over, so the next click elsewhere closes it', async () => {
+      const popup = await keptOpen()
+      expect(pageOf(popup).focused).toBe(false)
+      await later(60)
+      expect(pageOf(popup).focused).toBe(true)
+      keep = false
+      pageOf(popup).emit('blur')
+      await macrotask()
+      expect(popup.isDestroyed()).toBe(true)
+    })
+
+    it('leaves the keyboard alone when the app is no longer the focused one, and closes on the next focus inside it', async () => {
+      const popup = await keptOpen()
+      baseWindows = [Object.assign(shell, { isFocused: () => false })]
+      await later(60)
+      expect(pageOf(popup).focused).toBe(false)
+      shell.emit('focus')
+      await macrotask()
+      expect(popup.isDestroyed()).toBe(true)
+      Object.assign(shell, { isFocused: () => true })
+    })
+
+    it('does nothing once the popup has closed', async () => {
+      const popup = await keptOpen()
+      popup.destroy()
+      await later(60)
+      expect(pageOf(popup).focused).toBe(false)
+    })
   })
 
   it('closes when its page goes away', async () => {

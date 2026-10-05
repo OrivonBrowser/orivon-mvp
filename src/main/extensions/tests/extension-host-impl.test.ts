@@ -74,13 +74,36 @@ describe('buildHostImpl: windowOf', () => {
 })
 
 describe('extensionJustActivatedTab', () => {
-  it('holds for the focus handover after chrome.tabs.create, and not past it', async () => {
-    const win = { id: 1 }
+  const popupOf = (extensionId: string, parent: object): { extensionId: string, parent: never } => ({ extensionId, parent: parent as never })
+
+  async function activateAs (extensionId: string | undefined, win: object): Promise<void> {
     const tabs = { openTrusted: () => ['t', { on: vi.fn(), loadURL: vi.fn(async () => undefined) }] }
     const bridge = { services: { windows: { focused: () => ({ window: win }), all: () => [{ window: win, tabs }] } } } as unknown as ShellBridge
-    await buildHostImpl(() => bridge).createTab?.({ url: `chrome-extension://${ID}/welcome.html` } as never)
+    await buildHostImpl(() => bridge, () => extensionId).createTab?.({ url: `chrome-extension://${ID}/welcome.html` } as never)
+  }
+
+  it('holds for the focus handover after chrome.tabs.create, and not past it', async () => {
+    const win = { id: 1 }
+    await activateAs('ext-a', win)
     const now = Date.now()
-    expect(extensionJustActivatedTab(now)).toBe(true)
-    expect(extensionJustActivatedTab(now + EXTENSION_FOCUS_HANDOVER_MS + 50)).toBe(false)
+    expect(extensionJustActivatedTab(popupOf('ext-a', win), now)).toBe(true)
+    expect(extensionJustActivatedTab(popupOf('ext-a', win), now + EXTENSION_FOCUS_HANDOVER_MS + 50)).toBe(false)
+  })
+
+  it('does not hold for a popup whose extension is not the one that activated the tab', async () => {
+    const win = { id: 1 }
+    await activateAs('ext-b', win)
+    expect(extensionJustActivatedTab(popupOf('ext-a', win))).toBe(false)
+  })
+
+  it('does not hold for a popup in another window than the one the tab was activated in', async () => {
+    await activateAs('ext-a', { id: 1 })
+    expect(extensionJustActivatedTab(popupOf('ext-a', { id: 2 }))).toBe(false)
+  })
+
+  it('does not hold when the library did not say who asked', async () => {
+    const win = { id: 1 }
+    await activateAs(undefined, win)
+    expect(extensionJustActivatedTab(popupOf('ext-a', win))).toBe(false)
   })
 })

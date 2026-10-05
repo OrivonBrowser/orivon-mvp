@@ -18,7 +18,7 @@ import type { Session, WebContents } from 'electron'
 // file for bundling; tsc uses that .d.ts's ambient declaration instead.
 import { ElectronChromeExtensions } from 'orivon:crx-extensions'
 import { setSessionPartitionResolver } from 'orivon:crx-extensions-partition'
-import { setEventListenerFilter, setMessageSenderIdCheck, setRemoteMessageSenderCheck } from 'orivon:crx-extensions-router'
+import { callingExtensionId, setEventListenerFilter, setMessageSenderIdCheck, setRemoteMessageSenderCheck } from 'orivon:crx-extensions-router'
 import { setCookieHostAccessCheck } from 'orivon:crx-extensions-cookies'
 import { setTabUrlAccessCheck, setTabHostAccessCheck } from 'orivon:crx-extensions-tabs'
 import { setOpenPopupAnchor, setPopupHost, setTabCaptureInvocationRecorder } from 'orivon:crx-extensions-browser-action'
@@ -36,7 +36,7 @@ import { eventListenerFilter } from './extension-event-filter.js'
 import { closeCurrentPopup, installPopupPolicy } from './extension-popup-policy.js'
 import { extensionPopupHost, wirePopupHost } from './extension-popup-host.js'
 import { anchorFor } from './extension-action-anchor.js'
-import { buildHostImpl, extensionJustActivatedTab, isExtensionActivatingTab, isLoadedExtension, shellInitiated, type ShellBridge } from './extension-host-impl.js'
+import { buildHostImpl, EXTENSION_FOCUS_HANDOVER_MS, extensionJustActivatedTab, isExtensionActivatingTab, isLoadedExtension, shellInitiated, type ShellBridge } from './extension-host-impl.js'
 import { watchPinSetting } from './action-pins-runner.js'
 import { watchForMissedServiceWorkerPreload } from './extension-sw-preload-recovery.js'
 import { beginDnrReload, endDnrReload } from './extensions-dnr.js'
@@ -147,7 +147,7 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
     license: 'GPL-3.0',
     session: session.defaultSession,
     preloadPath,
-    ...buildHostImpl(() => bridge)
+    ...buildHostImpl(() => bridge, callingExtensionId)
   })
 
   // extension-sw-preload-recovery.ts must not import extensions-dnr.ts
@@ -194,7 +194,8 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
       if (tab !== undefined && !tab.isDestroyed()) tab.focus()
     },
     // A tab the popup's own extension opens takes the keyboard, and that must not close the popup.
-    keepOpenOnBlur: () => extensionJustActivatedTab()
+    keepOpenOnBlur: (popup) => extensionJustActivatedTab(popup),
+    focusHandoverMs: EXTENSION_FOCUS_HANDOVER_MS
   })
   setOpenPopupAnchor(async (extensionId, window) => {
     const owner = bridge?.services.windows.all().find((candidate) => candidate.window === window)

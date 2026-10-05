@@ -36,9 +36,12 @@ export interface PopupHost {
   unmount(parent: BaseWindow, view: WebContentsView): void
   /** Sets the view's bounds, in the window's content coordinates. */
   place(parent: BaseWindow, view: WebContentsView, placement: PopupPlacement): void
-  /** True while a loss of focus must not close the popup: the embedder itself is moving focus, for
-   * the popup's own extension (a tab it just opened). */
-  keepOpenOnBlur?(): boolean
+  /** True while a loss of focus must not close the popup: the embedder itself is moving focus for
+   * this popup's own extension (a tab it just opened in the popup's window). */
+  keepOpenOnBlur?(popup: { extensionId: string; parent: BaseWindow }): boolean
+  /** How long after such a blur the embedder is still moving focus. Once it is over, a popup that
+   * was kept open takes the keyboard back, so the next click elsewhere blurs and closes it. */
+  focusHandoverMs?: number | undefined
 }
 
 const POSITION_PADDING = 5
@@ -115,13 +118,19 @@ export class PopupView extends EventEmitter {
   }
 
   // Orivon patch (UPSTREAM.md patch 35): a reasonable extension-popup size,
-  // used only by armVisibilityFallback below -- not a guess at any
-  // particular extension's real content size, just large enough that a
-  // popup shown this way is usable rather than a 25x25 postage stamp.
+  // used only by armSizeFallback below when the page cannot be measured --
+  // not a guess at any particular extension's real content size, just large
+  // enough that a popup shown this way is usable rather than a 25x25 postage stamp.
   static FALLBACK_BOUNDS = { width: 320, height: 400 }
 
-  // Orivon patch (UPSTREAM.md patch 35): see armVisibilityFallback's own doc.
+  // Orivon patch (UPSTREAM.md patch 35): how long armSizeFallback waits for
+  // preferred-size-changed before measuring the page, and (REMEASURE_*) how
+  // often it measures again while no size has been reported.
   static VISIBILITY_FALLBACK_MS = 500
+  static REMEASURE_MS = 500
+  static REMEASURE_COUNT = 4
+
+  private static FOCUS_HANDOVER_MS = 500
 
   /** Orivon patch (UPSTREAM.md patch 68): the popup's page, in a view the host puts in `parent`. */
   readonly view: WebContentsView
@@ -139,6 +148,7 @@ export class PopupView extends EventEmitter {
 
   // Orivon patch (UPSTREAM.md patch 34): see closeOnNextAppFocus's own doc.
   private closeOnNextFocusCleanup?: (() => void) | undefined
+  private reclaimFocusTimer?: ReturnType<typeof setTimeout> | undefined
 
   /** Preferred size changes are only received in Electron v12+ */
   private usingPreferredSize = supportsPreferredSize()
@@ -194,9 +204,10 @@ export class PopupView extends EventEmitter {
 
   /** Mounts the view in the window and gives it the keyboard: a view that never held focus never blurs. */
   private show() {
-    if (this.destroyed || this.parent === undefined || !this.hidden) return
+    const parent = this.livingParent()
+    if (this.destroyed || parent === undefined || !this.hidden) return
     this.hidden = false
-    this.host.mount(this.parent, this.view)
+    this.host.mount(parent, this.view)
     if (!this.webContents.isDestroyed()) this.webContents.focus()
   }
 
@@ -210,8 +221,9 @@ export class PopupView extends EventEmitter {
     if (this.destroyed) return
 
     if (this.usingPreferredSize) {
-      // Set small initial size so the preferred size grows to what's needed
-      this.setSize({ width: PopupView.BOUNDS.minWidth, height: PopupView.BOUNDS.minHeight })
+      // Set small initial size so the preferred size grows to what's needed, unless the page has
+      // already reported the one it wants.
+      if (!this.sized) this.setSize({ width: PopupView.BOUNDS.minWidth, height: PopupView.BOUNDS.minHeight })
       // Orivon patch (UPSTREAM.md patch 68): mounted at its smallest size, under its anchor, and
       // grown from there. A view still outside any window has not been seen to report a size.
       this.updatePosition()
@@ -242,18 +254,25 @@ export class PopupView extends EventEmitter {
    * size, a postage stamp, for its entire life. After a moment the page's own
    * content is measured instead, and the popup is sized to that. A
    * `'preferred-size-changed'` that does still arrive after this fires
-   * still resizes and repositions the popup correctly.
+   * still resizes and repositions the popup correctly. A page that is still
+   * rendering when measured (an app that loads its content) is measured again
+   * a few times, until a size is reported.
    */
-  private armSizeFallback (): void {
+  private armSizeFallback (attempt: number = 0): void {
     setTimeout(async () => {
       if (this.destroyed || this.sized) return
       d('preferred-size-changed did not arrive in time; measuring the page')
       const measured = await this.measureContent()
       if (this.destroyed || this.sized) return
-      this.setSize(measured ?? PopupView.FALLBACK_BOUNDS)
-      this.updatePosition()
+      // Later measurements only follow a page that was still rendering: they never fall back to a default.
+      const size = attempt === 0 ? measured ?? PopupView.FALLBACK_BOUNDS : measured
+      if (size !== undefined && (size.width !== this.size.width || size.height !== this.size.height)) {
+        this.setSize(size)
+        this.updatePosition()
+      }
       this.show()
-    }, PopupView.VISIBILITY_FALLBACK_MS)
+      if (attempt < PopupView.REMEASURE_COUNT) this.armSizeFallback(attempt + 1)
+    }, attempt === 0 ? PopupView.VISIBILITY_FALLBACK_MS : PopupView.REMEASURE_MS)
   }
 
   /** The size of the page's content as it lays out at its natural width, whatever the view's size is now. */
@@ -262,11 +281,16 @@ export class PopupView extends EventEmitter {
       const size = await this.webContents.executeJavaScript(
         `((${() => {
           const root = document.documentElement
+          const body = document.body
           const saved = root.style.width
           root.style.width = 'max-content'
           const rect = root.getBoundingClientRect()
+          // The scroll extent too: a page sized in percent or viewport units lays out at the view's
+          // current 25 px, and only its overflow shows how much content it has.
+          const width = Math.max(rect.width, root.scrollWidth, body ? body.scrollWidth : 0)
+          const height = Math.max(rect.height, root.scrollHeight, body ? body.scrollHeight : 0)
           root.style.width = saved
-          return { width: Math.ceil(rect.width), height: Math.ceil(rect.height) }
+          return { width: Math.ceil(width), height: Math.ceil(height) }
         }})())`,
       )
       if (!(size?.width > 0) || !(size?.height > 0)) return undefined
@@ -275,6 +299,12 @@ export class PopupView extends EventEmitter {
       d('measuring the popup page failed: %O', error)
       return undefined
     }
+  }
+
+  /** The window the popup hangs under, while it exists: `closed` is handled a macrotask late (below),
+   * and a size or a load that arrives in between must not reach into a destroyed window. */
+  private livingParent (): BaseWindow | undefined {
+    return this.parent !== undefined && !this.parent.isDestroyed() ? this.parent : undefined
   }
 
   /** Orivon patch (UPSTREAM.md patch 68): every close trigger runs `destroy` a macrotask later. A
@@ -292,6 +322,7 @@ export class PopupView extends EventEmitter {
     d(`destroying ${this.extensionId}`)
 
     this.closeOnNextFocusCleanup?.()
+    clearTimeout(this.reclaimFocusTimer)
 
     const parent = this.parent
     if (parent) {
@@ -330,7 +361,7 @@ export class PopupView extends EventEmitter {
   }
 
   setSize(rect: Partial<Electron.Rectangle>) {
-    if (this.destroyed || !this.parent) return
+    if (this.destroyed || this.livingParent() === undefined) return
 
     const width = Math.floor(
       Math.min(PopupView.BOUNDS.maxWidth, Math.max(rect.width || 0, PopupView.BOUNDS.minWidth)),
@@ -358,8 +389,9 @@ export class PopupView extends EventEmitter {
   }
 
   private maybeClose = () => {
-    if (this.host.keepOpenOnBlur?.() === true) {
+    if (this.parent !== undefined && this.host.keepOpenOnBlur?.({ extensionId: this.extensionId, parent: this.parent }) === true) {
       d('preventing close due to the embedder moving focus')
+      this.reclaimFocusAfterHandover()
       return
     }
 
@@ -379,6 +411,22 @@ export class PopupView extends EventEmitter {
     }
 
     this.closeSoon()
+  }
+
+  /**
+   * Orivon patch (UPSTREAM.md patch 68): `blur` fires only on the transition away from the popup,
+   * and the blur the embedder caused was thrown away, so no second one comes unless the popup holds
+   * the keyboard again. Once the hand-over is over, the popup takes it back (a click elsewhere then
+   * closes it), or, with the app no longer the focused one, waits for the next focus inside it.
+   */
+  private reclaimFocusAfterHandover (): void {
+    if (this.reclaimFocusTimer !== undefined) return
+    this.reclaimFocusTimer = setTimeout(() => {
+      this.reclaimFocusTimer = undefined
+      if (this.destroyed || this.webContents.isDestroyed() || this.webContents.isFocused()) return
+      if (getAllWindows().some((win) => win.isFocused())) this.webContents.focus()
+      else this.closeOnNextAppFocus()
+    }, this.host.focusHandoverMs ?? PopupView.FOCUS_HANDOVER_MS)
   }
 
   /**
@@ -430,14 +478,15 @@ export class PopupView extends EventEmitter {
   }
 
   private updatePosition() {
-    if (this.destroyed || !this.parent) return
+    const parent = this.livingParent()
+    if (this.destroyed || parent === undefined) return
 
     const placement = { anchorRect: this.anchorRect, alignment: this.alignment, size: this.size }
     d(`updatePosition`, placement)
 
     this.emit('will-move', placement)
 
-    this.host.place(this.parent, this.view, placement)
+    this.host.place(parent, this.view, placement)
 
     this.emit('moved')
   }

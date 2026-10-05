@@ -43,6 +43,7 @@ vi.mock('orivon:crx-extensions-partition', () => ({
 }))
 
 vi.mock('orivon:crx-extensions-router', () => ({
+  callingExtensionId: vi.fn(),
   setRemoteMessageSenderCheck: vi.fn(),
   setMessageSenderIdCheck: vi.fn(),
   setEventListenerFilter: vi.fn(),
