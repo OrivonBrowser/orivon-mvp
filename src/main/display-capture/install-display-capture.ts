@@ -79,7 +79,6 @@ export const installDisplayCapture: ShellInstaller = {
       policy,
       choose: chooseDisplaySource,
       shares,
-      now: () => Date.now(),
       isTab,
       showing: (contents) => windowShowing(contents) !== undefined,
       mainFrameOrigin: committedOrigin,

@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createDisplayGate, type DisplayGateDeps, type PickRequest } from '../display-gate.js'
-import { TICKET_TIMEOUT_MS } from '../display-tickets.js'
 import type { DisplayChoice } from '../types.js'
 
 const ORIGIN = 'https://share.example'
@@ -16,21 +15,33 @@ async function settled (): Promise<void> {
   await new Promise<void>((resolve) => { setImmediate(resolve) })
 }
 
-function setup (overrides: Partial<DisplayGateDeps> = {}): { gate: ReturnType<typeof createDisplayGate>, deps: DisplayGateDeps, time: { now: number }, contents: never } {
-  const time = { now: 0 }
+/** Tickets as the real module keeps them: open until used, voided, rejected or timed out, and `has` says so. */
+function fakeTickets (): DisplayGateDeps['tickets'] & { end: () => void } {
+  const open = new Set<string>()
+  const key = '1:10:2'
+  return {
+    open: vi.fn(() => { open.add(key); return 'nonce-1' }),
+    void: vi.fn(() => { open.delete(key) }),
+    arm: vi.fn(),
+    called: vi.fn((_key: string, _nonce: string, rejectedEarly: boolean) => { if (rejectedEarly) open.delete(key) }),
+    has: (k: string) => open.has(k),
+    end: () => { open.clear() }
+  }
+}
+
+function setup (overrides: Partial<DisplayGateDeps> = {}): { gate: ReturnType<typeof createDisplayGate>, deps: DisplayGateDeps, contents: never } {
   const deps: DisplayGateDeps = {
-    tickets: { open: vi.fn(() => 'nonce-1'), void: vi.fn(), arm: vi.fn(), called: vi.fn() },
+    tickets: fakeTickets(),
     policy: { isApp: () => false, mayAsk: () => true, decide: vi.fn(async () => await Promise.resolve(true)) },
     choose: vi.fn(async () => await Promise.resolve(CHOICE)),
     shares: { tracksEnded: vi.fn() },
-    now: () => time.now,
     isTab: () => true,
     showing: () => true,
     mainFrameOrigin: () => ORIGIN,
     frameKey: () => '1:10:2',
     ...overrides
   }
-  return { gate: createDisplayGate(deps), deps, time, contents: tab() }
+  return { gate: createDisplayGate(deps), deps, contents: tab() }
 }
 
 describe('the display gate: picking', () => {
@@ -91,20 +102,19 @@ describe('the display gate: picking', () => {
     expect(deps.choose).toHaveBeenCalledOnce()
   })
 
-  it('refuses a pick while the last ticket has not been used, so it never voids a call in flight, until it times out', async () => {
-    const { gate, time, contents, deps } = setup()
+  it('refuses a pick while the last ticket is open, so it never voids a call in flight, until the tickets end it', async () => {
+    const { gate, contents, deps } = setup()
     await gate.pick(contents, REQUEST)
     expect(await gate.pick(contents, REQUEST)).toEqual({ type: 'refused', reason: 'busy' })
-    time.now = TICKET_TIMEOUT_MS
+    ;(deps.tickets as ReturnType<typeof fakeTickets>).end()
     expect(await gate.pick(contents, REQUEST)).toEqual({ type: 'go', nonce: 'nonce-1' })
     expect(deps.tickets.open).toHaveBeenCalledTimes(2)
   })
 
-  it('lets a pick through once the preload\'s call was reported', async () => {
+  it('lets a pick through once the preload reports its call was rejected', async () => {
     const { gate, contents } = setup()
-    const reply = await gate.pick(contents, REQUEST)
-    expect(reply.type).toBe('go')
-    gate.called(contents, 'nonce-1', false)
+    expect((await gate.pick(contents, REQUEST)).type).toBe('go')
+    gate.called(contents, 'nonce-1', true)
     expect((await gate.pick(contents, REQUEST)).type).toBe('go')
   })
 
@@ -143,6 +153,46 @@ describe('the display gate: picking', () => {
     const { gate, deps } = setup({ choose: async () => { gone = true; return await Promise.resolve(CHOICE) } })
     expect(await gate.pick(contents, REQUEST)).toEqual({ type: 'refused', reason: 'denied' })
     expect(deps.tickets.open).not.toHaveBeenCalled()
+  })
+})
+
+describe('the display gate: a page that was refused', () => {
+  const cancelled = { choose: vi.fn(async () => await Promise.resolve(null)) }
+
+  it('still needs a fresh gesture after a navigation that never commits ends its state', async () => {
+    const { gate, deps, contents } = setup(cancelled)
+    await gate.pick(contents, REQUEST)
+    gate.endForTab(contents)
+    expect(await gate.pick(contents, { ...REQUEST, activation: false })).toEqual({ type: 'refused', reason: 'activation' })
+    expect(deps.choose).toHaveBeenCalledOnce()
+  })
+
+  it('needs a gesture after the same origin loads again', async () => {
+    const { gate, contents } = setup(cancelled)
+    await gate.pick(contents, REQUEST)
+    gate.endForTab(contents)
+    gate.endForTab(contents)
+    expect(await gate.pick(contents, { ...REQUEST, activation: false })).toEqual({ type: 'refused', reason: 'activation' })
+  })
+
+  it('a new site starts fresh: the refusal of one origin does not follow the tab to another', async () => {
+    let origin = ORIGIN
+    let answer: DisplayChoice | null = null
+    const { gate, contents } = setup({ mainFrameOrigin: () => origin, choose: async () => await Promise.resolve(answer) })
+    await gate.pick(contents, REQUEST)
+    gate.endForTab(contents)
+    origin = 'https://other.example'
+    answer = CHOICE
+    expect((await gate.pick(contents, { ...REQUEST, activation: false })).type).toBe('go')
+  })
+
+  it('needs a gesture after a pick that was closed by the page leaving while the picker was open', async () => {
+    const { gate, contents } = setup({ choose: async (_request, signal) => await new Promise<DisplayChoice | null>((resolve) => { signal.addEventListener('abort', () => { resolve(CHOICE) }) }) })
+    const pending = gate.pick(contents, REQUEST)
+    await settled()
+    gate.endForTab(contents)
+    expect(await pending).toEqual({ type: 'refused', reason: 'denied' })
+    expect(await gate.pick(contents, { ...REQUEST, activation: false })).toEqual({ type: 'refused', reason: 'activation' })
   })
 })
 
