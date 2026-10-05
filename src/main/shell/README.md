@@ -13,7 +13,7 @@ the `{ window, services }` pair a hook or an overlay handler receives.
 `TAB_SIGNALS` entry adds), `tab-navigation.ts`, `tab-open.ts` (every way a tab is created) and
 `tab-panes.ts` (which views show where) as its parts; `tab-view.ts`, `tab-partition.ts`,
 `app-tab-watch.ts`, `tab-signals.ts`, `tab-types.ts`, `tab-factory.ts`, `tab-lifecycle.ts` and
-`tab-parking.ts` are the per-tab view; `load-in-tab.ts` is the one test that opens an address in the tab's own view or in a view of the session it needs, shared by the address bar and a link followed inside a tab. `eth-gateway-redirect.ts` opens an ENS gateway address (`<name>.eth.limo`, `<name>.eth.link`) as the `.eth` name it stands for: the web-request handler and the `gatewayRedirectFor` rule that the tab hooks below share. `tab-origin-liveness.ts` is `tab-view.ts`'s own per-origin
+`tab-parking.ts` are the per-tab view; `load-in-tab.ts` is the one test that opens an address in the tab's own view or in a view of the session it needs, shared by the address bar and a link followed inside a tab. `eth-gateway-redirect.ts` opens an ENS gateway address (`<name>.eth.limo`, `<name>.eth.link`) as the `.eth` name it stands for: the web-request handler, which shares the rule in `eth-gateway-rule.ts` (`gatewayRedirectFor`, `gatewayEntries`; no `electron`) with the tab hooks below. `tab-origin-liveness.ts` is `tab-view.ts`'s own per-origin
 live-document counter. `tab-order.ts` is where a tab sits in the strip, `tab-move.ts` moves one between windows keeping the
 same page (and is where a dragged tab's cross-window target -- which window's strip, and where in it -- is
 worked out from the tab centres `strip-centres.ts` reads off the target window's chrome page, shared by the actual move and by `tear-drag.ts`'s own mark), `tab-menu.ts` is its right-click
@@ -255,22 +255,26 @@ own throttling is not what slows a hidden page, only the page backing off when i
 
 **[`eth-gateway-redirect.ts`](eth-gateway-redirect.ts): a gateway address opens as the `.eth` name from the first load, through four hooks and one handler.**
 Setting `web3.ethGatewayRedirect` is on by default and applies at once; each hook asks `gatewayRedirectFor`, which answers
-only while the setting is on and the verifier can load the name (`verifierServesName`), so with the light client off every
-gateway address opens as it is. The hooks map the address before the load, so the tab's session, the fragment and the address
+only while the setting is on and the verifier can load the name (`verifierServesName`), so with the light client off or unable
+to start every gateway address opens as it is, except a developer-mode name or a test-build fixture, which the verifier serves without it. The hooks map the address before the load, so the tab's session, the fragment and the address
 bar are those of the name from the start: `resolveTarget` in `tab-navigation.ts` (typed text, the dashboard box, paste-and-go, bookmarks,
 Home), `TabFactory.content()` and `trusted()` (every new tab: middle clicks, links from other programs, startup pages, an
-extension's `tabs.create`), `loadServedAddresses` in `served-address.ts` (a link followed inside a tab, loaded through the
-same session test the address bar uses, so a link inside a cache-served app's tab lands on the default session), and
+extension's `tabs.create`), `loadServedAddresses` in `served-address.ts` (a link followed inside a tab that must move to the name's session or app-tab
+flag, such as a cache-served app's tab, which has no web-request owner: `gatewayLinkTarget` in `load-in-tab.ts` answers only then,
+and the link loads through the address bar's own session test), and
 `windowOpenHandler` (a `target=_blank` link or `window.open` becomes a new tab or window, never a popup that loads the gateway in its
 opener's session). The handler at order 5 on the default session's web-request owner, before HTTPS-only and extensions, catches what
-the hooks cannot see: a server redirect to a gateway address (from a tab, or from a popup that keeps its opener), and back and
+the hooks leave to it: a link followed inside an ordinary tab (so a `location.replace`, a form's POST body and the referrer are kept), a server redirect to a gateway address (from a tab, or from a popup that keeps its opener), and back and
 forward or a reload of a gateway entry saved while the setting was off. A restored tab and the copy of a sleeping tab map their
 saved entries through `gatewayEntries` before the list is restored, since the view was built for the `.eth` name and can sit in a
 session with no web-request owner. A fragment survives a server redirect (measured by
 `test/web3/e2e-eth-gateway-redirect.test.ts`).
 With the setting on a gateway address never commits, so the address bar and history show `ipfs://<name>.eth/...`; the omnibox's
-"go to" row still shows the typed address. A load from `will-navigate` drops a form's POST body and the referrer and makes a
-`location.replace` a new history entry, as for an `ipfs:` link. Limits: a `window.open` to a gateway address returns `null` and the new
+"go to" row still shows the typed address. A link inside a tab that must move is loaded from `will-navigate`, which drops a
+form's POST body and the referrer and makes a `location.replace` a new history entry, as for an `ipfs:` link. Limits: an
+extension never sees the gateway address a person navigates to, since the redirect runs before extensions' request handlers and
+the hooks map the address before any request exists, so a block an extension holds for an `eth.limo` host does not fire;
+a `window.open` to a gateway address returns `null` and the new
 tab has no opener, so a page that checks the handle or talks to the page it opened by `postMessage` does not work (an adopted
 popup whose first address is the gateway itself never commits the redirect); the copy of a live tab keeps the gateway entries it
 carried; a server redirect to a gateway address inside a cache-served app's own partition is not caught, since that

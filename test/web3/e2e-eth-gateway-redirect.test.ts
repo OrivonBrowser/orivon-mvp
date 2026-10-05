@@ -26,6 +26,23 @@ async function tabUrls (app: ElectronApplication): Promise<string[]> {
   return await app.evaluate(({ webContents }) => webContents.getAllWebContents().map((wc) => wc.getURL()))
 }
 
+/** Starts recording every redirect any page's main frame goes through, as the main process sees it. */
+async function recordRedirects (app: ElectronApplication): Promise<void> {
+  await app.evaluate(({ app: electronApp, webContents }) => {
+    const seen: string[] = []
+    ;(globalThis as { __gatewayRedirects?: string[] }).__gatewayRedirects = seen
+    const watch = (wc: Electron.WebContents): void => {
+      wc.on('did-redirect-navigation', (details) => { if (details.isMainFrame) seen.push(details.url) })
+    }
+    for (const wc of webContents.getAllWebContents()) watch(wc)
+    electronApp.on('web-contents-created', (_event, wc) => { watch(wc) })
+  })
+}
+
+async function redirectsSeen (app: ElectronApplication): Promise<string[]> {
+  return await app.evaluate(() => (globalThis as { __gatewayRedirects?: string[] }).__gatewayRedirects ?? [])
+}
+
 async function toggleGatewaySetting (app: ElectronApplication, chrome: Page): Promise<void> {
   await chrome.evaluate(() => {
     (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/web3')
@@ -82,13 +99,17 @@ it('opens a .eth.limo address as the .eth name, and leaves everything else on th
       await waitForAddressBarStable(chrome)
       const firstTab = (await activeTabInfo(chrome)).activeId as string
 
+      await recordRedirects(running)
+
       // 1. Typed: the bar shows the .eth name, the view is at its own origin, and the query and fragment survive.
       await clickAddressBarRetrying(chrome, 'site.eth.limo/page.html?q=1#f')
       const typed = await waitForTab(chrome, { address: 'ipfs://site.eth/page.html?q=1#f', title: 'gateway fixture page' })
       check(`a typed gateway address opens as the .eth name (${JSON.stringify(typed.info)})`, typed.ok)
       check('the view is at https://site.eth/', findViewShowing(running, chrome, 'https://site.eth/page.html?q=1#f') !== undefined)
+      const typedRedirects = await redirectsSeen(running)
+      check(`a typed gateway address is mapped before the load, so no request redirected (${JSON.stringify(typedRedirects)})`, !typedRedirects.some((url: string) => url.includes('eth.limo')))
 
-      // 2. A link in the same tab.
+      // 2. A link in the same tab: an ordinary tab leaves it to the web-request redirect, which keeps the history entry.
       await clickAddressBarRetrying(chrome, `${loopback}/links`)
       expect((await waitForTab(chrome, { title: 'links' })).ok).toBe(true)
       const links = tabViews(running, chrome).find((w: Page) => w.url() === `${loopback}/links`)
@@ -116,6 +137,7 @@ it('opens a .eth.limo address as the .eth name, and leaves everything else on th
         return redirectedAddress?.startsWith('ipfs://site.eth/page.html?q=4') === true
       })
       check(`a server redirect to a gateway address ends at the .eth name, fragment kept (${String(redirectedAddress)})`, redirectedAddress === 'ipfs://site.eth/page.html?q=4#k')
+      check('the web-request path is the one that moved it', (await redirectsSeen(running)).some((url: string) => url.startsWith('https://site.eth/page.html?q=4')))
 
       // 4b. A popup that keeps its opener and is redirected by the server to a gateway address.
       await clickAddressBarRetrying(chrome, `${loopback}/popup`)

@@ -41,7 +41,7 @@ export const web3: Section = {
     {
       id: 'web3-eth-gateway',
       label: 'Open .eth.limo addresses as .eth names',
-      help: 'An address like https://vitalik.eth.limo/ goes through a public gateway, which decides what the page is. Orivon opens vitalik.eth itself instead, checked on this computer, and keeps the rest of the address. This applies to .eth.limo and .eth.link pages opened in a tab, never to content inside a page, and not while the light client is off. Sign-ins, wallet connections and data a site keeps under its eth.limo address stay there and are not seen at the .eth name.',
+      help: 'An address like https://vitalik.eth.limo/ goes through a public gateway, which decides what the page is. Orivon opens vitalik.eth itself instead, checked on this computer, and keeps the rest of the address. This applies to .eth.limo and .eth.link pages opened in a tab, never to content inside a page, and not while the light client is off or cannot start. Sign-ins, wallet connections and data a site keeps under its eth.limo address stay there and are not seen at the .eth name.',
       keywords: ['eth.limo', 'eth.link', 'gateway', 'redirect', 'ens'],
       control: { type: 'toggle', key: 'web3.ethGatewayRedirect' }
     },

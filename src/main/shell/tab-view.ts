@@ -24,8 +24,8 @@ import { canViewSource } from '../page-tools/view-source.js'
 import { sitePopups } from '../site-settings/site-popups.js'
 import { refuseHeldNavigation, refuseHeldWindow } from './navigation-hold.js'
 import { loadServedAddresses } from './served-address.js'
-import { gatewayRedirectFor } from './eth-gateway-redirect.js'
-import { loadInTab } from './load-in-tab.js'
+import { gatewayRedirectFor } from './eth-gateway-rule.js'
+import { gatewayLinkTarget, loadInTab } from './load-in-tab.js'
 import { releaseOriginDocument, trackDocumentOrigin } from './tab-origin-liveness.js'
 import { watchLoadFailure } from './load-failure.js'
 import { trackInflightUrl } from './inflight-url.js'
@@ -292,7 +292,7 @@ export function wireView (id: string, record: TabRecord): void {
   refuseHeldNavigation(wc)
   const gatewayTarget = (url: string): string | undefined => gatewayRedirectFor(record.host.services?.settings, url)
   loadServedAddresses(wc, () => record.internalPage !== null, {
-    target: gatewayTarget,
+    target: (url) => gatewayLinkTarget(record, url),
     // The address bar's own test for a load: a link inside a cache-served app's tab lands on the default session.
     open: (url) => { if (shown()) loadInTab(id, record, url) }
   })

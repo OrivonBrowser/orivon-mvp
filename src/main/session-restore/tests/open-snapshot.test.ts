@@ -1,9 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { provideVerifierAccess } from '../../verifier/verifier-access.js'
+import { openSnapshot } from '../open-snapshot.js'
 import { fakeTabs } from './tabs-fake.js'
-
-vi.mock('electron', () => ({ session: { defaultSession: {} } }))
-const { openSnapshot } = await import('../open-snapshot.js')
 
 describe('openSnapshot', () => {
   it('opens the address as a tab, pinned when it was', () => {
