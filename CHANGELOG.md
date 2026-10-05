@@ -18,6 +18,9 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- **`contracts/manifest.ts`**: an app may now declare `media.screen` in `capabilities.media`; nothing changes for
+  existing apps, and it is not yet granted (the implementation follows).
+
 ### Added
 
 - **`test/` is ordered by area**, with a Layout table in `test/README.md`; a spec left at its top, a folder with no
