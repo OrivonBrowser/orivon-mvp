@@ -717,8 +717,9 @@ export const injectExtensionAPIs = (extras: ReadonlyArray<() => void> = []) => {
       // Orivon patch (UPSTREAM.md patch 10): chrome.declarativeNetRequest,
       // chrome.sidePanel, chrome.userScripts and the rest of
       // chrome.webRequest were entirely absent (only
-      // webRequest.onHeadersReceived existed). sidePanel/userScripts resolve
-      // as no-ops: no real side panel, no real user script world.
+      // webRequest.onHeadersReceived existed). userScripts resolves as no-ops:
+      // no real user script world. chrome.sidePanel is Orivon's own
+      // (src/preload/extension-apis/side-panel.ts, patch 70).
       // declarativeNetRequest's own methods (UPSTREAM.md patch 15) call
       // through this session's crx-msg IPC like every other real API here;
       // src/main/extensions/dnr-api.ts is the main-side handler.
@@ -767,19 +768,6 @@ export const injectExtensionAPIs = (extras: ReadonlyArray<() => void> = []) => {
             getMediaStreamId: invokeExtension('tabCapture.getMediaStreamId'),
             getCapturedTabs: invokeExtension('tabCapture.getCapturedTabs'),
             onStatusChanged: new ExtensionEvent('tabCapture.onStatusChanged'),
-          }
-        },
-      },
-
-      sidePanel: {
-        factory: (base) => {
-          return {
-            ...base,
-            setOptions: async () => {},
-            getOptions: async () => ({}),
-            setPanelBehavior: async () => {},
-            getPanelBehavior: async () => ({ openPanelOnActionClick: false }),
-            open: async () => {},
           }
         },
       },

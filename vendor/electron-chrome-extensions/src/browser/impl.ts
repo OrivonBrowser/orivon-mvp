@@ -30,6 +30,20 @@ export interface ChromeExtensionImpl {
   windowOf?(contents: Electron.WebContents): Electron.BaseWindow | undefined
 
   /**
+   * Orivon patch (UPSTREAM.md patch 70): the pages of the extension that are not tabs and not its popup, such
+   * as a side panel's page, with the window each one belongs to. `chrome.runtime.getContexts` lists them.
+   */
+  extensionContexts?(
+    extensionId: string,
+  ): Array<{ contextType: 'SIDE_PANEL'; contents: Electron.WebContents; windowId: number }>
+
+  /**
+   * Orivon patch (UPSTREAM.md patch 70): a click on one of the extension's context-menu items, called before the
+   * extension's `contextMenus.onClicked` is sent. The click is input the person made on the extension.
+   */
+  menuItemClicked?(extensionId: string, tab: Electron.WebContents): void
+
+  /**
    * Orivon patch (UPSTREAM.md patch 67): when a tab already shows `url`, brings it to the front
    * and answers true. `chrome.runtime.openOptionsPage()` asks before it opens a tab.
    */
