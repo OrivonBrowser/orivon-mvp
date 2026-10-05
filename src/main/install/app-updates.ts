@@ -63,6 +63,9 @@ export interface AppUpdatesDeps {
 
 export type ApplyOutcome = { readonly ok: true } | { readonly ok: false, readonly reason: string }
 
+/** What an install under the queue reports; `failure` is the reason to tell the person once the queue is free. */
+type Applied = ApplyOutcome & { readonly failure?: string }
+
 export interface AppUpdates {
   /**
    * The loader found a moved name: judge it, remember it, and ask unless the person has said not to.
@@ -133,14 +136,9 @@ export function createAppUpdates (deps: AppUpdatesDeps): AppUpdates {
     if (deps.persistQuiet) await loader.keepQuiet(origin, offer)
   }
 
-  /** Fetches the offered root, installs it and reloads the origin's tabs. Runs inside the origin's queue. */
-  async function applyLocked (offer: UpdateOffer, caller: DialogCaller | undefined): Promise<ApplyOutcome> {
+  /** Fetches the offered root, installs it and reloads the origin's tabs. Runs inside the origin's queue; asks the person nothing but what an install itself raises. */
+  async function applyLocked (offer: UpdateOffer, caller: DialogCaller | undefined): Promise<Applied> {
     const { origin } = offer
-    if (!offer.verified) {
-      const held = (await broker.app.grants(origin)).map((grant) => describeCapabilityGrant(grant.capability, grant.patterns).message)
-      if (!await deps.prompts.confirmForce(offer, held, caller)) return { ok: false, reason: 'declined' }
-      if (caller !== undefined && !caller.stillOn(origin)) return { ok: false, reason: 'declined' }
-    }
     const context = await loadContextFor(broker, origin)
     const result: LoadResult = await loader.applyUpdate(origin, offer.toCid, context)
     // The person has said yes to this very update, so the question about a changed bundle is answered.
@@ -155,10 +153,9 @@ export function createAppUpdates (deps: AppUpdatesDeps): AppUpdates {
       if (driven.movedAgain === true) {
         offers.delete(origin)
         changed(origin)
-      } else {
-        await deps.prompts.failed(offer, driven.reason, caller)
+        return { ok: false, reason: driven.reason }
       }
-      return { ok: false, reason: driven.reason }
+      return { ok: false, reason: driven.reason, failure: driven.reason }
     }
     return { ok: false, reason: 'declined' }
   }
@@ -198,13 +195,27 @@ export function createAppUpdates (deps: AppUpdatesDeps): AppUpdates {
     if (answer.quiet) await keepQuiet(origin, { cid: offer.toCid, verified: false })
   }
 
-  /** Takes the offer in the origin's queue, but only if it is still the one pending. */
+  /**
+   * Takes the offer, but only if it is still the one pending. Every question to the person is
+   * asked outside the origin's queue, so another tab of the app never waits on an answer; the
+   * queue is held only for the install, which checks the offer again before it starts.
+   */
   async function takeLocked (origin: string, toCid: string, caller: DialogCaller | undefined): Promise<ApplyOutcome> {
-    return await withOriginQueue(origin, async () => {
-      const offer = offers.get(origin)
-      if (offer === undefined || offer.toCid !== toCid) return { ok: false, reason: 'no such offer' } as const
-      return await applyLocked(offer, caller)
+    const offer = offers.get(origin)
+    if (offer === undefined || offer.toCid !== toCid) return { ok: false, reason: 'no such offer' }
+    if (!offer.verified) {
+      const held = (await broker.app.grants(origin)).map((grant) => describeCapabilityGrant(grant.capability, grant.patterns).message)
+      if (!await deps.prompts.confirmForce(offer, held, caller)) return { ok: false, reason: 'declined' }
+      if (caller !== undefined && !caller.stillOn(origin)) return { ok: false, reason: 'declined' }
+    }
+    const outcome = await withOriginQueue(origin, async (): Promise<Applied> => {
+      const current = offers.get(origin)
+      if (current === undefined || current.toCid !== toCid || current.verified !== offer.verified) return { ok: false, reason: 'no such offer' }
+      return await applyLocked(current, caller)
     })
+    if (outcome.ok) return outcome
+    if (outcome.failure !== undefined) await deps.prompts.failed(offer, outcome.failure, caller)
+    return { ok: false, reason: outcome.reason }
   }
 
   return {

@@ -232,6 +232,53 @@ describe('a question left open', () => {
   })
 })
 
+describe('a confirmation or a failure notice left open', () => {
+  it('lets another task of the origin run while Trust & Force waits for its answer, then applies once answered', async () => {
+    const { withOriginQueue } = await import('../origin-queue.js')
+    const r = rig({ verdict: { status: 'off' } })
+    let answer: (yes: boolean) => void = () => {}
+    r.prompts.confirmForce.mockImplementation(async () => await new Promise<boolean>((resolve) => { answer = resolve }))
+    await r.updates.offered(available())
+    const applying = r.updates.apply(APP, TO)
+    await vi.waitFor(() => { expect(r.prompts.confirmForce).toHaveBeenCalledTimes(1) })
+    expect(await withOriginQueue(APP, async () => 'ran')).toBe('ran')
+    expect(r.loader.applyUpdate).not.toHaveBeenCalled()
+    answer(true)
+    expect(await applying).toEqual({ ok: true })
+    expect(r.reloaded).toEqual([APP])
+  })
+
+  it('refuses the confirmed update when the pending offer moved to another CID while the person decided', async () => {
+    const r = rig({ verdict: { status: 'off' } })
+    let answer: (yes: boolean) => void = () => {}
+    r.prompts.confirmForce.mockImplementation(async () => await new Promise<boolean>((resolve) => { answer = resolve }))
+    await r.updates.offered(available())
+    const applying = r.updates.apply(APP, TO)
+    await vi.waitFor(() => { expect(r.prompts.confirmForce).toHaveBeenCalledTimes(1) })
+    r.updates.withdraw(APP)
+    answer(true)
+    expect(await applying).toEqual({ ok: false, reason: 'no such offer' })
+    expect(r.loader.applyUpdate).not.toHaveBeenCalled()
+  })
+
+  it('lets two applies of one offer race without installing twice', async () => {
+    const r = rig({ verdict: { status: 'off' }, force: true })
+    await r.updates.offered(available())
+    const results = await Promise.all([r.updates.apply(APP, TO), r.updates.apply(APP, TO)])
+    expect(results.filter((result) => result.ok)).toHaveLength(1)
+    expect(r.loader.applyUpdate).toHaveBeenCalledTimes(1)
+  })
+
+  it('lets another task of the origin run while the failure notice is open', async () => {
+    const { withOriginQueue } = await import('../origin-queue.js')
+    const r = rig({ verified: { yes: true }, applied: { outcome: 'rejected', reason: 'the gateway did not answer' } })
+    r.prompts.failed.mockImplementation(async () => await new Promise<void>(() => {}))
+    void r.updates.offered(available())
+    await vi.waitFor(() => { expect(r.prompts.failed).toHaveBeenCalledTimes(1) })
+    expect(await withOriginQueue(APP, async () => 'ran')).toBe('ran')
+  })
+})
+
 describe('a name that returns to the pinned content', () => {
   it('withdraws the offer, and says so to the key', async () => {
     const r = rig()
