@@ -13,6 +13,7 @@ import { pageMenuItems } from './page-menu-items.js'
 import { forgetNavigation, leaveAllowed } from './leave-page-prompt.js'
 import { watchPageDialogs } from './page-dialogs.js'
 import { windowOpenHandler } from './popups.js'
+import { repartitionBeforeCommit } from './pre-partition.js'
 import { keepsOpenerSession, openerCutNeeded, popupTargetIsApp } from './popup-opener.js'
 import { DEFAULT_BACKGROUND } from './theme-colors.js'
 import { sheetBackdropOf } from './sheet-backdrop.js'
@@ -149,6 +150,7 @@ export function wireView (id: string, record: TabRecord): void {
   watchLoadFailure(wc, () => { record.host.emitState() })
   // A press in a pane is the person choosing it, in a split. Not focus, which a page loading in the other pane can take.
   wc.on('input-event', (_event, input) => { if (input.type === 'mouseDown') record.host.paneClicked(id) })
+  repartitionBeforeCommit(wc, id, record, shown)
   wc.on('did-navigate', (_event, navigatedUrl: string) => {
     // Unconditional, ahead of the `shown()` gate below: a parked or
     // background view's own navigation still changes which origin's

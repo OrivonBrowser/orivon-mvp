@@ -131,6 +131,11 @@ describe('buildSiteInfo -- identity fields', () => {
     expect(info.origin).toBe(APP)
     expect(info.claimedName).toBe('Test app')
   })
+
+  it('carries the home the manifest names, and none when it names none', () => {
+    expect(buildSiteInfo(APP, { ...manifestWith({}), domain: 'app.eth' }, [], [], true).homeDomain).toBe('app.eth')
+    expect(buildSiteInfo(APP, manifestWith({}), [], [], true).homeDomain).toBeUndefined()
+  })
 })
 
 describe('buildSiteInfo -- extensionsOnSite', () => {

@@ -16,6 +16,8 @@ import type { DdocVerdict, PublishedTree } from '../../trust/ddoc.js'
 import { displayedLevel, websiteLevel } from '../../trust/website-level.js'
 import type { ScoreLevel, WebsiteLevel } from '../../trust/website-level.js'
 import { scoreIdOf } from '../../trust/score-provider.js'
+import { domainBinding, judgedLevelCounts, originHost } from '../../trust/domain-binding.js'
+import type { DomainBinding, HomeFacts } from '../../trust/domain-binding.js'
 import { canonicalCid } from '../../protocols/ipfs/names.js'
 import type { ProviderVerdict } from '../../trust/score-provider.js'
 import type { PinRecord } from '../../broker/policy/pin.js'
@@ -42,6 +44,14 @@ export interface SiteTrust {
   readonly judged: ProviderVerdict
   /** `displayedLevel` is that provider's judged Level 3 or 4, not what this browser observed. */
   readonly judgedShown: boolean
+  /** Whether the manifest of this page's content names this address as its home (`../../trust/domain-binding.ts`). */
+  readonly binding: DomainBinding
+  /** The `domain` that manifest names, when it names one. */
+  readonly homeDomain: string | undefined
+  /** A provider judged this content Level 3 or 4, but not at this address, so the level is not counted here. */
+  readonly judgedElsewhere: boolean
+  /** The manifest of this page's content was still being read; asking again soon gets the answer. */
+  readonly homePending: boolean
   /** `level.level`, a judged level over it, or `levelOverride` -- what every surface should
    * actually show (`../../trust/website-level.js`'s `displayedLevel`). */
   readonly displayedLevel: ScoreLevel
@@ -75,7 +85,7 @@ export function web3Score (trust: SiteTrust | null): Web3Score | null {
     level: trust.displayedLevel,
     overridden,
     judgedBy: trust.judgedShown && trust.judged.status === 'judged' ? trust.judged.provider.name : undefined,
-    pending: trust.judged.status === 'pending',
+    pending: trust.judged.status === 'pending' || trust.homePending,
     delivery: trust.displayedDelivery,
     deliveryOverridden: trust.deliveryOverride !== undefined,
     localDev: trust.ddoc.status === 'local-dev'
@@ -147,6 +157,10 @@ export function buildSiteTrust (
     levelOverride,
     judged: { status: 'off' },
     judgedShown: false,
+    binding: 'not-applicable',
+    homeDomain: undefined,
+    judgedElsewhere: false,
+    homePending: false,
     displayedLevel: displayedLevel(level.level, levelOverride),
     deliveryOverride,
     displayedDelivery: deliveryOverride ?? delivery.level
@@ -163,9 +177,37 @@ export function providerIdFor (trust: SiteTrust): string | undefined {
   return value === undefined ? undefined : scoreIdOf({ kind: assessable.kind, value })
 }
 
-export function withProviderVerdict (trust: SiteTrust, judged: ProviderVerdict): SiteTrust {
+/** What the page's own manifest says about where it lives: its binding at this origin, and the name it gives. */
+export interface Home {
+  readonly binding: DomainBinding
+  readonly domain: string | undefined
+  /** The manifest was still being read. */
+  readonly pending?: boolean
+}
+
+export function homeAt (origin: string, facts: HomeFacts, pending = false): Home {
+  return { binding: domainBinding(originHost(origin), facts), domain: facts.kind === 'app' ? facts.domain : undefined, pending }
+}
+
+/**
+ * A judged level counts only where `home` binds it (ADR-0055). Where it does not, the
+ * verdict stays on the trust for the page to explain, and the displayed level is what this
+ * browser observed.
+ */
+export function withProviderVerdict (trust: SiteTrust, judged: ProviderVerdict, home: Home): SiteTrust {
   const judgedLevel = judged.status === 'judged' ? judged.evaluation.trustlessity.level : undefined
-  const shown = displayedLevel(trust.level.level, trust.levelOverride, judgedLevel)
+  const counted = judgedLevelCounts(home.binding)
+  const shown = displayedLevel(trust.level.level, trust.levelOverride, counted ? judgedLevel : undefined)
   const observedOrOverride = displayedLevel(trust.level.level, trust.levelOverride)
-  return { ...trust, judged, judgedShown: shown !== observedOrOverride, displayedLevel: shown }
+  const wouldShow = displayedLevel(trust.level.level, trust.levelOverride, judgedLevel) !== observedOrOverride
+  return {
+    ...trust,
+    judged,
+    judgedShown: shown !== observedOrOverride,
+    judgedElsewhere: !counted && wouldShow,
+    binding: home.binding,
+    homeDomain: home.domain,
+    homePending: home.pending === true,
+    displayedLevel: shown
+  }
 }

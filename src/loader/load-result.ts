@@ -1,4 +1,4 @@
-// What one load() can end in: the six outcomes src/loader/index.ts routes
+// What one load() can end in: the seven outcomes src/loader/index.ts routes
 // to. A pending outcome carries everything installing needs, so a caller
 // acting on the person's answer never fetches again.
 
@@ -107,12 +107,31 @@ export interface LoadRejected {
    * than returning it.
    */
   readonly reason: string
+  /** The name moved again between an offer and its download; the offer is stale and a later check makes a fresh one. */
+  readonly movedAgain?: true
 }
 
 /** This origin was checked less than `updateCheckIntervalMs` ago, or its host answered the conditional manifest request with 304; no bundle was fetched and nothing changed. */
 export interface LoadUpToDate {
   readonly outcome: 'up-to-date'
   readonly canonicalOrigin: string
+  /** Set when the name was read just now and leads to the content already pinned, so an offer made for it earlier no longer stands. */
+  readonly atPinnedContent?: true
 }
 
-export type LoadResult = LoadInstalled | LoadNeedsReconsent | LoadNeedsCapabilityPrompt | LoadNeedsRollbackChoice | LoadRejected | LoadUpToDate
+/**
+ * An installed app's name now points at other content. Only the new manifest was fetched: the
+ * person is asked before the bundle is, and `Loader.applyUpdate` fetches it for `toCid`.
+ */
+export interface LoadUpdateAvailable {
+  readonly outcome: 'update-available'
+  readonly canonicalOrigin: string
+  /** The root the pin holds, and the root the name points at now. */
+  readonly fromCid: string
+  readonly toCid: string
+  readonly manifest: Manifest
+  /** Whether every pointer from the name to `toCid` was verified: false through a DNSLink. */
+  readonly pointersVerified: boolean
+}
+
+export type LoadResult = LoadInstalled | LoadNeedsReconsent | LoadNeedsCapabilityPrompt | LoadNeedsRollbackChoice | LoadRejected | LoadUpToDate | LoadUpdateAvailable

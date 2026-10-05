@@ -159,6 +159,7 @@ field is ignored, and the loader logs a warning naming it. An unknown field anyw
                                             // built with threads (ADR-0036); omit it unless needed,
                                             // since an isolated page loses window.opener from its
                                             // popups and sends no credentials with cross-origin loads
+  "domain": "app.orivonstack.eth"          // the one ENS name or DNS host the app calls home; see below
 }
 ```
 
@@ -204,6 +205,20 @@ parses the field (`src/loader/manifest/manifest.ts`), and the install-time conse
 Choose-individually / Deny-all sequence on `manifest.consentGranularity === 'per-capability'`.
 Three update-time prompts (reconsent, capability-widening, rollback) do not yet honour it; see
 `docs/open-questions.md` A162.
+
+### `domain`: the one name an app calls home
+
+`Manifest.domain` is an ENS name or a DNS host in the spelling a URL gives a host: lower case,
+two labels or more, 253 characters at most, with no scheme, port, path, user, trailing dot or IP
+address, never `localhost` and never under `.orivon`. A malformed value rejects the manifest;
+absence is allowed. It is **self-asserted**, like `name`.
+
+What it does: the manifest is a leaf of the content address, so a Web3 Score provider's judgement
+of a CID covers the `domain` the manifest inside it names, and Orivon counts a judged level only
+at the host that name gives (ADR-0055). The same files under another name, or a manifest with no
+`domain`, show as unverified and still run; a name that moves to such content cannot be switched
+to without the person's Trust & Force confirmation. Ports set it to the name they are published
+under.
 
 ### `version`: semver, ordering, and what an unparseable one costs
 

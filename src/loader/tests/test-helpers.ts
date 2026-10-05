@@ -187,6 +187,7 @@ export function memoryStorage (): MemoryStorage {
   const pins = new Map<string, unknown>()
   const updateChecks = new Map<string, unknown>()
   const ddocs = new Map<string, unknown>()
+  const updateOffers = new Map<string, unknown>()
   const assets = new Map<string, Map<string, Uint8Array>>()
   const staged = new Map<string, Uint8Array>()
   let nextId = 0
@@ -237,6 +238,11 @@ export function memoryStorage (): MemoryStorage {
     writeUpdateCheck: vi.fn(async (origin: string, record: unknown) => {
       if (record === undefined) updateChecks.delete(origin)
       else updateChecks.set(origin, record)
+    }),
+    readUpdateOffer: vi.fn(async (origin: string) => updateOffers.get(origin)),
+    writeUpdateOffer: vi.fn(async (origin: string, record: unknown) => {
+      if (record === undefined) updateOffers.delete(origin)
+      else updateOffers.set(origin, JSON.parse(JSON.stringify(record)))
     }),
     readDdoc: vi.fn(async (origin: string) => ddocs.get(origin)),
     // Held in its JSON form, as node-storage.ts writes it, so a read goes back through the parser.

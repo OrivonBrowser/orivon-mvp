@@ -8,7 +8,8 @@
 (`ask-caller.ts` is what they share). `grant-level.ts` is the one place a Level 4 site's summary loses its
 warning (`ADR-0037`). `grant-changed-capabilities.ts` is the one place accepted capabilities
 become `broker.grant()` calls. `request-grant-subsystem.ts` wires `request-grant.ts` into the
-running app.
+running app. `update-offer-prompts.ts` and `update-available-render.ts` are the update offer's
+questions (switch, notice, confirm Trust & Force, a failed apply) and their words (`ADR-0055`).
 
 **What it depends on.** [`../../contracts/`](../../contracts/),
 [`../../broker/policy/`](../../broker/policy/) (`manifest-patterns.ts`, `request-grant.ts`,

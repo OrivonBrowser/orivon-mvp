@@ -81,3 +81,41 @@ describe('WindowRegistry', () => {
     expect(registry.focused()).toBeUndefined()
   })
 })
+
+function windowWithTabs (pages: Record<string, { url: string, destroyed?: boolean }>, shown?: string, focused = false): ShellWindow {
+  const contents = new Map(Object.entries(pages).map(([id, page]) => [id, { id, getURL: () => page.url }]))
+  const tabs = {
+    ids: () => Object.keys(pages),
+    liveWebContents: (id: string) => pages[id]?.destroyed === true ? undefined : contents.get(id),
+    activeWebContents: () => (shown === undefined ? undefined : contents.get(shown))
+  }
+  return { window: { isDestroyed: () => false, isFocused: () => focused }, chrome: {}, tabs } as unknown as ShellWindow
+}
+
+describe('WindowRegistry -- tabs by origin', () => {
+  it('finds the live tabs showing an origin, in every window, and skips a destroyed one', () => {
+    const registry = new WindowRegistry()
+    registry.add(windowWithTabs({ a: { url: 'https://app.example/inbox' }, b: { url: 'https://other.example/' } }))
+    registry.add(windowWithTabs({ c: { url: 'https://app.example/' }, d: { url: 'https://app.example/x', destroyed: true } }))
+
+    expect(registry.liveTabsOn('https://app.example')).toHaveLength(2)
+    expect(registry.liveTabsOn('https://nobody.example')).toEqual([])
+  })
+
+  it('lists the tab the person can see first: the focused window\'s shown tab, then another window\'s, then the tabs behind', () => {
+    const registry = new WindowRegistry()
+    registry.add(windowWithTabs({ back: { url: 'https://app.example/a' }, other: { url: 'https://app.example/b' } }, 'other'))
+    registry.add(windowWithTabs({ hidden: { url: 'https://app.example/c' }, front: { url: 'https://app.example/d' } }, 'front', true))
+
+    const ids = registry.liveTabsOn('https://app.example').map((tab) => (tab as unknown as { id: string }).id)
+    expect(ids).toEqual(['front', 'other', 'back', 'hidden'])
+  })
+
+  it('lists each origin that has a live tab once', () => {
+    const registry = new WindowRegistry()
+    registry.add(windowWithTabs({ a: { url: 'https://app.example/inbox' }, b: { url: 'https://other.example/' }, e: { url: 'about:blank' } }))
+    registry.add(windowWithTabs({ c: { url: 'https://app.example/' } }))
+
+    expect(registry.liveTabOrigins().sort()).toEqual(['https://app.example', 'https://other.example'])
+  })
+})

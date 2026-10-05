@@ -7,7 +7,7 @@ prompt / reject).
 
 | Folder | Holds |
 |---|---|
-| (top level) | `index.ts` (`createLoader`/`load()` orchestration), `load-result.ts`, `subsystem.ts`, `dev-serve.ts`, `leaf-hash.ts` and `ddoc-declaration.ts` (used across every folder below) |
+| (top level) | `index.ts` (`createLoader`/`load()` orchestration), `name-update.ts` (a moved name: only the new manifest is fetched, `update-available`, and `applyUpdate` of exactly the offered root), `update-offer.ts` (the ticks a person left on offers), `load-result.ts`, `subsystem.ts`, `dev-serve.ts`, `leaf-hash.ts` and `ddoc-declaration.ts` (used across every folder below) |
 | [`manifest/`](manifest/) | Parsing and validating the manifest |
 | [`fetch/`](fetch/) | Turning a hint into a validated bundle |
 | [`cache/`](cache/) | Writing and pruning what's on disk |
@@ -52,6 +52,14 @@ Topics cited elsewhere as this page's Design notes live with the folder that own
 | The third-party reach path, A199's cancellation, A200's allowance | [`reach/`](reach/README.md) |
 | Restoring at startup, a pin that fails verification, CSP read per request | [`electron/`](electron/README.md) |
 | Why an install never prunes | [`cache/`](cache/README.md) |
+
+**An installed app at a name is offered a move, never taken along (`ADR-0055`).** `load()` of a name
+that points at another root fetches that root's manifest alone (`fetch/manifest-at-root.ts`, pinned to the
+root) and returns `update-available`; the pin does not move. The bundle is fetched in two cases only: the
+manifest is byte-identical to the pinned one (the same files republished, which moves the pin silently when
+the bundle hash is equal and is an offer otherwise), and `applyUpdate`, which fetches the offered root, is
+refused when the name has moved again, and asserts the content it got is that root. A check is repeated at
+most every 5 minutes per origin on a visit, whatever the hourly record says.
 
 **A staged file is hashed by reading it back, not as its bytes arrive**, because the leaf
 preimage puts the content's length before the content, and a declared `Content-Length` is

@@ -9,6 +9,12 @@ without fetching, pinning or serving a bundle, and `granted-origin-csp.ts` gives
 documents an installed app's CSP, through one handler `app-install-subsystem.ts` registers on the
 default session's `webRequest` owner.
 
+`app-updates.ts` is what happens to an installed app whose name moved (`ADR-0055`): it judges an
+`update-available` verified or not (`../../trust/app-update-trust.ts`), asks through `../consent/`,
+applies the offered root on Yes or a confirmed Trust & Force, and reloads every tab on the origin.
+`update-watch.ts` looks again, every 30 minutes, at each origin with an open app tab, and
+`dialog-caller.ts` is how a question finds the tab that raised it.
+
 **Tied to Electron.** `app-install-subsystem.ts` and `manifest-hint.ts` import `electron`; the
 other four -- `granted-origin-csp.ts` included -- must not.
 

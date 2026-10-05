@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { DEFAULT_SCORE_PROVIDER } from '../schema.js'
 import { SettingsStore } from '../settings-store.js'
 
 let dir: string
@@ -28,6 +29,18 @@ describe('SettingsStore', () => {
     expect(store.get('appearance.theme')).toBe('system')
     expect(store.isDefault('appearance.theme')).toBe(true)
     expect(store.snapshot().changed).toEqual([])
+  })
+
+  it('keeps a provider a person cleared, and gives the official one to a profile that never chose', async () => {
+    await mkdir(join(dir, 'nested'), { recursive: true })
+    await writeFile(file, JSON.stringify({ version: 1, values: { 'web3.scoreProvider': '' } }))
+    const cleared = new SettingsStore(file)
+    await cleared.load()
+    expect(cleared.get('web3.scoreProvider')).toBe('')
+
+    const untouched = new SettingsStore(join(dir, 'nested', 'none.json'))
+    await untouched.load()
+    expect(untouched.get('web3.scoreProvider')).toBe(DEFAULT_SCORE_PROVIDER)
   })
 
   it('remembers a choice across a restart, and writes only what differs from the default', async () => {

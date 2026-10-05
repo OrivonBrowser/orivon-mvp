@@ -101,6 +101,7 @@ Ports are named only where the compatibility pages already name them.
 |---|---|---|---|---|
 | `eth-name-loads-verified` | A `.eth` name loads through ENS and IPFS with every block verified, and tampered blocks are refused | apps published to a name | - | [`e2e-eth-verified`](../web3/e2e-eth-verified.test.ts) |
 | `ipfs-url-opens` | An `ipfs://` address opens the site behind it | apps published by content address | - | [`e2e-ipfs-address`](../web3/e2e-ipfs-address.test.ts) |
+| `installed-app-moves-only-when-accepted` | An app installed at a name keeps running the version it was installed at, in every tab, while the name points at newer content; the person is asked, and only on Yes does every tab show the new version, which the next start keeps without asking again | apps published to a name that ships new builds | - | [`e2e-eth-app-update-verified`](../web3/e2e-eth-app-update-verified.test.ts) |
 
 ## Capability coverage
 

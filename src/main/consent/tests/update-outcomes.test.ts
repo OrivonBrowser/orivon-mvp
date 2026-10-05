@@ -32,6 +32,17 @@ function rollbackChoiceResult (manifest = manifestWith('0.7.3'), versionFloor = 
   return { outcome: 'needs-rollback-choice', canonicalOrigin: APP, manifest, tree: fakeTree(), entries: [], declaration: undefined, content: undefined, versionFloor }
 }
 
+describe('driveLoadResult: up-to-date', () => {
+  it('withdraws an earlier offer only when the name was read and leads to the pinned content', async () => {
+    const withdrawUpdate = vi.fn()
+    const deps: UpdateOutcomeDeps = { broker: fakeBroker(), loader: fakeLoader({ outcome: 'rejected', reason: 'unused' }), withdrawUpdate }
+    await driveLoadResult(deps, { outcome: 'up-to-date', canonicalOrigin: APP }, NO_GRANTS)
+    expect(withdrawUpdate).not.toHaveBeenCalled()
+    await driveLoadResult(deps, { outcome: 'up-to-date', canonicalOrigin: APP, atPinnedContent: true }, NO_GRANTS)
+    expect(withdrawUpdate).toHaveBeenCalledWith(APP)
+  })
+})
+
 describe('driveLoadResult: needs-reconsent', () => {
   it('fails closed -- returns the pending result unchanged -- when no reconsentPrompt is wired', async () => {
     const pending = reconsentResult()
