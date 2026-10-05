@@ -19,11 +19,17 @@ export function createAppMediaGrants (deps: AppMediaGrantsDeps): AppMediaGrants 
   /** What the person refused on the page a tab shows now: a page that asks again meets the same no until it loads again. */
   const denied = new WeakMap<WebContents, Denied>()
 
+  /** The tabs that already carry the navigation listener: one per tab, however often a page is refused. */
+  const listening = new WeakSet<WebContents>()
+
   function deny (tab: WebContents, origin: string, kind: AppMediaKind): void {
+    if (!listening.has(tab)) {
+      listening.add(tab)
+      tab.on('did-navigate', () => { denied.delete(tab) })
+    }
     const known = denied.get(tab)
     if (known === undefined) {
       denied.set(tab, { origin, kinds: new Set([kind]) })
-      tab.on('did-navigate', () => { denied.delete(tab) })
     } else if (known.origin === origin) {
       known.kinds.add(kind)
     } else {

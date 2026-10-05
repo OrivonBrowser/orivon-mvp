@@ -5,10 +5,10 @@ import { createAppMediaGrants } from '../app-media-grants.js'
 
 const ORIGIN = 'https://app.example'
 
-function fakeTab (): { tab: WebContents, navigate: () => void } {
+function fakeTab (): { tab: WebContents, navigate: () => void, listenerCount: () => number } {
   const listeners: Array<() => void> = []
   const tab = { on: (_event: string, listener: () => void) => { listeners.push(listener) } } as unknown as WebContents
-  return { tab, navigate: () => { for (const listener of [...listeners]) listener() } }
+  return { tab, navigate: () => { for (const listener of [...listeners]) listener() }, listenerCount: () => listeners.length }
 }
 
 function setup (held: AppMediaKind[] = [], answer = true) {
@@ -87,5 +87,15 @@ describe('request', () => {
     await grants.request(tab, 'https://other.example', 'media.camera')
     await grants.request(tab, ORIGIN, 'media.camera')
     expect(ask).toHaveBeenCalledTimes(3)
+  })
+
+  it('listens for the tab\'s navigation once, however many times the page is refused and loads again', async () => {
+    const { grants } = setup([], false)
+    const { tab, navigate, listenerCount } = fakeTab()
+    for (let round = 0; round < 5; round++) {
+      await grants.request(tab, ORIGIN, 'media.camera')
+      navigate()
+    }
+    expect(listenerCount()).toBe(1)
   })
 })
