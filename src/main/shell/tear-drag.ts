@@ -272,13 +272,14 @@ export class TearDragController {
   }
 }
 
-export function imageToDataUrl (image: NativeImage | null, size: { width: number, height: number }): string | null {
+export function imageToDataUrl (image: NativeImage | null, size: { width: number, height: number }, jpegQuality?: number): string | null {
   // Empty, not just absent, is also "nothing to draw": a detached view (a background tab, caught
   // before beginTabDrag's own activateTab call takes effect, or a tab that never painted) captures
   // to a zero-sized image rather than throwing -- render()'s own chip fallback is for both.
   if (image === null || image.isEmpty()) return null
   try {
-    return image.resize(size).toDataURL()
+    const resized = image.resize(size)
+    return jpegQuality === undefined ? resized.toDataURL() : `data:image/jpeg;base64,${resized.toJPEG(jpegQuality).toString('base64')}`
   } catch {
     return null
   }

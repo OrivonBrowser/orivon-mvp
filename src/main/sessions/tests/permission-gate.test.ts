@@ -15,13 +15,15 @@ interface FakeSession {
   setPermissionRequestHandler: ReturnType<typeof vi.fn>
   setPermissionCheckHandler: ReturnType<typeof vi.fn>
   setDevicePermissionHandler: ReturnType<typeof vi.fn>
+  setDisplayMediaRequestHandler: ReturnType<typeof vi.fn>
 }
 
 function makeFakeSession (): FakeSession {
   return {
     setPermissionRequestHandler: vi.fn(),
     setPermissionCheckHandler: vi.fn(),
-    setDevicePermissionHandler: vi.fn()
+    setDevicePermissionHandler: vi.fn(),
+    setDisplayMediaRequestHandler: vi.fn()
   }
 }
 
@@ -58,6 +60,7 @@ vi.mock('../../shell/exclusive-access-notice.js', () => ({ noteExclusiveAccess: 
 const { permissionGateSubsystem, setNotificationsBlockedCheck } = await import('../permission-gate.js')
 const { ALLOWED_PERMISSIONS } = await import('../allowed-permissions.js')
 const { siteAsks } = await import('../site-asks.js')
+const { bindDisplayMediaHandler } = await import('../display-media-handler.js')
 
 // Electron's full permission vocabulary, merged from BOTH handler
 // signatures (session.md's own two lists differ slightly: 'display-
@@ -443,6 +446,91 @@ describe('permissionGateSubsystem', () => {
         expect(await handlers.ask(fakeTab(), 'geolocation', {})).toBe(false)
       } finally {
         request.mockRestore()
+      }
+    })
+
+    it('tells the registry a request was granted only after Electron was told, and never for a refusal', async () => {
+      const handlers = defaultSessionHandlers()
+      const order: string[] = []
+      const request = vi.spyOn(siteAsks, 'request').mockReturnValue(Promise.resolve(true))
+      const afterGrant = vi.spyOn(siteAsks, 'afterGrant').mockImplementation(() => { order.push('afterGrant') })
+      try {
+        const contents = fakeTab()
+        const details = { mediaTypes: [] }
+        await handlers.ask(contents, 'media', details)
+        order.push('callback-seen')
+        expect(order).toEqual(['afterGrant', 'callback-seen'])
+        expect(afterGrant).toHaveBeenCalledWith(contents, 'media', details)
+        afterGrant.mockClear()
+        request.mockReturnValue(Promise.resolve(false))
+        await handlers.ask(contents, 'media', details)
+        expect(afterGrant).not.toHaveBeenCalled()
+      } finally {
+        request.mockRestore()
+        afterGrant.mockRestore()
+      }
+    })
+  })
+
+  describe('display capture', () => {
+    it('refuses a media request with no device type when no asker owns it, and the display permission with it', () => {
+      const handlers = defaultSessionHandlers()
+      expect(handlers.request('media', { mediaTypes: [], isMainFrame: true, securityOrigin: 'https://a.example' })).toBe(false)
+      expect(handlers.check('display-capture')).toBe(false)
+      expect(handlers.request('display-capture')).toBe(false)
+    })
+
+    it('installs a display handler on every session that answers no stream until one is bound', () => {
+      permissionGateSubsystem.beforeReady?.()
+      void permissionGateSubsystem.afterReady?.({} as never)
+      const handler = fakeDefaultSession.setDisplayMediaRequestHandler.mock.calls.at(-1)?.[0] as (request: object, callback: (streams: object) => void) => void
+      const answers: object[] = []
+      handler({}, (streams) => answers.push(streams))
+      expect(answers).toEqual([{}])
+
+      const bound = vi.fn((_request: object, callback: (streams: object) => void) => { callback({ video: 'v' }) })
+      bindDisplayMediaHandler(bound as never)
+      try {
+        handler({ id: 1 }, (streams) => answers.push(streams))
+        expect(answers.at(-1)).toEqual({ video: 'v' })
+        expect(bound).toHaveBeenCalledOnce()
+      } finally {
+        bindDisplayMediaHandler(undefined)
+      }
+    })
+
+    it('answers no stream, once, when the bound handler throws or answers twice', () => {
+      permissionGateSubsystem.beforeReady?.()
+      void permissionGateSubsystem.afterReady?.({} as never)
+      const handler = fakeDefaultSession.setDisplayMediaRequestHandler.mock.calls.at(-1)?.[0] as (request: object, callback: (streams: object) => void) => void
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      const answers: object[] = []
+      try {
+        bindDisplayMediaHandler((() => { throw new Error('boom') }) as never)
+        handler({}, (streams) => answers.push(streams))
+        bindDisplayMediaHandler(((_request: object, callback: (streams: object) => void) => { callback({ video: 'a' }); callback({ video: 'b' }) }) as never)
+        handler({}, (streams) => answers.push(streams))
+      } finally {
+        bindDisplayMediaHandler(undefined)
+        error.mockRestore()
+      }
+      expect(answers).toEqual([{}, { video: 'a' }])
+    })
+
+    it('does not log the throw Electron makes when an answer carries no stream: the page\'s call just fails', () => {
+      permissionGateSubsystem.beforeReady?.()
+      void permissionGateSubsystem.afterReady?.({} as never)
+      const handler = fakeDefaultSession.setDisplayMediaRequestHandler.mock.calls.at(-1)?.[0] as (request: object, callback: (streams: object) => void) => void
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      try {
+        expect(() => { handler({}, () => { throw new Error('Video was requested, but no video stream was provided') }) }).not.toThrow()
+        expect(error).not.toHaveBeenCalled()
+        bindDisplayMediaHandler(((_request: object, callback: (streams: object) => void) => { callback({ video: 'v' }) }) as never)
+        handler({}, () => { throw new Error('refused') })
+        expect(error).toHaveBeenCalledOnce()
+      } finally {
+        bindDisplayMediaHandler(undefined)
+        error.mockRestore()
       }
     })
   })

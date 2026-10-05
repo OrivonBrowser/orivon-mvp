@@ -102,7 +102,7 @@ export const sitePromptPage: OverlayPage = {
         const buttons = CHOICES.map((choice) => {
           const button = h('button', {
             type: 'button',
-            disabled: choice.value === 'ask' && !row.askOffered,
+            disabled: (choice.value === 'ask' && !row.askOffered) || (choice.value === 'allow' && !row.allowOffered),
             onclick: () => {
               void overlay.request<{ kind: string, value: Choice } | undefined>({ type: 'set', kind: row.kind, value: choice.value }).then((done) => {
                 if (done === undefined) return

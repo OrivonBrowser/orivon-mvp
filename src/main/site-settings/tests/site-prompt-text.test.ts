@@ -47,7 +47,7 @@ describe('askView', () => {
 
 describe('reviewView', () => {
   it('carries the rows and whether Site settings can be opened', () => {
-    const rows = [{ kind: 'camera' as const, label: 'Camera', value: 'block' as const, askOffered: true }]
+    const rows = [{ kind: 'camera' as const, label: 'Camera', value: 'block' as const, askOffered: true, allowOffered: true }]
     expect(reviewView('https://meet.example', rows, true)).toEqual({ mode: 'review', origin: 'https://meet.example', rows, settingsLink: true })
   })
 })

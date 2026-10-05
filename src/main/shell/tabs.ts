@@ -192,6 +192,7 @@ export class TabManager {
     this.cancelPendingPush()
     this.listeners.clear()
     for (const id of [...this.tabs.keys()]) this.forgetTab(id, true)
+    this.panes.dispose()
   }
 
   /** True from the moment the window starts closing: no tab may be opened or driven on this manager any more. */

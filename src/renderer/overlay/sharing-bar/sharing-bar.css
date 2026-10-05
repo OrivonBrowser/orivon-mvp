@@ -1,0 +1,25 @@
+/* One 44px row: a mark, who is sharing what, Stop sharing and Hide. The sentence gives way first. */
+
+body[data-overlay='sharing-bar'] .sharingbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  height: 44px;
+  padding: 0 8px 0 14px;
+}
+
+body[data-overlay='sharing-bar'] .sharing-mark { flex: none; display: inline-flex; color: var(--wdanger-text); }
+body[data-overlay='sharing-bar'] .sharing-mark svg { width: 16px; height: 16px; }
+
+body[data-overlay='sharing-bar'] .sharing-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--wink);
+}
+
+body[data-overlay='sharing-bar'] .btn { flex: none; }

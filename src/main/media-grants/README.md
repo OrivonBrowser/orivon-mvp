@@ -35,7 +35,7 @@ from a device request or a display request.
 
 **The asker is registered ahead of the per-site asker.** The registry answers with the first asker whose answer is
 not `undefined`, in registration order, and the per-site asker refuses every app origin. `shell-installers.ts` keeps
-`media-grants` before `site-permissions`, and its test pins the order. An asker that is not an app's falls through:
+`media-grants` before `site-permissions`, and its test pins the order. The display gate's asker registers before both (`addFirst`) and owns the `media` request that names no device; this asker answers `undefined` for that request, so the two never shadow each other. An asker that is not an app's falls through:
 a website, an embed, a request with no device type and every other permission.
 
 **A registered app, not an app that holds a grant.** The asker's test for an app is "holds a grant or is served from

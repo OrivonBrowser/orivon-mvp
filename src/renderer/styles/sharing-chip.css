@@ -1,0 +1,7 @@
+/* The address bar's mark for a page that is sharing a screen, a window or a tab. The plain pill button look comes
+   from .pillbtn; this only tints it. */
+
+#sharing-chip { color: var(--wshare-mark); }
+#sharing-chip[hidden] { display: none; }
+#sharing-chip:not(:disabled):hover { color: var(--wshare-mark); }
+#sharing-chip:focus-visible { background: var(--whover-soft); }
