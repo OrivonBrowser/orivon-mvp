@@ -14,7 +14,7 @@ import type { CapabilityKind, Manifest, Pattern } from '../../contracts/index.js
 
 const CAPABILITY_KINDS: readonly CapabilityKind[] = [
   'tcp.connect', 'tcp.listen.local', 'tcp.listen.network', 'udp.bind.local', 'udp.bind.network',
-  'udp.send', 'https.connect', 'fs', 'id', 'web.context', 'web.embed', 'secrets'
+  'udp.send', 'https.connect', 'fs', 'id', 'web.context', 'web.embed', 'secrets', 'trust.score'
   // media.camera / media.microphone / clipboard.read (ADR-0032) are a
   // separate, stacked implementation PR (docs/planning/compatibility-
   // matrix.md); adding them here is that PR's own job, alongside its
@@ -34,7 +34,7 @@ function isConnectShaped (capability: CapabilityKind): capability is ConnectPatt
 }
 
 /**
- * True for exactly the eleven `CapabilityKind` literals -- the guard an
+ * True for exactly the `CapabilityKind` literals listed above -- the guard an
  * UNTRUSTED string needs before it may be treated as one. Two independent
  * callers need it: `../../main/request-grant.ts`'s `request.capability` (an
  * app's raw IPC payload) and `../grants/grant-persistence.ts`'s hydration

@@ -1,8 +1,8 @@
 # `src/broker/capabilities/`: the `orivon.*` entry points
 
 **What lives here.** The entry points `createBroker` ([`../index.ts`](../index.ts)) returns, one
-file per capability (`net`, `fs`, `user-selected`, `id`, `secrets`, `web`, and `embed` for
-`web.embed`'s broker half, `ADR-0039`), plus the helpers they share.
+file per capability (`net`, `fs`, `user-selected`, `id`, `secrets`, `web`, `embed` for
+`web.embed`'s broker half, `ADR-0039`, and `trust`, which is only `trust.score`'s grant check, `ADR-0058`), plus the helpers they share.
 [`listener-registry.ts`](listener-registry.ts) is one of them: which ports each origin holds a
 listener on, written by `net-listen.ts`'s `listen` and read by `embed.ts`, because `web.embed`'s local
 pattern (`ADR-0047`) loads only while the embedding app holds its port. `createBroker` builds it

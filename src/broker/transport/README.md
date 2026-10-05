@@ -43,6 +43,11 @@ failure mode where two compliant PRs push a shared file past the 500-line limit 
 either branch. `ipc.ts`'s `dispatch()` stays a thin router that narrows `method` to each module's
 slice (`Extract<ControlMethod, \`net.${string}\`>`).
 
+**`trust.websiteScore` checks its grant in the broker and runs its lookup from the context.** The score lookup reads
+settings and the network, so it lives in `src/main/browsing/` and `dispatch/trust.ts` reaches it through `ctx.websiteScore`,
+read live on each call because the shell publishes it after the broker is wired (the shape `RequestGrantCtx` has). The
+grant check comes first, so an app without `trust.score` learns nothing, not even whether a provider is chosen.
+
 **`ControlEvent` lives in [`relay/port-transport.ts`](relay/port-transport.ts).** `dispatch/net.ts`
 needs it and must not import `ipc.ts`, which imports `dispatchNet`: that is a cycle. `ipc.ts`
 re-exports it.
