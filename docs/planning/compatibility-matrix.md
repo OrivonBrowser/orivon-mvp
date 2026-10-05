@@ -1034,7 +1034,7 @@ the reference set, and whether this build has it.
 | Translate | ❌ | Not found |
 | Spellcheck | ⚠️ | `spellcheck.enabled` (on by default) checks text in every tab; the menu offers up to five suggestions, Add to Dictionary and a Check Spelling switch; no language picker, and Chromium downloads each dictionary once (`src/main/spellcheck/`) |
 | Dictionary / look up word | ❌ | Not found |
-| PDF viewer | ✅ | A served PDF opens in an ordinary tab in Chromium's built-in viewer with no `plugins` flag and no setting (`test/e2e-page-tools.test.ts`) |
+| PDF viewer | ✅ | A served PDF opens in an ordinary tab in Chromium's built-in viewer with no `plugins` flag and no setting (`test/page/e2e-page-tools.test.ts`) |
 | Image viewer | ➖ | Chromium's own default applies |
 | Picture-in-picture | ✅ | `page.pip` (More tools, the video's menu) pops out the video under the pointer, or the playing or largest one, and puts it back on a second run (`src/main/page-tools/pip.ts`) |
 | Media controls / global media hub | ❌ | Not found |
@@ -1047,7 +1047,7 @@ the reference set, and whether this build has it.
 | Alert / confirm / prompt dialogs | ✅ | Drawn in the tab's question panel under the asking frame's own origin, with a "do not let this page show more dialogs" tick from a document's third dialog. `alert` and `confirm` come from Electron's own dialog event and `prompt` from the tab's top-frame preload (a subframe's `prompt` throws, as in Electron). Electron's native box is not drawn for a tab or a `<webview>` guest. A call Chromium ignores (a sandbox without `allow-modals`, a handler running because the page is being left) is ignored here too |
 | Pinch zoom, smooth scrolling, autoscroll (middle-click drag on a page) | ➖ | Chromium's own default applies to page content |
 | Drag-and-drop of links/images/files into the page | ➖ | Chromium's own default applies |
-| Network / DNS / certificate error pages ("can't be reached") | ✅ | Overlay `load-error` (`src/main/sad-tab/load-error-watch.ts`) over a tab whose page failed to load: a sentence per network error, the address, Chromium's short error name and Try again; a certificate failure gets the `cert-error` sheet instead, and a failed HTTPS-only upgrade its own (`test/e2e-load-error.test.ts`) |
+| Network / DNS / certificate error pages ("can't be reached") | ✅ | Overlay `load-error` (`src/main/sad-tab/load-error-watch.ts`) over a tab whose page failed to load: a sentence per network error, the address, Chromium's short error name and Try again; a certificate failure gets the `cert-error` sheet instead, and a failed HTTPS-only upgrade its own (`test/page/e2e-load-error.test.ts`) |
 | "Aw, snap" crash page / sad-tab reload | ✅ | Overlay `sad-tab` (`src/main/sad-tab/`) over a crashed active tab with Reload and Close tab; an unresponsive page gets the same card with Wait and Reload; a background crash shows only the strip icon until the tab is activated |
 | `beforeunload` guard | ✅ | Asks Leave/Stay in the question panel while the page stays; Leave runs again a navigation the shell started, and a page's own navigation is repeated by the person (`leave-page-prompt.ts`) |
 

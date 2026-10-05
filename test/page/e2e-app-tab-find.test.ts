@@ -5,16 +5,16 @@
 // e2e-page-buffer.test.ts does: the app-tab flag is fixed when the tab's view is built.
 //
 // RUN THIS WITH:
-//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-app-tab-find.test.ts
+//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/page/e2e-app-tab-find.test.ts
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import type { ElectronApplication } from 'playwright'
-import { assertNoElectronSurvivors, closeElectron } from './support/launch-electron.mjs'
-import { pressKey, waitForKeyboardAt } from './support/e2e-helpers.js'
-import { launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from './support/qa-helpers.js'
-import type { FixtureServer } from './support/qa-helpers.js'
-import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
-import type { Grant, Manifest } from '../src/contracts/index.js'
-import { delay, evaluateRetrying, popoverShown, waitFor } from './support/smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
+import { pressKey, waitForKeyboardAt } from '../support/e2e-helpers.js'
+import { launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from '../support/qa-helpers.js'
+import type { FixtureServer } from '../support/qa-helpers.js'
+import type { DevGrantRequest } from '../../src/main/dev/dev-grant.js'
+import type { Grant, Manifest } from '../../src/contracts/index.js'
+import { delay, evaluateRetrying, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 
 /** An external script, never inline: a registered app's own policy admits none. */
 const HANDLER = `window.__seen = 0

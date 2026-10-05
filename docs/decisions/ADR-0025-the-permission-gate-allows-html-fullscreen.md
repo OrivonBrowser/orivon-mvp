@@ -74,7 +74,7 @@ this one. That is clause (2b).
   also keep fullscreen away from a document running another site's script, as they do clipboard
   write and file access. They look redundant with the gate and are not.
 - The argument rests on upstream behaviour this project does not control: the activation
-  requirement, and Escape being handled in the browser process. `test/e2e-shell-fidelity.test.ts`
+  requirement, and Escape being handled in the browser process. `test/page/e2e-shell-fidelity.test.ts`
   asserts both through their effects against the real shell: a load-time request is refused, a
   click fills the window with the chrome hidden and the notice shown, and an Escape sent through
   the browser's own input path leaves.

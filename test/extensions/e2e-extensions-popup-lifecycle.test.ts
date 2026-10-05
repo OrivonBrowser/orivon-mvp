@@ -190,7 +190,7 @@ it('closes an open browserAction popup the way Chrome does, and keeps window.clo
       check('focus moving to the toolbar closes the popup', await popupClosed())
 
       // ---- Escape inside the popup closes it ----
-      // Sent through webContents.sendInputEvent (test/e2e-shell-fidelity.test.ts's
+      // Sent through webContents.sendInputEvent (test/page/e2e-shell-fidelity.test.ts's
       // own pattern), not Playwright's page.keyboard: measured directly, a
       // CDP-level key press is silently dropped by Chromium's own input
       // routing when the target window never took real OS focus -- the

@@ -246,7 +246,7 @@ This table lists 157 authorities a Node or Electron app can need, in 14 classes.
 | Capability | Spec'd | Broker | Page | Node shim | Note |
 |---|:--:|:--:|:--:|:--:|---|
 | More than one window, always-on-top, frameless windows, window size and position, kiosk mode (`BrowserWindow`) | 🚫 | 🚫 | 🚫 | 🚫 | `BrowserWindow` throws `desktop-shell`: the app runs in a tab, and a shift-click opens a shell window. Refused by design in the Electron shim ([Table 2b](table-2b-electron.md)); no ADR names it |
-| Popup windows with an opener | ➖ | ➖ | ➖ | ➖ | Web platform: a popup the page can talk to becomes a tab in its opener's session with `window.opener`, which a cross-origin isolated app loses. OAuth and wallet flows use it. e2e in [`e2e-shell-fidelity.test.ts`](../../../test/e2e-shell-fidelity.test.ts) |
+| Popup windows with an opener | ➖ | ➖ | ➖ | ➖ | Web platform: a popup the page can talk to becomes a tab in its opener's session with `window.opener`, which a cross-origin isolated app loses. OAuth and wallet flows use it. e2e in [`e2e-shell-fidelity.test.ts`](../../../test/page/e2e-shell-fidelity.test.ts) |
 | HTML fullscreen, pointer lock, keyboard lock | ➖ | ➖ | ➖ | ➖ | Web platform: the gate allows them with a shell notice ([ADR-0025](../../decisions/ADR-0025-the-permission-gate-allows-html-fullscreen.md), [ADR-0026](../../decisions/ADR-0026-the-permission-gate-allows-pointer-and-keyboard-lock.md)); `automatic-fullscreen` stays denied |
 | Picture-in-picture | ➖ | ➖ | ➖ | ➖ | Web platform: not measured (Table 8 lists it as not found) |
 | Embedding another site | ✅ | ✅ | ✅ | ➖ | Given by `web.embed` (Table 1a) |
