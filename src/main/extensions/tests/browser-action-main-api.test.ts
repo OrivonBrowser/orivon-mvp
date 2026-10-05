@@ -111,7 +111,7 @@ describe('activateFromMain', () => {
 })
 
 describe('chrome.action.openPopup and the click interceptor', () => {
-  it('carries on to the extension and never asks the interceptor: no click was made, so nothing is taken as one', () => {
+  it('carries on to the extension and never asks the interceptor: no click was made, so nothing is taken as one', async () => {
     const tab = { id: 7 }
     const ctx = fakeCtx(tab)
     const win = { isDestroyed: () => false, getSize: () => [800, 600] }
@@ -122,7 +122,7 @@ describe('chrome.action.openPopup and the click interceptor', () => {
     withActions(api)
     const intercept = vi.fn(() => true)
     setActionClickInterceptor(intercept)
-    ;(api as any).openPopup({ extension: { id: B } }, undefined)
+    await (api as any).openPopup({ extension: { id: B } }, undefined)
     expect(intercept).not.toHaveBeenCalled()
     expect(ctx.router.sendEvent).toHaveBeenCalledWith(B, 'browserAction.onClicked', undefined)
   })
