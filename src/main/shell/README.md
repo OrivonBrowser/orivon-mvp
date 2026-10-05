@@ -13,7 +13,7 @@ the `{ window, services }` pair a hook or an overlay handler receives.
 `TAB_SIGNALS` entry adds), `tab-navigation.ts`, `tab-open.ts` (every way a tab is created) and
 `tab-panes.ts` (which views show where) as its parts; `tab-view.ts`, `tab-partition.ts`,
 `app-tab-watch.ts`, `tab-signals.ts`, `tab-types.ts`, `tab-factory.ts`, `tab-lifecycle.ts` and
-`tab-parking.ts` are the per-tab view. `tab-origin-liveness.ts` is `tab-view.ts`'s own per-origin
+`tab-parking.ts` are the per-tab view. `eth-gateway-redirect.ts` opens an ENS gateway address (`<name>.eth.limo`, `<name>.eth.link`) as the `.eth` name it stands for: the web-request handler and the `gatewayRedirectFor` rule that the tab hooks below share. `tab-origin-liveness.ts` is `tab-view.ts`'s own per-origin
 live-document counter. `tab-order.ts` is where a tab sits in the strip, `tab-move.ts` moves one between windows keeping the
 same page (and is where a dragged tab's cross-window target -- which window's strip, and where in it -- is
 worked out from the tab centres `strip-centres.ts` reads off the target window's chrome page, shared by the actual move and by `tear-drag.ts`'s own mark), `tab-menu.ts` is its right-click
@@ -81,7 +81,7 @@ test-hook.ts` is the e2e-only record of what each was actually set to.
 [`../shortcuts/`](../shortcuts/) (the command table and the service the menu reads, and the command bus a window runs a chosen command through), [`../overlays/`](../overlays/) (the question panel is an overlay shown through the tab slots),
 [`../consent/grant-prompt-origin.ts`](../consent/grant-prompt-origin.ts) (the origin line every
 permission dialog shows), [`../sessions/`](../sessions/) (the two questions' types, and
-`permission-gate.ts`'s notification store, handed to the permissions panel),
+`permission-gate.ts`'s notification store, handed to the permissions panel; `web-request-owner.ts` and `handler-while-needed.ts`, for `eth-gateway-redirect.ts`),
 [`../dev/`](../dev/) (the developer-mode flag, the score-level override, the local resolvers),
 [`../verifier/`](../verifier/), the stores and services a window reads ([`../settings/`](../settings/),
 [`../history/`](../history/), [`../zoom/`](../zoom/), [`../devtools/`](../devtools/),
@@ -252,3 +252,23 @@ document starts out visible. The page's preload turns it into `document.visibili
 ([`../../preload/page-visibility.ts`](../../preload/page-visibility.ts)); the decision is in the
 [decision log](../../../docs/decisions/decision-log.md). Limits: subframes are not told, and Chromium's
 own throttling is not what slows a hidden page, only the page backing off when it reads `hidden`.
+
+**[`eth-gateway-redirect.ts`](eth-gateway-redirect.ts): a gateway address opens as the `.eth` name from the first load, through four hooks and one handler.**
+Setting `web3.ethGatewayRedirect` is on by default and applies at once; each hook asks `gatewayRedirectFor`, which answers
+only while the setting is on and the verifier can load the name (`verifierServesName`), so with the light client off every
+gateway address opens as it is. The hooks map the address before the load, so the tab's session, the fragment and the address
+bar are those of the name from the start: `resolveTarget` in `tab-navigation.ts` (typed text, the dashboard box, paste-and-go, bookmarks,
+Home), `TabFactory.content()` and `trusted()` (every new tab: middle clicks, links from other programs, startup pages, an
+extension's `tabs.create`), `loadServedAddresses` in `served-address.ts` (a link followed inside a tab, loaded through the
+same session test the address bar uses, so a link inside a cache-served app's tab lands on the default session), and
+`windowOpenHandler` (a `target=_blank` link or `window.open` becomes a new tab, never a popup that loads the gateway in its
+opener's session). The handler at order 5 on the default session's web-request owner, before HTTPS-only and extensions, catches what
+the hooks cannot see: a server redirect to a gateway address, a popup that keeps its opener, back and forward or a reload of a
+gateway entry saved while the setting was off, and a restored tab's saved entries. A fragment survives a server redirect
+(measured by `test/web3/e2e-eth-gateway-redirect.test.ts`).
+With the setting on a gateway address never commits, so the address bar and history show `ipfs://<name>.eth/...`; the omnibox's
+"go to" row still shows the typed address. A load from `will-navigate` drops a form's POST body and the referrer and makes a
+`location.replace` a new history entry, as for an `ipfs:` link. Limits: a server redirect to a gateway address inside a
+cache-served app's own partition is not caught, since that partition has no web-request owner; a name whose content Orivon
+cannot load (Swarm, Arweave, not yet synced, unreachable) shows an error page, and turning the setting off is the way out;
+data a site keeps under its gateway origin stays there and is not seen at the `.eth` name.

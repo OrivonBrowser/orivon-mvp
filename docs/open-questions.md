@@ -2022,3 +2022,13 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   refused as it is in the address bar); open a local HTML file handed in at launch, which needs a rule for `file:`.
 - **Who decides:** owner
 - **Blocks:** nothing; check `xdg-settings` on a real package either way
+
+### A388: A gateway name whose content Orivon cannot load shows an error where the gateway would work **[OWNER]**
+
+- **Question:** With "Open .eth.limo addresses as .eth names" on, a name that points at Swarm or Arweave, has not
+  synced, or cannot be reached shows Orivon's error page, and a typed gateway address cannot be opened as it is.
+- **Why it matters:** the gateway would have loaded some of these pages; the only way out is to turn the setting off.
+- **Options:** keep it as it is, the limit named on the compatibility pages (rec.); offer "Open through eth.limo" once
+  on the error page, which needs a decision on what a gateway-served page may do here.
+- **Who decides:** owner
+- **Blocks:** nothing
