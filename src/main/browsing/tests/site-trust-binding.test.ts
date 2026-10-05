@@ -9,7 +9,7 @@ import { buildSiteTrust, withProviderVerdict } from '../site-trust.js'
 import type { NameEvidence } from '../../verifier/name-evidence.js'
 
 // A judged level counts only at the domain the content's manifest names
-// (ADR-0055): the content judged at app.eth shows its level at app.eth and
+// (ADR-0056): the content judged at app.eth shows its level at app.eth and
 // shows the level this browser observed everywhere else.
 
 const CID = 'bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi'

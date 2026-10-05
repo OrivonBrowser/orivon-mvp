@@ -933,7 +933,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 - **Question:** At an https host a 304 ends the conditional check (d-0088), so files shipped under a
   byte-identical manifest are never picked up there. Is "bump `version` every release" a publisher
-  requirement? (At a name the bundle hash is compared, `ADR-0055`.)
+  requirement? (At a name the bundle hash is compared, `ADR-0056`.)
 - **Why it matters:** A publisher who does not change the manifest never ships an update.
 - **Options:** state the requirement; a daily unconditional check; compare the published hash-tree
   root (ADR-0029) with the pin, a cheaper backstop.
@@ -2040,7 +2040,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 - **Question:** An update at a name is verified when the chosen provider has an evaluation for exactly
   the new CID (any level, no lower than the pinned one's), the version is newer, the manifest's
-  `domain` is the origin's host and the pointers verify (`ADR-0055`). Level 3 or more, or no
+  `domain` is the origin's host and the pointers verify (`ADR-0056`). Level 3 or more, or no
   default provider, would change that.
 - **Why it matters:** the bar decides whether a person is asked "switch?" or told to Trust & Force.
 - **Options:** keep it (rec.: it is what a provider can claim today, and means evaluated, not safe);

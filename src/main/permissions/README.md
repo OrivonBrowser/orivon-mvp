@@ -11,7 +11,7 @@
   against the manifest), `site-info-controller.ts` (the surface's one door to the broker and
   loader), `site-data-runner.ts` (Cookies and site data I/O) and `site-info-panel.ts`. The controller also
 reports the update a moved name offers the installed app and takes the person's choice to apply it
-(`ADR-0055`).
+(`ADR-0056`).
 
 Both popups share their `WebContentsView` lifecycle through `popover-view.ts`: it closes a popup on blur, on Escape
 (each page asks main to close it over its own channel) and when another popup opens, hands the keyboard back to the tab in front

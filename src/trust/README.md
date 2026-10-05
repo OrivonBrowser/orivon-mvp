@@ -6,7 +6,7 @@
 (`delivery-ladder.ts`), the connection ladder built from the broker's per-app connection log (a
 different axis, still unwired: nothing observes per-app connections yet), operation scoring, and
 the same-host hash tree check (`ddoc.ts`), whether a judged level counts at the address it is shown at
-(`domain-binding.ts`, `ADR-0055`), whether an update offered to an installed app at a name is verified
+(`domain-binding.ts`, `ADR-0056`), whether an update offered to an installed app at a name is verified
 (`app-update-trust.ts`), and what a Web3 Score provider answers, read as
 [`web3-score-provider.md`](../../docs/architecture/web3-score-provider.md) defines it
 (`score-provider.ts`; fetched by `../main/browsing/score-provider-client.ts`). Click-through shows the level and, beneath it, **the

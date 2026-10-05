@@ -1,4 +1,4 @@
-# ADR-0055: An installed app at a name moves to new content only when the person accepts; a judged level counts only at the domain its manifest names
+# ADR-0056: An installed app at a name moves to new content only when the person accepts; a judged level counts only at the domain its manifest names
 
 - **Status:** accepted
 - **Date:** 2026-10-05
@@ -8,7 +8,7 @@
 - **Amends:** ADR-0005 (no silent update at a name), ADR-0012 (only the manifest is fetched before
   asking), ADR-0030 (an installed name stops following its contenthash), ADR-0054 (a judged level
   picks a path, and counts only where it is bound; the provider setting's default is the official
-  provider, which reverses its "empty, the default, asks nobody", `d-0484`)
+  provider, which reverses its "empty, the default, asks nobody", `d-0488`)
 
 ## Decision
 An installed app reached at a name (ENS, DNSLink, IPNS) keeps running the version it was installed
@@ -60,7 +60,7 @@ minutes.
 - An app published without `domain` shows its observed Level 2, not the judged level, until it is
   republished with one. Ports gain a `domain` and a `<upstream>.<build>` version.
 - With the provider setting cleared every update is a notice (case 1); a profile that never chose
-  reads the official provider (`d-0484`). With DNSLink or the light client off every update is
+  reads the official provider (`d-0488`). With DNSLink or the light client off every update is
   unverified. An app reached at an `ipns://` address, a key or a DNSLink name, is never verified
   either, whatever its manifest names: no manifest can name a `.orivon` host, so the update's
   notice says the app is reached at an `ipns://` address and offers Trust & Force only.

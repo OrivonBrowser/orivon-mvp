@@ -53,7 +53,7 @@ Topics cited elsewhere as this page's Design notes live with the folder that own
 | Restoring at startup, a pin that fails verification, CSP read per request | [`electron/`](electron/README.md) |
 | Why an install never prunes | [`cache/`](cache/README.md) |
 
-**An installed app at a name is offered a move, never taken along (`ADR-0055`).** `load()` of a name
+**An installed app at a name is offered a move, never taken along (`ADR-0056`).** `load()` of a name
 that points at another root fetches that root's manifest alone (`fetch/manifest-at-root.ts`, pinned to the
 root) and returns `update-available`; the pin does not move. The bundle is fetched in two cases only: the
 manifest is byte-identical to the pinned one (the same files republished, which moves the pin silently when

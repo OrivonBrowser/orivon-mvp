@@ -1,4 +1,4 @@
-// What happens to an installed app whose name moved (ADR-0055). The loader found the new manifest
+// What happens to an installed app whose name moved (ADR-0056). The loader found the new manifest
 // (`update-available`); this file judges the offer verified or not, asks the person, and on a yes
 // has the loader fetch exactly the offered root, then installs it and reloads the origin's tabs.
 // The old version keeps running until then. Electron-free: the questions, the tabs and the score

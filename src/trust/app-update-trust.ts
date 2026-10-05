@@ -1,4 +1,4 @@
-// Whether an update an installed app was offered at its name can be called verified (ADR-0055).
+// Whether an update an installed app was offered at its name can be called verified (ADR-0056).
 // Pure: the caller looks the facts up and hands them over.
 //
 // Verified means a Web3 Score provider has evaluated exactly the offered content, no lower than

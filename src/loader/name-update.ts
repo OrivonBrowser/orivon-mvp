@@ -1,5 +1,5 @@
 // An installed app reached at a name: what a moved name is, and how an offered update is
-// fetched (ADR-0055). The ordinary path in ./index.ts downloads a whole bundle to learn what
+// fetched (ADR-0056). The ordinary path in ./index.ts downloads a whole bundle to learn what
 // changed; here the new manifest alone is fetched, and the bundle only for the same files
 // republished or once the person has said yes. See README.md's Design notes.
 

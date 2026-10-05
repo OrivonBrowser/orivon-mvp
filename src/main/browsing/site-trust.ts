@@ -190,7 +190,7 @@ export function homeAt (origin: string, facts: HomeFacts, pending = false): Home
 }
 
 /**
- * A judged level counts only where `home` binds it (ADR-0055). Where it does not, the
+ * A judged level counts only where `home` binds it (ADR-0056). Where it does not, the
  * verdict stays on the trust for the page to explain, and the displayed level is what this
  * browser observed.
  */

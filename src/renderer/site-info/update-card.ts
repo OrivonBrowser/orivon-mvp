@@ -1,6 +1,6 @@
 import type { SiteUpdate } from '../../main/permissions/site-info.js'
 
-// The update the key offers for an installed app whose name moved (ADR-0055): the versions, why a
+// The update the key offers for an installed app whose name moved (ADR-0056): the versions, why a
 // version is not verified, and one button. A verified version is taken with Update; any other only
 // through Trust & Force update, which main confirms before it does anything. Never innerHTML: every
 // string here is composed in main or comes from a manifest.

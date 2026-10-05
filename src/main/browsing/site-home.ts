@@ -1,4 +1,4 @@
-// Where the content shown at an address says it lives (ADR-0055). An installed app's pin holds
+// Where the content shown at an address says it lives (ADR-0056). An installed app's pin holds
 // its manifest; other content has one only at its root CID, read only when a provider judged
 // the content Level 3 or 4, because only then does the answer decide anything.
 

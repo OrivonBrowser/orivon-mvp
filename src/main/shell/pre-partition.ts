@@ -18,7 +18,7 @@ interface NavigationEvent {
  * partition the tab is in until `did-navigate` swaps it, and for that moment a document can
  * commit from the network, so a name that moved would show its new content before anyone
  * accepted it. This stops the navigation before it starts and loads the address in its own
- * partition, where the pinned files answer (ADR-0055). Typed addresses already do the same
+ * partition, where the pinned files answer (ADR-0056). Typed addresses already do the same
  * (`./tab-navigation.ts`).
  *
  * Only a move INTO a cache-served partition: leaving one for the open web still swaps at

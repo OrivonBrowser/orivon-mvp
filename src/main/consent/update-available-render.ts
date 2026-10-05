@@ -1,4 +1,4 @@
-// The words of the four questions an offered update raises (ADR-0055): the verified offer, the
+// The words of the four questions an offered update raises (ADR-0056): the verified offer, the
 // notice for one that is not, the Trust & Force confirmation and a failed download. Pure, like
 // ./grant-prompt-render.ts: ./update-outcomes-prompt.ts shows them. The address leads every text,
 // as it does in every question of this family; the name the manifest claims is a claim on its own line.

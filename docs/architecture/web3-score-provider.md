@@ -166,7 +166,7 @@ hold about 250,000 evaluations.
 
 What follows bounds this build of Orivon, not the standard.
 
-- **Orivon's own provider until changed.** Settings, Web3, "Web3 Score provider" holds the official provider's address, an `ipns://` name, in a profile with none saved; a person who clears it saves the empty value and asks nothing of anyone, and one who types another address asks that one (`ADR-0055`).
+- **Orivon's own provider until changed.** Settings, Web3, "Web3 Score provider" holds the official provider's address, an `ipns://` name, in a profile with none saved; a person who clears it saves the empty value and asks nothing of anyone, and one who types another address asks that one (`ADR-0056`).
 - **Only over DDOC.** A site is looked up only when its observed Website level is 2, so the files
   shown are the files the identifier names: an installed app's bundle hash, or the CID a `.eth`
   name or an `ipfs://` address resolved to. On a local origin in developer mode, the bundle hash
@@ -177,7 +177,7 @@ What follows bounds this build of Orivon, not the standard.
   met, and the shown level stays the observed one.
 - **Only at the domain the manifest names.** A manifest is a leaf of the content address, so a
   judgement of the content covers the `domain` its manifest names (`capability-api.md`, `domain`),
-  and the level counts only at that host (`ADR-0055`). The same files under another name, a
+  and the level counts only at that host (`ADR-0056`). The same files under another name, a
   manifest with no `domain` or one that could not be read show the observed level, and the Web3
   Score page says why. Content with no manifest at all, a website, is judged wherever it is shown.
   Nothing in the file format changes.
@@ -185,7 +185,7 @@ What follows bounds this build of Orivon, not the standard.
   provider is asked for the new CID without waiting: an evaluation at any level, no lower than the
   pinned CID's, with a newer version, the domain bound and the pointers verified, turns the notice
   into the question "switch to the new version?". No evaluation, no provider or an unreachable one
-  leaves the notice and the key icon's Trust & Force update (`ADR-0055`).
+  leaves the notice and the key icon's Trust & Force update (`ADR-0056`).
 - **Never silences a grant warning.** A judged Level 4 leaves every capability warning in place
   (`ADR-0054`, which narrows `ADR-0037` to the developer override).
 - **Fetched with no credentials**, a 10 second limit per file, answers kept for 10 minutes, and

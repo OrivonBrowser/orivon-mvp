@@ -9,7 +9,7 @@
 warning (`ADR-0037`). `grant-changed-capabilities.ts` is the one place accepted capabilities
 become `broker.grant()` calls. `request-grant-subsystem.ts` wires `request-grant.ts` into the
 running app. `update-offer-prompts.ts` and `update-available-render.ts` are the update offer's
-questions (switch, notice, confirm Trust & Force, a failed apply) and their words (`ADR-0055`).
+questions (switch, notice, confirm Trust & Force, a failed apply) and their words (`ADR-0056`).
 
 **What it depends on.** [`../../contracts/`](../../contracts/),
 [`../../broker/policy/`](../../broker/policy/) (`manifest-patterns.ts`, `request-grant.ts`,

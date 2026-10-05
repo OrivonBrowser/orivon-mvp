@@ -1,4 +1,4 @@
-// The open-tab half of the update check (ADR-0055): a name can move while a page stays open, and
+// The open-tab half of the update check (ADR-0056): a name can move while a page stays open, and
 // no visit raises a hint for it, so every interval each origin that has a tab open is looked at
 // again. Electron-free: which origins are open and what one check does come in as functions.
 

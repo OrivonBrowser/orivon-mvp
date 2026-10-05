@@ -111,7 +111,6 @@ export interface Manifest {
    * the settings-list revoke path (`docs/open-questions.md` A101) once the
    * app is running -- narrower than a row in the install prompt, but not
    * nothing.
-   *
    * ONE FLAG FOR THE WHOLE MANIFEST, not one per capability. The choice
    * this expresses is about whether the app's OWN CODE can cope with an
    * incomplete grant at all, which is a property of the app as a whole --
@@ -128,7 +127,6 @@ export interface Manifest {
    * `SharedArrayBuffer`, a shared `WebAssembly.Memory` and `Atomics.wait` in
    * a worker: everything a WebAssembly component built with threads needs
    * (ADR-0036). `true` is the only accepted value; omit it to not ask.
-   *
    * OPT-IN, because isolation costs the app two things the web platform
    * charges every isolated page: a window it opens can no longer reach it
    * through `window.opener` (a sign-in popup that reports back that way
@@ -137,13 +135,7 @@ export interface Manifest {
    * either must not.
    */
   readonly crossOriginIsolated?: true
-  /**
-   * The one ENS name or DNS host this app calls home, spelled as a URL spells
-   * a host: lower case, two labels or more, 253 characters at most, no scheme,
-   * port, path, trailing dot, IP address, `localhost` or `.orivon`. Malformed
-   * rejects the manifest; absent is allowed. A judged score of the content
-   * counts only at this name (ADR-0055); elsewhere the app runs, unverified.
-   */
+  /** The one ENS name or DNS host the app calls home, in URL host spelling; a judged score counts only there (ADR-0056). */
   readonly domain?: string
 }
 
@@ -161,11 +153,11 @@ export interface Capabilities {
    */
   readonly web?: WebCapability
   /**
-   * Camera and/or microphone (ADR-0032). Presence of a flag, not a boolean
-   * VALUE on it, is the declaration -- the same shape `fs` and `id` already
-   * use, because there is no narrower "how much camera" to ask for the way
-   * `net`'s patterns narrow a host. `true` is the only value the loader
-   * accepts for either flag; omit a flag to not ask for that device.
+   * Camera, microphone and/or screen capture (ADR-0032, ADR-0055). Presence
+   * of a flag, not a boolean VALUE on it, is the declaration -- the same shape
+   * `fs` and `id` already use, because there is no narrower "how much camera"
+   * to ask for the way `net`'s patterns narrow a host. `true` is the only
+   * value the loader accepts for any flag; omit a flag to not ask for it.
    */
   readonly media?: MediaCapability
   /** `navigator.clipboard.readText()`/`read()` (ADR-0032). Same presence-only shape as `media`. */
@@ -177,6 +169,8 @@ export interface Capabilities {
    * its own in v0. See `capability-api.ts`'s `OrivonSecrets`.
    */
   readonly secrets?: SecretsCapability
+  /** What the person's Web3 Score provider says about other sites (ADR-0058). Presence-only, like `media`. */
+  readonly trust?: TrustCapability
   /**
    * Schemes the shell may route to this app, e.g. `["magnet"]`. Declaration
    * alone never wins the default: routing requires its own user prompt, first
@@ -426,15 +420,22 @@ export interface EmbedCapability {
 }
 
 /**
- * ADR-0032. `true` is the only accepted value for either flag -- `false` and
+ * ADR-0032. `true` is the only accepted value for any flag -- `false` and
  * an empty object are both rejected, the same "presence, not a value, is the
- * ask" rule `Capabilities.media` documents. A grant for `media.camera` or
- * `media.microphone` carries no patterns of its own (there is no narrower
- * "which camera"), so a person granting this sees exactly what was declared.
+ * ask" rule `Capabilities.media` documents. A grant for `media.camera`,
+ * `media.microphone` or `media.screen` carries no patterns of its own (there
+ * is no narrower "which camera"), so a person granting this sees exactly what
+ * was declared.
  */
 export interface MediaCapability {
   readonly camera?: true
   readonly microphone?: true
+  /**
+   * A screen, a window or a tab (ADR-0055). The app only asks for it: which
+   * one is shared is chosen by the person in Orivon's picker each time, so
+   * declaring this never selects a surface and never captures one unprompted.
+   */
+  readonly screen?: true
 }
 
 /** ADR-0032. Same `true`-only shape as `MediaCapability`. */
@@ -449,6 +450,8 @@ export interface ClipboardCapability {
  * pair, so there is nothing narrower for a manifest to ask for yet.
  */
 export interface SecretsCapability {}
+
+export interface TrustCapability { readonly score?: true }
 
 /**
  * One capability actually granted to one origin.
@@ -491,5 +494,7 @@ export type CapabilityKind =
   | 'web.embed'
   | 'media.camera'
   | 'media.microphone'
+  | 'media.screen'
   | 'clipboard.read'
   | 'secrets'
+  | 'trust.score'

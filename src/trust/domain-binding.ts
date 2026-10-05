@@ -1,4 +1,4 @@
-// Whether a judged score of some content counts at the address it is shown at (ADR-0055).
+// Whether a judged score of some content counts at the address it is shown at (ADR-0056).
 // The manifest is a leaf of the content address, so a provider's judgement of the content
 // covers the `domain` its manifest names; the judgement counts only at that host. Pure:
 // the caller reads the manifest and hands over what it found.

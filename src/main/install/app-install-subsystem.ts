@@ -111,7 +111,7 @@ export const appInstallSubsystem: Subsystem = {
     const capabilityPrompt = createCapabilityPrompt(scoreLevelOverrideFor)
     const rollbackChoicePrompt = createRollbackChoicePrompt()
     const outcomeDeps: UpdateOutcomeDeps = { broker, loader, consent, perCapabilityConsent, reconsentPrompt, capabilityPrompt, rollbackChoicePrompt }
-    // An installed app whose name moved is offered, never installed unasked (ADR-0055).
+    // An installed app whose name moved is offered, never installed unasked (ADR-0056).
     const updates = createAppUpdates({
       outcome: outcomeDeps,
       verdictFor: async (id) => (await ctx.scoreVerdictFor?.(id)) ?? { status: 'off' },

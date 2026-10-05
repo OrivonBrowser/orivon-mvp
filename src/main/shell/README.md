@@ -7,7 +7,7 @@ window holding it. `window-frame.ts` is the native window itself and `window-opt
 opens. `window.ts` is the composition; its parts are `window-layout.ts` (where the chrome and the page
 area sit: the one place a page area is computed), `window-state.ts` (the `ShellState` push, and which
 overlays a tab switch or a navigation dismisses), `window-panels.ts` (the permissions and site-info
-popovers) and `shell-state-parts.ts` (the `ShellState` fields a feature adds; `state/update-offered.ts` is the one that lights the key icon's dot while the page in front has an update offer, and `pre-partition.ts` stops a link or redirect into a cache-served address before it commits so the pinned files answer, `ADR-0055`). `window-context.ts` is
+popovers) and `shell-state-parts.ts` (the `ShellState` fields a feature adds; `state/update-offered.ts` is the one that lights the key icon's dot while the page in front has an update offer, and `pre-partition.ts` stops a link or redirect into a cache-served address before it commits so the pinned files answer, `ADR-0056`). `window-context.ts` is
 the `{ window, services }` pair a hook or an overlay handler receives.
 `tabs.ts` owns the tab collection, with `tab-state.ts` (the state a tab reports, plus what each
 `TAB_SIGNALS` entry adds), `tab-navigation.ts`, `tab-open.ts` (every way a tab is created) and
