@@ -232,6 +232,12 @@ it('shares another tab: it comes to the front, keeps painting for the page while
       return view === undefined ? undefined : view.getVisible()
     }, origins.b)
     expect(await sharedViewAttached()).toBe(false)
+    // Its page reads visible while it is shared and behind another tab, as a captured tab does in Chrome.
+    const sharedPageState = async (): Promise<string> => await app.evaluate(async ({ webContents }, url) => {
+      const shared = webContents.getAllWebContents().find((contents) => !contents.isDestroyed() && contents.getURL().startsWith(url))
+      return shared === undefined ? 'missing' : String(await shared.executeJavaScript('document.visibilityState'))
+    }, origins.b)
+    expect(await waitFor(async () => (await sharedPageState()) === 'visible')).toBe(true)
     const count = async (): Promise<number> => await view.evaluate(() => (window as unknown as { __n: number }).__n)
     await delay(500)
     const before = await count()
@@ -247,6 +253,8 @@ it('shares another tab: it comes to the front, keeps painting for the page while
     expect(await result(view, 'ended')).toBe(1)
     expect(await waitFor(async () => (await sharedViewAttached()) === undefined)).toBe(true)
     expect(await waitFor(async () => (await tabMark(chrome, second)) === null)).toBe(true)
+    // The share is over and the tab is still behind another: its page reads hidden again.
+    expect(await waitFor(async () => (await sharedPageState()) === 'hidden')).toBe(true)
     expect(mainOutput(app)).not.toMatch(/reached no display handler/)
   } finally {
     await closeElectron(app)

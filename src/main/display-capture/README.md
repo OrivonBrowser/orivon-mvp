@@ -57,6 +57,8 @@ page's call fails with `AbortError`; the preload tells main when its call failed
 registry never keeps a share that has no track. The gate does not check that a picked tab is showing: the picker has to
 offer only tabs that are.
 
+**A shared tab's page reads visible while another tab is in front.** The shared tab stays attached and keeps painting, so [`../shell/tab-visibility.ts`](../shell/tab-visibility.ts) does not tell its page it is hidden while `forCaptured` lists a share for it, and tells it again when the share ends if the tab is still behind; a minimized or hidden window still reads hidden.
+
 **The permission check names the page as its own embedder.** Electron sets `embeddingOrigin` for a top frame too, so only an
 embedder that is a different origin refuses the `display-capture` check.
 
