@@ -32,6 +32,9 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **Packages for Linux, Windows and macOS on every GitHub release**: a deb and an AppImage, a Windows installer and a dmg each
+  for Apple silicon and Intel, each launched by CI before it is attached. Windows and macOS packages are not signed with a
+  bought certificate, so the system asks once before the first run.
 - **A manifest `domain` field** names the one ENS name or DNS host an app calls home; the loader parses it
   (ADR-0056). Update behaviour that uses it lands with the app-update work.
 - **A page can ask the Web3 Score provider the person chose** (`orivon.trust.websiteScore`, behind a declared `trust.score`

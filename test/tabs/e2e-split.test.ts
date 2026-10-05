@@ -92,9 +92,10 @@ async function boxOfTab (chrome: Page, id: string): Promise<Box> {
 
 /** The size a pane's page lays itself out at, read from the page. A view put on screen without its renderer being told the pane's size keeps laying the page out at the size it had before, so the pane shows a clipped or empty page. */
 async function layoutSizeOf (app: ElectronApplication, part: string): Promise<{ width: number, height: number } | undefined> {
-  const page = app.windows().find((candidate) => candidate.url().includes(part))
+  const page = app.windows().find((candidate) => !candidate.isClosed() && candidate.url().includes(part))
   if (page === undefined) return undefined
-  return await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))
+  // A navigation can close the page between finding and reading it: not laid out yet, so the caller polls again.
+  return await page.evaluate(() => ({ width: innerWidth, height: innerHeight })).catch(() => undefined)
 }
 
 /** Whether each page in `parts` lays itself out at the size of its pane, the pane being where the window put its view. */

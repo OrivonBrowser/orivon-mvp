@@ -86,13 +86,15 @@ stubs. Deciding this later costs a day of refactor exactly when the schedule is 
 
 ## Platform policy
 
-**Linux is the packaged target** (AppImage + deb), with no code-signing cost, and the audience
-skews Linux.
+**Every GitHub release ships packages for all three systems**: a deb and an AppImage for Linux,
+an NSIS installer for Windows, a dmg each for Apple silicon and Intel Macs
+([`packaging.md`](../development/packaging.md)). No certificate is bought: Linux packages are
+not signed, the Windows installer is unsigned (SmartScreen warns once), and the macOS app is
+signed ad hoc (Gatekeeper asks once). The audience skews Linux, where none of that applies.
 
-**Windows and macOS are supported from day one via run-from-source**: `git clone`,
-`npm install`, `npm start`. This sidesteps both Windows SmartScreen and macOS Gatekeeper
-without buying certificates, and widens the reachable audience. Those users count toward the
-metric and their telemetry must work identically.
+**Run-from-source stays supported on all three**: `git clone`, `npm install`, `npm start`. It
+needs no installer trust at all, and it self-selects contributors. Users of either path count
+toward the metric and their telemetry must work identically.
 
 Two constraints follow, and they are not optional:
 
@@ -231,8 +233,9 @@ activates one.
 **9. Developer mode.** Unpacked loader, plainly-worded opt-in, unsigned marking, developer
 docs. This is journey 4.
 
-**10. Packaging.** `electron-builder`, AppImage + deb. Plus a documented, tested
-run-from-source path in the README for Windows and macOS.
+**10. Packaging.** `electron-builder`: AppImage + deb, an unsigned NSIS installer, and ad-hoc
+signed dmgs, built and launched by CI on each GitHub release and attached to it. Plus a
+documented, tested run-from-source path in the README for Windows and macOS.
 
 **Auto-install is cut.** Unsigned `electron-updater` on Linux
 verifies only a SHA-512 fetched from the *same host* that serves the binary, making it a
