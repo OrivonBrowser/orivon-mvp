@@ -123,5 +123,6 @@ has a line, so a capability cannot land without that decision.
 | `web.embed` | `webview-shows-local-pattern`, `webview-popup-reaches-the-app` |
 | `media.camera` | not covered: a contract entry with no implementation behind it |
 | `media.microphone` | not covered: a contract entry with no implementation behind it |
+| `media.screen` | not covered: a contract entry with no implementation behind it |
 | `clipboard.read` | not covered: a contract entry with no implementation behind it |
 | `secrets` | not covered: no spec drives `orivon.secrets` from an app's page |

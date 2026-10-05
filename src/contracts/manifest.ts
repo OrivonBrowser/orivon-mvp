@@ -153,11 +153,11 @@ export interface Capabilities {
    */
   readonly web?: WebCapability
   /**
-   * Camera and/or microphone (ADR-0032). Presence of a flag, not a boolean
-   * VALUE on it, is the declaration -- the same shape `fs` and `id` already
-   * use, because there is no narrower "how much camera" to ask for the way
-   * `net`'s patterns narrow a host. `true` is the only value the loader
-   * accepts for either flag; omit a flag to not ask for that device.
+   * Camera, microphone and/or screen capture (ADR-0032, ADR-0055). Presence
+   * of a flag, not a boolean VALUE on it, is the declaration -- the same shape
+   * `fs` and `id` already use, because there is no narrower "how much camera"
+   * to ask for the way `net`'s patterns narrow a host. `true` is the only
+   * value the loader accepts for any flag; omit a flag to not ask for it.
    */
   readonly media?: MediaCapability
   /** `navigator.clipboard.readText()`/`read()` (ADR-0032). Same presence-only shape as `media`. */
@@ -418,15 +418,22 @@ export interface EmbedCapability {
 }
 
 /**
- * ADR-0032. `true` is the only accepted value for either flag -- `false` and
+ * ADR-0032. `true` is the only accepted value for any flag -- `false` and
  * an empty object are both rejected, the same "presence, not a value, is the
- * ask" rule `Capabilities.media` documents. A grant for `media.camera` or
- * `media.microphone` carries no patterns of its own (there is no narrower
- * "which camera"), so a person granting this sees exactly what was declared.
+ * ask" rule `Capabilities.media` documents. A grant for `media.camera`,
+ * `media.microphone` or `media.screen` carries no patterns of its own (there
+ * is no narrower "which camera"), so a person granting this sees exactly what
+ * was declared.
  */
 export interface MediaCapability {
   readonly camera?: true
   readonly microphone?: true
+  /**
+   * A screen, a window or a tab (ADR-0055). The app only asks for it: which
+   * one is shared is chosen by the person in Orivon's picker each time, so
+   * declaring this never selects a surface and never captures one unprompted.
+   */
+  readonly screen?: true
 }
 
 /** ADR-0032. Same `true`-only shape as `MediaCapability`. */
@@ -483,5 +490,6 @@ export type CapabilityKind =
   | 'web.embed'
   | 'media.camera'
   | 'media.microphone'
+  | 'media.screen'
   | 'clipboard.read'
   | 'secrets'

@@ -104,6 +104,12 @@ export const DELIBERATELY_DEFERRED = [
       'PR that follows this one, which removes this entry.'
   },
   {
+    interfaceName: 'MediaCapability',
+    field: 'screen',
+    reason: 'ADR-0055: MEDIA_CAPABILITY_KEYS does not exist yet -- added by the implementation ' +
+      'PR that follows this one, which removes this entry.'
+  },
+  {
     interfaceName: 'ClipboardCapability',
     field: 'read',
     reason: 'ADR-0032: CLIPBOARD_CAPABILITY_KEYS does not exist yet -- added by the ' +
