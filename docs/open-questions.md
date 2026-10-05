@@ -2023,12 +2023,14 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing; check `xdg-settings` on a real package either way
 
-### A388: A gateway name whose content Orivon cannot load shows an error where the gateway would work **[OWNER]**
+### A388: A gateway address opened as a .eth name skips what the gateway or an extension would have done **[OWNER]**
 
 - **Question:** With "Open .eth.limo addresses as .eth names" on, a name that points at Swarm or Arweave, has not
-  synced, or cannot be reached shows Orivon's error page, and a typed gateway address cannot be opened as it is.
+  synced, or cannot be reached shows Orivon's error page, and a typed gateway address cannot be opened as it is. The
+  redirect also runs before extensions' request handlers, so a block an extension holds for an `eth.limo` host never fires.
 - **Why it matters:** the gateway would have loaded some of these pages; the only way out is to turn the setting off.
-- **Options:** keep it as it is, the limit named on the compatibility pages (rec.); offer "Open through eth.limo" once
-  on the error page, which needs a decision on what a gateway-served page may do here.
+- **Options:** keep it as it is, both limits named on the compatibility pages (rec.); offer "Open through eth.limo" once
+  on the error page, which needs a decision on what a gateway-served page may do here; run the redirect after
+  extensions' request handlers, and map no address before a request while one with a block on the host is loaded.
 - **Who decides:** owner
 - **Blocks:** nothing

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ETH_GATEWAY_SUFFIXES, ethGatewayTarget } from '../eth-gateway.js'
+import { ETH_GATEWAY_SUFFIXES, ethGatewayTarget, isEthGatewayAddress } from '../eth-gateway.js'
 
 const never = (): boolean => false
 
@@ -43,5 +43,15 @@ describe('ethGatewayTarget', () => {
     const target = ethGatewayTarget('https://vitalik.eth.limo/', never)
     expect(target).toBeDefined()
     expect(ethGatewayTarget(target ?? '', never)).toBeUndefined()
+  })
+})
+
+describe('isEthGatewayAddress', () => {
+  it('is true for an http or https address under a gateway suffix, whatever the name, service label or port', () => {
+    for (const url of ['https://vitalik.eth.limo/', 'http://vitalik.eth.link/', 'https://www.eth.limo/', 'https://vitalik.eth.limo:8443/']) expect(isEthGatewayAddress(url), url).toBe(true)
+  })
+
+  it('is false for another scheme, a lookalike host, the bare suffix or an unparseable address', () => {
+    for (const url of ['wss://vitalik.eth.limo/', 'https://vitalik.eth.limo.evil.example/', 'https://evil-eth.limo/', 'https://eth.limo/', 'not a url']) expect(isEthGatewayAddress(url), url).toBe(false)
   })
 })

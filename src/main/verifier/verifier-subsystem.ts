@@ -20,7 +20,7 @@ import { ACCEPT, CHROMIUM_VERDICT, verifierCertificateVerdict } from './certific
 import { requestPartition, withPartition } from './partition.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import { contentAddressOf } from './content-address.js'
-import { chooseCheckpoint, slotTimestamp } from './checkpoint.js'
+import { chooseCheckpoint, MAX_CHECKPOINT_AGE_SECONDS, slotTimestamp } from './checkpoint.js'
 import type { CheckpointChoice } from './checkpoint.js'
 import { DEFAULT_ENDPOINTS } from './endpoints.js'
 import { HostSupervisor } from './host-supervisor.js'
@@ -213,6 +213,14 @@ function usableCheckpointAge (): number | undefined {
   return choice.ok ? choice.ageSeconds : undefined
 }
 
+/** Whether a checkpoint the light client can start from is at hand, answered from the choice already made: a gateway address asks on every navigation, and the file is read again only when no chosen checkpoint is usable. */
+function lightClientCanStart (): boolean {
+  if (lightClientSwitchedOff()) return false
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  if (checkpoint?.ok === true && nowSeconds - checkpoint.checkpoint.timestamp <= MAX_CHECKPOINT_AGE_SECONDS) return true
+  return chooseNow().ok
+}
+
 /**
  * Where a protocol origin's content came from and whether DDOC holds, as a tab
  * showing that origin sees it; null when it is not mounted there or the host
@@ -349,7 +357,7 @@ export const verifierSubsystem: Subsystem = {
     provideVerifierAccess({
       start: () => { startHost() },
       ready: async () => { await listeningGate.whenSettled() },
-      servesName: (name) => isDevEthName(name) || ethTestSeam()?.fixtures[name] !== undefined || usableCheckpointAge() !== undefined
+      servesName: (name) => isDevEthName(name) || ethTestSeam()?.fixtures[name] !== undefined || lightClientCanStart()
     })
     exposeVerifierStart(() => { startHost() })
     lifecycle.refreshAtLaunch()

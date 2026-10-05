@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { IDLE_STOP_MS, REFRESH_DELAY_MS, REFRESH_WHEN_OLDER_THAN_SECONDS } from '../host-lifecycle.js'
 import shippedCheckpoint from '../mainnet-checkpoint.json'
-import { MAINNET_GENESIS_SECONDS, SECONDS_PER_SLOT } from '../checkpoint.js'
+import { MAINNET_GENESIS_SECONDS, MAX_CHECKPOINT_AGE_SECONDS, SECONDS_PER_SLOT } from '../checkpoint.js'
 
 const SHIPPED_AT_MS = (MAINNET_GENESIS_SECONDS + shippedCheckpoint.slot * SECONDS_PER_SLOT) * 1000
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -121,6 +121,13 @@ describe('the verifier subsystem', () => {
   it('serves a .eth name while the light client can start', async () => {
     const { access } = await launch()
     expect(access.verifierServesName('vitalik.eth')).toBe(true)
+  })
+
+  it('stops serving a .eth name once the chosen checkpoint is older than a checkpoint may be, without a restart', async () => {
+    const { access } = await launch()
+    expect(access.verifierServesName('vitalik.eth')).toBe(true)
+    vi.setSystemTime(Date.now() + MAX_CHECKPOINT_AGE_SECONDS * 1000)
+    expect(access.verifierServesName('vitalik.eth')).toBe(false)
   })
 
   it('serves no .eth name through the light client when the environment or the person switches it off', async () => {

@@ -1,7 +1,7 @@
 // What the tab menu and the tab commands do to one tab or to the others around it. Each takes the tab's id:
 // the menu acts on the tab that was right-clicked, a command on the one in front.
 import { applyMuted } from './signals/audio.js'
-import { gatewayEntries } from './eth-gateway-redirect.js'
+import { gatewayEntries } from './eth-gateway-rule.js'
 import { carryHistory, restoreHistory } from './tab-history.js'
 import { setPinned } from './tab-pin.js'
 import type { TabMenuModel } from './tab-menu.js'

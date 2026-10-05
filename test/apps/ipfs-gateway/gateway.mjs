@@ -10,8 +10,8 @@ import { CID } from 'multiformats/cid'
 const HOST = '127.0.0.1'
 
 /**
- * @param {Record<string, Record<string, string> | string>} sites site name -> path -> content; a string is a site whose root is that one file
- * @param {{ dnslinks?: Record<string, string> }} [options] DNS name -> the site whose root its DNSLink names
+ * @param {Record<string, Record<string, string | Uint8Array> | string>} sites site name -> path -> content (text, or bytes for a binary file); a string is a site whose root is that one file
+ * @param {{ dnslinks?: Record<string, string>, blockDelayMs?: number }} [options] `dnslinks`: DNS name -> the site whose root its DNSLink names; `blockDelayMs`: how long each block answer waits, as a slow gateway's do
  */
 export async function startFixtureGateway (sites, options = {}) {
   /** @type {Map<string, Uint8Array>} */
@@ -27,7 +27,7 @@ export async function startFixtureGateway (sites, options = {}) {
       for await (const entry of importer([{ content: new TextEncoder().encode(contents) }], store, { cidVersion: 1, rawLeaves: true })) roots[site] = entry.cid.toString()
       continue
     }
-    const candidates = Object.entries(contents).map(([path, content]) => ({ path, content: new TextEncoder().encode(content) }))
+    const candidates = Object.entries(contents).map(([path, content]) => ({ path, content: typeof content === 'string' ? new TextEncoder().encode(content) : content }))
     for await (const entry of importer(candidates, store, { wrapWithDirectory: true, cidVersion: 1, rawLeaves: true })) {
       if (entry.path === '') roots[site] = entry.cid.toString()
       else files.set(`${site}/${entry.path}`, entry.cid.toString())
@@ -47,7 +47,9 @@ export async function startFixtureGateway (sites, options = {}) {
       if (block === undefined) { res.writeHead(404).end('not found'); return }
       const body = Buffer.from(block)
       if (tampered.has(key)) body[body.length - 1] ^= 0x01
-      res.writeHead(200, { 'content-type': 'application/vnd.ipld.raw' }).end(body)
+      const answer = () => { res.writeHead(200, { 'content-type': 'application/vnd.ipld.raw' }).end(body) }
+      if (options.blockDelayMs === undefined) answer()
+      else setTimeout(answer, options.blockDelayMs)
       return
     }
     if (url.pathname === '/dns-query') {
@@ -78,6 +80,11 @@ export async function startFixtureGateway (sites, options = {}) {
       if (cid === undefined) throw new Error(`no file ${path} in ${site}`)
       tampered.add(cid)
     },
-    close: async () => { await new Promise((resolve) => { server.close(() => { resolve(undefined) }) }) }
+    /** Gone at once, as a dead gateway is: open connections are cut, or a client that keeps reusing one holds close() open. */
+    close: async () => {
+      const closed = new Promise((resolve) => { server.close(() => { resolve(undefined) }) })
+      server.closeAllConnections()
+      await closed
+    }
   }
 }

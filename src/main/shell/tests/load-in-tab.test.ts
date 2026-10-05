@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { provideVerifierAccess } from '../../verifier/verifier-access.js'
 
 const repartitionView = vi.fn()
 const partitionChanged = vi.fn<(target: string, current: string | undefined) => { to: string | undefined } | undefined>()
@@ -6,12 +7,15 @@ const appTabFlagChanged = vi.fn<() => boolean>()
 vi.mock('../tab-parking.js', () => ({ repartitionView: (...args: unknown[]) => repartitionView(...args) }))
 vi.mock('../tab-partition.js', () => ({ partitionChanged: (target: string, current: string | undefined) => partitionChanged(target, current), appTabFlagChanged: () => appTabFlagChanged() }))
 
-const { loadInTab, repartitionForTarget } = await import('../load-in-tab.js')
+const { gatewayLinkTarget, loadInTab, repartitionForTarget } = await import('../load-in-tab.js')
 
 const loadURL = vi.fn(async () => {})
-const record = (partition: string | undefined): never => ({ partition, view: { webContents: { loadURL } }, host: { broker: undefined } }) as never
+const record = (partition: string | undefined, redirect = true): never => ({ partition, view: { webContents: { loadURL } }, host: { broker: undefined, services: { settings: { get: () => redirect } } } }) as never
+
+afterEach(() => { provideVerifierAccess({ start: () => {}, ready: async () => {} }) })
 
 beforeEach(() => {
+  provideVerifierAccess({ start: () => {}, ready: async () => {}, servesName: () => true })
   repartitionView.mockReset()
   loadURL.mockClear()
   partitionChanged.mockReset().mockReturnValue(undefined)
@@ -51,5 +55,33 @@ describe('loadInTab', () => {
     loadInTab('t1', record('persist:app'), 'https://site.eth/')
     expect(repartitionView).toHaveBeenCalledWith('t1', expect.anything(), 'https://site.eth/', undefined)
     expect(loadURL).not.toHaveBeenCalled()
+  })
+})
+
+describe('gatewayLinkTarget', () => {
+  it('leaves a link to a gateway address to the web-request redirect in a tab that need not move', () => {
+    expect(gatewayLinkTarget(record(undefined), 'https://site.eth.limo/a#f')).toBeUndefined()
+  })
+
+  it('maps the link in a tab that must move to the .eth address\'s session', () => {
+    partitionChanged.mockReturnValue({ to: undefined })
+    expect(gatewayLinkTarget(record('persist:app'), 'https://site.eth.limo/a#f')).toBe('https://site.eth/a#f')
+  })
+
+  it('maps the link in a cache-served app\'s tab even when the .eth address shares its session', () => {
+    expect(gatewayLinkTarget(record('persist:app'), 'https://app.eth.limo/x')).toBe('https://app.eth/x')
+  })
+
+  it('maps the link in a tab whose app-tab flag differs from the .eth address\'s', () => {
+    appTabFlagChanged.mockReturnValue(true)
+    expect(gatewayLinkTarget(record(undefined), 'https://site.eth.limo/')).toBe('https://site.eth/')
+  })
+
+  it('maps nothing when the setting is off, the address is no gateway one, or the name cannot load', () => {
+    partitionChanged.mockReturnValue({ to: undefined })
+    expect(gatewayLinkTarget(record('persist:app', false), 'https://site.eth.limo/')).toBeUndefined()
+    expect(gatewayLinkTarget(record('persist:app'), 'https://example.com/')).toBeUndefined()
+    provideVerifierAccess({ start: () => {}, ready: async () => {} })
+    expect(gatewayLinkTarget(record('persist:app'), 'https://site.eth.limo/')).toBeUndefined()
   })
 })

@@ -5,12 +5,12 @@
 operation), `bookmark-file.ts` (reading and writing the file, pure),
 `bookmarks-domain.ts` (what the Bookmarks page may ask, each field checked), `bookmarks-undo.ts` (what a delete in it can take back),
 `bookmarks-html-export.ts` (the Netscape bookmark file, pure) and `bookmarks-export-runner.ts` (the save dialog and the write),
-`favicon.ts` and its pure byte-sniffing half `favicon-format.ts` (a tab's icon as a `data:` URL),
+`favicon.ts`, its pure byte-sniffing half `favicon-format.ts` (a tab's icon as a `data:` URL) and `favicon-timeout.ts` (how long a fetch may take),
 `search-engines.ts` (the built-in engines, their keywords and suggestion addresses, and the template rule), `search-resolve.ts` and
 `search-current.ts` (which engine a typed search goes to, pure), `search-engine-store.ts` (the engines a person keeps in
 `search-engines.json`; its rules are in `search-engine-rules.ts` and the starting site engines in `site-engines.ts`),
 `favicon-cache.ts` (the icons already fetched), `bookmark-types.ts` (the node, bar item and import shapes, types only), `site-trust.ts` (the Web3 Score page and the
-toolbar shield's data), `score-provider-client.ts` (asks the chosen Web3 Score provider, `ADR-0054`), and `eth-gateway.ts` (which web addresses are an ENS gateway's copy of a `.eth` name, `eth.limo` and `eth.link`, and the `.eth` address each stands for; pure, with no `electron`; [`../shell/eth-gateway-redirect.ts`](../shell/eth-gateway-redirect.ts) acts on it). `site-trust.ts` is pure: its caller,
+toolbar shield's data), `score-provider-client.ts` (asks the chosen Web3 Score provider, `ADR-0054`), and `eth-gateway.ts` (which web addresses are an ENS gateway's copy of a `.eth` name, `eth.limo` and `eth.link`, and the `.eth` address each stands for (`ethGatewayTarget`, `isEthGatewayAddress`); pure, with no `electron`; [`../shell/eth-gateway-redirect.ts`](../shell/eth-gateway-redirect.ts) acts on it). `site-trust.ts` is pure: its caller,
 [`../permissions/site-info-controller.ts`](../permissions/site-info-controller.ts), hands it the
 pin, pin coverage, a `.eth` name's evidence and the developer overrides, so it never reaches for
 the loader, the verifier or `../dev/` itself.
@@ -86,6 +86,12 @@ loopback-page carve-out). It is the one main-process network call that fires on 
 browsing with no manifest and no grant, from a URL the page chose. It reuses the broker's address
 classification and the loader's resolver rather than a second copy (code-guidelines Rule 3);
 `open-questions.md` A124 is the one way it is weaker than the install path.
+
+**A verifier-served host gets a longer budget** (`VERIFIED_FAVICON_TIMEOUT_MS`, *provisional*). An icon on
+`<cid>.ipfs.orivon` or a `.eth` name is fetched block by block from gateways and checked, so five seconds
+aborts a slow load, and a capture that fails leaves the globe until the page announces another icon set. Such a host
+resolves to loopback, so `isSafeFaviconUrl` passes it only as the declaring page's own origin; the longer budget
+reaches nothing a page could not already load. Real gateways have not measured the number.
 
 **Not bounded, on purpose for now:** repeated `page-favicon-updated` events per tab (bounded per
 event by `MAX_FAVICON_CANDIDATES`, and only public hosts pass the gate; a real bound needs

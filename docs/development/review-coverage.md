@@ -338,3 +338,10 @@ In all, 36 findings, 36 confirmed, none refuted.
 | `/code-review` at low effort | The branch against `main` | No findings |
 | `src/shim` unit tests on Windows, on this branch and on `main` | Both trees | The two bundler tests that failed on `main` pass, and three Express/websocket bundling tests with them; five other files fail the same on both |
 | The Lounge's real end-to-end spec, its build rebuilt against this plugin | A real window on Windows | Every check passes but the relaunch status read, a timing race the change does not touch |
+
+### `stream/ipfs-favicon`: the icon budget on verifier-served hosts, and IPFS score providers (2026-10-05)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| `/code-review` at medium effort | PR #100 against `main` | One finding, confirmed and fixed: the slow-gateway spec waited the default 8 s for a page that needs two 3 s blocks in turn |
+| Reproduction with the fixture gateway and a page loading large files from its own host, at 800 ms per block | The 5 s build and this branch | 5 s: the icon fetch fails at 5001 ms and the tab keeps the globe; this branch: the icon shows at 14.3 s |

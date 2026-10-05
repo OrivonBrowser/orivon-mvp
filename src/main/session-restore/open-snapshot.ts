@@ -1,5 +1,5 @@
 // Opens a saved tab in a window: the one place an address from the closed stack or the session file becomes a tab.
-import { gatewayEntries } from '../shell/eth-gateway-redirect.js'
+import { gatewayEntries } from '../shell/eth-gateway-rule.js'
 import { restoreHistory } from '../shell/tab-history.js'
 import type { TabManager } from '../shell/tabs.js'
 import { showTitleUntilLoaded } from './restored-title.js'
