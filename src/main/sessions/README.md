@@ -119,10 +119,10 @@ follow from it:
   tab is in fullscreen from the tab's own events, watched from the `fullscreen` grant onward, so
   the gate notes a grant before answering it (`ADR-0026`).
 
-The notification measurement is the last phase of `test/e2e-site-permissions.test.ts`, which
+The notification measurement is the last phase of `test/sites/e2e-site-permissions.test.ts`, which
 runs only on a private session bus
 ([`setup.md`](../../../docs/development/setup.md)):
-`ORIVON_PRIVATE_BUS=1 node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-site-permissions.test.ts`.
+`ORIVON_PRIVATE_BUS=1 node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/sites/e2e-site-permissions.test.ts`.
 
 **`web-context-host.ts` reinstalls deny-everything handlers on isolated-context sessions.** They
 are the only thing keeping every name above away from a document running another site's script;

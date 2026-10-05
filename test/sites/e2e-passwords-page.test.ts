@@ -5,16 +5,16 @@
 // same in its own words. Every native dialog is stubbed.
 //
 // Run with `npm run test:e2e`, or directly:
-//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-passwords-page.test.ts
+//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/sites/e2e-passwords-page.test.ts
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { createFakeKeyring } from '../src/main/passwords/dev-password-storage.js'
-import { assertNoElectronSurvivors, closeElectron, launchElectron } from './support/launch-electron.mjs'
-import { delay, findChrome, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
+import { createFakeKeyring } from '../../src/main/passwords/dev-password-storage.js'
+import { assertNoElectronSurvivors, closeElectron, launchElectron } from '../support/launch-electron.mjs'
+import { delay, findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
 
 const SHOTS = process.env['ORIVON_SHOTS_DIR']
 const TEST_TIMEOUT_MS = 120_000

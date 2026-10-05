@@ -9,11 +9,11 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron, mainOutput } from './support/launch-electron.mjs'
-import { launchShell, startServer, visit } from './support/qa-helpers.js'
-import type { FixtureServer } from './support/qa-helpers.js'
-import { clickAddressBarRetrying } from './support/e2e-helpers.js'
-import { delay, tabIds, waitFor, waitForTab } from './support/smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
+import { launchShell, startServer, visit } from '../support/qa-helpers.js'
+import type { FixtureServer } from '../support/qa-helpers.js'
+import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
+import { delay, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 const SHOTS_DIR = process.env.ORIVON_UI_SHOTS_DIR
 const E2E_TIMEOUT_MS = 240_000

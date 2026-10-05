@@ -990,7 +990,7 @@ the reference set, and whether this build has it.
 | Serial (Web Serial) | ❌ | Same device-permission denial |
 | HID (WebHID) | ❌ | Same denial; also excluded by design for apps (`hid` is 🚫) |
 | Bluetooth (Web Bluetooth) | ❌ | No `select-bluetooth-device` listener exists, and Electron's typings say every Bluetooth request is then cancelled (not measured). The device-permission handler does not cover Bluetooth |
-| Sensors (motion/orientation/ambient light) | ⚠️ | No Electron permission name exists for them; measured on Linux: `Accelerometer` fails with `NotAllowedError`, `devicemotion` still fires and `AmbientLightSensor` is undefined; no prompt and no store (`test/e2e-site-asks.test.ts` prints the probe) |
+| Sensors (motion/orientation/ambient light) | ⚠️ | No Electron permission name exists for them; measured on Linux: `Accelerometer` fails with `NotAllowedError`, `devicemotion` still fires and `AmbientLightSensor` is undefined; no prompt and no store (`test/sites/e2e-site-asks.test.ts` prints the probe) |
 | Pop-ups | ✅ | A window a page opens with no click, touch or key press from the person in that tab in the last five seconds is blocked and listed under an address-bar chip, one window per input; per-site Allow and a default for every site; the rule is a recency test on browser-side input, since Electron reports no gesture flag (`src/main/site-settings/popup-policy.ts`, `tab-interaction.ts`) |
 | Redirects | ➖ | Chromium's own default navigation handling applies |
 | Automatic downloads | ✅ | A second download a page starts without a click on one page load is paused and asked about; Block cancels it and Allow is remembered; a file small enough to finish before the pause is already on disk; a download the person clicked for is never held (`src/main/site-settings/auto-downloads.ts`) |
@@ -1005,9 +1005,9 @@ the reference set, and whether this build has it.
 | Images on/off per site | ✅ | Per site and for every site; the page's image requests are cancelled and alt text shows, from the next load, in the default session only; the browser's own favicon fetch is not one of them (`src/main/site-settings/content-rules.ts`) |
 | Sound per site | ✅ | Per site and for every site; a tab on a blocked site is silent at once, its speaker badge reads "Muted by site settings", and the tab's own mute never overrides it (`src/main/site-settings/site-sound.ts`, `src/main/shell/signals/audio.ts`) |
 | Zoom per site | ✅ | Remembered per origin (`src/main/zoom/`) |
-| Local fonts (Local Font Access API) | ❌ | No Electron permission name exists for it; measured on Linux: `queryLocalFonts()` resolves with no fonts; no prompt (`test/e2e-site-asks.test.ts` prints the probe) |
+| Local fonts (Local Font Access API) | ❌ | No Electron permission name exists for it; measured on Linux: `queryLocalFonts()` resolves with no fonts; no prompt (`test/sites/e2e-site-asks.test.ts` prints the probe) |
 | Screen/window sharing (`getDisplayMedia`) | ❌ | Left unset (Electron's own default refusal) |
-| Persistent storage (`navigator.storage.persist`) | ❌ | No Electron permission name exists for it; measured on Linux: `persist()` resolves `false`; no prompt (`test/e2e-site-asks.test.ts` prints the probe) |
+| Persistent storage (`navigator.storage.persist`) | ❌ | No Electron permission name exists for it; measured on Linux: `persist()` resolves `false`; no prompt (`test/sites/e2e-site-asks.test.ts` prints the probe) |
 | AR/VR (WebXR) | ⚠️ | No Electron permission name exists for it; Chromium's default in this build applies (not measured) |
 | Fullscreen (`requestFullscreen`) | ✅ | Allowed from a click on every page (`ADR-0025`) |
 | Pointer lock | ✅ | Allowed, click-gated by Chromium (`ADR-0026`) |
@@ -1102,7 +1102,7 @@ the reference set, and whether this build has it.
 | Speech synthesis | ➖ | Ungated; no browser-level UI uses it |
 | Web Bluetooth / USB / Serial / HID | ❌ | USB, Serial and HID: the check handler denies `usb`, `serial` and `hid` and the device-permission handler answers `false`. Bluetooth: no `select-bluetooth-device` listener exists, and Electron's typings say every Bluetooth request is then cancelled (not measured); the device-permission handler does not cover Bluetooth |
 | Gamepad API | ➖ | Ungated; Chromium's own default applies |
-| Screen Wake Lock API | ❌ | No Electron permission name exists for it; measured on Linux: `wakeLock.request('screen')` rejects with `NotAllowedError`; no prompt (`test/e2e-site-asks.test.ts` prints the probe) |
+| Screen Wake Lock API | ❌ | No Electron permission name exists for it; measured on Linux: `wakeLock.request('screen')` rejects with `NotAllowedError`; no prompt (`test/sites/e2e-site-asks.test.ts` prints the probe) |
 | EyeDropper API | ➖ | Ungated; Chromium's own default applies |
 | File System Access API (single file) | ✅ | See Site settings |
 | Clipboard API | ✅ | Write allowed outright; read asked once per site and remembered (see Clipboard read) |

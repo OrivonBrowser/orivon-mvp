@@ -7,16 +7,16 @@
 // Set ORIVON_UI_SHOTS_DIR to also write screenshots in both colour schemes.
 //
 // Run with `npm run test:e2e`, or directly:
-//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-site-settings.test.ts
+//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/sites/e2e-site-settings.test.ts
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron, mainOutput } from './support/launch-electron.mjs'
-import { html, launchShell, startServer, visit } from './support/qa-helpers.js'
-import type { FixtureServer } from './support/qa-helpers.js'
-import { delay, popoverShown, waitFor } from './support/smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
+import { html, launchShell, startServer, visit } from '../support/qa-helpers.js'
+import type { FixtureServer } from '../support/qa-helpers.js'
+import { delay, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 
 const SHOTS_DIR = process.env.ORIVON_UI_SHOTS_DIR
 const E2E_TIMEOUT_MS = 240_000

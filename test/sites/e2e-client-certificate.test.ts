@@ -4,11 +4,11 @@
 // gives Electron's callback. Set ORIVON_UI_SHOTS_DIR to also write screenshots in both colour schemes.
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { overlayShown, safely, shoot, waitOverlay } from './support/auth-support.js'
-import { assertNoElectronSurvivors, closeElectron, mainOutput } from './support/launch-electron.mjs'
-import { html, launchShell, startServer, visit } from './support/qa-helpers.js'
-import type { FixtureServer } from './support/qa-helpers.js'
-import { waitFor } from './support/smoke-helpers.mjs'
+import { overlayShown, safely, shoot, waitOverlay } from '../support/auth-support.js'
+import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
+import { html, launchShell, startServer, visit } from '../support/qa-helpers.js'
+import type { FixtureServer } from '../support/qa-helpers.js'
+import { waitFor } from '../support/smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 90_000
 let fixture: FixtureServer

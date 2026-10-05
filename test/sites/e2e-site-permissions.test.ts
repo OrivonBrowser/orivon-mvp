@@ -20,7 +20,7 @@
 // that phase is skipped unless the runner says the bus is private
 // (ORIVON_E2E_PRIVATE_BUS=1 with a session bus that is not this user's own):
 //   ORIVON_PRIVATE_BUS=1 node scripts/run-headless.mjs npx vitest run \
-//     --config test/vitest.e2e.config.ts test/e2e-site-permissions.test.ts
+//     --config test/vitest.e2e.config.ts test/sites/e2e-site-permissions.test.ts
 // It never constructs a Notification: it reads permission state only.
 //
 // THE CLICKS ARE THE POINT: pointer lock and the second external link each
@@ -32,11 +32,11 @@ import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
-import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './support/launch-electron.mjs'
-import { ABSENCE_SETTLE_MS, HERMETIC_RESOLVER, delay, evaluateRetrying, findChrome, popoverShown, waitFor } from './support/smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, navigateToFixture, runPhase, waitForAddressBarStable } from './support/e2e-helpers.js'
-import { focusWebContents, underVirtualDisplay, webContentsFocused } from './support/focus-helpers.js'
-import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from './support/question-support.js'
+import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
+import { ABSENCE_SETTLE_MS, HERMETIC_RESOLVER, delay, evaluateRetrying, findChrome, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, navigateToFixture, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
+import { focusWebContents, underVirtualDisplay, webContentsFocused } from '../support/focus-helpers.js'
+import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
 
 const HOST = '127.0.0.1'
 // 8872-8885, 8893-8895 and 8897 belong to other suites' fixtures.

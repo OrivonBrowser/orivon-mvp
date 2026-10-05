@@ -26,15 +26,15 @@
 // RUN THIS WITH:
 //   npm run test:e2e
 // or directly:
-//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-site-info.test.ts
+//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/sites/e2e-site-info.test.ts
 import { afterAll, expect, it } from 'vitest'
 import { createServer } from 'node:http'
 import type { Server } from 'node:http'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { ABSENCE_SETTLE_MS, delay, findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from './support/smoke-helpers.mjs'
-import { APP_CLOSE_RACE_MS, asPage, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './support/e2e-helpers.js'
-import { seedExtensions } from './support/extensions-fixtures.js'
-import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from './support/question-support.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { ABSENCE_SETTLE_MS, delay, findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { APP_CLOSE_RACE_MS, asPage, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
+import { seedExtensions } from '../support/extensions-fixtures.js'
+import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
 import type { ElectronApplication, Page } from 'playwright'
 
 afterAll(async () => {

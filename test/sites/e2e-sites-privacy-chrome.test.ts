@@ -8,11 +8,11 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { createFakeKeyring } from '../src/main/passwords/dev-password-storage.js'
-import { assertNoElectronSurvivors, closeElectron, launchElectron } from './support/launch-electron.mjs'
-import { html, startServer } from './support/qa-helpers.js'
-import type { FixtureServer } from './support/qa-helpers.js'
-import { delay, findChrome, findViewShowing, HERMETIC_RESOLVER, popoverShown, waitFor } from './support/smoke-helpers.mjs'
+import { createFakeKeyring } from '../../src/main/passwords/dev-password-storage.js'
+import { assertNoElectronSurvivors, closeElectron, launchElectron } from '../support/launch-electron.mjs'
+import { html, startServer } from '../support/qa-helpers.js'
+import type { FixtureServer } from '../support/qa-helpers.js'
+import { delay, findChrome, findViewShowing, HERMETIC_RESOLVER, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 
 const SHOTS_DIR = process.env.ORIVON_UI_SHOTS_DIR
 const E2E_TIMEOUT_MS = 180_000

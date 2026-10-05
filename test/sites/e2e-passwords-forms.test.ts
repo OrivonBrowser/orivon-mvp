@@ -8,11 +8,11 @@ import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron, mainOutput } from './support/launch-electron.mjs'
-import { pressKey } from './support/e2e-helpers.js'
-import { html, launchShell, startServer, visit } from './support/qa-helpers.js'
-import type { FixtureServer } from './support/qa-helpers.js'
-import { ABSENCE_SETTLE_MS, delay, popoverShown, waitFor } from './support/smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
+import { pressKey } from '../support/e2e-helpers.js'
+import { html, launchShell, startServer, visit } from '../support/qa-helpers.js'
+import type { FixtureServer } from '../support/qa-helpers.js'
+import { ABSENCE_SETTLE_MS, delay, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 150_000
 const SEAM = { ORIVON_TEST_PASSWORD_KEYRING: '1' }

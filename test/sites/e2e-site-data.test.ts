@@ -11,11 +11,11 @@ import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import type { ElectronApplication, Locator, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { runCommand, SHOTS_DIR, shoot } from './support/auth-support.js'
-import { pressKey } from './support/e2e-helpers.js'
-import { assertNoElectronSurvivors, closeElectron, launchElectron } from './support/launch-electron.mjs'
-import { findChrome, waitFor } from './support/smoke-helpers.mjs'
-import { visit } from './support/qa-helpers.js'
+import { runCommand, SHOTS_DIR, shoot } from '../support/auth-support.js'
+import { pressKey } from '../support/e2e-helpers.js'
+import { assertNoElectronSurvivors, closeElectron, launchElectron } from '../support/launch-electron.mjs'
+import { findChrome, waitFor } from '../support/smoke-helpers.mjs'
+import { visit } from '../support/qa-helpers.js'
 
 const TEST_TIMEOUT_MS = 180_000
 const RESOLVER = '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost'
@@ -73,7 +73,7 @@ afterAll(async () => {
 })
 
 const cookieNames = async (host: string): Promise<string[]> =>
-  await app.evaluate(async ({ session }, domain) => (await session.defaultSession.cookies.get({})).filter((cookie) => cookie.domain?.replace(/^\./, '') === domain).map((cookie) => cookie.name).sort(), host)
+  await app.evaluate(async ({ session }, domain) => (await session.defaultSession.cookies.get({})).filter((cookie) => cookie.domain?.replace(/^\../, '') === domain).map((cookie) => cookie.name).sort(), host)
 
 /** The tab's title once the fixture page has counted what its origin keeps. */
 async function visitCounted (url: string, counted: string): Promise<Page> {

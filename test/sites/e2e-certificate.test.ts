@@ -12,11 +12,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { overlayShown, runCommand, safely, shoot, waitOverlay } from './support/auth-support.js'
-import { clickAddressBarRetrying } from './support/e2e-helpers.js'
-import { assertNoElectronSurvivors, closeElectron, mainOutput } from './support/launch-electron.mjs'
-import { findChrome, waitFor } from './support/smoke-helpers.mjs'
-import { launchShell, visit } from './support/qa-helpers.js'
+import { overlayShown, runCommand, safely, shoot, waitOverlay } from '../support/auth-support.js'
+import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
+import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
+import { findChrome, waitFor } from '../support/smoke-helpers.mjs'
+import { launchShell, visit } from '../support/qa-helpers.js'
 
 const TEST_TIMEOUT_MS = 120_000
 const FLOOD = 205

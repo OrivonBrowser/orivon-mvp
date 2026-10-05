@@ -12,9 +12,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './support/launch-electron.mjs'
-import { clickAddressBarRetrying } from './support/e2e-helpers.js'
-import { ABSENCE_SETTLE_MS, findChrome, popoverShown, waitFor, waitForTab } from './support/smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
+import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
+import { ABSENCE_SETTLE_MS, findChrome, popoverShown, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 interface Seen { readonly url: string, readonly headers: IncomingHttpHeaders }
 

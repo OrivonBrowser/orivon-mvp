@@ -67,7 +67,7 @@ window back, is what the notices say.
   contexts, as they do the other names the gate allows.
 - The argument rests on upstream behaviour: the click requirement for pointer lock, Escape in the
   browser process, keyboard lock acting only in fullscreen, and the held-Escape exit.
-  `test/e2e-site-permissions.test.ts` asserts the keyboard half against the real shell (one
+  `test/sites/e2e-site-permissions.test.ts` asserts the keyboard half against the real shell (one
   Escape reaches the page, holding it leaves) and the pointer half where the test display can
   give the window focus.
 
