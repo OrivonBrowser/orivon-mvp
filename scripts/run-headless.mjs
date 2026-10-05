@@ -1,5 +1,5 @@
 /**
- * Wraps a test/smoke command so it never paints on a real screen by
+ * Wraps a test or smoke command so it never paints on a real screen by
  * default (owner request: a build/test run must not interrupt whatever is
  * on the owner's real desktop). On Linux with xvfb-run on PATH, the wrapped
  * command runs under a fresh virtual display instead -- nothing appears on

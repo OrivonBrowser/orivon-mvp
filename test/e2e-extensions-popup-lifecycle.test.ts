@@ -10,8 +10,8 @@
 // The page/toolbar-focus checks drive focus through `focusWebContents`
 // (test/focus-helpers.ts), not a real Playwright click: measured directly,
 // asking Electron for REAL (non-showInactive) focus under bare xvfb-run --
-// with or without a window manager on the display (test/with-window-
-// manager.mjs starts one) -- makes the very first click that opens the
+// with or without a window manager on the display (with-window-manager.mjs
+// starts one) -- makes the very first click that opens the
 // popup fail to register at all. `focusWebContents` exercises the
 // identical native blur/focus event pair a real click produces, and is the
 // pattern this repo's own focus-helpers.ts documents as the sanctioned way

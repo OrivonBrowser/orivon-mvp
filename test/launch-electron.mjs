@@ -1,4 +1,4 @@
-// Shared launcher for every Electron-driving test/smoke script in this repo.
+// Shared launcher for every Electron-driving test or smoke script in this repo.
 //
 // WHY THIS EXISTS -- read before "simplifying" it away.
 //
@@ -49,7 +49,7 @@ const POISON = ['ELECTRON_RUN_AS_NODE']
  * `--alsa-output-device=null` points that ALSA fallback at alsa-lib's own
  * null PCM instead of the real card. Audio still runs at real-time rate
  * (capture and `isCurrentlyAudible()` keep working, measured against
- * test/probe-tabcapture -- a tabCapture feasibility probe), only nothing
+ * a tabCapture feasibility probe), only nothing
  * reaches a speaker. `--mute-audio` was not used instead: it can replace
  * the renderer's own sink with a null one and was not verified to leave
  * tab capture intact.

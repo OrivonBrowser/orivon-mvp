@@ -30,7 +30,7 @@ const SHOW_FALLBACK_MS = 1_000
 
 const TEST_TIMEOUT_MS = 30_000
 
-it('showOnce takes the showInactive() branch under the default test/smoke launch (ORIVON_WINDOW_NO_FOCUS=1)', async () => {
+it('showOnce takes the showInactive() branch under the default test launch (ORIVON_WINDOW_NO_FOCUS=1)', async () => {
   const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
   try {
     await waitFor(() => mainOutput(app).includes(NO_FOCUS_MARKER))

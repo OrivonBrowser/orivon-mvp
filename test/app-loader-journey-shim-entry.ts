@@ -65,8 +65,8 @@ export interface ShimRoundTripFailure {
  * resolves to a plain, structurally-typed failure object instead of
  * rejecting, because this function is called from `page.evaluate()` and a
  * rejected evaluate() throws on the TEST side with no chance to inspect the
- * shape of what failed (E-F3's reasoning in test/e2e-capability-boundary.
- * test.ts applies here too: capture the outcome, don't let it vanish into a
+ * shape of what failed (E-F3's reasoning in e2e-capability-boundary.test.ts
+ * applies here too: capture the outcome, don't let it vanish into a
  * generic evaluate() rejection).
  */
 function shimRoundTrip (host: string, port: number, message: string): Promise<ShimRoundTripResult | ShimRoundTripFailure> {

@@ -114,8 +114,7 @@ of `win.show()` when `ORIVON_WINDOW_NO_FOCUS=1` is set **and** the window is the
 - `npm run dev`, via `scripts/dev.mjs`;
 - every Electron launch made through [`test/launch-electron.mjs`](../../test/launch-electron.mjs),
   which both `npm run smoke` and `npm run test:e2e` go through, so this holds even running a
-  single e2e file directly (`npx vitest run --config test/vitest.e2e.config.ts test/some-file.
-  test.ts`), bypassing the npm scripts below entirely.
+  single e2e file directly (`npx vitest run --config test/vitest.e2e.config.ts test/<area>/<file>.test.ts`), bypassing the npm scripts below entirely.
 
 `npm run smoke` and `npm run test:e2e` go a step further on Linux:
 [`scripts/run-headless.mjs`](../../scripts/run-headless.mjs) runs them under a fresh virtual

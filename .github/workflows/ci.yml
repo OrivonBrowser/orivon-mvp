@@ -97,6 +97,10 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: npm run check:contracts-surface -- --base "origin/$BASE_REF"
 
+      # A spec or helper that moves takes its mentions with it: every test/ path a tracked file names exists.
+      - name: Every path under test/ that a tracked file names exists
+        run: npm run check:test-paths
+
       # A field src/contracts/manifest.ts documents must not be refused by the
       # loader's allowlist; the script reads both sides from their source.
       - name: Loader accepts every field the manifest contract declares
