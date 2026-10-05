@@ -80,6 +80,11 @@ export async function startFixtureGateway (sites, options = {}) {
       if (cid === undefined) throw new Error(`no file ${path} in ${site}`)
       tampered.add(cid)
     },
-    close: async () => { await new Promise((resolve) => { server.close(() => { resolve(undefined) }) }) }
+    /** Gone at once, as a dead gateway is: open connections are cut, or a client that keeps reusing one holds close() open. */
+    close: async () => {
+      const closed = new Promise((resolve) => { server.close(() => { resolve(undefined) }) })
+      server.closeAllConnections()
+      await closed
+    }
   }
 }
