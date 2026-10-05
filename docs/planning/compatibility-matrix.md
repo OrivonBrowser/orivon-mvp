@@ -811,7 +811,7 @@ the reference set, and whether this build has it.
 | QR code share of current page | ✅ | Share > Create QR code in the main menu, or the page menu, opens a sheet with the code, Copy link and Download as PNG (`src/main/qr/`, `src/renderer/overlay/qr/`) |
 | `view-source:` | ✅ | `page.viewSource` (`Ctrl+U`) and the page menu open `view-source:<address>` in a tab beside the page, for an http(s) page in an ordinary tab (`src/main/page-tools/view-source.ts`); typing `view-source:` and an http(s) address in the bar does the same, and anything else after it is searched (`src/main/pages/internal-aliases.ts`, `src/main/shell/tab-navigation.ts`) |
 | `data:` / `file:` typed in the address bar | 🚫 | `DANGEROUS_SCHEMES` refuses `javascript:`, `data:`, `file:` and `about:` typed or pasted; `about:<name>` for a page Orivon has is the one exception |
-| `file://` browsing (via a link, not typed) | ⚠️ | A `file:` link on a web page loads nothing and a typed `file:` address is refused, leaving a blank tab; the behaviour is Chromium's (measured in `test/e2e-address-bar.test.ts`) |
+| `file://` browsing (via a link, not typed) | ⚠️ | A `file:` link on a web page loads nothing and a typed `file:` address is refused, leaving a blank tab; the behaviour is Chromium's (measured in `test/toolbar/e2e-address-bar.test.ts`) |
 
 ### Tabs
 

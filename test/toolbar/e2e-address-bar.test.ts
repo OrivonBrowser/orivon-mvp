@@ -14,11 +14,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron, mainOutput } from './support/launch-electron.mjs'
-import { clickAddressBarRetrying } from './support/e2e-helpers.js'
-import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from './support/qa-helpers.js'
-import type { FixtureServer } from './support/qa-helpers.js'
-import { ABSENCE_SETTLE_MS, delay, popoverShown, waitFor, waitForTab } from './support/smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
+import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
+import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from '../support/qa-helpers.js'
+import type { FixtureServer } from '../support/qa-helpers.js'
+import { ABSENCE_SETTLE_MS, delay, popoverShown, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 const SHOTS_DIR = process.env.ORIVON_UI_SHOTS_DIR
 const PAGE_WITH_FILE_LINK = (href: string): string => `<!doctype html><title>Linker</title><a id="file" href="${href}" style="font:20px sans-serif">a local file</a>`

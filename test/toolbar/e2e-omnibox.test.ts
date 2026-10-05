@@ -9,11 +9,11 @@ import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { SqliteHistoryStore } from '../src/main/history/sqlite-history-store.js'
-import { assertNoElectronSurvivors, closeElectron, mainOutput } from './support/launch-electron.mjs'
-import { html, launchShell, startServer } from './support/qa-helpers.js'
-import type { FixtureServer } from './support/qa-helpers.js'
-import { activeTabInfo, delay, popoverShown, tabIds, waitFor } from './support/smoke-helpers.mjs'
+import { SqliteHistoryStore } from '../../src/main/history/sqlite-history-store.js'
+import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
+import { html, launchShell, startServer } from '../support/qa-helpers.js'
+import type { FixtureServer } from '../support/qa-helpers.js'
+import { activeTabInfo, delay, popoverShown, tabIds, waitFor } from '../support/smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 120_000
 const SHOTS_DIR = process.env.ORIVON_UI_SHOTS_DIR

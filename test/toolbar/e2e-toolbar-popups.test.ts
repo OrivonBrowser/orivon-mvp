@@ -4,15 +4,15 @@
 // popup reopens topmost, sized and painted after every way it can have left the window, among them an overlay or a tab
 // switch closing it without a blur, and its page crashing or being destroyed while it shows.
 // RUN THIS WITH:
-//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-toolbar-popups.test.ts
+//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/toolbar/e2e-toolbar-popups.test.ts
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron } from './support/launch-electron.mjs'
-import { pressKey, waitForKeyboardAt } from './support/e2e-helpers.js'
-import { distinctColours } from './support/qa-visual.js'
-import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from './support/qa-helpers.js'
-import type { FixtureServer } from './support/qa-helpers.js'
-import { delay, popoverShown, waitFor } from './support/smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
+import { pressKey, waitForKeyboardAt } from '../support/e2e-helpers.js'
+import { distinctColours } from '../support/qa-visual.js'
+import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from '../support/qa-helpers.js'
+import type { FixtureServer } from '../support/qa-helpers.js'
+import { delay, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 
 let server: FixtureServer
 
