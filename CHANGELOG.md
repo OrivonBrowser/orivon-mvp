@@ -20,6 +20,9 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **The shell's own pages load from `orivon-shell:`, not `file:`**, and Electron's file-protocol fuse is off in a package
+  and, after `npm install` or `npm run install:electron`, in every checkout's binary: a `file:` page gets no more reach
+  than a web page. A website cannot load, frame or navigate to a page of the shell.
 - **Default browser, asked properly**: Settings > Default browser, an unticked box on the welcome screen and a question
   a week after the last ask (in the default profile, "Don't ask again" from the third week). Only an installed package
   registers; a source run and an AppImage say why not. Windows and macOS packaging is written and unbuilt.

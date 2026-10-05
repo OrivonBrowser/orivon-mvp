@@ -103,6 +103,17 @@ Also mandatory:
   sees it. The real path is `node_modules/webtorrent/dist/sw.min.js` — note the `dist/`; a path
   without it looks plausible and fails as a silent 404.
 
+## The file-protocol fuse is off in this repository's binaries
+
+`npm install` (the `postinstall` hook) and `npm run install:electron` turn `grantFileProtocolExtraPrivileges`
+off in `node_modules/electron/dist/electron` (ADR-0059; a package has it off through `electron-builder.yml`).
+With it off, a `file:` page's module scripts are blocked (a null origin), a canvas read of a sibling image
+throws `SecurityError` and `fetch` of a sibling file rejects, so the shell's own pages load from
+`orivon-shell://renderer/...` instead (`src/main/pages/shell-scheme.ts`). After syncing `main`, run
+`npm run install:electron` in each checkout: it writes a new file and renames it over its own path, because a
+`cp -al` worktree shares the binary's inode with the checkout it came from and an in-place write would flip
+that one too (and fail with `ETXTBSY` while it runs). Never `flipFuses` a binary in `node_modules` directly.
+
 ## `file://` counts as a secure context — `serviceWorker.register()` needs no fallback
 
 Service workers are ordinarily gated to secure contexts (`https:` or `localhost`), and a

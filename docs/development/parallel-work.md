@@ -102,6 +102,14 @@ npm install      # or symlink the main checkout's: ln -s <repo>/node_modules nod
 
 A new worktree starts without `node_modules`, so it needs one of those two.
 
+**Run `npm run install:electron` in a checkout after syncing `main` once.** It turns the file-protocol
+fuse off in that checkout's Electron binary (ADR-0059); a checkout made before the change still has it
+on until the script runs there, and `npm install` runs it too. A worktree whose
+`node_modules` is a hard-linked copy (`cp -al`) shares the binary's inode with the checkout it came from:
+the script writes a new file and renames it over its own path, so the other checkout's binary is never
+changed, and a symlinked `node_modules` is refused (the flip would change the target's binary). A spec
+that needs the fuse off fails with a clear message until it has run.
+
 Branch naming: `stream/<name>`, matching the table above.
 
 **A PR stacked on another branch** starts from that branch, not from `main`:
