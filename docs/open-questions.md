@@ -2023,10 +2023,10 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first, then the owner
 - **Blocks:** nothing
 
-### A383: An extension popup opened while the page behind it was still settling lost the keyboard and closed **[RESEARCH]**
+### A383: An extension popup opened while the page behind it is still navigating closes when that navigation commits **[RESEARCH]**
 
-- **Question:** In `e2e-extensions-popup-lifecycle`, a popup opened right after the address bar navigated the active tab was blurred a moment after it was mounted and closed itself. No `focus()` call from the main process was seen in that window, so the focus came back some other way (the chrome page's address bar, or the navigation).
-- **Why it matters:** a person who opens a popup just after loading a page could see it vanish; the spec waits out the navigation instead.
-- **Options:** find what takes the focus back (rec.); have the popup host refuse a blur that arrives within a few frames of the mount.
-- **Who decides:** research first
+- **Question:** A popup opened while the active tab's navigation is in flight is blurred when the navigation commits: the new page takes the keyboard natively (measured: no `focus()` call from the main process, and no restack of the popup, in that window; the blur comes some 15 ms before `did-navigate`), and the popup closes as for any outside focus. Should it survive that commit?
+- **Why it matters:** a person who clicks a popup's icon while a page loads sees it vanish. The lifecycle spec waits for the tab to finish loading first.
+- **Options:** accept it, as the popup closes when the active tab navigates and this commit is one (rec.); ignore a blur while the tab it was opened over is committing a navigation that began before the popup opened.
+- **Who decides:** owner
 - **Blocks:** nothing

@@ -274,7 +274,8 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 - **Installing from the Chrome Web Store page no longer takes the browser down**: the store page keeps its own store API
   through every extension load, and a private window's store page refuses installs.
-- **An extension's popup opens inside the window**, under its toolbar button or the Extensions button, at the size of its page.
+- **An extension's popup opens inside the window**, under its toolbar button or the Extensions button, at the size of its page;
+  after it opens a tab it stays until the next click elsewhere.
 - **Three ways the whole browser could quit are closed**: an app's helper page failing to load, a light-client
   checkpoint the disk refuses to keep, and a profile file holding `null`.
 - **The light client switch applies at the next start, as Settings says**: switching it mid-run no longer changes the

@@ -27,6 +27,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Page } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { popupView } from './extensions-e2e-helpers.js'
 import { ABSENCE_SETTLE_MS, findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
 import { clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
 import { focusWebContents } from '../support/focus-helpers.js'
@@ -150,7 +151,7 @@ it('closes an open browserAction popup the way Chrome does, and keeps window.clo
       }
 
       /** Opens the popup fresh and waits for its view to be in the shell window --
-       * popup.ts's visibility fallback (500ms) covers the case
+       * popup.ts's size fallback (500ms) covers the case
        * 'preferred-size-changed' never arrives, so this never hangs even
        * without a real compositor. */
       async function openPopup (): Promise<Page> {
@@ -159,9 +160,7 @@ it('closes an open browserAction popup the way Chrome does, and keeps window.clo
         await waitFor(() => findPopup(liveApp.windows(), extensionId) !== undefined)
         const popup = findPopup(liveApp.windows(), extensionId)
         if (popup === undefined) throw new Error('popup did not open')
-        await waitFor(async () => await liveApp.evaluate(({ BaseWindow }, id: string) =>
-          BaseWindow.getAllWindows().some((win) => win.contentView.children.some((view) =>
-            (view as unknown as { webContents?: Electron.WebContents }).webContents?.getURL().startsWith(`chrome-extension://${id}/`) === true)), extensionId), 2000)
+        await waitFor(async () => await popupView(liveApp, extensionId) !== null, 2000)
         return popup
       }
 
@@ -193,7 +192,7 @@ it('closes an open browserAction popup the way Chrome does, and keeps window.clo
       // own pattern), not Playwright's page.keyboard: measured directly, a
       // CDP-level key press is silently dropped by Chromium's own input
       // routing when the target window never took real OS focus -- the
-      // same headless/no-compositor gap popup.ts's own visibility fallback
+      // same headless/no-compositor gap popup.ts's own size fallback
       // exists for for showing the popup, but has no equivalent for. Real
       // input dispatched through Electron's own webContents API reaches
       // 'before-input-event' regardless.
@@ -223,10 +222,10 @@ it('closes an open browserAction popup the way Chrome does, and keeps window.clo
       // still-open password-manager popup out from under them. An absence
       // is settled once, never polled for (testing.md's own rule 3: a
       // waitFor pointed at a condition already true reports a green no-op).
-      // The navigation above is still settling the address bar and the page's focus; a popup opened in the middle of
-      // it would lose the keyboard to that, which is not what this scenario is about.
-      await waitForAddressBarStable(chrome)
-      await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS))
+      // The tab finishes loading first: the page that commits a navigation takes the keyboard from whatever holds it
+      // at that moment, a popup included, so one opened while the navigation above is still in flight closes with it.
+      expect(await waitFor(async () => await liveApp.evaluate(({ webContents }, url: string) =>
+        webContents.getAllWebContents().some((contents) => contents.getURL() === url && !contents.isLoading()), fixtureUrl))).toBe(true)
       await openPopup()
       const fixtureTab = liveApp.windows().find((w) => w.url() === fixtureUrl)
       if (fixtureTab !== undefined) {

@@ -88,7 +88,7 @@ async function startFixtureServer (): Promise<{ server: Server, origin: string }
   return { server, origin: `http://127.0.0.1:${String(address.port)}` }
 }
 
-/** Finds the popup's own BrowserWindow among every open Playwright page --
+/** Finds the popup's own page among every open Playwright page --
  * it has no `.tab` entry in the strip, so this looks by URL prefix, not by
  * elimination against the chrome/tab views the way tabViews() does. */
 function findPopup (windows: Page[], extensionId: string): Page | undefined {
@@ -168,7 +168,7 @@ it('shows a real extension\'s browser action, its popup runs, and its chrome.tab
         return found
       }
       let popup = openPopup()
-      // Polled, not read once: the popup's own BrowserWindow/Page exists the
+      // Polled, not read once: the popup's page exists the
       // moment it is constructed, well before popup.html's script has run
       // and set the real title (smoke-helpers.mjs's own waitFor rule).
       const titleSet = await waitFor(async () => await evaluateRetrying(popup, () => document.title) === 'Action Popup')

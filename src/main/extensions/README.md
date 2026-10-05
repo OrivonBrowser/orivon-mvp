@@ -134,19 +134,21 @@ mounts it with `attachShown` above the bars, the side panel's guest and a new ta
 with `extension-popup-geometry.ts` (right edge on the anchor's, 5 px below it, 8 px inside the window,
 capped to the room), and gives the keyboard back to the page in front only when the popup held it.
 Its `panelFor` is adopted by the overlay host (`../shell/window-panels.ts`): each state push lifts an
-open popup again, and the host never closes it, because a tab the popup's own extension opens must
-not (`extension-host.ts`'s `keepOpenOnBlur`). An anchor is measured in the chrome page, which shares
+open popup again, and the host never closes it, because a tab the popup's own extension opens in its
+window must not (`extension-host.ts`'s `keepOpenOnBlur`, which names the popup: another extension's tab, or a
+tab in another window, does not count). The popup then takes the keyboard back once that hand-over is over,
+so the next click elsewhere closes it. An anchor is measured in the chrome page, which shares
 the window's content coordinates: the pinned icon, else the Extensions button, else the toolbar's
 right end (`extension-action-anchor.ts`). A virtual display never reports a page's preferred size,
-so the library measures the page after half a second; a real display's size, and the placement
+so the library measures the page's content after half a second, and again while it still renders; a real display's size, and the placement
 on Wayland, are *provisional* until a person's desktop shows them.
 
 **The Chrome Web Store page keeps its own `chrome.webstorePrivate`.** Every extension load makes the
-renderer rebuild `chrome.*`, and a store tab whose API was set by assignment got the native object
-back, which its next status poll reached and crashed the main process on. The preload now defines
-`webstorePrivate` and `management` as accessors that refuse redefinition (UPSTREAM.md of
-`vendor/electron-chrome-web-store`, patch 8), so `store-runner.ts` starts in every runtime, a private
-or guest one with every install denied before any question and no updater.
+renderer rebuild `chrome.*`; the preload defines `webstorePrivate` and `management` as accessors that
+refuse redefinition (UPSTREAM.md of `vendor/electron-chrome-web-store`, patch 8), because the native
+`webstorePrivate` crashes the main process when the page's status poll reaches it. `store-runner.ts`
+therefore starts in every runtime: a private or guest one blocks every install by policy before any
+question or icon fetch, and runs no updater.
 
 **Whether a new extension is pinned is decided once, at its install.** `finishInstall` records
 `pinned` from `extensions.pinInstalled` (off) for a fresh install with no pin, before the load, and

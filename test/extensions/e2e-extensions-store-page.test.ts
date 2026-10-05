@@ -157,7 +157,9 @@ it('keeps the browser up through store installs, loads beside an open store tab,
       check('the browser is up ten seconds after the loads', alive())
       if (!alive()) return
 
-      // 3: an uninstall from the page, the tab closed as soon as the question is answered.
+      // 3: an uninstall from the page, then the store tab closed. The reply to a closed tab (patch 10 of the store
+      // library) is pinned by store-api-uninstall.test.ts: its send runs right after the removal, before any tab can be
+      // closed from here, so this step shows that the browser survives the removal and the close.
       const uninstalling = answeringWith(liveApp, 'Remove', view.evaluate(async (id: string) => await (window as unknown as { __uninstall: (a: string) => Promise<unknown> }).__uninstall(id), items[1]!.id).catch(() => 'page closed'))
       await waitFor(() => registry().every((entry) => entry.id !== items[1]!.id), 20_000).catch(() => false)
       const chrome = findChrome(liveApp)
@@ -165,7 +167,7 @@ it('keeps the browser up through store installs, loads beside an open store tab,
       if (tab !== undefined) await chrome.click(`[data-id="${tab}"] .close`).catch(() => {})
       await uninstalling.catch(() => {})
       await delay(3_000)
-      check('the browser is up after an uninstall and an immediate tab close', alive())
+      check('the browser is up after an uninstall and a tab close', alive())
       check('the extension was removed', registry().every((entry) => entry.id !== items[1]!.id))
       check('no native message box was opened', (await noNativeDialogs(liveApp)).length === 0, JSON.stringify(await noNativeDialogs(liveApp)))
     } finally {
@@ -195,9 +197,9 @@ it('serves the store page its own API in a private window, and refuses the insta
         answers.push(await view.evaluate(async ([id, text]: [string, string]) => await (window as unknown as { __status: (a: string, b: string) => Promise<string> }).__status(id, text), [item.id, item.manifest] as [string, string]).catch((error: unknown) => `threw: ${String(error)}`))
         await delay(600)
       }
-      check('every status poll answers "installable"', answers.every((answer) => answer === 'installable'), JSON.stringify(answers))
+      check('every status poll answers "blocked_by_policy"', answers.every((answer) => answer === 'blocked_by_policy'), JSON.stringify(answers))
       const result = await view.evaluate(async (details: Record<string, unknown>) => await (window as unknown as { __install: (d: unknown) => Promise<unknown> }).__install(details), storeDetails(item))
-      check('the install is refused', result !== 'success', JSON.stringify(result))
+      check('the install is refused by the private runtime, with no question', result === 'blocked_by_policy', JSON.stringify(result))
       await delay(AFTER_INSTALL_MS)
       check('the browser is up ten seconds later', !exited && liveApp.process().exitCode === null)
       check('no native message box was opened', (await noNativeDialogs(liveApp)).length === 0)
