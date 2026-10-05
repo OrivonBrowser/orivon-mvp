@@ -16,13 +16,11 @@ import { openExtensionTab } from './extension-opened-pages.js'
 import { setupWindowOpenPolicy } from './extension-popup-policy.js'
 import { extensionOpenedUrl } from './extension-url-policy.js'
 import { readExtensionFacts } from './extensions-view-runner.js'
-import { slotDirForLoadedExtension } from './extensions-dnr.js'
-import { readRegistry } from './registry-runner.js'
 import { createPanelDriver } from './side-panel-driver.js'
 import type { PanelDriver, PanelPage, PanelPageEvents } from './side-panel-driver.js'
 import { createSidePanelApi, isOrdinaryTab } from './side-panel-api.js'
 import type { SidePanelDriver } from './side-panel-api.js'
-import { readOpenOnActionClick, writeOpenOnActionClick } from './side-panel-behavior-file.js'
+import { createBehaviorStore } from './side-panel-behavior-file.js'
 import { sidePanelGestures } from './side-panel-gesture.js'
 import { createSidePanelOptions } from './side-panel-options.js'
 import { registerSidePanelPage } from './side-panel-pages.js'
@@ -40,7 +38,7 @@ export async function closeSidePanels (extensionId: string): Promise<void> {
 
 let menuAction: ((extensionId: string) => (() => void) | undefined) | undefined
 
-/** What an action's right-click menu runs for "Open Side Panel": undefined when the extension has no panel for the tab in front. */
+/** What an action's right-click menu runs for "Open Side Panel": undefined when the extension has no panel for the tab in front or the window has no room for one. */
 export function sidePanelMenuAction (extensionId: string): (() => void) | undefined {
   return menuAction?.(extensionId)
 }
@@ -113,6 +111,7 @@ function makeRunner (ctx: ExtensionApiContext): SidePanelDriver {
     holds: (id) => ctx.held(id, 'sidePanel')
   })
 
+  const behavior = createBehaviorStore((id) => ctx.session.extensions.getExtension(id)?.path)
   const facts = new Map<string, { title: string, icon?: string | undefined }>()
   const driver = createPanelDriver({
     options,
@@ -147,15 +146,11 @@ function makeRunner (ctx: ExtensionApiContext): SidePanelDriver {
 
   const extensions = ctx.session.extensions
   extensions.on('extension-loaded', (_event, extension) => {
-    const slot = slotDirForLoadedExtension(ctx.userDataPath, extension.id)
-    options.setOpenOnActionClick(extension.id, slot !== undefined && readOpenOnActionClick(slot))
-    const entry = readRegistry(ctx.userDataPath).find((candidate) => candidate.id === extension.id)
-    if (entry !== undefined) {
-      void readExtensionFacts(entry).then((read) => {
-        facts.set(extension.id, { title: read.resolvedName, icon: read.iconDataUrl })
-        driver.republish()
-      }).catch(() => {})
-    }
+    options.setOpenOnActionClick(extension.id, behavior.read(extension.id))
+    void readExtensionFacts({ path: extension.path, name: extension.name }).then((read) => {
+      facts.set(extension.id, { title: read.resolvedName, icon: read.iconDataUrl })
+      driver.republish()
+    }).catch(() => {})
     driver.extensionLoaded(extension.id)
   })
   extensions.on('extension-unloaded', (_event, extension) => {
@@ -181,7 +176,7 @@ function makeRunner (ctx: ExtensionApiContext): SidePanelDriver {
     const front = window?.tabs.activeWebContents()
     if (window === undefined || front === undefined || front.isDestroyed()) return undefined
     const tabId = isOrdinaryTab(ctx, front) ? front.id : undefined
-    if (options.panelFor(extensionId, tabId) === undefined) return undefined
+    if (options.panelFor(extensionId, tabId) === undefined || panelOf(window)?.canShow() !== true) return undefined
     return () => { driver.openFromMenu(extensionId, window, tabId) }
   }
 
@@ -197,8 +192,7 @@ function makeRunner (ctx: ExtensionApiContext): SidePanelDriver {
     side: () => ctx.shell()?.settings.get('sidePanel.side') === 'left' ? 'left' : 'right',
     optionsChanged: (id) => { driver.optionsChanged(id) },
     behaviorChanged: (id) => {
-      const slot = slotDirForLoadedExtension(ctx.userDataPath, id)
-      if (slot !== undefined) writeOpenOnActionClick(slot, options.openOnActionClick(id))
+      behavior.write(id, options.openOnActionClick(id))
       driver.optionsChanged(id)
     },
     open: async (target) => { await driver.open(target) },

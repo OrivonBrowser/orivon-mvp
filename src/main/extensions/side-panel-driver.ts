@@ -11,6 +11,9 @@ import type { SidePanelOptions } from './side-panel-options.js'
 
 const ENTRY_PREFIX = 'ext:'
 
+/** `closeAll` stops waiting for a page that has not reported itself gone by now, so an uninstall can never hang on one. */
+const CLOSE_LIMIT_MS = 5_000
+
 /** What a window's panel offers this: the part of `PanelHost` the driver calls. */
 export interface PanelHostLike {
   canShow: () => boolean
@@ -66,13 +69,14 @@ export interface PanelDriverDeps {
 
 interface Shown { readonly ext: string, readonly page: PanelPage, url: string, path: string, readonly info: () => PanelEventInfo }
 interface WindowState {
-  loading?: { ext: string, page: PanelPage } | undefined
+  /** `url` is the page being loaded: it changes when the tab in front does during the first load. */
+  loading?: { ext: string, page: PanelPage, url: string } | undefined
   shown?: Shown | undefined
   /** The panel stays open without the extension while the tab in front has none; `viewAfter` is what it showed instead. */
   suspended?: { ext: string, viewAfter: string } | undefined
   /** `open({ tabId })` named a tab that is not in front: it opens when that tab comes forward. */
   pending?: { ext: string, tabId: number } | undefined
-  /** The next attach is a consequence of a tab switch, not of the person asking for the panel: it takes no focus. */
+  /** Set only while `host.open` runs: the choice it announces is not the person's (a tab switch, an extension's `open()`), so its page takes no focus. */
   quiet?: boolean | undefined
 }
 
@@ -139,11 +143,24 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
 
   const guestClosed = (state: WindowState, page: PanelPage): void => {
     const { shown } = state
+    // The page goes first: a throw while the extension is told must not leave it alive.
+    page.destroy()
     if (shown?.page === page) {
       state.shown = undefined
       deps.fire(shown.ext, 'onClosed', shown.info())
     }
-    page.destroy()
+  }
+
+  /** Opens the extension's entry for a reason the person did not give: nothing it announces takes the keyboard. */
+  const openQuietly = (state: WindowState, host: PanelHostLike, extensionId: string): void => {
+    state.quiet = true
+    try { host.open(`${ENTRY_PREFIX}${extensionId}`) } finally { state.quiet = false }
+  }
+
+  /** Takes the extension's page off the panel, which stays open on one of Orivon's own views until a tab with a panel of the extension is in front again. */
+  const suspend = (state: WindowState, host: PanelHostLike, extensionId: string): void => {
+    host.setGuest(null)
+    state.suspended = { ext: extensionId, viewAfter: host.view() }
   }
 
   /** Makes the page and, once its first load has ended, hands it to the window's panel. */
@@ -151,9 +168,16 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
     const state = stateOf(window)
     state.loading?.page.destroy()
     const quiet = state.quiet === true
-    state.quiet = false
     const events: PanelPageEvents = {
-      gone: () => { if (state.shown?.page === page) host.setGuest(null) },
+      gone: () => {
+        if (state.shown?.page === page) host.setGuest(null)
+        else if (state.loading?.page === page) {
+          // Nothing was shown yet: the panel is left on one of Orivon's own views, and nothing is announced.
+          state.loading = undefined
+          page.destroy()
+          if (host.view() === `${ENTRY_PREFIX}${extensionId}`) host.setGuest(null)
+        }
+      },
       destroyed: () => {
         if (state.loading?.page === page) {
           state.loading = undefined
@@ -165,9 +189,10 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
       }
     }
     const page: PanelPage = deps.createPage(extensionId, window, url, events)
-    state.loading = { ext: extensionId, page }
+    state.loading = { ext: extensionId, page, url }
     void page.ready.then(() => {
-      if (state.loading?.page !== page) { page.destroy(); return }
+      const { loading } = state
+      if (loading?.page !== page) { page.destroy(); return }
       state.loading = undefined
       if (!page.alive()) return
       const path = deps.options.get(extensionId, deps.frontTab(window)).path ?? ''
@@ -182,7 +207,7 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
       })
       // A panel that was closed or moved on from while the page loaded closed it again at once.
       if (released) return
-      state.shown = { ext: extensionId, page, url, path, info: infoFor(extensionId, window, path) }
+      state.shown = { ext: extensionId, page, url: loading.url, path, info: infoFor(extensionId, window, path) }
       deps.fire(extensionId, 'onOpened', state.shown.info())
       if (!quiet) host.focusIn()
     })
@@ -197,7 +222,6 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
       const state = stateOf(window)
       state.loading?.page.destroy()
       state.loading = undefined
-      state.quiet = false
       host.setGuest(null)
       return
     }
@@ -207,26 +231,41 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
   const sync = (window: ShellWindow): void => {
     const host = deps.hostOf(window)
     if (host === undefined) return
+    // A panel set for this tab alone is listed only while the tab is in front: the host refuses an entry that is not listed.
+    republish()
     const state = stateOf(window)
     const tab = deps.frontTab(window)
 
     if (state.pending !== undefined) {
       const { ext, tabId } = state.pending
       state.pending = undefined
-      if (tab === tabId && deps.options.panelFor(ext, tab) !== undefined && host.canShow()) {
-        state.quiet = true
-        host.open(`${ENTRY_PREFIX}${ext}`)
+      // A panel of that extension already on screen or loading is moved to the tab's page below.
+      const present = state.shown?.ext === ext || state.loading?.ext === ext
+      if (tab === tabId && !present && deps.options.panelFor(ext, tab) !== undefined && host.canShow()) {
+        openQuietly(state, host, ext)
         return
       }
+    }
+
+    const { loading } = state
+    if (loading !== undefined) {
+      const url = deps.options.panelFor(loading.ext, tab)
+      if (url === undefined) {
+        loading.page.destroy()
+        state.loading = undefined
+        suspend(state, host, loading.ext)
+      } else if (url !== loading.url) {
+        loading.url = url
+        loading.page.navigate(url, true)
+      }
+      return
     }
 
     const { shown } = state
     if (shown !== undefined) {
       const url = deps.options.panelFor(shown.ext, tab)
       if (url === undefined) {
-        // The panel stays open on one of Orivon's own views until a tab with a panel of the extension is in front again.
-        host.setGuest(null)
-        state.suspended = { ext: shown.ext, viewAfter: host.view() }
+        suspend(state, host, shown.ext)
       } else if (url !== shown.url) {
         shown.url = url
         shown.path = deps.options.get(shown.ext, tab).path ?? ''
@@ -240,8 +279,7 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
     if (!host.isOpen() || host.view() !== suspended.viewAfter) { state.suspended = undefined; return }
     if (deps.options.panelFor(suspended.ext, tab) === undefined) return
     state.suspended = undefined
-    state.quiet = true
-    host.open(`${ENTRY_PREFIX}${suspended.ext}`)
+    openQuietly(state, host, suspended.ext)
   }
 
   const syncAll = (): void => { for (const window of deps.windows()) sync(window) }
@@ -297,7 +335,8 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
         state.pending = { ext: target.extensionId, tabId: target.tabId }
         return
       }
-      host.open(`${ENTRY_PREFIX}${target.extensionId}`)
+      // An extension's own call is no choice of the person's: the panel opens without taking the keyboard from the page.
+      openQuietly(state, host, target.extensionId)
     },
 
     close: async (target) => {
@@ -323,7 +362,9 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
         if (state.suspended?.ext === extensionId) state.suspended = undefined
         if (state.pending?.ext === extensionId) state.pending = undefined
       }
-      await Promise.all(gone)
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const limit = new Promise<void>((resolve) => { timer = setTimeout(resolve, CLOSE_LIMIT_MS) })
+      try { await Promise.race([Promise.all(gone), limit]) } finally { clearTimeout(timer) }
     }
   }
 }

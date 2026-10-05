@@ -16,7 +16,7 @@ export function registerSidePanelPage (contents: WebContents, window: BaseWindow
 export function sidePanelPages (): ReadonlyArray<{ readonly contents: WebContents, readonly window: BaseWindow }> {
   return [...live].flatMap((contents) => {
     const window = windows.get(contents)
-    return contents.isDestroyed() || window === undefined ? [] : [{ contents, window }]
+    return contents.isDestroyed() || window === undefined || window.isDestroyed() ? [] : [{ contents, window }]
   })
 }
 

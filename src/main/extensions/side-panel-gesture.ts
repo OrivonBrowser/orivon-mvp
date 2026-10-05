@@ -35,7 +35,7 @@ export function createGestureLedger (clock: () => number = Date.now, windowMs: n
  * own pages feed it, and `chrome.sidePanel.open` reads it. */
 export const sidePanelGestures: GestureLedger = createGestureLedger()
 
-/** A toolbar click or a command key on `tab`: it counts for tabCapture, as before, and as the gesture `sidePanel.open` needs. */
+/** A toolbar click or a command key on `tab`: it counts as a tabCapture invocation and as the gesture `sidePanel.open` needs. */
 export function recordExtensionInvocation (extensionId: string, tab: WebContents): void {
   recordTabCaptureInvocation(extensionId, tab)
   sidePanelGestures.record(extensionId)

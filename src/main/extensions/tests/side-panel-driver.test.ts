@@ -10,8 +10,8 @@ const OTHER = 'b'.repeat(32)
 
 interface FakePage extends PanelPage { url: string, events: PanelPageEvents, navigated: Array<{ url: string, keepFocus: boolean }>, destroyCalls: number, finish: () => void }
 
-/** A panel that behaves as the real one does for a guest: it releases on null, refuses an entry that is not the one showing, and announces a choice. */
-function fakeHost (onChoose: (id: string) => void) {
+/** A panel that behaves as the real one does for a guest: it releases on null, refuses an id that is neither one of Orivon's views nor a listed entry, and announces a choice. */
+function fakeHost (onChoose: (id: string) => void, accepts: (id: string) => boolean) {
   const state = { open: false, view: 'bookmarks', canShow: true, focused: false, guest: null as PanelGuest | null }
   const release = (): void => {
     const { guest } = state
@@ -25,6 +25,7 @@ function fakeHost (onChoose: (id: string) => void) {
     isOpen: () => state.open && state.canShow,
     view: () => state.view,
     open: vi.fn((id?: string) => {
+      if (id !== undefined && !accepts(id)) return
       state.open = true
       if (id !== undefined && id !== state.view) { release(); state.view = id; onChoose(id) }
     }),
@@ -46,7 +47,7 @@ function fakeHost (onChoose: (id: string) => void) {
   return { host, state }
 }
 
-function setup (opts: { manifest?: unknown, reloading?: boolean } = {}) {
+function setup (opts: { manifest?: unknown, reloading?: boolean, fireThrows?: PanelEventName } = {}) {
   const options = createSidePanelOptions({
     manifestOf: () => opts.manifest ?? { side_panel: { default_path: 'panel.html' } },
     holds: () => true
@@ -56,8 +57,9 @@ function setup (opts: { manifest?: unknown, reloading?: boolean } = {}) {
   const fired: Array<{ id: string, name: PanelEventName, info: PanelEventInfo }> = []
   const published: unknown[] = []
   let front: number | undefined = 1
+  const listed = (): string[] => ((published.at(-1) ?? []) as Array<{ id: string }>).map((entry) => entry.id)
   let driver!: ReturnType<typeof createPanelDriver>
-  const { host, state } = fakeHost((id) => { driver.chosen(win, id) })
+  const { host, state } = fakeHost((id) => { driver.chosen(win, id) }, (id) => !id.startsWith('ext:') || listed().includes(id))
   driver = createPanelDriver({
     options,
     windows: () => [win],
@@ -81,7 +83,10 @@ function setup (opts: { manifest?: unknown, reloading?: boolean } = {}) {
       pages.push(page)
       return page
     },
-    fire: (id, name, info) => { fired.push({ id, name, info }) },
+    fire: (id, name, info) => {
+      if (name === opts.fireThrows) throw new Error('the extension is gone')
+      fired.push({ id, name, info })
+    },
     reloading: () => opts.reloading === true
   })
   const settle = async (): Promise<void> => { await Promise.resolve(); await Promise.resolve() }
@@ -287,6 +292,122 @@ describe('the tab in front', () => {
   })
 })
 
+describe('the picker follows the tab in front', () => {
+  it('lists a per-tab panel again when its tab comes forward after the list was rebuilt without it', async () => {
+    const s = setup({ manifest: {} })
+    s.options.set(EXT, { tabId: 2, path: 'two.html' })
+    s.setFront(2)
+    s.driver.republish()
+    await s.openPanel()
+    s.setFront(3)
+    s.driver.sync(s.win)
+    expect(s.published.at(-1)).toEqual([])
+    expect(s.host.isOpen()).toBe(true)
+    s.driver.tabClosed(9)
+    s.setFront(2)
+    s.driver.sync(s.win)
+    expect(s.published.at(-1)).toEqual([{ id: `ext:${EXT}`, title: 'Notes' }])
+    expect(s.pages).toHaveLength(2)
+  })
+
+  it('opens a panel set for a background tab when that tab comes forward, though it was not listed before', async () => {
+    const s = setup({ manifest: {} })
+    s.options.set(EXT, { tabId: 2, path: 'two.html' })
+    s.driver.republish()
+    expect(s.published).toEqual([])
+    await s.driver.open({ extensionId: EXT, window: s.win, tabId: 2 })
+    s.setFront(2)
+    s.driver.sync(s.win)
+    expect(s.pages).toHaveLength(1)
+    expect(s.state.view).toBe(`ext:${EXT}`)
+  })
+
+  it('leaves the keyboard to the next panel the person opens after a pending open named the panel already showing', async () => {
+    const s = setup()
+    s.options.set(EXT, { tabId: 2, path: 'two.html' })
+    s.driver.republish()
+    const page = await s.openPanel()
+    await s.driver.open({ extensionId: EXT, window: s.win, tabId: 2 })
+    s.setFront(2)
+    s.driver.sync(s.win)
+    expect(page.navigated.map((entry) => entry.url)).toEqual([`chrome-extension://${EXT}/two.html`])
+    s.host.close()
+    vi.mocked(s.host.focusIn).mockClear()
+    await s.openPanel()
+    expect(s.host.focusIn).toHaveBeenCalledOnce()
+  })
+
+  it('does not take the keyboard for a panel the extension opened through the API', async () => {
+    const s = setup()
+    await s.driver.open({ extensionId: EXT, window: s.win, tabId: undefined })
+    s.pages[0]?.finish()
+    await s.settle()
+    expect(s.fired.map((entry) => entry.name)).toEqual(['onOpened'])
+    expect(s.host.focusIn).not.toHaveBeenCalled()
+  })
+})
+
+describe('the tab in front changes during the first load', () => {
+  it('shows nothing, and brings the panel back with the tab, when the new tab has the panel disabled', async () => {
+    const s = setup()
+    s.options.set(EXT, { tabId: 2, enabled: false })
+    s.driver.republish()
+    s.host.open(`ext:${EXT}`)
+    const first = s.pages[0] as FakePage
+    s.setFront(2)
+    s.driver.sync(s.win)
+    expect(first.destroyCalls).toBeGreaterThan(0)
+    first.finish()
+    await s.settle()
+    expect(s.fired).toEqual([])
+    expect(s.state.view).not.toBe(`ext:${EXT}`)
+    expect(s.host.isOpen()).toBe(true)
+    s.setFront(1)
+    s.driver.sync(s.win)
+    expect(s.pages).toHaveLength(2)
+  })
+
+  it('loads the new tab\'s page instead, and reports that tab\'s path', async () => {
+    const s = setup()
+    s.options.set(EXT, { tabId: 2, path: 'two.html' })
+    s.driver.republish()
+    s.host.open(`ext:${EXT}`)
+    const page = s.pages[0] as FakePage
+    s.setFront(2)
+    s.driver.sync(s.win)
+    expect(page.navigated).toEqual([{ url: `chrome-extension://${EXT}/two.html`, keepFocus: true }])
+    page.finish()
+    await s.settle()
+    expect(s.fired[0]?.info).toEqual({ windowId: 5, tabId: 2, path: 'two.html' })
+    s.setFront(1)
+    s.driver.sync(s.win)
+    expect(page.navigated.at(-1)?.url).toBe(`chrome-extension://${EXT}/panel.html`)
+  })
+})
+
+describe('a page that fails', () => {
+  it('is dropped when its renderer dies during the first load, and nothing is announced', async () => {
+    const s = setup()
+    s.driver.republish()
+    s.host.open(`ext:${EXT}`)
+    const page = s.pages[0] as FakePage
+    page.events.gone()
+    expect(page.destroyCalls).toBeGreaterThan(0)
+    page.finish()
+    await s.settle()
+    expect(s.fired).toEqual([])
+    expect(s.state.view).not.toBe(`ext:${EXT}`)
+  })
+
+  it('is destroyed even when telling the extension that the panel closed throws', async () => {
+    const s = setup({ fireThrows: 'onClosed' })
+    s.driver.republish()
+    const page = await s.openPanel()
+    expect(() => { s.host.close() }).toThrow()
+    expect(page.destroyCalls).toBeGreaterThan(0)
+  })
+})
+
 describe('open and close from the API', () => {
   it('rejects when the window cannot show a panel, so the extension keeps its popup', async () => {
     const s = setup()
@@ -364,6 +485,22 @@ describe('the toolbar button and the extension\'s key', () => {
 })
 
 describe('an extension that goes away', () => {
+  it('stops waiting for a page that never reports it is gone', async () => {
+    vi.useFakeTimers()
+    try {
+      const s = setup()
+      s.driver.republish()
+      const page = await s.openPanel()
+      page.destroy = () => {}
+      let settled = false
+      void s.driver.closeAll(EXT).then(() => { settled = true })
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(settled).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('releases its panel at once when it is unloaded', async () => {
     const s = setup()
     s.driver.republish()

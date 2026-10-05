@@ -222,12 +222,18 @@ describeOrSkip('real Chrome extensions', () => {
             // measured directly (a single, unloaded extension's popup opens
             // clean every time; only the four-at-once run is flaky). A
             // click that lands on an already-open popup just re-focuses it.
+            //
+            // The page the toolbar click opened: for an extension with a side panel, its popup or panel page, never another page of the extension (an onboarding tab).
+            const findAction = (): Page | undefined => spec.panel === undefined
+              ? findPopup(liveApp.windows(), spec.id)
+              : liveApp.windows().find((w) => w.url().startsWith(`chrome-extension://${spec.id}/`) && [spec.popup, spec.panel].some((file) => w.url().includes(`/${file}`)))
             let popupOpened = false
             let bodyLen = 0
             for (let attempt = 0; attempt < 3 && !(popupOpened && bodyLen > 0); attempt++) {
-              await chrome.click(actionSelector).catch(() => {})
-              popupOpened = await waitFor(() => findPopup(liveApp.windows(), spec.id) !== undefined, 8000).catch(() => false)
-              const popup = findPopup(liveApp.windows(), spec.id)
+              // With the side panel the toolbar click toggles: a second click would close the panel the first opened.
+              if (spec.panel === undefined || findAction() === undefined) await chrome.click(actionSelector).catch(() => {})
+              popupOpened = await waitFor(() => findAction() !== undefined, 8000).catch(() => false)
+              const popup = findAction()
               // An MV2 popup shares its background page's renderer, where Playwright's own content() never
               // returns (measured with uBlock Origin); main reads the rendered text instead.
               bodyLen = popup === undefined
@@ -238,7 +244,7 @@ describeOrSkip('real Chrome extensions', () => {
             }
             check(`${slot}: action popup renders a non-empty body`, popupOpened && bodyLen > 0, `bodyLen=${String(bodyLen)}`)
             // The page that opened is the popup, or the side panel page for an extension that asks for the panel on a click.
-            const opened = findPopup(liveApp.windows(), spec.id)?.url() ?? ''
+            const opened = findAction()?.url() ?? ''
             check(`${slot}: the toolbar click shows its popup or its side panel`, [spec.popup, ...(spec.panel === undefined ? [] : [spec.panel])].some((file) => opened.includes(`/${file}`)), opened)
           } else {
             check(`${slot}: action popup renders a non-empty body`, false, 'toolbar action never appeared')

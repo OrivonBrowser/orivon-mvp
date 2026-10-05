@@ -1,7 +1,7 @@
 // What `chrome.sidePanel.setPanelBehavior` chose, kept in the extension's slot so it outlives a restart.
 // Everything else an extension sets for its panel is held in memory and set again by the extension at start.
 import { existsSync, readFileSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 
 const FILE = 'side-panel-behavior.json'
@@ -33,4 +33,24 @@ export function writeOpenOnActionClick (slotDir: string, value: boolean): void {
 /** An uninstall leaves nothing that a reinstall into the same slot could inherit. */
 export function clearOpenOnActionClick (slotDir: string): void {
   rmSync(behaviorPath(slotDir), { force: true })
+}
+
+/**
+ * The saved behaviour of loaded extensions, found through the folder each one is loaded from: an install adds its
+ * registry entry only after the load resolves, and the extension's worker may set its behaviour during that load.
+ */
+export function createBehaviorStore (loadedPath: (extensionId: string) => string | undefined): {
+  read: (extensionId: string) => boolean
+  write: (extensionId: string, value: boolean) => void
+} {
+  return {
+    read: (extensionId) => {
+      const path = loadedPath(extensionId)
+      return path !== undefined && readOpenOnActionClick(dirname(path))
+    },
+    write: (extensionId, value) => {
+      const path = loadedPath(extensionId)
+      if (path !== undefined) writeOpenOnActionClick(dirname(path), value)
+    }
+  }
 }
