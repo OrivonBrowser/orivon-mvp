@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { isAskView, isReviewView, segmentAfterKey } from '../view.js'
 
 const ask = { mode: 'ask', id: 'abc', origin: 'https://a.example', lines: [{ kinds: ['camera'], text: 'wants to use your camera' }], locationNote: null, privateNote: null, guardMs: 500 }
-const review = { mode: 'review', origin: 'https://a.example', settingsLink: false, rows: [{ kind: 'camera', label: 'Camera', value: 'block', askOffered: true }] }
+const review = { mode: 'review', origin: 'https://a.example', settingsLink: false, rows: [{ kind: 'camera', label: 'Camera', value: 'block', askOffered: true, allowOffered: true }] }
 
 describe('isAskView', () => {
   it('accepts what main sends', () => {

@@ -233,3 +233,29 @@ describe('changes', () => {
     expect(listener).toHaveBeenCalledTimes(2)
   })
 })
+
+describe('a kind that remembers only a block', () => {
+  it('never offers Allow, whatever the default and whatever is stored', () => {
+    const { controller } = setup()
+    expect(rowOf(controller.rowsFor(SHOP), 'screenShare').options).toEqual([
+      { value: 'default', label: 'Use default (Ask)' },
+      { value: 'block', label: 'Block' }
+    ])
+    expect(rowOf(controller.rowsFor(SHOP), 'camera').options.map((option) => option.value)).toContain('allow')
+  })
+
+  it('refuses to set an allow, sets a block and lets default forget it', () => {
+    const { controller, store } = setup()
+    expect(controller.set(SHOP, 'screenShare', 'allow')).toBe(false)
+    expect(store.get(SHOP, 'screenShare')).toBeUndefined()
+    expect(controller.set(SHOP, 'screenShare', 'block')).toBe(true)
+    expect(store.get(SHOP, 'screenShare')).toBe('block')
+    expect(controller.set(SHOP, 'screenShare', 'default')).toBe(true)
+    expect(store.get(SHOP, 'screenShare')).toBeUndefined()
+  })
+
+  it('lists its default as Ask or Block only', () => {
+    const { controller } = setup()
+    expect(controller.defaults().find((row) => row.kind === 'screenShare')?.options.map((option) => option.value)).toEqual(['ask', 'block'])
+  })
+})
