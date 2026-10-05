@@ -20,7 +20,7 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-it('asks before a moved name changes an installed app, takes the new version on Yes in every tab, and asks nothing on the next start', async () => {
+it('[app:installed-app-moves-only-when-accepted] asks before a moved name changes an installed app, takes the new version on Yes in every tab, and asks nothing on the next start', async () => {
   await runPhase('eth-app-update-verified', async (check) => {
     const rig = await startRig({
       a: updateApp({ version: '1.0.0', build: 'A', net: true }),

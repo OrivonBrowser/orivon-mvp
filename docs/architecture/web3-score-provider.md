@@ -166,7 +166,7 @@ hold about 250,000 evaluations.
 
 What follows bounds this build of Orivon, not the standard.
 
-- **Orivon's own provider until changed.** Settings, Web3, "Web3 Score provider" holds the official provider's address, an `ipns://` name, in a profile that never chose one; a person who clears it asks nothing of anyone, and one who types another address asks that one (`ADR-0055`).
+- **Orivon's own provider until changed.** Settings, Web3, "Web3 Score provider" holds the official provider's address, an `ipns://` name, in a profile with none saved; a person who clears it saves the empty value and asks nothing of anyone, and one who types another address asks that one (`ADR-0055`).
 - **Only over DDOC.** A site is looked up only when its observed Website level is 2, so the files
   shown are the files the identifier names: an installed app's bundle hash, or the CID a `.eth`
   name or an `ipfs://` address resolved to. On a local origin in developer mode, the bundle hash

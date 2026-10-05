@@ -157,12 +157,18 @@ export function registerLaunchForTeardown (app, { userDataDir } = {}) {
   }
 }
 
-/** Writes `appearance.theme` into the profile's settings file, keeping every value a seed already put there. */
-async function seedTheme (userDataDir, scheme) {
+/** Writes one value into the profile's settings file, keeping every value a seed already put there; `ifAbsent` leaves a value the seed set. */
+async function seedSetting (userDataDir, key, value, { ifAbsent = false } = {}) {
   const file = join(userDataDir, 'settings.json')
   let stored = { version: 1, values: {} }
   try { stored = JSON.parse(await readFile(file, 'utf8')) } catch { /* no file yet */ }
-  await writeFile(file, JSON.stringify({ ...stored, values: { ...stored.values, 'appearance.theme': scheme } }))
+  if (ifAbsent && stored.values?.[key] !== undefined) return
+  await mkdir(userDataDir, { recursive: true })
+  await writeFile(file, JSON.stringify({ ...stored, values: { ...stored.values, [key]: value } }))
+}
+
+async function seedTheme (userDataDir, scheme) {
+  await seedSetting(userDataDir, 'appearance.theme', scheme)
 }
 
 /**
@@ -170,12 +176,7 @@ async function seedTheme (userDataDir, scheme) {
  * network address, and a test run contacts nothing it did not start.
  */
 async function seedNoScoreProvider (userDataDir) {
-  const file = join(userDataDir, 'settings.json')
-  let stored = { version: 1, values: {} }
-  try { stored = JSON.parse(await readFile(file, 'utf8')) } catch { /* no file yet */ }
-  if (stored.values?.['web3.scoreProvider'] !== undefined) return
-  await mkdir(userDataDir, { recursive: true })
-  await writeFile(file, JSON.stringify({ ...stored, values: { ...stored.values, 'web3.scoreProvider': '' } }))
+  await seedSetting(userDataDir, 'web3.scoreProvider', '', { ifAbsent: true })
 }
 
 /**

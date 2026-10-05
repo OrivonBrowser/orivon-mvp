@@ -5,11 +5,12 @@
 // the Manifest.capabilities -> PatternSet mapping is ../broker/policy/manifest-patterns.ts, and
 // the storage seam is storage.ts. See src/loader/README.md.
 //
-// THE SIX OUTCOMES: `installed` (TOFU, a `silent` decideUpdate() verdict,
+// THE SEVEN OUTCOMES: `installed` (TOFU, a `silent` decideUpdate() verdict,
 // or an ALREADY-ACKNOWLEDGED rollback -- all three mean "ready to run,
 // nothing new to ask the user"), `needs-reconsent`, `needs-capability-
-// prompt`, `needs-rollback-choice`, `rejected`, and `up-to-date` (checked
-// too recently to check again). Showing UI for the three prompts, or
+// prompt`, `needs-rollback-choice`, `rejected`, `up-to-date` (checked
+// too recently to check again), and `update-available` (a moved name at an installed app: only
+// the new manifest was fetched, see name-update.ts). Showing UI for the three prompts, or
 // wiring the broker's grant prompt, is explicitly out of scope here
 // (src/loader/README.md) -- this function returns the verdict and stops.
 //
@@ -230,7 +231,6 @@ export interface Loader extends AppUpdateApi {
   /** The hash tree the site published with its pinned bundle, or `undefined` when it published none readable. Same read-only stance as `pinFor`. */
   ddocFor(origin: string): Promise<DdocDeclaration | undefined>
 }
-
 
 /**
  * The pinned manifest itself -- decideUpdate's `previouslyDeclaredPatterns`

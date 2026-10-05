@@ -123,6 +123,33 @@ describe('registerSiteInfoIpc -- applyUpdate', () => {
   })
 })
 
+describe('registerSiteInfoIpc -- openHome', () => {
+  function registerWithHome (home: string | undefined): ReturnType<typeof vi.fn> {
+    const openHome = vi.fn()
+    const controller = fakeController({ siteInfoFor: vi.fn(async () => ({ ...EMPTY_INFO, homeDomain: home })) })
+    registerSiteInfoIpc(siteInfoWebContents, POPUP_URL, controller, ORIGIN, '/tmp/orivon-test-userdata', () => undefined, () => undefined, () => undefined, () => undefined, undefined, undefined, undefined, undefined, openHome)
+    return openHome
+  }
+
+  it('opens the domain the controller reports as home, and ignores any a command names', async () => {
+    const openHome = registerWithHome('app.eth')
+    await dispatch({ type: 'openHome', domain: 'evil.example' })
+    expect(openHome).toHaveBeenCalledExactlyOnceWith('app.eth')
+  })
+
+  it('does nothing when the manifest names no home', async () => {
+    const openHome = registerWithHome(undefined)
+    await dispatch({ type: 'openHome' })
+    expect(openHome).not.toHaveBeenCalled()
+  })
+
+  it('does nothing for a frame that is not the popup\'s own', async () => {
+    const openHome = registerWithHome('app.eth')
+    await dispatch({ type: 'openHome' }, OTHER_FRAME_URL)
+    expect(openHome).not.toHaveBeenCalled()
+  })
+})
+
 describe('registerSiteInfoIpc -- get / trust', () => {
   it('get calls siteInfoFor with the FIXED origin, never one read from the command', async () => {
     const controller = fakeController()

@@ -35,7 +35,8 @@ public surface of `src/contracts/` (named `contracts/<file>`).
   end-to-end spec whose test is titled with the row's id, so a change that breaks an app fails a test that says which.
 
 - **`npm run perf:probe`** measures each process's CPU and memory through fixed scenes, to compare a change before and after.
-- **New profiles read Orivon's own Web3 Score provider** (Settings > Web3); clear the field to ask nobody. A profile that chose one keeps it.
+- **Profiles with no Web3 Score provider saved read Orivon's own** (Settings > Web3), existing ones too: a field cleared before
+  this change was never saved, so set it empty again to ask nobody. A provider a person saved keeps.
 - **Web3 Score providers** (Settings > Web3): judged Levels 3 and 4, with a site's operations and connections, from any
   address Orivon opens, asked by hash bucket so a request names a group of sites, not the site. Build one with web3-score-manager.
 - **Tabs can be grouped**: name and colour a group from the tab menu, collapse it to one chip, drag it, move it to its own

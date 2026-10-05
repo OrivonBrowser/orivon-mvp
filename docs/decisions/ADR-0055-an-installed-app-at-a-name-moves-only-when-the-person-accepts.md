@@ -7,7 +7,8 @@
   their defaults until the owner answers)
 - **Amends:** ADR-0005 (no silent update at a name), ADR-0012 (only the manifest is fetched before
   asking), ADR-0030 (an installed name stops following its contenthash), ADR-0054 (a judged level
-  picks a path, and counts only where it is bound)
+  picks a path, and counts only where it is bound; the provider setting's default is the official
+  provider, which reverses its "empty, the default, asks nobody", `d-0484`)
 
 ## Decision
 An installed app reached at a name (ENS, DNSLink, IPNS) keeps running the version it was installed
@@ -60,10 +61,12 @@ minutes.
   republished with one. Ports gain a `domain` and a `<upstream>.<build>` version.
 - With the provider setting cleared every update is a notice (case 1); a profile that never chose
   reads the official provider (`d-0484`). With DNSLink or the light client off every update is
-  unverified.
+  unverified. An app reached at an IPNS key is never verified either, whatever its manifest names:
+  no manifest can name a `.orivon` host, so the update's notice says the app is reached at a key
+  and offers Trust & Force only.
 - Trust & Force hands over grants and data guarded only by its confirmation.
-- A service worker's update fetch may bypass the cache-served partition; the boundary end-to-end
-  spec settles it and `security-model.md` T81 names the result.
+- A service worker's update fetch does not bypass the cache-served partition: the boundary
+  end-to-end spec measures that it reaches neither the gateway nor the new build.
 - A manifest-less website can still lend its judged level to another name.
 
 ## Reversibility
