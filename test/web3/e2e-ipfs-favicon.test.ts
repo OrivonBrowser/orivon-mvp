@@ -142,7 +142,8 @@ it('shows the icon of an ipfs:// page when the gateway answers slowly', async ()
       await waitForAddressBarStable(chrome)
 
       await clickAddressBarRetrying(chrome, `ipfs://${site}`)
-      const loaded = await waitForTab(chrome, { address: `ipfs://${site}/`, title: 'slow icon fixture' })
+      // Every block waits blockDelayMs, and the page needs the root and index.html in turn before it commits.
+      const loaded = await waitForTab(chrome, { address: `ipfs://${site}/`, title: 'slow icon fixture' }, 40_000)
       check(`the page loaded (${JSON.stringify(loaded.info)})`, loaded.ok)
       const shown = await waitFor(async () => await hasIcon(chrome), 40_000)
       check(`the tab shows the page's own icon (gateway asked ${String(gateway.requests.length)} times)`, shown)

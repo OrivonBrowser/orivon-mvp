@@ -239,7 +239,7 @@ export async function activeTabFaviconSrc (chrome) {
 }
 
 /**
- * Waits until EVERY field of `expected` matches the shell's reported active
+ * Waits, up to `timeoutMs`, until EVERY field of `expected` matches the shell's reported active
  * tab, and returns both the outcome and what was last seen.
  *
  * Wait for everything you are about to assert, in one predicate. The fields
@@ -249,12 +249,12 @@ export async function activeTabFaviconSrc (chrome) {
  * for one field and then reading another is a race that fails intermittently
  * and reads like a product bug.
  */
-export async function waitForTab (chrome, expected) {
+export async function waitForTab (chrome, expected, timeoutMs = WAIT_TIMEOUT_MS) {
   let info
   const ok = await waitFor(async () => {
     info = await activeTabInfo(chrome)
     return Object.entries(expected).every(([field, value]) => info[field] === value)
-  })
+  }, timeoutMs)
   return { ok, info }
 }
 
