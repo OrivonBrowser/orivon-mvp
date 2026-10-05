@@ -33,6 +33,7 @@ import { provideCommandKeys } from './api/commands-api.js'
 import { installExtensionCommands } from './install-extension-commands.js'
 import type { ExtensionCommandKeys } from './extension-commands-runner.js'
 import { installDnrWebRequestHandlers } from './dnr-webrequest.js'
+import { closeSidePanels } from './side-panel-runner.js'
 
 export interface ExtensionsApi {
   readonly installFromFolder: (dir: string, where?: InstallWhere) => Promise<InstallOutcome>
@@ -128,7 +129,7 @@ export const extensionsSubsystem: Subsystem = {
     // install route (the store page's included) is started.
     if (!ctx.privateSession) await loadEnabledExtensions(userDataPath)
 
-    const install: InstallContext = { userDataPath, session: session.defaultSession, prompt: createExtensionInstallPrompt(), prefs, privateSession: ctx.privateSession, clearExtensionStorage: async (id) => { await clearChromeStorage(session.defaultSession, id) } }
+    const install: InstallContext = { userDataPath, session: session.defaultSession, prompt: createExtensionInstallPrompt(), prefs, privateSession: ctx.privateSession, clearExtensionStorage: async (id) => { await clearChromeStorage(session.defaultSession, id) }, closeSidePanels }
     const preloadPath = join(import.meta.dirname, '../preload/web-store.js')
     const store = ctx.privateSession ? refusingStore : await startWebStore(install, preloadPath)
     installStoreTestHook(store)

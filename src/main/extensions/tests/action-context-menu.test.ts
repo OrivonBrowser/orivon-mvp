@@ -30,6 +30,15 @@ describe('actionMenuTemplate', () => {
     expect(template.map((item) => ('label' in item ? item.label : item.type))).toEqual(['Alpha', 'separator', 'Do the thing', 'separator', 'Options', 'Unpin from Toolbar', 'Manage Extension', 'Remove from Orivon…'])
   })
 
+  it('offers Open Side Panel first among Orivon\'s entries only when the extension has a panel, and runs it', () => {
+    expect(actionMenuTemplate(input()).some((item) => 'label' in item && item.label === 'Open Side Panel')).toBe(false)
+    const openSidePanel = vi.fn()
+    const template = actionMenuTemplate(input({ openSidePanel }))
+    expect(template.map((item) => ('label' in item ? item.label : item.type))).toEqual(['Alpha', 'separator', 'Open Side Panel', 'Options', 'Unpin from Toolbar', 'Manage Extension', 'Remove from Orivon…'])
+    ;(template[2] as { click: () => void }).click()
+    expect(openSidePanel).toHaveBeenCalledTimes(1)
+  })
+
   it('runs the effect each entry was given', () => {
     const effects = { openOptions: vi.fn(), togglePin: vi.fn(), manage: vi.fn(), remove: vi.fn() }
     const template = actionMenuTemplate(input(effects))
