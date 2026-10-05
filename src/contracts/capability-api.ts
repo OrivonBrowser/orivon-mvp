@@ -343,7 +343,10 @@ export interface OrivonFs {
  * for both.
  */
 export interface OrivonId {
-  /** derive(seed, "app", origin). Silent, no prompt. */
+  /**
+   * derive(seed, "app", origin). Silent, no prompt. A document opened from this computer is keyed on its
+   * `file:` URL, and its keys change when Orivon quits.
+   */
   publicKey(opts: { curve: string }): Promise<Uint8Array>
   /** Signs `payload` with the same per-origin key `publicKey` returns for this `curve`. Silent, no prompt. */
   sign(opts: { curve: string, payload: Uint8Array }): Promise<Uint8Array>
@@ -475,7 +478,8 @@ export interface OrivonSecrets {
   /**
    * Whether `encrypt` can succeed right now. `false` when the person holds
    * no live `secrets` grant, OR when the seed this origin's key derives from
-   * is session-only (no OS keyring reachable) -- ciphertext made from a
+   * is session-only (no OS keyring reachable), as it is for a document opened from this
+   * computer, whose keys last until Orivon quits -- ciphertext made from a
    * session-only seed cannot be decrypted after a restart, so an app that
    * checks first can choose not to rely on it rather than lose data
    * silently. Never throws for "no grant"; that is exactly the `false` case.

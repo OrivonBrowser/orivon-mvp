@@ -456,7 +456,11 @@ export interface SecretsCapability {}
  */
 export interface Grant {
   readonly id: GrantId
-  /** The web origin: scheme + host + port. Deliberately the web's definition. */
+  /**
+   * The web origin: scheme + host + port. Deliberately the web's definition. For a document opened
+   * from this computer it is that file's `file:` URL (empty host, no query or fragment): each file
+   * is its own origin, and its grants last until Orivon quits.
+   */
   readonly origin: string
   readonly capability: CapabilityKind
   /** What was granted. Empty for capabilities that carry no patterns. */

@@ -96,6 +96,9 @@ ledger entry, and its derived identity key (ADR-0003, ADR-0005).
 - IPFS- and ENS-delivered apps arrive with build step 6, which settles what they key on
   (CID, ENS name, or a web origin for the name) before the first such grant is persisted.
   *Provisional* until then
+- A **document opened from this computer** is its own origin, keyed on its `file:` URL (empty
+  host, no query or fragment). Its grants, saved data, `id` keys and `secrets` last until Orivon
+  quits; the next run starts with none, and a moved or renamed file is asked again.
 
 > **This definition must be settled before the first grant is persisted.** Changing it later
 > invalidates every stored grant and orphans every app's data.
@@ -295,7 +298,7 @@ orivon.id.requestIdentity({ kind })  // => Promise<IdentityHandle | null> — co
 //   screens `kind`. Kinds 1/6/7 sign silently; 0, 3, 5, 22242 and any delegation PROMPT.
 
 // --- secrets: one origin-bound, keyring-backed secret (ADR-0033) ---
-orivon.secrets.available()           // => Promise<boolean>  false if ungranted, or the seed is session-only
+orivon.secrets.available()           // => Promise<boolean>  false if ungranted, or the seed is session-only (a local file's is)
 orivon.secrets.encrypt(plaintext)    // => Promise<Uint8Array>  bytes in, bytes out, no encoding option
 orivon.secrets.decrypt(ciphertext)   // => Promise<Uint8Array>  'invalid' for bytes this origin's key did not produce
 
@@ -455,7 +458,8 @@ spellings of one of them are two different identities, permanently.
   strips a trailing DNS dot and `URL.origin` does not. And **not** the bare `originFromUrl()`
   underneath it: the frame variant denies when the committed URL and the frame's own origin
   disagree, and skipping that gives a sandboxed opaque-origin document the embedder's grants and
-  identity key (T3, T13b).
+  identity key (T3, T13b). For a document opened from this computer the key is its `file:` URL
+  and the derivation takes a per-run salt, so its keys end when Orivon quits.
 - **`identityId`** is **opaque and broker-generated, never a user-typed name and never derived
   from one.** The user-visible label is stored beside the identity, not used to derive it.
   Otherwise renaming an identity, or merely changing its case, destroys the npub with nothing to
