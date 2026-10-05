@@ -221,3 +221,18 @@ deb:
   # Debian section browsers ship under (e.g. Firefox, Chromium packages both use it),
   # not a guess -- "net" would be the wrong adjacent category (network clients/tools
   # generally, not browsers specifically).
+
+  # The installed entry's right-click menu in a dock or taskbar (a freedesktop "desktop action").
+  # Under `deb`, never `linux`: electron-builder merges `linux.desktop` into the AppImage's
+  # entry too, whose `Exec` is AppRun, and an action naming /opt/Orivon would launch nothing there.
+  # The two names and the `orivon.desktop` file name are what a pinned launcher keys on.
+  desktop:
+    entry:
+      Actions: "NewWindow;NewPrivateWindow;"
+    desktopActions:
+      NewWindow:
+        Name: New Window
+        Exec: /opt/Orivon/orivon --new-window
+      NewPrivateWindow:
+        Name: New Private Window
+        Exec: /opt/Orivon/orivon --new-private-window

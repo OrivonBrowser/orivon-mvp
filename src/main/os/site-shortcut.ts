@@ -86,10 +86,13 @@ export function linkFileName (name: string): string {
   return `${RESERVED_NAME.test(safe) ? `${safe} (site)` : safe}.lnk`
 }
 
-/** The argument string of a Windows shortcut: each argument in double quotes. An address the URL parser produced holds no
+/** The argument string of a Windows shortcut or task: each argument in double quotes. An address the URL parser produced holds no
  * quote, and a profile id is hexadecimal, so a quote here is refused rather than escaped. */
-export function linkArguments (input: Pick<EntryInput, 'address' | 'leading' | 'profileId'>): string {
-  const all = launchArguments(input)
+export function windowsArguments (all: readonly string[]): string {
   if (all.some((argument) => argument.includes('"') || NO_CONTROL.test(argument))) throw new Error('an argument cannot be quoted')
   return all.map((argument) => `"${argument}"`).join(' ')
+}
+
+export function linkArguments (input: Pick<EntryInput, 'address' | 'leading' | 'profileId'>): string {
+  return windowsArguments(launchArguments(input))
 }

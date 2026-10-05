@@ -10,6 +10,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import type { App } from 'electron'
 import { parseLaunch } from './launch-context.js'
 import type { Launch } from './launch-context.js'
+import { launchData, requestFromArgv } from './launch-request.js'
 import { createPrivateDir, isPrivateDirName, markPrivate } from './private-session.js'
 import { ProfileStore } from './profile-store.js'
 import type { PeerSource } from './peer-spawn.js'
@@ -31,7 +32,7 @@ export interface Runtime {
 /** Where the data is, and whether the sandbox is on: what a peer must be told the way this process was. Nothing else on the command line is passed on (a debugger's port would collide). */
 const INHERITED_SWITCHES = ['--user-data-dir=', '--no-sandbox']
 
-type LaunchApp = Pick<App, 'getPath' | 'setPath' | 'exit' | 'requestSingleInstanceLock' | 'isPackaged' | 'getAppPath' | 'commandLine'>
+type LaunchApp = Pick<App, 'getPath' | 'setPath' | 'exit' | 'requestSingleInstanceLock' | 'releaseSingleInstanceLock' | 'isPackaged' | 'getAppPath' | 'commandLine'>
 
 /** Null when this process is not to go on: a launch that could not be understood, or a profile that is already open. */
 export function startLaunch (app: LaunchApp, argv: readonly string[], env: NodeJS.ProcessEnv = process.env, execPath = process.execPath, tmp = tmpdir()): Runtime | null {
@@ -48,6 +49,7 @@ export function startLaunch (app: LaunchApp, argv: readonly string[], env: NodeJ
   const profiles = new ProfileStore(home)
   const source: PeerSource = { execPath, appPath: app.getAppPath(), packaged: app.isPackaged, appImage: env['APPIMAGE'], env }
 
+  let launched: Launch = launch
   let dir = home
   let profileId = 'default'
   if (launch.kind === 'profile') {
@@ -66,17 +68,32 @@ export function startLaunch (app: LaunchApp, argv: readonly string[], env: NodeJ
   }
   if (dir !== home) app.setPath('userData', dir)
 
-  // One browser per profile: a second start of it hands over and stops. A private session has a directory of its own and no rival.
-  if (launch.kind !== 'private' && !app.requestSingleInstanceLock()) {
-    app.exit(0)
-    return null
+  // One browser per profile: a second start of it hands over what it was asked and stops. A private session named
+  // on the command line has a directory of its own and no rival.
+  if (launch.kind !== 'private') {
+    const request = requestFromArgv(argv, app.isPackaged)
+    if (!app.requestSingleInstanceLock(launchData(request))) {
+      app.exit(0)
+      return null
+    }
+    if (request.kind === 'private') {
+      // Nothing of this profile is open, so the request is this process: a private session beside the profile's data, with
+      // no claim on the profile's lock, which the next start of the profile takes.
+      app.releaseSingleInstanceLock()
+      const sessionDir = createPrivateDir(dir, home, tmp)
+      launched = { kind: 'private', home, dir: sessionDir }
+      dir = sessionDir
+      profileId = 'private'
+      markPrivate(dir, process.pid)
+      app.setPath('userData', dir)
+    }
   }
   // Said at once, not once the first window is up: until then a second window of this browser would see the profile as
   // not in use, and Delete would remove it from under a browser that is starting.
-  if (launch.kind !== 'private') profiles.markRunning(profileId, process.pid)
+  if (launched.kind !== 'private') profiles.markRunning(profileId, process.pid)
   const inherit = argv.filter((argument) => INHERITED_SWITCHES.some((switchName) => argument === switchName || argument.startsWith(switchName)))
   // Chromium's own command line as well: a launcher can take a switch back off argv once it has taken effect, and a
   // peer started with the sandbox where this one runs without it aborts on a machine that has none.
   if (!inherit.includes('--no-sandbox') && app.commandLine.hasSwitch('no-sandbox')) inherit.push('--no-sandbox')
-  return { launch, dir, profiles, source, isPrivate: launch.kind === 'private', profileId, inherit }
+  return { launch: launched, dir, profiles, source, isPrivate: launched.kind === 'private', profileId, inherit }
 }
