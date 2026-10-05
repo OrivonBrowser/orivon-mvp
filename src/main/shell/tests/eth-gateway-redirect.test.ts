@@ -59,6 +59,11 @@ describe('the eth-gateway-redirect installer', () => {
     expect(matches('https://vitalik.eth.limo/')).toBe(true)
     expect(matches('http://vitalik.eth.link/')).toBe(true)
     expect(matches('wss://vitalik.eth.limo/')).toBe(false)
+    expect(matches('https://vitalik.eth.limo.evil.example/')).toBe(false)
+    expect(matches('https://evil-eth.limo/')).toBe(false)
+    expect(matches('https://eth.limo/')).toBe(false)
+    expect(matches('https://example.com/')).toBe(false)
+    expect(matches('not a url')).toBe(false)
   })
 
   it('takes the handler out when the setting goes off', () => {
