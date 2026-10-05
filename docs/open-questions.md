@@ -2028,6 +2028,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Why it matters:** a person who switches back to Orivon and clicks into the bar to edit the address finds it selected; one more click places a caret.
 - **Options:** accept: the rule stays free of timestamps (rec.); place a caret when a press follows a refocus closely.
 - **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
 
 ### A386: A window started from a launcher action may not take the focus on Wayland **[RESEARCH]**
 
