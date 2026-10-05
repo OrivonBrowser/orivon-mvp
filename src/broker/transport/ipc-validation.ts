@@ -10,7 +10,7 @@
 // trusted because the preload is well-behaved -- not the payload, and not
 // the envelope carrying it.
 
-import type { BindScope, CapabilityRequest, Pattern, RequestEnvelope } from '../../contracts/index.js'
+import type { BindScope, CapabilityRequest, Pattern, RequestEnvelope, WebsiteScore } from '../../contracts/index.js'
 import { LIMITS } from '../../contracts/index.js'
 import { isBindScope } from '../policy/bind-scope.js'
 import { MAX_PATTERNS } from '../policy/connect.js'
@@ -40,6 +40,7 @@ export type ControlMethod =
   | 'net.setNoDelay' | 'net.setKeepAlive' | 'net.lookup'
   | 'web.openContext' | 'web.evaluate' | 'web.close' | 'web.awaitClose' | 'web.setEmbedScript'
   | 'secrets.available' | 'secrets.encrypt' | 'secrets.decrypt'
+  | 'trust.websiteScore'
 
 export function isControlMethod (method: string): method is ControlMethod {
   return method === 'app.manifest' || method === 'app.grants' || method === 'app.requestGrant' ||
@@ -59,7 +60,8 @@ export function isControlMethod (method: string): method is ControlMethod {
     method === 'net.lookup' ||
     method === 'web.openContext' || method === 'web.evaluate' || method === 'web.close' || method === 'web.awaitClose' ||
     method === 'web.setEmbedScript' ||
-    method === 'secrets.available' || method === 'secrets.encrypt' || method === 'secrets.decrypt'
+    method === 'secrets.available' || method === 'secrets.encrypt' || method === 'secrets.decrypt' ||
+    method === 'trust.websiteScore'
 }
 
 export interface FsReadFileParams { readonly path: string }
@@ -105,6 +107,8 @@ export interface IdSignParams { readonly curve: string, readonly payload: Uint8A
 /** `secrets.available` takes no payload of its own -- the origin alone decides the answer. */
 export interface SecretsEncryptParams { readonly plaintext: Uint8Array }
 export interface SecretsDecryptParams { readonly ciphertext: Uint8Array }
+/** `trust.websiteScore` (ADR-0058). Whether the string names content is the lookup's to decide, never a shape error. */
+export interface TrustWebsiteScoreParams { readonly address: string }
 /** `web.openContext` (ADR-0019) -- `origin` is the CONTEXT's own origin, never this call's caller (that one is derived from the sender frame, T3, same as every other control method); `width`/`height` optional, `WebContextOptions`'s own default. */
 export interface WebOpenContextParams { readonly origin: string, readonly width?: number, readonly height?: number }
 export interface WebEvaluateParams { readonly id: string, readonly script: string, readonly timeoutMs?: number }
@@ -168,6 +172,18 @@ export interface RequestGrantCaller {
 export interface RequestGrantCtx {
   readonly requestGrant: ((origin: string, request: CapabilityRequest, caller: RequestGrantCaller, abandoned?: AbortSignal) => Promise<boolean>) | undefined
 }
+
+/**
+ * `trust.websiteScore`'s lookup (ADR-0058), read lazily from the same context object for `RequestGrantCtx`'s
+ * reason: the score client is built with the shell's services, long after the broker is wired. Optional, so a
+ * context that carries only `requestGrant` still satisfies `ControlCtx`.
+ */
+export interface TrustCtx {
+  readonly websiteScore?: ((origin: string, address: string) => Promise<WebsiteScore>) | undefined
+}
+
+/** What the control channel reads, live, from the subsystem context. */
+export type ControlCtx = RequestGrantCtx & TrustCtx
 
 export function isNetUdpBindParams (payload: unknown): payload is NetUdpBindParams {
   if (typeof payload !== 'object' || payload === null) return false
@@ -337,6 +353,10 @@ export function isSecretsDecryptParams (payload: unknown): payload is SecretsDec
   if (typeof payload !== 'object' || payload === null) return false
   const { ciphertext } = payload as { ciphertext?: unknown }
   return ciphertext instanceof Uint8Array && ciphertext.byteLength <= LIMITS.secretBytes + SECRET_WIRE_OVERHEAD_BYTES
+}
+
+export function isTrustWebsiteScoreParams (payload: unknown): payload is TrustWebsiteScoreParams {
+  return typeof payload === 'object' && payload !== null && typeof (payload as { address?: unknown }).address === 'string'
 }
 
 /** `width`/`height` bounded to a safe finite number when present -- broker/capabilities/web.ts clamps to 1..7680 regardless, so this is shape hygiene, not the real range check. */

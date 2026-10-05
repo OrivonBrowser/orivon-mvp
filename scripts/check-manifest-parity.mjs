@@ -54,7 +54,8 @@ export const PARITY_MAP = [
   // but it stays here rather than being omitted, so the day a field IS
   // added to either side, this check catches the drift immediately instead
   // of needing to be remembered.
-  { interfaceName: 'SecretsCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'SECRETS_CAPABILITY_KEYS' }
+  { interfaceName: 'SecretsCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'SECRETS_CAPABILITY_KEYS' },
+  { interfaceName: 'TrustCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'TRUST_CAPABILITY_KEYS' }
 ]
 
 /**
@@ -101,6 +102,12 @@ export const DELIBERATELY_DEFERRED = [
     interfaceName: 'MediaCapability',
     field: 'microphone',
     reason: 'ADR-0032: MEDIA_CAPABILITY_KEYS does not exist yet -- added by the implementation ' +
+      'PR that follows this one, which removes this entry.'
+  },
+  {
+    interfaceName: 'MediaCapability',
+    field: 'screen',
+    reason: 'ADR-0055: MEDIA_CAPABILITY_KEYS does not exist yet -- added by the implementation ' +
       'PR that follows this one, which removes this entry.'
   },
   {

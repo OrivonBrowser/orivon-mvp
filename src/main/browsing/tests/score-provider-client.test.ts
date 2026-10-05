@@ -120,3 +120,18 @@ describe('createScoreProviderClient', () => {
     expect(asked).toEqual([`${BASE}/provider.json`, `${BASE}/website/4c.json`])
   })
 })
+
+describe('providerName', () => {
+  function named (files: Record<string, FetchedJson>, address: string): Promise<string | undefined> {
+    const provider = fakeProvider(files)
+    return createScoreProviderClient({ providerAddress: () => address, isDevEthName: () => false, fetchJson: provider.fetchJson }).providerName()
+  }
+
+  it('is the name the provider gives itself, undefined with none chosen, and its address when the description cannot be read', async () => {
+    expect(await named(withAsgardex, BASE)).toBe('Test provider')
+    expect(await named(withAsgardex, '  ')).toBeUndefined()
+    expect(await named({}, BASE)).toBe(BASE)
+    expect(await named({ [`${BASE}/provider.json`]: { kind: 'failed', reason: 'down' } }, BASE)).toBe(BASE)
+    expect(await named({ [`${BASE}/provider.json`]: ok({ standard: 'other' }) }, BASE)).toBe(BASE)
+  })
+})

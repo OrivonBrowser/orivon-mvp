@@ -177,15 +177,22 @@ export function describeCapabilityGrant (capability: CapabilityKind, patterns: r
       // identity" or "the keyring" itself, either of which would overstate
       // what crosses the boundary.
       return { warning: false, message: 'Encrypt its own data with a key your system keyring protects' }
+    case 'trust.score':
+      return {
+        warning: false,
+        message: 'See what your Web3 Score provider says about other sites',
+        explanation: 'The provider you chose is asked about sites this app names. It sees which group of sites each one falls in, as when Orivon checks a site for you. With no provider chosen, nothing is asked.'
+      }
     case 'media.camera':
     case 'media.microphone':
+    case 'media.screen':
     case 'clipboard.read':
       // ADR-0032: contract-only so far -- the loader does not parse
       // Capabilities.media/clipboard yet (check-manifest-parity.mjs's own
       // DELIBERATELY_DEFERRED entries), so no live grant can reach this
       // switch. Thrown, not rendered, until that implementation PR gives
       // each its real copy.
-      throw new Error(`grant-prompt-render: ${capability} is not renderable yet (ADR-0032)`)
+      throw new Error(`grant-prompt-render: ${capability} is not renderable yet (ADR-0032, ADR-0055)`)
     default: {
       // Exhaustiveness guard, matching app-install.ts's own pattern: a new
       // CapabilityKind added without a case here fails to compile.

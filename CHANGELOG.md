@@ -18,6 +18,18 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- **`contracts/manifest.ts`**: a manifest may carry `domain`, the one ENS name or DNS host the app calls home; a
+  malformed value rejects the manifest and absence is allowed. Apps published under a name set `domain` to that name,
+  as a lower-case host with no scheme, port or path. Recheck: every port.
+- **`contracts/manifest.ts`**: an app may now declare `media.screen` in `capabilities.media`; nothing changes for
+  existing apps, and it is not yet granted (the implementation follows).
+- **`contracts/trust.ts`, `contracts/manifest.ts`, `contracts/capability-api.ts`**: new capability kind `trust.score`
+- **`contracts/trust.ts`, `contracts/manifest.ts`, `contracts/capability-api.ts`, `contracts/index.ts`**: new capability kind `trust.score`
+  (declare `"trust": { "score": true }`) and `orivon.trust.websiteScore(address)`, which answers with the Web3 Score
+  provider the person chose and the level it judged for that content. Apps that show a mark per site may declare it
+  and must treat a `null` level, a `denied` rejection and a `limit` rejection as "use what you ship". Recheck: none; no
+  port declares it yet.
+
 ### Added
 
 - **Packages for Linux, Windows and macOS on every GitHub release**: a deb and an AppImage, a Windows installer and a dmg each
@@ -25,6 +37,11 @@ public surface of `src/contracts/` (named `contracts/<file>`).
   bought certificate, so the system asks once before the first run.
 - **Every release is on IPFS** as one folder, `ipfs://<cid>` in its description, pinned by the Orivon node with the two
   before it; anyone can reproduce the CID and pin it.
+- **A manifest `domain` field** names the one ENS name or DNS host an app calls home; the loader parses it
+  (ADR-0056). Update behaviour that uses it lands with the app-update work.
+- **A page can ask the Web3 Score provider the person chose** (`orivon.trust.websiteScore`, behind a declared `trust.score`
+  grant): the provider's name and the level it judged for an `ipfs://` address or a `.eth` name, from caches and a verifier
+  partition of the page's own, limited to 128 lookups refilling at 2 a second.
 - **`test/` is ordered by area**, with a Layout table in `test/README.md`; a spec left at its top, a folder with no
   row and a dead `test/` path in any tracked file now fail CI, and a new capability kind needs a catalogue line.
 - **An app-behaviour catalogue** names what a working app relies on, one row each, and each row is proven by an
