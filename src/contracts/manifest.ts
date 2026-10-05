@@ -451,10 +451,7 @@ export interface ClipboardCapability {
  */
 export interface SecretsCapability {}
 
-/** ADR-0058. Same `true`-only shape as `MediaCapability`. See `trust.ts`'s `OrivonTrust`. */
-export interface TrustCapability {
-  readonly score?: true
-}
+export interface TrustCapability { readonly score?: true }
 
 /**
  * One capability actually granted to one origin.
@@ -500,5 +497,4 @@ export type CapabilityKind =
   | 'media.screen'
   | 'clipboard.read'
   | 'secrets'
-  /** `orivon.trust.websiteScore` (ADR-0058). */
   | 'trust.score'

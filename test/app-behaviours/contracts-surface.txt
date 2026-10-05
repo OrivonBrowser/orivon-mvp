@@ -519,9 +519,7 @@ export interface ClipboardCapability {
   readonly read?: true
 }
 export interface SecretsCapability {}
-export interface TrustCapability {
-  readonly score?: true
-}
+export interface TrustCapability { readonly score?: true }
 export interface Grant {
   readonly id: GrantId
   readonly origin: string
