@@ -185,3 +185,14 @@ describe('keepOpenOnBlur', () => {
     expect(createExtensionPopupHost({ focusTab, focusHandoverMs: 500 }).host.focusHandoverMs).toBe(500)
   })
 })
+
+describe('navigationInFlight', () => {
+  it('is passed through to the library when given, with the window it asks about, and absent when not', () => {
+    expect(createExtensionPopupHost({ focusTab }).host.navigationInFlight).toBeUndefined()
+    const page = {} as never
+    const inFlight = vi.fn(() => page)
+    const parent = {} as never
+    expect(createExtensionPopupHost({ focusTab, navigationInFlight: inFlight }).host.navigationInFlight?.(parent)).toBe(page)
+    expect(inFlight).toHaveBeenCalledWith(parent)
+  })
+})

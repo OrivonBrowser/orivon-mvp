@@ -74,8 +74,26 @@ function seedActionPopup (userDataDir: string): string {
   return id
 }
 
-async function startFixtureServer (): Promise<{ server: Server, origin: string }> {
+interface FixtureServer {
+  readonly server: Server
+  readonly origin: string
+  /** Requests for /slow that have arrived and are being held. */
+  readonly held: () => number
+  /** Answers every held /slow request. */
+  readonly release: () => void
+}
+
+async function startFixtureServer (): Promise<FixtureServer> {
+  const heldResponses: Array<() => void> = []
   const server = createServer((req, res) => {
+    if (req.url === '/slow') {
+      // The navigation to this page stays in flight until the test releases it.
+      heldResponses.push(() => {
+        res.writeHead(200, { 'content-type': 'text/html' })
+        res.end('<!doctype html><title>popup-lifecycle-slow</title><body>slow page</body>')
+      })
+      return
+    }
     if (req.url === '/frame') {
       res.writeHead(200, { 'content-type': 'text/html' })
       res.end('<!doctype html><title>popup-lifecycle-frame</title><body>frame</body>')
@@ -90,7 +108,12 @@ async function startFixtureServer (): Promise<{ server: Server, origin: string }
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
   const address = server.address()
   if (address === null || typeof address === 'string') throw new Error('fixture server did not report a port')
-  return { server, origin: `http://127.0.0.1:${String(address.port)}` }
+  return {
+    server,
+    origin: `http://127.0.0.1:${String(address.port)}`,
+    held: () => heldResponses.length,
+    release: () => { for (const answer of heldResponses.splice(0)) answer() }
+  }
 }
 
 function findPopup (windows: Page[], extensionId: string): Page | undefined {
@@ -98,8 +121,10 @@ function findPopup (windows: Page[], extensionId: string): Page | undefined {
 }
 
 let server: Server | undefined
+let releaseHeld: (() => void) | undefined
 
 afterAll(async () => {
+  releaseHeld?.()
   if (server !== undefined) await new Promise<void>((resolve) => { server?.close(() => { resolve() }) })
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
@@ -109,7 +134,9 @@ const TEST_TIMEOUT_MS = 120_000
 it('closes an open browserAction popup the way Chrome does, and keeps window.close() working', async () => {
   const started = await startFixtureServer()
   server = started.server
+  releaseHeld = started.release
   const fixtureUrl = `${started.origin}/`
+  const slowUrl = `${started.origin}/slow`
 
   await runPhase('popup lifecycle', async (check) => {
     let app: Awaited<ReturnType<typeof launchElectron>> | undefined
@@ -222,8 +249,7 @@ it('closes an open browserAction popup the way Chrome does, and keeps window.clo
       // still-open password-manager popup out from under them. An absence
       // is settled once, never polled for (testing.md's own rule 3: a
       // waitFor pointed at a condition already true reports a green no-op).
-      // The tab finishes loading first: the page that commits a navigation takes the keyboard from whatever holds it
-      // at that moment, a popup included, so one opened while the navigation above is still in flight closes with it.
+      // The tab finishes loading first, so the check below sees only the popup's own events.
       expect(await waitFor(async () => await liveApp.evaluate(({ webContents }, url: string) =>
         webContents.getAllWebContents().some((contents) => contents.getURL() === url && !contents.isLoading()), fixtureUrl))).toBe(true)
       await openPopup()
@@ -240,6 +266,26 @@ it('closes an open browserAction popup the way Chrome does, and keeps window.clo
         'a same-document navigation or a subframe reload does not close the popup',
         findPopup(liveApp.windows(), extensionId) !== undefined
       )
+
+      // ---- a popup opened while the tab is still navigating outlives that commit ----
+      // The page that commits takes the keyboard, which blurs a popup that is a view in the same window; nothing
+      // in a person's hands closed it. The request is held until the popup is open, then answered, and the check
+      // waits on the tab's own state (committed and loaded), never on a clock.
+      await closeLeftoverPopup()
+      await waitForAddressBarStable(chrome)
+      await clickAddressBarRetrying(chrome, slowUrl)
+      await waitFor(() => started.held() > 0)
+      await openPopup()
+      started.release()
+      const slowCommitted = await waitFor(async () => await liveApp.evaluate(({ webContents }, url: string) =>
+        webContents.getAllWebContents().some((contents) => contents.getURL() === url && !contents.isLoading()), slowUrl))
+      check('the slow page committed while the popup was open', slowCommitted)
+      check(
+        'a popup opened while the tab was navigating stays open through the commit',
+        findPopup(liveApp.windows(), extensionId) !== undefined
+      )
+      await focusWebContents(liveApp, slowUrl)
+      check('and focus moving to the page afterwards still closes it', await popupClosed())
 
       // Moving/resizing/minimising the shell window also closes the popup
       // (popup.ts's own parent 'move'/'resize'/'minimize' handlers) --

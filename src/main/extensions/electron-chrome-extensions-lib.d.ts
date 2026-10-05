@@ -199,6 +199,9 @@ declare module 'orivon:crx-extensions-browser-action' {
     keepOpenOnBlur? (popup: { extensionId: string, parent: Electron.BaseWindow }): boolean
     /** How long that hand-over lasts; the popup takes the keyboard back after it. */
     focusHandoverMs?: number | undefined
+    /** The page in front of `parent` while its main frame has a navigation that has not committed or
+     * failed: the popup stays open through the blur that commit causes. */
+    navigationInFlight? (parent: Electron.BaseWindow): Electron.WebContents | undefined
   }
   export function setPopupHost (host: PopupHost | undefined): void
   /** UPSTREAM.md patch 69: where `chrome.action.openPopup()` anchors the popup, in `window`'s

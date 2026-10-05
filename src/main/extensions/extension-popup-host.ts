@@ -2,7 +2,7 @@
 // itself (UPSTREAM.md patch 68); this puts it in the window above every other view, places it under the toolbar
 // button that opened it, and gives the keyboard back to the page in front when it goes. Tied to Electron: it
 // adds and removes real views.
-import type { BaseWindow, WebContentsView } from 'electron'
+import type { BaseWindow, WebContents, WebContentsView } from 'electron'
 import type { PopupHost } from 'orivon:crx-extensions-browser-action'
 import { attachShown } from '../shell/attach-view.js'
 import { popupBounds } from './extension-popup-geometry.js'
@@ -14,6 +14,8 @@ export interface PopupHostDeps {
   readonly keepOpenOnBlur?: (popup: { extensionId: string, parent: BaseWindow }) => boolean
   /** How long that hand-over lasts: the popup takes the keyboard back after it. */
   readonly focusHandoverMs?: number | undefined
+  /** The page in front in `window`, while its main frame is navigating to a document that has not committed. */
+  readonly navigationInFlight?: (window: BaseWindow) => WebContents | undefined
 }
 
 /** The panel shape the overlay host adopts: lifted above the bars on every restack, and never closed by it. */
@@ -34,6 +36,7 @@ export function createExtensionPopupHost (deps: PopupHostDeps): ExtensionPopupHo
 
   const host: PopupHost = {
     ...(deps.keepOpenOnBlur === undefined ? {} : { keepOpenOnBlur: deps.keepOpenOnBlur }),
+    ...(deps.navigationInFlight === undefined ? {} : { navigationInFlight: deps.navigationInFlight }),
     // Read when a popup asks, not when the host is built: the shared host is wired later.
     get focusHandoverMs () { return deps.focusHandoverMs },
     mount: (parent, view) => {
@@ -81,6 +84,7 @@ let wired: PopupHostDeps | undefined
 const shared = createExtensionPopupHost({
   focusTab: (window) => { wired?.focusTab(window) },
   keepOpenOnBlur: (popup) => wired?.keepOpenOnBlur?.(popup) === true,
+  navigationInFlight: (window) => wired?.navigationInFlight?.(window),
   get focusHandoverMs () { return wired?.focusHandoverMs }
 })
 

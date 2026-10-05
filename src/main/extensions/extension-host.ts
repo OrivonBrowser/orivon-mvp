@@ -35,6 +35,7 @@ import { appOrigin } from '../shell/devtools-app-origin.js'
 import { eventListenerFilter } from './extension-event-filter.js'
 import { closeCurrentPopup, installPopupPolicy } from './extension-popup-policy.js'
 import { extensionPopupHost, wirePopupHost } from './extension-popup-host.js'
+import { hasPendingNavigation, watchNavigations } from './extension-pending-navigation.js'
 import { anchorFor } from './extension-action-anchor.js'
 import { buildHostImpl, EXTENSION_FOCUS_HANDOVER_MS, extensionJustActivatedTab, isExtensionActivatingTab, isLoadedExtension, shellInitiated, type ShellBridge } from './extension-host-impl.js'
 import { watchPinSetting } from './action-pins-runner.js'
@@ -168,6 +169,7 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
     isEligible: (wc, id) => bridge?.services.windows.findTab(wc) != null && isExtensionOpened(wc, id)
   })
   app.on('web-contents-created', (_event, wc) => {
+    watchNavigations(wc)
     wc.on('did-fail-load', (_failEvent, errorCode, _description, url, isMainFrame) => {
       if (isMainFrame) recovery.pageFailed(wc, url, errorCode)
     })
@@ -195,7 +197,13 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
     },
     // A tab the popup's own extension opens takes the keyboard, and that must not close the popup.
     keepOpenOnBlur: (popup) => extensionJustActivatedTab(popup),
-    focusHandoverMs: EXTENSION_FOCUS_HANDOVER_MS
+    focusHandoverMs: EXTENSION_FOCUS_HANDOVER_MS,
+    // A popup opened over a page that is still navigating survives the blur that page's commit causes.
+    navigationInFlight: (window) => {
+      const owner = bridge?.services.windows.all().find((candidate) => candidate.window === window)
+      const tab = owner?.tabs.activeWebContents()
+      return tab !== undefined && !tab.isDestroyed() && hasPendingNavigation(tab) ? tab : undefined
+    }
   })
   setOpenPopupAnchor(async (extensionId, window) => {
     const owner = bridge?.services.windows.all().find((candidate) => candidate.window === window)

@@ -845,7 +845,14 @@
     reported the resize kills the process; `destroy` closes DevTools, unmounts and closes the page.
     `keepOpenOnBlur(popup)` lets the embedder say a loss of focus is its own doing for that popup's
     extension and window; once `focusHandoverMs` has passed the popup takes the keyboard back, so
-    the next click elsewhere blurs and closes it. With no preferred size reported, the page's
+    the next click elsewhere blurs and closes it. `navigationInFlight(parent)` names the page in
+    front of the window while its main frame has a navigation that has not committed or failed;
+    `src/browser/popup-navigation-guard.ts` then follows that one navigation and absorbs the blur
+    the commit causes (the committing page takes the keyboard), until the page reports the main
+    frame committed, failed or stopped loading, or went away, or a mouse button goes down in one
+    of the window's pages (a person leaving the popup, which closes it); a navigation that ends
+    having absorbed a blur gives the popup the keyboard back. A window already destroyed when a
+    blur, the keyboard hand-back or an app focus arrives closes the popup without being read. With no preferred size reported, the page's
     content (its scroll extent, not only its box) is measured after half a second and again while
     it still renders. A window destroyed under the popup is never reached for a size, a placement
     or a mount. `src/browser/router.ts` exports `callingExtensionId()`, the extension whose API call

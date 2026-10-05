@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events'
 import { nativeTheme, WebContentsView } from 'electron'
 import type { BaseWindow, Session, WebContents } from 'electron'
 import { getAllWindows } from './api/common'
+import { NavigationGuard } from './popup-navigation-guard'
 import debug from 'debug'
 
 const d = debug('electron-chrome-extensions:popup')
@@ -42,6 +43,9 @@ export interface PopupHost {
   /** How long after such a blur the embedder is still moving focus. Once it is over, a popup that
    * was kept open takes the keyboard back, so the next click elsewhere blurs and closes it. */
   focusHandoverMs?: number | undefined
+  /** The page in front of `parent`, when its main frame has started a navigation that has not yet
+   * committed or failed: the popup stays open through the blur that commit causes. */
+  navigationInFlight?(parent: BaseWindow): WebContents | undefined
 }
 
 const POSITION_PADDING = 5
@@ -149,6 +153,7 @@ export class PopupView extends EventEmitter {
   // Orivon patch (UPSTREAM.md patch 34): see closeOnNextAppFocus's own doc.
   private closeOnNextFocusCleanup?: (() => void) | undefined
   private reclaimFocusTimer?: ReturnType<typeof setTimeout> | undefined
+  private navigationGuard?: NavigationGuard | undefined
 
   /** Preferred size changes are only received in Electron v12+ */
   private usingPreferredSize = supportsPreferredSize()
@@ -198,6 +203,17 @@ export class PopupView extends EventEmitter {
     this.parent.on('move', this.closeSoon)
     this.parent.on('resize', this.closeSoon)
     this.parent.on('minimize', this.closeSoon)
+
+    // Orivon patch (UPSTREAM.md patch 68): see NavigationGuard.
+    const navigating = this.host.navigationInFlight?.(opts.parent)
+    if (navigating !== undefined) {
+      this.navigationGuard = new NavigationGuard(
+        navigating,
+        [navigating, ...collectWebContents(opts.parent)],
+        this.retakeKeyboard,
+        this.closeSoon,
+      )
+    }
 
     this.readyPromise = this.load(opts.url)
   }
@@ -323,6 +339,7 @@ export class PopupView extends EventEmitter {
 
     this.closeOnNextFocusCleanup?.()
     clearTimeout(this.reclaimFocusTimer)
+    this.navigationGuard?.dispose()
 
     const parent = this.parent
     if (parent) {
@@ -389,7 +406,12 @@ export class PopupView extends EventEmitter {
   }
 
   private maybeClose = () => {
-    if (this.parent !== undefined && this.host.keepOpenOnBlur?.({ extensionId: this.extensionId, parent: this.parent }) === true) {
+    const parent = this.livingParent()
+    if (parent === undefined) {
+      this.closeSoon()
+      return
+    }
+    if (this.host.keepOpenOnBlur?.({ extensionId: this.extensionId, parent }) === true) {
       d('preventing close due to the embedder moving focus')
       this.reclaimFocusAfterHandover()
       return
@@ -398,6 +420,11 @@ export class PopupView extends EventEmitter {
     // Keep open if webContents is being inspected
     if (!this.webContents.isDestroyed() && this.webContents.isDevToolsOpened()) {
       d('preventing close due to DevTools being open')
+      return
+    }
+
+    if (this.navigationGuard?.absorbsBlur() === true) {
+      d('preventing close due to the page behind committing a navigation')
       return
     }
 
@@ -423,10 +450,19 @@ export class PopupView extends EventEmitter {
     if (this.reclaimFocusTimer !== undefined) return
     this.reclaimFocusTimer = setTimeout(() => {
       this.reclaimFocusTimer = undefined
-      if (this.destroyed || this.webContents.isDestroyed() || this.webContents.isFocused()) return
-      if (getAllWindows().some((win) => win.isFocused())) this.webContents.focus()
-      else this.closeOnNextAppFocus()
+      this.retakeKeyboard()
     }, this.host.focusHandoverMs ?? PopupView.FOCUS_HANDOVER_MS)
+  }
+
+  /** The keyboard goes back to the popup, or, with the app no longer the focused one, the popup waits for the next focus inside it. */
+  private retakeKeyboard = (): void => {
+    if (this.destroyed || this.webContents.isDestroyed() || this.webContents.isFocused()) return
+    if (this.livingParent() === undefined) {
+      this.closeSoon()
+      return
+    }
+    if (getAllWindows().some((win) => win.isFocused())) this.webContents.focus()
+    else this.closeOnNextAppFocus()
   }
 
   /**
@@ -452,10 +488,15 @@ export class PopupView extends EventEmitter {
    * page, which is the person returning to it, not leaving it.
    */
   private closeOnNextAppFocus (): void {
-    if (this.closeOnNextFocusCleanup !== undefined || this.parent === undefined) return
+    if (this.closeOnNextFocusCleanup !== undefined) return
+    const parent = this.livingParent()
+    if (parent === undefined) {
+      this.closeSoon()
+      return
+    }
 
     const windows = getAllWindows()
-    const webContentsList = collectWebContents(this.parent).filter((wc) => wc !== this.webContents)
+    const webContentsList = collectWebContents(parent).filter((wc) => wc !== this.webContents)
 
     const cleanup = (): void => {
       for (const win of windows) win.removeListener('focus', onFocus)

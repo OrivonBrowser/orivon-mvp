@@ -243,6 +243,188 @@ describe('PopupView: its window closing under it (UPSTREAM.md patch 68)', () => 
   })
 })
 
+describe('PopupView: its window destroyed before the deferred close runs (UPSTREAM.md patch 68)', () => {
+  /** A window whose `closed` has been emitted: Electron has marked it destroyed, and reading its content view throws. */
+  function closedParent (): FakeParent {
+    const parent = fakeParent()
+    Object.defineProperty(parent, 'contentView', { get: () => { throw new Error('Object has been destroyed') } })
+    return parent
+  }
+
+  it('closes without reading the window when the page blurs with no app window focused', async () => {
+    const parent = fakeParent()
+    const popup = makePopup(parent)
+    await popup.whenReady()
+    baseWindows = []
+    parent.isDestroyed = () => true
+    Object.defineProperty(parent, 'contentView', { get: () => { throw new Error('Object has been destroyed') } })
+    parent.emit('closed')
+    expect(() => { pageOf(popup).emit('blur') }).not.toThrow()
+    await macrotask()
+    expect(popup.isDestroyed()).toBe(true)
+  })
+
+  it('does not ask the host about a window that is gone', async () => {
+    const parent = closedParent()
+    const keepOpenOnBlur = vi.fn(() => true)
+    setPopupHost({ ...host, keepOpenOnBlur })
+    const popup = makePopup(parent)
+    await popup.whenReady()
+    parent.isDestroyed = () => true
+    parent.emit('closed')
+    pageOf(popup).emit('blur')
+    await macrotask()
+    expect(keepOpenOnBlur).not.toHaveBeenCalled()
+    expect(popup.isDestroyed()).toBe(true)
+  })
+
+  it('closes when the window is destroyed before the keyboard is taken back', async () => {
+    baseWindows = []
+    setPopupHost({ ...host, keepOpenOnBlur: () => true, focusHandoverMs: 10 })
+    const parent = fakeParent()
+    const popup = makePopup(parent)
+    await popup.whenReady()
+    pageOf(popup).focused = false
+    pageOf(popup).emit('blur')
+    parent.isDestroyed = () => true
+    Object.defineProperty(parent, 'contentView', { get: () => { throw new Error('Object has been destroyed') } })
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    await macrotask()
+    expect(popup.isDestroyed()).toBe(true)
+  })
+})
+
+describe('PopupView: opened over a page whose navigation has not committed (UPSTREAM.md patch 68)', () => {
+  const shell = Object.assign(new EventEmitter(), { isFocused: () => true })
+
+  /** A popup opened while `tab` is mid-navigation: the host names it, and the parent also holds a toolbar view. */
+  async function openedOver (tab: EventEmitter): Promise<{ popup: InstanceType<typeof PopupView>, toolbar: EventEmitter }> {
+    baseWindows = [shell]
+    const parent = fakeParent()
+    const toolbar = new EventEmitter()
+    parent.contentView.children = [{ webContents: toolbar, children: [] }, { webContents: tab, children: [] }]
+    setPopupHost({ ...host, navigationInFlight: () => tab as never })
+    const popup = makePopup(parent)
+    await popup.whenReady()
+    return { popup, toolbar }
+  }
+
+  /** The page that commits takes the keyboard: the popup loses it, then the navigation reports. */
+  const blurred = async (popup: InstanceType<typeof PopupView>): Promise<void> => {
+    pageOf(popup).focused = false
+    pageOf(popup).emit('blur')
+    await macrotask()
+  }
+
+  it('stays open through the blur the commit causes, and takes the keyboard back once it has committed', async () => {
+    const tab = new EventEmitter()
+    const { popup } = await openedOver(tab)
+    await blurred(popup)
+    expect(popup.isDestroyed()).toBe(false)
+    expect(pageOf(popup).focused).toBe(false)
+    tab.emit('did-navigate')
+    expect(pageOf(popup).focused).toBe(true)
+    expect(popup.isDestroyed()).toBe(false)
+    pageOf(popup).emit('blur')
+    await macrotask()
+    expect(popup.isDestroyed()).toBe(true)
+  })
+
+  it('does not take the keyboard when nothing blurred it', async () => {
+    const tab = new EventEmitter()
+    const { popup } = await openedOver(tab)
+    pageOf(popup).focused = false
+    tab.emit('did-navigate')
+    expect(pageOf(popup).focused).toBe(false)
+  })
+
+  it.each([
+    ['a navigation that committed', (tab: EventEmitter) => tab.emit('did-navigate')],
+    ['a main-frame load that failed', (tab: EventEmitter) => tab.emit('did-fail-load', {}, -105, '', '', true)],
+    ['a page that stopped loading', (tab: EventEmitter) => tab.emit('did-stop-loading')],
+    ['a page that went away', (tab: EventEmitter) => tab.emit('destroyed')]
+  ])('closes on a blur that comes after %s', async (_name, settle) => {
+    const tab = new EventEmitter()
+    const { popup } = await openedOver(tab)
+    settle(tab)
+    await blurred(popup)
+    expect(popup.isDestroyed()).toBe(true)
+  })
+
+  it('keeps waiting through a subframe\'s failed load', async () => {
+    const tab = new EventEmitter()
+    const { popup } = await openedOver(tab)
+    tab.emit('did-fail-load', {}, -105, '', '', false)
+    await blurred(popup)
+    expect(popup.isDestroyed()).toBe(false)
+  })
+
+  it('closes on a blur that follows a click in the page', async () => {
+    const tab = new EventEmitter()
+    const { popup } = await openedOver(tab)
+    tab.emit('input-event', {}, { type: 'mouseDown' })
+    await blurred(popup)
+    expect(popup.isDestroyed()).toBe(true)
+  })
+
+  it('closes on a blur that follows a click in the toolbar', async () => {
+    const tab = new EventEmitter()
+    const { popup, toolbar } = await openedOver(tab)
+    toolbar.emit('input-event', {}, { type: 'mouseDown' })
+    await blurred(popup)
+    expect(popup.isDestroyed()).toBe(true)
+  })
+
+  it('closes when the click arrives after the blur it caused', async () => {
+    const tab = new EventEmitter()
+    const { popup } = await openedOver(tab)
+    await blurred(popup)
+    expect(popup.isDestroyed()).toBe(false)
+    tab.emit('input-event', {}, { type: 'mouseDown' })
+    await macrotask()
+    expect(popup.isDestroyed()).toBe(true)
+  })
+
+  it('is not moved by other input: a mouse move or a key does not count as a click', async () => {
+    const tab = new EventEmitter()
+    const { popup } = await openedOver(tab)
+    tab.emit('input-event', {}, { type: 'mouseMove' })
+    tab.emit('input-event', {}, { type: 'keyDown' })
+    await blurred(popup)
+    expect(popup.isDestroyed()).toBe(false)
+  })
+
+  it('closes on the next focus inside the app when the app was not the focused one at the commit', async () => {
+    const tab = new EventEmitter()
+    const { popup } = await openedOver(tab)
+    await blurred(popup)
+    baseWindows = [Object.assign(shell, { isFocused: () => false })]
+    tab.emit('did-navigate')
+    expect(pageOf(popup).focused).toBe(false)
+    shell.emit('focus')
+    await macrotask()
+    expect(popup.isDestroyed()).toBe(true)
+    Object.assign(shell, { isFocused: () => true })
+  })
+
+  it('closes on a blur as always when no navigation was in flight', async () => {
+    baseWindows = [shell]
+    setPopupHost({ ...host, navigationInFlight: () => undefined })
+    const popup = makePopup(fakeParent())
+    await popup.whenReady()
+    await blurred(popup)
+    expect(popup.isDestroyed()).toBe(true)
+  })
+
+  it('stops listening to the page once it closes', async () => {
+    const tab = new EventEmitter()
+    const { popup, toolbar } = await openedOver(tab)
+    popup.destroy()
+    for (const name of ['did-navigate', 'did-fail-load', 'did-stop-loading', 'destroyed', 'input-event']) expect(tab.listenerCount(name)).toBe(0)
+    expect(toolbar.listenerCount('input-event')).toBe(0)
+  })
+})
+
 describe('PopupView: closing (UPSTREAM.md patches 34 and 68)', () => {
   async function open (): Promise<{ parent: FakeParent, popup: InstanceType<typeof PopupView> }> {
     const parent = fakeParent()
