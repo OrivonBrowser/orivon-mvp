@@ -268,6 +268,9 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Fixed
 
+- **The first letter typed into the address bar is no longer lost**: the dropdown's page joins the window once loaded, and
+  a window refocus no longer selects the text. A new tab starts with the keyboard in the bar; the first click selects the
+  address and a first press that drags keeps its range.
 - **Three ways the whole browser could quit are closed**: an app's helper page failing to load, a light-client
   checkpoint the disk refuses to keep, and a profile file holding `null`.
 - **The light client switch applies at the next start, as Settings says**: switching it mid-run no longer changes the

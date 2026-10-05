@@ -2022,3 +2022,19 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   refused as it is in the address bar); open a local HTML file handed in at launch, which needs a rule for `file:`.
 - **Who decides:** owner
 - **Blocks:** nothing; check `xdg-settings` on a real package either way
+
+### A380: Does the first-start dropdown still fail after the keyboard fixes? **[OWNER]**
+
+- **Question:** The owner saw the address text hidden after "Enter Orivon" and no dropdown on the first start (probably `npm run dev`, X11 or Wayland). The overlay no longer joins the window before its page commits, and a new tab starts with the keyboard in the bar. Does a first start still show hidden text or no dropdown?
+- **Why it matters:** the one run that reproduced it showed the stolen first letter, not hidden text; if it persists the cause is another one, probably the dev server's slow overlay page.
+- **Options:** retest after merge, saying the display server and whether the bar showed a caret (rec.); if it persists, run the probe against `electron-vite dev` under a window manager.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A381: Should the first click after Alt+Tab select the whole address? **[AI-REC]**
+
+- **Question:** A window refocus keeps the caret where it was, and the next press counts as a first press: it selects the whole address, as the first press after Enter or Escape does. A caret on that click would need the time between the refocus and the press, which the rule leaves out.
+- **Why it matters:** a person who switches back to Orivon and clicks into the bar to edit the address finds it selected; one more click places a caret.
+- **Options:** accept: the rule stays free of timestamps (rec.); place a caret when a press follows a refocus closely.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
