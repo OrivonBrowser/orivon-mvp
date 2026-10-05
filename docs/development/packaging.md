@@ -59,42 +59,72 @@ section as a checklist still to complete, not a report of those results.
 
 ```bash
 # Confirm the desktop entry actually says what "Making 'set as default browser'
-# possible" below claims it says -- don't assume the protocols/mimeTypes composition in
+# possible" below claims it says -- don't assume the protocols composition in
 # electron-builder.yml renders the way its comments predict.
 dpkg -e release/*.deb /tmp/orivon-deb-control   # control files only, no install needed
 dpkg -x release/*.deb /tmp/orivon-deb-inspect   # full contents
 cat /tmp/orivon-deb-inspect/usr/share/applications/*.desktop
 
 # Expect a line equivalent to:
-#   MimeType=x-scheme-handler/http;x-scheme-handler/https;text/html;
-# and:
+#   MimeType=x-scheme-handler/http;x-scheme-handler/https;
+# (no text/html), and:
 #   Categories=Network;WebBrowser;
+#   Actions=new-window;new-private-window;
+# followed by a [Desktop Action new-window] and a [Desktop Action new-private-window] section whose Exec
+# lines run /opt/Orivon/orivon with --new-window and --new-private-window. The AppImage's own entry
+# (Exec=AppRun) carries no actions: they sit under `deb:` in electron-builder.yml, not `linux:`.
 ```
 
 ```bash
 # Try the actual default-browser registration once installed
 sudo dpkg -i release/*.deb
-xdg-settings set default-web-browser orivon.desktop   # filename derived from
-                                                        # linux.executableName below --
-                                                        # confirm the real name first with
-                                                        # `ls /usr/share/applications | grep -i orivon`
-xdg-settings check default-web-browser orivon.desktop
+xdg-mime default orivon.desktop x-scheme-handler/http x-scheme-handler/https
+gio mime x-scheme-handler/https   # the registered handler, and the applications the system lists
+xdg-settings check default-url-scheme-handler https orivon.desktop
 ```
+
+The file name is `orivon.desktop`, from `linux.executableName` and `desktopName` in `package.json`; confirm it
+with `ls /usr/share/applications | grep -i orivon`. Whether a desktop lists Orivon in its browser list with
+only the two scheme handlers is unmeasured (`docs/open-questions.md` A387).
 
 ## Making "set as default browser" possible: what's config and what isn't
 
 `electron-builder.yml` handles the packaging half: the top-level `protocols` key
-(`schemes: [http, https]`) and `linux.mimeTypes: [text/html]` are what electron-builder
-documents as producing the `.desktop` file's `MimeType=` line, and `linux.category` supplies
-`Categories=Network;WebBrowser;`. Both are freedesktop.org conventions `xdg-settings` and
-desktop menus rely on.
+(`schemes: [http, https]`) is what electron-builder documents as producing the `.desktop` file's
+`MimeType=` line (`x-scheme-handler/http;x-scheme-handler/https;`), and `linux.category` supplies
+`Categories=Network;WebBrowser;`. The package does not list `text/html`: a browser that claims it is offered
+every saved page, and Orivon opens no local file (`docs/open-questions.md` A375). Both are
+freedesktop.org conventions `xdg-settings` and desktop menus rely on.
 
-That is necessary but not sufficient. **The app itself still has to call
-`app.setAsDefaultProtocolClient()` at runtime** (and generally offer a "make me default" UI
-action): that's application code belonging in `src/main`, not packaging config, and it is out
-of scope for this file. Until it exists, a user can still run `xdg-settings set
-default-web-browser` by hand against the installed `.desktop` file; the in-app convenience
-action is separate follow-up work.
+The runtime half is application code in `src/main/os/`: only an installed package registers, and only when
+a person clicks (Settings > Default browser, the welcome screen's box, or the weekly question). A source run
+and an AppImage never register, because a registration naming them would point at the Electron binary or at a
+file that moves.
+
+## Launcher actions
+
+A right-click on Orivon's icon offers New Window and New Private Window. On Linux they are the `.deb`'s desktop
+actions (`deb.desktop.desktopActions` in `electron-builder.yml`, which run `/opt/Orivon/orivon --new-window` and
+`--new-private-window`); they sit under `deb:` and not `linux:` because electron-builder merges `linux.desktop`
+into the AppImage's entry too, where `Exec` is `AppRun` and `/opt/Orivon` does not exist. On Windows the same two
+are jump-list tasks and on macOS dock-menu items, set by the running program (`src/main/os/install-launcher-menu.ts`).
+A launcher written by hand adds the actions itself (`docs/development/setup.md`).
+
+## Windows and macOS (never built)
+
+`electron-builder.yml` has a `win:` block (an NSIS installer) and a `mac:` block (a dmg), and nothing in CI packages
+either. They are written from electron-builder's documentation and are *provisional* until a package is built on
+those systems (`docs/open-questions.md` A328).
+
+- **Windows.** `build/installer.nsh` writes, under `SHCTX`, the client key `Software\Clients\StartMenuInternet\Orivon`
+  with its `Capabilities` (`http` and `https` pointing at `OrivonURL`), a `RegisteredApplications` entry, and the URL
+  class `Software\Classes\OrivonURL`, whose command is `"<install>\Orivon.exe" -- "%1"` (the `--` stops a link being
+  read as a switch). Uninstalling removes all three. Windows does not let a program set the default browser, so
+  Make default opens `ms-settings:defaultapps?registeredAppUser=Orivon` and the person chooses. The installer's
+  shortcuts carry the app user model id `com.orivonstack.orivon`, the one `src/main/os/launcher-tasks.ts` sets on
+  the process.
+- **macOS.** `protocols` becomes `CFBundleURLTypes`. No HTML document types are declared, so a file dropped on the
+  dock icon is refused and logged. Make default calls `setAsDefaultProtocolClient`, which the system confirms.
 
 ## Caveats
 
@@ -136,7 +166,7 @@ Ubuntu/Debian LTS this project intends to support, not on whatever happens to be
 developer's own machine, or the packaged binary can silently stop working for exactly the users
 least likely to know how to work around it.
 
-**Only `deb` can register as the default browser.** Covered above at length; restated here
+**Of the Linux artefacts only `deb` can register as the default browser.** Covered above at length; restated here
 because it is the caveat that most directly shapes the "primary vs. trial artefact" framing at
 the top of this document, and it's easy to read past once and forget while skimming for build
 commands.
@@ -162,9 +192,9 @@ What a real build leaves open. None of them blocks a build.
   hard-fail without one (it falls back to the stock Electron icon) but shipping the browser
   with the generic Electron logo is a real, visible gap, not a neutral default. Someone needs to
   design one, or accept the placeholder knowingly.
-- **The `MimeType=` composition (`protocols.schemes` + `linux.mimeTypes` -> one merged line) is
-  documented behaviour, not observed.** Verify it against `release/*.deb` with the
-  `dpkg -e`/`-x` commands above.
+- **The `MimeType=` and `Actions=` composition (`protocols.schemes` -> `MimeType=`, `deb.desktop` ->
+  `Actions=` and the two action sections) is documented behaviour, not observed.** Verify it against
+  `release/*.deb` with the `dpkg -e`/`-x` commands above.
 - **`StartupWMClass`/`executableName` (`orivon`) is a reasonable guess, not a confirmed match.**
   Nothing in `src/main/*.ts` currently calls `app.setName()` or sets an explicit window/app
   identifier, so Electron's runtime default may not agree with the

@@ -7,13 +7,17 @@ const FADE_MS = 400
 
 const overlay = document.getElementById('overlay')
 const enter = document.getElementById('enter')
+const offer = document.getElementById('default-offer')
+const makeDefault = document.getElementById('make-default') as HTMLInputElement | null
+// Shown only when the shell loaded this page with the offer: the box starts unticked, and nothing happens unless it is ticked.
+if (new URLSearchParams(location.search).get('default') === '1') offer?.removeAttribute('hidden')
 // The one control on the screen: Enter acts at once, without a Tab first.
 enter?.focus()
 
 enter?.addEventListener('click', () => {
   // "leaving" first, so the shell makes its view transparent before the fade
   // shows what is under it.
-  location.hash = 'leaving'
+  location.hash = makeDefault?.checked === true && offer?.hidden === false ? 'leaving-default' : 'leaving'
   overlay?.classList.add('leaving')
   setTimeout(() => { location.hash = 'entered' }, FADE_MS)
 }, { once: true })

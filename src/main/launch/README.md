@@ -2,8 +2,9 @@
 
 **What lives here.** How a process finds out whether it is the default profile, another profile or a
 private session (`ADR-0042`), and what follows from that. `launch-context.ts` reads the command line;
-`start-launch.ts` runs first of all, points the data directory at the right place and steps aside if that profile
-is already open; `profile-store.ts` is the profiles (one directory each, with a `profile.json`);
+`launch-request.ts` is what a start asks for (open the addresses, a new window, a new private window) and the check
+on a request that arrives from another process; `start-launch.ts` runs first of all, points the data directory at the
+right place and steps aside if that profile is already open; `profile-store.ts` is the profiles (one directory each, with a `profile.json`);
 `private-session.ts` makes, marks, removes and sweeps the directories of private sessions;
 `pid-liveness.ts` is the one check both it and `profile-store.ts` use to tell a marker's process from one
 the OS has since reused its pid for;
@@ -31,9 +32,22 @@ engine beneath it; `start-launch.ts` calls Electron's `app.setPath` and single-i
 so `start-launch.ts` is called before the subsystems' `beforeReady`. No module reads the directory when it is
 loaded, and a check would fail the build that started to.
 
-**A second start hands over and stops.** The running profile receives the addresses on the second's command
-line and opens them; the second exits with status 0. A private session has a directory of its own and
-takes no lock.
+**A second start hands over what it asks for, and stops.** The command line says what the start wants
+(`launch-request.ts`): no address, or `--new-window`, is a new window; `--new-private-window` is a private session;
+an address, or a file or a `mailto:` that is not one, only brings the open window forward, opening the web addresses
+in it. The request travels as the single-instance lock's additional data, and the running profile checks it as it
+would any input from another process, reading anything malformed as a plain open of the addresses on the command
+line. The second exits with status 0. A first start of a profile with `--new-private-window` has nothing to hand
+over to: it releases the lock and runs as a private session, leaving the profile free for the next start. A
+private session that made its own directory has a small program of its own remove it once the process has ended (on
+Linux and macOS; Chromium writes as it quits, so a removal from inside would be undone), and the sweep at a later
+start removes what is left, which on Windows is everything. A private session started
+with `--orivon-private` has a directory of its own and takes no lock, so no second start reaches it.
+
+**The activation token does not cross.** The desktop gives a launched program a token so the window it raises may
+take the focus. In this Electron the token is consumed before the main script runs, and the running browser's
+`second-instance` argv holds none, so a private session started from a launcher action cannot be passed one
+(`docs/open-questions.md` A386).
 
 **A peer is told only where its data is.** The data directory and sandbox switches of this launch are passed on and
 nothing else: a debugger's port on the first process would be taken by the second.

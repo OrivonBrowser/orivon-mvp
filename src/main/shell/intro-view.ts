@@ -1,9 +1,12 @@
 // The welcome screen as a view over the whole window, above the chrome and the
 // dashboard tab that has already loaded beneath it. The page (src/renderer/
 // intro/) has no preload: it reports "Enter Orivon" by moving its own URL hash
-// to #leaving and then #entered, which is all this watches. Whether a launch
+// to #leaving (or #leaving-default, when the box that offers to make Orivon the
+// default browser is ticked) and then #entered, which is all this watches. Whether a launch
 // shows it at all is ./intro-state.ts.
 import { app, WebContentsView, type BaseWindow } from 'electron'
+import { defaultBrowserHost } from '../os/default-browser-runner.js'
+import { makeDefaultBrowser } from '../os/default-browser.js'
 import { attachShown } from './attach-view.js'
 import type { IntroPlan } from './intro-state.js'
 import { rendererEntryUrl, validatedDevServerUrl } from './renderer-entry.js'
@@ -17,9 +20,11 @@ const BACKDROP = APP_DARK_WASH
 const TRANSPARENT = '#00000000'
 const ERR_ABORTED = -3
 
+const wait = async (ms: number): Promise<void> => { await new Promise<void>((resolve) => { setTimeout(resolve, ms) }) }
+
 const covered = new WeakSet<BaseWindow>()
 
-/** True while the welcome screen is over `win`: it holds the keyboard, and nothing under it may take it. */
+/** True while the welcome screen is over `win`: it holds the keyboard, nothing under it may take it, and nothing may be asked in it. */
 export function introCovers (win: BaseWindow): boolean { return covered.has(win) }
 
 /** `focusAddressBar` gives the keyboard to the address bar: where it goes on entering, when a new tab is in front. */
@@ -72,9 +77,11 @@ export function showIntro (win: BaseWindow, tabs: Pick<TabManager, 'onStateChang
   webContents.on('will-navigate', (event) => { event.preventDefault() })
   webContents.on('did-navigate-in-page', (_event, url) => {
     const { hash } = new URL(url)
-    if (hash === '#leaving') {
+    if (hash === '#leaving' || hash === '#leaving-default') {
       view.setBackgroundColor(TRANSPARENT)
       void plan.onEntered()
+      // The system asked only when the person ticked the box; a screen that did not offer it cannot report it.
+      if (hash === '#leaving-default' && plan.offerDefault) void makeDefaultBrowser(defaultBrowserHost, wait).catch((error: unknown) => { console.error('[orivon] intro: could not make Orivon the default browser:', error) })
     } else if (hash === '#entered') {
       dismiss()
       const { activeTabId, tabs: all } = tabs.getState()
@@ -91,5 +98,6 @@ export function showIntro (win: BaseWindow, tabs: Pick<TabManager, 'onStateChang
   win.once('closed', dismiss)
   tabs.onStateChange(keepOnTop)
   const devServerUrl = validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL'])
-  void webContents.loadURL(rendererEntryUrl(import.meta.dirname, devServerUrl, '/intro/', '../renderer/intro/index.html'))
+  const page = rendererEntryUrl(import.meta.dirname, devServerUrl, '/intro/', '../renderer/intro/index.html')
+  void webContents.loadURL(plan.offerDefault ? `${page}?default=1` : page)
 }

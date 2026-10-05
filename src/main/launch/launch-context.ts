@@ -18,6 +18,9 @@ export const PROFILE_ID = /^[0-9a-f]{12}$/
 const PROFILE_FLAG = '--orivon-profile='
 const PRIVATE_FLAG = '--orivon-private'
 const PRIVATE_DIR_FLAG = '--orivon-private-dir='
+/** What a launcher action passes (a dock or taskbar menu entry, a desktop-entry action). */
+export const NEW_WINDOW_FLAG = '--new-window'
+export const NEW_PRIVATE_WINDOW_FLAG = '--new-private-window'
 
 export type LaunchParse = { readonly ok: true, readonly launch: Launch } | { readonly ok: false, readonly problem: string }
 
@@ -59,7 +62,7 @@ export function urlsFromArgv (argv: readonly string[], limit = 8): string[] {
   return urls
 }
 
-/** A command line without the addresses on it: starting the browser again opens none of them a second time. */
+/** A command line without the addresses or the launcher actions on it: starting the browser again opens none of them a second time. */
 export function withoutAddresses (argv: readonly string[]): string[] {
-  return argv.filter((argument) => !ADDRESS_ARGUMENT.test(argument))
+  return argv.filter((argument) => !ADDRESS_ARGUMENT.test(argument) && argument !== NEW_WINDOW_FLAG && argument !== NEW_PRIVATE_WINDOW_FLAG)
 }

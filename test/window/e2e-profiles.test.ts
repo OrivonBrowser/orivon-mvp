@@ -8,6 +8,8 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
+import { privatePeer } from './private-peer.js'
+import type { PrivatePeer } from './private-peer.js'
 import { delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor } from '../support/smoke-helpers.mjs'
 
 const leftBehind: string[] = []
@@ -146,35 +148,6 @@ it('shows the profiles in Settings, and leads to the page that manages them', as
     await closeElectron(app)
   }
 }, TEST_TIMEOUT_MS)
-
-interface PrivatePeer { pids: number[], dir: string, command: string }
-
-/** The private process started for the browser that owns `userData`, with the directory its own command line names. */
-function privatePeer (userData: string): PrivatePeer | undefined {
-  const pids = processesWith('--orivon-private', `--user-data-dir=${userData}`)
-  for (const pid of pids) {
-    let args: string[]
-    try { args = readFileSync(join('/proc', String(pid), 'cmdline'), 'utf8').split('\0') } catch { continue }
-    const dir = args.find((argument) => argument.startsWith('--orivon-private-dir='))?.replace('--orivon-private-dir=', '')
-    if (dir !== undefined && dir !== '') return { pids, dir, command: args.join(' ') }
-  }
-  return undefined
-}
-
-/** Every process whose command line has all of `parts`, by scanning /proc: a detached peer is nobody's child to find. */
-function processesWith (...parts: string[]): number[] {
-  const found: number[] = []
-  for (const name of readdirSync('/proc')) {
-    if (!/^\d+$/.test(name)) continue
-    try {
-      const command = readFileSync(join('/proc', name, 'cmdline'), 'utf8')
-      if (parts.every((part) => command.includes(part))) found.push(Number(name))
-    } catch {
-      // Gone, or not ours.
-    }
-  }
-  return found
-}
 
 it.skipIf(process.platform !== 'linux')('starts a private window as a process of its own, on a directory of its own that begins with this profile\'s settings', async () => {
   const { app, chrome } = await launched((dir) => {

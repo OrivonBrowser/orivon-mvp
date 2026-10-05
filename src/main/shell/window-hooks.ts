@@ -7,6 +7,7 @@ import { restoreOffer } from '../startup/restore-offer.js'
 import { sessionRecorder } from '../session-restore/session-hook.js'
 import { sidePanelHook } from '../side-panel/side-panel-hook.js'
 import { tabGroupsHook } from '../tab-groups/groups-hook.js'
+import { windowsTaskbar } from '../os/windows-taskbar-real.js'
 
 export interface WindowHook {
   readonly name: string
@@ -21,7 +22,8 @@ export const WINDOW_HOOKS: readonly WindowHook[] = [
   sessionRecorder,
   sidePanelHook,
   tabGroupsHook,
-  windowStateRecorder
+  windowStateRecorder,
+  windowsTaskbar
 ]
 
 /** A hook that throws is logged and skipped: a throw out of a window event would reach Electron's error dialog. */

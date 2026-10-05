@@ -18,7 +18,7 @@ import { onVerifierChange, verifierView } from '../verifier/verifier-subsystem.j
 import { web3Domain } from '../verifier/web3-domain.js'
 import { appDomain } from './app-domain.js'
 import { telemetryDomain } from './telemetry-domain.js'
-import { realDefaultBrowserHost } from '../os/default-browser-runner.js'
+import { defaultBrowserHost } from '../os/default-browser-runner.js'
 import { osDomain } from '../os/os-domain.js'
 import { checkUpdateNow } from '../self-update/update-check-runner.js'
 import { updatesDomain } from '../self-update/updates-domain.js'
@@ -157,7 +157,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       forcedOff: () => process.env['ORIVON_ETH_LIGHT_CLIENT'] === 'off'
     }),
     app: appDomain(app, services.profiles.isPrivate),
-    os: osDomain(realDefaultBrowserHost, services.profiles.isPrivate, async (ms) => { await new Promise<void>((resolve) => { setTimeout(resolve, ms) }) }),
+    os: osDomain(defaultBrowserHost, services.profiles.isPrivate, async (ms) => { await new Promise<void>((resolve) => { setTimeout(resolve, ms) }) }),
     tasks: tasksDomain({
       list: () => listTasks(tasksEnv),
       end: (pid) => endProcess(tasksEnv, pid),

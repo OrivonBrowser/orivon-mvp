@@ -134,6 +134,14 @@ describe('the profiles service', () => {
     for (const child of children) child.emit('exit')
   })
 
+  it('hands a private session every address it was given, as a cold start of the same command line would open them', () => {
+    const { service: s, spawn, children } = service()
+    s.openPrivate(['https://a.example/', 'file:///etc/passwd', 'https://b.example/'])
+    const args = (spawn.mock.calls[0] as [unknown, string[]])[1]
+    expect(args.slice(2)).toEqual(['https://a.example/', 'https://b.example/'])
+    for (const child of children) child.emit('exit')
+  })
+
   it('reports a profile it could not start instead of raising in the event that asked', () => {
     const made = service()
     const created = made.service.create('Work', 'green')

@@ -72,6 +72,11 @@ export function webIcon (): SVGSVGElement {
   return icon((el) => { el.append(path(polygon(6, 9, -Math.PI / 2), '2'), circle(12, 12, 2.5)) })
 }
 
+/** A compass, for the section about which browser the computer opens links in. */
+export function compassIcon (): SVGSVGElement {
+  return icon((el) => { el.append(circle(12, 12, 9), path('M15.5 8.5 13.5 13.5 8.5 15.5 10.5 10.5Z', '2')) })
+}
+
 export function keyboardIcon (): SVGSVGElement {
   return icon((el) => {
     el.append(rect(3, 6, 18, 12, 2))

@@ -24,6 +24,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - A catalogue of what apps rely on now has a test per row; a broker change that breaks an app fails by name.
 - test/ is grouped into areas, and a new capability, port or app bug has one README saying a row and a spec are required.
 - Every ported app now shows visitors in other browsers a panel pointing them to Orivon; it stays hidden inside Orivon, and --no-orivon-hint removes it.
+- Orivon asks to be the default browser from Settings, the welcome screen and weekly; the dock and taskbar offer New Window and New Private Window.
 
 ### In my head
 

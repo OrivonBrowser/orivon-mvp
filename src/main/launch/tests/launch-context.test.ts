@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
-import { PROFILE_ID, flagsFor, parseLaunch, urlsFromArgv } from '../launch-context.js'
+import { PROFILE_ID, flagsFor, parseLaunch, urlsFromArgv, withoutAddresses } from '../launch-context.js'
 
 const HOME = '/home/person/.config/orivon'
 const parse = (...argv: string[]): ReturnType<typeof parseLaunch> => parseLaunch(['/usr/bin/orivon', '--no-sandbox', ...argv], HOME)
@@ -65,5 +65,12 @@ describe('urlsFromArgv', () => {
     expect(urlsFromArgv(many)).toHaveLength(8)
     expect(urlsFromArgv(many, 3)).toHaveLength(3)
     expect(urlsFromArgv(['https://', 'http://[bad'])).toEqual([])
+  })
+})
+
+describe('withoutAddresses', () => {
+  it('drops the addresses and the launcher actions, so a restart opens none of them a second time, and keeps the rest', () => {
+    expect(withoutAddresses(['/usr/bin/orivon', '--new-window', '--new-private-window', '--no-sandbox', 'https://a.example/']))
+      .toEqual(['/usr/bin/orivon', '--no-sandbox'])
   })
 })

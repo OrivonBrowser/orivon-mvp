@@ -1724,15 +1724,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A326: Should Orivon offer to become the default browser **[OWNER]**
-
-- **Question:** Settings > About registers Orivon for http and https from a button, on a packaged Linux install only.
-  Should a first launch, or a later one, also offer it?
-- **Why it matters:** links from other programs reach Orivon only once it is registered, and an offer costs trust.
-- **Options:** keep the button only (current); a one-time offer after the first week; an offer at first launch.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A327: A copied password has no confidential marker on the clipboard **[RESEARCH]**
 
 - **Question:** Electron 44's clipboard cannot mark text as excluded from clipboard history, so a password copied from
@@ -1744,8 +1735,9 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 ### A328: The real keyring, a real client-certificate store and the Windows and macOS paths are tested with fakes **[RESEARCH]**
 
-- **Question:** The encrypted password store, the client-certificate chooser, the Windows shortcut link and the macOS and
-  Windows default-browser calls were run only against fakes; the packaged `Exec=` line and desktop file name are unobserved.
+- **Question:** The encrypted password store, the client-certificate chooser, the Windows shortcut link, the macOS
+  and Windows default-browser calls, the NSIS registry script, the macOS target and the installed entry's launcher
+  actions were run only against fakes; the packaged `Exec=` line and desktop file name are unobserved.
 - **Why it matters:** each is a place where a unit test passing says nothing about a real machine.
 - **Options:** a run on a machine with a keyring, an NSS store, Windows and macOS (rec.); a probe per path; leave it.
 - **Who decides:** research first
@@ -2012,16 +2004,15 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A375: The Linux package says Orivon opens HTML files, but a file handed in at launch is dropped **[OWNER]**
+### A375: Should Orivon open local HTML and PDF files handed to it? **[OWNER]**
 
-- **Question:** `electron-builder.yml` lists `text/html` in the desktop entry's MimeType, so a file manager can offer
-  Orivon for `report.html` and run it with a `file:///` argument; the launch keeps only http(s) addresses, so nothing
-  opens. Open local files, or stop claiming the type?
-- **Why it matters:** a person who picks Orivon for HTML files sees a new tab or a focused window and no page.
-- **Options:** drop `text/html` from the package, keeping the http and https scheme handlers (rec.; `file:` stays
-  refused as it is in the address bar); open a local HTML file handed in at launch, which needs a rule for `file:`.
+- **Question:** The Linux entry no longer lists `text/html`, so a file manager does not offer Orivon for `report.html`,
+  and a file or a `mailto:` handed to a running Orivon opens nothing (only a web address does). Should Orivon open a
+  local HTML or PDF file, which needs a rule for `file:` that the address bar refuses today?
+- **Why it matters:** a person who double-clicks a saved page expects the browser they chose to show it.
+- **Options:** keep refusing `file:` (rec.); open a local file handed in at launch in a tab marked as a local file.
 - **Who decides:** owner
-- **Blocks:** nothing; check `xdg-settings` on a real package either way
+- **Blocks:** nothing
 
 ### A380: Does the first-start dropdown still fail after the keyboard fixes? **[OWNER]**
 
@@ -2037,4 +2028,23 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Why it matters:** a person who switches back to Orivon and clicks into the bar to edit the address finds it selected; one more click places a caret.
 - **Options:** accept: the rule stays free of timestamps (rec.); place a caret when a press follows a refocus closely.
 - **Who decides:** AI, the recommendation stands unless the owner objects
+
+### A386: A window started from a launcher action may not take the focus on Wayland **[RESEARCH]**
+
+- **Question:** The desktop gives a launched program an activation token so its window may take the focus. Measured in
+  Electron 44 on a private gnome-shell: the token (environment or `--xdg-activation-token`) is consumed before the
+  main script runs, and the running browser's `second-instance` argv holds none, so a new window or private
+  session started from the dock cannot pass it on. Does the new window still come to the front?
+- **Why it matters:** a dock click that opens a window behind others reads as a click that did nothing.
+- **Options:** measure on real GNOME and KDE sessions (rec.); show the window with the compositor's own attention hint.
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A387: Does a desktop list Orivon for web links with only the two scheme handlers? **[RESEARCH]**
+
+- **Question:** The entry lists `x-scheme-handler/http` and `/https` and no `text/html`. GNOME's browser list is
+  believed to key on the schemes, which is unmeasured; the `.deb` has not been installed to check `gio mime`.
+- **Why it matters:** if a desktop needs `text/html` to list a browser, the default-browser button has nothing to set.
+- **Options:** install the built package and read `gio mime x-scheme-handler/https` (rec.); put `text/html` back.
+- **Who decides:** research first
 - **Blocks:** nothing
