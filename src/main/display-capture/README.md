@@ -9,6 +9,9 @@ the window shows while a share runs.
 |---|---|
 | `types.ts` | Pure: the shapes the gate, the picker, the indicators and the app media grants share |
 | `display-tickets.ts` | Pure: the one-shot ticket per frame that tells the gate which `media` request with no device type is the call Orivon's preload made after the pick; holds requests, allows exactly one, denies the rest |
+| `display-asker.ts` | The per-site asker that owns the `media` request with no device type, grants it only against a ticket, answers the `display-capture` check, and after a grant makes sure the display handler took the choice |
+| `end-unexpected-capture.ts` | The backstop for a grant that reached no display handler: reloads the tab and logs |
+| `frame-key.ts` | The ticket key of a tab's top frame |
 | `bindings.ts` | Where the gate finds the picker, the app media grants and the share registry; each refuses until bound |
 
 **What it depends on.** `electron`, [`../sessions/`](../sessions/) (the permission gate and its per-site asker
