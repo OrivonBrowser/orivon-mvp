@@ -340,6 +340,8 @@ it('keeps a narrow window\'s toolbar narrow while a pressed tab makes the chrome
     }))
     // Wide, the placeholder shows: its hiding below is the narrow layout's doing.
     expect((await read()).identity).not.toBe('none')
+    // Only once the window is shown: showing it sets its first bounds again (window-frame.ts), undoing an earlier resize.
+    expect(await waitFor(() => app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.isVisible() === true))).toBe(true)
     await app.evaluate(({ BaseWindow }) => { BaseWindow.getAllWindows()[0]?.setContentSize(500, 400) })
     // The narrow layout follows the resize a moment after the view's own width does.
     await waitFor(async () => { const now = await read(); return now.view === 500 && now.identity === 'none' })
