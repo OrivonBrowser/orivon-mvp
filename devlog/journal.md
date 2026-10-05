@@ -24,6 +24,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - A catalogue of what apps rely on now has a test per row; a broker change that breaks an app fails by name.
 - test/ is grouped into areas, and a new capability, port or app bug has one README saying a row and a spec are required.
 - Every ported app now shows visitors in other browsers a panel pointing them to Orivon; it stays hidden inside Orivon, and --no-orivon-hint removes it.
+- Explore opens on Web3 sites, marks each site Web2, Web2.5 or Web3, and lists 54 more live .eth sites.
 
 ### In my head
 
