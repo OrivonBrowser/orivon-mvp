@@ -43,6 +43,14 @@ describe('the apps domain', () => {
     expect(permissions.revokePickedPath).toHaveBeenCalledWith('https://app.example', 'pick-1')
   })
 
+  it('takes back each media permission, which are capability kinds like the rest', async () => {
+    const { call, permissions } = setup()
+    for (const capability of ['media.camera', 'media.microphone', 'media.screen']) {
+      expect(await call({ type: 'revoke', origin: 'https://app.example', capability })).toEqual({ ok: true })
+      expect(permissions.revokeCapability).toHaveBeenCalledWith('https://app.example', capability)
+    }
+  })
+
   it('refuses an origin that is not the canonical origin of an address, a capability that does not exist, and a pick with no id', async () => {
     const { call, permissions } = setup()
     for (const origin of ['https://app.example/path', 'not a url', 'HTTPS://APP.EXAMPLE', '', 5, null, undefined]) {

@@ -21,6 +21,7 @@ import type { CapabilityGrantSummary } from './grant-prompt-connect.js'
 import { cappedRows, describeConnectCapability, portsPhrase, WARNING_MARK } from './grant-prompt-connect.js'
 import { patternSetFromCapabilities } from '../../broker/policy/manifest-patterns.js'
 import { describeEmbedGrant } from './grant-prompt-embed.js'
+import { describeMediaGrant } from './grant-prompt-media.js'
 import { extensionsOnSiteLine } from './grant-prompt-extensions.js'
 import type { PatternSet } from '../../broker/policy/update.js'
 import { formatOriginForDisplay } from './grant-prompt-origin.js'
@@ -180,13 +181,11 @@ export function describeCapabilityGrant (capability: CapabilityKind, patterns: r
     case 'media.camera':
     case 'media.microphone':
     case 'media.screen':
+      return describeMediaGrant(capability)
     case 'clipboard.read':
-      // ADR-0032: contract-only so far -- the loader does not parse
-      // Capabilities.media/clipboard yet (check-manifest-parity.mjs's own
-      // DELIBERATELY_DEFERRED entries), so no live grant can reach this
-      // switch. Thrown, not rendered, until that implementation PR gives
-      // each its real copy.
-      throw new Error(`grant-prompt-render: ${capability} is not renderable yet (ADR-0032, ADR-0055)`)
+      // ADR-0032: no app door yet, so no live grant reaches this switch.
+      // Thrown, not rendered, until one is built and gives it real copy.
+      throw new Error(`grant-prompt-render: ${capability} is not renderable yet (ADR-0032)`)
     default: {
       // Exhaustiveness guard, matching app-install.ts's own pattern: a new
       // CapabilityKind added without a case here fails to compile.

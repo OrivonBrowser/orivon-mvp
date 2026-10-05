@@ -1,6 +1,6 @@
 # `src/shim-electron/`: the `electron` module compatibility package
 
-**What lives here.** Electron's `app`, `dialog`, `safeStorage`, `ipcRenderer`/`ipcMain`,
+**What lives here.** Electron's `app`, `dialog`, `safeStorage`, `desktopCapturer`, `ipcRenderer`/`ipcMain`,
 `BrowserWindow`, `Menu` and `Tray`, rebuilt (or refused by name) on `orivon.*`, so a ported app's
 `require('electron')` resolves instead of failing to load. What each API maps to, and which
 refuse, is [`compatibility-matrix.md`](../../docs/planning/compatibility-matrix.md) Table 2's
@@ -49,3 +49,17 @@ leaves an undeclared name `undefined`; the same `Proxy` as `default` throws corr
 `import electron from 'electron'` refuses every unknown name, while `import { someNewApi }` fails
 at bundle time, outside `ElectronShimError`. `index.ts`'s curated list closes this for the names
 ported apps use most; naming every real Electron export is not this package's job.
+
+**`desktopCapturer` runs Orivon's picker, and serves what the person picked.** `getSources` calls the page's
+`getDisplayMedia` (so the picker, the sharing indicators and the stop control are Orivon's, never the app's), keeps
+the stream under an id `orivon-shared:<random>` and resolves that one source: the person chose it, so there is no
+list to enumerate. The app hands the id back through the legacy
+`getUserMedia({ video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId } } })` call, which the shim
+answers from the held stream once. The picker captures video only: audio asked beside it is dropped, and a
+`getSources` stream carries none. Any other `chromeMediaSource` call (an id nothing holds, `'tab'`, desktop audio
+alone) rejects with `NotAllowedError`, because Electron would otherwise hand that legacy request the entire screen
+with no picker; every other `getUserMedia` call passes through. A stream the app does not take within 60 seconds is
+stopped. A cancelled picker resolves `[]`. `thumbnail` is one frame at `thumbnailSize` (150 by 150 when omitted,
+scaled to fit, empty at 0 by 0) with `toDataURL`, `toPNG`, `toJPEG`, `isEmpty` and `getSize`; `display_id` is `''`,
+`appIcon` is `null`, and `fetchWindowIcons` has nothing to fetch. The app needs `media.screen` declared, and
+`navigator.mediaDevices` (a secure context) to be present.

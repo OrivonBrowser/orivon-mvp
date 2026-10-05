@@ -58,6 +58,13 @@ export function patternSetFromCapabilities (capabilities: Capabilities): Pattern
   if (capabilities.id !== undefined) set.id = []
   if (capabilities.secrets !== undefined) set.secrets = []
 
+  // ADR-0032, ADR-0055: each declared flag is its own kind with no patterns
+  // ("which camera" is not an app's to choose). Mapped so that a manifest
+  // update that newly declares one reads as widening in `widensAuthority`.
+  if (capabilities.media?.camera === true) set['media.camera'] = []
+  if (capabilities.media?.microphone === true) set['media.microphone'] = []
+  if (capabilities.media?.screen === true) set['media.screen'] = []
+
   // ADR-0019: web.contexts IS the pattern list for 'web.context' -- each
   // declared origin is compared exactly against a grant's own patterns
   // (manifest.ts's WebCapability.contexts doc), the same "presence carries

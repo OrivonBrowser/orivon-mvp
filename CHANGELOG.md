@@ -19,7 +19,13 @@ now do and which ports to recheck. CI requires a line here for a row of that pag
 public surface of `src/contracts/` (named `contracts/<file>`).
 
 - **`contracts/manifest.ts`**: an app may now declare `media.screen` in `capabilities.media`; nothing changes for
-  existing apps, and it is not yet granted (the implementation follows).
+  existing apps. See `app-screen-declared-shows-the-picker` below.
+- **`app-media-declared-is-asked-once`, `app-media-undeclared-is-refused`**: `media: { camera: true, microphone: true }`
+  in the manifest now works. A declared kind is asked once, in the tab's panel, at the first `getUserMedia`; an
+  undeclared one is refused with no question, as before. Apps that record or call: declare it. Recheck: Element.
+- **`app-screen-declared-shows-the-picker`, `app-screen-undeclared-is-refused`, `electron-desktop-capturer-serves-the-picked-source`**:
+  a declared `media.screen` is asked once, then Orivon's picker opens; the `electron` shim's `desktopCapturer.getSources`
+  returns the one source chosen and its `chromeMediaSource: 'desktop'` call takes it once. Apps that list every screen: use that. Recheck: Element.
 
 ### Added
 
