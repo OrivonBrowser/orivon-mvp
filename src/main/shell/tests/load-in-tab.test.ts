@@ -68,6 +68,10 @@ describe('gatewayLinkTarget', () => {
     expect(gatewayLinkTarget(record('persist:app'), 'https://site.eth.limo/a#f')).toBe('https://site.eth/a#f')
   })
 
+  it('maps the link in a cache-served app\'s tab even when the .eth address shares its session', () => {
+    expect(gatewayLinkTarget(record('persist:app'), 'https://app.eth.limo/x')).toBe('https://app.eth/x')
+  })
+
   it('maps the link in a tab whose app-tab flag differs from the .eth address\'s', () => {
     appTabFlagChanged.mockReturnValue(true)
     expect(gatewayLinkTarget(record(undefined), 'https://site.eth.limo/')).toBe('https://site.eth/')

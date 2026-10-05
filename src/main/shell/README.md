@@ -259,8 +259,8 @@ only while the setting is on and the verifier can load the name (`verifierServes
 to start every gateway address opens as it is, except a developer-mode name or a test-build fixture, which the verifier serves without it. The hooks map the address before the load, so the tab's session, the fragment and the address
 bar are those of the name from the start: `resolveTarget` in `tab-navigation.ts` (typed text, the dashboard box, paste-and-go, bookmarks,
 Home), `TabFactory.content()` and `trusted()` (every new tab: middle clicks, links from other programs, startup pages, an
-extension's `tabs.create`), `loadServedAddresses` in `served-address.ts` (a link followed inside a tab that must move to the name's session or app-tab
-flag, such as a cache-served app's tab, which has no web-request owner: `gatewayLinkTarget` in `load-in-tab.ts` answers only then,
+extension's `tabs.create`), `loadServedAddresses` in `served-address.ts` (a link followed inside a tab in an app's own session, which has no web-request owner, or inside a tab that must move to the name's session or app-tab
+flag: `gatewayLinkTarget` in `load-in-tab.ts` answers only then,
 and the link loads through the address bar's own session test), and
 `windowOpenHandler` (a `target=_blank` link or `window.open` becomes a new tab or window, never a popup that loads the gateway in its
 opener's session). The handler at order 5 on the default session's web-request owner, before HTTPS-only and extensions, catches what

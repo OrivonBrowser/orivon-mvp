@@ -107,7 +107,7 @@ it('opens a .eth.limo address as the .eth name, and leaves everything else on th
       check(`a typed gateway address opens as the .eth name (${JSON.stringify(typed.info)})`, typed.ok)
       check('the view is at https://site.eth/', findViewShowing(running, chrome, 'https://site.eth/page.html?q=1#f') !== undefined)
       const typedRedirects = await redirectsSeen(running)
-      check(`a typed gateway address is mapped before the load, so no request redirected (${JSON.stringify(typedRedirects)})`, !typedRedirects.some((url: string) => url.includes('eth.limo')))
+      check(`a typed gateway address is mapped before the load, so no request redirected (${JSON.stringify(typedRedirects)})`, !typedRedirects.some((url: string) => url.startsWith('https://site.eth/page.html?q=1')))
 
       // 2. A link in the same tab: an ordinary tab leaves it to the web-request redirect, which keeps the history entry.
       await clickAddressBarRetrying(chrome, `${loopback}/links`)

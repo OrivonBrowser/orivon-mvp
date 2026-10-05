@@ -21,10 +21,10 @@ export function loadInTab (id: string, record: TabRecord, target: string): void 
   if (!repartitionForTarget(id, record, target)) void record.view.webContents.loadURL(target)
 }
 
-/** The `.eth` address a link to a gateway address is replaced by before the tab loads it, or undefined to leave the link to the web-request redirect (./eth-gateway-redirect.ts), which keeps a `location.replace`, a form's POST body and the referrer. Only a tab that must move to the mapped address's session or app-tab flag needs the replacement: a cache-served app's session has no web-request handler. */
+/** The `.eth` address a link to a gateway address is replaced by before the tab loads it, or undefined to leave the link to the web-request redirect (./eth-gateway-redirect.ts), which keeps a `location.replace`, a form's POST body and the referrer. Only a tab in an app's own session, or one that must move to the mapped address's session or app-tab flag, needs the replacement: an app's own session has no web-request handler, so the gateway request would reach the network. */
 export function gatewayLinkTarget (record: TabRecord, url: string): string | undefined {
   const mapped = gatewayRedirectFor(record.host.services?.settings, url)
   if (mapped === undefined) return undefined
-  const moves = partitionChanged(mapped, record.partition) !== undefined || appTabFlagChanged(mapped, record.view, record.host.broker)
+  const moves = record.partition !== undefined || partitionChanged(mapped, record.partition) !== undefined || appTabFlagChanged(mapped, record.view, record.host.broker)
   return moves ? mapped : undefined
 }
