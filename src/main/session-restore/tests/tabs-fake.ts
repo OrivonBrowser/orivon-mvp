@@ -13,7 +13,7 @@ export interface FakeTabs {
   room: boolean
 }
 
-export function fakeTabs (room = true): FakeTabs {
+export function fakeTabs (room = true, host: object = {}): FakeTabs {
   const records = new Map<string, TabRecord>()
   const order: string[] = []
   const calls: string[] = []
@@ -21,7 +21,7 @@ export function fakeTabs (room = true): FakeTabs {
   const fake: FakeTabs = { records, order, calls, active: null, room, tabs: undefined as never }
   const add = (extra: Partial<TabRecord>): string => {
     const id = `t${String(next++)}`
-    records.set(id, { internalPage: null, pinned: false, host: {}, view: { webContents: { stop: vi.fn(), reload: vi.fn(), navigationHistory: { restore: vi.fn(() => Promise.resolve()) } } }, ...extra } as unknown as TabRecord)
+    records.set(id, { internalPage: null, pinned: false, host, view: { webContents: { stop: vi.fn(), reload: vi.fn(), navigationHistory: { restore: vi.fn(() => Promise.resolve()) } } }, ...extra } as unknown as TabRecord)
     order.push(id)
     return id
   }

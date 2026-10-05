@@ -92,7 +92,7 @@ export interface PopupHost {
   webPreferencesFor: (url: string) => WebPreferences
   /** Whether `url`'s origin holds a grant or is cache-served -- `routePopup`'s own `isApp`. */
   isApp: (url: string) => boolean
-  /** The `.eth` address a gateway address opens as, or undefined: such an open is a new tab, which maps it before choosing a session, and never a popup that loads the gateway address in its opener's. Absent in a test with no gateway. */
+  /** The `.eth` address a gateway address opens as, or undefined: such an open is a new tab or window, which maps it before choosing a session, and never a popup that loads the gateway address in its opener's. Absent in a test with no gateway. */
   gatewayTarget?: (url: string) => string | undefined
   /** True when the pop-up blocker refuses this open (site-settings/popup-blocker.ts). Absent in a test with no blocker: nothing is refused. */
   popupBlocked?: (details: HandlerDetails, opener: PopupOpener) => boolean

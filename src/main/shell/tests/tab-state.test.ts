@@ -56,6 +56,7 @@ vi.mock('electron', () => ({
 vi.mock('../../../loader/electron/serve.js', () => ({ isOriginServedFromCacheSync: (origin: string) => origin === 'https://app.example' }))
 
 const { TabManager } = await import('../tabs.js')
+const { provideVerifierAccess } = await import('../../verifier/verifier-access.js')
 const { setPinned } = await import('../tab-pin.js')
 const { closeOthers, closeToRight, duplicateTab, newTabToRight, othersToClose, rightToClose, tabMenuFlags, toggleMute, togglePin } = await import('../tab-commands.js')
 
@@ -294,6 +295,20 @@ describe('opening a tab beside another', () => {
 
     const copy = createdViews.at(-1)?.webContents as FakeContents
     expect(copy.navigationHistory.restore).toHaveBeenCalledWith({ entries: [{ url: 'https://a.example/1', title: 'One' }, { url: 'https://a.example/2', title: 'Two' }], index: 1 })
+  })
+
+  it('gives the copy of a sleeping tab the .eth name for a gateway page it kept, while the gateway redirect is on', () => {
+    provideVerifierAccess({ start: () => {}, ready: async () => {}, servesName: () => true })
+    const manager = new TabManager({ children: [], addChildView: vi.fn(), removeChildView: vi.fn() } as never, () => ({ x: 0, y: 0, width: 800, height: 600 }), vi.fn(), 'http://localhost:5999/newtab/', {} as SubsystemContext, { services: { settings: { get: () => true } } } as never)
+    const [a] = strip(manager, 1) as [string]
+    const record = manager.record(a)
+    if (record !== undefined) record.sleeping = { url: 'https://s.eth.limo/2', title: 'Two', favicon: null, entries: [{ url: 'https://s.eth.limo/1', title: 'One' }, { url: 'https://s.eth.limo/2', title: 'Two' }] as never, index: 1, at: 0 }
+
+    duplicateTab(manager, a)
+
+    const copy = createdViews.at(-1)?.webContents as FakeContents
+    expect(copy.navigationHistory.restore).toHaveBeenCalledWith({ entries: [{ url: 'https://s.eth/1', title: 'One' }, { url: 'https://s.eth/2', title: 'Two' }], index: 1 })
+    provideVerifierAccess({ start: () => {}, ready: async () => {} })
   })
 
   it('has no history to give a copy of a tab that has only its one page', () => {

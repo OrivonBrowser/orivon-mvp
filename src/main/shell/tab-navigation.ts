@@ -7,12 +7,11 @@ import { isDevEthName } from '../dev/eth-resolver.js'
 import { aliasToInternal, viewSourceTarget } from '../pages/internal-aliases.js'
 import { parseInternalUrl } from '../pages/internal-pages.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
-import type { Broker } from '../../broker/broker-contracts.js'
 import { BLANK_URL } from './tab-factory.js'
 import { startNavigation } from './leave-page-prompt.js'
-import { repartitionView } from './tab-parking.js'
+import { repartitionForTarget } from './load-in-tab.js'
 import type { TabRecord } from './tab-types.js'
-import { appTabFlagChanged, EXIT_FULLSCREEN_WORLD_ID, partitionChanged } from './tab-view.js'
+import { EXIT_FULLSCREEN_WORLD_ID } from './tab-view.js'
 
 export interface NavigationEnv {
   readonly record: (id: string) => TabRecord | undefined
@@ -20,8 +19,6 @@ export interface NavigationEnv {
   readonly openInternal: (page: InternalPageId, path: string) => void
   /** The source of an http(s) address in a tab beside the active one. False when none opened. */
   readonly viewSource: (url: string) => boolean
-  /** A getter: the broker may still be undefined when the tab collection is made. */
-  readonly broker: () => Broker | undefined
   readonly searchUrl: ((query: string) => string) | undefined
   /** The `.eth` address a gateway address opens as, when it does (./eth-gateway-redirect.ts). Absent in tests. */
   readonly gatewayTarget?: (url: string) => string | undefined
@@ -55,13 +52,7 @@ export function navigateTab (env: NavigationEnv, id: string, rawInput: string): 
   if (source !== null && env.viewSource(source)) return
   const target = resolveTarget(env, rawInput)
 
-  const swap = partitionChanged(target, record.partition)
-  if (swap !== undefined || appTabFlagChanged(target, record.view, env.broker())) {
-    // swap.to can itself be undefined (PartitionSwap's own doc) -- ??
-    // would wrongly read that as "no swap" and keep the old partition.
-    repartitionView(id, record, target, swap !== undefined ? swap.to : record.partition)
-    return
-  }
+  if (repartitionForTarget(id, record, target)) return
 
   const contents = record.view.webContents
   // A page that asks "Leave this page?" and is stayed on rejects the load as aborted: that is the answer, not a failure.

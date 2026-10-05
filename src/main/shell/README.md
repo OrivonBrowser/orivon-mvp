@@ -13,7 +13,7 @@ the `{ window, services }` pair a hook or an overlay handler receives.
 `TAB_SIGNALS` entry adds), `tab-navigation.ts`, `tab-open.ts` (every way a tab is created) and
 `tab-panes.ts` (which views show where) as its parts; `tab-view.ts`, `tab-partition.ts`,
 `app-tab-watch.ts`, `tab-signals.ts`, `tab-types.ts`, `tab-factory.ts`, `tab-lifecycle.ts` and
-`tab-parking.ts` are the per-tab view. `eth-gateway-redirect.ts` opens an ENS gateway address (`<name>.eth.limo`, `<name>.eth.link`) as the `.eth` name it stands for: the web-request handler and the `gatewayRedirectFor` rule that the tab hooks below share. `tab-origin-liveness.ts` is `tab-view.ts`'s own per-origin
+`tab-parking.ts` are the per-tab view; `load-in-tab.ts` is the one test that opens an address in the tab's own view or in a view of the session it needs, shared by the address bar and a link followed inside a tab. `eth-gateway-redirect.ts` opens an ENS gateway address (`<name>.eth.limo`, `<name>.eth.link`) as the `.eth` name it stands for: the web-request handler and the `gatewayRedirectFor` rule that the tab hooks below share. `tab-origin-liveness.ts` is `tab-view.ts`'s own per-origin
 live-document counter. `tab-order.ts` is where a tab sits in the strip, `tab-move.ts` moves one between windows keeping the
 same page (and is where a dragged tab's cross-window target -- which window's strip, and where in it -- is
 worked out from the tab centres `strip-centres.ts` reads off the target window's chrome page, shared by the actual move and by `tear-drag.ts`'s own mark), `tab-menu.ts` is its right-click
@@ -261,14 +261,19 @@ bar are those of the name from the start: `resolveTarget` in `tab-navigation.ts`
 Home), `TabFactory.content()` and `trusted()` (every new tab: middle clicks, links from other programs, startup pages, an
 extension's `tabs.create`), `loadServedAddresses` in `served-address.ts` (a link followed inside a tab, loaded through the
 same session test the address bar uses, so a link inside a cache-served app's tab lands on the default session), and
-`windowOpenHandler` (a `target=_blank` link or `window.open` becomes a new tab, never a popup that loads the gateway in its
+`windowOpenHandler` (a `target=_blank` link or `window.open` becomes a new tab or window, never a popup that loads the gateway in its
 opener's session). The handler at order 5 on the default session's web-request owner, before HTTPS-only and extensions, catches what
-the hooks cannot see: a server redirect to a gateway address, a popup that keeps its opener, back and forward or a reload of a
-gateway entry saved while the setting was off, and a restored tab's saved entries. A fragment survives a server redirect
-(measured by `test/web3/e2e-eth-gateway-redirect.test.ts`).
+the hooks cannot see: a server redirect to a gateway address (from a tab, or from a popup that keeps its opener), and back and
+forward or a reload of a gateway entry saved while the setting was off. A restored tab and the copy of a sleeping tab map their
+saved entries through `gatewayEntries` before the list is restored, since the view was built for the `.eth` name and can sit in a
+session with no web-request owner. A fragment survives a server redirect (measured by
+`test/web3/e2e-eth-gateway-redirect.test.ts`).
 With the setting on a gateway address never commits, so the address bar and history show `ipfs://<name>.eth/...`; the omnibox's
 "go to" row still shows the typed address. A load from `will-navigate` drops a form's POST body and the referrer and makes a
-`location.replace` a new history entry, as for an `ipfs:` link. Limits: a server redirect to a gateway address inside a
-cache-served app's own partition is not caught, since that partition has no web-request owner; a name whose content Orivon
+`location.replace` a new history entry, as for an `ipfs:` link. Limits: a `window.open` to a gateway address returns `null` and the new
+tab has no opener, so a page that checks the handle or talks to the page it opened by `postMessage` does not work (an adopted
+popup whose first address is the gateway itself never commits the redirect); the copy of a live tab keeps the gateway entries it
+carried; a server redirect to a gateway address inside a cache-served app's own partition is not caught, since that
+partition has no web-request owner; a name whose content Orivon
 cannot load (Swarm, Arweave, not yet synced, unreachable) shows an error page, and turning the setting off is the way out;
 data a site keeps under its gateway origin stays there and is not seen at the `.eth` name.

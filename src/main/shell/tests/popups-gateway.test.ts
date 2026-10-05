@@ -1,3 +1,4 @@
+import type { WebContents } from 'electron'
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({ WebContentsView: vi.fn() }))
@@ -15,18 +16,19 @@ const OPENER = { url: 'https://news.example/story', partition: undefined }
 
 function hostWith (gatewayTarget?: Host['gatewayTarget']) {
   const openTab = vi.fn(() => undefined)
+  const openWindow = vi.fn((_url: string, _loadOptions?: unknown): WebContents | undefined => undefined)
   const host: Host = {
     atCapacity: () => false,
     openTab,
     adoptPopup: vi.fn(),
     openBlobTab: vi.fn(() => undefined),
-    openWindow: vi.fn(() => undefined),
+    openWindow,
     partitionFor: () => undefined,
     webPreferencesFor: () => ({}),
     isApp: () => false,
     ...(gatewayTarget === undefined ? {} : { gatewayTarget })
   }
-  return { host, openTab }
+  return { host, openTab, openWindow }
 }
 
 describe('windowOpenHandler and a gateway address', () => {
@@ -39,15 +41,17 @@ describe('windowOpenHandler and a gateway address', () => {
     expect(openTab).toHaveBeenCalledWith('https://site.eth.limo/page', true, undefined)
   })
 
-  it('opens a sized popup to a gateway address as a tab too', () => {
+  it('opens a sized popup to a gateway address through the window path, never adopted', () => {
     processWindowBudget.reset()
-    const { host, openTab } = hostWith(gateway)
+    const { host, openTab, openWindow } = hostWith(gateway)
+    openWindow.mockReturnValue({} as WebContents)
     const result = windowOpenHandler(host, () => OPENER)({ ...details('https://site.eth.limo/page', 'new-window'), features: 'width=500,height=600' })
     expect(result.action).toBe('deny')
-    expect(openTab).toHaveBeenCalledTimes(1)
+    expect(openWindow).toHaveBeenCalledWith('https://site.eth.limo/page', undefined)
+    expect(openTab).not.toHaveBeenCalled()
   })
 
-  it('adopts an ordinary popup as before', () => {
+  it('adopts an ordinary sized popup', () => {
     processWindowBudget.reset()
     const { host } = hostWith(gateway)
     expect(windowOpenHandler(host, () => OPENER)(details('https://other.example/', 'new-window')).action).toBe('allow')

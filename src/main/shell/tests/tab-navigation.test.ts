@@ -1,12 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('../tab-factory.js', () => ({ BLANK_URL: 'about:blank' }))
-vi.mock('../tab-parking.js', () => ({ repartitionView: vi.fn() }))
-vi.mock('../tab-view.js', () => ({
-  appTabFlagChanged: () => false,
-  partitionChanged: () => undefined,
-  EXIT_FULLSCREEN_WORLD_ID: 1001
-}))
+vi.mock('../load-in-tab.js', () => ({ repartitionForTarget: vi.fn(() => false) }))
+vi.mock('../tab-view.js', () => ({ EXIT_FULLSCREEN_WORLD_ID: 1001 }))
 
 const { navigateTab, reloadTab } = await import('../tab-navigation.js')
 type Env = Parameters<typeof navigateTab>[0]
@@ -20,7 +16,6 @@ function setup (gatewayTarget?: (url: string) => string | undefined): { navigate
     liveWebContents: () => undefined,
     openInternal,
     viewSource,
-    broker: () => undefined,
     searchUrl: (query: string) => `https://search.example/?q=${encodeURIComponent(query)}`,
     ...(gatewayTarget === undefined ? {} : { gatewayTarget })
   } as unknown as Env
@@ -114,7 +109,6 @@ describe('reload while a page is loading', () => {
       liveWebContents: () => wc,
       openInternal: vi.fn(),
       viewSource: vi.fn(),
-      broker: () => undefined,
       searchUrl: undefined
     } as unknown as Env
     return { reload: () => { reloadTab(env, 'tab-1') }, wcReload, loadURL }

@@ -16,7 +16,16 @@ const GATEWAY_ORDER = 5
 
 const SETTING = 'web3.ethGatewayRedirect'
 const GATEWAY_URLS = ETH_GATEWAY_SUFFIXES.flatMap((suffix) => [`http://*.${suffix}/*`, `https://*.${suffix}/*`])
-const GATEWAY_ADDRESS = (url: string): boolean => /^https?:\/\//.test(url)
+
+/** The handler's own test, so it runs for gateway hosts alone even once another handler widens the shared URL filter. */
+function isGatewayAddress (url: string): boolean {
+  try {
+    const { protocol, hostname } = new URL(url)
+    return (protocol === 'http:' || protocol === 'https:') && ETH_GATEWAY_SUFFIXES.some((suffix) => hostname.endsWith(`.${suffix}`))
+  } catch {
+    return false
+  }
+}
 
 export interface GatewaySettings {
   get: (key: typeof SETTING) => boolean
@@ -30,6 +39,14 @@ export function gatewayRedirectFor (settings: GatewaySettings | undefined, url: 
   return serves(new URL(target).hostname) ? target : undefined
 }
 
+/** `entries` with each gateway address replaced by the `.eth` one it opens as, for a back and forward list given to a tab whose view was built for the mapped address: such a view may sit in a session no web-request handler covers. */
+export function gatewayEntries<T extends { readonly url: string }> (settings: GatewaySettings | undefined, entries: ReadonlyArray<T>, serves: (name: string) => boolean = verifierServesName): T[] {
+  return entries.map((entry) => {
+    const target = gatewayRedirectFor(settings, entry.url, serves)
+    return target === undefined ? entry : { ...entry, url: target }
+  })
+}
+
 export const installEthGatewayRedirect: ShellInstaller = {
   name: 'eth-gateway-redirect',
   install: (_app, services) => {
@@ -37,7 +54,7 @@ export const installEthGatewayRedirect: ShellInstaller = {
     const owner = webRequestOwnerFor(session.defaultSession)
     const handler = handlerWhileNeeded(
       () => settings.get(SETTING) === true,
-      () => owner.onBeforeRequest(GATEWAY_ORDER, { urls: GATEWAY_URLS, types: ['mainFrame'] }, GATEWAY_ADDRESS, (details, current) => {
+      () => owner.onBeforeRequest(GATEWAY_ORDER, { urls: GATEWAY_URLS, types: ['mainFrame'] }, isGatewayAddress, (details, current) => {
         if (details.resourceType !== 'mainFrame') return current
         const target = gatewayRedirectFor(settings, details.url)
         return target === undefined ? current : { redirectURL: target }

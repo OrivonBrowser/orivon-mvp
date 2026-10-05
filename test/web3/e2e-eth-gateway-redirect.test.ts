@@ -47,10 +47,12 @@ it('opens a .eth.limo address as the .eth name, and leaves everything else on th
     const site = gateway.roots['site']!
     const server = createServer((request, response) => {
       response.setHeader('content-type', 'text/html; charset=utf-8')
-      if (request.url === '/go') {
+      if (request.url === '/go' || request.url === '/go-popup') {
         response.statusCode = 302
-        response.setHeader('location', 'https://site.eth.limo/page.html?q=4#k')
+        response.setHeader('location', request.url === '/go' ? 'https://site.eth.limo/page.html?q=4#k' : 'https://site.eth.limo/page.html?q=5')
         response.end()
+      } else if (request.url === '/popup') {
+        response.end('<!doctype html><title>popup opener</title><button id="open" onclick="window.open(\'/go-popup\', \'\', \'width=400,height=400\')">open</button>')
       } else if (request.url === '/links') {
         response.end('<!doctype html><title>links</title><a id="same" href="https://site.eth.limo/page.html?q=2#kept">same</a> <a id="blank" target="_blank" href="https://site.eth.limo/page.html?q=3">blank</a>')
       } else {
@@ -113,8 +115,16 @@ it('opens a .eth.limo address as the .eth name, and leaves everything else on th
         redirectedAddress = ((await activeTabInfo(chrome)) as { address?: string }).address
         return redirectedAddress?.startsWith('ipfs://site.eth/page.html?q=4') === true
       })
-      check(`a server redirect to a gateway address ends at the .eth name (${String(redirectedAddress)})`, redirectedAddress?.startsWith('ipfs://site.eth/page.html?q=4') === true)
-      console.log(`[measured] fragment after a server redirect through webRequest: ${JSON.stringify(redirectedAddress)}`)
+      check(`a server redirect to a gateway address ends at the .eth name, fragment kept (${String(redirectedAddress)})`, redirectedAddress === 'ipfs://site.eth/page.html?q=4#k')
+
+      // 4b. A popup that keeps its opener and is redirected by the server to a gateway address.
+      await clickAddressBarRetrying(chrome, `${loopback}/popup`)
+      expect((await waitForTab(chrome, { title: 'popup opener' })).ok).toBe(true)
+      const opener = tabViews(running, chrome).find((w: Page) => w.url() === `${loopback}/popup`)
+      if (opener === undefined) throw new Error('the popup opener has no view')
+      await opener.click('#open').catch((error: unknown) => { if (!/closed/.test(String(error))) throw error })
+      const popup = await waitForTab(chrome, { address: 'ipfs://site.eth/page.html?q=5', title: 'gateway fixture page' })
+      check(`a popup that keeps its opener and is redirected to a gateway address opens the .eth name (${JSON.stringify(popup.info)})`, popup.ok)
 
       // 5. A gateway address in a page's own frame is untouched.
       await clickAddressBarRetrying(chrome, `${loopback}/frame`)
@@ -122,7 +132,7 @@ it('opens a .eth.limo address as the .eth name, and leaves everything else on th
       await delay(ABSENCE_SETTLE_MS)
       const hostView = tabViews(running, chrome).find((w: Page) => w.url() === `${loopback}/frame`)
       const frameUrls = hostView?.frames().map((frame: Frame) => frame.url()) ?? []
-      check(`the page stays and no frame is at https://site.eth (${JSON.stringify(frameUrls)})`, hostView !== undefined && !frameUrls.some((url: string) => url.startsWith('https://site.eth')))
+      check(`the page stays and no frame is at https://site.eth/ (${JSON.stringify(frameUrls)})`, hostView !== undefined && !frameUrls.some((url: string) => url.startsWith('https://site.eth/')))
       check('the tab address is the page, not the name', (await activeTabInfo(chrome)).address === `${loopback}/frame`)
 
       // 6. The gateway's own hosts and a name nothing can load keep their host.

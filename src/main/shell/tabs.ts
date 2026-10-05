@@ -160,7 +160,6 @@ export class TabManager {
       liveWebContents: (id) => this.liveWebContents(id),
       openInternal: (page, path) => { this.openInternal(page, path) },
       viewSource: (url) => openTypedViewSource(this, url),
-      broker: () => ctx.broker,
       searchUrl: shell?.searchUrl,
       gatewayTarget: (url) => gatewayRedirectFor(shell?.services?.settings, url)
     }
