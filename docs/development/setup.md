@@ -8,9 +8,10 @@
 That is the whole list. **No compiler, no Python, no CMake, no Visual Studio Build Tools.**
 
 That is not an accident, and it is worth understanding before you add a dependency: Windows and
-macOS are supported from day one via *run from source* rather than signed installers, which
-sidesteps SmartScreen and Gatekeeper without buying certificates. If `npm install` ever needs
-`node-gyp`, run-from-source becomes a worse wall than the certificate it was meant to avoid. So
+macOS run from source as well as from the release packages, which are not signed with a bought
+certificate, and a run from source needs no installer trust at all. If `npm install` ever needs
+`node-gyp`, run-from-source becomes a worse wall than the certificate it was meant to avoid, and
+the release runners, which package with no compiler step, stop packaging. So
 **no native modules in Orivon's own dependencies** ([`CLAUDE.md`](../../CLAUDE.md) Rule 8), enforced
 automatically;
 see `check:natives` below.
@@ -236,12 +237,13 @@ on a profile that has passed it, delete `intro.json` from the profile directory.
 
 ## Platform notes
 
-**Linux is the packaged target**: AppImage and deb. No code-signing cost, and the audience
-skews Linux. `deb` is the primary artefact, because only a `.desktop` file registered by an
+**Every GitHub release packages all three systems** ([`packaging.md`](packaging.md)): a deb and
+an AppImage, an NSIS installer, and a dmg each for Apple silicon and Intel. On Linux `deb` is the
+primary artefact, because only a `.desktop` file registered by an
 installed package can become the default browser via `xdg-settings`, and the success metric is
 measured in daily-driver hours.
 
-**Windows and macOS are supported from day one via run-from-source.** Those users count toward
+**Windows and macOS are also supported via run-from-source.** Those users count toward
 the metric and their telemetry must work identically. Two constraints follow, and neither is
 optional:
 
