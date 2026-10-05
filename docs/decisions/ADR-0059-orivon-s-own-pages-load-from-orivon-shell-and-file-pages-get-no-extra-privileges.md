@@ -112,8 +112,11 @@ Run with the fuse off, each in a headless Electron 44 (`app.whenReady().then()`)
 - macOS and Windows are written and untested (*provisional*, A394): the flip goes through the framework
   binary and re-signs ad hoc on macOS, and a rename over a running `.exe` is refused on Windows, which the
   script reports as a warning.
-- The packaged Linux build is unpacked and launched once to read the chrome and dashboard URLs and the fuse
-  byte; CI never packages, so a regression in the packaged path appears only on a person's package run.
+- The packaged Linux build (`electron-builder --linux dir`, 2026-10-06) was launched once under a headless
+  display with a debugging port: its two pages were `orivon-shell://renderer/newtab/index.html` and
+  `orivon-shell://renderer/index.html`, read from the asar, and `@electron/fuses read` showed
+  `GrantFileProtocolExtraPrivileges is Disabled`. CI never packages, so a regression in the packaged path
+  appears only on a person's package run.
 
 ## Reversibility
 
