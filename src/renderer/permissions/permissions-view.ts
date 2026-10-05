@@ -92,7 +92,7 @@ function renderCard (
 /** Shared by every row below -- one `.permission-row` markup: an icon, a
  * message and one button, differing only in the icon's kind, the button's
  * word and what it addresses. The icon is a SIBLING placed BEFORE
- * `.permission-message`, never inside it: `test/e2e-site-permissions.test.ts`
+ * `.permission-message`, never inside it: `test/sites/e2e-site-permissions.test.ts`
  * reads that span's exact textContent, which an icon must never add to. */
 function renderRowElement (kind: Parameters<typeof grantIcon>[0], message: string, warning: boolean, onRevoke: () => void, action = 'Revoke'): HTMLElement {
   const li = document.createElement('li')

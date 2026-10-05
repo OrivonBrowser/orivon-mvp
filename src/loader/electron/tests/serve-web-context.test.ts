@@ -10,7 +10,7 @@ import { reachOnlyHandlerFor } from '../serve.js'
 // reachOnlyHandlerFor authorises against the SAME live grant
 // (authoriseReachFor, unchanged) `registerServingFor`'s own reach path uses,
 // never a copy of it -- not a completed network fetch: that needs the real
-// internet and is test/e2e-web-context.test.ts's job (the spec's own item
+// internet and is test/capabilities/e2e-web-context.test.ts's job (the spec's own item
 // 7). Every case below is provably network-free: fetchThirdParty's own
 // guard order means reachDial (the real, unmocked nodeReachDial()) is never
 // invoked for any of them, since each is denied before that point.

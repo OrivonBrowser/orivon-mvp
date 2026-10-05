@@ -23,7 +23,7 @@ jobs:
 
       # Runs the Rule 8 postinstall guard and fetches Electron's binary. Keep
       # ELECTRON_SKIP_BINARY_DOWNLOAD unset: the unit suite reaches
-      # test/launch-electron.mjs, whose import('electron') would fetch it anyway.
+      # test/support/launch-electron.mjs, whose import('electron') would fetch it anyway.
       - run: npm ci
 
       # webtorrent's tree (spike/app, gitignored) for the real-peer DHT tests,
@@ -74,7 +74,7 @@ jobs:
       - name: Every devlog bullet is at most 25 words
         run: npm run check:devlog
 
-      # docs/development/app-behaviours.md: each entry is proven by an e2e spec CI runs, and no spec names an
+      # test/app-behaviours/catalogue.md: each entry is proven by an e2e spec CI runs, and no spec names an
       # entry the page lacks.
       - name: Every app behaviour is proven by a spec CI runs
         run: npm run check:app-behaviours
@@ -86,7 +86,7 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: npm run check:app-behaviours -- --base "origin/$BASE_REF"
 
-      # test/snapshots/contracts-surface.txt is src/contracts/ without its comments; a change to it is a change
+      # test/app-behaviours/contracts-surface.txt is src/contracts/ without its comments; a change to it is a change
       # apps feel, and takes the same changelog record.
       - name: The contracts surface snapshot matches src/contracts/
         run: npm run check:contracts-surface
@@ -96,6 +96,10 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
         run: npm run check:contracts-surface -- --base "origin/$BASE_REF"
+
+      # A spec or helper that moves takes its mentions with it: every test/ path a tracked file names exists.
+      - name: Every path under test/ that a tracked file names exists
+        run: npm run check:test-paths
 
       # A field src/contracts/manifest.ts documents must not be refused by the
       # loader's allowlist; the script reads both sides from their source.
@@ -153,7 +157,7 @@ jobs:
         run: xvfb-run -a npm run test:e2e
 
       # Screenshots, console logs and the main-process log of every failed
-      # spec (test/qa-evidence.mjs); absent when the suite passes.
+      # spec (test/support/qa-evidence.mjs); absent when the suite passes.
       - name: Upload failure evidence
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -195,7 +199,7 @@ jobs:
           ORIVON_ORDINARY_BUILD: '1'
         run: >-
           xvfb-run -a node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts
-          test/e2e-loopback-grant.test.ts
+          test/app-loading/e2e-loopback-grant.test.ts
 
       - name: Upload failure evidence
         if: failure()

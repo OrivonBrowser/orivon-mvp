@@ -39,7 +39,7 @@ did:
   works today, WASM included".
 
 The third was wrong on the evidence. The served CSP carries `'wasm-unsafe-eval'` (d-0046), and
-`test/e2e-served-csp.test.ts` proves a pinned bundle compiles WebAssembly, inline and streamed
+`test/app-loading/e2e-served-csp.test.ts` proves a pinned bundle compiles WebAssembly, inline and streamed
 from a `.wasm` asset. Three of the four apps build step 5 ports run WebAssembly: AirGap Vault
 signs Sapling and Polkadot transactions in it, Element bundles its end-to-end encryption as
 WebAssembly, and most of ASGARDEX's 31 MB largest chunk is WebAssembly (`ADR-0009`).
@@ -75,7 +75,7 @@ the one `ADR-0002` shaped the API to mirror.
   only this build: `ADR-0002` promises that an app keeps working when the engine beneath it
   changes, and an app with a WebAssembly component is now such an app. The CSP's
   `'wasm-unsafe-eval'`, `.wasm` served as `application/wasm`, and `WebAssembly.instantiateStreaming`
-  are part of what an app can rely on. `test/e2e-served-csp.test.ts` guards all three.
+  are part of what an app can rely on. `test/app-loading/e2e-served-csp.test.ts` guards all three.
 - **A standalone WASI program qualifies and runs.** WebAssembly that imports
   `wasi_snapshot_preview1` instead of calling JavaScript runs against a host over `orivon.fs`
   (`src/shim/wasi/`), reached through Node's `wasi` module (`ADR-0040`). Links, file times and

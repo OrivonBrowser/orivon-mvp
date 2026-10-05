@@ -114,7 +114,7 @@ the design has failed.
 ## Where WASM fits
 
 **Inside an app, today.** WebAssembly an app calls from its own JavaScript runs in its renderer,
-with no host of Orivon's: the served CSP allows it, and `test/e2e-served-csp.test.ts` proves it.
+with no host of Orivon's: the served CSP allows it, and `test/app-loading/e2e-served-csp.test.ts` proves it.
 It reaches the network and disk the way the app's JavaScript does, through `orivon.*` and the
 grants the app holds. AirGap Vault signs in it, Element's encryption is bundled as it, and most of
 ASGARDEX's largest chunk is WebAssembly. A library that exists only as a native addon often has a

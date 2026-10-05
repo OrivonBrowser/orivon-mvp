@@ -480,7 +480,7 @@ is where a program can stall the page, the second is where a URL becomes code.
 
 ### Traps already known
 
-- `ELECTRON_RUN_AS_NODE=1` is set in the ambient shell; `test/launch-electron.mjs` strips it.
+- `ELECTRON_RUN_AS_NODE=1` is set in the ambient shell; `test/support/launch-electron.mjs` strips it.
 - Never a transferable on the renderer-to-main path (electron#34905, silent loss).
 - A `WebAssembly.Suspending` import reached through a JavaScript frame traps: the host installs
   them directly as the import object, and `child_process` never calls one itself

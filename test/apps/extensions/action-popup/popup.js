@@ -1,4 +1,4 @@
-// Fixture popup script for test/e2e-extensions-toolbar.test.ts. Sets the
+// Fixture popup script for test/extensions/e2e-extensions-toolbar.test.ts. Sets the
 // title so the e2e test can prove the popup window loaded the right page,
 // then calls chrome.tabs.query/chrome.tabs.create directly (a 'frame'-type
 // extension context, per electron-chrome-extensions' own preload

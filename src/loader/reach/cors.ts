@@ -2,7 +2,7 @@
 // a document's XHR reaches this handler rather than the broker's routed
 // fetch, and the page may read any response from a host the app holds a
 // live grant for. Electron 44 does not enforce CORS on a protocol.handle
-// response (measured, test/e2e-served-csp.test.ts), so today these headers
+// response (measured, test/app-loading/e2e-served-csp.test.ts), so today these headers
 // only keep that true if it ever starts to. Same idea as
 // src/main/sessions/web-context-host.ts's context wrapper, which this
 // directory may not import.

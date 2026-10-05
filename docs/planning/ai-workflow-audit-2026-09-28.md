@@ -323,7 +323,7 @@ ranges unless the owner asks. Each run is one row in `review-coverage.md`.
 
 Acceptance: the tooling table, now in the skill, says exactly this.
 
-**Step 14. Fix the e2e startup race** in `test/launch-electron.mjs`: after the
+**Step 14. Fix the e2e startup race** in `test/support/launch-electron.mjs`: after the
 is-real-Electron check, poll `BaseWindow.getAllWindows().length > 0` through `app.evaluate`
 with a bounded wait that does not throw. Run the full e2e suite twice.
 

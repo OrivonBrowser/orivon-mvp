@@ -47,7 +47,7 @@ export const MIN_WINDOW_HEIGHT = 400
 // macOS, build-plan.md; a real user's window must always take focus).
 // showInactive() shows the window without activating it, so a build or e2e
 // run started while the owner is typing elsewhere does not steal keystrokes.
-// Set by `npm run dev`, and by test/launch-electron.mjs for every Electron
+// Set by `npm run dev`, and by test/support/launch-electron.mjs for every Electron
 // launch it makes -- docs/development/setup.md.
 const NO_FOCUS = process.env['ORIVON_WINDOW_NO_FOCUS'] === '1'
 
@@ -188,7 +188,7 @@ export function showWhenReady ({ win, initialBounds, kiosk }: WindowFrame, optio
       // The one thing a real launch under a virtual display CAN check --
       // there is no window manager there to take OS focus FROM, so
       // isFocused() cannot tell showInactive() apart from show(). See
-      // test/e2e-window-no-focus.test.ts, which asserts this line runs
+      // test/window/e2e-window-no-focus.test.ts, which asserts this line runs
       // instead. Do not remove as "stray debug output". Only the launch's
       // first window can reach this branch (`skipFocus` above) -- a second
       // window opened under the same switch still takes focus.

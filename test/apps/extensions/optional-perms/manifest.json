@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Orivon E2E Optional Permissions With A Name Long Enough To Be Cut",
   "version": "1.0.0",
-  "description": "Fixture extension for test/e2e-extensions-permissions.test.ts: declares many optional permissions and hosts so the prompt shows a long list.",
+  "description": "Fixture extension for test/extensions/e2e-extensions-permissions.test.ts: declares many optional permissions and hosts so the prompt shows a long list.",
   "permissions": ["storage"],
   "optional_permissions": ["bookmarks", "history", "topSites", "downloads", "sessions", "tabGroups", "notifications"],
   "optional_host_permissions": ["https://*.example.com/*", "*://*/*"],

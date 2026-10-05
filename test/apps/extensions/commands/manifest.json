@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Orivon E2E Commands",
   "version": "1.0.0",
-  "description": "Fixture extension for test/e2e-extensions-shortcuts.test.ts: a browser action with a popup, three commands and a service worker that logs each onCommand it receives.",
+  "description": "Fixture extension for test/extensions/e2e-extensions-shortcuts.test.ts: a browser action with a popup, three commands and a service worker that logs each onCommand it receives.",
   "icons": { "48": "icon.png" },
   "action": { "default_popup": "popup.html", "default_icon": "icon.png" },
   "background": { "service_worker": "background.js" },

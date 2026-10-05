@@ -1,6 +1,6 @@
-// Fixture service worker for test/e2e-extensions-toolbar.test.ts: on a
+// Fixture service worker for test/extensions/e2e-extensions-toolbar.test.ts: on a
 // message, runs chrome.tabs.query and chrome.tabs.create and replies with
-// the result -- the MV3 shape test/e2e-extensions-toolbar.test.ts's own
+// the result -- the MV3 shape test/extensions/e2e-extensions-toolbar.test.ts's own
 // header describes. Not the e2e test's primary path (its own header notes
 // why); kept as a realistic MV3 worker a future investigation can drive
 // once electron-chrome-extensions' 'service-worker'-type preload injection

@@ -21,8 +21,8 @@ export default defineConfig({
     // fail to bind STATIC_PORT and fail electron.launch() with ETXTBSY.
     // Separate port ranges would not fix it: concurrent launches still race.
     fileParallelism: false,
-    // Failure evidence for every spec; see test/qa-evidence.mjs.
-    globalSetup: ['test/qa-global-setup.ts'],
-    setupFiles: ['test/qa-setup.ts']
+    // Failure evidence for every spec; see test/support/qa-evidence.mjs.
+    globalSetup: ['test/support/qa-global-setup.ts'],
+    setupFiles: ['test/support/qa-setup.ts']
   }
 })

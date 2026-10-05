@@ -14,12 +14,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 ### Changed for apps
 
 What an app that runs on Orivon must now do differently. One line per behaviour, naming its id from
-[`docs/development/app-behaviours.md`](docs/development/app-behaviours.md), what changed, what apps must
+[`test/app-behaviours/catalogue.md`](test/app-behaviours/catalogue.md), what changed, what apps must
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **`test/` is ordered by area**, with a Layout table in `test/README.md`; a spec left at its top, a folder with no
+  row and a dead `test/` path in any tracked file now fail CI, and a new capability kind needs a catalogue line.
 - **An app-behaviour catalogue** names what a working app relies on, one row each, and each row is proven by an
   end-to-end spec whose test is titled with the row's id, so a change that breaks an app fails a test that says which.
 

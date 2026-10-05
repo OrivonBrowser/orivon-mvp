@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Orivon E2E API Sweep",
   "version": "1.0.0",
-  "description": "Fixture extension for test/e2e-extensions-sweep.test.ts: asks for every API permission Orivon serves and reports which chrome.* members each context sees.",
+  "description": "Fixture extension for test/extensions/e2e-extensions-sweep.test.ts: asks for every API permission Orivon serves and reports which chrome.* members each context sees.",
   "permissions": [
     "activeTab", "alarms", "browsingData", "clipboardRead", "clipboardWrite", "contextMenus", "cookies",
     "declarativeNetRequest", "dns", "downloads", "downloads.open", "identity", "idle", "management",

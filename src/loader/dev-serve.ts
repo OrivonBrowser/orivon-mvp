@@ -15,7 +15,7 @@
 // hook exposes exactly that seam: given an origin the test has already
 // written a real, valid pin and its assets for (via node-storage.ts's own
 // functions, called directly from the test process -- see
-// test/e2e-serve-from-cache.test.ts), register its serving for real.
+// test/app-loading/e2e-serve-from-cache.test.ts), register its serving for real.
 //
 // GATED BEHIND THE SAME __ORIVON_DEV_GRANT_ENABLED__ FLAG dev-grant.ts
 // declares, not a second one -- both are e2e-build-only conveniences

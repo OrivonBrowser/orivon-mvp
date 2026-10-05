@@ -189,7 +189,8 @@ makes the vectors reviewable on their own, which
 **Every test lives in a `tests/` folder inside the directory whose code it covers**, not beside
 that code, and not pooled into one directory at the root. `src/loader/index.test.ts` is
 `src/loader/tests/index.test.ts`; `src/broker/handles/handles.test.ts` is
-`src/broker/handles/tests/handles.test.ts`.
+`src/broker/handles/tests/handles.test.ts`. End-to-end specs are the exception: they live under `test/`, one
+folder per area ([`test/README.md`](../../test/README.md)), and `check:test-paths` enforces that.
 
 The reason is what a directory listing is *for*. Before this, `src/broker/` held 83 files of
 which 40 were tests, interleaved alphabetically, so roughly half of what a reader scrolled past

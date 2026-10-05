@@ -1,7 +1,7 @@
 // Service worker: chrome.scripting.executeScript({ world: 'MAIN', func })
 // on the tab when asked -- "asked" means this extension's own fixture
 // origin has a tab open, which is all a real trigger needs to be for an
-// e2e fixture (test/e2e-extensions-orivon-filter.test.ts's own server
+// e2e fixture (test/extensions/e2e-extensions-orivon-filter.test.ts's own server
 // names the origin). `func` is serialised the same way installOrivon is
 // (chrome.scripting's own contract): no free variables.
 //

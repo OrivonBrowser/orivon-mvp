@@ -1,4 +1,4 @@
-// Fixture service worker for test/e2e-extensions-offscreen-capture.test.ts.
+// Fixture service worker for test/extensions/e2e-extensions-offscreen-capture.test.ts.
 // Every request/response is JSON, read back from a hidden sender page's own
 // chrome.runtime.sendMessage() call -- the same shape Volume Master's real
 // service worker uses (each context filters by its own `cmd`/`target`,

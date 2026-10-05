@@ -7,8 +7,8 @@
  */
 import { isInvokedDirectly, spawnCommandSync } from './cli.mjs'
 
-export const QA_SPECS = ['test/qa-visual.test.ts', 'test/qa-evidence.test.ts', 'test/e2e-qa-audit.test.ts', 'test/e2e-qa-visual.test.ts', 'test/e2e-qa-evidence.test.ts', 'test/e2e-qa-journey.test.ts', 'test/e2e-qa-adversarial.test.ts']
-export const VISUAL_SPECS = ['test/qa-visual.test.ts', 'test/e2e-qa-audit.test.ts', 'test/e2e-qa-visual.test.ts']
+export const QA_SPECS = ['test/qa/qa-visual.test.ts', 'test/qa/qa-evidence.test.ts', 'test/qa/e2e-qa-audit.test.ts', 'test/qa/e2e-qa-visual.test.ts', 'test/qa/e2e-qa-evidence.test.ts', 'test/qa/e2e-qa-journey.test.ts', 'test/qa/e2e-qa-adversarial.test.ts']
+export const VISUAL_SPECS = ['test/qa/qa-visual.test.ts', 'test/qa/e2e-qa-audit.test.ts', 'test/qa/e2e-qa-visual.test.ts']
 
 function run (command, args, env = {}) {
   const result = spawnCommandSync(command, args, { env: { ...process.env, ...env } })

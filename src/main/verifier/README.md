@@ -42,7 +42,7 @@ is `installPartitionStamp`, registered through
 `onBeforeSendHeaders` handlers so nothing earlier, an extension rule included, can set or remove
 the header underneath it. A `webRequest` listener sends its session's requests through Electron's
 proxy, and then a redirect a `protocol.handle` handler returns reaches the page with the
-redirect's status (`test/e2e-served-csp.test.ts` measures it): a cache-served app's own partition
+redirect's status (`test/app-loading/e2e-served-csp.test.ts` measures it): a cache-served app's own partition
 serves its `https` through such a handler (`src/loader/electron/serve.ts`'s `registerAppOrigin`,
 for the WHOLE scheme, not only the app's own host), and so does a web context, so a listener there
 would break every routed redirect; a request that handler does not itself serve, a third-party

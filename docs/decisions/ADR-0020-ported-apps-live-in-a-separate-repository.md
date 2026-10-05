@@ -60,7 +60,7 @@ has no privileged access to anything here.
 The split follows a boundary that already existed. Nothing in the shell depends on a port at
 runtime, because a port is just an origin: grants attach to the URL, so an app the browser has
 never heard of behaves identically to one shipped beside it. The coupling is in the test suite.
-Most of it was a path. It is not only a path: `test/e2e-freetube-real.test.ts` also asserts that
+Most of it was a path. It is not only a path: `test/ported-apps/e2e-freetube-real.test.ts` also asserts that
 FreeTube's storage lands as nedb files at the app's own fs root, which is a claim about a bundle
 built in the other repository. `open-questions.md` B5 carries that, and where those assertions
 belong is unsettled.
@@ -72,14 +72,14 @@ require touching the browser.
 ## Consequences
 
 - **This repository must build, test and ship with no `orivon-ports` checkout present.**
-  `test/e2e-freetube-real.test.ts` skips when the sibling is absent, which is the behaviour it
+  `test/ported-apps/e2e-freetube-real.test.ts` skips when the sibling is absent, which is the behaviour it
   already had when the build was absent.
 - The FreeTube e2e test now reads `ORIVON_PORTS_ROOT`, defaulting to a sibling checkout, and
   drives that repository's own executor rather than a server kept here.
 - Two repositories must be released together when a capability changes shape, because a bridge
   compiled against the old surface will keep calling it.
 - **CI here cannot prove a port still works.** It never checks out `orivon-ports`, so
-  `test/e2e-freetube-real.test.ts` skips and a port's regression is green on this side. Proving
+  `test/ported-apps/e2e-freetube-real.test.ts` skips and a port's regression is green on this side. Proving
   it needs a sibling checkout in CI, which this decision does not set up.
 - Documentation that cited `apps/freetube-real/` or the port recon now cites the other
   repository by name. Those references cannot be checked by a link checker here.

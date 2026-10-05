@@ -24,10 +24,10 @@ seconds, and a test would be paying rent to tell you something you already know.
 
 | Command | What |
 |---|---|
-| `npm run typecheck` | `tsc --noEmit`. Strict mode with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`, so the compiler is doing a lot of the work a test suite would elsewhere. `tsconfig.json`'s `include` covers `test/**/*.ts`, so this also type-checks `test/e2e-capability-boundary.test.ts`, and a type error there fails this always-on check even on a push that never runs the separate `e2e` job below |
+| `npm run typecheck` | `tsc --noEmit`. Strict mode with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`, so the compiler is doing a lot of the work a test suite would elsewhere. `tsconfig.json`'s `include` covers `test/**/*.ts`, so this also type-checks `test/capabilities/e2e-capability-boundary.test.ts`, and a type error there fails this always-on check even on a push that never runs the separate `e2e` job below |
 | `npm test` | Vitest. `environment: 'node'`, no DOM. Picks up `src/**/*.test.ts` and `scripts/**/*.test.ts` |
 | `npm run smoke` | Builds and drives the real shell with real clicks. The only check that proves a window appears |
-| `npm run test:e2e` | Builds, then runs [`test/e2e-capability-boundary.test.ts`](../../test/e2e-capability-boundary.test.ts) (TCP) and [`test/e2e-udp-capability.test.ts`](../../test/e2e-udp-capability.test.ts) (UDP) via [`test/vitest.e2e.config.ts`](../../test/vitest.e2e.config.ts); see §The end-to-end test below. Runs automatically in CI's `e2e` job on every push and pull request. Needs a display; on Linux with `xvfb-run` installed it uses a virtual one automatically (see [setup.md](setup.md) "The no-focus switch"), so a plain `npm run test:e2e` is safe with no wrapper, and on a platform with no virtual display it runs directly instead, without stealing your keyboard focus |
+| `npm run test:e2e` | Builds, then runs [`test/capabilities/e2e-capability-boundary.test.ts`](../../test/capabilities/e2e-capability-boundary.test.ts) (TCP) and [`test/capabilities/e2e-udp-capability.test.ts`](../../test/capabilities/e2e-udp-capability.test.ts) (UDP) via [`test/vitest.e2e.config.ts`](../../test/vitest.e2e.config.ts); see §The end-to-end test below. Runs automatically in CI's `e2e` job on every push and pull request. Needs a display; on Linux with `xvfb-run` installed it uses a virtual one automatically (see [setup.md](setup.md) "The no-focus switch"), so a plain `npm run test:e2e` is safe with no wrapper, and on a platform with no virtual display it runs directly instead, without stealing your keyboard focus |
 | `npm run qa` · `qa:visual` · `qa:report` | The QA specs and the inspection sheet; §Visual QA and failure evidence |
 
 Unit tests are **colocated** with what they test: `src/main/tests/omnibox.test.ts` sits beside
@@ -163,7 +163,7 @@ isolation, the e2e would test only the allow path, and every user journey is a h
 broker regression that skipped the check entirely would pass every test while the product
 appeared to work perfectly. Do not drop it.
 
-**It lives in [`test/e2e-app-loader-journey.test.ts`](../../test/e2e-app-loader-journey.test.ts)**,
+**It lives in [`test/app-loading/e2e-app-loader-journey.test.ts`](../../test/app-loading/e2e-app-loader-journey.test.ts)**,
 and the refusal goes through the real shim (`src/shim/net/net.ts`), not only the raw capability
 API. One link is substituted, and the file's header says exactly where: the fixture is served
 from loopback, and [`install-origin.ts`](../../src/loader/fetch/install-origin.ts) refuses a loopback
@@ -173,56 +173,56 @@ round trip is enabled separately, through `src/main/dev/dev-grant.ts`'s develope
 acting on the same broker the launched shell's IPC uses. That path
 (`src/main/install/grant-without-install.ts`, loopback in every build) has its own test, on an
 ordinary build with no developer mode,
-[`test/e2e-loopback-grant.test.ts`](../../test/e2e-loopback-grant.test.ts). `ORIVON_DEV_ORIGINS=1`,
+[`test/app-loading/e2e-loopback-grant.test.ts`](../../test/app-loading/e2e-loopback-grant.test.ts). `ORIVON_DEV_ORIGINS=1`,
 paired with `ORIVON_ETH_NAMES_FILE`, turns on the fake `.eth` names
 (`src/main/dev/eth-resolver.ts`) and grants them the same way -- both halves are covered in
-[`test/e2e-eth-secure-context.test.ts`](../../test/e2e-eth-secure-context.test.ts), which asserts
+[`test/web3/e2e-eth-secure-context.test.ts`](../../test/web3/e2e-eth-secure-context.test.ts), which asserts
 a `.eth` tab is a secure context and so keeps `crypto.subtle`, `crypto.randomUUID`, service
 workers and `navigator.clipboard`. See [setup.md](setup.md) for what the two variables do. Consent gating itself is proven separately, in
-[`test/e2e-install-consent-journey.test.ts`](../../test/e2e-install-consent-journey.test.ts).
+[`test/app-loading/e2e-install-consent-journey.test.ts`](../../test/app-loading/e2e-install-consent-journey.test.ts).
 
 The raw capability API has its own boundary suites, one file per transport, because Rule 2 caps
-a test at 800 lines: [`e2e-capability-boundary.test.ts`](../../test/e2e-capability-boundary.test.ts)
+a test at 800 lines: [`e2e-capability-boundary.test.ts`](../../test/capabilities/e2e-capability-boundary.test.ts)
 (TCP: `net.connect`, byte round trip, out-of-pattern denial) and `e2e-udp-capability.test.ts`
 (UDP: `net.udpBind`, datagram round trip, out-of-pattern refusal, and the two properties UDP has
 that TCP does not: a refused datagram must not kill the socket, and revoking `udp.send` must stop
 the *next datagram* on an already-bound socket). The shared harness (the fixture-server
 children, the address-bar navigation dance, the per-phase reporter) lives in
-[`test/e2e-helpers.ts`](../../test/e2e-helpers.ts).
+[`test/support/e2e-helpers.ts`](../../test/support/e2e-helpers.ts).
 
 These suites cover what an app's page is served with, what it may put inside itself and what it may serve:
-[`e2e-embed.test.ts`](../../test/e2e-embed.test.ts) drives a `<webview>` under a `web.embed`
+[`e2e-embed.test.ts`](../../test/capabilities/e2e-embed.test.ts) drives a `<webview>` under a `web.embed`
 grant (the shown site loads in the app's own embed partition with no `orivon.*`, the app's
 script runs first under a strict page CSP and talks to the element both ways, a site outside
 the grant and a `file:` URL are refused, an ordinary tab's element is inert, and a revoke closes
-the page), [`e2e-embed-local.test.ts`](../../test/e2e-embed-local.test.ts) serves pages from the
+the page), [`e2e-embed-local.test.ts`](../../test/capabilities/e2e-embed-local.test.ts) serves pages from the
 app's own loopback listener under a local pattern (two labels are two origins, a cookie does not
 cross them, a page is refused while the app holds no listener or another program holds the
 port, a server the test holds on `[::1]` at the app's port is never the one shown, and a shown
-page closes with the app's listener), [`e2e-embed-events.test.ts`](../../test/e2e-embed-events.test.ts) drives a shown page's
+page closes with the app's listener), [`e2e-embed-events.test.ts`](../../test/capabilities/e2e-embed-events.test.ts) drives a shown page's
 popups, downloads and a link to an unknown scheme with real input and reads the events on the
-element, [`e2e-http-server.test.ts`](../../test/e2e-http-server.test.ts) runs `http.createServer`
+element, [`e2e-http-server.test.ts`](../../test/node-runtime/e2e-http-server.test.ts) runs `http.createServer`
 in a page and answers real requests from outside the browser,
-and [`e2e-wasm-threads.test.ts`](../../test/e2e-wasm-threads.test.ts) pins one bundle
+and [`e2e-wasm-threads.test.ts`](../../test/node-runtime/e2e-wasm-threads.test.ts) pins one bundle
 declaring `crossOriginIsolated` and one without, and measures `SharedArrayBuffer`, a shared
 `WebAssembly.Memory` and `Atomics.wait` in a worker in each.
 
-[`e2e-wasi-host.test.ts`](../../test/e2e-wasi-host.test.ts) pins an app whose page runs a WASI
+[`e2e-wasi-host.test.ts`](../../test/node-runtime/e2e-wasi-host.test.ts) pins an app whose page runs a WASI
 program through Node's `wasi` module: its file calls reach the real broker through JSPI, the bytes
 it wrote are read back through `orivon.fs`, and its attempt to leave its preopen comes back
 `NOTCAPABLE`. The WASI host also has an opt-in conformance run against the official preview1
 suite, [`src/shim/wasi/tests/conformance.test.ts`](../../src/shim/wasi/tests/conformance.test.ts),
 which skips unless `ORIVON_WASI_TESTSUITE` names a checkout of the suite's prebuilt branch; the
 suite's binaries are not in this repository.
-[`e2e-child-process.test.ts`](../../test/e2e-child-process.test.ts) runs `child_process` in a pinned
+[`e2e-child-process.test.ts`](../../test/node-runtime/e2e-child-process.test.ts) runs `child_process` in a pinned
 app: `spawn` of a WASI program and `fork` of the app's own module, each in a Worker under the served
 CSP, the forked module's `fs` write read back through the broker, a native program refused as
 `ENOEXEC`, a missing one `ENOENT`, and `kill()` ending a running child.
-[`e2e-native-addon.test.ts`](../../test/e2e-native-addon.test.ts) loads a hand-assembled Node-API
+[`e2e-native-addon.test.ts`](../../test/node-runtime/e2e-native-addon.test.ts) loads a hand-assembled Node-API
 module as a native addon's WebAssembly build: through `createRequire` and `process.dlopen` on the
 page, through `preloadAddon` for one over the page's 8 MB synchronous-compile limit, and on the fly
 in a forked child.
-[`e2e-napi-rs-package.test.ts`](../../test/e2e-napi-rs-package.test.ts) runs a napi-rs package's
+[`e2e-napi-rs-package.test.ts`](../../test/node-runtime/e2e-napi-rs-package.test.ts) runs a napi-rs package's
 published WebAssembly build, which is threaded, through the package's own browser loader in a
 cross-origin isolated app. It skips unless `ORIVON_NAPI_RS_PACKAGE_DIR` names a directory the
 package was installed in, since the package is not one of this repository's. Real programs and
@@ -230,10 +230,10 @@ addons built outside the repository run against the WASI and addon hosts in opt-
 same way: `ORIVON_WASIP2_STD_PROGRAM`, `ORIVON_WASIP2_TOKIO_PROGRAM` and `ORIVON_NAPI_RS_ADDON`,
 each test's header naming what to build.
 
-[`e2e-the-lounge-real.test.ts`](../../test/e2e-the-lounge-real.test.ts) runs The Lounge's upstream server,
+[`e2e-the-lounge-real.test.ts`](../../test/ported-apps/e2e-the-lounge-real.test.ts) runs The Lounge's upstream server,
 unmodified, in a forked Worker of an app (the real consent prompt, the launcher creating the account with
 upstream's own command, the server on `127.0.0.1:9000`, its page in a `<webview>`) against
-[`irc-fake-server.mjs`](../../test/irc-fake-server.mjs): a network connect, messages both ways, a link opening
+[`irc-fake-server.mjs`](../../test/ported-apps/irc-fake-server.mjs): a network connect, messages both ways, a link opening
 a tab, the scrollback read back from SQLite after a relaunch on the same profile, and a second tab finding the
 port held. It skips unless `orivon-ports` (`ORIVON_PORTS_ROOT`, default the sibling checkout) holds the
 built app, and unless the build is the ordinary one (`ORIVON_ORDINARY_BUILD=1`), as `e2e-freetube-real`
@@ -266,7 +266,7 @@ under the headless runner with a main-process module loaded by Electron's `--req
 
 ### Checking against real Chrome extensions
 
-[`test/e2e-extensions-real.test.ts`](../../test/e2e-extensions-real.test.ts) installs whichever
+[`test/extensions/e2e-extensions-real.test.ts`](../../test/extensions/e2e-extensions-real.test.ts) installs whichever
 of uBlock Origin Lite, Dark Reader, Bitwarden and MetaMask it finds unpacked in
 `ORIVON_REAL_EXTENSIONS_DIR` (one subdirectory per extension, named `ubol`/`darkreader`/
 `bitwarden`/`metamask`) through the real install path, then records per extension: whether its
@@ -278,7 +278,7 @@ directly:
 
 ```
 ORIVON_REAL_EXTENSIONS_DIR=/path/to/extracted node scripts/build-e2e.mjs && \
-  node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-extensions-real.test.ts
+  node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-real.test.ts
 ```
 
 Re-download each extension's latest release from its own GitHub releases page when the directory
@@ -300,26 +300,26 @@ last run. All three launch Electron headless, like `test:e2e`.
 
 | Spec | Proves |
 |---|---|
-| [`e2e-qa-audit`](../../test/e2e-qa-audit.test.ts) | Every layout-audit rule fires on a page broken on purpose, and none on a clean one |
-| [`e2e-qa-visual`](../../test/e2e-qa-visual.test.ts) | Eleven shell states in light and in dark: layout audit clean, no shell errors, something painted, each shown view's backing colour equal to the one its page paints, and under `qa` the pixel baseline matched |
-| [`e2e-qa-journey`](../../test/e2e-qa-journey.test.ts) | A bookmark starred in the toolbar is on disk, survives a relaunch on the same profile, and so does removing it |
-| [`e2e-qa-adversarial`](../../test/e2e-qa-adversarial.test.ts) | Corrupt profile files, tab churn, a killed renderer and an abandoned load leave the shell working and consistent |
-| [`e2e-qa-evidence`](../../test/e2e-qa-evidence.test.ts) | The failure bundle holds what the page logged and threw, a dead renderer, the main log and real pixels |
+| [`e2e-qa-audit`](../../test/qa/e2e-qa-audit.test.ts) | Every layout-audit rule fires on a page broken on purpose, and none on a clean one |
+| [`e2e-qa-visual`](../../test/qa/e2e-qa-visual.test.ts) | Eleven shell states in light and in dark: layout audit clean, no shell errors, something painted, each shown view's backing colour equal to the one its page paints, and under `qa` the pixel baseline matched |
+| [`e2e-qa-journey`](../../test/qa/e2e-qa-journey.test.ts) | A bookmark starred in the toolbar is on disk, survives a relaunch on the same profile, and so does removing it |
+| [`e2e-qa-adversarial`](../../test/qa/e2e-qa-adversarial.test.ts) | Corrupt profile files, tab churn, a killed renderer and an abandoned load leave the shell working and consistent |
+| [`e2e-qa-evidence`](../../test/qa/e2e-qa-evidence.test.ts) | The failure bundle holds what the page logged and threw, a dead renderer, the main log and real pixels |
 
 **Colour schemes.** Playwright pins every page it attaches to `prefers-color-scheme: light` unless the
 launch passes `colorScheme: null`, while the shell's own colours follow `nativeTheme`; a launch with
 no option therefore sees light pages under a theme main chose on its own. `launchElectron({ scheme })`
-([`launch-electron.mjs`](../../test/launch-electron.mjs)) lifts the pin and writes the profile's
+([`launch-electron.mjs`](../../test/support/launch-electron.mjs)) lifts the pin and writes the profile's
 `appearance.theme`, merged into any settings a seed wrote, so the first paint and every page agree
 and the desktop's own theme cannot leak in; without it a launch is unchanged. `setScheme(app, scheme)`
-([`e2e-helpers.ts`](../../test/e2e-helpers.ts)) flips `nativeTheme` at run time. `e2e-qa-visual` takes
+([`e2e-helpers.ts`](../../test/support/e2e-helpers.ts)) flips `nativeTheme` at run time. `e2e-qa-visual` takes
 every state once per scheme (`ORIVON_QA_SCHEMES=light` or `dark` narrows it, and each scheme has its
-own baseline), and [`e2e-theme-backing`](../../test/e2e-theme-backing.test.ts) reads the colours a view
+own baseline), and [`e2e-theme-backing`](../../test/window/e2e-theme-backing.test.ts) reads the colours a view
 and the window hold at the moments a navigation starts.
 
-**Failure evidence, for every e2e spec.** [`launch-electron.mjs`](../../test/launch-electron.mjs)
-starts recording each launched app ([`qa-evidence.mjs`](../../test/qa-evidence.mjs)) and, at close,
-snapshots its final state. [`qa-setup.ts`](../../test/qa-setup.ts), a Vitest setup file, writes that
+**Failure evidence, for every e2e spec.** [`launch-electron.mjs`](../../test/support/launch-electron.mjs)
+starts recording each launched app ([`qa-evidence.mjs`](../../test/support/qa-evidence.mjs)) and, at close,
+snapshots its final state. [`qa-setup.ts`](../../test/support/qa-setup.ts), a Vitest setup file, writes that
 snapshot only if the test failed, and drops it otherwise. A failed spec leaves
 `qa-artifacts/latest/<spec>/<test>/` (gitignored; linked from `qa-artifacts/latest/index.md`):
 
@@ -338,7 +338,7 @@ CI uploads `qa-artifacts/latest/` when the `e2e` job fails. Collection runs unde
 setup file can write it; `ORIVON_QA_EVIDENCE=on` asks for it in a plain script and `off` turns it off. Typed values in password inputs are dropped from the DOM dump; the profile is a
 throwaway and the network is blackholed, so nothing else sensitive is written.
 
-**The layout audit** ([`qa-layout-audit.mjs`](../../test/qa-layout-audit.mjs)) runs inside each
+**The layout audit** ([`qa-layout-audit.mjs`](../../test/support/qa-layout-audit.mjs)) runs inside each
 shown shell view and reports: content outside the viewport, clipped text, a control covered by
 another element, a zero-size control, unexpected scrolling, a broken image or empty icon, a modal
 that is off-centre or outside the window, and `disabled` disagreeing with `aria-disabled`. An
@@ -363,7 +363,7 @@ deterministic checks already fail the spec; the reading is for what they cannot 
 is judged right only on positive evidence that it shows what it should.
 
 **Limits.** A question is drawn in the question panel, an overlay page: a spec reads and presses its real
-buttons (`test/question-support.ts`) and records the native boxes opened, which must be none. Leave this
+buttons (`test/support/question-support.ts`) and records the native boxes opened, which must be none. Leave this
 page is still a native box, so the specs replace it. `capturePage()` fails without a GPU, so captures go through Playwright's own
 screenshot of each view (measured behaviour in the `orivon-electron` skill). An uncaught exception
 in the main process raises a blocking error dialog, so no spec provokes one. Malformed calls to
@@ -398,66 +398,49 @@ outside `attach-view.ts`.
 
 ## Guards
 
-Fifteen checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
+Sixteen checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
 and CI's `check` job runs all of them; [`../../scripts/README.md`](../../scripts/README.md) says
 what each one enforces.
 
 `check:natives` · `check:contracts` · `check:secrets` · `check:vectors` · `check:comments` ·
 `check:size` · `check:questions` · `check:manifest-parity` · `check:page-globals` ·
 `check:dev-grant-absent` · `check:advisories` · `check:devlog` · `check:native-dialogs` ·
-`check:app-behaviours` · `check:contracts-surface` (§App behaviours)
+`check:test-paths` · `check:app-behaviours` · `check:contracts-surface` (the last two: §App behaviours)
 
-Every one is an exported pure function over a root directory, unit tested in
-`scripts/tests/` against temp fixtures, with a CLI block guarded by `isInvokedDirectly` so the
-test can import it without running it. Follow that shape if you add another, and add the CI step
-in the same change: `scripts/tests/check-scripts-in-ci.test.ts` fails the unit suite if a
-`check:*` script exists with no step to run it.
+Every one is an exported pure function over a root directory, unit tested against temp fixtures
+(`scripts/tests/`, or `tests/` beside a guard that has its own folder under `scripts/`), with a CLI block
+guarded by `isInvokedDirectly` so the test can import it without running it. Follow that shape if you add
+another, and add the CI step in the same change: `scripts/tests/check-scripts-in-ci.test.ts` fails the unit
+suite if a `check:*` script exists with no step to run it.
 
 A guard imports `node:*` builtins and nothing from `src/` -- one that depended on the code it
 guards could be disabled by the change it exists to catch.
 
 ---
 
+## Where a spec lives
+
+`test/` is a list of areas, one folder each, and [`../../test/README.md`](../../test/README.md) says what each
+proves and where the shared harness (`test/support/`) is. A spec goes in the folder of the area it proves; a
+new area is a new folder and a new row in that table. `check:test-paths` fails a `*.test.ts` left at the top
+of `test/`, a folder with no row, and any mention of a `test/` path that does not exist.
+
+---
+
 ## App behaviours
 
-[`app-behaviours.md`](app-behaviours.md) lists what a working app relies on, one behaviour to an
-entry, each tied to the e2e spec that proves it. The suites above are grouped by what Orivon built;
-this page is grouped by what an app needs, so a change that breaks an app turns a test red whose name
-says which behaviour went, whichever file the change was in. `check:app-behaviours` keeps the page and the
-specs in step.
+What a working app relies on, behaviour by behaviour, is kept in [`../../test/app-behaviours/`](../../test/app-behaviours/README.md):
+a catalogue of rows, each proven by an end-to-end spec whose test is titled `[app:<id>]`, and a table that
+gives every capability kind a line. The suites above are grouped by what Orivon built; the catalogue is
+grouped by what an app needs, so a change that breaks an app turns a test red whose name says which behaviour
+went, whichever file the change was in.
 
-**A failing `[app:<id>]` test means an app that relies on that behaviour is broken.** Read the entry,
-which names the apps and ports that rely on it, then do one of two things:
-
-- Fix the change. Most of the time the behaviour should not have moved.
-- Change the behaviour on purpose: edit the entry's sentence, add a line under `### Changed for apps` in
-  [`CHANGELOG.md`](../../CHANGELOG.md) (`` - **`<id>`**: what changed. Apps that <do Y> must now <do Z>.
-  Recheck: <ports>. ``), and put the same in the PR's **Dev:** line. CI fails a pull request that changes or
-  removes an entry's sentence with no such line. Never edit the test until it passes, and never skip it.
-
-**Adding an entry.** When a port, a user or a fix shows an app relying on something no entry covers:
-
-1. State the behaviour generically and observably ("data an app writes to IndexedDB survives a browser
-   restart"), never as one app's feature. Name an app or port only if a tracked file already names it.
-2. Find the e2e spec that proves it through the real shell. A unit test may stand beside it but never
-   proves an entry alone: it exercises a function in isolation, cannot see a wiring that broke, and is
-   edited in the same pull request as the code it tests. Where none exists, write a small generic spec:
-   the smallest page that shows the behaviour, loopback only, `startServer` on port 0, several
-   behaviours to a launch, waiting on state and never on the clock.
-3. Put `[app:<id>]` in the title of the `it` that proves it (several ids may share a title). It carries
-   no modifier, or `skipIf(!ORDINARY_BUILD)` for a spec that needs the build without the developer-only
-   hooks; that spec must be in the `e2e-ordinary` job of `ci.yml`. A skipped or narrowed test proves nothing, so
-   the guard refuses it.
-4. Watch it fail: break the behaviour in the code, see the test go red, restore it.
-5. Add the row. A behaviour no spec proves yet is `not covered: <reason>`, and the reason is the debt.
-
-**The contracts surface.** [`test/snapshots/contracts-surface.txt`](../../test/snapshots/contracts-surface.txt)
-is `src/contracts/` with its comments removed: every export, capability kind, error code and `LIMITS`
-value an app can write against. `check:contracts-surface` fails when it and the source disagree, so a
-change to a contract file shows up in the same diff as a change to the snapshot
-(`node scripts/check-contracts-surface.mjs --update` rewrites it). Rewording a comment changes nothing.
-A pull request that changes a file's section needs a line under `### Changed for apps` that names
-`` `contracts/<file>` ``, the same record a changed behaviour takes.
+**You must add or change a row, and a spec, when you add a capability, port an app, fix a bug an app
+reported, or change what an app can count on.** Its README says exactly when, how to add one, and what a
+failing `[app:<id>]` test means. `check:app-behaviours` keeps the catalogue, the specs and the capability
+table in step; `check:contracts-surface` keeps a snapshot of `src/contracts/`. Like the first, on pull
+requests it demands a line under `### Changed for apps` in [`CHANGELOG.md`](../../CHANGELOG.md) for a change
+an app would feel.
 
 ---
 

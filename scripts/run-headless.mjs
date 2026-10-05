@@ -1,11 +1,11 @@
 /**
- * Wraps a test/smoke command so it never paints on a real screen by
+ * Wraps a test or smoke command so it never paints on a real screen by
  * default (owner request: a build/test run must not interrupt whatever is
  * on the owner's real desktop). On Linux with xvfb-run on PATH, the wrapped
  * command runs under a fresh virtual display instead -- nothing appears on
  * screen at all. Everywhere else (no xvfb-run: macOS, Windows, or a Linux
  * box that never installed it) it runs directly; ORIVON_WINDOW_NO_FOCUS,
- * defaulted on by test/launch-electron.mjs for every Electron launch it
+ * defaulted on by test/support/launch-electron.mjs for every Electron launch it
  * makes, is what keeps THAT run from stealing focus instead. See
  * docs/development/setup.md, "The no-focus switch".
  *

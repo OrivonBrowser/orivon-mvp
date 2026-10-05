@@ -17,7 +17,7 @@ WebAssembly runs in an app exactly as it runs in Node. Every gap in these tables
 build, taken case by case as a real app reaches it, never a rule about which apps may exist.
 
 What a working app relies on, behaviour by behaviour and each tied to the end-to-end spec that
-proves it, is indexed in [`../development/app-behaviours.md`](../development/app-behaviours.md).
+proves it, is indexed in [`../../test/app-behaviours/catalogue.md`](../../test/app-behaviours/catalogue.md).
 
 Two axes, and they fail in completely different ways:
 
@@ -607,9 +607,9 @@ explaining *why a tier exists*, it belongs there.
 
 What an extension gets in this build. Measured two ways: five real extensions (uBlock Origin
 Lite, Dark Reader, Bitwarden, MetaMask, and the optional full uBlock Origin) through
-`test/e2e-extensions-real.test.ts`, and a sixth
+`test/extensions/e2e-extensions-real.test.ts`, and a sixth
 (Volume Master, opt-in via `ORIVON_VOLUME_MASTER_DIR`) through
-`test/e2e-extensions-offscreen-capture.test.ts`; plus a full `chrome.*` namespace sweep across a
+`test/extensions/e2e-extensions-offscreen-capture.test.ts`; plus a full `chrome.*` namespace sweep across a
 service worker, popup, options page, a `side_panel`-declared tab, a sandboxed page and content
 scripts (isolated and MAIN world, MV2 and MV3), run with the Chromium sandbox on.
 
@@ -650,7 +650,7 @@ scripts (isolated and MAIN world, MV2 and MV3), run with the Chromium sandbox on
 | `options_page` | ✅ | Opens in a tab |
 | `options_ui` | ⚠️ | Opens in a tab, same as `options_page`; the embedded (`open_in_new_tab: false`) mode is not implemented |
 | `chrome_url_overrides` (`newtab`, `history`, `bookmarks`) | ❌ | Not honoured: a new tab shows Orivon's own dashboard, History and Bookmarks their own pages; an extension's page can still be opened as a tab with `chrome.tabs.create` |
-| `devtools_page` | ✅ | Runs in the DevTools frame and `chrome.devtools.panels.create` calls back (`vendor/electron-chrome-extensions/UPSTREAM.md`, `test/e2e-extensions-sweep.test.ts`) |
+| `devtools_page` | ✅ | Runs in the DevTools frame and `chrome.devtools.panels.create` calls back (`vendor/electron-chrome-extensions/UPSTREAM.md`, `test/extensions/e2e-extensions-sweep.test.ts`) |
 | `web_accessible_resources` | ✅ | Tracked for the install prompt; Chromium enforces the resource list itself |
 | `externally_connectable` | ✅ | Chromium's own: a page whose address matches gets `chrome.runtime.sendMessage` and `connect`, and the extension's `onMessageExternal` and `onConnectExternal` fire; no Orivon code; the sender's `tab` carries `windowId` 0 |
 | `commands` | ✅ | Suggested keys are bound when free; `_execute_action` activates the extension; rebinding at `orivon://extensions/shortcuts`; Orivon's own shortcuts win; macOS key names are not run on a Mac (`extension-commands.ts`, `extension-commands-runner.ts`) |
@@ -811,7 +811,7 @@ the reference set, and whether this build has it.
 | QR code share of current page | ✅ | Share > Create QR code in the main menu, or the page menu, opens a sheet with the code, Copy link and Download as PNG (`src/main/qr/`, `src/renderer/overlay/qr/`) |
 | `view-source:` | ✅ | `page.viewSource` (`Ctrl+U`) and the page menu open `view-source:<address>` in a tab beside the page, for an http(s) page in an ordinary tab (`src/main/page-tools/view-source.ts`); typing `view-source:` and an http(s) address in the bar does the same, and anything else after it is searched (`src/main/pages/internal-aliases.ts`, `src/main/shell/tab-navigation.ts`) |
 | `data:` / `file:` typed in the address bar | 🚫 | `DANGEROUS_SCHEMES` refuses `javascript:`, `data:`, `file:` and `about:` typed or pasted; `about:<name>` for a page Orivon has is the one exception |
-| `file://` browsing (via a link, not typed) | ⚠️ | A `file:` link on a web page loads nothing and a typed `file:` address is refused, leaving a blank tab; the behaviour is Chromium's (measured in `test/e2e-address-bar.test.ts`) |
+| `file://` browsing (via a link, not typed) | ⚠️ | A `file:` link on a web page loads nothing and a typed `file:` address is refused, leaving a blank tab; the behaviour is Chromium's (measured in `test/toolbar/e2e-address-bar.test.ts`) |
 
 ### Tabs
 
@@ -990,7 +990,7 @@ the reference set, and whether this build has it.
 | Serial (Web Serial) | ❌ | Same device-permission denial |
 | HID (WebHID) | ❌ | Same denial; also excluded by design for apps (`hid` is 🚫) |
 | Bluetooth (Web Bluetooth) | ❌ | No `select-bluetooth-device` listener exists, and Electron's typings say every Bluetooth request is then cancelled (not measured). The device-permission handler does not cover Bluetooth |
-| Sensors (motion/orientation/ambient light) | ⚠️ | No Electron permission name exists for them; measured on Linux: `Accelerometer` fails with `NotAllowedError`, `devicemotion` still fires and `AmbientLightSensor` is undefined; no prompt and no store (`test/e2e-site-asks.test.ts` prints the probe) |
+| Sensors (motion/orientation/ambient light) | ⚠️ | No Electron permission name exists for them; measured on Linux: `Accelerometer` fails with `NotAllowedError`, `devicemotion` still fires and `AmbientLightSensor` is undefined; no prompt and no store (`test/sites/e2e-site-asks.test.ts` prints the probe) |
 | Pop-ups | ✅ | A window a page opens with no click, touch or key press from the person in that tab in the last five seconds is blocked and listed under an address-bar chip, one window per input; per-site Allow and a default for every site; the rule is a recency test on browser-side input, since Electron reports no gesture flag (`src/main/site-settings/popup-policy.ts`, `tab-interaction.ts`) |
 | Redirects | ➖ | Chromium's own default navigation handling applies |
 | Automatic downloads | ✅ | A second download a page starts without a click on one page load is paused and asked about; Block cancels it and Allow is remembered; a file small enough to finish before the pause is already on disk; a download the person clicked for is never held (`src/main/site-settings/auto-downloads.ts`) |
@@ -1005,9 +1005,9 @@ the reference set, and whether this build has it.
 | Images on/off per site | ✅ | Per site and for every site; the page's image requests are cancelled and alt text shows, from the next load, in the default session only; the browser's own favicon fetch is not one of them (`src/main/site-settings/content-rules.ts`) |
 | Sound per site | ✅ | Per site and for every site; a tab on a blocked site is silent at once, its speaker badge reads "Muted by site settings", and the tab's own mute never overrides it (`src/main/site-settings/site-sound.ts`, `src/main/shell/signals/audio.ts`) |
 | Zoom per site | ✅ | Remembered per origin (`src/main/zoom/`) |
-| Local fonts (Local Font Access API) | ❌ | No Electron permission name exists for it; measured on Linux: `queryLocalFonts()` resolves with no fonts; no prompt (`test/e2e-site-asks.test.ts` prints the probe) |
+| Local fonts (Local Font Access API) | ❌ | No Electron permission name exists for it; measured on Linux: `queryLocalFonts()` resolves with no fonts; no prompt (`test/sites/e2e-site-asks.test.ts` prints the probe) |
 | Screen/window sharing (`getDisplayMedia`) | ❌ | Left unset (Electron's own default refusal) |
-| Persistent storage (`navigator.storage.persist`) | ❌ | No Electron permission name exists for it; measured on Linux: `persist()` resolves `false`; no prompt (`test/e2e-site-asks.test.ts` prints the probe) |
+| Persistent storage (`navigator.storage.persist`) | ❌ | No Electron permission name exists for it; measured on Linux: `persist()` resolves `false`; no prompt (`test/sites/e2e-site-asks.test.ts` prints the probe) |
 | AR/VR (WebXR) | ⚠️ | No Electron permission name exists for it; Chromium's default in this build applies (not measured) |
 | Fullscreen (`requestFullscreen`) | ✅ | Allowed from a click on every page (`ADR-0025`) |
 | Pointer lock | ✅ | Allowed, click-gated by Chromium (`ADR-0026`) |
@@ -1034,7 +1034,7 @@ the reference set, and whether this build has it.
 | Translate | ❌ | Not found |
 | Spellcheck | ⚠️ | `spellcheck.enabled` (on by default) checks text in every tab; the menu offers up to five suggestions, Add to Dictionary and a Check Spelling switch; no language picker, and Chromium downloads each dictionary once (`src/main/spellcheck/`) |
 | Dictionary / look up word | ❌ | Not found |
-| PDF viewer | ✅ | A served PDF opens in an ordinary tab in Chromium's built-in viewer with no `plugins` flag and no setting (`test/e2e-page-tools.test.ts`) |
+| PDF viewer | ✅ | A served PDF opens in an ordinary tab in Chromium's built-in viewer with no `plugins` flag and no setting (`test/page/e2e-page-tools.test.ts`) |
 | Image viewer | ➖ | Chromium's own default applies |
 | Picture-in-picture | ✅ | `page.pip` (More tools, the video's menu) pops out the video under the pointer, or the playing or largest one, and puts it back on a second run (`src/main/page-tools/pip.ts`) |
 | Media controls / global media hub | ❌ | Not found |
@@ -1047,7 +1047,7 @@ the reference set, and whether this build has it.
 | Alert / confirm / prompt dialogs | ✅ | Drawn in the tab's question panel under the asking frame's own origin, with a "do not let this page show more dialogs" tick from a document's third dialog. `alert` and `confirm` come from Electron's own dialog event and `prompt` from the tab's top-frame preload (a subframe's `prompt` throws, as in Electron). Electron's native box is not drawn for a tab or a `<webview>` guest. A call Chromium ignores (a sandbox without `allow-modals`, a handler running because the page is being left) is ignored here too |
 | Pinch zoom, smooth scrolling, autoscroll (middle-click drag on a page) | ➖ | Chromium's own default applies to page content |
 | Drag-and-drop of links/images/files into the page | ➖ | Chromium's own default applies |
-| Network / DNS / certificate error pages ("can't be reached") | ✅ | Overlay `load-error` (`src/main/sad-tab/load-error-watch.ts`) over a tab whose page failed to load: a sentence per network error, the address, Chromium's short error name and Try again; a certificate failure gets the `cert-error` sheet instead, and a failed HTTPS-only upgrade its own (`test/e2e-load-error.test.ts`) |
+| Network / DNS / certificate error pages ("can't be reached") | ✅ | Overlay `load-error` (`src/main/sad-tab/load-error-watch.ts`) over a tab whose page failed to load: a sentence per network error, the address, Chromium's short error name and Try again; a certificate failure gets the `cert-error` sheet instead, and a failed HTTPS-only upgrade its own (`test/page/e2e-load-error.test.ts`) |
 | "Aw, snap" crash page / sad-tab reload | ✅ | Overlay `sad-tab` (`src/main/sad-tab/`) over a crashed active tab with Reload and Close tab; an unresponsive page gets the same card with Wait and Reload; a background crash shows only the strip icon until the tab is activated |
 | `beforeunload` guard | ✅ | Asks Leave/Stay in the question panel while the page stays; Leave runs again a navigation the shell started, and a page's own navigation is repeated by the person (`leave-page-prompt.ts`) |
 
@@ -1102,7 +1102,7 @@ the reference set, and whether this build has it.
 | Speech synthesis | ➖ | Ungated; no browser-level UI uses it |
 | Web Bluetooth / USB / Serial / HID | ❌ | USB, Serial and HID: the check handler denies `usb`, `serial` and `hid` and the device-permission handler answers `false`. Bluetooth: no `select-bluetooth-device` listener exists, and Electron's typings say every Bluetooth request is then cancelled (not measured); the device-permission handler does not cover Bluetooth |
 | Gamepad API | ➖ | Ungated; Chromium's own default applies |
-| Screen Wake Lock API | ❌ | No Electron permission name exists for it; measured on Linux: `wakeLock.request('screen')` rejects with `NotAllowedError`; no prompt (`test/e2e-site-asks.test.ts` prints the probe) |
+| Screen Wake Lock API | ❌ | No Electron permission name exists for it; measured on Linux: `wakeLock.request('screen')` rejects with `NotAllowedError`; no prompt (`test/sites/e2e-site-asks.test.ts` prints the probe) |
 | EyeDropper API | ➖ | Ungated; Chromium's own default applies |
 | File System Access API (single file) | ✅ | See Site settings |
 | Clipboard API | ✅ | Write allowed outright; read asked once per site and remembered (see Clipboard read) |

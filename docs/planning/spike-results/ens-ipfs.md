@@ -21,7 +21,7 @@ by fingerprint only.
 
 The conditions on the GO, all built: one resolver-rules value with dev names first; the verify
 proc on every session through `session-created`; an end-to-end canary that fails if Local Network
-Access starts being enforced (`test/e2e-eth-verified.test.ts`); and a `security-model.md` row for
+Access starts being enforced (`test/web3/e2e-eth-verified.test.ts`); and a `security-model.md` row for
 the loopback socket, since T15 as written says "no localhost socket".
 
 The fallback, sized but not built: one partition per `.eth` origin, with `protocol.handle('https')`

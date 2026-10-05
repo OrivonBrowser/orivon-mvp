@@ -787,7 +787,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Question:** Electron 44 enforces no CORS on `protocol.handle` responses, so
   `src/loader/reach/cors.ts` and `web-context-host.ts`'s wrapper change nothing. Keep them?
 - **Why it matters:** If a later Electron enforces CORS, worker `fetch` and XHR keep working.
-- **Options:** keep; re-run `test/e2e-served-csp.test.ts` on every Electron upgrade, adding tests
+- **Options:** keep; re-run `test/app-loading/e2e-served-csp.test.ts` on every Electron upgrade, adding tests
   that fail without the headers once enforcement arrives (rec.).
 - **Who decides:** research first
 - **Blocks:** nothing
@@ -1071,7 +1071,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Question:** Electron 44 disables `LocalNetworkAccessChecks`, so any page can fetch
   `http://127.0.0.1:<port>/` unseen by the gate. Accept this build, or block it?
 - **Why it matters:** a gap in `security-model.md` T12 (covers only `orivon.*` sockets). `.eth`
-  pages are served from loopback; `test/e2e-eth-verified.test.ts` is the canary.
+  pages are served from loopback; `test/web3/e2e-eth-verified.test.ts` is the canary.
 - **Options:** accept and say so in T12; block in the shell (a `webRequest` filter on private
   destinations requested from public documents).
 - **Who decides:** owner
@@ -1430,7 +1430,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 ### B5: Where FreeTube's storage assertions belong, and what they assert **[AI-REC]**
 
-- **Question:** `test/e2e-freetube-real.test.ts` asserts nedb files at the app's fs root, a claim
+- **Question:** `test/ported-apps/e2e-freetube-real.test.ts` asserts nedb files at the app's fs root, a claim
   about a bundle built in `orivon-ports` (ADR-0020). Move those checks there? Its IndexedDB
   check also passes on `localforage`, a name the failing build never uses (`NeDB`).
 - **Why it matters:** CI never checks out `orivon-ports`, so the coupling fails unseen.
@@ -1549,7 +1549,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 - **Question:** A doubled-slash spelling of a sandbox page gets the sandbox CSP, an opaque origin and no
   injected `chrome.*` from the vendored library, yet `chrome.tabs.query({})` still returns real tab data there
-  (measured through `WebFrameMain.executeJavaScript`, `test/e2e-extensions-sandbox-page.test.ts`). What answers?
+  (measured through `WebFrameMain.executeJavaScript`, `test/extensions/e2e-extensions-sandbox-page.test.ts`). What answers?
 - **Why it matters:** code in a sandbox page reached by that spelling can still read the person's open tabs.
 - **Options:** redirect every non-canonical `chrome-extension://` path to its canonical form before it loads,
   then confirm the query is refused (rec.); find the Electron native binding that answers and patch it; leave it.
@@ -1946,7 +1946,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   which measured on installed-app partitions handed a routed 302 to the page as the final response. Does a context's
   `fetch()` of a redirecting granted host get the redirect's status instead of the final page?
 - **Why it matters:** an app reading a site through a web context would see redirects fail.
-- **Options:** measure a 302 in `test/e2e-web-context-network.test.ts`, then drop the listener for the dead proxy the
+- **Options:** measure a 302 in `test/capabilities/e2e-web-context-network.test.ts`, then drop the listener for the dead proxy the
   context already sets, re-measuring that a WebSocket still fails (rec.); leave it.
 - **Who decides:** research first
 - **Blocks:** nothing

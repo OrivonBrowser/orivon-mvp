@@ -17,6 +17,11 @@ entirely.
 | [`ports/`](ports/) | The isolated-world per-socket state machines that installer wraps |
 | [`routed/`](routed/) | ADR-0017's routed network path: the main-world `fetch`, `XMLHttpRequest`, `EventSource` and `WebSocket` |
 
+**Breaking an app.** What a working app relies on is a row of
+[`test/app-behaviours/catalogue.md`](../../test/app-behaviours/catalogue.md), proven by an end-to-end spec, so a
+change here that breaks one fails a test that names it. A new or changed capability needs its rows and specs
+([README](../../test/app-behaviours/README.md)); CI fails a capability kind that has no line in the catalogue's coverage table.
+
 **What it depends on.** `electron` (via `require`: these are CommonJS),
 [`src/contracts/`](../contracts/) for types, and, from `expose-shim-globals.ts` only,
 [`src/shim/globals.ts`](../shim/globals.ts): the one shim file with no `electron` import and no

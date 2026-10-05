@@ -14,7 +14,7 @@ import {
   tabViews,
   waitFor,
   waitForTab
-} from '../test/smoke-helpers.mjs'
+} from '../test/support/smoke-helpers.mjs'
 
 /**
  * @param {{

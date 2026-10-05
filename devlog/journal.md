@@ -22,6 +22,9 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 
 - Wayland tab drags are now the browser's own drag and drop: the drag image follows outside the window and the other window marks the slot.
 - A catalogue of what apps rely on now has a test per row; a broker change that breaks an app fails by name.
+- test/ is grouped into areas, and a new capability, port or app bug has one README saying a row and a spec are required.
+- All six Orivon apps are on IPFS, listed in Explore, and judged by Orivon Attila, our official Web3 Score provider.
+- An ipfs:// tab icon now waits out slow gateways instead of giving up at 5 s, the likely reason The Lounge showed none.
 
 ### In my head
 

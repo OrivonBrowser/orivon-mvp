@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 // electron/fetch.ts's own header for why) -- mocked here so this file can
 // assert what they hand `net.request`/`net.resolveHost`, and how they treat
 // each redirect, without a real network call or a real Electron process.
-// test/e2e-loader-adapter.test.ts proves the same against a real server.
+// test/app-loading/e2e-loader-adapter.test.ts proves the same against a real server.
 vi.mock('electron', () => ({
   net: { request: vi.fn(), resolveHost: vi.fn() }
 }))

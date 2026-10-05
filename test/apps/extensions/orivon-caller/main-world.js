@@ -6,7 +6,7 @@
 // not).
 //
 // Which scenario runs is selected by the fixture page's own path
-// (test/e2e-extensions-orivon-filter.test.ts's own server): every scenario
+// (test/extensions/e2e-extensions-orivon-filter.test.ts's own server): every scenario
 // below calls the SAME harmless, already-registered method, orivon.app.
 // manifest().
 (function () {
