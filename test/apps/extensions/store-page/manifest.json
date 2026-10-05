@@ -1,0 +1,8 @@
+{
+  "manifest_version": 3,
+  "name": "Orivon E2E Store Page",
+  "version": "1.0.0",
+  "description": "Fixture for test/extensions/e2e-extensions-store-page.test.ts: no service worker, a browser action and one content script, so a store install of it is a load with nothing running after it.",
+  "action": { "default_title": "Store page" },
+  "content_scripts": [{ "matches": ["http://127.0.0.1/*"], "js": ["content.js"] }]
+}

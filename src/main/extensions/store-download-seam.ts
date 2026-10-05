@@ -19,18 +19,20 @@ declare global {
   var __orivonDevStoreTestSeam: boolean | undefined
 }
 
-/** The real store's CRX download URL for `id`, unless
- * ORIVON_TEST_STORE_BASE_URL names a fixture server to use instead --
- * `<base>/<id>.crx`. */
+/** The fixture server's CRX URL for `id` when ORIVON_TEST_STORE_BASE_URL names one -- `<base>/<id>.crx` --
+ * and `undefined` in every other build, so the real store's URL stays in use. */
+export function storeCrxOverrideUrl (id: string): string | undefined {
+  if (!SEAM_ENABLED) return undefined
+  const base = process.env['ORIVON_TEST_STORE_BASE_URL']
+  if (base === undefined) return undefined
+  globalThis.__orivonDevStoreTestSeam = true
+  return `${base}/${id}.crx`
+}
+
+/** The real store's CRX download URL for `id`, unless the test seam above names a fixture server. */
 export function storeCrxDownloadUrl (id: string): string {
-  if (SEAM_ENABLED) {
-    const base = process.env['ORIVON_TEST_STORE_BASE_URL']
-    if (base !== undefined) {
-      globalThis.__orivonDevStoreTestSeam = true
-      return `${base}/${id}.crx`
-    }
-  }
-  return `https://clients2.google.com/service/update2/crx?response=redirect&acceptformat=crx2%2Ccrx3&x=id%3D${id}%26uc&prodversion=${process.versions.chrome}`
+  return storeCrxOverrideUrl(id) ??
+    `https://clients2.google.com/service/update2/crx?response=redirect&acceptformat=crx2%2Ccrx3&x=id%3D${id}%26uc&prodversion=${process.versions.chrome}`
 }
 
 /** Overrides crx.ts's CHROME_WEB_STORE_PUBLISHER_KEY_HASH, so a fixture CRX

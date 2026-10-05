@@ -36,7 +36,14 @@ vi.mock('../registry-runner.js', () => ({
   patchStoreUpdater: vi.fn()
 }))
 
-const { buildWebStoreHost, recordUpdateCheck } = await import('../store-runner.js')
+const installChromeWebStore = vi.fn(async (_options: Record<string, any>) => {})
+
+vi.mock('../../../../vendor/electron-chrome-web-store/src/browser/index.js', () => ({
+  installChromeWebStore: (options: Record<string, any>) => installChromeWebStore(options),
+  updateExtensions: vi.fn()
+}))
+
+const { buildWebStoreHost, recordUpdateCheck, startWebStore } = await import('../store-runner.js')
 const { patchStoreUpdater } = await import('../registry-runner.js')
 
 const STORE_ENTRY: InstalledExtension = {
@@ -137,6 +144,34 @@ describe('buildWebStoreHost().uninstall', () => {
     expect(seenMessage).toBe(`Remove ${STORE_ENTRY.name}?`)
     expect(seenAccept).toBe('Remove')
     expect(uninstallMock).toHaveBeenCalledWith(expect.anything(), STORE_ENTRY.id)
+  })
+})
+
+describe('buildWebStoreHost().crxUrl', () => {
+  it('is undefined outside a test-seam build, so the library keeps the store\'s own download URL', () => {
+    expect(buildWebStoreHost(ctxWith()).crxUrl?.(STORE_ENTRY.id)).toBeUndefined()
+  })
+})
+
+describe('startWebStore', () => {
+  beforeEach(() => { installChromeWebStore.mockClear() })
+
+  it('starts the store with updates and the install question in an ordinary runtime', async () => {
+    const prompt = vi.fn(async () => true)
+    await startWebStore({ ...ctxWith(prompt), privateSession: false }, '/preload.js')
+    const options = installChromeWebStore.mock.calls[0]![0]
+    expect(options['autoUpdate']).toBe(true)
+    expect(options['preloadPath']).toBe('/preload.js')
+  })
+
+  it('in a private runtime keeps the page APIs, runs no updater and denies every install with no question', async () => {
+    const prompt = vi.fn(async () => true)
+    await startWebStore({ ...ctxWith(prompt), privateSession: true }, '/preload.js')
+    const options = installChromeWebStore.mock.calls[0]![0]
+    expect(options['autoUpdate']).toBe(false)
+    const manifest = { name: 'x', version: '1', manifest_version: 3 }
+    await expect(options['beforeInstall']({ manifest, frame: {} })).resolves.toEqual({ action: 'deny' })
+    expect(prompt).not.toHaveBeenCalled()
   })
 })
 
