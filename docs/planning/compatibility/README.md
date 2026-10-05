@@ -11,7 +11,7 @@ code does, in the same pull request, and so does the readable row that sums it u
 page.
 
 What a working app relies on, behaviour by behaviour and each tied to the end-to-end spec that
-proves it, is [`../../development/app-behaviours.md`](../../development/app-behaviours.md).
+proves it, is [`../../../test/app-behaviours/catalogue.md`](../../../test/app-behaviours/catalogue.md).
 
 | File | Table |
 |---|---|

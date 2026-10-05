@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
-  CATALOGUE, CI_WORKFLOW, checkCatalogue, findSuiteSwitches, findTests, findUnrecordedChanges, jobText, parseCatalogue
+  CATALOGUE, CI_WORKFLOW, CONTRACT, capabilityKinds, checkCatalogue, findSuiteSwitches, findTests, findUnrecordedChanges, jobText, parseCatalogue, parseCoverage
 } from '../check-app-behaviours.mjs'
 
 const HEADER = '| Id | Behaviour | Apps | Ports | Proven by |\n|---|---|---|---|---|\n'
 const row = (id: string, proven: string, behaviour = 'It works.'): string => `| \`${id}\` | ${behaviour} | wallets | - | ${proven} |\n`
 const spec = (name: string): string => `[\`test/${name}\`](../../test/${name})`
+
+/** A contract that declares no capability kind, so a catalogue under test needs no coverage table. */
+const NO_KINDS = 'export type CapabilityKind = never\n'
+const kindsOf = (...kinds: string[]): string => `export type CapabilityKind =\n${kinds.map((kind) => `  /** doc */\n  | '${kind}'`).join('\n')}\n\nexport interface Next {}\n`
 
 const WORKFLOW = [
   'jobs:',
@@ -26,7 +30,7 @@ const WORKFLOW = [
 /** A scratch repository holding a catalogue, a workflow and the given files. */
 const fixture = (catalogue: string, files: Record<string, string> = {}, workflow = WORKFLOW): string => {
   const root = mkdtempSync(join(tmpdir(), 'orivon-behaviours-'))
-  const all: Record<string, string> = { [CATALOGUE]: catalogue, [CI_WORKFLOW]: workflow, ...files }
+  const all: Record<string, string> = { [CATALOGUE]: catalogue, [CI_WORKFLOW]: workflow, [CONTRACT]: NO_KINDS, ...files }
   for (const [path, body] of Object.entries(all)) {
     mkdirSync(join(root, dirname(path)), { recursive: true })
     writeFileSync(join(root, path), body)
@@ -211,5 +215,59 @@ describe('findUnrecordedChanges', () => {
   it('ignores differences in whitespace inside the behaviour sentence', () => {
     const head = base.replace('Before.', 'Before.  ')
     expect(findUnrecordedChanges({ baseCatalogue: base, headCatalogue: head, baseChangelog: log([]), headChangelog: log([]) })).toEqual([])
+  })
+})
+
+describe('capabilityKinds', () => {
+  it('reads the members of the union, skipping comments, and stops at the next declaration', () => {
+    expect(capabilityKinds(kindsOf('tcp.connect', 'fs'))).toEqual(['tcp.connect', 'fs'])
+    expect(capabilityKinds('export type Other = 1\n')).toEqual([])
+  })
+})
+
+describe('parseCoverage', () => {
+  it('reads each backticked kind with the ids that prove it, or its not-covered reason', () => {
+    const text = '# t\n\n## Capability coverage\n\n| Capability | Rows |\n|---|---|\n| `fs` | `a-b`, `c-d` |\n| `id` | not covered: nothing relies on `x-y` yet |\n'
+    expect(parseCoverage(text)).toEqual([
+      { kind: 'fs', ids: ['a-b', 'c-d'], covered: true, line: 7 },
+      { kind: 'id', ids: [], covered: false, line: 8 }
+    ])
+    expect(parseCoverage('no table')).toEqual([])
+  })
+})
+
+describe('capability coverage in checkCatalogue', () => {
+  const rows = HEADER + row('a-b', spec('e2e-plain.test.ts'))
+  const proving = { 'test/e2e-plain.test.ts': PROVING('a-b') }
+  const table = (lines: string[]): string => `\n## Capability coverage\n\n| Capability | Rows |\n|---|---|\n${lines.join('\n')}\n`
+
+  it('passes when every kind has a line naming rows or a reason', () => {
+    const root = fixture(rows + table(['| `fs` | `a-b` |', '| `id` | not covered: nothing relies on it |']), { ...proving, [CONTRACT]: kindsOf('fs', 'id') })
+    expect(checkCatalogue(root)).toMatchObject({ ok: true, problems: [] })
+  })
+
+  it('fails a capability the contract declares and the catalogue has no line for', () => {
+    const root = fixture(rows + table(['| `fs` | `a-b` |']), { ...proving, [CONTRACT]: kindsOf('fs', 'tcp.connect') })
+    expect(checkCatalogue(root).problems.join('\n')).toContain('declares the capability `tcp.connect`')
+  })
+
+  it('fails a line for a kind that does not exist, a row that does not exist, a bare line and a repeated kind', () => {
+    const root = fixture(rows + table(['| `ghost` | `a-b` |', '| `fs` | `no-such-row` |', '| `id` | |', '| `id` | `a-b` |']), { ...proving, [CONTRACT]: kindsOf('fs', 'id') })
+    const joined = checkCatalogue(root).problems.join('\n')
+    expect(joined).toContain('`ghost` is not a capability kind')
+    expect(joined).toContain('names `no-such-row`')
+    expect(joined).toContain('`id` names no row')
+    expect(joined).toContain('`id` has two lines')
+  })
+
+  it('does not read the coverage table as catalogue rows', () => {
+    const root = fixture(rows + table(['| `fs` | `a-b` |']), { ...proving, [CONTRACT]: kindsOf('fs') })
+    expect(checkCatalogue(root).entries.map((entry) => entry.id)).toEqual(['a-b'])
+  })
+
+  it('fails when the contract cannot be read', () => {
+    const root = fixture(rows, proving)
+    rmSync(join(root, CONTRACT))
+    expect(checkCatalogue(root).problems.join()).toContain(`could not read ${CONTRACT}`)
   })
 })

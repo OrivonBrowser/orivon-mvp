@@ -1,5 +1,5 @@
 /**
- * Keeps the app-behaviour catalogue (`docs/development/app-behaviours.md`) and the specs that prove it
+ * Keeps the app-behaviour catalogue (`test/app-behaviours/catalogue.md`) and the specs that prove it
  * in step. Every entry names an e2e spec, that spec has a test titled `[app:<id>]` which CI runs, and no
  * spec names an id the catalogue lacks. With `--base <ref>` it also fails a pull request that changes
  * or removes an entry without a line under `### Changed for apps` in CHANGELOG.md.
@@ -11,10 +11,13 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, posix } from 'node:path'
-import { isInvokedDirectly, relativeToRoot } from './cli.mjs'
+import { isInvokedDirectly, relativeToRoot } from '../cli.mjs'
 
-export const CATALOGUE = 'docs/development/app-behaviours.md'
+export const CATALOGUE = 'test/app-behaviours/catalogue.md'
 export const CHANGELOG = 'CHANGELOG.md'
+/** The contract that declares every capability kind. */
+export const CONTRACT = 'src/contracts/manifest.ts'
+export const COVERAGE_HEADING = '## Capability coverage'
 export const CI_WORKFLOW = '.github/workflows/ci.yml'
 /** The CI job that runs the specs gated on an ordinary build. */
 export const ORDINARY_JOB = 'e2e-ordinary'
@@ -24,12 +27,12 @@ export const ORDINARY_GATE = '.skipIf(!ORDINARY_BUILD)'
 
 const ID = /^[a-z0-9]+(-[a-z0-9]+)*$/
 const MARKER = /\[app:([^\]\s]*)\]/g
+/** The guards' own tests are not scanned: they write marker-shaped text into scratch fixtures. */
 const SCANNED_DIRS = ['test', 'src', 'scripts/tests']
 const SCANNED_EXT = /\.(ts|tsx|mjs|js)$/
-/** The guard's own test writes marker-shaped text into scratch fixtures. */
-const SELF_TEST = 'scripts/tests/check-app-behaviours.test.ts'
 const NOT_COVERED = /^not covered:\s*\S/
-const E2E_SPEC = /^test\/e2e-[^/]+\.test\.ts$/
+/** An e2e spec: `e2e-*.test.ts` in any folder under test/ except the served apps in test/apps/. */
+const E2E_SPEC = /^test\/(?!apps\/)(?:[^/]+\/)*e2e-[^/]+\.test\.ts$/
 
 /**
  * @typedef {{ id: string, behaviour: string, apps: string, ports: string, provenBy: string,
@@ -45,7 +48,9 @@ export function parseCatalogue (text) {
   const entries = []
   const problems = []
   const seen = new Map()
-  text.split('\n').forEach((raw, i) => {
+  const cut = text.indexOf(COVERAGE_HEADING)
+  const rowsText = cut === -1 ? text : text.slice(0, cut)
+  rowsText.split('\n').forEach((raw, i) => {
     const line = i + 1
     const row = raw.trim()
     if (!row.startsWith('|')) return
@@ -127,6 +132,61 @@ export function findSuiteSwitches (source) {
   return [...source.matchAll(/\bdescribe\.(skip|todo|only|runIf|skipIf)\b/g)].map((m) => m[0])
 }
 
+/**
+ * The capability kinds the contract declares: the `'x'` members of `export type CapabilityKind`, read as
+ * text so the guard does not import the code it guards.
+ */
+export function capabilityKinds (manifestSource) {
+  const start = manifestSource.indexOf('export type CapabilityKind')
+  if (start === -1) return []
+  const kinds = []
+  for (const line of manifestSource.slice(start).split('\n').slice(1)) {
+    const trimmed = line.trim()
+    const member = /^\|\s*'([^']+)'/.exec(trimmed)
+    if (member !== null) kinds.push(member[1])
+    else if (trimmed !== '' && !/^(\/\*|\*|\/\/)/.test(trimmed)) break
+  }
+  return kinds
+}
+
+/**
+ * The lines of the catalogue's `## Capability coverage` table: a backticked kind, then the ids of the rows
+ * that prove what an app can do with it, or `not covered: <reason>`.
+ * @returns {Array<{ kind: string, ids: string[], covered: boolean, line: number }>}
+ */
+export function parseCoverage (text) {
+  const cut = text.indexOf(COVERAGE_HEADING)
+  if (cut === -1) return []
+  const before = text.slice(0, cut).split('\n').length
+  const out = []
+  text.slice(cut).split('\n').forEach((raw, i) => {
+    const cells = raw.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim())
+    const kind = /^`([^`]+)`$/.exec(cells[0] ?? '')
+    if (kind === null || !raw.trim().startsWith('|')) return
+    const proof = cells[1] ?? ''
+    const covered = !NOT_COVERED.test(proof)
+    out.push({ kind: kind[1], ids: covered ? [...proof.matchAll(/`([a-z0-9-]+)`/g)].map((m) => m[1]) : [], covered, line: before + i })
+  })
+  return out
+}
+
+/** Every capability kind has a line, no line names a kind that does not exist, and every id on a line is a row. */
+export function checkCoverage ({ kinds, coverage, ids }) {
+  const problems = []
+  const lines = new Map()
+  for (const line of coverage) {
+    if (lines.has(line.kind)) problems.push(`${CATALOGUE}:${line.line}: \`${line.kind}\` has two lines under ${COVERAGE_HEADING}`)
+    lines.set(line.kind, line)
+    if (!kinds.includes(line.kind)) problems.push(`${CATALOGUE}:${line.line}: \`${line.kind}\` is not a capability kind in ${CONTRACT}`)
+    if (line.covered && line.ids.length === 0) problems.push(`${CATALOGUE}:${line.line}: \`${line.kind}\` names no row and is not marked "not covered: <reason>"`)
+    for (const id of line.ids) if (!ids.has(id)) problems.push(`${CATALOGUE}:${line.line}: \`${line.kind}\` names \`${id}\`, which is not a row of this page`)
+  }
+  for (const kind of kinds) {
+    if (!lines.has(kind)) problems.push(`${CONTRACT} declares the capability \`${kind}\` and ${CATALOGUE} has no line for it under ${COVERAGE_HEADING}: add the rows an app can now count on, or "not covered: <reason>"`)
+  }
+  return problems
+}
+
 /** Ids a title carries, in order. */
 function markersOf (title) {
   return [...title.matchAll(MARKER)].map((m) => m[1])
@@ -169,6 +229,9 @@ export function checkCatalogue (root) {
   const { entries, problems } = parseCatalogue(text)
   if (entries.length === 0) problems.push(`${CATALOGUE} holds no entry`)
   const known = new Set(entries.map((entry) => entry.id))
+  let contract = null
+  try { contract = readFileSync(join(root, CONTRACT), 'utf8') } catch (err) { problems.push(`could not read ${CONTRACT}: ${err.code ?? err.message}`) }
+  if (contract !== null) problems.push(...checkCoverage({ kinds: capabilityKinds(contract), coverage: parseCoverage(text), ids: known }))
 
   let workflow = ''
   try { workflow = readFileSync(join(root, CI_WORKFLOW), 'utf8') } catch { /* reported below, when a spec needs it */ }
@@ -220,7 +283,6 @@ export function checkCatalogue (root) {
   const files = []
   for (const dir of SCANNED_DIRS) walk(root, dir, files)
   for (const file of files) {
-    if (file === SELF_TEST) continue
     let source
     try { source = readFileSync(join(root, file), 'utf8') } catch { continue }
     if (!source.includes('[app:')) continue
@@ -307,7 +369,7 @@ if (isInvokedDirectly(import.meta.url)) {
   const root = process.cwd()
   const result = checkCatalogue(root)
   if (!result.ok) {
-    console.error('\nApp-behaviour catalogue and specs disagree (docs/development/testing.md §App behaviours):\n')
+    console.error('\nApp-behaviour catalogue and specs disagree (test/app-behaviours/README.md):\n')
     for (const problem of result.problems) console.error(`  ${problem}`)
     console.error('')
     process.exit(1)

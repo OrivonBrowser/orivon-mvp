@@ -2,20 +2,20 @@
 // sockets and a real profile: what a grant reaches, what it refuses, and what an app that ports a Node
 // program gets back. One launch. Every refusal is a rejected call with a code, a positive signal; none is
 // read from an absence. Every check carries the id of the behaviour it protects
-// (docs/development/app-behaviours.md), so a change in src/broker/ that breaks an app names it here.
+// (test/app-behaviours/catalogue.md), so a change in src/broker/ that breaks an app names it here.
 //
 // The page is a bare loopback origin made an app by the developer-only grant, so the e2e build is required:
-//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-app-broker-rules.test.ts
+//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-behaviours/e2e-app-broker-rules.test.ts
 import { createServer as createTcpServer } from 'node:net'
 import type { AddressInfo, Server as TcpServer, Socket } from 'node:net'
 import { createServer as createTlsServer } from 'node:tls'
 import type { Server as TlsServer } from 'node:tls'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { generateSelfSignedFixture } from '../src/broker/adapters/tests/tls-adapter.test-helpers.js'
+import { generateSelfSignedFixture } from '../../src/broker/adapters/tests/tls-adapter.test-helpers.js'
 import { appManifest, grantApp, pageCall, startAppServer, type AppServer } from './app-behaviour-support.js'
-import { runPhase } from './support/e2e-helpers.js'
-import { assertNoElectronSurvivors, closeElectron } from './support/launch-electron.mjs'
-import { launchShell, QA_TEST_TIMEOUT_MS, visit } from './support/qa-helpers.js'
+import { runPhase } from '../support/e2e-helpers.js'
+import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
+import { launchShell, QA_TEST_TIMEOUT_MS, visit } from '../support/qa-helpers.js'
 
 let server: AppServer
 let echo: TcpServer
@@ -134,7 +134,7 @@ it('[app:tcp-connect-to-granted-loopback-port] [app:wildcard-host-never-reaches-
         const kept = await attempt(async () => (await orivon.fs.readFile('one.bin')).length)
         out['quotaKept'] = summary(kept, kept.ok ? kept.value : undefined)
         // A path outside the app's root is refused.
-        out['outside'] = summary(await attempt(async () => await orivon.fs.readFile('../outside.txt')))
+        out['outside'] = summary(await attempt(async () => await orivon.fs.readFile('../../outside.txt')))
 
         // TLS: a self-signed certificate is refused by default and accepted when the app opts out.
         out['tlsDefault'] = summary(await attempt(async () => { await (await orivon.net.connectSecure({ host: 'localhost', port: ports.tls })).close() }))

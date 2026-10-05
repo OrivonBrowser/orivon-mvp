@@ -1,17 +1,17 @@
 // What an app's page can count on from the browser around it, on an origin that is an app: a secure context,
 // history moves, a service worker, a settling wake lock, a noopener window, and Web Locks and pagehide
 // across two tabs of the same origin. One launch. Every check carries the id of the behaviour it protects
-// (docs/development/app-behaviours.md).
+// (test/app-behaviours/catalogue.md).
 //
 // The page is a bare loopback origin made an app by the developer-only grant, so the e2e build is required:
-//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-app-origin-platform.test.ts
+//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-behaviours/e2e-app-origin-platform.test.ts
 import type { Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { appManifest, grantApp, pageCall, startAppServer, type AppServer } from './app-behaviour-support.js'
-import { runPhase } from './support/e2e-helpers.js'
-import { assertNoElectronSurvivors, closeElectron } from './support/launch-electron.mjs'
-import { launchShell, QA_TEST_TIMEOUT_MS, visit } from './support/qa-helpers.js'
-import { findViewShowing, tabIds, waitFor } from './support/smoke-helpers.mjs'
+import { runPhase } from '../support/e2e-helpers.js'
+import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
+import { launchShell, QA_TEST_TIMEOUT_MS, visit } from '../support/qa-helpers.js'
+import { findViewShowing, tabIds, waitFor } from '../support/smoke-helpers.mjs'
 
 const HTML = 'text/html; charset=utf-8'
 const JS = 'text/javascript'

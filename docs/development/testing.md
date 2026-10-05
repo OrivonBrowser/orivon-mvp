@@ -451,11 +451,11 @@ which names the apps and ports that rely on it, then do one of two things:
 4. Watch it fail: break the behaviour in the code, see the test go red, restore it.
 5. Add the row. A behaviour no spec proves yet is `not covered: <reason>`, and the reason is the debt.
 
-**The contracts surface.** [`test/snapshots/contracts-surface.txt`](../../test/snapshots/contracts-surface.txt)
+**The contracts surface.** [`test/app-behaviours/contracts-surface.txt`](../../test/app-behaviours/contracts-surface.txt)
 is `src/contracts/` with its comments removed: every export, capability kind, error code and `LIMITS`
 value an app can write against. `check:contracts-surface` fails when it and the source disagree, so a
 change to a contract file shows up in the same diff as a change to the snapshot
-(`node scripts/check-contracts-surface.mjs --update` rewrites it). Rewording a comment changes nothing.
+(`node scripts/app-behaviours/check-contracts-surface.mjs --update` rewrites it). Rewording a comment changes nothing.
 A pull request that changes a file's section needs a line under `### Changed for apps` that names
 `` `contracts/<file>` ``, the same record a changed behaviour takes.
 

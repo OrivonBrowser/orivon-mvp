@@ -11,11 +11,11 @@
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { isInvokedDirectly } from './cli.mjs'
+import { isInvokedDirectly } from '../cli.mjs'
 import { changedSection } from './check-app-behaviours.mjs'
 
 export const CONTRACTS_DIR = 'src/contracts'
-export const SNAPSHOT = 'test/snapshots/contracts-surface.txt'
+export const SNAPSHOT = 'test/app-behaviours/contracts-surface.txt'
 export const CHANGELOG = 'CHANGELOG.md'
 const SECTION = /^== (.+)$/
 
@@ -141,7 +141,7 @@ if (isInvokedDirectly(import.meta.url)) {
   const surface = checkSurface(root)
   if (!surface.ok) {
     console.error(`\n${SNAPSHOT} does not match ${CONTRACTS_DIR}/.`)
-    console.error('If the change is intended: node scripts/check-contracts-surface.mjs --update, then record it under "### Changed for apps" in CHANGELOG.md.\n')
+    console.error('If the change is intended: node scripts/app-behaviours/check-contracts-surface.mjs --update, then record it under "### Changed for apps" in CHANGELOG.md.\n')
     process.exit(1)
   }
   console.log(`${SNAPSHOT} matches ${CONTRACTS_DIR}/.`)

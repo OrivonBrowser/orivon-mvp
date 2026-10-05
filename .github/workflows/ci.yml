@@ -74,7 +74,7 @@ jobs:
       - name: Every devlog bullet is at most 25 words
         run: npm run check:devlog
 
-      # docs/development/app-behaviours.md: each entry is proven by an e2e spec CI runs, and no spec names an
+      # test/app-behaviours/catalogue.md: each entry is proven by an e2e spec CI runs, and no spec names an
       # entry the page lacks.
       - name: Every app behaviour is proven by a spec CI runs
         run: npm run check:app-behaviours
@@ -86,7 +86,7 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: npm run check:app-behaviours -- --base "origin/$BASE_REF"
 
-      # test/snapshots/contracts-surface.txt is src/contracts/ without its comments; a change to it is a change
+      # test/app-behaviours/contracts-surface.txt is src/contracts/ without its comments; a change to it is a change
       # apps feel, and takes the same changelog record.
       - name: The contracts surface snapshot matches src/contracts/
         run: npm run check:contracts-surface

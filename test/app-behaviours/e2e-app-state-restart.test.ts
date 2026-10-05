@@ -1,17 +1,17 @@
 // What an app stores in the browser comes back after the browser restarts. Two launches on one profile: the
 // first writes into IndexedDB, localStorage, a non-extractable key and the app's own files; the second reads
 // all of it back from a fresh process. Every check carries the id of the behaviour it protects, so a failure
-// names what an app would lose (docs/development/app-behaviours.md).
+// names what an app would lose (test/app-behaviours/catalogue.md).
 //
 // The page is a bare loopback origin made an app by the developer-only grant, so the e2e build is required:
-//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-app-state-restart.test.ts
+//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-behaviours/e2e-app-state-restart.test.ts
 import { rm } from 'node:fs/promises'
 import type { ElectronApplication } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { appManifest, grantApp, pageCall, startAppServer, type AppServer } from './app-behaviour-support.js'
-import { runPhase } from './support/e2e-helpers.js'
-import { assertNoElectronSurvivors, closeElectron, profileDirOf } from './support/launch-electron.mjs'
-import { launchShell, QA_TEST_TIMEOUT_MS, visit } from './support/qa-helpers.js'
+import { runPhase } from '../support/e2e-helpers.js'
+import { assertNoElectronSurvivors, closeElectron, profileDirOf } from '../support/launch-electron.mjs'
+import { launchShell, QA_TEST_TIMEOUT_MS, visit } from '../support/qa-helpers.js'
 
 let server: AppServer
 beforeAll(async () => { server = await startAppServer() })

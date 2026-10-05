@@ -1,4 +1,4 @@
-// Shared plumbing for the app-behaviour specs (docs/development/app-behaviours.md): a loopback page on
+// Shared plumbing for the app-behaviour specs (test/app-behaviours/catalogue.md): a loopback page on
 // port 0 that also serves the script `asPage` runs, and the developer-only grant that makes the origin
 // an app. A page calls `window.orivon` only from a script it loaded itself (ADR-0045), so every
 // `orivon.*` call here goes through `pageCall`.
@@ -6,8 +6,8 @@
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { ElectronApplication, Page } from 'playwright'
-import type { Manifest } from '../src/contracts/index.js'
-import { asPage } from './support/e2e-helpers.js'
+import type { Manifest } from '../../src/contracts/index.js'
+import { asPage } from '../support/e2e-helpers.js'
 
 export interface AppServer {
   readonly origin: string
