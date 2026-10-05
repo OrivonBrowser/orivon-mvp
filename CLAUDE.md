@@ -76,7 +76,7 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
 11. **A rule the owner states twice goes into the repository in the same session**: a hook, a
     guard or a line here, never only memory. Memory is keyed to the checkout path and stops
     loading after a move.
-12. **If you create a PR, always ensure it has no merge conflicts and passes all tests**
+12. **If you create a PR, always ensure it has no merge conflicts and its CI checks pass**: `check`, and the e2e shards CI selected for what changed. A shard that fails on a spec your change cannot reach is rerun and named a flake in the PR, never ignored.
 13. **Ask questions trough the tool** and never stop working until feedback/decision from owner is the only real bottleneck, owner may be sleeping, and his response should not be the reason for you to stop unless there is no other way around.
 14. **Merge session changes in a PR's by yourself**, unless owner decision is critical. Applies for orivon-ports operations as well. This is preferred for faster development. Most of the times if you wait for my approval to merge a PR to main you will end un in a conflict loop, since development goes so fast. If you don't merge it state it very clearly at the end of the prompt.
 
@@ -86,7 +86,8 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
 |---|---|
 | `npm run typecheck` | After any `.ts` change; it covers `test/` as well as `src/` |
 | `npm test` | Unit tests (Vitest) |
-| `npm run check:<name>` | The sixteen guards in `docs/development/testing.md` §Guards; CI runs each |
+| `npm run check:<name>` | The seventeen guards in `docs/development/testing.md` §Guards; CI runs each |
+| `node scripts/ci/select-e2e.mjs --base origin/main` | Prints the e2e areas and specs CI would run for your change (`--explain` says why). Run the named specs of them locally, never the whole suite; nothing enforces it |
 | `npm run smoke` | The real shell launches and works. Read its JSON failure list, not the exit code |
 | `npm run test:e2e` | The Electron end-to-end suite; a failed spec leaves its evidence in `qa-artifacts/latest/` |
 | `npm run qa`, `qa:visual`, `qa:report` | Before calling a UI, flow or boundary change done; `orivon-qa` says which, and how to read the screenshots |

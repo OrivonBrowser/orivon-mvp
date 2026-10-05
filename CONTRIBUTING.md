@@ -95,8 +95,11 @@ npm run smoke     # only if you touched src/main/
 
 `npm run smoke` prints a JSON result and a failure list. Read those, not the exit code alone.
 
-All ten checks run in CI on every push. With no dedicated code reviewer, CI is the reviewer: a
-red pull request does not merge, ever.
+`check` (typecheck, unit tests and every guard) runs in CI on every pull request and every push to `main`.
+The end-to-end suite runs the specs a change can reach, in parallel shards; `main` and the nightly run all of
+it. With no dedicated code reviewer, CI is the reviewer: a pull request whose `check` or selected e2e shards are
+red does not merge, ever. A pull request from a fork runs `check` once a maintainer approves the workflow, and
+a maintainer adds the `ci:e2e` label to run its e2e; `ci:e2e-full` runs the whole suite for any pull request.
 
 ## Pull request title and body
 
