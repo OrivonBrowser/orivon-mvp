@@ -63,7 +63,7 @@ function testManifest (): Manifest {
 }
 
 it(
-  'opens an isolated context at the granted origin, with no orivon.*, no cookies, an ungranted fetch refused, ' +
+  '[app:web-context-open-evaluate-close] opens an isolated context at the granted origin, with no orivon.*, no cookies, an ungranted fetch refused, ' +
   'navigation refused, a reopened partition empty, a context still served after a main-process garbage collection, ' +
   'and revocation rejecting a pending closed with \'revoked\'',
   async () => {

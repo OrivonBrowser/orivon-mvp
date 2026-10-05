@@ -11,7 +11,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ## [Unreleased]
 
+### Changed for apps
+
+What an app that runs on Orivon must now do differently. One line per behaviour, naming its id from
+[`docs/development/app-behaviours.md`](docs/development/app-behaviours.md), what changed, what apps must
+now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
+public surface of `src/contracts/` (named `contracts/<file>`).
+
 ### Added
+
+- **An app-behaviour catalogue** names what a working app relies on, one row each, and each row is proven by an
+  end-to-end spec whose test is titled with the row's id, so a change that breaks an app fails a test that says which.
 
 - **`npm run perf:probe`** measures each process's CPU and memory through fixed scenes, to compare a change before and after.
 - **Web3 Score providers** (Settings > Web3): judged Levels 3 and 4, with a site's operations and connections, from any

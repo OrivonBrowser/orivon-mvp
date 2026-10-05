@@ -60,7 +60,7 @@ afterAll(async () => {
 const WAIT_BUDGET_MS = 8_000 + ADDRESS_BAR_STABLE_TIMEOUT_MS + DEFAULT_ACTION_TIMEOUT_MS * 3 + 12_000 + 8_000 + APP_CLOSE_RACE_MS
 const TEST_TIMEOUT_MS = WAIT_BUDGET_MS + 20_000
 
-it('an app finds its sessionStorage where it left it when a sign-in provider sends the tab back', async () => {
+it('[app:sessionstorage-survives-cross-origin-return] an app finds its sessionStorage where it left it when a sign-in provider sends the tab back', async () => {
   let providerOrigin = ''
   appServer = createServer((req, res) => {
     if (req.url === '/start.js') {

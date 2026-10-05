@@ -93,7 +93,7 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-it('a body being read arrives whole across garbage collections, and a dropped body frees its socket', async () => {
+it('[app:routed-fetch-delivers-whole-body] a body being read arrives whole across garbage collections, and a dropped body frees its socket', async () => {
   await runPhase('routed body gc', async (check) => {
     const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER, '--js-flags=--expose-gc'] })
     try {

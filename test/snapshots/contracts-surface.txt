@@ -1,0 +1,538 @@
+== capability-api.ts
+import type {
+  DirectoryHandle,
+  FileHandle,
+  FileStat,
+  IdentityHandle,
+  LookupAddress,
+  SecureTcpSocket,
+  TcpServer,
+  TcpSocket,
+  UdpSocket,
+  WebContext
+} from './handles.js'
+import type { Grant, Manifest, Pattern } from './manifest.js'
+export interface Orivon {
+  readonly version: 0
+  readonly app: OrivonApp
+  readonly net: OrivonNet
+  readonly fs: OrivonFs
+  readonly id: OrivonId
+  readonly web: OrivonWeb
+  readonly secrets: OrivonSecrets
+}
+export interface OrivonApp {
+  manifest(): Promise<Manifest>
+  grants(): Promise<readonly Grant[]>
+  requestGrant(capability: CapabilityRequest): Promise<boolean>
+}
+export interface CapabilityRequest {
+  readonly capability: string
+  readonly patterns?: readonly Pattern[]
+}
+export interface SecureConnectOptions {
+  readonly host: string
+  readonly port: number
+  readonly rejectUnauthorized?: boolean
+  readonly ca?: string | readonly string[]
+  readonly cert?: string
+  readonly key?: string
+  readonly pfx?: Uint8Array
+  readonly passphrase?: string
+  readonly servername?: string
+  readonly alpnProtocols?: readonly string[]
+}
+export type BindScope = 'local' | 'network'
+export interface OrivonNet {
+  connect(opts: { host: string, port: number }): Promise<TcpSocket>
+  connectSecure(opts: SecureConnectOptions): Promise<SecureTcpSocket>
+  listen(opts: { port: number, scope?: BindScope }): Promise<TcpServer>
+  udpBind(opts: { port: number, scope?: BindScope }): Promise<UdpSocket>
+  lookup(opts: { hostname: string }): Promise<readonly LookupAddress[]>
+}
+export interface OrivonFs {
+  readFile(path: string): Promise<Uint8Array>
+  writeFile(path: string, data: Uint8Array): Promise<void>
+  readFileSync(path: string): Uint8Array
+  open(path: string, flags: string): Promise<FileHandle>
+  mkdir(path: string, opts?: { recursive?: boolean }): Promise<void>
+  readdir(path: string): Promise<readonly string[]>
+  stat(path: string): Promise<FileStat>
+  rm(path: string, opts?: { recursive?: boolean }): Promise<void>
+  rename(from: string, to: string): Promise<void>
+  userSelected(opts: { directory: true }): Promise<DirectoryHandle | null>
+  userSelected(opts?: { directory?: false, multiple?: boolean }): Promise<readonly FileHandle[]>
+}
+export interface OrivonId {
+  publicKey(opts: { curve: string }): Promise<Uint8Array>
+  sign(opts: { curve: string, payload: Uint8Array }): Promise<Uint8Array>
+  requestIdentity(opts: { kind: string }): Promise<IdentityHandle | null>
+}
+export interface OrivonWeb {
+  openContext(origin: string, options?: WebContextOptions): Promise<WebContext>
+  setEmbedScript(source: string): Promise<void>
+}
+export interface EmbedPopup {
+  readonly url: string
+  readonly disposition: 'default' | 'foreground-tab' | 'background-tab' | 'new-window' | 'other'
+  readonly frameName: string
+  readonly referrer: string
+  readonly method: 'GET' | 'POST'
+}
+export interface EmbedDownload {
+  readonly url: string
+  readonly filename: string
+  readonly mimeType: string
+  readonly totalBytes: number
+}
+export interface EmbedEventMap {
+  readonly 'orivon-popup': CustomEvent<EmbedPopup>
+  readonly 'orivon-download': CustomEvent<EmbedDownload>
+}
+export interface WebContextOptions {
+  readonly width?: number
+  readonly height?: number
+}
+export interface OrivonSecrets {
+  available(): Promise<boolean>
+  encrypt(plaintext: Uint8Array): Promise<Uint8Array>
+  decrypt(ciphertext: Uint8Array): Promise<Uint8Array>
+}
+== errors.ts
+export type OrivonErrorCode =
+  | 'denied'
+  | 'revoked'
+  | 'unreachable'
+  | 'timeout'
+  | 'reset'
+  | 'closed'
+  | 'limit'
+  | 'invalid'
+  | 'notFound'
+  | 'exists'
+  | 'internal'
+  | 'unavailable'
+export interface OrivonError extends Error {
+  readonly code: OrivonErrorCode
+  readonly platformCode?: string
+  readonly handleId?: string
+}
+== handles.ts
+import type { OrivonErrorCode } from './errors.js'
+export interface Handle {
+  readonly id: string
+  readonly closed: Promise<void>
+  close(): Promise<void>
+}
+export interface TcpSocket extends Handle {
+  readonly readable: ReadableStream<Uint8Array>
+  readonly writable: WritableStream<Uint8Array>
+  readonly remoteAddress: string
+  readonly remotePort: number
+  readonly localAddress: string
+  readonly localPort: number
+  setNoDelay(on: boolean): Promise<void>
+  setKeepAlive(on: boolean, initialDelayMs?: number): Promise<void>
+}
+export interface PeerCertificate {
+  readonly subject: Readonly<Record<string, string | readonly string[]>>
+  readonly issuer: Readonly<Record<string, string | readonly string[]>>
+  readonly subjectaltname?: string
+  readonly valid_from: string
+  readonly valid_to: string
+  readonly serialNumber: string
+  readonly fingerprint: string
+  readonly fingerprint256: string
+  readonly raw: Uint8Array
+  readonly pubkey?: Uint8Array
+}
+export interface SecureHandshake {
+  readonly authorized: boolean
+  readonly authorizationError?: string
+  readonly alpnProtocol: string | false
+  readonly peerCertificate: PeerCertificate | null
+}
+export interface SecureTcpSocket extends TcpSocket, SecureHandshake {}
+export interface TcpServer extends Handle {
+  readonly connections: ReadableStream<TcpSocket>
+  readonly localAddress: string
+  readonly localPort: number
+}
+export interface Datagram {
+  data: Uint8Array
+  address: string
+  port: number
+  family: 'IPv4' | 'IPv6'
+}
+export interface SendRefusal {
+  readonly address: string
+  readonly port: number
+  readonly code: OrivonErrorCode
+}
+export interface UdpSocket extends Handle {
+  readonly readable: ReadableStream<Datagram>
+  readonly writable: WritableStream<Datagram>
+  readonly localAddress: string
+  readonly localPort: number
+  readonly droppedInbound: number
+  readonly droppedOutbound: number
+  readonly refusals: ReadableStream<SendRefusal>
+}
+export interface LookupAddress {
+  readonly address: string
+  readonly family: 'IPv4' | 'IPv6'
+}
+export interface FileStat {
+  size: number
+  isFile: boolean
+  isDirectory: boolean
+  mtimeMs: number
+}
+export interface FileHandle extends Handle {
+  read(opts: { position: number, length: number }): Promise<Uint8Array>
+  write(opts: { position: number, data: Uint8Array }): Promise<number>
+  readable(opts?: { start?: number, end?: number }): ReadableStream<Uint8Array>
+  writable(opts?: { start?: number }): WritableStream<Uint8Array>
+  stat(): Promise<FileStat>
+  truncate(length: number): Promise<void>
+  sync(): Promise<void>
+}
+export interface DirectoryHandle extends Handle {
+  readdir(path?: string): Promise<readonly string[]>
+  stat(path?: string): Promise<FileStat>
+  mkdir(path: string, opts?: { recursive?: boolean }): Promise<void>
+  rm(path: string, opts?: { recursive?: boolean }): Promise<void>
+  rename(from: string, to: string): Promise<void>
+  readFile(path: string): Promise<Uint8Array>
+  writeFile(path: string, data: Uint8Array): Promise<void>
+  open(path: string, flags: string): Promise<FileHandle>
+}
+export interface IdentityHandle extends Handle {
+  readonly kind: string
+  publicKey(): Promise<Uint8Array>
+  signEvent(event: object): Promise<object>
+}
+export interface WebContext extends Handle {
+  readonly origin: string
+  evaluate(script: string, options?: { readonly timeoutMs?: number }): Promise<unknown>
+}
+== index.ts
+export type { OrivonErrorCode, OrivonError } from './errors.js'
+export type {
+  Handle,
+  TcpSocket,
+  SecureTcpSocket,
+  SecureHandshake,
+  PeerCertificate,
+  TcpServer,
+  UdpSocket,
+  Datagram,
+  SendRefusal,
+  LookupAddress,
+  FileHandle,
+  FileStat,
+  DirectoryHandle,
+  IdentityHandle,
+  WebContext
+} from './handles.js'
+export type {
+  Manifest,
+  Capabilities,
+  NetCapability,
+  TcpCapability,
+  UdpCapability,
+  BindScopes,
+  HttpsCapability,
+  FsCapability,
+  IdCapability,
+  WebCapability,
+  EmbedCapability,
+  MediaCapability,
+  ClipboardCapability,
+  SecretsCapability,
+  Grant,
+  GrantId,
+  CapabilityKind,
+  ConsentGranularity,
+  Pattern
+} from './manifest.js'
+export type {
+  Orivon,
+  OrivonApp,
+  OrivonNet,
+  OrivonFs,
+  OrivonId,
+  OrivonWeb,
+  EmbedPopup,
+  EmbedDownload,
+  EmbedEventMap,
+  WebContextOptions,
+  OrivonSecrets,
+  CapabilityRequest,
+  SecureConnectOptions,
+  BindScope
+} from './capability-api.js'
+export type { Limits } from './limits.js'
+export { LIMITS } from './limits.js'
+export type {
+  RequestEnvelope,
+  ResponseEnvelope,
+  DataMessage,
+  CreditMessage,
+  StreamEndMessage,
+  WriteMessage,
+  WriteAckMessage,
+  WriteFailedMessage,
+  WriteEndMessage,
+  WriteAbortMessage,
+  DatagramMessage,
+  DatagramDropMessage,
+  DatagramCreditMessage,
+  SendMessage,
+  SendAckMessage,
+  SendFailedMessage,
+  AcceptedMessage,
+  BrokerToRendererMessage,
+  RendererToBrokerMessage,
+  PortMessage
+} from './ipc.js'
+export {
+  CREDIT_COALESCE_BYTES, DATAGRAM_CREDIT_COALESCE, DROP_REPORT_MS,
+  WRITE_HEARTBEAT_MS, WRITE_SILENCE_TIMEOUT_MS
+} from './ipc.js'
+== ipc.ts
+import type { OrivonErrorCode } from './errors.js'
+export interface RequestEnvelope<TPayload> {
+  readonly id: string
+  readonly method: string
+  readonly payload: TPayload
+  readonly timeoutMs: number
+}
+export type ResponseEnvelope<TResult> =
+  | { readonly id: string, readonly ok: true, readonly result: TResult }
+  | {
+    readonly id: string
+    readonly ok: false
+    readonly code: OrivonErrorCode
+    readonly platformCode?: string
+    readonly message: string
+  }
+export interface DataMessage {
+  readonly kind: 'data'
+  readonly handleId: string
+  readonly chunk: Uint8Array
+}
+export interface CreditMessage {
+  readonly kind: 'credit'
+  readonly handleId: string
+  readonly bytesConsumed: number
+}
+export interface StreamEndMessage {
+  readonly kind: 'end'
+  readonly handleId: string
+  readonly code?: OrivonErrorCode
+  readonly platformCode?: string
+}
+export interface WriteMessage {
+  readonly kind: 'write'
+  readonly handleId: string
+  readonly chunk: Uint8Array
+}
+export interface WriteAckMessage {
+  readonly kind: 'write-ack'
+  readonly handleId: string
+  readonly bytesAccepted: number
+}
+export interface WriteFailedMessage {
+  readonly kind: 'write-failed'
+  readonly handleId: string
+  readonly code: OrivonErrorCode
+  readonly platformCode?: string
+}
+export interface WriteEndMessage {
+  readonly kind: 'write-end'
+  readonly handleId: string
+}
+export interface WriteAbortMessage {
+  readonly kind: 'write-abort'
+  readonly handleId: string
+}
+export interface DatagramMessage {
+  readonly kind: 'datagram'
+  readonly handleId: string
+  readonly data: Uint8Array
+  readonly address: string
+  readonly port: number
+  readonly family: 'IPv4' | 'IPv6'
+  readonly dropped: number
+}
+export interface DatagramDropMessage {
+  readonly kind: 'datagram-dropped'
+  readonly handleId: string
+  readonly dropped: number
+}
+export interface DatagramCreditMessage {
+  readonly kind: 'datagram-credit'
+  readonly handleId: string
+  readonly datagramsConsumed: number
+  readonly bytesConsumed: number
+}
+export interface SendMessage {
+  readonly kind: 'send'
+  readonly handleId: string
+  readonly data: Uint8Array
+  readonly address: string
+  readonly port: number
+}
+export interface SendAckMessage {
+  readonly kind: 'send-ack'
+  readonly handleId: string
+  readonly datagramsAccepted: number
+}
+export interface SendFailedMessage {
+  readonly kind: 'send-failed'
+  readonly handleId: string
+  readonly code: OrivonErrorCode
+  readonly platformCode?: string
+  readonly dropped: number
+  readonly address: string
+  readonly port: number
+}
+export interface AcceptedMessage {
+  readonly kind: 'accepted'
+  readonly handleId: string
+  readonly socketId: string
+  readonly remoteAddress: string
+  readonly remotePort: number
+  readonly localAddress: string
+  readonly localPort: number
+  readonly port: MessagePort
+}
+export type BrokerToRendererMessage =
+  | DataMessage | StreamEndMessage | WriteAckMessage | WriteFailedMessage
+  | DatagramMessage | DatagramDropMessage | SendAckMessage | SendFailedMessage
+  | AcceptedMessage
+export type RendererToBrokerMessage =
+  | CreditMessage | WriteMessage | WriteEndMessage | WriteAbortMessage
+  | DatagramCreditMessage | SendMessage
+export type PortMessage = BrokerToRendererMessage | RendererToBrokerMessage
+export const CREDIT_COALESCE_BYTES = 64 * 1024
+export const WRITE_HEARTBEAT_MS = 5_000
+export const WRITE_SILENCE_TIMEOUT_MS = 15_000
+export const DATAGRAM_CREDIT_COALESCE = 32
+export const DROP_REPORT_MS = 1_000
+== limits.ts
+export const LIMITS = {
+  concurrentSockets: 512,
+  defaultConcurrentSockets: 64,
+  concurrentFileHandles: 64,
+  inFlightOperations: 256,
+  readWindowBytes: 1024 * 1024,
+  writeWindowBytes: 256 * 1024,
+  inboundDatagramWindow: 256,
+  inboundDatagramWindowBytes: 1024 * 1024,
+  outboundDatagramWindow: 64,
+  maxDatagramBytes: 65507,
+  webContexts: 2,
+  webContextEvaluateMs: 60_000,
+  webContextIdleMs: 300_000,
+  webContextScriptBytes: 4 * 1024 * 1024,
+  webContextResultBytes: 1024 * 1024,
+  embeds: 32,
+  embedScriptBytes: 4 * 1024 * 1024,
+  embedEventUrlBytes: 2 * 1024 * 1024,
+  secretBytes: 64 * 1024
+} as const
+export type Limits = typeof LIMITS
+== manifest.ts
+export type GrantId = string
+export type Pattern = string
+export type ConsentGranularity =
+  | 'all-or-nothing'
+  | 'per-capability'
+export interface Manifest {
+  readonly orivonApiVersion: 0
+  readonly id: string
+  readonly name: string
+  readonly version: string
+  readonly entry: string
+  readonly assets?: readonly string[]
+  readonly capabilities: Capabilities
+  readonly consentGranularity?: ConsentGranularity
+  readonly crossOriginIsolated?: true
+}
+export interface Capabilities {
+  readonly net?: NetCapability
+  readonly fs?: FsCapability
+  readonly id?: IdCapability
+  readonly web?: WebCapability
+  readonly media?: MediaCapability
+  readonly clipboard?: ClipboardCapability
+  readonly secrets?: SecretsCapability
+  readonly protocols?: readonly string[]
+}
+export interface NetCapability {
+  readonly tcp?: TcpCapability
+  readonly udp?: UdpCapability
+  readonly https?: HttpsCapability
+  readonly concurrentSockets?: number
+}
+export interface TcpCapability {
+  readonly connect?: readonly Pattern[]
+  readonly listen?: BindScopes
+}
+export interface UdpCapability {
+  readonly bind?: BindScopes
+  readonly send?: readonly Pattern[]
+}
+export interface BindScopes {
+  readonly local?: readonly Pattern[]
+  readonly network?: readonly Pattern[]
+}
+export interface HttpsCapability {
+  readonly connect?: readonly Pattern[]
+}
+export interface FsCapability {
+  readonly quotaBytes?: number
+}
+export interface IdCapability {
+  readonly curves?: readonly string[]
+}
+export interface WebCapability {
+  readonly contexts?: readonly string[]
+  readonly embed?: EmbedCapability
+}
+export interface EmbedCapability {
+  readonly origins: readonly string[]
+}
+export interface MediaCapability {
+  readonly camera?: true
+  readonly microphone?: true
+}
+export interface ClipboardCapability {
+  readonly read?: true
+}
+export interface SecretsCapability {}
+export interface Grant {
+  readonly id: GrantId
+  readonly origin: string
+  readonly capability: CapabilityKind
+  readonly patterns: readonly Pattern[]
+  readonly grantedAt: number
+}
+export type CapabilityKind =
+  | 'tcp.connect'
+  | 'tcp.listen.local'
+  | 'tcp.listen.network'
+  | 'udp.bind.local'
+  | 'udp.bind.network'
+  | 'udp.send'
+  | 'https.connect'
+  | 'fs'
+  | 'id'
+  | 'web.context'
+  | 'web.embed'
+  | 'media.camera'
+  | 'media.microphone'
+  | 'clipboard.read'
+  | 'secrets'

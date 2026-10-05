@@ -49,7 +49,7 @@ const TEST_TIMEOUT_MS =
   ADDRESS_BAR_STABLE_TIMEOUT_MS + DEFAULT_ACTION_TIMEOUT_MS * 3 + 8_000 * 8 + APP_CLOSE_RACE_MS + 30_000
 
 it.skipIf(!ORDINARY_BUILD)(
-  'visiting a loopback origin that advertises a manifest prompts, grants the URL, and turns the tab into an app tab -- on a plain build, with nothing installed',
+  '[app:loopback-manifest-hint-grants-the-origin] visiting a loopback origin that advertises a manifest prompts, grants the URL, and turns the tab into an app tab -- on a plain build, with nothing installed',
   async () => {
     await runPhase('loopback-grant', async (check) => {
       let app: Awaited<ReturnType<typeof launchElectron>> | undefined

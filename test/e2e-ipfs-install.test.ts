@@ -27,7 +27,7 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-it('installs an app served from a typed ipfs:// address, pins its CID, and asks for consent', async () => {
+it('[app:consent-question-holds-the-page] installs an app served from a typed ipfs:// address, pins its CID, and asks for consent', async () => {
   await runPhase('ipfs-install', async (check) => {
     const gateway = await startFixtureGateway({ app: APP })
     let app: Awaited<ReturnType<typeof launchElectron>> | undefined

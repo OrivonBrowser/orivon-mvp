@@ -98,7 +98,7 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-it('spawns a WASI program and forks an app module in Workers, refuses a native program, and kills a running child', async () => {
+it('[app:fork-runs-module-in-worker] [app:node-fs-writes-land-at-app-root] spawns a WASI program and forks an app module in Workers, refuses a native program, and kills a running child', async () => {
   const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
   try {
     await runPhase('child_process', async (check) => {

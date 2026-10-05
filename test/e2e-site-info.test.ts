@@ -181,7 +181,7 @@ it(
 )
 
 it(
-  'a switched-on capability grants for real and asks again only after it was off; the card\'s Reload closes it and the tab keeps its history',
+  '[app:granted-capabilities-are-reported] [app:declined-capability-is-refused] a switched-on capability grants for real and asks again only after it was off; the card\'s Reload closes it and the tab keeps its history',
   async () => {
     await runPhase('site-info-turn-on', async (check) => {
       const { server, url, setAsPageScript } = await startFixtureServer()
@@ -233,12 +233,12 @@ it(
         await waitFor(async () => (await popup?.$$('.switch.on'))?.length === 0, 5_000)
 
         const whileOff = await readFsAttempt()
-        check(`with fs off, the page's own fs call is refused (${whileOff})`, whileOff.startsWith('refused'))
+        check(`[app:declined-capability-is-refused] with fs off, the page's own fs call is refused (${whileOff})`, whileOff.startsWith('refused'))
         const askedWhileOff = await asPage(tabView(), setAsPageScript, `${url}__as-page-script.js`, async () => {
           const orivon = (globalThis as unknown as { orivon: { app: { requestGrant: (r: { capability: string }) => Promise<boolean> } } }).orivon
           return await orivon.app.requestGrant({ capability: 'fs' })
         })
-        check('a request for the capability it was switched off for resolves false with no question', askedWhileOff === false && await questionGone(running))
+        check('[app:declined-capability-is-refused] a request for the capability it was switched off for resolves false with no question', askedWhileOff === false && await questionGone(running))
 
         // ---- on, through the card ----------------------------------------
         popup = findPopup(running, '/site-info/')
@@ -254,7 +254,7 @@ it(
           const orivon = (globalThis as unknown as { orivon: { app: { grants: () => Promise<Array<{ capability: string }>> } } }).orivon
           return (await orivon.app.grants()).map((g) => g.capability)
         })
-        check(`the real broker holds fs again: ${JSON.stringify(grants)}`, grants.includes('fs'))
+        check(`[app:granted-capabilities-are-reported] the real broker holds fs again: ${JSON.stringify(grants)}`, grants.includes('fs'))
 
         // ---- the card's Reload closes the card, the tab keeps its history -----
         await tabView().evaluate(() => { (window as unknown as Record<string, unknown>)['__beforeReload'] = true })
@@ -282,7 +282,7 @@ it(
         await delay(ABSENCE_SETTLE_MS)
         check('while the question is open the page cannot take its tab elsewhere', running.windows().some((w) => w.url() === url) && !running.windows().some((w) => w.url().includes('/held-away')))
         await answerQuestion(running, 'Deny')
-        check('and a Deny resolves false', (await answered) === false)
+        check('[app:declined-capability-is-refused] and a Deny resolves false', (await answered) === false)
         await tabView().evaluate(() => { location.href = '/after-deny' })
         check('once answered the page can navigate again', await waitFor(() => running.windows().some((w) => w.url() === `${url}after-deny`), 10_000))
         check('no native message box was opened', (await noNativeDialogs(running)).length === 0)

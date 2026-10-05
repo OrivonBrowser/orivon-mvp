@@ -76,7 +76,7 @@ async function waitForPrompt (app: ElectronApplication): Promise<Page> {
 const TEST_TIMEOUT_MS =
   ADDRESS_BAR_STABLE_TIMEOUT_MS + DEFAULT_ACTION_TIMEOUT_MS * 3 + APP_CLOSE_RACE_MS + 30_000
 
-it('lets an ordinary website write the clipboard from a real click, and cannot read it without being asked', async () => {
+it('[app:clipboard-write-without-prompt] lets an ordinary website write the clipboard from a real click, and cannot read it without being asked', async () => {
   await runPhase('clipboard-write', async (check) => {
     let app: Awaited<ReturnType<typeof launchElectron>> | undefined
     let server: Server | undefined

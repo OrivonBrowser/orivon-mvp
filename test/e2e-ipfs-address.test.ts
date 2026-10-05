@@ -16,7 +16,7 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-it('loads a typed ipfs:// address, follows an ipfs:// link, and opens an ipns:// DNSLink name, each shown as its address', async () => {
+it('[app:ipfs-url-opens] loads a typed ipfs:// address, follows an ipfs:// link, and opens an ipns:// DNSLink name, each shown as its address', async () => {
   await runPhase('ipfs-address', async (check) => {
     const linkedGateway = await startFixtureGateway({
       linked: { 'index.html': '<!doctype html><meta charset="utf-8"><title>linked fixture</title><body>linked</body>' }

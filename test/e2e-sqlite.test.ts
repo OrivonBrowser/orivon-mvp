@@ -32,7 +32,7 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-it('a forked child opens, writes, closes, reopens and reads a database file in the app\'s files', async () => {
+it('[app:node-sqlite-in-worker] [app:node-fs-writes-land-at-app-root] a forked child opens, writes, closes, reopens and reads a database file in the app\'s files', async () => {
   const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
   try {
     await runPhase('node:sqlite', async (check) => {
