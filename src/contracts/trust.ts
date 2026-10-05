@@ -40,11 +40,8 @@ export interface WebsiteScore {
   /**
    * The provider's raw judged level for that content, 1 to 4. The shield's
    * display rule (what Orivon shows for a given level) is the page's to
-   * apply; it is not applied here. A level judged 3 or 4 is returned only
-   * for the host the content's own manifest names, or for content with no
-   * manifest; for any other address that serves the same content it is
-   * `null`, as it is on the shield. `null` also: no evaluation, no answer,
-   * or an address that does not name content.
+   * apply; it is not applied here. `null`: no evaluation, no answer, or an
+   * address that does not name content.
    */
   readonly level: 1 | 2 | 3 | 4 | null
 }
