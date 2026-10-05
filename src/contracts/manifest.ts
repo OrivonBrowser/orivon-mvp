@@ -137,6 +137,14 @@ export interface Manifest {
    * either must not.
    */
   readonly crossOriginIsolated?: true
+  /**
+   * The one ENS name or DNS host this app calls home, spelled as a URL spells
+   * a host: lower case, two labels or more, 253 characters at most, no scheme,
+   * port, path, trailing dot, IP address, `localhost` or `.orivon`. Malformed
+   * rejects the manifest; absent is allowed. A judged score of the content
+   * counts only at this name (ADR-0055); elsewhere the app runs, unverified.
+   */
+  readonly domain?: string
 }
 
 export interface Capabilities {

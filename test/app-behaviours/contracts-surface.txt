@@ -460,6 +460,7 @@ export interface Manifest {
   readonly capabilities: Capabilities
   readonly consentGranularity?: ConsentGranularity
   readonly crossOriginIsolated?: true
+  readonly domain?: string
 }
 export interface Capabilities {
   readonly net?: NetCapability

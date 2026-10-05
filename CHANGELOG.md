@@ -18,8 +18,14 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- `contracts/manifest`: a manifest may carry `domain`, the one ENS name or DNS host the app calls home. A malformed
+  value rejects the manifest; absence is allowed. Ports set it to the name they are published under, and recheck it
+  spells a lower-case host with no scheme, port or path.
+
 ### Added
 
+- **A manifest `domain` field** names the one ENS name or DNS host an app calls home; the loader parses it
+  (ADR-0055). Update behaviour that uses it lands with the app-update work.
 - **`test/` is ordered by area**, with a Layout table in `test/README.md`; a spec left at its top, a folder with no
   row and a dead `test/` path in any tracked file now fail CI, and a new capability kind needs a catalogue line.
 - **An app-behaviour catalogue** names what a working app relies on, one row each, and each row is proven by an

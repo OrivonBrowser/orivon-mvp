@@ -63,6 +63,7 @@ const KITCHEN_SINK: FullManifest = {
   assets: ['style.css', 'script.js'],
   consentGranularity: 'per-capability',
   crossOriginIsolated: true,
+  domain: 'kitchen-sink.example.com',
   capabilities: {
     protocols: ['magnet'],
     net: {
