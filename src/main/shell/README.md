@@ -7,7 +7,7 @@ window holding it. `window-frame.ts` is the native window itself and `window-opt
 opens. `window.ts` is the composition; its parts are `window-layout.ts` (where the chrome and the page
 area sit: the one place a page area is computed), `window-state.ts` (the `ShellState` push, and which
 overlays a tab switch or a navigation dismisses), `window-panels.ts` (the permissions and site-info
-popovers) and `shell-state-parts.ts` (the `ShellState` fields a feature adds). `window-context.ts` is
+popovers, and the extension popup's panel for the overlay host) and `shell-state-parts.ts` (the `ShellState` fields a feature adds). `window-context.ts` is
 the `{ window, services }` pair a hook or an overlay handler receives.
 `tabs.ts` owns the tab collection, with `tab-state.ts` (the state a tab reports, plus what each
 `TAB_SIGNALS` entry adds), `tab-navigation.ts`, `tab-open.ts` (every way a tab is created) and
@@ -77,7 +77,7 @@ test-hook.ts` is the e2e-only record of what each was actually set to.
 `grants/origin-hash.ts`, `broker-contracts.ts` types);
 [`../../loader/electron/serve.ts`](../../loader/electron/serve.ts);
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts); and, inside `src/main/`,
-[`../browsing/`](../browsing/), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/),
+[`../browsing/`](../browsing/), [`../extensions/extension-popup-host.ts`](../extensions/extension-popup-host.ts) (`window-panels.ts` adopts its panel), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/),
 [`../shortcuts/`](../shortcuts/) (the command table and the service the menu reads, and the command bus a window runs a chosen command through), [`../overlays/`](../overlays/) (the question panel is an overlay shown through the tab slots),
 [`../consent/grant-prompt-origin.ts`](../consent/grant-prompt-origin.ts) (the origin line every
 permission dialog shows), [`../sessions/`](../sessions/) (the two questions' types, and

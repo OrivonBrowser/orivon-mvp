@@ -266,8 +266,15 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 - **`npm run dev` starts on a fresh profile every launch** and deletes it at the end, so it behaves as a first run and runs
   beside an open Orivon; `npm start` keeps your real profile. `npm run dev -- --user-data-dir=<dir>` keeps one across launches.
 
+### Changed
+
+- **An extension added from now on is not put on the toolbar**; "Pin new extensions to the toolbar" (Settings > Apps) turns it back on.
+
 ### Fixed
 
+- **Installing from the Chrome Web Store page no longer takes the browser down**: the store page keeps its own store API
+  through every extension load, and a private window's store page refuses installs.
+- **An extension's popup opens inside the window**, under its toolbar button or the Extensions button, at the size of its page.
 - **Three ways the whole browser could quit are closed**: an app's helper page failing to load, a light-client
   checkpoint the disk refuses to keep, and a profile file holding `null`.
 - **The light client switch applies at the next start, as Settings says**: switching it mid-run no longer changes the
