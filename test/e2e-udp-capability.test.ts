@@ -54,7 +54,7 @@ import { installDevGrantHook } from '../src/main/dev/dev-grant.js'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Datagram, Manifest } from '../src/contracts/index.js'
 
-const TEST_DIR = fileURLToPath(new URL('./', import.meta.url)).replace(/[/\\]$/, '')
+const UDP_ECHO_SERVER = fileURLToPath(new URL('./udp-echo-server.mjs', import.meta.url))
 const FIXTURE_DIR = fileURLToPath(new URL('./apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
 const FIXTURE_ORIGIN = `http://${HOST}:${STATIC_PORT}`
 const FIXTURE_URL = `${FIXTURE_ORIGIN}/`
@@ -100,7 +100,7 @@ async function waitForLine (child: ChildProcess, needle: string, timeoutMs: numb
 }
 
 beforeAll(async () => {
-  udpEcho = spawn(process.execPath, [join(TEST_DIR, 'udp-echo-server.mjs'), String(UDP_ECHO_PORT), HOST], { stdio: 'pipe' })
+  udpEcho = spawn(process.execPath, [UDP_ECHO_SERVER, String(UDP_ECHO_PORT), HOST], { stdio: 'pipe' })
   staticServer = spawn(process.execPath, [join(FIXTURE_DIR, 'serve.mjs')], { stdio: 'pipe' })
   const ready = waitForLine(udpEcho, 'listening on', READY_TIMEOUT_MS)
   forwardOutput('udp-echo', udpEcho)
