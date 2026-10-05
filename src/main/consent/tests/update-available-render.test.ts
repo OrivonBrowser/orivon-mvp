@@ -29,6 +29,13 @@ describe('describeUnverifiedUpdate', () => {
     expect(content.message).toMatch(/Its Web3 Score has not been verified yet\. To switch, open the key icon and choose Trust & Force update\./)
     expect(content.detail).toContain('no evaluation of this exact version')
     expect(content.detail).toContain('names other.eth as its home')
+    expect(content.message).toContain('has updated the app to a new version')
+  })
+
+  it('does not call an older or equal version a new one', () => {
+    const content = describeUnverifiedUpdate(offer({ verified: false, reasons: ['not-newer'] }))
+    expect(content.message).toContain('now points at another version of the app')
+    expect(content.message).not.toContain('a new version')
   })
 })
 

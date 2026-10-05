@@ -43,6 +43,13 @@ describe('updateTrust', () => {
     expect(updateTrust(holding(overrides as Partial<UpdateTrustFacts>))).toEqual({ verified: false, reasons: [reason] })
   })
 
+  it('is never verified at a key address, whatever the manifest names, and says why', () => {
+    const key = 'k51qzi5uqu5dlvj2baxnqndepeb86cbk3ng7n3i46uzyxzyqj2xjonzllnv0v8.ipns.orivon'
+    expect(updateTrust(holding({ originHost: key, newDomain: 'app.eth' }))).toEqual({ verified: false, reasons: ['key-address'] })
+    expect(updateTrust(holding({ originHost: key, newDomain: undefined }))).toEqual({ verified: false, reasons: ['key-address'] })
+    expect(reasonText('key-address', 'app.eth')).toMatch(/reached at a key/)
+  })
+
   it('lists every reason that fails, in a fixed order', () => {
     expect(updateTrust(holding({ verdict: { status: 'off' }, versionOrder: 0, pointersVerified: false }))).toEqual({ verified: false, reasons: ['no-provider', 'not-newer', 'unproven-name'] })
   })
