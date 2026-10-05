@@ -10,6 +10,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
+import { prepareWindow } from '../support/qa-visual.js'
 import { ABSENCE_SETTLE_MS, delay, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 let server: Server
@@ -340,9 +341,10 @@ it('keeps a narrow window\'s toolbar narrow while a pressed tab makes the chrome
     }))
     // Wide, the placeholder shows: its hiding below is the narrow layout's doing.
     expect((await read()).identity).not.toBe('none')
-    await app.evaluate(({ BaseWindow }) => { BaseWindow.getAllWindows()[0]?.setContentSize(500, 400) })
+    // Waits for the window to be shown before it resizes: a window re-asserts its initial bounds when first shown.
+    await prepareWindow(app, { width: 500, height: 400 })
     // The narrow layout follows the resize a moment after the view's own width does.
-    await waitFor(async () => { const now = await read(); return now.view === 500 && now.identity === 'none' })
+    expect(await waitFor(async () => { const now = await read(); return now.view === 500 && now.identity === 'none' }), `the narrow layout never applied: ${JSON.stringify(await read())}`).toBe(true)
     expect(await read()).toMatchObject({ view: 500, root: 500, identity: 'none' })
 
     const id = (await tabIds(chrome))[0] as string
@@ -351,11 +353,11 @@ it('keeps a narrow window\'s toolbar narrow while a pressed tab makes the chrome
       const box = tab.getBoundingClientRect()
       tab.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, buttons: 1, clientX: box.left + 20, clientY: box.top + 10 }))
     }, id)
-    await waitFor(async () => (await read()).view > 500)
+    expect(await waitFor(async () => (await read()).view > 500), `the chrome view never widened: ${JSON.stringify(await read())}`).toBe(true)
     expect(await read()).toMatchObject({ view: 1000, root: 500, identity: 'none' })
 
     await chrome.evaluate(() => { window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 0 })) })
-    await waitFor(async () => { const now = await read(); return now.view === 500 && now.identity === 'none' })
+    expect(await waitFor(async () => { const now = await read(); return now.view === 500 && now.identity === 'none' }), `the chrome view never narrowed again: ${JSON.stringify(await read())}`).toBe(true)
     expect(await read()).toMatchObject({ view: 500, root: 500, identity: 'none' })
   } finally {
     await closeElectron(app)

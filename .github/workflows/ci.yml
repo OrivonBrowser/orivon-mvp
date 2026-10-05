@@ -1,15 +1,36 @@
 name: CI
 
-# CI is the reviewer: there is no human code review. Every job runs on every
-# push and pull request; workflow_dispatch re-runs them on demand.
+# `check` runs on every pull request and every push to main, and is the required status. The end-to-end suite
+# runs only the specs a change can reach (scripts/ci/select-e2e.mjs, test/impact-map.json), split across parallel
+# shards; main and the nightly run everything. A pull request from a fork runs e2e only after a maintainer adds
+# the `ci:e2e` label; `ci:e2e-full` runs everything for any pull request.
 on:
   push:
+    branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, labeled, ready_for_review]
+  schedule:
+    - cron: '17 3 * * *'
   workflow_dispatch:
+    inputs:
+      areas:
+        description: 'e2e areas to run: impacted (changes against main), all, or a comma list of test/ folders'
+        default: impacted
+
+# One run per pull request: a new push cancels the one before it. A label that is not a ci: label gets a group of
+# its own, so adding one cannot cancel a running check.
+concurrency:
+  group: ${{ github.event.action == 'labeled' && !startsWith(github.event.label.name, 'ci:') && format('ci-label-{0}', github.run_id) || format('ci-{0}', github.event.pull_request.number || github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
   check:
+    if: ${{ github.event.action != 'labeled' || startsWith(github.event.label.name, 'ci:') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       # Full history: the changelog-record step below compares with the merge base.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -101,6 +122,10 @@ jobs:
       - name: Every path under test/ that a tracked file names exists
         run: npm run check:test-paths
 
+      # test/impact-map.json says which e2e areas a change reaches: a new src/ directory must be mapped.
+      - name: The e2e impact map covers every source directory and area
+        run: npm run check:impact-map
+
       # A field src/contracts/manifest.ts documents must not be refused by the
       # loader's allowlist; the script reads both sides from their source.
       - name: Loader accepts every field the manifest contract declares
@@ -123,13 +148,52 @@ jobs:
       - name: Developer-only grant path is absent from a packaged build
         run: npm run check:dev-grant-absent
 
-  # The capability boundary end to end (testing.md "The end-to-end test").
-  # Its own job: it needs an Electron build and a display, runs far longer,
-  # and its failure means the boundary itself broke. If a hosted runner cannot
-  # launch Electron, gate the job to workflow_dispatch with the failing run as
-  # evidence; do not retry silently.
-  e2e:
+  # Which e2e specs this run needs, from the event, the changed files and the labels. Plain node, no install.
+  scope:
+    if: ${{ github.event.action != 'labeled' || startsWith(github.event.label.name, 'ci:') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.select.outputs.mode }}
+      count: ${{ steps.select.outputs.count }}
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+
+      - name: Select the e2e specs
+        id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref_name }}
+          BASE_REF: ${{ github.base_ref }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          FORK: ${{ github.event.pull_request.head.repo.fork }}
+          AREAS: ${{ inputs.areas }}
+        run: |
+          args=(--event "$EVENT" --ref "$REF" --labels "$LABELS" --areas "${AREAS:-impacted}")
+          if [ "$FORK" = "true" ]; then args+=(--fork); fi
+          if [ "$EVENT" = "pull_request" ]; then args+=(--base "origin/$BASE_REF"); fi
+          if [ "$EVENT" = "workflow_dispatch" ]; then args+=(--base origin/main); fi
+          node scripts/ci/select-e2e.mjs "${args[@]}"
+
+  # The capability boundary end to end (testing.md "The end-to-end test"), one shard of the selected specs. Each
+  # shard is its own runner, so the fixed fixture ports cannot clash. If a hosted runner cannot launch Electron,
+  # gate the job to workflow_dispatch with the failing run as evidence; do not retry silently.
+  e2e-shard:
+    name: e2e-shard-${{ matrix.shard }}
+    needs: scope
+    if: ${{ needs.scope.result == 'success' && needs.scope.outputs.count != '0' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.scope.outputs.matrix) }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -152,27 +216,52 @@ jobs:
           sudo chown root:root node_modules/electron/dist/chrome-sandbox
           sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
 
-      # Builds first (the app launches from out/), then runs the e2e config.
-      - name: Capability-enforcement end-to-end test
-        run: xvfb-run -a npm run test:e2e
+      - name: Build with the developer-only hooks the specs need
+        run: node scripts/build-e2e.mjs
+
+      - name: Specs of this shard
+        env:
+          FILES: ${{ matrix.files }}
+        run: xvfb-run -a node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts $FILES
 
       # Screenshots, console logs and the main-process log of every failed
-      # spec (test/support/qa-evidence.mjs); absent when the suite passes.
+      # spec (test/support/qa-evidence.mjs); absent when the shard passes.
       - name: Upload failure evidence
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: qa-artifacts
+          name: qa-artifacts-e2e-${{ matrix.shard }}
           path: qa-artifacts/latest/
           if-no-files-found: ignore
           retention-days: 7
 
-  # The specs that need the build Orivon ships, with no developer-only hooks (testing.md §App behaviours). Its
-  # own job: `e2e` builds with those hooks on, and one run cannot hold both builds. It runs beside `e2e`, so
-  # the serial suite does not lengthen. A spec an entry rests on that carries `skipIf(!ORDINARY_BUILD)` must
-  # be listed here: check:app-behaviours reads this job.
-  e2e-ordinary:
+  # The one e2e status: it passes when every selected shard passed or nothing was selected. If branch protection
+  # ever requires an e2e check, it is this job.
+  e2e:
+    needs: [scope, e2e-shard]
+    if: ${{ always() && (github.event.action != 'labeled' || startsWith(github.event.label.name, 'ci:')) }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every selected shard passed, or none was selected
+        env:
+          SCOPE: ${{ needs.scope.result }}
+          SHARDS: ${{ needs.e2e-shard.result }}
+          MODE: ${{ needs.scope.outputs.mode }}
+        run: |
+          echo "scope: $SCOPE; shards: $SHARDS; mode: $MODE"
+          [ "$SCOPE" = "success" ] || exit 1
+          [ "$SHARDS" = "success" ] || [ "$SHARDS" = "skipped" ] || exit 1
+
+  # The specs that need the build Orivon ships, with no developer-only hooks (test/app-behaviours/README.md). Its
+  # own job: the shards build with those hooks on, and one run cannot hold both builds. It runs beside them
+  # whenever any e2e is selected. A spec an entry rests on that carries `skipIf(!ORDINARY_BUILD)` must be
+  # listed here: check:app-behaviours reads this job.
+  e2e-ordinary:
+    needs: scope
+    if: ${{ needs.scope.result == 'success' && needs.scope.outputs.count != '0' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
