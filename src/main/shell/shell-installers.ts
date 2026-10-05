@@ -9,6 +9,7 @@ import { installAuth } from '../auth/install-auth.js'
 import { installAutofill } from '../autofill/install-autofill.js'
 import { installChoosers } from '../devices/install-choosers.js'
 import { installDisplayCapture } from '../display-capture/install-display-capture.js'
+import { installDisplayUi } from '../display-capture/install-display-ui.js'
 import { installFocus } from '../focus/install-focus.js'
 import { installMemorySaver } from '../memory-saver/install-memory-saver.js'
 import { installTabSlots } from '../overlays/install-tab-slots.js'
@@ -35,6 +36,7 @@ export const SHELL_INSTALLERS: readonly ShellInstaller[] = [
   installChoosers,
   installContentSettings,
   installDisplayCapture,
+  installDisplayUi,
   installFocus,
   installFormWatch,
   installLoadErrors,
