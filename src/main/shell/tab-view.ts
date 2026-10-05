@@ -289,8 +289,9 @@ export function wireView (id: string, record: TabRecord): void {
   wc.on('did-start-navigation', (details) => { if (details.isMainFrame && !details.isSameDocument) forgetNavigation(wc) })
   watchPageDialogs(wc, shown)
   refuseHeldNavigation(wc)
+  const gatewayTarget = (url: string): string | undefined => gatewayRedirectFor(record.host.services?.settings, url)
   loadServedAddresses(wc, () => record.internalPage !== null, {
-    target: (url) => gatewayRedirectFor(record.host.services?.settings, url),
+    target: gatewayTarget,
     // The address bar's own test for a load: a link inside a cache-served app's tab lands on the default session.
     open: (url) => {
       const swap = partitionChanged(url, record.partition)
@@ -336,6 +337,7 @@ export function wireView (id: string, record: TabRecord): void {
     partitionFor: (url) => partitionForTarget(url),
     webPreferencesFor: (url) => tabWebPreferences(record.host.preloadPath, undefined, appTabArgsFor(url, record.host.broker)),
     isApp: (url) => popupTargetIsApp(url, record.host.broker),
+    gatewayTarget,
     popupBlocked: (details, from) => refuseHeldWindow(wc, details.url) || sitePopups.check(wc, from.url, details.url)
   }, () => ({ url: wc.getURL(), partition: record.partition })))
   wireTabSignals(id, record)
