@@ -252,6 +252,15 @@ describe('the .eth loopback server', () => {
     }
   })
 
+  it('names the root it looked in on a missing path, and none on a name that has no content', async () => {
+    const missingPath = await get('/missing.js')
+    expect(missingPath.status).toBe(404)
+    expect(missingPath.headers['x-orivon-content-root']).toBeDefined()
+    const missingName = await get('/', { host: 'nobody.eth' })
+    expect(missingName.status).toBe(404)
+    expect(missingName.headers['x-orivon-content-root']).toBeUndefined()
+  })
+
   it('asks to retry while the light client is syncing', async () => {
     const reply = await get('/', { host: 'syncing.eth' })
     expect(reply.status).toBe(503)

@@ -33,7 +33,7 @@ describe('Loader.manifestAt', () => {
   })
 
   it('remembers a verified absence', async () => {
-    const { fetch, count } = counting(stubFetch({ [MANIFEST_URL]: { status: 404, body: utf8('') } }))
+    const { fetch, count } = counting(stubFetch({ [MANIFEST_URL]: { status: 404, body: utf8(''), headers: { 'x-orivon-content-root': CID } } }))
     const loader = loaderOver(fetch)
     expect(await loader.manifestAt(ORIGIN, CID)).toEqual({ kind: 'website' })
     await loader.manifestAt(ORIGIN, CID)

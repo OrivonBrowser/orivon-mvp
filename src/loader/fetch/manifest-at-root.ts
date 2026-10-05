@@ -8,7 +8,7 @@ import { MANIFEST_PATH } from '../../broker/policy/canonical-path.js'
 import { MAX_MANIFEST_BYTES, parseManifest } from '../manifest/manifest.js'
 import { ByteBudget, fetchWithBudget, joinChunks, raceAbort } from './budget.js'
 import type { Fetch, FetchResponse } from './budget.js'
-import { pinnedToRoot } from './content-root.js'
+import { CONTENT_ROOT_HEADER, pinnedToRoot } from './content-root.js'
 import { ensurePublicUnicastOrigin } from './install-origin.js'
 
 /** A cold read through the verifier takes up to a minute; nothing here is worth a longer wait. */
@@ -17,9 +17,9 @@ export const MANIFEST_READ_TIMEOUT_MS = 2 * 60_000
 const NOT_FOUND = 404
 
 /**
- * `website`: the host answered 404, so the content has no manifest (the verifier answers 404
- * only for a path it proved absent). `unread`: anything else that stopped the read, which
- * proves nothing about the content.
+ * `website`: the host answered 404 and named the root it looked in as this one, so that root has
+ * no manifest. A 404 without that echo (a name that points at no content gets one too) is
+ * `unread`, like anything else that stopped the read: it proves nothing about the content.
  */
 export type ManifestAtRoot =
   | { readonly kind: 'app', readonly manifest: Manifest, readonly bytes: Uint8Array }
@@ -33,10 +33,10 @@ export async function fetchManifestAtRoot (fetchFn: Fetch, resolveFn: Resolver, 
     const origin = await raceAbort(ensurePublicUnicastOrigin(canonicalOrigin, resolveFn), controller.signal, () => new Error('resolving the origin timed out'))
     if (!origin.ok) return { kind: 'unread', reason: origin.reason }
 
-    let status: number | undefined
+    let absentUnderRoot = false
     const noting: Fetch = async (url, addresses, signal, headers): Promise<FetchResponse> => {
       const response = await fetchFn(url, addresses, signal, headers)
-      status = response.status
+      absentUnderRoot = response.status === NOT_FOUND && response.headers?.get(CONTENT_ROOT_HEADER) === cid
       return response
     }
     const chunks: Uint8Array[] = []
@@ -44,7 +44,7 @@ export async function fetchManifestAtRoot (fetchFn: Fetch, resolveFn: Resolver, 
       pinnedToRoot(noting, cid), `${canonicalOrigin}${MANIFEST_PATH}`, origin.addresses, MAX_MANIFEST_BYTES,
       new ByteBudget(MAX_MANIFEST_BYTES), 'manifest', controller.signal, async (chunk) => { chunks.push(chunk) }
     )
-    if ('ok' in fetched) return status === NOT_FOUND ? { kind: 'website' } : { kind: 'unread', reason: fetched.reason }
+    if ('ok' in fetched) return absentUnderRoot ? { kind: 'website' } : { kind: 'unread', reason: fetched.reason }
 
     const bytes = joinChunks(chunks, fetched.byteLength)
     const parsed = parseManifest(new TextDecoder('utf-8', { fatal: false }).decode(bytes))

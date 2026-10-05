@@ -23,9 +23,19 @@ describe('fetchManifestAtRoot', () => {
     expect(seen).toEqual([{ url: MANIFEST_URL, root: CID }])
   })
 
-  it('answers website for a 404, the only answer that shows the content has no manifest', async () => {
-    const fetch = stubFetch({ [MANIFEST_URL]: { status: 404, body: utf8('not found') } })
+  it('answers website for a 404 that names this root as the one it looked in, the only answer that shows the content has no manifest', async () => {
+    const fetch = stubFetch({ [MANIFEST_URL]: { status: 404, body: utf8('not found'), headers: { [CONTENT_ROOT_HEADER]: CID } } })
     expect(await fetchManifestAtRoot(fetch, PUBLIC_RESOLVER, ORIGIN, CID)).toEqual({ kind: 'website' })
+  })
+
+  it('answers unread for a 404 that names no root, which is how a name that points at nothing answers', async () => {
+    const fetch = stubFetch({ [MANIFEST_URL]: { status: 404, body: utf8('not found') } })
+    expect(await fetchManifestAtRoot(fetch, PUBLIC_RESOLVER, ORIGIN, CID)).toMatchObject({ kind: 'unread' })
+  })
+
+  it('answers unread for a 404 that names another root', async () => {
+    const fetch = stubFetch({ [MANIFEST_URL]: { status: 404, body: utf8('not found'), headers: { [CONTENT_ROOT_HEADER]: 'bafyother' } } })
+    expect(await fetchManifestAtRoot(fetch, PUBLIC_RESOLVER, ORIGIN, CID)).toMatchObject({ kind: 'unread' })
   })
 
   it.each([500, 502, 504])('answers unread for HTTP %i, which proves nothing about the content', async (status) => {
