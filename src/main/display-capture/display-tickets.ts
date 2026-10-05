@@ -30,8 +30,8 @@ export interface DisplayTickets<C> {
   called: (key: string, nonce: string, rejectedEarly: boolean) => void
   /** Ends the frame's ticket and denies whatever it held: navigation, a destroyed frame, a renderer gone. */
   void: (key: string) => void
-  /** The choice for the display handler, once, and only for a ticket that allowed its request. */
-  consumeDisplay: (key: string) => C | undefined
+  /** The choice and the nonce for the display handler, once, and only for a ticket that allowed its request. */
+  consumeDisplay: (key: string) => { readonly choice: C, readonly nonce: string } | undefined
   /** True when a request was allowed and the display handler has not taken the choice. */
   awaitingDisplay: (key: string) => boolean
   has: (key: string) => boolean
@@ -139,7 +139,7 @@ export function createDisplayTickets<C> (overrides: Partial<DisplayTicketsDeps> 
       const ticket = tickets.get(key)
       if (ticket?.state !== 'allowed') return undefined
       end(key, ticket)
-      return ticket.choice
+      return { choice: ticket.choice, nonce: ticket.nonce }
     },
 
     awaitingDisplay: (key) => tickets.get(key)?.state === 'allowed',

@@ -30,6 +30,12 @@ describe('the display asker: requests', () => {
     expect(deps.tickets.request).toHaveBeenCalledWith(KEY)
   })
 
+  it('reads Electron\'s origin with its trailing slash as the same origin', async () => {
+    const { asker, deps } = setup()
+    expect(await asker.request?.(tab(), 'media', { ...DISPLAY, securityOrigin: `${ORIGIN}/` })).toBe(true)
+    expect(deps.tickets.request).toHaveBeenCalledWith(KEY)
+  })
+
   it('answers the ticket\'s refusal as a refusal', async () => {
     const { asker } = setup({ tickets: { request: async () => await Promise.resolve(false), awaitingDisplay: () => false, void: () => {} } })
     expect(await asker.request?.(tab(), 'media', DISPLAY)).toBe(false)

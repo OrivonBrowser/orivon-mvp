@@ -69,7 +69,7 @@ describe('display tickets', () => {
     expect(await state(held)).toBe('pending')
     advance(1)
     expect(await state(held)).toBe(true)
-    expect(tickets.consumeDisplay(KEY)).toBe('screen')
+    expect(tickets.consumeDisplay(KEY)).toEqual({ choice: 'screen', nonce })
     expect(tickets.consumeDisplay(KEY)).toBeUndefined()
   })
 
@@ -158,7 +158,7 @@ describe('display tickets', () => {
     advance(QUIET_WINDOW_MS)
     expect(await state(first)).toBe(true)
     expect(await state(tickets.request(KEY))).toBe(false)
-    expect(tickets.consumeDisplay(KEY)).toBe('screen')
+    expect(tickets.consumeDisplay(KEY)?.choice).toBe('screen')
   })
 
   it('denies everything held when the preload says its call was rejected early', async () => {
@@ -260,7 +260,7 @@ describe('display tickets', () => {
     tickets.called(KEY, again, false)
     advance(QUIET_WINDOW_MS)
     expect(await state(next)).toBe(true)
-    expect(tickets.consumeDisplay(KEY)).toBe('fresh')
+    expect(tickets.consumeDisplay(KEY)?.choice).toBe('fresh')
   })
 
   it('keeps one frame\'s ticket apart from another\'s', async () => {
