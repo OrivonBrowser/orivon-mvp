@@ -74,7 +74,7 @@ export class ProfilesService {
     return result
   }
 
-  /** Starts a browser for a profile, or brings the one running forward (its second start hands over and stops). */
+  /** Starts a browser for a profile, or opens a window in the one running (its second start hands over and stops). */
   open (id: string): boolean {
     if (this.kiosk || this.runtime.profiles.read(id) === null || (id === this.runtime.profileId && !this.runtime.isPrivate)) return false
     try {

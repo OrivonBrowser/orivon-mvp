@@ -204,6 +204,7 @@ Settings shows what it is doing.
 | `ORIVON_ETH_LIGHT_CLIENT=off` | Keeps the light client from starting, so the run contacts no Ethereum server and every real `.eth` name fails closed. `test/support/launch-electron.mjs` sets it for every smoke and e2e launch unless a test asks otherwise |
 | `ORIVON_LIVE_ETH=1` | Runs `src/protocols/verifier-host/light-client/tests/live-ens.test.ts`, which resolves real names through the light client against mainnet. Skipped otherwise |
 | `ORIVON_TEST_ETH_FIXTURES`, `ORIVON_TEST_IPFS_GATEWAYS`, `ORIVON_TEST_DOH` | Test builds only (`npm run test:e2e` builds one): `.eth` names mapped to content with no light client, and the gateway and DNS-over-HTTPS endpoints to fetch it from. An ordinary build contains none of this (`npm run check:dev-grant-absent`) |
+| `ORIVON_TEST_DEFAULT_BROWSER=can-set\|default\|declined` | Test builds only: stands a recording host in for the operating system's default-browser calls, so Settings, the welcome screen's box and the weekly ask can be driven with nothing reaching the machine (`src/main/os/default-browser-test-seam.ts`). An ordinary build contains none of this |
 | `ORIVON_TEST_LOCAL_POINTER=1` | Test builds only: treats the pointer's screen position as unknown, as on a native Wayland session, so a tab drag is the browser's own drag and drop on a virtual X display (`src/main/shell/local-pointer.ts`). An ordinary build contains none of this |
 
 Each release ships a checkpoint for the light client, refreshed with
@@ -232,14 +233,43 @@ today, but npm warns that it will stop working, so use the first form. An `ORIVO
 in the environment is used as it stands, and the flag beats it. To see the `once` showing again
 on a profile that has passed it, delete `intro.json` from the profile directory.
 
+The welcome screen also offers a box, unticked, to make Orivon the default browser, on a build installed from a
+package; a run from source never shows it (`docs/development/packaging.md`).
+
+---
+
+## Starting a window from the dock or the taskbar
+
+A second start of a running browser opens a new window (no address, or `--new-window`) or a private session
+(`--new-private-window`); an address opens in the window in use. The installed `.deb`'s icon menu carries both
+as actions. A launcher you wrote by hand for a source run never gets them from the browser, which does not edit it:
+add the lines yourself. For an entry whose `Exec` runs `electron-vite preview`, give `Exec` the `--skipBuild` flag
+(a build per click would rewrite `out/` under the browser you are running), and add the actions:
+
+```ini
+Exec=electron-vite preview --skipBuild
+Actions=NewWindow;NewPrivateWindow;
+
+[Desktop Action NewWindow]
+Name=New Window
+Exec=electron-vite preview --skipBuild -- --new-window
+
+[Desktop Action NewPrivateWindow]
+Name=New Private Window
+Exec=electron-vite preview --skipBuild -- --new-private-window
+```
+
+Run from the repository directory (`Path=`), after `npm run build`. A source run never registers as the default
+browser, and on Windows its taskbar button has an identity of its own (`com.orivonstack.orivon.source`).
+
 ---
 
 ## Platform notes
 
 **Linux is the packaged target**: AppImage and deb. No code-signing cost, and the audience
 skews Linux. `deb` is the primary artefact, because only a `.desktop` file registered by an
-installed package can become the default browser via `xdg-settings`, and the success metric is
-measured in daily-driver hours.
+installed package can become the default browser (`xdg-mime`, or `xdg-settings` for the same two
+schemes), and the success metric is measured in daily-driver hours.
 
 **Windows and macOS are supported from day one via run-from-source.** Those users count toward
 the metric and their telemetry must work identically. Two constraints follow, and neither is

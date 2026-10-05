@@ -20,6 +20,11 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **Default browser, asked properly**: Settings > Default browser, an unticked box on the welcome screen and a question
+  a week after the last ask (in the default profile, "Don't ask again" from the third week). Only an installed package
+  registers; a source run and an AppImage say why not. Windows and macOS packaging is written and unbuilt.
+- **New Window and New Private Window** from the dock, the taskbar and the installed entry's menu, and a second start of
+  a running browser with no address (or `--new-window`, `--new-private-window`) now opens a window or a private session.
 - **`test/` is ordered by area**, with a Layout table in `test/README.md`; a spec left at its top, a folder with no
   row and a dead `test/` path in any tracked file now fail CI, and a new capability kind needs a catalogue line.
 - **An app-behaviour catalogue** names what a working app relies on, one row each, and each row is proven by an
