@@ -1,6 +1,7 @@
 // A tab on an `ipfs://` page shows the icon the page declares. The page runs at
 // `https://<cid>.ipfs.orivon`, served by the verifier from blocks it checked, so its icon
 // must come the same way. Driven through the test seam's gateway, so nothing leaves the machine.
+import { randomBytes } from 'node:crypto'
 import { afterAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, launchElectron, mainOutput, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
 import { findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from './smoke-helpers.mjs'
@@ -152,3 +153,41 @@ it('shows the icon of an ipfs:// page when the gateway answers slowly', async ()
     }
   })
 }, TEST_TIMEOUT_MS + 60_000)
+
+const CONCURRENT_FILES = 8
+
+it('shows the icon of an ipfs:// page while the page itself is loading large files from the same host', async () => {
+  await runPhase('ipfs-favicon-busy-page', async (check) => {
+    const files: Record<string, string | Uint8Array> = {
+      'index.html': `<!doctype html><meta charset="utf-8"><title>busy fixture</title><link rel="icon" href="install/public/favicon.ico"><body>busy<script>for (let i = 0; i < ${String(CONCURRENT_FILES)}; i++) fetch('big' + String(i) + '.bin').then((r) => r.arrayBuffer())</script></body>`,
+      'install/public/favicon.ico': PNG
+    }
+    for (let i = 0; i < CONCURRENT_FILES; i++) files[`big${String(i)}.bin`] = randomBytes(2 * 1024 * 1024)
+    const gateway = await startFixtureGateway({ site: files }, { blockDelayMs: 800 })
+    const site = gateway.roots['site']!
+    let app: Awaited<ReturnType<typeof launchElectron>> | undefined
+    try {
+      app = await launchElectron({
+        appPath: '.',
+        args: [HERMETIC_RESOLVER],
+        env: { ORIVON_TEST_ETH_FIXTURES: JSON.stringify({}), ORIVON_TEST_IPFS_GATEWAYS: gateway.url, ORIVON_TEST_DOH: `${gateway.url}/dns-query` }
+      })
+      const running = app
+      const listening = await waitFor(async () => await running.evaluate(() => { const seam = (globalThis as { __orivonDevEthFixtures?: { listening: boolean, start?: () => void } }).__orivonDevEthFixtures; seam?.start?.(); return seam?.listening === true }), 20_000)
+      if (!listening) throw new Error('the verifier host never reported listening')
+      await waitFor(() => running.windows().length === 2)
+      const chrome = findChrome(app)
+      await waitForAddressBarStable(chrome)
+
+      await clickAddressBarRetrying(chrome, `ipfs://${site}`)
+      const loaded = await waitForTab(chrome, { address: `ipfs://${site}/`, title: 'busy fixture' })
+      check(`the page loaded (${JSON.stringify(loaded.info)})`, loaded.ok)
+      const shown = await waitFor(async () => await hasIcon(chrome), 60_000)
+      check(`the tab shows the page's own icon (gateway asked ${String(gateway.requests.length)} times)`, shown)
+      expect(shown).toBe(true)
+    } finally {
+      if (app !== undefined) await closeElectronApp(app)
+      await gateway.close()
+    }
+  })
+}, TEST_TIMEOUT_MS + 90_000)
