@@ -113,7 +113,7 @@ export function recordUpdateCheck (userDataPath: string, result: UpdateCheckResu
  * `session.extensions.getAllExtensions()` already sees what Orivon
  * installed with no bookkeeping of its own.
  *
- * A private or guest runtime starts it too, with every install denied before any question and no
+ * A private or guest runtime starts it too, with every install blocked before any question and no
  * updater: a store tab there must still get the preload's overrides, because the native
  * `chrome.webstorePrivate` its page would otherwise reach crashes the main process. */
 export async function startWebStore (ctx: InstallContext, preloadPath: string): Promise<StoreApi> {
@@ -125,6 +125,8 @@ export async function startWebStore (ctx: InstallContext, preloadPath: string): 
     session: ctx.session,
     loadExtensions: false,
     autoUpdate: !ctx.privateSession,
+    // Nothing is installable here: the library then refuses before it fetches the page's icon from the main process.
+    ...(ctx.privateSession ? { allowlist: [] } : {}),
     preloadPath,
     verifyCrx,
     beforeInstall: async ({ manifest, frame }) => {

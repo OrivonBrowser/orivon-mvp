@@ -161,6 +161,7 @@ describe('startWebStore', () => {
     await startWebStore({ ...ctxWith(prompt), privateSession: false }, '/preload.js')
     const options = installChromeWebStore.mock.calls[0]![0]
     expect(options['autoUpdate']).toBe(true)
+    expect(options['allowlist']).toBeUndefined()
     expect(options['preloadPath']).toBe('/preload.js')
   })
 
@@ -169,6 +170,8 @@ describe('startWebStore', () => {
     await startWebStore({ ...ctxWith(prompt), privateSession: true }, '/preload.js')
     const options = installChromeWebStore.mock.calls[0]![0]
     expect(options['autoUpdate']).toBe(false)
+    // An empty allowlist answers every status and install "blocked_by_policy" before the library fetches the page's icon.
+    expect(options['allowlist']).toEqual([])
     const manifest = { name: 'x', version: '1', manifest_version: 3 }
     await expect(options['beforeInstall']({ manifest, frame: {} })).resolves.toEqual({ action: 'deny' })
     expect(prompt).not.toHaveBeenCalled()
