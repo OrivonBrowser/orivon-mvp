@@ -6,17 +6,32 @@
 // Run with `npm run test:e2e`, or directly:
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-pin-new.test.ts
 import { afterAll, expect, it } from 'vitest'
+import { mkdirSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
-import { evaluateRetrying, findChrome, HERMETIC_RESOLVER, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
+import { delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 import { closeElectronApp } from '../support/e2e-helpers.js'
 import { answeringWith, noNativeDialogs, stubNativeDialogs } from '../support/question-support.js'
 import { FIXTURES_DIR } from '../support/extensions-fixtures.js'
 import { openExtensionPage, rpc, seedFixture, waitRecovered } from './extensions-e2e-helpers.js'
 
 const TEST_TIMEOUT_MS = 240_000
+
+const SHOTS = process.env['ORIVON_SHOTS_DIR']
+
+/** With ORIVON_SHOTS_DIR set, writes `name` in both colour schemes, for reading the surface by eye. */
+async function shoot (pages: Page[], name: string, clip?: { x: number, y: number, width: number, height: number }): Promise<void> {
+  if (SHOTS === undefined) return
+  mkdirSync(SHOTS, { recursive: true })
+  for (const scheme of ['light', 'dark'] as const) {
+    for (const page of pages) await page.emulateMedia({ colorScheme: scheme })
+    await delay(300)
+    await pages[0]?.screenshot({ path: join(SHOTS, `${name}-${scheme}.png`), ...(clip === undefined ? {} : { clip }) })
+  }
+  for (const page of pages) await page.emulateMedia({ colorScheme: null })
+}
 
 afterAll(async () => { expect(await assertNoElectronSurvivors()).toEqual([]) })
 
@@ -53,6 +68,7 @@ it('does not pin an extension installed from now on, pins it from the menu, and 
     await waitRecovered(first.app)
     await new Promise((resolve) => setTimeout(resolve, 1_000))
     expect(await toolbarIds(first.chrome)).toEqual([seededId])
+    await shoot([first.chrome], 'toolbar-new-extension-unpinned', { x: 0, y: 0, width: 1280, height: 104 })
 
     // The menu lists both, the seeded one pinned and the new one not.
     await first.chrome.click('#extensions-menu-btn')
@@ -70,6 +86,7 @@ it('does not pin an extension installed from now on, pins it from the menu, and 
     await menu.click(`[data-key="pin:${freshId}"]`)
     expect(await waitFor(async () => (await toolbarIds(first.chrome)).length === 2)).toBe(true)
     expect(await toolbarIds(first.chrome)).toContain(freshId)
+    await shoot([first.chrome], 'toolbar-new-extension-pinned', { x: 0, y: 0, width: 1280, height: 104 })
     expect(await noNativeDialogs(first.app)).toEqual([])
   } finally {
     await closeElectronApp(first.app)

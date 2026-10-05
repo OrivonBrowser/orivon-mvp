@@ -7,6 +7,8 @@
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-popup-placement.test.ts
 import { afterAll, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
 import { delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
@@ -14,6 +16,20 @@ import { closeElectronApp, runPhase } from '../support/e2e-helpers.js'
 import { seedFixture, waitRecovered } from './extensions-e2e-helpers.js'
 
 const TEST_TIMEOUT_MS = 180_000
+
+const SHOTS = process.env['ORIVON_SHOTS_DIR']
+
+/** With ORIVON_SHOTS_DIR set, writes `name` in both colour schemes, for reading the surface by eye. */
+async function shoot (pages: Page[], name: string, clip?: { x: number, y: number, width: number, height: number }): Promise<void> {
+  if (SHOTS === undefined) return
+  mkdirSync(SHOTS, { recursive: true })
+  for (const scheme of ['light', 'dark'] as const) {
+    for (const page of pages) await page.emulateMedia({ colorScheme: scheme })
+    await delay(300)
+    await pages[0]?.screenshot({ path: join(SHOTS, `${name}-${scheme}.png`), ...(clip === undefined ? {} : { clip }) })
+  }
+  for (const page of pages) await page.emulateMedia({ colorScheme: null })
+}
 const GAP = 5
 const TOLERANCE = 1
 
@@ -120,6 +136,9 @@ it('opens an extension popup inside the window under its anchor, in the page\'s 
         return { width: Math.ceil(rect.width), height: Math.ceil(rect.height) }
       })
       check('it has the size of its page, not the fallback size', content !== undefined && Math.abs(fromIcon.bounds.width - content.width) <= 4 && Math.abs(fromIcon.bounds.height - content.height) <= 4 && !(fromIcon.bounds.width === 320 && fromIcon.bounds.height === 400), JSON.stringify({ popup: fromIcon.bounds, content }))
+
+      if (page !== undefined) await shoot([page], 'extension-popup')
+      await shoot([chrome], 'toolbar-popup-open', { x: 0, y: 0, width: 1280, height: 104 })
 
       // Growing keeps the right edge. A virtual display never reports a page's preferred size, so the event Chromium
       // raises for it is raised here, for the size the page would report.
