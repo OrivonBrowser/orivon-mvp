@@ -249,6 +249,12 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
 
     const { loading } = state
     if (loading !== undefined) {
+      // The host announces nothing when the person leaves the entry during the first load, so the page is let go here.
+      if (!host.isOpen() || host.view() !== `${ENTRY_PREFIX}${loading.ext}`) {
+        loading.page.destroy()
+        state.loading = undefined
+        return
+      }
       const url = deps.options.panelFor(loading.ext, tab)
       if (url === undefined) {
         loading.page.destroy()

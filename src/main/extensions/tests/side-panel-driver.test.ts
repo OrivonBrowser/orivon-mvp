@@ -367,6 +367,22 @@ describe('the tab in front changes during the first load', () => {
     expect(s.pages).toHaveLength(2)
   })
 
+  it('lets go of a page whose entry the person left, and does not bring it back with a later tab', async () => {
+    const s = setup()
+    s.options.set(EXT, { tabId: 2, enabled: false })
+    s.driver.republish()
+    s.host.open(`ext:${EXT}`)
+    const first = s.pages[0] as FakePage
+    s.state.view = 'bookmarks'
+    s.setFront(2)
+    s.driver.sync(s.win)
+    expect(first.destroyCalls).toBeGreaterThan(0)
+    s.setFront(1)
+    s.driver.sync(s.win)
+    expect(s.pages).toHaveLength(1)
+    expect(s.state.view).toBe('bookmarks')
+  })
+
   it('loads the new tab\'s page instead, and reports that tab\'s path', async () => {
     const s = setup()
     s.options.set(EXT, { tabId: 2, path: 'two.html' })
