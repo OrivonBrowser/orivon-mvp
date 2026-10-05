@@ -20,6 +20,8 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **An extension's side panel** (`chrome.sidePanel`): its page is listed in the panel's view picker, opens from its toolbar
+  button, its `_execute_side_panel` key or `open()` after the person's input, and follows the tab in front.
 - **`test/` is ordered by area**, with a Layout table in `test/README.md`; a spec left at its top, a folder with no
   row and a dead `test/` path in any tracked file now fail CI, and a new capability kind needs a catalogue line.
 - **An app-behaviour catalogue** names what a working app relies on, one row each, and each row is proven by an

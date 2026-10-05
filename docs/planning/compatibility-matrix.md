@@ -655,7 +655,7 @@ scripts (isolated and MAIN world, MV2 and MV3), run with the Chromium sandbox on
 | `externally_connectable` | ✅ | Chromium's own: a page whose address matches gets `chrome.runtime.sendMessage` and `connect`, and the extension's `onMessageExternal` and `onConnectExternal` fire; no Orivon code; the sender's `tab` carries `windowId` 0 |
 | `commands` | ✅ | Suggested keys are bound when free; `_execute_action` activates the extension; rebinding at `orivon://extensions/shortcuts`; Orivon's own shortcuts win; macOS key names are not run on a Mac (`extension-commands.ts`, `extension-commands-runner.ts`) |
 | `omnibox` | ❌ | Orivon's own address bar is unrelated code |
-| `side_panel` | ❌ | `chrome.sidePanel` is a no-op stub (Table 7c); the key drives no real panel surface |
+| `side_panel` | ✅ | `default_path` is the panel every tab shows until `chrome.sidePanel.setOptions` says otherwise, in the window's side panel (Table 7c, 7d) |
 | `host_permissions` | ✅ | Gates `chrome.cookies`/`chrome.tabs`/`insertCSS`/`webNavigation` API access; an optional site the person allowed counts at once (`granted-host-rule.ts`) |
 | `optional_permissions` / `optional_host_permissions` | ✅ | Asked in an Orivon sheet, only for what the manifest declares (`permissions-api.ts`); kept in `prefs.json` across restarts; `remove` takes it back; Orivon's own checks follow at once, Chromium's own at the extension's next quiet reload (`manifest-stage-granted.ts`) |
 | `incognito` (`spanning`/`split`/`not_allowed`) | ➖ | Moot: no private window runs any extension |
@@ -708,10 +708,10 @@ is not the same as it doing anything: read the note, not just the symbol.
 | `privacy` | ⚠️ | Inert `ChromeSetting` placeholders; a `get` call triggers a native "Unknown Extension API" log |
 | `proxy` | ⚠️ | Exists as a namespace; `settings.get` explicitly rejects `"Access to extension API denied."` |
 | `browser` global | ✅ | The same object as `chrome` for every namespace Orivon provides, so an extension that takes `self.browser \|\| self.chrome` gets `permissions`, `webRequest` and the rest (measured with a fixture) |
-| `runtime` | ⚠️ | `id`/`getManifest`/`getURL`/`connect`/`sendMessage`/`openOptionsPage` work; `onMessageExternal` and `onConnectExternal` fire for a matching page (Table 7b); `getContexts` lists the worker, popup, tab pages and offscreen document; `connectNative`/`disconnectNative`/`sendNativeMessage` throw by design (below); `onInstalled` fires once in a service worker after an install or update, with `reason` and, for an update, `previousVersion` (Electron never fires its own); `getManifest` still carries the `declarative_net_request` the extension shipped, which a blocker reads at start-up |
+| `runtime` | ⚠️ | `id`/`getManifest`/`getURL`/`connect`/`sendMessage`/`openOptionsPage` work; `onMessageExternal` and `onConnectExternal` fire for a matching page (Table 7b); `getContexts` lists the worker, popup, tab pages, side panel pages and offscreen document; `connectNative`/`disconnectNative`/`sendNativeMessage` throw by design (below); `onInstalled` fires once in a service worker after an install or update, with `reason` and, for an update, `previousVersion` (Electron never fires its own); `getManifest` still carries the `declarative_net_request` the extension shipped, which a blocker reads at start-up |
 | `scripting` | ✅ | `registerContentScripts` with `world: 'MAIN'` measured running in the page's own world, and an isolated one staying out of it; `executeScript` measured running a real function in a tab and returning its result; it needs host access, and `activeTab` alone is refused (Table 7d) |
 | `search` | ✅ | `query` opens the default engine's results in the current tab, a new tab or a new window (`api/search-api.ts`) |
-| `sidePanel` | ⚠️ | Every method resolves as a no-op; no panel surface opens |
+| `sidePanel` | ✅ | `setOptions` and `getOptions` (global or per tab), `setPanelBehavior` and `getPanelBehavior` (kept across restarts), `getLayout`, `open` (needs the person's input on the extension within five seconds, and a window with room), `close`, `onOpened` and `onClosed`; a tab that is an app's or an Orivon page is no tab to it (`side-panel-api.ts`, `test/extensions/e2e-extensions-side-panel.test.ts`) |
 | `storage.local` | ✅ | Native to Electron |
 | `storage.sync` | ⚠️ | Alias `local`; no real multi-device sync |
 | `storage.managed` | ⚠️ | Empty and read-only, as in Chrome with no policy set; no policy delivery |
@@ -755,6 +755,7 @@ policy source this build has no equivalent of.
 | Extension pages: options tab | ✅ | Both `options_page` and `options_ui` open a tab; the embedded mode of `options_ui` is not implemented |
 | Extension pages: an extension's own full page opened as a tab | ✅ | Same URL policy as any extension-initiated navigation |
 | Extension pages: offscreen documents | ✅ | `chrome.offscreen`; one per extension, never shown (Table 7c) |
+| Extension pages: the side panel | ✅ | The extension's own page in the window's side panel, picked from the panel's list or opened by its toolbar button (when it asks with `openPanelOnActionClick`), its `_execute_side_panel` key or `sidePanel.open()`; a second click or key closes it, and a window below 760 px or a kiosk falls back to the popup; the page follows the tab in front, and its `window.open`, links and `window.close()` open tabs and close the panel (`side-panel-runner.ts`) |
 | Extension popup: closes on focus loss elsewhere in Orivon, on tab switch and navigation | ✅ | |
 | Extension popup: paints its theme colour before first paint | ✅ | |
 | Extension popup: a `chrome.*` call on its first line | ✅ | No longer fails with "unknown extension context" |
@@ -1136,7 +1137,8 @@ the reference set, and whether this build has it.
 | Asking for more access later | ✅ | `chrome.permissions.request` asks in a sheet and the person can take a grant back from the details page (Table 7b) |
 | Bookmarks, history, top sites and search for extensions | ✅ | Over Orivon's own stores; history and top sites never list an app's pages (Table 7c) |
 | `webRequest` | ✅ | Served by Orivon, blocking included for manifest version 2; full uBlock Origin blocks (Table 7c) |
-| `sidePanel`, `userScripts` | ⚠️ | Present as no-ops (Table 7c) |
+| `sidePanel` | ✅ | Real (Table 7c, 7d) |
+| `userScripts` | ⚠️ | Present as no-ops (Table 7c) |
 | Native messaging | 🚫 | Off by design: it would start desktop programs outside the broker |
 | Extensions inside apps a person has granted permissions to | ✅ | Table 7d |
 | Extensions in private windows | ❌ | Table 7d |
@@ -1165,7 +1167,7 @@ the reference set, and whether this build has it.
 | Toolbar customisation | ❌ | Not found |
 | Keyboard shortcuts, remappable | ✅ | Full remapping UI |
 | Gestures (mouse/trackpad) | ❌ | Not found |
-| Side panel | ✅ | Docked beside the page on the right or the left (`sidePanel.side`), 280 to 640 px wide, from `Mod+Alt+B`, the toolbar button or More tools, with Bookmarks, History, a Reading list that stays empty while nothing saves to it, Downloads, and one slot for an extension's view that no extension fills yet; the page narrows rather than being covered, and the panel is hidden below 760 px, in HTML fullscreen and in a kiosk (`src/main/side-panel/`, `src/renderer/overlay/side-panel/`) |
+| Side panel | ✅ | Docked beside the page on the right or the left (`sidePanel.side`), 280 to 640 px wide, from `Mod+Alt+B`, the toolbar button or More tools, with Bookmarks, History, a Reading list that stays empty while nothing saves to it, Downloads, and an extension's own page, listed in the panel's view picker (Table 7d); the page narrows rather than being covered, and the panel is hidden below 760 px, in HTML fullscreen and in a kiosk (`src/main/side-panel/`, `src/renderer/overlay/side-panel/`) |
 | Settings, History and Profiles update live, without a restart | ✅ | Confirmed across Apps, Privacy, Usage, Updates and Profiles settings, History and the Profiles page, including across separate profile processes (`grant-events.ts`, `start-internal-pages.ts`) |
 
 ### Updates, crash reporting, OS integration and misc

@@ -53,6 +53,9 @@ interface ExtSpec {
   readonly slot: string
   readonly dir: string
   readonly popup: string
+  /** The side panel page the toolbar click opens instead of the popup, when the extension asks for that
+   * (`sidePanel.setPanelBehavior({ openPanelOnActionClick: true })`). */
+  readonly panel?: string
   /** A manifest version 2 extension runs a background page, not a service worker. */
   readonly mv2?: boolean
 }
@@ -61,7 +64,7 @@ const SPECS: readonly ExtSpec[] = [
   { slot: 'ubol', dir: 'ubol', popup: 'popup.html' },
   { slot: 'darkreader', dir: 'darkreader', popup: 'ui/popup/index.html' },
   { slot: 'bitwarden', dir: 'bitwarden', popup: 'popup/index.html' },
-  { slot: 'metamask', dir: 'metamask', popup: 'popup-init.html' },
+  { slot: 'metamask', dir: 'metamask', popup: 'popup-init.html', panel: 'sidepanel.html' },
   { slot: 'ubo', dir: 'ubo', popup: 'popup-fenix.html', mv2: true }
 ]
 
@@ -234,6 +237,9 @@ describeOrSkip('real Chrome extensions', () => {
                   : await popup.content().then((html) => html.length).catch(() => 0)
             }
             check(`${slot}: action popup renders a non-empty body`, popupOpened && bodyLen > 0, `bodyLen=${String(bodyLen)}`)
+            // The page that opened is the popup, or the side panel page for an extension that asks for the panel on a click.
+            const opened = findPopup(liveApp.windows(), spec.id)?.url() ?? ''
+            check(`${slot}: the toolbar click shows its popup or its side panel`, [spec.popup, ...(spec.panel === undefined ? [] : [spec.panel])].some((file) => opened.includes(`/${file}`)), opened)
           } else {
             check(`${slot}: action popup renders a non-empty body`, false, 'toolbar action never appeared')
           }
