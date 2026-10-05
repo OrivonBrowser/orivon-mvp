@@ -81,3 +81,30 @@ describe('WindowRegistry', () => {
     expect(registry.focused()).toBeUndefined()
   })
 })
+
+function windowWithTabs (pages: Record<string, { url: string, destroyed?: boolean }>): ShellWindow {
+  const tabs = {
+    ids: () => Object.keys(pages),
+    liveWebContents: (id: string) => pages[id]?.destroyed === true ? undefined : { getURL: () => pages[id]?.url ?? '' }
+  }
+  return { window: { isDestroyed: () => false }, chrome: {}, tabs } as unknown as ShellWindow
+}
+
+describe('WindowRegistry -- tabs by origin', () => {
+  it('finds the live tabs showing an origin, in every window, and skips a destroyed one', () => {
+    const registry = new WindowRegistry()
+    registry.add(windowWithTabs({ a: { url: 'https://app.example/inbox' }, b: { url: 'https://other.example/' } }))
+    registry.add(windowWithTabs({ c: { url: 'https://app.example/' }, d: { url: 'https://app.example/x', destroyed: true } }))
+
+    expect(registry.liveTabsOn('https://app.example')).toHaveLength(2)
+    expect(registry.liveTabsOn('https://nobody.example')).toEqual([])
+  })
+
+  it('lists each origin that has a live tab once', () => {
+    const registry = new WindowRegistry()
+    registry.add(windowWithTabs({ a: { url: 'https://app.example/inbox' }, b: { url: 'https://other.example/' }, e: { url: 'about:blank' } }))
+    registry.add(windowWithTabs({ c: { url: 'https://app.example/' } }))
+
+    expect(registry.liveTabOrigins().sort()).toEqual(['https://app.example', 'https://other.example'])
+  })
+})

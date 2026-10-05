@@ -41,11 +41,13 @@ import { parseManifest } from './manifest/manifest.js'
 import { checkRecord, checkedRecently, loadCheckRecord, pinnedManifestLeaf, saveCheckRecord, validatorsForPin } from './fetch/update-check.js'
 import type { LoadInstalled, LoadRejected, LoadResult } from './load-result.js'
 import { pinnedToRoot } from './fetch/content-root.js'
-import { fetchManifestAtRoot } from './fetch/manifest-at-root.js'
-import type { ManifestAtRoot } from './fetch/manifest-at-root.js'
+import { rememberingManifestReader } from './fetch/manifest-at-root.js'
+import { createNameUpdates } from './name-update.js'
+import type { AppUpdateApi } from './name-update.js'
+import { readQuietOffers, writeQuietOffer } from './update-offer.js'
 
 export type { Fetch, FetchResponse } from './fetch/bundle.js'
-export type { LoadInstalled, LoadNeedsCapabilityPrompt, LoadNeedsReconsent, LoadNeedsRollbackChoice, LoadRejected, LoadResult, LoadUpToDate } from './load-result.js'
+export type { LoadInstalled, LoadNeedsCapabilityPrompt, LoadNeedsReconsent, LoadNeedsRollbackChoice, LoadRejected, LoadResult, LoadUpToDate, LoadUpdateAvailable } from './load-result.js'
 export type { LoaderStorage } from './cache/storage.js'
 export { appRootDirectoryName } from './cache/storage.js'
 
@@ -157,7 +159,12 @@ export interface LoadContext {
   readonly hasPersistedGrants?: boolean
 }
 
-export interface Loader {
+/** `recheck`: look at the name now, whatever was looked at a moment ago (the open-tab watch is itself the cadence). */
+export interface LoadOptions {
+  readonly recheck?: true
+}
+
+export interface Loader extends AppUpdateApi {
   /**
    * `hintedUrl` names the origin to install -- from a `<link
    * rel="orivon-manifest">` hint already in delivered HTML, the only
@@ -172,7 +179,7 @@ export interface Loader {
    * once it has fetched and parsed it. A passive discovery trigger never has
    * anything but `hintedUrl` to start from (docs/open-questions.md A45).
    */
-  load(hintedUrl: string, context: LoadContext): Promise<LoadResult>
+  load(hintedUrl: string, context: LoadContext, options?: LoadOptions): Promise<LoadResult>
 
   /**
    * S4-5: installs a bundle already fetched and validated by a prior
@@ -222,19 +229,8 @@ export interface Loader {
 
   /** The hash tree the site published with its pinned bundle, or `undefined` when it published none readable. Same read-only stance as `pinFor`. */
   ddocFor(origin: string): Promise<DdocDeclaration | undefined>
-
-  /** The manifest the pin holds for `origin`: no network call. `undefined` when never pinned or the stored manifest no longer matches the pin. */
-  manifestFor(origin: string): Promise<Manifest | undefined>
-
-  /**
-   * The manifest of the content `cid` names, read through `origin`'s own content-addressed
-   * route and nothing else of the bundle. Kept per (origin, CID) once the read has an answer,
-   * an app or a website; a failed read is asked again.
-   */
-  manifestAt(origin: string, cid: string): Promise<ManifestAtRoot>
 }
 
-const MAX_REMEMBERED_ROOT_MANIFESTS = 64
 
 /**
  * The pinned manifest itself -- decideUpdate's `previouslyDeclaredPatterns`
@@ -387,9 +383,22 @@ export function createLoader (options: CreateLoaderOptions): Loader {
     }
   }
 
-  async function load (hintedUrl: string, context: LoadContext): Promise<LoadResult> {
+  const names = createNameUpdates(
+    options,
+    contentOf,
+    async (canonicalOrigin, manifest, tree, entries, declaration, content, context) => await decideAndRoute(options, canonicalOrigin, manifest, tree, entries, declaration, content, context)
+  )
+
+  async function load (hintedUrl: string, context: LoadContext, loadOptions?: LoadOptions): Promise<LoadResult> {
     const interval = options.updateCheckIntervalMs
     const origin = originFromUrl(hintedUrl)
+    if (origin !== null && options.contentAddress !== undefined) {
+      const pin = await pinFor(origin)
+      if (pin?.content !== undefined) {
+        const named = await names.check(hintedUrl, origin, pin, context, loadOptions?.recheck === true)
+        if (named !== undefined) return named
+      }
+    }
     if (interval === undefined || origin === null) return await checkInFull(hintedUrl, context)
 
     const previous = await loadCheckRecord(options.storage, origin)
@@ -464,22 +473,15 @@ export function createLoader (options: CreateLoaderOptions): Loader {
     return parseDdocDeclaration(await options.storage.readDdoc(origin))
   }
 
+  async function applyUpdate (origin: string, toCid: string, context: LoadContext): Promise<LoadResult> {
+    return await names.apply(origin, origin, toCid, context)
+  }
+
   async function manifestFor (origin: string): Promise<Manifest | undefined> {
     return await pinnedManifest(options.storage, origin, await pinFor(origin))
   }
 
-  const rootManifests = new Map<string, Promise<ManifestAtRoot>>()
-  async function manifestAt (origin: string, cid: string): Promise<ManifestAtRoot> {
-    const key = `${origin} ${cid}`
-    const known = rootManifests.get(key)
-    if (known !== undefined) return await known
-    const asked = fetchManifestAtRoot(options.fetch, options.resolve, origin, cid)
-    rootManifests.set(key, asked)
-    if (rootManifests.size > MAX_REMEMBERED_ROOT_MANIFESTS) rootManifests.delete(rootManifests.keys().next().value as string)
-    const answer = await asked
-    if (answer.kind === 'unread') rootManifests.delete(key)
-    return answer
-  }
+  const manifestAt = rememberingManifestReader(options.fetch, options.resolve)
 
-  return { load, reconsider, installFetched, pinFor, ddocFor, manifestFor, manifestAt }
+  return { load, reconsider, installFetched, applyUpdate, pinFor, ddocFor, quietOffers: async (origin) => await readQuietOffers(options.storage, origin), keepQuiet: async (origin, offer) => { await writeQuietOffer(options.storage, origin, offer) }, manifestFor, manifestAt }
 }

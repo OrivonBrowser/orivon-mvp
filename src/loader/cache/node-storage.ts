@@ -32,6 +32,10 @@ function updateCheckPath (userDataPath: string, origin: string): string {
   return join(appRoot(userDataPath, origin), 'update-check.json')
 }
 
+function updateOfferPath (userDataPath: string, origin: string): string {
+  return join(appRoot(userDataPath, origin), 'update-offer.json')
+}
+
 function ddocPath (userDataPath: string, origin: string): string {
   return join(appRoot(userDataPath, origin), 'ddoc.json')
 }
@@ -318,6 +322,16 @@ export function nodeLoaderStorage (userDataPath: string): LoaderStorage {
     },
     writeUpdateCheck: async (origin, record) => {
       await writeOrRemove(userDataPath, origin, updateCheckPath(userDataPath, origin), record)
+    },
+    readUpdateOffer: async (origin) => {
+      try {
+        return JSON.parse(await readFile(updateOfferPath(userDataPath, origin), 'utf8')) as unknown
+      } catch {
+        return undefined
+      }
+    },
+    writeUpdateOffer: async (origin, record) => {
+      await writeOrRemove(userDataPath, origin, updateOfferPath(userDataPath, origin), record)
     },
     readDdoc: async (origin) => {
       try {

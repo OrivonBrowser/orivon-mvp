@@ -81,8 +81,8 @@ export function installedResult (manifest: Manifest): LoadResult {
  */
 export function fakeLoader (
   result: LoadResult,
-  overrides: Partial<{ installFetched: Loader['installFetched'], reconsider: Loader['reconsider'] }> = {}
-): Loader & { load: ReturnType<typeof vi.fn>, installFetched: ReturnType<typeof vi.fn>, reconsider: ReturnType<typeof vi.fn> } {
+  overrides: Partial<{ installFetched: Loader['installFetched'], reconsider: Loader['reconsider'], applyUpdate: Loader['applyUpdate'], pinFor: Loader['pinFor'], quietOffers: Loader['quietOffers'] }> = {}
+): Loader & { load: ReturnType<typeof vi.fn>, installFetched: ReturnType<typeof vi.fn>, reconsider: ReturnType<typeof vi.fn>, applyUpdate: ReturnType<typeof vi.fn>, keepQuiet: ReturnType<typeof vi.fn> } {
   const notStubbed = (name: string) => async (): Promise<never> => { throw new Error(`loader.${name} was not stubbed for this test`) }
   return {
     load: vi.fn(async () => result),
@@ -91,8 +91,11 @@ export function fakeLoader (
     // Not one of S4-5's outcome-driving methods above, and no test in this
     // suite exercises it -- resolves null (never pinned) rather than
     // throwing, so a test that does not care about it need not stub it.
-    pinFor: async () => null,
+    pinFor: overrides.pinFor ?? (async () => null),
     ddocFor: async () => undefined,
+    applyUpdate: vi.fn(overrides.applyUpdate ?? (async () => ({ outcome: 'rejected' as const, reason: 'unused' }))),
+    quietOffers: overrides.quietOffers ?? (async () => ({ quiet: [] })),
+    keepQuiet: vi.fn(async () => {}),
     manifestFor: async () => undefined,
     manifestAt: async () => ({ kind: 'website' as const })
   }

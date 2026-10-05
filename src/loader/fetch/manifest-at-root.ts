@@ -22,7 +22,7 @@ const NOT_FOUND = 404
  * proves nothing about the content.
  */
 export type ManifestAtRoot =
-  | { readonly kind: 'app', readonly manifest: Manifest }
+  | { readonly kind: 'app', readonly manifest: Manifest, readonly bytes: Uint8Array }
   | { readonly kind: 'website' }
   | { readonly kind: 'unread', readonly reason: string }
 
@@ -46,11 +46,34 @@ export async function fetchManifestAtRoot (fetchFn: Fetch, resolveFn: Resolver, 
     )
     if ('ok' in fetched) return status === NOT_FOUND ? { kind: 'website' } : { kind: 'unread', reason: fetched.reason }
 
-    const parsed = parseManifest(new TextDecoder('utf-8', { fatal: false }).decode(joinChunks(chunks, fetched.byteLength)))
-    return parsed.ok ? { kind: 'app', manifest: parsed.manifest } : { kind: 'unread', reason: parsed.reason }
+    const bytes = joinChunks(chunks, fetched.byteLength)
+    const parsed = parseManifest(new TextDecoder('utf-8', { fatal: false }).decode(bytes))
+    return parsed.ok ? { kind: 'app', manifest: parsed.manifest, bytes } : { kind: 'unread', reason: parsed.reason }
   } catch (error) {
     return { kind: 'unread', reason: error instanceof Error ? error.message : String(error) }
   } finally {
     clearTimeout(timer)
+  }
+}
+
+const MAX_REMEMBERED = 64
+
+/**
+ * `fetchManifestAtRoot` asked once per (origin, CID): an answer that is an app or a website
+ * is kept, a failed read is asked again. A call that arrives while the first is under way
+ * shares it.
+ */
+export function rememberingManifestReader (fetchFn: Fetch, resolveFn: Resolver): (origin: string, cid: string) => Promise<ManifestAtRoot> {
+  const asked = new Map<string, Promise<ManifestAtRoot>>()
+  return async (origin, cid) => {
+    const key = `${origin} ${cid}`
+    const known = asked.get(key)
+    if (known !== undefined) return await known
+    const pending = fetchManifestAtRoot(fetchFn, resolveFn, origin, cid)
+    asked.set(key, pending)
+    if (asked.size > MAX_REMEMBERED) asked.delete(asked.keys().next().value as string)
+    const answer = await pending
+    if (answer.kind === 'unread') asked.delete(key)
+    return answer
   }
 }

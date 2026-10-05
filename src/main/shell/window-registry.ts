@@ -3,6 +3,7 @@
 // process-wide channel and has to reach the manager of whichever window holds
 // the sending tab.
 import type { BaseWindow, WebContents, WebContentsView } from 'electron'
+import { originFromUrl } from '../../broker/policy/origin.js'
 import type { OverlayHost } from '../overlays/overlay-types.js'
 import type { TabManager } from './tabs.js'
 
@@ -56,5 +57,34 @@ export class WindowRegistry {
       if (tabId !== null) return { window, tabId }
     }
     return null
+  }
+
+  /** Every live tab, in any window, whose page is on `origin`. Not `getAllWebContents`: that also holds guests and parked views. */
+  liveTabsOn (origin: string): WebContents[] {
+    const found: WebContents[] = []
+    for (const [contents] of this.liveTabs()) {
+      if (originFromUrl(contents.getURL()) === origin) found.push(contents)
+    }
+    return found
+  }
+
+  /** The origins that have a live tab, each once. */
+  liveTabOrigins (): string[] {
+    const origins = new Set<string>()
+    for (const [contents] of this.liveTabs()) {
+      const origin = originFromUrl(contents.getURL())
+      if (origin !== null) origins.add(origin)
+    }
+    return [...origins]
+  }
+
+  private * liveTabs (): Generator<[WebContents, ShellWindow]> {
+    for (const entry of this.windows) {
+      if (entry.window.isDestroyed()) continue
+      for (const id of entry.tabs.ids()) {
+        const contents = entry.tabs.liveWebContents(id)
+        if (contents !== undefined) yield [contents, entry]
+      }
+    }
   }
 }

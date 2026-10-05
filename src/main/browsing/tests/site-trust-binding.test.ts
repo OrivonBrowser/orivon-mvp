@@ -43,13 +43,13 @@ async function levelAt (origin: string, read: ManifestAtRoot, verdict: ProviderV
 
 describe('a judged level at the domain the manifest names', () => {
   it('shows Level 4 where the live manifest names this host', async () => {
-    const { displayed, home } = await levelAt('https://app.eth', { kind: 'app', manifest: manifest('app.eth') })
+    const { displayed, home } = await levelAt('https://app.eth', { kind: 'app', bytes: new Uint8Array(), manifest: manifest('app.eth') })
     expect(displayed).toBe(4)
     expect(home).toMatchObject({ binding: 'bound', domain: 'app.eth' })
   })
 
   it('hides it at evil.eth, whose live manifest names app.eth, and keeps the observed level', async () => {
-    const { displayed, home } = await levelAt('https://evil.eth', { kind: 'app', manifest: manifest('app.eth') })
+    const { displayed, home } = await levelAt('https://evil.eth', { kind: 'app', bytes: new Uint8Array(), manifest: manifest('app.eth') })
     expect(displayed).toBe(2)
     expect(home).toMatchObject({ binding: 'other-home', domain: 'app.eth' })
     const trust = withProviderVerdict(liveTrust('https://evil.eth'), judged(4), home)
@@ -57,7 +57,7 @@ describe('a judged level at the domain the manifest names', () => {
   })
 
   it('hides it for a manifest with no domain', async () => {
-    expect((await levelAt('https://app.eth', { kind: 'app', manifest: manifest(undefined) })).displayed).toBe(2)
+    expect((await levelAt('https://app.eth', { kind: 'app', bytes: new Uint8Array(), manifest: manifest(undefined) })).displayed).toBe(2)
   })
 
   it('hides it after a failed read, and says the read is not finished only when it did not answer in time', async () => {
@@ -91,11 +91,11 @@ describe('a judged level at the domain the manifest names', () => {
 
   it('reads the live manifest only when a provider judged Level 3 or 4', async () => {
     for (const verdict of [{ status: 'off' }, { status: 'no-score', provider: { name: 'P', address: 'x' } }, judged(2)] as const) {
-      const src = source({ kind: 'app', manifest: manifest('app.eth') })
+      const src = source({ kind: 'app', bytes: new Uint8Array(), manifest: manifest('app.eth') })
       await readHome(src, 'https://app.eth', null, CID, verdict, WAIT)
       expect(src.rootReads).toBe(0)
     }
-    const src = source({ kind: 'app', manifest: manifest('app.eth') })
+    const src = source({ kind: 'app', bytes: new Uint8Array(), manifest: manifest('app.eth') })
     await readHome(src, 'https://app.eth', null, CID, judged(3), WAIT)
     expect(src.rootReads).toBe(1)
   })

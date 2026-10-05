@@ -7,6 +7,7 @@ import { grantIcon } from '../grant-icons.js'
 import { renderSitePermissions } from './permissions-view.js'
 import type { PermissionsCallbacks, PermissionsModel } from './permissions-view.js'
 import { homeLine, originHost } from '../../trust/domain-binding.js'
+import { renderUpdateCard } from './update-card.js'
 
 // The site-info popup's main page -- Chrome's own layout (a connection
 // row, then one switch per permission the site actually asked for), with
@@ -30,6 +31,8 @@ export interface MainPageCallbacks {
   readonly onOpenSiteSettings: () => void
   readonly onManageExtensions: () => void
   readonly onReload: () => void
+  readonly onApplyUpdate: (cid: string) => void
+  readonly onOpenHome: () => void
   readonly permissions: PermissionsCallbacks
 }
 
@@ -76,7 +79,8 @@ export function renderMainPage (
   pendingStaleCapabilities: ReadonlySet<SiteCapabilityRow['capability']>,
   showReloadBanner: boolean,
   permissions: PermissionsModel | null,
-  callbacks: MainPageCallbacks
+  callbacks: MainPageCallbacks,
+  updateFailure: string | null = null
 ): void {
   container.replaceChildren()
 
@@ -98,8 +102,17 @@ export function renderMainPage (
     homeEl.className = 'site-claim site-home'
     homeEl.textContent = home
     header.append(homeEl)
+    if (info.homeDomain !== undefined) {
+      const open = document.createElement('button')
+      open.type = 'button'
+      open.className = 'link-button'
+      open.textContent = `Open ${info.homeDomain}`
+      open.addEventListener('click', callbacks.onOpenHome)
+      header.append(open)
+    }
   }
   container.append(header)
+  if (info.update !== undefined) container.append(renderUpdateCard(info.update, updateFailure, { onApply: callbacks.onApplyUpdate }))
 
   const connectionRow = document.createElement('button')
   connectionRow.type = 'button'

@@ -46,12 +46,26 @@ export interface SiteCapabilityRow {
   readonly patterns: readonly Pattern[]
 }
 
+/** A newer version of an installed app, offered because its name moved: what the popover shows and offers to take. */
+export interface SiteUpdate {
+  readonly toCid: string
+  readonly toVersion: string
+  readonly fromVersion: string | undefined
+  /** Verified offers are taken with Update; any other needs Trust & Force. */
+  readonly verified: boolean
+  readonly level: number | undefined
+  /** Why a version is not verified, one sentence each. */
+  readonly reasons: readonly string[]
+}
+
 export interface SiteInfo {
   readonly origin: string
   readonly displayOrigin: string
   readonly claimedName: string | undefined
   /** The `domain` the app's manifest names as its home, when it names one. */
   readonly homeDomain: string | undefined
+  /** The update offered to this installed app, when its name has moved. */
+  readonly update: SiteUpdate | undefined
   /** True when the site has asked for at least one Orivon capability or
    * picked a file/folder -- what the toolbar key's visibility switches on. */
   readonly asked: boolean
@@ -127,6 +141,7 @@ export function buildSiteInfo (
     displayOrigin: formatOriginForDisplay(origin),
     claimedName: manifest.name,
     homeDomain: manifest.domain,
+    update: undefined,
     asked: capabilityRows.length > 0 || pickedPathRows.length > 0,
     capabilityRows,
     pickedPathRows,

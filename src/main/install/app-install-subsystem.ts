@@ -14,10 +14,16 @@
 
 import { net, session } from 'electron'
 import type { Subsystem, SubsystemContext } from '../registry.js'
-import { publishInstallApp } from '../registry.js'
+import { publishAppUpdates, publishInstallApp } from '../registry.js'
 import { installFromHint } from './app-install.js'
 import { createInstallConsentPrompt, createPerCapabilityConsentPrompt } from '../consent/install-consent-prompt.js'
 import { createCapabilityPrompt, createReconsentPrompt, createRollbackChoicePrompt } from '../consent/update-outcomes-prompt.js'
+import { createUpdatePrompts } from '../consent/update-offer-prompts.js'
+import type { UpdateOutcomeDeps } from '../consent/update-outcomes.js'
+import { createAppUpdates } from './app-updates.js'
+import { dialogCallerFor } from './dialog-caller.js'
+import { OPEN_TAB_CHECK_MS, startUpdateWatch } from './update-watch.js'
+import { updateWatchMs } from '../verifier/test-seam.js'
 import { grantableWithoutInstall, grantWithoutInstall } from './grant-without-install.js'
 import { defaultSessionGrantedOriginCsp, GRANTED_ORIGIN_CSP_FILTER } from './granted-origin-csp.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
@@ -104,6 +110,28 @@ export const appInstallSubsystem: Subsystem = {
     const reconsentPrompt = createReconsentPrompt()
     const capabilityPrompt = createCapabilityPrompt(scoreLevelOverrideFor)
     const rollbackChoicePrompt = createRollbackChoicePrompt()
+    const outcomeDeps: UpdateOutcomeDeps = { broker, loader, consent, perCapabilityConsent, reconsentPrompt, capabilityPrompt, rollbackChoicePrompt }
+    // An installed app whose name moved is offered, never installed unasked (ADR-0055).
+    const updates = createAppUpdates({
+      outcome: outcomeDeps,
+      verdictFor: async (id) => (await ctx.scoreVerdictFor?.(id)) ?? { status: 'off' },
+      prompts: createUpdatePrompts(),
+      reloadTabs: (origin) => { for (const tab of ctx.openTabs?.on(origin) ?? []) if (!tab.isDestroyed()) tab.reload() },
+      persistQuiet: !ctx.privateSession
+    })
+    publishAppUpdates(ctx, updates)
+    const installDeps: UpdateOutcomeDeps = { ...outcomeDeps, offerUpdate: updates.offered }
+    // A name can move while a page stays open and no visit raises a hint for it: look again at every origin with an app tab open.
+    startUpdateWatch({
+      openOrigins: () => (ctx.openTabs?.origins() ?? []).filter((origin) => broker.app.isRegisteredSync(origin)),
+      check: async (origin) => {
+        // Only an app reached at a name moves without a visit; every other install is looked at on a visit.
+        if ((await loader.pinFor(origin))?.content === undefined) return
+        const tab = ctx.openTabs?.on(origin)[0]
+        await installFromHint(installDeps, origin, origin, tab === undefined ? undefined : dialogCallerFor(tab, (sender) => ctx.windowForSender?.(sender as never)), true)
+      },
+      intervalMs: updateWatchMs() ?? OPEN_TAB_CHECK_MS
+    })
     publishInstallApp(ctx, async (hintingOrigin, hintedUrl, caller) => {
       // A loopback origin can never reach installFromHint's own consent:
       // install-origin.ts refuses it for not being https and not being
@@ -129,7 +157,7 @@ export const appInstallSubsystem: Subsystem = {
         }
         return outcome
       }
-      const result = await installFromHint({ broker, loader, consent, perCapabilityConsent, reconsentPrompt, capabilityPrompt, rollbackChoicePrompt }, hintingOrigin, hintedUrl, caller)
+      const result = await installFromHint(installDeps, hintingOrigin, hintedUrl, caller)
       if (result.outcome === 'rejected') {
         console.warn(`[app-install] install refused for ${hintingOrigin}: ${result.reason}`)
       }

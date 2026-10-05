@@ -9,11 +9,14 @@ import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { SubsystemContext } from '../registry.js'
 import { buildSiteInfo } from './site-info.js'
-import type { SiteInfo } from './site-info.js'
+import type { SiteInfo, SiteUpdate } from './site-info.js'
 import { turnOffCapability, turnOnCapability } from './site-switches.js'
 import type { TurnOnResult } from './site-switches.js'
 import { buildSiteTrust, providerIdFor, withProviderVerdict } from '../browsing/site-trust.js'
 import { readHome } from '../browsing/site-home.js'
+import { reasonText } from '../../trust/app-update-trust.js'
+import type { ApplyOutcome } from '../install/app-updates.js'
+import type { DialogCaller } from '../consent/request-grant.js'
 import type { SiteTrust } from '../browsing/site-trust.js'
 import type { DeliveryLevel, PinCoverageEvidence } from '../../trust/delivery-ladder.js'
 import type { ScoreLevel } from '../../trust/website-level.js'
@@ -32,7 +35,7 @@ export interface SiteSummary {
 }
 
 const EMPTY_SITE_INFO = (origin: string, extensionsOnSite: readonly string[] = []): SiteInfo => ({
-  origin, displayOrigin: origin, claimedName: undefined, homeDomain: undefined, asked: false, capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite
+  origin, displayOrigin: origin, claimedName: undefined, homeDomain: undefined, update: undefined, asked: false, capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite
 })
 
 /** The loader-adjacent facts `../browsing/site-trust.js` needs but does not
@@ -73,6 +76,8 @@ export interface SiteInfoController {
    * cannot read themselves (that file stays broker/loader-free). `null`
    * for an unregistered origin: nothing here to declare. */
   storageDeclarationFor: (url: string) => Promise<StorageDeclaration | null>
+  /** Takes the update offered for `origin` (`../install/app-updates.ts`): refused for any CID but the pending offer. */
+  applyUpdate: (origin: string, cid: string, caller?: DialogCaller) => Promise<ApplyOutcome>
   turnOn: (origin: string, capability: CapabilityKind, shownPatterns: readonly Pattern[]) => Promise<TurnOnResult>
   turnOff: (origin: string, capability: CapabilityKind) => Promise<void>
   revokePickedPath: (origin: string, pickId: string) => Promise<void>
@@ -88,7 +93,20 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     return await extensionNamesForOrigin(extensions, origin, trustSources.isOriginServedFromCacheSync)
   }
 
+  /** The offer pending for `origin`, in the words the popover shows. */
+  function updateFor (origin: string): SiteUpdate | undefined {
+    const offer = ctx.appUpdates?.pending(origin)
+    if (offer === undefined) return undefined
+    return { toCid: offer.toCid, toVersion: offer.toVersion, fromVersion: offer.fromVersion, verified: offer.verified, level: offer.level, reasons: offer.reasons.map((reason) => reasonText(reason, offer.newDomain)) }
+  }
+
   async function siteInfoFor (url: string): Promise<SiteInfo> {
+    const info = await builtSiteInfoFor(url)
+    const update = updateFor(info.origin)
+    return update === undefined ? info : { ...info, update }
+  }
+
+  async function builtSiteInfoFor (url: string): Promise<SiteInfo> {
     const origin = originFromUrl(url)
     // No canonical origin (about:, chrome://, a malformed url) -- nothing
     // to show, and no address for `broker` to look anything up under.
@@ -150,6 +168,11 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
       }
       const pin = ctx.loader === undefined ? null : await ctx.loader.pinFor(origin)
       return { filesQuotaBytes: manifest.capabilities.fs?.quotaBytes, codeVersion: pin?.version }
+    },
+
+    async applyUpdate (origin, cid, caller) {
+      const updates = ctx.appUpdates
+      return updates === undefined ? { ok: false, reason: 'no such offer' } : await updates.apply(origin, cid, caller)
     },
 
     async turnOn (origin, capability, shownPatterns) {
