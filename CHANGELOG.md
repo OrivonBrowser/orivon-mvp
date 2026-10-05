@@ -18,6 +18,18 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- **`contracts/manifest.ts`**: a manifest may carry `domain`, the one ENS name or DNS host the app calls home; a
+  malformed value rejects the manifest and absence is allowed. Apps published under a name set `domain` to that name,
+  as a lower-case host with no scheme, port or path. Recheck: every port.
+- **`contracts/manifest.ts`**: an app may now declare `media.screen` in `capabilities.media`; nothing changes for
+  existing apps, and it is not yet granted (the implementation follows).
+- **`contracts/trust.ts`, `contracts/manifest.ts`, `contracts/capability-api.ts`**: new capability kind `trust.score`
+- **`contracts/trust.ts`, `contracts/manifest.ts`, `contracts/capability-api.ts`, `contracts/index.ts`**: new capability kind `trust.score`
+  (declare `"trust": { "score": true }`) and `orivon.trust.websiteScore(address)`, which answers with the Web3 Score
+  provider the person chose and the level it judged for that content. Apps that show a mark per site may declare it
+  and must treat a `null` level, a `denied` rejection and a `limit` rejection as "use what you ship". Recheck: none; no
+  port declares it yet, and the loader does not accept the field until the implementation lands.
+
 ### Added
 
 - **Default browser, asked properly**: Settings > Default browser, an unticked box on the welcome screen and a question
@@ -27,6 +39,8 @@ public surface of `src/contracts/` (named `contracts/<file>`).
   a running browser with no address (or `--new-window`, `--new-private-window`) now opens a window or a private session.
 - **An extension's side panel** (`chrome.sidePanel`): its page is listed in the panel's view picker, opens from its toolbar
   button, its `_execute_side_panel` key or `open()` after the person's input, and follows the tab in front.
+- **A manifest `domain` field** names the one ENS name or DNS host an app calls home; the loader parses it
+  (ADR-0056). Update behaviour that uses it lands with the app-update work.
 - **`test/` is ordered by area**, with a Layout table in `test/README.md`; a spec left at its top, a folder with no
   row and a dead `test/` path in any tracked file now fail CI, and a new capability kind needs a catalogue line.
 - **An app-behaviour catalogue** names what a working app relies on, one row each, and each row is proven by an

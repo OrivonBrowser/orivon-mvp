@@ -29,6 +29,8 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Orivon asks to be the default browser from Settings, the welcome screen and weekly; the dock and taskbar offer New Window and New Private Window.
 - CI's e2e now runs only the specs a change can reach, in parallel shards: minutes instead of forty.
 - Extensions get a real side panel: chrome.sidePanel works, the toolbar click or key opens it, and open() needs the person's own input.
+- Orivon Attila now judges every Explore site: 62 more evaluations by CID, and its judging rules are written down with worked examples.
+- FreeTube raised to Web3 Score Level 3: running YouTube's code is informed consent when the grant dialog says so and it's the app's purpose.
 
 ### In my head
 
