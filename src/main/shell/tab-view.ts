@@ -15,7 +15,8 @@ import { watchPageDialogs } from './page-dialogs.js'
 import { windowOpenHandler } from './popups.js'
 import { keepsOpenerSession, openerCutNeeded, popupTargetIsApp } from './popup-opener.js'
 import { DEFAULT_BACKGROUND } from './theme-colors.js'
-import { sheetBackdropOf } from './sheet-backdrop.js'
+import { isDashboardUrl, sheetBackdropOf } from './sheet-backdrop.js'
+import { SHELL_SCHEME } from './shell-session.js'
 import { recordViewBackground } from './view-background-test-hook.js'
 import { watchBacking } from './tab-backing.js'
 import { repartitionView } from './tab-parking.js'
@@ -147,6 +148,13 @@ export function wireView (id: string, record: TabRecord): void {
   watchLoadFailure(wc, () => { record.host.emitState() })
   // A press in a pane is the person choosing it, in a split. Not focus, which a page loading in the other pane can take.
   wc.on('input-event', (_event, input) => { if (input.type === 'mouseDown') record.host.paneClicked(id) })
+  // A page in a tab may not send it, or any of its frames, to a page of the shell. The new-tab page is loaded
+  // by the main process and reached again by Back, neither of which fires these events.
+  const refuseShellPage = (event: { readonly url: string, preventDefault: () => void }): void => {
+    if (event.url.startsWith(`${SHELL_SCHEME}:`)) event.preventDefault()
+  }
+  wc.on('will-frame-navigate', refuseShellPage)
+  wc.on('will-redirect', refuseShellPage)
   wc.on('did-navigate', (_event, navigatedUrl: string) => {
     // Unconditional, ahead of the `shown()` gate below: a parked or
     // background view's own navigation still changes which origin's
@@ -176,7 +184,8 @@ export function wireView (id: string, record: TabRecord): void {
     // ONLY EVER CLEARED, NEVER SET, so no URL a page can influence can win
     // dashboard treatment -- the direction TabRecord.isDashboardTab's own
     // one-way rule exists to protect.
-    if (record.isDashboardTab && originFromUrl(navigatedUrl) !== originFromUrl(record.host.dashboardUrl)) {
+    // By address, not origin: about:blank, data: and file: pages share the dashboard's opaque origin.
+    if (record.isDashboardTab && !isDashboardUrl(navigatedUrl, record.host.dashboardUrl)) {
       record.isDashboardTab = false
       // The dashboard's own pre-paint colour (makeTabView's own doc) must not
       // bleed through a site with no CSS background of its own -- and a

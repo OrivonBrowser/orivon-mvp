@@ -32,10 +32,16 @@ function parsePattern (pattern: string): ParsedPattern | undefined {
  * an `<all_urls>` extension can see. */
 const ALL_URLS_SCHEMES = new Set(['http', 'https', 'ftp'])
 
+/** The schemes an explicit pattern may name: Chrome's match-pattern grammar, and `chrome-extension` for an
+ * extension's own pages. Any other, the shell's own `orivon-shell:` and `orivon:` among them, is never
+ * covered, so a pattern an extension declares cannot reach a page of the shell's. (`file` is in the grammar and
+ * is refused where host access is decided, never granted.) */
+const EXPLICIT_SCHEMES = new Set(['http', 'https', 'ws', 'wss', 'ftp', 'file', 'chrome-extension'])
+
 function schemeMatches (patternScheme: string, urlScheme: string, isAllUrls: boolean): boolean {
   if (isAllUrls) return ALL_URLS_SCHEMES.has(urlScheme)
   if (patternScheme === '*') return urlScheme === 'http' || urlScheme === 'https'
-  return patternScheme === urlScheme
+  return patternScheme === urlScheme && EXPLICIT_SCHEMES.has(urlScheme)
 }
 
 function hostMatches (patternHost: string, urlHost: string): boolean {

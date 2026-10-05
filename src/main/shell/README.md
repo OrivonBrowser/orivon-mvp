@@ -41,7 +41,7 @@ view's frame (`split-frame.ts`) every popover built by
 [`../permissions/popover-view.ts`](../permissions/popover-view.ts) (permissions, site info) and
 every overlay view ([`../overlays/`](../overlays/)) set `webPreferences.partition` to `shell-session.ts`'s `SHELL_PARTITION`. Internal pages
 have their own session (ADR-0041). An ordinary tab, and the
-new-tab dashboard (a tab that happens to navigate to `file://`), stay on
+new-tab dashboard (a tab that happens to navigate to `orivon-shell://renderer/newtab/index.html`), stay on
 `session.defaultSession`; the Design notes below say why.
 
 The bookmarks bar's main side is [`bookmarks-bar/`](bookmarks-bar/) (its own README): what the bar shows, the
@@ -117,12 +117,23 @@ done to one tab or to those around it in `tab-commands.ts`. `TabViewHost.service
 **[`shell-session.ts`](shell-session.ts): the shell's own views never share a session with a
 tab.** Chrome extensions load into `session.defaultSession`, the session every ordinary tab and
 the dashboard use, and may act on `<all_urls>` there, so a privileged view on that session would
-be reachable the same way. The dashboard stays out of their reach in a packaged build because it
-is `file://` and no extension is given file access. `SHELL_PARTITION` is `persist:` so a
+be reachable the same way. The dashboard is the one page of the shell on that session, and stays out
+of their reach because no extension host pattern names the `orivon-shell:` scheme it loads from
+(`../../broker/policy/extension-host-patterns.ts`). `SHELL_PARTITION` is `persist:` so a
 privileged page may one day use `localStorage` without losing it; none does now.
 `permission-gate.ts` and `verifier-subsystem.ts` cover the partition through
 `app.on('session-created', ...)`, registered in `beforeReady` (`../subsystems.ts`), before
 `createShellWindow` first creates it.
+
+**[`shell-session.ts`](shell-session.ts) also names the renderer entries and where each is served.** A
+built shell loads every entry from `orivon-shell://renderer/<path inside out/renderer>`, never from
+`file:` (`renderer-entry.ts` builds the address; [`../pages/shell-scheme.ts`](../pages/shell-scheme.ts)
+answers it). `SHELL_SESSION_ENTRIES` are served on `SHELL_PARTITION` with every file under `assets/`;
+`DEFAULT_SESSION_ENTRIES` (the dashboard) on the default session, with only the files its own build
+reaches, since a website shares that session. A page of the shell that is copied into another session
+(a duplicated tab, a swap) does not carry its history entry: `tab-history.ts` drops entries on the
+scheme, because no handler answers them there. `wireView` refuses a tab's navigation, frame or
+redirect to the scheme.
 
 **[`tabs.ts`](tabs.ts): a tab changes session by replacing its view.** Electron fixes a
 partition at construction, so every path that can change a tab's origin swaps its

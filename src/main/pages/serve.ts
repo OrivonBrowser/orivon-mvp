@@ -2,7 +2,8 @@
 // built renderer's files and the dev server: no Electron here, so every
 // refusal is unit-tested under plain vitest.
 import { isAbsolute, relative, resolve } from 'node:path'
-import { routeInternalRequest } from './route.js'
+import { routeInternalRequest, routeShell } from './route.js'
+import type { ShellSessionKind } from './route.js'
 
 export interface InternalServeOptions {
   /** The built renderer directory, `out/renderer`. */
@@ -32,6 +33,8 @@ const MIME: Readonly<Record<string, string>> = {
   '.png': 'image/png',
   '.webp': 'image/webp',
   '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  '.ttf': 'font/ttf',
   '.ico': 'image/x-icon'
 }
 
@@ -97,21 +100,24 @@ export function withRootBase (html: string, base = '/'): string {
   return /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (open) => `${open}<base href="${base}">`) : `<base href="${base}">${html}`
 }
 
+/** The file at `relativePath` under `root`, or null when it is not there or would lie outside it. */
+async function readInsideRoot (root: string, readFile: (path: string) => Promise<Uint8Array>, relativePath: string): Promise<Uint8Array | null> {
+  const target = resolve(root, relativePath)
+  const inside = relative(root, target)
+  if (inside === '' || inside.startsWith('..') || isAbsolute(inside)) return null
+  try {
+    return await readFile(target)
+  } catch {
+    return null
+  }
+}
+
 export function createInternalHandler (options: InternalServeOptions): (request: Request) => Promise<Response> {
   const { rendererRoot, devServerUrl } = options
   const fetchDev = options.fetchDev ?? (async (url: string, accept?: string) => await fetch(url, accept === undefined ? undefined : { headers: { accept } }))
   const root = resolve(rendererRoot)
 
-  async function readInside (relativePath: string): Promise<Uint8Array | null> {
-    const target = resolve(root, relativePath)
-    const inside = relative(root, target)
-    if (inside === '' || inside.startsWith('..') || isAbsolute(inside)) return null
-    try {
-      return await options.readFile(target)
-    } catch {
-      return null
-    }
-  }
+  const readInside = async (relativePath: string): Promise<Uint8Array | null> => await readInsideRoot(root, options.readFile, relativePath)
 
   return async (request) => {
     const route = routeInternalRequest(request.url, devServerUrl !== undefined, options.devFsRoots)
@@ -144,5 +150,41 @@ export function createInternalHandler (options: InternalServeOptions): (request:
         return reply(upstream.body, upstream.status, upstream.headers.get('content-type') ?? 'application/octet-stream', devServerUrl)
       }
     }
+  }
+}
+
+export interface ShellServeOptions {
+  /** The built renderer directory, `out/renderer`. */
+  readonly rendererRoot: string
+  readonly session: ShellSessionKind
+  /** What the default session may read besides the new-tab page: `reachableFiles` of its build. */
+  readonly defaultFiles?: ReadonlySet<string> | undefined
+  readonly readFile: (path: string) => Promise<Uint8Array>
+}
+
+/** A page of the shell may not be framed, embed an object or move its base; its own meta policy says the rest. */
+const SHELL_PAGE_CSP = "frame-ancestors 'none'; object-src 'none'; base-uri 'none'"
+
+function shellReply (body: BodyInit | null, status: number, contentType: string, html: boolean): Response {
+  const headers: Record<string, string> = {
+    'content-type': contentType,
+    'x-content-type-options': 'nosniff',
+    'cache-control': 'no-store',
+    // A page of another origin may not load this file as a script, stylesheet or image, even where the scheme is reachable.
+    'cross-origin-resource-policy': 'same-origin'
+  }
+  if (html) headers['content-security-policy'] = SHELL_PAGE_CSP
+  return new Response(body, { status, headers })
+}
+
+/** Answers `orivon-shell://renderer/...` from the built renderer (shell-scheme.ts installs it per session). */
+export function createShellHandler (options: ShellServeOptions): (request: Request) => Promise<Response> {
+  const root = resolve(options.rendererRoot)
+  return async (request) => {
+    const route = routeShell(request.url, options.session, options.defaultFiles)
+    if (route.kind === 'not-found') return shellReply('Not found', 404, 'text/plain; charset=utf-8', false)
+    const bytes = await readInsideRoot(root, options.readFile, route.path)
+    if (bytes === null) return shellReply('Not found', 404, 'text/plain; charset=utf-8', false)
+    return shellReply(bytes as BodyInit, 200, MIME[extensionOf(route.path)] ?? 'application/octet-stream', route.html)
   }
 }

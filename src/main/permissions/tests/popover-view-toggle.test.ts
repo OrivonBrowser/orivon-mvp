@@ -62,7 +62,7 @@ function setup (activeContents?: () => unknown): { popover: ReturnType<typeof cr
   const contentView = { addChildView: () => { attached += 1 }, removeChildView: () => { attached -= 1 } }
   const win = { getContentBounds: () => ({ x: 0, y: 0, width: 1200, height: 800 }), on: vi.fn() }
   const popover = createPopoverView(win as never, contentView as never, {
-    dirname: '/app', entryPath: '/site-info/', fallbackHtml: '../renderer/site-info/index.html',
+    dirname: '/app', entryPath: '/site-info/', entry: 'site-info',
     preloadRelPath: '../preload/site-info.js', urlArgName: 'orivon-site-info-url', align: 'left',
     background: BACKGROUND, registerIpc: () => () => {}, activeContents: activeContents as never
   })
@@ -289,7 +289,7 @@ describe('a popup whose detaching throws', () => {
     const detach = vi.fn(() => { throw new Error('window disposed') })
     const win = { getContentBounds: () => ({ x: 0, y: 0, width: 1200, height: 800 }), on: vi.fn() }
     const popover = createPopoverView(win as never, { addChildView: vi.fn(), removeChildView: detach } as never, {
-      dirname: '/app', entryPath: '/site-info/', fallbackHtml: '../renderer/site-info/index.html',
+      dirname: '/app', entryPath: '/site-info/', entry: 'site-info',
       preloadRelPath: '../preload/site-info.js', urlArgName: 'orivon-site-info-url', align: 'left',
       background: BACKGROUND, registerIpc: () => () => {}
     })
@@ -308,7 +308,7 @@ describe('a warm popup whose page is gone', () => {
     const contentView = { addChildView: () => { attached += 1 }, removeChildView: () => { attached -= 1 } }
     const win = { getContentBounds: () => ({ x: 0, y: 0, width: 1200, height: 800 }), on: vi.fn() }
     const popover = createPopoverView(win as never, contentView as never, {
-      dirname: '/app', entryPath: '/site-info/', fallbackHtml: '../renderer/site-info/index.html',
+      dirname: '/app', entryPath: '/site-info/', entry: 'site-info',
       preloadRelPath: '../preload/site-info.js', urlArgName: 'orivon-site-info-url', align: 'left',
       background: BACKGROUND, warm: true, registerIpc: () => () => {}
     })

@@ -279,6 +279,9 @@ export default defineConfig({
     root: rendererRoot,
     server: { host: rendererHost, hmr: rendererHmr },
     build: {
+      // The new-tab page runs beside websites, and the shell scheme serves it only the files this
+      // manifest says its build reaches (src/main/pages/shell-scheme.ts); `.vite/` itself is never served.
+      manifest: true,
       // `index` is the privileged chrome view; `newtab` is the dashboard,
       // ordinary tab content loaded into a tab's own WebContentsView with
       // the unprivileged (well, narrowly scoped) newtab preload -- see

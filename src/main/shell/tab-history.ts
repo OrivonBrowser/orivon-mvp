@@ -1,18 +1,28 @@
 // A tab given pages behind it: a copy of a tab, and a tab brought back from the last session. Back goes where Back
 // in the original would.
 import type { WebContents } from 'electron'
+import { SHELL_SCHEME } from './shell-session.js'
+
+const isShellPage = (url: string): boolean => url.startsWith(`${SHELL_SCHEME}:`)
 
 /**
  * Gives `wc` a back and forward list, ending on entry `index`. The load its tab was created with is stopped
  * first: left running, it commits as one more entry after the restored ones and the page loads twice. Electron
  * leaves the restored entry unloaded, so the reload is what loads it (once). With `then` the list is restored
- * as it stands and that address is loaded after it, as one more entry. A list that cannot be restored
- * leaves the tab on its address alone and answers false.
+ * as it stands and that address is loaded after it, as one more entry. Entries on the shell's own scheme are
+ * left out, the index shifted to match; a list whose shown entry is one is not restored. A list that cannot be
+ * restored leaves the tab on its address alone and answers false.
  */
 export function restoreHistory (wc: WebContents, entries: ReadonlyArray<{ readonly url: string, readonly title: string }>, index: number, then?: string): boolean {
+  const shown = entries[index]
+  if (shown === undefined || isShellPage(shown.url)) return false
+  // The shell's own pages are served in one session only (../pages/shell-scheme.ts): in a copy they would be
+  // an entry Back reaches and nothing answers, so they stay behind.
+  const kept = entries.filter(({ url }) => !isShellPage(url))
+  const keptIndex = entries.slice(0, index).filter(({ url }) => !isShellPage(url)).length
   try {
     wc.stop()
-    wc.navigationHistory.restore({ entries: entries.map(({ url, title }) => ({ url, title })), index }).catch(() => {})
+    wc.navigationHistory.restore({ entries: kept.map(({ url, title }) => ({ url, title })), index: keptIndex }).catch(() => {})
     if (then === undefined) wc.reload()
     else void wc.loadURL(then)
     return true

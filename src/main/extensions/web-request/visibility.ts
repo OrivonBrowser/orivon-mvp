@@ -15,6 +15,12 @@ export interface VisibleRequest {
   readonly pageUrl?: string | undefined
 }
 
+/** A page of the shell's own (`orivon-shell:` for its renderer entries, `orivon:` for its internal pages): no
+ * extension's request rules or listeners ever apply to it, or to what it loads. */
+export function isShellOwnUrl (url: string): boolean {
+  return url.startsWith('orivon:') || url.startsWith('orivon-shell:')
+}
+
 const WEB_SCHEMES = new Set(['http:', 'https:', 'ws:', 'wss:'])
 
 /** The web store: no extension sees its pages or anything they load,
@@ -45,7 +51,7 @@ function accessUrlOf (url: URL): string {
 }
 
 function initiatorHidden (initiator: URL, extensionId: string): boolean {
-  if (initiator.protocol === 'orivon:' || initiator.protocol === 'chrome:' || initiator.protocol === 'devtools:') return true
+  if (initiator.protocol === 'orivon:' || initiator.protocol === 'orivon-shell:' || initiator.protocol === 'chrome:' || initiator.protocol === 'devtools:') return true
   return initiator.protocol === 'chrome-extension:' && initiator.hostname !== extensionId
 }
 

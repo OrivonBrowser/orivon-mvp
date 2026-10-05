@@ -339,12 +339,17 @@ copy has actually loaded -- a failure restores it and reloads it, so a person ne
 neither.
 
 **`allowFileAccess` is never `true`, anywhere in this directory.** An extension with file access
-could read `file://` pages, including a page-cache-served or dashboard `file://` URL the shell
+could read `file://` pages, including a page-cache-served `file://` URL the shell
 itself never grants an ordinary web page. Because no extension ever gets it, a `file:` URL is
 never covered by an extension's host permission: `<all_urls>` leaves `file` out
 (`../../broker/policy/extension-host-patterns.ts`'s `ALL_URLS_SCHEMES`), and
 `dnr/host-permissions.ts`'s `createHostAccessChecker` and `extension-host-access.ts`'s
 `hasHostAccess` refuse a `file:` request, initiator or url whatever pattern would otherwise match.
+
+**An explicit host pattern names only a web scheme.** `matchesHostPattern` takes a pattern's own scheme
+only for `http`, `https`, `ws`, `wss` and `ftp`, as Chrome's grammar does, so `orivon-shell://*/*`
+(the new-tab page's scheme) or `orivon://*/*` matches nothing; `web-request/visibility.ts`'s
+`isShellOwnUrl` keeps both schemes out of every extension's request rules and listeners.
 
 **The extensions page reads an entry's own loaded folder for what a list needs, never the
 registry alone.** A name or description can be a `__MSG_...` reference into `_locales/<default_locale>/messages.json`,

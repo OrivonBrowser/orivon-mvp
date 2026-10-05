@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { routeInternalRequest } from '../route.js'
+import { reachableFiles, routeInternalRequest, routeShell, shellRequestAllowed } from '../route.js'
+import { DEFAULT_SESSION_ENTRIES, SHELL_SESSION_ENTRIES } from '../../shell/shell-session.js'
 
 describe('routeInternalRequest', () => {
   it('serves a page for its address and for any place inside it', () => {
@@ -112,5 +113,131 @@ describe('routeInternalRequest', () => {
     it('refuses every /@fs/ request when no roots are given, the safe default', () => {
       expect(routeInternalRequest(`orivon://settings/@fs${ROOT}/src/protocols/builtin.ts`, true)).toEqual({ kind: 'not-found' })
     })
+  })
+})
+
+describe('routeShell', () => {
+  const NEWTAB_FILES = new Set(['newtab/index.html', 'assets/newtab-a1.js', 'assets/newtab-a1.css', 'assets/shared-b2.js', 'assets/font-c3.woff2'])
+  const ROUTE = (url: string, session: 'shell' | 'default', files: ReadonlySet<string> = NEWTAB_FILES): ReturnType<typeof routeShell> => routeShell(url, session, files)
+
+  it('serves each entry in its own session only', () => {
+    for (const entry of SHELL_SESSION_ENTRIES) {
+      const file = entry === 'index' ? 'index.html' : `${entry}/index.html`
+      expect(ROUTE(`orivon-shell://renderer/${file}`, 'shell')).toEqual({ kind: 'file', path: file, html: true })
+      expect(ROUTE(`orivon-shell://renderer/${file}`, 'default')).toEqual({ kind: 'not-found' })
+    }
+    for (const entry of DEFAULT_SESSION_ENTRIES) {
+      expect(ROUTE(`orivon-shell://renderer/${entry}/index.html`, 'default')).toEqual({ kind: 'file', path: `${entry}/index.html`, html: true })
+      expect(ROUTE(`orivon-shell://renderer/${entry}/index.html`, 'shell')).toEqual({ kind: 'not-found' })
+    }
+  })
+
+  it('serves every file under assets/ to the shell session, with a type it knows', () => {
+    expect(ROUTE('orivon-shell://renderer/assets/x-1.js', 'shell')).toEqual({ kind: 'file', path: 'assets/x-1.js', html: false })
+    expect(ROUTE('orivon-shell://renderer/assets/x-1.css', 'shell')).toEqual({ kind: 'file', path: 'assets/x-1.css', html: false })
+    expect(ROUTE('orivon-shell://renderer/assets/font.woff2', 'shell')).toEqual({ kind: 'file', path: 'assets/font.woff2', html: false })
+    for (const bad of ['x.html', 'x.json', 'x.js.map', 'noextension', 'x.node']) {
+      expect(ROUTE(`orivon-shell://renderer/assets/${bad}`, 'shell'), bad).toEqual({ kind: 'not-found' })
+    }
+  })
+
+  it('serves the default session only the files the new-tab page reaches', () => {
+    expect(ROUTE('orivon-shell://renderer/assets/newtab-a1.js', 'default')).toEqual({ kind: 'file', path: 'assets/newtab-a1.js', html: false })
+    expect(ROUTE('orivon-shell://renderer/assets/font-c3.woff2', 'default')).toEqual({ kind: 'file', path: 'assets/font-c3.woff2', html: false })
+    expect(ROUTE('orivon-shell://renderer/assets/chrome-only-d4.js', 'default')).toEqual({ kind: 'not-found' })
+    expect(routeShell('orivon-shell://renderer/assets/newtab-a1.js', 'default')).toEqual({ kind: 'not-found' })
+  })
+
+  it('refuses what is not a page or an asset of the build', () => {
+    for (const url of [
+      'orivon-shell://renderer/.vite/manifest.json',
+      'orivon-shell://renderer/pages/settings/index.html',
+      'orivon-shell://renderer/index.js',
+      'orivon-shell://renderer/',
+      'orivon-shell://renderer',
+      'orivon-shell://renderer//index.html',
+      'orivon-shell://renderer/assets//x.js',
+      'orivon-shell://renderer/assets/..%2f..%2fpackage.json',
+      'orivon-shell://renderer/assets/%2e%2e/%2e%2e/main/index.js',
+      'orivon-shell://renderer/assets/%2E%2E%5C%2E%2E%5Cx.js',
+      'orivon-shell://renderer/assets/%252e%252e/x.js',
+      'orivon-shell://renderer/assets/a%00.js',
+      'orivon-shell://renderer/assets/a\\b.js',
+      'orivon-shell://other/index.html',
+      'orivon-shell://renderer:8080/index.html',
+      'orivon-shell://user@renderer/index.html',
+      'orivon://renderer/index.html',
+      'file:///index.html',
+      'https://renderer/index.html',
+      'not a url',
+      ''
+    ]) {
+      expect(ROUTE(url, 'shell'), url).toEqual({ kind: 'not-found' })
+      expect(ROUTE(url, 'default'), url).toEqual({ kind: 'not-found' })
+    }
+  })
+
+  it('reads the same file whatever the query or fragment says', () => {
+    expect(ROUTE('orivon-shell://renderer/overlay/index.html?overlay=menu&surface=menu', 'shell')).toEqual({ kind: 'file', path: 'overlay/index.html', html: true })
+    expect(ROUTE('orivon-shell://renderer/index.html#x', 'shell')).toEqual({ kind: 'file', path: 'index.html', html: true })
+  })
+})
+
+describe('reachableFiles', () => {
+  const manifest = {
+    'newtab/index.html': { file: 'newtab/index.html', isEntry: true, src: 'newtab/index.html', imports: ['_shared.js'], css: ['assets/newtab.css'], assets: ['assets/logo.png'] },
+    '_shared.js': { file: 'assets/shared.js', imports: ['_leaf.js'], dynamicImports: ['lazy.js'] },
+    '_leaf.js': { file: 'assets/leaf.js', css: ['assets/leaf.css'] },
+    'lazy.js': { file: 'assets/lazy.js' },
+    'index.html': { file: 'index.html', isEntry: true, imports: ['_chrome.js'] },
+    '_chrome.js': { file: 'assets/chrome.js' }
+  }
+
+  it('names the entry, what it imports through any depth, and its styles and assets', () => {
+    expect([...reachableFiles(manifest, 'newtab/index.html')].sort()).toEqual([
+      'assets/lazy.js', 'assets/leaf.css', 'assets/leaf.js', 'assets/logo.png', 'assets/newtab.css', 'assets/shared.js', 'newtab/index.html'
+    ])
+  })
+
+  it('leaves out what only another entry reaches', () => {
+    expect(reachableFiles(manifest, 'newtab/index.html').has('assets/chrome.js')).toBe(false)
+  })
+
+  it('terminates on an import cycle and names nothing for an unknown entry', () => {
+    const loop = { a: { file: 'assets/a.js', imports: ['b'] }, b: { file: 'assets/b.js', imports: ['a'] } }
+    expect([...reachableFiles(loop, 'a')].sort()).toEqual(['assets/a.js', 'assets/b.js'])
+    expect(reachableFiles(manifest, 'missing').size).toBe(0)
+  })
+})
+
+describe('shellRequestAllowed', () => {
+  const DASHBOARD = 'orivon-shell://renderer/newtab/index.html'
+  const from = (url: string, isTopFrame = true): { url: string, isTopFrame: boolean } => ({ url, isTopFrame })
+
+  it('lets the new-tab page load its own files, with or without a query', () => {
+    for (const resourceType of ['script', 'stylesheet', 'image', 'font', 'xhr']) {
+      expect(shellRequestAllowed({ resourceType, frame: from(DASHBOARD) }), resourceType).toBe(true)
+      expect(shellRequestAllowed({ resourceType, frame: from(`${DASHBOARD}?q=1#x`) }), resourceType).toBe(true)
+    }
+  })
+
+  it('lets a tab navigate to the page, which is how it loads and how Back returns to it', () => {
+    expect(shellRequestAllowed({ resourceType: 'mainFrame', frame: from('https://a.example/') })).toBe(true)
+    expect(shellRequestAllowed({ resourceType: 'mainFrame', frame: null })).toBe(true)
+  })
+
+  it('stops every other page, extension page or frame from loading anything of the scheme', () => {
+    for (const resourceType of ['script', 'stylesheet', 'image', 'subFrame', 'xhr', 'media', 'font', 'webSocket', 'other']) {
+      expect(shellRequestAllowed({ resourceType, frame: from('https://a.example/') }), resourceType).toBe(false)
+      expect(shellRequestAllowed({ resourceType, frame: from('chrome-extension://abc/page.html') }), resourceType).toBe(false)
+      expect(shellRequestAllowed({ resourceType, frame: from('') }), resourceType).toBe(false)
+      expect(shellRequestAllowed({ resourceType, frame: null }), resourceType).toBe(false)
+    }
+  })
+
+  it('stops a frame inside the new-tab page and a page that only names it in its path or query', () => {
+    expect(shellRequestAllowed({ resourceType: 'script', frame: from(DASHBOARD, false) })).toBe(false)
+    expect(shellRequestAllowed({ resourceType: 'script', frame: from('https://a.example/?u=orivon-shell://renderer/newtab/index.html') })).toBe(false)
+    expect(shellRequestAllowed({ resourceType: 'script', frame: from('orivon-shell://renderer/index.html') })).toBe(false)
   })
 })

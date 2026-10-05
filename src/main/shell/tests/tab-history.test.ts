@@ -29,6 +29,44 @@ describe('restoreHistory', () => {
   })
 })
 
+const DASHBOARD = { url: 'orivon-shell://renderer/newtab/index.html', title: 'New tab' }
+
+describe('a history that holds the shell\'s own pages', () => {
+  it('is restored without them, the index shifted to the page that was shown', () => {
+    const { wc, restore } = contents()
+    expect(restoreHistory(wc, [DASHBOARD, { url: 'https://a.example/1', title: 'One' }, DASHBOARD, { url: 'https://a.example/2', title: 'Two' }], 3)).toBe(true)
+    expect(restore).toHaveBeenCalledExactlyOnceWith({ entries: [{ url: 'https://a.example/1', title: 'One' }, { url: 'https://a.example/2', title: 'Two' }], index: 1 })
+  })
+
+  it('is not restored at all when the page shown is one of them', () => {
+    const { wc, calls, restore } = contents()
+    expect(restoreHistory(wc, [{ url: 'https://a.example/1', title: 'One' }, DASHBOARD], 1)).toBe(false)
+    expect(calls).toEqual([])
+    expect(restore).not.toHaveBeenCalled()
+  })
+
+  it('is carried to a copy as the pages after the dashboard, so Back cannot reach it', () => {
+    const from = contents([DASHBOARD, { url: 'https://a.example/1', title: 'One' }], 1)
+    const to = contents()
+    expect(carryHistory(from.wc, to.wc)).toBe(true)
+    expect(to.restore).toHaveBeenCalledExactlyOnceWith({ entries: [{ url: 'https://a.example/1', title: 'One' }], index: 0 })
+  })
+
+  it('carries nothing from a tab that shows the dashboard', () => {
+    const from = contents([{ url: 'https://a.example/1', title: 'One' }, DASHBOARD], 1)
+    const to = contents()
+    expect(carryHistory(from.wc, to.wc)).toBe(false)
+    expect(to.calls).toEqual([])
+  })
+
+  it('carries nothing before a swap made from the dashboard, and the new tab loads its own address', () => {
+    const from = contents([DASHBOARD], 0)
+    const to = contents()
+    expect(carryHistory(from.wc, to.wc, 'https://a.example/1')).toBe(false)
+    expect(to.calls).toEqual([])
+  })
+})
+
 describe('carryHistory', () => {
   it('gives the copy the same pages by the same sequence, and only their address and title', () => {
     const from = contents([{ url: 'https://a.example/1', title: 'One', pageState: 'SECRET' }, { url: 'https://a.example/2', title: 'Two', pageState: 'SECRET' }], 1)

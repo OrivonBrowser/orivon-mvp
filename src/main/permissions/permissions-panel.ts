@@ -39,7 +39,7 @@ export function createPermissionsPanel (
   const popover = createPopoverView(win, contentView, {
     dirname,
     entryPath: '/permissions/',
-    fallbackHtml: '../renderer/permissions/index.html',
+    entry: 'permissions',
     preloadRelPath: '../preload/permissions.js',
     urlArgName: 'orivon-permissions-url',
     align: 'right',
