@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { TabState } from '../../../shell/tab-types.js'
 import { offeredTabs } from '../picker-tabs.js'
 import type { TabWindow } from '../picker-tabs.js'
@@ -51,5 +51,14 @@ describe('offeredTabs', () => {
   it('skips a window that is being destroyed', () => {
     const a = wc(1)
     expect(offeredTabs([win([{ state: tab('a'), contents: a }], true)], { tab: a as never, hints: {} })).toEqual([])
+  })
+
+  it('reads each window\'s tab state once per call', () => {
+    const a = wc(1); const b = wc(2); const c = wc(3)
+    const first = win([{ state: tab('c'), contents: c }])
+    const second = win([{ state: tab('a'), contents: a }, { state: tab('b'), contents: b }])
+    const reads = [first, second].map((entry) => vi.spyOn(entry.tabs, 'getState'))
+    offeredTabs([first, second], { tab: b as never, hints: {} })
+    expect(reads.map((read) => read.mock.calls.length)).toEqual([1, 1])
   })
 })

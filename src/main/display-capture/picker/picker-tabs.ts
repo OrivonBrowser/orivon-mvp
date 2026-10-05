@@ -21,12 +21,12 @@ export interface TabOffer {
 }
 
 export function offeredTabs (windows: readonly TabWindow[], request: Pick<DisplayRequest, 'tab' | 'hints'>): TabOffer[] {
-  const live = windows.filter((entry) => !entry.window.isDestroyed())
-  const holds = (entry: TabWindow): boolean => entry.tabs.getState().tabs.some((tab) => entry.tabs.liveWebContents(tab.id) === request.tab)
-  const ordered = [...live.filter(holds), ...live.filter((entry) => !holds(entry))]
+  const live = windows.filter((entry) => !entry.window.isDestroyed()).map((entry) => ({ entry, tabs: entry.tabs.getState().tabs }))
+  const holds = ({ entry, tabs }: { entry: TabWindow, tabs: readonly TabState[] }): boolean => tabs.some((tab) => entry.tabs.liveWebContents(tab.id) === request.tab)
+  const ordered = [...live.filter(holds), ...live.filter((window) => !holds(window))]
   const offers: TabOffer[] = []
-  for (const entry of ordered) {
-    for (const tab of entry.tabs.getState().tabs) {
+  for (const { entry, tabs } of ordered) {
+    for (const tab of tabs) {
       const wc = entry.tabs.liveWebContents(tab.id)
       if (wc === undefined || wc.isDestroyed() || !isPickableTab(tab)) continue
       const self = wc === request.tab
