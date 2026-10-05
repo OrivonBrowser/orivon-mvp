@@ -110,6 +110,13 @@ describe('the verifier subsystem', () => {
     expect(done).toBe(true)
   })
 
+  it('serves a .eth name only while the light client can start, or for a developer name', async () => {
+    const { access } = await launch()
+    expect(access.verifierServesName('vitalik.eth')).toBe(true)
+    process.env['ORIVON_ETH_LIGHT_CLIENT'] = 'off'
+    expect(access.verifierServesName('vitalik.eth')).toBe(false)
+  })
+
   it('starts the host when an address bar input names a .eth host, and not for other text', async () => {
     const { access } = await launch()
     access.prewarmVerifier('example.com')
