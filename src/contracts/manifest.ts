@@ -111,7 +111,6 @@ export interface Manifest {
    * the settings-list revoke path (`docs/open-questions.md` A101) once the
    * app is running -- narrower than a row in the install prompt, but not
    * nothing.
-   *
    * ONE FLAG FOR THE WHOLE MANIFEST, not one per capability. The choice
    * this expresses is about whether the app's OWN CODE can cope with an
    * incomplete grant at all, which is a property of the app as a whole --
@@ -128,7 +127,6 @@ export interface Manifest {
    * `SharedArrayBuffer`, a shared `WebAssembly.Memory` and `Atomics.wait` in
    * a worker: everything a WebAssembly component built with threads needs
    * (ADR-0036). `true` is the only accepted value; omit it to not ask.
-   *
    * OPT-IN, because isolation costs the app two things the web platform
    * charges every isolated page: a window it opens can no longer reach it
    * through `window.opener` (a sign-in popup that reports back that way
@@ -137,6 +135,8 @@ export interface Manifest {
    * either must not.
    */
   readonly crossOriginIsolated?: true
+  /** The one ENS name or DNS host the app calls home, in URL host spelling; a judged score counts only there (ADR-0056). */
+  readonly domain?: string
 }
 
 export interface Capabilities {
