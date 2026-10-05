@@ -13,14 +13,14 @@ the window shows while a share runs.
 | `end-unexpected-capture.ts` | The backstop for a grant that reached no display handler: reloads the tab and logs |
 | `frame-key.ts` | The ticket key of a tab's top frame |
 | `display-policy.ts` | Pure: whether a page may be shown the picker (a website unless blocked, an app with its `media.screen` grant) |
-| `display-gate.ts` | Pure: from the page's pick to the ticket: who asked, one picker per tab, fresh activation after a refusal, the picker, the arm and called steps |
+| `display-gate.ts` | Pure: from the page's pick to the ticket: who asked, one picker per tab, fresh activation after a refusal (kept across a navigation, for the refused origin), the picker, the arm and called steps |
 | `display-ipc.ts` | The tab preload's channels, read strictly: the sender is a tab's top frame, the payload has exactly its keys |
 | `display-handler.ts` | What the session's display handler answers: the ticket's choice as Electron's streams; starts the share |
-| `share-registry.ts` | The running shares: starts on the display handler's answer, ends on the tracks, the requester's page or the shown tab, and Stop |
+| `share-registry.ts` | The running shares: starts on the display handler's answer, ends on the tracks, the requester's page, the shown tab's destruction, and Stop; marks a picked tab pending until its share starts |
 | `install-display-capture.ts` | Wires the above into the shell: the asker (added first), the handler, the channels, the registry, the page's lifecycle |
 | `bindings.ts` | Where the gate finds the picker, the app media grants and the share registry; each refuses until bound |
 | `install-display-ui.ts` | The shell installer for the picker and the indicators: binds the picker the gate asks, and starts what draws a running share |
-| `picker/` | The picker: `choose-display-source.ts` (the `ChooseDisplaySource` the gate asks), the `screen-share-picker` overlay (`picker-overlay.ts` with its pure model, view, tab list, source feed and store), the real wiring (`picker-real.ts`, `picker-platform.ts`) and the test build's `dev-choose.ts` |
+| `picker/` | The picker: `choose-display-source.ts` (the `ChooseDisplaySource` the gate asks), the `screen-share-picker` overlay (`picker-overlay.ts` with its pure model, view, tab list, source feed and store), and the real wiring (`picker-real.ts`, `picker-platform.ts`); the test build's picker is [`../dev/dev-display-chooser.ts`](../dev/dev-display-chooser.ts) |
 | `indicators/` | What shows while a share runs: the sharing bar overlay (`sharing-bar.ts`), the sentences (`shares.ts`), one subscription to the bound registry (`share-events.ts`). The tab badges and the address-bar chip read the registry through `../shell/signals/sharing.ts` and `../shell/state/sharing.ts` |
 
 **What it depends on.** `electron`, [`../channels.ts`](../channels.ts), [`../dev/dev-display-chooser.ts`](../dev/dev-display-chooser.ts) (the test-only picker the installer exposes in an e2e build), [`../sessions/`](../sessions/) (the permission gate and its per-site asker
@@ -65,3 +65,17 @@ embedder that is a different origin refuses the `display-capture` check.
 **A tab share's end is read from `isBeingCaptured()` and from the tracks the preload reports.** A browser under automation
 that records its views (Playwright's screencast) keeps `isBeingCaptured()` true, so the end-to-end spec proves the share's
 end through the preload's report; the registry's own poll is unit-tested.
+
+**A picked tab stays attached from the pick, not from the share.** The share starts only when the display handler answers,
+a moment after the person pressed Share, and a person can leave the picked tab in between; a view taken out of the window
+then cannot be captured and the page's call fails with `AbortError`. The gate tells the registry to expect the tab under the
+ticket's nonce, [`../shell/tab-panes.ts`](../shell/tab-panes.ts) keeps a pending tab's view in the window, and the mark ends
+when the share starts, the call is rejected, the page goes away or the ticket's lifetime is over.
+
+**A shared tab keeps being shared when it loads another document.** Chromium keeps capturing a tab across its navigations
+(measured), so the registry watches the shown tab only for its destruction or loss of renderer; the requester's navigation
+still ends the share, because the page that holds the tracks is gone.
+
+**A refused page keeps its gesture requirement across a navigation that never commits.** `endForTab` aborts the picker and voids the
+ticket but keeps the tab's `needsActivation`, so a download or a 204 cannot reopen the picker in a loop; the refusal holds for
+the origin it was made on, so a tab that commits another origin starts fresh.
