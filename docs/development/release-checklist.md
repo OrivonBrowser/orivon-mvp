@@ -148,7 +148,8 @@ forgotten.
 - [ ] `npm run typecheck && npm test && npm run check:natives && npm run check:contracts` green.
 - [ ] CI green on `main`.
 - [ ] After publishing: the Release workflow is green and the release carries the deb, the
-      AppImage, the Windows installer and both dmgs ([`packaging.md`](packaging.md) §Releases).
+      AppImage, the Windows installer, both dmgs and `ipfs.json` ([`packaging.md`](packaging.md)
+      §Releases); within about 15 minutes `ipfs://<cid>` from its notes opens in Orivon.
 - [ ] [`CHANGELOG.md`](../../CHANGELOG.md) updated.
 - [ ] Known limitations stated **in-product**, not only in the README: peers see the user's IP;
       no automatic port forwarding behind NAT; address-bar search text goes to DuckDuckGo.
