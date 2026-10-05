@@ -851,7 +851,9 @@
     the commit causes (the committing page takes the keyboard), until the page reports the main
     frame committed, failed or stopped loading, or went away, or a mouse button goes down in one
     of the window's pages (a person leaving the popup, which closes it); a navigation that ends
-    having absorbed a blur gives the popup the keyboard back. A window already destroyed when a
+    having absorbed a blur gives the popup the keyboard back only while its own window is the focused
+    one (focusing a page raises its window); with another app window focused the popup closes, with
+    none focused it waits for the next focus inside the app. A window already destroyed when a
     blur, the keyboard hand-back or an app focus arrives closes the popup without being read. With no preferred size reported, the page's
     content (its scroll extent, not only its box) is measured after half a second and again while
     it still renders. A window destroyed under the popup is never reached for a size, a placement

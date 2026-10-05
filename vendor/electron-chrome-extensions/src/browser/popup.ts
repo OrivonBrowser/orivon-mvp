@@ -454,14 +454,21 @@ export class PopupView extends EventEmitter {
     }, this.host.focusHandoverMs ?? PopupView.FOCUS_HANDOVER_MS)
   }
 
-  /** The keyboard goes back to the popup, or, with the app no longer the focused one, the popup waits for the next focus inside it. */
+  /**
+   * The keyboard goes back to the popup only while its own window is the focused one: focusing a
+   * page raises its window, so doing it with another app window focused would pull the person back
+   * from where they went. With another window focused the blur was theirs, and the popup closes; with
+   * no window focused the popup waits for the next focus inside the app.
+   */
   private retakeKeyboard = (): void => {
     if (this.destroyed || this.webContents.isDestroyed() || this.webContents.isFocused()) return
-    if (this.livingParent() === undefined) {
+    const parent = this.livingParent()
+    if (parent === undefined) {
       this.closeSoon()
       return
     }
-    if (getAllWindows().some((win) => win.isFocused())) this.webContents.focus()
+    if (parent.isFocused()) this.webContents.focus()
+    else if (getAllWindows().some((win) => win.isFocused())) this.closeSoon()
     else this.closeOnNextAppFocus()
   }
 

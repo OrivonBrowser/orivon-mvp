@@ -46,6 +46,7 @@ class FakeView {
 }
 
 let baseWindows: EventEmitter[] = []
+let parentFocused = true
 const nativeThemeStub = { shouldUseDarkColors: false }
 
 vi.mock('electron', () => ({
@@ -59,12 +60,14 @@ const { PopupView, setPopupHost, popupParentOf } = await import('../../../../ven
 
 interface FakeParent extends EventEmitter {
   isDestroyed: () => boolean
+  isFocused: () => boolean
   contentView: { children: unknown[] }
 }
 
 function fakeParent (): FakeParent {
   const parent = new EventEmitter() as FakeParent
   parent.isDestroyed = () => false
+  parent.isFocused = () => parentFocused
   parent.contentView = { children: [] }
   return parent
 }
@@ -87,6 +90,7 @@ const macrotask = async (): Promise<void> => await new Promise((resolve) => setI
 beforeEach(() => {
   FakeView.instances = []
   baseWindows = []
+  parentFocused = true
   nativeThemeStub.shouldUseDarkColors = false
   host.mount.mockReset()
   host.unmount.mockReset()
@@ -399,10 +403,26 @@ describe('PopupView: opened over a page whose navigation has not committed (UPST
     const { popup } = await openedOver(tab)
     await blurred(popup)
     baseWindows = [Object.assign(shell, { isFocused: () => false })]
+    parentFocused = false
     tab.emit('did-navigate')
     expect(pageOf(popup).focused).toBe(false)
     shell.emit('focus')
     await macrotask()
+    expect(popup.isDestroyed()).toBe(true)
+    Object.assign(shell, { isFocused: () => true })
+  })
+
+  it('closes instead of raising its window when the person went to another app window during the commit', async () => {
+    const tab = new EventEmitter()
+    const { popup } = await openedOver(tab)
+    await blurred(popup)
+    const other = Object.assign(new EventEmitter(), { isFocused: () => true })
+    baseWindows = [Object.assign(shell, { isFocused: () => false }), other]
+    parentFocused = false
+    const focus = vi.spyOn(pageOf(popup), 'focus')
+    tab.emit('did-navigate')
+    await macrotask()
+    expect(focus).not.toHaveBeenCalled()
     expect(popup.isDestroyed()).toBe(true)
     Object.assign(shell, { isFocused: () => true })
   })
@@ -514,10 +534,24 @@ describe('PopupView: closing (UPSTREAM.md patches 34 and 68)', () => {
     it('leaves the keyboard alone when the app is no longer the focused one, and closes on the next focus inside it', async () => {
       const popup = await keptOpen()
       baseWindows = [Object.assign(shell, { isFocused: () => false })]
+      parentFocused = false
+    parentFocused = false
       await later(60)
       expect(pageOf(popup).focused).toBe(false)
       shell.emit('focus')
       await macrotask()
+      expect(popup.isDestroyed()).toBe(true)
+      Object.assign(shell, { isFocused: () => true })
+    })
+
+    it('closes instead of raising its window when another app window holds the focus', async () => {
+      const popup = await keptOpen()
+      const other = Object.assign(new EventEmitter(), { isFocused: () => true })
+      baseWindows = [Object.assign(shell, { isFocused: () => false }), other]
+      parentFocused = false
+      const focus = vi.spyOn(pageOf(popup), 'focus')
+      await later(60)
+      expect(focus).not.toHaveBeenCalled()
       expect(popup.isDestroyed()).toBe(true)
       Object.assign(shell, { isFocused: () => true })
     })
