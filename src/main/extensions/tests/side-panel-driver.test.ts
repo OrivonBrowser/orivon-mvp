@@ -270,7 +270,7 @@ describe('the tab in front', () => {
     }
   })
 
-  it('opens for a background tab when that tab comes forward, and not for a later one', async () => {
+  it('opens for a background tab when that tab comes forward', async () => {
     const s = setup({ manifest: {} })
     s.options.set(EXT, { tabId: 2, path: 'two.html' })
     s.driver.republish()
@@ -279,16 +279,93 @@ describe('the tab in front', () => {
     s.setFront(2)
     s.driver.sync(s.win)
     expect(s.host.open).toHaveBeenCalledWith(`ext:${EXT}`)
+  })
 
-    const t = setup({ manifest: {} })
-    t.options.set(EXT, { tabId: 2, path: 'two.html' })
-    t.driver.republish()
-    await t.driver.open({ extensionId: EXT, window: t.win, tabId: 2 })
-    t.setFront(3)
-    t.driver.sync(t.win)
-    t.setFront(2)
-    t.driver.sync(t.win)
-    expect(t.host.open).not.toHaveBeenCalled()
+  it('keeps waiting for the named tab through a switch to another tab, an option change for another tab and an extension loading', async () => {
+    const s = setup({ manifest: {} })
+    s.options.set(EXT, { tabId: 2, path: 'two.html' })
+    s.driver.republish()
+    await s.driver.open({ extensionId: EXT, window: s.win, tabId: 2 })
+    s.setFront(3)
+    s.driver.sync(s.win)
+    s.options.set(EXT, { tabId: 4, path: 'four.html' })
+    s.driver.optionsChanged(EXT)
+    s.driver.extensionLoaded(OTHER)
+    expect(s.host.open).not.toHaveBeenCalled()
+    s.setFront(2)
+    s.driver.sync(s.win)
+    expect(s.host.open).toHaveBeenCalledWith(`ext:${EXT}`)
+    expect(s.pages).toHaveLength(1)
+  })
+
+  it('opens once: the tab leaving and coming back does not open it again', async () => {
+    const s = setup({ manifest: {} })
+    s.options.set(EXT, { tabId: 2, path: 'two.html' })
+    s.driver.republish()
+    await s.driver.open({ extensionId: EXT, window: s.win, tabId: 2 })
+    s.setFront(2)
+    s.driver.sync(s.win)
+    s.host.close()
+    s.setFront(3)
+    s.driver.sync(s.win)
+    s.setFront(2)
+    s.driver.sync(s.win)
+    expect(vi.mocked(s.host.open)).toHaveBeenCalledTimes(1)
+  })
+
+  describe('stops waiting for the named tab', () => {
+    const reasons: Record<string, (s: ReturnType<typeof setup>) => void | Promise<void>> = {
+      'when the tab closes': (s) => { s.driver.tabClosed(2) },
+      'when the extension unloads': (s) => { s.driver.extensionUnloaded(EXT) },
+      'when the extension\'s panel is turned off for that tab': (s) => { s.options.set(EXT, { tabId: 2, enabled: false }); s.driver.optionsChanged(EXT) },
+      'when the extension closes its panel': async (s) => { await s.driver.close({ extensionId: EXT, window: s.win, tabId: undefined }) },
+      'when the extension opens its panel for the tab in front': async (s) => { await s.driver.open({ extensionId: EXT, window: s.win, tabId: undefined }); s.host.close() }
+    }
+    for (const [reason, end] of Object.entries(reasons)) {
+      it(reason, async () => {
+        const s = setup({ manifest: {} })
+        s.options.set(EXT, { tabId: 2, path: 'two.html' })
+        s.options.set(EXT, { tabId: 3, path: 'three.html' })
+        s.driver.republish()
+        await s.driver.open({ extensionId: EXT, window: s.win, tabId: 2 })
+        s.setFront(3)
+        s.driver.sync(s.win)
+        await end(s)
+        vi.mocked(s.host.open).mockClear()
+        s.setFront(2)
+        s.driver.sync(s.win)
+        expect(s.host.open).not.toHaveBeenCalled()
+      })
+    }
+  })
+
+  it('keeps each extension\'s own wait', async () => {
+    const s = setup({ manifest: {} })
+    s.options.set(EXT, { tabId: 2, path: 'two.html' })
+    s.options.set(OTHER, { tabId: 2, path: 'two.html' })
+    s.driver.republish()
+    await s.driver.open({ extensionId: EXT, window: s.win, tabId: 2 })
+    await s.driver.open({ extensionId: OTHER, window: s.win, tabId: 2 })
+    await s.driver.close({ extensionId: OTHER, window: s.win, tabId: undefined })
+    s.setFront(2)
+    s.driver.sync(s.win)
+    expect(s.host.open).toHaveBeenCalledWith(`ext:${EXT}`)
+    expect(s.host.open).not.toHaveBeenCalledWith(`ext:${OTHER}`)
+  })
+
+  it('does not bring the extension\'s page back after it closed the panel that was waiting to return', async () => {
+    const s = setup()
+    s.options.set(EXT, { tabId: 2, enabled: false })
+    s.driver.republish()
+    await s.openPanel()
+    s.setFront(2)
+    s.driver.sync(s.win)
+    expect(s.host.isOpen()).toBe(true)
+    await s.driver.close({ extensionId: EXT, window: s.win, tabId: undefined })
+    s.setFront(1)
+    s.driver.sync(s.win)
+    expect(s.pages).toHaveLength(1)
+    expect(s.host.open).toHaveBeenCalledTimes(1)
   })
 })
 

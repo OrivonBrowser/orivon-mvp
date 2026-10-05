@@ -74,8 +74,13 @@ interface WindowState {
   shown?: Shown | undefined
   /** The panel stays open without the extension while the tab in front has none; `viewAfter` is what it showed instead. */
   suspended?: { ext: string, viewAfter: string } | undefined
-  /** `open({ tabId })` named a tab that is not in front: it opens when that tab comes forward. */
-  pending?: { ext: string, tabId: number } | undefined
+  /**
+   * `open({ tabId })` named a tab that is not in front, per extension: it opens when that tab comes forward, however many
+   * other tabs come first. The gesture `open` needs was spent when it was asked, so it does not expire. It ends when the tab
+   * closes, the extension goes away or turns the panel off for that tab, a newer `open` or a `close` of the extension in
+   * this window answers it, or the window closes.
+   */
+  pending: Map<string, number>
   /** Set only while `host.open` runs: the choice it announces is not the person's (a tab switch, an extension's `open()`), so its page takes no focus. */
   quiet?: boolean | undefined
 }
@@ -106,7 +111,7 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
   const states = new WeakMap<ShellWindow, WindowState>()
   const stateOf = (window: ShellWindow): WindowState => {
     let state = states.get(window)
-    if (state === undefined) { state = {}; states.set(window, state) }
+    if (state === undefined) { state = { pending: new Map() }; states.set(window, state) }
     return state
   }
   let published = '[]'
@@ -228,6 +233,20 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
     show(window, host, extensionId, url)
   }
 
+  /** Opens, quietly, the panels waiting for `tab`; true when one opened. Waiting for another tab goes on, unless that tab's panel was turned off. */
+  const openPending = (window: ShellWindow, host: PanelHostLike, state: WindowState, tab: number | undefined): boolean => {
+    let opened = false
+    for (const [ext, tabId] of [...state.pending]) {
+      if (deps.options.panelFor(ext, tabId) === undefined) { state.pending.delete(ext); continue }
+      if (tab !== tabId) continue
+      state.pending.delete(ext)
+      // A panel of that extension already on screen or loading is moved to the tab's page by the rest of `sync`.
+      const present = state.shown?.ext === ext || state.loading?.ext === ext
+      if (!present && host.canShow()) { openQuietly(state, host, ext); opened = true }
+    }
+    return opened
+  }
+
   const sync = (window: ShellWindow): void => {
     const host = deps.hostOf(window)
     if (host === undefined) return
@@ -236,16 +255,7 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
     const state = stateOf(window)
     const tab = deps.frontTab(window)
 
-    if (state.pending !== undefined) {
-      const { ext, tabId } = state.pending
-      state.pending = undefined
-      // A panel of that extension already on screen or loading is moved to the tab's page below.
-      const present = state.shown?.ext === ext || state.loading?.ext === ext
-      if (tab === tabId && !present && deps.options.panelFor(ext, tab) !== undefined && host.canShow()) {
-        openQuietly(state, host, ext)
-        return
-      }
-    }
+    if (openPending(window, host, state, tab)) return
 
     const { loading } = state
     if (loading !== undefined) {
@@ -314,7 +324,7 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
         const state = stateOf(window)
         if (state.loading?.ext === extensionId) { state.loading.page.destroy(); state.loading = undefined }
         if (state.suspended?.ext === extensionId) state.suspended = undefined
-        if (state.pending?.ext === extensionId) state.pending = undefined
+        state.pending.delete(extensionId)
         const host = deps.hostOf(window)
         if (state.shown?.ext === extensionId || host?.view() === `${ENTRY_PREFIX}${extensionId}`) host?.setGuest(null)
       }
@@ -324,7 +334,7 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
       deps.options.forgetTab(tabId)
       for (const window of deps.windows()) {
         const state = stateOf(window)
-        if (state.pending?.tabId === tabId) state.pending = undefined
+        for (const [ext, waitingFor] of [...state.pending]) if (waitingFor === tabId) state.pending.delete(ext)
       }
       republish()
     },
@@ -338,9 +348,10 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
       if (deps.options.panelFor(target.extensionId, tab) === undefined) throw new Error(`No active side panel for windowId: ${String(windowId)}.`)
       const state = stateOf(target.window)
       if (target.tabId !== undefined && target.tabId !== deps.frontTab(target.window)) {
-        state.pending = { ext: target.extensionId, tabId: target.tabId }
+        state.pending.set(target.extensionId, target.tabId)
         return
       }
+      state.pending.delete(target.extensionId)
       // An extension's own call is no choice of the person's: the panel opens without taking the keyboard from the page.
       openQuietly(state, host, target.extensionId)
     },
@@ -348,7 +359,9 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
     close: async (target) => {
       const host = deps.hostOf(target.window)
       const state = stateOf(target.window)
-      if (state.pending?.ext === target.extensionId) state.pending = undefined
+      state.pending.delete(target.extensionId)
+      // A panel waiting to come back on a tab that has one is no longer wanted either.
+      if (state.suspended?.ext === target.extensionId) state.suspended = undefined
       if (host !== undefined && (state.shown?.ext === target.extensionId || state.loading?.ext === target.extensionId)) host.close()
     },
 
@@ -366,7 +379,7 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
         if (state.loading?.ext === extensionId) { gone.push(state.loading.page.destroyed); state.loading.page.destroy(); state.loading = undefined }
         if (state.shown?.ext === extensionId) { gone.push(state.shown.page.destroyed); deps.hostOf(window)?.setGuest(null) }
         if (state.suspended?.ext === extensionId) state.suspended = undefined
-        if (state.pending?.ext === extensionId) state.pending = undefined
+        state.pending.delete(extensionId)
       }
       let timer: ReturnType<typeof setTimeout> | undefined
       const limit = new Promise<void>((resolve) => { timer = setTimeout(resolve, CLOSE_LIMIT_MS) })
