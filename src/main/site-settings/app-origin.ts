@@ -4,7 +4,7 @@
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import type { SubsystemContext } from '../registry.js'
 
-/** An app holding grants, or one served from the cache. */
+/** An origin the broker registered, one holding grants, or one served from the cache. */
 export function isAppOrigin (ctx: Pick<SubsystemContext, 'broker'>, origin: string): boolean {
-  return ctx.broker?.app.hasGrantsSync(origin) === true || isOriginServedFromCacheSync(origin)
+  return ctx.broker?.app.isRegisteredSync(origin) === true || ctx.broker?.app.hasGrantsSync(origin) === true || isOriginServedFromCacheSync(origin)
 }

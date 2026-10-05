@@ -38,7 +38,7 @@ export const installMediaGrants: ShellInstaller = {
     siteAsks.add(createAppMediaAsker({
       isTab: (contents) => services.windows.findTab(contents) !== null,
       urlOf: (tab) => tab.getURL(),
-      isApp: (origin) => isAppOrigin(ctx, origin) || ctx.broker?.app.isRegisteredSync(origin) === true,
+      isApp: (origin) => isAppOrigin(ctx, origin),
       grants
     }))
   }
