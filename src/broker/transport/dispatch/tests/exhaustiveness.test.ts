@@ -5,6 +5,8 @@ import { dispatchFs } from '../fs.js'
 import type { FsControlMethod } from '../fs.js'
 import { dispatchId } from '../id.js'
 import type { IdControlMethod } from '../id.js'
+import { dispatchTrust } from '../trust.js'
+import type { TrustControlMethod } from '../trust.js'
 import { dispatchWeb } from '../web.js'
 import type { WebControlMethod } from '../web.js'
 import { APP, stubBroker } from '../../tests/ipc.test-helpers.js'
@@ -51,6 +53,13 @@ describe('dispatchFs/dispatchApp/dispatchId fail closed on an unrouted method, i
     const broker = stubBroker([])
 
     await expect(dispatchWeb(broker, APP, UNROUTED as unknown as WebControlMethod, {}))
+      .rejects.toMatchObject({ code: 'internal' })
+  })
+
+  it('dispatchTrust throws internal rather than resolving undefined', async () => {
+    const broker = stubBroker([])
+
+    await expect(dispatchTrust(broker, APP, UNROUTED as unknown as TrustControlMethod, {}, undefined))
       .rejects.toMatchObject({ code: 'internal' })
   })
 })

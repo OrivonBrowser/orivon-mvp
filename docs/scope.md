@@ -97,8 +97,8 @@ If these work, this version has done its job. None of them is yet named as the d
 | **Per-site permissions and content settings**: a prompt under the address bar for the camera, microphone, location, clipboard, MIDI, idle detection, window placement and notifications; a popover off the address pill, a Settings > Site settings page, a pop-up blocker, and JavaScript, images, sound and automatic downloads per site | A browser that gives every page the camera, or none of them, is unusable for a call or a QR scan; a person can only trust what they can see and change per site. A registered app keeps its manifest's grants and is never asked. `ADR-0049`, `ADR-0032` |
 | Developer mode: unpacked loader + docs | Permissionless is a core value, and it recruits the A+ developers. `ADR-0002` |
 | Telemetry + first-run disclosure + "what was sent" page | Without it the metric is unfalsifiable. The disclosure UI is not optional. `ADR-0004` |
-| Packaging: **Linux first** (AppImage + deb) | No code-signing cost, and the target audience skews Linux |
-| **Run-from-source on Windows and macOS** | `npm install && npm start` sidesteps SmartScreen and Gatekeeper without buying certificates, widens the audience, and self-selects contributors. Forces a no-native-modules policy on Orivon's own dependencies, not on the apps it runs |
+| **Packages for Linux, Windows and macOS on every GitHub release**: deb + AppImage, an NSIS installer, a dmg each for Apple silicon and Intel | A person should not need git and Node to try a browser. CI builds each package on its own system, launches it, and attaches it to the release. No certificate is bought: Windows warns once (SmartScreen) and macOS asks once (ad-hoc signature, Gatekeeper) |
+| **Run-from-source on Windows and macOS** | `npm install && npm start` needs no installer trust at all, widens the audience, and self-selects contributors. Forces a no-native-modules policy on Orivon's own dependencies, not on the apps it runs |
 | **Bookmarks**: star a page and edit it in a bubble, folders on a bar with a menu for each, a manager at `orivon://bookmarks`, bookmark all tabs, and import and export as an HTML file | A browser with no way to keep and arrange pages is not a plausible daily driver, since `activeSec` is what the success metric actually measures. One JSON file in the profile (`ADR-0003`) |
 | **Downloads**: a list at `orivon://downloads` and a toolbar button with a bubble, files saved to the Downloads folder or a chosen one, pause, resume, cancel and retry, and a hold on files that run code until the person keeps them | A person who lives in the browser downloads files every day and has to find, resume and trust them; Orivon never opens a file that runs code. Files save with no prompt unless Settings says to ask |
 | **A History page to live in**: by day or by session, sorted by recency, visits or name, site icons, selecting and deleting many, and the tabs closed recently | History is only useful if a person can find the page they meant; it stays local and is cleared from Settings or the page |
@@ -138,7 +138,7 @@ Real parts of Orivon, not in this version yet. Each lands when a need calls for 
 `orivon-runtime` (Wasmtime; arrives when untrusted third-party apps or mobile do) ·
 mobile · Web3 search · Tor / proxy chains ·
 wallet Crypto and Address-book layers plus `CapabilityDescriptor` · cross-device sync ·
-Windows and macOS packaging with code signing.
+Windows and macOS code signing with bought certificates (Developer ID with notarization, a Windows code-signing certificate).
 
 **Ideas, not scheduled: a BitTorrent streaming app, and Nostr identity.** A torrent app would be
 compatibility tier 4 (`architecture/app-compatibility.md`): a magnet link playing in a tab over

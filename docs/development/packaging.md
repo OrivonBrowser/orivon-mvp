@@ -1,17 +1,23 @@
 # Packaging
 
-Linux only: `deb` and `AppImage`, built by [`electron-builder`](https://www.electron.build)
-from [`electron-builder.yml`](../../electron-builder.yml) at the repo root. Windows and macOS
-are not packaged at all: they ship run-from-source, deliberately, to avoid buying
-certificates ([`docs/planning/build-plan.md`](../planning/build-plan.md) "Platform policy";
-[`docs/development/setup.md`](setup.md)).
+Orivon is packaged for three systems by [`electron-builder`](https://www.electron.build) from
+[`electron-builder.yml`](../../electron-builder.yml) at the repo root:
 
-> **Status: builds, and only partly verified against the build's output.** The build produces
-> real `deb`/`AppImage` artefacts in `release/`, and the app window launches and renders the
-> real shell from the built AppImage. **Not yet checked against a real build:** the desktop-entry
-> contents, the `MimeType=`/`Categories=` composition, and the `xdg-settings` registration flow.
-> §Known gaps below lists what is and is not confirmed; treat any other claim here as "designed
-> to, per current docs" rather than "observed."
+| System | Package | Signed |
+|---|---|---|
+| Linux (x64) | `orivon_<version>_amd64.deb` and `Orivon-<version>-x86_64.AppImage` | no (Linux packages are not) |
+| Windows (x64) | `Orivon-Setup-<version>-x64.exe`, an NSIS installer | no: SmartScreen warns on first run |
+| macOS | `Orivon-<version>-arm64.dmg` (Apple silicon) and `Orivon-<version>-x64.dmg` (Intel) | ad hoc: Gatekeeper asks once |
+
+Each GitHub release builds all of them and attaches them to itself (§Releases). No certificate is
+bought, so Windows and macOS packages are not trusted by their systems out of the box
+(§Windows and macOS). Running from source stays supported on every system
+([`setup.md`](setup.md)).
+
+> **Status.** CI builds every package on its own system, installs or mounts it, and launches it
+> until the shell page renders (§Releases). **Not yet checked against a real build:** the
+> desktop-entry contents, the `MimeType=`/`Categories=` composition, and the `xdg-settings`
+> registration flow. §Known gaps lists what is and is not confirmed.
 
 ## `deb` is the primary artefact
 
@@ -37,25 +43,121 @@ So:
 it's there.
 
 ```bash
-npm run package:linux
+npm run package:linux   # on Linux
+npm run package:win     # on Windows
+npm run package:mac     # on macOS: both architectures
 ```
 
-`"package:linux": "electron-vite build && electron-builder --linux"` in `package.json` runs the
-same two steps a manual build would: `electron-vite build` first (`out/main`, `out/preload`,
-`out/renderer`), then `electron-builder --linux`. `electron-builder` does not invoke the app
-build itself: it packages whatever is already on disk, so skipping the first step packages a
-stale (or missing) `out/`. `electron-builder.yml` is picked up automatically; it's the tool's
-default config filename, so no `--config` flag is needed.
+Each runs the ordinary build first (`scripts/build-ordinary.mjs`: `out/main`, `out/preload`,
+`out/renderer`, with the developer-only grant path stripped), then `electron-builder` for that
+system with `--publish never`. `electron-builder` does not build the app itself: it packages
+whatever is in `out/`. Build each system on that system: a Windows installer can be built
+elsewhere only through Wine, and a dmg only on macOS. Output lands in `release/` (gitignored).
 
-Output lands in `release/` (already gitignored).
+To check a package starts, launch it on a throwaway profile:
 
-### Verifying what actually got built
+```bash
+node scripts/run-headless.mjs node scripts/smoke-packaged.mjs release/linux-unpacked/orivon
+```
 
-The build itself has now been run once (2026-09-03) and produced real `release/*.deb` and
-`release/*.AppImage` files; the app window was confirmed launching and rendering the real shell
-from the AppImage. The specific commands below, inspecting the `.desktop` entry's contents and
-registering as the default browser, have **not** been run against that build. Treat this
-section as a checklist still to complete, not a report of those results.
+It passes once the shell page has rendered from inside `app.asar`, and prints the app's output
+when it does not.
+
+## Releases
+
+[`.github/workflows/release.yml`](../../.github/workflows/release.yml) builds the packages.
+
+1. Tag the release `v<semver>` (`v0.1.0`, `v0.2.0-beta.1`) and publish it on GitHub, as a release
+   or a pre-release. A saved draft builds nothing until it is published.
+2. The workflow sets each package's version from the tag (`package.json` stays `0.0.0` in git),
+   builds on `ubuntu-latest`, `windows-latest` and `macos-latest`, then installs the deb and runs
+   the AppImage, installs the Windows installer silently, and mounts each dmg, checking its
+   signature, and launches each one with `scripts/smoke-packaged.mjs`.
+3. When every system passes, a separate job attaches the packages to the release. If one system
+   fails, nothing is attached: re-run the failed job from the Actions tab, and the attach job
+   follows. Re-running replaces assets of the same name.
+4. A release build first refuses an `.eth` light-client checkpoint
+   (`src/main/verifier/mainnet-checkpoint.json`) over 14 days old: the app rejects one that old,
+   and a fresh install of that release would verify no `.eth` name. Refresh it before tagging
+   ([`release-checklist.md`](release-checklist.md)).
+
+A pull request that changes `electron-builder.yml`, `build/`, `scripts/smoke-packaged.mjs` or the
+workflow runs the same build and launch, and keeps the packages for seven days as workflow
+artifacts instead of attaching them. Actions > Release > Run workflow does the same on demand.
+
+The job that writes to the release only downloads the packages and uploads them. The jobs that
+run `npm ci` or Kubo hold a read-only token, so no dependency's install script can alter a release.
+
+### On IPFS
+
+Every release is also one folder on IPFS. Its `ipfs://<cid>` is in the release's description,
+under "On IPFS", which the workflow writes, and in the `ipfs.json` attached to it:
+
+```json
+{ "cid": "bafy...", "add": "ipfs add -r --cid-version=1 ...", "files": [{ "name": "orivon_0.1.0_amd64.deb", "sha256": "..." }] }
+```
+
+- **The workflow** computes the CID with [`scripts/pin-releases.sh`](../../scripts/pin-releases.sh)
+  `manifest`, using Kubo at a pinned version and checksum, in a job with a read-only token. It
+  only hashes: nothing is uploaded to IPFS from CI.
+- **A pinning node** runs `pin-releases.sh sync` on a timer. It reads the public releases list,
+  downloads the files of the newest three releases, checks each against its SHA-256, adds them
+  with the same flags, and refuses a release whose files add up to any other CID. It pins what
+  it keeps as `orivon-release-<tag>` and unpins the older releases it pinned; a pin without that
+  name is never touched. There is no IPNS name: a release's description is where its CID lives.
+- **Anyone can pin a release too.** The CID depends only on the files and the flags in
+  `pin-releases.sh`, so `pin-releases.sh sync` (or `ipfs add` with those flags) on any Kubo node
+  reproduces it. Changing the flags changes every CID from the next release on.
+
+The Orivon node runs it from a systemd timer every 15 minutes:
+
+```ini
+# orivon-release-pinner.service
+[Service]
+Type=oneshot
+User=<a user that can reach the Kubo API>
+Environment=IPFS_API=/ip4/127.0.0.1/tcp/5001 KEEP=3
+ExecStart=/path/to/pin-releases.sh sync
+
+# orivon-release-pinner.timer
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target
+```
+
+`journalctl -u orivon-release-pinner` shows each run: a line per release pinned, refused or
+unpinned. A refused release is not downloaded again until its `ipfs.json` names another CID.
+
+## Windows and macOS
+
+**Windows.** The installer is unsigned. On first run SmartScreen shows "Windows protected your
+PC": **More info**, then **Run anyway**. It installs for the current user into
+`%LOCALAPPDATA%\Programs\Orivon`, needs no administrator, and lets the person choose another
+folder. Silent install: `Orivon-Setup-<version>-x64.exe /S`.
+
+**macOS.** The app is signed ad hoc, not with a Developer ID, and not notarized. Apple silicon
+refuses a binary with no signature at all, and packaging rewrites the Electron binary (its fuses,
+name and `Info.plist`), so the signature Electron shipped with no longer holds: electron-builder
+signs it again with `identity: "-"`. Hardened runtime is off, since it rejects an ad-hoc app
+loading the Electron framework, and it only matters for notarization. After dragging Orivon to
+Applications, the first open is refused: open **System Settings > Privacy & Security** and choose
+**Open Anyway**, or run `xattr -dr com.apple.quarantine /Applications/Orivon.app`. The Intel dmg
+is built on an Apple silicon runner and launched there under Rosetta.
+
+**Signing later.** A Developer ID certificate (with notarization) and a Windows code-signing
+certificate would remove both warnings. electron-builder reads them from the environment
+(`CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`), so
+adding them is repository secrets, the matching `env:` lines in the workflow, and removing
+`identity: "-"` and `hardenedRuntime: false` from `mac:`.
+
+### Verifying the desktop entry
+
+The commands below, inspecting the `.desktop` entry's contents and registering as the default
+browser, have **not** been run against a built package. Treat this section as a checklist still
+to complete, not a report of those results.
 
 ```bash
 # Confirm the desktop entry actually says what "Making 'set as default browser'
@@ -125,16 +227,12 @@ reason `deb` is the artefact that should carry any daily-driver usage**: an inst
 places `chrome-sandbox` on a normal read-write filesystem where `dpkg` can and does set its
 permissions correctly at install time, so the sandbox works as intended without extra flags.
 
-**Build on the oldest LTS you intend to support.** glibc's symbol versioning is backward
-compatible, not forward compatible: a binary built (or linked, or whose shared-library version
-floor is computed) on a newer glibc can reference symbol versions (`memcpy@GLIBC_2.14`,
-`pthread_create@GLIBC_2.34`, and so on) that don't exist on an older system, and fails at
-*launch* on that older system with an opaque `version 'GLIBC_2.xx' not found`, not at package
-build time. The reverse direction is fine: a binary built against an old glibc baseline runs
-unmodified on every newer one. Practically: build (and smoke-test) the `.deb` on the oldest
-Ubuntu/Debian LTS this project intends to support, not on whatever happens to be on the
-developer's own machine, or the packaged binary can silently stop working for exactly the users
-least likely to know how to work around it.
+**The oldest Linux it runs on is Electron's, not the build machine's.** A binary compiled
+against a newer glibc fails to launch on an older system (`version 'GLIBC_2.xx' not found`).
+Packaging compiles nothing here (`npmRebuild: false`, and Rule 8 keeps native modules out), so
+the only binaries in the package are Electron's own, built against an old baseline, and building
+on `ubuntu-latest` does not raise the floor. A native module added to the shell's dependencies
+would change that, and would have to be built on the oldest LTS Orivon supports.
 
 **Only `deb` can register as the default browser.** Covered above at length; restated here
 because it is the caveat that most directly shapes the "primary vs. trial artefact" framing at
@@ -143,25 +241,20 @@ commands.
 
 ## Files shipped, and why the list is short
 
-`electron-builder.yml`'s `files:` key is an **allowlist**: `out/**/*` and `package.json`,
-nothing else, not even `node_modules/`. See the comments in that file for the full reasoning;
-short version: `package.json` declares zero runtime `dependencies` (webtorrent and every
-app-side library are pre-built app assets fetched into `userData` at runtime, never a shell
-dependency, per `build-plan.md` "Platform policy" #1 and `ADR-0005`), so there is nothing under
-`node_modules/` the packaged app needs, and an allowlist can't accidentally pick up `spike/`,
-`test/`, `scripts/`, `devlog/`, `.claude/`, `docs/`, or root-level markdown the way a
-blocklist subtracted from `**/*` would have to remember to keep excluding.
+`electron-builder.yml`'s `files:` key is an **allowlist** of the app's own sources: `out/**/*`
+and `package.json`. An allowlist cannot pick up `spike/`, `test/`, `scripts/`, `devlog/`,
+`.claude/`, `docs/` or root-level markdown the way a blocklist subtracted from `**/*` would have
+to remember to keep excluding. The production tree of `package.json`'s `dependencies` (the ENS
+resolver's, the IPFS/IPNS reader's and the renderer shims' packages) is still copied into
+`app.asar`'s own `node_modules/`, since electron-vite leaves some of them to be required at run
+time. webtorrent and every app-side library are not shell dependencies: they are app assets
+fetched into `userData` (`ADR-0005`). `build/icon.png` is copied beside `app.asar` as
+`resources/icon.png`, for the window icon.
 
 ## Known gaps
 
 What a real build leaves open. None of them blocks a build.
 
-- **No app icon exists in this repository.** `electron-builder.yml` does not set `linux.icon`
-  or `directories.buildResources`, so it relies on the documented default: a `build/icon.png`
-  (or `.svg`, 1024x1024 recommended) that does not currently exist. Electron-builder does not
-  hard-fail without one (it falls back to the stock Electron icon) but shipping the browser
-  with the generic Electron logo is a real, visible gap, not a neutral default. Someone needs to
-  design one, or accept the placeholder knowingly.
 - **The `MimeType=` composition (`protocols.schemes` + `linux.mimeTypes` -> one merged line) is
   documented behaviour, not observed.** Verify it against `release/*.deb` with the
   `dpkg -e`/`-x` commands above.
@@ -190,9 +283,8 @@ specifically so that a stray `latest-linux.yml`/`app-update.yml` never ships imp
 channel that doesn't exist, since electron-builder would otherwise auto-detect a GitHub publish
 target from `package.json`'s `repository` field.
 
-**Code signing.** Not configured because it doesn't need to be: Linux `deb`/`AppImage` targets
-aren't signed by electron-builder in the way Windows/macOS builds are, and this file doesn't
-configure Windows or macOS targets at all (see the top of `electron-builder.yml`).
+**Code signing with a bought certificate.** Not configured; §Windows and macOS says what a
+person sees without it, and what adding it takes.
 
 ## Version notes: 26.x, not v27
 
