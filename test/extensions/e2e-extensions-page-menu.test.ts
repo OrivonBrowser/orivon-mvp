@@ -7,10 +7,10 @@
 import { afterAll, expect, it } from 'vitest'
 import type { Server } from 'node:http'
 import type { ElectronApplication, Page } from 'playwright'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture } from './support/e2e-helpers.js'
-import { startFixtureServer } from './support/extensions-fixtures.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { closeElectronApp, navigateToFixture } from '../support/e2e-helpers.js'
+import { startFixtureServer } from '../support/extensions-fixtures.js'
 import { openExtensionPage, rpc, seedFixture, waitRecovered } from './extensions-e2e-helpers.js'
 
 let server: Server | undefined

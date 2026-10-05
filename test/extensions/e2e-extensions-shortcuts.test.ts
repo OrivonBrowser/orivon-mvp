@@ -9,15 +9,15 @@
 // With ORIVON_SHOTS_DIR set the page is photographed in both themes.
 //
 // Run with `npm run test:e2e`, or directly:
-//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-extensions-shortcuts.test.ts
+//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-shortcuts.test.ts
 import { afterAll, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import { mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
-import { assertNoElectronSurvivors, closeElectron, launchElectron, profileDirOf } from './support/launch-electron.mjs'
-import { delay, findChrome, HERMETIC_RESOLVER, tabIds, waitFor } from './support/smoke-helpers.mjs'
-import { navigateToFixture, pressKey } from './support/e2e-helpers.js'
+import { assertNoElectronSurvivors, closeElectron, launchElectron, profileDirOf } from '../support/launch-electron.mjs'
+import { delay, findChrome, HERMETIC_RESOLVER, tabIds, waitFor } from '../support/smoke-helpers.mjs'
+import { navigateToFixture, pressKey } from '../support/e2e-helpers.js'
 import { openExtensionPage, rpc, seedFixture, waitRecovered } from './extensions-e2e-helpers.js'
 
 const TEST_TIMEOUT_MS = 180_000

@@ -6,14 +6,14 @@
 import { cpSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication } from 'playwright'
-import { mainOutput } from './support/launch-electron.mjs'
-import { delay, waitFor } from './support/smoke-helpers.mjs'
-import { FIXTURES_DIR } from './support/extensions-fixtures.js'
-import { loadableManifest, readExtensionManifest } from '../src/broker/policy/extension-manifest.js'
-import { serializeRegistry, type InstalledExtension } from '../src/main/extensions/registry.js'
-import { readRegistry } from '../src/main/extensions/registry-runner.js'
-import { resolveSlotKey } from '../src/main/extensions/install-runner.js'
-import { generateId } from '../vendor/electron-chrome-web-store/src/browser/id.js'
+import { mainOutput } from '../support/launch-electron.mjs'
+import { delay, waitFor } from '../support/smoke-helpers.mjs'
+import { FIXTURES_DIR } from '../support/extensions-fixtures.js'
+import { loadableManifest, readExtensionManifest } from '../../src/broker/policy/extension-manifest.js'
+import { serializeRegistry, type InstalledExtension } from '../../src/main/extensions/registry.js'
+import { readRegistry } from '../../src/main/extensions/registry-runner.js'
+import { resolveSlotKey } from '../../src/main/extensions/install-runner.js'
+import { generateId } from '../../vendor/electron-chrome-web-store/src/browser/id.js'
 
 /** Copies `test/apps/extensions/<name>/` into the profile the way
  * install-runner.ts would have left it (the stripped manifest, with the

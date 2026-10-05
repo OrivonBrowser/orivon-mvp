@@ -1,7 +1,7 @@
 // Test builds only: exposes the Chrome Web Store methods on `globalThis`,
 // reachable from Playwright's ElectronApplication.evaluate() -- it runs
 // inside this same process, the same reasoning as ../dev/dev-grant.ts's own
-// hook. test/e2e-extensions-store.test.ts has no real
+// hook. test/extensions/e2e-extensions-store.test.ts has no real
 // chromewebstore.google.com page to drive the real install flow from, so it
 // drives ctx.extensions' store methods directly instead. Gated on the same
 // compiled-in flag as the developer grant, so an ordinary build carries

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Orivon E2E Store Live",
   "version": "1.0.0",
-  "description": "Fixture for test/e2e-extensions-store-live.test.ts: the shape of a real content blocker. A module service worker that needs chrome.permissions at load, opens a welcome tab when installed, creates an offscreen document, registers content scripts and carries one static ruleset.",
+  "description": "Fixture for test/extensions/e2e-extensions-store-live.test.ts: the shape of a real content blocker. A module service worker that needs chrome.permissions at load, opens a welcome tab when installed, creates an offscreen document, registers content scripts and carries one static ruleset.",
   "permissions": ["declarativeNetRequest", "offscreen", "scripting", "storage", "alarms", "permissions"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js", "type": "module" },

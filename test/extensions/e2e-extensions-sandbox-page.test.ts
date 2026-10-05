@@ -20,21 +20,21 @@
 // less page proves the preload correctly refused to expose anything.
 //
 // Run with:
-//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-extensions-sandbox-page.test.ts
+//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-sandbox-page.test.ts
 import { afterAll, expect, it } from 'vitest'
 import { readFileSync, writeFileSync, cpSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Frame, Page } from 'playwright'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { evaluateRetrying, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
-import { closeElectronApp, runPhase } from './support/e2e-helpers.js'
-import { loadableManifest, readExtensionManifest } from '../src/broker/policy/extension-manifest.js'
-import { serializeRegistry, type InstalledExtension } from '../src/main/extensions/registry.js'
-import { resolveSlotKey } from '../src/main/extensions/install-runner.js'
-import { generateId } from '../vendor/electron-chrome-web-store/src/browser/id.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { evaluateRetrying, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { closeElectronApp, runPhase } from '../support/e2e-helpers.js'
+import { loadableManifest, readExtensionManifest } from '../../src/broker/policy/extension-manifest.js'
+import { serializeRegistry, type InstalledExtension } from '../../src/main/extensions/registry.js'
+import { resolveSlotKey } from '../../src/main/extensions/install-runner.js'
+import { generateId } from '../../vendor/electron-chrome-web-store/src/browser/id.js'
 
-const FIXTURE_DIR = fileURLToPath(new URL('./apps/extensions/sandbox-page', import.meta.url))
+const FIXTURE_DIR = fileURLToPath(new URL('../apps/extensions/sandbox-page', import.meta.url))
 const SLOT = 'sandbox-page'
 
 function seedSandboxPage (userDataDir: string): string {

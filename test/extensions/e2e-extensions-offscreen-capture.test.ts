@@ -9,7 +9,7 @@
 // after.
 //
 // A second, opt-in suite drives the owner's own installed Volume Master
-// copy the same way test/e2e-extensions-real.test.ts drives uBOL/Dark
+// copy the same way test/extensions/e2e-extensions-real.test.ts drives uBOL/Dark
 // Reader/Bitwarden/MetaMask -- skipped unless ORIVON_VOLUME_MASTER_DIR
 // points at an unpacked copy (never committed extension code).
 //
@@ -18,22 +18,22 @@
 // other extension e2e file here.
 //
 // Run with:
-//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-extensions-offscreen-capture.test.ts
+//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-offscreen-capture.test.ts
 import { describe, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import { cpSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Page } from 'playwright'
-import { assertNoElectronSurvivors, launchElectron, mainOutput } from './support/launch-electron.mjs'
-import { evaluateRetrying, findChrome, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase } from './support/e2e-helpers.js'
-import { loadableManifest, readExtensionManifest } from '../src/broker/policy/extension-manifest.js'
-import { serializeRegistry, type InstalledExtension } from '../src/main/extensions/registry.js'
-import { resolveSlotKey } from '../src/main/extensions/install-runner.js'
-import { generateId } from '../vendor/electron-chrome-web-store/src/browser/id.js'
+import { assertNoElectronSurvivors, launchElectron, mainOutput } from '../support/launch-electron.mjs'
+import { evaluateRetrying, findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { closeElectronApp, navigateToFixture, runPhase } from '../support/e2e-helpers.js'
+import { loadableManifest, readExtensionManifest } from '../../src/broker/policy/extension-manifest.js'
+import { serializeRegistry, type InstalledExtension } from '../../src/main/extensions/registry.js'
+import { resolveSlotKey } from '../../src/main/extensions/install-runner.js'
+import { generateId } from '../../vendor/electron-chrome-web-store/src/browser/id.js'
 
-const FIXTURE_DIR = fileURLToPath(new URL('./apps/extensions/offscreen-capture', import.meta.url))
+const FIXTURE_DIR = fileURLToPath(new URL('../apps/extensions/offscreen-capture', import.meta.url))
 const SLOT = 'offscreen-capture'
 
 /** Seeds the fixture the real way -- e2e-extensions-toolbar.test.ts's own

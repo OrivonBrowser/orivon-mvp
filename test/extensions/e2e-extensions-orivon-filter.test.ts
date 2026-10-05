@@ -20,26 +20,26 @@
 // and a fixed one for the routed-fetch probe (PROBE_PORT's own comment).
 //
 // RUN THIS WITH: npm run test:e2e, or directly:
-//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-extensions-orivon-filter.test.ts
+//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-orivon-filter.test.ts
 import { afterAll, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import { cpSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { HERMETIC_RESOLVER, evaluateRetrying, waitFor } from './support/smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase } from './support/e2e-helpers.js'
-import { loadableManifest, readExtensionManifest } from '../src/broker/policy/extension-manifest.js'
-import { serializeRegistry, type InstalledExtension } from '../src/main/extensions/registry.js'
-import { resolveSlotKey } from '../src/main/extensions/install-runner.js'
-import { generateId } from '../vendor/electron-chrome-web-store/src/browser/id.js'
-import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
-import type { Grant, Manifest } from '../src/contracts/index.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { HERMETIC_RESOLVER, evaluateRetrying, waitFor } from '../support/smoke-helpers.mjs'
+import { closeElectronApp, navigateToFixture, runPhase } from '../support/e2e-helpers.js'
+import { loadableManifest, readExtensionManifest } from '../../src/broker/policy/extension-manifest.js'
+import { serializeRegistry, type InstalledExtension } from '../../src/main/extensions/registry.js'
+import { resolveSlotKey } from '../../src/main/extensions/install-runner.js'
+import { generateId } from '../../vendor/electron-chrome-web-store/src/browser/id.js'
+import type { DevGrantRequest } from '../../src/main/dev/dev-grant.js'
+import type { Grant, Manifest } from '../../src/contracts/index.js'
 
-const FIXTURES_DIR = fileURLToPath(new URL('./apps/extensions/', import.meta.url)).replace(/[/\\]$/, '')
+const FIXTURES_DIR = fileURLToPath(new URL('../apps/extensions/', import.meta.url)).replace(/[/\\]$/, '')
 const SLOT = 'orivon-caller'
 
-/** Mirrors test/e2e-extensions-load.test.ts's own seedExtensions, narrowed to this one fixture: see that file for the full mechanism this replays. */
+/** Mirrors test/extensions/e2e-extensions-load.test.ts's own seedExtensions, narrowed to this one fixture: see that file for the full mechanism this replays. */
 function seedExtension (userDataDir: string): void {
   const sourceDir = join(FIXTURES_DIR, SLOT)
   const rawManifest: unknown = JSON.parse(readFileSync(join(sourceDir, 'manifest.json'), 'utf8'))
@@ -144,7 +144,7 @@ const OBJECT_JS = `(() => {
   setTimeout(() => { settle('neither') }, 1000)
 })()`
 
-/** A plain, single-page HTTP origin on an EPHEMERAL port -- test/e2e-extensions-load.test.ts's own header explains why never a fixed one. */
+/** A plain, single-page HTTP origin on an EPHEMERAL port -- test/extensions/e2e-extensions-load.test.ts's own header explains why never a fixed one. */
 async function startFixtureServer (): Promise<{ server: Server, origin: string }> {
   const server = createServer((req, res) => {
     if (req.url === '/orivon-fixture/page.js') {

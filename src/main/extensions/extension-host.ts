@@ -277,7 +277,7 @@ export function attachExtensionShell (ctx: SubsystemContext, services: ShellServ
       // close for the active tab's own navigation; this is the other half.
       // Never for a switch the popup's own extension just made through
       // chrome.tabs.create/update (isExtensionActivatingTab's own doc):
-      // test/e2e-extensions-toolbar.test.ts deliberately keeps the popup
+      // test/extensions/e2e-extensions-toolbar.test.ts deliberately keeps the popup
       // open and interactive across its own chrome.tabs.create() call.
       if (!isExtensionActivatingTab()) closeCurrentPopup()
       if (trackedTabs.has(wc)) {

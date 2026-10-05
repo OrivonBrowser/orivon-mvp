@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // keyed on the real consumer, the http(s)-only target check, its re-check on
 // the captured tab's own navigation, and listener cleanup on an ordinary
 // release; the 'media' carve-out itself is covered end to end by
-// test/e2e-extensions-offscreen-capture.test.ts, and a forged invocation by
+// test/extensions/e2e-extensions-offscreen-capture.test.ts, and a forged invocation by
 // browser-action-tab-capture-invocation.test.ts.
 const {
   TabCaptureAPI,

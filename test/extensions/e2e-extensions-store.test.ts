@@ -10,17 +10,17 @@
 // local fixture server instead of the real store.
 //
 // Run with `npm run test:e2e`, or directly:
-//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-extensions-store.test.ts
+//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-store.test.ts
 import { afterAll, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { evaluateRetrying, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
-import { answeringWith, noNativeDialogs, stubNativeDialogs } from './support/question-support.js'
-import { closeElectronApp, navigateToFixture, runPhase } from './support/e2e-helpers.js'
-import { parseRegistry } from '../src/main/extensions/registry.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { evaluateRetrying, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { answeringWith, noNativeDialogs, stubNativeDialogs } from '../support/question-support.js'
+import { closeElectronApp, navigateToFixture, runPhase } from '../support/e2e-helpers.js'
+import { parseRegistry } from '../../src/main/extensions/registry.js'
 import { buildManifestCrx as buildCrx, makeRsaKeyPair } from './store-crx-support.js'
 
 let server: Server | undefined

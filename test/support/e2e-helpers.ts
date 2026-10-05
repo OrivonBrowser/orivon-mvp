@@ -226,7 +226,7 @@ let asPageCounter = 0
  * -- which leaves no page frame at all, so main-world-socket.ts's caller-
  * attribution filter refuses every `window.orivon` call made that way
  * (ADR-0045; that file's own README.md Design notes). Generalises
- * test/e2e-extensions-orivon-filter.test.ts's own PAGE_JS/page.js: `serve`
+ * test/extensions/e2e-extensions-orivon-filter.test.ts's own PAGE_JS/page.js: `serve`
  * must be a fixture server's own hook that makes GETting `scriptUrl` (on
  * the SAME origin `view` is currently showing) return whatever text this
  * call last gave it -- the individual fixture servers differ too much to

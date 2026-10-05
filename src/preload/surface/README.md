@@ -76,7 +76,7 @@ method that no longer matches the saved one is itself treated as tamper, refused
 frozen `Error.prepareStackTrace` is -- main-world code that obtains its own `CallSite` (its own
 `prepareStackTrace`) cannot make a later frame lie about its origin by replacing a prototype
 method. V8 defines those methods non-writable and non-configurable, so on Electron 44 the
-replacement itself fails (`test/e2e-extensions-orivon-filter.test.ts` measures it); the
+replacement itself fails (`test/extensions/e2e-extensions-orivon-filter.test.ts` measures it); the
 comparison guards an engine that allows it. The decision, over the CallSites excluding `guarded`'s own frame
 (`Error.captureStackTrace`'s second argument does the excluding): refuse if any frame's file
 name, script name or eval origin CONTAINS a `chrome-extension://` script (refusing more is

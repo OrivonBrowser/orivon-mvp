@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Orivon E2E Network Perms",
   "version": "1.0.0",
-  "description": "Fixture extension for test/e2e-extensions-load.test.ts: declares every permission loadableManifest must strip.",
+  "description": "Fixture extension for test/extensions/e2e-extensions-load.test.ts: declares every permission loadableManifest must strip.",
   "permissions": ["declarativeNetRequest", "webRequest", "nativeMessaging", "storage"],
   "host_permissions": ["<all_urls>"],
   "background": {

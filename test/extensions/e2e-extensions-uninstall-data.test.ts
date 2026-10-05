@@ -3,16 +3,16 @@
 // same extension afterwards (the same id) starts empty.
 //
 // Run with `npm run test:e2e`, or directly:
-//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-extensions-uninstall-data.test.ts
+//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-uninstall-data.test.ts
 import { afterAll, expect, it } from 'vitest'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { findChrome, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
-import { closeElectronApp } from './support/e2e-helpers.js'
-import { answeringWith, noNativeDialogs, stubNativeDialogs } from './support/question-support.js'
-import { FIXTURES_DIR } from './support/extensions-fixtures.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { closeElectronApp } from '../support/e2e-helpers.js'
+import { answeringWith, noNativeDialogs, stubNativeDialogs } from '../support/question-support.js'
+import { FIXTURES_DIR } from '../support/extensions-fixtures.js'
 import { openExtensionPage, rpc, waitRecovered } from './extensions-e2e-helpers.js'
 
 afterAll(async () => {

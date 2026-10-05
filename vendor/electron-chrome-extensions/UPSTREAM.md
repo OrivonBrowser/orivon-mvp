@@ -94,7 +94,7 @@
     globalThis is inaccessible under scuttling mode" with this patch (0 occurrences across a full
     real-extensions run that previously threw it in both contexts every time), and the popup
     renders its real content -- read through Playwright's `page.content()`, not `page.evaluate()`
-    (`test/e2e-extensions-real.test.ts`'s own comment: `evaluate()` throws on `setInterval`, a
+    (`test/extensions/e2e-extensions-real.test.ts`'s own comment: `evaluate()` throws on `setInterval`, a
     global LavaMoat's own scuttle exceptions list does not carry, so it is unsafe against a
     scuttled page regardless of this patch). Provisional: real Chrome's own native `chrome`
     binding is believed non-configurable for the same reason (so a real Chrome extension's own

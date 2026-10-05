@@ -16,14 +16,14 @@
 // repository's OTHER e2e files already keep on a fixed port either.
 //
 // Run with `npm run test:e2e`, or directly:
-//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-extensions-load.test.ts
+//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-load.test.ts
 import { afterAll, expect, it } from 'vitest'
 import type { Server } from 'node:http'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { evaluateRetrying, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase } from './support/e2e-helpers.js'
-import { seedExtensions, startFixtureServer } from './support/extensions-fixtures.js'
-import { SHELL_PARTITION } from '../src/main/shell/shell-session.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { evaluateRetrying, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { closeElectronApp, navigateToFixture, runPhase } from '../support/e2e-helpers.js'
+import { seedExtensions, startFixtureServer } from '../support/extensions-fixtures.js'
+import { SHELL_PARTITION } from '../../src/main/shell/shell-session.js'
 
 let server: Server | undefined
 

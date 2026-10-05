@@ -1,4 +1,4 @@
-// Fixture popup for test/e2e-extensions-offscreen-capture.test.ts. Clicking
+// Fixture popup for test/extensions/e2e-extensions-offscreen-capture.test.ts. Clicking
 // #capture is the "allowed" half of the invocation-gate test: the toolbar
 // click that opened this popup already granted the invocation
 // (browser-action.ts's own activateClick), so the same chrome.tabCapture

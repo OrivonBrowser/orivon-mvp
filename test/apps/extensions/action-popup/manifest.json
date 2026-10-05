@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Orivon E2E Action Popup",
   "version": "1.0.0",
-  "description": "Fixture extension for test/e2e-extensions-toolbar.test.ts: a browser action with a popup, an options page and a service worker that exercises chrome.tabs.",
+  "description": "Fixture extension for test/extensions/e2e-extensions-toolbar.test.ts: a browser action with a popup, an options page and a service worker that exercises chrome.tabs.",
   "action": {
     "default_popup": "popup.html",
     "default_icon": "icon.png"

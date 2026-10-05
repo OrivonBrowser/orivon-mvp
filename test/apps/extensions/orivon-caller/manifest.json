@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Orivon E2E Orivon Caller",
   "version": "1.0.0",
-  "description": "Fixture extension for test/e2e-extensions-orivon-filter.test.ts: calls window.orivon from a MAIN-world content script, an isolated content script's web-accessible injected <script>, and chrome.scripting.executeScript.",
+  "description": "Fixture extension for test/extensions/e2e-extensions-orivon-filter.test.ts: calls window.orivon from a MAIN-world content script, an isolated content script's web-accessible injected <script>, and chrome.scripting.executeScript.",
   "content_scripts": [
     {
       "matches": ["<all_urls>"],

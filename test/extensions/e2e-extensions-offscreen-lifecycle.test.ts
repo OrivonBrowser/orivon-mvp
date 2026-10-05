@@ -1,25 +1,25 @@
 // The offscreen document's own lifecycle and navigation policy: process
 // exit, window.open denial and renderer-crash cleanup. Kept separate from
-// test/e2e-extensions-offscreen-capture.test.ts because none of these
+// test/extensions/e2e-extensions-offscreen-capture.test.ts because none of these
 // actually exercise tabCapture itself. Reuses that file's own fixture
 // (test/apps/extensions/offscreen-capture/) and seeding helper shape.
 //
 // Run with:
-//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-extensions-offscreen-lifecycle.test.ts
+//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-offscreen-lifecycle.test.ts
 import { describe, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import { cpSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
-import { closeElectronApp } from './support/e2e-helpers.js'
-import { loadableManifest, readExtensionManifest } from '../src/broker/policy/extension-manifest.js'
-import { serializeRegistry, type InstalledExtension } from '../src/main/extensions/registry.js'
-import { resolveSlotKey } from '../src/main/extensions/install-runner.js'
-import { generateId } from '../vendor/electron-chrome-web-store/src/browser/id.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { closeElectronApp } from '../support/e2e-helpers.js'
+import { loadableManifest, readExtensionManifest } from '../../src/broker/policy/extension-manifest.js'
+import { serializeRegistry, type InstalledExtension } from '../../src/main/extensions/registry.js'
+import { resolveSlotKey } from '../../src/main/extensions/install-runner.js'
+import { generateId } from '../../vendor/electron-chrome-web-store/src/browser/id.js'
 
-const FIXTURE_DIR = fileURLToPath(new URL('./apps/extensions/offscreen-capture', import.meta.url))
+const FIXTURE_DIR = fileURLToPath(new URL('../apps/extensions/offscreen-capture', import.meta.url))
 const SLOT = 'offscreen-capture'
 
 function seedFixture (userDataDir: string): string {

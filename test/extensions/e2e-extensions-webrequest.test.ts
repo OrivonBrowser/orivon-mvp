@@ -2,7 +2,7 @@
 // Fixture: test/apps/extensions/webrequest-mv2/ (blocking onBeforeRequest,
 // onBeforeSendHeaders and onHeadersReceived listeners, plus observers that
 // log what they see on their own background page). Seeded the real way
-// (test/e2e-extensions-dnr.test.ts's own doc): registry.json plus
+// (test/extensions/e2e-extensions-dnr.test.ts's own doc): registry.json plus
 // loadableManifest's stripped copy, which keeps webRequest and
 // webRequestBlocking out of the loaded manifest.
 //
@@ -13,15 +13,15 @@ import { createServer, type IncomingHttpHeaders, type Server } from 'node:http'
 import { cpSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { evaluateRetrying, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase } from './support/e2e-helpers.js'
-import { loadableManifest, readExtensionManifest } from '../src/broker/policy/extension-manifest.js'
-import { serializeRegistry, type InstalledExtension } from '../src/main/extensions/registry.js'
-import { resolveSlotKey } from '../src/main/extensions/install-runner.js'
-import { generateId } from '../vendor/electron-chrome-web-store/src/browser/id.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { evaluateRetrying, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { closeElectronApp, navigateToFixture, runPhase } from '../support/e2e-helpers.js'
+import { loadableManifest, readExtensionManifest } from '../../src/broker/policy/extension-manifest.js'
+import { serializeRegistry, type InstalledExtension } from '../../src/main/extensions/registry.js'
+import { resolveSlotKey } from '../../src/main/extensions/install-runner.js'
+import { generateId } from '../../vendor/electron-chrome-web-store/src/browser/id.js'
 
-const FIXTURE_DIR = fileURLToPath(new URL('./apps/extensions/webrequest-mv2/', import.meta.url)).replace(/[/\\]$/, '')
+const FIXTURE_DIR = fileURLToPath(new URL('../apps/extensions/webrequest-mv2/', import.meta.url)).replace(/[/\\]$/, '')
 
 function seedWebRequestExtension (userDataDir: string): InstalledExtension {
   const rawManifest: unknown = JSON.parse(readFileSync(join(FIXTURE_DIR, 'manifest.json'), 'utf8'))

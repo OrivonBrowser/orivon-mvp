@@ -1549,7 +1549,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 - **Question:** A doubled-slash spelling of a sandbox page gets the sandbox CSP, an opaque origin and no
   injected `chrome.*` from the vendored library, yet `chrome.tabs.query({})` still returns real tab data there
-  (measured through `WebFrameMain.executeJavaScript`, `test/e2e-extensions-sandbox-page.test.ts`). What answers?
+  (measured through `WebFrameMain.executeJavaScript`, `test/extensions/e2e-extensions-sandbox-page.test.ts`). What answers?
 - **Why it matters:** code in a sandbox page reached by that spelling can still read the person's open tabs.
 - **Options:** redirect every non-canonical `chrome-extension://` path to its canonical form before it loads,
   then confirm the query is refused (rec.); find the Electron native binding that answers and patch it; leave it.

@@ -607,9 +607,9 @@ explaining *why a tier exists*, it belongs there.
 
 What an extension gets in this build. Measured two ways: five real extensions (uBlock Origin
 Lite, Dark Reader, Bitwarden, MetaMask, and the optional full uBlock Origin) through
-`test/e2e-extensions-real.test.ts`, and a sixth
+`test/extensions/e2e-extensions-real.test.ts`, and a sixth
 (Volume Master, opt-in via `ORIVON_VOLUME_MASTER_DIR`) through
-`test/e2e-extensions-offscreen-capture.test.ts`; plus a full `chrome.*` namespace sweep across a
+`test/extensions/e2e-extensions-offscreen-capture.test.ts`; plus a full `chrome.*` namespace sweep across a
 service worker, popup, options page, a `side_panel`-declared tab, a sandboxed page and content
 scripts (isolated and MAIN world, MV2 and MV3), run with the Chromium sandbox on.
 
@@ -650,7 +650,7 @@ scripts (isolated and MAIN world, MV2 and MV3), run with the Chromium sandbox on
 | `options_page` | ✅ | Opens in a tab |
 | `options_ui` | ⚠️ | Opens in a tab, same as `options_page`; the embedded (`open_in_new_tab: false`) mode is not implemented |
 | `chrome_url_overrides` (`newtab`, `history`, `bookmarks`) | ❌ | Not honoured: a new tab shows Orivon's own dashboard, History and Bookmarks their own pages; an extension's page can still be opened as a tab with `chrome.tabs.create` |
-| `devtools_page` | ✅ | Runs in the DevTools frame and `chrome.devtools.panels.create` calls back (`vendor/electron-chrome-extensions/UPSTREAM.md`, `test/e2e-extensions-sweep.test.ts`) |
+| `devtools_page` | ✅ | Runs in the DevTools frame and `chrome.devtools.panels.create` calls back (`vendor/electron-chrome-extensions/UPSTREAM.md`, `test/extensions/e2e-extensions-sweep.test.ts`) |
 | `web_accessible_resources` | ✅ | Tracked for the install prompt; Chromium enforces the resource list itself |
 | `externally_connectable` | ✅ | Chromium's own: a page whose address matches gets `chrome.runtime.sendMessage` and `connect`, and the extension's `onMessageExternal` and `onConnectExternal` fire; no Orivon code; the sender's `tab` carries `windowId` 0 |
 | `commands` | ✅ | Suggested keys are bound when free; `_execute_action` activates the extension; rebinding at `orivon://extensions/shortcuts`; Orivon's own shortcuts win; macOS key names are not run on a Mac (`extension-commands.ts`, `extension-commands-runner.ts`) |

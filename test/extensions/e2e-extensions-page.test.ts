@@ -7,20 +7,20 @@
 // installs a fixture .zip built on the fly.
 //
 // Run with `npm run test:e2e`, or directly:
-//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-extensions-page.test.ts
+//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-page.test.ts
 import { afterAll, expect, it } from 'vitest'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import AdmZip from 'adm-zip'
 import type { ElectronApplication, Page } from 'playwright'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { delay, findChrome, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
-import { closeElectronApp } from './support/e2e-helpers.js'
-import { answerQuestion, noNativeDialogs, stubNativeDialogs } from './support/question-support.js'
-import { seedExtensions } from './support/extensions-fixtures.js'
-import { parseRegistry } from '../src/main/extensions/registry.js'
-import type { InstalledExtension } from '../src/main/extensions/registry.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { delay, findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { closeElectronApp } from '../support/e2e-helpers.js'
+import { answerQuestion, noNativeDialogs, stubNativeDialogs } from '../support/question-support.js'
+import { seedExtensions } from '../support/extensions-fixtures.js'
+import { parseRegistry } from '../../src/main/extensions/registry.js'
+import type { InstalledExtension } from '../../src/main/extensions/registry.js'
 
 afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])

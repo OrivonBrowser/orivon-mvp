@@ -5,20 +5,20 @@
 // only, so none of this ran there. Fixture: test/apps/extensions/store-live/.
 //
 // Run with `npm run test:e2e`, or directly:
-//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-extensions-store-live.test.ts
+//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-store-live.test.ts
 import { afterAll, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { evaluateRetrying, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase } from './support/e2e-helpers.js'
-import { parseRegistry } from '../src/main/extensions/registry.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { evaluateRetrying, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { closeElectronApp, navigateToFixture, runPhase } from '../support/e2e-helpers.js'
+import { parseRegistry } from '../../src/main/extensions/registry.js'
 import { buildFolderCrx, makeRsaKeyPair } from './store-crx-support.js'
-import { answeringWith, noNativeDialogs, stubNativeDialogs } from './support/question-support.js'
+import { answeringWith, noNativeDialogs, stubNativeDialogs } from '../support/question-support.js'
 
-const FIXTURE_DIR = fileURLToPath(new URL('./apps/extensions/store-live/', import.meta.url)).replace(/[/\\]$/, '')
+const FIXTURE_DIR = fileURLToPath(new URL('../apps/extensions/store-live/', import.meta.url)).replace(/[/\\]$/, '')
 const TEST_TIMEOUT_MS = 120_000
 const AFTER_INSTALL_MS = 10_000
 

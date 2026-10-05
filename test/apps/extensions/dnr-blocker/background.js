@@ -1,4 +1,4 @@
-// Fixture service worker for test/e2e-extensions-dnr.test.ts. Adds its own
+// Fixture service worker for test/extensions/e2e-extensions-dnr.test.ts. Adds its own
 // dynamic rules once per service-worker start; idempotent (removes its own
 // ids first) since the worker can restart and its previously persisted
 // dynamic rules would otherwise collide on id.

@@ -266,7 +266,7 @@ under the headless runner with a main-process module loaded by Electron's `--req
 
 ### Checking against real Chrome extensions
 
-[`test/e2e-extensions-real.test.ts`](../../test/e2e-extensions-real.test.ts) installs whichever
+[`test/extensions/e2e-extensions-real.test.ts`](../../test/extensions/e2e-extensions-real.test.ts) installs whichever
 of uBlock Origin Lite, Dark Reader, Bitwarden and MetaMask it finds unpacked in
 `ORIVON_REAL_EXTENSIONS_DIR` (one subdirectory per extension, named `ubol`/`darkreader`/
 `bitwarden`/`metamask`) through the real install path, then records per extension: whether its
@@ -278,7 +278,7 @@ directly:
 
 ```
 ORIVON_REAL_EXTENSIONS_DIR=/path/to/extracted node scripts/build-e2e.mjs && \
-  node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-extensions-real.test.ts
+  node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-real.test.ts
 ```
 
 Re-download each extension's latest release from its own GitHub releases page when the directory

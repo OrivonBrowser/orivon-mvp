@@ -7,7 +7,7 @@ import { join, relative, sep } from 'node:path'
 import { createHash, createPrivateKey, generateKeyPairSync, sign as signWithKey, type KeyObject } from 'node:crypto'
 import AdmZip from 'adm-zip'
 import Pbf from 'pbf'
-import { convertHexadecimalToIDAlphabet } from '../vendor/electron-chrome-web-store/src/browser/id.js'
+import { convertHexadecimalToIDAlphabet } from '../../vendor/electron-chrome-web-store/src/browser/id.js'
 
 export interface KeyPair { readonly publicKey: Buffer, readonly privateKey: KeyObject }
 
