@@ -234,7 +234,10 @@ class of conflict git cannot see, and CI is what catches it:
 | `npm run check:contracts` | `src/contracts/` grew an edge out of the directory |
 | `npm run build` | The bundle no longer builds |
 
-With no dedicated code reviewer, **CI is the reviewer**, so a red PR does not merge, ever.
+With no dedicated code reviewer, **CI is the reviewer**, so a PR whose `check` or selected e2e shards are red does not
+merge, ever. The e2e shards are the specs the changed files can reach (`test/impact-map.json`; `node
+scripts/ci/select-e2e.mjs --base origin/main` prints them). A change at a boundary (broker, contracts, preload,
+loader, shim) takes the `ci:e2e-full` label, so the whole suite runs before it merges.
 
 ---
 
@@ -254,7 +257,8 @@ With no dedicated code reviewer, **CI is the reviewer**, so a red PR does not me
    filling in what is already there. Its `## Stream, paths and merge order` block is the part
    this page cares about: the stream, the paths and whether the PR is independent or stacked on
    another. **Its labels are how you see which streams are open at once**.
-5. **CI must be green.**
+5. **CI must be green**: `check`, and the e2e shards it selected. A shard that fails on a spec your change
+   cannot reach is a flake: rerun that shard and say so in the PR.
 6. **The owner merges.** Branch protection is `strict`, so merging PR N+1 always needs a fresh
    merge of `main` into its branch first, even when it touches none of PR N's files.
 
