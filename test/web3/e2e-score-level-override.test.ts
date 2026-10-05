@@ -13,7 +13,7 @@
 // Hermetic: everything it touches is loopback.
 //
 // RUN THIS WITH: npm run test:e2e, or directly:
-//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-score-level-override.test.ts
+//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/web3/e2e-score-level-override.test.ts
 import { afterAll, expect, it } from 'vitest'
 import { createServer } from 'node:http'
 import type { AddressInfo, Server } from 'node:net'
@@ -21,10 +21,10 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { findChrome, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
-import { answerAndRead, noNativeDialogs, stubNativeDialogs, type QuestionText } from './support/question-support.js'
-import { APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, readShield, runPhase, waitForAddressBarStable } from './support/e2e-helpers.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { answerAndRead, noNativeDialogs, stubNativeDialogs, type QuestionText } from '../support/question-support.js'
+import { APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, readShield, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
 
 afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])

@@ -176,7 +176,7 @@ ordinary build with no developer mode,
 [`test/app-loading/e2e-loopback-grant.test.ts`](../../test/app-loading/e2e-loopback-grant.test.ts). `ORIVON_DEV_ORIGINS=1`,
 paired with `ORIVON_ETH_NAMES_FILE`, turns on the fake `.eth` names
 (`src/main/dev/eth-resolver.ts`) and grants them the same way -- both halves are covered in
-[`test/e2e-eth-secure-context.test.ts`](../../test/e2e-eth-secure-context.test.ts), which asserts
+[`test/web3/e2e-eth-secure-context.test.ts`](../../test/web3/e2e-eth-secure-context.test.ts), which asserts
 a `.eth` tab is a secure context and so keeps `crypto.subtle`, `crypto.randomUUID`, service
 workers and `navigator.clipboard`. See [setup.md](setup.md) for what the two variables do. Consent gating itself is proven separately, in
 [`test/app-loading/e2e-install-consent-journey.test.ts`](../../test/app-loading/e2e-install-consent-journey.test.ts).

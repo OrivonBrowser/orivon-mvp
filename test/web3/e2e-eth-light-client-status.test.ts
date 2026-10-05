@@ -8,9 +8,9 @@
 import { afterAll, expect, it } from 'vitest'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { evaluateRetrying, findChrome, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
-import { APP_CLOSE_RACE_MS, closeElectronApp, runPhase, waitForAddressBarStable } from './support/e2e-helpers.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { evaluateRetrying, findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { APP_CLOSE_RACE_MS, closeElectronApp, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
 import type { ElectronApplication, Page } from 'playwright'
 
 afterAll(async () => {

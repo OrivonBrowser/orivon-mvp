@@ -10,10 +10,10 @@ import { afterAll, expect, it } from 'vitest'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { ElectronApplication, Page } from 'playwright'
-import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './support/launch-electron.mjs'
-import { findChrome, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, navigateToFixture, readShield, runPhase } from './support/e2e-helpers.js'
-import { startFixtureGateway } from './apps/ipfs-gateway/gateway.mjs'
+import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
+import { findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, navigateToFixture, readShield, runPhase } from '../support/e2e-helpers.js'
+import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 
 const SITES = {
   level: { 'index.html': '<!doctype html><meta charset="utf-8"><title>level fixture</title><body>level</body>' },

@@ -14,10 +14,10 @@
 import { afterAll, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './support/launch-electron.mjs'
-import { evaluateRetrying, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, navigateToFixture, runPhase } from './support/e2e-helpers.js'
-import { startFixtureGateway } from './apps/ipfs-gateway/gateway.mjs'
+import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
+import { evaluateRetrying, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, navigateToFixture, runPhase } from '../support/e2e-helpers.js'
+import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 
 const HOST = '127.0.0.1'
 const SITE = {

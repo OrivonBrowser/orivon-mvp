@@ -16,9 +16,9 @@ import type { AddressInfo } from 'node:net'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
-import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './support/launch-electron.mjs'
-import { findChrome, waitFor } from './support/smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, navigateToFixture, readShield, runPhase } from './support/e2e-helpers.js'
+import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
+import { findChrome, waitFor } from '../support/smoke-helpers.mjs'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, navigateToFixture, readShield, runPhase } from '../support/e2e-helpers.js'
 
 const SCORED = 'sha256:' + '1a'.repeat(32)
 const UNSCORED = 'sha256:' + '2b'.repeat(32)

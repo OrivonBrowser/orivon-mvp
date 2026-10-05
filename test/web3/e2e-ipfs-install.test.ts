@@ -6,13 +6,13 @@
 import { afterAll, expect, it } from 'vitest'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './support/launch-electron.mjs'
-import { findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from './support/smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './support/e2e-helpers.js'
-import { startFixtureGateway } from './apps/ipfs-gateway/gateway.mjs'
-import { originHash } from '../src/broker/grants/origin-hash.js'
-import { answerAccepting, noNativeDialogs, stubNativeDialogs } from './support/question-support.js'
-import type { QuestionText } from './support/question-support.js'
+import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
+import { findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
+import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
+import { originHash } from '../../src/broker/grants/origin-hash.js'
+import { answerAccepting, noNativeDialogs, stubNativeDialogs } from '../support/question-support.js'
+import type { QuestionText } from '../support/question-support.js'
 
 const MANIFEST = { orivonApiVersion: 0, id: 'ipfs.orivon.fixture', name: 'Ipfs fixture', version: '1.0.0', entry: 'index.html', assets: ['app.js'], capabilities: { fs: { quotaBytes: 1_048_576 } } }
 const APP = {

@@ -127,7 +127,7 @@ names, not a test of this design:
 | Pin coverage: pinned versus third-party loads per page | [`src/loader/serve/pin-coverage.ts`](../../src/loader/serve/pin-coverage.ts) | Built. The evidence for third-party code on a Level 2 site |
 | The Settings page | [`src/renderer/permissions/`](../../src/renderer/permissions/), [`permissions-ipc.ts`](../../src/main/ipc/permissions-ipc.ts) | Built, with one section (Permissions). EI-11 adds the light-client section |
 | Mapping `.eth` hosts to loopback, honoured by the default session and every partition | [`src/main/dev/eth-resolver.ts`](../../src/main/dev/eth-resolver.ts) | Built for dev names, verified in Electron 44 |
-| A `.eth` tab proven to be a secure context | [`test/e2e-eth-secure-context.test.ts`](../../test/e2e-eth-secure-context.test.ts) | The pattern to reuse |
+| A `.eth` tab proven to be a secure context | [`test/web3/e2e-eth-secure-context.test.ts`](../../test/web3/e2e-eth-secure-context.test.ts) | The pattern to reuse |
 | Content types, byte ranges | [`serve/content-type.ts`](../../src/loader/serve/content-type.ts), [`serve/range.ts`](../../src/loader/serve/range.ts) | Reuse: no second map (code-guidelines Rule 3) |
 | Address classification: public unicast, loopback, private | [`src/broker/policy/address.ts`](../../src/broker/policy/address.ts) | Reuse for every URL a resolver contract or a DNSLink names |
 | A hook on every session through `session-created` | [`src/main/sessions/permission-gate.ts`](../../src/main/sessions/permission-gate.ts) | The model for installing a certificate check everywhere |
@@ -546,11 +546,11 @@ Updated 2026-09-25. Each item is built to its exit criterion unless noted.
 | EI-0 | Done. The roadmap change put ENS, IPFS and the ENS anchor in scope and dropped `ipfs` and `ens` from the scope-creep rule; `ADR-0005`, `ADR-0006`, `ADR-0029` and `ADR-0030` are amended; decision-log rows `d-0108` to `d-0117`; B3 answered the canonical way and C5 for ENS and IPFS |
 | EI-1 | Done: [`spike-results/ens-ipfs.md`](spike-results/ens-ipfs.md). GO for the loopback design |
 | EI-2, EI-3, EI-4, EI-6 | Done, with unit tests |
-| EI-5, EI-7 | Done. `test/e2e-eth-verified.test.ts`: a fixture name loads verified, a tampered block is refused, and the Local Network Access canary holds |
+| EI-5, EI-7 | Done. `test/web3/e2e-eth-verified.test.ts`: a fixture name loads verified, a tampered block is refused, and the Local Network Access canary holds |
 | EI-8 | Done. An opt-in live test resolves the five names through Helios and refuses a tampered proof; the real shell loads `vitalik.eth` from mainnet |
-| EI-9 | Done. `test/e2e-eth-install.test.ts` installs a `.eth` app through the real hint; its pin carries the CID and it opens from cache with the gateway gone |
-| EI-10 | Done. `test/e2e-eth-website-level.test.ts`: an `ipfs` fixture name is Level 2 with its CID, a DNSLink fixture is Level 2 naming the domain with D4 unmet, an ordinary page is Level 1, and none shows Level 3 or above. An installed site whose files match its published tree is Level 2 (unit-tested) |
-| EI-11 | Done. Settings section: `test/e2e-eth-light-client-status.test.ts`. The popover's `.eth` row is unit-tested (`src/main/verifier/tests/name-evidence.test.ts`) |
+| EI-9 | Done. `test/web3/e2e-eth-install.test.ts` installs a `.eth` app through the real hint; its pin carries the CID and it opens from cache with the gateway gone |
+| EI-10 | Done. `test/web3/e2e-eth-website-level.test.ts`: an `ipfs` fixture name is Level 2 with its CID, a DNSLink fixture is Level 2 naming the domain with D4 unmet, an ordinary page is Level 1, and none shows Level 3 or above. An installed site whose files match its published tree is Level 2 (unit-tested) |
+| EI-11 | Done. Settings section: `test/web3/e2e-eth-light-client-status.test.ts`. The popover's `.eth` row is unit-tested (`src/main/verifier/tests/name-evidence.test.ts`) |
 | EI-12 | Done, but for the run from source on Windows and macOS, which needs those machines. `security-model.md` T27 to T38 and a T15 exception; `ARCHITECTURE.md`, the glossary, the compatibility matrix, `capability-api.md`, the README's launch endpoints, the stream row; two reviews, every finding addressed or acknowledged |
 
 **Where the build departed from the text above, and why:**

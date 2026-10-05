@@ -25,7 +25,7 @@ Ports are named only where the compatibility pages already name them.
 
 | Id | Behaviour | Apps that rely on it | Ports | Proven by |
 |---|---|---|---|---|
-| `consent-question-holds-the-page` | The first visit to an origin that declares capabilities opens a question in the tab's own window, and the page waits where it is until the person answers; an app opened from an `ipfs://` address asks before it runs | every app that declares a capability | all | [`e2e-consent-navigation-hold`](../app-loading/e2e-consent-navigation-hold.test.ts), [`e2e-ipfs-install`](../e2e-ipfs-install.test.ts) |
+| `consent-question-holds-the-page` | The first visit to an origin that declares capabilities opens a question in the tab's own window, and the page waits where it is until the person answers; an app opened from an `ipfs://` address asks before it runs | every app that declares a capability | all | [`e2e-consent-navigation-hold`](../app-loading/e2e-consent-navigation-hold.test.ts), [`e2e-ipfs-install`](../web3/e2e-ipfs-install.test.ts) |
 | `loopback-manifest-hint-grants-the-origin` | A page on a loopback origin that links its manifest with `<link rel="orivon-manifest">` is asked about, and on Allow the grants attach to that origin on the shared session, with nothing installed | an app served by a plain static server | FreeTube, The Lounge | [`e2e-loopback-grant`](../app-loading/e2e-loopback-grant.test.ts) (the `e2e-ordinary` CI job) |
 | `granted-capabilities-are-reported` | `orivon.app.grants()` lists nothing before the person allows, and lists what was allowed after | apps that adapt to what they were granted | ASGARDEX, FreeTube | [`e2e-site-info`](../e2e-site-info.test.ts) |
 | `declined-capability-is-refused` | A capability the person turned off is refused to the page's own calls, and `requestGrant` resolves false on Deny | apps that run with less than they declared | ASGARDEX | [`e2e-site-info`](../e2e-site-info.test.ts) |
@@ -99,8 +99,8 @@ Ports are named only where the compatibility pages already name them.
 
 | Id | Behaviour | Apps that rely on it | Ports | Proven by |
 |---|---|---|---|---|
-| `eth-name-loads-verified` | A `.eth` name loads through ENS and IPFS with every block verified, and tampered blocks are refused | apps published to a name | - | [`e2e-eth-verified`](../e2e-eth-verified.test.ts) |
-| `ipfs-url-opens` | An `ipfs://` address opens the site behind it | apps published by content address | - | [`e2e-ipfs-address`](../e2e-ipfs-address.test.ts) |
+| `eth-name-loads-verified` | A `.eth` name loads through ENS and IPFS with every block verified, and tampered blocks are refused | apps published to a name | - | [`e2e-eth-verified`](../web3/e2e-eth-verified.test.ts) |
+| `ipfs-url-opens` | An `ipfs://` address opens the site behind it | apps published by content address | - | [`e2e-ipfs-address`](../web3/e2e-ipfs-address.test.ts) |
 
 ## Capability coverage
 

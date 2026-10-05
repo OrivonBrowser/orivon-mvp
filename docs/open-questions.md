@@ -1071,7 +1071,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Question:** Electron 44 disables `LocalNetworkAccessChecks`, so any page can fetch
   `http://127.0.0.1:<port>/` unseen by the gate. Accept this build, or block it?
 - **Why it matters:** a gap in `security-model.md` T12 (covers only `orivon.*` sockets). `.eth`
-  pages are served from loopback; `test/e2e-eth-verified.test.ts` is the canary.
+  pages are served from loopback; `test/web3/e2e-eth-verified.test.ts` is the canary.
 - **Options:** accept and say so in T12; block in the shell (a `webRequest` filter on private
   destinations requested from public documents).
 - **Who decides:** owner

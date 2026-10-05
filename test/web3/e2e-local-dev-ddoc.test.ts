@@ -16,9 +16,9 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
-import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './support/launch-electron.mjs'
-import { findChrome, waitFor } from './support/smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, navigateToFixture, readShield, runPhase } from './support/e2e-helpers.js'
+import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
+import { findChrome, waitFor } from '../support/smoke-helpers.mjs'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, navigateToFixture, readShield, runPhase } from '../support/e2e-helpers.js'
 
 const ETH_NAME = 'ddocprobe.eth'
 const TREE = JSON.stringify({ bundleHash: 'sha256:' + 'a'.repeat(64), leaves: { '/index.html': 'sha256:' + 'b'.repeat(64) } })
