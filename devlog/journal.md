@@ -27,6 +27,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - An ipfs:// tab icon now waits out slow gateways instead of giving up at 5 s, the likely reason The Lounge showed none.
 - Every ported app now shows visitors in other browsers a panel pointing them to Orivon; it stays hidden inside Orivon, and --no-orivon-hint removes it.
 - CI's e2e now runs only the specs a change can reach, in parallel shards: minutes instead of forty.
+- Screen sharing works: a picker for tabs, windows and screens, Stop and indicators; only Orivon's own capture call is ever granted.
 
 ### In my head
 

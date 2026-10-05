@@ -29,6 +29,12 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **Screen sharing**: a page's `getDisplayMedia` opens Orivon's picker (a tab, a window or the entire screen, with tab
+  audio), the tab and the shared tab show it, a bar offers Stop sharing, and a site can be blocked. Only the call
+  Orivon's preload makes after the pick is granted, so the legacy `chromeMediaSource` capture is refused (ADR-0055).
+- **A registered app's camera, microphone and screen**: `media.camera`, `media.microphone` and `media.screen` are read
+  from the manifest, offered at consent, asked before first use and refused when undeclared; the `electron` shim's
+  `desktopCapturer.getSources` returns the source the person picked.
 - **`test/` is ordered by area**, with a Layout table in `test/README.md`; a spec left at its top, a folder with no
   row and a dead `test/` path in any tracked file now fail CI, and a new capability kind needs a catalogue line.
 - **An app-behaviour catalogue** names what a working app relies on, one row each, and each row is proven by an
