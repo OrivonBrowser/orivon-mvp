@@ -2,8 +2,8 @@
 // focused shows the new tab's address, so Enter cannot load the old tab's address into it. An edit kept while the
 // keyboard is in another app or the page is src/renderer/tests/navigation.test.ts's: the headless display delivers
 // no blur to the chrome's document when a window or a sibling view takes the keyboard, so the first click after a window
-// refocus (a caret under the old rule) is covered there and by src/renderer/tests/address-select.test.ts only. A new tab
-// opened in front starts with the keyboard in the bar, and the first click on the bar selects its address.
+// refocus is covered by src/renderer/tests/address-select.test.ts only. A new tab opened in front starts with the
+// keyboard in the bar, text typed there before the tab's page loads stays, and the first click on the bar selects its address.
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { runCommand } from '../support/auth-support.js'
@@ -101,6 +101,21 @@ it('starts a new tab with the keyboard in the address bar, not in the tab\'s own
     await focusPageInWindow(app, chrome, `${server.origin}/one`)
     await runCommand(chrome, 'tab.new')
     await expectBarHoldsKeyboard(app, chrome)
+  } finally {
+    await closeElectron(app)
+  }
+}, QA_TEST_TIMEOUT_MS)
+
+it('keeps what is typed in the bar while the new tab\'s page takes and gives back the keyboard', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    await focusPageInWindow(app, chrome, `${server.origin}/one`)
+    await runCommand(chrome, 'tab.new')
+    expect(await waitFor(async () => await addressActive(chrome))).toBe(true)
+    await chrome.keyboard.type('ab')
+    await delay(ABSENCE_SETTLE_MS)
+    await chrome.keyboard.type('c')
+    expect(await address(chrome)).toBe('abc')
   } finally {
     await closeElectron(app)
   }

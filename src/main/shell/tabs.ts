@@ -211,7 +211,8 @@ export class TabManager {
         windowFocused: !shell.window.isDestroyed() && shell.window.isFocused(),
         coveredByIntro: shell.coveredByIntro?.() === true
       }),
-      focusAddressBar: () => { shell.runCommand?.('nav.focusAddress') }
+      focusAddressBar: () => { shell.runCommand?.('nav.focusAddress') },
+      returnKeyboard: () => { shell.focusChrome?.() }
     })
   }
 

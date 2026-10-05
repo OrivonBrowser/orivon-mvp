@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, expect, it } from 'vitest'
 import { closeElectronApp } from '../support/e2e-helpers.js'
+import { readFocusLog, startFocusLog } from '../support/focus-helpers.js'
 import { assertNoElectronSurvivors, closeElectron, launchElectron } from '../support/launch-electron.mjs'
 import { ABSENCE_SETTLE_MS, findChrome, HERMETIC_RESOLVER, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 
@@ -101,17 +102,11 @@ it('once, on a fresh profile: shows over the whole window, stays on top of a new
     expect(JSON.parse(await readFile(seenFile, 'utf8'))).toEqual({ seen: true })
 
     // The first letter typed builds the dropdown, and its page does not take the keyboard from the field.
-    await app.evaluate(({ app: electronApp, webContents }) => {
-      const log: string[] = []
-      ;(globalThis as unknown as { __focusLog: string[] }).__focusLog = log
-      const watch = (wc: Electron.WebContents): void => { wc.on('focus', () => { log.push(wc.getURL() === '' ? 'blank' : wc.getURL()) }) }
-      for (const wc of webContents.getAllWebContents()) watch(wc)
-      electronApp.on('web-contents-created', (_event, wc) => { watch(wc) })
-    })
+    await startFocusLog(app)
     await chrome.keyboard.type('a', { delay: 25 })
     expect(await waitFor(() => popoverShown(app, 'overlay=omnibox'))).toBe(true)
     await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS))
-    const taken = await app.evaluate(() => (globalThis as unknown as { __focusLog: string[] }).__focusLog)
+    const taken = await readFocusLog(app)
     expect(taken.filter((url) => url === 'blank' || url.includes('overlay=omnibox'))).toEqual([])
     expect((await focusedUrls()).some((url) => url.includes('/renderer/index.html'))).toBe(true)
     expect(await barActive()).toBe(true)

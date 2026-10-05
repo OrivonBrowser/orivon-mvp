@@ -191,7 +191,8 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     },
     services,
     runCommand: (id) => { services.commands.run(id, entry) },
-    coveredByIntro: () => introCovers(win)
+    coveredByIntro: () => introCovers(win),
+    focusChrome: () => { if (!chrome.webContents.isDestroyed() && !chrome.webContents.isFocused()) chrome.webContents.focus() }
   })
   // Read by an overlay's handler when it is first used, which is after `entry` exists.
   const overlays = createOverlayHost({

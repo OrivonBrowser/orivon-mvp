@@ -2012,6 +2012,17 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
+### A375: The Linux package says Orivon opens HTML files, but a file handed in at launch is dropped **[OWNER]**
+
+- **Question:** `electron-builder.yml` lists `text/html` in the desktop entry's MimeType, so a file manager can offer
+  Orivon for `report.html` and run it with a `file:///` argument; the launch keeps only http(s) addresses, so nothing
+  opens. Open local files, or stop claiming the type?
+- **Why it matters:** a person who picks Orivon for HTML files sees a new tab or a focused window and no page.
+- **Options:** drop `text/html` from the package, keeping the http and https scheme handlers (rec.; `file:` stays
+  refused as it is in the address bar); open a local HTML file handed in at launch, which needs a rule for `file:`.
+- **Who decides:** owner
+- **Blocks:** nothing; check `xdg-settings` on a real package either way
+
 ### A380: Does the first-start dropdown still fail after the keyboard fixes? **[OWNER]**
 
 - **Question:** The owner saw the address text hidden after "Enter Orivon" and no dropdown on the first start (probably `npm run dev`, X11 or Wayland). The overlay no longer joins the window before its page commits, and a new tab starts with the keyboard in the bar. Does a first start still show hidden text or no dropdown?
@@ -2027,14 +2038,3 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** accept: the rule stays free of timestamps (rec.); place a caret when a press follows a refocus closely.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
-
-### A375: The Linux package says Orivon opens HTML files, but a file handed in at launch is dropped **[OWNER]**
-
-- **Question:** `electron-builder.yml` lists `text/html` in the desktop entry's MimeType, so a file manager can offer
-  Orivon for `report.html` and run it with a `file:///` argument; the launch keeps only http(s) addresses, so nothing
-  opens. Open local files, or stop claiming the type?
-- **Why it matters:** a person who picks Orivon for HTML files sees a new tab or a focused window and no page.
-- **Options:** drop `text/html` from the package, keeping the http and https scheme handlers (rec.; `file:` stays
-  refused as it is in the address bar); open a local HTML file handed in at launch, which needs a rule for `file:`.
-- **Who decides:** owner
-- **Blocks:** nothing; check `xdg-settings` on a real package either way

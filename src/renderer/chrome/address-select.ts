@@ -14,6 +14,8 @@ export interface AddressSelect {
   pointerUp: (dragged: boolean) => boolean
   /** A key was pressed in the field. */
   keyDown: () => void
+  /** The field was selected on purpose or its text was edited: it is being used, so the next press is not a first one. */
+  entered: () => void
 }
 
 export function createAddressSelect (): AddressSelect {
@@ -35,6 +37,7 @@ export function createAddressSelect (): AddressSelect {
       firstPress = false
       return wanted
     },
-    keyDown: () => { kept = false }
+    keyDown: () => { kept = false },
+    entered: () => { kept = false }
   }
 }

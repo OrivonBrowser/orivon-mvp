@@ -62,6 +62,7 @@ export class TabOpener {
     this.host.add(built.id, built.record)
     void built.record.view.webContents.loadURL(built.target)
     this.host.activate(built.id)
+    if (target === undefined) this.host.freshTabInFront?.(built.id, built.record.view.webContents)
     return [built.id, built.record.view.webContents]
   }
 

@@ -8,7 +8,7 @@ import type { ChromeContext, ChromeModule } from './context.js'
 import { must } from './context.js'
 
 /** How far a press may travel and still be a click. */
-const DRAG_PX = 3
+const DRAG_PX = 5
 
 const INSECURE_TITLE = 'This site does not use a secure connection. Do not enter passwords or card numbers.'
 
@@ -95,6 +95,9 @@ export function createAddressDisplay (): ChromeModule {
         pressedBlurred = false
       })
       input.addEventListener('keydown', () => { entry.keyDown() })
+      // Ctrl+L and a paste from the context menu reach the field with no key press in it.
+      input.addEventListener('select', () => { entry.entered() })
+      input.addEventListener('input', () => { entry.entered() })
       // Escape gives the page's address back, hands the bar to the display and the keyboard to the page. A key another
       // feature already used (closing a list under the bar), or one an input method is composing with, is not a request to leave.
       input.addEventListener('keydown', (event) => {

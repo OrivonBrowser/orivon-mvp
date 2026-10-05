@@ -59,6 +59,15 @@ describe('createAddressSelect', () => {
     expect(select.pointerUp(false)).toBe(false)
   })
 
+  it('does not treat a press after an explicit select or an edit as a first press', () => {
+    const select = createAddressSelect()
+    select.blur(true)
+    expect(select.focus()).toBe(false)
+    select.entered()
+    select.pointerDown(true)
+    expect(select.pointerUp(false)).toBe(false)
+  })
+
   it('forgets a press that ended on a drag, so the next focus is judged on its own', () => {
     const select = createAddressSelect()
     select.pointerDown(false)

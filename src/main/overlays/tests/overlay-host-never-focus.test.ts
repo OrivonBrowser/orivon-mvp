@@ -91,7 +91,7 @@ describe('createOverlayHost: a never overlay joins the window once its page is r
     expect(attaches(0)).toBeGreaterThan(0)
   })
 
-  it('attaches a take overlay at once, as it always did', () => {
+  it('attaches a take overlay at show', () => {
     const host = setup([def('t', { focus: 'take', keep: 'fresh' })])
     host.show('t', ANCHOR)
     expect(attaches(0)).toBeGreaterThan(0)
