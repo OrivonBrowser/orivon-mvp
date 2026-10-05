@@ -47,10 +47,16 @@ const pageShown: PageShownOf = async (view) => {
   }
 }
 
-/** Whether another page is showing this tab: its view then stays in the window, hidden, when the person switches away. */
+/**
+ * Whether another page is showing this tab, or the person has just picked it for that: its view then stays in the window,
+ * hidden, when the person switches away. A pick that is not yet a share counts, since the person can leave the tab in the
+ * moment before the share starts, and a view taken out then is not captured.
+ */
 const isBeingShown = (view: View): boolean => {
   const contents = (view as WebContentsView).webContents as WebContents | undefined
-  return contents !== undefined && !contents.isDestroyed() && shareRegistry().forCaptured(contents).length > 0
+  if (contents === undefined || contents.isDestroyed()) return false
+  const registry = shareRegistry()
+  return registry.forCaptured(contents).length > 0 || registry.capturePending(contents)
 }
 
 /** The window's PaneHost, plus the tab-aware calls that decide what it shows. */

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { CAPTURE_POLL_MS, createShareRegistry, type ShareRegistryDeps } from '../share-registry.js'
+import { TICKET_TIMEOUT_MS } from '../display-tickets.js'
 import type { DisplayChoice } from '../types.js'
 
 const requester = { id: 1 } as never
@@ -16,6 +17,7 @@ function setup (): {
   capturing: Set<unknown>
   tick: () => void
   pollers: () => number
+  timers: Map<number, () => void>
 } {
   const watchers = new Map<unknown, Array<() => void>>()
   const tabWatchers = new Map<unknown, Array<() => void>>()
@@ -23,6 +25,8 @@ function setup (): {
   let counter = 0
   let polling: (() => void) | undefined
   let pollers = 0
+  const timers = new Map<number, () => void>()
+  let timerId = 0
   const deps: ShareRegistryDeps = {
     now: () => 42,
     newId: () => `share-${++counter}`,
@@ -39,6 +43,8 @@ function setup (): {
       return () => { tabWatchers.set(contents, (tabWatchers.get(contents) ?? []).filter((fn) => fn !== ended)) }
     },
     isBeingCaptured: (contents) => capturing.has(contents),
+    setTimer: (run, ms) => { expect(ms).toBe(TICKET_TIMEOUT_MS); timers.set(++timerId, run); return timerId },
+    clearTimer: (handle) => { timers.delete(handle as number) },
     sendStop: vi.fn(),
     markInUse: vi.fn(),
     clearInUse: vi.fn(),
@@ -49,7 +55,7 @@ function setup (): {
       return () => { polling = undefined; pollers-- }
     }
   }
-  return { registry: createShareRegistry(deps), deps, watchers, tabWatchers, capturing, tick: () => { polling?.() }, pollers: () => pollers }
+  return { registry: createShareRegistry(deps), deps, watchers, tabWatchers, capturing, tick: () => { polling?.() }, pollers: () => pollers, timers }
 }
 
 describe('the share registry', () => {
@@ -182,5 +188,53 @@ describe('the share registry', () => {
     registry.onChange(heard)()
     registry.start({ requester, origin: 'https://a.example', choice: SCREEN, audio: false, nonce: 'n' })
     expect(heard).not.toHaveBeenCalled()
+  })
+
+  describe('a tab share that is expected', () => {
+    it('marks the tab pending from the pick until the share starts, then lists it as captured', () => {
+      const { registry } = setup()
+      const heard = vi.fn()
+      registry.onChange(heard)
+      registry.expectCapture(shown, 'n')
+      expect(registry.capturePending(shown)).toBe(true)
+      expect(registry.capturePending(requester)).toBe(false)
+      registry.start({ requester, origin: 'https://a.example', choice: TAB, audio: false, nonce: 'n' })
+      expect(registry.capturePending(shown)).toBe(false)
+      expect(registry.forCaptured(shown)).toHaveLength(1)
+      expect(heard).toHaveBeenCalledOnce()
+    })
+
+    it('clears the mark and tells listeners when the pick is cancelled, so a kept view can be let go', () => {
+      const { registry, timers } = setup()
+      const heard = vi.fn()
+      registry.onChange(heard)
+      registry.expectCapture(shown, 'n')
+      registry.cancelExpected('n')
+      expect(registry.capturePending(shown)).toBe(false)
+      expect(heard).toHaveBeenCalledOnce()
+      expect(timers.size).toBe(0)
+      registry.cancelExpected('n')
+      expect(heard).toHaveBeenCalledOnce()
+    })
+
+    it('clears the mark when the ticket\'s lifetime is over, whatever became of the ticket', () => {
+      const { registry, timers } = setup()
+      const heard = vi.fn()
+      registry.onChange(heard)
+      registry.expectCapture(shown, 'n')
+      ;[...timers.values()][0]?.()
+      expect(registry.capturePending(shown)).toBe(false)
+      expect(heard).toHaveBeenCalledOnce()
+    })
+
+    it('stays pending while any expectation for the tab is open', () => {
+      const { registry } = setup()
+      registry.expectCapture(shown, 'one')
+      registry.expectCapture(shown, 'two')
+      registry.cancelExpected('one')
+      expect(registry.capturePending(shown)).toBe(true)
+      registry.cancelExpected('two')
+      expect(registry.capturePending(shown)).toBe(false)
+    })
   })
 })

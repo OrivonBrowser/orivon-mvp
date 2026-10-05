@@ -74,6 +74,8 @@ export interface ShareRegistry {
   list: () => readonly ActiveShare[]
   forRequester: (contents: WebContents) => readonly ActiveShare[]
   forCaptured: (contents: WebContents) => readonly ActiveShare[]
+  /** The person picked this tab for a share that has not started: its view must stay in the window until it does or the pick lapses. */
+  capturePending: (contents: WebContents) => boolean
   /** Called after any share starts or ends; returns the unsubscribe. */
   onChange: (listener: () => void) => () => void
   /** Ends the tracks the page was handed and tells the page they ended. A share already gone is ignored. */

@@ -3,6 +3,7 @@
 // out ended, when the tab it shows closes, or when that tab stops being captured. Main cannot see a screen or window
 // capture, so only the first three apply to those. Pure over its dependencies.
 import type { WebContents } from 'electron'
+import { TICKET_TIMEOUT_MS } from './display-tickets.js'
 import type { ActiveShare, DisplayChoice, ShareRegistry } from './types.js'
 
 /** How often a tab share is checked for having stopped being captured. */
@@ -21,6 +22,9 @@ export interface ShareRegistryDeps {
   sendStop: (requester: WebContents, nonce: string) => void
   markInUse: (contents: WebContents) => void
   clearInUse: (contents: WebContents) => void
+  /** Runs `run` once after `ms`. */
+  setTimer: (run: () => void, ms: number) => unknown
+  clearTimer: (handle: unknown) => void
   /** Runs `tick` every `ms` until the returned stop is called. */
   every: (tick: () => void, ms: number) => () => void
 }
@@ -38,6 +42,10 @@ export interface ShareHost extends ShareRegistry {
   start: (input: ShareStart) => ActiveShare
   /** The preload says every track it handed out for `nonce` has ended. */
   tracksEnded: (requester: WebContents, nonce: string) => void
+  /** The person picked `tab` for the ticket with this nonce; the share has not started. The mark lapses with the ticket. */
+  expectCapture: (tab: WebContents, nonce: string) => void
+  /** The ticket with this nonce ended without a share. Ignored when the share started or the mark lapsed. */
+  cancelExpected: (nonce: string) => void
 }
 
 interface Entry {
@@ -50,6 +58,7 @@ interface Entry {
 
 export function createShareRegistry (deps: ShareRegistryDeps): ShareHost {
   const entries = new Map<string, Entry>()
+  const expected = new Map<string, { readonly tab: WebContents, readonly timer: unknown }>()
   const listeners = new Set<() => void>()
   let stopPolling: (() => void) | undefined
 
@@ -57,6 +66,15 @@ export function createShareRegistry (deps: ShareRegistryDeps): ShareHost {
     for (const listener of [...listeners]) {
       try { listener() } catch (error) { console.error('[share-registry] a listener failed:', error) }
     }
+  }
+
+  /** Drops the expectation for `nonce`; true when there was one. */
+  function clearExpected (nonce: string): boolean {
+    const found = expected.get(nonce)
+    if (found === undefined) return false
+    expected.delete(nonce)
+    deps.clearTimer(found.timer)
+    return true
   }
 
   function end (id: string): void {
@@ -83,6 +101,14 @@ export function createShareRegistry (deps: ShareRegistryDeps): ShareHost {
     list: () => [...entries.values()].map((entry) => entry.share),
     forRequester: (contents) => [...entries.values()].filter((entry) => entry.share.requester === contents).map((entry) => entry.share),
     forCaptured: (contents) => [...entries.values()].filter((entry) => entry.share.captured === contents).map((entry) => entry.share),
+    capturePending: (contents) => [...expected.values()].some((entry) => entry.tab === contents),
+    expectCapture (tab, nonce) {
+      clearExpected(nonce)
+      expected.set(nonce, { tab, timer: deps.setTimer(() => { if (clearExpected(nonce)) changed() }, TICKET_TIMEOUT_MS) })
+    },
+    cancelExpected (nonce) {
+      if (clearExpected(nonce)) changed()
+    },
     onChange (listener) {
       listeners.add(listener)
       return () => { listeners.delete(listener) }
@@ -93,6 +119,7 @@ export function createShareRegistry (deps: ShareRegistryDeps): ShareHost {
     },
 
     start ({ requester, origin, choice, audio, nonce }) {
+      clearExpected(nonce)
       const id = deps.newId()
       const share: ActiveShare = {
         id, requester, origin, kind: choice.kind, label: choice.label, audio, startedAt: deps.now(),

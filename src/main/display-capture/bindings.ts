@@ -10,6 +10,7 @@ const NO_SHARES: ShareRegistry = {
   list: () => [],
   forRequester: () => [],
   forCaptured: () => [],
+  capturePending: () => false,
   onChange: () => () => {},
   stop: () => {}
 }
@@ -34,6 +35,15 @@ export function shareRegistry (): ShareRegistry {
   return registry ?? NO_SHARES
 }
 
+const rebinders = new Set<() => void>()
+
+/** Calls `listener` after the share registry is bound or replaced, so what follows it can move to the new one. Returns the removal. */
+export function onShareRegistryBound (listener: () => void): () => void {
+  rebinders.add(listener)
+  return () => { rebinders.delete(listener) }
+}
+
 export function bindShareRegistry (bound: ShareRegistry | undefined): void {
   registry = bound
+  for (const listener of [...rebinders]) listener()
 }

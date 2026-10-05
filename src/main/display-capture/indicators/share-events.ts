@@ -1,7 +1,7 @@
 // One subscription to whichever share registry is bound, for the three things that draw from it (tab badges, the
 // chip's state, the bar). The registry is bound by another installer, so the subscription is made on first use and
-// moved if the binding changes.
-import { shareRegistry } from '../bindings.js'
+// moved when the binding changes.
+import { onShareRegistryBound, shareRegistry } from '../bindings.js'
 import type { ShareRegistry } from '../types.js'
 
 const listeners = new Set<() => void>()
@@ -35,3 +35,5 @@ export function shareRegistryRebound (): void {
   follow()
   fire()
 }
+
+onShareRegistryBound(shareRegistryRebound)

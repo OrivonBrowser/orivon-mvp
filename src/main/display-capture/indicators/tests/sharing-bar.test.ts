@@ -26,7 +26,7 @@ function rig () {
   } as unknown as ShellWindow
   let shares: ActiveShare[] = []
   const stop = vi.fn((id: string) => { shares = shares.filter((s) => s.id !== id) })
-  const registry: ShareRegistry = { list: () => shares, forRequester: () => [], forCaptured: () => [], onChange: () => () => {}, stop }
+  const registry: ShareRegistry = { list: () => shares, forRequester: () => [], forCaptured: () => [], capturePending: () => false, onChange: () => () => {}, stop }
   const bars = new SharingBars()
   bars.use(() => [window], () => registry)
   return { bars, window, mine, theirs, calls, sent, stop, setShares: (next: ActiveShare[]) => { shares = next } }

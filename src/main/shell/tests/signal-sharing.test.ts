@@ -22,6 +22,7 @@ function fakeRegistry (): ShareRegistry & { set: (next: ActiveShare[]) => void }
     list: () => shares,
     forRequester: (contents) => shares.filter((s) => s.requester === contents),
     forCaptured: (contents) => shares.filter((s) => s.captured === contents),
+    capturePending: () => false,
     onChange: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     stop: () => {},
     set: (next) => { shares = next; for (const listener of [...listeners]) listener() }

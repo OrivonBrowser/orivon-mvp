@@ -22,7 +22,12 @@ export interface DisplayGateDeps {
   tickets: Pick<DisplayTickets<DisplayChoice>, 'open' | 'void' | 'arm' | 'called' | 'has'>
   policy: DisplayPolicy
   choose: ChooseDisplaySource
-  shares: { tracksEnded: (requester: WebContents, nonce: string) => void }
+  shares: {
+    tracksEnded: (requester: WebContents, nonce: string) => void
+    /** The picked tab is to be captured: keeps its view in the window until the share starts or the ticket ends. */
+    expectCapture: (tab: WebContents, nonce: string) => void
+    cancelExpected: (nonce: string) => void
+  }
   /** An ordinary tab or an app's tab. */
   isTab: (contents: WebContents) => boolean
   /** The tab is on screen in a window; a picker for a background tab would land over another page. */
@@ -51,6 +56,8 @@ interface TabState {
    */
   needsActivation: boolean
   refusedOrigin: string | null
+  /** The nonce of this tab's ticket for a tab share, until the share starts or the ticket ends. */
+  expecting: string | undefined
 }
 
 const refused = (reason: 'denied' | 'activation' | 'busy'): PickReply => ({ type: 'refused', reason })
@@ -59,13 +66,19 @@ export function createDisplayGate (deps: DisplayGateDeps): DisplayGate {
   const states = new WeakMap<WebContents, TabState>()
   const stateOf = (contents: WebContents): TabState => {
     let state = states.get(contents)
-    if (state === undefined) states.set(contents, state = { picking: undefined, needsActivation: false, refusedOrigin: null })
+    if (state === undefined) states.set(contents, state = { picking: undefined, needsActivation: false, refusedOrigin: null, expecting: undefined })
     return state
   }
 
   function refuse (state: TabState, origin: string): void {
     state.needsActivation = true
     state.refusedOrigin = origin
+  }
+
+  function stopExpecting (contents: WebContents, nonce: string): void {
+    const state = states.get(contents)
+    if (state?.expecting === nonce) state.expecting = undefined
+    deps.shares.cancelExpected(nonce)
   }
 
   async function pick (contents: WebContents, request: PickRequest): Promise<PickReply> {
@@ -92,7 +105,12 @@ export function createDisplayGate (deps: DisplayGateDeps): DisplayGate {
         return refused('denied')
       }
       state.needsActivation = false
-      return { type: 'go', nonce: deps.tickets.open(ticketKey, choice) }
+      const nonce = deps.tickets.open(ticketKey, choice)
+      if (choice.kind === 'tab') {
+        state.expecting = nonce
+        deps.shares.expectCapture(choice.tab, nonce)
+      }
+      return { type: 'go', nonce }
     } catch (error) {
       console.error('[display-capture] the picker failed:', error)
       refuse(state, origin)
@@ -109,6 +127,7 @@ export function createDisplayGate (deps: DisplayGateDeps): DisplayGate {
       if (key !== undefined) deps.tickets.arm(key, nonce)
     },
     called (contents, nonce, rejectedEarly) {
+      if (rejectedEarly) stopExpecting(contents, nonce)
       const key = deps.frameKey(contents)
       if (key !== undefined) deps.tickets.called(key, nonce, rejectedEarly)
     },
@@ -119,6 +138,7 @@ export function createDisplayGate (deps: DisplayGateDeps): DisplayGate {
       const state = states.get(contents)
       state?.picking?.abort()
       if (state !== undefined) state.picking = undefined
+      if (state?.expecting !== undefined) stopExpecting(contents, state.expecting)
       const key = deps.frameKey(contents)
       if (key !== undefined) deps.tickets.void(key)
     }

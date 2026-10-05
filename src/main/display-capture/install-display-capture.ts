@@ -76,6 +76,8 @@ export const installDisplayCapture: ShellInstaller = {
       sendStop: (requester, nonce) => {
         if (!requester.isDestroyed()) requester.mainFrame.send(DISPLAY_CAPTURE_STOP_CHANNEL, { nonce })
       },
+      setTimer: (run, ms) => setTimeout(run, ms),
+      clearTimer: (handle) => { clearTimeout(handle as ReturnType<typeof setTimeout>) },
       markInUse: markMediaInUse,
       clearInUse: clearMediaInUse,
       every: (tick, ms) => {

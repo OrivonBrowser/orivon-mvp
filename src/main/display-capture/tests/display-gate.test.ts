@@ -34,7 +34,7 @@ function setup (overrides: Partial<DisplayGateDeps> = {}): { gate: ReturnType<ty
     tickets: fakeTickets(),
     policy: { isApp: () => false, mayAsk: () => true, decide: vi.fn(async () => await Promise.resolve(true)) },
     choose: vi.fn(async () => await Promise.resolve(CHOICE)),
-    shares: { tracksEnded: vi.fn() },
+    shares: { tracksEnded: vi.fn(), expectCapture: vi.fn(), cancelExpected: vi.fn() },
     isTab: () => true,
     showing: () => true,
     mainFrameOrigin: () => ORIGIN,
@@ -153,6 +153,33 @@ describe('the display gate: picking', () => {
     const { gate, deps } = setup({ choose: async () => { gone = true; return await Promise.resolve(CHOICE) } })
     expect(await gate.pick(contents, REQUEST)).toEqual({ type: 'refused', reason: 'denied' })
     expect(deps.tickets.open).not.toHaveBeenCalled()
+  })
+})
+
+describe('the display gate: a picked tab that is to be captured', () => {
+  const TAB_CHOICE: DisplayChoice = { kind: 'tab', tab: { id: 2 } as never, audio: false, label: 'Another tab' }
+
+  it('tells the registry to expect the tab under the ticket\'s nonce, and not for a screen', async () => {
+    const tabPick = setup({ choose: async () => await Promise.resolve(TAB_CHOICE) })
+    await tabPick.gate.pick(tabPick.contents, REQUEST)
+    expect(tabPick.deps.shares.expectCapture).toHaveBeenCalledWith(TAB_CHOICE.kind === 'tab' ? TAB_CHOICE.tab : undefined, 'nonce-1')
+    const screenPick = setup()
+    await screenPick.gate.pick(screenPick.contents, REQUEST)
+    expect(screenPick.deps.shares.expectCapture).not.toHaveBeenCalled()
+  })
+
+  it('cancels the expectation when the preload\'s call was rejected, and when the page goes away', async () => {
+    const rejected = setup({ choose: async () => await Promise.resolve(TAB_CHOICE) })
+    await rejected.gate.pick(rejected.contents, REQUEST)
+    rejected.gate.called(rejected.contents, 'nonce-1', false)
+    expect(rejected.deps.shares.cancelExpected).not.toHaveBeenCalled()
+    rejected.gate.called(rejected.contents, 'nonce-1', true)
+    expect(rejected.deps.shares.cancelExpected).toHaveBeenCalledWith('nonce-1')
+
+    const left = setup({ choose: async () => await Promise.resolve(TAB_CHOICE) })
+    await left.gate.pick(left.contents, REQUEST)
+    left.gate.endForTab(left.contents)
+    expect(left.deps.shares.cancelExpected).toHaveBeenCalledWith('nonce-1')
   })
 })
 

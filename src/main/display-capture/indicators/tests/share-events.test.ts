@@ -6,7 +6,7 @@ import { onShareChange, shareRegistryRebound } from '../share-events.js'
 function registry (): ShareRegistry & { fire: () => void } {
   const listeners = new Set<() => void>()
   return {
-    list: () => [], forRequester: () => [], forCaptured: () => [], stop: () => {},
+    list: () => [], forRequester: () => [], forCaptured: () => [], capturePending: () => false, stop: () => {},
     onChange: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     fire: () => { for (const listener of [...listeners]) listener() }
   }
@@ -28,12 +28,11 @@ describe('onShareChange', () => {
     expect(listener).toHaveBeenCalledTimes(1)
   })
 
-  it('follows a registry bound later, and tells the listeners to read again', () => {
+  it('follows a registry bound later, and tells the listeners to read again, with nothing else calling rebound', () => {
     const listener = vi.fn()
     const off = onShareChange(listener)
     const later = registry()
     bindShareRegistry(later)
-    shareRegistryRebound()
     expect(listener).toHaveBeenCalledTimes(1)
     later.fire()
     expect(listener).toHaveBeenCalledTimes(2)

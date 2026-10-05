@@ -260,3 +260,50 @@ it('shares another tab: it comes to the front, keeps painting for the page while
     await closeElectron(app)
   }
 }, E2E_TIMEOUT_MS)
+
+it('keeps a shared tab attached when the person leaves it at once, keeps sharing it across its own navigation, and still ends on Stop', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    const view = await visit(app, chrome, `${origins.a}/`)
+    const [first] = await tabIds(chrome) as string[]
+    await chrome.click('#new-tab')
+    await clickAddressBarRetrying(chrome, `${origins.b}/`)
+    expect((await waitForTab(chrome, { address: `${origins.b}/` })).ok).toBe(true)
+    const second = (await tabIds(chrome)).at(-1) as string
+    await chrome.click(`.tab[data-id="${first as string}"]`)
+    expect(await waitFor(() => findViewShowing(app, chrome, `${origins.a}/`) !== undefined)).toBe(true)
+
+    await run(view, "window.share('tab', { video: true })")
+    const picker = await waitOverlay(app, 'screen-share-picker', '.picker-card')
+    await picker.locator('.picker-card', { hasText: 'share-b' }).click()
+    await pressShare(picker)
+    // Back to the requester before the share is registered: the picked tab must not be taken out of the window.
+    await chrome.click(`.tab[data-id="${first as string}"]`)
+    expect(await result(view, 'tab', 30_000)).toMatchObject({ tracks: 1, state: 'live', label: 'share-b' })
+    await view.evaluate(() => { (window as unknown as { startCount: () => void }).startCount() })
+    const count = async (): Promise<number> => await view.evaluate(() => (window as unknown as { __n: number }).__n)
+    const framesIn = async (ms: number): Promise<number> => { const before = await count(); await delay(ms); return await count() - before }
+    expect(await waitFor(async () => (await tabMark(chrome, second)) === 'This tab is being shared')).toBe(true)
+    await delay(500)
+    expect(await framesIn(2_000)).toBeGreaterThan(20)
+
+    // The shared tab loads another document: the share, its marks and its frames carry on.
+    await app.evaluate(async ({ webContents }, [from, to]) => {
+      const shared = webContents.getAllWebContents().find((contents) => !contents.isDestroyed() && contents.getURL().startsWith(from as string))
+      await shared?.loadURL(to as string)
+    }, [origins.b, `${origins.b}/moved`])
+    await delay(1_000)
+    expect(await tabMark(chrome, second)).toBe('This tab is being shared')
+    expect(await tabMark(chrome, first as string)).toBe('Sharing a tab')
+    expect(await framesIn(2_000)).toBeGreaterThan(20)
+    expect(await view.evaluate(() => (window as unknown as { __r: Record<string, unknown> }).__r.ended)).toBeUndefined()
+    const bar = await waitOverlay(app, SHARING_BAR, '.sharing-text')
+
+    await bar.click('text=Stop sharing')
+    expect(await result(view, 'ended')).toBe(1)
+    expect(await waitFor(async () => (await tabMark(chrome, second)) === null)).toBe(true)
+    expect(mainOutput(app)).not.toMatch(/reached no display handler/)
+  } finally {
+    await closeElectron(app)
+  }
+}, E2E_TIMEOUT_MS)
