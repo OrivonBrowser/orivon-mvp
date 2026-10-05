@@ -25,6 +25,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - test/ is grouped into areas, and a new capability, port or app bug has one README saying a row and a spec are required.
 - Every ported app now shows visitors in other browsers a panel pointing them to Orivon; it stays hidden inside Orivon, and --no-orivon-hint removes it.
 - CI's e2e now runs only the specs a change can reach, in parallel shards: minutes instead of forty.
+- Publishing a GitHub release now builds Linux, Windows and macOS packages, launches each in CI, and attaches them.
 
 ### In my head
 

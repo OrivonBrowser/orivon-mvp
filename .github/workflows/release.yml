@@ -108,7 +108,8 @@ jobs:
             hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$dmg"
             codesign --verify --deep --strict --verbose=2 "$mount/Orivon.app"
             node scripts/run-headless.mjs node scripts/smoke-packaged.mjs "$mount/Orivon.app/Contents/MacOS/Orivon"
-            hdiutil detach "$mount"
+            # A helper of the Intel build, run under Rosetta, can hold the volume a few seconds longer.
+            hdiutil detach "$mount" || { sleep 5; hdiutil detach -force "$mount"; }
           done
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

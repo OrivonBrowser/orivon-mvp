@@ -48,18 +48,24 @@ async function evaluate (wsUrl, expression) {
   }
 }
 
-/** Ends the app and everything it started: Chromium's helpers outlive a bare kill of the main process. */
-function stop (child) {
-  if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return
+const exited = (child) => child.exitCode !== null || child.signalCode !== null
+
+/**
+ * Ends the app and everything it started (Chromium's helpers outlive a bare kill of the main process),
+ * and waits for it: a dmg cannot be detached while one of its processes is still going.
+ */
+async function stop (child) {
+  if (child.pid === undefined || exited(child)) return
   if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
   else try { process.kill(-child.pid, 'SIGKILL') } catch {}
+  for (let waited = 0; !exited(child) && waited < 15_000; waited += 250) await sleep(250)
 }
 
 /** Resolves once the shell page has rendered; rejects with what the app printed if it never does. */
 async function waitForShell (child, output, deadline) {
   while (Date.now() < deadline) {
     if (child.pid === undefined) throw new Error('the app could not be started')
-    if (child.exitCode !== null || child.signalCode !== null) throw new Error(`the app exited (${child.exitCode ?? child.signalCode}) before its shell page rendered`)
+    if (exited(child)) throw new Error(`the app exited (${child.exitCode ?? child.signalCode}) before its shell page rendered`)
     const port = devToolsPort(output())
     if (port !== undefined) {
       const targets = await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json()).catch(() => [])
@@ -95,8 +101,7 @@ if (isInvokedDirectly(import.meta.url)) {
     failed = true
     console.error(`[smoke-packaged] ${executable}: ${error.message}\n--- app output ---\n${log.split('\n').slice(-80).join('\n')}`)
   } finally {
-    stop(child)
-    await sleep(1000)
+    await stop(child)
     rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 })
   }
   process.exit(failed ? 1 : 0)
