@@ -305,6 +305,89 @@ for (const scheme of SCHEMES) {
     }
   }, QA_TEST_TIMEOUT_MS)
 
+  it(`the screen-share picker and the sharing bar look right (${scheme})`, async () => {
+    const sharing = await startServer((_req, res) => {
+      html(res, `<!doctype html><meta charset="utf-8"><title>Sharing fixture</title><body style="font:16px sans-serif;margin:32px"><h1>Sharing fixture</h1><button id="go">Share</button>
+<script>
+window.__r = {}
+document.getElementById('go').addEventListener('click', () => window.__next())
+window.__next = () => {}
+window.share = (options) => navigator.mediaDevices.getDisplayMedia(options).then((stream) => { window.__r.state = stream.getVideoTracks()[0].readyState }, (error) => { window.__r.state = 'ERR:' + error.name })
+</script>`)
+    })
+    const { app, chrome } = await launchShell({ scheme })
+    try {
+      await runPhase('visual states of the screen-share picker and bar', async (check) => {
+        expect(await waitFor(() => dashboardOf(app) !== undefined)).toBe(true)
+        await prepareWindow(app)
+        const view = await visit(app, chrome, `${sharing.origin}/`)
+        await chrome.click('#new-tab')
+        await clickAddressBarRetrying(chrome, `${server.origin}/`)
+        expect((await waitForTab(chrome, { address: `${server.origin}/` })).ok).toBe(true)
+        await chrome.evaluate(() => { document.querySelector<HTMLElement>('.tab')?.click() })
+        expect(await waitFor(() => findViewShowing(app, chrome, `${sharing.origin}/`) !== undefined)).toBe(true)
+
+        const asking = async (options: string): Promise<Page> => {
+          await view.evaluate((code) => { (window as unknown as { __next: () => void }).__next = new Function(code) as () => void }, `window.share(${options})`)
+          await view.click('#go')
+          let picker: Page | undefined
+          expect(await waitFor(async () => {
+            picker = app.windows().find((page) => page.url().includes('overlay=screen-share-picker') && !page.isClosed())
+            try { await picker?.waitForSelector('.picker-card', { timeout: 1_000 }); return picker !== undefined } catch { return false }
+          }, 20_000)).toBe(true)
+          return picker as Page
+        }
+
+        const picker = await asking('{ video: true }')
+        await picker.waitForSelector('.picker:not(.arming)')
+        check('the picker names the site, offers three segments, two tab cards with This tab first, and no Share yet', await picker.evaluate(() => ({
+          title: document.querySelector('.sheet-title')?.textContent ?? '',
+          segments: [...document.querySelectorAll('.picker-segments button')].map((b) => b.textContent),
+          cards: [...document.querySelectorAll('.picker-card .picker-label')].map((l) => l.textContent),
+          self: document.querySelector('.picker-card .picker-self')?.textContent ?? '',
+          share: (document.querySelector('.btn-row .btn.primary') as HTMLButtonElement).disabled
+        })).then((r) => r.title.startsWith('Choose what to share with') && r.segments.join() === 'Tab,Window,Entire screen' && r.cards.length === 2 && r.self === 'This tab' && r.share), 'picker content')
+        const fit = await picker.evaluate(() => { const root = document.documentElement; return root.scrollHeight <= root.clientHeight && root.scrollWidth <= root.clientWidth })
+        check('the picker sits inside its view, uncut and unscrolled', fit)
+        await picker.locator('.picker-card').nth(1).click()
+        await state(check, app, `screen-share-picker-${scheme}`, {
+          expected: 'A sheet floats over the page, centred in the page area: the title "Choose what to share with <127.0.0.1 origin>", three segments Tab, Window and Entire screen with Tab selected, a grid of two cards each with a pale picture area (a plain icon, no screenshot) and a label, the first marked "This tab" and the second selected with the accent colour, then Cancel and a filled Share button. Text, cards and buttons are fully inside the sheet and readable in this colour scheme.',
+          action: 'Pressed Share on a loopback page that calls getDisplayMedia, with a second tab open, and chose the second card.',
+          ignore: [FIXTURE_ADDRESS, { x: 300, y: 150, width: 560, height: 60 }, { x: 300, y: 330, width: 560, height: 40 }]
+        })
+        await picker.keyboard.press('Escape').catch(() => {})
+        expect(await waitFor(() => app.windows().every((page) => !page.url().includes('overlay=screen-share-picker')))).toBe(true)
+
+        const screenPicker = await asking("{ video: { displaySurface: 'monitor' } }")
+        await screenPicker.locator('.picker-segments button', { hasText: 'Entire screen' }).waitFor()
+        await screenPicker.waitForSelector('.picker-segments button[aria-selected="true"]:has-text("Entire screen")')
+        await screenPicker.waitForSelector('.picker-card')
+        await screenPicker.click('.picker-card')
+        await screenPicker.waitForSelector('.picker:not(.arming)')
+        await screenPicker.click('.btn-row .btn.primary')
+        await view.waitForFunction(() => (window as unknown as { __r: { state?: string } }).__r.state === 'live', undefined, { timeout: 30_000 })
+        let bar: Page | undefined
+        expect(await waitFor(async () => {
+          bar = app.windows().find((page) => page.url().includes('overlay=sharing-bar') && !page.isClosed())
+          try { await bar?.waitForSelector('.sharing-text', { timeout: 1_000 }); return bar !== undefined } catch { return false }
+        }, 20_000)).toBe(true)
+        const text = (await (bar as Page).textContent('.sharing-text')) ?? ''
+        check('the sharing bar says who is sharing what and offers Stop sharing and Hide', /is sharing your screen$/.test(text) && await (bar as Page).locator('text=Stop sharing').count() === 1 && await (bar as Page).locator('button[aria-label="Hide this bar"]').count() === 1, text)
+        check('the address bar carries the sharing chip and the tab the sharing mark', await chrome.evaluate(() => (document.querySelector('#sharing-chip') as HTMLElement | null)?.hidden === false && document.querySelector('.tab.active .tab-share.sharing') !== null), 'chip and tab mark')
+        await state(check, app, `sharing-bar-${scheme}`, {
+          expected: 'A one-row bar floats at the top centre of the page area: a small red screen mark, the text "<127.0.0.1 origin> is sharing your screen", a red-outlined Stop sharing button and a close button. In the toolbar a red screen chip sits in the address pill, and the active tab shows a small red screen mark before its close button. Everything is readable in this colour scheme and nothing is cut.',
+          action: 'Chose the entire screen in the picker and pressed Share.',
+          ignore: [FIXTURE_ADDRESS, { x: 330, y: 100, width: 340, height: 30 }]
+        })
+        await (bar as Page).click('text=Stop sharing')
+        expect(await waitFor(() => app.windows().every((page) => !page.url().includes('overlay=sharing-bar')))).toBe(true)
+      })
+    } finally {
+      await closeElectron(app)
+      await sharing.close()
+    }
+  }, QA_TEST_TIMEOUT_MS * 2)
+
   it(`the shell parts fixed in this round look right: bookmarks overflow, Web3 and Profiles settings, a crowded tab strip (${scheme})`, async () => {
     const bookmarks = JSON.stringify({
       version: 2,

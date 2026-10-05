@@ -96,6 +96,12 @@
   :root { --wwarn-mark: #f97316; }
 }
 
+/* A screen share running, as a mark that must be seen on the chrome (the sharing chip and a tab's mark). */
+:root { --wshare-mark: #b91c1c; }
+@media (prefers-color-scheme: dark) {
+  :root { --wshare-mark: #f87171; }
+}
+
 * { box-sizing: border-box; }
 
 html, body {

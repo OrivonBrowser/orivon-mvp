@@ -4,6 +4,7 @@
 import type { PickerCard, PickerSegment } from '../../../main/display-capture/picker/picker-model.js'
 import type { PickerView } from '../../../main/display-capture/picker/picker-view.js'
 import { h, replaceChildren } from '../../pages/shared/dom.js'
+import { tabsIcon } from '../../pages/shared/icons.js'
 import { SITE_KIND_ICONS } from '../../pages/shared/site-kind-icons.js'
 import type { Overlay, OverlayPage } from '../kit.js'
 import { COLUMNS, gridStep, isCards, isPickerView } from './view.js'
@@ -100,7 +101,7 @@ export const screenSharePickerPage: OverlayPage = {
     function cardElement (card: PickerCard, index: number): HTMLElement {
       const picture = card.thumb !== null
         ? h('img', { className: 'picker-thumb', alt: '', src: card.thumb, draggable: false })
-        : h('span', { className: 'picker-thumb picker-thumb-empty' }, card.icon !== null ? h('img', { className: 'picker-icon', alt: '', src: card.icon, draggable: false }) : SITE_KIND_ICONS.screenShare())
+        : h('span', { className: 'picker-thumb picker-thumb-empty' }, card.icon !== null ? h('img', { className: 'picker-icon', alt: '', src: card.icon, draggable: false }) : segment === 'tab' ? tabsIcon() : SITE_KIND_ICONS.screenShare())
       const li = h('li', { className: 'picker-card', role: 'option', id: `picker-card-${String(index)}` },
         picture,
         h('span', { className: 'picker-label', title: card.label }, card.label),
