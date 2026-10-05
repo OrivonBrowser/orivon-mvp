@@ -1,18 +1,16 @@
 import { EventEmitter } from 'node:events'
-import { BrowserWindow, nativeTheme } from 'electron'
-import type { Session } from 'electron'
+import { nativeTheme, WebContentsView } from 'electron'
+import type { BaseWindow, Session, WebContents } from 'electron'
 import { getAllWindows } from './api/common'
 import debug from 'debug'
 
 const d = debug('electron-chrome-extensions:popup')
 
-// Orivon patch (UPSTREAM.md patch 35): was the single literal '#ffffff'
-// passed to the BrowserWindow constructor below. This paints before the
-// extension's own popup page has a pixel to show (same reasoning as
-// src/main/shell/window-frame.ts's own background colour); a fixed light
-// colour flashed white for a moment on every popup open in dark mode.
+// Orivon patch (UPSTREAM.md patch 35): the colour a popup paints before the extension's own page
+// has a pixel to show; a fixed light colour flashed white on every open in dark mode.
 const POPUP_BACKGROUND_LIGHT = '#ffffff'
 const POPUP_BACKGROUND_DARK = '#202124'
+const POPUP_CORNER_RADIUS = 8
 
 export interface PopupAnchorRect {
   x: number
@@ -21,10 +19,62 @@ export interface PopupAnchorRect {
   height: number
 }
 
+/** Where a popup goes: the toolbar rectangle it opens from, which side of it, and its size. */
+export interface PopupPlacement {
+  anchorRect: PopupAnchorRect
+  alignment?: string | undefined
+  size: { width: number; height: number }
+}
+
+/** Orivon patch (UPSTREAM.md patch 68): the popup is a view inside the window it belongs to, and the
+ * embedder owns what that means for the window: how the view is attached, where it sits, what gets
+ * the keyboard when it leaves. The library never adds the view itself. */
+export interface PopupHost {
+  /** Puts the view in `parent`, on top. */
+  mount(parent: BaseWindow, view: WebContentsView): void
+  /** Takes the view out of `parent`. */
+  unmount(parent: BaseWindow, view: WebContentsView): void
+  /** Sets the view's bounds, in the window's content coordinates. */
+  place(parent: BaseWindow, view: WebContentsView, placement: PopupPlacement): void
+  /** True while a loss of focus must not close the popup: the embedder itself is moving focus, for
+   * the popup's own extension (a tab it just opened). */
+  keepOpenOnBlur?(): boolean
+}
+
+const POSITION_PADDING = 5
+
+/** What a library with no embedder does: on top of the window, under the anchor, right edge to right edge. */
+const defaultHost: PopupHost = {
+  mount: (parent, view) => { parent.contentView.addChildView(view) },
+  unmount: (parent, view) => { parent.contentView.removeChildView(view) },
+  place: (_parent, view, { anchorRect, alignment, size }) => {
+    const x = alignment?.includes('right') ? anchorRect.x : anchorRect.x + anchorRect.width - size.width
+    const y = alignment?.includes('top')
+      ? anchorRect.y - size.height - POSITION_PADDING
+      : anchorRect.y + anchorRect.height + POSITION_PADDING
+    view.setBounds({ x: Math.floor(x), y: Math.floor(y), ...size })
+  },
+}
+
+let gPopupHost: PopupHost = defaultHost
+
+export function setPopupHost(host: PopupHost | undefined): void {
+  gPopupHost = host ?? defaultHost
+}
+
+// Orivon patch (UPSTREAM.md patch 68): a popup's page has no BrowserWindow of its own, so the window
+// it hangs under is recorded here for `chrome.tabs`' notion of the current window (api/tabs.ts).
+const popupParents = new WeakMap<WebContents, BaseWindow>()
+
+/** The window the popup whose page is `contents` was opened over. */
+export function popupParentOf(contents: WebContents): BaseWindow | undefined {
+  return popupParents.get(contents)
+}
+
 interface PopupViewOptions {
   extensionId: string
   session: Session
-  parent: Electron.BaseWindow
+  parent: BaseWindow
   url: string
   anchorRect: PopupAnchorRect
   // Orivon patch: `| undefined` added (exactOptionalPropertyTypes) --
@@ -43,10 +93,10 @@ const supportsPreferredSize = () => {
  * toolbar/chrome view, every tab view, any further nesting) -- used only to
  * arm a one-shot 'focus' listener across all of them (closeOnNextAppFocus
  * below), never to address any one of them individually. */
-function collectWebContents (win: Electron.BaseWindow): Electron.WebContents[] {
-  const out: Electron.WebContents[] = []
+function collectWebContents(win: BaseWindow): WebContents[] {
+  const out: WebContents[] = []
   const walk = (view: Electron.View): void => {
-    const webContents = (view as unknown as { webContents?: Electron.WebContents }).webContents
+    const webContents = (view as unknown as { webContents?: WebContents }).webContents
     if (webContents !== undefined) out.push(webContents)
     for (const child of view.children) walk(child)
   }
@@ -55,7 +105,7 @@ function collectWebContents (win: Electron.BaseWindow): Electron.WebContents[] {
 }
 
 export class PopupView extends EventEmitter {
-  static POSITION_PADDING = 5
+  static POSITION_PADDING = POSITION_PADDING
 
   static BOUNDS = {
     minWidth: 25,
@@ -73,18 +123,19 @@ export class PopupView extends EventEmitter {
   // Orivon patch (UPSTREAM.md patch 35): see armVisibilityFallback's own doc.
   static VISIBILITY_FALLBACK_MS = 500
 
-  // Orivon patch: `| undefined` added to all three (exactOptionalPropertyTypes)
-  // -- destroy() assigns `undefined` to browserWindow/parent, and the
-  // constructor assigns opts.alignment (now `string | undefined`) to
-  // alignment; the bare `?:` form refuses both.
-  browserWindow?: BrowserWindow | undefined
-  parent?: Electron.BaseWindow | undefined
+  /** Orivon patch (UPSTREAM.md patch 68): the popup's page, in a view the host puts in `parent`. */
+  readonly view: WebContentsView
+  readonly webContents: WebContents
+  parent?: BaseWindow | undefined
   extensionId: string
 
   private anchorRect: PopupAnchorRect
+  private size = { width: PopupView.BOUNDS.minWidth, height: PopupView.BOUNDS.minHeight }
   private destroyed: boolean = false
   private hidden: boolean = true
+  private sized: boolean = false
   private alignment?: string | undefined
+  private readonly host: PopupHost
 
   // Orivon patch (UPSTREAM.md patch 34): see closeOnNextAppFocus's own doc.
   private closeOnNextFocusCleanup?: (() => void) | undefined
@@ -101,20 +152,9 @@ export class PopupView extends EventEmitter {
     this.extensionId = opts.extensionId
     this.anchorRect = opts.anchorRect
     this.alignment = opts.alignment
+    this.host = gPopupHost
 
-    this.browserWindow = new BrowserWindow({
-      show: false,
-      frame: false,
-      parent: opts.parent,
-      movable: false,
-      maximizable: false,
-      minimizable: false,
-      // https://github.com/electron/electron/issues/47579
-      fullscreenable: false,
-      resizable: false,
-      skipTaskbar: true,
-      backgroundColor: nativeTheme.shouldUseDarkColors ? POPUP_BACKGROUND_DARK : POPUP_BACKGROUND_LIGHT,
-      roundedCorners: false,
+    this.view = new WebContentsView({
       webPreferences: {
         session: opts.session,
         sandbox: true,
@@ -126,38 +166,43 @@ export class PopupView extends EventEmitter {
         disableDialogs: true,
       },
     })
+    this.view.setBackgroundColor(nativeTheme.shouldUseDarkColors ? POPUP_BACKGROUND_DARK : POPUP_BACKGROUND_LIGHT)
+    this.view.setBorderRadius(POPUP_CORNER_RADIUS)
+    this.webContents = this.view.webContents
+    popupParents.set(this.webContents, opts.parent)
 
-    const untypedWebContents = this.browserWindow.webContents as any
+    const untypedWebContents = this.webContents as any
     untypedWebContents.on('preferred-size-changed', this.updatePreferredSize)
 
-    this.browserWindow.webContents.on('devtools-closed', this.maybeClose)
-    this.browserWindow.webContents.on('before-input-event', this.onBeforeInput)
-    this.browserWindow.on('blur', this.maybeClose)
-    this.browserWindow.on('closed', this.destroy)
-    this.parent.once('closed', this.destroy)
+    this.webContents.on('devtools-closed', this.maybeClose)
+    this.webContents.on('before-input-event', this.onBeforeInput)
+    this.webContents.on('blur', this.maybeClose)
+    this.webContents.on('destroyed', this.closeSoon)
+    this.parent.once('closed', this.closeSoon)
     // Orivon patch (UPSTREAM.md patch 34): Chrome closes an extension
     // popup the moment the window it belongs to is moved, resized or
     // minimised, not only on an outside click -- none of the three
     // touches this popup's OWN bounds (only setSize/updatePosition below
     // do that), so there is no risk of a false positive from the popup
     // positioning itself.
-    this.parent.on('move', this.destroy)
-    this.parent.on('resize', this.destroy)
-    this.parent.on('minimize', this.destroy)
+    this.parent.on('move', this.closeSoon)
+    this.parent.on('resize', this.closeSoon)
+    this.parent.on('minimize', this.closeSoon)
 
     this.readyPromise = this.load(opts.url)
   }
 
+  /** Mounts the view in the window and gives it the keyboard: a view that never held focus never blurs. */
   private show() {
+    if (this.destroyed || this.parent === undefined || !this.hidden) return
     this.hidden = false
-    this.browserWindow?.show()
+    this.host.mount(this.parent, this.view)
+    if (!this.webContents.isDestroyed()) this.webContents.focus()
   }
 
   private async load(url: string): Promise<void> {
-    const win = this.browserWindow!
-
     try {
-      await win.webContents.loadURL(url)
+      await this.webContents.loadURL(url)
     } catch (e) {
       console.error(e)
     }
@@ -167,7 +212,11 @@ export class PopupView extends EventEmitter {
     if (this.usingPreferredSize) {
       // Set small initial size so the preferred size grows to what's needed
       this.setSize({ width: PopupView.BOUNDS.minWidth, height: PopupView.BOUNDS.minHeight })
-      this.armVisibilityFallback()
+      // Orivon patch (UPSTREAM.md patch 68): mounted at its smallest size, under its anchor, and
+      // grown from there. A view still outside any window has not been seen to report a size.
+      this.updatePosition()
+      this.show()
+      this.armSizeFallback()
     } else {
       // Set large initial size to avoid overflow
       this.setSize({ width: PopupView.BOUNDS.maxWidth, height: PopupView.BOUNDS.maxHeight })
@@ -184,33 +233,55 @@ export class PopupView extends EventEmitter {
   }
 
   /**
-   * Orivon patch (UPSTREAM.md patch 35): `updatePreferredSize` (this
-   * class's only other path to `show()`, on the branch above) fires from
+   * Orivon patch (UPSTREAM.md patches 35 and 68): `updatePreferredSize` (this
+   * class's only other path to a size, on the branch above) fires from
    * `'preferred-size-changed'`, an event Chromium's own layout/compositor
    * pipeline emits -- there is nothing in this class that requires it to
-   * arrive promptly, or at all. A popup left waiting for it is fully
-   * loaded and interactive over CDP the whole time, but `show: false`
-   * forever: invisible and unfocusable to a real person. A
+   * arrive promptly, or at all (measured: it never fires under a GPU-less
+   * virtual display). A popup left waiting for it would stay at its smallest
+   * size, a postage stamp, for its entire life. After a moment the page's own
+   * content is measured instead, and the popup is sized to that. A
    * `'preferred-size-changed'` that does still arrive after this fires
-   * still resizes and repositions the popup correctly (updatePreferredSize
-   * does not check `hidden` before acting).
+   * still resizes and repositions the popup correctly.
    */
-  private armVisibilityFallback (): void {
-    setTimeout(() => {
-      if (this.destroyed || !this.hidden) return
-      d('preferred-size-changed did not arrive in time; showing with a default size')
-      this.setSize(PopupView.FALLBACK_BOUNDS)
-      // Orivon patch (UPSTREAM.md patch 35): setSize alone leaves the popup
-      // at its CONSTRUCTOR bounds' position (screen centre, roughly --
-      // BrowserWindow's own default with no `x`/`y` given), never anchored
-      // to the toolbar button that opened it, since nothing here calls
-      // updatePosition() the way updatePreferredSize does on the OTHER path
-      // to show(). Positioned before show(), not after: showing first would
-      // flash the popup at the wrong spot for one frame before it jumped to
-      // the right one.
+  private armSizeFallback (): void {
+    setTimeout(async () => {
+      if (this.destroyed || this.sized) return
+      d('preferred-size-changed did not arrive in time; measuring the page')
+      const measured = await this.measureContent()
+      if (this.destroyed || this.sized) return
+      this.setSize(measured ?? PopupView.FALLBACK_BOUNDS)
       this.updatePosition()
       this.show()
     }, PopupView.VISIBILITY_FALLBACK_MS)
+  }
+
+  /** The size of the page's content as it lays out at its natural width, whatever the view's size is now. */
+  private async measureContent (): Promise<{ width: number; height: number } | undefined> {
+    try {
+      const size = await this.webContents.executeJavaScript(
+        `((${() => {
+          const root = document.documentElement
+          const saved = root.style.width
+          root.style.width = 'max-content'
+          const rect = root.getBoundingClientRect()
+          root.style.width = saved
+          return { width: Math.ceil(rect.width), height: Math.ceil(rect.height) }
+        }})())`,
+      )
+      if (!(size?.width > 0) || !(size?.height > 0)) return undefined
+      return size
+    } catch (error) {
+      d('measuring the popup page failed: %O', error)
+      return undefined
+    }
+  }
+
+  /** Orivon patch (UPSTREAM.md patch 68): every close trigger runs `destroy` a macrotask later. A
+   * window shrunk under an open popup blurs the popup while that resize is still running, and
+   * taking a view out of the window from inside the native call kills the process. */
+  private closeSoon = () => {
+    setImmediate(this.destroy)
   }
 
   destroy = () => {
@@ -222,30 +293,31 @@ export class PopupView extends EventEmitter {
 
     this.closeOnNextFocusCleanup?.()
 
-    if (this.parent) {
-      if (!this.parent.isDestroyed()) {
-        this.parent.off('closed', this.destroy)
-        this.parent.off('move', this.destroy)
-        this.parent.off('resize', this.destroy)
-        this.parent.off('minimize', this.destroy)
+    const parent = this.parent
+    if (parent) {
+      if (!parent.isDestroyed()) {
+        parent.off('closed', this.closeSoon)
+        parent.off('move', this.closeSoon)
+        parent.off('resize', this.closeSoon)
+        parent.off('minimize', this.closeSoon)
       }
       this.parent = undefined
     }
 
-    if (this.browserWindow) {
-      if (!this.browserWindow.isDestroyed()) {
-        const { webContents } = this.browserWindow
-
-        if (!webContents.isDestroyed() && webContents.isDevToolsOpened()) {
-          webContents.closeDevTools()
-        }
-
-        this.browserWindow.off('closed', this.destroy)
-        this.browserWindow.destroy()
-      }
-
-      this.browserWindow = undefined
+    const { webContents } = this
+    if (!webContents.isDestroyed() && webContents.isDevToolsOpened()) {
+      webContents.closeDevTools()
     }
+
+    if (parent && !this.hidden) {
+      try {
+        this.host.unmount(parent, this.view)
+      } catch (error) {
+        d('unmounting the popup failed: %O', error)
+      }
+    }
+
+    if (!webContents.isDestroyed()) webContents.close()
   }
 
   isDestroyed() {
@@ -258,7 +330,7 @@ export class PopupView extends EventEmitter {
   }
 
   setSize(rect: Partial<Electron.Rectangle>) {
-    if (!this.browserWindow || !this.parent) return
+    if (this.destroyed || !this.parent) return
 
     const width = Math.floor(
       Math.min(PopupView.BOUNDS.maxWidth, Math.max(rect.width || 0, PopupView.BOUNDS.minWidth)),
@@ -273,10 +345,8 @@ export class PopupView extends EventEmitter {
 
     this.emit('will-resize', size)
 
-    this.browserWindow?.setBounds({
-      ...this.browserWindow.getBounds(),
-      ...size,
-    })
+    this.size = size
+    this.view.setBounds({ ...this.view.getBounds(), ...size })
 
     this.emit('resized')
   }
@@ -284,12 +354,17 @@ export class PopupView extends EventEmitter {
   private onBeforeInput = (_event: Electron.Event, input: Electron.Input): void => {
     // Orivon patch (UPSTREAM.md patch 34): Chrome closes an extension
     // popup on Escape.
-    if (input.type === 'keyDown' && input.key === 'Escape') this.destroy()
+    if (input.type === 'keyDown' && input.key === 'Escape') this.closeSoon()
   }
 
   private maybeClose = () => {
+    if (this.host.keepOpenOnBlur?.() === true) {
+      d('preventing close due to the embedder moving focus')
+      return
+    }
+
     // Keep open if webContents is being inspected
-    if (!this.browserWindow?.isDestroyed() && this.browserWindow?.webContents.isDevToolsOpened()) {
+    if (!this.webContents.isDestroyed() && this.webContents.isDevToolsOpened()) {
       d('preventing close due to DevTools being open')
       return
     }
@@ -303,7 +378,7 @@ export class PopupView extends EventEmitter {
       return
     }
 
-    this.destroy()
+    this.closeSoon()
   }
 
   /**
@@ -319,20 +394,20 @@ export class PopupView extends EventEmitter {
    * for). Since blur only fires on that one transition, missing it here
    * left the popup stuck open for good.
    *
-   * Arms a one-shot 'focus' listener across every other app window AND
-   * every webContents living inside the parent's own view tree (its
-   * toolbar/chrome view, every tab view): the parent's tab/toolbar views
-   * can gain Chromium's own internal input focus without the parent
-   * BaseWindow itself re-firing 'focus' (it never lost native OS focus in
-   * the first place, if the popup itself never actually took it) --
-   * exactly the case a plain `app.on('browser-window-focus', ...)` would
-   * miss. Whichever fires first closes the popup and disarms the rest.
+   * Arms a one-shot 'focus' listener across every app window AND every
+   * webContents living inside the parent's own view tree (its toolbar/chrome
+   * view, every tab view): the parent's tab/toolbar views can gain
+   * Chromium's own internal input focus without the parent BaseWindow itself
+   * re-firing 'focus'. Whichever fires first disarms the rest, and closes
+   * the popup unless its own page holds the keyboard a macrotask later:
+   * coming back from a program outside the app hands focus to the popup's
+   * page, which is the person returning to it, not leaving it.
    */
   private closeOnNextAppFocus (): void {
     if (this.closeOnNextFocusCleanup !== undefined || this.parent === undefined) return
 
-    const windows = getAllWindows().filter((win) => win !== this.browserWindow)
-    const webContentsList = collectWebContents(this.parent)
+    const windows = getAllWindows()
+    const webContentsList = collectWebContents(this.parent).filter((wc) => wc !== this.webContents)
 
     const cleanup = (): void => {
       for (const win of windows) win.removeListener('focus', onFocus)
@@ -341,7 +416,11 @@ export class PopupView extends EventEmitter {
     }
     const onFocus = (): void => {
       cleanup()
-      if (!this.destroyed) this.destroy()
+      setImmediate(() => {
+        if (this.destroyed) return
+        if (!this.webContents.isDestroyed() && this.webContents.isFocused()) return
+        this.destroy()
+      })
     }
 
     for (const win of windows) win.on('focus', onFocus)
@@ -351,45 +430,14 @@ export class PopupView extends EventEmitter {
   }
 
   private updatePosition() {
-    if (!this.browserWindow || !this.parent) return
+    if (this.destroyed || !this.parent) return
 
-    const winBounds = this.parent.getBounds()
-    const winContentBounds = this.parent.getContentBounds()
-    const nativeTitlebarHeight = winBounds.height - winContentBounds.height
+    const placement = { anchorRect: this.anchorRect, alignment: this.alignment, size: this.size }
+    d(`updatePosition`, placement)
 
-    const viewBounds = this.browserWindow.getBounds()
+    this.emit('will-move', placement)
 
-    let x = winBounds.x + this.anchorRect.x + this.anchorRect.width - viewBounds.width
-    let y =
-      winBounds.y +
-      nativeTitlebarHeight +
-      this.anchorRect.y +
-      this.anchorRect.height +
-      PopupView.POSITION_PADDING
-
-    // If aligned to a differently then we need to offset the popup position
-    if (this.alignment?.includes('right')) x = winBounds.x + this.anchorRect.x
-    if (this.alignment?.includes('top'))
-      y =
-        winBounds.y +
-        nativeTitlebarHeight -
-        viewBounds.height +
-        this.anchorRect.y -
-        PopupView.POSITION_PADDING
-
-    // Convert to ints
-    x = Math.floor(x)
-    y = Math.floor(y)
-
-    const position = { x, y }
-    d(`updatePosition`, position)
-
-    this.emit('will-move', position)
-
-    this.browserWindow.setBounds({
-      ...this.browserWindow.getBounds(),
-      ...position,
-    })
+    this.host.place(this.parent, this.view, placement)
 
     this.emit('moved')
   }
@@ -398,7 +446,7 @@ export class PopupView extends EventEmitter {
   private async queryPreferredSize() {
     if (this.usingPreferredSize || this.destroyed) return
 
-    const rect = await this.browserWindow!.webContents.executeJavaScript(
+    const rect = await this.webContents.executeJavaScript(
       `((${() => {
         const rect = document.body.getBoundingClientRect()
         return { width: rect.width, height: rect.height }
@@ -414,6 +462,7 @@ export class PopupView extends EventEmitter {
   private updatePreferredSize = (event: Electron.Event, size: Electron.Size) => {
     d('updatePreferredSize', size)
     this.usingPreferredSize = true
+    this.sized = true
     this.setSize(size)
     this.updatePosition()
 

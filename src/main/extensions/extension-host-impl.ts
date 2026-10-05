@@ -34,9 +34,19 @@ export const shellInitiated = new Set<WebContents>()
  * clicking the tab strip. `createTab` and `selectTab` below are the only two ways an
  * extension can activate a tab, and neither recurses into the other. */
 let tabActivationFromExtension = false
+let lastActivationFromExtensionAt = Number.NEGATIVE_INFINITY
 
 export function isExtensionActivatingTab (): boolean {
   return tabActivationFromExtension
+}
+
+/** How long after an extension activates a tab the keyboard is still on its way to that tab: the popup that
+ * asked for it loses focus a moment after `activateTab` returns, not inside it. */
+export const EXTENSION_FOCUS_HANDOVER_MS = 500
+
+/** Whether an extension activated a tab within the last `EXTENSION_FOCUS_HANDOVER_MS`, or is doing so now. */
+export function extensionJustActivatedTab (now: number = Date.now()): boolean {
+  return tabActivationFromExtension || now - lastActivationFromExtensionAt < EXTENSION_FOCUS_HANDOVER_MS
 }
 
 /** `session.defaultSession.extensions.getExtension` answers `null` for an id
@@ -71,6 +81,7 @@ export function buildHostImpl (getBridge: () => ShellBridge | undefined): HostIm
       return [opened[1], win]
     } finally {
       tabActivationFromExtension = false
+      lastActivationFromExtensionAt = Date.now()
     }
   },
 
@@ -90,6 +101,7 @@ export function buildHostImpl (getBridge: () => ShellBridge | undefined): HostIm
       found.window.tabs.activateTab(found.tabId)
     } finally {
       tabActivationFromExtension = false
+      lastActivationFromExtensionAt = Date.now()
     }
   },
 

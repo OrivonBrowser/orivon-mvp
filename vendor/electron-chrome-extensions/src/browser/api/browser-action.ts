@@ -1,6 +1,8 @@
 import { Menu, MenuItem, nativeImage } from 'electron'
 import type { ExtensionContext } from '../context'
 import { PopupView } from '../popup'
+export { setPopupHost } from '../popup'
+export type { PopupHost, PopupPlacement } from '../popup'
 import type { ExtensionEvent } from '../router'
 import {
   getExtensionUrl,
@@ -66,6 +68,20 @@ let gActionMenuBuilder: ActionMenuBuilder | undefined
 
 export function setActionMenuBuilder(builder: ActionMenuBuilder | undefined): void {
   gActionMenuBuilder = builder
+}
+
+// Orivon patch (UPSTREAM.md patch 69): where `chrome.action.openPopup()` anchors the popup -- the
+// action's own toolbar icon, else the embedder's nearest stand-in -- in `window`'s content
+// coordinates. Unset, or answering `undefined`: the window's top-right corner.
+export type OpenPopupAnchor = (
+  extensionId: string,
+  window: Electron.BaseWindow,
+) => Promise<Electron.Rectangle | undefined>
+
+let gOpenPopupAnchor: OpenPopupAnchor | undefined
+
+export function setOpenPopupAnchor(anchor: OpenPopupAnchor | undefined): void {
+  gOpenPopupAnchor = anchor
 }
 
 interface ExtensionAction {
@@ -385,8 +401,8 @@ export class BrowserActionAPI {
   // `this.popup` already being a single field, not a map.
   getOpenPopup(): { extensionId: string; webContents: Electron.WebContents; tabId: number } | undefined {
     if (!this.popup || this.popup.isDestroyed() || this.popupTabId === undefined) return undefined
-    const webContents = this.popup.browserWindow?.webContents
-    if (webContents === undefined) return undefined
+    const { webContents } = this.popup
+    if (webContents.isDestroyed()) return undefined
     return { extensionId: this.popup.extensionId, webContents, tabId: this.popupTabId }
   }
 
@@ -736,7 +752,7 @@ export class BrowserActionAPI {
   // skipping `activate`'s own remote-only guard, with NO `recordInvocation`
   // argument (defaults false), the same call shape `activate` itself uses
   // only once it has confirmed a real click.
-  private openPopup = (event: ExtensionEvent, options?: chrome.action.OpenPopupOptions) => {
+  private openPopup = async (event: ExtensionEvent, options?: chrome.action.OpenPopupOptions) => {
     const window =
       typeof options?.windowId === 'number'
         ? this.ctx.store.getWindowById(options.windowId)
@@ -749,18 +765,29 @@ export class BrowserActionAPI {
     const activeTab = this.ctx.store.getActiveTabFromWindow(window)
     if (!activeTab) return
 
-    // Orivon patch: `?? 0` -- noUncheckedIndexedAccess types a
-    // destructured array element as possibly undefined; getSize() always
-    // returns a 2-element tuple, so this fallback never actually applies.
-    const [width = 0] = window.getSize()
-    const anchorSize = 64
+    // Orivon patch (UPSTREAM.md patch 69): the embedder says where the action's icon is.
+    let anchorRect: Electron.Rectangle | undefined
+    try {
+      anchorRect = await gOpenPopupAnchor?.(event.extension.id, window)
+    } catch (error) {
+      d('openPopup: the anchor lookup failed: %O', error)
+    }
+    if (window.isDestroyed()) return
+
+    if (anchorRect === undefined) {
+      // Orivon patch: `?? 0` -- noUncheckedIndexedAccess types a
+      // destructured array element as possibly undefined; getSize() always
+      // returns a 2-element tuple, so this fallback never actually applies.
+      const [width = 0] = window.getSize()
+      const anchorSize = 64
+      anchorRect = { x: width - anchorSize, y: 0, width: anchorSize, height: anchorSize }
+    }
 
     this.activateClick({
       eventType: 'click',
       extensionId: event.extension.id,
       tabId: activeTab?.id,
-      // TODO(mv3): get anchor position
-      anchorRect: { x: width - anchorSize, y: 0, width: anchorSize, height: anchorSize },
+      anchorRect,
     })
   }
 

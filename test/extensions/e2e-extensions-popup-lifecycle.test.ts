@@ -149,8 +149,8 @@ it('closes an open browserAction popup the way Chrome does, and keeps window.clo
         await waitFor(() => findPopup(liveApp.windows(), extensionId) === undefined)
       }
 
-      /** Opens the popup fresh and waits for its own BrowserWindow to be
-       * visible -- popup.ts's visibility fallback (500ms) covers the case
+      /** Opens the popup fresh and waits for its view to be in the shell window --
+       * popup.ts's visibility fallback (500ms) covers the case
        * 'preferred-size-changed' never arrives, so this never hangs even
        * without a real compositor. */
       async function openPopup (): Promise<Page> {
@@ -159,10 +159,9 @@ it('closes an open browserAction popup the way Chrome does, and keeps window.clo
         await waitFor(() => findPopup(liveApp.windows(), extensionId) !== undefined)
         const popup = findPopup(liveApp.windows(), extensionId)
         if (popup === undefined) throw new Error('popup did not open')
-        await waitFor(async () => await liveApp.evaluate(({ BrowserWindow }, id: string) => {
-          const win = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().startsWith(`chrome-extension://${id}/`))
-          return win !== undefined && win.isVisible()
-        }, extensionId), 2000)
+        await waitFor(async () => await liveApp.evaluate(({ BaseWindow }, id: string) =>
+          BaseWindow.getAllWindows().some((win) => win.contentView.children.some((view) =>
+            (view as unknown as { webContents?: Electron.WebContents }).webContents?.getURL().startsWith(`chrome-extension://${id}/`) === true)), extensionId), 2000)
         return popup
       }
 
@@ -224,6 +223,10 @@ it('closes an open browserAction popup the way Chrome does, and keeps window.clo
       // still-open password-manager popup out from under them. An absence
       // is settled once, never polled for (testing.md's own rule 3: a
       // waitFor pointed at a condition already true reports a green no-op).
+      // The navigation above is still settling the address bar and the page's focus; a popup opened in the middle of
+      // it would lose the keyboard to that, which is not what this scenario is about.
+      await waitForAddressBarStable(chrome)
+      await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS))
       await openPopup()
       const fixtureTab = liveApp.windows().find((w) => w.url() === fixtureUrl)
       if (fixtureTab !== undefined) {

@@ -55,7 +55,7 @@ vi.mock('orivon:crx-extensions-router', () => ({
 }))
 vi.mock('orivon:crx-extensions-cookies', () => ({ setCookieHostAccessCheck: vi.fn() }))
 vi.mock('orivon:crx-extensions-tabs', () => ({ setTabUrlAccessCheck: vi.fn(), setTabHostAccessCheck: vi.fn() }))
-vi.mock('orivon:crx-extensions-browser-action', () => ({ setTabCaptureInvocationRecorder: vi.fn() }))
+vi.mock('orivon:crx-extensions-browser-action', () => ({ setTabCaptureInvocationRecorder: vi.fn(), setPopupHost: vi.fn(), setOpenPopupAnchor: vi.fn() }))
 vi.mock('orivon:crx-extensions-tab-capture', () => ({
   setTabCaptureInvocationCheck: vi.fn(),
   setTabCaptureAppRefusalCheck: vi.fn(),
@@ -210,7 +210,7 @@ describe('extension-host: window-open policy for popups and MV2 background pages
     const once = vi.fn()
     const isDestroyed = vi.fn(() => false)
     const destroy = vi.fn()
-    onPopupCreated({ browserWindow: { webContents: { setWindowOpenHandler, once } }, isDestroyed, destroy })
+    onPopupCreated({ webContents: { setWindowOpenHandler, once }, isDestroyed, destroy })
 
     expect(setWindowOpenHandler).toHaveBeenCalledTimes(1)
     const handler = setWindowOpenHandler.mock.calls[0]?.[0]
@@ -238,7 +238,7 @@ describe('extension-host: window-open policy for popups and MV2 background pages
     const onPopupCreated = lastInstance.on.mock.calls.find((call: any[]) => call[0] === 'browser-action-popup-created')?.[1]
     const setWindowOpenHandler = vi.fn()
     const popupPage = { setWindowOpenHandler, once: vi.fn() }
-    onPopupCreated({ browserWindow: { webContents: popupPage }, parent: older.window, isDestroyed: () => false, destroy: vi.fn() })
+    onPopupCreated({ webContents: popupPage, parent: older.window, isDestroyed: () => false, destroy: vi.fn() })
     setWindowOpenHandler.mock.calls[0]?.[0]({ url: 'chrome-extension://abcdefghijklmnopabcdefghijklmnop/help.html' })
 
     expect(older.tabs.openTrusted).toHaveBeenCalledTimes(1)

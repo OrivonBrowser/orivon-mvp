@@ -7,7 +7,7 @@ const ID = 'abcdefghijklmnopabcdefghijklmnop'
 vi.mock('electron', () => ({ session: { defaultSession: { extensions: { getExtension: vi.fn((id: string) => id === 'abcdefghijklmnopabcdefghijklmnop' ? {} : null) } } } }))
 vi.mock('../../shell/window.js', () => ({ createShellWindow: vi.fn() }))
 
-const { buildHostImpl } = await import('../extension-host-impl.js')
+const { buildHostImpl, extensionJustActivatedTab, EXTENSION_FOCUS_HANDOVER_MS } = await import('../extension-host-impl.js')
 const { isExtensionOpened } = await import('../extension-opened-pages.js')
 
 function bridgeWith (record: Record<string, unknown>): ShellBridge {
@@ -70,5 +70,17 @@ describe('buildHostImpl: windowOf', () => {
     const host = buildHostImpl(() => bridge)
     expect(host.windowOf?.(chromeB as WebContents)).toBe(winB)
     expect(host.windowOf?.({} as WebContents)).toBeUndefined()
+  })
+})
+
+describe('extensionJustActivatedTab', () => {
+  it('holds for the focus handover after chrome.tabs.create, and not past it', async () => {
+    const win = { id: 1 }
+    const tabs = { openTrusted: () => ['t', { on: vi.fn(), loadURL: vi.fn(async () => undefined) }] }
+    const bridge = { services: { windows: { focused: () => ({ window: win }), all: () => [{ window: win, tabs }] } } } as unknown as ShellBridge
+    await buildHostImpl(() => bridge).createTab?.({ url: `chrome-extension://${ID}/welcome.html` } as never)
+    const now = Date.now()
+    expect(extensionJustActivatedTab(now)).toBe(true)
+    expect(extensionJustActivatedTab(now + EXTENSION_FOCUS_HANDOVER_MS + 50)).toBe(false)
   })
 })

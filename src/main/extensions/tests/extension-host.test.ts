@@ -59,7 +59,9 @@ vi.mock('orivon:crx-extensions-tabs', () => ({
 }))
 
 vi.mock('orivon:crx-extensions-browser-action', () => ({
-  setTabCaptureInvocationRecorder: vi.fn()
+  setTabCaptureInvocationRecorder: vi.fn(),
+  setPopupHost: vi.fn(),
+  setOpenPopupAnchor: vi.fn()
 }))
 
 vi.mock('orivon:crx-extensions-tab-capture', () => ({

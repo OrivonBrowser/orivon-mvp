@@ -1,96 +1,75 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 
-// Drives the REAL PopupView (UPSTREAM.md patches 34-35), the same way
-// browser-action-popup-url.test.ts drives the REAL BrowserActionAPI --
-// fakes stand in for BrowserWindow/nativeTheme/the parent BaseWindow so
-// this suite can control focus, size-event and window-event timing
-// directly, deterministically, and without a real display. The e2e
-// equivalent (test/extensions/e2e-extensions-popup-lifecycle.test.ts) measured this
-// directly: under bare xvfb-run OR under a real window manager
-// (test/support/with-window-manager.mjs), a synthetic setPosition()/setSize() on a
-// BaseWindow does not reliably produce a native 'move'/'resize' event at
-// all -- an environment limitation of the virtual display, not of this
-// code, and not something an e2e assertion can be pinned to. This suite
-// exercises the same event handlers directly instead.
+// Drives the REAL PopupView (UPSTREAM.md patches 34, 35 and 68) with a fake view and a fake host,
+// so focus, size and window-event timing are set directly, without a display. The e2e equivalent
+// (test/extensions/e2e-extensions-popup-lifecycle.test.ts) measured that a synthetic move or
+// resize of a window does not reliably produce a native event under a virtual display, so these
+// events are emitted here instead.
 //
-// PopupView's own supportsPreferredSize() reads
-// process.versions.electron, which plain vitest/node never sets -- stubbed
-// once here so the constructor takes the same `usingPreferredSize: true`
-// path it does under the real Electron 44 this app ships.
+// PopupView reads process.versions.electron, which plain vitest never sets: stubbed once so the
+// constructor takes the preferred-size path it takes under the Electron this app ships.
 ;(process.versions as unknown as { electron: string }).electron = '44.0.0'
 
 class FakeWebContents extends EventEmitter {
   private destroyed = false
+  focused = false
+  closed = 0
+  devTools = false
   isDestroyed (): boolean { return this.destroyed }
-  isDevToolsOpened (): boolean { return false }
-  closeDevTools (): void {}
+  isDevToolsOpened (): boolean { return this.devTools }
+  closeDevTools (): void { this.devTools = false }
+  isFocused (): boolean { return this.focused }
+  focus (): void { this.focused = true }
+  close (): void { this.closed += 1; this.destroyed = true; this.emit('destroyed') }
   async loadURL (_url: string): Promise<void> {}
-  async executeJavaScript (): Promise<{ width: number, height: number }> { return { width: 0, height: 0 } }
-  getURL (): string { return '' }
+  measured: { width: number, height: number } = { width: 0, height: 0 }
+  async executeJavaScript (): Promise<{ width: number, height: number }> { return this.measured }
 }
 
-class FakeBrowserWindow extends EventEmitter {
-  static instances: FakeBrowserWindow[] = []
-  webContents = new FakeWebContents()
-  readonly constructorOpts: { backgroundColor?: string, webPreferences?: { disableDialogs?: boolean } }
-  private destroyed = false
-  private visible = false
-  private bounds = { x: 0, y: 0, width: 25, height: 25 }
-
-  constructor (opts: { backgroundColor?: string, webPreferences?: { disableDialogs?: boolean } }) {
-    super()
+class FakeView {
+  static instances: FakeView[] = []
+  readonly webContents = new FakeWebContents()
+  readonly constructorOpts: { webPreferences?: { disableDialogs?: boolean } }
+  background = ''
+  radius = 0
+  bounds = { x: 0, y: 0, width: 0, height: 0 }
+  constructor (opts: { webPreferences?: { disableDialogs?: boolean } }) {
     this.constructorOpts = opts
-    FakeBrowserWindow.instances.push(this)
+    FakeView.instances.push(this)
   }
 
-  show (): void { this.visible = true }
-  isVisible (): boolean { return this.visible }
-  isDestroyed (): boolean { return this.destroyed }
-  // getAllWindows() (api/common.ts) includes the popup's OWN
-  // BrowserWindow -- maybeClose's own `getAllWindows().some(isFocused)`
-  // needs this to exist on every entry, not just the ones a test cares
-  // about. Never focused: nothing in this suite exercises a popup that
-  // reports itself focused via this path.
-  isFocused (): boolean { return false }
-  destroy (): void { if (this.destroyed) return; this.destroyed = true; this.emit('closed') }
+  setBackgroundColor (color: string): void { this.background = color }
+  setBorderRadius (radius: number): void { this.radius = radius }
   getBounds (): typeof this.bounds { return this.bounds }
-  setBounds (b: Partial<typeof this.bounds>): void { this.bounds = { ...this.bounds, ...b } }
-
-  static getAllWindows (): FakeBrowserWindow[] { return FakeBrowserWindow.instances.filter((w) => !w.isDestroyed()) }
-  static reset (): void { FakeBrowserWindow.instances = [] }
+  setBounds (bounds: Partial<typeof this.bounds>): void { this.bounds = { ...this.bounds, ...bounds } }
 }
 
 let baseWindows: EventEmitter[] = []
 const nativeThemeStub = { shouldUseDarkColors: false }
 
 vi.mock('electron', () => ({
-  BrowserWindow: FakeBrowserWindow,
+  WebContentsView: FakeView,
   BaseWindow: { getAllWindows: () => baseWindows },
+  BrowserWindow: { getAllWindows: () => [] },
   nativeTheme: nativeThemeStub
 }))
 
-const { PopupView } = await import('../../../../vendor/electron-chrome-extensions/src/browser/popup.js')
+const { PopupView, setPopupHost, popupParentOf } = await import('../../../../vendor/electron-chrome-extensions/src/browser/popup.js')
 
 interface FakeParent extends EventEmitter {
-  getBounds: () => { x: number, y: number, width: number, height: number }
-  getContentBounds: () => { x: number, y: number, width: number, height: number }
   isDestroyed: () => boolean
   contentView: { children: unknown[] }
 }
 
-/** A minimal fake parent BaseWindow: an EventEmitter with the handful of
- * BaseWindow members popup.ts actually calls (`getBounds`/`getContentBounds`
- * for updatePosition, `contentView.children` for closeOnNextAppFocus's own
- * collectWebContents, `isDestroyed` for destroy()'s own cleanup). */
 function fakeParent (): FakeParent {
   const parent = new EventEmitter() as FakeParent
-  parent.getBounds = () => ({ x: 0, y: 0, width: 800, height: 600 })
-  parent.getContentBounds = () => ({ x: 0, y: 0, width: 800, height: 564 })
   parent.isDestroyed = () => false
   parent.contentView = { children: [] }
   return parent
 }
+
+const host = { mount: vi.fn(), unmount: vi.fn(), place: vi.fn() }
 
 function makePopup (parent: FakeParent): InstanceType<typeof PopupView> {
   return new PopupView({
@@ -102,212 +81,278 @@ function makePopup (parent: FakeParent): InstanceType<typeof PopupView> {
   })
 }
 
-function browserWindowOf (popup: InstanceType<typeof PopupView>): FakeBrowserWindow {
-  return popup.browserWindow as unknown as FakeBrowserWindow
-}
+const pageOf = (popup: InstanceType<typeof PopupView>): FakeWebContents => popup.webContents as unknown as FakeWebContents
+const macrotask = async (): Promise<void> => await new Promise((resolve) => setImmediate(resolve))
 
 beforeEach(() => {
-  FakeBrowserWindow.reset()
+  FakeView.instances = []
   baseWindows = []
   nativeThemeStub.shouldUseDarkColors = false
+  host.mount.mockReset()
+  host.unmount.mockReset()
+  host.place.mockReset()
+  setPopupHost(host)
 })
 
-describe('PopupView: page dialogs (UPSTREAM.md patch 62)', () => {
-  it('is built with dialogs disabled, so alert, confirm and prompt never open a native box', () => {
-    const popup = makePopup(fakeParent())
-    expect(browserWindowOf(popup).constructorOpts.webPreferences?.disableDialogs).toBe(true)
-  })
-})
-
-describe('PopupView: closing on parent window events (UPSTREAM.md patch 34)', () => {
-  it('closes when the parent window moves', () => {
-    const parent = fakeParent()
-    const popup = makePopup(parent)
-    parent.emit('move')
-    expect(popup.isDestroyed()).toBe(true)
-  })
-
-  it('closes when the parent window resizes', () => {
-    const parent = fakeParent()
-    const popup = makePopup(parent)
-    parent.emit('resize')
-    expect(popup.isDestroyed()).toBe(true)
-  })
-
-  it('closes when the parent window minimises', () => {
-    const parent = fakeParent()
-    const popup = makePopup(parent)
-    parent.emit('minimize')
-    expect(popup.isDestroyed()).toBe(true)
-  })
-
-  it('closes on Escape', () => {
-    const parent = fakeParent()
-    const popup = makePopup(parent)
-    browserWindowOf(popup).webContents.emit('before-input-event', {}, { type: 'keyDown', key: 'Escape' })
-    expect(popup.isDestroyed()).toBe(true)
-  })
-
-  it('does not close on a non-Escape key', () => {
-    const parent = fakeParent()
-    const popup = makePopup(parent)
-    browserWindowOf(popup).webContents.emit('before-input-event', {}, { type: 'keyDown', key: 'a' })
-    expect(popup.isDestroyed()).toBe(false)
-  })
-
-  it('stops listening on the parent once destroyed, leaking nothing for the next popup', () => {
-    const parent = fakeParent()
-    const popup = makePopup(parent)
-    popup.destroy()
-    expect(parent.listenerCount('move')).toBe(0)
-    expect(parent.listenerCount('resize')).toBe(0)
-    expect(parent.listenerCount('minimize')).toBe(0)
-  })
-})
-
-describe('PopupView: closing on the next focus after an inconclusive blur (UPSTREAM.md patch 34)', () => {
-  /** The shell's own top-level window, already alive (as it always is on a
-   * real desktop, just not focused) before the popup's own blur fires --
-   * closeOnNextAppFocus arms listeners on the windows getAllWindows()
-   * already knows about at arm-time, the same as a real shell window that
-   * exists continuously and only changes focus state. */
-  function fakeShell (): EventEmitter & { isFocused: () => boolean, focused: boolean } {
-    const shell = new EventEmitter() as EventEmitter & { isFocused: () => boolean, focused: boolean }
-    shell.focused = false
-    shell.isFocused = () => shell.focused
-    return shell
-  }
-
-  it('arms on blur when no app window is focused, and closes on the next focus of another window', () => {
-    const parent = fakeParent()
-    const shell = fakeShell()
-    baseWindows = [shell]
-    const popup = makePopup(parent)
-
-    // Nothing reports focused -- the same state an X11 focus-transfer race
-    // (or a genuine login-form departure) produces.
-    browserWindowOf(popup).emit('blur')
-    expect(popup.isDestroyed()).toBe(false)
-
-    // The shell later reports focused -- the transfer completing late.
-    shell.focused = true
-    shell.emit('focus')
-
-    expect(popup.isDestroyed()).toBe(true)
-  })
-
-  it('closes on focus reaching a webContents inside the parent, even if the parent BaseWindow itself never re-fires focus', () => {
-    const parent = fakeParent()
-    const tabWebContents = new EventEmitter()
-    parent.contentView.children = [{ webContents: tabWebContents, children: [] }]
-    const popup = makePopup(parent)
-
-    browserWindowOf(popup).emit('blur')
-    expect(popup.isDestroyed()).toBe(false)
-
-    tabWebContents.emit('focus')
-
-    expect(popup.isDestroyed()).toBe(true)
-  })
-
-  it('never throws when a focus arrives even later, after the popup already closed', () => {
-    const parent = fakeParent()
-    const shell = fakeShell()
-    baseWindows = [shell]
-    const popup = makePopup(parent)
-
-    browserWindowOf(popup).emit('blur')
-    shell.focused = true
-    shell.emit('focus')
-    expect(popup.isDestroyed()).toBe(true)
-
-    // A second, later focus on the same window must not throw -- proves
-    // the one-shot listener was actually removed, not just harmless to
-    // fire twice (destroy() itself is already idempotent either way).
-    expect(() => { shell.emit('focus') }).not.toThrow()
-  })
-})
-
-describe('PopupView: never becomes permanently invisible (UPSTREAM.md patch 35)', () => {
-  it('shows itself with a default size if preferred-size-changed never arrives in time', async () => {
-    vi.useFakeTimers()
-    try {
-      const parent = fakeParent()
-      const popup = makePopup(parent)
-      await popup.whenReady()
-      const browserWindow = browserWindowOf(popup)
-      expect(browserWindow.isVisible()).toBe(false)
-
-      await vi.advanceTimersByTimeAsync(600)
-
-      expect(browserWindow.isVisible()).toBe(true)
-      expect(browserWindow.getBounds()).toEqual(expect.objectContaining({ width: 320, height: 400 }))
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('positions itself against the anchor rect before showing, not just at its default size (regression: was left centred)', async () => {
-    vi.useFakeTimers()
-    try {
-      const parent = fakeParent()
-      const popup = makePopup(parent)
-      await popup.whenReady()
-
-      await vi.advanceTimersByTimeAsync(600)
-
-      // fakeParent(): getBounds {x:0,y:0,w:800,h:600}, getContentBounds
-      // {x:0,y:0,w:800,h:564} -> a 36px native titlebar. makePopup()'s own
-      // anchorRect is {x:0,y:0,w:10,h:10}. Had armVisibilityFallback never
-      // called updatePosition(), this would still read {x:0,y:0} -- the
-      // BrowserWindow's own constructor default with no explicit position,
-      // which reads as "centred on screen" on a real desktop, not "wrong
-      // by a small amount": nothing here ever calls setPosition at all
-      // without this fix.
-      expect(browserWindowOf(popup).getBounds()).toEqual({
-        x: 0 + 0 + 10 - 320, // winBounds.x + anchorRect.x + anchorRect.width - viewBounds.width
-        y: 0 + 36 + 0 + 10 + 5, // winBounds.y + titlebar + anchorRect.y + anchorRect.height + POSITION_PADDING
-        width: 320,
-        height: 400
-      })
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('does not re-show or resize once preferred-size-changed already did', async () => {
-    vi.useFakeTimers()
-    try {
-      const parent = fakeParent()
-      const popup = makePopup(parent)
-      await popup.whenReady()
-      const browserWindow = browserWindowOf(popup)
-
-      browserWindow.webContents.emit('preferred-size-changed', {}, { width: 111, height: 222 })
-      expect(browserWindow.isVisible()).toBe(true)
-      expect(browserWindow.getBounds()).toEqual(expect.objectContaining({ width: 111, height: 222 }))
-
-      await vi.advanceTimersByTimeAsync(600)
-
-      // The fallback timer still fires, but `hidden` is already false, so
-      // it must not have overwritten the real preferred size.
-      expect(browserWindow.getBounds()).toEqual(expect.objectContaining({ width: 111, height: 222 }))
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-})
-
-describe('PopupView: background colour follows the OS theme (UPSTREAM.md patch 35)', () => {
-  it('is the light colour in light mode', () => {
-    nativeThemeStub.shouldUseDarkColors = false
+describe('PopupView: a view in the window, mounted by the host', () => {
+  it('is built with dialogs disabled, so alert, confirm and prompt never open a native box (UPSTREAM.md patch 62)', () => {
     makePopup(fakeParent())
-    expect(FakeBrowserWindow.instances[0]?.constructorOpts.backgroundColor).toBe('#ffffff')
+    expect(FakeView.instances[0]?.constructorOpts.webPreferences?.disableDialogs).toBe(true)
   })
 
-  it('is the dark colour in dark mode', () => {
+  it('mounts once the page has loaded, at its smallest size, placed before it is mounted, and gives it the keyboard', async () => {
+    const parent = fakeParent()
+    const order: string[] = []
+    host.place.mockImplementation(() => { order.push('place') })
+    host.mount.mockImplementation(() => { order.push('mount') })
+    const popup = makePopup(parent)
+    expect(host.mount).not.toHaveBeenCalled()
+    await popup.whenReady()
+    expect(host.mount).toHaveBeenCalledTimes(1)
+    expect(host.mount).toHaveBeenCalledWith(parent, popup.view)
+    expect(order).toEqual(['place', 'mount'])
+    expect(host.place).toHaveBeenCalledWith(parent, popup.view, expect.objectContaining({ size: { width: 25, height: 25 } }))
+    expect(pageOf(popup).focused).toBe(true)
+  })
+
+  it('does not mount again when the page reports its size', async () => {
+    const popup = makePopup(fakeParent())
+    await popup.whenReady()
+    pageOf(popup).emit('preferred-size-changed', {}, { width: 111, height: 222 })
+    pageOf(popup).emit('preferred-size-changed', {}, { width: 130, height: 240 })
+    expect(host.mount).toHaveBeenCalledTimes(1)
+  })
+
+  it('places again at every new size, keeping the anchor it opened from', async () => {
+    const popup = makePopup(fakeParent())
+    await popup.whenReady()
+    pageOf(popup).emit('preferred-size-changed', {}, { width: 111, height: 222 })
+    pageOf(popup).emit('preferred-size-changed', {}, { width: 300, height: 400 })
+    expect(host.place).toHaveBeenLastCalledWith(expect.anything(), popup.view, {
+      anchorRect: { x: 0, y: 0, width: 10, height: 10 }, alignment: undefined, size: { width: 300, height: 400 }
+    })
+  })
+
+  it('records the window its page hangs under, for chrome.tabs', () => {
+    const parent = fakeParent()
+    const popup = makePopup(parent)
+    expect(popupParentOf(popup.webContents)).toBe(parent)
+  })
+
+  it('paints the theme\'s colour and has rounded corners before its page has a pixel (UPSTREAM.md patch 35)', () => {
     nativeThemeStub.shouldUseDarkColors = true
     makePopup(fakeParent())
-    expect(FakeBrowserWindow.instances[0]?.constructorOpts.backgroundColor).toBe('#202124')
+    expect(FakeView.instances[0]?.background).toBe('#202124')
+    expect(FakeView.instances[0]?.radius).toBeGreaterThan(0)
+    nativeThemeStub.shouldUseDarkColors = false
+    makePopup(fakeParent())
+    expect(FakeView.instances[1]?.background).toBe('#ffffff')
+  })
+})
+
+describe('PopupView: never stays at its smallest size (UPSTREAM.md patches 35 and 68)', () => {
+  it('measures its page when preferred-size-changed never arrives in time', async () => {
+    vi.useFakeTimers()
+    try {
+      const popup = makePopup(fakeParent())
+      pageOf(popup).measured = { width: 210, height: 130 }
+      await popup.whenReady()
+
+      await vi.advanceTimersByTimeAsync(600)
+
+      expect(host.mount).toHaveBeenCalledTimes(1)
+      expect(host.place).toHaveBeenLastCalledWith(expect.anything(), popup.view, expect.objectContaining({ size: { width: 210, height: 130 } }))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('takes a default size when the page cannot be measured', async () => {
+    vi.useFakeTimers()
+    try {
+      const popup = makePopup(fakeParent())
+      await popup.whenReady()
+
+      await vi.advanceTimersByTimeAsync(600)
+
+      expect(host.place).toHaveBeenLastCalledWith(expect.anything(), popup.view, expect.objectContaining({ size: { width: 320, height: 400 } }))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not resize once preferred-size-changed already did', async () => {
+    vi.useFakeTimers()
+    try {
+      const popup = makePopup(fakeParent())
+      pageOf(popup).measured = { width: 210, height: 130 }
+      await popup.whenReady()
+      pageOf(popup).emit('preferred-size-changed', {}, { width: 111, height: 222 })
+
+      await vi.advanceTimersByTimeAsync(600)
+
+      expect(host.mount).toHaveBeenCalledTimes(1)
+      expect(host.place).toHaveBeenLastCalledWith(expect.anything(), popup.view, expect.objectContaining({ size: { width: 111, height: 222 } }))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('PopupView: closing (UPSTREAM.md patches 34 and 68)', () => {
+  async function open (): Promise<{ parent: FakeParent, popup: InstanceType<typeof PopupView> }> {
+    const parent = fakeParent()
+    const popup = makePopup(parent)
+    await popup.whenReady()
+    pageOf(popup).emit('preferred-size-changed', {}, { width: 111, height: 222 })
+    return { parent, popup }
+  }
+
+  it.each(['move', 'resize', 'minimize', 'closed'])('closes a macrotask after the parent window emits %s', async (name) => {
+    const { parent, popup } = await open()
+    parent.emit(name)
+    expect(popup.isDestroyed()).toBe(false)
+    await macrotask()
+    expect(popup.isDestroyed()).toBe(true)
+  })
+
+  it('closes a macrotask after Escape, not on another key', async () => {
+    const { popup } = await open()
+    pageOf(popup).emit('before-input-event', {}, { type: 'keyDown', key: 'a' })
+    await macrotask()
+    expect(popup.isDestroyed()).toBe(false)
+    pageOf(popup).emit('before-input-event', {}, { type: 'keyDown', key: 'Escape' })
+    await macrotask()
+    expect(popup.isDestroyed()).toBe(true)
+  })
+
+  it('closes a macrotask after its page blurs while an app window is focused', async () => {
+    const { popup } = await open()
+    const shell = Object.assign(new EventEmitter(), { isFocused: () => true })
+    baseWindows = [shell]
+    pageOf(popup).emit('blur')
+    expect(popup.isDestroyed()).toBe(false)
+    await macrotask()
+    expect(popup.isDestroyed()).toBe(true)
+  })
+
+  it('stays open when the page blurs while the host says it is moving focus for the popup\'s own extension', async () => {
+    const { popup } = await open()
+    const shell = Object.assign(new EventEmitter(), { isFocused: () => true })
+    baseWindows = [shell]
+    let keep = true
+    setPopupHost({ ...host, keepOpenOnBlur: () => keep })
+    const other = makePopup(fakeParent())
+    await other.whenReady()
+    pageOf(other).emit('blur')
+    await macrotask()
+    expect(other.isDestroyed()).toBe(false)
+    keep = false
+    pageOf(other).emit('blur')
+    await macrotask()
+    expect(other.isDestroyed()).toBe(true)
+    expect(popup.isDestroyed()).toBe(false)
+  })
+
+  it('closes when its page goes away', async () => {
+    const { popup } = await open()
+    pageOf(popup).emit('destroyed')
+    await macrotask()
+    expect(popup.isDestroyed()).toBe(true)
+  })
+
+  it('unmounts once and closes the page, however many triggers fire', async () => {
+    const { parent, popup } = await open()
+    parent.emit('resize')
+    pageOf(popup).emit('before-input-event', {}, { type: 'keyDown', key: 'Escape' })
+    popup.destroy()
+    await macrotask()
+    expect(host.unmount).toHaveBeenCalledTimes(1)
+    expect(host.unmount).toHaveBeenCalledWith(parent, popup.view)
+    expect(pageOf(popup).closed).toBe(1)
+  })
+
+  it('unmounts nothing if it closed before it was mounted, and still closes the page', async () => {
+    const popup = makePopup(fakeParent())
+    popup.destroy()
+    await popup.whenReady()
+    expect(host.unmount).not.toHaveBeenCalled()
+    expect(pageOf(popup).closed).toBe(1)
+  })
+
+  it('closes DevTools first, and survives a host that cannot unmount', async () => {
+    const { popup } = await open()
+    pageOf(popup).devTools = true
+    host.unmount.mockImplementation(() => { throw new Error('window gone') })
+    expect(() => { popup.destroy() }).not.toThrow()
+    expect(pageOf(popup).devTools).toBe(false)
+  })
+
+  it('keeps open while DevTools is open', async () => {
+    const { popup } = await open()
+    pageOf(popup).devTools = true
+    pageOf(popup).emit('blur')
+    await macrotask()
+    expect(popup.isDestroyed()).toBe(false)
+  })
+
+  it('stops listening on the parent once destroyed, leaking nothing for the next popup', async () => {
+    const { parent, popup } = await open()
+    popup.destroy()
+    for (const name of ['move', 'resize', 'minimize', 'closed']) expect(parent.listenerCount(name)).toBe(0)
+  })
+})
+
+describe('PopupView: after a blur that may have left the app (UPSTREAM.md patch 34)', () => {
+  /** The shell's own window, alive and not focused: neither it nor the popup reports focus, as in a
+   * focus hand-over that is not atomic, or a trip to a password manager outside the app. */
+  function fakeShell (): EventEmitter & { isFocused: () => boolean } {
+    return Object.assign(new EventEmitter(), { isFocused: () => false })
+  }
+
+  async function blurred (): Promise<{ popup: InstanceType<typeof PopupView>, shell: ReturnType<typeof fakeShell>, tab: EventEmitter }> {
+    const parent = fakeParent()
+    const tab = new EventEmitter()
+    parent.contentView.children = [{ webContents: tab, children: [] }]
+    const shell = fakeShell()
+    baseWindows = [shell]
+    const popup = makePopup(parent)
+    await popup.whenReady()
+    pageOf(popup).emit('preferred-size-changed', {}, { width: 111, height: 222 })
+    pageOf(popup).focused = false
+    pageOf(popup).emit('blur')
+    await macrotask()
+    expect(popup.isDestroyed()).toBe(false)
+    return { popup, shell, tab }
+  }
+
+  it('closes when focus lands elsewhere in the app a macrotask later', async () => {
+    const { popup, shell } = await blurred()
+    shell.emit('focus')
+    await macrotask()
+    expect(popup.isDestroyed()).toBe(true)
+  })
+
+  it('closes when focus reaches a tab of the parent that the window itself never re-announced', async () => {
+    const { popup, tab } = await blurred()
+    tab.emit('focus')
+    await macrotask()
+    expect(popup.isDestroyed()).toBe(true)
+  })
+
+  it('stays open when focus came back to the popup\'s own page: the person returned to it', async () => {
+    const { popup, shell } = await blurred()
+    shell.emit('focus')
+    pageOf(popup).focused = true
+    await macrotask()
+    expect(popup.isDestroyed()).toBe(false)
+  })
+
+  it('never throws when a focus arrives after the popup already closed', async () => {
+    const { popup, shell } = await blurred()
+    shell.emit('focus')
+    await macrotask()
+    expect(popup.isDestroyed()).toBe(true)
+    expect(() => { shell.emit('focus') }).not.toThrow()
   })
 })

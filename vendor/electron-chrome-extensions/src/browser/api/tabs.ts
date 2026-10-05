@@ -9,6 +9,7 @@ import {
 } from './common'
 import type { TabContents } from './common'
 import { WindowsAPI } from './windows'
+import { popupParentOf } from '../popup'
 import debug from 'debug'
 
 const d = debug('electron-chrome-extensions:tabs')
@@ -229,6 +230,7 @@ export class TabsAPI {
     if (event.type === 'frame') {
       const own =
         this.ctx.store.tabToWindow.get(event.sender) ??
+        popupParentOf(event.sender) ??
         BrowserWindow.fromWebContents(event.sender)?.getParentWindow()
       if (own && !own.isDestroyed()) return own.id
     }
