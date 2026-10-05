@@ -23,6 +23,8 @@ export interface NavigationEnv {
   /** A getter: the broker may still be undefined when the tab collection is made. */
   readonly broker: () => Broker | undefined
   readonly searchUrl: ((query: string) => string) | undefined
+  /** The `.eth` address a gateway address opens as, when it does (./eth-gateway-redirect.ts). Absent in tests. */
+  readonly gatewayTarget?: (url: string) => string | undefined
 }
 
 /** Asks a tab's page to leave HTML fullscreen. In an isolated world, where
@@ -109,5 +111,5 @@ export function reloadTab (env: NavigationEnv, id: string): void {
 function resolveTarget (env: NavigationEnv, rawInput: string): string {
   const result = parseOmniboxInput(rawInput, isDevEthName, env.searchUrl)
   if (result.kind === 'reject') return BLANK_URL
-  return result.url
+  return env.gatewayTarget?.(result.url) ?? result.url
 }

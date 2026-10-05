@@ -23,6 +23,7 @@ import { closeParkedViews } from './tab-parking.js'
 import { buildTabState } from './tab-state.js'
 import type { TabStateEnv } from './tab-state.js'
 import { openTypedViewSource } from '../page-tools/view-source.js'
+import { gatewayRedirectFor } from './eth-gateway-redirect.js'
 import { exitHtmlFullscreen, goBack, goForward, navigateTab, reloadTab } from './tab-navigation.js'
 import type { NavigationEnv } from './tab-navigation.js'
 import { TabOpener } from './tab-open.js'
@@ -160,7 +161,8 @@ export class TabManager {
       openInternal: (page, path) => { this.openInternal(page, path) },
       viewSource: (url) => openTypedViewSource(this, url),
       broker: () => ctx.broker,
-      searchUrl: shell?.searchUrl
+      searchUrl: shell?.searchUrl,
+      gatewayTarget: (url) => gatewayRedirectFor(shell?.services?.settings, url)
     }
     this.stateEnv = { dashboardUrl, partnerOf: (id) => this.splits.groups.partnerOf(id) }
   }

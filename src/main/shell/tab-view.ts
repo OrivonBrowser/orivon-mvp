@@ -24,6 +24,7 @@ import { canViewSource } from '../page-tools/view-source.js'
 import { sitePopups } from '../site-settings/site-popups.js'
 import { refuseHeldNavigation, refuseHeldWindow } from './navigation-hold.js'
 import { loadServedAddresses } from './served-address.js'
+import { gatewayRedirectFor } from './eth-gateway-redirect.js'
 import { releaseOriginDocument, trackDocumentOrigin } from './tab-origin-liveness.js'
 import { watchLoadFailure } from './load-failure.js'
 import { trackInflightUrl } from './inflight-url.js'
@@ -288,7 +289,15 @@ export function wireView (id: string, record: TabRecord): void {
   wc.on('did-start-navigation', (details) => { if (details.isMainFrame && !details.isSameDocument) forgetNavigation(wc) })
   watchPageDialogs(wc, shown)
   refuseHeldNavigation(wc)
-  loadServedAddresses(wc, () => record.internalPage !== null)
+  loadServedAddresses(wc, () => record.internalPage !== null, {
+    target: (url) => gatewayRedirectFor(record.host.services?.settings, url),
+    // The address bar's own test for a load: a link inside a cache-served app's tab lands on the default session.
+    open: (url) => {
+      const swap = partitionChanged(url, record.partition)
+      if (swap !== undefined || appTabFlagChanged(url, view, record.host.broker)) repartitionView(id, record, url, swap !== undefined ? swap.to : record.partition)
+      else void wc.loadURL(url)
+    }
+  })
   wc.on('context-menu', (_event, params) => {
     const { window } = record.host
     if (window === undefined) return
