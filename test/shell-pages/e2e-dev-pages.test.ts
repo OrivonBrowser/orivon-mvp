@@ -11,11 +11,11 @@ import { createServer as createNetServer, type AddressInfo } from 'node:net'
 import type { ElectronApplication, Page } from 'playwright'
 import { createServer, type ViteDevServer } from 'vite'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron, launchElectron } from './support/launch-electron.mjs'
-import { HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
-import { rendererAlias, rendererHmr, rendererHost, rendererRoot } from '../electron.vite.config.js'
-import { INTERNAL_PAGES } from '../src/main/pages/internal-pages.js'
-import type { InternalPageId } from '../src/main/pages/internal-pages.js'
+import { assertNoElectronSurvivors, closeElectron, launchElectron } from '../support/launch-electron.mjs'
+import { HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { rendererAlias, rendererHmr, rendererHost, rendererRoot } from '../../electron.vite.config.js'
+import { INTERNAL_PAGES } from '../../src/main/pages/internal-pages.js'
+import type { InternalPageId } from '../../src/main/pages/internal-pages.js'
 
 const TEST_TIMEOUT_MS = 60_000
 
