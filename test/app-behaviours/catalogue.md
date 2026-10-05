@@ -94,6 +94,11 @@ Ports are named only where the compatibility pages already name them.
 | `webview-shows-local-pattern` | An app granted `web.embed` for a loopback pattern shows that page in a `<webview>` and talks to it | apps that serve their own UI | The Lounge | [`e2e-embed-local`](../capabilities/e2e-embed-local.test.ts) |
 | `webview-popup-reaches-the-app` | A window request or a download from a page shown in a `<webview>` reaches the app as one bubbling event, and nothing opens and no file is written until the app decides | apps that embed a site | The Lounge | [`e2e-embed-events`](../capabilities/e2e-embed-events.test.ts) |
 | `web-context-open-evaluate-close` | `orivon.web.openContext` opens a hidden page on a granted origin, `evaluate` runs in it, and `close` ends it | apps that need a site's own scripts | FreeTube | [`e2e-web-context`](../capabilities/e2e-web-context.test.ts) |
+| `app-media-declared-is-asked-once` | An app that declares `media.camera` or `media.microphone` is asked at its first `getUserMedia` for that kind, in the tab's own panel, and the page waits for the answer; on Allow it gets the stream and is not asked again, on Deny it gets `NotAllowedError` and is not asked again on that page load | apps with calls or recording | - | [`e2e-app-media`](e2e-app-media.test.ts) |
+| `app-media-undeclared-is-refused` | An app that does not declare `media.camera` or `media.microphone` is refused `getUserMedia` for it with `NotAllowedError` and no question | apps that run with less than they could ask for | - | [`e2e-app-media`](e2e-app-media.test.ts) |
+| `app-screen-declared-shows-the-picker` | An app that declares `media.screen` is asked at its first `getDisplayMedia`, in the tab's own panel; on Allow Orivon's picker opens and what the person chooses is what the app receives, with no second question on the next share | screen-sharing and recording apps | - | [`e2e-app-screen-share`](e2e-app-screen-share.test.ts) |
+| `app-screen-undeclared-is-refused` | An app that does not declare `media.screen` is refused `getDisplayMedia` with `NotAllowedError`, and neither a question nor the picker appears | apps that run with less than they could ask for | - | [`e2e-app-screen-share`](e2e-app-screen-share.test.ts) |
+| `electron-desktop-capturer-serves-the-picked-source` | The `electron` shim's `desktopCapturer.getSources` opens Orivon's picker and resolves the one source the person chose, with a one-frame `thumbnail`; the legacy `getUserMedia` call with `chromeMediaSource: 'desktop'` and that source's id returns that stream (video only) once, and any other `chromeMediaSource` id is refused with `NotAllowedError` | ported Electron apps that share a screen | - | [`e2e-app-screen-share`](e2e-app-screen-share.test.ts) |
 
 ## Names and addresses
 
@@ -121,8 +126,8 @@ has a line, so a capability cannot land without that decision.
 | `id` | not covered: no ported app uses `orivon.id` yet; `e2e-id-capability` proves the capability itself |
 | `web.context` | `web-context-open-evaluate-close` |
 | `web.embed` | `webview-shows-local-pattern`, `webview-popup-reaches-the-app` |
-| `media.camera` | not covered: a contract entry with no implementation behind it |
-| `media.microphone` | not covered: a contract entry with no implementation behind it |
-| `media.screen` | not covered: a contract entry with no implementation behind it |
+| `media.camera` | `app-media-declared-is-asked-once`, `app-media-undeclared-is-refused` |
+| `media.microphone` | `app-media-declared-is-asked-once`, `app-media-undeclared-is-refused` |
+| `media.screen` | `app-screen-declared-shows-the-picker`, `app-screen-undeclared-is-refused`, `electron-desktop-capturer-serves-the-picked-source` |
 | `clipboard.read` | not covered: a contract entry with no implementation behind it |
 | `secrets` | not covered: no spec drives `orivon.secrets` from an app's page |
