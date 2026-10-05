@@ -52,6 +52,8 @@ export interface InstallContext {
   readonly privateSession?: boolean
   /** Empties the loaded extension's chrome.storage; an uninstall runs it first (extension-data.ts). */
   readonly clearExtensionStorage?: (id: string) => Promise<void>
+  /** Closes every side panel the extension has open, so none writes storage back; an uninstall runs it before `clearExtensionStorage`. */
+  readonly closeSidePanels?: (id: string) => Promise<void>
 }
 
 export type InstallOutcome =
