@@ -90,7 +90,7 @@ export function createNameUpdates (
     if (content.cid === fromCid) {
       const previous = await loadCheckRecord(options.storage, origin)
       await saveCheckRecord(options.storage, origin, checkRecord(options.now(), previous?.validators, previous?.manifestLeaf ?? await pinnedManifestLeaf(options.storage, origin)))
-      return { outcome: 'up-to-date', canonicalOrigin: origin }
+      return { outcome: 'up-to-date', canonicalOrigin: origin, atPinnedContent: true }
     }
 
     const read = await fetchManifestAtRoot(options.fetch, options.resolve, origin, content.cid)

@@ -47,7 +47,7 @@ describe('createLoader: a bundle from a content-addressed origin', () => {
     const storage = memoryStorage()
     await loader(storage, recording('<!doctype html>v1').fetch, async () => CONTENT).load(ORIGIN, NO_GRANTS)
     const again = recording('<!doctype html>v1')
-    expect(await loader(storage, again.fetch, async () => CONTENT).load(ORIGIN, NO_GRANTS)).toEqual({ outcome: 'up-to-date', canonicalOrigin: ORIGIN })
+    expect(await loader(storage, again.fetch, async () => CONTENT).load(ORIGIN, NO_GRANTS)).toEqual({ outcome: 'up-to-date', canonicalOrigin: ORIGIN, atPinnedContent: true })
     expect(again.seen).toEqual([])
   })
 
@@ -70,7 +70,7 @@ describe('createLoader: a bundle from a content-addressed origin', () => {
     expect(pin?.content).toEqual(moved)
     expect(pin?.pinnedAt).toBe(pinnedAt)
     const third = recording('<!doctype html>v1')
-    expect(await loader(storage, third.fetch, async () => moved).load(ORIGIN, NO_GRANTS)).toEqual({ outcome: 'up-to-date', canonicalOrigin: ORIGIN })
+    expect(await loader(storage, third.fetch, async () => moved).load(ORIGIN, NO_GRANTS)).toEqual({ outcome: 'up-to-date', canonicalOrigin: ORIGIN, atPinnedContent: true })
     expect(third.seen).toEqual([])
   })
 

@@ -115,6 +115,8 @@ export interface LoadRejected {
 export interface LoadUpToDate {
   readonly outcome: 'up-to-date'
   readonly canonicalOrigin: string
+  /** Set when the name was read just now and leads to the content already pinned, so an offer made for it earlier no longer stands. */
+  readonly atPinnedContent?: true
 }
 
 /**

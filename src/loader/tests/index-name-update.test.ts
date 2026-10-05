@@ -62,8 +62,11 @@ describe('createLoader: an installed app at a name that moves', () => {
     const storage = memoryStorage()
     await installedV1(storage)
     const again = site('<!doctype html>v1')
-    expect(await loaderOver(storage, again.fetch, () => CONTENT).load(ORIGIN, NO_GRANTS)).toEqual({ outcome: 'up-to-date', canonicalOrigin: ORIGIN })
+    const loader = loaderOver(storage, again.fetch, () => CONTENT)
+    expect(await loader.load(ORIGIN, NO_GRANTS)).toEqual({ outcome: 'up-to-date', canonicalOrigin: ORIGIN, atPinnedContent: true })
     expect(again.seen).toEqual([])
+    // Not read again within the interval: nothing was learned, so an offer made earlier stands.
+    expect(await loader.load(ORIGIN, NO_GRANTS)).toEqual({ outcome: 'up-to-date', canonicalOrigin: ORIGIN })
   })
 
   it('checks again after 5 minutes although the hourly record is fresh, and a restart checks at once', async () => {

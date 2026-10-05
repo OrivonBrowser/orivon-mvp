@@ -172,7 +172,7 @@ export interface SubsystemContext {
 }
 
 export interface OpenTabs {
-  /** Every live tab, in any window, whose page is on `origin`. */
+  /** Every live tab, in any window, whose page is on `origin`, the ones the person can see first. */
   readonly on: (origin: string) => WebContents[]
   /** The origins that have a live tab, each once. */
   readonly origins: () => string[]

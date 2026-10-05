@@ -203,6 +203,49 @@ describe('an update that is not verified', () => {
   })
 })
 
+describe('a question left open', () => {
+  it('does not hold the origin\'s queue: the key\'s apply goes through while the question waits', async () => {
+    const r = rig({ verified: { yes: false } })
+    r.prompts.verified.mockImplementation(async () => await new Promise(() => {}))
+    void r.updates.offered(available())
+    await vi.waitFor(() => { expect(r.prompts.verified).toHaveBeenCalledTimes(1) })
+    expect(await r.updates.apply(APP, TO)).toEqual({ ok: true })
+    expect(r.reloaded).toEqual([APP])
+  })
+
+  it('is not asked a second time by a check that finds the same move meanwhile', async () => {
+    const r = rig()
+    r.prompts.verified.mockImplementation(async () => await new Promise(() => {}))
+    void r.updates.offered(available())
+    await vi.waitFor(() => { expect(r.prompts.verified).toHaveBeenCalledTimes(1) })
+    await r.updates.offered(available())
+    expect(r.prompts.verified).toHaveBeenCalledTimes(1)
+  })
+
+  it('may be answered Yes while the task that started it still holds the queue', async () => {
+    const { outsideOriginQueue, withOriginQueue } = await import('../origin-queue.js')
+    const r = rig({ verified: { yes: true } })
+    let started: Promise<void> | undefined
+    await withOriginQueue(APP, async () => { started = outsideOriginQueue(async () => { await r.updates.offered(available()) }) })
+    await started
+    expect(r.reloaded).toEqual([APP])
+  })
+})
+
+describe('a name that returns to the pinned content', () => {
+  it('withdraws the offer, and says so to the key', async () => {
+    const r = rig()
+    await r.updates.offered(available())
+    expect(r.updates.pending(APP)).toBeDefined()
+    const before = r.changes.length
+    r.updates.withdraw(APP)
+    expect(r.updates.pending(APP)).toBeUndefined()
+    expect(r.changes.length).toBe(before + 1)
+    r.updates.withdraw(APP)
+    expect(r.changes.length).toBe(before + 1)
+  })
+})
+
 describe('apply', () => {
   it('refuses a CID that is not the pending offer', async () => {
     const r = rig({ verdict: { status: 'off' }, force: true })

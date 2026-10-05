@@ -64,9 +64,16 @@ export interface AppUpdatesDeps {
 export type ApplyOutcome = { readonly ok: true } | { readonly ok: false, readonly reason: string }
 
 export interface AppUpdates {
-  /** The loader found a moved name: judge it, remember it, and ask unless the person has said not to. */
+  /**
+   * The loader found a moved name: judge it, remember it, and ask unless the person has said not to.
+   * Resolves when the question is answered. A Yes takes the origin's queue itself, so a caller that
+   * holds it must start this outside it (`outsideOriginQueue`): an unanswered question then never
+   * holds the queue, and `apply` from the key's popover is not stuck behind it.
+   */
   offered: (result: LoadUpdateAvailable, caller?: DialogCaller) => Promise<void>
   pending: (origin: string) => UpdateOffer | undefined
+  /** The name went back to the pinned content: drops the origin's offer. */
+  withdraw: (origin: string) => void
   /** Takes the offer for `origin`, which must name exactly `toCid`: verified at once, unverified only after the Trust & Force confirmation. */
   apply: (origin: string, toCid: string, caller?: DialogCaller) => Promise<ApplyOutcome>
   /** Calls back when an origin's pending offer appears, changes or goes; returns the unsubscribe. */
@@ -83,6 +90,7 @@ export function createAppUpdates (deps: AppUpdatesDeps): AppUpdates {
   const offers = new Map<string, UpdateOffer>()
   const listeners = new Set<(origin: string) => void>()
   const dismissed = new Set<string>()
+  const asking = new Set<string>()
   const sessionQuiet = new Map<string, UpdateOfferRecord>()
 
   const changed = (origin: string): void => { for (const listener of listeners) listener(origin) }
@@ -160,13 +168,24 @@ export function createAppUpdates (deps: AppUpdatesDeps): AppUpdates {
     const { origin } = offer
     offers.set(origin, offer)
     changed(origin)
-    if (dismissed.has(keyOf(origin, offer.toCid, offer.verified)) || await quietFor(origin, offer.toCid, offer.verified)) return
+    const key = keyOf(origin, offer.toCid, offer.verified)
+    // One question per offer: a check that finds the same move while it is still open adds nothing.
+    if (dismissed.has(key) || asking.has(key) || await quietFor(origin, offer.toCid, offer.verified)) return
+    asking.add(key)
+    try {
+      await ask(offer, caller)
+    } finally {
+      asking.delete(key)
+    }
+  }
 
+  async function ask (offer: UpdateOffer, caller: DialogCaller | undefined): Promise<void> {
+    const { origin } = offer
     if (offer.verified) {
       const answer = await deps.prompts.verified(offer, caller)
       if (answer === null) return
       if (answer.yes) {
-        await applyLocked(offer, caller)
+        await takeLocked(origin, offer.toCid, caller)
         return
       }
       dismissed.add(keyOf(origin, offer.toCid, true))
@@ -179,16 +198,24 @@ export function createAppUpdates (deps: AppUpdatesDeps): AppUpdates {
     if (answer.quiet) await keepQuiet(origin, { cid: offer.toCid, verified: false })
   }
 
+  /** Takes the offer in the origin's queue, but only if it is still the one pending. */
+  async function takeLocked (origin: string, toCid: string, caller: DialogCaller | undefined): Promise<ApplyOutcome> {
+    return await withOriginQueue(origin, async () => {
+      const offer = offers.get(origin)
+      if (offer === undefined || offer.toCid !== toCid) return { ok: false, reason: 'no such offer' } as const
+      return await applyLocked(offer, caller)
+    })
+  }
+
   return {
     offered,
     pending: (origin) => offers.get(origin),
+    withdraw: (origin) => {
+      if (offers.delete(origin)) changed(origin)
+    },
     apply: async (origin, toCid, caller) => {
       if (originFromUrl(origin) !== origin) return { ok: false, reason: 'no such offer' }
-      return await withOriginQueue(origin, async () => {
-        const offer = offers.get(origin)
-        if (offer === undefined || offer.toCid !== toCid) return { ok: false, reason: 'no such offer' } as const
-        return await applyLocked(offer, caller)
-      })
+      return await takeLocked(origin, toCid, caller)
     },
     onChange: (listener) => {
       listeners.add(listener)

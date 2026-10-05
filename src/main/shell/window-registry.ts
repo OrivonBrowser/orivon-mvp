@@ -59,13 +59,19 @@ export class WindowRegistry {
     return null
   }
 
-  /** Every live tab, in any window, whose page is on `origin`. Not `getAllWebContents`: that also holds guests and parked views. */
+  /**
+   * Every live tab, in any window, whose page is on `origin`, the ones the person can see first: the
+   * focused window's active tab, then another window's active tab, then the tabs behind them. Not
+   * `getAllWebContents`: that also holds guests and parked views.
+   */
   liveTabsOn (origin: string): WebContents[] {
-    const found: WebContents[] = []
-    for (const [contents] of this.liveTabs()) {
-      if (originFromUrl(contents.getURL()) === origin) found.push(contents)
+    const found: Array<{ contents: WebContents, rank: number }> = []
+    for (const [contents, entry] of this.liveTabs()) {
+      if (originFromUrl(contents.getURL()) !== origin) continue
+      const shown = entry.tabs.activeWebContents() === contents
+      found.push({ contents, rank: shown ? (entry.window.isFocused() ? 0 : 1) : 2 })
     }
-    return found
+    return found.sort((a, b) => a.rank - b.rank).map((tab) => tab.contents)
   }
 
   /** The origins that have a live tab, each once. */

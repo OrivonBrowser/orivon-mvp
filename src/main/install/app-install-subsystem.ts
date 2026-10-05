@@ -31,7 +31,7 @@ import { devModeEnabled } from '../dev/dev-mode.js'
 import { scoreLevelOverrideFor } from '../dev/score-levels.js'
 import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
-import { withOriginQueue } from './origin-queue.js'
+import { outsideOriginQueue, withOriginQueue } from './origin-queue.js'
 import { MAX_MANIFEST_BYTES } from '../../loader/manifest/manifest.js'
 
 const GRANT_MANIFEST_TIMEOUT_MS = 5_000
@@ -120,13 +120,21 @@ export const appInstallSubsystem: Subsystem = {
       persistQuiet: !ctx.privateSession
     })
     publishAppUpdates(ctx, updates)
-    const installDeps: UpdateOutcomeDeps = { ...outcomeDeps, offerUpdate: updates.offered }
+    const installDeps: UpdateOutcomeDeps = {
+      ...outcomeDeps,
+      // Started outside the origin's queue: an unanswered question must not hold the queue the key's Update button needs.
+      offerUpdate: async (result, caller) => {
+        void outsideOriginQueue(async () => await updates.offered(result, caller)).catch((error: unknown) => { console.error('[app-updates] the update question failed', error) })
+      },
+      withdrawUpdate: updates.withdraw
+    }
     // A name can move while a page stays open and no visit raises a hint for it: look again at every origin with an app tab open.
     startUpdateWatch({
       openOrigins: () => (ctx.openTabs?.origins() ?? []).filter((origin) => broker.app.isRegisteredSync(origin)),
       check: async (origin) => {
         // Only an app reached at a name moves without a visit; every other install is looked at on a visit.
         if ((await loader.pinFor(origin))?.content === undefined) return
+        // The tab the person sees, so the question can be answered where it appears.
         const tab = ctx.openTabs?.on(origin)[0]
         await installFromHint(installDeps, origin, origin, tab === undefined ? undefined : dialogCallerFor(tab, (sender) => ctx.windowForSender?.(sender as never)), true)
       },
