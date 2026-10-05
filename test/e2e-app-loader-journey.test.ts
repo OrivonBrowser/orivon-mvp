@@ -8,7 +8,7 @@
 //
 // THE HIGHEST-VALUE ASSERTION, BUILT AND VERIFIED FIRST: the out-of-manifest
 // refusal below, run through the real shim (src/shim/net/net.ts), not the
-// raw capability API test/e2e-capability-boundary.test.ts already covers.
+// raw capability API test/capabilities/e2e-capability-boundary.test.ts already covers.
 // Without it, nothing fails if capability enforcement degrades to allow-all.
 //
 // WHAT IS REAL HERE, AND WHAT IS SUBSTITUTED -- READ BEFORE TRUSTING THIS AS
@@ -32,7 +32,7 @@
 // refused, since this file has already registered the origin with an empty
 // grant the manifest would widen, and the granted round trip below is enabled
 // instead through src/main/dev-grant.ts's developer-only hook (the same
-// substitution test/e2e-capability-boundary.test.ts already makes, and for
+// substitution test/capabilities/e2e-capability-boundary.test.ts already makes, and for
 // the identical reason), acting on the SAME broker instance the real launched
 // shell's real IPC pipe uses. d-0025's own consent-gating logic is proven
 // separately, honestly, in ./e2e-install-consent-journey.test.ts, which
@@ -201,7 +201,7 @@ it(
         // exactly like no grant at all"). Registering here, with an EMPTY
         // pattern list, gets this fixture's tab flagged for its very
         // first navigation while keeping tcp.connect denied -- the same
-        // grant-before-navigate ordering test/e2e-fetch-routing.test.ts
+        // grant-before-navigate ordering test/capabilities/e2e-fetch-routing.test.ts
         // already uses, for the identical reason (a flag fixed at tab
         // construction cannot retroactively apply to an already-created
         // tab; src/preload/README.md's own Design notes name this as a

@@ -24,10 +24,10 @@ seconds, and a test would be paying rent to tell you something you already know.
 
 | Command | What |
 |---|---|
-| `npm run typecheck` | `tsc --noEmit`. Strict mode with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`, so the compiler is doing a lot of the work a test suite would elsewhere. `tsconfig.json`'s `include` covers `test/**/*.ts`, so this also type-checks `test/e2e-capability-boundary.test.ts`, and a type error there fails this always-on check even on a push that never runs the separate `e2e` job below |
+| `npm run typecheck` | `tsc --noEmit`. Strict mode with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`, so the compiler is doing a lot of the work a test suite would elsewhere. `tsconfig.json`'s `include` covers `test/**/*.ts`, so this also type-checks `test/capabilities/e2e-capability-boundary.test.ts`, and a type error there fails this always-on check even on a push that never runs the separate `e2e` job below |
 | `npm test` | Vitest. `environment: 'node'`, no DOM. Picks up `src/**/*.test.ts` and `scripts/**/*.test.ts` |
 | `npm run smoke` | Builds and drives the real shell with real clicks. The only check that proves a window appears |
-| `npm run test:e2e` | Builds, then runs [`test/e2e-capability-boundary.test.ts`](../../test/e2e-capability-boundary.test.ts) (TCP) and [`test/e2e-udp-capability.test.ts`](../../test/e2e-udp-capability.test.ts) (UDP) via [`test/vitest.e2e.config.ts`](../../test/vitest.e2e.config.ts); see §The end-to-end test below. Runs automatically in CI's `e2e` job on every push and pull request. Needs a display; on Linux with `xvfb-run` installed it uses a virtual one automatically (see [setup.md](setup.md) "The no-focus switch"), so a plain `npm run test:e2e` is safe with no wrapper, and on a platform with no virtual display it runs directly instead, without stealing your keyboard focus |
+| `npm run test:e2e` | Builds, then runs [`test/capabilities/e2e-capability-boundary.test.ts`](../../test/capabilities/e2e-capability-boundary.test.ts) (TCP) and [`test/capabilities/e2e-udp-capability.test.ts`](../../test/capabilities/e2e-udp-capability.test.ts) (UDP) via [`test/vitest.e2e.config.ts`](../../test/vitest.e2e.config.ts); see §The end-to-end test below. Runs automatically in CI's `e2e` job on every push and pull request. Needs a display; on Linux with `xvfb-run` installed it uses a virtual one automatically (see [setup.md](setup.md) "The no-focus switch"), so a plain `npm run test:e2e` is safe with no wrapper, and on a platform with no virtual display it runs directly instead, without stealing your keyboard focus |
 | `npm run qa` · `qa:visual` · `qa:report` | The QA specs and the inspection sheet; §Visual QA and failure evidence |
 
 Unit tests are **colocated** with what they test: `src/main/tests/omnibox.test.ts` sits beside
@@ -182,7 +182,7 @@ workers and `navigator.clipboard`. See [setup.md](setup.md) for what the two var
 [`test/e2e-install-consent-journey.test.ts`](../../test/e2e-install-consent-journey.test.ts).
 
 The raw capability API has its own boundary suites, one file per transport, because Rule 2 caps
-a test at 800 lines: [`e2e-capability-boundary.test.ts`](../../test/e2e-capability-boundary.test.ts)
+a test at 800 lines: [`e2e-capability-boundary.test.ts`](../../test/capabilities/e2e-capability-boundary.test.ts)
 (TCP: `net.connect`, byte round trip, out-of-pattern denial) and `e2e-udp-capability.test.ts`
 (UDP: `net.udpBind`, datagram round trip, out-of-pattern refusal, and the two properties UDP has
 that TCP does not: a refused datagram must not kill the socket, and revoking `udp.send` must stop
@@ -191,15 +191,15 @@ children, the address-bar navigation dance, the per-phase reporter) lives in
 [`test/support/e2e-helpers.ts`](../../test/support/e2e-helpers.ts).
 
 These suites cover what an app's page is served with, what it may put inside itself and what it may serve:
-[`e2e-embed.test.ts`](../../test/e2e-embed.test.ts) drives a `<webview>` under a `web.embed`
+[`e2e-embed.test.ts`](../../test/capabilities/e2e-embed.test.ts) drives a `<webview>` under a `web.embed`
 grant (the shown site loads in the app's own embed partition with no `orivon.*`, the app's
 script runs first under a strict page CSP and talks to the element both ways, a site outside
 the grant and a `file:` URL are refused, an ordinary tab's element is inert, and a revoke closes
-the page), [`e2e-embed-local.test.ts`](../../test/e2e-embed-local.test.ts) serves pages from the
+the page), [`e2e-embed-local.test.ts`](../../test/capabilities/e2e-embed-local.test.ts) serves pages from the
 app's own loopback listener under a local pattern (two labels are two origins, a cookie does not
 cross them, a page is refused while the app holds no listener or another program holds the
 port, a server the test holds on `[::1]` at the app's port is never the one shown, and a shown
-page closes with the app's listener), [`e2e-embed-events.test.ts`](../../test/e2e-embed-events.test.ts) drives a shown page's
+page closes with the app's listener), [`e2e-embed-events.test.ts`](../../test/capabilities/e2e-embed-events.test.ts) drives a shown page's
 popups, downloads and a link to an unknown scheme with real input and reads the events on the
 element, [`e2e-http-server.test.ts`](../../test/e2e-http-server.test.ts) runs `http.createServer`
 in a page and answers real requests from outside the browser,

@@ -50,7 +50,7 @@ decision logic.
 **A WebSocket is decided the same way, once, before its handshake.** It is routed when its URL,
 read as `http(s):`, is cross-origin, so a dev server's hot-reload socket on the page's own host
 and port stays native, where the dev CSP's `connect-src 'self'` admits it (measured in Electron
-44, `test/e2e-websocket-routing.test.ts`; one on another port is refused). On `'denied'` the
+44, `test/capabilities/e2e-websocket-routing.test.ts`; one on another port is refused). On `'denied'` the
 native `WebSocket` is built and its events re-dispatched; a CSP refusal there fires `error` and
 goes `CLOSED` with no `close` event (measured), passed on unchanged. A handshake redirect fails
 the connection, as in Chromium.

@@ -36,8 +36,8 @@ Ports are named only where the compatibility pages already name them.
 
 | Id | Behaviour | Apps that rely on it | Ports | Proven by |
 |---|---|---|---|---|
-| `routed-fetch-reaches-granted-hosts` | A page `fetch` or `XMLHttpRequest` to a granted cross-origin host succeeds with no CORS check and keeps the headers the app sets | apps with a REST or video API | FreeTube, ASGARDEX, Element | [`e2e-fetch-routing`](../e2e-fetch-routing.test.ts) |
-| `routed-fetch-delivers-whole-body` | A long response body arrives whole, across garbage collections, whether sent with a length or chunked | apps that stream large responses | FreeTube | [`e2e-routed-body-gc`](../e2e-routed-body-gc.test.ts) |
+| `routed-fetch-reaches-granted-hosts` | A page `fetch` or `XMLHttpRequest` to a granted cross-origin host succeeds with no CORS check and keeps the headers the app sets | apps with a REST or video API | FreeTube, ASGARDEX, Element | [`e2e-fetch-routing`](../capabilities/e2e-fetch-routing.test.ts) |
+| `routed-fetch-delivers-whole-body` | A long response body arrives whole, across garbage collections, whether sent with a length or chunked | apps that stream large responses | FreeTube | [`e2e-routed-body-gc`](../capabilities/e2e-routed-body-gc.test.ts) |
 | `routed-fetch-follows-redirects` | A routed `fetch` follows redirects to a granted host up to a bounded count | apps behind redirecting APIs | Element | not covered: unit tests only (`fetch-redirect.test.ts`); no spec drives a redirect through an app's `fetch` |
 | `routed-fetch-sends-formdata` | A routed `fetch` accepts a `FormData` body | apps that upload | Element | not covered: unit tests only (`fetch-flow.test.ts`); no spec posts a form through an app's `fetch` |
 | `tcp-connect-to-granted-loopback-port` | A connection to the exact loopback `host:port` the manifest names reaches it, and bytes come back | apps that talk to a local daemon | The Lounge | [`e2e-app-broker-rules`](./e2e-app-broker-rules.test.ts) |
@@ -80,7 +80,7 @@ Ports are named only where the compatibility pages already name them.
 | `sandboxed-frame-with-csp-runs-served-script` | A `sandbox="allow-scripts"` frame with a `csp` attribute runs a script the app serves | apps that evaluate code in a frame | FreeTube | not covered: only the real FreeTube spec drives it, and that needs a ports checkout; `e2e-served-csp` runs a `data:` frame without the `sandbox` and `csp` attributes |
 | `cross-origin-isolated-when-declared` | A page whose manifest asks for isolation reports `crossOriginIsolated`, and one that does not asks for it is not isolated | apps with threads or shared memory | The Lounge | [`e2e-wasm-threads`](../e2e-wasm-threads.test.ts) |
 | `page-globals-replaceable` | A global Orivon installs on a page can be assigned over, shadowed and deleted by the app | bundles that ponyfill `Buffer` or `fetch` | FreeTube, The Lounge | [`e2e-page-buffer`](../e2e-page-buffer.test.ts) |
-| `clipboard-write-without-prompt` | A page writes to the clipboard on a click with no question | apps with copy buttons | AirGap Vault | [`e2e-clipboard-write`](../e2e-clipboard-write.test.ts) |
+| `clipboard-write-without-prompt` | A page writes to the clipboard on a click with no question | apps with copy buttons | AirGap Vault | [`e2e-clipboard-write`](../capabilities/e2e-clipboard-write.test.ts) |
 | `page-declared-favicon-shows` | A page's `<link rel="icon">` shows in its tab, and comes back on a return after a blank page or a failed load | every app | all | [`e2e-tab-favicon`](../e2e-tab-favicon.test.ts) |
 | `target-blank-link-opens-tab` | A `target="_blank"` link opens a tab | apps with external links | ASGARDEX, The Lounge | [`e2e-link-open`](../e2e-link-open.test.ts) |
 
@@ -91,9 +91,9 @@ Ports are named only where the compatibility pages already name them.
 | `fork-runs-module-in-worker` | `child_process.fork` of a bundled module runs it in a Worker with its own `fs`, and its output and exit come back | ported Node servers | The Lounge | [`e2e-child-process`](../e2e-child-process.test.ts) |
 | `forked-child-ends-with-last-page` | A forked child outlives the tab that started it and ends when the app's last page closes | ported Node servers | The Lounge | [`e2e-child-host`](../e2e-child-host.test.ts) |
 | `node-sqlite-in-worker` | `node:sqlite` in a forked child opens a real database file in the app's files | apps with an embedded database | The Lounge | [`e2e-sqlite`](../e2e-sqlite.test.ts) |
-| `webview-shows-local-pattern` | An app granted `web.embed` for a loopback pattern shows that page in a `<webview>` and talks to it | apps that serve their own UI | The Lounge | [`e2e-embed-local`](../e2e-embed-local.test.ts) |
-| `webview-popup-reaches-the-app` | A window request or a download from a page shown in a `<webview>` reaches the app as one bubbling event, and nothing opens and no file is written until the app decides | apps that embed a site | The Lounge | [`e2e-embed-events`](../e2e-embed-events.test.ts) |
-| `web-context-open-evaluate-close` | `orivon.web.openContext` opens a hidden page on a granted origin, `evaluate` runs in it, and `close` ends it | apps that need a site's own scripts | FreeTube | [`e2e-web-context`](../e2e-web-context.test.ts) |
+| `webview-shows-local-pattern` | An app granted `web.embed` for a loopback pattern shows that page in a `<webview>` and talks to it | apps that serve their own UI | The Lounge | [`e2e-embed-local`](../capabilities/e2e-embed-local.test.ts) |
+| `webview-popup-reaches-the-app` | A window request or a download from a page shown in a `<webview>` reaches the app as one bubbling event, and nothing opens and no file is written until the app decides | apps that embed a site | The Lounge | [`e2e-embed-events`](../capabilities/e2e-embed-events.test.ts) |
+| `web-context-open-evaluate-close` | `orivon.web.openContext` opens a hidden page on a granted origin, `evaluate` runs in it, and `close` ends it | apps that need a site's own scripts | FreeTube | [`e2e-web-context`](../capabilities/e2e-web-context.test.ts) |
 
 ## Names and addresses
 

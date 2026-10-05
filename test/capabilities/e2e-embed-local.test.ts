@@ -10,17 +10,17 @@
 // are used by no other e2e file.
 //
 // Run with `npm run test:e2e`, or directly:
-//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/e2e-embed-local.test.ts
+//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/capabilities/e2e-embed-local.test.ts
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { createServer as createHttpServer } from 'node:http'
 import type { Server as HttpServer } from 'node:http'
 import { createServer as createTcpServer } from 'node:net'
 import type { Server as TcpServer } from 'node:net'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { HERMETIC_RESOLVER } from './support/smoke-helpers.mjs'
-import { asPage, closeElectronApp, navigateToFixture, runPhase, waitForTcpReady } from './support/e2e-helpers.js'
-import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
-import type { Grant, Manifest } from '../src/contracts/index.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { HERMETIC_RESOLVER } from '../support/smoke-helpers.mjs'
+import { asPage, closeElectronApp, navigateToFixture, runPhase, waitForTcpReady } from '../support/e2e-helpers.js'
+import type { DevGrantRequest } from '../../src/main/dev/dev-grant.js'
+import type { Grant, Manifest } from '../../src/contracts/index.js'
 
 const HOST = '127.0.0.1'
 const APP_PORT = 9171

@@ -77,7 +77,7 @@ import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { assertNoElectronSurvivors, DEFAULT_ACTION_TIMEOUT_MS, launchElectron } from './support/launch-electron.mjs'
+import { assertNoElectronSurvivors, DEFAULT_ACTION_TIMEOUT_MS, launchElectron } from '../support/launch-electron.mjs'
 import {
   evaluateRetrying,
   findChrome,
@@ -86,22 +86,22 @@ import {
   WAIT_TIMEOUT_MS,
   waitFor,
   waitForTab
-} from './support/smoke-helpers.mjs'
+} from '../support/smoke-helpers.mjs'
 import {
   ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, asPage, clickAddressBarRetrying, closeElectronApp, forwardOutput,
   killChild, navigateToFixture, runPhase, waitForAddressBarStable, waitForTcpReady
-} from './support/e2e-helpers.js'
+} from '../support/e2e-helpers.js'
 import { clearFixtureAsPageScript, setFixtureAsPageScript, AS_PAGE_SCRIPT_URL } from './fixture-as-page.js'
-import { HOST, ECHO_PORT, STATIC_PORT } from './apps/fixture/config.mjs'
-import { parseManifest } from '../src/loader/manifest/manifest.js'
-import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
-import type { Grant } from '../src/contracts/index.js'
+import { HOST, ECHO_PORT, STATIC_PORT } from '../apps/fixture/config.mjs'
+import { parseManifest } from '../../src/loader/manifest/manifest.js'
+import type { DevGrantRequest } from '../../src/main/dev/dev-grant.js'
+import type { Grant } from '../../src/contracts/index.js'
 
 // fileURLToPath on a directory URL keeps the trailing separator (the same
 // gotcha test/apps/fixture/serve.mjs's own header documents) -- stripped here so
 // join(FIXTURE_DIR, 'echo-server.mjs') below points inside test/apps/fixture/,
 // not test/apps/.
-const FIXTURE_DIR = fileURLToPath(new URL('./apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
+const FIXTURE_DIR = fileURLToPath(new URL('../apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
 const FIXTURE_ORIGIN = `http://${HOST}:${STATIC_PORT}`
 const FIXTURE_URL = `${FIXTURE_ORIGIN}/`
 const MANIFEST_URL = `${FIXTURE_URL}.well-known/orivon.json`

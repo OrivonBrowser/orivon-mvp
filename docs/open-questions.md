@@ -1946,7 +1946,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   which measured on installed-app partitions handed a routed 302 to the page as the final response. Does a context's
   `fetch()` of a redirecting granted host get the redirect's status instead of the final page?
 - **Why it matters:** an app reading a site through a web context would see redirects fail.
-- **Options:** measure a 302 in `test/e2e-web-context-network.test.ts`, then drop the listener for the dead proxy the
+- **Options:** measure a 302 in `test/capabilities/e2e-web-context-network.test.ts`, then drop the listener for the dead proxy the
   context already sets, re-measuring that a WebSocket still fails (rec.); leave it.
 - **Who decides:** research first
 - **Blocks:** nothing

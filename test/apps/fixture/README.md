@@ -80,7 +80,7 @@ displays both strings side by side with a `match: true/false` line.
 rules, and checks that the checked-in manifest is accepted, declares **exactly one**
 `net.connect` pattern equal to `config.mjs`'s `HOST:ECHO_PORT`, and nothing else (no `listen`,
 no `udp`, no `fs`, no `id`, no `protocols`), because the e2e out-of-manifest rejection test in
-`test/e2e-capability-boundary.test.ts` depends on the manifest staying this narrow.
+`test/capabilities/e2e-capability-boundary.test.ts` depends on the manifest staying this narrow.
 
 **No runner picks it up.** `vitest.config.ts`'s `include` is `src/**/*.test.ts` and
 `scripts/**/*.test.ts`, and `test/vitest.e2e.config.ts` excludes `test/apps/**` so a pure

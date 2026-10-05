@@ -18,18 +18,18 @@
 // evaluate callbacks, which cannot close over outer values.
 //
 // RUN THIS WITH: npm run test:e2e, or directly:
-//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/e2e-websocket-routing.test.ts
+//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/capabilities/e2e-websocket-routing.test.ts
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server } from 'node:http'
 import type { Duplex } from 'node:stream'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { evaluateRetrying, HERMETIC_RESOLVER } from './support/smoke-helpers.mjs'
-import { asPage, closeElectronApp, navigateToFixture, runPhase } from './support/e2e-helpers.js'
-import { cspHeaderValue } from '../src/loader/serve/csp.js'
-import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
-import type { Grant, Manifest } from '../src/contracts/index.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { evaluateRetrying, HERMETIC_RESOLVER } from '../support/smoke-helpers.mjs'
+import { asPage, closeElectronApp, navigateToFixture, runPhase } from '../support/e2e-helpers.js'
+import { cspHeaderValue } from '../../src/loader/serve/csp.js'
+import type { DevGrantRequest } from '../../src/main/dev/dev-grant.js'
+import type { Grant, Manifest } from '../../src/contracts/index.js'
 
 const HOST = '127.0.0.1'
 const PAGE_PORT = 8886

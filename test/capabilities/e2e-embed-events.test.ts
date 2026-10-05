@@ -13,7 +13,7 @@
 // popup and a download depend on a user gesture.
 //
 // Run with `npm run test:e2e`, or directly:
-//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/e2e-embed-events.test.ts
+//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/capabilities/e2e-embed-events.test.ts
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { createServer } from 'node:http'
 import type { Server } from 'node:http'
@@ -23,17 +23,17 @@ import { readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { ElectronApplication } from 'playwright'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { ABSENCE_SETTLE_MS, delay, evaluateRetrying, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
-import { closeElectronApp, forwardOutput, killChild, navigateToFixture, runPhase, waitForTcpReady } from './support/e2e-helpers.js'
-import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from './support/question-support.js'
-import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
-import { embedPartitionFor } from '../src/main/embed/embed-guard.js'
-import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
-import type { EmbedDownload, EmbedPopup, Grant, Manifest } from '../src/contracts/index.js'
-import { LIMITS } from '../src/contracts/index.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { ABSENCE_SETTLE_MS, delay, evaluateRetrying, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { closeElectronApp, forwardOutput, killChild, navigateToFixture, runPhase, waitForTcpReady } from '../support/e2e-helpers.js'
+import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
+import { HOST, STATIC_PORT } from '../apps/fixture/config.mjs'
+import { embedPartitionFor } from '../../src/main/embed/embed-guard.js'
+import type { DevGrantRequest } from '../../src/main/dev/dev-grant.js'
+import type { EmbedDownload, EmbedPopup, Grant, Manifest } from '../../src/contracts/index.js'
+import { LIMITS } from '../../src/contracts/index.js'
 
-const FIXTURE_DIR = fileURLToPath(new URL('./apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
+const FIXTURE_DIR = fileURLToPath(new URL('../apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
 const FIXTURE_ORIGIN = `http://${HOST}:${STATIC_PORT}`
 const SITE_PORT = 8961
 const OTHER_PORT = 8962

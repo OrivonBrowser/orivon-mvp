@@ -685,7 +685,7 @@ The second half is the wallet's path:
 11. **Tests.** Fakes to extend: `src/broker/transport/tests/stub-broker.ts`,
     `src/preload/surface/tests/main-world-socket.test-helpers.ts`,
     `src/broker/transport/dispatch/tests/exhaustiveness.test.ts`. The e2e model is
-    `test/e2e-id-capability.test.ts`. Section 11 has the plan.
+    `test/capabilities/e2e-id-capability.test.ts`. Section 11 has the plan.
 12. **Pages.** The READMEs of every directory touched (`src/preload/surface/README.md` has an
     "update this bullet in the same PR" rule), `ARCHITECTURE.md`'s table, `CHANGELOG.md`,
     `docs/planning/compatibility-matrix.md`, and section 12's list.
@@ -800,7 +800,7 @@ today), each with the mitigation this design already carries:
   driven by the Electron suite with a fake `Network` behind the same kind of test seam the
   verifier uses for fixture names, compiled out of an ordinary build and covered by
   `check:dev-grant-absent`'s logic or a sibling guard. How the suite answers native prompts is
-  the first thing to check in `test/e2e-id-capability.test.ts` and the dev-grant path; a
+  the first thing to check in `test/capabilities/e2e-id-capability.test.ts` and the dev-grant path; a
   dev-only auto-approve seam for wallet prompts needs the same compile-out guarantee. Clipboard
   round trips hang under `xvfb`: test the copy button's promise outcome, not the clipboard.
 - **Live, opt-in.** A read-only test against mainnet through Helios (`eth_getBalance`,

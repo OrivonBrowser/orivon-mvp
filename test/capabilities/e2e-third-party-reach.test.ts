@@ -4,7 +4,7 @@
 // wired to the real network via src/loader/reach/reach.ts's `nodeReachDial`.
 //
 // WHY THIS CANNOT PROVE A COMPLETED BYTE ROUND TRIP OVER TLS, AND WHY THAT
-// IS NOT A GAP HERE EITHER. `test/e2e-connect-secure-capability.test.ts`'s
+// IS NOT A GAP HERE EITHER. `test/capabilities/e2e-connect-secure-capability.test.ts`'s
 // own header already establishes this for `orivon.net.connectSecure`:
 // "there is no hermetic way to hand a locally launched, unmodified
 // production build a certificate it will actually trust" -- `nodeReachDial`
@@ -53,20 +53,20 @@
 // elsewhere in this suite (8872/8873/8875/8876/8877/8879/8880).
 //
 // RUN THIS WITH: npm run test:e2e, or directly:
-//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/e2e-third-party-reach.test.ts
+//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/capabilities/e2e-third-party-reach.test.ts
 import { afterAll, expect, it } from 'vitest'
 import { createServer } from 'node:tls'
 import type { Server } from 'node:tls'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { evaluateRetrying, HERMETIC_RESOLVER } from './support/smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase, waitForTcpReady } from './support/e2e-helpers.js'
-import { bundleTree } from '../src/broker/policy/bundle-hash.js'
-import type { BundleEntry } from '../src/broker/policy/bundle-hash.js'
-import { fromBundleTree } from '../src/broker/policy/pin.js'
-import { nodeLoaderStorage } from '../src/loader/cache/node-storage.js'
-import { generateTlsFixture } from '../src/broker/adapters/tests/tls-adapter.test-helpers.js'
-import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
-import type { Grant, Manifest } from '../src/contracts/index.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { evaluateRetrying, HERMETIC_RESOLVER } from '../support/smoke-helpers.mjs'
+import { closeElectronApp, navigateToFixture, runPhase, waitForTcpReady } from '../support/e2e-helpers.js'
+import { bundleTree } from '../../src/broker/policy/bundle-hash.js'
+import type { BundleEntry } from '../../src/broker/policy/bundle-hash.js'
+import { fromBundleTree } from '../../src/broker/policy/pin.js'
+import { nodeLoaderStorage } from '../../src/loader/cache/node-storage.js'
+import { generateTlsFixture } from '../../src/broker/adapters/tests/tls-adapter.test-helpers.js'
+import type { DevGrantRequest } from '../../src/main/dev/dev-grant.js'
+import type { Grant, Manifest } from '../../src/contracts/index.js'
 
 const ORIGIN = 'https://third-party-reach-e2e.orivon.test'
 const GRANTED_PORT = 8881

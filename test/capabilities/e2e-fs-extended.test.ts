@@ -42,18 +42,18 @@ import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { launchElectron } from './support/launch-electron.mjs'
-import { HERMETIC_RESOLVER } from './support/smoke-helpers.mjs'
+import { launchElectron } from '../support/launch-electron.mjs'
+import { HERMETIC_RESOLVER } from '../support/smoke-helpers.mjs'
 import {
   ADDRESS_BAR_STABLE_TIMEOUT_MS, asPage, closeElectronApp, forwardOutput, killChild,
   navigateToFixture, runPhase, waitForTcpReady
-} from './support/e2e-helpers.js'
+} from '../support/e2e-helpers.js'
 import { clearFixtureAsPageScript, setFixtureAsPageScript, AS_PAGE_SCRIPT_URL } from './fixture-as-page.js'
-import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
-import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
-import type { Grant, Manifest } from '../src/contracts/index.js'
+import { HOST, STATIC_PORT } from '../apps/fixture/config.mjs'
+import type { DevGrantRequest } from '../../src/main/dev/dev-grant.js'
+import type { Grant, Manifest } from '../../src/contracts/index.js'
 
-const FIXTURE_DIR = fileURLToPath(new URL('./apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
+const FIXTURE_DIR = fileURLToPath(new URL('../apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
 const FIXTURE_ORIGIN = `http://${HOST}:${STATIC_PORT}`
 const FIXTURE_URL = `${FIXTURE_ORIGIN}/`
 

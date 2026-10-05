@@ -6,14 +6,14 @@
 // real page in the real launched shell, reached over real Electron IPC and
 // the real broker's real grant check -- and, because nothing in production
 // calls broker.grant() for any origin yet (id.publicKey/sign's own doc,
-// ../src/broker/broker-contracts.ts), correctly come back 'denied', not a
+// ../../src/broker/broker-contracts.ts), correctly come back 'denied', not a
 // timeout, a crash, or a silent success. Exactly Phase 1's own precedent for
 // net.connect, applied to id.
 //
 // Phase 2 is what Phase 1 cannot show: a REAL grant. It builds its own
 // Broker directly (real WebCrypto derivation, a keychain stub standing in
-// for ADR-0033's real safeStorage-backed one -- ../src/main/keyring/
-// electron-keychain.ts, wired into production by ../src/broker/transport/
+// for ADR-0033's real safeStorage-backed one -- ../../src/main/keyring/
+// electron-keychain.ts, wired into production by ../../src/broker/transport/
 // ipc.ts -- so this test controls the seed rather than depending on this
 // machine's own keyring), grants 'id' for one curve, and proves
 // publicKey/sign work under it, that a different (ungranted) curve is still
@@ -37,28 +37,28 @@ import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { assertNoElectronSurvivors, DEFAULT_ACTION_TIMEOUT_MS, launchElectron } from './support/launch-electron.mjs'
+import { assertNoElectronSurvivors, DEFAULT_ACTION_TIMEOUT_MS, launchElectron } from '../support/launch-electron.mjs'
 import {
   evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, WAIT_TIMEOUT_MS, waitFor, waitForTab
-} from './support/smoke-helpers.mjs'
+} from '../support/smoke-helpers.mjs'
 import {
   ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, forwardOutput,
   killChild, runPhase, waitForAddressBarStable, waitForTcpReady
-} from './support/e2e-helpers.js'
-import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
-import { createBroker } from '../src/broker/index.js'
-import type { BrokerFs, CreateBrokerOptions, Keychain } from '../src/broker/broker-contracts.js'
-import { dialTcp, listenTcp, resolveHost, resolveLookup } from '../src/broker/adapters/node-adapters.js'
-import { dialTls } from '../src/broker/adapters/tls-adapter.js'
-import { bindUdp } from '../src/broker/adapters/udp-adapter.js'
-import { isOrivonErrorLike } from '../src/broker/errors.js'
-import { installDevGrantHook } from '../src/main/dev/dev-grant.js'
-import type { Manifest } from '../src/contracts/index.js'
+} from '../support/e2e-helpers.js'
+import { HOST, STATIC_PORT } from '../apps/fixture/config.mjs'
+import { createBroker } from '../../src/broker/index.js'
+import type { BrokerFs, CreateBrokerOptions, Keychain } from '../../src/broker/broker-contracts.js'
+import { dialTcp, listenTcp, resolveHost, resolveLookup } from '../../src/broker/adapters/node-adapters.js'
+import { dialTls } from '../../src/broker/adapters/tls-adapter.js'
+import { bindUdp } from '../../src/broker/adapters/udp-adapter.js'
+import { isOrivonErrorLike } from '../../src/broker/errors.js'
+import { installDevGrantHook } from '../../src/main/dev/dev-grant.js'
+import type { Manifest } from '../../src/contracts/index.js'
 
 // Trailing separator stripped -- fileURLToPath on a directory URL keeps it
 // (test/apps/fixture/serve.mjs's own header documents this), which would make
 // join() below point at test/apps/fixture//serve.mjs instead of inside it.
-const FIXTURE_DIR = fileURLToPath(new URL('./apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
+const FIXTURE_DIR = fileURLToPath(new URL('../apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
 const FIXTURE_ORIGIN = `http://${HOST}:${STATIC_PORT}`
 const FIXTURE_URL = `${FIXTURE_ORIGIN}/`
 
@@ -246,7 +246,7 @@ it('Phase 2: the real broker signs under a real id grant, and denies an ungrante
         open: async () => { throw new Error('fs is not exercised by this test') }
       }
       // Stands in for ADR-0003's safeStorage-backed seed. Production's own
-      // keychain (../src/broker/transport/ipc.ts) still throws 'internal' --
+      // keychain (../../src/broker/transport/ipc.ts) still throws 'internal' --
       // unreachable there today because the grant check answers 'denied'
       // first, which Phase 1 above proves directly. Wiring a real
       // safeStorage-backed keychain is separate work, not this lane's (see

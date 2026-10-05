@@ -1,8 +1,8 @@
 // Shared harness for the capability end-to-end tests: the fixture-server child
 // handling, the address-bar navigation dance, and the per-phase reporter.
 //
-// Extracted from ../e2e-capability-boundary.test.ts when
-// ../e2e-udp-capability.test.ts needed all of it verbatim. The REASON is shared
+// Extracted from ../capabilities/e2e-capability-boundary.test.ts when
+// ../capabilities/e2e-udp-capability.test.ts needed all of it verbatim. The REASON is shared
 // -- drive the real shell to a real page and report per phase -- not merely the
 // shape (code-guidelines.md Rule 3). A PURE MOVE: no behaviour changed, so the
 // diff reads as one.

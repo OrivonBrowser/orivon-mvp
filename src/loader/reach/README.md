@@ -20,7 +20,7 @@ why plain `http:` stays denied (A163), is `../serve/serve.ts`'s `fetchThirdParty
 hand-rolled HTTP/1.1 client.** Node's `https` takes a per-request `ca` (the seam
 `../../broker/adapters/tls-adapter.ts` already has), so this path is proven over a real TLS
 handshake in a real Electron launch (`tests/reach.test.ts`); an unmodified Electron cannot be
-made to trust a locally generated certificate (`test/e2e-fetch-routing.test.ts`'s header).
+made to trust a locally generated certificate (`test/capabilities/e2e-fetch-routing.test.ts`'s header).
 Nothing here forces a hand-rolled client the way `contextBridge` forces
 `src/preload/routed/fetch.ts`, so Rule 6 picks the mature one, which already handles chunked
 encoding and keep-alive. It has no cookie jar to forget, and never follows a redirect itself: a

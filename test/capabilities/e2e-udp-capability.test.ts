@@ -1,6 +1,6 @@
 // The UDP half of the end-to-end capability test, in its own file because
 // ./e2e-capability-boundary.test.ts is a whole suite already and Rule 2 caps a
-// test at 800 lines. The shared harness lives in ./support/e2e-helpers.ts.
+// test at 800 lines. The shared harness lives in ../support/e2e-helpers.ts.
 //
 // WHAT THIS PROVES, AND WHAT IT DELIBERATELY DOES NOT. Phase 1 drives the REAL
 // shell: window.orivon.net.udpBind exists on a real page, a real call reaches
@@ -36,26 +36,26 @@ import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
 import {
   ADDRESS_BAR_STABLE_TIMEOUT_MS, clickAddressBarRetrying, closeElectronApp, forwardOutput, killChild, runPhase,
   waitForAddressBarStable, waitForTcpReady
-} from './support/e2e-helpers.js'
+} from '../support/e2e-helpers.js'
 import {
   evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor, waitForTab
-} from './support/smoke-helpers.mjs'
-import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
-import { createBroker } from '../src/broker/index.js'
-import type { BrokerFs, CreateBrokerOptions, Keychain } from '../src/broker/broker-contracts.js'
-import { dialTcp, listenTcp, resolveHost, resolveLookup } from '../src/broker/adapters/node-adapters.js'
-import { dialTls } from '../src/broker/adapters/tls-adapter.js'
-import { bindUdp } from '../src/broker/adapters/udp-adapter.js'
-import { installDevGrantHook } from '../src/main/dev/dev-grant.js'
-import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
-import type { Datagram, Manifest } from '../src/contracts/index.js'
+} from '../support/smoke-helpers.mjs'
+import { HOST, STATIC_PORT } from '../apps/fixture/config.mjs'
+import { createBroker } from '../../src/broker/index.js'
+import type { BrokerFs, CreateBrokerOptions, Keychain } from '../../src/broker/broker-contracts.js'
+import { dialTcp, listenTcp, resolveHost, resolveLookup } from '../../src/broker/adapters/node-adapters.js'
+import { dialTls } from '../../src/broker/adapters/tls-adapter.js'
+import { bindUdp } from '../../src/broker/adapters/udp-adapter.js'
+import { installDevGrantHook } from '../../src/main/dev/dev-grant.js'
+import type { DevGrantRequest } from '../../src/main/dev/dev-grant.js'
+import type { Datagram, Manifest } from '../../src/contracts/index.js'
 
 const UDP_ECHO_SERVER = fileURLToPath(new URL('./udp-echo-server.mjs', import.meta.url))
-const FIXTURE_DIR = fileURLToPath(new URL('./apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
+const FIXTURE_DIR = fileURLToPath(new URL('../apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
 const FIXTURE_ORIGIN = `http://${HOST}:${STATIC_PORT}`
 const FIXTURE_URL = `${FIXTURE_ORIGIN}/`
 

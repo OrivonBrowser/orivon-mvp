@@ -152,7 +152,7 @@ ICE/STUN/TURN dial does not (A41). A context has no reason to use WebRTC, so it 
 `setWebRTCIPHandlingPolicy('disable_non_proxied_udp')`, and `session.setProxy` pointed at
 `http://127.0.0.1:9`, where nothing answers. A request `protocol.handle` answers never reaches
 proxy resolution, so the proxy sees only what those handlers did not intercept.
-`test/e2e-web-context-network.test.ts` proves a granted `fetch()` still gets a real response
+`test/capabilities/e2e-web-context-network.test.ts` proves a granted `fetch()` still gets a real response
 with both belts active.
 
 **[`web-request-owner.ts`](web-request-owner.ts): one owner per (session, event), because

@@ -69,7 +69,7 @@ person saves it.
 
 Refusing directories keeps each handle bounded to one choice. A file inside a directory can be
 reached only through the directory's own read grant, which the gate refuses, so a page can reach
-no file the person did not hand over individually. `test/e2e-file-system-access.test.ts` asserts
+no file the person did not hand over individually. `test/capabilities/e2e-file-system-access.test.ts` asserts
 this against a real page and a real file on disk.
 
 ## Consequences
