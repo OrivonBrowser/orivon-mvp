@@ -57,6 +57,8 @@ export function patternSetFromCapabilities (capabilities: Capabilities): Pattern
   if (capabilities.fs !== undefined) set.fs = []
   if (capabilities.id !== undefined) set.id = []
   if (capabilities.secrets !== undefined) set.secrets = []
+  // `trust.score` (ADR-0058) is presence-only too, and `trust: {}` declares nothing.
+  if (capabilities.trust?.score === true) set['trust.score'] = []
 
   // ADR-0019: web.contexts IS the pattern list for 'web.context' -- each
   // declared origin is compared exactly against a grant's own patterns

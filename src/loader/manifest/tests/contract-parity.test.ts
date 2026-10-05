@@ -10,6 +10,7 @@ import type {
   NetCapability,
   TcpCapability,
   UdpCapability,
+  TrustCapability,
   WebCapability
 } from '../../../contracts/index.js'
 
@@ -36,7 +37,8 @@ type FullManifest = Omit<Full<Manifest>, 'capabilities'> & {
   // either (their PARITY_MAP loader arrays do not exist until the stacked
   // implementation PR), so a kitchen-sink manifest naming them would fail
   // the round-trip this file exists to prove.
-  readonly capabilities: Omit<Full<Capabilities>, 'net' | 'fs' | 'id' | 'web' | 'media' | 'clipboard' | 'secrets'> & {
+  readonly capabilities: Omit<Full<Capabilities>, 'net' | 'fs' | 'id' | 'web' | 'media' | 'clipboard' | 'secrets' | 'trust'> & {
+    readonly trust: Full<TrustCapability>
     readonly net: Omit<Full<NetCapability>, 'tcp' | 'udp' | 'https'> & {
       readonly tcp: Full<TcpCapability>
       readonly udp: Full<UdpCapability>
@@ -63,6 +65,7 @@ const KITCHEN_SINK: FullManifest = {
   assets: ['style.css', 'script.js'],
   consentGranularity: 'per-capability',
   crossOriginIsolated: true,
+  domain: 'kitchen-sink.example.com',
   capabilities: {
     protocols: ['magnet'],
     net: {
@@ -73,7 +76,8 @@ const KITCHEN_SINK: FullManifest = {
     },
     fs: { quotaBytes: 104857600 },
     id: { curves: ['secp256k1'] },
-    web: { contexts: ['https://kitchen-sink.example'], embed: { origins: ['*'] } }
+    web: { contexts: ['https://kitchen-sink.example'], embed: { origins: ['*'] } },
+    trust: { score: true }
   }
 }
 

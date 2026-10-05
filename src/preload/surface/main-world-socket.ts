@@ -460,6 +460,9 @@ export function installOrivon (
       encrypt: guarded(async (plaintext: Uint8Array) => await callRevived(bridge.secretsEncrypt(plaintext))),
       decrypt: guarded(async (ciphertext: Uint8Array) => await callRevived(bridge.secretsDecrypt(ciphertext)))
     }),
+    trust: Object.freeze({
+      websiteScore: guarded(async (address: string) => await callRevived(bridge.trustWebsiteScore(address)))
+    }),
     web: Object.freeze({
       openContext: guarded(async (origin: string, options?: { width?: number, height?: number }) => buildWebContext(await callRevived(bridge.webOpenContext({ origin, ...options })))),
       setEmbedScript: guarded(async (source: string) => { await callRevived(bridge.webSetEmbedScript(source)) })

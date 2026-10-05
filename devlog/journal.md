@@ -28,6 +28,10 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Every ported app now shows visitors in other browsers a panel pointing them to Orivon; it stays hidden inside Orivon, and --no-orivon-hint removes it.
 - CI's e2e now runs only the specs a change can reach, in parallel shards: minutes instead of forty.
 - Publishing a GitHub release now builds Linux, Windows and macOS packages, launches each in CI, and attaches them.
+- Orivon Attila now judges every Explore site: 62 more evaluations by CID, and its judging rules are written down with worked examples.
+- FreeTube raised to Web3 Score Level 3: running YouTube's code is informed consent when the grant dialog says so and it's the app's purpose.
+- Explore opens on Web3 sites, marks each site Web2, Web2.5 or Web3, and lists 54 more live .eth sites.
+- A page can now ask the person's chosen Web3 Score provider about a site, behind a declared trust.score grant the person answers.
 
 ### In my head
 

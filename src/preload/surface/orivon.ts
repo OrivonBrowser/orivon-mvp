@@ -7,7 +7,7 @@ import { netConnectBridge, netConnectSecureBridge, netListenBridge, netLookupBri
 import { webOpenContextBridge } from './web.js'
 import type { MainWorldWebContextBridge } from './web.js'
 import type { MainWorldBridge } from './main-world-bridges.js'
-import type { CapabilityRequest, FileStat, Grant, Manifest, OrivonErrorCode } from '../../contracts/index.js'
+import type { CapabilityRequest, FileStat, Grant, Manifest, OrivonErrorCode, WebsiteScore } from '../../contracts/index.js'
 import { LIMITS } from '../../contracts/index.js'
 import type { ResponseEnvelope } from '../../contracts/ipc.js'
 import { toOrivonError } from '../orivon-error.js'
@@ -220,6 +220,10 @@ async function secretsDecrypt (ciphertext: Uint8Array): Promise<Uint8Array> {
   return await call('secrets.decrypt', { ciphertext }, TIMEOUT_MS.secrets)
 }
 
+async function trustWebsiteScore (address: string): Promise<WebsiteScore> {
+  return await call('trust.websiteScore', { address }, TIMEOUT_MS.trust)
+}
+
 /**
  * web.context: `OrivonWeb.openContext(origin, options?)` (capability-api.ts)
  * takes `origin` as its own argument -- unlike every other method on this
@@ -290,6 +294,7 @@ function exposeFallback (): void {
     },
     id: { publicKey: deniedRejection, sign: deniedRejection },
     secrets: { available: deniedRejection, encrypt: deniedRejection, decrypt: deniedRejection },
+    trust: { websiteScore: deniedRejection },
     net: { lookup: deniedRejection },
     web: { openContext: deniedRejection, setEmbedScript: deniedRejection }
   })
@@ -344,6 +349,7 @@ export function buildOrivonBridge (): MainWorldBridge {
     secretsAvailable,
     secretsEncrypt,
     secretsDecrypt,
+    trustWebsiteScore,
     webOpenContext: webOpenContextBridge,
     webSetEmbedScript,
     netConnect: netConnectBridge,

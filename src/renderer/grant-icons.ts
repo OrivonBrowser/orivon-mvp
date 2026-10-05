@@ -97,6 +97,12 @@ function micIcon (): SVGSVGElement {
   return el
 }
 
+function screenShareIcon (): SVGSVGElement {
+  const el = svg('0 0 24 24')
+  el.append(rect(2, 4, 20, 13, 2), line(8, 21, 16, 21), line(12, 17, 12, 21))
+  return el
+}
+
 function clipboardIcon (): SVGSVGElement {
   const el = svg('0 0 24 24')
   el.append(rect(8, 2, 8, 4, 1), path('M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2', '2'))
@@ -144,8 +150,10 @@ const BUILDERS: Record<GrantIconKind, () => SVGSVGElement> = {
   'web.context': appWindowIcon,
   'web.embed': appWindowIcon,
   secrets: lockKeyholeIcon,
+  'trust.score': globeIcon,
   'media.camera': cameraIcon,
   'media.microphone': micIcon,
+  'media.screen': screenShareIcon,
   'clipboard.read': clipboardIcon,
   file: fileIcon,
   directory: folderIcon,

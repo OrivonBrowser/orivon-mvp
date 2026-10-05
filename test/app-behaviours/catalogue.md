@@ -101,6 +101,8 @@ Ports are named only where the compatibility pages already name them.
 |---|---|---|---|---|
 | `eth-name-loads-verified` | A `.eth` name loads through ENS and IPFS with every block verified, and tampered blocks are refused | apps published to a name | - | [`e2e-eth-verified`](../web3/e2e-eth-verified.test.ts) |
 | `ipfs-url-opens` | An `ipfs://` address opens the site behind it | apps published by content address | - | [`e2e-ipfs-address`](../web3/e2e-ipfs-address.test.ts) |
+| `score-lookup-needs-the-trust-grant` | A page that declared `trust.score` and was not granted it is refused `denied` by `orivon.trust.websiteScore`, also after the person answered Deny, and nothing is asked of the provider; one that is granted and asks in a loop is refused `limit` once its bucket of 128 lookups is spent | apps that show a mark per site from the person's own Web3 Score provider | Orivon Explore (`explore`) | [`e2e-trust-website-score`](../web3/e2e-trust-website-score.test.ts) |
+| `score-lookup-answers-the-chosen-provider` | A page granted `trust.score` gets the chosen provider's name and the level it judged for an `ipfs://` address and for a `.eth` name (bare or over `https`); a web address, content the provider has no score for and text that is no address answer level `null`; with no provider chosen the answer is `null` and nothing is asked; the provider receives buckets, never an identifier | apps that show a mark per site from the person's own Web3 Score provider | Orivon Explore (`explore`) | [`e2e-trust-website-score`](../web3/e2e-trust-website-score.test.ts) |
 
 ## Capability coverage
 
@@ -123,5 +125,7 @@ has a line, so a capability cannot land without that decision.
 | `web.embed` | `webview-shows-local-pattern`, `webview-popup-reaches-the-app` |
 | `media.camera` | not covered: a contract entry with no implementation behind it |
 | `media.microphone` | not covered: a contract entry with no implementation behind it |
+| `media.screen` | not covered: a contract entry with no implementation behind it |
 | `clipboard.read` | not covered: a contract entry with no implementation behind it |
 | `secrets` | not covered: no spec drives `orivon.secrets` from an app's page |
+| `trust.score` | `score-lookup-needs-the-trust-grant`, `score-lookup-answers-the-chosen-provider` |
