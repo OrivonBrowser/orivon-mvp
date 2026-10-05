@@ -12,14 +12,10 @@
 // Requires a prepared build in that checkout and an ORDINARY shell build;
 // skipped otherwise, for the same reason e2e-loopback-grant.test.ts is.
 //
-// NO RESTART-PERSISTENCE CHECK: proving a settings change survives an app
-// restart needs a second launchElectron() call against the SAME
-// --user-data-dir as the first. launch-electron.mjs has no such capability
-// today -- userDataDir is generated fresh with mkdtemp() inside
-// launchElectron() itself, never exposed to a caller, and unconditionally
-// removed by closeElectron()'s own finally block. Adding that is a change
-// to test/, owned by the shell stream, not this one -- checked, not
-// guessed, before leaving it out.
+// NO RESTART-PERSISTENCE CHECK HERE: a second launchElectron({ reuseProfile })
+// after closeElectron(app, { keepProfile: true }) would prove it, and the
+// generic spec for what an app's stored data does across a restart is
+// e2e-app-state-restart.test.ts.
 //
 // RUN THIS WITH:
 //   cd ../orivon-ports && node src/cli.ts build freetube

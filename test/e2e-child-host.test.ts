@@ -104,7 +104,7 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-it('a child outlives the page that started it while another page of the app is open, and ends with the app\'s last page', async () => {
+it('[app:forked-child-ends-with-last-page] a child outlives the page that started it while another page of the app is open, and ends with the app\'s last page', async () => {
   const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
   try {
     const appJs = await bundleForApp(fileURLToPath(new URL('./child-host-entry.ts', import.meta.url)))

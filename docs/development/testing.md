@@ -130,7 +130,9 @@ with no export path to recover from ([`ADR-0003`](../decisions/ADR-0003-local-fi
 ### 5. The update decision table
 
 `decideUpdate({pinnedHash, newHash, grantedPatterns, newPatterns, version, versionFloor})`
-→ `'silent' | 'reconsent' | 'capability-prompt' | 'reject'`, about eight rows.
+→ `'silent' | 'reconsent' | 'capability-prompt' | 'rollback-choice' | 'rollback-notice'`, about eight
+rows. The two rollback outcomes are for a version below the origin's floor: `rollback-choice` until
+the person has acknowledged it, `rollback-notice` after.
 
 *Why:* its failure mode is **"no prompt appeared"**, which no manual checklist catches, and the
 capability at stake is `tcp.connect *:*`.
@@ -396,13 +398,14 @@ outside `attach-view.ts`.
 
 ## Guards
 
-Thirteen checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
+Fourteen checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
 and CI's `check` job runs all of them; [`../../scripts/README.md`](../../scripts/README.md) says
 what each one enforces.
 
 `check:natives` · `check:contracts` · `check:secrets` · `check:vectors` · `check:comments` ·
 `check:size` · `check:questions` · `check:manifest-parity` · `check:page-globals` ·
-`check:dev-grant-absent` · `check:advisories` · `check:devlog` · `check:native-dialogs`
+`check:dev-grant-absent` · `check:advisories` · `check:devlog` · `check:native-dialogs` ·
+`check:app-behaviours` (§App behaviours)
 
 Every one is an exported pure function over a root directory, unit tested in
 `scripts/tests/` against temp fixtures, with a CLI block guarded by `isInvokedDirectly` so the
@@ -412,6 +415,41 @@ in the same change: `scripts/tests/check-scripts-in-ci.test.ts` fails the unit s
 
 A guard imports `node:*` builtins and nothing from `src/` -- one that depended on the code it
 guards could be disabled by the change it exists to catch.
+
+---
+
+## App behaviours
+
+[`app-behaviours.md`](app-behaviours.md) lists what a working app relies on, one behaviour to an
+entry, each tied to the e2e spec that proves it. The suites above are grouped by what Orivon built;
+this page is grouped by what an app needs, so a change that breaks an app turns a test red whose name
+says which behaviour went, whichever file the change was in. `check:app-behaviours` keeps the page and the
+specs in step.
+
+**A failing `[app:<id>]` test means an app that relies on that behaviour is broken.** Read the entry,
+which names the apps and ports that rely on it, then do one of two things:
+
+- Fix the change. Most of the time the behaviour should not have moved.
+- Change the behaviour on purpose: edit the entry's sentence, add a line under `### Changed for apps` in
+  [`CHANGELOG.md`](../../CHANGELOG.md) (`` - **`<id>`**: what changed. Apps that <do Y> must now <do Z>.
+  Recheck: <ports>. ``), and put the same in the PR's **Dev:** line. CI fails a pull request that changes or
+  removes an entry's sentence with no such line. Never edit the test until it passes, and never skip it.
+
+**Adding an entry.** When a port, a user or a fix shows an app relying on something no entry covers:
+
+1. State the behaviour generically and observably ("data an app writes to IndexedDB survives a browser
+   restart"), never as one app's feature. Name an app or port only if a tracked file already names it.
+2. Find the e2e spec that proves it through the real shell. A unit test may stand beside it but never
+   proves an entry alone: it exercises a function in isolation, cannot see a wiring that broke, and is
+   edited in the same pull request as the code it tests. Where none exists, write a small generic spec:
+   the smallest page that shows the behaviour, loopback only, `startServer` on port 0, several
+   behaviours to a launch, waiting on state and never on the clock.
+3. Put `[app:<id>]` in the title of the `it` that proves it (several ids may share a title). It carries
+   no modifier, or `skipIf(!ORDINARY_BUILD)` for a spec that needs the build without the developer-only
+   hooks; that spec must be in the `e2e-ordinary` job of `ci.yml`. A skipped or narrowed test proves nothing, so
+   the guard refuses it.
+4. Watch it fail: break the behaviour in the code, see the test go red, restore it.
+5. Add the row. A behaviour no spec proves yet is `not covered: <reason>`, and the reason is the debt.
 
 ---
 

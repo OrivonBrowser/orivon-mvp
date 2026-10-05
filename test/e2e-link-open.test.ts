@@ -146,7 +146,7 @@ const SCENARIOS: Scenario[] = [
 ]
 
 for (const scenario of SCENARIOS) {
-  it(`${scenario.label} opens a tab without crashing, ${scenario.expectActivates ? 'activating' : 'staying in the background'}`, async () => {
+  it(`${scenario.sel === '#blank' ? '[app:target-blank-link-opens-tab] ' : ''}${scenario.label} opens a tab without crashing, ${scenario.expectActivates ? 'activating' : 'staying in the background'}`, async () => {
     const { app, chrome, exited } = await launched()
     let crashed = false
     try {

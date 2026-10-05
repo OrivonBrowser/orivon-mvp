@@ -16,6 +16,9 @@ folder handle. Every other member of `orivon.*` is built Spec'd → Broker → P
 WebAssembly runs in an app exactly as it runs in Node. Every gap in these tables is a limit of this
 build, taken case by case as a real app reaches it, never a rule about which apps may exist.
 
+What a working app relies on, behaviour by behaviour and each tied to the end-to-end spec that
+proves it, is indexed in [`../development/app-behaviours.md`](../development/app-behaviours.md).
+
 Two axes, and they fail in completely different ways:
 
 - **Table 1 is authority**: what is an app *allowed* to do. Missing it, the app runs and every

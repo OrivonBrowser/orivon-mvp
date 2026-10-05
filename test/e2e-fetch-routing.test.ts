@@ -91,7 +91,7 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-it('a real page\'s fetch() reaches a granted host with an app-set Origin and no ambient credentials, ' +
+it('[app:routed-fetch-reaches-granted-hosts] a real page\'s fetch() reaches a granted host with an app-set Origin and no ambient credentials, ' +
    'and refuses an ungranted host with no prompt', async () => {
   await runPhase('fetch routing', async (check) => {
     const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })

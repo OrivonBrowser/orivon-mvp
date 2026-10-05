@@ -59,7 +59,7 @@ async function send (port: number, path: string, init: { method?: string, body?:
   })
 }
 
-it('a page runs http.createServer on a loopback port, and real requests from outside the browser are answered', async () => {
+it('[app:local-listener-accepts-connections] a page runs http.createServer on a loopback port, and real requests from outside the browser are answered', async () => {
   const port = await freePort()
   const manifest: Manifest = {
     orivonApiVersion: 0,

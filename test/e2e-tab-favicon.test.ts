@@ -76,7 +76,7 @@ async function openIconTab (app: ElectronApplication, chrome: Page): Promise<voi
   expect(await waitFor(async () => await hasIcon(chrome)), 'the page\'s own icon shows').toBe(true)
 }
 
-it('shows the icon again on returning to the page after a blank page, by address and by Back', async () => {
+it('[app:page-declared-favicon-shows] shows the icon again on returning to the page after a blank page, by address and by Back', async () => {
   const { app, chrome } = await launched()
   try {
     await openIconTab(app, chrome)

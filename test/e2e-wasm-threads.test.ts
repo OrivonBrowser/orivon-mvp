@@ -102,7 +102,7 @@ async function measure (view: Awaited<ReturnType<typeof navigateToFixture>>): Pr
   }, 40_000)
 }
 
-it('a pinned bundle declaring crossOriginIsolated gets SharedArrayBuffer and worker Atomics.wait, one without does not, and a <webview> still attaches inside the isolated page', async () => {
+it('[app:cross-origin-isolated-when-declared] a pinned bundle declaring crossOriginIsolated gets SharedArrayBuffer and worker Atomics.wait, one without does not, and a <webview> still attaches inside the isolated page', async () => {
   const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
   try {
     await runPhase('cross-origin isolation for WebAssembly threads', async (check) => {

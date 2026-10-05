@@ -190,7 +190,7 @@ const downloadOf = (heard: Heard[]): EmbedDownload | undefined => heard.length =
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
 
 it(
-  'a page shown in a <webview> asks for a window or starts a download, and its app hears one bubbling event each while nothing opens ' +
+  '[app:webview-popup-opens-tab] a page shown in a <webview> asks for a window or starts a download, and its app hears one bubbling event each while nothing opens ' +
   'and no file is written; an unknown scheme in a shown page is heard by the element and never offered to another program',
   async () => {
     await runPhase('web.embed events e2e', async (check) => {

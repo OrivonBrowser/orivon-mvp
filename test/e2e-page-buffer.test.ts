@@ -118,7 +118,7 @@ afterAll(async () => {
 
 const TEST_TIMEOUT_MS = 120_000
 
-it('gives a registered app tab the buffer package as its Buffer global before its first script, and an ordinary site none', async () => {
+it('[app:page-globals-replaceable] gives a registered app tab the buffer package as its Buffer global before its first script, and an ordinary site none', async () => {
   await runPhase('page Buffer global', async (check) => {
     const shimBundle = (await esbuild.build({
       stdin: { contents: SHIM_ENTRY, resolveDir: REPO_ROOT, loader: 'ts', sourcefile: 'shim-buffer-entry.ts' },

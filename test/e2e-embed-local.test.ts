@@ -229,7 +229,7 @@ async function waitForResult<T> (read: () => Promise<T | null>): Promise<T | nul
 type Check = (name: string, pass: boolean, detail?: string) => void
 
 it(
-  'a local pattern shows pages the app serves itself, one origin per label, only while the app holds the listener: ' +
+  '[app:webview-shows-local-pattern] a local pattern shows pages the app serves itself, one origin per label, only while the app holds the listener: ' +
   'another program\'s port and a closed listener do not load, and a cookie set for "localhost" does not cross labels',
   async () => {
     await runPhase('web.embed local pattern e2e', async (check: Check) => {

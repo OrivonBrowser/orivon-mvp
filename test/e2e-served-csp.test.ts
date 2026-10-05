@@ -90,7 +90,7 @@ afterAll(async () => {
 
 const TEST_TIMEOUT_MS = 180_000
 
-it('a pinned bundle compiles wasm, shows data: images, starts blob: workers, loads data: frames and evals under the real served CSP; ' +
+it('[app:wasm-streaming-under-served-csp] [app:blob-worker-runs] a pinned bundle compiles wasm, shows data: images, starts blob: workers, loads data: frames and evals under the real served CSP; ' +
   'a `*` https grant admits any https: subresource in the header while the handler still refuses loopback', async () => {
   await Promise.all([
     new Promise<void>((resolve) => { wssProbe.server.listen(WSS_PROBE_PORT, '127.0.0.1', resolve) }),

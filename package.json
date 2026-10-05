@@ -34,6 +34,7 @@
     "check:native-dialogs": "node scripts/check-native-dialogs.mjs",
     "check:dev-grant-absent": "node scripts/check-dev-grant-absent.mjs",
     "check:devlog": "node scripts/check-devlog.mjs",
+    "check:app-behaviours": "node scripts/check-app-behaviours.mjs",
     "install:electron": "node scripts/install-electron.mjs",
     "smoke": "node scripts/build-ordinary.mjs && node scripts/run-headless.mjs node scripts/smoke.mjs",
     "test:e2e": "node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts",

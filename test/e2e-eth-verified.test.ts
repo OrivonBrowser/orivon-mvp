@@ -57,7 +57,7 @@ async function listen (handler: Parameters<typeof createServer>[1]): Promise<{ s
   return { server, port: (server.address() as AddressInfo).port }
 }
 
-it('loads a .eth name from verified IPFS content, refuses a tampered block, and grants the page no loopback privilege', async () => {
+it('[app:eth-name-loads-verified] loads a .eth name from verified IPFS content, refuses a tampered block, and grants the page no loopback privilege', async () => {
   await runPhase('eth-verified', async (check) => {
     // Two gateways, each the only source of its sites: the one that lies about
     // script.eth is dropped for the session, and broken.eth's refusal must

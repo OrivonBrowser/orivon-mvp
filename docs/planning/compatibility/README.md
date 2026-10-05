@@ -10,6 +10,9 @@ they sit under `planning/`: each says what works today and nothing else. A row c
 code does, in the same pull request, and so does the readable row that sums it up on the matrix
 page.
 
+What a working app relies on, behaviour by behaviour and each tied to the end-to-end spec that
+proves it, is [`../../development/app-behaviours.md`](../../development/app-behaviours.md).
+
 | File | Table |
 |---|---|
 | [`table-1-capabilities.md`](table-1-capabilities.md) | 1a, what `orivon.*` offers; 1b, authority no capability covers |
