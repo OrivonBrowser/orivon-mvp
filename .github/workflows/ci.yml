@@ -84,6 +84,15 @@ jobs:
         if: github.event_name == 'pull_request'
         run: npm run check:app-behaviours -- --base origin/${{ github.base_ref }}
 
+      # test/snapshots/contracts-surface.txt is src/contracts/ without its comments; a change to it is a change
+      # apps feel, and takes the same changelog record.
+      - name: The contracts surface snapshot matches src/contracts/
+        run: npm run check:contracts-surface
+
+      - name: A changed contracts surface has a changelog record
+        if: github.event_name == 'pull_request'
+        run: npm run check:contracts-surface -- --base origin/${{ github.base_ref }}
+
       # A field src/contracts/manifest.ts documents must not be refused by the
       # loader's allowlist; the script reads both sides from their source.
       - name: Loader accepts every field the manifest contract declares

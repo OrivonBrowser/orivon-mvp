@@ -15,7 +15,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 What an app that runs on Orivon must now do differently. One line per behaviour, naming its id from
 [`docs/development/app-behaviours.md`](docs/development/app-behaviours.md), what changed, what apps must
-now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed.
+now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
+public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 

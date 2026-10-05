@@ -15,7 +15,8 @@ a test red whose title carries the behaviour's id, whichever file the change was
 [`testing.md`](testing.md) §App behaviours says how to add a row. **A row changes only with a line
 under `### Changed for apps` in [`CHANGELOG.md`](../../CHANGELOG.md)** (`**<id>**: what changed. Apps
 that do Y must now do Z. Recheck: the ports.`): CI fails a pull request that rewrites or removes a
-behaviour's sentence without one. The matrix of what works today is
+behaviour's sentence without one, and the same for a change to the public surface of `src/contracts/`
+(§The contracts surface in [`testing.md`](testing.md)). The matrix of what works today is
 [`compatibility-matrix.md`](../planning/compatibility-matrix.md); this page is its test-side index.
 
 Ports are named only where the compatibility pages already name them.

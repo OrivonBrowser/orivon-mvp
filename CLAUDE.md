@@ -85,7 +85,7 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
 |---|---|
 | `npm run typecheck` | After any `.ts` change; it covers `test/` as well as `src/` |
 | `npm test` | Unit tests (Vitest) |
-| `npm run check:<name>` | The fourteen guards in `docs/development/testing.md` §Guards; CI runs each |
+| `npm run check:<name>` | The fifteen guards in `docs/development/testing.md` §Guards; CI runs each |
 | `npm run smoke` | The real shell launches and works. Read its JSON failure list, not the exit code |
 | `npm run test:e2e` | The Electron end-to-end suite; a failed spec leaves its evidence in `qa-artifacts/latest/` |
 | `npm run qa`, `qa:visual`, `qa:report` | Before calling a UI, flow or boundary change done; `orivon-qa` says which, and how to read the screenshots |

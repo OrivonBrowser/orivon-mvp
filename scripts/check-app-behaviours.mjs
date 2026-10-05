@@ -194,7 +194,7 @@ export function checkCatalogue (root) {
 }
 
 /** The lines under `### Changed for apps` in the first (unreleased) release section of a changelog. */
-function changedSection (changelog) {
+export function changedSection (changelog) {
   const lines = changelog.split('\n')
   const releases = lines.map((line, i) => (/^## /.test(line) ? i : -1)).filter((i) => i !== -1)
   const end = releases.length > 1 ? releases[1] : lines.length

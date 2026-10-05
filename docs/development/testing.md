@@ -398,14 +398,14 @@ outside `attach-view.ts`.
 
 ## Guards
 
-Fourteen checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
+Fifteen checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
 and CI's `check` job runs all of them; [`../../scripts/README.md`](../../scripts/README.md) says
 what each one enforces.
 
 `check:natives` · `check:contracts` · `check:secrets` · `check:vectors` · `check:comments` ·
 `check:size` · `check:questions` · `check:manifest-parity` · `check:page-globals` ·
 `check:dev-grant-absent` · `check:advisories` · `check:devlog` · `check:native-dialogs` ·
-`check:app-behaviours` (§App behaviours)
+`check:app-behaviours` · `check:contracts-surface` (§App behaviours)
 
 Every one is an exported pure function over a root directory, unit tested in
 `scripts/tests/` against temp fixtures, with a CLI block guarded by `isInvokedDirectly` so the
@@ -450,6 +450,14 @@ which names the apps and ports that rely on it, then do one of two things:
    the guard refuses it.
 4. Watch it fail: break the behaviour in the code, see the test go red, restore it.
 5. Add the row. A behaviour no spec proves yet is `not covered: <reason>`, and the reason is the debt.
+
+**The contracts surface.** [`test/snapshots/contracts-surface.txt`](../../test/snapshots/contracts-surface.txt)
+is `src/contracts/` with its comments removed: every export, capability kind, error code and `LIMITS`
+value an app can write against. `check:contracts-surface` fails when it and the source disagree, so a
+change to a contract file shows up in the same diff as a change to the snapshot
+(`node scripts/check-contracts-surface.mjs --update` rewrites it). Rewording a comment changes nothing.
+A pull request that changes a file's section needs a line under `### Changed for apps` that names
+`` `contracts/<file>` ``, the same record a changed behaviour takes.
 
 ---
 
