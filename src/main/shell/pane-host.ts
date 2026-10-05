@@ -29,14 +29,22 @@ const MEND_TRIES = 3
 export class PaneHost {
   private readonly shown = new Map<string, View>()
   private readonly placed = new Map<string, Bounds>()
+  /** Views of tabs that left the screen but stay in the window, hidden, while `keepAttached` says so (a tab being shared). */
+  private readonly kept = new Map<string, View>()
   private readonly settling = new Map<string, ReturnType<typeof setTimeout>>()
   private mending: ReturnType<typeof setTimeout> | undefined
   private backdrop: View | null = null
   private readonly changeListeners = new Set<() => void>()
 
   /** `layoutSizeOf`, when given, lets a pane that went on screen be checked against its bounds (`settle`); `pageShownOf`, that
-   * each pane on screen is shown (`mend`). */
-  constructor (private readonly contentView: View, private readonly layoutSizeOf?: LayoutSizeOf, private readonly pageShownOf?: PageShownOf) {}
+   * each pane on screen is shown (`mend`). `keepAttached` names a view that is to stay in the window, hidden, when its tab is no
+   * longer in front: Chromium captures only a view that is in a window. */
+  constructor (
+    private readonly contentView: View,
+    private readonly layoutSizeOf?: LayoutSizeOf,
+    private readonly pageShownOf?: PageShownOf,
+    private readonly keepAttached?: (view: View) => boolean
+  ) {}
 
   /** Called after a change to which tabs are on screen (not after a pane is only resized). Returns the removal. */
   onShownChange (listener: () => void): () => void {
@@ -62,7 +70,7 @@ export class PaneHost {
     let changed = false
     for (const [id, view] of this.shown) {
       if (wanted.get(id) === view) continue
-      this.contentView.removeChildView(view)
+      this.leave(id, view)
       this.forget(id)
       changed = true
     }
@@ -84,6 +92,7 @@ export class PaneHost {
     let attached = false
     panes.forEach((pane, at) => {
       if (this.shown.get(pane.id) !== pane.view) {
+        this.dropKept(pane.id, pane.view)
         attached = true
         attachShown(this.contentView, pane.view, ordered ? this.slotFor(panes, at, nextBackdrop) : undefined, this.onScreenOver(panes.slice(at + 1).map((other) => other.view)))
         this.shown.set(pane.id, pane.view)
@@ -120,6 +129,32 @@ export class PaneHost {
         if (mended) this.mend(tries - 1)
       })
     }, MEND_MS)
+  }
+
+  /** A view going off the screen: out of the window, or hidden in it while it is to stay attached. A hidden attached view
+   * still paints, which is what a capture of it needs, so this ends with `releaseKept` once nothing needs it. */
+  private leave (id: string, view: View): void {
+    if (this.keepAttached?.(view) === true) {
+      view.setVisible(false)
+      this.kept.set(id, view)
+    } else {
+      this.contentView.removeChildView(view)
+    }
+  }
+
+  /** The kept view of `id`, taken out of the window unless it is `except`, the view about to be shown again. */
+  private dropKept (id: string, except?: View): void {
+    const view = this.kept.get(id)
+    if (view === undefined) return
+    this.kept.delete(id)
+    if (view !== except) this.contentView.removeChildView(view)
+  }
+
+  /** Takes out of the window every kept view that nothing needs any more: a share ended. */
+  releaseKept (): void {
+    for (const [id, view] of [...this.kept]) {
+      if (this.keepAttached?.(view) !== true) this.dropKept(id)
+    }
   }
 
   /** Of `views`, those on screen now: the ones a view put below them must be shown beside. */
@@ -188,12 +223,14 @@ export class PaneHost {
 
   /** Takes a tab's view off the screen (it is going away, or being swapped for another). */
   hide (id: string): void {
+    this.dropKept(id)
     if (this.takeOff(id)) this.shownChanged()
   }
 
   /** `hide` without the announcement, for a view that `replace` puts another in the place of at once. Whether a pane
    * was on screen. */
   takeOff (id: string): boolean {
+    this.dropKept(id)
     const view = this.shown.get(id)
     if (view === undefined) return false
     this.contentView.removeChildView(view)

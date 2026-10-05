@@ -8,7 +8,7 @@ const B = (x: number) => ({ x, y: 0, width: 100, height: 100 })
  * on `addChildView`); a fresh one goes at `index`, the end by default. */
 interface FakeView { name: string, setBounds: ReturnType<typeof vi.fn>, setVisible: ReturnType<typeof vi.fn>, getVisible: () => boolean }
 
-function setup (): { host: PaneHost, children: string[], view: (name: string) => FakeView } {
+function setup (keep: (view: unknown) => boolean = () => false): { host: PaneHost, children: string[], view: (name: string) => FakeView } {
   const children: string[] = []
   const shownFlag = new Map<string, boolean>()
   const views = new Map<string, FakeView>()
@@ -31,8 +31,55 @@ function setup (): { host: PaneHost, children: string[], view: (name: string) =>
     }),
     removeChildView: vi.fn((child: { name: string }) => { const at = children.indexOf(child.name); if (at !== -1) children.splice(at, 1) })
   }
-  return { host: new PaneHost(contentView as never), children, view }
+  return { host: new PaneHost(contentView as never, undefined, undefined, keep as never), children, view }
 }
+
+describe('PaneHost: a view that is to stay attached', () => {
+  const keeping = (names: string[]): ((view: unknown) => boolean) => (view) => names.includes((view as FakeView).name)
+
+  it('hides a kept view in the window instead of taking it off, and shows it again in place', () => {
+    const kept = ['A']
+    const { host, children, view } = setup(keeping(kept))
+    host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
+    host.show([{ id: 'b', view: view('B') as never, bounds: B(0) }])
+    expect(children).toEqual(['A', 'B'])
+    expect(view('A').setVisible).toHaveBeenLastCalledWith(false)
+    expect(host.isShown('a')).toBe(false)
+    host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
+    expect(children).toEqual(['A'])
+    expect(view('A').setVisible).toHaveBeenLastCalledWith(true)
+    expect(host.isShown('a')).toBe(true)
+  })
+
+  it('takes a view that is not kept off the window as ever', () => {
+    const { host, children, view } = setup(keeping([]))
+    host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
+    host.show([{ id: 'b', view: view('B') as never, bounds: B(0) }])
+    expect(children).toEqual(['B'])
+  })
+
+  it('takes a kept view off the window once nothing keeps it', () => {
+    const kept = ['A']
+    const { host, children, view } = setup(keeping(kept))
+    host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
+    host.show([{ id: 'b', view: view('B') as never, bounds: B(0) }])
+    host.releaseKept()
+    expect(children).toEqual(['A', 'B'])
+    kept.length = 0
+    host.releaseKept()
+    expect(children).toEqual(['B'])
+    host.releaseKept()
+    expect(children).toEqual(['B'])
+  })
+
+  it('takes a kept view off the window when its tab closes', () => {
+    const { host, children, view } = setup(keeping(['A']))
+    host.show([{ id: 'a', view: view('A') as never, bounds: B(0) }])
+    host.show([{ id: 'b', view: view('B') as never, bounds: B(0) }])
+    host.hide('a')
+    expect(children).toEqual(['B'])
+  })
+})
 
 describe('PaneHost', () => {
   it('shows a pane at its bounds, and swaps it for another', () => {

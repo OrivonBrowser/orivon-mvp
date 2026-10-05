@@ -132,6 +132,17 @@ export function createPicker (deps: PickerDeps, { window, services, close, send 
     })
   }
 
+  /** Chromium captures only a tab that is in front of its window, so the tab picked is brought there as the choice resolves (as Chrome does). */
+  function bringToFront (tab: Electron.WebContents): void {
+    const found = services.windows.findTab(tab)
+    if (found === null || found.window.tabs.getState().activeTabId === found.tabId) return
+    found.window.tabs.activateTab(found.tabId)
+    if (found.window !== window) {
+      found.window.window.show()
+      found.window.window.focus()
+    }
+  }
+
   function share (asked: Question, cardId: string, wantsAudio: boolean): void {
     const ref = asked.refs.get(cardId)
     if (ref === undefined) return
@@ -143,6 +154,8 @@ export function createPicker (deps: PickerDeps, { window, services, close, send 
         return
       }
       finish(asked, { kind: 'tab', tab: offer.wc, audio: audio.tab && wantsAudio, label: cardText(offer.tab.title) || 'Tab' })
+      // After the picker is closed: switching tabs while it is up would end it as a tab switch, and the answer is only used a microtask later.
+      bringToFront(offer.wc)
     } else if (ref.kind === 'portal') {
       shareFromPortal(asked, ref.segment, ref.segment === 'screen' && audio.system && wantsAudio)
     } else {

@@ -31,7 +31,9 @@ function rig (options: { platform?: Partial<PickerPlatform>, hints?: DisplayHint
       liveWebContents: (id: string) => tabs[ids.indexOf(id)]
     }
   } as unknown as ShellWindow
-  const services = { windows: { all: () => [window] } }
+  const activated: string[] = []
+  ;(window.tabs as unknown as { activateTab: (id: string) => void }).activateTab = (id) => { activated.push(id); activeTabId = id }
+  const services = { windows: { all: () => [window], findTab: (contents: FakeTab) => ({ window, tabId: ids[tabs.indexOf(contents)] ?? '' }) } }
   const close = vi.fn()
   const sent: unknown[] = []
   const overlay = { window, services, close, send: (event: unknown) => { sent.push(event) } } as unknown as OverlayWindow
@@ -63,7 +65,7 @@ function rig (options: { platform?: Partial<PickerPlatform>, hints?: DisplayHint
   }
   const drawn = (id: string): void => { handler.request({ type: 'drawn', id }); clock.now += SHARE_GUARD_MS }
   const settle = async (): Promise<void> => { for (let i = 0; i < 8; i++) await Promise.resolve() }
-  return { handler, store, deps, getSources, close, sent, clock, open, drawn, settle, tabs, setActive: (id: string) => { activeTabId = id }, platform }
+  return { activated, handler, store, deps, getSources, close, sent, clock, open, drawn, settle, tabs, setActive: (id: string) => { activeTabId = id }, platform }
 }
 
 const ownCard = (view: Record<string, any>): Record<string, any> => view['cards'].tab[0]
@@ -175,6 +177,21 @@ describe('the picker overlay', () => {
         expect(choice).toMatchObject({ kind: 'tab', audio: expected, label: 'Title b' })
         expect((choice as { tab: unknown }).tab).toBe(r.tabs[1])
       }
+    })
+
+    it('brings a tab that is not in front to the front as the choice resolves, and leaves the tab already in front alone', async () => {
+      const r = rig()
+      const { view, id, answer } = r.open()
+      r.drawn(id)
+      r.handler.request({ type: 'share', id, card: view['cards'].tab[0]['id'], audio: false })
+      await answer
+      expect(r.activated).toEqual([])
+      const other = rig()
+      const second = other.open()
+      other.drawn(second.id)
+      other.handler.request({ type: 'share', id: second.id, card: second.view['cards'].tab[2]['id'], audio: false })
+      await second.answer
+      expect(other.activated).toEqual(['c'])
     })
 
     it('refuses a card main never offered, and one of a tab that closed since', async () => {
