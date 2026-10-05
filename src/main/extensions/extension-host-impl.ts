@@ -14,6 +14,8 @@ import { extensionOpenedUrl } from './extension-url-policy.js'
 import { applyOrivonTabDetails } from './extension-tab-details.js'
 import { markExtensionOpened, openExtensionTab } from './extension-opened-pages.js'
 import { activateTabShowing } from './extension-options-tab.js'
+import { sidePanelGestures } from './side-panel-gesture.js'
+import { sidePanelPages, sidePanelWindowOf } from './side-panel-pages.js'
 
 export interface ShellBridge { ctx: SubsystemContext, services: ShellServices }
 
@@ -145,7 +147,15 @@ export function buildHostImpl (getBridge: () => ShellBridge | undefined, callerO
 
   activateTabShowing: (url) => activateTabShowing(getBridge()?.services.windows.all() ?? [], url),
 
-  windowOf: (wc) => getBridge()?.services.windows.all().find((w) => w.chrome.webContents === wc)?.window,
+  // A toolbar's own page, or a side panel's page: the window each acts for.
+  windowOf: (wc) => getBridge()?.services.windows.all().find((w) => w.chrome.webContents === wc)?.window ?? sidePanelWindowOf(wc),
+
+  extensionContexts: (id) => sidePanelPages()
+    .filter((page) => page.contents.getURL().startsWith(`chrome-extension://${id}/`))
+    .map((page) => ({ contextType: 'SIDE_PANEL' as const, contents: page.contents, windowId: page.window.id })),
+
+  // A click on one of the extension's own context-menu items is input the person made on it.
+  menuItemClicked: (id) => { sidePanelGestures.record(id) },
 
   navigateTab: async (wc, url) => {
     const target = extensionOpenedUrl(url, isLoadedExtension)

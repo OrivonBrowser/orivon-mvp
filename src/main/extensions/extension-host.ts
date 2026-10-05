@@ -47,11 +47,12 @@ import { senderMatchesClaimedExtensionId } from './extension-sender-id-check.js'
 import { registerSandboxPageQuery } from './extension-sandbox-page-query.js'
 import { apiOrHostAccessFor, hostAccessFor } from './extension-host-access.js'
 import { clearInvocationsForExtension, hasRecentInvocation } from './extension-tab-invocation.js'
-import { recordTabCaptureInvocation } from './extension-tab-capture-invocation.js'
+import { recordExtensionInvocation } from './side-panel-gesture.js'
+import { sidePanelWindowOf } from './side-panel-pages.js'
 
 /** The session's extensions emitter takes one `extension-unloaded` listener from each extension subsystem: the
  * vendored library's eight, the invocation ledger, the dNR engine, the bookmarks and manifest APIs, the command
- * keys and the loaded-extensions feed, which is past Node's warning line of ten. Set here, before the first of them
+ * keys, the side panel and the loaded-extensions feed, which is past Node's warning line of ten. Set here, before the first of them
  * attaches, and above the count with room for a subsystem to come, not unlimited: a listener added per extension or
  * per navigation still warns. */
 export const EXTENSIONS_LISTENER_ROOM = 32
@@ -72,6 +73,7 @@ let pageRecovery: ExtensionPageRecovery<WebContents> | undefined
 export const extensionPagesAroundReload = {
   begin: (id: string): void => { pageRecovery?.begin(id) },
   end: (id: string): void => { pageRecovery?.end(id) },
+  reloading: (id: string): boolean => pageRecovery?.reloading(id) === true,
   sweep: (id: string): void => { pageRecovery?.sweep(id, webContents.getAllWebContents()) }
 }
 
@@ -116,7 +118,7 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
   setCookieHostAccessCheck((manifest, url, extensionId) => hostAccessFor(extensionId, manifest, url))
   setTabUrlAccessCheck((manifest, url, extensionId, tabId) => apiOrHostAccessFor(extensionId, manifest, 'tabs', url, tabId))
   setTabHostAccessCheck((manifest, url, extensionId, tabId) => hostAccessFor(extensionId, manifest, url, tabId))
-  setTabCaptureInvocationRecorder(recordTabCaptureInvocation)
+  setTabCaptureInvocationRecorder(recordExtensionInvocation)
   setTabCaptureInvocationCheck(hasRecentInvocation)
   setTabCaptureGrantRecorder((extensionId, targetTabId) => { mintTabCaptureGrant(extensionId, targetTabId, Date.now()) })
   setTabCaptureConsumedCheck(wasTabCaptureGrantConsumed)
@@ -166,7 +168,7 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
   const recovery = createExtensionPageRecovery<WebContents>({
     now: Date.now,
     graceMs: RELOAD_AFTER_GRACE_MS,
-    isEligible: (wc, id) => bridge?.services.windows.findTab(wc) != null && isExtensionOpened(wc, id)
+    isEligible: (wc, id) => sidePanelWindowOf(wc) !== undefined || (bridge?.services.windows.findTab(wc) != null && isExtensionOpened(wc, id))
   })
   app.on('web-contents-created', (_event, wc) => {
     watchNavigations(wc)

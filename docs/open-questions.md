@@ -2049,3 +2049,19 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** refuse extension scripting on `https://chromewebstore.google.com` in the host-access check (rec., once measured against the extensions people use there, such as a store-rating overlay); leave it.
 - **Who decides:** research first, then the owner
 - **Blocks:** nothing
+
+### A384: How long should the input that lets an extension open its side panel count? **[AI-REC]**
+
+- **Question:** `chrome.sidePanel.open` is accepted within five seconds of input the browser saw on the extension, spent by one open. Chrome's own window and what it counts as input on the extension were not measured.
+- **Why it matters:** too short and an extension that opens its panel after a network answer is refused; too long and one click opens panels for a while.
+- **Options:** keep five seconds (rec.: it matches the length of a page's transient activation); measure Chrome's, and take that.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A385: Does a real wallet extension work with its panel on a toolbar click? **[RESEARCH]**
+
+- **Question:** MetaMask sets `openPanelOnActionClick`, opens its panel from its popup with `open({ windowId })` and returns with `window.close()`; behind a remote flag its worker calls `open({ tabId })` with no gesture. Only a fixture extension has been run against the panel.
+- **Why it matters:** the toolbar click of the extension with the most users now opens a panel instead of its popup.
+- **Options:** run `test/extensions/e2e-extensions-real.test.ts` with `ORIVON_REAL_EXTENSIONS_DIR` set before merging (rec.); do nothing until a report comes in.
+- **Who decides:** research first
+- **Blocks:** nothing

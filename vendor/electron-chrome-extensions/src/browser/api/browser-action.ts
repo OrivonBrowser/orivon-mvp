@@ -636,10 +636,10 @@ export class BrowserActionAPI {
     // caller that already proved this is a real click (`activate`, above).
     if (recordInvocation) {
       gTabCaptureInvocationRecorder?.(extensionId, tab)
+      // Orivon patch (UPSTREAM.md patch 46): handled elsewhere, no popup. Patch 70: only for a
+      // counted click; `chrome.action.openPopup()` is no click, so it always opens the popup.
+      if (gActionClickInterceptor?.(extensionId, tab)) return
     }
-
-    // Orivon patch (UPSTREAM.md patch 46): handled elsewhere, no popup.
-    if (gActionClickInterceptor?.(extensionId, tab)) return
 
     const popupUrl = this.getPopupUrl(extensionId, tab.id)
 

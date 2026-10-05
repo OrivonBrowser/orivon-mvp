@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { installFromFolder, type InstallContext } from '../install-runner.js'
 import { setEnabled, uninstall } from '../install-lifecycle.js'
 import { readRegistry } from '../registry-runner.js'
+import { behaviorPath, writeOpenOnActionClick } from '../side-panel-behavior-file.js'
 import { ALWAYS_ALLOW, FIXTURE_MANIFEST, fakeSession, withTempDir, writeFixtureFolder } from './install-runner-fixtures.js'
 
 describe('uninstall / setEnabled', () => {
@@ -133,6 +134,48 @@ describe('uninstall / setEnabled', () => {
       expect(loaded.has(a.entry.id)).toBe(true)
       expect(loaded.has(b.entry.id)).toBe(false)
       expect(existsSync(b.entry.path)).toBe(false)
+    })
+  })
+})
+
+describe('uninstall and the side panel', () => {
+  it('closes the extension\'s side panels before its storage is emptied, while it is still loaded', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const source = writeFixtureFolder(root, FIXTURE_MANIFEST)
+      const { session, loaded } = fakeSession()
+      const outcome = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)
+      expect(outcome.installed).toBe(true)
+      if (!outcome.installed) return
+      const order: string[] = []
+
+      await uninstall({
+        userDataPath,
+        session,
+        prompt: ALWAYS_ALLOW,
+        closeSidePanels: async (id) => { order.push(`close:${id}:${String(loaded.has(id))}`) },
+        clearExtensionStorage: async () => { order.push('clear') }
+      }, outcome.entry.id)
+
+      expect(order).toEqual([`close:${outcome.entry.id}:true`, 'clear'])
+    })
+  })
+
+  it('removes the saved toolbar behaviour with the extension', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const source = writeFixtureFolder(root, FIXTURE_MANIFEST)
+      const { session } = fakeSession()
+      const outcome = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, source)
+      expect(outcome.installed).toBe(true)
+      if (!outcome.installed) return
+      const slot = dirname(outcome.entry.path)
+      writeOpenOnActionClick(slot, true)
+      expect(existsSync(behaviorPath(slot))).toBe(true)
+
+      await uninstall({ userDataPath, session, prompt: ALWAYS_ALLOW }, outcome.entry.id)
+
+      expect(existsSync(behaviorPath(slot))).toBe(false)
     })
   })
 })

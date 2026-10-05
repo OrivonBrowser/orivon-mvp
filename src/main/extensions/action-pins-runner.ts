@@ -15,6 +15,7 @@ import { extensionOpenedUrl } from './extension-url-policy.js'
 import { openExtensionTab } from './extension-opened-pages.js'
 import { activateTabShowing } from './extension-options-tab.js'
 import { readExtensionFacts } from './extensions-view-runner.js'
+import { sidePanelMenuAction } from './side-panel-runner.js'
 
 const USER_SETTINGS_EVENT = 'action.onUserSettingsChanged'
 
@@ -57,6 +58,7 @@ function install (ctx: ExtensionApiContext): void {
     hasOptions: optionsPageUrl(id, manifestOf(id)) !== undefined,
     pinned: pinned(id),
     extensionItems,
+    openSidePanel: sidePanelMenuAction(id),
     openOptions: () => {
       const url = optionsPageUrl(id, manifestOf(id))
       const target = url === undefined ? undefined : extensionOpenedUrl(url, isLoaded)

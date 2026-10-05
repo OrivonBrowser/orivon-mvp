@@ -7,6 +7,7 @@ import type { ElectronChromeExtensions } from 'orivon:crx-extensions'
 import type { ShellServices } from '../shell/shell-services.js'
 import { extensionOpenedUrl, type IsLoadedExtension } from './extension-url-policy.js'
 import { openExtensionTab } from './extension-opened-pages.js'
+import { sidePanelWindowOf } from './side-panel-pages.js'
 
 export interface PopupPolicyDeps {
   /** undefined until the first window exists. */
@@ -46,8 +47,8 @@ export function setupWindowOpenPolicy (contents: WebContents, deps: PopupPolicyD
   contents.setWindowOpenHandler(({ url }) => {
     const services = deps.services()
     if (services !== undefined) {
-      // A popup's own page opens its tab beside the window the popup hangs under; a background page has no window of its own.
-      const win = parentOf(contents) ?? services.windows.focused()?.window
+      // A popup's or a side panel's own page opens its tab beside the window it belongs to; a background page has no window of its own.
+      const win = parentOf(contents) ?? sidePanelWindowOf(contents) ?? services.windows.focused()?.window
       const target = extensionOpenedUrl(url, deps.isLoaded)
       const shellWindow = win === undefined ? undefined : services.windows.all().find((w) => w.window === win)
       if (shellWindow !== undefined && target !== undefined) openExtensionTab(shellWindow.tabs, target)

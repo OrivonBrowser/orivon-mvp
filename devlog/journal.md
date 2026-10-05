@@ -28,6 +28,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Every ported app now shows visitors in other browsers a panel pointing them to Orivon; it stays hidden inside Orivon, and --no-orivon-hint removes it.
 - Orivon asks to be the default browser from Settings, the welcome screen and weekly; the dock and taskbar offer New Window and New Private Window.
 - CI's e2e now runs only the specs a change can reach, in parallel shards: minutes instead of forty.
+- Extensions get a real side panel: chrome.sidePanel works, the toolbar click or key opens it, and open() needs the person's own input.
 
 ### In my head
 

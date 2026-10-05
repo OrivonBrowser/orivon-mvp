@@ -233,6 +233,9 @@ export class TabsAPI {
         popupParentOf(event.sender) ??
         BrowserWindow.fromWebContents(event.sender)?.getParentWindow()
       if (own && !own.isDestroyed()) return own.id
+      // Orivon patch (UPSTREAM.md patch 70): a page the host places in a window that is neither a tab nor a popup (a side panel).
+      const placed = this.ctx.store.impl.windowOf?.(event.sender)
+      if (placed && !placed.isDestroyed()) return placed.id
     }
     return this.ctx.store.lastFocusedWindowId
   }

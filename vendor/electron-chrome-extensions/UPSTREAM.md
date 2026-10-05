@@ -72,8 +72,9 @@
     `src/renderer/index.ts`'s `apiDefinitions`: added factories for all four, following the
     file's own existing pattern (a `webRequest.onHeadersReceived`-only stub was already there).
     Reason: entirely absent otherwise, so an extension whose startup code calls or feature-
-    detects any of them throws before it does anything else. `sidePanel` and `userScripts`
-    resolve as no-ops: no real side panel, no real user script world.
+    detects any of them throws before it does anything else. `userScripts` resolves as no-ops:
+    no real user script world. `sidePanel` is Orivon's own, defined in the extension's page by
+    `src/preload/extension-apis/side-panel.ts` (patch 70).
     `declarativeNetRequest` is real, wired by patches 43 and 44 below to Orivon's own engine
     (`src/main/extensions/dnr/`, `src/main/extensions/extensions-dnr.ts`).
 11. **Non-enumerable API properties.** `src/renderer/index.ts`'s per-API `Object.defineProperty
@@ -725,8 +726,8 @@
     `onUpdate`). Module setters, set once before the first activation: `setActionVisibilityCheck`
     filters the actions `getState` and `listActions` report (unset: all of them), and
     `setActionClickInterceptor`, called in `activateClick` after the invocation is recorded and
-    before any popup opens; `true` means the click was handled elsewhere (a side panel, an
-    omnibox), so no popup and no `onClicked`. `src/browser/index.ts` exposes the three methods as
+    before any popup opens, for a counted click only (patch 70); `true` means the click was
+    handled elsewhere (a side panel, an omnibox), so no popup and no `onClicked`. `src/browser/index.ts` exposes the three methods as
     `listActions`, `activateAction` and `notifyActionsChanged`. Reason: Orivon's own toolbar menu
     lists and clicks actions, and pinning hides some, none of which the chrome view's
     `<browser-action-list>` channel can do on Orivon's behalf. `visibleActions` sorts by the
@@ -870,6 +871,22 @@
     which `openPopup` awaits before opening; `undefined`, or a lookup that throws, keeps the
     window's top-right corner. Reason: the popup had no anchor of the extension's own when an
     extension, not a click, asked for it.
+70. **Side panel pages, and a click that is no click.** `src/browser/impl.ts`: the optional
+    `extensionContexts(extensionId)` (the extension's side panel pages, each with its window) and
+    `menuItemClicked(extensionId, tab)`; the optional `windowOf(contents)` also answers for a side
+    panel page. `src/browser/api/runtime.ts`: `getContexts` adds a `SIDE_PANEL` context for each
+    page `extensionContexts` reports. `src/browser/api/tabs.ts` (`currentWindowId`) and
+    `src/browser/api/windows.ts` (`getCurrent`) ask `windowOf(sender)` for a calling frame before
+    the last focused window. `src/browser/api/context-menus.ts`: a click on one of the extension's
+    items calls `menuItemClicked` before `contextMenus.onClicked` is sent; the file also takes
+    type-only imports and conditional spreads so the root tsconfig accepts it when a unit test
+    imports it. `src/browser/api/browser-action.ts`: the click interceptor (patch 46) runs only
+    when the click is counted, so `chrome.action.openPopup()`, which is no click, always opens the
+    popup. `src/renderer/index.ts`: the `sidePanel` no-op factory is gone; Orivon defines
+    `chrome.sidePanel` from `src/preload/extension-apis/side-panel.ts` when the manifest declares
+    the permission. Reason: a side panel page acted for the last focused window and was absent from
+    `getContexts`; a context-menu click and a toolbar click are input the host needs to hear of;
+    and an extension asking for its popup from a worker toggled its panel instead.
 
 `partition.ts` is reached only through the virtual specifier `src/main/extensions/
 electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and
@@ -877,8 +894,8 @@ electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file'
 tsconfig (verbatimModuleSyntax, exactOptionalPropertyTypes) are therefore not patched: nothing in
 `src/` opens it directly, and `vendor/tsconfig.json`'s own, looser check already covers it as
 authored. `browser/index.ts`, `router.ts`, `api/cookies.ts`, `api/tabs.ts`, `api/web-navigation.ts`,
-`api/windows.ts`, `store.ts`, `api/browser-action.ts`, `popup.ts`, `api/runtime.ts` and
-`api/notifications.ts` are the exceptions: patches 13-14, 16-20, 21-31, 67 and 68 above make them satisfy the root tsconfig too, so
+`api/windows.ts`, `store.ts`, `api/browser-action.ts`, `popup.ts`, `api/runtime.ts`,
+`api/notifications.ts` and `api/context-menus.ts` are the exceptions: patches 13-14, 16-20, 21-31, 67, 68 and 70 above make them satisfy the root tsconfig too, so
 `src/main/extensions/tests/` can unit-test the sender-id, permission and host-access patches
 directly against the real files, instead of only against a same-shaped local fake. `context.ts`
 and `api/common.ts`/`impl.ts` sit on the same import path and needed no patch of their own: measured,

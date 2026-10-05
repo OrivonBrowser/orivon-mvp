@@ -54,6 +54,8 @@ export interface InstallContext {
   readonly clearExtensionStorage?: (id: string) => Promise<void>
   /** Whether an extension installed now gets a toolbar button (the `extensions.pinInstalled` setting); unset: no. */
   readonly pinInstalled?: () => boolean
+  /** Closes every side panel the extension has open, so none writes storage back; an uninstall runs it before `clearExtensionStorage`. */
+  readonly closeSidePanels?: (id: string) => Promise<void>
 }
 
 export type InstallOutcome =

@@ -28,6 +28,8 @@ declare module 'orivon:crx-extensions' {
       navigateTab?(tab: Electron.WebContents, url: string): void | Promise<void>
       windowOf?(contents: Electron.WebContents): Electron.BaseWindow | undefined
       activateTabShowing?(url: string): boolean
+      extensionContexts?(extensionId: string): Array<{ contextType: 'SIDE_PANEL', contents: Electron.WebContents, windowId: number }>
+      menuItemClicked?(extensionId: string, tab: Electron.WebContents): void
     }
     interface Options extends Impl {
       license: 'GPL-3.0' | 'Patron-License-2020-11-19'

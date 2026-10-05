@@ -10,6 +10,7 @@ import { commandsApi } from './commands-api.js'
 import { historyApi, topSitesApi } from './history-api.js'
 import { runtimeApi } from './runtime-api.js'
 import { searchApi } from './search-api.js'
+import { sidePanelApi } from '../side-panel-runner.js'
 
 export const EXTENSION_APIS: readonly ExtensionApiModule[] = [
   actionUserSettingsApi,
@@ -19,6 +20,7 @@ export const EXTENSION_APIS: readonly ExtensionApiModule[] = [
   permissionsApi,
   runtimeApi,
   searchApi,
+  sidePanelApi,
   topSitesApi,
   webRequestApi
 ]

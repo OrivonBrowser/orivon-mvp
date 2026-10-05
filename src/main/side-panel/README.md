@@ -18,14 +18,20 @@ the page area shrinks by the panel's width, in `tabBounds()` of [`../shell/windo
 | `side-panel-hook.ts`, `install-side-panel.ts` | Gives a window its panel; makes the file store |
 
 **What other code uses.** `sidePanelFor(window)` answers `isOpen`, `open`, `close`, `toggle`, `view`, `width`,
-`side`, `bodyBounds` and `onChange`, and the guest slot: `setGuest({ id, title, icon?, view, closed? })` lays a
+`side`, `bodyBounds`, `canShow` and `onChange`, and the guest slot: `setGuest({ id, title, icon?, view, closed? })` lays a
 `WebContentsView` over the body below the header, above the panel and under every popup, and `closed` runs once
 when it leaves. `setGuestEntries(entries)` adds `ext:<id>` entries to every window's picker, and
 `onGuestChosen(listener)` hears a picker choice, `open(entryId)` or `toggle(entryId)`; the listener owns the view
 and answers with `setGuest`. The answer is for the entry the panel is showing: once the person has picked another
 view, or while the panel is closed, a late `setGuest` is dropped and its `closed` runs at once. The guest steps aside
 while the view picker's list is open, since it sits above the panel's page. All of it is main-side: the page can only
-choose an entry the list holds.
+choose an entry the list holds. `canShow()` says whether the window could show a panel now (not a kiosk, wide enough,
+not stopped): a caller that must not fail silently asks it before `open`. `setGuest(null)` for an entry that was chosen
+while nothing answers for it puts the panel back on the last of Orivon's own views, so the body is never left blank.
+
+**Who fills the slot.** Extensions do, through [`../extensions/side-panel-runner.ts`](../extensions/side-panel-runner.ts):
+it lists every extension holding `sidePanel` with a panel for the tab in front, and answers a choice with the
+extension's page once its first load has ended.
 
 **Tied to Electron, entirely.** The model, the requests and the views' row building import no `electron` value;
 the host, the overlay and the store do.

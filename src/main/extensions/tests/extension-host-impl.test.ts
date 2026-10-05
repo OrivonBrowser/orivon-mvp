@@ -107,3 +107,46 @@ describe('extensionJustActivatedTab', () => {
     expect(extensionJustActivatedTab(popupOf('ext-a', win))).toBe(false)
   })
 })
+
+describe('buildHostImpl: side panel pages', () => {
+  function panelPage (url: string): WebContents {
+    return { id: 9, once: vi.fn(), isDestroyed: () => false, getURL: () => url } as unknown as WebContents
+  }
+
+  it('names the window a side panel page belongs to', async () => {
+    const { registerSidePanelPage } = await import('../side-panel-pages.js')
+    const page = panelPage(`chrome-extension://${'f'.repeat(32)}/panel.html`)
+    const win = { id: 4, isDestroyed: () => false }
+    registerSidePanelPage(page, win as never)
+    const host = buildHostImpl(() => ({ services: { windows: { all: () => [] } } }) as unknown as ShellBridge)
+    expect(host.windowOf?.(page)).toBe(win)
+  })
+
+  it('lists the extension\'s side panel pages as SIDE_PANEL contexts, and no other extension\'s', async () => {
+    const { registerSidePanelPage } = await import('../side-panel-pages.js')
+    const mine = panelPage(`chrome-extension://${ID}/panel.html`)
+    const other = panelPage('chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba/panel.html')
+    registerSidePanelPage(mine, { id: 6, isDestroyed: () => false } as never)
+    registerSidePanelPage(other, { id: 7, isDestroyed: () => false } as never)
+    const host = buildHostImpl(() => undefined)
+    expect(host.extensionContexts?.(ID)).toEqual([{ contextType: 'SIDE_PANEL', contents: mine, windowId: 6 }])
+  })
+
+  it('leaves out a side panel page whose window is gone, instead of throwing', async () => {
+    const { registerSidePanelPage } = await import('../side-panel-pages.js')
+    const orphan = panelPage(`chrome-extension://${ID}/orphan.html`)
+    registerSidePanelPage(orphan, { get id (): number { throw new Error('Object has been destroyed') }, isDestroyed: () => true } as never)
+    const host = buildHostImpl(() => undefined)
+    expect(host.extensionContexts?.(ID)?.some((context) => context.contents === orphan)).toBe(false)
+  })
+
+  it('counts a click on one of the extension\'s context-menu items as input on it', async () => {
+    const { sidePanelGestures } = await import('../side-panel-gesture.js')
+    sidePanelGestures.clear(ID)
+    const host = buildHostImpl(() => undefined)
+    expect(sidePanelGestures.available(ID)).toBe(false)
+    host.menuItemClicked?.(ID, {} as WebContents)
+    expect(sidePanelGestures.available(ID)).toBe(true)
+    sidePanelGestures.clear(ID)
+  })
+})

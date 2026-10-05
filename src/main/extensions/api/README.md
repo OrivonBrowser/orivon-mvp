@@ -28,6 +28,10 @@ the permission (`extension-event-filter.ts`'s `EVENT_GATES` adds per-event rules
 **Apps stay out of every answer.** `ctx.isAppOrigin(url)` is true for the origin of a registered
 app; a data API leaves such URLs, tabs and storage out of its answers and events.
 
+**`chrome.sidePanel`** is registered by [`../side-panel-runner.ts`](../side-panel-runner.ts) (`sidePanelApi`, listed in
+`api-registry.ts`): its context call builds the driver that runs the panel, so the module needs no `electron` value of
+its own.
+
 **The library namespaces.** `bookmarks-api.ts`, `history-api.ts` (with `topSites`) and
 `search-api.ts` sit over the shell's stores through `ctx.shell()`, and the pure parts are apart:
 `bookmarks-shape.ts` (Chrome's ids and nodes: root `0`, bar `1`, other `2`, the reading list never

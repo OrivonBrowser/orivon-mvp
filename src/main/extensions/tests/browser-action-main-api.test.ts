@@ -110,6 +110,35 @@ describe('activateFromMain', () => {
   })
 })
 
+describe('chrome.action.openPopup and the click interceptor', () => {
+  it('carries on to the extension and never asks the interceptor: no click was made, so nothing is taken as one', () => {
+    const tab = { id: 7 }
+    const ctx = fakeCtx(tab)
+    const win = { isDestroyed: () => false, getSize: () => [800, 600] }
+    ctx.store.getCurrentWindow = () => win
+    ctx.store.getWindowById = () => win
+    ctx.store.getActiveTabFromWindow = () => tab
+    const api = new BrowserActionAPI(ctx)
+    withActions(api)
+    const intercept = vi.fn(() => true)
+    setActionClickInterceptor(intercept)
+    ;(api as any).openPopup({ extension: { id: B } }, undefined)
+    expect(intercept).not.toHaveBeenCalled()
+    expect(ctx.router.sendEvent).toHaveBeenCalledWith(B, 'browserAction.onClicked', undefined)
+  })
+
+  it('runs the interceptor for a click and for a click started by Orivon', () => {
+    const tab = { id: 7 }
+    const ctx = fakeCtx(tab)
+    const api = new BrowserActionAPI(ctx)
+    withActions(api)
+    const intercept = vi.fn(() => false)
+    setActionClickInterceptor(intercept)
+    api.activateFromMain(B, tab as never, ANCHOR)
+    expect(intercept).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('notifyChanged', () => {
   it('tells every observer once, however many times it is called in a tick', async () => {
     const api = new BrowserActionAPI(fakeCtx({ id: 1 }))

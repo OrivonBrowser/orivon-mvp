@@ -20,6 +20,18 @@ function recovery (now: () => number = () => 0, isEligible: (p: ReloadablePage, 
   return createExtensionPageRecovery({ now, graceMs: 1000, isEligible })
 }
 
+describe('createExtensionPageRecovery: reloading', () => {
+  it('is true only between begin and end, and only for that extension', () => {
+    const r = recovery()
+    expect(r.reloading(ID)).toBe(false)
+    r.begin(ID)
+    expect(r.reloading(ID)).toBe(true)
+    expect(r.reloading(OTHER)).toBe(false)
+    r.end(ID)
+    expect(r.reloading(ID)).toBe(false)
+  })
+})
+
 describe('createExtensionPageRecovery: the pages that exist once the extension is loaded again', () => {
   it('navigates every live page of the extension to its own URL again, and nothing else', () => {
     const welcome = page(`chrome-extension://${ID}/welcome.html`)

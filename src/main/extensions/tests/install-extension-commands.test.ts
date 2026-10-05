@@ -3,13 +3,19 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { parseBinding } from '../../shortcuts/accelerator.js'
+import type { Chord } from '../../shortcuts/accelerator.js'
 import { createExtensionPrefsStore } from '../extension-prefs-runner.js'
 
 // The session's extensions, as far as this reads them: a list it can be asked
 // for and the two events it listens to.
 const sessionExtensions = Object.assign(new EventEmitter(), { getAllExtensions: vi.fn((): unknown[] => []) })
-vi.mock('electron', () => ({ session: { defaultSession: { extensions: sessionExtensions } } }))
-vi.mock('../extension-host.js', () => ({ extensionHost: () => undefined }))
+const defaultSession = { extensions: sessionExtensions }
+Object.assign(sessionExtensions, { owner: defaultSession })
+vi.mock('electron', () => ({ session: { defaultSession } }))
+vi.mock('../extension-host.js', () => ({ extensionHost: () => ({ sendCommand: () => {}, activateAction: () => {}, listActions: () => [] }) }))
+const openSidePanelFor = vi.hoisted(() => vi.fn((_id: string, _tab: unknown, _window: unknown) => true))
+vi.mock('../side-panel-runner.js', () => ({ openSidePanelFor }))
 const registry = vi.hoisted(() => ({ entries: [] as Array<{ id: string, installedAt: number }> }))
 vi.mock('../registry-runner.js', () => ({ readRegistry: () => registry.entries }))
 
@@ -85,6 +91,20 @@ describe('installExtensionCommands', () => {
     expect(names()).toEqual(['zulu', 'alpha'])
     sessionExtensions.emit('extension-loaded')
     expect(names()).toEqual(['alpha', 'zulu'])
+  })
+
+  it('opens the extension\'s side panel from its key, and passes the key on when there is no panel', () => {
+    const tab = { isDestroyed: () => false, session: (sessionExtensions as unknown as { owner: unknown }).owner, getURL: () => 'https://a.example/' }
+    const window = { window: { isDestroyed: () => false }, tabs: { activeWebContents: () => tab } }
+    sessionExtensions.getAllExtensions.mockReturnValue([loaded('one', { _execute_side_panel: { suggested_key: { default: 'Alt+Shift+P' }, description: 'Panel' } })])
+    const keys = KEYS(false)
+    keys.ready({ ...environment, windows: { findOwner: () => undefined, focused: () => window as never } })
+    expect(keys.groups()[0]?.commands[0]?.unavailable).toBeNull()
+    const press = parseBinding('Alt+Shift+P', 'linux') as Chord
+    expect(keys.run(press, tab as never)).toBe(true)
+    expect(openSidePanelFor).toHaveBeenCalledWith('one', tab, window)
+    openSidePanelFor.mockReturnValueOnce(false)
+    expect(keys.run(press, tab as never)).toBe(false)
   })
 
   it('has nothing in a private runtime', () => {

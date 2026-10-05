@@ -33,6 +33,7 @@ import { provideCommandKeys } from './api/commands-api.js'
 import { installExtensionCommands } from './install-extension-commands.js'
 import type { ExtensionCommandKeys } from './extension-commands-runner.js'
 import { installDnrWebRequestHandlers } from './dnr-webrequest.js'
+import { closeSidePanels } from './side-panel-runner.js'
 
 export interface ExtensionsApi {
   readonly installFromFolder: (dir: string, where?: InstallWhere) => Promise<InstallOutcome>
@@ -128,7 +129,7 @@ export const extensionsSubsystem: Subsystem = {
     // install route refuses; the store page's hook still starts (below).
     if (!ctx.privateSession) await loadEnabledExtensions(userDataPath)
 
-    const install: InstallContext = { userDataPath, session: session.defaultSession, prompt: createExtensionInstallPrompt(), prefs, privateSession: ctx.privateSession, pinInstalled: () => shellServices()?.settings.get('extensions.pinInstalled') === true, clearExtensionStorage: async (id) => { await clearChromeStorage(session.defaultSession, id) } }
+    const install: InstallContext = { userDataPath, session: session.defaultSession, prompt: createExtensionInstallPrompt(), prefs, privateSession: ctx.privateSession, pinInstalled: () => shellServices()?.settings.get('extensions.pinInstalled') === true, clearExtensionStorage: async (id) => { await clearChromeStorage(session.defaultSession, id) }, closeSidePanels }
     const preloadPath = join(import.meta.dirname, '../preload/web-store.js')
     // Started in every runtime: a store tab in a private window must never reach the native
     // `chrome.webstorePrivate`. In a private one installs are denied inside it.
