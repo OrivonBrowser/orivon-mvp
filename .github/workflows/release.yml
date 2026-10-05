@@ -181,15 +181,15 @@ jobs:
           TAG: ${{ github.event.release.tag_name }}
         run: gh release upload "$TAG" packages/* --clobber --repo "$GITHUB_REPOSITORY"
 
-      # Once per release: a re-run finds the CID already in the notes.
+      # Replaces the section a previous run wrote: a re-run rebuilds the packages, and their CID with them.
       - name: Name the release's CID in its notes
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
         run: |
           cid=$(jq -r .cid packages/ipfs.json)
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body > notes.md
-          if grep -qF "$cid" notes.md; then exit 0; fi
-          printf '\n\n### On IPFS\n\nThe same files, as one folder: `ipfs://%s`. Open it in Orivon, or run `ipfs get %s`. The Orivon node pins it within about 15 minutes, beside the two releases before it, all listed at `ipns://%s`.\n' \
-            "$cid" "$cid" "$RELEASES_IPNS" >> notes.md
+          # Notes edited on github.com end their lines with CRLF.
+          body=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body | sed $'/^### On IPFS\r\\{0,1\\}$/,$d')
+          printf '%s\n\n### On IPFS\n\nThe same files, as one folder: `ipfs://%s`. Open it in Orivon, or run `ipfs get %s`. The Orivon node pins it within about 15 minutes, beside the two releases before it, all listed at `ipns://%s`.\n' \
+            "$body" "$cid" "$cid" "$RELEASES_IPNS" > notes.md
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
