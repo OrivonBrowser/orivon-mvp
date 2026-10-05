@@ -52,6 +52,8 @@ export interface InstallContext {
   readonly privateSession?: boolean
   /** Empties the loaded extension's chrome.storage; an uninstall runs it first (extension-data.ts). */
   readonly clearExtensionStorage?: (id: string) => Promise<void>
+  /** Whether an extension installed now gets a toolbar button (the `extensions.pinInstalled` setting); unset: no. */
+  readonly pinInstalled?: () => boolean
 }
 
 export type InstallOutcome =
@@ -242,6 +244,12 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
   // A new version starts from the rulesets its manifest enables; the dynamic rules stay.
   if (enabled && replaced !== undefined && replaced.version !== facts.version) droppedRulesetChoice = takeEnabledRulesetOverride(slotDir)
 
+  // A fresh install with no pin of the person's own is pinned, or not, by the setting as it is now, before the
+  // load so the toolbar never shows an icon that goes. A failed load puts it back to unchosen below.
+  const recordedPin = ctx.prefs !== undefined && previousInSlot.length === 0 && ctx.prefs.get(id).pinned === null
+  if (recordedPin) ctx.prefs?.update(id, { pinned: ctx.pinInstalled?.() ?? false })
+  const forgetPin = (): void => { if (recordedPin) ctx.prefs?.update(id, { pinned: null }) }
+
   if (enabled) {
     // Handed to the declarativeNetRequest service BEFORE loadExtension: the
     // registry write below only lands after the load resolves, so its own
@@ -260,6 +268,7 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
       // version that restoreAsideOnFailure may reload under this same id.
       clearPendingDnrInstall(id)
       clearPendingInstalled(id)
+      forgetPin()
       await restoreAsideOnFailure()
       throw error
     }
@@ -275,6 +284,7 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
       clearPendingDnrInstall(id)
       clearPendingInstalled(id)
       ctx.session.extensions.removeExtension(loaded.id)
+      forgetPin()
       // Loading under an installed extension's id replaced it in the session: load that one back.
       const displaced = readRegistry(ctx.userDataPath).find((existing) => existing.id === loaded.id && existing.enabled)
       if (displaced !== undefined) {

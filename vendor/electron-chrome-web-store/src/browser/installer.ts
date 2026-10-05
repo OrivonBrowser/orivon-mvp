@@ -266,7 +266,7 @@ export async function installExtension(
   if (opts.host) {
     const extensionsPath = opts.extensionsPath || getDefaultExtensionsPath()
     await downloadExtensionFromURL(
-      getExtensionCrxURL(extensionId),
+      opts.host.crxUrl?.(extensionId) ?? getExtensionCrxURL(extensionId),
       extensionsPath,
       opts.verifyCrx,
       extensionId,

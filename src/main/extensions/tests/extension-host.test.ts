@@ -43,6 +43,7 @@ vi.mock('orivon:crx-extensions-partition', () => ({
 }))
 
 vi.mock('orivon:crx-extensions-router', () => ({
+  callingExtensionId: vi.fn(),
   setRemoteMessageSenderCheck: vi.fn(),
   setMessageSenderIdCheck: vi.fn(),
   setEventListenerFilter: vi.fn(),
@@ -59,7 +60,9 @@ vi.mock('orivon:crx-extensions-tabs', () => ({
 }))
 
 vi.mock('orivon:crx-extensions-browser-action', () => ({
-  setTabCaptureInvocationRecorder: vi.fn()
+  setTabCaptureInvocationRecorder: vi.fn(),
+  setPopupHost: vi.fn(),
+  setOpenPopupAnchor: vi.fn()
 }))
 
 vi.mock('orivon:crx-extensions-tab-capture', () => ({

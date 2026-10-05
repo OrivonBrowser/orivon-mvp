@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// afterReady in a private or guest runtime: nothing loads, no Web Store hook
-// starts, and every install route refuses. The ordinary runtime is the control.
+// afterReady in a private or guest runtime: nothing loads, the Web Store page's APIs are still
+// served (so a store tab never reaches the native ones) with installs refused, and every install
+// route refuses. The ordinary runtime is the control.
 const loadExtension = vi.fn(async () => ({}))
 const startWebStore = vi.fn(async () => ({
   installFromStore: vi.fn(), checkForUpdates: vi.fn(), updateFromStore: vi.fn()
@@ -40,10 +41,11 @@ beforeEach(() => {
 })
 
 describe('extensionsSubsystem.afterReady', () => {
-  it('in a private runtime loads nothing, starts no Web Store hook and refuses every install route', async () => {
+  it('in a private runtime loads nothing, starts the store with installs refused and refuses every install route', async () => {
     await extensionsSubsystem.afterReady!(ctx(true))
     expect(loadExtension).not.toHaveBeenCalled()
-    expect(startWebStore).not.toHaveBeenCalled()
+    expect(startWebStore).toHaveBeenCalledTimes(1)
+    expect((startWebStore.mock.calls[0] as any[])[0].privateSession).toBe(true)
     await expect(published.installFromFolder('/x')).resolves.toEqual(REFUSED)
     await expect(published.installFromFile('/x.crx')).resolves.toEqual(REFUSED)
     await expect(published.installFromStore('a'.repeat(32))).resolves.toEqual(REFUSED)

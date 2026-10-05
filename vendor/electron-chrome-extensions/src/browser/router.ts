@@ -1,8 +1,18 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { app, ipcMain } from 'electron'
 import type { Session } from 'electron'
 import debug from 'debug'
 
 import { resolvePartition } from './partition'
+
+// Orivon patch (UPSTREAM.md patch 68): the extension whose API call is running, for the embedder's own
+// callbacks (impl.ts createTab, selectTab), which are not told who asked.
+const callerStore = new AsyncLocalStorage<string>()
+
+/** The id of the extension whose API call (a chrome.tabs or chrome.runtime one, say) is running now, if one is. */
+export function callingExtensionId(): string | undefined {
+  return callerStore.getStore()
+}
 
 // Shorten base64 encoded icons
 const shortenValues = (k: string, v: any) =>
@@ -778,7 +788,9 @@ export class ExtensionRouter {
         ? { type: event.type, sender: event.sender, extension: extension! }
         : { type: event.type, sender: event.serviceWorker, extension: extension! }
 
-    const result = await handler.callback(extEvent, ...args)
+    const result = await (extension == null
+      ? handler.callback(extEvent, ...args)
+      : callerStore.run(extension.id, () => handler.callback(extEvent, ...args)))
 
     d(`${handlerName} result: %r`, result)
 

@@ -18,10 +18,10 @@ import type { Session, WebContents } from 'electron'
 // file for bundling; tsc uses that .d.ts's ambient declaration instead.
 import { ElectronChromeExtensions } from 'orivon:crx-extensions'
 import { setSessionPartitionResolver } from 'orivon:crx-extensions-partition'
-import { setEventListenerFilter, setMessageSenderIdCheck, setRemoteMessageSenderCheck } from 'orivon:crx-extensions-router'
+import { callingExtensionId, setEventListenerFilter, setMessageSenderIdCheck, setRemoteMessageSenderCheck } from 'orivon:crx-extensions-router'
 import { setCookieHostAccessCheck } from 'orivon:crx-extensions-cookies'
 import { setTabUrlAccessCheck, setTabHostAccessCheck } from 'orivon:crx-extensions-tabs'
-import { setTabCaptureInvocationRecorder } from 'orivon:crx-extensions-browser-action'
+import { setOpenPopupAnchor, setPopupHost, setTabCaptureInvocationRecorder } from 'orivon:crx-extensions-browser-action'
 import { setTabCaptureAppRefusalCheck, setTabCaptureConsumedCheck, setTabCaptureGrantRecorder, setTabCaptureInvocationCheck } from 'orivon:crx-extensions-tab-capture'
 import type { ShellServices } from '../shell/shell-services.js'
 import { setPageMenuItemsSource } from '../shell/page-menu-items.js'
@@ -34,7 +34,10 @@ import { EXTENSION_SANDBOX_CSP_FILTER, extensionSandboxCsp } from './extension-s
 import { appOrigin } from '../shell/devtools-app-origin.js'
 import { eventListenerFilter } from './extension-event-filter.js'
 import { closeCurrentPopup, installPopupPolicy } from './extension-popup-policy.js'
-import { buildHostImpl, isExtensionActivatingTab, isLoadedExtension, shellInitiated, type ShellBridge } from './extension-host-impl.js'
+import { extensionPopupHost, wirePopupHost } from './extension-popup-host.js'
+import { hasPendingNavigation, watchNavigations } from './extension-pending-navigation.js'
+import { anchorFor } from './extension-action-anchor.js'
+import { buildHostImpl, EXTENSION_FOCUS_HANDOVER_MS, extensionJustActivatedTab, isExtensionActivatingTab, isLoadedExtension, shellInitiated, type ShellBridge } from './extension-host-impl.js'
 import { watchPinSetting } from './action-pins-runner.js'
 import { watchForMissedServiceWorkerPreload } from './extension-sw-preload-recovery.js'
 import { beginDnrReload, endDnrReload } from './extensions-dnr.js'
@@ -145,7 +148,7 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
     license: 'GPL-3.0',
     session: session.defaultSession,
     preloadPath,
-    ...buildHostImpl(() => bridge)
+    ...buildHostImpl(() => bridge, callingExtensionId)
   })
 
   // extension-sw-preload-recovery.ts must not import extensions-dnr.ts
@@ -166,6 +169,7 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
     isEligible: (wc, id) => bridge?.services.windows.findTab(wc) != null && isExtensionOpened(wc, id)
   })
   app.on('web-contents-created', (_event, wc) => {
+    watchNavigations(wc)
     wc.on('did-fail-load', (_failEvent, errorCode, _description, url, isMainFrame) => {
       if (isMainFrame) recovery.pageFailed(wc, url, errorCode)
     })
@@ -182,6 +186,29 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
   pageRecovery = recovery
 
   installPopupPolicy(hostExtensions, { services: () => bridge?.services, isLoaded: isLoadedExtension })
+  // The popup is a view in its window: Orivon attaches and places it, and gives the keyboard back to the
+  // tab in front. An opened-by-the-extension popup anchors at its own toolbar icon, as a click does.
+  setPopupHost(extensionPopupHost)
+  wirePopupHost({
+    focusTab: (window) => {
+      const owner = bridge?.services.windows.all().find((candidate) => candidate.window === window)
+      const tab = owner?.tabs.activeWebContents()
+      if (tab !== undefined && !tab.isDestroyed()) tab.focus()
+    },
+    // A tab the popup's own extension opens takes the keyboard, and that must not close the popup.
+    keepOpenOnBlur: (popup) => extensionJustActivatedTab(popup),
+    focusHandoverMs: EXTENSION_FOCUS_HANDOVER_MS,
+    // A popup opened over a page that is still navigating survives the blur that page's commit causes.
+    navigationInFlight: (window) => {
+      const owner = bridge?.services.windows.all().find((candidate) => candidate.window === window)
+      const tab = owner?.tabs.activeWebContents()
+      return tab !== undefined && !tab.isDestroyed() && hasPendingNavigation(tab) ? tab : undefined
+    }
+  })
+  setOpenPopupAnchor(async (extensionId, window) => {
+    const owner = bridge?.services.windows.all().find((candidate) => candidate.window === window)
+    return owner === undefined ? undefined : await anchorFor(owner, extensionId)
+  })
 
   return hostExtensions
 }

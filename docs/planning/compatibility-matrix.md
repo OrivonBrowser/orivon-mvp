@@ -620,7 +620,7 @@ scripts (isolated and MAIN world, MV2 and MV3), run with the Chromium sandbox on
 | Install: unpacked folder | ✅ | `orivon://extensions` Developer mode (`install-runner.ts`) |
 | Install: `.zip` | ✅ | Symlink entries and path-traversal entries refused |
 | Install: `.crx` (CRX3) | ✅ | Needs the developer's own signature; Orivon's own verifier, not the library's |
-| Install and update from the Chrome Web Store | ✅ | The store's own "Add to Chrome" button; developer signature and the store's publisher proof both checked before any bytes are kept (`ADR-0043`) |
+| Install and update from the Chrome Web Store | ✅ | The store's own "Add to Chrome" button, driven from the store page; developer signature and the store's publisher proof both checked before any bytes are kept (`ADR-0043`). The page keeps its own store API through every extension load beside it, and a private window's store page refuses installs |
 | A held-back update that would widen host access or add a warned permission | ✅ | Shown as pending, not installed silently (T19 subset rule) |
 | Stable id across updates | ✅ | Every loaded copy carries a `key` |
 | Enable / disable | ✅ | Registry entry toggle |
@@ -646,7 +646,7 @@ scripts (isolated and MAIN world, MV2 and MV3), run with the Chromium sandbox on
 | `content_scripts`: `run_at` | ✅ | `document_idle` measured |
 | `background.service_worker`, `"type": "module"` | ✅ | The worker's first start after a fresh load is reloaded once to receive events it raced (Table 7d) |
 | `background.scripts` (MV2 persistent page) | ✅ | Loads (a deprecation warning only, does not block); reachable with the same full extension-page API surface as MV3's service worker |
-| `action` (MV3) / `browser_action` (MV2): `default_popup`, `default_icon`, `default_title` | ✅ | Toolbar button when pinned, badge and popup; an unpinned extension runs from the Extensions menu |
+| `action` (MV3) / `browser_action` (MV2): `default_popup`, `default_icon`, `default_title` | ✅ | Toolbar button when pinned, badge and popup; an unpinned extension runs from the Extensions menu. The popup opens inside the window, under its button (the Extensions button for one run from the menu), at the size of its page |
 | `options_page` | ✅ | Opens in a tab |
 | `options_ui` | ⚠️ | Opens in a tab, same as `options_page`; the embedded (`open_in_new_tab: false`) mode is not implemented |
 | `chrome_url_overrides` (`newtab`, `history`, `bookmarks`) | ❌ | Not honoured: a new tab shows Orivon's own dashboard, History and Bookmarks their own pages; an extension's page can still be opened as a tab with `chrome.tabs.create` |
@@ -686,7 +686,7 @@ is not the same as it doing anything: read the note, not just the symbol.
 
 | API | Works | Note |
 |---|---|---|
-| `action` (MV3) / `browserAction` (MV2) | ✅ | Toolbar button, badge, title, icon, popup, and `getUserSettings` answering the real pin state with `onUserSettingsChanged` firing; `enable` and `disable` are no-ops (`action-pins-runner.ts`, `preload/extension-apis/action-settings.ts`) |
+| `action` (MV3) / `browserAction` (MV2) | ✅ | Toolbar button, badge, title, icon, popup (opened in the window under the action's button, also from `openPopup`), and `getUserSettings` answering the real pin state with `onUserSettingsChanged` firing; `enable` and `disable` are no-ops (`action-pins-runner.ts`, `preload/extension-apis/action-settings.ts`) |
 | `alarms` | ✅ | `create` + `onAlarm` measured firing |
 | `bookmarks` | ✅ | The tree as Chrome shapes it (bar `1`, other `2`), search, create, update, move, remove and the four change events derived from the store; writes count against Chrome's quota; the reading root is never visible; `javascript:` and `data:` addresses are refused; `onChildrenReordered`, `onImportBegan` and `onImportEnded` never fire (`api/bookmarks-api.ts`) |
 | `commands` | ✅ | `getAll` with the live shortcut, `onCommand` and `onChanged` through the shortcut dispatcher; a command key counts as an invocation on that tab (`extension-commands-runner.ts`, `api/commands-api.ts`) |
@@ -770,7 +770,7 @@ policy source this build has no equivalent of.
 | Storage: `session` | ✅ | Confirmed round-tripping (Table 7c) |
 | Storage: quotas | ✅ | `local` holds 10 MiB (`QUOTA_BYTES` 10485760) and a write past it rejects with Chrome's quota error; `session` rejects past its own quota; `sync` and `managed` report the same limit |
 | i18n / `_locales` | ✅ | Name/description/icon resolution on the extensions page; `chrome.i18n` answers from Electron's own implementation (Table 7c) |
-| Toolbar: pin/unpin, badge, icon, title | ✅ | Pinned per extension from the Extensions menu or the icon's right-click menu; a new extension is pinned by default (`extensions.pinNew`); an unpinned extension runs from the menu and its badge shows on its row (`action-pins-runner.ts`, `extensions-menu-overlay.ts`) |
+| Toolbar: pin/unpin, badge, icon, title | ✅ | Pinned per extension from the Extensions menu or the icon's right-click menu; an extension added from now on is not pinned unless "Pin new extensions to the toolbar" (`extensions.pinInstalled`, off) is on, and one with no recorded pin follows `extensions.pinNew`; an unpinned extension runs from the menu and its badge shows on its row (`action-pins-runner.ts`, `extensions-menu-overlay.ts`) |
 | Toolbar: the Extensions button and its menu | ✅ | Lists every extension with its badge, pin and a More list (options, pin, manage, remove); shown when an extension is loaded, always or never as chosen in Appearance; never in a private window (`extensions-button.ts`, `extensions-menu-overlay.ts`) |
 | Toolbar: enable/disable a button per tab | ❌ | `action.enable` and `action.disable` do nothing, so a button is never greyed out for a tab (`vendor/electron-chrome-extensions/src/renderer/index.ts`) |
 | Site access controls: "on click" / "on specific sites" / "on all sites" picker | ❌ | Not modelled; host access is the manifest's declared patterns, decided at install or update, plus the sites the person allows an extension to ask for (Table 7b) |

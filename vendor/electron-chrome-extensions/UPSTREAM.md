@@ -6,7 +6,7 @@
 - License: GPL-3.0 (see `LICENSE.md`, `LICENSE-GPL`, `LICENSE-PATRON.md`), combinable with
   Orivon's AGPL-3.0-only under GPLv3 §13
 - Vendored from: `packages/electron-chrome-extensions/src/` (no `spec/`, no build output)
-- Modified: by the Orivon project, as the patches below list; last modified 2026-10-03
+- Modified: by the Orivon project, as the patches below list; last modified 2026-10-05
 
 ## Patches
 
@@ -513,7 +513,7 @@
       function, not an end-to-end reproduction of the attack itself. (The
       offscreen document's OWN `will-navigate`/`will-redirect` lock gained
       the identical `isMainFrame` gate -- patch 32's own entry above.)
-34. **`popup.ts`: a popup closes on more than its own `blur`.** `PopupView`'s constructor now also
+34. **`popup.ts`: a popup closes on more than its own `blur`.** `PopupView`'s constructor also
     closes it when the parent window moves, resizes or minimises (`'move'`/`'resize'`/`'minimize'`,
     all removed again in `destroy()`), and when Escape is pressed inside it
     (`webContents.on('before-input-event', ...)`) -- Chrome does all three. A new
@@ -523,31 +523,26 @@
     with the `blur` that reports it, so for a brief instant neither the popup nor the parent
     reports itself focused -- indistinguishable, at that instant, from a genuine departure to
     another app. Since `blur` fires only once, missing this reading left the popup stuck open for
-    good. The one-shot fallback listens for the next `'focus'` on any other window `getAllWindows()`
-    already knows about, or on any webContents inside the parent's own content-view tree (a tab or
+    good. The one-shot fallback listens for the next `'focus'` on any app window, or on any
+    webContents inside the parent's own content-view tree other than the popup's own (a tab or
     toolbar view can gain Chromium's own internal input focus without the parent `BaseWindow`
-    itself re-firing `'focus'`, if it was never the one that lost native focus to begin with) --
-    whichever fires first closes the popup and disarms the rest. Reason: a popup that never
-    reliably closes on its own is a correctness bug independent of platform, and the added closes
-    match Chrome's own documented behaviour.
-35. **`popup.ts`: a popup can never stay permanently invisible, and no longer flashes white in
-    dark mode.** Two independent, narrow changes to the same constructor. First,
-    `armVisibilityFallback`: a preferred-size-capable popup (Electron 12+, the only case this
-    project ships) has exactly one path to `show()` -- `'preferred-size-changed'`, an event
-    Chromium's own layout/compositor pipeline emits with no guarantee of promptness, or of firing
-    at all (measured: it never fires under a GPU-less headless display). Nothing before this patch
-    gave such a popup a second way to become visible; it would stay `show: false` --
-    fully loaded and interactive over CDP, but invisible and unfocusable to a real person -- for
-    its entire life. A 500ms timer now shows it anyway, at a fixed reasonable size
-    (`FALLBACK_BOUNDS`, 320x400) positioned against the same anchor rect `updatePosition()`
-    always uses, if `'preferred-size-changed'` has not arrived yet -- `updatePosition()` runs
-    before `show()`, since showing first would flash the popup at the wrong spot for one frame
-    before it jumped to the right one; a later `'preferred-size-changed'` still resizes and
-    repositions it correctly on arrival regardless (`updatePreferredSize` does not check `hidden`
-    first). Second, the `backgroundColor` passed to
-    `new BrowserWindow(...)` -- paints before the extension's own popup page has a pixel to show --
-    now follows `nativeTheme.shouldUseDarkColors` instead of always being `'#ffffff'`. Reason: a
-    fixed light background flashed white for a moment on every popup open in dark mode.
+    itself re-firing `'focus'`) -- whichever fires first disarms the rest, and closes the popup
+    unless, a macrotask later, the popup's own page holds the keyboard: coming back from a program
+    outside the app hands focus to the popup's page, which is the person returning to it.
+    Reason: a popup that never reliably closes on its own is a correctness bug independent of
+    platform, and the added closes match Chrome's own documented behaviour.
+35. **`popup.ts`: a popup is never stuck at its smallest size, and no longer flashes white in
+    dark mode.** A preferred-size-capable popup (Electron 12+, the only case this project ships)
+    takes its size from `'preferred-size-changed'`, an event Chromium's own layout/compositor
+    pipeline emits with no guarantee of promptness, or of firing at all (measured: it never fires
+    under a GPU-less virtual display, with the view mounted or not). `armSizeFallback`: if it has
+    not arrived after 500 ms, the page's own content is measured (`<html>` laid out at
+    `width: max-content`) and the popup takes that size, or `FALLBACK_BOUNDS` (320x400) when the
+    page cannot be measured; a later `'preferred-size-changed'` still resizes and repositions it.
+    Second, the view's `setBackgroundColor` -- the colour painted before the extension's own page
+    has a pixel to show -- follows `nativeTheme.shouldUseDarkColors` instead of always being
+    `'#ffffff'`. Reason: a popup left at 25x25 is unusable, and a fixed light background flashed
+    white for a moment on every popup open in dark mode.
 36. **`router.ts`: `onExtensionMessage` waits for a still-registering extension instead of
     refusing it outright.** A genuine page of an extension whose `session.extensions.loadExtension()`
     is already in flight can call a `crx-msg` handler (a real extension's own popup script calling
@@ -834,6 +829,47 @@
     front; `src/browser/api/runtime.ts`'s `openOptionsPage` asks it before opening a tab. The file
     also takes type-only imports and `documentOrigin?: string | undefined`, so the root tsconfig
     accepts it when a unit test imports it. Reason: every call opened another options tab.
+68. **The popup is a view inside its window, and the embedder mounts it.** `src/browser/popup.ts`:
+    `PopupView` builds a `WebContentsView` (same `webPreferences`, patch 35's colour through
+    `setBackgroundColor`, rounded corners) and exposes `view` and `webContents` in place of the
+    `BrowserWindow` it used to open; it never adds the view to a window itself.
+    `setPopupHost({ mount, unmount, place, keepOpenOnBlur?, focusHandoverMs? })`, re-exported by
+    `src/browser/api/browser-action.ts`, is where the embedder attaches the view, sets its bounds
+    in the window's content coordinates (`PopupPlacement`: anchor rectangle, alignment, size) and
+    gives the keyboard back when it leaves; with no host set, the view is added on top of the
+    window's content view under its anchor. The view loads outside the window, is mounted at its
+    smallest size under the anchor and given the keyboard (a view that never held focus never
+    blurs), and is placed again at every new size. Every close trigger (blur, Escape, the parent's
+    move, resize, minimise or close, the page being destroyed) runs the idempotent `destroy` a
+    macrotask later, because taking a view out of a window from inside the native call that
+    reported the resize kills the process; `destroy` closes DevTools, unmounts and closes the page.
+    `keepOpenOnBlur(popup)` lets the embedder say a loss of focus is its own doing for that popup's
+    extension and window; once `focusHandoverMs` has passed the popup takes the keyboard back, so
+    the next click elsewhere blurs and closes it. `navigationInFlight(parent)` names the page in
+    front of the window while its main frame has a navigation that has not committed or failed;
+    `src/browser/popup-navigation-guard.ts` then follows that one navigation and absorbs the blur
+    the commit causes (the committing page takes the keyboard), until the page reports the main
+    frame committed, failed or stopped loading, or went away, or a mouse button goes down in one
+    of the window's pages (a person leaving the popup, which closes it); a navigation that ends
+    having absorbed a blur gives the popup the keyboard back only while its own window is the focused
+    one (focusing a page raises its window); with another app window focused the popup closes, with
+    none focused it waits for the next focus inside the app. A window already destroyed when a
+    blur, the keyboard hand-back or an app focus arrives closes the popup without being read. With no preferred size reported, the page's
+    content (its scroll extent, not only its box) is measured after half a second and again while
+    it still renders. A window destroyed under the popup is never reached for a size, a placement
+    or a mount. `src/browser/router.ts` exports `callingExtensionId()`, the extension whose API call
+    is running (an `AsyncLocalStorage` the router enters around each handler), for the embedder's
+    `createTab` and `selectTab`, which are not told who asked. `popupParentOf(
+    contents)` (a `WeakMap` the popup fills) answers the window a popup page hangs under, which
+    `src/browser/api/tabs.ts`'s `currentWindowId` now asks before `BrowserWindow.fromWebContents`,
+    since a view has no window of its own; `getOpenPopup` reads `popup.webContents`. Reason: a
+    top-level popup window is positioned by the window manager on Wayland, which ignores the
+    requested position, so the popup opened far from the toolbar button.
+69. **`chrome.action.openPopup()` anchors at the action's icon.** `src/browser/api/browser-action.ts`:
+    `setOpenPopupAnchor(anchor)` takes an async `(extensionId, window) => Rectangle | undefined`,
+    which `openPopup` awaits before opening; `undefined`, or a lookup that throws, keeps the
+    window's top-right corner. Reason: the popup had no anchor of the extension's own when an
+    extension, not a click, asked for it.
 
 `partition.ts` is reached only through the virtual specifier `src/main/extensions/
 electron-chrome-extensions-lib.d.ts` declares, never its real path -- that file's own header, and
@@ -842,7 +878,7 @@ tsconfig (verbatimModuleSyntax, exactOptionalPropertyTypes) are therefore not pa
 `src/` opens it directly, and `vendor/tsconfig.json`'s own, looser check already covers it as
 authored. `browser/index.ts`, `router.ts`, `api/cookies.ts`, `api/tabs.ts`, `api/web-navigation.ts`,
 `api/windows.ts`, `store.ts`, `api/browser-action.ts`, `popup.ts`, `api/runtime.ts` and
-`api/notifications.ts` are the exceptions: patches 13-14, 16-20, 21-31 and 67 above make them satisfy the root tsconfig too, so
+`api/notifications.ts` are the exceptions: patches 13-14, 16-20, 21-31, 67 and 68 above make them satisfy the root tsconfig too, so
 `src/main/extensions/tests/` can unit-test the sender-id, permission and host-access patches
 directly against the real files, instead of only against a same-shaped local fake. `context.ts`
 and `api/common.ts`/`impl.ts` sit on the same import path and needed no patch of their own: measured,

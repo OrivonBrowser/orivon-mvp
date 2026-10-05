@@ -357,8 +357,15 @@ export function registerWebStoreApi(webStoreState: WebStoreState) {
 
       try {
         await uninstallExtension(id, webStoreState)
+        // Orivon patch 10: the store tab can be gone by the time this runs, and a throw here
+        // is uncaught, which exits the main process.
         queueMicrotask(() => {
-          event.sender.send('chrome.management.onUninstalled', id)
+          if (event.sender.isDestroyed()) return
+          try {
+            event.sender.send('chrome.management.onUninstalled', id)
+          } catch (error) {
+            console.error(error)
+          }
         })
         return Result.SUCCESS
       } catch (error) {

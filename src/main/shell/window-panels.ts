@@ -18,6 +18,7 @@ import { sitePermissions } from '../site-settings/site-permissions-view.js'
 import { siteSettingsControllerFor } from '../site-settings/site-settings-runner.js'
 import type { SubsystemContext } from '../registry.js'
 import type { OverlayHostHandle } from '../overlays/overlay-host.js'
+import { extensionPopupPanel } from '../extensions/extension-popup-host.js'
 import type { ShellServices } from './shell-services.js'
 import type { TabManager } from './tabs.js'
 import { reloadFromCard } from './reload-from-card.js'
@@ -98,5 +99,8 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, dirnam
 
   overlays.adopt(permissions, permissions.restack)
   overlays.adopt(siteInfo, siteInfo.restack)
+  // An extension's popup is a view in this window: lifted above the bars with each state push, never closed by the host.
+  const extensionPopup = extensionPopupPanel(win)
+  overlays.adopt(extensionPopup, extensionPopup.restack)
   return { permissions, siteInfo, siteInfoController }
 }

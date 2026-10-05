@@ -1888,14 +1888,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
-### A348: A browser exit right after a Chrome Web Store install is not reproduced **[RESEARCH]**
-
-- **Question:** What exits the browser right after a successful store install, the owner reports, with the extension working after a restart? A live install of a module worker with a welcome tab, an offscreen document and a static ruleset, with a web tab open, and of the real 75 MB AdBlock package, left the process running.
-- **Why it matters:** The report stands unexplained. What the live install did show was every real blocker's worker failing at load (fixed), which looks like "works after a restart" from outside.
-- **Options:** Get the extension id and the terminal output at the exit (rec.); wrap each `session.extensions` listener in `contain()`, which hides the cause; leave it.
-- **Who decides:** research first, with the owner's id and output
-- **Blocks:** nothing
-
 ### A350: A page's `fetch()` cannot follow a `webRequest` redirect to the extension's own file **[RESEARCH]**
 
 - **Question:** How can a page's `fetch()` follow a blocking listener's redirect to the extension's own web-accessible
@@ -2048,4 +2040,12 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Why it matters:** if a desktop needs `text/html` to list a browser, the default-browser button has nothing to set.
 - **Options:** install the built package and read `gio mime x-scheme-handler/https` (rec.); put `text/html` back.
 - **Who decides:** research first
+- **Blocks:** nothing
+
+### A382: Chrome stops extensions scripting the Chrome Web Store page; Orivon does not **[RESEARCH]**
+
+- **Question:** Chrome refuses every extension's content scripts, `chrome.scripting` and `webRequest` on the Web Store's own origin. Orivon runs them there, so an extension can rewrite the page that installs extensions. Refuse the store origin as Chrome does?
+- **Why it matters:** the store page asks the person to approve each install; a script that edits that page can change what the approval shows.
+- **Options:** refuse extension scripting on `https://chromewebstore.google.com` in the host-access check (rec., once measured against the extensions people use there, such as a store-rating overlay); leave it.
+- **Who decides:** research first, then the owner
 - **Blocks:** nothing

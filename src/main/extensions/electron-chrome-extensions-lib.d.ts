@@ -50,16 +50,15 @@ declare module 'orivon:crx-extensions' {
     /** Tells the library no tracked tab is the visible one in `window` right
      * now -- ExtensionStore.clearActiveTab's own doc. */
     clearActiveTab (window: Electron.BaseWindow): void
-    /** Fires once a browserAction popup's own BrowserWindow exists, before
-     * its page has loaded (browser-action.ts's own activateClick, right
-     * after `new PopupView(...)`) -- the only member of this class
-     * extension-host.ts listens for, so it is kept to that one event name.
-     * `parent`/`destroy`/`isDestroyed` added alongside `browserWindow` --
-     * PopupView's own public shape -- so extension-host.ts can close the
-     * popup when the PARENT window regains focus, not only when the
-     * popup's own `blur` fires. */
+    /** Fires once a browserAction popup's own view exists, before its page has
+     * loaded (browser-action.ts's own activateClick, right after
+     * `new PopupView(...)`) -- the only member of this class extension-host.ts
+     * listens for, so it is kept to that one event name. `parent`/`destroy`/
+     * `isDestroyed` ride alongside `webContents` -- PopupView's own public
+     * shape -- so extension-host.ts can close the popup when its tab goes
+     * away, not only on the popup's own blur (UPSTREAM.md patch 68). */
     on (event: 'browser-action-popup-created', listener: (popup: {
-      browserWindow?: { webContents: Electron.WebContents }
+      webContents: Electron.WebContents
       parent?: Electron.BaseWindow
       isDestroyed (): boolean
       destroy (): void
@@ -116,6 +115,9 @@ declare module 'orivon:crx-extensions-partition' {
 }
 
 declare module 'orivon:crx-extensions-router' {
+  /** UPSTREAM.md patch 68: the extension whose API call is running, read from inside the callbacks that call
+   * makes (`createTab`, `selectTab`), which are not told who asked. */
+  export function callingExtensionId (): string | undefined
   interface FrameSenderEvent { type: 'frame', sender: Electron.WebContents }
   interface OtherSenderEvent { type: 'service-worker' }
   type RemoteMessageSenderEvent = FrameSenderEvent | OtherSenderEvent
@@ -178,6 +180,34 @@ declare module 'orivon:crx-extensions-browser-action' {
    * `extensionItems` are the extension's own `contextMenus` entries for it. */
   export function setActionMenuBuilder (
     builder: ((extensionId: string, extensionItems: Electron.MenuItem[]) => Array<Electron.MenuItemConstructorOptions | Electron.MenuItem>) | undefined
+  ): void
+
+  /** Where a popup goes: the toolbar rectangle it opens from, which side of it, and its size. */
+  export interface PopupPlacement {
+    anchorRect: Electron.Rectangle
+    alignment?: string | undefined
+    size: { width: number, height: number }
+  }
+  /** UPSTREAM.md patch 68: what a popup, a view the library builds and never attaches itself,
+   * needs from its window. Bounds are in the window's content coordinates. */
+  export interface PopupHost {
+    mount (parent: Electron.BaseWindow, view: Electron.WebContentsView): void
+    unmount (parent: Electron.BaseWindow, view: Electron.WebContentsView): void
+    place (parent: Electron.BaseWindow, view: Electron.WebContentsView, placement: PopupPlacement): void
+    /** True while a loss of focus must not close the popup: the embedder is moving focus for this popup's
+     * own extension. */
+    keepOpenOnBlur? (popup: { extensionId: string, parent: Electron.BaseWindow }): boolean
+    /** How long that hand-over lasts; the popup takes the keyboard back after it. */
+    focusHandoverMs?: number | undefined
+    /** The page in front of `parent` while its main frame has a navigation that has not committed or
+     * failed: the popup stays open through the blur that commit causes. */
+    navigationInFlight? (parent: Electron.BaseWindow): Electron.WebContents | undefined
+  }
+  export function setPopupHost (host: PopupHost | undefined): void
+  /** UPSTREAM.md patch 69: where `chrome.action.openPopup()` anchors the popup, in `window`'s
+   * content coordinates; `undefined` for the window's top-right corner. */
+  export function setOpenPopupAnchor (
+    anchor: ((extensionId: string, window: Electron.BaseWindow) => Promise<Electron.Rectangle | undefined>) | undefined
   ): void
 }
 
