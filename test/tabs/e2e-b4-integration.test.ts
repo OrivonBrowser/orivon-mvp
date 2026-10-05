@@ -9,10 +9,10 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron } from './support/launch-electron.mjs'
-import { clickAddressBarRetrying } from './support/e2e-helpers.js'
-import { launchShell } from './support/qa-helpers.js'
-import { delay, popoverShown, tabIds, waitFor, waitForTab } from './support/smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
+import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
+import { launchShell } from '../support/qa-helpers.js'
+import { delay, popoverShown, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 const SHOTS = process.env['ORIVON_UI_SHOTS_DIR']
 const TEST_TIMEOUT_MS = 240_000

@@ -81,8 +81,8 @@ Ports are named only where the compatibility pages already name them.
 | `cross-origin-isolated-when-declared` | A page whose manifest asks for isolation reports `crossOriginIsolated`, and one that does not asks for it is not isolated | apps with threads or shared memory | The Lounge | [`e2e-wasm-threads`](../node-runtime/e2e-wasm-threads.test.ts) |
 | `page-globals-replaceable` | A global Orivon installs on a page can be assigned over, shadowed and deleted by the app | bundles that ponyfill `Buffer` or `fetch` | FreeTube, The Lounge | [`e2e-page-buffer`](../node-runtime/e2e-page-buffer.test.ts) |
 | `clipboard-write-without-prompt` | A page writes to the clipboard on a click with no question | apps with copy buttons | AirGap Vault | [`e2e-clipboard-write`](../capabilities/e2e-clipboard-write.test.ts) |
-| `page-declared-favicon-shows` | A page's `<link rel="icon">` shows in its tab, and comes back on a return after a blank page or a failed load | every app | all | [`e2e-tab-favicon`](../e2e-tab-favicon.test.ts) |
-| `target-blank-link-opens-tab` | A `target="_blank"` link opens a tab | apps with external links | ASGARDEX, The Lounge | [`e2e-link-open`](../e2e-link-open.test.ts) |
+| `page-declared-favicon-shows` | A page's `<link rel="icon">` shows in its tab, and comes back on a return after a blank page or a failed load | every app | all | [`e2e-tab-favicon`](../tabs/e2e-tab-favicon.test.ts) |
+| `target-blank-link-opens-tab` | A `target="_blank"` link opens a tab | apps with external links | ASGARDEX, The Lounge | [`e2e-link-open`](../tabs/e2e-link-open.test.ts) |
 
 ## Running code and showing other pages
 

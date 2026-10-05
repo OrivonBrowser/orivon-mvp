@@ -8,7 +8,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { HERMETIC_RESOLVER } from './support/smoke-helpers.mjs'
+import { HERMETIC_RESOLVER } from '../support/smoke-helpers.mjs'
 
 const electronPath = createRequire(import.meta.url)('electron') as string
 

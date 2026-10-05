@@ -15,10 +15,10 @@ import { createServer, type Server } from 'node:http'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './support/launch-electron.mjs'
-import { clickAddressBarRetrying } from './support/e2e-helpers.js'
-import { activeTabInfo, evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor, waitForTab, tabIds } from './support/smoke-helpers.mjs'
-import { MAX_NEW_WINDOWS_PER_MINUTE_PROCESS } from '../src/main/shell/popups.js'
+import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
+import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
+import { activeTabInfo, evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor, waitForTab, tabIds } from '../support/smoke-helpers.mjs'
+import { MAX_NEW_WINDOWS_PER_MINUTE_PROCESS } from '../../src/main/shell/popups.js'
 
 const NO_SOUND_ARGS = [HERMETIC_RESOLVER, '--alsa-output-device=null']
 const NO_SOUND_ENV = { PULSE_SERVER: 'unix:/nonexistent' }
