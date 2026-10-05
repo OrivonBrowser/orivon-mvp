@@ -1989,18 +1989,27 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 ### A378: Can a quick flick out of the window's left or top edge start a native tab drag? **[RESEARCH]**
 
-- **Question:** The browser starts a drag of the chrome only when the pointer event that began it lies inside the chrome view (`WebContentsViewAura::StartDragging`). A tab press makes the view wider and taller to the right and below, which covers a flick down and to the right. A flick past the left or top edge begins outside it, so the pressed tab starts no drag until the pointer is back over the chrome. Moving the view's corner out there and shifting the page by the same amount, so nothing moves on screen, was measured: no `dragstart` in 4 of 4 presses, since the browser looks for the dragged element at the press's old point in the new layout.
+- **Question:** The browser starts a drag of the chrome only when the pointer event that began it lies inside the chrome view (`WebContentsViewAura::StartDragging`). A tab press makes the view wider and taller to the right and below, which covers a flick down and to the right. A flick past the left or top edge begins outside it, so the pressed tab starts no drag until the pointer is back over the chrome. Moving the view's corner and shifting the page by the same amount, so nothing moves on screen, needs a draggable stand-in at the press's old point, since the browser looks for the dragged element there again when the drag starts.
+- **Measured (mutter 46, weston 13):** with the stand-in the drag of the pressed tab started in 100 of 100 fast flicks (20 each left, up, diagonal, right, down), none left a drag refused. Two things rule it out: the view's move and the page's shift are not one step, so one frame at the move and one at the return shows the strip empty (a 60 fps capture of the strip: 4,500 of 53,000 px differ from the pressed state for one frame, in click and flick alike, whichever of the two goes first or 16 ms apart); and every motion after the press then counts as past the drag threshold, since the browser measures it from the old point, so a 1 px wiggle in a click began a drag in 2 of 4 clicks and tore the tab off into a window of its own.
 - **Why it matters:** a tab at the start of the strip, flicked left toward a window beside it, does nothing; only a slower drag works.
-- **Options:** leave it (rec.: down and right cover the usual flicks); keep a draggable stand-in at the press's old point while the page is shifted (not measured, and the view's move may show the strip shifted for a frame); a different route to the drag.
+- **Options:** leave it (rec.: down and right cover the usual flicks); a second copy of the chrome page at the shifted place for the frames of the move (measured: no flash, 41 px differ) does not answer the threshold; a different route to the drag.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A377: Do other Wayland compositors behave as mutter 46 does for the native tab drag? **[RESEARCH]**
+### A377: Does KDE's compositor behave as mutter 46 does for the native tab drag? **[RESEARCH]**
 
-- **Question:** The native tab drag rests on mutter 46 measurements: no `dragend` outcome tells Escape from a release over nothing except a `keyup` Escape 100 to 200 ms later, a drop needs one real motion after entering a window, and the drag image is drawn at the requested offset. Do KDE's compositor, wlroots ones and Weston do the same?
-- **Why it matters:** a compositor with a later or missing Escape key-up turns every cancel into a window of its own (the wait is 300 ms, provisional); one that drops the motion rule loses nothing, one that adds a rule loses drops.
-- **Options:** run the private-compositor harness against one compositor of each family (rec.); widen the wait if one is late.
+- **Question:** sway 1.9 (wlroots 0.17) and weston 13 agree with mutter 46 on the drop-needs-one-motion rule, on the marks and tear-offs, and on the drag image request, and neither delivers Escape during a drag (A379). KWin was not run: does it deliver the `keyup` Escape after `dragend` that the cancel wait expects, and does it draw the drag image at the requested offset? Measurements are in `docs/planning/wayland-window-placement.md` (P6).
+- **Why it matters:** a compositor with a late Escape key-up turns every cancel into a window of its own (the wait is 300 ms, provisional); one that adds a motion rule loses drops.
+- **Options:** run the private-compositor harness against KWin (rec., when a KWin build can be unpacked without installing); widen the wait if it is late.
 - **Who decides:** research first
+- **Blocks:** nothing
+
+### A379: Escape cannot cancel a native tab drag on sway and weston **[AI-REC]**
+
+- **Question:** On sway 1.9 and weston 13 the keyboard leaves the window when the drag starts and no key reaches the page until the pointer is released, so nothing can tell a cancel from a drop. A person who presses Escape and then releases over a window's page gets a new window. Releasing over the source's strip or toolbar does nothing. Do anything about it?
+- **Why it matters:** the common cancel gesture silently does the opposite of what it means on those compositors; the cost is one stray window to close.
+- **Options:** accept and keep the strip and toolbar as the place to let go (rec.: no signal exists to build on); give the page a visible hint while a tab is dragged (not measured, and the compositor may draw over it).
+- **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
 ### A375: The Linux package says Orivon opens HTML files, but a file handed in at launch is dropped **[OWNER]**
