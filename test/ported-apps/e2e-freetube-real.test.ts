@@ -18,7 +18,7 @@
 // e2e-app-state-restart.test.ts.
 //
 // RUN THIS WITH:
-//   cd ../../orivon-ports && node src/cli.ts build freetube
+//   cd ../orivon-ports && node src/cli.ts build freetube
 //   cd -  &&  node scripts/build-ordinary.mjs
 //   ORIVON_ORDINARY_BUILD=1 npx vitest run --config test/vitest.e2e.config.ts test/ported-apps/e2e-freetube-real.test.ts
 import { afterAll, expect, it } from 'vitest'

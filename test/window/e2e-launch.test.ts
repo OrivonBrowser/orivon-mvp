@@ -94,7 +94,7 @@ it('refuses to start for a launch it cannot understand, and creates nothing', as
   seedProfile(home)
 
   const cases: Array<[string[], RegExp]> = [
-    [['--orivon-profile=../../evil'], /is not the id of a profile/],
+    [['--orivon-profile=../evil'], /is not the id of a profile/],
     [['--orivon-profile=deadbeef0000'], /there is no profile/],
     [['--orivon-private', `--orivon-profile=${PROFILE}`], /cannot also be a profile/],
     [['--orivon-private', '--orivon-private-dir=/etc'], /not the directory of a private session/],

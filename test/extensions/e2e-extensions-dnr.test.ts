@@ -6,7 +6,7 @@
 // on the raw source).
 //
 // The verifier partition header ordering (a .eth request) is unit-tested
-// against ../../sessions/web-request-compose.ts's own compose function instead
+// against ../sessions/web-request-compose.ts's own compose function instead
 // of a real .eth fixture here: see src/main/sessions/tests/dnr-ordering.test.ts.
 //
 // Run with `npm run test:e2e`, or directly:

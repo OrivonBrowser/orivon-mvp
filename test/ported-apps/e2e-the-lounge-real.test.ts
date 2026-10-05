@@ -10,7 +10,7 @@
 // loopback IRC addresses it may dial).
 //
 // RUN THIS WITH:
-//   cd ../../orivon-ports && ORIVON_MVP_ROOT=<this checkout> node src/cli.ts build the-lounge --rebuild
+//   cd ../orivon-ports && ORIVON_MVP_ROOT=<this checkout> node src/cli.ts build the-lounge --rebuild
 //   node scripts/build-ordinary.mjs
 //   ORIVON_ORDINARY_BUILD=1 npx vitest run --config test/vitest.e2e.config.ts test/ported-apps/e2e-the-lounge-real.test.ts
 import { afterAll, expect, it } from 'vitest'

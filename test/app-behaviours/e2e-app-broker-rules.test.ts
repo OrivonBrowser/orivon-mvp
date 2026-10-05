@@ -134,7 +134,7 @@ it('[app:tcp-connect-to-granted-loopback-port] [app:wildcard-host-never-reaches-
         const kept = await attempt(async () => (await orivon.fs.readFile('one.bin')).length)
         out['quotaKept'] = summary(kept, kept.ok ? kept.value : undefined)
         // A path outside the app's root is refused.
-        out['outside'] = summary(await attempt(async () => await orivon.fs.readFile('../../outside.txt')))
+        out['outside'] = summary(await attempt(async () => await orivon.fs.readFile('../outside.txt')))
 
         // TLS: a self-signed certificate is refused by default and accepted when the app opts out.
         out['tlsDefault'] = summary(await attempt(async () => { await (await orivon.net.connectSecure({ host: 'localhost', port: ports.tls })).close() }))

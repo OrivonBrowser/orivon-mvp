@@ -6,7 +6,7 @@
 // CSP, and the broker's confinement sitting under the host's own check.
 //
 // The program writes greeting.txt, prints `done`, then tries to create
-// ../../escape and exits with that call's errno: 76, NOTCAPABLE, when every
+// ../escape and exits with that call's errno: 76, NOTCAPABLE, when every
 // earlier call succeeded. The page then reads greeting.txt back through
 // orivon.fs directly, so the bytes are proven to be where the broker keeps
 // the app's files.
@@ -55,7 +55,7 @@ function openAt (name: { offset: number, length: number }, call: (import_: strin
 
 function program (): Uint8Array<ArrayBuffer> {
   const file = { offset: 200, text: 'greeting.txt' }
-  const escape = { offset: 240, text: '../../escape' }
+  const escape = { offset: 240, text: '../escape' }
   const greeting = { offset: 300, text: GREETING }
   const done = { offset: 400, text: 'done\n' }
   const accumulate = [op.localGet(0), op.i32Add, op.localSet(0)]
