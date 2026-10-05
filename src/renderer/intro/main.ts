@@ -11,7 +11,7 @@ const offer = document.getElementById('default-offer')
 const makeDefault = document.getElementById('make-default') as HTMLInputElement | null
 // Shown only when the shell loaded this page with the offer: the box starts unticked, and nothing happens unless it is ticked.
 if (new URLSearchParams(location.search).get('default') === '1') offer?.removeAttribute('hidden')
-// The one control on the screen: Enter acts at once, without a Tab first.
+// Enter has the focus, so Enter acts at once; the default-browser box, when offered, is a Tab away.
 enter?.focus()
 
 enter?.addEventListener('click', () => {
