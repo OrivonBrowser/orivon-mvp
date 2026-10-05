@@ -113,6 +113,7 @@ export function stubBroker (
         calls.push({ method: 'app.hasGrantsSync', origin, args: undefined })
         return overrides.hasGrantsSync?.(origin) ?? false
       },
+      heldSync: () => false,
       socketAllowanceSync: (origin) => {
         calls.push({ method: 'app.socketAllowanceSync', origin, args: undefined })
         return overrides.socketAllowanceSync?.(origin) ?? LIMITS.defaultConcurrentSockets
