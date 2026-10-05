@@ -301,6 +301,8 @@ describe('createOverlayHost: restack order', () => {
     const attached: number[] = []
     const { host } = setup([def('pop'), def('bar', { layer: 'bar', focus: 'never', closeOn: CLOSE_LIKE_BAR })])
     host.show('pop', ANCHOR); host.show('bar')
+    // A bar that never takes the keyboard joins the window once its page is ready.
+    void views[1]?.spec.port.ready()
     for (const view of views) view.log.length = 0
     // Record the global order in which the two views are re-added.
     for (const view of views) {
@@ -321,6 +323,7 @@ describe('createOverlayHost: restack with adopted panels', () => {
     const adopted = panel('adopted', order)
     host.adopt(adopted, adopted.restack)
     host.show('bar'); host.show('pop', ANCHOR)
+    void views[0]?.spec.port.ready()
     order.length = 0
     for (const view of views) {
       const push = view.log.push.bind(view.log)
