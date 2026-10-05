@@ -1,0 +1,59 @@
+/* The screen-share picker: a title, three segments, a grid of cards that scrolls when it is long, the audio option and the buttons. */
+
+body[data-overlay='screen-share-picker'] .picker { padding: 16px 18px; outline: none; }
+body[data-overlay='screen-share-picker'] .sheet-title { margin: 0 0 12px; overflow-wrap: anywhere; }
+body[data-overlay='screen-share-picker'] .picker-segments { width: 100%; }
+body[data-overlay='screen-share-picker'] .picker-segments > button { flex: 1 1 0; }
+
+body[data-overlay='screen-share-picker'] .picker-panel { margin: 12px 0; min-height: 168px; max-height: 300px; overflow-y: auto; }
+body[data-overlay='screen-share-picker'] .picker-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--picker-columns, 3), minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 2px;
+  list-style: none;
+  outline-offset: 2px;
+}
+body[data-overlay='screen-share-picker'] .picker-card {
+  display: grid;
+  grid-template-rows: auto auto auto;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid var(--wborder);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.12s, border-color 0.12s;
+}
+body[data-overlay='screen-share-picker'] .picker-card:hover { background: var(--whover); }
+body[data-overlay='screen-share-picker'] .picker-card[aria-selected='true'] { background: var(--waccent-wash); border-color: var(--waccent-text); }
+body[data-overlay='screen-share-picker'] .picker-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 5px;
+  object-fit: contain;
+  background: color-mix(in srgb, var(--wink) 6%, transparent);
+  color: var(--wink-dim);
+}
+body[data-overlay='screen-share-picker'] .picker-thumb .icon { width: 28px; height: 28px; }
+body[data-overlay='screen-share-picker'] .picker-icon { width: 32px; height: 32px; object-fit: contain; }
+body[data-overlay='screen-share-picker'] .picker-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--wink-strong); }
+body[data-overlay='screen-share-picker'] .picker-card[aria-selected='true'] .picker-label { color: var(--waccent-text); }
+body[data-overlay='screen-share-picker'] .picker-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--wink-dim); }
+body[data-overlay='screen-share-picker'] .picker-self { justify-self: start; }
+
+body[data-overlay='screen-share-picker'] .picker-empty,
+body[data-overlay='screen-share-picker'] .picker-notice { margin: 0; padding: 48px 12px; text-align: center; color: var(--wink-dim); font-size: 13px; }
+body[data-overlay='screen-share-picker'] .picker-notice p { margin: 0 0 12px; }
+
+body[data-overlay='screen-share-picker'] .picker-audio { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 13px; }
+body[data-overlay='screen-share-picker'] .picker-audio[hidden] { display: none; }
+body[data-overlay='screen-share-picker'] .btn-row { margin-top: 0; }
+
+/* The first half second: Share is visibly not ready, so a press that does nothing is not a surprise. */
+body[data-overlay='screen-share-picker'] .arming .btn-row .btn.primary { opacity: 0.6; }
+body[data-overlay='screen-share-picker'] .btn-row .btn { transition: opacity 0.12s, background-color 0.12s, border-color 0.12s; }

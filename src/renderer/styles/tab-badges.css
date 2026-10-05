@@ -100,3 +100,34 @@
 .tab .tab-sound-mark svg { width: 10px; height: 10px; }
 /* The mark is small, so its strokes are heavier than the 24px icon's own. */
 .tab .tab-sound-mark svg path { stroke-width: 2.8; }
+
+/* A screen share the tab is part of: red where the page shares, accent where the tab is shown. In the row between the
+   title and the close button, or as a corner mark on a pinned tab's icon. Not a button. */
+.tab .tab-share {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-right: 18px; /* the close button's room */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tab .tab-share svg { width: 14px; height: 14px; }
+.tab .tab-share:has(+ .tab-audio) { margin-right: 2px; }
+.tab .tab-share.sharing, .tab .tab-share-mark.sharing { color: var(--wdanger-text); }
+.tab .tab-share.shared, .tab .tab-share-mark.shared { color: var(--waccent-text); }
+.tab .tab-share-mark {
+  position: absolute;
+  left: 4px;
+  bottom: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--wchrome);
+  pointer-events: none;
+}
+.tab.active .tab-share-mark { background: var(--wsurface); }
+.tab .tab-share-mark svg { width: 10px; height: 10px; }
