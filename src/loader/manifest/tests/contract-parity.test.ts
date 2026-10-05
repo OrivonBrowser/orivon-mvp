@@ -35,8 +35,9 @@ type FullManifest = Omit<Full<Manifest>, 'capabilities'> & {
   // added it -- the real parser does not accept any of the three yet
   // either (their PARITY_MAP loader arrays do not exist until the stacked
   // implementation PR), so a kitchen-sink manifest naming them would fail
-  // the round-trip this file exists to prove.
-  readonly capabilities: Omit<Full<Capabilities>, 'net' | 'fs' | 'id' | 'web' | 'media' | 'clipboard' | 'secrets'> & {
+  // the round-trip this file exists to prove. ADR-0058: 'trust' is excluded
+  // for the same reason, until its loader array exists.
+  readonly capabilities: Omit<Full<Capabilities>, 'net' | 'fs' | 'id' | 'web' | 'media' | 'clipboard' | 'secrets' | 'trust'> & {
     readonly net: Omit<Full<NetCapability>, 'tcp' | 'udp' | 'https'> & {
       readonly tcp: Full<TcpCapability>
       readonly udp: Full<UdpCapability>

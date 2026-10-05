@@ -144,7 +144,7 @@ not browser features.*
 ## The idea underneath
 
 Orivon Browser is built on Electron. The thing built to last is the *interface* apps are written
-against: seven files of TypeScript types in [`src/contracts/`](src/contracts/), with no
+against: eight files of TypeScript types in [`src/contracts/`](src/contracts/), with no
 implementation in them at all.
 
 An app calls `orivon.net.connect()`. Today that reaches a Node socket in an Electron main
@@ -154,7 +154,7 @@ app already written having to change a line.
 That is a property engineered into the design rather than a roadmap. It costs nothing extra now,
 and it means apps written this year aren't thrown away if the thing underneath them changes.
 
-If you want to know what Orivon actually is, read those seven files before anything else.
+If you want to know what Orivon actually is, read those eight files before anything else.
 [`ARCHITECTURE.md`](ARCHITECTURE.md) explains how they fit together, and which design choices
 were deliberate.
 

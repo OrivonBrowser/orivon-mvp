@@ -147,6 +147,8 @@ field is ignored, and the loader logs a warning naming it. An unknown field anyw
     "media": { "camera": true, "microphone": true },  // ADR-0032; omit a flag to not ask for it
     "clipboard": { "read": true },                    // ADR-0032
     "secrets": {},                                    // ADR-0033; presence alone is the ask
+    "trust": { "score": true },                       // ADR-0058; what the person's Web3 Score provider says
+                                                       // about other sites
     "protocols": ["magnet"]            // shell routes magnet: links to this app
                                        // (first registrant is default; conflicts → user chooses)
   },
@@ -299,6 +301,11 @@ orivon.secrets.available()           // => Promise<boolean>  false if ungranted,
 orivon.secrets.encrypt(plaintext)    // => Promise<Uint8Array>  bytes in, bytes out, no encoding option
 orivon.secrets.decrypt(ciphertext)   // => Promise<Uint8Array>  'invalid' for bytes this origin's key did not produce
 
+// --- trust: what the person's Web3 Score provider says about other sites (ADR-0058) ---
+orivon.trust.websiteScore(address)   // => Promise<{ provider: string | null, level: 1 | 2 | 3 | 4 | null }>
+                                      //   the provider's judged Website level for the content `address`
+                                      //   names; needs the `trust.score` grant
+
 // --- web: other sites' documents ---
 orivon.web.openContext(origin)       // => Promise<WebContext>  an empty, never-displayed document AS that
                                       //   site (ADR-0019); .evaluate(script) runs one script in it
@@ -327,6 +334,26 @@ orivon.web.setEmbedScript(source)    // => Promise<void>  the script that runs f
 > another program; the element's own `will-navigate` names it. One shown page reaches its app
 > with at most 20 notices a second, and the rest are dropped. A page shown from a local pattern
 > is closed when the app's last listener on its port closes.
+
+> **`trust.score` (ADR-0058) lets an app ask the person's Web3 Score provider about other
+> sites.** It is granted like any other capability, on visit, under the app's
+> `consentGranularity`, and the call checks what was granted, not what the manifest declares;
+> ungranted, `websiteScore` rejects `denied`. `address` is what a page would open: an
+> `ipfs://<cid>` address, `https://<name>.eth`, or a bare `<name>.eth`, each with an optional
+> path. The answer is the provider's own judged level for that content, `1` to `4`, with the
+> provider's name; the page applies the shield's display rule itself, and nothing here changes
+> what Orivon shows or what a capability warning says. `level` is `null` when the person has
+> chosen no provider (nothing is fetched then, and `provider` is `null` too), when the provider
+> holds no evaluation of that content or does not answer, and for an address that does not name
+> content. A lookup that fails resolves `null`, never an error: a provider that did not answer
+> is not the page's fault. A value that is not a string rejects `invalid`; an origin asking
+> faster than the broker allows rejects `limit`.
+>
+> **A page's questions are kept apart from the shell's own.** They share no cache with the
+> shell's Web3 Score lookups or with any other origin's, so timing an answer reveals nothing
+> about the sites the person has opened. The provider sees the same hash-bucket requests
+> `web3-score-provider.md` describes, now also when an app asks, and the grant says so to the
+> person. This bounds this build of Orivon.
 
 > **`media.camera`, `media.microphone` and `clipboard.read` (ADR-0032) have no `orivon.*` entry
 > point of their own.** They are Chromium platform permissions (`getUserMedia`,
