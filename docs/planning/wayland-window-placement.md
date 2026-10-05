@@ -101,6 +101,41 @@ picks the first free spot, with no dependence on the pointer position, the reque
 drag in progress (windows opened mid-drag landed at the same kind of spot). `center-new-windows`
 centres every window; that is a user setting.
 
+### P6: the native tab drag under sway 1.9 and weston 13
+
+Orivon itself (the build of `main` with the native tab drag), two windows of 600x500, driven by
+real pointer input. sway 1.9 (wlroots 0.17.1) ran headless with the pixman renderer; its pointer and
+keyboard were a `zwlr_virtual_pointer_v1` and a `zwp_virtual_keyboard_v1` client, because a headless
+sway has no input device and advertises no seat capabilities until one exists. weston 13.0.0 ran
+with its `desktop-shell` on the x11 backend inside a private Xvfb; the pointer and keys were XTest
+events there, and Super+drag placed the second window, since weston places windows itself. The
+tab-strip, trap and flick cases are the ones measured under mutter in P4 and in the tab-drag
+decisions. Nothing here says anything about KDE's compositor or any other.
+
+| Item | sway 1.9 | weston 13 |
+|---|---|---|
+| `xdg_wm_base`, `wl_data_device_manager`, `wl_seat` | 2, 3, 8 | 5, 3, 7 |
+| `xdg_toplevel_drag_v1` | not advertised | not advertised |
+| Same-window reorder, tab to another window's strip (mark shown over it), release on the source's own toolbar (nothing), dashboard tab to the left edge (split), page of the same or another window and empty desktop (new window) | as under mutter | as under mutter |
+| One real motion after entering a window | still needed: a jump into the other window's strip and an immediate release, or a 3 s wait and then a release, drop nothing and tear the tab off into a new window | same |
+| Quick flicks | down, to a window on the right and to the right of the window start the drag; left starts none and the next normal drag works; a flick of more than a window's width to the right starts none and the next normal drag works | same |
+| Escape during the drag | never reaches the page. No `keydown`, no `keyup`, before or after the release; the drag goes on until the pointer is released, and a release over the page of a window tears the tab off. `dragend` follows a release over nothing with `none`, as under mutter | same: `wl_keyboard.leave` arrives at `start_drag` and no key reaches the client |
+| Drag image | the client asks for the image at `+16,+16` from the pointer (`wl_surface.attach(buffer, 16, 16)` on the icon surface); where sway draws it was not measured, there was no screen capture | drawn at `+16,+16`, to the pixel (edges at 481 and 374 for a pointer at 346,330 and a 119x28 image) |
+| Where a torn-off window opens | centred on the output (a 700x520 window at 290,140 on 1280x800) | a spot of weston's choosing, different from the source's (about 492,48 for a 700x520 window on 1280x800, read from the union of the two windows' boxes in a screenshot) |
+| `BaseWindow.getBounds()`, `screen.getCursorScreenPoint()` | the position is what Orivon set (16,10 here, as under mutter), never the compositor's; the cursor point is `{0,0}` at rest and in the drag, inside and outside windows | the position is what Orivon set; the cursor point is `{0,0}` throughout |
+
+What this means for the cancel tell. The tell is a `keyup` Escape after `dragend` (mutter 46). Neither
+compositor above delivers the key at all, so the 300 ms wait never fires and nothing is left in the
+renderer. It also means a person on these compositors has no way to cancel: they release over
+the source's toolbar or strip, which does nothing.
+
+Harness notes. weston 13.0.0's `desktop-shell` segfaulted (in `desktop-shell.so`, under a click, in
+`weston_desktop_surface_foreach_child`) when a window was clicked while a tooltip `xdg_popup` of
+another window was still alive after a drag. The harness moves the pointer over each window after a
+release, which makes Chromium destroy the tooltip; it is unrelated to the drag itself. Both
+compositors were also started with `--ozone-platform=wayland` and no GPU; sway needed
+`WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman`.
+
 ## What this means
 
 1. **Drag preview.** The native drag image is the one thing that follows the pointer anywhere on

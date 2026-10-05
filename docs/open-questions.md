@@ -1995,12 +1995,20 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A377: Do other Wayland compositors behave as mutter 46 does for the native tab drag? **[RESEARCH]**
+### A377: Does KDE's compositor behave as mutter 46 does for the native tab drag? **[RESEARCH]**
 
-- **Question:** The native tab drag rests on mutter 46 measurements: no `dragend` outcome tells Escape from a release over nothing except a `keyup` Escape 100 to 200 ms later, a drop needs one real motion after entering a window, and the drag image is drawn at the requested offset. Do KDE's compositor, wlroots ones and Weston do the same?
-- **Why it matters:** a compositor with a later or missing Escape key-up turns every cancel into a window of its own (the wait is 300 ms, provisional); one that drops the motion rule loses nothing, one that adds a rule loses drops.
-- **Options:** run the private-compositor harness against one compositor of each family (rec.); widen the wait if one is late.
+- **Question:** sway 1.9 (wlroots 0.17) and weston 13 agree with mutter 46 on the drop-needs-one-motion rule, on the marks and tear-offs, and on the drag image request, and neither delivers Escape during a drag (A379). KWin was not run: does it deliver the `keyup` Escape after `dragend` that the cancel wait expects, and does it draw the drag image at the requested offset? Measurements are in `docs/planning/wayland-window-placement.md` (P6).
+- **Why it matters:** a compositor with a late Escape key-up turns every cancel into a window of its own (the wait is 300 ms, provisional); one that adds a motion rule loses drops.
+- **Options:** run the private-compositor harness against KWin (rec., when a KWin build can be unpacked without installing); widen the wait if it is late.
 - **Who decides:** research first
+- **Blocks:** nothing
+
+### A379: Escape cannot cancel a native tab drag on sway and weston **[AI-REC]**
+
+- **Question:** On sway 1.9 and weston 13 the keyboard leaves the window when the drag starts and no key reaches the page until the pointer is released, so nothing can tell a cancel from a drop. A person who presses Escape and then releases over a window's page gets a new window. Releasing over the source's strip or toolbar does nothing. Do anything about it?
+- **Why it matters:** the common cancel gesture silently does the opposite of what it means on those compositors; the cost is one stray window to close.
+- **Options:** accept and keep the strip and toolbar as the place to let go (rec.: no signal exists to build on); give the page a visible hint while a tab is dragged (not measured, and the compositor may draw over it).
+- **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
 ### A375: The Linux package says Orivon opens HTML files, but a file handed in at launch is dropped **[OWNER]**
