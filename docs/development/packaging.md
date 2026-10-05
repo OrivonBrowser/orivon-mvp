@@ -90,8 +90,8 @@ run `npm ci` or Kubo hold a read-only token, so no dependency's install script c
 
 ### On IPFS
 
-Every release is also one folder on IPFS. Its address is in the release notes, under "On IPFS",
-and in the `ipfs.json` attached to it:
+Every release is also one folder on IPFS. Its `ipfs://<cid>` is in the release's description,
+under "On IPFS", which the workflow writes, and in the `ipfs.json` attached to it:
 
 ```json
 { "cid": "bafy...", "add": "ipfs add -r --cid-version=1 ...", "files": [{ "name": "orivon_0.1.0_amd64.deb", "sha256": "..." }] }
@@ -103,9 +103,8 @@ and in the `ipfs.json` attached to it:
 - **A pinning node** runs `pin-releases.sh sync` on a timer. It reads the public releases list,
   downloads the files of the newest three releases, checks each against its SHA-256, adds them
   with the same flags, and refuses a release whose files add up to any other CID. It pins what
-  it keeps, unpins older releases, and publishes the set under the IPNS name
-  `k51qzi5uqu5dkhm6spg3gbtdjoj15qhwg77uqwg7j33xwun8jc9cdpeh9gnl8p`: one folder per pinned
-  release, plus `releases.json`, which lists every release by CID, pinned or not.
+  it keeps as `orivon-release-<tag>` and unpins the older releases it pinned; a pin without that
+  name is never touched. There is no IPNS name: a release's description is where its CID lives.
 - **Anyone can pin a release too.** The CID depends only on the files and the flags in
   `pin-releases.sh`, so `pin-releases.sh sync` (or `ipfs add` with those flags) on any Kubo node
   reproduces it. Changing the flags changes every CID from the next release on.
@@ -130,7 +129,7 @@ WantedBy=timers.target
 ```
 
 `journalctl -u orivon-release-pinner` shows each run: a line per release pinned, refused or
-unpinned, and per new index.
+unpinned. A refused release is not downloaded again until its `ipfs.json` names another CID.
 
 ## Windows and macOS
 

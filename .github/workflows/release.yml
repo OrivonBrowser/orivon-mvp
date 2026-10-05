@@ -4,7 +4,8 @@ name: Release
 # silicon and Intel), installs or mounts each package and launches it. Publishing a GitHub
 # release attaches the packages to it, named by the release tag (v1.2.0 packages as 1.2.0).
 # A pull request that touches packaging runs the same jobs without publishing. Each release
-# also gets an ipfs.json (its CID), and a pinning node puts it on IPFS (scripts/pin-releases.sh).
+# also gets an ipfs.json and its CID in its description, and a pinning node puts it on IPFS
+# (scripts/pin-releases.sh).
 on:
   release:
     types: [published]
@@ -23,7 +24,6 @@ permissions:
 env:
   KUBO_VERSION: v0.43.1
   KUBO_SHA256: 3f2bf974ab2a3ec6d997fac7d8cb46f59983a7cddd0b55ef998e6ce379155fb2
-  RELEASES_IPNS: k51qzi5uqu5dkhm6spg3gbtdjoj15qhwg77uqwg7j33xwun8jc9cdpeh9gnl8p
 
 jobs:
   package:
@@ -182,7 +182,7 @@ jobs:
         run: gh release upload "$TAG" packages/* --clobber --repo "$GITHUB_REPOSITORY"
 
       # Replaces the section a previous run wrote: a re-run rebuilds the packages, and their CID with them.
-      - name: Name the release's CID in its notes
+      - name: Write the release's CID into its description
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
@@ -190,6 +190,6 @@ jobs:
           cid=$(jq -r .cid packages/ipfs.json)
           # Notes edited on github.com end their lines with CRLF.
           body=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body | sed $'/^### On IPFS\r\\{0,1\\}$/,$d')
-          printf '%s\n\n### On IPFS\n\nThe same files, as one folder: `ipfs://%s`. Open it in Orivon, or run `ipfs get %s`. The Orivon node pins it within about 15 minutes, beside the two releases before it, all listed at `ipns://%s`.\n' \
-            "$body" "$cid" "$cid" "$RELEASES_IPNS" > notes.md
+          printf '%s\n\n### On IPFS\n\nThe same files, as one folder: `ipfs://%s`. Open it in Orivon, or run `ipfs get %s`. The Orivon node pins it within about 15 minutes, with the two releases before it.\n' \
+            "$body" "$cid" "$cid" > notes.md
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
