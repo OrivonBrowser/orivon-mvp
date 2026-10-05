@@ -81,6 +81,8 @@ const SPECS = {
   'web3.lightClient': { kind: 'bool', default: true },
   // Where judged Web3 Score levels are read (docs/architecture/web3-score-provider.md). Empty asks nobody.
   'web3.scoreProvider': { kind: 'text', default: '', maxLength: 2048, check: isEmptyOrAddress },
+  // Whether a tab asked to open `<name>.eth.limo` (or `.eth.link`) opens `<name>.eth` instead. Applied at once.
+  'web3.ethGatewayRedirect': { kind: 'bool', default: true },
   // Every tab's page can be inspected unless the person turns it off; where the tools open is theirs too.
   'developer.tools': { kind: 'bool', default: true },
   'developer.dock': { kind: 'enum', options: ['right', 'bottom', 'undocked'], default: 'right' },

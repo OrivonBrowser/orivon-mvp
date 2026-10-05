@@ -55,4 +55,8 @@ describe('the settings schema', () => {
     expect(validateSetting(SETTINGS['search.customUrl'], 'https://%s.example/')).toBeUndefined()
     expect(validateSetting(SETTINGS['search.customUrl'], 'http://search.example/?q=%s')).toBeUndefined()
   })
+
+  it('opens gateway addresses as .eth names unless told not to', () => {
+    expect(SETTINGS['web3.ethGatewayRedirect']).toEqual({ kind: 'bool', default: true })
+  })
 })

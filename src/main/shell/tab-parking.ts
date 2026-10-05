@@ -87,12 +87,12 @@ export function closeParkedViews (record: TabRecord): void {
 /** Swaps the view `record` shows for one in `nextPartition` -- the ONLY way
  * to change a tab's Electron session partition after creation (Electron fixes
  * `webPreferences.partition` at construction; there is no live "reassign
- * session" API). Called from two places, both guarded by `partitionChanged`
- * so neither fires for a same-origin navigation, a rejected/about:blank
- * fallback or the dashboard: tabs.ts's navigate() (a typed target, pre-fetch)
- * and tab-view.ts's wireView()'s did-navigate handler (a redirect, clicked
- * link, form submission or script navigation -- the target is only known
- * once Chromium has already committed it).
+ * session" API). Guarded by `partitionChanged` so it never fires for a
+ * same-origin navigation, a rejected/about:blank fallback or the dashboard.
+ * Called for a typed target (pre-fetch) and a gateway link, both through
+ * load-in-tab.ts, and from tab-view.ts's wireView()'s did-navigate handler
+ * (a redirect, clicked link, form submission or script navigation -- the
+ * target is only known once Chromium has already committed it).
  *
  * A view leaving an app's partition is parked rather than closed, and a tab
  * coming back to that app gets it again, with the app's own history and

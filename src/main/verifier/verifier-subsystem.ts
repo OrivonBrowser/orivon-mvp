@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { app, session, utilityProcess } from 'electron'
 import type { Session, WebFrameMain, WebRequestFilter } from 'electron'
 import type { Subsystem } from '../registry.js'
-import { devEthNames } from '../dev/eth-resolver.js'
+import { devEthNames, isDevEthName } from '../dev/eth-resolver.js'
 import type { HostConfig, LightClientState, SiteProvenance } from '../../protocols/verifier-host/protocol.js'
 import type { ContentAddress, PinRecord } from '../../broker/policy/pin.js'
 import { servedByVerifier } from '../../loader/fetch/verifier-origin.js'
@@ -346,7 +346,11 @@ export const verifierSubsystem: Subsystem = {
       privateSession: ctx.privateSession
     })
     startHost = () => { lifecycle.request() }
-    provideVerifierAccess({ start: () => { startHost() }, ready: async () => { await listeningGate.whenSettled() } })
+    provideVerifierAccess({
+      start: () => { startHost() },
+      ready: async () => { await listeningGate.whenSettled() },
+      servesName: (name) => isDevEthName(name) || ethTestSeam()?.fixtures[name] !== undefined || usableCheckpointAge() !== undefined
+    })
     exposeVerifierStart(() => { startHost() })
     lifecycle.refreshAtLaunch()
     app.on('will-quit', () => {

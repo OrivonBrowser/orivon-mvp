@@ -20,6 +20,9 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **A `<name>.eth.limo` or `<name>.eth.link` address opens as `<name>.eth`**, checked on this computer, with its path, query and
+  fragment kept; Settings > Web3 turns it off. Data a site keeps under its gateway address stays there and is not seen at
+  the `.eth` name.
 - **`test/` is ordered by area**, with a Layout table in `test/README.md`; a spec left at its top, a folder with no
   row and a dead `test/` path in any tracked file now fail CI, and a new capability kind needs a catalogue line.
 - **An app-behaviour catalogue** names what a working app relies on, one row each, and each row is proven by an
