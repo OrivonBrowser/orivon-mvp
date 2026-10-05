@@ -22,9 +22,14 @@ afterAll(async () => {
 
 const popupOf = (app: ElectronApplication) => app.windows().find((w) => w.url().includes('/site-info/'))
 
+/** A click that lands while the tab is still reloading after an install opens nothing, so the click is repeated once before the popover counts as not opening. */
 async function openKey (app: ElectronApplication) {
-  await findChrome(app).click('#site-permissions-btn')
-  if (!await waitFor(() => popupOf(app) !== undefined, 5_000)) throw new Error('the site popover did not open')
+  let opened = false
+  for (let attempt = 0; attempt < 2 && !opened; attempt += 1) {
+    await findChrome(app).click('#site-permissions-btn')
+    opened = await waitFor(() => popupOf(app) !== undefined, 5_000)
+  }
+  if (!opened) throw new Error('the site popover did not open')
   const popup = popupOf(app)!
   await popup.waitForSelector('.site-header')
   return popup
