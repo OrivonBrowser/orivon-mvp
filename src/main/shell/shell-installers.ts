@@ -8,6 +8,7 @@ import type { SubsystemContext } from '../registry.js'
 import { installAuth } from '../auth/install-auth.js'
 import { installAutofill } from '../autofill/install-autofill.js'
 import { installChoosers } from '../devices/install-choosers.js'
+import { installDefaultBrowserAsk } from '../os/install-default-browser-ask.js'
 import { installFocus } from '../focus/install-focus.js'
 import { installLauncherMenu } from '../os/install-launcher-menu.js'
 import { installMemorySaver } from '../memory-saver/install-memory-saver.js'
@@ -34,6 +35,7 @@ export const SHELL_INSTALLERS: readonly ShellInstaller[] = [
   installAutofill,
   installChoosers,
   installContentSettings,
+  installDefaultBrowserAsk,
   installFocus,
   installFormWatch,
   installLauncherMenu,

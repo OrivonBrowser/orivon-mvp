@@ -91,7 +91,7 @@ describe('the sections a feature fills', () => {
     await state.load()
     const listed = sectionsFor(state).map((section) => section.id)
     expect(listed).not.toContain('addresses')
-    expect(listed.slice(0, 3)).toEqual(['appearance', 'search', 'startup'])
+    expect(listed.slice(0, 4)).toEqual(['appearance', 'search', 'default-browser', 'startup'])
   })
 
   it('has an icon and the Privacy and accounts group for each', () => {

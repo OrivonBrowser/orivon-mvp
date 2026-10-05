@@ -18,11 +18,11 @@ afterAll(async () => {
 
 const TEST_TIMEOUT_MS = 45_000
 
-function launch (mode: string, seed?: (dir: string) => Promise<void>): Promise<ElectronApplication> {
+function launch (mode: string, seed?: (dir: string) => Promise<void>, env: Record<string, string> = {}): Promise<ElectronApplication> {
   return launchElectron({
     appPath: '.',
     args: [HERMETIC_RESOLVER],
-    env: { ORIVON_INTRO: mode },
+    env: { ORIVON_INTRO: mode, ...env },
     ...(seed === undefined ? {} : { seedProfile: seed })
   })
 }
@@ -131,6 +131,54 @@ it('always: shows even when seen, and clicking through does not use up the one-t
     await closeElectron(fresh)
   }
 }, TEST_TIMEOUT_MS * 2)
+
+const seamCalls = (app: ElectronApplication): Promise<{ setDefault: string[] }> =>
+  app.evaluate(() => (globalThis as unknown as { __orivonDevDefaultBrowser: { setDefault: string[] } }).__orivonDevDefaultBrowser)
+
+it('offers no default-browser box on a run that cannot register, and registers nothing', async () => {
+  const app = await launch('always')
+  try {
+    expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
+    const intro = introPage(app) as Page
+    expect(await intro.locator('#default-offer').isHidden()).toBe(true)
+    await intro.click('#enter')
+    expect(await waitFor(() => introPage(app) === undefined)).toBe(true)
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('offers an unticked default-browser box where it can register, and Enter without the tick registers nothing', async () => {
+  const app = await launch('always', undefined, { ORIVON_TEST_DEFAULT_BROWSER: 'can-set' })
+  try {
+    expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
+    const intro = introPage(app) as Page
+    expect(await intro.locator('#default-offer').isVisible()).toBe(true)
+    expect(await intro.locator('#make-default').isChecked()).toBe(false)
+    expect((await intro.locator('#default-offer').innerText()).trim()).toBe('Make Orivon my default browser')
+    await intro.click('#enter')
+    expect(await waitFor(() => introPage(app) === undefined)).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS))
+    expect((await seamCalls(app)).setDefault).toEqual([])
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('registers http and https when the box is ticked and Enter Orivon is pressed', async () => {
+  const app = await launch('always', undefined, { ORIVON_TEST_DEFAULT_BROWSER: 'can-set' })
+  try {
+    expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
+    const intro = introPage(app) as Page
+    await intro.check('#make-default')
+    await intro.click('#enter')
+    expect(await waitFor(() => introPage(app) === undefined)).toBe(true)
+    expect(await waitFor(async () => (await seamCalls(app)).setDefault.length === 2, 10_000)).toBe(true)
+    expect((await seamCalls(app)).setDefault).toEqual(['http', 'https'])
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
 
 it('the default test launch opens without it', async () => {
   const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })

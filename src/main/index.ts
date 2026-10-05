@@ -27,6 +27,8 @@ import { firstWindowOptions } from './shell/first-window.js'
 import { seedClosedStack } from './session-restore/restore.js'
 import { readLaunchRequest } from './launch/launch-request.js'
 import type { LaunchRequest } from './launch/launch-request.js'
+import { canOfferDefault } from './os/default-browser.js'
+import { defaultBrowserHost } from './os/default-browser-runner.js'
 import { handleOpenUrl } from './os/open-url.js'
 import { sweepPrivateDirs } from './launch/private-session.js'
 import { startLaunch } from './launch/start-launch.js'
@@ -136,6 +138,8 @@ function boot (runtime: Runtime): void {
     app.on('second-instance', (_event, argv, _workingDirectory, data) => { queueLaunch(readLaunchRequest(data, argv)) })
     // macOS hands a clicked link to the running app as an event; it joins the same queue.
     app.on('open-url', (event, url) => { handleOpenUrl(event, url, (urls) => { queueLaunch({ kind: 'open', urls }) }) })
+    // The app declares no document types, so a file handed to it (a drop on the dock icon) is not one to open.
+    app.on('open-file', (event) => { event.preventDefault(); console.error('[orivon] a file was handed to the browser; opening files is not supported') })
   }
 
   // A private session ends with its last window on every platform: there is nothing to keep resident, and no window to bring back.
@@ -248,8 +252,10 @@ function boot (runtime: Runtime): void {
       try {
         // Only this first window can open on the welcome screen: the macOS
         // 'activate' below recreates a window in a process that has already shown it.
+        // Only the default profile's own screen offers it, and a kiosk is no one's browser.
+        const offersDefault = runtime.profileId === 'default' && !shell.kiosk && canOfferDefault(defaultBrowserHost)
         const plan = firstWindowOptions({ services: shell, isPrivate: false, argv: process.argv, displays: screen.getAllDisplays(), openWindow: (options) => { createShellWindow(ctx, shell, options) } })
-        const firstWindow = createShellWindow(ctx, shell, { ...plan, intro: plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')), firstOfLaunch: true })
+        const firstWindow = createShellWindow(ctx, shell, { ...plan, intro: plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData'), offersDefault), firstOfLaunch: true })
         const after = plan.after
         afterFirst = after === undefined ? undefined : () => { after(firstWindow) }
       } finally {

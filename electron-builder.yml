@@ -1,9 +1,8 @@
-# electron-builder configuration -- Linux only (deb + AppImage).
-#
-# Scope, deliberately: no `win:` / `mac:` blocks and no code-signing config of any kind.
-# Windows and macOS ship run-from-source instead of a signed installer, on purpose, to
-# avoid buying certificates (docs/planning/build-plan.md "Platform policy"). Signing is
-# not "left off for now" -- for this file it is simply out of scope.
+# electron-builder configuration. Linux (deb + AppImage) is what is built and tested.
+# The `win` and `mac` blocks further down register Orivon with the system as a browser
+# and have never been built: nothing in CI packages them. Code signing is not configured
+# for any platform, and avoiding the certificates is the reason Windows and macOS users
+# run from source today (docs/planning/build-plan.md "Platform policy").
 #
 # BUILT. A real `electron-builder` invocation was run for the first time 2026-09-03
 # (see docs/development/packaging.md), producing real `deb`/`AppImage` artefacts in
@@ -122,8 +121,8 @@ electronFuses:
 # default-web-browser` (Linux) looks for an installed .desktop file whose MimeType=
 # line includes `x-scheme-handler/http` and `x-scheme-handler/https`, and this is the
 # documented, cross-platform electron-builder mechanism that populates it (it would
-# equally populate the Windows registry / macOS Info.plist equivalents, unused here
-# since only Linux targets are configured below).
+# equally populate the macOS Info.plist; the Windows registry entries are written by
+# build/installer.nsh instead).
 # This config key alone does not make Orivon a working browser at the OS level -- the
 # app itself must still call `app.setAsDefaultProtocolClient()` at runtime. That is
 # application code in src/main, out of scope for this file; see
@@ -166,16 +165,10 @@ linux:
   # (Network) to be present alongside it, not instead of it -- most desktop-menu
   # implementations key off both.
 
-  mimeTypes:
-    - text/html
-  # Alongside `protocols.schemes` above, not a duplicate of it: `protocols` covers URL
-  # *schemes* (x-scheme-handler/*), text/html is a document MIME type rather than a
-  # scheme, so it has its own config surface. Together, electron-builder's documented
-  # behaviour is that they compose into one MimeType= line:
-  # `x-scheme-handler/http;x-scheme-handler/https;text/html;`. That composition is
-  # read from current docs, not observed against a real build -- verify the generated
-  # .desktop file's actual MimeType= line the first time this is really packaged (see
-  # docs/development/packaging.md).
+  # No `mimeTypes`: the entry lists only `x-scheme-handler/http` and `/https`, from `protocols`
+  # above. A browser that claims `text/html` is offered every .html file and every `xdg-open` of
+  # a page, and the desktop's browser list is keyed on the two schemes. Opening a local file is
+  # a separate feature (docs/open-questions.md A375).
 
   synopsis: A browser that runs applications Chrome cannot
   description: >-
@@ -236,3 +229,25 @@ deb:
       NewPrivateWindow:
         Name: New Private Window
         Exec: /opt/Orivon/orivon --new-private-window
+
+# --- Windows and macOS: registration as a browser (never built) ------------------------
+# Only an installed package registers Orivon as a browser (src/main/os/default-browser.ts).
+win:
+  target:
+    - nsis
+
+nsis:
+  # A per-user install writes the registry entries under HKCU, where Windows reads a user's
+  # default apps from; build/installer.nsh writes them with SHCTX, so a machine-wide install
+  # would write HKLM instead.
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  include: build/installer.nsh
+
+mac:
+  target:
+    - dmg
+  category: public.app-category.productivity
+  # `protocols` above becomes CFBundleURLTypes (http, https). No document types are declared:
+  # opening a local file in Orivon is not offered (docs/open-questions.md A375).
