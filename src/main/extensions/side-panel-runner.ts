@@ -182,7 +182,7 @@ function makeRunner (ctx: ExtensionApiContext): SidePanelDriver {
     if (window === undefined || front === undefined || front.isDestroyed()) return undefined
     const tabId = isOrdinaryTab(ctx, front) ? front.id : undefined
     if (options.panelFor(extensionId, tabId) === undefined) return undefined
-    return () => { driver.openFromKey(extensionId, window, tabId) }
+    return () => { driver.openFromMenu(extensionId, window, tabId) }
   }
 
   setActionClickInterceptor((extensionId, tab) => {

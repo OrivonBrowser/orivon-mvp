@@ -317,12 +317,25 @@ describe('the toolbar button and the extension\'s key', () => {
     expect(s.fired.map((entry) => entry.name)).toEqual(['onOpened', 'onClosed'])
   })
 
-  it('opens from the key whether or not the extension asked for the panel on a click, and passes the key on when there is no panel', () => {
+  it('toggles from the key whether or not the extension asked for the panel on a click, and passes the key on when there is no panel', async () => {
     const s = setup()
     expect(s.driver.openFromKey(EXT, s.win, 1)).toBe(true)
-    expect(s.host.open).toHaveBeenCalledWith(`ext:${EXT}`)
+    s.pages[0]?.finish()
+    await s.settle()
+    expect(s.host.isOpen()).toBe(true)
+    expect(s.driver.openFromKey(EXT, s.win, 1)).toBe(true)
+    expect(s.host.isOpen()).toBe(false)
     s.options.set(EXT, { enabled: false })
     expect(s.driver.openFromKey(EXT, s.win, 1)).toBe(false)
+  })
+
+  it('opens from the action menu and never closes the panel by it', async () => {
+    const s = setup()
+    expect(s.driver.openFromMenu(EXT, s.win, 1)).toBe(true)
+    s.pages[0]?.finish()
+    await s.settle()
+    expect(s.driver.openFromMenu(EXT, s.win, 1)).toBe(true)
+    expect(s.host.isOpen()).toBe(true)
   })
 })
 
@@ -335,6 +348,13 @@ describe('an extension that goes away', () => {
     expect(s.host.isOpen()).toBe(true)
     expect(page.destroyCalls).toBeGreaterThan(0)
     expect(s.state.view).toBe('bookmarks')
+  })
+
+  it('leaves it out of the picker even while the session still lists it as loaded', () => {
+    const s = setup()
+    s.driver.republish()
+    s.driver.extensionUnloaded(EXT)
+    expect(s.published.at(-1)).toEqual([{ id: `ext:${OTHER}`, title: 'Other' }])
   })
 
   it('keeps its panel through a reload Orivon makes', async () => {

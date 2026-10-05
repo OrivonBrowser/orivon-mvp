@@ -89,8 +89,10 @@ export interface PanelDriver {
   close: (target: PanelTarget) => Promise<void>
   /** A toolbar click: toggles the panel when the extension asked for that and has one for the tab. True when it did. */
   actionClick: (extensionId: string, window: ShellWindow, tabId: number | undefined) => boolean
-  /** The extension's own key for its panel: opens it when it has one for the tab. */
+  /** The extension's own key for its panel: toggles it when the extension has one for the tab. */
   openFromKey: (extensionId: string, window: ShellWindow, tabId: number | undefined) => boolean
+  /** "Open Side Panel" in the action's menu: opens it, never closes it. */
+  openFromMenu: (extensionId: string, window: ShellWindow, tabId: number | undefined) => boolean
   /** Closes every panel page of the extension, and settles once they are gone. */
   closeAll: (extensionId: string) => Promise<void>
   republish: () => void
@@ -105,10 +107,11 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
   }
   let published = '[]'
 
-  const entries = (): PanelGuestEntry[] => {
+  const entries = (except?: string): PanelGuestEntry[] => {
     const fronts = deps.windows().map((window) => deps.frontTab(window))
     const found: PanelGuestEntry[] = []
     for (const id of deps.candidates()) {
+      if (id === except) continue
       const available = deps.options.panelFor(id) !== undefined || fronts.some((tab) => tab !== undefined && deps.options.panelFor(id, tab) !== undefined)
       if (!available) continue
       const facts = deps.facts(id)
@@ -117,8 +120,9 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
     return found
   }
 
-  const republish = (): void => {
-    const next = entries()
+  /** `except`: an extension that is going away and may still be listed as loaded while its unload is announced. */
+  const republish = (except?: string): void => {
+    const next = entries(except)
     const key = JSON.stringify(next)
     if (key === published) return
     published = key
@@ -263,7 +267,7 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
         const host = deps.hostOf(window)
         if (state.shown?.ext === extensionId || host?.view() === `${ENTRY_PREFIX}${extensionId}`) host?.setGuest(null)
       }
-      republish()
+      republish(extensionId)
     },
     tabClosed: (tabId) => {
       deps.options.forgetTab(tabId)
@@ -300,7 +304,8 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
       if (!deps.options.openOnActionClick(extensionId)) return false
       return openOrToggle(extensionId, window, tabId, true)
     },
-    openFromKey: (extensionId, window, tabId) => openOrToggle(extensionId, window, tabId, false),
+    openFromKey: (extensionId, window, tabId) => openOrToggle(extensionId, window, tabId, true),
+    openFromMenu: (extensionId, window, tabId) => openOrToggle(extensionId, window, tabId, false),
 
     closeAll: async (extensionId) => {
       const gone: Array<Promise<void>> = []

@@ -1,14 +1,22 @@
 {
   "worker": {
+    "close": "function",
+    "getLayout": "function",
     "getOptions": "function",
     "getPanelBehavior": "function",
+    "onClosed": "event",
+    "onOpened": "event",
     "open": "function",
     "setOptions": "function",
     "setPanelBehavior": "function"
   },
   "page": {
+    "close": "function",
+    "getLayout": "function",
     "getOptions": "function",
     "getPanelBehavior": "function",
+    "onClosed": "event",
+    "onOpened": "event",
     "open": "function",
     "setOptions": "function",
     "setPanelBehavior": "function"
