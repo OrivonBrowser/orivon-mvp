@@ -17,7 +17,7 @@ window on the owner's screen, silent audio) is in `orivon-electron` and CLAUDE.m
 | `npm run qa` | the QA specs below, then `qa:report` | before calling a UI, flow or boundary change done |
 | `npm run qa:visual` | layout-audit proof, unit tests of the pixel tools, the shell-state specs | after any change to what the shell draws |
 | `npm run qa:report` | writes `qa-artifacts/latest/inspect.md` | to read states against expectations |
-| `npm run test:e2e` | every e2e spec, each leaving evidence on failure | CI, on every PR. Not locally: the development machine is shared and has crashed under load (`.claude/hookify.machine-load.local.md`) |
+| `npm run test:e2e` | every e2e spec, each leaving evidence on failure | CI runs the specs a change can reach on a PR and everything on `main`. Not locally: the development machine is shared and has crashed under load (`.claude/hookify.machine-load.local.md`) |
 | `npm run smoke` | the real shell once, JSON failure list | when `src/main/` changed |
 
 One spec: `node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/<area>/<file> -t "<name>"`
@@ -45,7 +45,8 @@ One spec: `node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e
    and the ones for what you touched), then `e2e-qa-adversarial`. Never relax a boundary to make a
    test pass; if the test is wrong, say why in the change.
 5. **Before done**: `npm run qa` and the named specs above, one heavy command at a time; for
-   anything in 3 or 4, the full e2e suite must then pass in CI on the PR before it merges.
+   anything in 3 or 4, the e2e shards CI selects must pass on the PR, and the PR takes the `ci:e2e-full` label so the
+   whole suite runs before it merges.
    Compiling is not done.
 
 ## Reading a failure

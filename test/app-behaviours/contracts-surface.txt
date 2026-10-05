@@ -508,6 +508,7 @@ export interface EmbedCapability {
 export interface MediaCapability {
   readonly camera?: true
   readonly microphone?: true
+  readonly screen?: true
 }
 export interface ClipboardCapability {
   readonly read?: true
@@ -534,5 +535,6 @@ export type CapabilityKind =
   | 'web.embed'
   | 'media.camera'
   | 'media.microphone'
+  | 'media.screen'
   | 'clipboard.read'
   | 'secrets'

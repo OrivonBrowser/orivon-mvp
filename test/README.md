@@ -37,6 +37,11 @@ spec left at the top of `test/` and a folder with no row. File names keep their 
 | [`support/`](support/) | The shared harness: `launch-electron.mjs`, `smoke-helpers.mjs`, `e2e-helpers.ts`, the `qa-*` files, `question-support.ts`, and the teardown unit test |
 | [`apps/`](apps/), `fixtures/` | The apps and static pages the specs serve |
 
+`impact-map.json` says which of these areas a changed file reaches, and `spec-weights.json` how long each spec
+takes; CI uses them to run only the specs a pull request can reach, in parallel shards
+([`scripts/ci/README.md`](../scripts/ci/README.md)). A new `src/` directory needs a rule in the map
+(`npm run check:impact-map`).
+
 `vitest.e2e.config.ts` selects every `test/**/*.test.ts` except `apps/`; CI, `npm run test:e2e` and the
 scripts cite it by that path.
 

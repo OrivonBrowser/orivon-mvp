@@ -21,8 +21,8 @@ import { isLoopbackHost } from '../../broker/policy/origin.js'
 import { electronResolveHost } from '../../loader/electron/resolve.js'
 import { FaviconCache } from './favicon-cache.js'
 import { decodeDataUrl, MAX_FAVICON_BYTES, toDataUrl } from './favicon-format.js'
+import { faviconTimeoutMs } from './favicon-timeout.js'
 
-export const FAVICON_TIMEOUT_MS = 5_000
 /** Real sites redirect a bare-domain icon URL to a `www` host, or move
  * `/favicon.ico` behind a CDN -- both cross-origin, both legitimate. Each
  * hop is re-checked by isSafeFaviconUrl, so this only bounds how long a
@@ -341,7 +341,7 @@ async function requestOnce (url: string, signal: AbortSignal): Promise<HopResult
  * slow final host should not get MAX_FAVICON_REDIRECTS times the budget. */
 async function fetchUnchecked (url: string, pageUrl: string): Promise<string | null> {
   const controller = new AbortController()
-  const timer = setTimeout(() => { controller.abort() }, FAVICON_TIMEOUT_MS)
+  const timer = setTimeout(() => { controller.abort() }, faviconTimeoutMs(url))
   try {
     let current = url
     for (let hop = 0; hop <= MAX_FAVICON_REDIRECTS; hop++) {
