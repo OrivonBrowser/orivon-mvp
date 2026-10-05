@@ -32,6 +32,7 @@ export const REQUIRED_CONTRACT_FILES = [
   'capability-api.ts',
   'limits.ts',
   'ipc.ts',
+  'trust.ts',
   'index.ts'
 ]
 

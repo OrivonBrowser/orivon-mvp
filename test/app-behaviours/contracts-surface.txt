@@ -12,6 +12,7 @@ import type {
   WebContext
 } from './handles.js'
 import type { Grant, Manifest, Pattern } from './manifest.js'
+import type { OrivonTrust } from './trust.js'
 export interface Orivon {
   readonly version: 0
   readonly app: OrivonApp
@@ -20,6 +21,7 @@ export interface Orivon {
   readonly id: OrivonId
   readonly web: OrivonWeb
   readonly secrets: OrivonSecrets
+  readonly trust: OrivonTrust
 }
 export interface OrivonApp {
   manifest(): Promise<Manifest>
@@ -250,6 +252,7 @@ export type {
   MediaCapability,
   ClipboardCapability,
   SecretsCapability,
+  TrustCapability,
   Grant,
   GrantId,
   CapabilityKind,
@@ -272,6 +275,7 @@ export type {
   SecureConnectOptions,
   BindScope
 } from './capability-api.js'
+export type { OrivonTrust, WebsiteScore } from './trust.js'
 export type { Limits } from './limits.js'
 export { LIMITS } from './limits.js'
 export type {
@@ -470,6 +474,7 @@ export interface Capabilities {
   readonly media?: MediaCapability
   readonly clipboard?: ClipboardCapability
   readonly secrets?: SecretsCapability
+  readonly trust?: TrustCapability
   readonly protocols?: readonly string[]
 }
 export interface NetCapability {
@@ -509,11 +514,13 @@ export interface EmbedCapability {
 export interface MediaCapability {
   readonly camera?: true
   readonly microphone?: true
+  readonly screen?: true
 }
 export interface ClipboardCapability {
   readonly read?: true
 }
 export interface SecretsCapability {}
+export interface TrustCapability { readonly score?: true }
 export interface Grant {
   readonly id: GrantId
   readonly origin: string
@@ -535,5 +542,15 @@ export type CapabilityKind =
   | 'web.embed'
   | 'media.camera'
   | 'media.microphone'
+  | 'media.screen'
   | 'clipboard.read'
   | 'secrets'
+  | 'trust.score'
+== trust.ts
+export interface OrivonTrust {
+  websiteScore(address: string): Promise<WebsiteScore>
+}
+export interface WebsiteScore {
+  readonly provider: string | null
+  readonly level: 1 | 2 | 3 | 4 | null
+}

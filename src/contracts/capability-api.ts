@@ -40,6 +40,7 @@ import type {
   WebContext
 } from './handles.js'
 import type { Grant, Manifest, Pattern } from './manifest.js'
+import type { OrivonTrust } from './trust.js'
 
 /** The root object injected into an app's page as `orivon`. */
 export interface Orivon {
@@ -50,6 +51,7 @@ export interface Orivon {
   readonly id: OrivonId
   readonly web: OrivonWeb
   readonly secrets: OrivonSecrets
+  readonly trust: OrivonTrust
 }
 
 export interface OrivonApp {

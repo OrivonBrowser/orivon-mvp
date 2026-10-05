@@ -1,4 +1,4 @@
-# ADR-0055: An installed app at a name moves to new content only when the person accepts; a judged level counts only at the domain its manifest names
+# ADR-0056: An installed app at a name moves to new content only when the person accepts; a judged level counts only at the domain its manifest names
 
 - **Status:** accepted
 - **Date:** 2026-10-05
