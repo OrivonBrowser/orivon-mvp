@@ -133,7 +133,7 @@ until shown otherwise.
 
 ## Known limits
 
-- A question is the question panel, an overlay page: drive it with `test/question-support.ts` (read the
+- A question is the question panel, an overlay page: drive it with `test/support/question-support.ts` (read the
   text, press the real button after the guard) and assert `noNativeDialogs`. Leave this page is still
   a native `dialog.showMessageBoxSync`: specs replace it and the screenshots cannot show it.
 - `capturePage()` fails under this machine's GPU-less xvfb; screenshots go through Playwright's own

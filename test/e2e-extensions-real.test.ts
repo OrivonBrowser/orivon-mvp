@@ -11,7 +11,7 @@
 //
 // Installs each through the real path: loadableManifest's stripped
 // manifest copy and a real per-slot key, the same as
-// test/extensions-fixtures.ts's seedExtensions and every other e2e file
+// test/support/extensions-fixtures.ts's seedExtensions and every other e2e file
 // here -- never session.defaultSession.extensions.loadExtension() called
 // directly on the raw source.
 //
@@ -39,9 +39,9 @@ import { createServer, type Server } from 'node:http'
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Page } from 'playwright'
-import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
-import { evaluateRetrying, findChrome, HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
+import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
+import { evaluateRetrying, findChrome, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
+import { closeElectronApp, navigateToFixture, runPhase } from './support/e2e-helpers.js'
 import { loadableManifest, readExtensionManifest } from '../src/broker/policy/extension-manifest.js'
 import { serializeRegistry, type InstalledExtension } from '../src/main/extensions/registry.js'
 import { resolveSlotKey } from '../src/main/extensions/install-runner.js'
@@ -65,7 +65,7 @@ const SPECS: readonly ExtSpec[] = [
   { slot: 'ubo', dir: 'ubo', popup: 'popup-fenix.html', mv2: true }
 ]
 
-/** Seeds the registry the real way (test/extensions-fixtures.ts's own doc
+/** Seeds the registry the real way (test/support/extensions-fixtures.ts's own doc
  * says why this is the real boot path). Skips, with a logged reason, an
  * extension whose folder is missing or whose manifest.json
  * readExtensionManifest refuses -- one damaged download must not strand

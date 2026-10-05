@@ -21,10 +21,10 @@
 import { afterAll, expect, it } from 'vitest'
 
 
-import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
-import { evaluateRetrying, findChrome, findViewShowing, waitFor, waitForTab } from './smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
-import { FREETUBE_ORIGIN as ORIGIN, grantAndServe, pinRealApp } from './freetube-fixture.js'
+import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './support/launch-electron.mjs'
+import { evaluateRetrying, findChrome, findViewShowing, waitFor, waitForTab } from './support/smoke-helpers.mjs'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './support/e2e-helpers.js'
+import { FREETUBE_ORIGIN as ORIGIN, grantAndServe, pinRealApp } from './support/freetube-fixture.js'
 
 afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])

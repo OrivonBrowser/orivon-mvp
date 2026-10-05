@@ -25,10 +25,10 @@
 import { afterAll, expect, it } from 'vitest'
 import type { ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
-import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
-import { evaluateRetrying, findChrome, findViewShowing, waitFor, waitForTab } from './smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, asPage, clickAddressBarRetrying, closeElectronApp, killChild, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
-import { AS_PAGE_SCRIPT_URL, PORT_APP_FREETUBE, clearFreetubeAsPageScript, grantOriginOnly, readAppManifest, setFreetubeAsPageScript, startOwnServer } from './freetube-fixture.js'
+import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './support/launch-electron.mjs'
+import { evaluateRetrying, findChrome, findViewShowing, waitFor, waitForTab } from './support/smoke-helpers.mjs'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, asPage, clickAddressBarRetrying, closeElectronApp, killChild, runPhase, waitForAddressBarStable } from './support/e2e-helpers.js'
+import { AS_PAGE_SCRIPT_URL, PORT_APP_FREETUBE, clearFreetubeAsPageScript, grantOriginOnly, readAppManifest, setFreetubeAsPageScript, startOwnServer } from './support/freetube-fixture.js'
 
 const LIVE = process.env['CI'] !== 'true' || process.env['ORIVON_E2E_LIVE'] === '1'
 

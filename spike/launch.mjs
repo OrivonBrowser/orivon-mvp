@@ -39,7 +39,7 @@ export async function launchElectron ({ appPath = '.', args = [] } = {}) {
   }
 
   // Nothing a gate plays may reach the owner's real speakers -- xvfb hides a
-  // window, not sound. See test/launch-electron.mjs's own SILENT_AUDIO_ENV
+  // window, not sound. See test/support/launch-electron.mjs's own SILENT_AUDIO_ENV
   // doc for the full reasoning; duplicated here rather than imported, since
   // this file's own header says spike/ survives independently of test/.
   if (env['PULSE_SERVER'] === undefined) env['PULSE_SERVER'] = 'unix:/nonexistent'

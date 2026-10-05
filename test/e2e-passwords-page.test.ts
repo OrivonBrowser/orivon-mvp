@@ -13,8 +13,8 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { createFakeKeyring } from '../src/main/passwords/dev-password-storage.js'
-import { assertNoElectronSurvivors, closeElectron, launchElectron } from './launch-electron.mjs'
-import { delay, findChrome, HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron, launchElectron } from './support/launch-electron.mjs'
+import { delay, findChrome, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
 
 const SHOTS = process.env['ORIVON_SHOTS_DIR']
 const TEST_TIMEOUT_MS = 120_000

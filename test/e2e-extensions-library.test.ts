@@ -9,9 +9,9 @@ import type { AddressInfo } from 'node:net'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
-import { assertNoElectronSurvivors, closeElectron, launchElectron } from './launch-electron.mjs'
-import { activeTabInfo, delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from './smoke-helpers.mjs'
-import { clickAddressBarRetrying } from './e2e-helpers.js'
+import { assertNoElectronSurvivors, closeElectron, launchElectron } from './support/launch-electron.mjs'
+import { activeTabInfo, delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from './support/smoke-helpers.mjs'
+import { clickAddressBarRetrying } from './support/e2e-helpers.js'
 import { openExtensionPage, rpc, seedFixture, waitRecovered } from './extensions-e2e-helpers.js'
 
 const TEST_TIMEOUT_MS = 180_000

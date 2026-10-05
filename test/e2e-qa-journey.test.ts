@@ -8,11 +8,11 @@ import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { removeThroughBubble } from './bookmark-bubble-helpers.js'
-import { runPhase } from './e2e-helpers.js'
-import { assertNoElectronSurvivors, closeElectron, profileDirOf } from './launch-electron.mjs'
-import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './qa-helpers.js'
-import { ABSENCE_SETTLE_MS, bookmarksBarMatches, bookmarkUrls, delay, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { removeThroughBubble } from './support/bookmark-bubble-helpers.js'
+import { runPhase } from './support/e2e-helpers.js'
+import { assertNoElectronSurvivors, closeElectron, profileDirOf } from './support/launch-electron.mjs'
+import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './support/qa-helpers.js'
+import { ABSENCE_SETTLE_MS, bookmarksBarMatches, bookmarkUrls, delay, waitFor, waitForTab } from './support/smoke-helpers.mjs'
 
 let server: FixtureServer
 beforeAll(async () => {

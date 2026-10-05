@@ -7,8 +7,8 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { expect } from 'vitest'
 import { makeChromeHistory, makeFirefoxPlaces } from '../src/main/import/tests/databases.js'
-import { launchElectron } from './launch-electron.mjs'
-import { findChrome, HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
+import { launchElectron } from './support/launch-electron.mjs'
+import { findChrome, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
 
 export interface Launched {
   readonly app: ElectronApplication

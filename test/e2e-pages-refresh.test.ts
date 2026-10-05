@@ -3,9 +3,9 @@
 // back to the bookmarks bar and says so in its address.
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron } from './launch-electron.mjs'
-import { launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './qa-helpers.js'
-import { waitFor } from './smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron } from './support/launch-electron.mjs'
+import { launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './support/qa-helpers.js'
+import { waitFor } from './support/smoke-helpers.mjs'
 
 let server: FixtureServer
 

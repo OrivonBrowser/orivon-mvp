@@ -2,7 +2,7 @@
  * Starts a real window manager on the already-set `DISPLAY`, runs the given
  * command as a child, then stops it. Meant to be the command
  * `scripts/run-headless.mjs`'s `xvfb-run` wraps:
- *   node scripts/run-headless.mjs node test/with-window-manager.mjs <command> [args...]
+ *   node scripts/run-headless.mjs node test/support/with-window-manager.mjs <command> [args...]
  *
  * `xvfb-run` alone starts a bare X server with no window manager at all --
  * enough to render, but nothing arbitrates window stacking or hands a
@@ -11,13 +11,13 @@
  * top-level windows (an extension popup and the shell) needs a real WM
  * present on the display to mean anything; `openbox` is a small, fast one.
  *
- * Usage: node scripts/run-headless.mjs node test/with-window-manager.mjs <command> [args...]
+ * Usage: node scripts/run-headless.mjs node test/support/with-window-manager.mjs <command> [args...]
  */
 import { spawn, spawnSync } from 'node:child_process'
 
 const [, , command, ...args] = process.argv
 if (command === undefined) {
-  console.error('usage: node test/with-window-manager.mjs <command> [args...]')
+  console.error('usage: node test/support/with-window-manager.mjs <command> [args...]')
   process.exit(1)
 }
 

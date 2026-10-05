@@ -12,11 +12,11 @@ import { join } from 'node:path'
 import { deflateSync, crc32 } from 'node:zlib'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput, profileDirOf } from './launch-electron.mjs'
+import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput, profileDirOf } from './support/launch-electron.mjs'
 import { commandById } from '../src/main/shortcuts/commands.js'
-import { pressKey } from './e2e-helpers.js'
-import { removeThroughBubble } from './bookmark-bubble-helpers.js'
-import { bookmarksBarMatches, bookmarkUrls, delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, popoverShown, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { pressKey } from './support/e2e-helpers.js'
+import { removeThroughBubble } from './support/bookmark-bubble-helpers.js'
+import { bookmarksBarMatches, bookmarkUrls, delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, popoverShown, tabIds, waitFor, waitForTab } from './support/smoke-helpers.mjs'
 
 // The menu lists the manager once its command stops being a stub.
 const MANAGER_ROW = commandById('bookmarks.open')?.pending === true ? [] : ['Bookmark Manager']

@@ -4,8 +4,8 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './launch-electron.mjs'
-import { evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './support/launch-electron.mjs'
+import { evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 90_000
 const SILENT = { args: [HERMETIC_RESOLVER, '--alsa-output-device=null'], env: { PULSE_SERVER: 'unix:/nonexistent' } }

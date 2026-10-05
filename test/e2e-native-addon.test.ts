@@ -12,9 +12,9 @@
 //   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/e2e-native-addon.test.ts
 import { afterAll, expect, it } from 'vitest'
 import { fileURLToPath } from 'node:url'
-import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
-import { evaluateRetrying, HERMETIC_RESOLVER } from './smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase, waitForPageGlobal } from './e2e-helpers.js'
+import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
+import { evaluateRetrying, HERMETIC_RESOLVER } from './support/smoke-helpers.mjs'
+import { closeElectronApp, navigateToFixture, runPhase, waitForPageGlobal } from './support/e2e-helpers.js'
 import { bundleForApp, serveApp } from './pinned-app.js'
 import type { NativeAddonResults } from './native-addon-entry.js'
 import type { NativeAddonFileResults } from './native-addon-files-entry.js'

@@ -18,10 +18,10 @@ import { afterAll, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { ElectronApplication } from 'playwright'
-import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
-import { ABSENCE_SETTLE_MS, delay, findChrome, findViewShowing, HERMETIC_RESOLVER, tabIds, waitFor } from './smoke-helpers.mjs'
-import { APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
-import { answerQuestion, noNativeDialogs, stubNativeDialogs, waitQuestion } from './question-support.js'
+import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
+import { ABSENCE_SETTLE_MS, delay, findChrome, findViewShowing, HERMETIC_RESOLVER, tabIds, waitFor } from './support/smoke-helpers.mjs'
+import { APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './support/e2e-helpers.js'
+import { answerQuestion, noNativeDialogs, stubNativeDialogs, waitQuestion } from './support/question-support.js'
 
 afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])

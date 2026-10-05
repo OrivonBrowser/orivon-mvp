@@ -5,12 +5,12 @@
 // screenshots of the panel in both colour schemes.
 import { afterAll, expect, it } from 'vitest'
 import type { ElectronApplication } from 'playwright'
-import { runCommand, safely, shoot } from './auth-support.js'
-import { assertNoElectronSurvivors, closeElectron, mainOutput } from './launch-electron.mjs'
-import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from './question-support.js'
-import { html, launchShell, startServer, visit } from './qa-helpers.js'
-import type { FixtureServer } from './qa-helpers.js'
-import { ABSENCE_SETTLE_MS, delay, waitFor } from './smoke-helpers.mjs'
+import { runCommand, safely, shoot } from './support/auth-support.js'
+import { assertNoElectronSurvivors, closeElectron, mainOutput } from './support/launch-electron.mjs'
+import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from './support/question-support.js'
+import { html, launchShell, startServer, visit } from './support/qa-helpers.js'
+import type { FixtureServer } from './support/qa-helpers.js'
+import { ABSENCE_SETTLE_MS, delay, waitFor } from './support/smoke-helpers.mjs'
 
 const E2E_TIMEOUT_MS = 120_000
 const servers: FixtureServer[] = []

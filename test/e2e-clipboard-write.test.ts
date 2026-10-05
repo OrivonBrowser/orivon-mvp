@@ -19,10 +19,10 @@
 // Hermetic: one throwaway server on loopback, nothing else.
 import { afterAll, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
-import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
-import { HERMETIC_RESOLVER, evaluateRetrying, popoverShown, waitFor } from './smoke-helpers.mjs'
+import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './support/launch-electron.mjs'
+import { HERMETIC_RESOLVER, evaluateRetrying, popoverShown, waitFor } from './support/smoke-helpers.mjs'
 import type { ElectronApplication, Page } from 'playwright'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, navigateToFixture, runPhase } from './support/e2e-helpers.js'
 
 const HOST = '127.0.0.1'
 // 8872-8882 are taken by the fixture apps and their servers (freetube-fixture.ts,

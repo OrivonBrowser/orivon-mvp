@@ -7,10 +7,10 @@
 
 import pngjs from 'pngjs'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { runPhase } from './e2e-helpers.js'
-import { assertNoElectronSurvivors, closeElectron } from './launch-electron.mjs'
-import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './qa-helpers.js'
-import { auditLayout, applyAllowlist } from './qa-visual.js'
+import { runPhase } from './support/e2e-helpers.js'
+import { assertNoElectronSurvivors, closeElectron } from './support/launch-electron.mjs'
+import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './support/qa-helpers.js'
+import { auditLayout, applyAllowlist } from './support/qa-visual.js'
 
 const { PNG } = pngjs
 

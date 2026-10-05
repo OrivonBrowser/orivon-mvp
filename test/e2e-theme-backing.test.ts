@@ -6,10 +6,10 @@
 import pngjs from 'pngjs'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { setScheme } from './e2e-helpers.js'
-import { assertNoElectronSurvivors, closeElectron } from './launch-electron.mjs'
-import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './qa-helpers.js'
-import { waitFor } from './smoke-helpers.mjs'
+import { setScheme } from './support/e2e-helpers.js'
+import { assertNoElectronSurvivors, closeElectron } from './support/launch-electron.mjs'
+import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './support/qa-helpers.js'
+import { waitFor } from './support/smoke-helpers.mjs'
 
 const DASHBOARD = { light: '#394244', dark: '#0d0e14' }
 const WHITE = '#ffffff'

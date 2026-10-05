@@ -17,7 +17,7 @@ import pngjs from 'pngjs'
 const { PNG } = pngjs
 
 /** `qa-artifacts/` at the repository root (gitignored). */
-export const QA_ROOT = fileURLToPath(new URL('../qa-artifacts/', import.meta.url))
+export const QA_ROOT = fileURLToPath(new URL('../../qa-artifacts/', import.meta.url))
 export const LATEST_DIR = join(QA_ROOT, 'latest')
 
 const LIST_CAP = 500

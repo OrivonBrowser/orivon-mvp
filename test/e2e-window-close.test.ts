@@ -3,8 +3,8 @@
 // then asked it for its bounds. Every other suite closes its tabs before it
 // quits, so none of them walks this path.
 import { afterAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './launch-electron.mjs'
-import { delay, findChrome, HERMETIC_RESOLVER, tabIds, waitFor } from './smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './support/launch-electron.mjs'
+import { delay, findChrome, HERMETIC_RESOLVER, tabIds, waitFor } from './support/smoke-helpers.mjs'
 
 afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])

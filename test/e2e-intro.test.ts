@@ -8,9 +8,9 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, expect, it } from 'vitest'
-import { closeElectronApp } from './e2e-helpers.js'
-import { assertNoElectronSurvivors, closeElectron, launchElectron } from './launch-electron.mjs'
-import { ABSENCE_SETTLE_MS, findChrome, HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
+import { closeElectronApp } from './support/e2e-helpers.js'
+import { assertNoElectronSurvivors, closeElectron, launchElectron } from './support/launch-electron.mjs'
+import { ABSENCE_SETTLE_MS, findChrome, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
 
 afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])

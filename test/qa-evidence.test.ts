@@ -5,7 +5,7 @@
 // Run: npx vitest run --config test/vitest.e2e.config.ts test/qa-evidence.test.ts
 
 import { describe, expect, it, vi } from 'vitest'
-import { attachCollectors, bundleFor, collected, errorsSince, holdEvidence, mark } from './qa-evidence.mjs'
+import { attachCollectors, bundleFor, collected, errorsSince, holdEvidence, mark } from './support/qa-evidence.mjs'
 
 type Handler = (...args: unknown[]) => void
 

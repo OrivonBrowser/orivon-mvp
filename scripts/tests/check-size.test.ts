@@ -71,9 +71,9 @@ describe('checkFileSizes', () => {
 
     it('treats anything under test/ as a test file regardless of its own name', () => {
       const root = fixture()
-      writeLines(root, 'test/launch-electron.mjs', TEST_LIMIT)
+      writeLines(root, 'test/support/launch-electron.mjs', TEST_LIMIT)
       expect(checkFileSizes(root)).toEqual(CLEAN)
-      writeLines(root, 'test/launch-electron.mjs', TEST_LIMIT + 1)
+      writeLines(root, 'test/support/launch-electron.mjs', TEST_LIMIT + 1)
       expect(checkFileSizes(root).ok).toBe(false)
     })
 

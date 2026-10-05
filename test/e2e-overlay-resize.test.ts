@@ -4,9 +4,9 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './launch-electron.mjs'
-import { clickAddressBarRetrying } from './e2e-helpers.js'
-import { delay, findChrome, HERMETIC_RESOLVER, popoverShown, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './support/launch-electron.mjs'
+import { clickAddressBarRetrying } from './support/e2e-helpers.js'
+import { delay, findChrome, HERMETIC_RESOLVER, popoverShown, waitFor, waitForTab } from './support/smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 90_000
 const SILENT = { env: { PULSE_SERVER: 'unix:/nonexistent' }, args: [HERMETIC_RESOLVER, '--alsa-output-device=null'] }

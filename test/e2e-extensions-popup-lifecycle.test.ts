@@ -8,7 +8,7 @@
 // instead (see that file's own header for why, not measurable here).
 //
 // The page/toolbar-focus checks drive focus through `focusWebContents`
-// (test/focus-helpers.ts), not a real Playwright click: measured directly,
+// (test/support/focus-helpers.ts), not a real Playwright click: measured directly,
 // asking Electron for REAL (non-showInactive) focus under bare xvfb-run --
 // with or without a window manager on the display (with-window-manager.mjs
 // starts one) -- makes the very first click that opens the
@@ -26,10 +26,10 @@ import { cpSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Page } from 'playwright'
-import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
-import { ABSENCE_SETTLE_MS, findChrome, HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
-import { clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
-import { focusWebContents } from './focus-helpers.js'
+import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
+import { ABSENCE_SETTLE_MS, findChrome, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
+import { clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from './support/e2e-helpers.js'
+import { focusWebContents } from './support/focus-helpers.js'
 import { loadableManifest, readExtensionManifest } from '../src/broker/policy/extension-manifest.js'
 import { serializeRegistry, type InstalledExtension } from '../src/main/extensions/registry.js'
 import { resolveSlotKey } from '../src/main/extensions/install-runner.js'
@@ -41,7 +41,7 @@ const SLOT = 'action-popup'
 // Never lets Chromium reach a real audio device: xvfb hides the window,
 // not the sound, and this launches under the owner's own PulseAudio/ALSA
 // session. No fixture here plays audio, but every Electron launch in this
-// repo is moving to these defaults regardless (test/launch-electron.mjs).
+// repo is moving to these defaults regardless (test/support/launch-electron.mjs).
 const NO_AUDIO_ENV = { PULSE_SERVER: 'unix:/nonexistent' }
 const NO_AUDIO_ARGS = ['--alsa-output-device=null']
 
@@ -244,7 +244,7 @@ it('closes an open browserAction popup the way Chrome does, and keeps window.clo
       // measured directly, a synthetic setPosition()/setSize()/minimize()
       // on a BaseWindow does not reliably produce the corresponding native
       // event at all under this virtual display, with or without a window
-      // manager present (test/with-window-manager.mjs), so it cannot be
+      // manager present (test/support/with-window-manager.mjs), so it cannot be
       // pinned to an e2e assertion here. Covered instead by
       // src/main/extensions/tests/popup-lifecycle.test.ts, which drives
       // those same handlers directly against a fake parent window.

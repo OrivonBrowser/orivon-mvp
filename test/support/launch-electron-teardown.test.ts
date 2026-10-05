@@ -28,7 +28,7 @@
 //
 // Run directly, without pulling in the other (real-launch) files in this
 // directory's vitest.e2e.config.ts: `npx vitest run --config
-// test/vitest.e2e.config.ts test/launch-electron-teardown.test.ts`
+// test/vitest.e2e.config.ts test/support/launch-electron-teardown.test.ts`
 
 import { describe, expect, it, vi } from 'vitest'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'

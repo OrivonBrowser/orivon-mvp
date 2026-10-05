@@ -30,15 +30,15 @@
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-session-partitions.test.ts
 import { afterAll, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
-import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
+import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
 import {
   evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab
-} from './smoke-helpers.mjs'
+} from './support/smoke-helpers.mjs'
 import {
   ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase,
   waitForAddressBarStable
-} from './e2e-helpers.js'
-import { DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
+} from './support/e2e-helpers.js'
+import { DEFAULT_ACTION_TIMEOUT_MS } from './support/launch-electron.mjs'
 import { originFromUrl } from '../src/broker/policy/origin.js'
 import { partitionFor } from '../src/broker/grants/origin-hash.js'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'

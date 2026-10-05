@@ -4,8 +4,8 @@
 // host. Never touches accounts.google.com or any other Google host.
 import { describe, it, expect } from 'vitest'
 import http from 'node:http'
-import { launchElectron, closeElectron } from './launch-electron.mjs'
-import { evaluateRetrying, findChrome, waitFor } from './smoke-helpers.mjs'
+import { launchElectron, closeElectron } from './support/launch-electron.mjs'
+import { evaluateRetrying, findChrome, waitFor } from './support/smoke-helpers.mjs'
 
 /** Waits up to 10 s for the shell window: launchElectron() can resolve before
  * the chrome view's target is attached, so the first look may find none. */

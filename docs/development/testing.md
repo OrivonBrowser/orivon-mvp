@@ -188,7 +188,7 @@ a test at 800 lines: [`e2e-capability-boundary.test.ts`](../../test/e2e-capabili
 that TCP does not: a refused datagram must not kill the socket, and revoking `udp.send` must stop
 the *next datagram* on an already-bound socket). The shared harness (the fixture-server
 children, the address-bar navigation dance, the per-phase reporter) lives in
-[`test/e2e-helpers.ts`](../../test/e2e-helpers.ts).
+[`test/support/e2e-helpers.ts`](../../test/support/e2e-helpers.ts).
 
 These suites cover what an app's page is served with, what it may put inside itself and what it may serve:
 [`e2e-embed.test.ts`](../../test/e2e-embed.test.ts) drives a `<webview>` under a `web.embed`
@@ -309,17 +309,17 @@ last run. All three launch Electron headless, like `test:e2e`.
 **Colour schemes.** Playwright pins every page it attaches to `prefers-color-scheme: light` unless the
 launch passes `colorScheme: null`, while the shell's own colours follow `nativeTheme`; a launch with
 no option therefore sees light pages under a theme main chose on its own. `launchElectron({ scheme })`
-([`launch-electron.mjs`](../../test/launch-electron.mjs)) lifts the pin and writes the profile's
+([`launch-electron.mjs`](../../test/support/launch-electron.mjs)) lifts the pin and writes the profile's
 `appearance.theme`, merged into any settings a seed wrote, so the first paint and every page agree
 and the desktop's own theme cannot leak in; without it a launch is unchanged. `setScheme(app, scheme)`
-([`e2e-helpers.ts`](../../test/e2e-helpers.ts)) flips `nativeTheme` at run time. `e2e-qa-visual` takes
+([`e2e-helpers.ts`](../../test/support/e2e-helpers.ts)) flips `nativeTheme` at run time. `e2e-qa-visual` takes
 every state once per scheme (`ORIVON_QA_SCHEMES=light` or `dark` narrows it, and each scheme has its
 own baseline), and [`e2e-theme-backing`](../../test/e2e-theme-backing.test.ts) reads the colours a view
 and the window hold at the moments a navigation starts.
 
-**Failure evidence, for every e2e spec.** [`launch-electron.mjs`](../../test/launch-electron.mjs)
-starts recording each launched app ([`qa-evidence.mjs`](../../test/qa-evidence.mjs)) and, at close,
-snapshots its final state. [`qa-setup.ts`](../../test/qa-setup.ts), a Vitest setup file, writes that
+**Failure evidence, for every e2e spec.** [`launch-electron.mjs`](../../test/support/launch-electron.mjs)
+starts recording each launched app ([`qa-evidence.mjs`](../../test/support/qa-evidence.mjs)) and, at close,
+snapshots its final state. [`qa-setup.ts`](../../test/support/qa-setup.ts), a Vitest setup file, writes that
 snapshot only if the test failed, and drops it otherwise. A failed spec leaves
 `qa-artifacts/latest/<spec>/<test>/` (gitignored; linked from `qa-artifacts/latest/index.md`):
 
@@ -338,7 +338,7 @@ CI uploads `qa-artifacts/latest/` when the `e2e` job fails. Collection runs unde
 setup file can write it; `ORIVON_QA_EVIDENCE=on` asks for it in a plain script and `off` turns it off. Typed values in password inputs are dropped from the DOM dump; the profile is a
 throwaway and the network is blackholed, so nothing else sensitive is written.
 
-**The layout audit** ([`qa-layout-audit.mjs`](../../test/qa-layout-audit.mjs)) runs inside each
+**The layout audit** ([`qa-layout-audit.mjs`](../../test/support/qa-layout-audit.mjs)) runs inside each
 shown shell view and reports: content outside the viewport, clipped text, a control covered by
 another element, a zero-size control, unexpected scrolling, a broken image or empty icon, a modal
 that is off-centre or outside the window, and `disabled` disagreeing with `aria-disabled`. An
@@ -363,7 +363,7 @@ deterministic checks already fail the spec; the reading is for what they cannot 
 is judged right only on positive evidence that it shows what it should.
 
 **Limits.** A question is drawn in the question panel, an overlay page: a spec reads and presses its real
-buttons (`test/question-support.ts`) and records the native boxes opened, which must be none. Leave this
+buttons (`test/support/question-support.ts`) and records the native boxes opened, which must be none. Leave this
 page is still a native box, so the specs replace it. `capturePage()` fails without a GPU, so captures go through Playwright's own
 screenshot of each view (measured behaviour in the `orivon-electron` skill). An uncaught exception
 in the main process raises a blocking error dialog, so no spec provokes one. Malformed calls to

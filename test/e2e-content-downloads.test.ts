@@ -9,10 +9,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron, mainOutput } from './launch-electron.mjs'
-import { html, launchShell, startServer, visit } from './qa-helpers.js'
-import type { FixtureServer } from './qa-helpers.js'
-import { delay, popoverShown, waitFor } from './smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron, mainOutput } from './support/launch-electron.mjs'
+import { html, launchShell, startServer, visit } from './support/qa-helpers.js'
+import type { FixtureServer } from './support/qa-helpers.js'
+import { delay, popoverShown, waitFor } from './support/smoke-helpers.mjs'
 
 const SHOTS_DIR = process.env.ORIVON_UI_SHOTS_DIR
 const E2E_TIMEOUT_MS = 240_000

@@ -11,9 +11,9 @@ import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import type { CDPSession, ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './launch-electron.mjs'
-import { clickAddressBarRetrying } from './e2e-helpers.js'
-import { findChrome, HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './support/launch-electron.mjs'
+import { clickAddressBarRetrying } from './support/e2e-helpers.js'
+import { findChrome, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
 
 const FIXTURE_DIR = fileURLToPath(new URL('./fixtures/ui-kit/', import.meta.url))
 const SHARED_DIR = fileURLToPath(new URL('../src/renderer/pages/shared/', import.meta.url))

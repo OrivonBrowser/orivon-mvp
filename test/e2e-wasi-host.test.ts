@@ -16,9 +16,9 @@
 import { afterAll, expect, it } from 'vitest'
 import { fileURLToPath } from 'node:url'
 import esbuild from 'esbuild'
-import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
-import { evaluateRetrying, HERMETIC_RESOLVER } from './smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase, waitForPageGlobal } from './e2e-helpers.js'
+import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
+import { evaluateRetrying, HERMETIC_RESOLVER } from './support/smoke-helpers.mjs'
+import { closeElectronApp, navigateToFixture, runPhase, waitForPageGlobal } from './support/e2e-helpers.js'
 import { shimEsbuildPlugin } from '../src/shim/tests/support/shim-esbuild-plugin.js'
 import type { WasiRunResult } from './wasi-host-entry.js'
 import { bundleTree } from '../src/broker/policy/bundle-hash.js'
@@ -100,7 +100,7 @@ async function appScript (): Promise<Uint8Array> {
 // itself serves -- and because this origin is served from a hash-verified
 // pin (never a plain file server), that script has to be part of the pin
 // from the start. `extra` rides alongside this fixture's own bundle entries
-// the same way test/freetube-fixture.ts's `pinRealApp` does; serving is
+// the same way test/support/freetube-fixture.ts's `pinRealApp` does; serving is
 // driven by the pin's own asset tree (`isPinnedPath`), not by the
 // manifest's declared `assets` list, so an extra pinned path is servable
 // the same as any real one without being added to MANIFEST.assets.

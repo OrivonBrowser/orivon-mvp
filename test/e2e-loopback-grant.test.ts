@@ -28,11 +28,11 @@
 import { afterAll, expect, it } from 'vitest'
 import type { ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
-import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
-import { HERMETIC_RESOLVER, evaluateRetrying, findChrome, findViewShowing, waitFor } from './smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, asPage, clickAddressBarRetrying, closeElectronApp, killChild, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
-import { AS_PAGE_SCRIPT_URL, PORT_APP_FREETUBE, clearFreetubeAsPageScript, setFreetubeAsPageScript, startOwnServer } from './freetube-fixture.js'
-import { answerAccepting, noNativeDialogs, stubNativeDialogs } from './question-support.js'
+import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './support/launch-electron.mjs'
+import { HERMETIC_RESOLVER, evaluateRetrying, findChrome, findViewShowing, waitFor } from './support/smoke-helpers.mjs'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, asPage, clickAddressBarRetrying, closeElectronApp, killChild, runPhase, waitForAddressBarStable } from './support/e2e-helpers.js'
+import { AS_PAGE_SCRIPT_URL, PORT_APP_FREETUBE, clearFreetubeAsPageScript, setFreetubeAsPageScript, startOwnServer } from './support/freetube-fixture.js'
+import { answerAccepting, noNativeDialogs, stubNativeDialogs } from './support/question-support.js'
 
 const ORDINARY_BUILD = process.env['ORIVON_ORDINARY_BUILD'] === '1'
 

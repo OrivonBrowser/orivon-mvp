@@ -23,7 +23,7 @@ jobs:
 
       # Runs the Rule 8 postinstall guard and fetches Electron's binary. Keep
       # ELECTRON_SKIP_BINARY_DOWNLOAD unset: the unit suite reaches
-      # test/launch-electron.mjs, whose import('electron') would fetch it anyway.
+      # test/support/launch-electron.mjs, whose import('electron') would fetch it anyway.
       - run: npm ci
 
       # webtorrent's tree (spike/app, gitignored) for the real-peer DHT tests,
@@ -157,7 +157,7 @@ jobs:
         run: xvfb-run -a npm run test:e2e
 
       # Screenshots, console logs and the main-process log of every failed
-      # spec (test/qa-evidence.mjs); absent when the suite passes.
+      # spec (test/support/qa-evidence.mjs); absent when the suite passes.
       - name: Upload failure evidence
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

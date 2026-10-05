@@ -7,7 +7,7 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { ElectronApplication, Page } from 'playwright'
 import type { Manifest } from '../src/contracts/index.js'
-import { asPage } from './e2e-helpers.js'
+import { asPage } from './support/e2e-helpers.js'
 
 export interface AppServer {
   readonly origin: string

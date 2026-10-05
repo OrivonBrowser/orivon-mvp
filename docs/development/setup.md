@@ -46,7 +46,7 @@ Check yours:
 echo "${ELECTRON_RUN_AS_NODE:-not set}"
 ```
 
-**Never launch Electron directly.** Use [`test/launch-electron.mjs`](../../test/launch-electron.mjs),
+**Never launch Electron directly.** Use [`test/support/launch-electron.mjs`](../../test/support/launch-electron.mjs),
 which strips the variable and verifies the launch is real. `npm run dev` and `npm run smoke` are
 already safe.
 
@@ -112,7 +112,7 @@ of `win.show()` when `ORIVON_WINDOW_NO_FOCUS=1` is set **and** the window is the
 (`npm start`, or a packaged build). Only:
 
 - `npm run dev`, via `scripts/dev.mjs`;
-- every Electron launch made through [`test/launch-electron.mjs`](../../test/launch-electron.mjs),
+- every Electron launch made through [`test/support/launch-electron.mjs`](../../test/support/launch-electron.mjs),
   which both `npm run smoke` and `npm run test:e2e` go through, so this holds even running a
   single e2e file directly (`npx vitest run --config test/vitest.e2e.config.ts test/<area>/<file>.test.ts`), bypassing the npm scripts below entirely.
 
@@ -160,7 +160,7 @@ around a command that now also wraps itself, is harmless (confirmed empirically:
 needed to change.
 
 Debugging: `echo "${ORIVON_WINDOW_NO_FOCUS:-not set}"` inside whatever launched `electron-vite` or
-`test/launch-electron.mjs` tells you whether it is active for that run.
+`test/support/launch-electron.mjs` tells you whether it is active for that run.
 
 ---
 
@@ -201,7 +201,7 @@ Settings shows what it is doing.
 
 | Variable | What it does |
 |---|---|
-| `ORIVON_ETH_LIGHT_CLIENT=off` | Keeps the light client from starting, so the run contacts no Ethereum server and every real `.eth` name fails closed. `test/launch-electron.mjs` sets it for every smoke and e2e launch unless a test asks otherwise |
+| `ORIVON_ETH_LIGHT_CLIENT=off` | Keeps the light client from starting, so the run contacts no Ethereum server and every real `.eth` name fails closed. `test/support/launch-electron.mjs` sets it for every smoke and e2e launch unless a test asks otherwise |
 | `ORIVON_LIVE_ETH=1` | Runs `src/protocols/verifier-host/light-client/tests/live-ens.test.ts`, which resolves real names through the light client against mainnet. Skipped otherwise |
 | `ORIVON_TEST_ETH_FIXTURES`, `ORIVON_TEST_IPFS_GATEWAYS`, `ORIVON_TEST_DOH` | Test builds only (`npm run test:e2e` builds one): `.eth` names mapped to content with no light client, and the gateway and DNS-over-HTTPS endpoints to fetch it from. An ordinary build contains none of this (`npm run check:dev-grant-absent`) |
 | `ORIVON_TEST_LOCAL_POINTER=1` | Test builds only: treats the pointer's screen position as unknown, as on a native Wayland session, so a tab drag is the browser's own drag and drop on a virtual X display (`src/main/shell/local-pointer.ts`). An ordinary build contains none of this |
@@ -223,7 +223,7 @@ picks when, and an unset variable means `once`.
 |---|---|
 | `once` | Shows until the person has clicked through, then never again for that profile: the click writes `<userData>/intro.json`. What `npm start` and a packaged build do |
 | `always` | Shows on every launch, and never writes `intro.json`, so a launch on a profile that has passed it still shows it. What `npm run dev` does, which matters only on a profile named with `--user-data-dir`: its own fresh one has not passed it |
-| `off` | Never shows. `test/launch-electron.mjs` sets it for every smoke and e2e launch unless a test asks otherwise |
+| `off` | Never shows. `test/support/launch-electron.mjs` sets it for every smoke and e2e launch unless a test asks otherwise |
 
 Any other value is treated as `once`, with a line on the console.
 

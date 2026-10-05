@@ -13,9 +13,9 @@ import type { Server as TlsServer } from 'node:tls'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { generateSelfSignedFixture } from '../src/broker/adapters/tests/tls-adapter.test-helpers.js'
 import { appManifest, grantApp, pageCall, startAppServer, type AppServer } from './app-behaviour-support.js'
-import { runPhase } from './e2e-helpers.js'
-import { assertNoElectronSurvivors, closeElectron } from './launch-electron.mjs'
-import { launchShell, QA_TEST_TIMEOUT_MS, visit } from './qa-helpers.js'
+import { runPhase } from './support/e2e-helpers.js'
+import { assertNoElectronSurvivors, closeElectron } from './support/launch-electron.mjs'
+import { launchShell, QA_TEST_TIMEOUT_MS, visit } from './support/qa-helpers.js'
 
 let server: AppServer
 let echo: TcpServer

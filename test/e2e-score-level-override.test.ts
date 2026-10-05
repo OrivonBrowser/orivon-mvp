@@ -21,10 +21,10 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
-import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
-import { findChrome, HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
-import { answerAndRead, noNativeDialogs, stubNativeDialogs, type QuestionText } from './question-support.js'
-import { APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, readShield, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
+import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
+import { findChrome, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
+import { answerAndRead, noNativeDialogs, stubNativeDialogs, type QuestionText } from './support/question-support.js'
+import { APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, readShield, runPhase, waitForAddressBarStable } from './support/e2e-helpers.js'
 
 afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])

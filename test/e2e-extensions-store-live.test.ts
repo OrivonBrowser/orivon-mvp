@@ -11,12 +11,12 @@ import { createServer, type Server } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
-import { evaluateRetrying, HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
+import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
+import { evaluateRetrying, HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
+import { closeElectronApp, navigateToFixture, runPhase } from './support/e2e-helpers.js'
 import { parseRegistry } from '../src/main/extensions/registry.js'
 import { buildFolderCrx, makeRsaKeyPair } from './store-crx-support.js'
-import { answeringWith, noNativeDialogs, stubNativeDialogs } from './question-support.js'
+import { answeringWith, noNativeDialogs, stubNativeDialogs } from './support/question-support.js'
 
 const FIXTURE_DIR = fileURLToPath(new URL('./apps/extensions/store-live/', import.meta.url)).replace(/[/\\]$/, '')
 const TEST_TIMEOUT_MS = 120_000

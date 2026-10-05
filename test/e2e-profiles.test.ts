@@ -7,8 +7,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './launch-electron.mjs'
-import { delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor } from './smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './support/launch-electron.mjs'
+import { delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor } from './support/smoke-helpers.mjs'
 
 const leftBehind: string[] = []
 const peerPids: number[] = []

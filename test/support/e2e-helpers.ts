@@ -1,8 +1,8 @@
 // Shared harness for the capability end-to-end tests: the fixture-server child
 // handling, the address-bar navigation dance, and the per-phase reporter.
 //
-// Extracted from ./e2e-capability-boundary.test.ts when
-// ./e2e-udp-capability.test.ts needed all of it verbatim. The REASON is shared
+// Extracted from ../e2e-capability-boundary.test.ts when
+// ../e2e-udp-capability.test.ts needed all of it verbatim. The REASON is shared
 // -- drive the real shell to a real page and report per phase -- not merely the
 // shape (code-guidelines.md Rule 3). A PURE MOVE: no behaviour changed, so the
 // diff reads as one.
@@ -16,7 +16,7 @@ import { connect as netConnect } from 'node:net'
 import type { ElectronApplication } from 'playwright'
 import { closeElectron, APP_CLOSE_RACE_MS } from './launch-electron.mjs'
 import { evaluateRetrying, findChrome, findViewShowing, waitFor, waitForTab } from './smoke-helpers.mjs'
-import { BUILTIN_ADDRESSES } from '../src/protocols/builtin.js'
+import { BUILTIN_ADDRESSES } from '../../src/protocols/builtin.js'
 /** Ceiling for waitForAddressBarStable below. Named so the budget
  * arithmetic beneath it can reuse the real number instead of retyping
  * `8_000` in two places that could quietly drift apart. */

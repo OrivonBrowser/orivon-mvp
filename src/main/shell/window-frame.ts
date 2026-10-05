@@ -47,7 +47,7 @@ export const MIN_WINDOW_HEIGHT = 400
 // macOS, build-plan.md; a real user's window must always take focus).
 // showInactive() shows the window without activating it, so a build or e2e
 // run started while the owner is typing elsewhere does not steal keystrokes.
-// Set by `npm run dev`, and by test/launch-electron.mjs for every Electron
+// Set by `npm run dev`, and by test/support/launch-electron.mjs for every Electron
 // launch it makes -- docs/development/setup.md.
 const NO_FOCUS = process.env['ORIVON_WINDOW_NO_FOCUS'] === '1'
 

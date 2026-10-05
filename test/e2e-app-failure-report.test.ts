@@ -18,10 +18,10 @@
 import { afterAll, expect, it } from 'vitest'
 import type { ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
-import { assertNoElectronSurvivors, launchElectron, mainOutput, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
-import { findChrome, findViewShowing, waitFor, waitForTab } from './smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, killChild, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
-import { AS_PAGE_SCRIPT_URL, PORT_APP_FREETUBE, clearFreetubeAsPageScript, grantOriginOnly, readAppManifest, setFreetubeAsPageScript, startOwnServer } from './freetube-fixture.js'
+import { assertNoElectronSurvivors, launchElectron, mainOutput, DEFAULT_ACTION_TIMEOUT_MS } from './support/launch-electron.mjs'
+import { findChrome, findViewShowing, waitFor, waitForTab } from './support/smoke-helpers.mjs'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, killChild, runPhase, waitForAddressBarStable } from './support/e2e-helpers.js'
+import { AS_PAGE_SCRIPT_URL, PORT_APP_FREETUBE, clearFreetubeAsPageScript, grantOriginOnly, readAppManifest, setFreetubeAsPageScript, startOwnServer } from './support/freetube-fixture.js'
 
 const ORIGIN = `http://127.0.0.1:${String(PORT_APP_FREETUBE)}`
 

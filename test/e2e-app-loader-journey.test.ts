@@ -58,9 +58,9 @@ import { createServer as createNetServer } from 'node:net'
 import type { AddressInfo, Server as NetServer, Socket } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import esbuild from 'esbuild'
-import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
-import { HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
+import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
+import { HERMETIC_RESOLVER, waitFor } from './support/smoke-helpers.mjs'
+import { closeElectronApp, navigateToFixture, runPhase } from './support/e2e-helpers.js'
 import { shimEsbuildPlugin } from '../src/shim/tests/support/shim-esbuild-plugin.js'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
@@ -179,7 +179,7 @@ it(
     await runPhase('app-loader journey', async (check) => {
       const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
       // A second listener alongside launchElectron's own stdout forwarder
-      // (test/launch-electron.mjs) -- both fire on every 'data' event, so
+      // (test/support/launch-electron.mjs) -- both fire on every 'data' event, so
       // this adds a capture, it does not replace the existing forwarding.
       let mainStdout = ''
       let mainStderr = ''

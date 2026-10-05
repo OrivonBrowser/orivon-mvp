@@ -44,12 +44,12 @@ import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { launchElectron } from './launch-electron.mjs'
-import { findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { launchElectron } from './support/launch-electron.mjs'
+import { findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor, waitForTab } from './support/smoke-helpers.mjs'
 import {
   ADDRESS_BAR_STABLE_TIMEOUT_MS, asPage, clickAddressBarRetrying, closeElectronApp, forwardOutput, killChild,
   navigateToFixture, runPhase, waitForAddressBarStable, waitForTcpReady
-} from './e2e-helpers.js'
+} from './support/e2e-helpers.js'
 import { clearFixtureAsPageScript, setFixtureAsPageScript, AS_PAGE_SCRIPT_URL } from './fixture-as-page.js'
 import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'

@@ -73,7 +73,7 @@ const SILENT_AUDIO_SWITCH = '--alsa-output-device=null'
  * only applies to Playwright's own action methods; `evaluate()` has no
  * timeout in this Playwright version regardless of this setting (confirmed
  * against the installed source: it passes `kNoTimeout` internally). Every
- * call site in this repo goes through `test/smoke-helpers.mjs`'s
+ * call site in this repo goes through `test/support/smoke-helpers.mjs`'s
  * `evaluateRetrying()`, which races the evaluate against its own deadline
  * explicitly for exactly this reason -- do not assume this constant covers
  * it.

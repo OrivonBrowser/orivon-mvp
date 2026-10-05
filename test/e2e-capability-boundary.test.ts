@@ -77,7 +77,7 @@ import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { assertNoElectronSurvivors, DEFAULT_ACTION_TIMEOUT_MS, launchElectron } from './launch-electron.mjs'
+import { assertNoElectronSurvivors, DEFAULT_ACTION_TIMEOUT_MS, launchElectron } from './support/launch-electron.mjs'
 import {
   evaluateRetrying,
   findChrome,
@@ -86,11 +86,11 @@ import {
   WAIT_TIMEOUT_MS,
   waitFor,
   waitForTab
-} from './smoke-helpers.mjs'
+} from './support/smoke-helpers.mjs'
 import {
   ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, asPage, clickAddressBarRetrying, closeElectronApp, forwardOutput,
   killChild, navigateToFixture, runPhase, waitForAddressBarStable, waitForTcpReady
-} from './e2e-helpers.js'
+} from './support/e2e-helpers.js'
 import { clearFixtureAsPageScript, setFixtureAsPageScript, AS_PAGE_SCRIPT_URL } from './fixture-as-page.js'
 import { HOST, ECHO_PORT, STATIC_PORT } from './apps/fixture/config.mjs'
 import { parseManifest } from '../src/loader/manifest/manifest.js'
@@ -220,7 +220,7 @@ const GRANT_DENIAL_MESSAGE = 'tcp.connect is not granted to this origin'
 it('Phase 1: the real shell launches, and a real net.connect through the full IPC pipe is correctly denied (no grant exists)', async () => {
   await runPhase('Phase 1', async (check) => {
     // ---- the real shell, the real page, the real (documented) gap
-    // Launches via test/launch-electron.mjs -- the only correct way to start
+    // Launches via test/support/launch-electron.mjs -- the only correct way to start
     // Electron in this repo (ELECTRON_RUN_AS_NODE=1 is ambient here) -- and
     // exercises the exact Playwright `_electron` attach path the known,
     // previously-unresolved risk (docs/open-questions.md C6) is about,
@@ -407,7 +407,7 @@ it('Phase 1: the real shell launches, and a real net.connect through the full IP
         }
       } finally {
         // Same shared teardown as Phase 2 below -- see closeElectronApp's
-        // own header (test/e2e-helpers.ts) for the close-hang workaround
+        // own header (test/support/e2e-helpers.ts) for the close-hang workaround
         // this performs, and closeElectron's for why it now runs
         // unconditionally rather than only when this `finally` itself runs
         // to completion.

@@ -59,8 +59,8 @@ function startPages () {
 }
 
 async function measure (options) {
-  const { launchElectron, closeElectron, collectProcessTree } = await import('../test/launch-electron.mjs')
-  const { findChrome, waitFor, HERMETIC_RESOLVER } = await import('../test/smoke-helpers.mjs')
+  const { launchElectron, closeElectron, collectProcessTree } = await import('../test/support/launch-electron.mjs')
+  const { findChrome, waitFor, HERMETIC_RESOLVER } = await import('../test/support/smoke-helpers.mjs')
   const server = await startPages()
   const origin = `http://127.0.0.1:${server.address().port}`
   const app = await launchElectron({

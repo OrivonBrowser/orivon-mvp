@@ -5,10 +5,10 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { clickAddressBarRetrying, waitForKeyboardAt } from './e2e-helpers.js'
-import { assertNoElectronSurvivors, closeElectron } from './launch-electron.mjs'
-import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './qa-helpers.js'
-import { ABSENCE_SETTLE_MS, delay, popoverShown, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { clickAddressBarRetrying, waitForKeyboardAt } from './support/e2e-helpers.js'
+import { assertNoElectronSurvivors, closeElectron } from './support/launch-electron.mjs'
+import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './support/qa-helpers.js'
+import { ABSENCE_SETTLE_MS, delay, popoverShown, waitFor, waitForTab } from './support/smoke-helpers.mjs'
 
 let server: FixtureServer
 

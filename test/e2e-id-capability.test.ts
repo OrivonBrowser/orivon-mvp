@@ -37,14 +37,14 @@ import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { assertNoElectronSurvivors, DEFAULT_ACTION_TIMEOUT_MS, launchElectron } from './launch-electron.mjs'
+import { assertNoElectronSurvivors, DEFAULT_ACTION_TIMEOUT_MS, launchElectron } from './support/launch-electron.mjs'
 import {
   evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, WAIT_TIMEOUT_MS, waitFor, waitForTab
-} from './smoke-helpers.mjs'
+} from './support/smoke-helpers.mjs'
 import {
   ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, forwardOutput,
   killChild, runPhase, waitForAddressBarStable, waitForTcpReady
-} from './e2e-helpers.js'
+} from './support/e2e-helpers.js'
 import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
 import { createBroker } from '../src/broker/index.js'
 import type { BrokerFs, CreateBrokerOptions, Keychain } from '../src/broker/broker-contracts.js'

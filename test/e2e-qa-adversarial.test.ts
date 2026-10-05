@@ -15,11 +15,11 @@ import type { ServerResponse } from 'node:http'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { clickAddressBarRetrying, runPhase } from './e2e-helpers.js'
-import { assertNoElectronSurvivors, closeElectron, mainOutput } from './launch-electron.mjs'
-import { collected, windowGeometry } from './qa-evidence.mjs'
-import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './qa-helpers.js'
-import { ABSENCE_SETTLE_MS, activeTabInfo, delay, tabIds, tabViews, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { clickAddressBarRetrying, runPhase } from './support/e2e-helpers.js'
+import { assertNoElectronSurvivors, closeElectron, mainOutput } from './support/launch-electron.mjs'
+import { collected, windowGeometry } from './support/qa-evidence.mjs'
+import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './support/qa-helpers.js'
+import { ABSENCE_SETTLE_MS, activeTabInfo, delay, tabIds, tabViews, waitFor, waitForTab } from './support/smoke-helpers.mjs'
 
 /** Thirty tabs opened or closed in a burst: generous, because a shared CI runner is slower than a desk. */
 const SLOW_RUNNER_MS = 30_000

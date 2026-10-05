@@ -10,9 +10,9 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { SqliteHistoryStore } from '../src/main/history/sqlite-history-store.js'
-import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './launch-electron.mjs'
-import { clickAddressBarRetrying } from './e2e-helpers.js'
-import { delay, findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from './support/launch-electron.mjs'
+import { clickAddressBarRetrying } from './support/e2e-helpers.js'
+import { delay, findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from './support/smoke-helpers.mjs'
 
 let server: Server
 let origin = ''

@@ -34,9 +34,9 @@
 // RUN THIS WITH: npm run test:e2e, or directly:
 //   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/e2e-csp-connect-src.test.ts
 import { afterAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
-import { evaluateRetrying, HERMETIC_RESOLVER } from './smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
+import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
+import { evaluateRetrying, HERMETIC_RESOLVER } from './support/smoke-helpers.mjs'
+import { closeElectronApp, navigateToFixture, runPhase } from './support/e2e-helpers.js'
 import { bundleTree } from '../src/broker/policy/bundle-hash.js'
 import type { BundleEntry } from '../src/broker/policy/bundle-hash.js'
 import { fromBundleTree } from '../src/broker/policy/pin.js'

@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import pngjs from 'pngjs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { applyAllowlist, baselineDir, compareBaseline, diffPngs, distinctColours } from './qa-visual'
+import { applyAllowlist, baselineDir, compareBaseline, diffPngs, distinctColours } from './support/qa-visual'
 
 const { PNG } = pngjs
 

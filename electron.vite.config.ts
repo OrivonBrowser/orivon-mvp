@@ -72,7 +72,7 @@ export function shimNodeSpecifiers (): Plugin {
  * two never drift. A concrete `server.hmr.host` matters for a page whose
  * origin is `orivon://<page>`, not the dev server's: without one, Vite's
  * client infers the wrong socket host from that origin. `127.0.0.1`, not
- * Vite's own `localhost` default: `HERMETIC_RESOLVER` (test/smoke-helpers.mjs)
+ * Vite's own `localhost` default: `HERMETIC_RESOLVER` (test/support/smoke-helpers.mjs)
  * blackholes every other hostname, and `internalCsp` (serve.ts) must allow
  * the exact host named here. */
 export const rendererHost = '127.0.0.1'

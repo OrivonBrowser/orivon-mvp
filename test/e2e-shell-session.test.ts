@@ -6,9 +6,9 @@
 // place a WebContents' real `.session` object is observable
 // (e2e-session-partitions.test.ts's header says why).
 import { afterAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
-import { findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
-import { closeElectronApp, runPhase } from './e2e-helpers.js'
+import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
+import { findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from './support/smoke-helpers.mjs'
+import { closeElectronApp, runPhase } from './support/e2e-helpers.js'
 
 afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])

@@ -4,9 +4,9 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication } from 'playwright'
-import { launchElectron } from './launch-electron.mjs'
-import { findChrome, findViewShowing, tabViews, waitFor } from './smoke-helpers.mjs'
-import { answerEveryQuestion, stubNativeDialogs, type QuestionText } from './question-support.js'
+import { launchElectron } from './support/launch-electron.mjs'
+import { findChrome, findViewShowing, tabViews, waitFor } from './support/smoke-helpers.mjs'
+import { answerEveryQuestion, stubNativeDialogs, type QuestionText } from './support/question-support.js'
 
 export const PORTS_ROOT = process.env['ORIVON_PORTS_ROOT'] ?? join(process.cwd(), '..', 'orivon-ports')
 export const STATIC_ROOT = process.env['ORIVON_THE_LOUNGE_ROOT'] ?? join(PORTS_ROOT, 'out', 'the-lounge', 'static')

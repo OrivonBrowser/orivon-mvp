@@ -22,11 +22,11 @@
 import { afterAll, expect, it } from 'vitest'
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http'
 import type { ElectronApplication, Page } from 'playwright'
-import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
-import { ABSENCE_SETTLE_MS, HERMETIC_RESOLVER, delay, evaluateRetrying, findChrome, findViewShowing, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
-import { focusWebContents, underVirtualDisplay, webContentsFocused } from './focus-helpers.js'
-import { answerQuestion, noNativeDialogs, readQuestion, stubNativeDialogs, waitQuestion } from './question-support.js'
+import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './support/launch-electron.mjs'
+import { ABSENCE_SETTLE_MS, HERMETIC_RESOLVER, delay, evaluateRetrying, findChrome, findViewShowing, tabIds, waitFor, waitForTab } from './support/smoke-helpers.mjs'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, navigateToFixture, runPhase } from './support/e2e-helpers.js'
+import { focusWebContents, underVirtualDisplay, webContentsFocused } from './support/focus-helpers.js'
+import { answerQuestion, noNativeDialogs, readQuestion, stubNativeDialogs, waitQuestion } from './support/question-support.js'
 
 const HOST = '127.0.0.1'
 // 8872-8884 belong to other suites' fixtures; this file needs one of its own.

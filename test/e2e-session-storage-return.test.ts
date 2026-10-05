@@ -10,12 +10,12 @@
 // a view that still holds it (tab-view.ts's parkKeyFor).
 import { afterAll, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
-import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
-import { findChrome, HERMETIC_RESOLVER, mismatch, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './support/launch-electron.mjs'
+import { findChrome, HERMETIC_RESOLVER, mismatch, waitFor, waitForTab } from './support/smoke-helpers.mjs'
 import {
   ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase,
   waitForAddressBarStable
-} from './e2e-helpers.js'
+} from './support/e2e-helpers.js'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
 

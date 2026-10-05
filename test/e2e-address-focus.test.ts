@@ -4,11 +4,11 @@
 // no blur to the chrome's document when a window or a sibling view takes the keyboard.
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { runCommand } from './auth-support.js'
-import { pressKey } from './e2e-helpers.js'
-import { assertNoElectronSurvivors, closeElectron } from './launch-electron.mjs'
-import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './qa-helpers.js'
-import { waitFor, waitForTab } from './smoke-helpers.mjs'
+import { runCommand } from './support/auth-support.js'
+import { pressKey } from './support/e2e-helpers.js'
+import { assertNoElectronSurvivors, closeElectron } from './support/launch-electron.mjs'
+import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './support/qa-helpers.js'
+import { waitFor, waitForTab } from './support/smoke-helpers.mjs'
 
 const CHROME = '/renderer/index.html'
 let server: FixtureServer

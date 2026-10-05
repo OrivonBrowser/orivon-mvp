@@ -5,9 +5,9 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { closeElectron, assertNoElectronSurvivors, mainOutput } from './launch-electron.mjs'
-import { html, launchShell, startServer, type FixtureServer } from './qa-helpers.js'
-import { ABSENCE_SETTLE_MS, delay, evaluateRetrying, popoverShown, waitFor } from './smoke-helpers.mjs'
+import { closeElectron, assertNoElectronSurvivors, mainOutput } from './support/launch-electron.mjs'
+import { html, launchShell, startServer, type FixtureServer } from './support/qa-helpers.js'
+import { ABSENCE_SETTLE_MS, delay, evaluateRetrying, popoverShown, waitFor } from './support/smoke-helpers.mjs'
 
 const SHOTS_DIR = process.env['ORIVON_UI_SHOTS_DIR']
 const TEST_TIMEOUT_MS = 90_000

@@ -15,9 +15,9 @@ import { createServer, type Server } from 'node:http'
 import { mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
-import { assertNoElectronSurvivors, closeElectron, launchElectron, profileDirOf } from './launch-electron.mjs'
-import { delay, findChrome, HERMETIC_RESOLVER, tabIds, waitFor } from './smoke-helpers.mjs'
-import { navigateToFixture, pressKey } from './e2e-helpers.js'
+import { assertNoElectronSurvivors, closeElectron, launchElectron, profileDirOf } from './support/launch-electron.mjs'
+import { delay, findChrome, HERMETIC_RESOLVER, tabIds, waitFor } from './support/smoke-helpers.mjs'
+import { navigateToFixture, pressKey } from './support/e2e-helpers.js'
 import { openExtensionPage, rpc, seedFixture, waitRecovered } from './extensions-e2e-helpers.js'
 
 const TEST_TIMEOUT_MS = 180_000

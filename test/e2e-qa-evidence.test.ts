@@ -12,12 +12,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import pngjs from 'pngjs'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { runPhase } from './e2e-helpers.js'
-import { assertNoElectronSurvivors, closeElectron, mainOutput } from './launch-electron.mjs'
-import { bundleFor, collected, writeEvidenceBundle } from './qa-evidence.mjs'
-import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './qa-helpers.js'
-import { distinctColours } from './qa-visual.js'
-import { waitFor } from './smoke-helpers.mjs'
+import { runPhase } from './support/e2e-helpers.js'
+import { assertNoElectronSurvivors, closeElectron, mainOutput } from './support/launch-electron.mjs'
+import { bundleFor, collected, writeEvidenceBundle } from './support/qa-evidence.mjs'
+import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from './support/qa-helpers.js'
+import { distinctColours } from './support/qa-visual.js'
+import { waitFor } from './support/smoke-helpers.mjs'
 
 const { PNG } = pngjs
 

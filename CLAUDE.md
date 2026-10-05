@@ -105,7 +105,7 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
 ## Local quirks
 
 Nothing an agent does may appear on the owner's screen or play on their speakers: no window, no opened tab,
-no notification, no sound (`test/launch-electron.mjs` silences every launch).
+no notification, no sound (`test/support/launch-electron.mjs` silences every launch).
 
 - Launch Electron only through `smoke`, `test:e2e` or `node scripts/run-headless.mjs <command>`.
 - `ELECTRON_RUN_AS_NODE=1` is set in this shell; the `orivon-electron` skill says what it breaks.

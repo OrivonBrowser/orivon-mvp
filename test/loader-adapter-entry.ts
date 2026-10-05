@@ -1,7 +1,7 @@
 // Standalone Electron main-process entry for ./e2e-loader-adapter.test.ts --
 // never launched directly (see .claude/skills/orivon-electron/SKILL.md).
 // That test bundles this file with esbuild and launches the result exactly
-// like any other e2e fixture (test/launch-electron.mjs's launchElectron()),
+// like any other e2e fixture (test/support/launch-electron.mjs's launchElectron()),
 // then drives the hook below through app.evaluate(). Opens no window --
 // nothing here needs one, and Electron does not exit for lack of one; the
 // test's own closeElectron() call ends this process.

@@ -9,9 +9,9 @@ import { rm } from 'node:fs/promises'
 import type { ElectronApplication } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { appManifest, grantApp, pageCall, startAppServer, type AppServer } from './app-behaviour-support.js'
-import { runPhase } from './e2e-helpers.js'
-import { assertNoElectronSurvivors, closeElectron, profileDirOf } from './launch-electron.mjs'
-import { launchShell, QA_TEST_TIMEOUT_MS, visit } from './qa-helpers.js'
+import { runPhase } from './support/e2e-helpers.js'
+import { assertNoElectronSurvivors, closeElectron, profileDirOf } from './support/launch-electron.mjs'
+import { launchShell, QA_TEST_TIMEOUT_MS, visit } from './support/qa-helpers.js'
 
 let server: AppServer
 beforeAll(async () => { server = await startAppServer() })

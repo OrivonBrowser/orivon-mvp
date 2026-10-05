@@ -1,7 +1,7 @@
 // The net.connectSecure half of the end-to-end capability test, in its own
 // file for the reason ./e2e-udp-capability.test.ts's own header gives:
 // ./e2e-capability-boundary.test.ts is already a whole suite and Rule 2 caps
-// a test file at 800 lines. Shares ./e2e-helpers.ts.
+// a test file at 800 lines. Shares ./support/e2e-helpers.ts.
 //
 // WHAT THIS PROVES, AND WHAT IT DELIBERATELY DOES NOT.
 //
@@ -57,9 +57,9 @@ import { createServer } from 'node:tls'
 import type { Server } from 'node:tls'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
-import { HERMETIC_RESOLVER } from './smoke-helpers.mjs'
-import { asPage, closeElectronApp, forwardOutput, killChild, navigateToFixture, runPhase, waitForTcpReady } from './e2e-helpers.js'
+import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
+import { HERMETIC_RESOLVER } from './support/smoke-helpers.mjs'
+import { asPage, closeElectronApp, forwardOutput, killChild, navigateToFixture, runPhase, waitForTcpReady } from './support/e2e-helpers.js'
 import { clearFixtureAsPageScript, setFixtureAsPageScript, AS_PAGE_SCRIPT_URL } from './fixture-as-page.js'
 import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
 import { generateTlsFixture } from '../src/broker/adapters/tests/tls-adapter.test-helpers.js'

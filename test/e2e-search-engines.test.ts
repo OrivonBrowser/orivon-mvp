@@ -9,10 +9,10 @@ import type { IncomingMessage } from 'node:http'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron, mainOutput } from './launch-electron.mjs'
-import { html, launchShell, startServer } from './qa-helpers.js'
-import type { FixtureServer } from './qa-helpers.js'
-import { ABSENCE_SETTLE_MS, activeTabInfo, delay, popoverShown, tabIds, waitFor } from './smoke-helpers.mjs'
+import { assertNoElectronSurvivors, closeElectron, mainOutput } from './support/launch-electron.mjs'
+import { html, launchShell, startServer } from './support/qa-helpers.js'
+import type { FixtureServer } from './support/qa-helpers.js'
+import { ABSENCE_SETTLE_MS, activeTabInfo, delay, popoverShown, tabIds, waitFor } from './support/smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 120_000
 const SHOTS_DIR = process.env.ORIVON_UI_SHOTS_DIR

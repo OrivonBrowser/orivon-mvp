@@ -10,7 +10,7 @@ stream rather than `packaging` ([`parallel-work.md`](../docs/development/paralle
 It lives here because `npm run smoke` is where people look for it.
 
 **What it depends on.** `node:*` builtins — plus, for `smoke.mjs` and `perf-probe.mjs` only, `playwright` via
-[`test/launch-electron.mjs`](../test/launch-electron.mjs), and, for `install-electron.mjs`
+[`test/support/launch-electron.mjs`](../test/support/launch-electron.mjs), and, for `install-electron.mjs`
 only, the `electron` package's own `install.js`.
 
 **What it must never import.** Anything under [`src/`](../src/). A guard that depended on the
