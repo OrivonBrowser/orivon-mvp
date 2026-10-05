@@ -14,21 +14,21 @@
 // that listens, and its page connects to it, as an app reaches its daemon.
 //
 // Run with `npm run test:e2e`, or directly:
-//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/e2e-child-process.test.ts
+//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/node-runtime/e2e-child-process.test.ts
 import { afterAll, expect, it } from 'vitest'
 import type { ConsoleMessage, Worker } from 'playwright'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'node:net'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { evaluateRetrying, HERMETIC_RESOLVER } from './support/smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase, waitForPageGlobal } from './support/e2e-helpers.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { evaluateRetrying, HERMETIC_RESOLVER } from '../support/smoke-helpers.mjs'
+import { closeElectronApp, navigateToFixture, runPhase, waitForPageGlobal } from '../support/e2e-helpers.js'
 import { bundleForApp, serveApp } from './pinned-app.js'
 import type { ChildProcessResults } from './child-process-entry.js'
 import type { ComponentSocketResults } from './child-process-socket-entry.js'
 import type { ComponentListenerResults } from './child-process-listener-entry.js'
-import { echoProgram } from '../src/shim/wasi/tests/support/programs.js'
-import { LISTENER_TARGET, SOCKET_TARGET, listenerFixture, socketFixture, tourFixture } from '../src/shim/wasi-p2/tests/support/component-fixture.js'
-import type { Manifest } from '../src/contracts/index.js'
+import { echoProgram } from '../../src/shim/wasi/tests/support/programs.js'
+import { LISTENER_TARGET, SOCKET_TARGET, listenerFixture, socketFixture, tourFixture } from '../../src/shim/wasi-p2/tests/support/component-fixture.js'
+import type { Manifest } from '../../src/contracts/index.js'
 
 const ORIGIN = 'https://child-process-e2e.orivon.test'
 const ELF = new Uint8Array([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1, 0])

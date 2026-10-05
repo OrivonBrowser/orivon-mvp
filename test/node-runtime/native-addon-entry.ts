@@ -3,7 +3,7 @@
 
 import { fork } from 'child_process'
 import { createRequire } from 'module'
-import { preloadAddon } from '../src/shim/addon/index.js'
+import { preloadAddon } from '../../src/shim/addon/index.js'
 
 export interface NativeAddonResults {
   readonly small?: { answer: number, greet: string }

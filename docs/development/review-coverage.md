@@ -168,7 +168,7 @@ see in the PR itself.
 | Mechanism | Scope | Outcome |
 |---|---|---|
 | Self-review, with a bundling probe | The two new module targets, as an ESM default import and as a CommonJS `require()` bundled by esbuild | Found that `require()` gets a shim module's namespace, where an unbuilt member is `undefined` rather than refused by name, in every shim module: A287, and the shim README corrected |
-| Negative run of the opt-in e2e | `test/e2e-napi-rs-package.test.ts` with `crossOriginIsolated: false` | Fails, so the check depends on the isolation Orivon serves |
+| Negative run of the opt-in e2e | `test/node-runtime/e2e-napi-rs-package.test.ts` with `crossOriginIsolated: false` | Fails, so the check depends on the isolation Orivon serves |
 | Review before merge, inline | The branch against `main` | No defect in the branch's own code. CI's one failure was a flake in `setImmediate`'s tests, which waited a fixed 10 ms for a MessageChannel task; they now wait on a sentinel immediate |
 
 ### `stream/extensions`: Chrome extensions (2026-09-29)

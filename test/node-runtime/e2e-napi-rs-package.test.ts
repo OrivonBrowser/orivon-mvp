@@ -9,18 +9,18 @@
 //
 //   npm install --prefix <dir> @node-rs/argon2-wasm32-wasi@2.2.1
 //   node scripts/build-e2e.mjs
-//   ORIVON_NAPI_RS_PACKAGE_DIR=<dir> npx vitest run --config test/vitest.e2e.config.ts test/e2e-napi-rs-package.test.ts
+//   ORIVON_NAPI_RS_PACKAGE_DIR=<dir> npx vitest run --config test/vitest.e2e.config.ts test/node-runtime/e2e-napi-rs-package.test.ts
 //
 // Last run with @node-rs/argon2-wasm32-wasi 2.2.1: passes.
 import { afterAll, expect, it } from 'vitest'
 import esbuild from 'esbuild'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { evaluateRetrying, HERMETIC_RESOLVER } from './support/smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase, waitForPageGlobal } from './support/e2e-helpers.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { evaluateRetrying, HERMETIC_RESOLVER } from '../support/smoke-helpers.mjs'
+import { closeElectronApp, navigateToFixture, runPhase, waitForPageGlobal } from '../support/e2e-helpers.js'
 import { serveApp } from './pinned-app.js'
-import type { Manifest } from '../src/contracts/index.js'
+import type { Manifest } from '../../src/contracts/index.js'
 
 const PACKAGE_DIR = process.env.ORIVON_NAPI_RS_PACKAGE_DIR
 const PACKAGE = '@node-rs/argon2-wasm32-wasi'

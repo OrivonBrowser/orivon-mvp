@@ -14,21 +14,21 @@
 // second phase) ends the listener, and its port stops answering.
 //
 // Run with `npm run test:e2e`, or directly:
-//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/e2e-child-host.test.ts
+//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/node-runtime/e2e-child-host.test.ts
 import { afterAll, expect, it } from 'vitest'
 import type { ConsoleMessage, Worker } from 'playwright'
 import { fileURLToPath } from 'node:url'
 import { connect as netConnect } from 'node:net'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from './support/smoke-helpers.mjs'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 import {
   clickAddressBarRetrying, closeElectronApp, navigateToFixture, runPhase, waitForAddressBarStable, waitForPageGlobal
-} from './support/e2e-helpers.js'
+} from '../support/e2e-helpers.js'
 import { bundleForApp, serveApp } from './pinned-app.js'
 import type { ChildHostE2eResults } from './child-host-entry.js'
 import type { ChildHostSpawnEchoResult, ChildHostSpawnStartResult } from './child-host-spawn-entry.js'
-import { LISTENER_TARGET, listenerFixture } from '../src/shim/wasi-p2/tests/support/component-fixture.js'
-import type { Manifest } from '../src/contracts/index.js'
+import { LISTENER_TARGET, listenerFixture } from '../../src/shim/wasi-p2/tests/support/component-fixture.js'
+import type { Manifest } from '../../src/contracts/index.js'
 
 const ORIGIN = 'https://child-host-e2e.orivon.test'
 const TITLE = 'child host fixture'

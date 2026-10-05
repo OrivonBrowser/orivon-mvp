@@ -5,7 +5,7 @@
 // stdout, which the page that forked it never drains (`silent: true`, and
 // no `child.stdout` reader) even before it is orphaned -- proving a fork's
 // own output posting, unlike a spawn's, never waits on the page for an ack
-// (`../src/shim/worker/runtime-fork.ts`'s `write`), so it cannot stall here
+// (`../../src/shim/worker/runtime-fork.ts`'s `write`), so it cannot stall here
 // however long the tab that started it has been gone.
 
 import { promises as fs } from 'fs'

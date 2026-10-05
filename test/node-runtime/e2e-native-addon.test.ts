@@ -9,18 +9,18 @@
 // from a forked child, whose readFileSync works too.
 //
 // Run with `npm run test:e2e`, or directly:
-//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/e2e-native-addon.test.ts
+//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/node-runtime/e2e-native-addon.test.ts
 import { afterAll, expect, it } from 'vitest'
 import { fileURLToPath } from 'node:url'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { evaluateRetrying, HERMETIC_RESOLVER } from './support/smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase, waitForPageGlobal } from './support/e2e-helpers.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { evaluateRetrying, HERMETIC_RESOLVER } from '../support/smoke-helpers.mjs'
+import { closeElectronApp, navigateToFixture, runPhase, waitForPageGlobal } from '../support/e2e-helpers.js'
 import { bundleForApp, serveApp } from './pinned-app.js'
 import type { NativeAddonResults } from './native-addon-entry.js'
 import type { NativeAddonFileResults } from './native-addon-files-entry.js'
-import { fileAddon, napiAddon } from '../src/shim/addon/tests/support/napi-addons.js'
-import { echoProgram } from '../src/shim/wasi/tests/support/programs.js'
-import type { Manifest } from '../src/contracts/index.js'
+import { fileAddon, napiAddon } from '../../src/shim/addon/tests/support/napi-addons.js'
+import { echoProgram } from '../../src/shim/wasi/tests/support/programs.js'
+import type { Manifest } from '../../src/contracts/index.js'
 
 const ORIGIN = 'https://native-addon-e2e.orivon.test'
 const ISOLATED_ORIGIN = 'https://native-addon-files-e2e.orivon.test'

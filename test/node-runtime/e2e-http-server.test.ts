@@ -6,17 +6,17 @@
 // `close()` the port no longer answers.
 //
 // Run with `npm run test:e2e`, or directly:
-//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-http-server.test.ts
+//   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/node-runtime/e2e-http-server.test.ts
 import { afterAll, expect, it } from 'vitest'
 import { fileURLToPath } from 'node:url'
 import { Agent, request } from 'node:http'
 import { connect, createServer } from 'node:net'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { evaluateRetrying, HERMETIC_RESOLVER } from './support/smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase, waitForPageGlobal } from './support/e2e-helpers.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { evaluateRetrying, HERMETIC_RESOLVER } from '../support/smoke-helpers.mjs'
+import { closeElectronApp, navigateToFixture, runPhase, waitForPageGlobal } from '../support/e2e-helpers.js'
 import { bundleForApp, serveApp } from './pinned-app.js'
 import type { HttpServerSeen, HttpServerStartResult } from './http-server-entry.js'
-import type { Manifest } from '../src/contracts/index.js'
+import type { Manifest } from '../../src/contracts/index.js'
 
 const ORIGIN = 'https://http-server-e2e.orivon.test'
 

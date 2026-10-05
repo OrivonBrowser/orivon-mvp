@@ -2,7 +2,7 @@
 // the way a server ported from Node would be: it imports the shim's ready module
 // first, then requires `node:sqlite` as CommonJS code does.
 
-import '../src/shim/sqlite/ready.js'
+import '../../src/shim/sqlite/ready.js'
 import { mkdirSync } from 'fs'
 
 declare const require: (id: string) => unknown

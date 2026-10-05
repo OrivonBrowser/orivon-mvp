@@ -201,28 +201,28 @@ cross them, a page is refused while the app holds no listener or another program
 port, a server the test holds on `[::1]` at the app's port is never the one shown, and a shown
 page closes with the app's listener), [`e2e-embed-events.test.ts`](../../test/capabilities/e2e-embed-events.test.ts) drives a shown page's
 popups, downloads and a link to an unknown scheme with real input and reads the events on the
-element, [`e2e-http-server.test.ts`](../../test/e2e-http-server.test.ts) runs `http.createServer`
+element, [`e2e-http-server.test.ts`](../../test/node-runtime/e2e-http-server.test.ts) runs `http.createServer`
 in a page and answers real requests from outside the browser,
-and [`e2e-wasm-threads.test.ts`](../../test/e2e-wasm-threads.test.ts) pins one bundle
+and [`e2e-wasm-threads.test.ts`](../../test/node-runtime/e2e-wasm-threads.test.ts) pins one bundle
 declaring `crossOriginIsolated` and one without, and measures `SharedArrayBuffer`, a shared
 `WebAssembly.Memory` and `Atomics.wait` in a worker in each.
 
-[`e2e-wasi-host.test.ts`](../../test/e2e-wasi-host.test.ts) pins an app whose page runs a WASI
+[`e2e-wasi-host.test.ts`](../../test/node-runtime/e2e-wasi-host.test.ts) pins an app whose page runs a WASI
 program through Node's `wasi` module: its file calls reach the real broker through JSPI, the bytes
 it wrote are read back through `orivon.fs`, and its attempt to leave its preopen comes back
 `NOTCAPABLE`. The WASI host also has an opt-in conformance run against the official preview1
 suite, [`src/shim/wasi/tests/conformance.test.ts`](../../src/shim/wasi/tests/conformance.test.ts),
 which skips unless `ORIVON_WASI_TESTSUITE` names a checkout of the suite's prebuilt branch; the
 suite's binaries are not in this repository.
-[`e2e-child-process.test.ts`](../../test/e2e-child-process.test.ts) runs `child_process` in a pinned
+[`e2e-child-process.test.ts`](../../test/node-runtime/e2e-child-process.test.ts) runs `child_process` in a pinned
 app: `spawn` of a WASI program and `fork` of the app's own module, each in a Worker under the served
 CSP, the forked module's `fs` write read back through the broker, a native program refused as
 `ENOEXEC`, a missing one `ENOENT`, and `kill()` ending a running child.
-[`e2e-native-addon.test.ts`](../../test/e2e-native-addon.test.ts) loads a hand-assembled Node-API
+[`e2e-native-addon.test.ts`](../../test/node-runtime/e2e-native-addon.test.ts) loads a hand-assembled Node-API
 module as a native addon's WebAssembly build: through `createRequire` and `process.dlopen` on the
 page, through `preloadAddon` for one over the page's 8 MB synchronous-compile limit, and on the fly
 in a forked child.
-[`e2e-napi-rs-package.test.ts`](../../test/e2e-napi-rs-package.test.ts) runs a napi-rs package's
+[`e2e-napi-rs-package.test.ts`](../../test/node-runtime/e2e-napi-rs-package.test.ts) runs a napi-rs package's
 published WebAssembly build, which is threaded, through the package's own browser loader in a
 cross-origin isolated app. It skips unless `ORIVON_NAPI_RS_PACKAGE_DIR` names a directory the
 package was installed in, since the package is not one of this repository's. Real programs and

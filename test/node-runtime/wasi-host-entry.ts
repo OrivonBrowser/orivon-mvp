@@ -4,7 +4,7 @@
 // the module fetched and compiled under the app's served CSP, and every file
 // call reaching the real window.orivon.fs through JSPI.
 
-import { WASI } from '../src/shim/wasi/node-wasi.js'
+import { WASI } from '../../src/shim/wasi/node-wasi.js'
 
 export interface WasiRunResult {
   readonly exitCode?: number

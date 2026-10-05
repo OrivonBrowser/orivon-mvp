@@ -6,31 +6,31 @@
 // CSP, and the broker's confinement sitting under the host's own check.
 //
 // The program writes greeting.txt, prints `done`, then tries to create
-// ../escape and exits with that call's errno: 76, NOTCAPABLE, when every
+// ../../escape and exits with that call's errno: 76, NOTCAPABLE, when every
 // earlier call succeeded. The page then reads greeting.txt back through
 // orivon.fs directly, so the bytes are proven to be where the broker keeps
 // the app's files.
 //
 // Run with `npm run test:e2e`, or directly:
-//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/e2e-wasi-host.test.ts
+//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/node-runtime/e2e-wasi-host.test.ts
 import { afterAll, expect, it } from 'vitest'
 import { fileURLToPath } from 'node:url'
 import esbuild from 'esbuild'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { evaluateRetrying, HERMETIC_RESOLVER } from './support/smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase, waitForPageGlobal } from './support/e2e-helpers.js'
-import { shimEsbuildPlugin } from '../src/shim/tests/support/shim-esbuild-plugin.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { evaluateRetrying, HERMETIC_RESOLVER } from '../support/smoke-helpers.mjs'
+import { closeElectronApp, navigateToFixture, runPhase, waitForPageGlobal } from '../support/e2e-helpers.js'
+import { shimEsbuildPlugin } from '../../src/shim/tests/support/shim-esbuild-plugin.js'
 import type { WasiRunResult } from './wasi-host-entry.js'
-import { bundleTree } from '../src/broker/policy/bundle-hash.js'
-import type { BundleEntry } from '../src/broker/policy/bundle-hash.js'
-import { fromBundleTree } from '../src/broker/policy/pin.js'
-import { nodeLoaderStorage } from '../src/loader/cache/node-storage.js'
-import { op, wasiModule } from '../src/shim/wasi/tests/support/wasm-module.js'
-import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
-import type { Grant, Manifest } from '../src/contracts/index.js'
+import { bundleTree } from '../../src/broker/policy/bundle-hash.js'
+import type { BundleEntry } from '../../src/broker/policy/bundle-hash.js'
+import { fromBundleTree } from '../../src/broker/policy/pin.js'
+import { nodeLoaderStorage } from '../../src/loader/cache/node-storage.js'
+import { op, wasiModule } from '../../src/shim/wasi/tests/support/wasm-module.js'
+import type { DevGrantRequest } from '../../src/main/dev/dev-grant.js'
+import type { Grant, Manifest } from '../../src/contracts/index.js'
 
 const ORIGIN = 'https://wasi-host-e2e.orivon.test'
-const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url))
+const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url))
 const GREETING = 'hello from wasi'
 const READ_WRITE = (1n << 1n) | (1n << 6n)
 const CREAT_TRUNC = 1 | 8
@@ -55,7 +55,7 @@ function openAt (name: { offset: number, length: number }, call: (import_: strin
 
 function program (): Uint8Array<ArrayBuffer> {
   const file = { offset: 200, text: 'greeting.txt' }
-  const escape = { offset: 240, text: '../escape' }
+  const escape = { offset: 240, text: '../../escape' }
   const greeting = { offset: 300, text: GREETING }
   const done = { offset: 400, text: 'done\n' }
   const accumulate = [op.localGet(0), op.i32Add, op.localSet(0)]

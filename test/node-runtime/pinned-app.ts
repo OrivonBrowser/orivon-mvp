@@ -6,15 +6,15 @@
 import type { ElectronApplication } from 'playwright'
 import esbuild from 'esbuild'
 import { fileURLToPath } from 'node:url'
-import { bundleTree } from '../src/broker/policy/bundle-hash.js'
-import type { BundleEntry } from '../src/broker/policy/bundle-hash.js'
-import { fromBundleTree } from '../src/broker/policy/pin.js'
-import { nodeLoaderStorage } from '../src/loader/cache/node-storage.js'
-import { shimEsbuildPlugin } from '../src/shim/tests/support/shim-esbuild-plugin.js'
-import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
-import type { CapabilityKind, Grant, Manifest } from '../src/contracts/index.js'
+import { bundleTree } from '../../src/broker/policy/bundle-hash.js'
+import type { BundleEntry } from '../../src/broker/policy/bundle-hash.js'
+import { fromBundleTree } from '../../src/broker/policy/pin.js'
+import { nodeLoaderStorage } from '../../src/loader/cache/node-storage.js'
+import { shimEsbuildPlugin } from '../../src/shim/tests/support/shim-esbuild-plugin.js'
+import type { DevGrantRequest } from '../../src/main/dev/dev-grant.js'
+import type { CapabilityKind, Grant, Manifest } from '../../src/contracts/index.js'
 
-const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url))
+const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url))
 
 /** Bundles a page or Worker script against src/shim/, as a port's bundler would. */
 export async function bundleForApp (entry: string, format: 'iife' | 'esm' = 'iife'): Promise<Uint8Array> {

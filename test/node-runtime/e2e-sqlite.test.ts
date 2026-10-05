@@ -4,17 +4,17 @@
 // engine's WebAssembly fetched by the child's own bundle under the served CSP.
 //
 // Run with `npm run test:e2e`, or directly:
-//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/e2e-sqlite.test.ts
+//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/node-runtime/e2e-sqlite.test.ts
 import { afterAll, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
-import { assertNoElectronSurvivors, launchElectron } from './support/launch-electron.mjs'
-import { evaluateRetrying, HERMETIC_RESOLVER } from './support/smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase, waitForPageGlobal } from './support/e2e-helpers.js'
+import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
+import { evaluateRetrying, HERMETIC_RESOLVER } from '../support/smoke-helpers.mjs'
+import { closeElectronApp, navigateToFixture, runPhase, waitForPageGlobal } from '../support/e2e-helpers.js'
 import { bundleForApp, serveApp } from './pinned-app.js'
 import type { SqliteResults } from './sqlite-entry.js'
-import type { Manifest } from '../src/contracts/index.js'
+import type { Manifest } from '../../src/contracts/index.js'
 
 const ORIGIN = 'https://sqlite-e2e.orivon.test'
 const MANIFEST: Manifest = {
