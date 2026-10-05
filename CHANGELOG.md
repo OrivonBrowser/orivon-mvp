@@ -21,6 +21,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 - **`contracts/manifest.ts`**: an app may now declare `media.screen` in `capabilities.media`; nothing changes for
   existing apps, and it is not yet granted (the implementation follows).
 - **`contracts/trust.ts`, `contracts/manifest.ts`, `contracts/capability-api.ts`**: new capability kind `trust.score`
+- **`contracts/trust.ts`, `contracts/manifest.ts`, `contracts/capability-api.ts`, `contracts/index.ts`**: new capability kind `trust.score`
   (declare `"trust": { "score": true }`) and `orivon.trust.websiteScore(address)`, which answers with the Web3 Score
   provider the person chose and the level it judged for that content. Apps that show a mark per site may declare it
   and must treat a `null` level, a `denied` rejection and a `limit` rejection as "use what you ship". Recheck: none; no
