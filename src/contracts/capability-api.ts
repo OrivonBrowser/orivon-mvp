@@ -345,7 +345,7 @@ export interface OrivonFs {
  * for both.
  */
 export interface OrivonId {
-  /** derive(seed, "app", origin). Silent, no prompt. */
+  /** derive(seed, "app", origin). Silent, no prompt. A local file's origin is its `file:` URL: a moved or renamed file has other keys. */
   publicKey(opts: { curve: string }): Promise<Uint8Array>
   /** Signs `payload` with the same per-origin key `publicKey` returns for this `curve`. Silent, no prompt. */
   sign(opts: { curve: string, payload: Uint8Array }): Promise<Uint8Array>
