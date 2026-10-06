@@ -214,7 +214,10 @@ it('says why Orivon cannot be made the default browser from a run like this one,
     const row = page.locator('#row-default-browser')
     await row.waitFor()
     expect(await row.locator('.row-label').textContent()).toBe('Default browser')
-    expect(await row.locator('.row-control').textContent()).toContain('Not available while Orivon runs from its source folder.')
+    // A test build never names a run from source's desktop entry, so on Linux the row says how to add one.
+    expect(await row.locator('.row-control').textContent()).toContain(process.platform === 'linux'
+      ? 'Not available until Orivon (source) is in your app list'
+      : 'Not available while Orivon runs from its source folder.')
     expect(await row.locator('button').count()).toBe(0)
     await delay(ABSENCE_SETTLE_MS)
     const calls = await recorded(app)

@@ -64,6 +64,9 @@ export function createPicker (choose: (id: string) => void, toggled: (open: bool
     if (choice !== undefined) choose(choice.id)
   }
 
+  // Pressing the button keeps the focus in an open list: the list closes when it loses the focus, and the click
+  // that ends the press would then open it again.
+  button.addEventListener('mousedown', (event) => { if (isOpen()) event.preventDefault() })
   button.addEventListener('click', () => { if (isOpen()) close(true); else open() })
   button.addEventListener('keydown', (event) => {
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return

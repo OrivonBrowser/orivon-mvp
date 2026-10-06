@@ -33,8 +33,11 @@ Nothing a page or a link supplies reaches a command line or a file path unvalida
 ## Design notes
 
 **Only an installed package registers, and only on a click.** A run from source would register the Electron binary,
-and an AppImage moves, so `unavailableReason` answers from facts alone (the platform and how Orivon was started) and
-the runner never calls the system there; the answer says why, and Settings words it. Nothing registers at start-up:
+and an AppImage moves, so `unavailableReason` answers from facts alone (the platform, how Orivon was started and the
+desktop entry a choice would name) and the runner never calls the system there. The one exception is a Linux run
+from source whose own entry, `orivon-source.desktop`, starts this checkout: a choice there names the entry, so it
+registers that entry with `xdg-settings` and `xdg-mime`, the tools Electron's own calls run for `orivon.desktop`. A
+test build never sees the entry, so an end-to-end run cannot change the machine's default; the answer says why, and Settings words it. Nothing registers at start-up:
 the Settings button, the welcome screen's box and the weekly question are the three clicks that do. On Windows no
 program may take the choice, so Make default opens Windows Settings and the answer is read again when the person
 returns; macOS registers through `setAsDefaultProtocolClient`. Both paths are written from the platforms'
