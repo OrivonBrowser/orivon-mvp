@@ -321,9 +321,10 @@ h1, p { margin: 0; }
 }
 
 .telemetry {
+  position: relative;
   max-width: 560px;
-  margin-top: 36px;
-  padding: 20px 22px;
+  margin-top: 28px;
+  padding: 18px 22px;
   border: 1px solid rgba(165, 180, 252, 0.28);
   border-radius: 16px;
   background: rgba(15, 23, 42, 0.62);
@@ -355,7 +356,18 @@ h1, p { margin: 0; }
   outline: 2px solid #a5b4fc;
   outline-offset: 3px;
 }
-.telemetry-details ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.5; }
+.telemetry-details ul {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  margin: 0;
+  padding: 14px 22px 14px 40px;
+  border: 1px solid rgba(165, 180, 252, 0.28);
+  border-radius: 16px;
+  background: rgb(15, 23, 42);
+  line-height: 1.5;
+}
 .telemetry-buttons {
   display: flex;
   gap: 12px;
