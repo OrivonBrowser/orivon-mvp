@@ -10,7 +10,7 @@ const ENUMS: ReadonlyArray<[key: keyof typeof SETTINGS, options: string[], fallb
   ['sites.javascript', ['allow', 'block'], 'allow']
 ]
 const BOOLS: ReadonlyArray<[key: keyof typeof SETTINGS, fallback: boolean]> = [
-  ['privacy.globalPrivacyControl', false],
+  ['privacy.globalPrivacyControl', true],
   ['privacy.doNotTrack', false],
   ['privacy.httpsOnly', false],
   ['passwords.offerToSave', true],

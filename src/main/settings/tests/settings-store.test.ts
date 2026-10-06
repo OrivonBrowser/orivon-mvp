@@ -169,4 +169,35 @@ describe('SettingsStore', () => {
     expect(values['appearance.theme']).toBe('system')
     expect(changed).toEqual(['search.engine'])
   })
+
+  it('gives the Global Privacy Control signal to a profile that never chose, and keeps an off that was chosen', async () => {
+    const untouched = new SettingsStore(join(dir, 'nested', 'none.json'))
+    await untouched.load()
+    expect(untouched.get('privacy.globalPrivacyControl')).toBe(true)
+    expect(untouched.isDefault('privacy.globalPrivacyControl')).toBe(true)
+
+    await mkdir(join(dir, 'nested'), { recursive: true })
+    await writeFile(file, JSON.stringify({ version: 1, values: { 'privacy.globalPrivacyControl': false } }))
+    const off = new SettingsStore(file)
+    await off.load()
+    expect(off.get('privacy.globalPrivacyControl')).toBe(false)
+    expect(off.snapshot().changed).toEqual(['privacy.globalPrivacyControl'])
+
+    await writeFile(file, JSON.stringify({ version: 1, values: { 'privacy.globalPrivacyControl': true } }))
+    const on = new SettingsStore(file)
+    await on.load()
+    expect(on.get('privacy.globalPrivacyControl')).toBe(true)
+    expect(on.isDefault('privacy.globalPrivacyControl')).toBe(true)
+  })
+
+  it('remembers the values the file gave, whatever is changed afterwards', async () => {
+    await mkdir(join(dir, 'nested'), { recursive: true })
+    await writeFile(file, JSON.stringify({ version: 1, values: { 'privacy.globalPrivacyControl': false } }))
+    const store = new SettingsStore(file)
+    await store.load()
+    store.set('privacy.globalPrivacyControl', true)
+
+    expect(store.get('privacy.globalPrivacyControl')).toBe(true)
+    expect(store.valuesAtStart()['privacy.globalPrivacyControl']).toBe(false)
+  })
 })

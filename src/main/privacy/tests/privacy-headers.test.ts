@@ -1,31 +1,28 @@
 import { describe, expect, it } from 'vitest'
-import { withoutCookie, withoutSetCookie, withPrivacySignals } from '../privacy-headers.js'
+import { withoutCookie, withoutSetCookie, withDoNotTrack } from '../privacy-headers.js'
 
-describe('withPrivacySignals', () => {
-  it('returns the same object when both signals are off', () => {
+describe('withDoNotTrack', () => {
+  it('returns the same object when it is off', () => {
     const headers = { Accept: '*/*' }
-    expect(withPrivacySignals(headers, { gpc: false, dnt: false })).toBe(headers)
+    expect(withDoNotTrack(headers, false)).toBe(headers)
   })
 
-  it('adds only the signal that is on', () => {
-    expect(withPrivacySignals({ Accept: '*/*' }, { gpc: true, dnt: false })).toEqual({ Accept: '*/*', 'Sec-GPC': '1' })
-    expect(withPrivacySignals({ Accept: '*/*' }, { gpc: false, dnt: true })).toEqual({ Accept: '*/*', DNT: '1' })
-    expect(withPrivacySignals({}, { gpc: true, dnt: true })).toEqual({ 'Sec-GPC': '1', DNT: '1' })
+  it('adds DNT when it is on, and never Sec-GPC, which the engine sends', () => {
+    expect(withDoNotTrack({ Accept: '*/*' }, true)).toEqual({ Accept: '*/*', DNT: '1' })
   })
 
   it('returns the same object when the header is already set to 1', () => {
-    const headers = { 'Sec-GPC': '1', DNT: '1' }
-    expect(withPrivacySignals(headers, { gpc: true, dnt: true })).toBe(headers)
+    const headers = { DNT: '1' }
+    expect(withDoNotTrack(headers, true)).toBe(headers)
   })
 
   it('replaces a differently cased or different-valued copy rather than adding a second', () => {
-    expect(withPrivacySignals({ 'sec-gpc': '0' }, { gpc: true, dnt: false })).toEqual({ 'Sec-GPC': '1' })
-    expect(withPrivacySignals({ dnt: '0' }, { gpc: false, dnt: true })).toEqual({ DNT: '1' })
+    expect(withDoNotTrack({ dnt: '0' }, true)).toEqual({ DNT: '1' })
   })
 
   it('does not change the headers it was given', () => {
     const headers = { Accept: '*/*' }
-    withPrivacySignals(headers, { gpc: true, dnt: true })
+    withDoNotTrack(headers, true)
     expect(headers).toEqual({ Accept: '*/*' })
   })
 })

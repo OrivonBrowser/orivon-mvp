@@ -6,7 +6,7 @@ import { createNetHandlers } from '../net-handlers.js'
 import type { NetSettings } from '../net-handlers.js'
 
 type Values = Record<string, string | boolean>
-const DEFAULTS: Values = { 'privacy.cookies': 'all', 'privacy.globalPrivacyControl': false, 'privacy.doNotTrack': false, 'privacy.httpsOnly': false }
+const DEFAULTS: Values = { 'privacy.cookies': 'all', 'privacy.doNotTrack': false, 'privacy.httpsOnly': false }
 
 function rig (values: Values = {}, isDevHost: (host: string) => boolean = () => false) {
   const current: Values = { ...DEFAULTS, ...values }
@@ -25,20 +25,19 @@ const receive = (url: string, resourceType: OnHeadersReceivedListenerDetails['re
   id, url, method: 'GET', resourceType, referrer: '', timestamp: 0, statusLine: 'HTTP/1.1 200', statusCode: 200, responseHeaders: {}, ...(top === undefined ? {} : { frame: { top: { url: top } } as unknown as NonNullable<OnHeadersReceivedListenerDetails['frame']> })
 })
 
-describe('the header signals', () => {
-  it('hand the request back untouched while both are off', () => {
+describe('the Do Not Track header', () => {
+  it('hand the request back untouched while Do Not Track is off', () => {
     const { handlers } = rig()
     const seed = { requestHeaders: { Accept: '*/*' } }
     expect(handlers.beforeSendHeaders(send('https://a.example/', 'xhr', 'https://a.example/'), seed)).toBe(seed)
   })
 
-  it('add Sec-GPC and DNT when they are on, and follow the setting at once', () => {
-    const { handlers, current } = rig({ 'privacy.globalPrivacyControl': true })
+  it('add DNT when it is on, follow the setting at once, and leave Sec-GPC to the engine', () => {
+    const { handlers, current } = rig({ 'privacy.doNotTrack': true })
     const seed = { requestHeaders: {} as Record<string, string> }
-    expect(handlers.beforeSendHeaders(send('https://a.example/', 'mainFrame', undefined), seed)).toEqual({ requestHeaders: { 'Sec-GPC': '1' } })
-    current['privacy.globalPrivacyControl'] = false
-    current['privacy.doNotTrack'] = true
     expect(handlers.beforeSendHeaders(send('https://a.example/', 'mainFrame', undefined), seed)).toEqual({ requestHeaders: { DNT: '1' } })
+    current['privacy.doNotTrack'] = false
+    expect(handlers.beforeSendHeaders(send('https://a.example/', 'mainFrame', undefined), seed)).toBe(seed)
   })
 })
 

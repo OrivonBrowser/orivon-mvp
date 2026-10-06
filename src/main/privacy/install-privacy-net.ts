@@ -53,7 +53,7 @@ export const installPrivacyNet: ShellInstaller = {
         () => owner.onBeforeRequest(HTTPS_ORDER, { urls: ['http://*/*'], types: ['mainFrame'] }, PLAIN_ADDRESS, handlers.beforeRequest)
       ),
       handlerWhileNeeded(
-        () => settings.get('privacy.globalPrivacyControl') === true || settings.get('privacy.doNotTrack') === true || blockingCookies(),
+        () => settings.get('privacy.doNotTrack') === true || blockingCookies(),
         () => owner.onBeforeSendHeaders(PRIVACY_ORDER, WEB, WEB_ADDRESS, handlers.beforeSendHeaders)
       ),
       handlerWhileNeeded(blockingCookies, () => owner.onHeadersReceived(PRIVACY_ORDER, WEB, WEB_ADDRESS, handlers.headersReceived))

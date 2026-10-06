@@ -20,7 +20,7 @@ export function settingsDomain (settings: SettingsStore): InternalDomain {
       const key = typeof request.key === 'string' ? request.key : ''
       switch (request.type) {
         case 'get':
-          return { descriptions: describeSettings(), ...settings.snapshot() }
+          return { descriptions: describeSettings(), ...settings.snapshot(), atStart: settings.valuesAtStart() }
         case 'set':
           return settings.set(key, request.value)
         case 'reset':

@@ -9,7 +9,7 @@ import { SettingsState } from '../settings/state.js'
 import type { OrivonInternal } from '../shared/bridge.js'
 
 const REPLIES: Record<string, unknown> = {
-  settings: { descriptions: [], values: {} },
+  settings: { descriptions: [], values: {}, atStart: {} },
   about: { version: '1.0.0', electron: '1', chromium: '1', node: '1', platform: 'linux', userAgent: 'x', developerMode: false },
   shortcuts: { platform: 'linux', rows: [] },
   privacy: { history: { remembering: true, problem: null, count: 0 }, zoomSites: 0 },

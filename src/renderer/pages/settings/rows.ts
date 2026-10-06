@@ -34,10 +34,14 @@ function renderChoice (control: Extract<Control, { type: 'choice' }>, state: Set
   return select
 }
 
-function renderToggle (control: Extract<Control, { type: 'toggle' }>, state: SettingsState, id: string): HTMLElement {
-  // A switch that cannot act shows what is really happening: off.
+/** A switch that cannot act shows what is really happening: off when the setting has no effect, its saved value when it is locked. */
+export function toggleState (control: Extract<Control, { type: 'toggle' }>, state: SettingsState): { readonly checked: boolean, readonly disabled: boolean } {
   const disabled = control.disabled?.(state) === true
-  const input = h('input', { type: 'checkbox', id, checked: !disabled && state.value(control.key) === true, disabled })
+  return { checked: !disabled && state.value(control.key) === true, disabled: disabled || control.locked?.(state) === true }
+}
+
+function renderToggle (control: Extract<Control, { type: 'toggle' }>, state: SettingsState, id: string): HTMLElement {
+  const input = h('input', { type: 'checkbox', id, ...toggleState(control, state) })
   input.addEventListener('change', () => {
     // A click leaves the switch focused, and a focused input that is not settled holds every redraw (main.ts).
     input.dataset['settled'] = 'true'
