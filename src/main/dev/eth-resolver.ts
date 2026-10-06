@@ -17,8 +17,16 @@
 import { readFileSync } from 'node:fs'
 import { devModeEnabled } from './dev-mode.js'
 
-/** One lowercase label plus `.eth` -- the same shape orivon-ports' recipe.ts validates. Re-checked here because this file reads a name from OUTSIDE this process and is about to splice it into a command-line switch; that file's own validation is not a guarantee this one may skip. */
-const ETH_NAME = /^[a-z0-9][a-z0-9-]*\.eth$/
+/**
+ * One or more lowercase labels plus `.eth`, so an ENS subname such as
+ * `thelounge.orivonstack.eth` is a developer name. Re-checked here because
+ * this file reads a name from OUTSIDE this process and is about to splice it
+ * into a command-line switch; orivon-ports' own validation is not a guarantee
+ * this one may skip. `../install/grant-without-install.ts` shares this
+ * pattern, so the names mapped to loopback and the origins grantable without
+ * an install can never differ.
+ */
+export const DEV_ETH_NAME = /^(?:[a-z0-9][a-z0-9-]*\.)+eth$/
 const MIN_PORT = 1
 const MAX_PORT = 65535
 
@@ -34,7 +42,7 @@ const MAX_PORT = 65535
 function validEntries (names: Readonly<Record<string, unknown>>): Array<[string, number]> {
   const entries: Array<[string, number]> = []
   for (const [name, port] of Object.entries(names)) {
-    if (!ETH_NAME.test(name)) continue
+    if (!DEV_ETH_NAME.test(name)) continue
     if (typeof port !== 'number' || !Number.isInteger(port) || port < MIN_PORT || port > MAX_PORT) continue
     entries.push([name, port])
   }
@@ -42,7 +50,7 @@ function validEntries (names: Readonly<Record<string, unknown>>): Array<[string,
 }
 
 /**
- * `{ "freetube.eth": 8875, ... }` to a `--host-resolver-rules` value, one
+ * `{ "thelounge.orivonstack.eth": 8875, ... }` to a `--host-resolver-rules` value, one
  * `MAP` clause per accepted name.
  */
 export function buildHostResolverRules (names: Readonly<Record<string, unknown>>): string {

@@ -2126,9 +2126,9 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 ### A402: Screen sharing on Wayland, Windows and macOS is written but not measured end to end **[RESEARCH]**
 
-- **Question:** Linux X11 is measured end to end. On Wayland the picker hands a window or screen to the desktop portal, and only the portal round trip is measured, not an accepted share; Windows (system audio) and macOS (Screen Recording permission) follow Electron's documentation.
+- **Question:** Linux X11 is measured end to end, and so is an accepted share on GNOME Wayland (a manual share with the portal's messages traced; the capture's own portal session records the screen picked). Not measured: other portal backends (KDE, wlroots), Windows (system audio) and macOS (Screen Recording permission), which follow Electron's documentation.
 - **Why it matters:** the owner's own desktop is GNOME on Wayland; a share that fails there fails for the person most likely to try it first.
-- **Options:** a manual share on a real GNOME Wayland desktop and on Windows and macOS before release (rec.); a headless portal backend that accepts by itself (none installed here).
+- **Options:** a manual share on Windows, macOS and a KDE Wayland desktop before release (rec.); a headless portal backend that accepts by itself (none installed here).
 - **Who decides:** research first
 - **Blocks:** nothing
 
@@ -2210,4 +2210,15 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   such a machine; `orivon.secrets.available()` says so for secrets only.
 - **Options:** leave it, as for every origin (rec.); say it in the consent when no keyring is reachable.
 - **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A407: A page's `setFocusBehavior` is refused as too late **[RESEARCH]**
+
+- **Question:** A page that passes a `CaptureController` and calls `setFocusBehavior` when its `getDisplayMedia` promise
+  resolves gets `InvalidStateError: The window of opportunity for focus-decision is closed.` Chromium closes that
+  window in the microtask after the call resolves; the page's promise is Orivon's and resolves in the first one.
+- **Why it matters:** a site that decides whether the shared surface takes focus cannot; Orivon's picker brings a picked tab to the front either way.
+- **Options:** accept (rec.); make the native call when the page calls, with main holding the request until the
+  person picks, so the page's callbacks are reactions of the browser's own promise (a change to the ticket and picker).
+- **Who decides:** research first
 - **Blocks:** nothing

@@ -7,7 +7,7 @@ import { createKeyQuiet } from '../../overlays/key-quiet.js'
 import type { OverlayDef, OverlayHandler, OverlayWindow } from '../../overlays/overlay-types.js'
 import { slotClosed } from '../../overlays/tab-slots.js'
 import type { DisplayChoice } from '../types.js'
-import { audioPlan, budgetImages, cardText, defaultSegment, portalCardText, PERMISSION_TEXT, segmentMode, segmentsFor, SCREEN_SETTINGS_URL } from './picker-model.js'
+import { audioPlan, budgetImages, cardText, defaultSegment, portalCardText, portalSourceId, PERMISSION_TEXT, segmentMode, segmentsFor, SCREEN_SETTINGS_URL } from './picker-model.js'
 import type { PickerCard, PickerPlatform, PickerSegment } from './picker-model.js'
 import { createSourceFeed, sourceCard } from './picker-sources.js'
 import type { FeedTimers, RawSource, SourceFeed } from './picker-sources.js'
@@ -44,14 +44,14 @@ export interface PickerDeps {
 /** Tabs captured for a thumbnail in one show: a page behind the one in front gives none, so this only bounds the work. */
 const MAX_TAB_CAPTURES = 12
 
+const PORTAL_LABEL = { window: 'Shared window', screen: 'Shared screen' } as const
+
 export function createPicker (deps: PickerDeps, { window, services, close, send }: OverlayWindow): OverlayHandler {
   const now = deps.now ?? Date.now
   const keys = createKeyQuiet(now)
   let question: Question | null = null
   let shownAt: number | null = null
   let segment: PickerSegment = 'tab'
-  /** A share waits on the system's dialog: nothing else is accepted meanwhile. */
-  let busy = false
   let feed: SourceFeed | null = null
   const thumbs = new Map<Electron.WebContents, string | null>()
 
@@ -117,19 +117,9 @@ export function createPicker (deps: PickerDeps, { window, services, close, send 
     close()
   }
 
-  /** Wayland: the system's own dialog lists and picks, and answers with the one source. */
+  /** Wayland: the choice names a source the capture has never seen, so the system's own dialog opens during the page's call and the person picks there. */
   function shareFromPortal (asked: Question, which: 'window' | 'screen', systemAudio: boolean): void {
-    busy = true
-    void deps.getSources({ types: [which], thumbnailSize: { width: 0, height: 0 }, fetchWindowIcons: false }).then(
-      (sources): DisplayChoice | null => {
-        const [source, ...others] = sources
-        return source === undefined || others.length > 0 ? null : { kind: which, source: { id: source.id, name: source.name }, systemAudio, label: cardText(source.name) || 'Shared window' }
-      },
-      (): null => null
-    ).then((choice) => {
-      busy = false
-      if (asked === question && !asked.settled) finish(asked, choice)
-    })
+    finish(asked, { kind: which, source: { id: portalSourceId(which), name: PORTAL_LABEL[which] }, systemAudio, label: PORTAL_LABEL[which] })
   }
 
   /** Chromium captures only a tab that is in front of its window, so the tab picked is brought there as the choice resolves (as Chrome does). */
@@ -168,7 +158,6 @@ export function createPicker (deps: PickerDeps, { window, services, close, send 
     feed = null
     question = null
     shownAt = null
-    busy = false
     thumbs.clear()
     keys.reset()
   }
@@ -217,7 +206,6 @@ export function createPicker (deps: PickerDeps, { window, services, close, send 
         if (shownAt === null) shownAt = now()
         return true
       }
-      if (busy) return undefined
       if (asked.type === 'cancel') {
         finish(open, null)
       } else if (asked.type === 'segment') {

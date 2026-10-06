@@ -25,7 +25,7 @@ other four -- `granted-origin-csp.ts` included -- must not.
 `transport/token-bucket.ts`), [`../../loader/`](../../loader/) (`index.ts` type,
 `manifest/manifest.ts`, `electron/serve.ts`'s `liveCspHeaderFor` and
 `isOriginServedFromCacheSync`), [`../consent/`](../consent/) (`install-consent*`,
-`update-outcomes*`), [`../dev/`](../dev/) (`dev-mode.ts`, `score-levels.ts`),
+`update-outcomes*`), [`../dev/`](../dev/) (`dev-mode.ts`, `eth-resolver.ts`'s name pattern, `score-levels.ts`),
 [`../extensions/site-reach-runner.ts`](../extensions/site-reach-runner.ts)'s
 `extensionNamesForOrigin` (the extensions disclosure, `docs/planning/extensions-exploration.md`, wired into
 the install-consent prompts here the same way `../consent/README.md` describes),
