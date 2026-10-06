@@ -31,7 +31,7 @@ separate from the loader's own `apps/<hash>` state (pinned code, staging, `pin.j
 re-verify and an app's declared quota govern two disjoint trees (T13b). App removal has to clear
 all three. A document opened from this computer is keyed on its `file:` URL like any origin (`../policy/origin.ts`'s
 `localFileKey`): its `fs` root is `app-data/<hash>`, its grants persist, and `id` and `secrets` derive from
-the same seed with no salt, so all three outlive a restart and belong to the exact path.
+the same seed with no salt, so its grants, data and keys outlive a restart and belong to the exact path.
 
 **`LedgerStorage` is synchronous, unlike `LoaderStorage`, on purpose.** Callers invoke
 `Broker.registerApp` without awaiting it, which is safe only because nothing inside it yields;
