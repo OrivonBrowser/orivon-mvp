@@ -33,6 +33,8 @@ function mount () {
   const push = (): void => { nav.render?.(state(), ctx) }
   push()
   return {
+    nav,
+    ctx,
     input,
     form: els['#address-form'] as FakeEl,
     doc,
@@ -110,6 +112,19 @@ describe('the address field and the state pushes', () => {
     s.focusField()
     s.moveTo('https://a.example/after-blur')
     expect(s.input.value).toBe('https://a.example/after-blur')
+  })
+
+  it('keeps the text the search key put in the field through a state push that arrives before the first letter', () => {
+    const s = mount()
+    s.nav.event?.({ type: 'focusSearch' }, s.ctx)
+    s.focusField()
+    s.input.value = '? '
+    s.input.selected = false
+    s.push()
+    expect(s.input.value).toBe('? ')
+    expect(s.input.selected).toBe(false)
+    s.moveTo('https://a.example/next')
+    expect(s.input.value).toBe('? ')
   })
 
   it('does not reselect an untouched focused field that already shows the address', () => {

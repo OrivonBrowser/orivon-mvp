@@ -15,7 +15,7 @@ import { runCommand } from '../support/auth-support.js'
 import { clearFocusLog, readFocusLog, startFocusLog } from '../support/focus-helpers.js'
 import { html, launchShell, startServer } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
-import { ABSENCE_SETTLE_MS, activeTabInfo, delay, popoverShown, tabIds, waitFor } from '../support/smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, activeTabInfo, delay, popoverShown, tabIds, tabViews, waitFor } from '../support/smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 120_000
 const SHOTS_DIR = process.env.ORIVON_UI_SHOTS_DIR
@@ -378,6 +378,22 @@ it('searches for what follows a question mark, and the search key puts one in th
     // A forced search is never finished with a page.
     expect((await field(chrome)).value).toBe('? 127.0.0.1')
     await shoot(app, chrome, 'omnibox-search')
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('keeps the question mark the search key put in the field when the page it covers changes its title', async () => {
+  const { app, chrome } = await launchShell({ seedProfile: async (dir: string) => { await seedPages(dir) } })
+  try {
+    expect(await waitFor(async () => (await chrome.evaluate(() => document.querySelector('#address')?.getAttribute('role') ?? null)) === 'combobox')).toBe(true)
+    await chrome.evaluate(() => { (window as unknown as { orivonShell: { runCommand: (id: string) => void } }).orivonShell.runCommand('nav.focusSearch') })
+    expect(await waitFor(async () => (await field(chrome)).value === '? ')).toBe(true)
+    // A state push reaches the bar after the search key and before the first letter: the tab's title changed.
+    await tabViews(app, chrome)[0]?.evaluate(() => { document.title = 'a new title' })
+    expect(await waitFor(async () => (await chrome.evaluate(() => document.querySelector('.tab-title, .tab')?.textContent ?? '')).includes('a new title'))).toBe(true)
+    expect(await field(chrome)).toMatchObject({ value: '? ', start: 2, end: 2, focused: true })
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
