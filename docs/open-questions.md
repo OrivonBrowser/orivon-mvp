@@ -2056,13 +2056,14 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A394: Does the file-protocol fuse flip work on macOS and Windows, and in a package? **[RESEARCH]**
+### A394: Can the file-protocol fuse flip run on macOS and Windows? **[RESEARCH]**
 
-- **Question:** `scripts/install-electron.mjs` flips the fuse through the framework binary on macOS (then re-signs
-  ad hoc) and renames over the `.exe` on Windows, which Windows refuses while the binary runs. Neither is run, and
-  the packaged Linux build was launched once under a headless display, not on a person's machine.
-- **Why it matters:** a failed flip leaves local files closed, which is safe, but a person on macOS or Windows
-  then never gets them.
+- **Question:** `scripts/install-electron.mjs` flips the fuse on Linux only and refuses elsewhere. On macOS the
+  fuse sits in a signed framework (a flip needs an ad hoc re-sign that keeps the bundle valid); Windows refuses a
+  rename over a running `.exe`. Neither is run, and the packaged Linux build was launched once under a headless
+  display, not on a person's machine.
+- **Why it matters:** a refused flip leaves local files closed, which is safe, but a person on macOS or Windows
+  who runs from source never gets them.
 - **Options:** run `npm install` and a package on each system and read the fuse byte (rec.); flip a copy and swap
   it in on the next start.
 - **Who decides:** research first

@@ -92,7 +92,7 @@ describe('disableFileProtocolFuse', () => {
   it('writes nothing when the fuse is already off', async () => {
     await writeFile(binary, fakeBinary(48))
     const before = await stat(binary)
-    const result = await disableFileProtocolFuse({ binary, checkoutRoot: checkout() })
+    const result = await disableFileProtocolFuse({ binary, checkoutRoot: checkout(), platform: 'linux' })
     expect(result.status).toBe('already-off')
     expect((await stat(binary)).ino).toBe(before.ino)
     expect((await stat(binary)).mtimeMs).toBe(before.mtimeMs)
@@ -107,7 +107,7 @@ describe('disableFileProtocolFuse', () => {
     await link(binary, twin)
     const before = await stat(binary)
 
-    const result = await disableFileProtocolFuse({ binary, checkoutRoot: checkout() })
+    const result = await disableFileProtocolFuse({ binary, checkoutRoot: checkout(), platform: 'linux' })
 
     expect(result.status).toBe('flipped')
     const after = await stat(binary)
@@ -126,6 +126,7 @@ describe('disableFileProtocolFuse', () => {
     const result = await disableFileProtocolFuse({
       binary,
       checkoutRoot: checkout(),
+      platform: 'linux',
       flip: async (path: string) => { await writeFile(path, 'half'); throw new Error('disk full') }
     })
     expect(result.status).toBe('failed')
@@ -138,7 +139,7 @@ describe('disableFileProtocolFuse', () => {
     const outside = join(root, 'elsewhere', 'electron')
     await mkdir(join(root, 'elsewhere'), { recursive: true })
     await writeFile(outside, fakeBinary(49))
-    const result = await disableFileProtocolFuse({ binary: outside, checkoutRoot: checkout() })
+    const result = await disableFileProtocolFuse({ binary: outside, checkoutRoot: checkout(), platform: 'linux' })
     expect(result.status).toBe('refused')
     expect(result.reason).toMatch(/outside/)
     expect(fileFuseOf(await readFile(outside))).toBe(49)
@@ -150,14 +151,25 @@ describe('disableFileProtocolFuse', () => {
     await writeFile(join(real, 'electron'), fakeBinary(49))
     const linked = join(checkout(), 'linked-dist')
     await symlink(real, linked)
-    const result = await disableFileProtocolFuse({ binary: join(linked, 'electron'), checkoutRoot: checkout() })
+    const result = await disableFileProtocolFuse({ binary: join(linked, 'electron'), checkoutRoot: checkout(), platform: 'linux' })
     expect(result.status).toBe('refused')
     expect(fileFuseOf(await readFile(join(real, 'electron')))).toBe(49)
   })
 
+  // The flip is measured on Linux only (A394); a macOS framework needs a re-sign and Windows
+  // refuses a rename over a running .exe, so neither is touched until it is measured.
+  it.each(['darwin', 'win32'] as const)('refuses on %s and leaves the binary alone', async (platform) => {
+    const original = fakeBinary(49)
+    await writeFile(binary, original)
+    const result = await disableFileProtocolFuse({ binary, checkoutRoot: checkout(), platform })
+    expect(result.status).toBe('refused')
+    expect(result.reason).toMatch(/A394/)
+    expect(await readFile(binary)).toEqual(original)
+  })
+
   it('reports a binary with no fuse wire as failed, not as off', async () => {
     await writeFile(binary, Buffer.alloc(500, 0x41))
-    const result = await disableFileProtocolFuse({ binary, checkoutRoot: checkout() })
+    const result = await disableFileProtocolFuse({ binary, checkoutRoot: checkout(), platform: 'linux' })
     expect(result.status).toBe('failed')
     await expect(access(`${binary}.fuse-tmp`)).rejects.toThrow()
   })

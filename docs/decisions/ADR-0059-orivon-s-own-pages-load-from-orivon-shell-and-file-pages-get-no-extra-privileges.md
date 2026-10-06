@@ -109,9 +109,10 @@ Run with the fuse off, each in a headless Electron 44 (`app.whenReady().then()`)
 - Every overlay and popover now reads its page through the main process instead of Chromium's file loader;
   custom-scheme responses skip the HTTP cache. If `window/e2e-menu-warm` or `perf:probe` regress, built
   files are cached in memory.
-- macOS and Windows are written and untested (*provisional*, A394): the flip goes through the framework
-  binary and re-signs ad hoc on macOS, and a rename over a running `.exe` is refused on Windows, which the
-  script reports as a warning.
+- The flip runs on Linux only (*provisional*, A394): on macOS the binary sits in a signed framework that
+  would need an ad hoc re-sign, and Windows refuses a rename over a running `.exe`. Until each is measured
+  the script refuses there, warns, and leaves the binary as it is, so local files stay closed on those systems
+  in a checkout. A package sets the fuse through electron-builder on every platform.
 - The packaged Linux build (`electron-builder --linux dir`, 2026-10-06) was launched once under a headless
   display with a debugging port: its two pages were `orivon-shell://renderer/newtab/index.html` and
   `orivon-shell://renderer/index.html`, read from the asar, and `@electron/fuses read` showed

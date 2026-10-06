@@ -19,7 +19,7 @@
  * test/support/launch-electron.mjs, so a skip here only moves the download later.
  */
 import { spawnSync } from 'node:child_process'
-import { chmod, copyFile, mkdir, realpath, rename, rm, stat } from 'node:fs/promises'
+import { chmod, copyFile, realpath, rename, rm, stat } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, sep } from 'node:path'
@@ -79,18 +79,6 @@ export function electronBinaryPath (installer) {
   }
 }
 
-/** The file that holds the fuse wire, and where a copy of it can sit and still be that file. */
-function fuseTargets (binary, platform) {
-  if (platform === 'darwin' && binary.includes('.app')) {
-    const file = join(dirname(binary), '..', 'Frameworks', 'Electron Framework.framework', 'Electron Framework')
-    const app = `${binary.split('.app')[0]}.app`
-    // @electron/fuses reads a path that names an .app as "the bundle", so the copy lives beside it.
-    const tmpDir = join(dirname(app), '.fuse-tmp')
-    return { file, tmp: join(tmpDir, 'Electron Framework'), tmpDir, app }
-  }
-  return { file: binary, tmp: `${binary}.fuse-tmp`, tmpDir: undefined, app: undefined }
-}
-
 async function flipWithFuses (path) {
   const { flipFuses, FuseV1Options, FuseVersion } = await import('@electron/fuses')
   await flipFuses(path, { version: FuseVersion.V1, [FuseV1Options.GrantFileProtocolExtraPrivileges]: false })
@@ -104,8 +92,8 @@ async function currentFileFuse (path) {
 /**
  * Turns the binary's file-protocol fuse off, writing a new file and renaming it over `binary`: a
  * worktree's `node_modules` is a hard-linked copy of another checkout's, so a write in place would
- * change that checkout's binary too (and fail with ETXTBSY while it runs). macOS and Windows are
- * provisional (docs/open-questions.md A394).
+ * change that checkout's binary too (and fail with ETXTBSY while it runs). Only Linux is flipped:
+ * macOS and Windows are refused until the flip is measured there (docs/open-questions.md A394).
  *
  * @param {object} options
  * @param {string} options.binary The Electron executable.
@@ -118,7 +106,11 @@ async function currentFileFuse (path) {
 export async function disableFileProtocolFuse ({
   binary, checkoutRoot, platform = process.platform, flip = flipWithFuses, read = currentFileFuse
 }) {
-  const { file, tmp, tmpDir, app } = fuseTargets(binary, platform)
+  if (platform !== 'linux') {
+    return { status: 'refused', reason: `the flip is not measured on ${platform} yet (A394)` }
+  }
+  const file = binary
+  const tmp = `${binary}.fuse-tmp`
   try {
     const [realFile, realRoot] = await Promise.all([realpath(file), realpath(checkoutRoot)])
     if (!realFile.startsWith(realRoot + sep)) {
@@ -131,7 +123,6 @@ export async function disableFileProtocolFuse ({
 
     const before = await stat(file)
     try {
-      if (tmpDir !== undefined) await mkdir(tmpDir, { recursive: true })
       await copyFile(file, tmp)
       await chmod(tmp, before.mode & 0o7777)
       await flip(tmp)
@@ -139,24 +130,14 @@ export async function disableFileProtocolFuse ({
     } catch (error) {
       await rm(tmp, { force: true })
       throw error
-    } finally {
-      if (tmpDir !== undefined) await rm(tmpDir, { recursive: true, force: true })
     }
-    if ((await stat(file)).ino === before.ino && platform !== 'win32') {
+    if ((await stat(file)).ino === before.ino) {
       return { status: 'failed', reason: 'the binary kept its inode, so it was not replaced' }
     }
-    if (app !== undefined) resignDarwin(app)
     return { status: 'flipped' }
   } catch (error) {
     return { status: 'failed', reason: error instanceof Error ? error.message : String(error) }
   }
-}
-
-function resignDarwin (app) {
-  const result = spawnSync('codesign', [
-    '--sign', '-', '--force', '--preserve-metadata=entitlements,requirements,flags,runtime', '--deep', app
-  ])
-  if (result.status !== 0) throw new Error(`ad-hoc codesign failed: ${result.stderr?.toString() ?? ''}`)
 }
 
 if (isInvokedDirectly(import.meta.url)) {
