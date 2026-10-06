@@ -143,7 +143,7 @@ Orivon is built to be lived in, not opened only when you need a dapp.
 | 🧩 **Chrome extensions** | Install from the Chrome Web Store, a `.crx` or `.zip`, or a folder. Popups, side panels, keyboard shortcuts and DevTools panels work |
 | 🕶️ **Profiles and private windows** | Each profile is a separate browser with its own data. A private window keeps nothing and sends no statistics |
 | 🗂️ **Tabs that scale** | Groups, split view, pinning, tab search, idle tabs put to sleep, tear-off with a live preview, and session restore |
-| 🔒 **Privacy controls** | Third-party cookie blocking, Global Privacy Control and Do Not Track, HTTPS-only, DNS over HTTPS, and pop-ups blocked unless you clicked |
+| 🔒 **Privacy controls** | Global Privacy Control on by default, third-party cookie blocking, Do Not Track, HTTPS-only, DNS over HTTPS, and pop-ups blocked unless you clicked |
 | 🧰 **Everything else you expect** | A password manager in your OS keyring, bookmarks and history imported from Chrome, Edge, Brave or Firefox, reader view, printing to PDF, screenshots, screen sharing and picture-in-picture |
 | 🐧 **Linux first** | Native on X11 and Wayland, with packages for Windows and macOS |
 
