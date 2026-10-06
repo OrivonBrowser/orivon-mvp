@@ -1,6 +1,6 @@
 # Informativa sulla privacy
 
-Versione dell'informativa: 2
+Versione dell'informativa: 3
 
 Orivon Browser tiene la cronologia della tua navigazione sul tuo computer. Questa pagina dice che cosa ne esce,
 perché, e che cosa puoi fare. È scritta per chi usa il browser; l'elenco tecnico che la sostiene
@@ -28,16 +28,16 @@ privacy@orivonstack.com.
 
 ## Cosa invia la telemetria
 
-Partono due messaggi, ciascuno circa una volta al giorno, con uno in più di ciascuno all'inizio
-del mese per chiudere i totali del mese precedente, e un altro messaggio quando chiedi di
-cancellare i tuoi dati. In Impostazioni > Privacy vedi il testo esatto di ciascuno, prima e dopo
+Partono due messaggi: quando attivi la telemetria, circa una volta al giorno dopo di allora,
+quando chiudi il browser, e una volta in più all'inizio del mese per chiudere i totali del mese
+precedente. Un altro messaggio parte quando chiedi di cancellare i tuoi dati. In Impostazioni > Privacy vedi il testo esatto di ciascuno, prima e dopo
 l'invio.
 
 | Campo | Messaggio | Che cos'è |
 |---|---|---|
 | `schema` | tutti | La versione del formato del messaggio, un numero |
-| `installId` | rapporto d'uso, richiesta di cancellazione | Un identificativo di questo computer, di 32 caratteri. Deriva dall'ID macchina del sistema operativo passato in una funzione di hash a senso unico, quindi non si può risalire all'ID macchina. È lo stesso per tutti i profili del browser su questo computer, e per una versione avviata dai sorgenti e una installata. Viene creato solo dopo che attivi la telemetria |
-| `stream` | rapporto d'uso | Un valore casuale creato una volta per ogni profilo del browser. Due profili aperti insieme vengono contati entrambi e sommati come un solo computer grazie all'ID di installazione, quindi non sono due persone |
+| `installId` | rapporto d'uso, rapporto sui siti, richiesta di cancellazione | Un identificativo di questo computer, di 32 caratteri. Deriva dall'ID macchina del sistema operativo passato in una funzione di hash a senso unico, quindi non si può risalire all'ID macchina. È lo stesso per tutti i profili del browser su questo computer, e per una versione avviata dai sorgenti e una installata. Viene creato solo dopo che attivi la telemetria. Lo porta anche il rapporto sui siti, così i rapporti falsificati da un programma si distinguono dai tuoi |
+| `stream` | rapporto d'uso, rapporto sui siti | Un valore casuale creato una volta per ogni profilo del browser. Due profili aperti insieme vengono contati entrambi e sommati come un solo computer grazie all'ID di installazione, quindi non sono due persone |
 | `region` | rapporto d'uso | `EU`, `US` oppure `other`, ricavato sul tuo computer dal suo fuso orario. Non viene mai preso dal tuo indirizzo IP |
 | `version` | rapporto d'uso, rapporto sui siti | La versione di Orivon Browser |
 | `period` | rapporto d'uso, rapporto sui siti | Il mese, per esempio `2026-10`. Il messaggio è un totale del mese finora, inviato di nuovo con un totale più grande nei giorni seguenti |
@@ -46,7 +46,6 @@ l'invio.
 | `classes.web3` | rapporto d'uso | Dei secondi attivi, quelli su siti Web3 (verificati per intero, senza un server che possa cambiare ciò che ricevi) |
 | `classes.web25` | rapporto d'uso | Dei secondi attivi, quelli su siti Web2.5 (verificati in parte) |
 | `classes.web2` | rapporto d'uso | Dei secondi attivi, quelli su normali siti Web2. Solo un totale: nessun sito viene nominato |
-| `reportId` | rapporto sui siti | Un valore casuale creato per ogni profilo e ogni mese. Non è il tuo ID di installazione, e il mese dopo ne viene creato uno nuovo |
 | `sites` | rapporto sui siti | Per ogni sito Web3 o Web2.5 con un nome pubblico, i secondi attivi nel mese |
 
 Come è scritto `sites`. Ogni chiave è `web3:<nome>` o `web25:<nome>`, per esempio
@@ -63,11 +62,12 @@ Che cosa resta fuori, detto chiaramente. Nessun indirizzo di pagina, nessun perc
 cercato, nessun titolo di pagina, nessun segnalibro, nessuna password, nessun nome di file,
 nessun elenco dell'ordine o degli orari delle tue visite, nessun identificativo pubblicitario. Il
 rapporto sui siti nomina siti Web3 e Web2.5 pubblici e i secondi trascorsi su ciascuno in un
-mese: è la cosa più vicina a un'informazione di navigazione che inviamo, ed è quindi tenuto
-separato dal tuo ID di installazione, come dice la tabella.
+mese: è la cosa più vicina a un'informazione di navigazione che inviamo. Viene inviato con il tuo ID
+di installazione: i siti in cui passi il tempo sono quindi collegati a quell'ID per il mese e per
+il mese dopo, e poi restano solo come totali per sito senza ID, come dice la sezione seguente.
 
-Inviato circa una volta al giorno, e una volta in più all'inizio del mese per chiudere i totali
-del mese precedente. Non si invia nulla da una versione di sviluppo, da una
+Inviato quando attivi la telemetria, circa una volta al giorno, quando chiudi il browser, e una
+volta in più all'inizio del mese per chiudere i totali del mese precedente. Non si invia nulla da una versione di sviluppo, da una
 finestra privata, o quando è impostato `ORIVON_TELEMETRY=off`. Non si invia nulla prima che tu
 scelga. Il browser ignora tutto ciò che il server risponde: il server non può cambiare
 impostazioni né inviare comandi.
@@ -98,9 +98,14 @@ e per questo puoi chiederci di cancellarle.
 - **Righe d'uso**, una per computer, profilo e mese: 12 mesi, poi restano solo totali che non si
   possono ricondurre a un computer (il numero di utenti attivi, la ripartizione per regione e per
   classe).
-- **Rapporti sui siti**: un elenco di siti con i secondi, conservato per il mese; un mese dopo
-  la chiusura del mese viene ridotto a totali per sito per tutti gli utenti insieme, e i singoli
-  rapporti vengono cancellati.
+- **Rapporti sui siti**: un elenco di siti con i secondi, con il tuo ID di installazione,
+  conservato per il mese; un mese dopo la chiusura del mese viene ridotto a totali per sito per
+  tutti gli utenti insieme, e i singoli rapporti vengono cancellati. Fino ad allora ogni riga
+  porta il tuo ID di installazione; dopo, nessun ID.
+- **Rapporti che sembrano falsificati**: i secondi sui siti che un rapporto d'uso non giustifica
+  non vengono contati. Un ID di installazione che invia rapporti falsificati viene cancellato e
+  rifiutato per 12 mesi, poi tolto dall'elenco. La base è il nostro legittimo interesse a
+  statistiche accurate, articolo 6(1)(f).
 - **Il tuo indirizzo IP e lo User-Agent**: non vengono scritti su disco. Il front end web che
   chiude la connessione cifrata non tiene alcun registro degli accessi. L'indirizzo resta solo in
   memoria, per limitare ogni indirizzo a 30 richieste in 10 minuti, e si perde al riavvio.
@@ -122,11 +127,10 @@ questa informativa è la descrizione di ciò che conserva e per quanto tempo.
 - **Accesso** alle righe che conserviamo: scrivi a privacy@orivonstack.com indicando l'ID di installazione
   mostrato nelle Impostazioni.
 - **Cancellazione.** Premi **Cancella i miei dati** nelle Impostazioni: chiede al server di
-  cancellare ogni riga d'uso per il tuo ID di installazione, spegne la telemetria e dice se è
-  riuscito. Puoi anche scrivere a privacy@orivonstack.com indicando il tuo ID. I rapporti sui
-  siti non si possono cancellare tramite l'ID di installazione, perché non lo contengono mai,
-  quindi non possiamo trovare il tuo tra gli altri; escono come parte dei totali mensili per
-  sito descritti sopra.
+  cancellare ogni riga d'uso e ogni rapporto sui siti per il tuo ID di installazione, spegne la
+  telemetria e dice se è riuscito. Puoi anche scrivere a privacy@orivonstack.com indicando il tuo
+  ID. I totali per sito già riuniti per tutti gli utenti non portano alcun ID, quindi il tuo non si
+  può trovare tra quelli.
 - **Revocare il consenso** in qualsiasi momento nelle Impostazioni.
 - **Opposizione, rettifica, limitazione, portabilità.** Scrivi a privacy@orivonstack.com; i dati sono solo
   contatori, quindi rettifica e portabilità hanno poco su cui agire, ma risponderemo.

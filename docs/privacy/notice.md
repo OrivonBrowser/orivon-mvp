@@ -1,6 +1,6 @@
 # Privacy notice
 
-Notice version: 2
+Notice version: 3
 
 Orivon Browser keeps your browsing history on your computer. This page says what leaves it, why, and
 what you can do about it. It is written for the person using the browser; the engineering list
@@ -27,14 +27,14 @@ project. Write to privacy@orivonstack.com for anything in this notice.
 
 ## What telemetry sends
 
-Two messages leave, each about once a day, with one more of each at the start of a month to close the previous month's totals, and one more message when you ask us to delete your data.
+Two messages leave: when you turn telemetry on, about once a day after that, when you quit the browser, and once more at the start of a month to close the previous month's totals. One more message leaves when you ask us to delete your data.
 Settings > Privacy shows the literal text of each before and after it is sent.
 
 | Field | Message | What it is |
 |---|---|---|
 | `schema` | all | The version of the message layout, a number |
-| `installId` | usage report, erase request | An identifier for this computer, 32 characters. It comes from the operating system's machine ID run through a one-way hash, so it cannot be turned back into the machine ID. It is the same for every profile of the browser on this computer, and for a build run from source and an installed one. It is made only after you turn telemetry on |
-| `stream` | usage report | A random value made once for each browser profile. Two profiles open at the same time are each counted, and added up as one computer by the install ID, so they are not two people |
+| `installId` | usage report, site report, erase request | An identifier for this computer, 32 characters. It comes from the operating system's machine ID run through a one-way hash, so it cannot be turned back into the machine ID. It is the same for every profile of the browser on this computer, and for a build run from source and an installed one. It is made only after you turn telemetry on. The site report carries it too, so that reports a program forged can be told from yours |
+| `stream` | usage report, site report | A random value made once for each browser profile. Two profiles open at the same time are each counted, and added up as one computer by the install ID, so they are not two people |
 | `region` | usage report | `EU`, `US` or `other`, worked out on your computer from its time zone. It is never taken from your IP address |
 | `version` | usage report, site report | The version of Orivon Browser |
 | `period` | usage report, site report | The month, such as `2026-10`. The message is a total for the month so far, sent again with a larger total on later days |
@@ -43,7 +43,6 @@ Settings > Privacy shows the literal text of each before and after it is sent.
 | `classes.web3` | usage report | Of the active seconds, those on Web3 sites (fully verified, no server that can change what you get) |
 | `classes.web25` | usage report | Of the active seconds, those on Web2.5 sites (partly verified) |
 | `classes.web2` | usage report | Of the active seconds, those on ordinary Web2 sites. A total only; no site is named |
-| `reportId` | site report | A random value made for each profile and each month. It is not your install ID, and the next month it is a new one |
 | `sites` | site report | For each Web3 or Web2.5 site that has a public name, the active seconds in the month |
 
 How `sites` is written. Each key is `web3:<name>` or `web25:<name>`, such as `web3:vitalik.eth`
@@ -58,10 +57,11 @@ written down, even on your computer: they exist only inside the `classes.web2` t
 What stays out, said plainly. No page addresses, no paths, no search text, no page titles, no
 bookmarks, no passwords, no file names, no list of the order or the times of your visits, no
 advertising identifier. The site report does name public Web3 and Web2.5 sites and the seconds
-spent on each over a month; it is the closest thing to browsing information we send, so it is
-kept apart from your install ID, as the table says.
+spent on each over a month; it is the closest thing to browsing information we send. It is sent under your install ID, so
+the sites you spend time on are linked to that ID for the month and the month after, and then
+kept only as per-site totals with no ID, as the next section says.
 
-Sent about once a day, and at the start of a month once more to close the previous month's totals. Nothing is sent from a development build, from a private window, or
+Sent when you turn telemetry on, about once a day, when you quit the browser, and at the start of a month once more to close the previous month's totals. Nothing is sent from a development build, from a private window, or
 when `ORIVON_TELEMETRY=off` is set. Nothing is sent before you choose. The browser ignores
 everything the server answers: the server cannot change settings or send commands.
 
@@ -90,9 +90,13 @@ us to delete them.
 
 - **Usage rows**, one per computer and profile and month: 12 months, then only totals that cannot
   be traced to a computer remain (the number of active users, the split by region and class).
-- **Site reports**: a list of sites with seconds, kept for the month, then, one month after the
-  month closes, folded into totals per site for all users together, and the individual reports
-  deleted.
+- **Site reports**: a list of sites with seconds, with your install ID, kept for the month, then,
+  one month after the month closes, folded into totals per site for all users together, and the
+  individual reports deleted. Until then each row carries your install ID; afterwards no ID.
+- **Reports that look forged**: site seconds that a usage report does not account for are not
+  counted. An install ID found sending forged reports is deleted and refused for 12 months, then
+  taken off the list. Our legitimate interest in accurate statistics, Article 6(1)(f), is the
+  basis.
 - **Your IP address and User-Agent**: not written to disk. The web front end that terminates the
   encrypted connection keeps no access log. Your address is held in memory only, to limit each
   address to 30 requests in 10 minutes, and is lost on restart.
@@ -112,10 +116,9 @@ stores and for how long.
 - **See what is sent.** Settings > Privacy shows both messages and a list of what has been sent.
 - **Access** the rows we hold: write to privacy@orivonstack.com with the install ID shown in Settings.
 - **Erase.** Press **Delete my data** in Settings: it asks the server to delete every usage row
-  for your install ID, turns telemetry off, and says whether it worked. You can also write to
-  privacy@orivonstack.com with your install ID. Site reports cannot be erased by install ID,
-  because they never carry it, so we cannot find yours among them; they leave as part of the
-  monthly per-site totals described above.
+  and every site report for your install ID, turns telemetry off, and says whether it worked. You
+  can also write to privacy@orivonstack.com with your install ID. Per-site totals already folded
+  together for all users carry no ID, so yours cannot be found among them.
 - **Withdraw consent** at any time in Settings.
 - **Object, correct, restrict, move.** Write to privacy@orivonstack.com; the data is only counters, so
   correction and moving have little to act on, but we will answer.
