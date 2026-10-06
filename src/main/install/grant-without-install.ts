@@ -25,12 +25,14 @@ import { patternSetFromCapabilities, widensInvisibleLimits } from '../../broker/
 import type { InvisibleLimitFields } from '../../broker/policy/manifest-patterns.js'
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import { isLoopbackHost } from '../../broker/policy/origin.js'
+import { DEV_ETH_NAME } from '../dev/eth-resolver.js'
 
 /**
- * orivon-ports' own convention for a fake name over one of its plain
- * loopback servers -- never real ENS, and this file grants no more trust to
- * it than it already grants a bare port number. Unlike a loopback host, a
- * `.eth` name is a STRING this function does not resolve, so it is NOT
+ * orivon-ports names each plain loopback server it runs after the app's ENS
+ * name (`thelounge.orivonstack.eth`); this file never resolves it through ENS
+ * and grants it no more trust than it already grants a bare port number.
+ * Unlike a loopback host, a `.eth` name is a STRING this function does not
+ * resolve, so it is NOT
  * guaranteed to reach loopback; that is what the `--host-resolver-rules`
  * clauses from orivon-ports' names file are for. What makes it acceptable
  * anyway, all three required together: the `.eth` half is developer-mode
@@ -42,12 +44,10 @@ import { isLoopbackHost } from '../../broker/policy/origin.js'
  * override that misdirects an `.eth` name, and https:// is refused for it
  * outright, since no `.eth` name is ever going to present a certificate that
  * could make that attempt indistinguishable from a real one.
- */
-const ETH_NAME = /^[a-z0-9][a-z0-9-]*\.eth$/
-
-/**
+ *
  * Whether `origin` may take this path: a loopback host over http or https,
- * always, or a plain-http `.eth` name when `devMode` is on. `devMode` is
+ * always, or a plain-http `.eth` name when `devMode` is on. The accepted
+ * shape, one or more labels before `.eth`, is `DEV_ETH_NAME`. `devMode` is
  * ../dev/dev-mode.ts's answer, kept as a parameter so this stays a pure
  * function with no Electron import.
  */
@@ -60,7 +60,7 @@ export function grantableWithoutInstall (origin: string, devMode: boolean): bool
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return false
   if (isLoopbackHost(url.hostname)) return true
-  return devMode && url.protocol === 'http:' && ETH_NAME.test(url.hostname)
+  return devMode && url.protocol === 'http:' && DEV_ETH_NAME.test(url.hostname)
 }
 
 export interface GrantWithoutInstallDeps {

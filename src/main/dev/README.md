@@ -8,7 +8,7 @@ why it is safe; this table is what turns each one on.
 | `dev-grant.ts` | Grants a capability from Node code already in the process (Playwright's `evaluate()`) | Compiled out unless `ORIVON_ENABLE_DEV_GRANT=1` at build time |
 | `dev-display-chooser.ts` | Stands in for the screen-share picker: a spec binds it to pick the first screen, a tab by address or nothing, and reads back what the gate asked | Compiled out unless `ORIVON_ENABLE_DEV_GRANT=1` at build time |
 | `dev-mode.ts` | The one reader of developer mode | `ORIVON_DEV_ORIGINS=1`, set only by `scripts/dev.mjs` |
-| `eth-resolver.ts` | orivon-ports' developer `.eth` names, for [`../verifier/`](../verifier/)'s resolver rules | Developer mode and `ORIVON_ETH_NAMES_FILE` |
+| `eth-resolver.ts` | orivon-ports' developer `.eth` names (one or more labels, so `thelounge.orivonstack.eth` counts; the pattern is shared with `../install/grant-without-install.ts`), for [`../verifier/`](../verifier/)'s resolver rules | Developer mode and `ORIVON_ETH_NAMES_FILE` |
 | `score-levels.ts` | Overrides the displayed Website and Delivery level per origin ([`ADR-0037`](../../../docs/decisions/ADR-0037-a-level-4-site-s-grants-are-shown-without-warnings.md)) | Developer mode and `ORIVON_SCORE_LEVELS_FILE` |
 | `local-ddoc.ts` | Whether a local origin serves a DDOC hash tree ([`ADR-0029`](../../../docs/decisions/ADR-0029-sites-publish-their-bundle-hash-tree.md)) | Developer mode |
 
