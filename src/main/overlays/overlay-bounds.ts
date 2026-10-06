@@ -65,6 +65,7 @@ export function overlayBounds (
   limits: OverlayLimits
 ): Electron.Rectangle {
   if (placement.kind === 'dock') return dockBounds(frame)
+  if (placement.kind === 'pane') return { ...frame.area }
   if (placement.kind === 'area') {
     const width = Math.max(0, Math.min(placement.width, frame.width - EDGE * 2))
     const areaBottom = frame.area.y + frame.area.height

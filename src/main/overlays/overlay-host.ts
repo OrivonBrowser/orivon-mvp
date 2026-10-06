@@ -99,7 +99,8 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
   function boundsFor (slot: Slot): Electron.Rectangle {
     const { width, height } = deps.win.getContentBounds()
     const limits = { min: slot.def.height?.min ?? DEFAULT_HEIGHT.min, max: slot.def.height?.max ?? DEFAULT_HEIGHT.max }
-    const area = slot.def.placement.kind === 'area' ? deps.paneArea?.() ?? deps.area() : deps.area()
+    const { kind } = slot.def.placement
+    const area = kind === 'area' || kind === 'pane' ? deps.paneArea?.() ?? deps.area() : deps.area()
     return overlayBounds(slot.def.placement, slot.anchor, { width, height, area }, slot.height, limits)
   }
 
@@ -148,7 +149,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     mine = createOverlayView({
       dirname: deps.dirname,
       def: slot.def,
-      square: slot.def.placement.kind === 'dock',
+      square: slot.def.placement.kind === 'dock' || slot.def.placement.kind === 'pane',
       port: {
         ready: () => {
           if (!current()) return { shown: false }
@@ -172,8 +173,8 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
         },
         request: (command) => current() ? slot.handler?.request(command) : undefined,
         size: (height) => {
-          // A dock's height is the window's, never its content's.
-          if (!current() || !slot.open || slot.def.placement.kind === 'dock') return
+          // A dock's or a pane's height is the window's, never its content's.
+          if (!current() || !slot.open || slot.def.placement.kind === 'dock' || slot.def.placement.kind === 'pane') return
           slot.height = height
           slot.view?.setBounds(boundsFor(slot))
         },
@@ -292,6 +293,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
   function restack (): void {
     if (disposed) return
     const joined = (layer: OverlayDef['layer']): Slot[] => openOrder.filter((other) => other.def.layer === layer && !other.attachWhenReady)
+    for (const slot of joined('cover')) slot.view?.attach(deps.contentView)
     for (const slot of joined('bar')) slot.view?.attach(deps.contentView)
     for (const panel of adopted) {
       try { panel.restack?.() } catch (error) { console.error('[overlay] restacking an adopted panel failed', error) }
