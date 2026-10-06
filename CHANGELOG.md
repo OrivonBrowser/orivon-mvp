@@ -339,6 +339,8 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Fixed
 
+- **A run from source keeps the sign-ins an installed package made**: its binary encrypts cookies as a package's does
+  (`npm run install:electron`, and the source launcher on a cold start), so cookies in the profile they share are readable by both.
 - **A second click on the side panel's view picker closes its list**: the list lost the focus to the button, closed, and the
   click opened it again.
 - **The first letter typed into the address bar is no longer lost**: the dropdown's page joins the window once loaded, and

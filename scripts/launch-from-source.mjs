@@ -1,8 +1,8 @@
 /**
  * Starts Orivon from this checkout the way a desktop launcher does, and writes the Linux desktop entry that calls it.
  * A start while anything runs this checkout's Electron goes straight to it, and a browser already open takes the
- * request and the start exits; only a start with nothing running builds first. A dock click then never waits for a
- * build, never rewrites `out/` under a running browser (a profile or a private session included), and its switches
+ * request and the start exits; only a start with nothing running sets the binary's fuses as a package has them and
+ * builds first. A dock click then never waits for a build, never rewrites the binary or `out/` under a running browser (a profile or a private session included), and its switches
  * (`--new-window`, `--new-private-window`) reach the browser, which `electron-vite preview` would drop.
  *
  * The entry is `orivon-source.desktop`, never `orivon.desktop`: that name is the installed package's (ADR-0057), and
@@ -19,6 +19,7 @@ import { homedir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isInvokedDirectly } from './cli.mjs'
+import { setCheckoutFuses } from './install-electron.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const SCRIPT = fileURLToPath(import.meta.url)
@@ -87,13 +88,16 @@ export function desktopEntry (node, script, root) {
 
 const entryPath = (env, home, name) => join(dataHome(env, home), 'applications', name)
 
-function run (args) {
+async function run (args) {
   // A launcher's PATH may not reach this Node, which the build's npx needs; and a shell's ELECTRON_RUN_AS_NODE would
   // turn Electron into plain Node.
   const env = { ...process.env, PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}` }
   delete env.ELECTRON_RUN_AS_NODE
   const electron = createRequire(import.meta.url)('electron')
   if (!isRunning(realpathSync(electron))) {
+    // Syncing `main` runs no `npm install`, so a fuse that a later checkout sets is set here, while nothing runs the binary.
+    const fuses = await setCheckoutFuses({ binary: electron, checkoutRoot: ROOT })
+    if (fuses.status === 'refused' || fuses.status === 'failed') console.warn(`[launch-from-source] the Electron binary keeps Electron's own fuses: ${fuses.reason}`)
     const built = spawnSync(process.execPath, [join(ROOT, 'scripts', 'build-ordinary.mjs')], { cwd: ROOT, env, stdio: 'inherit' })
     if (built.status !== 0) process.exit(built.status ?? 1)
   }
@@ -105,7 +109,7 @@ if (isInvokedDirectly(import.meta.url)) {
   const [, , command, ...args] = process.argv
   const path = entryPath(process.env, homedir(), 'orivon-source.desktop')
   if (command === 'run') {
-    run(args)
+    await run(args)
   } else if ((command === 'install' || command === 'remove') && process.platform !== 'linux') {
     console.error('[launch-from-source] the desktop entry is a Linux one')
     process.exit(1)

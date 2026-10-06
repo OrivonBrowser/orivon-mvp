@@ -303,7 +303,9 @@ export async function launchElectron ({
     if (reuseProfile === undefined) await seedNoScoreProvider(userDataDir)
     if (scheme !== undefined) await seedTheme(userDataDir, scheme)
     app = await electron.launch({
-      args: [appPath, `--user-data-dir=${userDataDir}`, ...args],
+      // The binary encrypts cookies (scripts/install-electron.mjs), so Chromium reads its key at every start; on
+      // a desktop's session bus that key is in the person's own keyring, and a locked one asks for it on screen.
+      args: [appPath, `--user-data-dir=${userDataDir}`, '--password-store=basic', ...args],
       env,
       // Playwright's own Linux default: unshift --no-sandbox onto the
       // args unless this is set (confirmed against the installed
