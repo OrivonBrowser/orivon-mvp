@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ClosedStack } from '../../session-restore/closed-stack.js'
 import type { SavedSession, SavedWindow } from '../../session-restore/session-types.js'
+const fuse = vi.hoisted(() => ({ known: undefined as string | undefined, read: vi.fn() }))
+vi.mock('../../local-files/file-fuse.js', () => ({ knownFileProtocolFuse: () => fuse.known, fileProtocolFuse: fuse.read }))
+
 import { OFFER_SHOWN_MS, restoreOverlayFor } from '../restore-overlay.js'
 
 const window = (url: string): SavedWindow => ({ bounds: { x: 10, y: 10, width: 800, height: 600 }, maximized: false, active: 0, tabs: [{ url, title: '', pinned: false }] })
@@ -17,7 +20,7 @@ function setup (previous: SavedSession | null) {
 }
 
 describe('the restore overlay', () => {
-  beforeEach(() => { vi.useFakeTimers() })
+  beforeEach(() => { vi.useFakeTimers(); fuse.known = undefined; fuse.read.mockReset() })
   afterEach(() => { vi.useRealTimers() })
 
   const previous: SavedSession = { version: 1, clean: false, windows: [window('https://a.example/'), window('https://b.example/')] }
@@ -35,6 +38,23 @@ describe('the restore overlay', () => {
     expect(openWindow).toHaveBeenCalledTimes(2)
     expect(openWindow.mock.calls[0]?.[0]).toMatchObject({ place: { x: 10, y: 10, width: 800, height: 600 }, maximized: false })
     expect(closedTabs.size).toBe(0)
+  })
+
+  it('waits for the fuse read before it opens a window that holds a local file, and opens every window once it is in', async () => {
+    let finish: (state: string) => void = () => undefined
+    fuse.read.mockReturnValue(new Promise((resolve) => { finish = resolve }))
+    const { handler, openWindow } = setup({ version: 1, clean: false, windows: [window('file:///home/a/x.html'), window('https://b.example/')] })
+    handler.request({ type: 'restore' })
+    expect(openWindow).not.toHaveBeenCalled()
+    finish('off')
+    await vi.waitFor(() => { expect(openWindow).toHaveBeenCalledTimes(2) })
+  })
+
+  it('does not wait for the fuse when no saved tab is a local file', () => {
+    const { handler, openWindow } = setup(previous)
+    handler.request({ type: 'restore' })
+    expect(fuse.read).not.toHaveBeenCalled()
+    expect(openWindow).toHaveBeenCalledTimes(2)
   })
 
   it('does not open again a window that Reopen already brought back', () => {

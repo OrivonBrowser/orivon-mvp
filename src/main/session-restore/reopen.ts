@@ -2,6 +2,7 @@
 import type { CommandDeps } from '../shortcuts/run-command.js'
 import type { ShellWindow } from '../shell/window-registry.js'
 import type { ClosedEntry, ClosedStack } from './closed-stack.js'
+import { deferUntilFuseKnown, holdsLocalFile } from './fuse-wait.js'
 import { optionsFor } from './restore.js'
 import { openSnapshot } from './open-snapshot.js'
 import { rejoinGroup } from '../tab-groups/groups-runner.js'
@@ -20,6 +21,11 @@ function windowOfEntry (entry: ClosedEntry & { kind: 'tab' }, target: ShellWindo
  */
 export function reopenEntry (entry: ClosedEntry, target: ShellWindow, deps: CommandDeps): ReopenResult {
   const stack = deps.services.closedTabs
+  // A local file opens only after the binary's fuse is read; until then it would lose its place, so the entry waits, still on the stack.
+  const waits = deferUntilFuseKnown(holdsLocalFile(entry.kind === 'window' ? entry.window.tabs : [entry.tab]), () => {
+    if (stack.list().some((held) => held.id === entry.id) && !target.window.isDestroyed()) reopenEntry(entry, target, deps)
+  })
+  if (waits) return 'opened'
   if (entry.kind === 'window') {
     stack.take(entry.id)
     deps.openWindow(optionsFor(entry.window, deps.displays()))

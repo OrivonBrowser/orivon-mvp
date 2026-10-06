@@ -2,6 +2,7 @@
 // focus and goes away by itself. It carries no data, so the page can ask for two things and nothing else.
 import type { OverlayDef } from '../overlays/overlay-types.js'
 import { restoreWindows, takeOffStack } from './startup-open.js'
+import { deferUntilFuseKnown, holdsLocalFile } from '../session-restore/fuse-wait.js'
 import type { Displays } from '../session-restore/restore.js'
 import { usableWindows } from './startup-plan.js'
 
@@ -44,7 +45,8 @@ export function restoreOverlayFor (deps: RestoreDeps): OverlayDef {
           close()
           // Only what Reopen has not already brought back: a second copy of a window is worse than none.
           const windows = takeOffStack(services.closedTabs, usableWindows(services.session.previous()))
-          restoreWindows(windows, (options) => { services.commands.openWindow(options) }, deps.displays())
+          const open = (): void => { restoreWindows(windows, (options) => { services.commands.openWindow(options) }, deps.displays()) }
+          if (!deferUntilFuseKnown(windows.some((window) => holdsLocalFile(window.tabs)), open)) open()
           return undefined
         },
         closed: stop
