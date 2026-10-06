@@ -22,6 +22,7 @@ import { installEthGatewayRedirect } from './eth-gateway-redirect.js'
 import { installPrivacyNet } from '../privacy/install-privacy-net.js'
 import { installReader } from '../reader/install-reader.js'
 import { installLoadErrors } from '../sad-tab/install-load-errors.js'
+import { installLoadingScreen } from '../loading-screen/install-loading-screen.js'
 import { installQuestions } from './question/install-questions.js'
 import { installSidePanel } from '../side-panel/install-side-panel.js'
 import { installContentSettings } from '../site-settings/install-content-settings.js'
@@ -49,6 +50,7 @@ export const SHELL_INSTALLERS: readonly ShellInstaller[] = [
   installFormWatch,
   installLauncherMenu,
   installLoadErrors,
+  installLoadingScreen,
   installMediaGrants,
   installMemorySaver,
   installPrivacyNet,

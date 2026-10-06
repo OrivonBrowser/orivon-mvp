@@ -15,6 +15,7 @@ import { screenshotOverlay, toastOverlay } from '../page-tools/page-overlays.js'
 import { shortcutOverlay } from '../os/shortcut-real.js'
 import { httpsWarningOverlay } from '../privacy/https-warning-overlay.js'
 import { loadErrorOverlay } from '../sad-tab/load-error-overlay.js'
+import { loadingScreenOverlay } from '../loading-screen/loading-screen-overlay.js'
 import { qrOverlay } from '../qr/qr-real.js'
 import { sadTabOverlay } from '../sad-tab/sad-tab-overlay.js'
 import { bookmarkAllTabsOverlay, bookmarkEditOverlay } from '../shell/bookmark-bubble/edit-overlay.js'
@@ -47,6 +48,7 @@ export const OVERLAYS: readonly OverlayDef[] = [
   findOverlay,
   httpsWarningOverlay,
   loadErrorOverlay,
+  loadingScreenOverlay,
   menuOverlay,
   omniboxOverlay,
   passwordFillOverlay,
