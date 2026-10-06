@@ -24,6 +24,7 @@ import { describeEmbedGrant } from './grant-prompt-embed.js'
 import { extensionsOnSiteLine } from './grant-prompt-extensions.js'
 import type { PatternSet } from '../../broker/policy/update.js'
 import { formatOriginForDisplay } from './grant-prompt-origin.js'
+import { homeLine, originHost } from '../../trust/domain-binding.js'
 import { summaryAtLevel } from './grant-level.js'
 import type { ScoreLevel } from '../../trust/website-level.js'
 // Re-exported so every existing caller and test keeps its import path (this
@@ -392,11 +393,12 @@ function describeCapabilitySet (
   // the extensions line, rather than opening it -- see the matching
   // comment on `describeGrantRequest`.
   const extensionsLine = extensionsOnSiteLine(extensionsOnSite)
+  const home = homeLine(originHost(origin), manifest.domain)
   return {
     warning,
     title: displayOrigin,
     message,
-    detail: [claim, ...rowLines, ...(extensionsLine === undefined ? [] : [extensionsLine]), displayOrigin].join('\n')
+    detail: [claim, ...(home === undefined ? [] : [home]), ...rowLines, ...(extensionsLine === undefined ? [] : [extensionsLine]), displayOrigin].join('\n')
   }
 }
 

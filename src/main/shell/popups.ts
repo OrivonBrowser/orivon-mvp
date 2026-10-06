@@ -92,6 +92,8 @@ export interface PopupHost {
   webPreferencesFor: (url: string) => WebPreferences
   /** Whether `url`'s origin holds a grant or is cache-served -- `routePopup`'s own `isApp`. */
   isApp: (url: string) => boolean
+  /** The `.eth` address a gateway address opens as, or undefined: such an open is a new tab or window, which maps it before choosing a session, and never a popup that loads the gateway address in its opener's. Absent in a test with no gateway. */
+  gatewayTarget?: (url: string) => string | undefined
   /** True when the pop-up blocker refuses this open (site-settings/popup-blocker.ts). Absent in a test with no blocker: nothing is refused. */
   popupBlocked?: (details: HandlerDetails, opener: PopupOpener) => boolean
 }
@@ -183,7 +185,7 @@ export function windowOpenHandler (
     // Every browser opens a middle click or a plain ctrl+click behind the current tab.
     const active = details.disposition !== 'background-tab'
     const loadOptions = loadOptionsFor(details)
-    if (routePopup(details, from, host.partitionFor(details.url), host.isApp) === 'new-tab') {
+    if (host.gatewayTarget?.(details.url) !== undefined || routePopup(details, from, host.partitionFor(details.url), host.isApp) === 'new-tab') {
       // routePopup's 'new-tab' returns before disposition is ever weighed (a builtin address, a
       // cross-origin app target, an opener-severing feature) -- but a shift-click still reaches
       // here with the same 'new-window' disposition it gets everywhere else (measured against

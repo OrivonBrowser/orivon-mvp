@@ -1,17 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('../tab-factory.js', () => ({ BLANK_URL: 'about:blank' }))
-vi.mock('../tab-parking.js', () => ({ repartitionView: vi.fn() }))
-vi.mock('../tab-view.js', () => ({
-  appTabFlagChanged: () => false,
-  partitionChanged: () => undefined,
-  EXIT_FULLSCREEN_WORLD_ID: 1001
-}))
+vi.mock('../load-in-tab.js', () => ({ repartitionForTarget: vi.fn(() => false) }))
+vi.mock('../tab-view.js', () => ({ EXIT_FULLSCREEN_WORLD_ID: 1001 }))
 
 const { navigateTab, reloadTab } = await import('../tab-navigation.js')
 type Env = Parameters<typeof navigateTab>[0]
 
-function setup (): { navigate: (input: string) => void, openInternal: ReturnType<typeof vi.fn>, viewSource: ReturnType<typeof vi.fn>, loadURL: ReturnType<typeof vi.fn> } {
+function setup (gatewayTarget?: (url: string) => string | undefined): { navigate: (input: string) => void, openInternal: ReturnType<typeof vi.fn>, viewSource: ReturnType<typeof vi.fn>, loadURL: ReturnType<typeof vi.fn> } {
   const loadURL = vi.fn(async () => {})
   const openInternal = vi.fn()
   const viewSource = vi.fn(() => true)
@@ -20,8 +16,8 @@ function setup (): { navigate: (input: string) => void, openInternal: ReturnType
     liveWebContents: () => undefined,
     openInternal,
     viewSource,
-    broker: () => undefined,
-    searchUrl: (query: string) => `https://search.example/?q=${encodeURIComponent(query)}`
+    searchUrl: (query: string) => `https://search.example/?q=${encodeURIComponent(query)}`,
+    ...(gatewayTarget === undefined ? {} : { gatewayTarget })
   } as unknown as Env
   return { navigate: (input) => { navigateTab(env, 'tab-1', input) }, openInternal, viewSource, loadURL }
 }
@@ -75,6 +71,28 @@ describe('typing into the address bar', () => {
   })
 })
 
+describe('typing a gateway address', () => {
+  const target = (url: string): string | undefined => (url.startsWith('https://site.eth.limo/') ? url.replace('site.eth.limo', 'site.eth') : undefined)
+
+  it('opens the .eth address with its path, query and fragment kept', () => {
+    const { navigate, loadURL } = setup(target)
+    navigate('site.eth.limo/page.html?q=1#f')
+    expect(loadURL).toHaveBeenCalledExactlyOnceWith('https://site.eth/page.html?q=1#f')
+  })
+
+  it('loads the gateway as typed when nothing maps it', () => {
+    const { navigate, loadURL } = setup()
+    navigate('site.eth.limo/page.html?q=1#f')
+    expect(loadURL).toHaveBeenCalledExactlyOnceWith('https://site.eth.limo/page.html?q=1#f')
+  })
+
+  it('leaves a typed address the mapping does not know alone', () => {
+    const { navigate, loadURL } = setup(target)
+    navigate('example.com/x')
+    expect(loadURL).toHaveBeenCalledExactlyOnceWith('https://example.com/x')
+  })
+})
+
 describe('reload while a page is loading', () => {
   function loading (opts: { loadingMain: boolean, inflightUrl?: string, active?: string }): { reload: () => void, wcReload: ReturnType<typeof vi.fn>, loadURL: ReturnType<typeof vi.fn> } {
     const wcReload = vi.fn()
@@ -91,7 +109,6 @@ describe('reload while a page is loading', () => {
       liveWebContents: () => wc,
       openInternal: vi.fn(),
       viewSource: vi.fn(),
-      broker: () => undefined,
       searchUrl: undefined
     } as unknown as Env
     return { reload: () => { reloadTab(env, 'tab-1') }, wcReload, loadURL }

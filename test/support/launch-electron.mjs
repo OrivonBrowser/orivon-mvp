@@ -19,7 +19,7 @@
 // .claude/skills/orivon-electron/SKILL.md for the full incident writeup.
 import { _electron as electron } from 'playwright'
 import { rmSync } from 'node:fs'
-import { mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { attachCollectors, holdEvidence } from './qa-evidence.mjs'
@@ -157,12 +157,26 @@ export function registerLaunchForTeardown (app, { userDataDir } = {}) {
   }
 }
 
-/** Writes `appearance.theme` into the profile's settings file, keeping every value a seed already put there. */
-async function seedTheme (userDataDir, scheme) {
+/** Writes one value into the profile's settings file, keeping every value a seed already put there; `ifAbsent` leaves a value the seed set. */
+async function seedSetting (userDataDir, key, value, { ifAbsent = false } = {}) {
   const file = join(userDataDir, 'settings.json')
   let stored = { version: 1, values: {} }
   try { stored = JSON.parse(await readFile(file, 'utf8')) } catch { /* no file yet */ }
-  await writeFile(file, JSON.stringify({ ...stored, values: { ...stored.values, 'appearance.theme': scheme } }))
+  if (ifAbsent && stored.values?.[key] !== undefined) return
+  await mkdir(userDataDir, { recursive: true })
+  await writeFile(file, JSON.stringify({ ...stored, values: { ...stored.values, [key]: value } }))
+}
+
+async function seedTheme (userDataDir, scheme) {
+  await seedSetting(userDataDir, 'appearance.theme', scheme)
+}
+
+/**
+ * A fresh profile asks no Web3 Score provider unless its seed names one: the default provider is a
+ * network address, and a test run contacts nothing it did not start.
+ */
+async function seedNoScoreProvider (userDataDir) {
+  await seedSetting(userDataDir, 'web3.scoreProvider', '', { ifAbsent: true })
 }
 
 /**
@@ -275,6 +289,7 @@ export async function launchElectron ({
     // Inside the same try as the launch, so a throwing seed is cleaned up by
     // the same catch rather than leaking the directory it was given.
     if (seedProfile !== undefined) await seedProfile(userDataDir)
+    if (reuseProfile === undefined) await seedNoScoreProvider(userDataDir)
     if (scheme !== undefined) await seedTheme(userDataDir, scheme)
     app = await electron.launch({
       args: [appPath, `--user-data-dir=${userDataDir}`, ...args],

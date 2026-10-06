@@ -82,3 +82,9 @@ it cannot load any host the verifier serves.
 **The proxy check runs in main, not in the host** ([`proxy-check.ts`](proxy-check.ts)). It needs
 `app.resolveProxy`, and a `utilityProcess` has no `session` to ask. It runs once per host start,
 per gateway, since a PAC script can answer differently per URL.
+
+**`verifierServesName` says whether a `.eth` name would load in this run.** [`verifier-access.ts`](verifier-access.ts) answers it
+from what `verifier-subsystem.ts` provides: true for a developer-mode name, a test-build fixture, or while the light client can
+start from a usable checkpoint; false with the light client off or unable to start, and before anything has provided it. A
+feature that sends a person to a `.eth` name, such as [`../shell/eth-gateway-rule.ts`](../shell/eth-gateway-rule.ts), asks it
+first, so it never replaces an address that works with one that cannot load.

@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { IDLE_STOP_MS, REFRESH_DELAY_MS, REFRESH_WHEN_OLDER_THAN_SECONDS } from '../host-lifecycle.js'
 import shippedCheckpoint from '../mainnet-checkpoint.json'
-import { MAINNET_GENESIS_SECONDS, SECONDS_PER_SLOT } from '../checkpoint.js'
+import { MAINNET_GENESIS_SECONDS, MAX_CHECKPOINT_AGE_SECONDS, SECONDS_PER_SLOT } from '../checkpoint.js'
 
 const SHIPPED_AT_MS = (MAINNET_GENESIS_SECONDS + shippedCheckpoint.slot * SECONDS_PER_SLOT) * 1000
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -21,6 +21,7 @@ class FakeProcess extends EventEmitter {
 
 const electron = vi.hoisted(() => ({ forks: [] as unknown[], userData: '' }))
 const remove = vi.hoisted(() => vi.fn())
+const devNames = vi.hoisted(() => ({ names: [] as string[] }))
 const registered = vi.hoisted(() => ({ beforeRequest: [] as Array<(details: unknown, current: unknown) => Promise<unknown>>, beforeSendHeaders: 0 }))
 
 vi.mock('electron', () => ({
@@ -40,6 +41,11 @@ vi.mock('../../sessions/web-request-owner.js', () => ({
     onBeforeSendHeaders: () => { registered.beforeSendHeaders += 1; return { remove } },
     onBeforeRequest: (_order: number, _filter: unknown, _matches: unknown, run: (details: unknown, current: unknown) => Promise<unknown>) => { registered.beforeRequest.push(run); return { remove } }
   })
+}))
+
+vi.mock('../../dev/eth-resolver.js', () => ({
+  devEthNames: () => ({ names: devNames.names, rules: '', secureOrigins: '' }),
+  isDevEthName: (host: string) => devNames.names.includes(host)
 }))
 
 const forks = (): FakeProcess[] => electron.forks as FakeProcess[]
@@ -71,8 +77,10 @@ describe('the verifier subsystem', () => {
     remove.mockClear()
     tabs.open = []
     delete process.env['ORIVON_ETH_LIGHT_CLIENT']
+    delete process.env['ORIVON_TEST_ETH_FIXTURES']
+    devNames.names = []
   })
-  afterEach(() => { vi.useRealTimers() })
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
   it('starts no host at launch when the checkpoint is fresh, however long nothing needs it', async () => {
     await launch()
@@ -108,6 +116,39 @@ describe('the verifier subsystem', () => {
     forks()[0]?.listens()
     await vi.advanceTimersByTimeAsync(0)
     expect(done).toBe(true)
+  })
+
+  it('serves a .eth name while the light client can start', async () => {
+    const { access } = await launch()
+    expect(access.verifierServesName('vitalik.eth')).toBe(true)
+  })
+
+  it('stops serving a .eth name once the chosen checkpoint is older than a checkpoint may be, without a restart', async () => {
+    const { access } = await launch()
+    expect(access.verifierServesName('vitalik.eth')).toBe(true)
+    vi.setSystemTime(Date.now() + MAX_CHECKPOINT_AGE_SECONDS * 1000)
+    expect(access.verifierServesName('vitalik.eth')).toBe(false)
+  })
+
+  it('serves no .eth name through the light client when the environment or the person switches it off', async () => {
+    process.env['ORIVON_ETH_LIGHT_CLIENT'] = 'off'
+    const { access } = await launch()
+    expect(access.verifierServesName('vitalik.eth')).toBe(false)
+    delete process.env['ORIVON_ETH_LIGHT_CLIENT']
+    const person = await launch()
+    person.configureVerifier({ lightClientEnabled: () => false, windows: () => [], servedFromCache: () => false })
+    expect(person.access.verifierServesName('vitalik.eth')).toBe(false)
+  })
+
+  it('serves a developer-mode name and a test-build fixture name with the light client off', async () => {
+    process.env['ORIVON_ETH_LIGHT_CLIENT'] = 'off'
+    process.env['ORIVON_TEST_ETH_FIXTURES'] = JSON.stringify({ 'site.eth': 'ipfs://bafy' })
+    vi.stubGlobal('__ORIVON_DEV_GRANT_ENABLED__', true)
+    devNames.names = ['dev.eth']
+    const { access } = await launch()
+    expect(access.verifierServesName('dev.eth')).toBe(true)
+    expect(access.verifierServesName('site.eth')).toBe(true)
+    expect(access.verifierServesName('vitalik.eth')).toBe(false)
   })
 
   it('starts the host when an address bar input names a .eth host, and not for other text', async () => {

@@ -465,6 +465,15 @@ describe('describeInstallConsent', () => {
     )
   })
 
+  it('names the home the app gives when the address is not it, and stays silent at the home itself', () => {
+    const manifest = { ...manifestWith({ net: { https: { connect: ['weather.example:443'] } } }), domain: 'weather.eth' }
+
+    expect(describeInstallConsent(ORIGIN, manifest, ['https.connect']).detail).toBe(
+      'Claims to be "Test app".\nThis app names weather.eth as its home.\n- Connect to weather.example\nhttps://app.example'
+    )
+    expect(describeInstallConsent('https://weather.eth', manifest, ['https.connect']).detail).not.toMatch(/as its home/)
+  })
+
   it('worked example 2: unlimited network next to a narrow filesystem row -- breadth stays visible per row', () => {
     const manifest = manifestWith({ net: { https: { connect: ['*:*'] } }, fs: { quotaBytes: 1024 } })
 

@@ -4,6 +4,7 @@ import type { ApplyResult, SiteDataSnapshot, SiteInfoCommand } from '../main/ipc
 import type { SiteInfo } from '../main/permissions/site-info.js'
 import type { SitePermissionsView } from '../main/site-settings/site-permissions-view.js'
 import type { SiteTrust } from '../main/browsing/site-trust.js'
+import type { ApplyOutcome } from '../main/install/app-updates.js'
 import type { CapabilityKind, Pattern } from '../contracts/index.js'
 
 // Loaded ONLY by the site-info popup's own WebContentsView
@@ -49,6 +50,14 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
     revokePickedPath: async (pickId: string): Promise<SiteInfo | null> => {
       const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'revokePickedPath', pickId } satisfies SiteInfoCommand)
       return (result ?? null) as SiteInfo | null
+    },
+    /** Takes the update offered to this origin; main refuses any `cid` but the pending offer's. */
+    applyUpdate: async (cid: string): Promise<ApplyOutcome> => {
+      const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'applyUpdate', cid } satisfies SiteInfoCommand)
+      return (result ?? { ok: false, reason: 'no answer' }) as ApplyOutcome
+    },
+    openHome: async (): Promise<void> => {
+      await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'openHome' } satisfies SiteInfoCommand)
     },
     clearBrowserData: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'clearBrowserData' } satisfies SiteInfoCommand)

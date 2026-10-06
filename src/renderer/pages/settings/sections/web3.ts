@@ -7,7 +7,7 @@ export const web3: Section = {
     {
       id: 'web3-score-provider',
       label: 'Web3 Score provider',
-      help: 'Where Orivon reads judged Web3 Score levels, such as whether a site\'s code is open source. Any address Orivon opens works: https://, ipfs:// or a .eth name. Orivon asks for a group of scores named by the start of a hash, one of at most 256, so the provider learns the group, never the site, though one that scores only a few sites can guess. Empty asks nobody.',
+      help: 'Where Orivon reads judged Web3 Score levels, such as whether a site\'s code is open source. Any address Orivon opens works: https://, ipfs:// or a .eth name. Orivon asks for a group of scores named by the start of a hash, one of at most 256, so the provider learns the group, never the site, though one that scores only a few sites can guess. Unless you change it, Orivon\'s own provider is used; empty asks nobody.',
       keywords: ['web3 score', 'score', 'provider', 'trustlessity', 'judged', 'level', 'privacy'],
       control: { type: 'text', key: 'web3.scoreProvider', placeholder: 'None', problem: 'Enter an address, like https://example.com/score' }
     },
@@ -37,6 +37,13 @@ export const web3: Section = {
       keywords: ['environment', 'variable'],
       control: { type: 'info', text: () => 'Off for this run' },
       visible: (state) => state.web3.status?.forcedOff === true
+    },
+    {
+      id: 'web3-eth-gateway',
+      label: 'Open .eth.limo addresses as .eth names',
+      help: 'An address like https://vitalik.eth.limo/ goes through a public gateway, which decides what the page is. Orivon opens vitalik.eth itself instead, checked on this computer, and keeps the rest of the address. This applies to .eth.limo and .eth.link pages opened in a tab, never to content inside a page, and not while the light client is off or cannot start. Sign-ins, wallet connections and data a site keeps under its eth.limo address stay there and are not seen at the .eth name.',
+      keywords: ['eth.limo', 'eth.link', 'gateway', 'redirect', 'ens'],
+      control: { type: 'toggle', key: 'web3.ethGatewayRedirect' }
     },
     {
       id: 'web3-state',

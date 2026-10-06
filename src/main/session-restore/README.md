@@ -9,7 +9,7 @@ continue from it. `tab-snapshot.ts` says what is written down about a tab, `clos
 and tabs again (`fillTabs`, `optionsFor`, `seedClosedStack`).
 
 **What it depends on.** `electron` (`session-hook.ts`, and `WebContents` in `tab-snapshot.ts`);
-[`../shell/`](../shell/) (types of tabs, windows and hooks; `tab-lifecycle.ts`);
+[`../shell/`](../shell/) (types of tabs, windows and hooks; `tab-lifecycle.ts`; `eth-gateway-rule.ts`, the rule that maps a saved gateway address);
 [`../storage/`](../storage/) (the debounced write); [`../browsing/omnibox.ts`](../browsing/omnibox.ts)
 (the one rule for which addresses a tab may open); [`../window-state/placement.ts`](../window-state/placement.ts)
 (where a saved window may open on the displays there are now); [`../pages/internal-pages.ts`](../pages/internal-pages.ts).

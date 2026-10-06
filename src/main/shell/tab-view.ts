@@ -13,6 +13,7 @@ import { pageMenuItems } from './page-menu-items.js'
 import { forgetNavigation, leaveAllowed } from './leave-page-prompt.js'
 import { watchPageDialogs } from './page-dialogs.js'
 import { windowOpenHandler } from './popups.js'
+import { repartitionBeforeCommit } from './pre-partition.js'
 import { keepsOpenerSession, openerCutNeeded, popupTargetIsApp } from './popup-opener.js'
 import { DEFAULT_BACKGROUND } from './theme-colors.js'
 import { isDashboardUrl, sheetBackdropOf } from './sheet-backdrop.js'
@@ -25,6 +26,8 @@ import { canViewSource } from '../page-tools/view-source.js'
 import { sitePopups } from '../site-settings/site-popups.js'
 import { refuseHeldNavigation, refuseHeldWindow } from './navigation-hold.js'
 import { loadServedAddresses } from './served-address.js'
+import { gatewayRedirectFor } from './eth-gateway-rule.js'
+import { gatewayLinkTarget, loadInTab } from './load-in-tab.js'
 import { releaseOriginDocument, trackDocumentOrigin } from './tab-origin-liveness.js'
 import { watchLoadFailure } from './load-failure.js'
 import { trackInflightUrl } from './inflight-url.js'
@@ -155,6 +158,7 @@ export function wireView (id: string, record: TabRecord): void {
   }
   wc.on('will-frame-navigate', refuseShellPage)
   wc.on('will-redirect', refuseShellPage)
+  repartitionBeforeCommit(wc, id, record, shown)
   wc.on('did-navigate', (_event, navigatedUrl: string) => {
     // Unconditional, ahead of the `shown()` gate below: a parked or
     // background view's own navigation still changes which origin's
@@ -297,7 +301,12 @@ export function wireView (id: string, record: TabRecord): void {
   wc.on('did-start-navigation', (details) => { if (details.isMainFrame && !details.isSameDocument) forgetNavigation(wc) })
   watchPageDialogs(wc, shown)
   refuseHeldNavigation(wc)
-  loadServedAddresses(wc, () => record.internalPage !== null)
+  const gatewayTarget = (url: string): string | undefined => gatewayRedirectFor(record.host.services?.settings, url)
+  loadServedAddresses(wc, () => record.internalPage !== null, {
+    target: (url) => gatewayLinkTarget(record, url),
+    // The address bar's own test for a load: a link inside a cache-served app's tab lands on the default session.
+    open: (url) => { if (shown()) loadInTab(id, record, url) }
+  })
   wc.on('context-menu', (_event, params) => {
     const { window } = record.host
     if (window === undefined) return
@@ -336,6 +345,7 @@ export function wireView (id: string, record: TabRecord): void {
     partitionFor: (url) => partitionForTarget(url),
     webPreferencesFor: (url) => tabWebPreferences(record.host.preloadPath, undefined, appTabArgsFor(url, record.host.broker)),
     isApp: (url) => popupTargetIsApp(url, record.host.broker),
+    gatewayTarget,
     popupBlocked: (details, from) => refuseHeldWindow(wc, details.url) || sitePopups.check(wc, from.url, details.url)
   }, () => ({ url: wc.getURL(), partition: record.partition })))
   wireTabSignals(id, record)

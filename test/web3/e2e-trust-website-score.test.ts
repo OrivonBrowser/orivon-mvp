@@ -27,6 +27,8 @@ const SCORED_ETH_LEVEL = 4
 const SCORED_IPFS_LEVEL = 3
 const TEST_TIMEOUT_MS = 240_000
 
+const APP_MANIFEST = { orivonApiVersion: 0, id: 'trust.orivon.fixture', name: 'Trust fixture', version: '1.0.0', entry: 'index.html', capabilities: {}, domain: 'bound.eth' }
+
 const page = (title: string): Record<string, string> => ({ 'index.html': `<!doctype html><meta charset="utf-8"><title>${title}</title><body>${title}</body>` })
 
 afterAll(async () => {
@@ -74,10 +76,10 @@ async function requestAndAnswer (app: ElectronApplication, server: AppServer, vi
 }
 
 it('[app:score-lookup-needs-the-trust-grant] [app:score-lookup-answers-the-chosen-provider] a page granted trust.score gets the level the chosen provider judges for ipfs:// and .eth addresses, and a page without the grant is refused', async () => {
-  const gateway = await startFixtureGateway({ ipfsScored: page('ipfs scored'), ethScored: page('eth scored'), ethPlain: page('eth plain'), ipfsPlain: page('ipfs plain') })
+  const gateway = await startFixtureGateway({ ipfsScored: page('ipfs scored'), ethScored: page('eth scored'), ethPlain: page('eth plain'), ipfsPlain: page('ipfs plain'), ethApp: { ...page('eth app'), '.well-known/orivon.json': JSON.stringify(APP_MANIFEST) } })
   const roots = gateway.roots
   const asked: string[] = []
-  const entries = [{ id: `cid:${roots['ipfsScored']!}`, level: SCORED_IPFS_LEVEL }, { id: `cid:${roots['ethScored']!}`, level: SCORED_ETH_LEVEL }]
+  const entries = [{ id: `cid:${roots['ipfsScored']!}`, level: SCORED_IPFS_LEVEL }, { id: `cid:${roots['ethScored']!}`, level: SCORED_ETH_LEVEL }, { id: `cid:${roots['ethApp']!}`, level: SCORED_ETH_LEVEL }]
   const files = new Map<string, string>([['/score/provider.json', JSON.stringify({ standard: 'orivon-web3-score/1', name: PROVIDER_NAME, bucketHexChars: 2 })]])
   for (const { id } of entries) {
     const bucket = bucketOf(id)
@@ -101,7 +103,7 @@ it('[app:score-lookup-needs-the-trust-grant] [app:score-lookup-answers-the-chose
   const manifest = appManifest('trust-score', { secrets: {}, trust: { score: true } })
   const env = {
     ORIVON_DEV_ORIGINS: '1',
-    ORIVON_TEST_ETH_FIXTURES: JSON.stringify({ 'scored.eth': `ipfs://${roots['ethScored']!}`, 'plain.eth': `ipfs://${roots['ethPlain']!}` }),
+    ORIVON_TEST_ETH_FIXTURES: JSON.stringify({ 'scored.eth': `ipfs://${roots['ethScored']!}`, 'plain.eth': `ipfs://${roots['ethPlain']!}`, 'bound.eth': `ipfs://${roots['ethApp']!}`, 'borrowed.eth': `ipfs://${roots['ethApp']!}` }),
     ORIVON_TEST_IPFS_GATEWAYS: gateway.url
   }
   const verifierListening = async (app: ElectronApplication): Promise<boolean> => await waitFor(async () => await app.evaluate(() => {
@@ -149,7 +151,9 @@ it('[app:score-lookup-needs-the-trust-grant] [app:score-lookup-answers-the-chose
           'plain.eth',
           'https://example.com/',
           'not an address',
-          42
+          42,
+          'bound.eth',
+          'https://borrowed.eth/'
         ])
         const level = (index: number): number | null | undefined => answers[index]?.value?.level
         check(`[app:score-lookup-answers-the-chosen-provider] an ipfs:// address answers the judged level and the provider's name (${JSON.stringify(answers[0])})`, answers[0]?.value?.provider === PROVIDER_NAME && level(0) === SCORED_IPFS_LEVEL)
@@ -159,6 +163,9 @@ it('[app:score-lookup-needs-the-trust-grant] [app:score-lookup-answers-the-chose
         check(`a web address answers level null (${JSON.stringify(answers[5])})`, answers[5]?.value?.provider === PROVIDER_NAME && level(5) === null)
         check(`text that is no address answers level null (${JSON.stringify(answers[6])})`, answers[6]?.value?.provider === PROVIDER_NAME && level(6) === null)
         check(`a value that is not a string is refused: invalid (${JSON.stringify(answers[7])})`, answers[7]?.ok === false && answers[7].code === 'invalid')
+
+        check(`a name the judged content's manifest names as its home answers the judged level (${JSON.stringify(answers[8])})`, answers[8]?.value?.provider === PROVIDER_NAME && level(8) === SCORED_ETH_LEVEL)
+        check(`a name that points at the same content but is not that home answers level null: the level is not borrowed (${JSON.stringify(answers[9])})`, answers[9]?.value?.provider === PROVIDER_NAME && level(9) === null)
 
         const bucketRequests = /^\/score\/(provider\.json|website\/[0-9a-f]{2}\.json)$/
         const named = Object.values(roots).flatMap((root) => [root, root.slice(-12)])

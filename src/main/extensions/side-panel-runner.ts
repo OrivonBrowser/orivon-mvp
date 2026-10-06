@@ -22,6 +22,7 @@ import { createSidePanelApi, isOrdinaryTab } from './side-panel-api.js'
 import type { SidePanelDriver } from './side-panel-api.js'
 import { createBehaviorStore } from './side-panel-behavior-file.js'
 import { sidePanelGestures } from './side-panel-gesture.js'
+import { sidePanelTabClosing } from './side-panel-tab-closing.js'
 import { createSidePanelOptions } from './side-panel-options.js'
 import { registerSidePanelPage } from './side-panel-pages.js'
 
@@ -137,9 +138,7 @@ function makeRunner (ctx: ExtensionApiContext): SidePanelDriver {
         const found = shell.windows.findTab(contents)
         if (found !== null) driver.sync(found.window)
       },
-      tabClosing: (info) => {
-        if (info.reason !== 'moved') driver.tabClosed(info.record.view.webContents.id)
-      }
+      ...sidePanelTabClosing(driver)
     })
     driver.republish()
   })

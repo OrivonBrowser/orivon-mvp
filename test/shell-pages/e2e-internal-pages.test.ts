@@ -60,6 +60,7 @@ it('opens Settings at its first section, applies a change at once and keeps it, 
     expect(await page.locator('.nav-item').allTextContents()).toEqual([
       'Appearance',
       'Search',
+      'Default browser',
       'On start-up',
       'Page content',
       'Accessibility',

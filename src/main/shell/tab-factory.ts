@@ -13,6 +13,7 @@ import { INTERNAL_PARTITION } from '../pages/internal-pages.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
 import type { InternalPageRegistry } from '../pages/internal-registry.js'
 import { guardInternalView } from '../pages/internal-tab.js'
+import { gatewayRedirectFor } from './eth-gateway-rule.js'
 import type { TabRecord, TabViewHost } from './tab-types.js'
 import { appTabArgsFor, makeTabView, partitionForTarget, wireView } from './tab-view.js'
 import { paintBacking } from './tab-backing.js'
@@ -73,6 +74,11 @@ export class TabFactory {
     }
   }
 
+  /** `target`, or the `.eth` address it opens as: decided before the view exists, so the partition, the fragment and the address bar are those of the name from the first load. */
+  private opensAs (target: string): string {
+    return gatewayRedirectFor(this.host.services?.settings, target) ?? target
+  }
+
   /** A website or an app, or the new-tab page when `url` is undefined. `target` is what to load. */
   content (url?: string): BuiltTab & { readonly target: string } {
     // Computed BEFORE the view exists: preload is fixed at
@@ -85,7 +91,7 @@ export class TabFactory {
     // through sanitizeDirectUrl below and gets the ORDINARY preload
     // regardless of what URL it resolves to.
     const isDashboard = url === undefined
-    const target = isDashboard ? this.dashboardUrl : (sanitizeDirectUrl(url) ?? BLANK_URL)
+    const target = isDashboard ? this.dashboardUrl : this.opensAs(sanitizeDirectUrl(url) ?? BLANK_URL)
 
     // Excluded even though the dashboard's own URL is occasionally a real
     // http(s) address (electron-vite's dev server) -- `partitionForTarget`
@@ -128,7 +134,8 @@ export class TabFactory {
    * policy (today: the extension host's extension-url-policy.ts) -- same
    * session/app-tab handling as content(), without its sanitizeDirectUrl
    * gate, which refuses chrome-extension: outright. */
-  trusted (target: string): BuiltTab & { readonly target: string } {
+  trusted (requested: string): BuiltTab & { readonly target: string } {
+    const target = this.opensAs(requested)
     const partition = partitionForTarget(target)
     const view = makeTabView(this.appPreload, partition, appTabArgsFor(target, this.broker()))
     const id = makeTabId()

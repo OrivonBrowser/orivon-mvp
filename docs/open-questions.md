@@ -929,10 +929,11 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A236: The update check sees a release only when the manifest changes **[OWNER]**
+### A236: The update check at a plain host sees a release only when the manifest changes **[OWNER]**
 
-- **Question:** A 304 ends the conditional check (d-0088), so files shipped under a byte-identical
-  manifest are never picked up. Is "bump `version` every release" a publisher requirement?
+- **Question:** At an https host a 304 ends the conditional check (d-0088), so files shipped under a
+  byte-identical manifest are never picked up there. Is "bump `version` every release" a publisher
+  requirement? (At a name the bundle hash is compared, `ADR-0056`.)
 - **Why it matters:** A publisher who does not change the manifest never ships an update.
 - **Options:** state the requirement; a daily unconditional check; compare the published hash-tree
   root (ADR-0029) with the pin, a cheaper backstop.
@@ -1342,7 +1343,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   the joined path refuses in-root symlinks the check allows); wait for an atomic beneath-root open.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
-
 
 ### A289: What Orivon does for extensions when it cannot run sandboxed **[RESEARCH]**
 
@@ -2054,6 +2054,58 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Why it matters:** the toolbar click of the extension with the most users now opens a panel instead of its popup.
 - **Options:** run `test/extensions/e2e-extensions-real.test.ts` with `ORIVON_REAL_EXTENSIONS_DIR` set before merging (rec.); do nothing until a report comes in.
 - **Who decides:** research first
+- **Blocks:** nothing
+
+### A388: A gateway address opened as a .eth name skips what the gateway or an extension would have done **[OWNER]**
+
+- **Question:** With "Open .eth.limo addresses as .eth names" on, a name that points at Swarm or Arweave, has not
+  synced, or cannot be reached shows Orivon's error page, and a typed gateway address cannot be opened as it is. The
+  redirect also runs before extensions' request handlers, so a block an extension holds for an `eth.limo` host never fires.
+- **Why it matters:** the gateway would have loaded some of these pages; the only way out is to turn the setting off.
+- **Options:** keep it as it is, both limits named on the compatibility pages (rec.); offer "Open through eth.limo" once
+  on the error page, which needs a decision on what a gateway-served page may do here; run the redirect after
+  extensions' request handlers, and map no address before a request while one with a block on the host is loaded.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A389: Is "an evaluation for the exact CID" the right bar for a verified update? **[OWNER]**
+
+- **Question:** An update at a name is verified when the chosen provider has an evaluation for exactly
+  the new CID (any level, no lower than the pinned one's), the version is newer, the manifest's
+  `domain` is the origin's host and the pointers verify (`ADR-0056`). Level 3 or more, or no
+  default provider, would change that.
+- **Why it matters:** the bar decides whether a person is asked "switch?" or told to Trust & Force.
+- **Options:** keep it (rec.: it is what a provider can claim today, and means evaluated, not safe);
+  require Level 3 (fails FreeTube, judged Level 2); revisit when the Security score has levels.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A390: Plain `.eth` websites follow their name with no prompt **[AI-REC]**
+
+- **Question:** Only an installed app is held at its pin and asked about; a `.eth` site that is not an
+  app follows the name live, as a website does. Should a website be offered the same choice?
+- **Why it matters:** a name owner can change what a bookmarked `.eth` website shows, as on any site.
+- **Options:** keep it (rec.: a website has no grants or data to protect and no version to compare);
+  hold websites at a pin too, which breaks every site whose content changes daily.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A391: One key holds the provider and Explore's name **[OWNER]**
+
+- **Question:** The official provider and the Explore catalogue publish from the same server, so one
+  compromise could pass an app's update as verified under its own name (`security-model.md` T81).
+- **Why it matters:** "verified" is only as independent as the provider is from the publisher.
+- **Options:** a separate provider key held elsewhere (rec.); accept it while the apps are the
+  project's own; a second provider the person adds.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A395: A page's score lookup reads a judged name's manifest in the name's own partition **[AI-REC]**
+
+- **Question:** `orivon.trust.websiteScore` reads the manifest of a name the provider judged Level 3 or 4 through the loader, whose requests the verifier serves from that name's own partition, not the caller's.
+- **Why it matters:** a page that times the read learns whether the person has that name warm, the leak A256 closed for the name's resolution (`ADR-0058`). The stamp strips any partition a main-process request sets.
+- **Options:** a verifier request kind that reads one file in a named partition (rec.); a session of its own for these reads; accept it, the read happens only for judged names and at most 128 a burst.
+- **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
 ### A394: Can the file-protocol fuse flip run on macOS and Windows? **[RESEARCH]**

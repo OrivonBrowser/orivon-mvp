@@ -36,6 +36,14 @@ public surface of `src/contracts/` (named `contracts/<file>`).
   and, after `npm install` or `npm run install:electron`, in a Linux checkout's binary: a `file:` page gets no more reach
   than a web page. A website cannot load, frame or navigate to a page of the shell. A copied tab, or one that becomes an
   app, no longer keeps the new-tab page behind it.
+- **A `<name>.eth.limo` or `<name>.eth.link` address opens as `<name>.eth`**, checked on this computer, with its path, query and
+  fragment kept; Settings > Web3 turns it off. Data a site keeps under its gateway address stays there and is not seen at
+  the `.eth` name.
+- **An installed app at a name moves to new content only when you accept.** Orivon notices a moved name on a visit and in
+  an open tab, fetches only the new manifest, and asks "switch to the new version?" when a Web3 Score provider has judged
+  it; otherwise it says why and the key icon offers Trust & Force update. The version you run keeps running meanwhile.
+- **A manifest `domain` field** names the one ENS name or DNS host an app calls home. A provider's judged level shows
+  only at that name; elsewhere the page shows the observed level and says why, and the install question names the home.
 - **Default browser, asked properly**: Settings > Default browser, an unticked box on the welcome screen and a question
   a week after the last ask (in the default profile, "Don't ask again" from the third week). Only an installed package
   registers; a source run and an AppImage say why not. Windows and macOS packaging is written and unbuilt.
@@ -59,6 +67,8 @@ public surface of `src/contracts/` (named `contracts/<file>`).
   end-to-end spec whose test is titled with the row's id, so a change that breaks an app fails a test that says which.
 
 - **`npm run perf:probe`** measures each process's CPU and memory through fixed scenes, to compare a change before and after.
+- **Profiles with no Web3 Score provider saved read Orivon's own** (Settings > Web3), existing ones too: a field cleared before
+  this change was never saved, so set it empty again to ask nobody. A provider a person saved keeps.
 - **Web3 Score providers** (Settings > Web3): judged Levels 3 and 4, with a site's operations and connections, from any
   address Orivon opens, asked by hash bucket so a request names a group of sites, not the site. Build one with web3-score-manager.
 - **Tabs can be grouped**: name and colour a group from the tab menu, collapse it to one chip, drag it, move it to its own

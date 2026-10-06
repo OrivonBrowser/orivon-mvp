@@ -94,6 +94,11 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, dirnam
       },
       isPrivate: services.isPrivate
     }),
+    // "Open <the home an app names>": a new tab at that name.
+    (domain) => {
+      siteInfo.close()
+      tabs.createTab(`https://${domain}/`)
+    },
     dirname
   )
 
