@@ -21,6 +21,7 @@ window-hook types, the question panel in [`../shell/question/`](../shell/questio
 waits for the welcome screen), [`../overlays/`](../overlays/)
 (`OverlayDef`), [`../startup/restore-overlay.ts`](../startup/restore-overlay.ts) (the ask waits for the restore bar to
 go), [`../page-tools/toast.ts`](../page-tools/toast.ts), [`../launch/launch-context.ts`](../launch/launch-context.ts)
+[`../launch/local-operand.ts`](../launch/local-operand.ts) (which operand of an open-file event is a local file)
 and [`../launch/peer-spawn.ts`](../launch/peer-spawn.ts) (the command that starts Orivon again, one home for it),
 [`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts) (the ask's file).
 

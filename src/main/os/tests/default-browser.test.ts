@@ -37,7 +37,7 @@ function host (over: { platform?: NodeJS.Platform, launcher?: Launcher, register
     isDefault: vi.fn(async () => registered.value),
     setDefault: vi.fn(() => { registered.value = true; return true }),
     openSettings: vi.fn(async () => {}),
-    setDocumentDefault: vi.fn(() => true)
+    setDocumentDefault: vi.fn(() => Promise.resolve(true))
   }
 }
 

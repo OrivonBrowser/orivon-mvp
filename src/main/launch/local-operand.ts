@@ -21,12 +21,16 @@ export function pathKind (path: string): PathKind {
 /** Two or more letters then a colon: a scheme. One letter is a Windows drive. */
 const SCHEME = /^[A-Za-z][A-Za-z0-9+.-]+:/
 
+/** A Windows path on a drive. A network share and the device namespaces are no local file, and statting one is already a round trip to that host. */
+const DRIVE_PATH = /^[A-Za-z]:[\\/]/
+
 /** The `file:` URL `operand` names, or null: a URI with a host, a path that is not there and every other scheme are not files. */
 export function localOperandUrl (operand: string, cwd: string, kindOf: (path: string) => PathKind = pathKind, platform: NodeJS.Platform = process.platform): string | null {
   if (/^file:/i.test(operand)) return sanitizeLocalFileUrl(operand)
   if (SCHEME.test(operand) || operand === '') return null
   const path = platform === 'win32' ? win32 : posix
   const absolute = path.resolve(cwd, operand)
+  if (platform === 'win32' && !DRIVE_PATH.test(absolute)) return null
   if (kindOf(absolute) === undefined) return null
   return sanitizeLocalFileUrl(pathToFileURL(absolute, { windows: platform === 'win32' }).href)
 }

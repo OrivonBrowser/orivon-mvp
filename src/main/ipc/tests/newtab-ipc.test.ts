@@ -39,6 +39,12 @@ describe('registerNewTabIpc -- isFromDashboard', () => {
     expect(load).toHaveBeenCalled()
   })
 
+  it('leaves a bookmarked local file off the tiles, which can only navigate a web address', async () => {
+    const file: Bookmark = { url: 'file:///home/a/x.html', title: 'X', favicon: null }
+    bookmarks.getAll = vi.fn(() => [file, BOOKMARK])
+    expect(await dispatch(DASHBOARD_URL, true)).toEqual([BOOKMARK])
+  })
+
   it('refuses a subframe at the dashboard\'s own address', async () => {
     expect(await dispatch(DASHBOARD_URL, false)).toBeUndefined()
   })

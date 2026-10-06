@@ -84,12 +84,23 @@ describe('urlsFromArgv', () => {
 })
 
 describe('withoutAddresses', () => {
-  it('drops the addresses and the launcher actions, so a restart opens none of them a second time, and keeps the rest', () => {
-    expect(withoutAddresses(['/usr/bin/orivon', '--new-window', '--new-private-window', '--no-sandbox', 'https://a.example/']))
-      .toEqual(['/usr/bin/orivon', '--no-sandbox'])
+  it('drops the addresses and the launcher actions, so a restart opens none of them a second time, and keeps the switches', () => {
+    expect(withoutAddresses(['--new-window', '--new-private-window', '--no-sandbox', 'https://a.example/']))
+      .toEqual(['--no-sandbox'])
   })
 
   it('drops a file: URI too', () => {
-    expect(withoutAddresses(['/usr/bin/orivon', 'file:///tmp/a.html', '--no-sandbox'])).toEqual(['/usr/bin/orivon', '--no-sandbox'])
+    expect(withoutAddresses(['file:///tmp/a.html', '--no-sandbox'])).toEqual(['--no-sandbox'])
+  })
+
+  it('drops a path operand, which opens as a local file, and everything after the first --', () => {
+    expect(withoutAddresses(['--no-sandbox', '/home/a/page.html', 'notes.html', '--', '/home/a/other.html', '--orivon-private']))
+      .toEqual(['--no-sandbox'])
+    expect(withoutAddresses(['--orivon-profile=a1b2c3d4e5f6', '--', 'C:\\Users\\a\\x.html'])).toEqual(['--orivon-profile=a1b2c3d4e5f6'])
+  })
+
+  it('keeps the app path of a run from source, and only the first operand is it', () => {
+    expect(withoutAddresses(['.', '--no-sandbox', '/home/a/page.html'], false)).toEqual(['.', '--no-sandbox'])
+    expect(withoutAddresses(['--no-sandbox', '/repo', '/home/a/page.html'], false)).toEqual(['--no-sandbox', '/repo'])
   })
 })

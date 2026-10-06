@@ -152,7 +152,6 @@ function boot (runtime: Runtime): void {
     app.on('second-instance', (_event, argv, _workingDirectory, data) => { queueLaunch(readLaunchRequest(data, argv)) })
     // macOS hands a clicked link to the running app as an event; it joins the same queue.
     app.on('open-url', (event, url) => { handleOpenUrl(event, url, (urls) => { queueLaunch({ kind: 'open', urls }) }) })
-    // The app declares no document types, so a file handed to it (a drop on the dock icon) is not one to open.
     // A document the system hands to the browser (the file manager's Open with, a drop on the dock icon) opens as the command line's would.
     app.on('open-file', (event, path) => { handleOpenFile(event, path, (urls) => { queueLaunch({ kind: 'open', urls }) }) })
   }

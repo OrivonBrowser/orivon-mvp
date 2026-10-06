@@ -1,6 +1,7 @@
 import type { SiteInfo, SiteCapabilityRow } from '../../main/permissions/site-info.js'
 import type { SiteTrust } from '../../main/browsing/site-trust.js'
 import { createSwitch } from './switch.js'
+import { plainPath } from '../pages/shared/plain-path.js'
 import { chevronIcon } from './icons.js'
 import { paintShield, web3Shield } from '../web3-shield.js'
 import { grantIcon } from '../grant-icons.js'
@@ -71,10 +72,10 @@ function row (kind: Parameters<typeof grantIcon>[0], message: string, warning: b
   return li
 }
 
-/** The path a local-file key names, as a person reads it: no scheme, no percent codes. */
+/** The path a local-file key names, as a person reads it: no scheme, no percent codes, no bidirectional control. */
 function pathOfKey (key: string): string {
   try {
-    return decodeURIComponent(new URL(key).pathname)
+    return plainPath(decodeURIComponent(new URL(key).pathname))
   } catch {
     return key
   }

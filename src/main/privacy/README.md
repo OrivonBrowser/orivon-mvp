@@ -24,6 +24,7 @@ page may ask about it. The site-info popover uses the first two through
 (`tab-slots.ts`, the overlay types), [`../../protocols/`](../../protocols/) (which names the verifier routes) and [`../dev/eth-resolver.ts`](../dev/eth-resolver.ts)
 (this run's developer names);
 [`../history/`](../history/) and [`../zoom/`](../zoom/) (what is forgotten through them);
+[`../../broker/grants/origin-hash.ts`](../../broker/grants/origin-hash.ts) (`local-files-domain.ts` names a file by its hash);
 [`../pages/internal-ipc.ts`](../pages/internal-ipc.ts) (the shape of a page's domain).
 
 **What it must never import.** [`../shell/`](../shell/), except `install-privacy-net.ts`, which takes

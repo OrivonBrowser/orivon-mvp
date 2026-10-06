@@ -225,11 +225,10 @@ export function registerShellIpc (
         bookmarks.remove(command.url)
         return
       case 'openBookmark': {
-        // Open in the active tab, like typing the URL into the address
-        // bar -- navigate() already runs it through the same omnibox
-        // parsing, and a bookmark URL is always absolute http(s), so it
-        // resolves to `kind: 'url'` unchanged, never a search fallback.
-        // No active tab (the last one just closed) creates a fresh one
+        // Like typing the address into the bar: a bookmarked local file opens
+        // in a tab of its own, anything else is the active tab's navigation
+        // (navigateFromBrowser), and a bookmark URL is always absolute, so it
+        // is never a search fallback. No active tab (the last one just closed) creates a fresh one
         // instead of silently doing nothing.
         const { activeTabId } = tabs.getState()
         if (activeTabId === null) openFromBrowser(tabs, command.url)

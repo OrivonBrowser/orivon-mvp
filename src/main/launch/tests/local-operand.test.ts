@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { addressesFromOperands, localOperandUrl } from '../local-operand.js'
 
 const present = (...paths: string[]) => (path: string) => paths.includes(path) ? 'file' as const : path === '/work/docs' ? 'directory' as const : undefined
@@ -32,6 +32,14 @@ describe('localOperandUrl', () => {
 
   it('takes a Windows drive path', () => {
     expect(localOperandUrl('C:\\Users\\u\\a.html', 'D:\\work', (path) => path === 'C:\\Users\\u\\a.html' ? 'file' : undefined, 'win32')).toBe('file:///C:/Users/u/a.html')
+  })
+
+  it('refuses a network share and a device path on Windows without asking the disk', () => {
+    const kindOf = vi.fn(() => 'file' as const)
+    for (const operand of ['\\\\host\\share\\a.html', '\\\\?\\C:\\a.html', '\\\\.\\C:\\a.html']) {
+      expect(localOperandUrl(operand, 'C:\\work', kindOf, 'win32')).toBeNull()
+    }
+    expect(kindOf).not.toHaveBeenCalled()
   })
 })
 

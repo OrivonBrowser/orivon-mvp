@@ -16,7 +16,8 @@ Private and Settings pages may ask of it.
 
 **What it depends on.** `node:fs`, `node:os`, `node:child_process`;
 [`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts) (`profile-store.ts`'s
-own writes); `electron` only as a type (`start-launch.ts` is handed the `app`).
+own writes); [`../browsing/local-file-input.ts`](../browsing/local-file-input.ts) (which text names a local file:
+`launch-request.ts` and `local-operand.ts`); `electron` only as a type (`start-launch.ts` is handed the `app`).
 [`../shell/`](../shell/) is never imported.
 
 **What it must never import.** [`../shell/tabs.ts`](../shell/tabs.ts) or any store that reads the data

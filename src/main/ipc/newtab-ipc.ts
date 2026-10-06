@@ -1,4 +1,4 @@
-// The new-tab dashboard's IPC surface: read-only bookmark access, and
+// The new-tab dashboard's IPC surface: read-only access to the bookmarks that are web addresses, and
 // navigating the CALLING tab -- nothing else. Owner override, 2026-08-28
 // (scope.md; the dashboard replaces about:blank for a fresh tab).
 //
@@ -48,7 +48,8 @@ export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry
         case 'getBookmarks':
           // The first tab of a launch asks before the file is read.
           await bookmarks.load()
-          return bookmarks.getAll().slice(0, DASHBOARD_TILES)
+          // A tile navigates its own tab, and a tab's navigation never opens a local file.
+          return bookmarks.getAll().filter((bookmark) => !/^file:/i.test(bookmark.url)).slice(0, DASHBOARD_TILES)
         case 'navigate': {
           // Resolved from the event's OWN sender, in whichever window holds
           // it, never a tab id the page could simply claim -- a dashboard

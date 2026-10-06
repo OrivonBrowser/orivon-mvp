@@ -7,6 +7,10 @@ describe('localFileLine', () => {
     expect(localFileLine({ id: 'a', path: '/home/u/notes/app.html', missing: true })).toMatchObject({ missing: true })
     expect(localFileLine({ id: 'a', path: 'C:\\Users\\u\\app.html', missing: false })).toEqual({ name: 'app.html', where: 'C:\\Users\\u', missing: false })
   })
+
+  it('leaves out a bidirectional override in the name, so it cannot read as another extension', () => {
+    expect(localFileLine({ id: 'a', path: '/home/u/photo\u202Egpj.html', missing: false }).name).toBe('photogpj.html')
+  })
 })
 
 describe('isRows', () => {

@@ -12,7 +12,7 @@ export interface StartupInput {
   readonly mode: StartupMode
   /** `startup.pages`: one address per line. */
   readonly pages: string
-  /** The http(s) addresses the process was started with. */
+  /** The web addresses and local files the process was started with. */
   readonly argvUrls: readonly string[]
   readonly previous: SavedSession | null
   readonly isPrivate: boolean

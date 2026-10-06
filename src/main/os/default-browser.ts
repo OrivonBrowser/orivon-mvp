@@ -36,7 +36,7 @@ export interface DefaultBrowserHost extends DefaultBrowserFacts {
   isDefault: (protocol: WebProtocol) => Promise<boolean>
   setDefault: (protocol: WebProtocol) => boolean
   /** Linux: makes Orivon the program that opens `mimeType`. Absent where the system asks the person instead. */
-  setDocumentDefault?: (mimeType: string) => boolean
+  setDocumentDefault?: (mimeType: string) => Promise<boolean>
   /** Windows lets only the person choose a default browser: this opens the page where they do. */
   openSettings: () => Promise<void>
 }
@@ -88,7 +88,7 @@ export async function makeDefaultBrowser (host: DefaultBrowserHost, wait: (ms: n
   if (host.platform === 'linux') {
     for (const type of LINUX_DOCUMENT_TYPES) {
       try {
-        host.setDocumentDefault?.(type)
+        await host.setDocumentDefault?.(type)
       } catch (error) {
         console.error(`[os] could not register for ${type}`, error)
       }
