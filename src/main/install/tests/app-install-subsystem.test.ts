@@ -54,6 +54,15 @@ describe('appInstallSubsystem', () => {
     expect(ctx.installApp).toBeTypeOf('function')
   })
 
+  it('answers a hint from a local file with a refusal while no record of local files exists, and never with an install', async () => {
+    const ctx = createSubsystemContext(fakeApp)
+    publishBroker(ctx, stubBroker([]) as unknown as Broker)
+    publishLoader(ctx, fakeLoader)
+    await appInstallSubsystem.afterReady?.(ctx)
+
+    expect(await ctx.installApp?.('file:///home/u/notes/app.html', 'file:///home/u/notes/orivon.json')).toMatchObject({ outcome: 'rejected' })
+  })
+
   it('is not marked critical -- an unwired install path must never take the real browser down', () => {
     expect(appInstallSubsystem.critical).not.toBe(true)
   })

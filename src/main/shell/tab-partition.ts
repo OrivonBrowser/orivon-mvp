@@ -101,7 +101,7 @@ export function partitionAfterFileBlock (
  * '--orivon-newtab-url=' already made. */
 export function appTabArgsFor (target: string, broker: Broker | undefined): string[] | undefined {
   if (broker === undefined) return undefined
-  const origin = originFromUrl(target)
+  const origin = isolationKeyFromUrl(target)
   if (origin === null) return undefined
   return broker.app.isRegisteredSync(origin) ? [APP_TAB_FLAG] : undefined
 }
@@ -113,7 +113,7 @@ export function appTabArgsFor (target: string, broker: Broker | undefined): stri
  * partition ever changing. Undefined for a target with no derivable origin, same as
  * `partitionChanged` -- a rejected navigation must not read as a flag change either. */
 export function appTabFlagChanged (target: string, view: WebContentsView, broker: Broker | undefined): boolean {
-  if (originFromUrl(target) === null) return false
+  if (isolationKeyFromUrl(target) === null) return false
   return (appTabArgsFor(target, broker) !== undefined) !== appTabViews.has(view)
 }
 
