@@ -16,16 +16,19 @@ interface ShareOptions {
   readonly handOff: string
 }
 
-type ShareResult = { readonly ok: true, readonly nonce: string } | { readonly ok: false, readonly name: string, readonly message: string }
+/** `share` is the id the main world and the DOM hand-off name a share by; the ticket's nonce never leaves this world. */
+type ShareResult = { readonly ok: true, readonly share: string } | { readonly ok: false, readonly name: string, readonly message: string }
 
 /** The tracks one share handed to the page, originals and clones: a share has ended when all of them have. */
 interface ShareRecord {
   readonly nonce: string
+  readonly id: string
   readonly tracks: Set<MediaStreamTrack>
 }
 
 const POLL_MS = 1000
 const records = new Map<string, ShareRecord>()
+const recordsById = new Map<string, ShareRecord>()
 let poll: ReturnType<typeof setInterval> | undefined
 
 const refusal = (name: string, message: string): ShareResult => ({ ok: false, name, message })
@@ -39,6 +42,7 @@ function ended (record: ShareRecord): boolean {
 function settle (record: ShareRecord): void {
   if (!records.has(record.nonce) || !ended(record)) return
   records.delete(record.nonce)
+  recordsById.delete(record.id)
   if (records.size === 0 && poll !== undefined) { clearInterval(poll); poll = undefined }
   ipcRenderer.send(DISPLAY_CAPTURE_CHANNEL, { type: 'tracks-ended', nonce: record.nonce })
 }
@@ -64,13 +68,19 @@ function errorOf (error: unknown): ShareResult {
   return refusal(name, message)
 }
 
+/** A random name for a share that the page may see, so that what the page can read says nothing of the ticket. */
+function randomName (prefix: string): string {
+  const words = crypto.getRandomValues(new Uint32Array(4))
+  return `${prefix}-${Array.from(words, (word) => word.toString(36)).join('')}`
+}
+
 /** Hands the stream to the main world through the DOM: an element carries it, and an event the main world named announces it. */
-function handOver (stream: MediaStream, event: string, nonce: string): boolean {
+function handOver (stream: MediaStream, event: string, id: string): boolean {
   const root = document.documentElement
   if (root === null) return false
   const holder = document.createElement('video')
   holder.srcObject = stream
-  holder.setAttribute('data-orivon-share', nonce)
+  holder.setAttribute('data-orivon-share', id)
   root.append(holder)
   holder.dispatchEvent(new Event(event, { bubbles: true }))
   holder.remove()
@@ -115,22 +125,23 @@ async function share (options: ShareOptions): Promise<ShareResult> {
     ipcRenderer.send(DISPLAY_CAPTURE_CHANNEL, { type: 'tracks-ended', nonce })
     return errorOf(error)
   }
-  const record: ShareRecord = { nonce, tracks: new Set() }
+  const record: ShareRecord = { nonce, id: randomName('orivon-id'), tracks: new Set() }
   records.set(nonce, record)
+  recordsById.set(record.id, record)
   for (const track of stream.getTracks()) keep(record, track)
-  if (!handOver(stream, options.handOff, nonce)) {
+  if (!handOver(stream, options.handOff, record.id)) {
     for (const track of stream.getTracks()) track.stop()
     settle(record)
     return refusal('AbortError', 'Failed to start capture')
   }
-  return { ok: true, nonce }
+  return { ok: true, share: record.id }
 }
 
 /** A clone the main world made of a track this world handed out, passed over the DOM like the stream was. */
 function onClone (event: Event): void {
   const holder = event.target
   if (!(holder instanceof HTMLVideoElement)) return
-  const record = records.get(holder.getAttribute('data-orivon-share') ?? '')
+  const record = recordsById.get(holder.getAttribute('data-orivon-share') ?? '')
   const stream = holder.srcObject
   if (record === undefined || !(stream instanceof MediaStream)) return
   for (const track of stream.getTracks()) keep(record, track)
@@ -224,8 +235,8 @@ function wrapInMainWorld (shareInOtherWorld: (options: ShareOptions) => Promise<
         window.removeEventListener(handOff, receive, true)
         if (!result.ok) throw result.name === 'TypeError' ? new TypeError(result.message) : new DOMException(result.message, result.name)
         if (stream === undefined) throw new DOMException('Failed to start capture', 'AbortError')
-        shares.set(stream, result.nonce)
-        for (const track of stream.getTracks()) shares.set(track, result.nonce)
+        shares.set(stream, result.share)
+        for (const track of stream.getTracks()) shares.set(track, result.share)
         return stream
       }, (error: unknown) => {
         window.removeEventListener(handOff, receive, true)

@@ -5,6 +5,7 @@
 // and two calls at once in one tab. Fake pickers only: no real dialog, no window, no sound.
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
+import { SUSPECT_MS } from '../../src/main/display-capture/display-tickets.js'
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
 import { html, launchShell, startServer, visit } from '../support/qa-helpers.js'
@@ -16,10 +17,12 @@ const E2E_TIMEOUT_MS = 240_000
 const PAGE = (name: string): string => `<!doctype html><title>${name}</title><body><button id="go">go</button>
 <script>
 window.__r = {}
+window.__got = []
 const done = (key, promise) => promise.then((value) => { window.__r[key] = value }, (error) => { window.__r[key] = 'ERR:' + error.name })
 const describe = (stream) => { const track = stream.getVideoTracks()[0]; return { tracks: stream.getTracks().length, state: track.readyState, surface: track.getSettings().displaySurface, label: track.label } }
 window.share = (key, options) => done(key, navigator.mediaDevices.getDisplayMedia(options).then((stream) => {
   window.__stream = stream
+  window.__got.push(stream)
   stream.getVideoTracks()[0].addEventListener('ended', () => { window.__r.ended = (window.__r.ended || 0) + 1 })
   const video = document.createElement('video')
   video.muted = true
@@ -29,7 +32,10 @@ window.share = (key, options) => done(key, navigator.mediaDevices.getDisplayMedi
   window.__video = video
   return describe(stream)
 }))
-window.legacy = (key, video) => done(key, navigator.mediaDevices.getUserMedia({ video }).then(describe))
+const keep = (stream) => { window.__got.push(stream); return describe(stream) }
+window.legacy = (key, video) => done(key, navigator.mediaDevices.getUserMedia({ video }).then(keep))
+window.native = (key) => { const frame = document.createElement('iframe'); document.body.append(frame); done(key, frame.contentWindow.MediaDevices.prototype.getDisplayMedia.call(navigator.mediaDevices, { video: true }).then(keep)) }
+window.live = () => window.__got.flatMap((stream) => stream.getTracks()).filter((track) => track.readyState === 'live').length
 window.cloneIt = () => { window.__clone = window.__stream.getVideoTracks()[0].clone(); window.__clone.addEventListener('ended', () => { window.__r.cloneEnded = true }) }
 window.frames = () => window.__video.getVideoPlaybackQuality().totalVideoFrames
 window.fromFrame = (key) => { const frame = document.createElement('iframe'); document.body.append(frame); done(key, frame.contentWindow.navigator.mediaDevices.getDisplayMedia({ video: true }).then(describe)) }
@@ -115,7 +121,9 @@ it('grants only the call the preload makes after the pick, and refuses every oth
     expect(await view.evaluate(() => [(window as unknown as { __stream: MediaStream }).__stream.getVideoTracks()[0]?.readyState, (window as unknown as { __clone: MediaStreamTrack }).__clone.readyState])).toEqual(['ended', 'ended'])
     expect(await waitFor(async () => (await shares(app)).length === 0)).toBe(true)
 
-    // The legacy paths take the same permission request: refused, with the picker never asked.
+    // The legacy paths take the same permission request: refused, with the picker never asked. They come after the
+    // suspicion that follows a served share has lapsed: inside it they would end the page's renderer (below).
+    await delay(SUSPECT_MS + 500)
     const asked = await chooserCalls(app)
     await run(view, "window.legacy('desktop', { mandatory: { chromeMediaSource: 'desktop' } })")
     expect(await result(view, 'desktop')).toBe('ERR:NotAllowedError')
@@ -130,6 +138,9 @@ it('grants only the call the preload makes after the pick, and refuses every oth
     expect(await result(view, 'frame')).toBe('ERR:NotAllowedError')
     expect(await chooserCalls(app)).toBe(asked)
     expect(await shares(app)).toEqual([])
+
+    // Each of those marked the page suspect: its own next call waits until that lapses.
+    await delay(SUSPECT_MS + 500)
 
     // Two calls at once in one tab: the second is refused while the first picker is open.
     await useChooser(app, { kind: 'screen', delayMs: 1500 })
@@ -228,6 +239,90 @@ it('shares a screen twenty times in a row, each stopped before the next, and the
     console.log(`screen shares: ${String(outcomes.filter((outcome) => outcome === 'ok').length)} of 20 started`)
     expect(outcomes.filter((outcome) => outcome !== 'ok')).toEqual([])
     expect(mainOutput(app)).not.toMatch(/reached no display handler/)
+  } finally {
+    await closeElectron(app)
+  }
+}, E2E_TIMEOUT_MS)
+
+const liveTracks = async (view: Page): Promise<number> => await view.evaluate(() => (window as unknown as { live: () => number }).live())
+
+it('refuses the preload\'s call when the page made a request of its own first, whether it went around the wrapper before or during the pick', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    const view = await visit(app, chrome, `${origins.a}/`)
+    expect(await waitFor(async () => (await app.evaluate(() => (globalThis as unknown as { __orivonDevDisplayChooser?: unknown }).__orivonDevDisplayChooser)) !== undefined)).toBe(true)
+    await useChooser(app, { kind: 'screen' })
+
+    // A native call through a realm the preload did not wrap, then the wrapped call right after: the picker is never shown.
+    await run(view, "window.native('native'); window.share('wrapped', { video: true })")
+    expect(await result(view, 'native')).toBe('ERR:NotAllowedError')
+    expect(await result(view, 'wrapped')).toBe('ERR:NotAllowedError')
+    expect(await chooserCalls(app)).toBe(0)
+    expect(await liveTracks(view)).toBe(0)
+    expect(await shares(app)).toEqual([])
+
+    // The same while the picker is open: the picker was shown for the wrapped call, and nothing is shared after it.
+    await delay(SUSPECT_MS + 500)
+    await useChooser(app, { kind: 'screen', delayMs: 1500 })
+    await run(view, "window.__r = {}; window.share('wrapped', { video: true }); setTimeout(() => window.native('native'), 300)")
+    expect(await result(view, 'native')).toBe('ERR:NotAllowedError')
+    expect(await result(view, 'wrapped', 30_000)).toBe('ERR:NotAllowedError')
+    expect(await liveTracks(view)).toBe(0)
+    expect(await shares(app)).toEqual([])
+
+    // A legacy desktop call, then the wrapped call: the same.
+    await delay(SUSPECT_MS + 500)
+    await resetChooser(app)
+    await useChooser(app, { kind: 'screen' })
+    await run(view, "window.__r = {}; window.legacy('legacy', { mandatory: { chromeMediaSource: 'desktop' } }); window.share('wrapped', { video: true })")
+    expect(await result(view, 'legacy')).toBe('ERR:NotAllowedError')
+    expect(await result(view, 'wrapped')).toBe('ERR:NotAllowedError')
+    expect(await chooserCalls(app)).toBe(0)
+    expect(await liveTracks(view)).toBe(0)
+    expect(await shares(app)).toEqual([])
+  } finally {
+    await closeElectron(app)
+  }
+}, E2E_TIMEOUT_MS)
+
+it('shares honestly once the suspicion that follows a request with no ticket has lapsed', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    const view = await visit(app, chrome, `${origins.a}/`)
+    expect(await waitFor(async () => (await app.evaluate(() => (globalThis as unknown as { __orivonDevDisplayChooser?: unknown }).__orivonDevDisplayChooser)) !== undefined)).toBe(true)
+    await useChooser(app, { kind: 'screen' })
+    await run(view, "window.native('native')")
+    expect(await result(view, 'native')).toBe('ERR:NotAllowedError')
+    await delay(SUSPECT_MS + 500)
+    await run(view, "window.share('honest', { video: true })")
+    expect(await result(view, 'honest')).toMatchObject({ tracks: 1, state: 'live' })
+    expect(await shares(app)).toHaveLength(1)
+    expect(await liveTracks(view)).toBe(1)
+  } finally {
+    await closeElectron(app)
+  }
+}, E2E_TIMEOUT_MS)
+
+it('ends the page\'s renderer and its share when a request with no ticket follows the one that was served', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    const view = await visit(app, chrome, `${origins.a}/`)
+    expect(await waitFor(async () => (await app.evaluate(() => (globalThis as unknown as { __orivonDevDisplayChooser?: unknown }).__orivonDevDisplayChooser)) !== undefined)).toBe(true)
+    await useChooser(app, { kind: 'screen' })
+    await app.evaluate(({ webContents }, url) => {
+      const contents = webContents.getAllWebContents().find((each) => !each.isDestroyed() && each.getURL().includes(url))
+      ;(globalThis as unknown as { __gone: string[] }).__gone = []
+      contents?.on('render-process-gone', (_event, details) => { (globalThis as unknown as { __gone: string[] }).__gone.push(details.reason) })
+    }, origins.a)
+    await run(view, "window.share('screen', { video: true })")
+    expect(await result(view, 'screen')).toMatchObject({ state: 'live' })
+    expect(await shares(app)).toHaveLength(1)
+
+    // The page's own request right after: the one served may not have been the preload's.
+    await run(view, "window.native('native')").catch(() => undefined)
+    expect(await waitFor(async () => (await app.evaluate(() => (globalThis as unknown as { __gone: string[] }).__gone.length)) > 0, 20_000)).toBe(true)
+    expect(await waitFor(async () => (await shares(app)).length === 0, 10_000)).toBe(true)
+    expect(mainOutput(app)).toMatch(/request with no ticket followed one that was served/)
   } finally {
     await closeElectron(app)
   }

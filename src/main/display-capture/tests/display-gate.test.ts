@@ -16,8 +16,9 @@ async function settled (): Promise<void> {
 }
 
 /** Tickets as the real module keeps them: open until used, voided, rejected or timed out, and `has` says so. */
-function fakeTickets (): DisplayGateDeps['tickets'] & { end: () => void } {
+function fakeTickets (): DisplayGateDeps['tickets'] & { end: () => void, suspected: { value: boolean } } {
   const open = new Set<string>()
+  const suspected = { value: false }
   const key = '1:10:2'
   return {
     open: vi.fn(() => { open.add(key); return 'nonce-1' }),
@@ -25,6 +26,8 @@ function fakeTickets (): DisplayGateDeps['tickets'] & { end: () => void } {
     arm: vi.fn(),
     called: vi.fn((_key: string, _nonce: string, rejectedEarly: boolean) => { if (rejectedEarly) open.delete(key) }),
     has: (k: string) => open.has(k),
+    suspect: () => suspected.value,
+    suspected,
     end: () => { open.clear() }
   }
 }
@@ -66,6 +69,28 @@ describe('the display gate: picking', () => {
     const { gate, deps, contents } = setup(overrides)
     expect(await gate.pick(contents, REQUEST)).toEqual({ type: 'refused', reason: 'denied' })
     expect(deps.choose).not.toHaveBeenCalled()
+  })
+
+  it('refuses without a picker, and opens no ticket, while the frame is suspect', async () => {
+    const tickets = fakeTickets()
+    tickets.suspected.value = true
+    const { gate, deps, contents } = setup({ tickets })
+    expect(await gate.pick(contents, REQUEST)).toEqual({ type: 'refused', reason: 'denied' })
+    expect(deps.choose).not.toHaveBeenCalled()
+    expect(tickets.open).not.toHaveBeenCalled()
+  })
+
+  it('opens no ticket when the frame became suspect while the person chose, and asks for a fresh gesture', async () => {
+    const tickets = fakeTickets()
+    const { gate, deps, contents } = setup({
+      tickets,
+      choose: vi.fn(async () => { tickets.suspected.value = true; return await Promise.resolve(CHOICE) })
+    })
+    expect(await gate.pick(contents, REQUEST)).toEqual({ type: 'refused', reason: 'denied' })
+    expect(deps.choose).toHaveBeenCalledOnce()
+    expect(tickets.open).not.toHaveBeenCalled()
+    tickets.suspected.value = false
+    expect(await gate.pick(contents, { ...REQUEST, activation: false })).toEqual({ type: 'refused', reason: 'activation' })
   })
 
   it('refuses without a picker when the policy says no', async () => {

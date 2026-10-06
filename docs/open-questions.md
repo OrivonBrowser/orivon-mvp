@@ -2033,18 +2033,10 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 ### A381: Stop sharing cannot end a screen or window share the page has copied **[AI-REC]**
 
-- **Question:** Electron 44 gives main no way to end a screen or window capture, so Stop ends the tracks the preload handed the page and their clones; a page that copied a track through a frame the preload does not reach keeps capturing. Accept, or reload the page on Stop?
-- **Why it matters:** a person who presses Stop expects the share to end; closing or reloading the tab always ends it, and Wayland and macOS show their own indicator.
+- **Question:** Electron 44 gives main no way to end a screen or window capture, so Stop ends the tracks the preload handed the page and their clones. A clone made through a same-origin `about:blank` realm the preload does not reach is never reported: the bar and marks follow the tracks the preload knows, so they go when those end while that hidden copy keeps capturing. Accept, or reload the page on Stop?
+- **Why it matters:** a person who presses Stop expects the share to end, and the indicator is only as true as the tracks the preload handed out; closing or reloading the tab always ends it, and Wayland and macOS show the system's own indicator.
 - **Options:** accept and keep closing the tab as the hard stop (rec.: only a page working against the person keeps a hidden copy, and it was granted the share); reload the page on Stop (ends a call with it); ask Electron for a stop in `setDisplayMediaRequestHandler` (settles it).
 - **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
-### A382: The backstop for an unexpected capture grant reloads the tab; should it end the renderer? **[RESEARCH]**
-
-- **Question:** If a granted `media` request turns out not to be the display call (the display handler did not run), the tab is reloaded. Whether the page receives a frame before the reload is not measured; ending the renderer would leave less time. The ticket rules should make the case unreachable.
-- **Why it matters:** the backstop is the last line if a page wins a race the rules missed; a frame of the entire screen is the cost.
-- **Options:** keep the reload (rec. until measured); end the renderer, which also ends other tabs that share its process; measure first with a beacon from the page.
-- **Who decides:** research first
 - **Blocks:** nothing
 
 ### A383: Screen sharing on Wayland, Windows and macOS is written but not measured end to end **[RESEARCH]**

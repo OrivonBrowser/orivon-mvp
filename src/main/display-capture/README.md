@@ -10,7 +10,7 @@ the window shows while a share runs.
 | `types.ts` | Pure: the shapes the gate, the picker, the indicators and the app media grants share |
 | `display-tickets.ts` | Pure: the one-shot ticket per frame that tells the gate which `media` request with no device type is the call Orivon's preload made after the pick; holds requests, allows exactly one, denies the rest |
 | `display-asker.ts` | The per-site asker that owns the `media` request with no device type, grants it only against a ticket, answers the `display-capture` check, and after a grant makes sure the display handler took the choice |
-| `end-unexpected-capture.ts` | The backstop for a grant that reached no display handler: reloads the tab and logs |
+| `end-unexpected-capture.ts` | The backstop for a capture that may not be the picked one: ends the tab's renderer and logs why |
 | `frame-key.ts` | The ticket key of a tab's top frame |
 | `display-policy.ts` | Pure: whether a page may be shown the picker (a website unless blocked, an app with its `media.screen` grant) |
 | `display-gate.ts` | Pure: from the page's pick to the ticket: who asked, one picker per tab, fresh activation after a refusal (kept across a navigation, for the refused origin), the picker, the arm and called steps |
@@ -24,7 +24,7 @@ the window shows while a share runs.
 | `indicators/` | What shows while a share runs: the sharing bar overlay (`sharing-bar.ts`), the sentences (`shares.ts`), one subscription to the bound registry (`share-events.ts`). The tab badges and the address-bar chip read the registry through `../shell/signals/sharing.ts` and `../shell/state/sharing.ts` |
 
 **What it depends on.** `electron`, [`../channels.ts`](../channels.ts), [`../dev/dev-display-chooser.ts`](../dev/dev-display-chooser.ts) (the test-only picker the installer exposes in an e2e build), [`../sessions/`](../sessions/) (the permission gate and its per-site asker
-registry), [`../site-settings/`](../site-settings/) (the `screenShare` kind, the stored block, `isAppOrigin`),
+registry), [`../site-settings/`](../site-settings/) (the `screenShare` kind, the stored block, `isRegisteredAppOrigin`),
 [`../overlays/`](../overlays/) (the picker and the bar), [`../shell/`](../shell/) (the windows, tabs and tab
 signals), [`../consent/grant-prompt-origin.ts`](../consent/grant-prompt-origin.ts) (how a site is written for the person) and [`../memory-saver/media-in-use.ts`](../memory-saver/media-in-use.ts).
 
@@ -47,10 +47,21 @@ can overtake its arm message by a moment, while a page's request sent earlier ca
 ticket's timeout deny everything held. A request with no open ticket is refused at once, which is what ends a legacy
 `getUserMedia({ chromeMediaSource })` call: Electron gives it the same request as `getDisplayMedia`.
 
-**A grant the display handler did not follow ends the page's document.** The display handler runs inside the call that
-grants the request, so a ticket still waiting for it right after the grant means the granted request was not a display
-request. `end-unexpected-capture.ts` reloads the tab: provisional, and ending the page's renderer instead is the open
-alternative.
+**A request the preload did not make ends the page's renderer, and a frame that made one is suspect for a while.** The display
+handler runs inside the call that grants the request, so a ticket still waiting for it right after the grant means the granted
+request was not a display request. A page's own request can also take the preload's ticket: Blink handles a frame's media
+requests one at a time, so a native `getDisplayMedia` or legacy `chromeMediaSource` call the page left pending queues the
+preload's call behind it, and the ticket then sees one held request, the page's. An honest page never makes a request that
+reaches the browser with no ticket (its `getDisplayMedia` is wrapped and a ported app's legacy call is answered by the shim),
+so [`display-tickets.ts`](display-tickets.ts) treats one as a sign: the frame is suspect for `SUSPECT_MS` (provisional;
+what settles it is a measured honest page that makes such a request), the gate shows no picker and opens no ticket meanwhile,
+a request held while the frame is suspect voids the ticket, and one that follows a served ticket within `SUSPECT_MS` (or
+arrives while a ticket is allowed and not yet taken) voids that ticket and ends the renderer, since the served request may not
+have been the preload's. The preload's own call failing is never taken for this: a picked window that closes between the pick
+and the capture fails legitimately. [`end-unexpected-capture.ts`](end-unexpected-capture.ts) ends the renderer with
+`forcefullyCrashRenderer` and logs why; a reload would leave the old document running until the new one commits, and the page's
+server sets how long. The tab shows the sad-tab card, whose text says only that the page stopped working, and the share
+registry ends a share whose requester's renderer is gone. Another tab in the same renderer process can go with it.
 
 **A tab that is not showing in a window cannot be shared.** Chromium refuses to capture the view of a background tab and the
 page's call fails with `AbortError`; the preload tells main when its call failed after the display handler answered, so the

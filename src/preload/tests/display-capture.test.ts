@@ -13,7 +13,7 @@ vi.mock('electron', () => ({
 
 const { DISPLAY_CAPTURE_CHANNEL, DISPLAY_CAPTURE_PICK_CHANNEL, DISPLAY_CAPTURE_STOP_CHANNEL } = await import('../../main/channels.js')
 
-type Share = (options: object) => Promise<{ ok: boolean, nonce?: string, name?: string, message?: string }>
+type Share = (options: object) => Promise<{ ok: boolean, share?: string, name?: string, message?: string }>
 const install = async (): Promise<{ share: Share, cloneEvent: string }> => {
   const { installDisplayCapture } = await import('../display-capture.js')
   installDisplayCapture()
@@ -97,9 +97,25 @@ describe('the call this world makes for the page', () => {
     expect(events.slice(0, 2)).toEqual(['arm', 'getDisplayMedia'])
     expect(events).toContain('called')
     expect(bridge.send).toHaveBeenCalledWith(DISPLAY_CAPTURE_CHANNEL, { type: 'called', nonce: 'nonce-1', rejectedEarly: false })
-    expect(result).toEqual({ ok: true, nonce: 'nonce-1' })
+    expect(result).toEqual({ ok: true, share: expect.any(String) })
     expect(handed).toHaveLength(1)
-    expect(handed[0]?.nonce).toBe('nonce-1')
+    expect(handed[0]?.nonce).toBe(result.share)
+  })
+
+  it('never lets the ticket\'s nonce reach the main world: the result and the hand-off name the share by another id', async () => {
+    vi.useFakeTimers()
+    let counter = 0
+    vi.stubGlobal('crypto', { getRandomValues: (words: Uint32Array) => words.fill(++counter) })
+    const { handed } = stubPage(() => Promise.resolve(stream([new FakeTrack()])))
+    bridge.invoke.mockResolvedValue({ type: 'go', nonce: 'secret-nonce' })
+    const { share } = await install()
+    const result = await share(OPTIONS)
+    await vi.advanceTimersByTimeAsync(10)
+    expect(JSON.stringify(result)).not.toContain('secret-nonce')
+    expect(handed.map((each) => each.nonce)).not.toContain('secret-nonce')
+    expect(handed[0]?.nonce).toBe(result.share)
+    // The nonce still reaches main, which is where it is checked.
+    expect(bridge.send).toHaveBeenCalledWith(DISPLAY_CAPTURE_CHANNEL, { type: 'arm', nonce: 'secret-nonce' })
   })
 
   it('reports that its call failed before the turn ended, and gives the page the error', async () => {
@@ -199,5 +215,41 @@ describe('the tracks this world handed out', () => {
     stop('other')
     ;(stop as unknown as (payload: unknown) => void)(undefined)
     expect(track.readyState).toBe('live')
+  })
+
+  it('keeps a clone the main world hands over under the share it names, and not under the nonce', async () => {
+    const original = new FakeTrack()
+    const clone = new FakeTrack()
+    vi.useFakeTimers()
+    let counter = 0
+    vi.stubGlobal('crypto', { getRandomValues: (words: Uint32Array) => words.fill(++counter) })
+    stubPage(() => Promise.resolve(stream([original])))
+    bridge.invoke.mockResolvedValue({ type: 'go', nonce: 'nonce-1' })
+    const { share, cloneEvent } = await install()
+    const id = (await share(OPTIONS)).share
+    await vi.advanceTimersByTimeAsync(10)
+    bridge.send.mockClear()
+    const onClone = (window.addEventListener as unknown as { mock: { calls: Array<[string, (event: Event) => void]> } }).mock.calls.find((call) => call[0] === cloneEvent)?.[1] as (event: Event) => void
+    const Video = HTMLVideoElement as unknown as new () => object
+    const Media = class { getTracks (): unknown[] { return [clone] } }
+    vi.stubGlobal('MediaStream', Media)
+    const carry = (name: string): Event => ({ target: Object.assign(new Video(), { getAttribute: () => name, srcObject: new Media() }) }) as unknown as Event
+    onClone(carry('nonce-1'))
+    original.end()
+    expect(bridge.send).toHaveBeenCalledWith(DISPLAY_CAPTURE_CHANNEL, { type: 'tracks-ended', nonce: 'nonce-1' })
+    bridge.send.mockClear()
+
+    const second = new FakeTrack()
+    vi.stubGlobal('navigator', { mediaDevices: { getDisplayMedia: () => Promise.resolve(stream([second])) }, userActivation: { isActive: true } })
+    bridge.invoke.mockResolvedValue({ type: 'go', nonce: 'nonce-2' })
+    const secondId = (await share(OPTIONS)).share
+    await vi.advanceTimersByTimeAsync(10)
+    bridge.send.mockClear()
+    onClone(carry(secondId ?? ''))
+    second.end()
+    expect(bridge.send).not.toHaveBeenCalled()
+    clone.end()
+    expect(bridge.send).toHaveBeenCalledWith(DISPLAY_CAPTURE_CHANNEL, { type: 'tracks-ended', nonce: 'nonce-2' })
+    expect(id).not.toBe(secondId)
   })
 })

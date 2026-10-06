@@ -15,7 +15,7 @@ export interface DisplayAskerDeps {
   mainFrameOrigin: (contents: WebContents) => string | null
   /** Whether the page may show the picker, from what is decided already: false where sharing is blocked. */
   mayAsk: (contents: WebContents, origin: string) => boolean
-  endUnexpectedCapture: (contents: WebContents) => void
+  endUnexpectedCapture: (contents: WebContents, reason: string) => void
 }
 
 function field<T> (details: unknown, key: string, is: (value: unknown) => value is T): T | undefined {
@@ -43,7 +43,7 @@ export function createDisplayAsker (deps: DisplayAskerDeps): SiteAsker {
       if (origin === null || asked === undefined || originFromUrl(asked) !== origin) return undefined
       const key = mainFrameKey(contents)
       if (key === undefined || (details as { isMainFrame?: unknown }).isMainFrame !== true) return Promise.resolve(false)
-      return deps.tickets.request(key)
+      return deps.tickets.request(key, () => { deps.endUnexpectedCapture(contents, 'a request with no ticket followed one that was served') })
     },
 
     check (contents, permission, requestingOrigin, details) {
@@ -60,7 +60,7 @@ export function createDisplayAsker (deps: DisplayAskerDeps): SiteAsker {
       const key = mainFrameKey(contents)
       if (key === undefined || !deps.tickets.awaitingDisplay(key)) return
       deps.tickets.void(key)
-      deps.endUnexpectedCapture(contents)
+      deps.endUnexpectedCapture(contents, 'a granted request reached no display handler')
     }
   }
 }

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { createDisplayTickets, EARLY_SLACK_MS, QUIET_WINDOW_MS, TICKET_TIMEOUT_MS, ticketKey } from '../display-tickets.js'
+import { describe, expect, it, vi } from 'vitest'
+import { createDisplayTickets, EARLY_SLACK_MS, QUIET_WINDOW_MS, SUSPECT_MS, TICKET_TIMEOUT_MS, ticketKey } from '../display-tickets.js'
 
 interface Timer { at: number, run: () => void, live: boolean }
 
@@ -138,7 +138,7 @@ describe('display tickets', () => {
     expect(await state(real)).toBe(false)
   })
 
-  it('refuses a request that arrives after the one allowed, and keeps the choice for the display handler', async () => {
+  it('voids an allowed ticket when another request arrives before the display handler took it, and reports the aftermath', async () => {
     const { tickets, advance } = setup()
     const nonce = tickets.open(KEY, 'screen')
     tickets.arm(KEY, nonce)
@@ -146,8 +146,10 @@ describe('display tickets', () => {
     tickets.called(KEY, nonce, false)
     advance(QUIET_WINDOW_MS)
     expect(await state(first)).toBe(true)
-    expect(await state(tickets.request(KEY))).toBe(false)
-    expect(tickets.consumeDisplay(KEY)?.choice).toBe('screen')
+    const aftermath = vi.fn()
+    expect(await state(tickets.request(KEY, aftermath))).toBe(false)
+    expect(aftermath).toHaveBeenCalledOnce()
+    expect(tickets.consumeDisplay(KEY)).toBeUndefined()
   })
 
   it('denies everything held when the preload says its call was rejected early', async () => {
@@ -388,5 +390,89 @@ describe('display tickets', () => {
     tickets.called(KEY, nonce, false)
     advance(QUIET_WINDOW_MS + 20)
     expect(await state(held)).toBe(true)
+  })
+
+  describe('a request with no ticket', () => {
+    it('marks the frame suspect for SUSPECT_MS and no longer', async () => {
+      const { tickets, advance } = setup()
+      expect(tickets.suspect(KEY)).toBe(false)
+      expect(await state(tickets.request(KEY))).toBe(false)
+      expect(tickets.suspect(KEY)).toBe(true)
+      expect(tickets.suspect(OTHER)).toBe(false)
+      advance(SUSPECT_MS - 1)
+      expect(tickets.suspect(KEY)).toBe(true)
+      advance(1)
+      expect(tickets.suspect(KEY)).toBe(false)
+    })
+
+    it('is no aftermath when the frame never had a ticket consumed', async () => {
+      const { tickets } = setup()
+      const aftermath = vi.fn()
+      await tickets.request(KEY, aftermath)
+      expect(aftermath).not.toHaveBeenCalled()
+    })
+
+    it('is an aftermath within SUSPECT_MS of the frame\'s ticket being consumed, and not after', async () => {
+      const { tickets, advance } = setup()
+      const consume = async (): Promise<void> => {
+        const nonce = tickets.open(KEY, 'screen')
+        tickets.arm(KEY, nonce)
+        const held = tickets.request(KEY)
+        tickets.called(KEY, nonce, false)
+        advance(QUIET_WINDOW_MS)
+        await held
+        tickets.consumeDisplay(KEY)
+      }
+      await consume()
+      advance(SUSPECT_MS - 1)
+      const early = vi.fn()
+      await tickets.request(KEY, early)
+      expect(early).toHaveBeenCalledOnce()
+      await consume()
+      advance(SUSPECT_MS)
+      const late = vi.fn()
+      await tickets.request(KEY, late)
+      expect(late).not.toHaveBeenCalled()
+    })
+
+    it('does not count a different frame\'s consumed ticket', async () => {
+      const { tickets, advance } = setup()
+      const nonce = tickets.open(OTHER, 'screen')
+      tickets.arm(OTHER, nonce)
+      const held = tickets.request(OTHER)
+      tickets.called(OTHER, nonce, false)
+      advance(QUIET_WINDOW_MS)
+      await held
+      tickets.consumeDisplay(OTHER)
+      const aftermath = vi.fn()
+      await tickets.request(KEY, aftermath)
+      expect(aftermath).not.toHaveBeenCalled()
+    })
+
+    it('voids a ticket whose request is held while the frame is suspect', async () => {
+      const { tickets, advance } = setup()
+      await tickets.request(KEY)
+      advance(1000)
+      const nonce = tickets.open(KEY, 'screen')
+      tickets.arm(KEY, nonce)
+      const held = tickets.request(KEY)
+      tickets.called(KEY, nonce, false)
+      advance(QUIET_WINDOW_MS * 2)
+      expect(await state(held)).toBe(false)
+      expect(tickets.consumeDisplay(KEY)).toBeUndefined()
+      expect(tickets.has(KEY)).toBe(false)
+    })
+
+    it('lets an honest request through once SUSPECT_MS has passed', async () => {
+      const { tickets, advance } = setup()
+      await tickets.request(KEY)
+      advance(SUSPECT_MS)
+      const nonce = tickets.open(KEY, 'screen')
+      tickets.arm(KEY, nonce)
+      const held = tickets.request(KEY)
+      tickets.called(KEY, nonce, false)
+      advance(QUIET_WINDOW_MS)
+      expect(await state(held)).toBe(true)
+    })
   })
 })

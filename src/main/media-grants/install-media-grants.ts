@@ -8,7 +8,7 @@ import type { DialogCaller } from '../consent/request-grant.js'
 import { bindAppMediaGrants } from '../display-capture/bindings.js'
 import { siteAsks } from '../sessions/site-asks.js'
 import type { ShellInstaller } from '../shell/shell-installers.js'
-import { isAppOrigin } from '../site-settings/app-origin.js'
+import { isRegisteredAppOrigin } from '../site-settings/app-origin.js'
 import { createAppMediaAsker } from './app-media-asker.js'
 import { createAppMediaGrants } from './app-media-grants.js'
 
@@ -38,7 +38,7 @@ export const installMediaGrants: ShellInstaller = {
     siteAsks.add(createAppMediaAsker({
       isTab: (contents) => services.windows.findTab(contents) !== null,
       urlOf: (tab) => tab.getURL(),
-      isApp: (origin) => isAppOrigin(ctx, origin),
+      isApp: (origin) => isRegisteredAppOrigin(ctx, origin),
       grants
     }))
   }

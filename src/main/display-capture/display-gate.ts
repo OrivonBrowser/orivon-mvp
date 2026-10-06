@@ -19,7 +19,7 @@ export interface PickRequest {
 }
 
 export interface DisplayGateDeps {
-  tickets: Pick<DisplayTickets<DisplayChoice>, 'open' | 'void' | 'arm' | 'called' | 'has'>
+  tickets: Pick<DisplayTickets<DisplayChoice>, 'open' | 'void' | 'arm' | 'called' | 'has' | 'suspect'>
   policy: DisplayPolicy
   choose: ChooseDisplaySource
   shares: {
@@ -87,6 +87,8 @@ export function createDisplayGate (deps: DisplayGateDeps): DisplayGate {
     // A ticket still open is a call in flight: a second pick would void it. The tickets end their own on use and on timeout.
     const key = deps.frameKey(contents)
     if (state.picking !== undefined || (key !== undefined && deps.tickets.has(key))) return refused('busy')
+    // A frame that made a request the preload did not is not shown a picker: its next call may be that request's twin.
+    if (key !== undefined && deps.tickets.suspect(key)) return refused('denied')
     const origin = deps.mainFrameOrigin(contents)
     if (state.needsActivation && state.refusedOrigin === origin && !request.activation) return refused('activation')
     if (origin === null) return refused('denied')
@@ -100,7 +102,7 @@ export function createDisplayGate (deps: DisplayGateDeps): DisplayGate {
         : null
       // The page moved on or the tab closed while the person chose: the choice was about a page that is not there.
       const ticketKey = contents.isDestroyed() || controller.signal.aborted || deps.mainFrameOrigin(contents) !== origin ? undefined : deps.frameKey(contents)
-      if (choice === null || ticketKey === undefined) {
+      if (choice === null || ticketKey === undefined || deps.tickets.suspect(ticketKey)) {
         refuse(state, origin)
         return refused('denied')
       }

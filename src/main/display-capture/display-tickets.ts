@@ -18,6 +18,15 @@ export const EARLY_SLACK_MS = 50
 /** How long a ticket lives from `open`, whether or not it was used. */
 export const TICKET_TIMEOUT_MS = 10_000
 
+/**
+ * How long a frame stays suspect after a request with no ticket, and how long after a ticket was consumed such a request
+ * still counts as a possible second request the display handler did not tell apart. An honest page never makes one: its
+ * `getDisplayMedia` is wrapped and an app's legacy call is answered by the shim, so neither reaches the browser without
+ * a ticket. Provisional: it only has to outlast the picker's round trip, and a page that makes one has no use for the
+ * next five seconds of sharing; what would settle it is a measured honest page that does.
+ */
+export const SUSPECT_MS = 5000
+
 /** A frame's identity: the tab's webContents id and the main frame's `processId:routingId`. */
 export function ticketKey (webContentsId: number, processId: number, routingId: number): string {
   return `${webContentsId}:${processId}:${routingId}`
@@ -33,8 +42,15 @@ export interface DisplayTicketsDeps {
 export interface DisplayTickets<C> {
   /** Opens the frame's ticket, voiding an older one, and returns the nonce the preload must present. */
   open: (key: string, choice: C) => string
-  /** A `media` request with no device type from the frame: held while a ticket is open, refused at once otherwise. */
-  request: (key: string) => Promise<boolean>
+  /**
+   * A `media` request with no device type from the frame: held while a ticket is open, refused at once otherwise. A
+   * refusal for want of a ticket marks the frame suspect, and `onAftermath` runs when it came within `SUSPECT_MS` of
+   * the frame's ticket being consumed (or while one was allowed and not yet consumed): the request already served may
+   * not have been the preload's.
+   */
+  request: (key: string, onAftermath?: () => void) => Promise<boolean>
+  /** True for `SUSPECT_MS` after the frame made a request with no ticket: no picker is shown and no ticket opens meanwhile. */
+  suspect: (key: string) => boolean
   arm: (key: string, nonce: string) => void
   called: (key: string, nonce: string, rejectedEarly: boolean) => void
   /** Ends the frame's ticket and denies whatever it held: navigation, a destroyed frame, a renderer gone. */
@@ -74,6 +90,16 @@ const defaultDeps: DisplayTicketsDeps = {
 export function createDisplayTickets<C> (overrides: Partial<DisplayTicketsDeps> = {}): DisplayTickets<C> {
   const deps = { ...defaultDeps, ...overrides }
   const tickets = new Map<string, Ticket<C>>()
+  const suspectUntil = new Map<string, number>()
+  const consumedAt = new Map<string, number>()
+
+  function prune (): void {
+    const now = deps.now()
+    for (const [key, until] of suspectUntil) if (until <= now) suspectUntil.delete(key)
+    for (const [key, at] of consumedAt) if (now - at >= SUSPECT_MS) consumedAt.delete(key)
+  }
+
+  const suspect = (key: string): boolean => (suspectUntil.get(key) ?? Number.NEGATIVE_INFINITY) > deps.now()
 
   function end (key: string, ticket: Ticket<C>): void {
     if (tickets.get(key) !== ticket) return
@@ -126,9 +152,20 @@ export function createDisplayTickets<C> (overrides: Partial<DisplayTicketsDeps> 
       return ticket.nonce
     },
 
-    async request (key) {
+    async request (key, onAftermath) {
       const ticket = tickets.get(key)
-      if (ticket?.state !== 'open') return false
+      if (ticket?.state !== 'open') {
+        prune()
+        const after = consumedAt.get(key)
+        const aftermath = ticket !== undefined || (after !== undefined && deps.now() - after < SUSPECT_MS)
+        suspectUntil.set(key, deps.now() + SUSPECT_MS)
+        // An allowed ticket is voided too: the display handler must not serve a request that may not be the preload's.
+        if (ticket !== undefined) end(key, ticket)
+        if (aftermath) onAftermath?.()
+        return false
+      }
+      // A request held while the frame is suspect: the frame has shown it makes requests the preload did not.
+      if (suspect(key)) { end(key, ticket); return false }
       return await new Promise<boolean>((resolve) => {
         ticket.held.push({ resolve })
         ticket.lastArrival = deps.now()
@@ -168,8 +205,12 @@ export function createDisplayTickets<C> (overrides: Partial<DisplayTicketsDeps> 
       const ticket = tickets.get(key)
       if (ticket?.state !== 'allowed') return undefined
       end(key, ticket)
+      prune()
+      consumedAt.set(key, deps.now())
       return { choice: ticket.choice, nonce: ticket.nonce }
     },
+
+    suspect,
 
     awaitingDisplay: (key) => tickets.get(key)?.state === 'allowed',
     has: (key) => tickets.has(key)
