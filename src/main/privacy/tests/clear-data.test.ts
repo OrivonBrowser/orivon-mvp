@@ -50,6 +50,22 @@ describe('clearing browsing data', () => {
     expect(app.clearData).not.toHaveBeenCalled()
   })
 
+  it('clears the local-files session with site data and with the cache, and not otherwise', async () => {
+    const { deps } = setup()
+    const localFiles = { clearData: vi.fn(async () => {}), clearStorageData: vi.fn(async () => {}) }
+    const withLocal = { ...deps, localFiles }
+
+    await clearBrowsingData({ ...NOTHING, history: 'all', zoomLevels: true }, withLocal)
+    expect(localFiles.clearData).not.toHaveBeenCalled()
+
+    await clearBrowsingData({ ...NOTHING, siteData: true }, withLocal)
+    expect((localFiles.clearData.mock.calls as unknown[][])[0]?.[0]).toEqual({ dataTypes: expect.arrayContaining(['cookies', 'localStorage', 'indexedDB']) })
+    expect(localFiles.clearStorageData).toHaveBeenCalledWith({ storages: ['cachestorage'] })
+
+    await clearBrowsingData({ ...NOTHING, cache: true }, withLocal)
+    expect(localFiles.clearData).toHaveBeenLastCalledWith({ dataTypes: ['cache'] })
+  })
+
   it('clears an app\'s storage only when asked for by name', async () => {
     const { deps, app, websites } = setup()
     await clearBrowsingData({ ...NOTHING, appData: true }, deps)

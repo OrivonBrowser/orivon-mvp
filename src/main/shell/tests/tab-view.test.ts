@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { originFromUrl } from '../../../broker/policy/origin.js'
 import { partitionFor } from '../../../broker/grants/origin-hash.js'
 import type { Broker } from '../../../broker/broker-contracts.js'
+import { LOCAL_FILES_PARTITION } from '../../local-files/partition.js'
 
 // tab-view.ts imports WebContentsView from 'electron' at module scope, so
 // even these pure functions cannot be imported without mocking it first --
@@ -22,7 +23,7 @@ vi.mock('../../../loader/electron/serve.js', () => ({
   isOriginServedFromCacheSync: (origin: string) => served.has(origin)
 }))
 
-const { appTabArgsFor, appTabFlagChanged, captureTabPage, makeTabView, partitionChanged, partitionForTarget, popupTargetIsApp } = await import('../tab-view.js')
+const { appTabArgsFor, appTabFlagChanged, captureTabPage, leftDashboard, makeTabView, partitionChanged, partitionForTarget, popupTargetIsApp } = await import('../tab-view.js')
 
 const APP = 'https://app.example'
 const SITE = 'https://news.example'
@@ -216,5 +217,57 @@ describe('captureTabPage', () => {
   it('is null for no page, and for a capture that throws', async () => {
     expect(await captureTabPage(undefined)).toBeNull()
     expect(await captureTabPage({ capturePage: vi.fn().mockRejectedValue(new Error('gone')) } as never)).toBeNull()
+  })
+})
+
+describe('a local file runs in the local-files session', () => {
+  const FILE = 'file:///home/u/app/index.html'
+
+  it('partitionForTarget puts any local file there, query and fragment included', () => {
+    expect(partitionForTarget(FILE)).toBe(LOCAL_FILES_PARTITION)
+    expect(partitionForTarget(`${FILE}?q=1#top`)).toBe(LOCAL_FILES_PARTITION)
+  })
+
+  it('partitionForTarget leaves a file with a host to the default session, where the guard serves it nothing', () => {
+    expect(partitionForTarget('file://server/share/a.html')).toBeUndefined()
+  })
+
+  it('partitionChanged moves a default-session tab onto a file and back out onto a website', () => {
+    expect(partitionChanged(FILE, undefined)).toEqual({ to: LOCAL_FILES_PARTITION })
+    expect(partitionChanged(SITE, LOCAL_FILES_PARTITION)).toEqual({ to: undefined })
+  })
+
+  it('partitionChanged keeps a tab that goes from one local file to another', () => {
+    expect(partitionChanged('file:///home/u/app/other.html', LOCAL_FILES_PARTITION)).toBeUndefined()
+  })
+
+  it('partitionChanged moves a tab from an app\'s partition onto a file', () => {
+    expect(partitionChanged(FILE, appPartition)).toEqual({ to: LOCAL_FILES_PARTITION })
+  })
+
+  it('a local file is never an app tab', () => {
+    expect(appTabArgsFor(FILE, brokerWith({ registered: [FILE] }))).toBeUndefined()
+  })
+})
+
+describe('leftDashboard -- which committed document still counts as the new-tab page', () => {
+  const BUILT = 'file:///opt/orivon/out/renderer/newtab/index.html'
+  const DEV = 'http://localhost:5173/newtab/'
+
+  it('keeps the flag on the dashboard itself, whatever query or fragment it carries', () => {
+    expect(leftDashboard(BUILT, BUILT)).toBe(false)
+    expect(leftDashboard(`${BUILT}#top`, BUILT)).toBe(false)
+    expect(leftDashboard(DEV, DEV)).toBe(false)
+  })
+
+  it('clears it for any other local file, which a built dashboard and every file share a web origin of null with', () => {
+    expect(leftDashboard('file:///home/u/app/index.html', BUILT)).toBe(true)
+    expect(leftDashboard('file:///opt/orivon/out/renderer/index.html', BUILT)).toBe(true)
+  })
+
+  it('clears it for a website and for a blank page', () => {
+    expect(leftDashboard(SITE, BUILT)).toBe(true)
+    expect(leftDashboard(SITE, DEV)).toBe(true)
+    expect(leftDashboard('about:blank', BUILT)).toBe(true)
   })
 })

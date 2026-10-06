@@ -7,7 +7,7 @@
 // -- the same division ./handle-store.ts draws between "one origin's state"
 // and the map of origins.
 
-import { originFromUrl } from '../policy/origin.js'
+import { isolationKeyFromUrl } from '../policy/origin.js'
 import { fail } from '../errors.js'
 import { OriginTable } from './handle-store.js'
 import type { HandleTableFault } from './handle-contracts.js'
@@ -32,7 +32,7 @@ export class OriginRegistry {
    * EXPECTED condition -- so this fires in normal operation.
    */
   key (origin: string, onFault: (fault: HandleTableFault) => void): string {
-    const canonical = originFromUrl(origin)
+    const canonical = isolationKeyFromUrl(origin)
     if (canonical === null) {
       const error = fail('internal', 'handle table keyed on a string that is not an origin')
       onFault({ origin, handleId: null, error })

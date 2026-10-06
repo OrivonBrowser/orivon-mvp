@@ -18,7 +18,8 @@ import type { Subsystem, SubsystemContext } from '../registry.js'
 import { publishSenderAttributed } from '../registry.js'
 import { partitionForTarget } from '../shell/tab-view.js'
 import { isChildHostFor } from '../children/child-host.js'
-import { originFromUrl } from '../../broker/policy/origin.js'
+import { isLocalFileKey, isolationKeyFromUrl } from '../../broker/policy/origin.js'
+import { LOCAL_FILES_PARTITION } from '../local-files/partition.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 
@@ -50,6 +51,7 @@ export const sessionAttributionSubsystem: Subsystem = {
   name: 'session-attribution',
   afterReady: (ctx: SubsystemContext) => {
     const expectedSession = (origin: string): unknown => {
+      if (isLocalFileKey(origin)) return session.fromPartition(LOCAL_FILES_PARTITION)
       const partition = partitionForTarget(origin)
       return partition === undefined ? session.defaultSession : session.fromPartition(partition)
     }
@@ -66,7 +68,7 @@ export const sessionAttributionSubsystem: Subsystem = {
     // firing early that matters, not afterReady's own ordering.
     app.on('web-contents-created', (_createdEvent, wc) => {
       wc.on('did-navigate', (_navEvent, url) => {
-        const origin = originFromUrl(url)
+        const origin = isolationKeyFromUrl(url)
         attributionRecords.set(wc, {
           origin,
           attributed: origin !== null && wc.session === expectedSession(origin)
@@ -76,6 +78,12 @@ export const sessionAttributionSubsystem: Subsystem = {
 
     publishSenderAttributed(ctx, (sender, origin) => {
       const wc = sender as WebContents
+      // A local file is attributed only by its own cross-document commit, in the local-files
+      // session: no live fallback, so a pushState onto a sibling's path is denied.
+      if (isLocalFileKey(origin)) {
+        const record = attributionRecords.get(wc)
+        return record !== undefined && record.origin === origin && record.attributed
+      }
       // An app's own child host (ADR-0046) runs in a session of its own by design.
       if (isChildHostFor(wc, origin)) return true
       // Cache-served origins are checked LIVE and STRICTLY, never through a

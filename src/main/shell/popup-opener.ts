@@ -43,3 +43,16 @@ export function openerCutNeeded (wc: WebContents, navigatedUrl: string, broker: 
   }
   return originFromUrl(navigatedUrl) !== originFromUrl(openerUrl) && popupTargetIsApp(navigatedUrl, broker)
 }
+
+/**
+ * Whether any frame of `wc` is an http(s) page. A window-open handler cannot tell which frame is
+ * opening, so a local file's request to open another file is refused while one is present.
+ * A frame that cannot be read counts as a web frame.
+ */
+export function hasWebFrame (wc: WebContents): boolean {
+  try {
+    return wc.mainFrame.framesInSubtree.some((frame) => /^https?:/i.test(frame.url))
+  } catch {
+    return true
+  }
+}

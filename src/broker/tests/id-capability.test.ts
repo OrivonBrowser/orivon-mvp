@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { createBroker } from '../index.js'
 import { APP, baseDeps, manifestWith } from './index.test-helpers.js'
 import { derivePublicKey } from '../policy/derive-p256.js'
+import { derivationScope } from '../grants/local-file-lifetime.js'
 
 /** 32 varying, non-secret bytes -- an all-repeated seed trips derive.ts's own degenerate-seed guard. */
 const SEED = Uint8Array.from({ length: 32 }, (_, i) => i)
@@ -169,5 +170,26 @@ describe('orivon.id -- the ordinary consent-made grant (empty patterns, A153/man
     // own (still empty) patterns.
     broker.registerApp(APP, manifestWith({ id: { curves: ['P-256', 'secp256k1'] } }))
     await expect(broker.id.publicKey(APP, { curve: 'secp256k1' })).rejects.toMatchObject({ code: 'internal' }) // secp256k1 itself is unimplemented (see the test above) -- 'internal', not 'denied', proves the manifest check passed
+  })
+})
+
+describe('orivon.id for a local file', () => {
+  const FILE = 'file:///home/u/app/index.html'
+
+  it('derives from the file key and this run, so the key is not the one a web origin or another run would get', async () => {
+    const broker = createBroker(baseDeps({ keychain: { getSeed: async () => SEED } }))
+    broker.registerApp(FILE, manifestWith({ id: { curves: ['P-256'] } }))
+    await broker.grant(FILE, 'id', ['P-256'])
+
+    const publicKey = await broker.id.publicKey(FILE, { curve: 'P-256' })
+
+    expect(publicKey).toEqual(await derivePublicKey({ seed: SEED, label: 'app', scope: derivationScope(FILE), curve: 'P-256' }))
+    expect(publicKey).not.toEqual(await derivePublicKey({ seed: SEED, label: 'app', scope: FILE, curve: 'P-256' }))
+    expect(publicKey).not.toEqual(await derivePublicKey({ seed: SEED, label: 'app', scope: derivationScope(FILE, 'another-run'), curve: 'P-256' }))
+  })
+
+  it('is denied with no grant, as for a web origin', async () => {
+    const broker = createBroker(baseDeps({ keychain: { getSeed: async () => SEED } }))
+    await expect(broker.id.publicKey(FILE, { curve: 'P-256' })).rejects.toMatchObject({ code: 'denied' })
   })
 })

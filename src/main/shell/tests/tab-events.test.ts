@@ -82,6 +82,7 @@ function fakeHost (overrides: Partial<Host> = {}): Host & Record<string, unknown
     openTab: vi.fn(),
     adoptPopup: vi.fn(),
     openBlobTab: vi.fn(),
+    openLocalFile: vi.fn(),
     openWindow: vi.fn(),
     atCapacity: () => false,
     isClosing: () => false,

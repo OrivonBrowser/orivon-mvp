@@ -25,6 +25,8 @@
 
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
+import { localDataRoot } from './local-file-lifetime.js'
+import { isLocalFileKey } from '../policy/origin.js'
 
 /** `sha256_hex(utf8(canonicalOrigin))`. No salt, no prefix, no version tag -- a one-way door once any app has data on a real machine. */
 export function originHash (canonicalOrigin: string): string {
@@ -38,10 +40,12 @@ export function originHash (canonicalOrigin: string): string {
  * never share a root, or a pin re-verify and an app's declared quota would
  * be governing one tree instead of two disjoint ones. `node-fs-adapter.ts`'s
  * `nodeFs` and `site-data-runner.ts`'s storage snapshot both need exactly
- * this path -- one join, not two `'app-data'` string literals drifting.
+ * this path -- one join, not two `'app-data'` string literals drifting. A local file's root
+ * is under this run's own folder (`local-file-lifetime.ts`) and is removed at quit.
  */
 export function appDataRoot (userDataPath: string, canonicalOrigin: string): string {
-  return join(userDataPath, 'app-data', originHash(canonicalOrigin))
+  const hash = originHash(canonicalOrigin)
+  return isLocalFileKey(canonicalOrigin) ? localDataRoot(userDataPath, hash) : join(userDataPath, 'app-data', hash)
 }
 
 // AI RECOMMENDATION, NOT AN OWNER DECISION, flagged rather than silently

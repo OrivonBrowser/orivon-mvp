@@ -7,7 +7,7 @@
 // testable on its own (README.md's own note).
 
 import { MessageChannelMain } from 'electron'
-import { isAttributedSession, originFromSenderFrame } from '../../broker/policy/origin.js'
+import { callerKeyFromSenderFrame, isAttributedSession } from '../../broker/policy/origin.js'
 import type { ControlEvent, PortDeliveryFrame } from '../../broker/transport/relay/port-transport.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { CHILD_HOST_PORT_CHANNEL } from '../channels.js'
@@ -74,7 +74,7 @@ export function createChildHostRegistry (
   }
 
   async function connect (event: ControlEvent): Promise<void> {
-    const origin = originFromSenderFrame(event.senderFrame)
+    const origin = callerKeyFromSenderFrame(event.senderFrame)
     if (origin === null) return
     // A document that committed this origin outside the session it belongs in gets no host, as it
     // gets no broker call (../../broker/policy/origin.ts's isAttributedSession).
@@ -112,7 +112,7 @@ export function createChildHostRegistry (
       // host's first document load, which the calling frame could navigate
       // across in the meantime (deliver-port.ts's own rule, same reason).
       const reFrame: PortDeliveryFrame | null = event.senderFrame
-      if (reFrame === null || originFromSenderFrame(reFrame) !== origin) return
+      if (reFrame === null || callerKeyFromSenderFrame(reFrame) !== origin) return
 
       const { port1, port2 } = new MessageChannelMain()
       host.postPagePort(port1)

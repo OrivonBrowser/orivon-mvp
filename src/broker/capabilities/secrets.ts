@@ -11,6 +11,7 @@
 import { openSecret, sealSecret } from '../policy/secret-seal.js'
 import { LIMITS } from '../../contracts/index.js'
 import { fail } from '../errors.js'
+import { derivationScope } from '../grants/local-file-lifetime.js'
 import type { GrantLedger } from '../grants/grant-ledger.js'
 import type { Broker, CreateBrokerOptions } from '../broker-contracts.js'
 
@@ -55,14 +56,14 @@ export function createSecretsCapability ({ deps, ledger, canonical }: SecretsCap
       throw fail('unavailable', 'no OS keyring is reachable this session; the seed would not survive a restart')
     }
     const seed = await deps.keychain.getSeed()
-    return await sealSecret(seed, key, plaintext)
+    return await sealSecret(seed, derivationScope(key), plaintext)
   }
 
   async function decrypt (origin: string, ciphertext: Uint8Array): Promise<Uint8Array> {
     const key = canonical(origin)
     requireGrant(ledger, key)
     const seed = await deps.keychain.getSeed()
-    return await openSecret(seed, key, ciphertext)
+    return await openSecret(seed, derivationScope(key), ciphertext)
   }
 
   return { available, encrypt, decrypt }

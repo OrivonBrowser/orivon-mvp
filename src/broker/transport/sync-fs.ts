@@ -18,7 +18,7 @@
 // ./ipc.ts's handleControlRequest: `SyncControlEvent`, `SyncFsPolicy` and
 // `RateLimiter` are all structural.
 
-import { isAttributedSession, originFromSenderFrame } from '../policy/origin.js'
+import { callerKeyFromSenderFrame, isAttributedSession } from '../policy/origin.js'
 import type { SenderFrameLike } from '../policy/origin.js'
 import { mapIoError } from '../io-errors.js'
 import type { ResponseEnvelope } from '../../contracts/ipc.js'
@@ -89,7 +89,7 @@ export function handleSyncFsReadRequest (
   limiter?: RateLimiter,
   attributed?: (sender: unknown, origin: string) => boolean
 ): ResponseEnvelope<Uint8Array> {
-  const origin = originFromSenderFrame(event.senderFrame)
+  const origin = callerKeyFromSenderFrame(event.senderFrame)
   if (origin === null) {
     return { id: NO_ID, ok: false, code: 'denied', message: 'no authenticated origin for this frame' }
   }

@@ -55,6 +55,13 @@ export class TabOpener {
     return this.addAndShow(this.factory.blob(url, partition), active, loadOptions)
   }
 
+  /** A local file in a new tab of the local-files session, whole (query and fragment kept). Undefined for a URL `localFileKey` refuses, or at MAX_TABS. */
+  openLocalFile (url: string, active = true): string | undefined {
+    if (this.host.atCapacity()) return undefined
+    const built = this.factory.localFile(url)
+    return built === undefined ? undefined : this.addAndShow(built, active)
+  }
+
   /** createTab() for a trusted caller (the extension host): skips the sanitizeDirectUrl gate that refuses chrome-extension: outright, since its own policy already checked `target`. */
   openTrusted (target?: string): [string, WebContents] | undefined {
     if (this.host.atCapacity()) return undefined

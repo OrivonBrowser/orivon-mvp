@@ -20,7 +20,8 @@ logic; see this file's Design notes below. `session-attribution.ts` publishes
 claims, decided at that document's own commit and reused afterward rather than re-decided live,
 reusing [`../shell/tab-view.ts`](../shell/tab-view.ts)'s own `partitionForTarget` rule so every
 renderer-reachable broker channel can refuse a call whose WebContents never committed the origin
-it claims in the session it belongs in.
+it claims in the session it belongs in. A local file's key is attributed only by its own commit in the
+local-files session ([`../local-files/`](../local-files/)), with no live fallback.
 
 **What it depends on.** `electron`, [`../../contracts/`](../../contracts/) (`LIMITS`),
 [`../../broker/`](../../broker/) (`grants/origin-hash.ts`, `grants/node-ledger-storage.ts`'s
@@ -28,7 +29,7 @@ it claims in the session it belongs in.
 [`../../loader/electron/serve.ts`](../../loader/electron/serve.ts),
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts), [`../shell/`](../shell/) (the native
 question `external-link-prompt.ts`; `showing-window.ts`;
-`exclusive-access-notice.ts`; `lock-navigation.ts`; `tab-view.ts`'s `partitionForTarget`), the
+`exclusive-access-notice.ts`; `lock-navigation.ts`; `tab-view.ts`'s `partitionForTarget`), [`../local-files/`](../local-files/)'s `partition.ts`, the
 top-level `registry.ts`. Only `permission-gate.ts`, `web-context-host.ts`, `web-request-owner.ts`
 and `session-attribution.ts` import `electron`: the decision files, `web-request-compose.ts`
 included, are unit-tested under plain vitest.

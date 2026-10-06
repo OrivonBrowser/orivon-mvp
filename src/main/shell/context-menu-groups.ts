@@ -3,6 +3,7 @@
 // action the caller did not supply is an item that is not offered, which is how
 // the chrome's own menu stays small. Pure: no Electron value is used.
 import type { ContextMenuParams, MenuItemConstructorOptions } from 'electron'
+import { localFileKey } from '../../broker/policy/origin.js'
 import { sanitizeDirectUrl } from '../browsing/omnibox.js'
 import type { CommandId } from '../shortcuts/commands.js'
 import { menuSafe, queryFrom, searchLabel } from './context-menu-text.js'
@@ -15,6 +16,8 @@ export interface ContextMenuActions {
   copyText: (text: string) => void
   /** Absent in a kiosk, which opens nothing beside the page it shows. */
   openInNewTab?: (url: string) => void
+  /** Offered only on a page that is itself a local file: opens one of its `file:` links in a new tab. */
+  openLocalFile?: (url: string) => void
   /** Absent where a split is not offered. */
   openInSplit?: (url: string) => void
   openInWindow?: (url: string) => void
@@ -99,6 +102,10 @@ export function linkGroup (params: MenuParams, actions: ContextMenuActions): Men
     if (inPrivate !== undefined) items.push({ label: 'Open Link in Private Window', click: () => { inPrivate(openable) } })
     const inSplit = actions.openInSplit
     if (inSplit !== undefined) items.push({ label: 'Open Link in Split View', click: () => { inSplit(openable) } })
+  }
+  const local = actions.openLocalFile
+  if (openable === null && local !== undefined && localFileKey(params.linkURL) !== null) {
+    items.push({ label: 'Open Link in New Tab', click: () => { local(params.linkURL) } })
   }
   const save = actions.saveUrl
   const saveable = webAddress(params.linkURL)

@@ -4,7 +4,7 @@
 // function here reads or writes any tab-collection state.
 import { WebContentsView } from 'electron'
 import type { NativeImage, WebContents, WebPreferences } from 'electron'
-import { originFromUrl } from '../../broker/policy/origin.js'
+import { localFileKey, originFromUrl } from '../../broker/policy/origin.js'
 import { faviconOnCommit } from '../browsing/favicon.js'
 import { knownIcon } from '../history/favicon-host.js'
 import type { TabRecord } from './tab-types.js'
@@ -13,7 +13,7 @@ import { pageMenuItems } from './page-menu-items.js'
 import { forgetNavigation, leaveAllowed } from './leave-page-prompt.js'
 import { watchPageDialogs } from './page-dialogs.js'
 import { windowOpenHandler } from './popups.js'
-import { keepsOpenerSession, openerCutNeeded, popupTargetIsApp } from './popup-opener.js'
+import { hasWebFrame, keepsOpenerSession, openerCutNeeded, popupTargetIsApp } from './popup-opener.js'
 import { DEFAULT_BACKGROUND } from './theme-colors.js'
 import { sheetBackdropOf } from './sheet-backdrop.js'
 import { recordViewBackground } from './view-background-test-hook.js'
@@ -31,10 +31,10 @@ import { wireSignInIdentity } from './sign-in-identity-tab.js'
 import { watchAppTab } from './app-tab-watch.js'
 import { wireTabSignals } from './tab-signals.js'
 import { readableNow } from '../reader/reader-signal.js'
-import { APP_TAB_FLAG, appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, partitionChanged, partitionForTarget } from './tab-partition.js'
+import { APP_TAB_FLAG, appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, leftDashboard, partitionChanged, partitionForTarget } from './tab-partition.js'
 
 export { popupTargetIsApp } from './popup-opener.js'
-export { appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, partitionChanged, partitionForTarget } from './tab-partition.js'
+export { appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, leftDashboard, partitionChanged, partitionForTarget } from './tab-partition.js'
 export type { PartitionSwap } from './tab-partition.js'
 
 /** tabs.ts's own tab-count ceiling: an unbounded window.open() flood (an
@@ -176,7 +176,7 @@ export function wireView (id: string, record: TabRecord): void {
     // ONLY EVER CLEARED, NEVER SET, so no URL a page can influence can win
     // dashboard treatment -- the direction TabRecord.isDashboardTab's own
     // one-way rule exists to protect.
-    if (record.isDashboardTab && originFromUrl(navigatedUrl) !== originFromUrl(record.host.dashboardUrl)) {
+    if (record.isDashboardTab && leftDashboard(navigatedUrl, record.host.dashboardUrl)) {
       record.isDashboardTab = false
       // The dashboard's own pre-paint colour (makeTabView's own doc) must not
       // bleed through a site with no CSS background of its own -- and a
@@ -298,6 +298,7 @@ export function wireView (id: string, record: TabRecord): void {
       ...(services?.kiosk === true ? { kiosk: true } : {}),
       // Beside the page being read, as a middle click opens a link.
       openInNewTab: (url) => { record.host.openTab(url, false) },
+      ...(localFileKey(wc.getURL()) !== null && !hasWebFrame(wc) ? { openLocalFile: (url: string) => { record.host.openLocalFile(url, false) } } : {}),
       openInFront: (url) => { record.host.openTab(url) },
       openInSplit: (url) => { record.host.openInSplit(id, url) },
       openInWindow: (url) => { record.host.openWindow(url) },
@@ -323,12 +324,13 @@ export function wireView (id: string, record: TabRecord): void {
       record.host.adoptPopup(view, partition, active)
     },
     openBlobTab: (url, partition, active, loadOptions) => record.host.openBlobTab(url, partition, active, loadOptions),
+    openLocalFile: (url, active) => record.host.openLocalFile(url, active),
     openWindow: (url, loadOptions) => record.host.openWindow(url, loadOptions),
     partitionFor: (url) => partitionForTarget(url),
     webPreferencesFor: (url) => tabWebPreferences(record.host.preloadPath, undefined, appTabArgsFor(url, record.host.broker)),
     isApp: (url) => popupTargetIsApp(url, record.host.broker),
     popupBlocked: (details, from) => refuseHeldWindow(wc, details.url) || sitePopups.check(wc, from.url, details.url)
-  }, () => ({ url: wc.getURL(), partition: record.partition })))
+  }, () => ({ url: wc.getURL(), partition: record.partition, hasWebFrame: hasWebFrame(wc) })))
   wireTabSignals(id, record)
 }
 

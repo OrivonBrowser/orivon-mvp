@@ -112,6 +112,13 @@ export class TabManager {
         if (id !== undefined && this.order.length > before) this.afterOpen?.(id, opener)
       },
       openBlobTab: (url, partition, active, loadOptions) => this.liveWebContents(this.openedByPage(() => this.opener.openBlobTab(url, partition, active, loadOptions))),
+      openLocalFile: (url, active) => {
+        const opener = this.activeId
+        const id = this.opener.openLocalFile(url, active)
+        if (id === undefined) return undefined
+        this.afterOpen?.(id, opener)
+        return this.liveWebContents(id)
+      },
       openWindow: (url, loadOptions) => shell?.openWindow?.(url, loadOptions),
       atCapacity: () => this.atCapacity(),
       htmlFullscreenChanged: (id, entered) => { shell?.htmlFullscreenChanged(id, entered) },
@@ -225,6 +232,12 @@ export class TabManager {
 
   /** A new tab: `active` and `loadOptions` are tab-open.ts's. */
   createTab (url?: string, active = true, loadOptions?: LoadURLOptions): string { return this.opener.createTab(url, active, loadOptions) }
+
+  /** Whether `id` still shows the new-tab page: the flag a navigation away clears. */
+  isDashboardTab (id: string): boolean { return this.tabs.get(id)?.isDashboardTab === true }
+
+  /** A local file in a new tab of the local-files session; undefined for anything `localFileKey` refuses. */
+  openLocalFile (url: string, active = true): string | undefined { return this.opener.openLocalFile(url, active) }
 
   /** A same-origin blob: URL a no-guest popup open wants, in the opener's `partition`. */
   openBlobTab (url: string, partition: string | undefined, active = true, loadOptions?: LoadURLOptions): string { return this.opener.openBlobTab(url, partition, active, loadOptions) }

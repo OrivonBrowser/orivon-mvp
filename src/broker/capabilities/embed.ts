@@ -8,7 +8,7 @@
 import { LIMITS } from '../../contracts/index.js'
 import type { Pattern } from '../../contracts/index.js'
 import { fail } from '../errors.js'
-import { originFromUrl } from '../policy/origin.js'
+import { isolationKeyFromUrl } from '../policy/origin.js'
 import type { HandleTable } from '../handles/handles.js'
 import type { GrantLedger } from '../grants/grant-ledger.js'
 import type { ListenerRegistry } from './listener-registry.js'
@@ -33,18 +33,18 @@ export function createEmbedCapability ({ handleTable, ledger, canonical, listene
   const scripts = new Map<string, string>()
 
   function originsSync (origin: string): readonly Pattern[] | undefined {
-    const key = originFromUrl(origin)
+    const key = isolationKeyFromUrl(origin)
     if (key === null) return undefined
     return ledger.currentGrant(key, 'web.embed')?.patterns
   }
 
   function holdsListenerSync (origin: string, port: number): boolean {
-    const key = originFromUrl(origin)
+    const key = isolationKeyFromUrl(origin)
     return key !== null && listeners.holds(key, port)
   }
 
   function scriptSync (origin: string): string | undefined {
-    const key = originFromUrl(origin)
+    const key = isolationKeyFromUrl(origin)
     if (key === null || ledger.currentGrant(key, 'web.embed') === undefined) return undefined
     return scripts.get(key)
   }

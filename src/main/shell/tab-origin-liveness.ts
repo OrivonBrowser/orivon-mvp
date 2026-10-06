@@ -3,7 +3,7 @@
 // this pushed that file past its line budget. See tab-view.ts's own header
 // and README.md's Design notes for how wireView() calls into this.
 import type { WebContents } from 'electron'
-import { originFromUrl } from '../../broker/policy/origin.js'
+import { isolationKeyFromUrl } from '../../broker/policy/origin.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 
 /**
@@ -53,7 +53,7 @@ export function releaseOriginDocument (wc: WebContents, broker: Broker | undefin
  * navigates still changes which origin's document count it holds.
  */
 export function trackDocumentOrigin (wc: WebContents, navigatedUrl: string, broker: Broker | undefined): void {
-  const next = originFromUrl(navigatedUrl)
+  const next = isolationKeyFromUrl(navigatedUrl)
   if (next === (countedOriginByWebContents.get(wc) ?? null)) return
   releaseOriginDocument(wc, broker)
   acquireOriginDocument(wc, next)

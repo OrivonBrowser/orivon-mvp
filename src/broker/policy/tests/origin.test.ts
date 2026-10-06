@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isLocalhostName, isLoopbackHost, isPersistableOrigin, originFromSenderFrame, originFromUrl, type SenderFrameLike } from '../origin.js'
+import { callerKeyFromSenderFrame, isLocalFileKey, isLocalhostName, isLoopbackHost, isolationKeyFromUrl, isPersistableOrigin, localFileKey, originFromSenderFrame, originFromUrl, type SenderFrameLike } from '../origin.js'
 
 // Origin derivation is the first of the six security-critical areas in
 // docs/development/testing.md, and it has the property that qualifies an area
@@ -524,5 +524,100 @@ describe('isLocalhostName', () => {
   it('recognises a trailing root-label dot', () => {
     expect(isLocalhostName('localhost.')).toBe(true)
     expect(isLocalhostName('app.localhost.')).toBe(true)
+  })
+})
+
+describe('a local file is an origin of its own', () => {
+  describe('localFileKey', () => {
+    it.each<[string, string]>([
+      ['file:///home/u/app/index.html', 'file:///home/u/app/index.html'],
+      ['file:///home/u/app/index.html?q=1#frag', 'file:///home/u/app/index.html'],
+      ['file:///home/u/a%20b.html', 'file:///home/u/a%20b.html'],
+      ['file:///home/u/x/../app/index.html', 'file:///home/u/app/index.html'],
+      ['file:///C:/Users/u/app/index.html', 'file:///C:/Users/u/app/index.html']
+    ])('%s -> %s', (input, expected) => {
+      expect(localFileKey(input)).toBe(expected)
+    })
+
+    it('keys two siblings, and a moved file, differently', () => {
+      expect(localFileKey('file:///d/a.html')).not.toBe(localFileKey('file:///d/b.html'))
+      expect(localFileKey('file:///d/a.html')).not.toBe(localFileKey('file:///e/a.html'))
+    })
+
+    it.each([
+      ['a host', 'file://server/share/a.html'],
+      ['a UNC-shaped path', 'file:////server/share/a.html'],
+      ['a web URL', 'https://x.example/a.html'],
+      ['a blob', 'blob:file:///d/a.html'],
+      ['text that is not a URL', 'not a url'],
+      ['the empty string', '']
+    ])('refuses %s', (_name, input) => {
+      expect(localFileKey(input)).toBeNull()
+    })
+
+    it('reads file://localhost/ as the empty host, the way the URL parser and Chromium do', () => {
+      expect(localFileKey('file://localhost/d/a.html')).toBe('file:///d/a.html')
+    })
+
+    it('refuses a key over 2,048 characters', () => {
+      expect(localFileKey(`file:///${'a'.repeat(2040)}`)?.length).toBe(2048)
+      expect(localFileKey(`file:///${'a'.repeat(2041)}`)).toBeNull()
+    })
+
+    it('is never persistable', () => {
+      expect(isPersistableOrigin('file:///d/a.html')).toBe(false)
+    })
+
+    it('is recognised by isLocalFileKey and nothing else is', () => {
+      expect(isLocalFileKey('file:///d/a.html')).toBe(true)
+      expect(isLocalFileKey('https://x.example')).toBe(false)
+      expect(isLocalFileKey('file://server/a.html')).toBe(false)
+    })
+  })
+
+  describe('isolationKeyFromUrl', () => {
+    it('is the web origin for a web URL and the file key for a file URL', () => {
+      expect(isolationKeyFromUrl('https://x.example/a?b')).toBe('https://x.example')
+      expect(isolationKeyFromUrl('file:///d/a.html#x')).toBe('file:///d/a.html')
+      expect(isolationKeyFromUrl('chrome-extension://abc/a.html')).toBeNull()
+    })
+
+    it('leaves originFromUrl refusing file:, so a caller not yet switched fails closed', () => {
+      expect(originFromUrl('file:///d/a.html')).toBeNull()
+    })
+  })
+
+  describe('callerKeyFromSenderFrame', () => {
+    const file = { url: 'file:///d/a.html?x=1', origin: 'file://' }
+
+    it('accepts a file document whose frame origin is the file origin', () => {
+      expect(callerKeyFromSenderFrame(file)).toBe('file:///d/a.html')
+    })
+
+    it('still accepts a web frame exactly as originFromSenderFrame does', () => {
+      expect(callerKeyFromSenderFrame({ url: 'https://x.example/p', origin: 'https://x.example' })).toBe('https://x.example')
+    })
+
+    it('denies a sandboxed (opaque) file document', () => {
+      expect(callerKeyFromSenderFrame({ url: 'file:///d/a.html', origin: 'null' })).toBeNull()
+    })
+
+    it('denies a file URL whose frame claims a web origin, and the reverse', () => {
+      expect(callerKeyFromSenderFrame({ url: 'file:///d/a.html', origin: 'https://x.example' })).toBeNull()
+      expect(callerKeyFromSenderFrame({ url: 'https://x.example/', origin: 'file://' })).toBeNull()
+    })
+
+    it('denies a host, an over-long path, a missing field and a disposed frame', () => {
+      expect(callerKeyFromSenderFrame({ url: 'file://server/a.html', origin: 'file://' })).toBeNull()
+      expect(callerKeyFromSenderFrame({ url: `file:///${'a'.repeat(2100)}`, origin: 'file://' })).toBeNull()
+      expect(callerKeyFromSenderFrame({ url: 'file:///d/a.html' })).toBeNull()
+      expect(callerKeyFromSenderFrame(null)).toBeNull()
+      const disposed = { get url (): string { throw new Error('disposed') }, origin: 'file://' }
+      expect(callerKeyFromSenderFrame(disposed)).toBeNull()
+    })
+
+    it('leaves originFromSenderFrame refusing a file frame', () => {
+      expect(originFromSenderFrame(file)).toBeNull()
+    })
   })
 })

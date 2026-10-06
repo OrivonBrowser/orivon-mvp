@@ -39,7 +39,7 @@ import { createPickPath } from './picker-dialog.js'
 import { createSyncFsPolicy } from './sync-fs-policy.js'
 import { handleSyncFsReadRequest } from './sync-fs.js'
 import type { SyncControlEvent, SyncFsPolicy } from './sync-fs.js'
-import { isAttributedSession, originFromSenderFrame } from '../policy/origin.js'
+import { callerKeyFromSenderFrame, isAttributedSession } from '../policy/origin.js'
 import { fail } from '../errors.js'
 import { toFailureResponse } from './response-envelope.js'
 import { dispatchApp } from './dispatch/app.js'
@@ -101,7 +101,7 @@ async function dispatch (
       // this same tab gets a new pair of on every call.
       return await dispatchApp(broker, origin, method, payload, requestGrantCtx, {
         window: () => windowForSender?.(event.sender),
-        stillOn: (checkedOrigin) => !event.sender.isDestroyed() && originFromSenderFrame(event.sender.mainFrame) === checkedOrigin,
+        stillOn: (checkedOrigin) => !event.sender.isDestroyed() && callerKeyFromSenderFrame(event.sender.mainFrame) === checkedOrigin,
         id: event.sender,
         contents: () => event.sender
       }, abandoned)
@@ -246,7 +246,7 @@ export async function handleControlRequest (
     return { id: envelopeId(envelope), ok: false, code: 'invalid', message: 'malformed request envelope' }
   }
 
-  const origin = originFromSenderFrame(event.senderFrame)
+  const origin = callerKeyFromSenderFrame(event.senderFrame)
   if (origin === null) {
     return { id: envelope.id, ok: false, code: 'denied', message: 'no authenticated origin for this frame' }
   }

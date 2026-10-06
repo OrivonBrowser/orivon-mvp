@@ -2049,3 +2049,15 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** install the built package and read `gio mime x-scheme-handler/https` (rec.); put `text/html` back.
 - **Who decides:** research first
 - **Blocks:** nothing
+
+### A392: The file-protocol fuse stays on while the shell's pages are `file:` URLs **[RESEARCH]**
+
+- **Question:** `grantFileProtocolExtraPrivileges` lets a `file:` page fetch `file:` URLs and treats its frames as one
+  origin. The shell's own pages are `file:` URLs in a packaged build, so the fuse stays on, and the local-files guard
+  (`src/main/local-files/`, ADR-0058) is what stops a downloaded page reading other files. Serving the shell's pages
+  from a scheme of Orivon's own would let the fuse go off and the guard become a second lock instead of the only one.
+- **Why it matters:** one guard stands between a downloaded page and the files of the person's account.
+- **Options:** serve the shell's pages from an Orivon scheme and turn the fuse off (rec., a packaging change to measure);
+  keep the guard alone.
+- **Who decides:** owner
+- **Blocks:** nothing

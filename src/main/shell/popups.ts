@@ -5,7 +5,7 @@
 // popup keeps its opener's session.
 import { WebContentsView } from 'electron'
 import type { HandlerDetails, LoadURLOptions, WebContents, WebPreferences, WindowOpenHandlerResponse } from 'electron'
-import { originFromUrl } from '../../broker/policy/origin.js'
+import { localFileKey, originFromUrl } from '../../broker/policy/origin.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 
 export type PopupRoute = 'adopt' | 'new-tab'
@@ -13,6 +13,8 @@ export type PopupRoute = 'adopt' | 'new-tab'
 export interface PopupOpener {
   readonly url: string
   readonly partition: string | undefined
+  /** True while any frame of the opener's tab is a web page: a handler cannot tell which frame is opening. */
+  readonly hasWebFrame?: boolean
 }
 
 /** A window feature that severs the opener, matched as a whole name. */
@@ -81,6 +83,8 @@ export interface PopupHost {
   /** `url` (a blob:, `blobMintedByOpener`'s own doc) opened directly in `partition`, the opener's
    * own -- the one case a blob: URL is safe to open at all. `active`/`loadOptions` -- `openTab`'s own doc. */
   openBlobTab: (url: string, partition: string | undefined, active: boolean, loadOptions?: LoadURLOptions) => WebContents | undefined
+  /** `url`, a local file, in a new tab of the local-files session. Absent: a local file is never opened from a page. */
+  openLocalFile?: (url: string, active: boolean) => WebContents | undefined
   /** `url` in a brand new window, as Chrome opens a shift-click -- undefined when the shell
    * cannot make one, so the caller opens a tab here instead. `loadOptions` -- see
    * `loadOptionsFor`'s own doc. */
@@ -124,6 +128,15 @@ function loadOptionsFor (details: HandlerDetails): LoadURLOptions | undefined {
     options.extraHeaders = `content-type: ${postBody.contentType}${postBody.boundary !== undefined ? `; boundary=${postBody.boundary}` : ''}\n`
   }
   return options
+}
+
+/** A `file:` target of any shape: even one `localFileKey` refuses is denied here, never handed to a tab. */
+function isFileTarget (url: string): boolean {
+  try {
+    return new URL(url).protocol === 'file:'
+  } catch {
+    return false
+  }
 }
 
 const MAX_NEW_WINDOWS_PER_MINUTE_PER_TAB = 5
@@ -182,6 +195,12 @@ export function windowOpenHandler (
     if (host.popupBlocked?.(details, from) === true) return { action: 'deny' }
     // Every browser opens a middle click or a plain ctrl+click behind the current tab.
     const active = details.disposition !== 'background-tab'
+    if (isFileTarget(details.url)) {
+      // Only a page that is itself a local file, with no web frame that could be the caller, may open
+      // another; it never gets a window to script (a sibling is its own origin), so it is never adopted.
+      if (localFileKey(details.url) !== null && localFileKey(from.url) !== null && from.hasWebFrame !== true) host.openLocalFile?.(details.url, active)
+      return { action: 'deny' }
+    }
     const loadOptions = loadOptionsFor(details)
     if (routePopup(details, from, host.partitionFor(details.url), host.isApp) === 'new-tab') {
       // routePopup's 'new-tab' returns before disposition is ever weighed (a builtin address, a

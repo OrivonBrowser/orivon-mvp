@@ -65,6 +65,9 @@ is the string `"null"`, so every `file:`, `data:`, `about:`, `javascript:` and `
 share one storage domain and one grant entry. And `blob:https://x.example/u` reports the
 legitimate-looking `https://x.example` (so do `ws:`, `wss:` and `ftp:`), for a scheme T13b
 rejects. An unrecognised scheme denies. Why `http:` stays: the comment on the constant.
+`file:` has no `originFromUrl` origin on purpose: a document opened from this computer is keyed by
+`localFileKey` (its empty-host `file:` URL, no query or fragment) and reached through
+`isolationKeyFromUrl` and `callerKeyFromSenderFrame`, so a caller not yet moved to the key fails closed.
 
 **[`update.ts`](update.ts)'s re-consent rule is a subset check over the granted pattern set,
 never a comparison of capability kinds** (T19,

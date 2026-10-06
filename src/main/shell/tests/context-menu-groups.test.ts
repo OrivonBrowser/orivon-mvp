@@ -83,6 +83,33 @@ describe('link group', () => {
   })
 })
 
+describe('link group on a local file', () => {
+  const FILE_LINK = 'file:///home/u/app/other.html'
+
+  it('offers only a new tab for a file link, and only when the page is a local file', () => {
+    const local = vi.fn()
+    const withLocal = { ...full(), openLocalFile: local } as Actions
+    const template = contextMenuTemplate(params({ linkURL: FILE_LINK, linkText: 'other' }), withLocal, false, ctx)
+
+    expect(labels(template)).toEqual(['Open Link in New Tab', 'Copy Link Address', 'Copy Link Text'])
+    click(template, 'Open Link in New Tab')
+    expect(local).toHaveBeenCalledWith(FILE_LINK)
+  })
+
+  it('offers no way to open a file link on a page that is not a local file', () => {
+    const template = contextMenuTemplate(params({ linkURL: FILE_LINK, linkText: 'other' }), full(), false, ctx)
+
+    expect(labels(template)).toEqual(['Copy Link Address', 'Copy Link Text'])
+  })
+
+  it('does not open a file link that names a host', () => {
+    const withLocal = { ...full(), openLocalFile: vi.fn() } as Actions
+    const template = contextMenuTemplate(params({ linkURL: 'file://server/share/a.html' }), withLocal, false, ctx)
+
+    expect(labels(template)).toEqual(['Copy Link Address'])
+  })
+})
+
 describe('image group', () => {
   const image = { mediaType: 'image', hasImageContents: true, srcURL: 'https://example.com/i.png' } as const
 
