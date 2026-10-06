@@ -50,6 +50,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Screen sharing on Wayland now shares the monitor you pick; two identical monitors had confused GNOME's restore of the choice.
 - A page's CaptureController now binds to Orivon's share, so Meet's tab zoom and scroll work; its black presenter tile awaits a retest.
 - Every ported app republished naming its home, <app>.orivonstack.eth: Attila's judged level counts only there, and in development under the same names.
+- ipns:// keys now open, in a tab and as the default Attila provider; a dead public gateway had stalled every lookup past its deadline.
 
 ### In my head
 

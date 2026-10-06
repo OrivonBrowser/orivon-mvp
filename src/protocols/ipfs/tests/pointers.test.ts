@@ -123,6 +123,16 @@ describe('resolveIpnsKey', () => {
     expect(asked).toEqual([`${A}/ipns/${name}?format=ipns-record`])
   })
 
+  it('is unavailable at once when no source is left to ask', async () => {
+    const { name } = await ipnsKey()
+    const pool = new GatewayPool([A], 4)
+    pool.drop(A)
+    const caller = new AbortController()
+    const timer = setTimeout(() => { caller.abort(new Error('still waiting')) }, 1000)
+    await expect(resolveIpnsKey(name, fakeGateways(new Map()).fetch, { pool, nameServices: [] }, memorySequenceStore(), LIMITS, caller.signal, () => {})).rejects.toMatchObject({ failure: 'unavailable', message: expect.stringContaining('no source left to ask') })
+    clearTimeout(timer)
+  })
+
   it('waits out a short cooldown when every gateway is cooling, instead of failing untried', async () => {
     const { key, name } = await ipnsKey()
     const gw = fakeGateways(new Map())

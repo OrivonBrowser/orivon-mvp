@@ -85,6 +85,8 @@ export async function racePass<T> (
   hedgeDelayMs: number,
   callerSignal: AbortSignal
 ): Promise<PassResult<T>> {
+  // With nothing to start, nothing would ever answer the wait below.
+  if (candidates.length === 0) return { kind: 'exhausted', lied: false, retryable: false, reasons: [] }
   // One controller per attempt, in start order, so each loser can be told whether it was outrun.
   const attempts: AbortController[] = []
   let winner: number | undefined
