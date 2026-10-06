@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { createArrival } from '../arrival.js'
 
-function setup (): { arrival: ReturnType<typeof createArrival>, sent: string[], state: { arming: boolean, over: boolean } } {
+function setup (): { arrival: ReturnType<typeof createArrival>, sent: string[], state: { arming: boolean } } {
   const sent: string[] = []
-  const state = { arming: false, over: false }
-  const arrival = createArrival({ send: (type) => { sent.push(type) }, isArming: () => state.arming, isOver: () => state.over, left: () => { sent.push('restore') } })
+  const state = { arming: false }
+  const arrival = createArrival({ send: (type) => { sent.push(type) }, isArming: () => state.arming, left: () => { sent.push('restore') } })
   return { arrival, sent, state }
 }
 
@@ -26,30 +26,26 @@ describe('createArrival', () => {
     expect(sent).toEqual(['enter'])
   })
 
-  it('sends the arrival when the guard ends under a pointer or focus that stayed on the button', () => {
+  it('sends nothing for a pointer or focus that rested on the button through the guard, until it arrives again', () => {
     const { arrival, sent, state } = setup()
     state.arming = true
-    state.over = true
     arrival.arrive()
     state.arming = false
-    arrival.guardEnded()
+    expect(sent).toEqual([])
+    arrival.leave()
+    arrival.arrive()
     expect(sent).toEqual(['enter'])
   })
 
-  it('sends nothing when the guard ends and the button is not under the pointer or focus', () => {
-    const { arrival, sent } = setup()
-    arrival.guardEnded()
-    expect(sent).toEqual([])
-  })
-
-  it('arrives again after the panel moved under a pointer that was already on the button', () => {
+  it('arrives anew after the panel moved under a pointer that was already on the button', () => {
     const { arrival, sent, state } = setup()
-    state.over = true
     arrival.arrive()
     state.arming = true
     arrival.restarted()
+    arrival.arrive()
     state.arming = false
-    arrival.guardEnded()
+    expect(sent).toEqual(['enter'])
+    arrival.arrive()
     expect(sent).toEqual(['enter', 'enter'])
   })
 })

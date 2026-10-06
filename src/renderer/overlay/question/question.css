@@ -9,6 +9,7 @@ body[data-overlay^='question'] .q-detail { margin: 8px 0 0; color: var(--wink-di
 body[data-overlay^='question'] .q-input { box-sizing: border-box; width: 100%; margin: 10px 0 0; }
 body[data-overlay^='question'] .q-check { margin-top: 10px; }
 body[data-overlay^='question'] .btn-row { margin-top: 14px; }
+body[data-overlay^='question'] .q-hint:empty { display: none; }
 body[data-overlay^='question'] .btn-row .btn { transition: opacity 0.12s, background-color 0.12s, border-color 0.12s; }
 
 /* The first half second: a guarded button is visibly not ready, so a press that does nothing is not a surprise. */

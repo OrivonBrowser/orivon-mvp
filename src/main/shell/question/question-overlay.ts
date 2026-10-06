@@ -141,7 +141,10 @@ export function createQuestionPanel (name: string, now: () => number = Date.now)
         if (answer.button < 0 || answer.button >= spec.buttons.length) return undefined
         if (spec.guarded?.includes(answer.button) === true && (shownAt === null || now() - shownAt < GUARD_MS || keys.quietFor() < GUARD_MS)) return undefined
         if (spec.doublePress?.includes(answer.button) === true) {
-          if (armed !== answer.button) return undefined
+          if (armed !== answer.button) {
+            send({ type: 'hint', button: answer.button })
+            return undefined
+          }
           if (firstPress === null || firstPress.button !== answer.button || now() - firstPress.at > DOUBLE_PRESS_MS) {
             firstPress = { button: answer.button, at: now() }
             send({ type: 'pressed', button: answer.button, ms: DOUBLE_PRESS_MS })

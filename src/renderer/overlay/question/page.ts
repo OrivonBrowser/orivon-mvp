@@ -13,6 +13,9 @@ import './question.css'
 /** What a double-press button says once it has been pressed and waits for the second press. */
 const AGAIN_LABEL = 'Press again'
 
+/** What a press on a double-press button that is not armed is answered with. */
+const HINT = 'Move the pointer onto the button, then press it twice.'
+
 export const questionPage: OverlayPage = {
   mount (content, overlay: Overlay) {
     const root = h('div', { className: 'q', tabIndex: -1 })
@@ -29,10 +32,7 @@ export const questionPage: OverlayPage = {
       for (const arrival of arrivals) arrival.restarted()
       if (guardMs <= 0) return
       root.classList.add('arming')
-      armTimer = setTimeout(() => {
-        root.classList.remove('arming')
-        for (const arrival of arrivals) arrival.guardEnded()
-      }, guardMs)
+      armTimer = setTimeout(() => { root.classList.remove('arming') }, guardMs)
     }
 
     /** Main starts its clock when it takes this report, so the page's own look-ready timer starts from the reply, never before it. */
@@ -61,8 +61,10 @@ export const questionPage: OverlayPage = {
       const kind = typeof event === 'object' && event !== null ? (event as { type?: unknown }).type : undefined
       if (kind === 'arm') {
         arm()
+        showHint('')
         for (const index of showing?.doublePress ?? []) restoreLabel(index)
       }
+      if (kind === 'hint') showHint(HINT)
       if (kind === 'pressed') {
         const { button: index, ms } = event as { button?: unknown, ms?: unknown }
         const button = typeof index === 'number' ? buttonFor(index) : null
@@ -74,19 +76,27 @@ export const questionPage: OverlayPage = {
       }
     })
 
+    /** The line under the buttons that says why a press did nothing; an empty text clears it. */
+    function showHint (text: string): void {
+      const line = root.querySelector('.q-hint')
+      if (line !== null) line.textContent = text
+    }
+
     /** Tells main when the pointer or the focus arrives on a double-press button, and when it leaves: main arms it only then, after the guard. */
     function watchArrival (id: string, index: number, button: HTMLElement): void {
       const arrival = createArrival({
-        send: (type) => { void overlay.request({ type, id, button: index }) },
+        send: (type) => {
+          if (type === 'enter') showHint('')
+          void overlay.request({ type, id, button: index })
+        },
         isArming: () => root.classList.contains('arming'),
-        isOver: () => button.matches(':hover') || document.activeElement === button,
         left: () => { restoreLabel(index) }
       })
       arrivals.push(arrival)
-      // A move inside the button counts as arriving: a pointer that rested on it through the guard only has to move to arm it.
-      button.addEventListener('pointermove', arrival.arrive)
+      // A pointer that rested on the button through the guard has to leave and enter again: entering is what arms it.
       button.addEventListener('pointerenter', arrival.arrive)
-      button.addEventListener('focus', arrival.arrive)
+      // A click focuses the button too; only the keyboard's focus is an arrival, or a press would arm the button it is the first press on.
+      button.addEventListener('focus', () => { if (button.matches(':focus-visible')) arrival.arrive() })
       button.addEventListener('pointerleave', arrival.leave)
       button.addEventListener('blur', arrival.leave)
     }
@@ -139,7 +149,8 @@ export const questionPage: OverlayPage = {
         view.detail !== undefined && h('p', { className: 'q-detail', id: 'q-detail' }, view.detail),
         text,
         tick !== undefined && h('label', { className: 'check q-check' }, tick, h('span', null, view.checkboxLabel ?? '')),
-        h('div', { className: 'btn-row' }, ...buttons))
+        h('div', { className: 'btn-row' }, ...buttons),
+        view.doublePress.length > 0 && h('p', { className: 'q-detail q-hint', role: 'status' }))
       if (!page && view.origin === undefined) root.querySelector('.q-origin')?.remove()
       guardMs = view.guarded.length > 0 ? view.guardMs : 0
       reportDrawn(view.id)

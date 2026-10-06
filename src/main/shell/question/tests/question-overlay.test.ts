@@ -318,6 +318,16 @@ describe('a question whose button needs two presses', () => {
     expect(r.results).toEqual([])
   })
 
+  it('tells the page to move onto the button when it is pressed before it was armed', () => {
+    const r = rig(DOUBLE)
+    r.handler.show?.({ id: r.id })
+    draw(r)
+    r.clock.now += GUARD_MS * 4
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.send).toHaveBeenCalledWith({ type: 'hint', button: 0 })
+    expect(r.send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'pressed' }))
+  })
+
   it('ignores an arrival inside the guard, and an arrival at another button', () => {
     const early = rig(DOUBLE)
     early.handler.show?.({ id: early.id })

@@ -4,18 +4,17 @@ export interface ArrivalPorts {
   send: (type: 'enter' | 'leave') => void
   /** The panel's guard is running: main ignores an arrival now, so none is sent. */
   isArming: () => boolean
-  /** The pointer hovers the button or it holds the focus. */
-  isOver: () => boolean
   /** The button shows its own label again. */
   left: () => void
 }
 
 /**
  * Tracks whether main has been told the pointer or focus is on one button. Main arms a double-press
- * button only on an arrival it takes after the guard, so an arrival that came during the guard is
- * sent again once it ends.
+ * button only on an arrival after the guard: a pointer or focus that rested on the button through
+ * the guard sends nothing until it leaves and arrives again, so someone clicking fast where the
+ * panel appeared arms nothing.
  */
-export function createArrival (ports: ArrivalPorts): { arrive: () => void, leave: () => void, restarted: () => void, guardEnded: () => void } {
+export function createArrival (ports: ArrivalPorts): { arrive: () => void, leave: () => void, restarted: () => void } {
   let here = false
   const arrive = (): void => {
     if (ports.isArming() || here) return
@@ -31,7 +30,6 @@ export function createArrival (ports: ArrivalPorts): { arrive: () => void, leave
       ports.send('leave')
     },
     // Main forgets its arming when the guard starts over.
-    restarted: () => { here = false },
-    guardEnded: () => { if (ports.isOver()) arrive() }
+    restarted: () => { here = false }
   }
 }
