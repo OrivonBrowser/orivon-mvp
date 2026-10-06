@@ -4,7 +4,7 @@ import { createDisplayTickets, EARLY_SLACK_MS, QUIET_WINDOW_MS, SUSPECT_MS, TICK
 interface Timer { at: number, run: () => void, live: boolean }
 
 /** A clock the test advances by hand, and the timers that fire as it passes them. */
-function setup (timerJitterMs = 0): { tickets: ReturnType<typeof createDisplayTickets<string>>, advance: (ms: number) => void, nonces: string[] } {
+function setup (timerJitterMs = 0, onEnd?: (key: string, nonce: string) => void): { tickets: ReturnType<typeof createDisplayTickets<string>>, advance: (ms: number) => void, nonces: string[] } {
   let now = 0
   const timers: Timer[] = []
   const nonces: string[] = []
@@ -13,7 +13,8 @@ function setup (timerJitterMs = 0): { tickets: ReturnType<typeof createDisplayTi
     now: () => now,
     setTimer: (run, ms) => { const timer = { at: now + (ms > 1 ? ms - timerJitterMs : ms), run, live: true }; timers.push(timer); return timer },
     clearTimer: (handle) => { (handle as Timer).live = false },
-    nonce: () => { const value = `n${++counter}`; nonces.push(value); return value }
+    nonce: () => { const value = `n${++counter}`; nonces.push(value); return value },
+    ...(onEnd === undefined ? {} : { onEnd })
   })
   const advance = (ms: number): void => {
     const end = now + ms
@@ -138,7 +139,7 @@ describe('display tickets', () => {
     expect(await state(real)).toBe(false)
   })
 
-  it('voids an allowed ticket when another request arrives before the display handler took it, and reports the aftermath', async () => {
+  it('voids an allowed ticket when another request arrives before the display handler took it', async () => {
     const { tickets, advance } = setup()
     const nonce = tickets.open(KEY, 'screen')
     tickets.arm(KEY, nonce)
@@ -146,9 +147,7 @@ describe('display tickets', () => {
     tickets.called(KEY, nonce, false)
     advance(QUIET_WINDOW_MS)
     expect(await state(first)).toBe(true)
-    const aftermath = vi.fn()
-    expect(await state(tickets.request(KEY, aftermath))).toBe(false)
-    expect(aftermath).toHaveBeenCalledOnce()
+    expect(await state(tickets.request(KEY))).toBe(false)
     expect(tickets.consumeDisplay(KEY)).toBeUndefined()
   })
 
@@ -405,14 +404,7 @@ describe('display tickets', () => {
       expect(tickets.suspect(KEY)).toBe(false)
     })
 
-    it('is no aftermath when the frame never had a ticket consumed', async () => {
-      const { tickets } = setup()
-      const aftermath = vi.fn()
-      await tickets.request(KEY, aftermath)
-      expect(aftermath).not.toHaveBeenCalled()
-    })
-
-    it('is an aftermath within SUSPECT_MS of the frame\'s ticket being consumed, and not after', async () => {
+    it('refuses a request that follows a served ticket, long after or soon after, and never reports it as more than a refusal', async () => {
       const { tickets, advance } = setup()
       const consume = async (): Promise<void> => {
         const nonce = tickets.open(KEY, 'screen')
@@ -424,29 +416,25 @@ describe('display tickets', () => {
         tickets.consumeDisplay(KEY)
       }
       await consume()
-      advance(SUSPECT_MS - 1)
-      const early = vi.fn()
-      await tickets.request(KEY, early)
-      expect(early).toHaveBeenCalledOnce()
-      await consume()
+      advance(100)
+      expect(await state(tickets.request(KEY))).toBe(false)
       advance(SUSPECT_MS)
-      const late = vi.fn()
-      await tickets.request(KEY, late)
-      expect(late).not.toHaveBeenCalled()
+      await consume()
+      advance(SUSPECT_MS * 3)
+      expect(await state(tickets.request(KEY))).toBe(false)
+      expect(tickets.suspect(KEY)).toBe(true)
     })
 
-    it('does not count a different frame\'s consumed ticket', async () => {
-      const { tickets, advance } = setup()
-      const nonce = tickets.open(OTHER, 'screen')
-      tickets.arm(OTHER, nonce)
-      const held = tickets.request(OTHER)
-      tickets.called(OTHER, nonce, false)
-      advance(QUIET_WINDOW_MS)
-      await held
-      tickets.consumeDisplay(OTHER)
-      const aftermath = vi.fn()
-      await tickets.request(KEY, aftermath)
-      expect(aftermath).not.toHaveBeenCalled()
+    it('forgets the suspicion of every frame of a tab when a new document commits there, and no other tab\'s', async () => {
+      const { tickets } = setup()
+      await tickets.request(KEY)
+      await tickets.request(OTHER)
+      expect(tickets.suspect(KEY)).toBe(true)
+      tickets.forgetTab(1)
+      expect(tickets.suspect(KEY)).toBe(false)
+      expect(tickets.suspect(OTHER)).toBe(true)
+      tickets.forgetTab(22)
+      expect(tickets.suspect(OTHER)).toBe(true)
     })
 
     it('voids a ticket whose request is held while the frame is suspect', async () => {
@@ -473,6 +461,82 @@ describe('display tickets', () => {
       tickets.called(KEY, nonce, false)
       advance(QUIET_WINDOW_MS)
       expect(await state(held)).toBe(true)
+    })
+  })
+
+  describe('telling the owner of a mark that a ticket ended', () => {
+    const arrange = (): ReturnType<typeof setup> & { ended: Array<[string, string]> } => {
+      const ended: Array<[string, string]> = []
+      return { ...setup(0, (key, nonce) => { ended.push([key, nonce]) }), ended }
+    }
+
+    it('reports a ticket the display handler never took: voided, timed out, replaced, refused for two requests or a wrong nonce or the slack', async () => {
+      const { tickets, advance, ended } = arrange()
+      const voided = tickets.open(KEY, 'a')
+      tickets.void(KEY)
+      const timedOut = tickets.open(KEY, 'b')
+      advance(TICKET_TIMEOUT_MS)
+      const replaced = tickets.open(KEY, 'c')
+      const fresh = tickets.open(KEY, 'd')
+      const wrong = tickets.open(OTHER, 'e')
+      tickets.arm(OTHER, 'guess')
+      const twice = tickets.open(KEY, 'f')
+      tickets.arm(KEY, twice)
+      void tickets.request(KEY)
+      void tickets.request(KEY)
+      const early = tickets.open(OTHER, 'g')
+      void tickets.request(OTHER)
+      advance(EARLY_SLACK_MS + 1)
+      tickets.arm(OTHER, early)
+      expect(ended.map(([, nonce]) => nonce)).toEqual([voided, timedOut, replaced, wrong, fresh, twice, early])
+      expect(ended[0]?.[0]).toBe(KEY)
+    })
+
+    it('reports a ticket voided by suspicion, and one that was allowed and not yet taken', async () => {
+      const { tickets, advance, ended } = arrange()
+      await tickets.request(KEY)
+      const suspected = tickets.open(KEY, 'a')
+      tickets.arm(KEY, suspected)
+      void tickets.request(KEY)
+      expect(ended.map(([, nonce]) => nonce)).toEqual([suspected])
+      advance(SUSPECT_MS)
+      const allowed = tickets.open(KEY, 'b')
+      tickets.arm(KEY, allowed)
+      const held = tickets.request(KEY)
+      tickets.called(KEY, allowed, false)
+      advance(QUIET_WINDOW_MS)
+      await held
+      await tickets.request(KEY)
+      expect(ended.map(([, nonce]) => nonce)).toEqual([suspected, allowed])
+    })
+
+    it('does not report a ticket the display handler took: the share starts right after, and starting it clears the mark', async () => {
+      const { tickets, advance, ended } = arrange()
+      const nonce = tickets.open(KEY, 'screen')
+      tickets.arm(KEY, nonce)
+      const held = tickets.request(KEY)
+      tickets.called(KEY, nonce, false)
+      advance(QUIET_WINDOW_MS)
+      await held
+      expect(tickets.consumeDisplay(KEY)).toEqual({ choice: 'screen', nonce })
+      expect(ended).toEqual([])
+    })
+  })
+
+  describe('voiding every ticket that was allowed and not yet taken', () => {
+    it('voids an allowed ticket and leaves an open one', async () => {
+      const { tickets, advance } = setup()
+      const nonce = tickets.open(KEY, 'screen')
+      tickets.arm(KEY, nonce)
+      const held = tickets.request(KEY)
+      tickets.called(KEY, nonce, false)
+      advance(QUIET_WINDOW_MS)
+      await held
+      tickets.open(OTHER, 'open')
+      tickets.voidAllowed()
+      expect(tickets.awaitingDisplay(KEY)).toBe(false)
+      expect(tickets.consumeDisplay(KEY)).toBeUndefined()
+      expect(tickets.has(OTHER)).toBe(true)
     })
   })
 })

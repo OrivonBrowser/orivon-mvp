@@ -44,6 +44,9 @@ export type DisplayChoice =
 /** The picker. Resolves null for every way out but Share: cancel, Escape, a navigation, a closed tab, the signal. */
 export type ChooseDisplaySource = (request: DisplayRequest, signal: AbortSignal) => Promise<DisplayChoice | null>
 
+/** What the preload's own call failed with, as it reports it: any other name is reported as `AbortError`. */
+export type FailureName = 'NotAllowedError' | 'AbortError' | 'NotReadableError' | 'NotFoundError'
+
 /** The three app media kinds of `Capabilities.media` (ADR-0032, ADR-0055). */
 export type AppMediaKind = 'media.camera' | 'media.microphone' | 'media.screen'
 

@@ -246,7 +246,7 @@ it('shares a screen twenty times in a row, each stopped before the next, and the
 
 const liveTracks = async (view: Page): Promise<number> => await view.evaluate(() => (window as unknown as { live: () => number }).live())
 
-it('refuses the preload\'s call when the page made a request of its own first, whether it went around the wrapper before or during the pick', async () => {
+it('refuses the preload\'s call when the page went around the wrapper first, natively or with the legacy call', async () => {
   const { app, chrome } = await launchShell()
   try {
     const view = await visit(app, chrome, `${origins.a}/`)
@@ -261,15 +261,6 @@ it('refuses the preload\'s call when the page made a request of its own first, w
     expect(await liveTracks(view)).toBe(0)
     expect(await shares(app)).toEqual([])
 
-    // The same while the picker is open: the picker was shown for the wrapped call, and nothing is shared after it.
-    await delay(SUSPECT_MS + 500)
-    await useChooser(app, { kind: 'screen', delayMs: 1500 })
-    await run(view, "window.__r = {}; window.share('wrapped', { video: true }); setTimeout(() => window.native('native'), 300)")
-    expect(await result(view, 'native')).toBe('ERR:NotAllowedError')
-    expect(await result(view, 'wrapped', 30_000)).toBe('ERR:NotAllowedError')
-    expect(await liveTracks(view)).toBe(0)
-    expect(await shares(app)).toEqual([])
-
     // A legacy desktop call, then the wrapped call: the same.
     await delay(SUSPECT_MS + 500)
     await resetChooser(app)
@@ -280,6 +271,33 @@ it('refuses the preload\'s call when the page made a request of its own first, w
     expect(await chooserCalls(app)).toBe(0)
     expect(await liveTracks(view)).toBe(0)
     expect(await shares(app)).toEqual([])
+  } finally {
+    await closeElectron(app)
+  }
+}, E2E_TIMEOUT_MS)
+
+it('refuses the page, or ends its renderer, when its own request races the wrapped call while the picker is open', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    const view = await visit(app, chrome, `${origins.a}/`)
+    expect(await waitFor(async () => (await app.evaluate(() => (globalThis as unknown as { __orivonDevDisplayChooser?: unknown }).__orivonDevDisplayChooser)) !== undefined)).toBe(true)
+    await useChooser(app, { kind: 'screen', delayMs: 1500 })
+    await run(view, "window.__r = {}; window.share('wrapped', { video: true }); setTimeout(() => window.native('native'), 300)")
+    // Timing decides which safe end this takes. The page's request before the ticket opens is refused, and so is the
+    // wrapped call after it. After the ticket opens, Blink queues the preload's call behind the page's, the page's is
+    // served unconfirmed, and the preload's call is then refused with no ticket: the preload reports it, and main ends
+    // the renderer. Either way nothing keeps a capture.
+    let ended = false
+    try {
+      expect(await result(view, 'native')).toBe('ERR:NotAllowedError')
+      expect(await result(view, 'wrapped', 30_000)).toBe('ERR:NotAllowedError')
+      expect(await liveTracks(view)).toBe(0)
+    } catch (error) {
+      if (!/Target crashed|has been closed/.test(String(error))) throw error
+      ended = true
+    }
+    if (ended) expect(mainOutput(app)).toMatch(/refused after a request was served against its ticket|a granted request reached no display handler/)
+    expect(await waitFor(async () => (await shares(app)).length === 0, 10_000)).toBe(true)
   } finally {
     await closeElectron(app)
   }
@@ -303,7 +321,7 @@ it('shares honestly once the suspicion that follows a request with no ticket has
   }
 }, E2E_TIMEOUT_MS)
 
-it('ends the page\'s renderer and its share when a request with no ticket follows the one that was served', async () => {
+it('refuses a request with no ticket from a realm the preload did not wrap, a second after an honest share, and the share keeps running', async () => {
   const { app, chrome } = await launchShell()
   try {
     const view = await visit(app, chrome, `${origins.a}/`)
@@ -318,11 +336,18 @@ it('ends the page\'s renderer and its share when a request with no ticket follow
     expect(await result(view, 'screen')).toMatchObject({ state: 'live' })
     expect(await shares(app)).toHaveLength(1)
 
-    // The page's own request right after: the one served may not have been the preload's.
-    await run(view, "window.native('native')").catch(() => undefined)
-    expect(await waitFor(async () => (await app.evaluate(() => (globalThis as unknown as { __gone: string[] }).__gone.length)) > 0, 20_000)).toBe(true)
+    // What an extension's content script, or a ported app's callback-form call, does: its own request reaches main
+    // with no ticket. It is refused, and neither the page nor the share it holds is touched.
+    await delay(1000)
+    await run(view, "window.native('native')")
+    expect(await result(view, 'native')).toBe('ERR:NotAllowedError')
+    await delay(2000)
+    expect(await app.evaluate(() => (globalThis as unknown as { __gone: string[] }).__gone.length)).toBe(0)
+    expect(await shares(app)).toHaveLength(1)
+    expect(await liveTracks(view)).toBe(1)
+    expect(mainOutput(app)).not.toMatch(/the tab's renderer is ended/)
+    await stopShare(app, (await shares(app))[0]?.id ?? '')
     expect(await waitFor(async () => (await shares(app)).length === 0, 10_000)).toBe(true)
-    expect(mainOutput(app)).toMatch(/request with no ticket followed one that was served/)
   } finally {
     await closeElectron(app)
   }

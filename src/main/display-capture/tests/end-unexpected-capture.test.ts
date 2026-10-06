@@ -7,11 +7,11 @@ describe('endUnexpectedCapture', () => {
     try {
       const forcefullyCrashRenderer = vi.fn()
       const reload = vi.fn()
-      endUnexpectedCapture({ forcefullyCrashRenderer, reload, isDestroyed: () => false, getURL: () => 'https://a.example/' } as never, 'a request with no ticket followed one that was served')
+      endUnexpectedCapture({ forcefullyCrashRenderer, reload, isDestroyed: () => false, getURL: () => 'https://a.example/' } as never, 'the preload\'s own call was refused after a request was served')
       expect(forcefullyCrashRenderer).toHaveBeenCalledOnce()
       expect(reload).not.toHaveBeenCalled()
       expect(error).toHaveBeenCalledOnce()
-      expect(String(error.mock.calls[0]?.[0])).toContain('a request with no ticket followed one that was served')
+      expect(String(error.mock.calls[0]?.[0])).toContain('the preload\'s own call was refused after a request was served')
     } finally {
       error.mockRestore()
     }

@@ -27,14 +27,7 @@ describe('the display asker: requests', () => {
   it('holds a media request with no device type against the tab\'s ticket key', async () => {
     const { asker, deps } = setup()
     expect(await asker.request?.(tab(), 'media', DISPLAY)).toBe(true)
-    expect(deps.tickets.request).toHaveBeenCalledWith(KEY, expect.any(Function))
-  })
-
-  it('ends the requester\'s renderer when the tickets report a request with no ticket right after a served one', async () => {
-    const { asker, deps } = setup({ tickets: { request: vi.fn(async (_key: string, onAftermath?: () => void) => { onAftermath?.(); return await Promise.resolve(false) }), awaitingDisplay: vi.fn(() => false), void: vi.fn() } })
-    const contents = tab()
-    expect(await asker.request?.(contents, 'media', DISPLAY)).toBe(false)
-    expect(deps.endUnexpectedCapture).toHaveBeenCalledWith(contents, expect.stringContaining('no ticket'))
+    expect(deps.tickets.request).toHaveBeenCalledWith(KEY)
   })
 
   it('does not end the renderer for a plain refusal', async () => {
@@ -46,7 +39,7 @@ describe('the display asker: requests', () => {
   it('reads Electron\'s origin with its trailing slash as the same origin', async () => {
     const { asker, deps } = setup()
     expect(await asker.request?.(tab(), 'media', { ...DISPLAY, securityOrigin: `${ORIGIN}/` })).toBe(true)
-    expect(deps.tickets.request).toHaveBeenCalledWith(KEY, expect.any(Function))
+    expect(deps.tickets.request).toHaveBeenCalledWith(KEY)
   })
 
   it('answers the ticket\'s refusal as a refusal', async () => {

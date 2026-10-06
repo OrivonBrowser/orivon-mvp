@@ -100,6 +100,8 @@ describe('the call this world makes for the page', () => {
     expect(result).toEqual({ ok: true, share: expect.any(String) })
     expect(handed).toHaveLength(1)
     expect(handed[0]?.nonce).toBe(result.share)
+    expect(bridge.send).toHaveBeenCalledWith(DISPLAY_CAPTURE_CHANNEL, { type: 'received', nonce: 'nonce-1' })
+    expect(bridge.send).not.toHaveBeenCalledWith(DISPLAY_CAPTURE_CHANNEL, expect.objectContaining({ type: 'failed' }))
   })
 
   it('never lets the ticket\'s nonce reach the main world: the result and the hand-off name the share by another id', async () => {
@@ -118,6 +120,22 @@ describe('the call this world makes for the page', () => {
     expect(bridge.send).toHaveBeenCalledWith(DISPLAY_CAPTURE_CHANNEL, { type: 'arm', nonce: 'secret-nonce' })
   })
 
+  it.each([
+    ['NotAllowedError', 'NotAllowedError'],
+    ['NotReadableError', 'NotReadableError'],
+    ['NotFoundError', 'NotFoundError'],
+    ['AbortError', 'AbortError'],
+    ['SecurityError', 'AbortError']
+  ])('reports a call that rejected with %s as failed with %s, and never as received', async (thrown, reported) => {
+    stubPage(() => Promise.reject(Object.assign(new Error('no'), { name: thrown })))
+    bridge.invoke.mockResolvedValue({ type: 'go', nonce: 'nonce-1' })
+    const { share } = await install()
+    expect(await share(OPTIONS)).toMatchObject({ ok: false, name: thrown })
+    expect(bridge.send).toHaveBeenCalledWith(DISPLAY_CAPTURE_CHANNEL, { type: 'failed', nonce: 'nonce-1', name: reported })
+    expect(bridge.send).not.toHaveBeenCalledWith(DISPLAY_CAPTURE_CHANNEL, expect.objectContaining({ type: 'received' }))
+    expect(bridge.send).not.toHaveBeenCalledWith(DISPLAY_CAPTURE_CHANNEL, expect.objectContaining({ type: 'tracks-ended' }))
+  })
+
   it('reports that its call failed before the turn ended, and gives the page the error', async () => {
     vi.useFakeTimers()
     stubPage(() => Promise.reject(Object.assign(new Error('bad constraints'), { name: 'TypeError' })))
@@ -127,7 +145,7 @@ describe('the call this world makes for the page', () => {
     await vi.advanceTimersByTimeAsync(10)
     expect(bridge.send).toHaveBeenCalledWith(DISPLAY_CAPTURE_CHANNEL, { type: 'called', nonce: 'nonce-1', rejectedEarly: true })
     expect(result).toEqual({ ok: false, name: 'TypeError', message: 'bad constraints' })
-    expect(bridge.send).toHaveBeenCalledWith(DISPLAY_CAPTURE_CHANNEL, { type: 'tracks-ended', nonce: 'nonce-1' })
+    expect(bridge.send).toHaveBeenCalledWith(DISPLAY_CAPTURE_CHANNEL, { type: 'failed', nonce: 'nonce-1', name: 'AbortError' })
   })
 
   it.each([

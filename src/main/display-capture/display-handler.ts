@@ -10,7 +10,7 @@ import type { ShareHost } from './share-registry.js'
 import type { DisplayChoice } from './types.js'
 
 export interface DisplayHandlerDeps {
-  tickets: Pick<DisplayTickets<DisplayChoice>, 'consumeDisplay'>
+  tickets: Pick<DisplayTickets<DisplayChoice>, 'consumeDisplay' | 'void' | 'voidAllowed'>
   /** The tab a frame belongs to. */
   contentsOf: (frame: WebFrameMain) => WebContents | undefined
   shares: Pick<ShareHost, 'start'>
@@ -36,10 +36,18 @@ export function createDisplayHandler (deps: DisplayHandlerDeps): DisplayMediaHan
   return (request, callback) => {
     const frame = request.frame
     const contents = frame === null ? undefined : deps.contentsOf(frame)
-    if (frame === null || contents === undefined) { callback({}); return }
+    // The grant was for a frame that is gone. Its ticket is voided here, or the asker would find it still waiting for this
+    // handler and end an honest renderer; with no tab to name, every ticket waiting for the handler goes, as the one
+    // being answered is among them and the others only have their call refused.
+    if (frame === null || contents === undefined) { deps.tickets.voidAllowed(); callback({}); return }
     // Only a tab's top frame ever holds a ticket; the frame is matched by its process and routing ids, as the ticket was keyed.
     const key = frameKeyOf(contents, frame)
-    if (key === undefined || key !== mainFrameKey(contents)) { callback({}); return }
+    const topKey = mainFrameKey(contents)
+    if (key === undefined || key !== topKey) {
+      if (topKey !== undefined) deps.tickets.void(topKey)
+      callback({})
+      return
+    }
     const taken = deps.tickets.consumeDisplay(key)
     const served = taken === undefined ? undefined : streamsFor(taken.choice, request.audioRequested, deps.platform)
     if (taken === undefined || served === undefined) { callback({}); return }

@@ -27,6 +27,7 @@ function fakeTickets (): DisplayGateDeps['tickets'] & { end: () => void, suspect
     called: vi.fn((_key: string, _nonce: string, rejectedEarly: boolean) => { if (rejectedEarly) open.delete(key) }),
     has: (k: string) => open.has(k),
     suspect: () => suspected.value,
+    forgetTab: vi.fn(() => { suspected.value = false }),
     suspected,
     end: () => { open.clear() }
   }
@@ -37,11 +38,12 @@ function setup (overrides: Partial<DisplayGateDeps> = {}): { gate: ReturnType<ty
     tickets: fakeTickets(),
     policy: { isApp: () => false, mayAsk: () => true, decide: vi.fn(async () => await Promise.resolve(true)) },
     choose: vi.fn(async () => await Promise.resolve(CHOICE)),
-    shares: { tracksEnded: vi.fn(), expectCapture: vi.fn(), cancelExpected: vi.fn() },
+    shares: { received: vi.fn(), failed: vi.fn(() => false), tracksEnded: vi.fn(), expectCapture: vi.fn(), cancelExpected: vi.fn() },
     isTab: () => true,
     showing: () => true,
     mainFrameOrigin: () => ORIGIN,
     frameKey: () => '1:10:2',
+    endUnexpectedCapture: vi.fn(),
     ...overrides
   }
   return { gate: createDisplayGate(deps), deps, contents: tab() }
@@ -272,5 +274,52 @@ describe('the display gate: the preload\'s messages and the page going away', ()
     expect(deps.tickets.void).toHaveBeenCalledWith('1:10:2')
     expect(signal?.aborted).toBe(true)
     expect(await pending).toEqual({ type: 'refused', reason: 'denied' })
+  })
+
+  it('passes received to the registry', () => {
+    const { gate, deps, contents } = setup()
+    gate.received(contents, 'n')
+    expect(deps.shares.received).toHaveBeenCalledWith(contents, 'n')
+  })
+
+  it('forgets the tab\'s suspicion when a new document commits there', async () => {
+    const tickets = fakeTickets()
+    tickets.suspected.value = true
+    const { gate, deps, contents } = setup({ tickets })
+    expect(await gate.pick(contents, REQUEST)).toEqual({ type: 'refused', reason: 'denied' })
+    gate.pageCommitted(contents)
+    expect(deps.tickets.forgetTab).toHaveBeenCalledWith(1)
+    expect((await gate.pick(contents, REQUEST)).type).toBe('go')
+  })
+
+  describe('when the preload\'s own call failed', () => {
+    const TAB_CHOICE: DisplayChoice = { kind: 'tab', tab: { id: 2 } as never, audio: false, label: 'Another tab' }
+
+    it('ends the renderer, however late, when an unconfirmed share was refused its call', () => {
+      const { gate, deps, contents } = setup({ shares: { received: vi.fn(), failed: vi.fn(() => true), tracksEnded: vi.fn(), expectCapture: vi.fn(), cancelExpected: vi.fn() } })
+      gate.failed(contents, 'n', 'NotAllowedError')
+      expect(deps.endUnexpectedCapture).toHaveBeenCalledWith(contents, expect.stringContaining('refused'))
+    })
+
+    it.each(['AbortError', 'NotReadableError', 'NotFoundError'] as const)('ends the share and not the renderer for %s', (name) => {
+      const failed = vi.fn(() => true)
+      const { gate, deps, contents } = setup({ shares: { received: vi.fn(), failed, tracksEnded: vi.fn(), expectCapture: vi.fn(), cancelExpected: vi.fn() } })
+      gate.failed(contents, 'n', name)
+      expect(failed).toHaveBeenCalledWith(contents, 'n')
+      expect(deps.endUnexpectedCapture).not.toHaveBeenCalled()
+    })
+
+    it('does not end the renderer for a refusal when no share was started or the share was confirmed', () => {
+      const { gate, deps, contents } = setup()
+      gate.failed(contents, 'n', 'NotAllowedError')
+      expect(deps.endUnexpectedCapture).not.toHaveBeenCalled()
+    })
+
+    it('lets go of a picked tab the page was to be shown', async () => {
+      const { gate, deps, contents } = setup({ choose: async () => await Promise.resolve(TAB_CHOICE) })
+      await gate.pick(contents, REQUEST)
+      gate.failed(contents, 'nonce-1', 'AbortError')
+      expect(deps.shares.cancelExpected).toHaveBeenCalledWith('nonce-1')
+    })
   })
 })

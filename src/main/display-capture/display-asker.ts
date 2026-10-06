@@ -43,7 +43,7 @@ export function createDisplayAsker (deps: DisplayAskerDeps): SiteAsker {
       if (origin === null || asked === undefined || originFromUrl(asked) !== origin) return undefined
       const key = mainFrameKey(contents)
       if (key === undefined || (details as { isMainFrame?: unknown }).isMainFrame !== true) return Promise.resolve(false)
-      return deps.tickets.request(key, () => { deps.endUnexpectedCapture(contents, 'a request with no ticket followed one that was served') })
+      return deps.tickets.request(key)
     },
 
     check (contents, permission, requestingOrigin, details) {

@@ -86,6 +86,9 @@ function denyByDefault (target: Session): void {
   target.setPermissionRequestHandler((contents, permission, callback, details) => {
     // A per-site asker answers first, for the names it owns and only in a tab.
     const sited = siteAsks.request(contents, permission, details)
+    // An asker's `afterGrant` relies on Electron running the display handler synchronously inside `callback(true)`
+    // (measured on Electron 44): a handler that ran later would make the display asker end every honest share. The
+    // twenty-shares spec in `test/sites/e2e-screen-share-gate.test.ts` is the one that would catch the change.
     if (sited !== undefined) return answerWhenAsked(sited, callback, () => { siteAsks.afterGrant(contents, permission, details) })
     // A page an app shows in a <webview> reaches another program only if the
     // app decides to, through its own grants (ADR-0047): never through a prompt here.

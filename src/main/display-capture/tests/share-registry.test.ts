@@ -93,12 +93,80 @@ describe('the share registry', () => {
   it('ends the share when the tracks report ended for its nonce, and for no other', () => {
     const { registry, deps } = setup()
     registry.start({ requester, origin: 'https://a.example', choice: SCREEN, audio: false, nonce: 'nonce-1' })
+    registry.received(requester, 'nonce-1')
     registry.tracksEnded(requester, 'other')
     registry.tracksEnded({ id: 9 } as never, 'nonce-1')
     expect(registry.list()).toHaveLength(1)
     registry.tracksEnded(requester, 'nonce-1')
     expect(registry.list()).toEqual([])
     expect(deps.clearInUse).toHaveBeenCalledWith(requester)
+  })
+
+  describe('confirming a share', () => {
+    const begin = (): ReturnType<typeof setup> => {
+      const harness = setup()
+      harness.registry.start({ requester, origin: 'https://a.example', choice: SCREEN, audio: false, nonce: 'nonce-1' })
+      return harness
+    }
+
+    it('ignores the tracks ending until the preload reports its call received the stream', () => {
+      const { registry } = begin()
+      registry.tracksEnded(requester, 'nonce-1')
+      expect(registry.list()).toHaveLength(1)
+      registry.received({ id: 9 } as never, 'nonce-1')
+      registry.received(requester, 'other')
+      registry.tracksEnded(requester, 'nonce-1')
+      expect(registry.list()).toHaveLength(1)
+      registry.received(requester, 'nonce-1')
+      registry.tracksEnded(requester, 'nonce-1')
+      expect(registry.list()).toEqual([])
+    })
+
+    it('ends an unconfirmed share when the preload\'s call failed, and says it did', () => {
+      const { registry, deps } = begin()
+      expect(registry.failed(requester, 'other')).toBe(false)
+      expect(registry.failed({ id: 9 } as never, 'nonce-1')).toBe(false)
+      expect(registry.list()).toHaveLength(1)
+      expect(registry.failed(requester, 'nonce-1')).toBe(true)
+      expect(registry.list()).toEqual([])
+      expect(deps.clearInUse).toHaveBeenCalledWith(requester)
+      expect(registry.failed(requester, 'nonce-1')).toBe(false)
+    })
+
+    it('does not end a confirmed share for a failure report', () => {
+      const { registry } = begin()
+      registry.received(requester, 'nonce-1')
+      expect(registry.failed(requester, 'nonce-1')).toBe(false)
+      expect(registry.list()).toHaveLength(1)
+    })
+
+    it('keeps an unconfirmed share listed indefinitely: the sharing bar stays while the page is busy', () => {
+      const { registry, timers } = begin()
+      for (const run of [...timers.values()]) run()
+      expect(registry.list()).toHaveLength(1)
+    })
+
+    it('sends Stop again when the share is confirmed after Stop was pressed, since the preload had no tracks the first time', () => {
+      const { registry, deps } = begin()
+      registry.stop('share-1')
+      expect(deps.sendStop).toHaveBeenCalledTimes(1)
+      registry.received(requester, 'nonce-1')
+      expect(deps.sendStop).toHaveBeenCalledTimes(2)
+      expect(deps.sendStop).toHaveBeenLastCalledWith(requester, 'nonce-1')
+    })
+
+    it('sends no second Stop for a share that was confirmed first', () => {
+      const { registry, deps } = begin()
+      registry.received(requester, 'nonce-1')
+      registry.stop('share-1')
+      expect(deps.sendStop).toHaveBeenCalledTimes(1)
+    })
+
+    it('ends an unconfirmed share when its requester loads another document', () => {
+      const { registry, watchers } = begin()
+      for (const ended of [...(watchers.get(requester) ?? [])]) ended()
+      expect(registry.list()).toEqual([])
+    })
   })
 
   it('ends the share when its requester loads another document or goes away', () => {
@@ -126,6 +194,8 @@ describe('the share registry', () => {
     const { registry, deps } = setup()
     const first = registry.start({ requester, origin: 'https://a.example', choice: SCREEN, audio: false, nonce: 'a' })
     registry.start({ requester, origin: 'https://a.example', choice: SCREEN, audio: false, nonce: 'b' })
+    registry.received(requester, 'a')
+    registry.received(requester, 'b')
     registry.tracksEnded(requester, 'a')
     expect(deps.clearInUse).not.toHaveBeenCalled()
     registry.tracksEnded(requester, 'b')
@@ -154,6 +224,8 @@ describe('the share registry', () => {
     registry.start({ requester, origin: 'https://a.example', choice: TAB, audio: false, nonce: 't' })
     registry.start({ requester, origin: 'https://a.example', choice: TAB, audio: false, nonce: 'u' })
     expect(pollers()).toBe(1)
+    registry.received(requester, 't')
+    registry.received(requester, 'u')
     registry.tracksEnded(requester, 't')
     expect(pollers()).toBe(1)
     registry.tracksEnded(requester, 'u')
@@ -163,6 +235,7 @@ describe('the share registry', () => {
   it('stops watching the contents of a share that ended', () => {
     const { registry, watchers, tabWatchers } = setup()
     registry.start({ requester, origin: 'https://a.example', choice: TAB, audio: false, nonce: 'n' })
+    registry.received(requester, 'n')
     registry.tracksEnded(requester, 'n')
     expect(watchers.get(requester)).toEqual([])
     expect(tabWatchers.get(shown)).toEqual([])

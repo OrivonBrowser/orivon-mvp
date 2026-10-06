@@ -11,18 +11,20 @@ const SHOWN = { id: 2, mainFrame: SHOWN_FRAME, isDestroyed: () => false } as nev
 const SCREEN: DisplayChoice = { kind: 'screen', source: { id: 'screen:0:0', name: 'Entire screen' }, systemAudio: true, label: 'Entire screen' }
 const TAB: DisplayChoice = { kind: 'tab', tab: SHOWN, audio: true, label: 'A tab' }
 
-function run (choice: DisplayChoice | undefined, request: object = {}, overrides: { frame?: unknown, platform?: NodeJS.Platform } = {}): { answers: object[], start: ReturnType<typeof vi.fn>, consume: ReturnType<typeof vi.fn> } {
+function run (choice: DisplayChoice | undefined, request: object = {}, overrides: { frame?: unknown, platform?: NodeJS.Platform, contentsOf?: () => unknown } = {}): { answers: object[], start: ReturnType<typeof vi.fn>, consume: ReturnType<typeof vi.fn>, voided: ReturnType<typeof vi.fn>, voidedAllowed: ReturnType<typeof vi.fn> } {
   const consume = vi.fn((key: string) => key === ticketKey(1, 10, 2) && choice !== undefined ? { choice, nonce: 'nonce-1' } : undefined)
   const start = vi.fn()
+  const voided = vi.fn()
+  const voidedAllowed = vi.fn()
   const handler = createDisplayHandler({
-    tickets: { consumeDisplay: consume },
-    contentsOf: () => CONTENTS,
+    tickets: { consumeDisplay: consume, void: voided, voidAllowed: voidedAllowed },
+    contentsOf: (overrides.contentsOf ?? (() => CONTENTS)) as never,
     shares: { start },
     platform: overrides.platform ?? 'linux'
   })
   const answers: object[] = []
   handler({ frame: 'frame' in overrides ? overrides.frame : FRAME, securityOrigin: 'https://a.example', videoRequested: true, audioRequested: false, userGesture: true, ...request } as never, (streams) => answers.push(streams))
-  return { answers, start, consume }
+  return { answers, start, consume, voided, voidedAllowed }
 }
 
 describe('the display handler', () => {
@@ -55,6 +57,25 @@ describe('the display handler', () => {
     const other = run(SCREEN, {}, { frame: { processId: 10, routingId: 7 } })
     expect(other.answers).toEqual([{}])
     expect(other.consume).not.toHaveBeenCalled()
+  })
+
+  it('voids the tab\'s ticket when the granted frame is not the top frame any more, so the asker ends no honest renderer', () => {
+    const { voided, voidedAllowed } = run(SCREEN, {}, { frame: { processId: 10, routingId: 7 } })
+    expect(voided).toHaveBeenCalledWith(ticketKey(1, 10, 2))
+    expect(voidedAllowed).not.toHaveBeenCalled()
+  })
+
+  it('voids every ticket that waits for the handler when the request names no frame or a tab that is gone', () => {
+    expect(run(SCREEN, {}, { frame: null }).voidedAllowed).toHaveBeenCalledOnce()
+    const unknown = run(SCREEN, {}, { contentsOf: () => undefined })
+    expect(unknown.voidedAllowed).toHaveBeenCalledOnce()
+    expect(unknown.answers).toEqual([{}])
+  })
+
+  it('voids nothing when it serves the ticket', () => {
+    const { voided, voidedAllowed } = run(SCREEN)
+    expect(voided).not.toHaveBeenCalled()
+    expect(voidedAllowed).not.toHaveBeenCalled()
   })
 
   it('answers no stream when the tab to show was closed while the person picked', () => {

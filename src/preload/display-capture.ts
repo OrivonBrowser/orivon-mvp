@@ -27,6 +27,7 @@ interface ShareRecord {
 }
 
 const POLL_MS = 1000
+const REPORTED_NAMES: readonly string[] = ['NotAllowedError', 'AbortError', 'NotReadableError', 'NotFoundError']
 const records = new Map<string, ShareRecord>()
 const recordsById = new Map<string, ShareRecord>()
 let poll: ReturnType<typeof setInterval> | undefined
@@ -66,6 +67,11 @@ function errorOf (error: unknown): ShareResult {
   const name = typeof error === 'object' && error !== null && typeof (error as { name?: unknown }).name === 'string' ? (error as { name: string }).name : 'AbortError'
   const message = typeof error === 'object' && error !== null && typeof (error as { message?: unknown }).message === 'string' ? (error as { message: string }).message : 'Failed to start capture'
   return refusal(name, message)
+}
+
+/** The failure name main reads: one of the few it knows, and `AbortError` for any other. */
+function reportedName (failure: ShareResult): string {
+  return !failure.ok && REPORTED_NAMES.includes(failure.name) ? failure.name : 'AbortError'
 }
 
 /** A random name for a share that the page may see, so that what the page can read says nothing of the ticket. */
@@ -120,11 +126,14 @@ async function share (options: ShareOptions): Promise<ShareResult> {
   try {
     stream = await request
   } catch (error) {
-    // Main may already have started the share when it answered the request, and Chromium can still fail to start the
-    // capture (a tab it cannot capture): no track will ever end for it, so main is told there is none.
-    ipcRenderer.send(DISPLAY_CAPTURE_CHANNEL, { type: 'tracks-ended', nonce })
-    return errorOf(error)
+    // Main starts the share when it answers the request, before this call knows its outcome, and keeps it unconfirmed.
+    // Chromium can still fail to start the capture (a tab it cannot capture), and a refusal here means the request main
+    // served was another one's: either way main is told this call failed and why, and decides what ends.
+    const failure = errorOf(error)
+    ipcRenderer.send(DISPLAY_CAPTURE_CHANNEL, { type: 'failed', nonce, name: reportedName(failure) })
+    return failure
   }
+  ipcRenderer.send(DISPLAY_CAPTURE_CHANNEL, { type: 'received', nonce })
   const record: ShareRecord = { nonce, id: randomName('orivon-id'), tracks: new Set() }
   records.set(nonce, record)
   recordsById.set(record.id, record)

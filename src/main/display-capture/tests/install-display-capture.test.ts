@@ -56,4 +56,16 @@ describe('installDisplayCapture', () => {
     installDisplayCapture.install(app as never, { windows: { findTab: () => ({}) }, settings: { get: () => 'ask' }, siteSettings: { get: () => undefined } } as never, ctx as never, {} as never)
     expect(siteAsks.check(tab(), 'display-capture', SITE, { isMainFrame: true })).toBe(false)
   })
+
+  it('ends a tab\'s ticket and picker when its page is destroyed, replaced or loses its renderer, and forgets suspicion when a document commits', () => {
+    const page = Object.assign(new EventEmitter(), tab() as object)
+    electron.webContents.getAllWebContents.mockReturnValueOnce([page])
+    const app = new EventEmitter()
+    installDisplayCapture.install(app as never, { windows: { findTab: () => ({}) }, settings: { get: () => 'ask' }, siteSettings: { get: () => undefined } } as never, {} as never, {} as never)
+    for (const event of ['destroyed', 'render-process-gone', 'did-start-navigation', 'did-navigate']) expect(page.listenerCount(event)).toBe(1)
+    expect(() => { page.emit('destroyed'); page.emit('did-navigate') }).not.toThrow()
+    const later = Object.assign(new EventEmitter(), tab() as object)
+    app.emit('web-contents-created', {}, later)
+    expect(later.listenerCount('destroyed')).toBe(1)
+  })
 })

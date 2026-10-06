@@ -205,7 +205,7 @@ export const NATIVE_TAB_DRAG_ARGUMENT = '--orivon-native-tab-drag'
 /** A tab's preload -> main, `ipcRenderer.invoke`: `{ type: 'pick', audio, hints, activation }` when the page calls `getDisplayMedia`, answered once the person has picked (src/main/display-capture/display-ipc.ts). */
 export const DISPLAY_CAPTURE_PICK_CHANNEL = 'orivon-display-capture:pick'
 
-/** A tab's preload -> main, one-way: `{ type: 'arm' | 'called' | 'tracks-ended', nonce, ... }`, the steps that tell the permission gate which request is the preload's own call and when the tracks it handed out have ended. Main derives the tab and frame from `event.senderFrame`. */
+/** A tab's preload -> main, one-way: `{ type: 'arm' | 'called' | 'received' | 'failed' | 'tracks-ended', nonce, ... }`, the steps that tell the permission gate which request is the preload's own call, whether that call got the stream, and when the tracks it handed out have ended. Main derives the tab and frame from `event.senderFrame`. */
 export const DISPLAY_CAPTURE_CHANNEL = 'orivon-display-capture:report'
 
 /** Main -> a tab's top frame: `{ nonce }`, stop every track handed out for that share and tell the page they ended. */

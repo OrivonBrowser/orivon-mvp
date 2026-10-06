@@ -1,7 +1,8 @@
 // The shares that are running: what the indicators list and what Stop ends. A share starts when the display handler
-// answers with a source and ends when its requester's document ends, when the preload reports every track it handed
-// out ended, when the tab it shows closes, or when that tab stops being captured. Main cannot see a screen or window
-// capture, so only the first three apply to those. Pure over its dependencies.
+// answers with a source, unconfirmed, and is confirmed when the preload reports that its own call received the stream.
+// It ends when its requester's document ends, when a confirmed share's tracks all end, when the preload reports its
+// call failed, when the tab it shows closes, or when that tab stops being captured. Main cannot see a screen or window
+// capture, so the tab's closing and its capture ending do not apply to those. Pure over its dependencies.
 import type { WebContents } from 'electron'
 import { TICKET_TIMEOUT_MS } from './display-tickets.js'
 import type { ActiveShare, DisplayChoice, ShareRegistry } from './types.js'
@@ -40,7 +41,14 @@ export interface ShareStart {
 
 export interface ShareHost extends ShareRegistry {
   start: (input: ShareStart) => ActiveShare
-  /** The preload says every track it handed out for `nonce` has ended. */
+  /** The preload says its own call for `nonce` received the stream: the share is confirmed. */
+  received: (requester: WebContents, nonce: string) => void
+  /**
+   * The preload says its own call for `nonce` failed. Ends the share when it is unconfirmed and returns true; false when
+   * there was none to end (no share started, or the share is confirmed).
+   */
+  failed: (requester: WebContents, nonce: string) => boolean
+  /** The preload says every track it handed out for `nonce` has ended. Only a confirmed share is ended by it. */
   tracksEnded: (requester: WebContents, nonce: string) => void
   /** The person picked `tab` for the ticket with this nonce; the share has not started. The mark lapses with the ticket. */
   expectCapture: (tab: WebContents, nonce: string) => void
@@ -53,6 +61,10 @@ interface Entry {
   readonly nonce: string
   /** A tab share counts as stopped only after Chromium was seen capturing it. */
   seenCaptured: boolean
+  /** The preload's own call received the stream; until then the share may be a capture the page was handed. */
+  confirmed: boolean
+  /** Stop was pressed while unconfirmed, when the preload had no tracks to stop: it is sent again on confirming. */
+  stopRequested: boolean
   readonly unwatch: Array<() => void>
 }
 
@@ -115,7 +127,9 @@ export function createShareRegistry (deps: ShareRegistryDeps): ShareHost {
     },
     stop (id) {
       const entry = entries.get(id)
-      if (entry !== undefined) deps.sendStop(entry.share.requester, entry.nonce)
+      if (entry === undefined) return
+      if (!entry.confirmed) entry.stopRequested = true
+      deps.sendStop(entry.share.requester, entry.nonce)
     },
 
     start ({ requester, origin, choice, audio, nonce }) {
@@ -125,7 +139,7 @@ export function createShareRegistry (deps: ShareRegistryDeps): ShareHost {
         id, requester, origin, kind: choice.kind, label: choice.label, audio, startedAt: deps.now(),
         ...(choice.kind === 'tab' ? { captured: choice.tab } : {})
       }
-      const entry: Entry = { share, nonce, seenCaptured: false, unwatch: [] }
+      const entry: Entry = { share, nonce, seenCaptured: false, confirmed: false, stopRequested: false, unwatch: [] }
       entries.set(id, entry)
       entry.unwatch.push(deps.watch(requester, () => { end(id) }))
       if (share.captured !== undefined) {
@@ -137,9 +151,27 @@ export function createShareRegistry (deps: ShareRegistryDeps): ShareHost {
       return share
     },
 
+    received (requester, nonce) {
+      for (const entry of entries.values()) {
+        if (entry.share.requester !== requester || entry.nonce !== nonce || entry.confirmed) continue
+        entry.confirmed = true
+        if (entry.stopRequested) deps.sendStop(requester, nonce)
+      }
+    },
+
+    failed (requester, nonce) {
+      let ended = false
+      for (const [id, entry] of [...entries]) {
+        if (entry.share.requester !== requester || entry.nonce !== nonce || entry.confirmed) continue
+        end(id)
+        ended = true
+      }
+      return ended
+    },
+
     tracksEnded (requester, nonce) {
       for (const [id, entry] of [...entries]) {
-        if (entry.share.requester === requester && entry.nonce === nonce) end(id)
+        if (entry.share.requester === requester && entry.nonce === nonce && entry.confirmed) end(id)
       }
     }
   }

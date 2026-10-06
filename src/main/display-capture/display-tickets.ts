@@ -19,11 +19,12 @@ export const EARLY_SLACK_MS = 50
 export const TICKET_TIMEOUT_MS = 10_000
 
 /**
- * How long a frame stays suspect after a request with no ticket, and how long after a ticket was consumed such a request
- * still counts as a possible second request the display handler did not tell apart. An honest page never makes one: its
- * `getDisplayMedia` is wrapped and an app's legacy call is answered by the shim, so neither reaches the browser without
- * a ticket. Provisional: it only has to outlast the picker's round trip, and a page that makes one has no use for the
- * next five seconds of sharing; what would settle it is a measured honest page that does.
+ * How long a frame stays suspect after a request with no ticket: no picker is shown, and a request held against a ticket
+ * opened meanwhile voids it, since the held request may be that request's twin. Suspicion refuses and never ends a
+ * renderer: a page's own wrapped call, an extension's content script and a ported app's legacy call can each make a
+ * request that reaches main with no ticket, and the share registry's confirmation is what catches a capture the page
+ * was handed by such a request. Provisional: it only has to outlast the picker's round trip; what would settle it is a
+ * measured honest page that is refused by it.
  */
 export const SUSPECT_MS = 5000
 
@@ -37,6 +38,8 @@ export interface DisplayTicketsDeps {
   setTimer: (run: () => void, ms: number) => unknown
   clearTimer: (handle: unknown) => void
   nonce: () => string
+  /** Runs when a ticket ends without its choice having been taken by the display handler: refused, voided, timed out. */
+  onEnd?: (key: string, nonce: string) => void
 }
 
 export interface DisplayTickets<C> {
@@ -44,17 +47,19 @@ export interface DisplayTickets<C> {
   open: (key: string, choice: C) => string
   /**
    * A `media` request with no device type from the frame: held while a ticket is open, refused at once otherwise. A
-   * refusal for want of a ticket marks the frame suspect, and `onAftermath` runs when it came within `SUSPECT_MS` of
-   * the frame's ticket being consumed (or while one was allowed and not yet consumed): the request already served may
-   * not have been the preload's.
+   * refusal for want of a ticket marks the frame suspect, and voids a ticket that was allowed and not yet taken.
    */
-  request: (key: string, onAftermath?: () => void) => Promise<boolean>
+  request: (key: string) => Promise<boolean>
   /** True for `SUSPECT_MS` after the frame made a request with no ticket: no picker is shown and no ticket opens meanwhile. */
   suspect: (key: string) => boolean
+  /** A new document committed in the tab: the suspicion its frames earned belongs to the old one. */
+  forgetTab: (webContentsId: number) => void
   arm: (key: string, nonce: string) => void
   called: (key: string, nonce: string, rejectedEarly: boolean) => void
   /** Ends the frame's ticket and denies whatever it held: navigation, a destroyed frame, a renderer gone. */
   void: (key: string) => void
+  /** Voids every ticket that was allowed and not yet taken: the display handler was asked for a frame it cannot name. */
+  voidAllowed: () => void
   /** The choice and the nonce for the display handler, once, and only for a ticket that allowed its request. */
   consumeDisplay: (key: string) => { readonly choice: C, readonly nonce: string } | undefined
   /** True when a request was allowed and the display handler has not taken the choice. */
@@ -91,17 +96,16 @@ export function createDisplayTickets<C> (overrides: Partial<DisplayTicketsDeps> 
   const deps = { ...defaultDeps, ...overrides }
   const tickets = new Map<string, Ticket<C>>()
   const suspectUntil = new Map<string, number>()
-  const consumedAt = new Map<string, number>()
 
   function prune (): void {
     const now = deps.now()
     for (const [key, until] of suspectUntil) if (until <= now) suspectUntil.delete(key)
-    for (const [key, at] of consumedAt) if (now - at >= SUSPECT_MS) consumedAt.delete(key)
   }
 
   const suspect = (key: string): boolean => (suspectUntil.get(key) ?? Number.NEGATIVE_INFINITY) > deps.now()
 
-  function end (key: string, ticket: Ticket<C>): void {
+  /** Ends the ticket and denies what it held; `taken` is the display handler's consuming it, which is no failure to report. */
+  function end (key: string, ticket: Ticket<C>, taken = false): void {
     if (tickets.get(key) !== ticket) return
     tickets.delete(key)
     if (ticket.quiet !== undefined) deps.clearTimer(ticket.quiet)
@@ -109,6 +113,7 @@ export function createDisplayTickets<C> (overrides: Partial<DisplayTicketsDeps> 
     const held = ticket.held
     ticket.held = []
     for (const request of held) request.resolve(false)
+    if (!taken) deps.onEnd?.(key, ticket.nonce)
   }
 
   /** The moment the quiet window ends: it runs from the later of the last request and the called message. */
@@ -152,16 +157,13 @@ export function createDisplayTickets<C> (overrides: Partial<DisplayTicketsDeps> 
       return ticket.nonce
     },
 
-    async request (key, onAftermath) {
+    async request (key) {
       const ticket = tickets.get(key)
       if (ticket?.state !== 'open') {
         prune()
-        const after = consumedAt.get(key)
-        const aftermath = ticket !== undefined || (after !== undefined && deps.now() - after < SUSPECT_MS)
         suspectUntil.set(key, deps.now() + SUSPECT_MS)
         // An allowed ticket is voided too: the display handler must not serve a request that may not be the preload's.
         if (ticket !== undefined) end(key, ticket)
-        if (aftermath) onAftermath?.()
         return false
       }
       // A request held while the frame is suspect: the frame has shown it makes requests the preload did not.
@@ -201,12 +203,18 @@ export function createDisplayTickets<C> (overrides: Partial<DisplayTicketsDeps> 
       if (ticket !== undefined) end(key, ticket)
     },
 
+    voidAllowed () {
+      for (const [key, ticket] of [...tickets]) if (ticket.state === 'allowed') end(key, ticket)
+    },
+
+    forgetTab (webContentsId) {
+      for (const key of [...suspectUntil.keys()]) if (key.startsWith(`${webContentsId}:`)) suspectUntil.delete(key)
+    },
+
     consumeDisplay (key) {
       const ticket = tickets.get(key)
       if (ticket?.state !== 'allowed') return undefined
-      end(key, ticket)
-      prune()
-      consumedAt.set(key, deps.now())
+      end(key, ticket, true)
       return { choice: ticket.choice, nonce: ticket.nonce }
     },
 

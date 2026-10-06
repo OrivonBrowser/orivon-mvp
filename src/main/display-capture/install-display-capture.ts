@@ -59,7 +59,6 @@ export const installDisplayCapture: ShellInstaller = {
   name: 'display-capture',
   install: (app, services, ctx) => {
     const isTab = (contents: WebContents): boolean => services.windows.findTab(contents) !== null
-    const tickets = createDisplayTickets<DisplayChoice>()
     const policy = createDisplayPolicy({
       isApp: (origin) => isRegisteredAppOrigin(ctx, origin),
       blockedByDefault: () => services.settings.get('sites.screenShare') === 'block',
@@ -86,6 +85,8 @@ export const installDisplayCapture: ShellInstaller = {
       }
     })
     bindShareRegistry(shares)
+    // A ticket that ends without the display handler taking it lets go of the picked tab its mark keeps attached.
+    const tickets = createDisplayTickets<DisplayChoice>({ onEnd: (_key, nonce) => { shares.cancelExpected(nonce) } })
 
     const gate = createDisplayGate({
       tickets,
@@ -95,7 +96,8 @@ export const installDisplayCapture: ShellInstaller = {
       isTab,
       showing: (contents) => windowShowing(contents) !== undefined,
       mainFrameOrigin: committedOrigin,
-      frameKey: mainFrameKey
+      frameKey: mainFrameKey,
+      endUnexpectedCapture
     })
     registerDisplayIpc({ ipc: ipcMain, gate, isTab })
 
@@ -119,6 +121,8 @@ export const installDisplayCapture: ShellInstaller = {
       const end = (): void => { gate.endForTab(contents) }
       contents.on('did-start-navigation', (details) => { if (details.isMainFrame && !details.isSameDocument) end() })
       contents.on('render-process-gone', end)
+      contents.on('destroyed', end)
+      contents.on('did-navigate', () => { gate.pageCommitted(contents) })
     }
     for (const contents of webContents.getAllWebContents()) endWhenPageEnds(contents)
     app.on('web-contents-created', (_event, contents) => { endWhenPageEnds(contents) })

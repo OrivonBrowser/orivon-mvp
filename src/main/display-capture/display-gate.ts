@@ -4,7 +4,7 @@
 import type { WebContents } from 'electron'
 import type { DisplayPolicy } from './display-policy.js'
 import type { DisplayTickets } from './display-tickets.js'
-import type { ChooseDisplaySource, DisplayChoice, DisplayHints } from './types.js'
+import type { ChooseDisplaySource, DisplayChoice, DisplayHints, FailureName } from './types.js'
 
 /** What a pick answers: the nonce the preload presents when it arms the ticket, or why the page is refused. */
 export type PickReply =
@@ -19,10 +19,13 @@ export interface PickRequest {
 }
 
 export interface DisplayGateDeps {
-  tickets: Pick<DisplayTickets<DisplayChoice>, 'open' | 'void' | 'arm' | 'called' | 'has' | 'suspect'>
+  tickets: Pick<DisplayTickets<DisplayChoice>, 'open' | 'void' | 'arm' | 'called' | 'has' | 'suspect' | 'forgetTab'>
   policy: DisplayPolicy
   choose: ChooseDisplaySource
   shares: {
+    received: (requester: WebContents, nonce: string) => void
+    /** True when it ended an unconfirmed share. */
+    failed: (requester: WebContents, nonce: string) => boolean
     tracksEnded: (requester: WebContents, nonce: string) => void
     /** The picked tab is to be captured: keeps its view in the window until the share starts or the ticket ends. */
     expectCapture: (tab: WebContents, nonce: string) => void
@@ -36,13 +39,24 @@ export interface DisplayGateDeps {
   mainFrameOrigin: (contents: WebContents) => string | null
   /** The ticket key of the tab's top frame. */
   frameKey: (contents: WebContents) => string | undefined
+  endUnexpectedCapture: (contents: WebContents, reason: string) => void
 }
 
 export interface DisplayGate {
   pick: (contents: WebContents, request: PickRequest) => Promise<PickReply>
   arm: (contents: WebContents, nonce: string) => void
   called: (contents: WebContents, nonce: string, rejectedEarly: boolean) => void
+  /** The preload's own call received the stream: the share is confirmed. */
+  received: (contents: WebContents, nonce: string) => void
+  /**
+   * The preload's own call failed. A refusal (`NotAllowedError`) of a call whose share had started means someone else's
+   * request took the ticket, and the stream it was served went to the page: the renderer ends, however late it comes.
+   * Any other failure only means the capture could not start, and the share ends.
+   */
+  failed: (contents: WebContents, nonce: string, name: FailureName) => void
   tracksEnded: (contents: WebContents, nonce: string) => void
+  /** A new document committed in the tab: the suspicion the old one earned is forgotten. */
+  pageCommitted: (contents: WebContents) => void
   /** The tab's page is going away or being replaced: closes its picker and voids its ticket. A refusal is kept: see `TabState`. */
   endForTab: (contents: WebContents) => void
 }
@@ -133,8 +147,19 @@ export function createDisplayGate (deps: DisplayGateDeps): DisplayGate {
       const key = deps.frameKey(contents)
       if (key !== undefined) deps.tickets.called(key, nonce, rejectedEarly)
     },
+    received (contents, nonce) {
+      deps.shares.received(contents, nonce)
+    },
+    failed (contents, nonce, name) {
+      stopExpecting(contents, nonce)
+      const ended = deps.shares.failed(contents, nonce)
+      if (ended && name === 'NotAllowedError') deps.endUnexpectedCapture(contents, 'the preload\'s own call was refused after a request was served against its ticket')
+    },
     tracksEnded (contents, nonce) {
       deps.shares.tracksEnded(contents, nonce)
+    },
+    pageCommitted (contents) {
+      deps.tickets.forgetTab(contents.id)
     },
     endForTab (contents) {
       const state = states.get(contents)
