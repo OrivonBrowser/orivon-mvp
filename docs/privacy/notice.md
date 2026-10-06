@@ -23,7 +23,7 @@ behind it is [`outbound-requests.md`](outbound-requests.md), and an Italian vers
 ## Who is responsible
 
 The controller of the telemetry data is [CONTROLLER]. Write to [CONTACT] for anything in this
-notice. There is no data protection officer; the project is too small to need one.
+notice.
 
 ## What telemetry sends
 
@@ -125,7 +125,7 @@ below is in [`outbound-requests.md`](outbound-requests.md) with the file that ma
 | What | To whom | Why, and the basis | You can |
 |---|---|---|---|
 | Check for a new release | `api.github.com` | To tell you an update exists. Your consent: it is off until you switch it on in Settings > About | Switch it off |
-| Follow Ethereum and prove `.eth` names | `eth.drpc.org`, `rpc.mevblocker.io`, `ethereum-rpc.publicnode.com`, `ethereum-beacon-api.publicnode.com` | To verify a name instead of trusting a server. Needed for the feature you asked for when you open a `.eth` or `ipfs://` address; the first two minutes after launch also renew a stale checkpoint (our legitimate interest, Article 6(1)(f), in the feature working). The RPC sees which `.eth` name you open | Switch the light client off in Settings > Web3 (then no `.eth` name loads) |
+| Follow Ethereum and prove `.eth` names | `eth.drpc.org`, `rpc.mevblocker.io`, `ethereum-rpc.publicnode.com`, `ethereum-beacon-api.publicnode.com` | To verify a name instead of trusting a server. Needed for the feature you asked for when you open a `.eth` or `ipfs://` address; two minutes after launch it also renews a checkpoint more than a week old (our legitimate interest, Article 6(1)(f), in the feature working). The RPC sees which `.eth` name you open | Switch the light client off in Settings > Web3 (then no `.eth` name loads) |
 | Fetch the content of an `ipfs://` address or a `.eth` site, and look up `ipns://` keys and DNSLink names | `ipfs.orbitor.dev`, `ipfs.filebase.io`, `trustless-gateway.link`, `name.web3.storage`, `cloudflare-dns.com`, `dns.google`, and for some names a server that the name's own record chooses | To open the address you asked for. Performing what you asked, Article 6(1)(b). The server sees which content you open. Every block is checked against its hash | Not opening such addresses |
 | Check an installed app for a new version while its tab is open | The same servers, every 30 minutes | To tell you when an app you installed has a new version. Our legitimate interest, Article 6(1)(f), in keeping apps current and safe; it repeats the lookups of the row above | Close the app's tab |
 | Ask the Web3 Score provider about the page you are on | The provider set in Settings > Web3 (by default one chosen by Orivon, at an IPNS address) | To show a trust level in the site shield. Legitimate interest, Article 6(1)(f); on by default. The provider learns a bucket, 1 of 16 or 256, that the page's content identifier falls in, never the identifier or the address. A provider that knows few sites can guess which one a bucket means | Clear the provider address in Settings > Web3 |
