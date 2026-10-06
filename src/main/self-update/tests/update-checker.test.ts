@@ -110,4 +110,11 @@ describe('check now', () => {
     await checker.checkNow()
     expect(offer).toHaveBeenCalledWith(null)
   })
+
+  it('keeps the offer it has when the source could not be reached', async () => {
+    const { checker, offer } = setup({ fetchLatest: async () => { throw new Error('offline') } })
+    const result = await checker.checkNow()
+    expect(result.reached).toBe(false)
+    expect(offer).not.toHaveBeenCalled()
+  })
 })

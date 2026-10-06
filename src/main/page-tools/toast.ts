@@ -53,6 +53,7 @@ export const TOAST_TEXT = {
   noAddress: { text: 'This page has no address to share', tone: 'info' },
   updateDownloading: { text: 'Downloading Orivon', tone: 'info', sticky: true },
   updateInstalling: { text: 'Installing Orivon', tone: 'info', sticky: true },
+  updateRestarting: { text: 'Orivon restarts to finish the update.', tone: 'info' },
   updateFailed: { text: 'Could not install the update', tone: 'error' },
   localFilesUnsafe: { text: 'This copy of Orivon cannot open files from this computer safely.', tone: 'error' }
 } as const satisfies Record<string, ToastText>

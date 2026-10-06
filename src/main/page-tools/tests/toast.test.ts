@@ -13,6 +13,10 @@ describe('toastView', () => {
     expect(Object.entries(TOAST_TEXT).filter(([, entry]) => 'sticky' in entry).map(([code]) => code)).toEqual(['savingPdf', 'updateDownloading', 'updateInstalling'])
   })
 
+  it('says the browser restarts, as a message that goes away by itself', () => {
+    expect(toastView('updateRestarting')).toEqual({ text: 'Orivon restarts to finish the update.', tone: 'info', sticky: false })
+  })
+
   it('offers Save as PDF from the no-printer message and from no other', () => {
     expect(toastView('noPrinter')).toMatchObject({ action: 'Save as PDF' })
     expect(toastAction('noPrinter')).toBe('page.pdf')

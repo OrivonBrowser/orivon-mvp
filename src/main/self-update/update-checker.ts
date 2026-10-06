@@ -65,7 +65,8 @@ export function createUpdateChecker (deps: CheckerDeps): UpdateChecker {
     },
     checkNow: async () => {
       const result = await checkForUpdate({ currentVersion: deps.currentVersion, now: deps.now(), fetchLatestRelease: deps.fetchLatest })
-      await deps.offer(result.shouldNotify ? result.release : null)
+      // A look that did not reach the source says nothing: the release found earlier stays on offer.
+      if (result.reached) await deps.offer(result.shouldNotify ? result.release : null)
       return result
     }
   }

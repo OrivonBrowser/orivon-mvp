@@ -46,7 +46,7 @@ describe('the update flow', () => {
     expect(await flow.install()).toEqual({ ok: true })
     expect(download).toHaveBeenCalledWith('v1.2.0', FILE, expect.any(Function))
     expect(install).toHaveBeenCalledWith('appimage', '/pending/file')
-    expect(states.map((state) => state.phase)).toEqual(['downloading', 'installing'])
+    expect(states.map((state) => state.phase)).toEqual(['downloading', 'installing', 'restarting'])
   })
 
   it('refuses to install what this copy cannot take, and says why', async () => {
@@ -79,7 +79,7 @@ describe('the update flow', () => {
     expect(flow.state()).toEqual({ phase: 'failed', percent: null, failure: 'The download is larger than the release says, so it was thrown away.' })
     expect(flow.release()).toBe(RELEASE)
     expect(await flow.install()).toEqual({ ok: true })
-    expect(states.at(-1)?.phase).toBe('installing')
+    expect(states.at(-1)?.phase).toBe('restarting')
   })
 
   it('reports a refused install as such, and a failed one with its reason', async () => {
@@ -100,5 +100,66 @@ describe('the update flow', () => {
     release()
     expect(await first).toEqual(await second)
     expect(download).toHaveBeenCalledTimes(1)
+  })
+
+  it('says it is restarting once the install steps succeeded, and refuses another install meanwhile', async () => {
+    const install = vi.fn(async () => ({ ok: true as const }))
+    const { flow, states } = setup({ install })
+    await flow.offer(RELEASE)
+    expect(await flow.install()).toEqual({ ok: true })
+    expect(flow.state().phase).toBe('restarting')
+    expect(states.map((state) => state.phase)).toEqual(['downloading', 'installing', 'restarting'])
+    expect(await flow.install()).toMatchObject({ ok: false, why: 'unavailable' })
+    expect(install).toHaveBeenCalledTimes(1)
+    await flow.offer(null)
+    expect(flow.release()).toBe(RELEASE)
+  })
+
+  it('keeps the old release and its file together while installability of a new one is worked out', async () => {
+    let finish!: (value: Installability) => void
+    const download = vi.fn(async () => '/p')
+    const second: ReleaseInfo = { version: 'v1.3.0', url: 'u' }
+    const secondFile = { name: 'Orivon-1.3.0-x86_64.AppImage', size: 5, sha256: 'b'.repeat(64) }
+    const { flow } = setup({
+      download,
+      installability: async (release) => release === second ? await new Promise<Installability>((resolve) => { finish = resolve }) : ABLE
+    })
+    await flow.offer(RELEASE)
+    const offering = flow.offer(second)
+    const installing = flow.install()
+    finish({ ok: true, kind: 'appimage', file: secondFile })
+    await offering
+    await installing
+    expect(download).toHaveBeenCalledWith('v1.2.0', FILE, expect.any(Function))
+    expect(flow.release()).toBe(RELEASE)
+  })
+
+  it('takes the new release and its file together once both are known', async () => {
+    const second: ReleaseInfo = { version: 'v1.3.0', url: 'u' }
+    const secondFile = { name: 'Orivon-1.3.0-x86_64.AppImage', size: 5, sha256: 'b'.repeat(64) }
+    const { flow } = setup({ installability: async (release) => release === second ? { ok: true, kind: 'appimage', file: secondFile } : ABLE })
+    await flow.offer(RELEASE)
+    await flow.offer(second)
+    expect(flow.release()).toBe(second)
+    expect(flow.installability()).toEqual({ ok: true, kind: 'appimage', file: secondFile })
+  })
+
+  it('clears a failure when a different release is offered, and keeps it for the same one', async () => {
+    const { flow } = setup({ download: async () => { throw new Error('No.') } })
+    await flow.offer(RELEASE)
+    await flow.install()
+    expect(flow.state().phase).toBe('failed')
+    await flow.offer({ ...RELEASE })
+    expect(flow.state().phase).toBe('failed')
+    await flow.offer({ version: 'v1.3.0', url: 'u' })
+    expect(flow.state().phase).toBe('idle')
+  })
+
+  it('clears a failure when the offer goes away', async () => {
+    const { flow } = setup({ download: async () => { throw new Error('No.') } })
+    await flow.offer(RELEASE)
+    await flow.install()
+    await flow.offer(null)
+    expect(flow.state().phase).toBe('idle')
   })
 })

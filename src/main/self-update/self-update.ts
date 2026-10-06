@@ -18,7 +18,7 @@ import type { FetchLike } from './download-update.js'
 import { installKind, MANUAL_WORDS, packageName } from './install-kind.js'
 import type { InstallFacts } from './install-kind.js'
 import { installPlan, installPreCheck } from './install-plan.js'
-import { machineProbe, realInstallHost } from './install-host.js'
+import { machineProbe, markedRestarter, realInstallHost } from './install-host.js'
 import { runInstall } from './install-update.js'
 import type { InstallResult } from './install-update.js'
 import { releaseUrl } from './release-url.js'
@@ -129,13 +129,14 @@ export function createSelfUpdate ({ app, windows, isPrivate }: SelfUpdateDeps): 
     }
     const machine = await readFacts()
     const workDir = await mkdtemp(join(tmpdir(), 'orivon-update-'))
-    // A restart that follows brings the windows back, whatever the start-up setting says.
-    writeRestartMarker(userData)
-    const restarter = {
+    // A restart that follows brings the windows back, whatever the start-up setting says; the note is written as the
+    // restart is armed, so a slow password prompt cannot age it.
+    const restarter = markedRestarter({
+      mark: () => { writeRestartMarker(userData) },
       relaunch: (execPath: string) => { app.relaunch({ execPath, args: withoutAddresses(process.argv.slice(1), app.isPackaged) }) },
       // `quit`, never `exit`: the session and the stores flush before the browser closes.
       quit: () => { app.quit() }
-    }
+    })
     try {
       const result = await runInstall(installPlan(kind, path, { ...machine, workDir }), realInstallHost(restarter))
       if (!result.ok) clearRestartMarker(userData)
@@ -162,6 +163,7 @@ export function createSelfUpdate ({ app, windows, isPrivate }: SelfUpdateDeps): 
     const version = flow.release()?.version.replace(/^v/, '') ?? ''
     if (state.phase === 'downloading') toast(target, 'updateDownloading', `${version} · ${String(state.percent ?? 0)}%`)
     else if (state.phase === 'installing') toast(target, 'updateInstalling', `${version}…`)
+    else if (state.phase === 'restarting') toast(target, 'updateRestarting')
     else if (state.phase === 'failed') toast(target, 'updateFailed')
   }
 

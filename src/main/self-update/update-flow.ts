@@ -10,7 +10,8 @@ export type Installability =
   | { readonly ok: true, readonly kind: InstallerKind, readonly file: ManifestFile }
   | { readonly ok: false, readonly why: string }
 
-export type FlowPhase = 'idle' | 'downloading' | 'installing' | 'failed'
+/** `restarting`: the install steps all succeeded and the browser has been asked to quit and start again; a page that cancels the quit leaves it here, with the update on disk. */
+export type FlowPhase = 'idle' | 'downloading' | 'installing' | 'restarting' | 'failed'
 
 export interface FlowState {
   readonly phase: FlowPhase
@@ -55,6 +56,7 @@ export function createUpdateFlow (deps: FlowDeps): UpdateFlow {
 
   const set = (next: FlowState): void => { state = next; deps.changed(state) }
   const busy = (): boolean => running !== null
+  const restarting = (): boolean => state.phase === 'restarting'
 
   async function run (release: ReleaseInfo, choice: Extract<Installability, { ok: true }>): Promise<InstallOutcome> {
     let lastEmit = -Infinity
@@ -70,7 +72,10 @@ export function createUpdateFlow (deps: FlowDeps): UpdateFlow {
       })
       set({ phase: 'installing', percent: null, failure: null })
       const result = await deps.install(choice.kind, path)
-      if (result.ok) return { ok: true }
+      if (result.ok) {
+        set({ phase: 'restarting', percent: null, failure: null })
+        return { ok: true }
+      }
       set({ phase: 'failed', percent: null, failure: result.reason })
       return { ok: false, why: 'failed', reason: result.reason, declined: result.declined }
     } catch (error) {
@@ -82,17 +87,22 @@ export function createUpdateFlow (deps: FlowDeps): UpdateFlow {
 
   return {
     offer: async (release) => {
-      if (busy()) return
+      if (busy() || restarting()) return
+      // The release and the file for it change together: an install during the wait goes on with the pair it had.
+      const next = release === null ? null : await deps.installability(release)
+      if (busy() || restarting()) return
+      const changed = offered?.version !== release?.version
       offered = release
-      able = release === null ? null : await deps.installability(release)
-      // An offer replaced by a later check forgets a failure that belonged to the one before.
-      if (state.phase === 'failed' && release === null) set(IDLE)
+      able = next
+      // A failure belonged to the release it happened with.
+      if (changed && state.phase === 'failed') set(IDLE)
     },
     release: () => offered,
     installability: () => able,
     state: () => state,
     install: async () => {
       if (running !== null) return await running
+      if (restarting()) return { ok: false, why: 'unavailable', reason: 'Orivon restarts to finish the update.', declined: false }
       const release = offered
       if (release === null) return { ok: false, why: 'none', reason: 'No update is on offer.', declined: false }
       if (able === null || !able.ok) return { ok: false, why: 'unavailable', reason: able?.why ?? 'This copy cannot install the update.', declined: false }
