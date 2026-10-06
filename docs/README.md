@@ -16,6 +16,8 @@ files, and it is the whole product surface.
 
 Then [`architecture/security-model.md`](architecture/security-model.md) for what is being
 defended against, and [`glossary.md`](glossary.md) when a term does not parse.
+[`known-limitations.md`](known-limitations.md) lists what this version does not do yet, and what
+each server Orivon talks to can see.
 
 What the browser sends, and to whom, is in [`privacy/`](privacy/):
 [`notice.md`](privacy/notice.md) ([Italian](privacy/notice.it.md)) for the people using it,

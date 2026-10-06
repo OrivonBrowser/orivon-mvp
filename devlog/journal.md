@@ -57,6 +57,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Telemetry ships: the welcome asks with two equal buttons; it counts Web3, Web2.5 and Web2 time and public Web3 sites, unlinked.
 - Our own telemetry server runs on the EU VPS: no IP kept, 12-month retention; a privacy notice in English and Italian explains everything.
 - Global Privacy Control is on by default, sent by the engine itself to every page, frame and worker, ahead of California's 2027 rule.
+- README rewritten for launch day: alpha, apps linked by `.eth` name, everyday-browser features up front, limits moved to `docs/known-limitations.md`.
 
 ### In my head
 
