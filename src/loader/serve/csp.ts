@@ -24,6 +24,11 @@ const LOCAL_SCHEMES = ['data:', 'blob:'] as const
  */
 const SCRIPT_SOURCES = ["'self'", "'unsafe-eval'", "'wasm-unsafe-eval'"] as const
 
+/** What a caller may relax: `inlineScripts` is for a document no extension runs in (a granted local file). */
+export interface CspOptions {
+  readonly inlineScripts?: boolean
+}
+
 /**
  * What a manifest's `crossOriginIsolated: true` asks for: the two headers
  * that make a document cross-origin isolated, so `SharedArrayBuffer` and a
@@ -47,17 +52,20 @@ function directive (name: string, sources: readonly string[]): string {
  * `tcp.connect` grant, `securePatterns` the live `https.connect` grant;
  * both are read fresh per request by the caller.
  *
+ * `options.inlineScripts` adds `'unsafe-inline'` to `script-src`. The refusal above exists for
+ * extension-written DOM, and a granted local file runs in a session that loads no extension.
+ *
  * `form-action` is deliberately unset: it has no fallback to `default-src`,
  * and restricting it would also refuse the redirects a form-post sign-in
  * flow follows.
  */
-export function cspHeaderValue (connectPatterns: readonly Pattern[], securePatterns: readonly Pattern[]): string {
+export function cspHeaderValue (connectPatterns: readonly Pattern[], securePatterns: readonly Pattern[], options: CspOptions = {}): string {
   const reach = reachSourcesFor(securePatterns).sources
   const connectTokens = connectSrcFor(connectPatterns).sources.slice(1)
   const withLocal = ["'self'", ...LOCAL_SCHEMES]
   return [
     "default-src 'self'",
-    directive('script-src', SCRIPT_SOURCES),
+    directive('script-src', options.inlineScripts === true ? [...SCRIPT_SOURCES, "'unsafe-inline'"] : SCRIPT_SOURCES),
     "style-src 'self' 'unsafe-inline'",
     // See README.md's Design notes for why this is 'none' rather than left to default-src.
     "object-src 'none'",

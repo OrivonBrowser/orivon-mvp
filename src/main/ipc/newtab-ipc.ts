@@ -26,15 +26,10 @@ export type NewTabCommand =
   | { type: 'getBookmarks' }
   | { type: 'navigate'; input: string }
 
-/**
- * The dashboard's own tab, not merely a page at its address: a built dashboard is a `file:` URL, and
- * a local file opened at that same path runs there too. The tab's flag is set only for a tab made as
- * the new-tab page and cleared by its first navigation to any other document.
- */
-function isFromDashboard (event: IpcMainInvokeEvent, dashboardUrl: string, windows: WindowRegistry): boolean {
-  if (event.senderFrame === null || event.senderFrame !== event.sender.mainFrame || event.senderFrame.url !== dashboardUrl) return false
-  const found = windows.findTab(event.sender)
-  return found !== null && found.window.tabs.isDashboardTab(found.tabId)
+function isFromDashboard (event: IpcMainInvokeEvent, dashboardUrl: string): boolean {
+  return event.senderFrame !== null &&
+    event.senderFrame === event.sender.mainFrame &&
+    event.senderFrame.url === dashboardUrl
 }
 
 /** Once per process: `ipcMain.handle` refuses a second registration of a channel. */
@@ -42,7 +37,7 @@ export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry
   ipcMain.handle(
     NEWTAB_COMMAND_CHANNEL,
     async (event: IpcMainInvokeEvent, command: NewTabCommand): Promise<Bookmark[] | undefined> => {
-      if (!isFromDashboard(event, dashboardUrl, windows)) {
+      if (!isFromDashboard(event, dashboardUrl)) {
         // Not the dashboard's own frame -- refuse silently, same
         // non-committal response ipc.ts's isFromChrome() gives, rather
         // than a thrown error that would confirm the channel exists.

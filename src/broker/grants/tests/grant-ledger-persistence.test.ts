@@ -93,6 +93,23 @@ describe('GrantLedger -- grant persistence (A23)', () => {
     expect(restored?.grantedAt).toBe(999)
   })
 
+  it('persists a local file\'s grants like a website\'s, and restores them only through registerApp', () => {
+    const FILE = 'file:///home/u/notes/app.html'
+    const storage = memoryLedgerStorage()
+    const before = new GrantLedger(storage)
+    before.registerApp(FILE, manifestFor({ fs: { quotaBytes: 1 } }))
+    before.grant(FILE, 'fs', [], 77)
+    expect(storage.grants.get(FILE)).toEqual({ fs: { patterns: [], grantedAt: 77 } })
+
+    const after = new GrantLedger(storage) // the "restart"
+    expect(after.grantsFor(FILE)).toEqual([])
+    expect(after.currentGrant(FILE, 'fs')).toBeUndefined()
+
+    after.registerApp(FILE, manifestFor({ fs: { quotaBytes: 1 } }))
+    expect(after.currentGrant(FILE, 'fs')?.grantedAt).toBe(77)
+    expect(after.currentGrant('file:///home/u/notes/other.html', 'fs')).toBeUndefined()
+  })
+
   // The security core of the whole feature: a restored grant is re-checked
   // against the manifest in force NOW, not the one in force when it was
   // granted. A narrowed manifest must not let the old, wider grant come back.

@@ -225,9 +225,8 @@ describe('originFromUrl', () => {
   })
 })
 
-// A23/T13c: never persist a grant for a loopback, file: or plain-http
-// origin. file: never reaches this function at all -- originFromUrl already
-// refuses it a derivable origin -- so only scheme and host remain to check.
+// A23/T13c: never persist a grant for a loopback or plain-http origin. A
+// local-file key (an exact file: path) persists like a website's.
 describe('isPersistableOrigin', () => {
   describe('refused', () => {
     it.each([
@@ -564,8 +563,15 @@ describe('a local file is an origin of its own', () => {
       expect(localFileKey(`file:///${'a'.repeat(2041)}`)).toBeNull()
     })
 
-    it('is never persistable', () => {
-      expect(isPersistableOrigin('file:///d/a.html')).toBe(false)
+    it('is persistable, as a website origin is', () => {
+      expect(isPersistableOrigin('file:///d/a.html')).toBe(true)
+      expect(isPersistableOrigin('file:///C:/Users/u/a.html')).toBe(true)
+    })
+
+    it('is not persistable when it is not exactly a key: a host, a query, a fragment, a // path', () => {
+      for (const notAKey of ['file://server/share/a.html', 'file:///d/a.html?x=1', 'file:///d/a.html#f', 'file:////server/share/a.html', 'file:///d/../a.html']) {
+        expect(isPersistableOrigin(notAKey)).toBe(false)
+      }
     })
 
     it('is recognised by isLocalFileKey and nothing else is', () => {

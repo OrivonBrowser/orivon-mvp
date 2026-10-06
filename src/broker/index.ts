@@ -204,7 +204,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   }
 
   function heldSync (origin: string, capability: CapabilityKind): boolean {
-    const key = originFromUrl(origin)
+    const key = isolationKeyFromUrl(origin)
     return key !== null && ledger.currentGrant(key, capability) !== undefined
   }
 

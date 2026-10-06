@@ -15,7 +15,6 @@
 
 import { derivePublicKey, signWithP256 } from '../policy/derive-p256.js'
 import { fail } from '../errors.js'
-import { derivationScope } from '../grants/local-file-lifetime.js'
 import type { GrantLedger } from '../grants/grant-ledger.js'
 import type { Broker, CreateBrokerOptions } from '../broker-contracts.js'
 import type { Manifest } from '../../contracts/index.js'
@@ -83,14 +82,14 @@ export function createIdCapability ({ deps, ledger, canonical, manifestFor }: Id
     const key = canonical(origin)
     requireGrantedCurve(ledger, manifestFor, key, opts.curve)
     const seed = await deps.keychain.getSeed()
-    return await derivePublicKey({ seed, label: 'app', scope: derivationScope(key), curve: asP256(opts.curve) })
+    return await derivePublicKey({ seed, label: 'app', scope: key, curve: asP256(opts.curve) })
   }
 
   async function sign (origin: string, opts: { curve: string, payload: Uint8Array }): Promise<Uint8Array> {
     const key = canonical(origin)
     requireGrantedCurve(ledger, manifestFor, key, opts.curve)
     const seed = await deps.keychain.getSeed()
-    return await signWithP256({ seed, label: 'app', scope: derivationScope(key), curve: asP256(opts.curve) }, opts.payload)
+    return await signWithP256({ seed, label: 'app', scope: key, curve: asP256(opts.curve) }, opts.payload)
   }
 
   return { publicKey, sign }

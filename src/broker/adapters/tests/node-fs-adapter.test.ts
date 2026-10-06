@@ -6,7 +6,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { createBroker } from '../../index.js'
 import { nodeFs } from '../node-fs-adapter.js'
 import { appDataRoot, originHash } from '../../grants/origin-hash.js'
-import { runId } from '../../grants/local-file-lifetime.js'
 
 // The real filesystem adapter's own suite -- split out of
 // node-adapters.test.ts under code-guidelines.md Rule 2, paired with
@@ -31,7 +30,7 @@ describe('nodeFs (the real filesystem adapter)', () => {
     expect(root).toContain(originHash('https://app.example'))
   })
 
-  it('rootFor a local file is under this run\'s app-data-local folder, never app-data/', async () => {
+  it('rootFor a local file is under app-data/<hash of its key>, like a website\'s, never named by the path', async () => {
     const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-'))
     const fs = nodeFs(userData)
     const file = 'file:///home/u/app/index.html'
@@ -39,10 +38,9 @@ describe('nodeFs (the real filesystem adapter)', () => {
     const root = fs.rootFor(file)
 
     expect(root).toBe(join(appDataRoot(userData, file), 'files'))
-    expect(root).toContain(join(userData, 'app-data-local', runId()))
-    expect(root).toContain(originHash(file))
+    expect(root).toBe(join(userData, 'app-data', originHash(file), 'files'))
     expect(root).not.toContain('index.html')
-    expect(existsSync(join(userData, 'app-data'))).toBe(false)
+    expect(fs.rootFor('file:///home/u/app/other.html')).not.toBe(root)
   })
 
   it('writeFile then readFile round-trips, creating parent directories', async () => {

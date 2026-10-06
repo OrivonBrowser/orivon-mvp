@@ -97,7 +97,7 @@ export function originFromUrl (url: string): string | null {
   return `${parsed.protocol}//${host}${port}`
 }
 
-/** The longest local-file key: it names a grant row and a per-run directory, so it is bounded as a host is. */
+/** The longest local-file key: it names a grant row and a data directory, so it is bounded as a host is. */
 export const MAX_LOCAL_FILE_KEY_LENGTH = 2048
 
 /**
@@ -165,14 +165,13 @@ export function isLoopbackHost (host: string): boolean {
 
 /**
  * True only if `origin` (already in `originFromUrl`'s canonical shape) may
- * ever be written to disk -- T13c: "Never persist grants for loopback,
- * `file:` or plain-`http` origins" (security-model.md). Session-scoped,
- * re-prompted every launch, is the answer for everything this returns false
- * for.
+ * ever be written to disk -- T13c: never persist grants for loopback or
+ * plain-`http` origins (security-model.md). Session-scoped, re-prompted every
+ * launch, is the answer for everything this returns false for.
  *
- * A local-file key (`localFileKey`) is refused by the `https:` check below, and a
- * `file:` URL has no `originFromUrl` origin in the first place. That leaves scheme
- * and host to check:
+ * A local-file key (`localFileKey`) is persistable: its grants and data are
+ * keyed to the exact path and last as a website's do. Any other `file:` string
+ * is refused. For a web origin that leaves scheme and host to check:
  *   - `http:` is refused outright, regardless of host -- the "plain-http"
  *     half of T13c.
  *   - The whole `.localhost` NAMESPACE is refused by name, not just the bare
@@ -207,6 +206,7 @@ export function isPersistableOrigin (origin: string): boolean {
     return false
   }
 
+  if (parsed.protocol === 'file:') return isLocalFileKey(origin)
   if (parsed.protocol !== 'https:') return false
 
   const host = canonicalHost(parsed.hostname)

@@ -8,7 +8,6 @@ import { APP, baseDeps, manifestWith } from './index.test-helpers.js'
 import { openSecret, sealSecret } from '../policy/secret-seal.js'
 import { originFromUrl } from '../policy/origin.js'
 import { LIMITS } from '../../contracts/index.js'
-import { derivationScope } from '../grants/local-file-lifetime.js'
 
 /** 32 varying, non-secret bytes -- an all-repeated seed trips derive.ts's own degenerate-seed guard. */
 const SEED = Uint8Array.from({ length: 32 }, (_, i) => i)
@@ -126,24 +125,29 @@ describe('orivon.secrets.decrypt', () => {
 })
 
 describe('orivon.secrets for a local file', () => {
-  const FILE = 'file:///home/u/app/index.html'
+  const FILE = 'file:///home/u/notes/app.html'
 
-  it('seals under the file key and this run: this run opens it, another run does not', async () => {
-    const broker = createBroker(baseDeps({ keychain: persistentKeychain() }))
-    broker.registerApp(FILE, manifestWith({ secrets: {} }))
-    await broker.grant(FILE, 'secrets', [])
-    const plaintext = new TextEncoder().encode('hello')
+  it('opens ciphertext after a restart: a second broker on the same seed and path decrypts it', async () => {
+    const first = createBroker(baseDeps({ keychain: persistentKeychain() }))
+    first.registerApp(FILE, manifestWith({ secrets: {} }))
+    await first.grant(FILE, 'secrets', [])
+    const wire = await first.secrets.encrypt(FILE, new TextEncoder().encode('kept'))
 
-    const sealed = await broker.secrets.encrypt(FILE, plaintext)
-
-    expect(await broker.secrets.decrypt(FILE, sealed)).toEqual(plaintext)
-    expect(await openSecret(SEED, derivationScope(FILE), sealed)).toEqual(plaintext)
-    await expect(openSecret(SEED, derivationScope(FILE, 'another-run'), sealed)).rejects.toMatchObject({ code: 'invalid' })
-    await expect(openSecret(SEED, FILE, sealed)).rejects.toMatchObject({ code: 'invalid' })
+    const second = createBroker(baseDeps({ keychain: persistentKeychain() }))
+    second.registerApp(FILE, manifestWith({ secrets: {} }))
+    await second.grant(FILE, 'secrets', [])
+    expect(await second.secrets.decrypt(FILE, wire)).toEqual(new TextEncoder().encode('kept'))
   })
 
-  it('is unavailable with no grant', async () => {
+  it('is invalid for ciphertext a sibling file sealed', async () => {
     const broker = createBroker(baseDeps({ keychain: persistentKeychain() }))
-    expect(await broker.secrets.available(FILE)).toBe(false)
+    const SIBLING = 'file:///home/u/notes/other.html'
+    for (const key of [FILE, SIBLING]) {
+      broker.registerApp(key, manifestWith({ secrets: {} }))
+      await broker.grant(key, 'secrets', [])
+    }
+    const wire = await broker.secrets.encrypt(SIBLING, new Uint8Array([1]))
+
+    await expect(broker.secrets.decrypt(FILE, wire)).rejects.toMatchObject({ code: 'invalid' })
   })
 })

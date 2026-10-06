@@ -19,8 +19,6 @@ const { NEWTAB_COMMAND_CHANNEL } = await import('../../channels.js')
 const DASHBOARD_URL = 'http://localhost:5999/newtab/'
 const BOOKMARK: Bookmark = { url: 'https://a.example/', title: 'A', favicon: null }
 
-let isDashboardTab = true
-
 function dispatch (frameUrl: string, isTopFrame: boolean): unknown {
   const handler = handlers.get(NEWTAB_COMMAND_CHANNEL)
   if (handler === undefined) throw new Error('registerNewTabIpc did not register a handler')
@@ -33,9 +31,7 @@ function dispatch (frameUrl: string, isTopFrame: boolean): unknown {
 describe('registerNewTabIpc -- isFromDashboard', () => {
   const load = vi.fn(async () => {})
   const bookmarks = { getAll: vi.fn(() => [BOOKMARK]), load } as unknown as BookmarkStore
-  const windows = {
-    findTab: () => ({ window: { tabs: { isDashboardTab: () => isDashboardTab } }, tabId: 't1' })
-  } as unknown as WindowRegistry
+  const windows = {} as WindowRegistry
   registerNewTabIpc(DASHBOARD_URL, windows, bookmarks)
 
   it('answers the dashboard\'s own top frame, once the bookmark file has been read', async () => {
@@ -49,14 +45,5 @@ describe('registerNewTabIpc -- isFromDashboard', () => {
 
   it('refuses the top frame once it has navigated away', async () => {
     expect(await dispatch('https://elsewhere.example/', true)).toBeUndefined()
-  })
-
-  it('refuses a page at the dashboard\'s address in a tab that is not the dashboard tab, such as a local file opened at that path', async () => {
-    isDashboardTab = false
-    try {
-      expect(await dispatch(DASHBOARD_URL, true)).toBeUndefined()
-    } finally {
-      isDashboardTab = true
-    }
   })
 })
