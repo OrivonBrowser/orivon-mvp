@@ -5,7 +5,8 @@
 import type { LoadURLOptions, WebContents, WebContentsView } from 'electron'
 import { internalUrl } from '../pages/internal-pages.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
-import { knownFileProtocolFuse } from '../local-files/file-fuse.js'
+import { fileProtocolFuse, knownFileProtocolFuse } from '../local-files/file-fuse.js'
+import type { FileProtocolFuse } from '../local-files/file-fuse.js'
 import type { BuiltTab, TabFactory } from './tab-factory.js'
 import type { TabRecord } from './tab-types.js'
 
@@ -58,11 +59,18 @@ export class TabOpener {
     return this.addAndShow(this.factory.blob(url, partition), active, loadOptions)
   }
 
-  /** A local file in a new tab of its local-files session, whole (query and fragment kept). Undefined for a URL `localFileKey` refuses, at MAX_TABS, and while the binary's
-   * file-protocol fuse is not known to be off: with it on, a local page could read other files, so no tab opens and the person is told. */
-  openLocalFile (url: string, active = true): string | undefined {
-    if (this.host.atCapacity()) return undefined
-    if (knownFileProtocolFuse() !== 'off') {
+  /** A local file in a new tab of its local-files session, whole (query and fragment kept). Undefined for a URL `localFileKey` refuses, at MAX_TABS, and unless the binary's
+   * file-protocol fuse is off: with it on, a local page could read other files, so no tab opens and the person is told. The binary is read on the first open only
+   * (README.md's Design notes), so that one open waits for the answer; every later one is as quick as any other tab. */
+  openLocalFile (url: string, active = true): Promise<string | undefined> {
+    if (this.host.atCapacity()) return Promise.resolve(undefined)
+    const known = knownFileProtocolFuse()
+    if (known !== undefined) return Promise.resolve(this.openWithFuse(url, active, known))
+    return fileProtocolFuse().then((fuse) => this.host.atCapacity() ? undefined : this.openWithFuse(url, active, fuse))
+  }
+
+  private openWithFuse (url: string, active: boolean, fuse: FileProtocolFuse): string | undefined {
+    if (fuse !== 'off') {
       this.host.localFilesRefused?.()
       return undefined
     }

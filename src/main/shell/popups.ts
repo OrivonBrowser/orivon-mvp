@@ -82,7 +82,7 @@ export interface PopupHost {
    * own -- the one case a blob: URL is safe to open at all. `active`/`loadOptions` -- `openTab`'s own doc. */
   openBlobTab: (url: string, partition: string | undefined, active: boolean, loadOptions?: LoadURLOptions) => WebContents | undefined
   /** `url`, a local file, in a new tab of the local-files session. Absent: a local file is never opened from a page. */
-  openLocalFile?: (url: string, active: boolean) => WebContents | undefined
+  openLocalFile?: (url: string, active: boolean) => Promise<WebContents | undefined>
   /** `url` in a brand new window, as Chrome opens a shift-click -- undefined when the shell
    * cannot make one, so the caller opens a tab here instead. `loadOptions` -- see
    * `loadOptionsFor`'s own doc. */
@@ -199,7 +199,7 @@ export function windowOpenHandler (
       // Only a page that is itself a local file may open another, and it never gets a window to script
       // (a sibling is its own origin), so it is never adopted. A web frame inside a local page cannot
       // reach here: Chromium refuses its `file:` target before any handler runs.
-      if (localFileKey(details.url) !== null && localFileKey(from.url) !== null) host.openLocalFile?.(details.url, active)
+      if (localFileKey(details.url) !== null && localFileKey(from.url) !== null) void host.openLocalFile?.(details.url, active)
       return { action: 'deny' }
     }
     const loadOptions = loadOptionsFor(details)

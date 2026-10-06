@@ -17,7 +17,7 @@ const WEB_OPENER: Opener = { url: 'https://news.example/story', partition: undef
 const SIBLING = 'file:///home/u/app/other.html'
 
 function hostWith (withOpenLocalFile = true) {
-  const openLocalFile = vi.fn(() => undefined)
+  const openLocalFile = vi.fn(() => Promise.resolve(undefined))
   const host: Host = {
     atCapacity: () => false,
     openTab: vi.fn(() => undefined),

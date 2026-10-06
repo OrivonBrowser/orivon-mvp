@@ -320,7 +320,7 @@ export function wireView (id: string, record: TabRecord): void {
       ...(services?.kiosk === true ? { kiosk: true } : {}),
       // Beside the page being read, as a middle click opens a link.
       openInNewTab: (url) => { record.host.openTab(url, false) },
-      ...(localFileKey(wc.getURL()) !== null ? { openLocalFile: (url: string) => { record.host.openLocalFile(url, false) } } : {}),
+      ...(localFileKey(wc.getURL()) !== null ? { openLocalFile: (url: string) => { void record.host.openLocalFile(url, false) } } : {}),
       openInFront: (url) => { record.host.openTab(url) },
       openInSplit: (url) => { record.host.openInSplit(id, url) },
       openInWindow: (url) => { record.host.openWindow(url) },

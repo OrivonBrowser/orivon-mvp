@@ -7,7 +7,8 @@ and this directory is the session side of that.
 - `file-fuse.ts`: does the running Electron binary leave a `file:` page the extra privileges Electron grants
   by default (`grantFileProtocolExtraPrivileges`, the fuse)? `fileProtocolFuse()` reads the fuse wire once,
   streaming the binary in 1 MiB chunks, and answers `'off'`, `'on'` or `'unknown'`; anything but `'off'` is
-  treated as on. `knownFileProtocolFuse()` is the answer once read, for a caller that cannot wait.
+  treated as on. It runs on the first local-file open and not before. `knownFileProtocolFuse()` is the answer
+  once read, for a caller that cannot wait.
 - `partition.ts`: `localPartitionFor(url)`, the one function that says which session a local file belongs in:
   `persist:orivon-local-files` until the file is recorded, `persist:local-<hash of its key>` after.
 - `local-file-apps.ts`: the record, `<userData>/local-file-apps.json`, of the files a person let use Orivon
@@ -37,16 +38,17 @@ shares its binary's inode with other checkouts). Both are why a page the shell l
 `file:` (`../pages/shell-scheme.ts`). A feature that opens a local file asks `fileProtocolFuse()` first and
 opens only on `'off'`: a checkout whose binary was not flipped (a copy made before the flip, an install that
 skipped it, a macOS or Windows checkout, where the script refuses) reports `'on'` and opens no local file,
-and the handler itself serves nothing then. The subsystem starts the read before the app is ready and
-does not wait for it, so a launch pays nothing for it: `TabOpener.openLocalFile` asks
-`knownFileProtocolFuse()` without waiting and refuses until the read has ended, and a caller that opens a
-file at startup awaits `fileProtocolFuse()` itself.
+and the handler itself serves nothing then. Nothing reads the binary at start-up: the read streams
+the whole executable (about 200 MB) on the main process's thread, and nothing needs the answer until a local
+file is opened. `TabOpener.openLocalFile` asks `knownFileProtocolFuse()`; on the first open it is still
+unknown, so that one open waits for `fileProtocolFuse()` (once per run, then memoised) and every later one
+is as quick as any tab. The handler awaits the same memo before it serves a file.
 
 **The sentinel is searched in chunks, and every one must agree.** The wire follows a 32-byte
 sentinel, so a chunk boundary can split it: the tail of each chunk is searched again with the next. A
 universal macOS build has two sentinels; `'off'` needs all of them off. A wire of another version, one
 too short to hold this fuse, or a removed fuse (byte 114) is `'unknown'`. The read therefore runs to the
-end of the file, and is not cached across starts.
+end of the file, and is not cached across starts, which is why it waits for a first open.
 
 **The constants repeat `@electron/fuses`'s.** The main process cannot import a development
 dependency, so the sentinel and the fuse's index and state bytes are copied here, and
