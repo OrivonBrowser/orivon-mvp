@@ -13,10 +13,13 @@ and this directory is the session side of that.
   `persist:orivon-local-files` until the file is recorded, `persist:local-<hash of its key>` after.
 - `local-file-apps.ts`: the record, `<userData>/local-file-apps.json`, of the files a person let use Orivon
   permissions (one key each, capped, a corrupt file reads as empty), and the installed record the shell asks.
-- `file-handler.ts`: the `protocol.handle('file')` handler of a local session.
+- `file-handler.ts`: the `protocol.handle('file')` handler of a local session. A folder it answers with the listing
+  `directory-listing.ts` writes: every name escaped as text and as an address, no script, a policy that loads nothing.
 - `local-file-fence.ts`: the `webRequest` rule that cancels a `file:` document load that belongs to another
   local session. `local-partition.ts` makes a session local (handler and fence, once); `refuse-file-scheme.ts`
   answers `file:` with a 404 on every other session; `local-files-subsystem.ts` wires them to Electron.
+- `drop-local-file-grants.ts` and `delete-local-file-data.ts`: what a path holds in the ledger that nobody recorded (dropped
+  before the file is asked about), and Delete data for one file (grants, its session, its folders, its record).
 
 Tied to Electron (`ARCHITECTURE.md`'s `src/main/` row): sessions, `protocol.handle` and a byte inside the binary.
 
@@ -24,7 +27,7 @@ Tied to Electron (`ARCHITECTURE.md`'s `src/main/` row): sessions, `protocol.hand
 hash), `../../broker/adapters/atomic-write.ts` (`local-file-apps.ts`), `../../loader/electron/serve.ts`
 (`liveCspHeaderFor`), `../sessions/web-request-owner.ts`, `../registry.ts` (the subsystem), Node's `fs`.
 
-**What it must never import.** Anything under `../shell/`: the tab code asks this directory which session a
+**What it must never import.** Anything under `../shell/` or `../install/`: the tab code asks this directory which session a
 file belongs in, never the reverse.
 
 **Owner stream.** `sites`.

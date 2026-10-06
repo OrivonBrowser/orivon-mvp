@@ -5,8 +5,8 @@
 - **All sites**, off the toolbar's tune icon: `permissions.ts` (`PermissionsController`) lists
   grants and revokes them, recording each revoke as a declined capability (`d-0087`), and lists
   each site's remembered notification answer for reset. Revoke only: forgetting an app entirely
-  is `GrantLedger.forgetOrigin`. `permissions-panel.ts` is its popup.
-- **One site**, off the address pill's shield and key (`d-0037`): `site-info.ts` (pure, one row
+  is `GrantLedger.forgetOrigin`. A local file is not listed here: it is not an app a person installed, and the privacy page lists the recorded ones. `permissions-panel.ts` is its popup.
+- **One site**, off the address pill's shield and key (`d-0037`; a local file is named by its path, shows no Web3 Score, and has Turn off and Delete data): `site-info.ts` (pure, one row
   per declared capability), `site-switches.ts` (turn one capability off or on, re-validated
   against the manifest), `site-info-controller.ts` (the surface's one door to the broker and
   loader), `site-data-runner.ts` (Cookies and site data I/O) and `site-info-panel.ts`. The controller also

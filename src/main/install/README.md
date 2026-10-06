@@ -7,7 +7,9 @@ concurrent `load()` calls for one origin (A62). `grant-without-install.ts` grant
 install path refuses (loopback in every build; an orivon-ports `.eth` name in developer mode)
 without fetching, pinning or serving a bundle, and `granted-origin-csp.ts` gives such an origin's
 documents an installed app's CSP, through one handler `app-install-subsystem.ts` registers on the
-default session's `webRequest` owner.
+default session's `webRequest` owner. `local-file-grant.ts` does the same for a file opened from this computer: its manifest
+is read only from under the document's folder, the file is registered against it, and a Yes to the question that needs two
+presses records the file (`../local-files/`) and grants all it declares (`ADR-0060`).
 
 `app-updates.ts` is what happens to an installed app whose name moved (`ADR-0056`): it judges an
 `update-available` verified or not (`../../trust/app-update-trust.ts`), asks through `../consent/`,

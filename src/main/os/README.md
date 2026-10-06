@@ -1,7 +1,7 @@
 # `src/main/os/`: what the operating system is told about Orivon: links opened from other programs, the default-browser registration and its ask, launcher menus, shortcuts and sharing
 
 **What lives here.** The decisions and the runners of seven things. A link another program hands to a running macOS
-app (`open-url.ts`). Whether Orivon is the default browser and the call that makes it so (`default-browser.ts`, its
+app (`open-url.ts`), and a file the system hands it (`open-file.ts`: the open-file event joins the same queue as a second start's operands). Whether Orivon is the default browser and the call that makes it so (`default-browser.ts`, which on Linux also registers the three document types in `LINUX_DOCUMENT_TYPES`, its
 runner, `os-domain.ts` for the Settings page). When Orivon asks to be the default browser (`default-browser-ask.ts`
 is the rule over three facts and the clock; `install-default-browser-ask.ts` looks at it every hour). The entries a
 dock or a taskbar shows for Orivon's icon (`launcher-tasks.ts`, `install-launcher-menu.ts`, and

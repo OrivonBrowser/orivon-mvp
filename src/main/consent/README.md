@@ -6,7 +6,8 @@
 `grant-prompt-choice.ts` and `grant-prompt-extensions.ts`) turns a decision into words; the three
 `*-prompt.ts` files put those words to the person as a question in the panel of the tab that asked
 (`ask-caller.ts` is what they share). `grant-level.ts` is the one place a Level 4 site's summary loses its
-warning (`ADR-0037`). `grant-changed-capabilities.ts` is the one place accepted capabilities
+warning (`ADR-0037`). `local-file-consent.ts` is the question for a file on this computer: warning style, the file's path, what Orivon cannot
+check, the capability rows, and a button that needs a double press. `grant-changed-capabilities.ts` is the one place accepted capabilities
 become `broker.grant()` calls. `request-grant-subsystem.ts` wires `request-grant.ts` into the
 running app. `update-offer-prompts.ts` and `update-available-render.ts` are the update offer's
 questions (switch, notice, confirm Trust & Force, a failed apply) and their words (`ADR-0056`).

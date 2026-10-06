@@ -194,14 +194,19 @@ only the two scheme handlers is unmeasured (`docs/open-questions.md` A387).
 `electron-builder.yml` handles the packaging half: the top-level `protocols` key
 (`schemes: [http, https]`) is what electron-builder documents as producing the `.desktop` file's
 `MimeType=` line (`x-scheme-handler/http;x-scheme-handler/https;`), and `linux.category` supplies
-`Categories=Network;WebBrowser;`. The package does not list `text/html`: a browser that claims it is offered
-every saved page, and this build opens no local file yet (A375 in `docs/decisions/resolved-questions.md`). Both are
-freedesktop.org conventions `xdg-settings` and desktop menus rely on.
+`Categories=Network;WebBrowser;`. `linux.mimeTypes` lists `text/html`, `application/xhtml+xml`, `image/svg+xml`
+and `application/pdf`, which puts Orivon under Open with for those files and opens them as local files; only
+as the default browser does it also take `text/html`, `application/xhtml+xml` and `application/pdf` (the
+runtime half below), and SVG stays under Open with. Both are freedesktop.org conventions `xdg-settings` and
+desktop menus rely on. macOS lists the same types as `mac.fileAssociations` at rank Alternate, and the
+installer script lists them under `Capabilities\FileAssociations` and each extension's `OpenWithProgids`,
+never taking an extension over; neither is read back on a system yet (A397).
 
 The runtime half is application code in `src/main/os/`: only an installed package registers, and only when
 a person clicks (Settings > Default browser, the welcome screen's box, or the weekly question). A source run
 and an AppImage never register, because a registration naming them would point at the Electron binary or at a
-file that moves.
+file that moves. On Linux the same click also runs `xdg-mime default orivon.desktop` for `text/html`,
+`application/xhtml+xml` and `application/pdf` (`LINUX_DOCUMENT_TYPES` in `default-browser.ts`).
 
 ## Launcher actions
 

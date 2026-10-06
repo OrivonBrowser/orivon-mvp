@@ -48,10 +48,18 @@ The bookmarks bar's main side is [`bookmarks-bar/`](bookmarks-bar/) (its own REA
 folder menu, the right-click menu and what opens a bookmark. The bubble under the star, which names and files a
 bookmark, and the sheet for "Bookmark all tabs", are [`bookmark-bubble/`](bookmark-bubble/) (its own README).
 
+A tab is opened for an address that the person or a store of the browser's own names through `open-from-browser.ts`: a web
+address is an ordinary tab, a local file goes through `TabOpener.openLocalFile` (which reads the binary's file-protocol
+fuse on the first open of a run, `../local-files/README.md`), and typed text that names a file opens it in a new tab
+(`navigateFromBrowser`). `open-file-command.ts` is Open file (`Ctrl+O`). `local-file-navigation.ts` stops a page's own
+navigation to a file and opens a file dropped on a web page as a local file.
+
 The question panel: every question the browser puts to the person is asked through `question/ask-question.ts`'s
 `askQuestion(target, spec, options)`, which resolves with the pressed button in the shape of Electron's message box.
 `question/question-spec.ts` is the spec and the cleaning every string passes through (pure, no `electron`),
-`question/question-overlay.ts` is the overlay and the map of questions main holds under random ids, and
+`question/question-overlay.ts` is the overlay and the map of questions main holds under random ids (it also decides a
+`doublePress` button: one that answers only on a second press within 1,500 ms, armed after the guard and an arrival of the
+pointer or the focus on it), and
 `question/install-questions.ts` binds the ask to this process's windows. The panel is drawn in the window of the tab
 the question belongs to, under the address pill with its top edge inside the toolbar; a background tab's question waits
 for its tab, a kiosk draws it centred, and only a question asked when no shell window exists opens a native box.
