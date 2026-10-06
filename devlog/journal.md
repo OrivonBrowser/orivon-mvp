@@ -37,7 +37,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Explore opens on Web3 sites, marks each site Web2, Web2.5 or Web3, and lists 54 more live .eth sites.
 - A page can now ask the person's chosen Web3 Score provider about a site, behind a declared trust.score grant the person answers.
 - Local files open: each an origin of its exact path, asked with a double-press warning before it may use Orivon permissions.
-- An installed app at a .eth name no longer changes silently: Orivon asks before switching builds, and a Web3 Score counts only at the app's home.
+- An installed app at a .eth name no longer changes silently: Orivon asks before switching builds; a Web3 Score counts only at its home.
 - A .eth.limo or .eth.link address now opens the real .eth name, proven by Orivon instead of a gateway; a setting turns it off.
 - Address bar: no more eaten first letter, a new tab types straight into it, and the first click selects the whole address.
 - Installing from the Chrome Web Store no longer crashes Orivon; extension popups open under their icon on Wayland; new extensions start unpinned.
