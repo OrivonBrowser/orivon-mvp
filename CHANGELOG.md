@@ -35,6 +35,9 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **Telemetry, chosen on the welcome and switched in Settings**: two equal buttons, neither preselected; when shared, a monthly
+  count of use split into Web3, Web2.5 and Web2 time goes to `telemetry.orivonstack.com`, with public Web3 and Web2.5 sites in a
+  separate unlinked report. Never in a development build or a private window; [`docs/privacy/notice.md`](docs/privacy/notice.md) says all.
 - **"Orivon (source)" in the Linux dock** (`node scripts/launch-from-source.mjs install`), with New Window and New Private Window:
   a click with Orivon open reaches it at once; only a start with nothing open builds first. With it installed, a Linux
   run from source can be made the default browser from Settings.
