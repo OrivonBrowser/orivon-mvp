@@ -41,6 +41,8 @@ export interface SendContext {
   readonly random?: () => number
   /** The width a period's random offset is drawn from; a test build may narrow it to nothing. */
   readonly offsetWindowMs?: number
+  /** How often a running month's snapshot goes again; a test build may shorten it from a day. */
+  readonly snapshotEveryMs?: number
 }
 
 export interface SendCycleResult {
@@ -83,7 +85,7 @@ export async function runSendCycle (state: SendCycleState, ctx: SendContext, sen
       : hasSites(buildSitesPayload(current.accounting, { reportId: '', version: ctx.version, period: target }))
 
     let transport = kindState.transport
-    for (const due of periodsDue(now, period, kindState.schedule, hasData)) {
+    for (const due of periodsDue(now, period, kindState.schedule, hasData, ctx.snapshotEveryMs)) {
       if (due === period && !hasData(due) && kind === 'sites') continue
       transport = enqueue(transport, payloadFor(due), ctx.consent, clock)
     }

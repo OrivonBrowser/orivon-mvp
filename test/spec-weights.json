@@ -130,6 +130,7 @@
   "test/tabs/e2e-tab-state.test.ts": 30,
   "test/tabs/e2e-tab-visibility.test.ts": 5,
   "test/tabs/e2e-undriven-capture.test.ts": 3,
+  "test/telemetry/e2e-telemetry-send.test.ts": 40,
   "test/toolbar/e2e-address-bar.test.ts": 18,
   "test/toolbar/e2e-address-focus.test.ts": 4,
   "test/toolbar/e2e-omnibox.test.ts": 19,

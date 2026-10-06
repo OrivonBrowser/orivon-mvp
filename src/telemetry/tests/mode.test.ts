@@ -64,6 +64,6 @@ describe('ingestBaseUrl', () => {
 
 describe('testOverrides', () => {
   it('reads nothing outside a test build, which is every unit test', () => {
-    expect(testOverrides({ ORIVON_TELEMETRY_HOME: '/x', ORIVON_TELEMETRY_URL: 'http://127.0.0.1:1', ORIVON_TELEMETRY_TICK_MS: '100' })).toEqual({ home: undefined, url: undefined, tickMs: undefined })
+    expect(testOverrides({ ORIVON_TELEMETRY_HOME: '/x', ORIVON_TELEMETRY_URL: 'http://127.0.0.1:1', ORIVON_TELEMETRY_TICK_MS: '100', ORIVON_TELEMETRY_ASSUME_ACTIVE: '1' })).toEqual({ home: undefined, url: undefined, tickMs: undefined, assumeActive: false })
   })
 })

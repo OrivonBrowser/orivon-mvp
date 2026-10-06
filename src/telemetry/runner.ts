@@ -107,7 +107,7 @@ async function buildService (app: App): Promise<TelemetryService> {
     clock: () => Date.now(),
     send: realSender,
     sendErase: async (payload) => await post('erase', payload),
-    ...(overrides.tickMs === undefined ? {} : { offsetWindowMs: 0 }),
+    ...(overrides.tickMs === undefined ? {} : { offsetWindowMs: 0, snapshotEveryMs: overrides.tickMs * 2 }),
     notify: notifyChanged
   })
 }
@@ -115,11 +115,11 @@ async function buildService (app: App): Promise<TelemetryService> {
 async function startTelemetry (app: App, servicePromise: Promise<TelemetryService>): Promise<void> {
   const service = await servicePromise
   const { BaseWindow, powerMonitor } = await import('electron')
-  const tickMs = testOverrides().tickMs
+  const { tickMs, assumeActive } = testOverrides()
 
-  const windows = (): TrackedWindow[] => BaseWindow.getAllWindows().map((w) => ({ id: w.id, focused: w.isFocused() }))
+  const windows = (): TrackedWindow[] => assumeActive ? [{ id: 0, focused: true }] : BaseWindow.getAllWindows().map((w) => ({ id: w.id, focused: w.isFocused() }))
   // Real, OS-level input signal, chosen because no window or tab event exists to feed here instead.
-  const interacting = (): boolean => powerMonitor.getSystemIdleState(IDLE_INTERACTION_THRESHOLD_SEC) === 'active'
+  const interacting = (): boolean => assumeActive || powerMonitor.getSystemIdleState(IDLE_INTERACTION_THRESHOLD_SEC) === 'active'
 
   // Best-effort: the process could in principle exit before this write lands, the same bounded loss
   // (one checkpoint interval) an ordinary crash already has. Not worth hanging an ordinary quit.

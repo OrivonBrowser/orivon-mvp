@@ -41,13 +41,15 @@ export interface TestOverrides {
   readonly url: string | undefined
   /** Milliseconds between the checkpoint and send ticks, and no random wait before a send: a test cannot wait a month. */
   readonly tickMs: number | undefined
+  /** Count the browser as focused and in use at every tick: a headless test has no focused window and no input to count. */
+  readonly assumeActive: boolean
 }
 
 /** What a test build was told through the environment; an ordinary build reads nothing and returns none. */
 export function testOverrides (env: NodeJS.ProcessEnv = process.env): TestOverrides {
-  if (!SEAM_ENABLED) return { home: undefined, url: undefined, tickMs: undefined }
+  if (!SEAM_ENABLED) return { home: undefined, url: undefined, tickMs: undefined, assumeActive: false }
   const tick = Number(env['ORIVON_TELEMETRY_TICK_MS'])
-  return { home: env['ORIVON_TELEMETRY_HOME'], url: env['ORIVON_TELEMETRY_URL'], tickMs: Number.isFinite(tick) && tick >= 50 ? tick : undefined }
+  return { home: env['ORIVON_TELEMETRY_HOME'], url: env['ORIVON_TELEMETRY_URL'], tickMs: Number.isFinite(tick) && tick >= 50 ? tick : undefined, assumeActive: env['ORIVON_TELEMETRY_ASSUME_ACTIVE'] === '1' }
 }
 
 /** Whether this build carries the test-only overrides. */

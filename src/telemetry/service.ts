@@ -34,6 +34,8 @@ export interface ServiceDeps {
   readonly sendErase: (payload: ErasePayload) => Promise<boolean>
   /** The width of a period's random send offset; a test build may narrow it. */
   readonly offsetWindowMs?: number
+  /** How often a running month's snapshot goes again; a test build may shorten it from a day. */
+  readonly snapshotEveryMs?: number
   /** Something a page may be showing changed. */
   readonly notify: () => void
 }
@@ -172,7 +174,8 @@ export class TelemetryService {
         stream: this.deps.store.getStream(),
         installId: () => this.installId(),
         reportIdFor: (period) => this.deps.store.reportIdFor(period),
-        ...(this.deps.offsetWindowMs === undefined ? {} : { offsetWindowMs: this.deps.offsetWindowMs })
+        ...(this.deps.offsetWindowMs === undefined ? {} : { offsetWindowMs: this.deps.offsetWindowMs }),
+        ...(this.deps.snapshotEveryMs === undefined ? {} : { snapshotEveryMs: this.deps.snapshotEveryMs })
       }, this.deps.send, this.deps.clock)
       this.cycle = result.state
       this.deps.store.setHistoryState(result.state.history)

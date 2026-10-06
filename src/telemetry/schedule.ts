@@ -90,14 +90,14 @@ export function withOffsetFor (schedule: KindSchedule, period: string, random: (
  * period's random offset has passed; then the closing snapshot of the previous period once, if it had
  * any data, and the running period's month-to-date snapshot at most once every 24 hours.
  */
-export function periodsDue (nowMs: number, period: string, schedule: KindSchedule, hasData: (period: string) => boolean): string[] {
+export function periodsDue (nowMs: number, period: string, schedule: KindSchedule, hasData: (period: string) => boolean, everyMs: number = SNAPSHOT_EVERY_MS): string[] {
   if (schedule.offsetPeriod !== period) return []
   if (nowMs < periodStartMs(period) + schedule.offsetMs) return []
   const due: string[] = []
   const previous = previousPeriod(period)
   if (schedule.closedPeriod !== previous && hasData(previous)) due.push(previous)
   const sentThisPeriod = schedule.lastSentAtMs !== undefined && schedule.lastSentAtMs >= periodStartMs(period)
-  if (!sentThisPeriod || nowMs - (schedule.lastSentAtMs ?? 0) >= SNAPSHOT_EVERY_MS) due.push(period)
+  if (!sentThisPeriod || nowMs - (schedule.lastSentAtMs ?? 0) >= everyMs) due.push(period)
   return due
 }
 
