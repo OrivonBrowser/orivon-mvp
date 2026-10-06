@@ -7,16 +7,10 @@ import { startLaunch } from './launch/start-launch.js'
 // loading it is about half of what such a start costs. Imports here stay within electron, node:module and
 // launch/start-launch.js (tests/start.test.ts holds that).
 
-// Owner's decision, 2026-09-09: an uncaught main-process error is LOGGED and
-// exits. Electron's default is a modal error dialog, and a modal dialog keeps
-// its process alive until a human clicks it -- so on an unattended run every
-// crash became a window left on the developer's screen and an Electron
-// process tree that never exited, accumulating overnight. Registered here,
-// above every other statement, because a throw before this line still gets
-// the dialog.
-//
-// This moves where a crash is REPORTED, and hides nothing: the error is
-// printed in full and the non-zero exit is what a test runner reads.
+// An uncaught main-process error is logged and the process exits. Electron's default is a modal error dialog, which
+// keeps its process alive until someone clicks it: on an unattended run, a window left on the screen and a process
+// tree that never exits. Registered above every other statement, because a throw before this line still gets the
+// dialog. Nothing is hidden: the error is printed in full, and the non-zero exit is what a test runner reads.
 function exitOnUncaught (kind: string, error: unknown): void {
   console.error(`[orivon] ${kind} in the main process:`, error)
   app.exit(1)

@@ -5,7 +5,7 @@ const source = readFileSync(new URL('../start.ts', import.meta.url), 'utf8')
 
 describe('the process entry', () => {
   it('imports only what it needs to take the single-instance lock, so a second start does not load the browser', () => {
-    const imported = [...source.matchAll(/^import\s[^\n]*\sfrom\s'([^']+)'/gm)].map((match) => match[1])
+    const imported = [...source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)].map((match) => match[1])
     expect(imported.sort()).toEqual(['./launch/start-launch.js', 'electron', 'node:module'])
   })
 
