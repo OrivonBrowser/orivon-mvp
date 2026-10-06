@@ -76,6 +76,8 @@ requests, suspicion, a wrong nonce, the early slack, the timeout) lets go of the
 the page's destruction does the same through the gate. The display handler voids the ticket when the granted request names a
 frame that is gone or is not the tab's top frame any more, so the asker's check after the grant ends no honest renderer.
 
+**On Wayland the picker lists nothing, and the capture asks the system dialog itself.** The desktop portal restores a pick by a monitor's make, model and serial (a window's by app and title), so two identical monitors are one monitor to it: a listing first would hand the capture a stored pick that restores the first of them, whichever the person chose. Share on a Wayland card therefore answers with a source id from [`picker-model.ts`](picker/picker-model.ts)'s `portalSourceId` that the capture never issued, so no stored pick exists for it and the capture opens its own portal session, in which the person chooses. Each share takes an id never used before: a reused id could hold the previous share's pick and restore it with no dialog. The page's call resolves while the system dialog is still open, and cancelling there ends the track, which the preload reports and the registry turns into the end of the share.
+
 **A tab that is not showing in a window cannot be shared.** Chromium refuses to capture the view of a background tab and the
 page's call fails with `AbortError`; the preload tells main when its call failed after the display handler answered, so the
 registry never keeps a share that has no track. The gate does not check that a picked tab is showing: the picker has to
