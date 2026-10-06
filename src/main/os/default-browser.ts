@@ -1,7 +1,8 @@
-// Whether Orivon is the computer's default browser, and the one call that makes it so. Only an installed package
-// (a .deb, an installer, a macOS app) registers itself: a run from source would register the Electron binary, and
-// an AppImage moves, so a registration naming it goes stale. The rule lives here so a test run can never change the
-// machine's default browser.
+// Whether Orivon is the computer's default browser, and the one call that makes it so. An installed package (a .deb,
+// an installer, a macOS app) registers itself, and so does a run from source on Linux once its own desktop entry is
+// installed, since a choice there names the entry. Elsewhere a run from source would register the Electron binary,
+// and an AppImage moves, so a registration naming it goes stale. The rule lives here so a test run can never change
+// the machine's default browser.
 
 export type DefaultBrowserState = 'default' | 'can-set' | 'unavailable'
 
@@ -14,12 +15,16 @@ export type UnavailableReason = 'source' | 'appimage' | 'platform' | 'private'
 export interface DefaultBrowserFacts {
   readonly platform: NodeJS.Platform
   readonly launcher: Launcher
+  /** Linux: the desktop entry a choice names. A run from source has one only once `scripts/launch-from-source.mjs
+   * install` has written this checkout's, and never in a test build. */
+  readonly desktopEntry?: string | undefined
 }
 
 const REGISTERING_PLATFORMS: readonly NodeJS.Platform[] = ['linux', 'win32', 'darwin']
 
 /** The reason this process may not register, or undefined when it may: decided from facts alone, so nothing has to ask the system. */
 export function unavailableReason (facts: DefaultBrowserFacts): Exclude<UnavailableReason, 'private'> | undefined {
+  if (facts.launcher === 'source' && facts.platform === 'linux' && facts.desktopEntry !== undefined) return undefined
   if (facts.launcher !== 'installed') return facts.launcher
   return REGISTERING_PLATFORMS.includes(facts.platform) ? undefined : 'platform'
 }
@@ -34,7 +39,7 @@ export const LINUX_DOCUMENT_TYPES: readonly string[] = ['text/html', 'applicatio
 /** What the operating system says and does, behind calls a test replaces. */
 export interface DefaultBrowserHost extends DefaultBrowserFacts {
   isDefault: (protocol: WebProtocol) => Promise<boolean>
-  setDefault: (protocol: WebProtocol) => boolean
+  setDefault: (protocol: WebProtocol) => boolean | Promise<boolean>
   /** Linux: makes Orivon the program that opens `mimeType`. Absent where the system asks the person instead. */
   setDocumentDefault?: (mimeType: string) => Promise<boolean>
   /** Windows lets only the person choose a default browser: this opens the page where they do. */
@@ -45,6 +50,8 @@ export interface DefaultBrowserAnswer {
   readonly state: DefaultBrowserState
   /** Present when `state` is `unavailable`. */
   readonly reason?: UnavailableReason
+  /** Linux: the desktop entry the choice names, for the command a person can run by hand. */
+  readonly entry?: string
 }
 
 /** The operating system is asked only where the answer could be acted on. */
@@ -52,7 +59,8 @@ export async function readDefaultBrowser (host: DefaultBrowserHost): Promise<Def
   const reason = unavailableReason(host)
   if (reason !== undefined) return { state: 'unavailable', reason }
   const [http, https] = await Promise.all([host.isDefault('http'), host.isDefault('https')])
-  return { state: http && https ? 'default' : 'can-set' }
+  const entry = host.platform === 'linux' ? host.desktopEntry : undefined
+  return { state: http && https ? 'default' : 'can-set', ...(entry === undefined ? {} : { entry }) }
 }
 
 /** How long the system gets to record a registration before it is read back. */
@@ -80,7 +88,7 @@ export async function makeDefaultBrowser (host: DefaultBrowserHost, wait: (ms: n
   }
   for (const protocol of ['http', 'https'] as const) {
     try {
-      host.setDefault(protocol)
+      await host.setDefault(protocol)
     } catch (error) {
       console.error(`[os] could not register for ${protocol}`, error)
     }

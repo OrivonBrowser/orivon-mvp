@@ -62,7 +62,7 @@ Background: [`.claude/skills/orivon-electron/SKILL.md`](../../.claude/skills/ori
 | `npm run dev` | Runs the app with hot reload, on a fresh profile each launch (below). This is the one you want |
 | `npm run build` | Builds `main`, `preload` and `renderer` into `out/` |
 | `npm start` | Runs the built output, without the dev server, on your real profile, as a packaged build does |
-| `node scripts/launch-from-source.mjs install` | Linux: adds "Orivon (source)" to the dock and the app list, with New Window and New Private Window. It runs `npm start`'s build only when no Orivon is open; with one open, a click reaches it at once. `remove` takes it away. Its file is `orivon-source.desktop`: an `orivon.desktop` in `~/.local/share/applications` hides an installed package's entry and its default-browser choice |
+| `node scripts/launch-from-source.mjs install` | Linux: adds "Orivon (source)" to the dock and the app list (below); `remove` takes it away |
 | `npm run typecheck` | `tsc --noEmit`. The compiler is the primary correctness check here |
 | `npm test` | Vitest, `environment: 'node'`. Unit tests only, no DOM |
 | `npm run check:natives` | **Rule 8.** Fails if any dependency needs a compiler. Also runs automatically on `postinstall` |
@@ -236,7 +236,8 @@ in the environment is used as it stands, and the flag beats it. To see the `once
 on a profile that has passed it, delete `intro.json` from the profile directory.
 
 The welcome screen also offers a box, unticked, to make Orivon the default browser, on a build installed from a
-package; a run from source never shows it (`docs/development/packaging.md`).
+package and on a Linux run from source whose entry is installed (below); other runs from source never show it
+(`docs/development/packaging.md`).
 
 ---
 
@@ -244,25 +245,18 @@ package; a run from source never shows it (`docs/development/packaging.md`).
 
 A second start of a running browser opens a new window (no address, or `--new-window`) or a private session
 (`--new-private-window`); an address opens in the window in use. The installed `.deb`'s icon menu carries both
-as actions. A launcher you wrote by hand for a source run never gets them from the browser, which does not edit it:
-add the lines yourself. For an entry whose `Exec` runs `electron-vite preview`, give `Exec` the `--skipBuild` flag
-(a build per click would rewrite `out/` under the browser you are running), and add the actions:
+as actions.
 
-```ini
-Exec=electron-vite preview --skipBuild
-Actions=new-window;new-private-window;
+On Linux, `node scripts/launch-from-source.mjs install` gives a run from source the same: an "Orivon (source)" entry
+(`~/.local/share/applications/orivon-source.desktop`) with New Window and New Private Window. Its start builds, as
+`npm start` does, only when no Orivon holds the default profile's lock; with one open, a click reaches it at once and
+`out/` is never rebuilt under it. Once the entry is installed, Settings > Default browser can make that run from source
+the default browser. `remove` deletes the entry. Never name an entry of your own `orivon.desktop`: in
+`~/.local/share/applications` it hides the installed package's entry, its actions and its default-browser choice.
 
-[Desktop Action new-window]
-Name=New Window
-Exec=electron-vite preview --skipBuild -- --new-window
-
-[Desktop Action new-private-window]
-Name=New Private Window
-Exec=electron-vite preview --skipBuild -- --new-private-window
-```
-
-Run from the repository directory (`Path=`), after `npm run build`. A source run never registers as the default
-browser, and on Windows its taskbar button has an identity of its own (`com.orivonstack.orivon.source`).
+A run from source and an installed package share the default profile's data and its lock, so whichever starts first
+receives the other's starts. On Windows and macOS a run from source never registers as the default browser, and on
+Windows its taskbar button has an identity of its own (`com.orivonstack.orivon.source`).
 
 ---
 

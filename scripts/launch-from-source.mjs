@@ -66,14 +66,19 @@ export function isOpen (dir, { readLink = (path) => readlinkSync(path), host = h
   return pid !== null && alive(pid)
 }
 
-/** A path the entry can name without escaping: the Desktop Entry Specification reads these characters specially. */
-const PLAIN_PATH = /^[^\s"'`$\\%\u0000-\u001f\u007f]+$/
+/** A path the entry can name unquoted: the Desktop Entry Specification reserves these characters, and `xdg-settings`
+ * takes the program as `Exec`'s first word, quotes and all, so a quoted one would name no program. */
+const PLAIN_PATH = /^[^\s"'`$\\%<>~|&;*?#()\u0000-\u001f\u007f]+$/
+
+/** The installed package's types (`electron-builder.yml`). `xdg-settings` rewrites a local entry that lacks the type
+ * it registers, putting the line after the action groups. */
+const MIME_TYPES = 'text/html;application/xhtml+xml;image/svg+xml;application/pdf;x-scheme-handler/http;x-scheme-handler/https;'
 
 /** The desktop entry for this checkout. The action ids and names are the installed package's (`electron-builder.yml`). */
 export function desktopEntry (node, script, root) {
   const unplain = [node, script, root].find((path) => !PLAIN_PATH.test(path))
-  if (unplain !== undefined) throw new Error(`a desktop entry cannot name ${JSON.stringify(unplain)}: move it to a path without spaces, quotes, $, % or backslashes`)
-  const exec = (...args) => `Exec="${node}" "${script}" run ${args.join(' ')}`.trimEnd()
+  if (unplain !== undefined) throw new Error(`a desktop entry cannot name ${JSON.stringify(unplain)}: move it to a path without spaces, quotes or shell characters`)
+  const exec = (...args) => `Exec=${node} ${script} run ${args.join(' ')}`
   return [
     '[Desktop Entry]',
     'Type=Application',
@@ -83,6 +88,7 @@ export function desktopEntry (node, script, root) {
     'Terminal=false',
     'Categories=Network;WebBrowser;',
     'StartupWMClass=orivon',
+    `MimeType=${MIME_TYPES}`,
     'Actions=new-window;new-private-window;',
     '',
     '[Desktop Action new-window]',

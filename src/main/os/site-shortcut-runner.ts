@@ -39,10 +39,12 @@ function launcher (host: ShortcutHost): { program: string, leading: string[] } {
 }
 
 /** `$XDG_DATA_HOME` when it is an absolute path (the specification says to ignore any other), else `~/.local/share`. */
-function dataHome (host: ShortcutHost): string {
-  const set = host.env()['XDG_DATA_HOME'] ?? ''
-  return isAbsolute(set) ? set : join(host.home(), '.local', 'share')
+export function xdgDataHome (env: Readonly<Record<string, string | undefined>>, home: string): string {
+  const set = env['XDG_DATA_HOME'] ?? ''
+  return isAbsolute(set) ? set : join(home, '.local', 'share')
 }
+
+const dataHome = (host: ShortcutHost): string => xdgDataHome(host.env(), host.home())
 
 /** The first path on the desktop that nothing occupies: `Name.lnk`, then `Name (2).lnk` and so on. */
 function freeLinkPath (host: ShortcutHost, name: string): string | undefined {

@@ -87,6 +87,16 @@ describe('why it is unavailable', () => {
   })
 })
 
+describe('the desktop entry a choice names', () => {
+  it('keeps a desktop file name main gave, and drops anything else, since it is shown in a command to paste', async () => {
+    for (const [reply, entry] of [[{ state: 'can-set', entry: 'orivon-source.desktop' }, 'orivon-source.desktop'], [{ state: 'can-set', entry: 'x; rm -rf ~/.desktop' }, undefined], [{ state: 'can-set', entry: 7 }, undefined], [{ state: 'can-set' }, undefined]] as const) {
+      const { part: p } = part([reply])
+      await p.load()
+      expect(p.entry, JSON.stringify(reply)).toBe(entry)
+    }
+  })
+})
+
 describe('a hand-over to the system\'s own settings', () => {
   it('is not a declined change: the row says to finish there', async () => {
     const { part: p } = part([{ state: 'can-set' }, { state: 'can-set', ok: false, handedOff: true }])

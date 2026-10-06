@@ -3,7 +3,7 @@
 - **Status:** proposed
 - **Date:** 2026-10-05
 - **Type:** architecture
-- **Decided by:** AI recommendation accepted by default
+- **Decided by:** AI recommendation accepted by default; the owner chose the Linux run-from-source exception
 
 ## Decision
 
@@ -13,8 +13,12 @@ user model id of an installed Windows program; a run from source uses `com.orivo
 `OrivonURL` (the Windows URL class) and `StartMenuInternet\Orivon` (the Windows client key and the name
 `RegisteredApplications` lists). An installed package (a .deb, an NSIS installer, a macOS app) registers them
 at install time. The browser itself registers nothing at start-up: from an installed package it asks, and only
-a person's click (Settings, the welcome screen's box or the weekly question) makes the call. A run from source,
-an AppImage and a private session never register, and say why.
+a person's click (Settings, the welcome screen's box or the weekly question) makes the call. An AppImage and a
+private session never register, and say why. A run from source registers only on Linux, and only its own entry,
+`orivon-source.desktop` ("Orivon (source)"), which `scripts/launch-from-source.mjs install` writes for one checkout;
+elsewhere, or with no entry, it says why. A run from source never writes or names `orivon.desktop`. It shares the
+default profile's data directory and lock with an installed package, so whichever starts first takes the other's
+starts and the links a default choice sends.
 
 ## Context
 
@@ -27,6 +31,11 @@ from a packaged build on a press of the button, which left Windows and macOS wit
 
 - **Register at start-up from any run.** Rejected: a run from source would register the Electron binary, an
   AppImage moves and leaves a stale registration, and a test run would change the machine's default browser.
+- **Never register from source.** Rejected for Linux: there a choice names a desktop entry, not a binary, and a
+  developer who browses with a run from source has no other way to receive links. A test build never names the
+  entry, so a test run still cannot change the default.
+- **Give a run from source a data directory of its own.** Rejected: a developer's run from source and installed
+  package would hold two profiles of the same person.
 - **Let each profile or each run mint its own identity.** Rejected: a profile is a data directory, not an
   application, and a name that varies per run cannot be pinned.
 - **Register on Windows from the program (`setAsDefaultProtocolClient`).** Rejected: Windows ignores it for

@@ -33,7 +33,8 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 ### Added
 
 - **"Orivon (source)" in the Linux dock** (`node scripts/launch-from-source.mjs install`), with New Window and New Private Window:
-  a click with Orivon open reaches it at once; only a start with nothing open builds first.
+  a click with Orivon open reaches it at once; only a start with nothing open builds first. With it installed, a Linux
+  run from source can be made the default browser from Settings.
 - **Open a file from this computer**: by a typed path or `file:` address, `Ctrl+O`, a second start's command line or Open with, in a
   persistent session of its own. A file that links a manifest is asked about once per run, in a warning whose Allow needs two presses, and
   may then use `window.orivon`, its grants and data kept with its exact path (ADR-0060). The packages claim HTML, XHTML, SVG and PDF.
