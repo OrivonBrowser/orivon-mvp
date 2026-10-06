@@ -2149,7 +2149,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 - **Question:** On a `file:` page `localStorage` throws a `SecurityError` (measured, Electron 44), and
   `sessionStorage` was not measured. A local page using either breaks; IndexedDB, Cache Storage and OPFS work.
-  Chrome allows `localStorage` on `file:`, and the cause here is not isolated (a storage-key check on a
+  Other engines allow `localStorage` on `file:`, and the cause here is not isolated (a storage-key check on a
   local origin is the likeliest).
 - **Why it matters:** a web app written for `localStorage` fails when opened from disk.
 - **Options:** find the Electron setting or flag behind it (rec.); polyfill it over IndexedDB in the tab's

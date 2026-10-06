@@ -46,7 +46,7 @@ again, and another file saved at the same path gets what the path held.
 - **Manifest, local.** `entry` and `domain` are ignored; `crossOriginIsolated` is not honoured in this build;
   the version floor is not read, as for a website granted without installing.
 - **Network.** A local page sends `Origin: null`, no cookie of the web's, and reaches loopback and the LAN as
-  a page does in Chrome.
+  any web page does.
 
 ## Context
 
