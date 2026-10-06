@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyGlobalPrivacyControl, GPC_FEATURE, withFeature } from '../gpc-switch.js'
+import { applyGlobalPrivacyControl, SIGNAL_OFF_BLINK_FEATURE, SIGNAL_ON_FEATURE, withFeature } from '../gpc-switch.js'
 
 function commandLine (initial: Record<string, string> = {}) {
   const switches: Record<string, string> = { ...initial }
@@ -8,22 +8,22 @@ function commandLine (initial: Record<string, string> = {}) {
 
 describe('withFeature', () => {
   it('names the feature once, after the ones already named', () => {
-    expect(withFeature('', GPC_FEATURE)).toBe(GPC_FEATURE)
-    expect(withFeature('A,B', GPC_FEATURE)).toBe(`A,B,${GPC_FEATURE}`)
-    expect(withFeature(`A,${GPC_FEATURE}`, GPC_FEATURE)).toBe(`A,${GPC_FEATURE}`)
+    expect(withFeature('', SIGNAL_ON_FEATURE)).toBe(SIGNAL_ON_FEATURE)
+    expect(withFeature('A,B', SIGNAL_ON_FEATURE)).toBe(`A,B,${SIGNAL_ON_FEATURE}`)
+    expect(withFeature(`A,${SIGNAL_ON_FEATURE}`, SIGNAL_ON_FEATURE)).toBe(`A,${SIGNAL_ON_FEATURE}`)
   })
 })
 
 describe('applyGlobalPrivacyControl', () => {
-  it('turns the feature on, keeping what another part enabled', () => {
+  it('turns the signal on, keeping what another part enabled', () => {
     const { switches, api } = commandLine({ 'enable-features': 'Other' })
     applyGlobalPrivacyControl(api, true)
-    expect(switches['enable-features']).toBe(`Other,${GPC_FEATURE}`)
+    expect(switches).toEqual({ 'enable-features': `Other,${SIGNAL_ON_FEATURE}` })
   })
 
-  it('touches nothing when the signal is off', () => {
-    const { switches, api } = commandLine()
+  it('exposes the property as false when the signal is off, keeping what another part enabled', () => {
+    const { switches, api } = commandLine({ 'enable-blink-features': 'Other' })
     applyGlobalPrivacyControl(api, false)
-    expect(switches).toEqual({})
+    expect(switches).toEqual({ 'enable-blink-features': `Other,${SIGNAL_OFF_BLINK_FEATURE}` })
   })
 })
