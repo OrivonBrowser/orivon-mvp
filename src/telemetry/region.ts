@@ -21,6 +21,8 @@ const US_ZONES: ReadonlySet<string> = new Set([
   'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'America/Phoenix', 'America/Anchorage',
   'America/Detroit', 'America/Boise', 'America/Juneau', 'America/Sitka', 'America/Metlakatla', 'America/Yakutat',
   'America/Nome', 'America/Adak', 'America/Menominee', 'Pacific/Honolulu', 'Pacific/Johnston',
+  'America/Indianapolis', 'America/Louisville', 'America/Fort_Wayne', 'America/Knox_IN', 'America/Shiprock', 'America/Atka',
+  'America/Puerto_Rico', 'America/St_Thomas', 'America/Virgin', 'Pacific/Guam', 'Pacific/Saipan', 'Pacific/Pago_Pago', 'Pacific/Samoa', 'Pacific/Midway',
   'EST5EDT', 'CST6CDT', 'MST7MDT', 'PST8PDT', 'Navajo'
 ])
 

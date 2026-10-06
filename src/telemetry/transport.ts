@@ -150,6 +150,11 @@ export function enqueue (state: TransportState, payload: SentPayload, consentSta
   }
 }
 
+/** A send that happened: what went, when, and when its snapshot was taken (a snapshot taken after its month ended is that month's last). */
+export interface SentRecord extends HistoryEntry {
+  readonly enqueuedAtMs: number
+}
+
 /**
  * What attemptSend produced: the possibly-updated state, and -- only on
  * an actual successful send -- what went out and when. `sent` is
@@ -159,11 +164,6 @@ export function enqueue (state: TransportState, payload: SentPayload, consentSta
  * send fails, it is not history" holds by construction, not by
  * discipline at the call site.
  */
-/** A send that happened: what went, when, and when its snapshot was taken (a snapshot taken after its month ended is that month's last). */
-export interface SentRecord extends HistoryEntry {
-  readonly enqueuedAtMs: number
-}
-
 export interface SendResult {
   readonly state: TransportState
   readonly sent: SentRecord | undefined

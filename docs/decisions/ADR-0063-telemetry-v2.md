@@ -36,8 +36,8 @@ response channel) and widens what is measured and how the person chooses.
    consent per operating-system user, kept under the user's config directory and read fresh on
    every send, so every profile obeys it. A refusal is not asked again for six months. The
    region never drives a default.
-6. **Cadence.** A month-to-date snapshot at most once a day, upserted by the server, with the
-   closing snapshot of a month sent once after it ends. Nothing queues beyond one message.
+6. **Cadence.** A month-to-date snapshot about once a day, upserted by the server, with the
+   closing snapshot of a month sent once after it ends: at a month's start, one more of each. Nothing queues beyond one message.
 7. **Erase.** `POST /v1/erase` with the install identifier, from a "Delete my data" button that
    also turns telemetry off.
 8. **Where it never runs.** Development builds (`npm run dev`), a private window, and any run with

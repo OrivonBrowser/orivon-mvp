@@ -28,7 +28,8 @@ privacy@orivonstack.com.
 
 ## Cosa invia la telemetria
 
-Partono due messaggi, al massimo una volta al giorno ciascuno, e un terzo quando chiedi di
+Partono due messaggi, ciascuno circa una volta al giorno, con uno in più di ciascuno all'inizio
+del mese per chiudere i totali del mese precedente, e un altro messaggio quando chiedi di
 cancellare i tuoi dati. In Impostazioni > Privacy vedi il testo esatto di ciascuno, prima e dopo
 l'invio.
 
@@ -63,7 +64,8 @@ rapporto sui siti nomina siti Web3 e Web2.5 pubblici e i secondi trascorsi su ci
 mese: è la cosa più vicina a un'informazione di navigazione che inviamo, ed è quindi tenuto
 separato dal tuo ID di installazione, come dice la tabella.
 
-Inviato al massimo una volta al giorno. Non si invia nulla da una versione di sviluppo, da una
+Inviato circa una volta al giorno, e una volta in più all'inizio del mese per chiudere i totali
+del mese precedente. Non si invia nulla da una versione di sviluppo, da una
 finestra privata, o quando è impostato `ORIVON_TELEMETRY=off`. Non si invia nulla prima che tu
 scelga. Il browser ignora tutto ciò che il server risponde: il server non può cambiare
 impostazioni né inviare comandi.

@@ -27,7 +27,7 @@ project. Write to privacy@orivonstack.com for anything in this notice.
 
 ## What telemetry sends
 
-Two messages leave, at most once a day each, and one more when you ask us to delete your data.
+Two messages leave, each about once a day, with one more of each at the start of a month to close the previous month's totals, and one more message when you ask us to delete your data.
 Settings > Privacy shows the literal text of each before and after it is sent.
 
 | Field | Message | What it is |
@@ -59,7 +59,7 @@ advertising identifier. The site report does name public Web3 and Web2.5 sites a
 spent on each over a month; it is the closest thing to browsing information we send, so it is
 kept apart from your install ID, as the table says.
 
-Sent at most once a day. Nothing is sent from a development build, from a private window, or
+Sent about once a day, and at the start of a month once more to close the previous month's totals. Nothing is sent from a development build, from a private window, or
 when `ORIVON_TELEMETRY=off` is set. Nothing is sent before you choose. The browser ignores
 everything the server answers: the server cannot change settings or send commands.
 
