@@ -62,7 +62,7 @@ rather than editing here.
 | [`consent/`](consent/) | Decide what to ask, say it in words, show the dialog | no | the `-prompt` files only |
 | [`permissions/`](permissions/) | The grant list a person can revoke from, and the per-site popover | no | the two `-panel` files and `popover-view.ts` |
 | [`install/`](install/) | A hinted manifest becomes a registered, consented app | per-origin queue | the `-subsystem` file, `manifest-hint.ts` only |
-| [`local-files/`](local-files/) | The session and guard that make a document opened from this computer an origin of its own | no (its saved data is removed at start and at quit) | `install-file-guard.ts`, `local-files-subsystem.ts` only |
+| [`local-files/`](local-files/) | The sessions, handler and fence that make a document opened from this computer an origin of its exact path | the record of files allowed to use Orivon permissions (`local-file-apps.json`) | `local-partition.ts`, `refuse-file-scheme.ts`, `local-files-subsystem.ts` only |
 | [`sessions/`](sessions/) | What an Electron `Session` is allowed to do | each site's notification answer | `permission-gate.ts`, `web-context-host.ts`, `web-request-owner.ts`, `session-attribution.ts` |
 | [`keyring/`](keyring/) | The identity seed, OS-keyring-backed or session-only | the encrypted seed file | `electron-keychain.ts` only |
 | [`self-update/`](self-update/) | Check, notify, never install | last-check timestamp | `-runner` only |

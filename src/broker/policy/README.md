@@ -68,6 +68,7 @@ rejects. An unrecognised scheme denies. Why `http:` stays: the comment on the co
 `file:` has no `originFromUrl` origin on purpose: a document opened from this computer is keyed by
 `localFileKey` (its empty-host `file:` URL, no query or fragment) and reached through
 `isolationKeyFromUrl` and `callerKeyFromSenderFrame`, so a caller not yet moved to the key fails closed.
+`isPersistableOrigin` accepts that key, so its grants persist like a website's, keyed to the exact path.
 
 **[`update.ts`](update.ts)'s re-consent rule is a subset check over the granted pattern set,
 never a comparison of capability kinds** (T19,

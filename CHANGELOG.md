@@ -32,6 +32,9 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **Local files run in sessions of their own**: a document opened from this computer is an origin of its exact path, in a
+  persistent session that reads no other file, sends no cookie of the web's and runs no extension; a file recorded as
+  allowed to use Orivon permissions gets a session apart (ADR-0060). Nothing opens one yet: that is the next change.
 - **Screen sharing**: a page's `getDisplayMedia` opens Orivon's picker (a tab, a window or the entire screen, with tab
   audio), the tab and the shared tab show it, a bar offers Stop sharing, and a site can be blocked. Only the call
   Orivon's preload makes after the pick is granted, so the legacy `chromeMediaSource` capture is refused (ADR-0055).

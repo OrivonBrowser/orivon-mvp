@@ -2144,3 +2144,35 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   it in on the next start.
 - **Who decides:** research first
 - **Blocks:** local files on macOS and Windows
+
+### A396: `localStorage` throws on a local page **[RESEARCH]**
+
+- **Question:** On a `file:` page `localStorage` throws a `SecurityError` (measured, Electron 44), and
+  `sessionStorage` was not measured. A local page using either breaks; IndexedDB, Cache Storage and OPFS work.
+  Chrome allows `localStorage` on `file:`, and the cause here is not isolated (a storage-key check on a
+  local origin is the likeliest).
+- **Why it matters:** a web app written for `localStorage` fails when opened from disk.
+- **Options:** find the Electron setting or flag behind it (rec.); polyfill it over IndexedDB in the tab's
+  preload; leave it and say so on the compatibility page.
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A397: Do the macOS and Windows file claims hold? **[RESEARCH]**
+
+- **Question:** The packages claim HTML, XHTML, SVG and PDF on Linux (`mimeTypes`), and are meant to on macOS
+  (`fileAssociations`) and Windows (`Capabilities\FileAssociations`). Neither has been installed and read back.
+- **Why it matters:** a claim that does not register lists no Orivon under "Open with" for a file.
+- **Options:** install a package on each system and read the registry or Launch Services (rec.); ship Linux only.
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A398: A Yes moves a local file to a session of its own and leaves its earlier storage behind **[OWNER]**
+
+- **Question:** A local file runs in the shared local-files session until the person lets it use Orivon
+  permissions, then in a session of its own; what it stored before is not carried over, and the consent says so.
+  A session for every file from its first open avoids that, at a session in memory (never freed in a run) and a
+  folder on disk for each file ever opened.
+- **Why it matters:** an app that saved data before the Yes starts afresh after it.
+- **Options:** own session once granted (rec.); one per file from the first open.
+- **Who decides:** owner
+- **Blocks:** nothing

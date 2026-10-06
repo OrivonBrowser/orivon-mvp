@@ -29,10 +29,9 @@ both, apart, so the narrowing happens in one place: the capability entry points.
 (`./origin-hash.ts`'s `appDataRoot`, consulted by `../adapters/node-fs-adapter.ts`'s `nodeFs`),
 separate from the loader's own `apps/<hash>` state (pinned code, staging, `pin.json`) so a pin
 re-verify and an app's declared quota govern two disjoint trees (T13b). App removal has to clear
-all three. A document opened from this computer keeps its `fs` files under `app-data-local/<run>/<hash>`
-instead, in the one module that says how long local-file data lasts (`./local-file-lifetime.ts`:
-the per-run id, the folder and the key scope `id` and `secrets` derive from), so keeping it for
-longer changes that file and the sweep that empties the folder, nothing else.
+all three. A document opened from this computer is keyed on its `file:` URL like any origin (`../policy/origin.ts`'s
+`localFileKey`): its `fs` root is `app-data/<hash>`, its grants persist, and `id` and `secrets` derive from
+the same seed with no salt, so all three outlive a restart and belong to the exact path.
 
 **`LedgerStorage` is synchronous, unlike `LoaderStorage`, on purpose.** Callers invoke
 `Broker.registerApp` without awaiting it, which is safe only because nothing inside it yields;

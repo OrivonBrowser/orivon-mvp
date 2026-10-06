@@ -45,6 +45,8 @@ so it is never asked.
 but closing first returns focus to the page and keeps the sheet out of any later capture; the one
 frame of wait is the compositor's.
 
+**The save dialog never starts at a recorded local file.** `savePage` offers the default name through `uniquePath` with `reservedPath` (a local file the person let use Orivon permissions), so "Save" cannot overwrite one by accepting what is offered.
+
 **A file the tab shows is downloaded, not re-saved.** A page of another type (an image, a PDF, plain
 text) saved as HTML would be a wrapper around nothing, so `save-page.ts` downloads the address through
 the tab's session into the chosen path. It listens for that one download, recognised by the address
