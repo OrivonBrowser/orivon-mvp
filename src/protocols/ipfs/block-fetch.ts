@@ -10,9 +10,9 @@ import { GatewayFailure, askGateway, readCapped } from './gateways.js'
 import type { Fetch, GatewayPool } from './gateways.js'
 import type { IpfsLimits } from './limits.js'
 import { BlockRefused, checkCidAccepted, inlineBlock, verifyBlock } from './verify-block.js'
+import { racePass } from './race.js'
+import type { AttemptOutcome, PassResult } from './race.js'
 
-/** Concurrent gateway attempts for one block: the first, plus at most one hedge. */
-export const MAX_ATTEMPTS_IN_FLIGHT = 2
 /** A rate-limited or unreachable pass earns one retry, up to this many total. */
 export const MAX_PASSES = 3
 
@@ -31,13 +31,7 @@ function limitFailure (error: unknown): ResolutionError {
   return new ResolutionError(unsupported ? 'unsupported' : 'unverifiable', message)
 }
 
-type AttemptOutcome =
-  | { readonly kind: 'verified', readonly bytes: Uint8Array }
-  | { readonly kind: 'lied', readonly reason: string }
-  | { readonly kind: 'failed', readonly retryable: boolean, readonly reason: string }
-  | { readonly kind: 'fatal', readonly error: ResolutionError }
-
-async function attemptGateway (gateway: string, cid: CID, key: string, deps: FetchDeps, signal: AbortSignal, onRefusal: (refusal: Refusal) => void): Promise<AttemptOutcome> {
+async function attemptGateway (gateway: string, cid: CID, key: string, deps: FetchDeps, signal: AbortSignal, onRefusal: (refusal: Refusal) => void): Promise<AttemptOutcome<Uint8Array>> {
   let bytes: Uint8Array
   try {
     bytes = await askGateway(
@@ -61,144 +55,7 @@ async function attemptGateway (gateway: string, cid: CID, key: string, deps: Fet
     }
     return { kind: 'fatal', error: limitFailure(error) }
   }
-  return { kind: 'verified', bytes }
-}
-
-/** A FIFO of attempt outcomes, with a `next()` that genuinely waits -- no
- * polling. `push` is called from inside a `.then()` (a real completion),
- * and resolves whichever `next()` call is currently pending directly, the
- * same hand-off `resolution/slots.ts`'s `Slots` uses for the same reason:
- * a poll that never yields to a macrotask would starve every timer and
- * network callback in the process, including the hedge delay's own and
- * the gateway fetch's, and never resolve at all. */
-class AttemptQueue<T> {
-  private readonly results: T[] = []
-  private notify: (() => void) | undefined
-
-  push (value: T): void {
-    this.results.push(value)
-    this.notify?.()
-  }
-
-  /** Waits for at least one result, or rejects with `signal.reason` once it
-   * aborts first with nothing queued. Only one call may be pending at a
-   * time -- this module never calls `next` again before the previous one
-   * has settled. */
-  async next (signal: AbortSignal): Promise<T> {
-    if (this.results.length === 0) {
-      // An 'abort' listener added to a signal that already fired is never called.
-      if (signal.aborted) throw signal.reason
-      await new Promise<void>((resolve, reject) => {
-        const onAbort = (): void => { reject(signal.reason) }
-        this.notify = () => {
-          signal.removeEventListener('abort', onAbort)
-          this.notify = undefined
-          resolve()
-        }
-        signal.addEventListener('abort', onAbort, { once: true })
-      })
-    }
-    return this.results.shift()!
-  }
-}
-
-/** What one pass across `candidates` (racePass, below) ended with. */
-type PassResult =
-  | { readonly kind: 'verified', readonly bytes: Uint8Array }
-  | { readonly kind: 'fatal', readonly error: ResolutionError }
-  | { readonly kind: 'exhausted', readonly lied: boolean, readonly retryable: boolean, readonly reasons: readonly string[] }
-
-/** `AbortSignal.timeout(ms)` fires on its own; this fires only if told to,
- * so a hedge that already got its answer never leaves a live timer behind
- * waiting to fire into an abandoned pass. */
-function abortAfter (ms: number): { readonly signal: AbortSignal, readonly cancel: () => void } {
-  const controller = new AbortController()
-  const timer = setTimeout(() => { controller.abort() }, ms)
-  return { signal: controller.signal, cancel: () => { clearTimeout(timer) } }
-}
-
-/** Runs every candidate in `candidates`, up to `MAX_ATTEMPTS_IN_FLIGHT` at
- * once, hedging a slow leader with the next gateway after `hedgeDelayMs` --
- * first verified answer wins and every other attempt is abandoned. Returns
- * once nothing is left to try: verified, fatal, or every attempt in the
- * pass has failed or lied.
- */
-async function racePass (
-  candidates: readonly string[],
-  run: (gateway: string, signal: AbortSignal) => Promise<AttemptOutcome>,
-  hedgeDelayMs: number,
-  callerSignal: AbortSignal
-): Promise<PassResult> {
-  const abandon = new AbortController()
-  const combined = AbortSignal.any([callerSignal, abandon.signal])
-  try {
-    const queue = new AttemptQueue<AttemptOutcome>()
-    let inFlight = 0
-    let nextIndex = 0
-    let lied = false
-    let retryable = false
-    const reasons: string[] = []
-
-    // Applies one outcome, returning the pass's final result if this one
-    // ends it (verified or fatal), or undefined to keep racing.
-    const handle = (outcome: AttemptOutcome): PassResult | undefined => {
-      if (outcome.kind === 'verified' || outcome.kind === 'fatal') return outcome
-      if (outcome.kind === 'lied') lied = true
-      else retryable = retryable || outcome.retryable
-      reasons.push(outcome.reason)
-      return undefined
-    }
-
-    const start = (): void => {
-      if (nextIndex >= candidates.length || inFlight >= MAX_ATTEMPTS_IN_FLIGHT) return
-      const gateway = candidates[nextIndex++]!
-      inFlight++
-      // `combined`, not `callerSignal`: a loser abandoned by `abandon.abort()`
-      // below must have its REAL network request cancelled too, not just
-      // stop being waited on here -- passing the caller's own signal alone
-      // would leave an abandoned attempt's fetch (and the gateway slot it
-      // holds) running until its own timeout regardless of who won the race.
-      run(gateway, combined).then(
-        (outcome) => { queue.push(outcome) },
-        // run() only throws for a bug (askGateway's own contract is "never
-        // throws but GatewayFailure"); surfaced as fatal rather than swallowed.
-        (error: unknown) => { queue.push({ kind: 'fatal', error: error instanceof ResolutionError ? error : new ResolutionError('unavailable', String(error)) }) }
-      ).finally(() => { inFlight-- })
-    }
-
-    start()
-    for (;;) {
-      // A caller that left is answered with its own reason, never with the
-      // reasons its cancelled attempts reported on the way out.
-      if (callerSignal.aborted) throw callerSignal.reason
-      const canHedge = inFlight < MAX_ATTEMPTS_IN_FLIGHT && nextIndex < candidates.length
-      if (canHedge) {
-        const hedge = abortAfter(hedgeDelayMs)
-        try {
-          const outcome = await queue.next(AbortSignal.any([combined, hedge.signal]))
-          const result = handle(outcome)
-          if (result !== undefined) return result
-        } catch {
-          if (combined.aborted) throw callerSignal.reason
-          start() // the hedge delay elapsed with nothing yet -- start the next gateway too
-          continue
-        } finally {
-          hedge.cancel()
-        }
-      } else {
-        const outcome = await queue.next(combined)
-        const result = handle(outcome)
-        if (result !== undefined) return result
-      }
-      if (inFlight === 0 && nextIndex >= candidates.length) return { kind: 'exhausted', lied, retryable, reasons }
-      if (inFlight < MAX_ATTEMPTS_IN_FLIGHT) start()
-    }
-  } finally {
-    // Every attempt still running lost the race (or the pass ended without
-    // one): freeing its slot and its gateway's health record from further
-    // waiting matters more than its answer, which nothing needs any more.
-    abandon.abort()
-  }
+  return { kind: 'verified', value: bytes }
 }
 
 /** Throws a ResolutionError: `unsupported` before any gateway is asked, for
@@ -245,7 +102,7 @@ export async function fetchVerifiedBlock (cid: CID, deps: FetchDeps, signal: Abo
       continue
     }
 
-    let result: PassResult
+    let result: PassResult<Uint8Array>
     try {
       result = await racePass(candidates, (gateway, attemptSignal) => attemptGateway(gateway, cid, key, deps, attemptSignal, onRefusal), deps.limits.hedgeDelayMs, signal)
     } catch (error) {
@@ -256,7 +113,7 @@ export async function fetchVerifiedBlock (cid: CID, deps: FetchDeps, signal: Abo
       // own abort reason happens to be.
       throw error instanceof ResolutionError ? error : new ResolutionError('unavailable', error instanceof Error ? error.message : String(error))
     }
-    if (result.kind === 'verified') return result.bytes
+    if (result.kind === 'verified') return result.value
     if (result.kind === 'fatal') throw result.error
     anyLied = anyLied || result.lied
     reasons.push(...result.reasons)

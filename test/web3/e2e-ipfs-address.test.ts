@@ -16,7 +16,7 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-it('[app:ipfs-url-opens] loads a typed ipfs:// address, follows an ipfs:// link, and opens an ipns:// DNSLink name, each shown as its address', async () => {
+it('[app:ipfs-url-opens] loads a typed ipfs:// address, follows an ipfs:// link, and opens an ipns:// DNSLink name and a signed ipns:// key, each shown as its address', async () => {
   await runPhase('ipfs-address', async (check) => {
     const linkedGateway = await startFixtureGateway({
       linked: { 'index.html': '<!doctype html><meta charset="utf-8"><title>linked fixture</title><body>linked</body>' }
@@ -27,7 +27,7 @@ it('[app:ipfs-url-opens] loads a typed ipfs:// address, follows an ipfs:// link,
         'index.html': `<!doctype html><meta charset="utf-8"><title>ipfs fixture</title><body><a id="next" href="ipfs://${linked}/">next</a><script src="app.js"></script></body>`,
         'app.js': 'document.body.dataset.app = "ran"'
       }
-    }, { dnslinks: { 'docs.example': 'site' } })
+    }, { dnslinks: { 'docs.example': 'site' }, ipnsKeys: ['site'] })
     const site = gateway.roots['site']!
     let app: Awaited<ReturnType<typeof launchElectron>> | undefined
     try {
@@ -71,6 +71,13 @@ it('[app:ipfs-url-opens] loads a typed ipfs:// address, follows an ipfs:// link,
       const named = await waitForTab(chrome, { address: 'ipns://docs.example/', title: 'ipfs fixture' })
       check(`an ipns:// DNSLink name is shown as its address (${JSON.stringify(named.info)})`, named.ok)
 
+      const key = gateway.keys['site']!
+      await clickAddressBarRetrying(chrome, `ipns://${key}`)
+      const keyed = await waitForTab(chrome, { address: `ipns://${key}/`, title: 'ipfs fixture' })
+      check(`an ipns:// key opens the site its signed record names, shown as its address (${JSON.stringify(keyed.info)})`, keyed.ok)
+      check('the page runs at the key\'s own origin', findViewShowing(app, chrome, `https://${key}.ipns.orivon/`) !== undefined)
+      check('the gateway was asked for the key\'s signed record', gateway.requests.includes(`/ipns/${key}?format=ipns-record`))
+
       await clickAddressBarRetrying(chrome, 'ipns://site.eth')
       const viaIpns = await waitForTab(chrome, { address: 'ipfs://site.eth/', title: 'ipfs fixture' })
       check(`ipns://site.eth opens the .eth name's own origin, shown as ipfs://site.eth/ (${JSON.stringify(viaIpns.info)})`, viaIpns.ok)
@@ -80,7 +87,7 @@ it('[app:ipfs-url-opens] loads a typed ipfs:// address, follows an ipfs:// link,
       const viaIpfs = await waitForTab(chrome, { address: 'ipfs://site.eth/', title: 'ipfs fixture' })
       check(`ipfs://site.eth/ does the same (${JSON.stringify(viaIpfs.info)})`, viaIpfs.ok)
 
-      expect(typed.ok && followed.ok && named.ok && viaIpns.ok && viaIpfs.ok).toBe(true)
+      expect(typed.ok && followed.ok && named.ok && keyed.ok && viaIpns.ok && viaIpfs.ok).toBe(true)
       expect(page).toEqual({ origin: `https://${site}.ipfs.orivon`, secure: true, ran: 'ran' })
     } finally {
       if (app !== undefined) await closeElectronApp(app)

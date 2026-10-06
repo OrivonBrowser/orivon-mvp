@@ -1,17 +1,21 @@
 // A trustless IPFS gateway for the end-to-end suite, serving sites whose
-// DAGs are built when it starts. It speaks `?format=raw` for blocks and the
+// DAGs are built when it starts. It speaks `?format=raw` for blocks,
+// `?format=ipns-record` for the signed IPNS records it publishes, and the
 // JSON form of DNS-over-HTTPS for DNSLink TXT records, logs every request,
 // and can flip a byte in any file's block so a test can watch the verifier
 // refuse it. Plain HTTP on loopback, on a port the OS picks.
 import { createServer } from 'node:http'
+import { generateKeyPair } from '@libp2p/crypto/keys'
 import { importer } from 'ipfs-unixfs-importer'
+import { createIPNSRecord, marshalIPNSRecord } from 'ipns'
+import { base36 } from 'multiformats/bases/base36'
 import { CID } from 'multiformats/cid'
 
 const HOST = '127.0.0.1'
 
 /**
  * @param {Record<string, Record<string, string | Uint8Array> | string>} sites site name -> path -> content (text, or bytes for a binary file); a string is a site whose root is that one file
- * @param {{ dnslinks?: Record<string, string>, blockDelayMs?: number }} [options] `dnslinks`: DNS name -> the site whose root its DNSLink names; `blockDelayMs`: how long each block answer waits, as a slow gateway's do
+ * @param {{ dnslinks?: Record<string, string>, ipnsKeys?: string[], blockDelayMs?: number, hang?: boolean }} [options] `dnslinks`: DNS name -> the site whose root its DNSLink names; `ipnsKeys`: sites to publish under a fresh signed IPNS key each (`keys` names them); `blockDelayMs`: how long each block answer waits, as a slow gateway's do; `hang`: answer nothing at all, as a dead gateway behind a proxy does
  */
 export async function startFixtureGateway (sites, options = {}) {
   /** @type {Map<string, Uint8Array>} */
@@ -34,12 +38,31 @@ export async function startFixtureGateway (sites, options = {}) {
     }
   }
 
+  /** @type {Record<string, string>} site -> the IPNS key naming it */
+  const keys = {}
+  /** @type {Map<string, Uint8Array>} */
+  const ipnsRecords = new Map()
+  for (const site of options.ipnsKeys ?? []) {
+    const key = await generateKeyPair('Ed25519')
+    const name = CID.createV1(0x72, key.publicKey.toMultihash()).toString(base36)
+    ipnsRecords.set(name, marshalIPNSRecord(await createIPNSRecord(key, `/ipfs/${roots[site]}`, 1n, 60 * 60 * 1000)))
+    keys[site] = name
+  }
+
   const requests = []
   const tampered = new Set()
 
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', `http://${HOST}`)
     requests.push(`${url.pathname}${url.search}`)
+    if (options.hang === true) return
+    const ipns = /^\/ipns\/([^/]+)$/.exec(url.pathname)
+    if (ipns !== null && url.searchParams.get('format') === 'ipns-record') {
+      const record = ipnsRecords.get(ipns[1])
+      if (record === undefined) { res.writeHead(404).end('not found'); return }
+      res.writeHead(200, { 'content-type': 'application/vnd.ipfs.ipns-record' }).end(Buffer.from(record))
+      return
+    }
     const raw = /^\/ipfs\/([^/]+)$/.exec(url.pathname)
     if (raw !== null && url.searchParams.get('format') === 'raw') {
       const key = CID.parse(raw[1]).toString()
@@ -67,6 +90,7 @@ export async function startFixtureGateway (sites, options = {}) {
   return {
     url: `http://${HOST}:${String(port)}`,
     roots,
+    keys,
     requests,
     /** The CID of the block holding this site's file, which is what a refusal of it names. */
     blockOf: (site, path) => {
