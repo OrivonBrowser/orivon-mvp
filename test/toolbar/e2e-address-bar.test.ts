@@ -351,7 +351,7 @@ async function waitForPage (app: App, chrome: Page, url: string): Promise<Page> 
   return view as Page
 }
 
-it('loads no file: address, whether a web page links to it or it is typed', async () => {
+it('loads no file: address a web page links to, and opens one the person types as a local file in a tab of its own', async () => {
   const local = join(scratch, 'local.html')
   await writeFile(local, '<!doctype html><title>Local file</title><p>from disk</p>')
   const linker = await startServer((_request, response) => { html(response, PAGE_WITH_FILE_LINK(`file://${local}`)) })
@@ -366,11 +366,11 @@ it('loads no file: address, whether a web page links to it or it is typed', asyn
     expect(await urls()).toEqual(before)
     expect(await inputValue(chrome)).toBe(`${linker.origin}/`)
 
-    // Typed, the address is turned away and the tab is left on a blank page with an empty bar.
+    // Typed, the address opens that file in a new tab, and the web page stays where it was.
     await clickAddressBarRetrying(chrome, `file://${local}`)
-    expect(await waitFor(async () => (await urls()).includes('about:blank'))).toBe(true)
-    expect((await urls()).some((url) => url.startsWith('file://') && url.endsWith('local.html'))).toBe(false)
-    expect(await inputValue(chrome)).toBe('')
+    expect(await waitFor(async () => (await urls()).includes(`file://${local}`))).toBe(true)
+    expect(await urls()).toContain(`${linker.origin}/`)
+    expect(await waitFor(async () => (await inputValue(chrome)).endsWith('local.html'))).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await linker.close()
