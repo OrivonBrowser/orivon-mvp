@@ -124,8 +124,8 @@ software: keep funds you cannot afford to lose out of the wallets for now.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/assets/readme/consent.png" alt="The Lounge asking, in plain words, for permission to connect to any computer on the internet"></td>
-<td width="50%"><img src="docs/assets/readme/app.png" alt="A ported desktop app running in an Orivon tab"></td>
+<td width="50%"><img src="docs/assets/readme/consent.png" alt="Element asking, in plain words, for network access, the camera, the microphone and screen sharing before it runs"></td>
+<td width="50%"><img src="docs/assets/readme/app.png" alt="FreeTube running in an Orivon tab from freetube.orivonstack.eth, showing Blender Studio's open movies"></td>
 </tr>
 <tr>
 <td align="center"><sub>One question, in plain words, before an app runs</sub></td>
