@@ -17,7 +17,7 @@ import type { UsagePayload } from '../disclosure.js'
 
 function payloadFor (period: string): UsagePayload {
   return {
-    schema: 2,
+    schema: 3,
     installId: '4c2f2f3a111144448888abcde1234567',
     stream: 'ab'.repeat(16),
     region: 'EU',

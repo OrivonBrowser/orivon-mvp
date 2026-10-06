@@ -16,7 +16,7 @@ const OFF_REASONS: Readonly<Record<string, string>> = {
 
 const STATES: Readonly<Record<string, string>> = {
   undecided: 'Not chosen yet. Nothing is sent.',
-  accepted: 'On. A running total for the month is sent about once a day.',
+  accepted: 'On. A running total for the month is sent when you turn this on, about once a day, and when you quit.',
   declined: 'Off. Nothing is sent.'
 }
 
@@ -96,7 +96,7 @@ export function renderUsage (state: SettingsState): HTMLElement {
         h('summary', { textContent: 'What is sent' }),
         h('p', { className: 'muted', textContent: 'The usage report, the exact text. Your region comes from your time zone.' }),
         h('pre', { className: 'json', id: 'usage-json', textContent: JSON.stringify(status.usage, null, 2) }),
-        h('p', { className: 'muted', textContent: 'The sites report, a separate message that nothing links to the usage report.' }),
+        h('p', { className: 'muted', textContent: 'The sites report, sent under the same install ID as the usage report.' }),
         h('pre', { className: 'json', id: 'sites-json', textContent: JSON.stringify(status.sites, null, 2) })),
       sentList(status)),
     h('div', { className: 'usage-buttons' }, off !== undefined || status.everAccepted !== true ? null : eraseButton, noticeButton),

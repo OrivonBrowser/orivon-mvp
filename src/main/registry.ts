@@ -377,11 +377,16 @@ export interface Subsystem {
   beforeReady?: () => void
   /** Runs after app ready, before the shell window is created. */
   afterReady?: (ctx: SubsystemContext) => void | Promise<void>
+  /**
+   * Runs when the browser quits, inside `main/index.ts`'s bounded wait: it must tolerate being cut
+   * off, and what it has not finished by then is lost, never retried.
+   */
+  beforeQuit?: () => Promise<void>
 }
 
 export interface SubsystemFailure {
   readonly name: string
-  readonly phase: 'beforeReady' | 'afterReady'
+  readonly phase: 'beforeReady' | 'afterReady' | 'beforeQuit'
   readonly error: unknown
   /** Copied from the failing `Subsystem.critical` at the moment it threw. */
   readonly critical: boolean
@@ -429,6 +434,20 @@ export async function runAfterReady (
       failures.push({ name: subsystem.name, phase: 'afterReady', error, critical: subsystem.critical === true })
     }
   }
+  return failures
+}
+
+/** All `beforeQuit` hooks at once: the quit waits for the slowest, so they must not queue behind each other. Never rejects. */
+export async function runBeforeQuit (list: Subsystem[]): Promise<SubsystemFailure[]> {
+  const failures: SubsystemFailure[] = []
+  await Promise.all(list.map(async (subsystem) => {
+    if (subsystem.beforeQuit === undefined) return
+    try {
+      await subsystem.beforeQuit()
+    } catch (error) {
+      failures.push({ name: subsystem.name, phase: 'beforeQuit', error, critical: subsystem.critical === true })
+    }
+  }))
   return failures
 }
 

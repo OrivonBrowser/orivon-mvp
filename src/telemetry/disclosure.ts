@@ -6,7 +6,7 @@ import { SHELL_APP_ID, type AccountingState, type Period } from './accounting.js
 import type { Region } from './region.js'
 import { classOfKey, reportedKey, UNLISTED } from './site-key.js'
 
-export const PAYLOAD_SCHEMA = 2
+export const PAYLOAD_SCHEMA = 3
 
 /** What the install ID reads before the person has turned telemetry on: the machine is not read until then. */
 export const INSTALL_ID_PLACEHOLDER = '(made when you turn this on)'
@@ -33,10 +33,14 @@ export interface UsagePayload {
   readonly classes: ClassSeconds
 }
 
-/** `POST /v1/sites`: seconds on each Web3 and Web2.5 site this month so far, under a random report ID that links to nothing else. */
+/**
+ * `POST /v1/sites`: seconds on each Web3 and Web2.5 site this month so far. It goes under the same
+ * install ID and stream as the usage report, so a forged one can be told apart and erased.
+ */
 export interface SitesPayload {
   readonly schema: typeof PAYLOAD_SCHEMA
-  readonly reportId: string
+  readonly installId: string
+  readonly stream: string
   readonly version: string
   readonly period: Period
   readonly sites: Readonly<Record<string, number>>
@@ -60,7 +64,8 @@ export interface UsageMeta {
 }
 
 export interface SitesMeta {
-  readonly reportId: string
+  readonly installId: string
+  readonly stream: string
   readonly version: string
   readonly period: Period
 }
@@ -119,7 +124,7 @@ export function buildUsagePayload (state: AccountingState, meta: UsageMeta): Usa
 }
 
 export function buildSitesPayload (state: AccountingState, meta: SitesMeta): SitesPayload {
-  return { schema: PAYLOAD_SCHEMA, reportId: meta.reportId, version: meta.version, period: meta.period, sites: reportedSites(state, meta.period) }
+  return { schema: PAYLOAD_SCHEMA, installId: meta.installId, stream: meta.stream, version: meta.version, period: meta.period, sites: reportedSites(state, meta.period) }
 }
 
 export function buildErasePayload (installId: string): ErasePayload {

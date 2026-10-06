@@ -1,5 +1,5 @@
 // Disk persistence for one profile's telemetry state: the counted time, the record of what was sent,
-// each report's schedule and the random identifiers that belong to the profile alone. The consent
+// each report's schedule and the random stream that belongs to the profile alone. The consent
 // and the install ID are not here: they are the same for every profile and live in system-store.ts.
 // Shaped after src/main/bookmarks.ts's own idiom: tolerant read on load, in-memory truth the rest of
 // the app reads synchronously, explicit writes. See README.md, Design notes, for why this file
@@ -10,10 +10,10 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { randomBytes } from 'node:crypto'
-import { INTERNAL_SITE, initialState, type AccountingState, type Period } from './accounting.js'
+import { INTERNAL_SITE, initialState, type AccountingState } from './accounting.js'
 import { initialHistoryState, type HistoryEntry, type HistoryState } from './history.js'
 import { initialKindSchedule, type KindSchedule } from './schedule.js'
-import type { PayloadKind } from './disclosure.js'
+import { PAYLOAD_SCHEMA, type PayloadKind } from './disclosure.js'
 
 export interface SchedulesDisk {
   readonly usage: KindSchedule
@@ -26,15 +26,10 @@ export interface TelemetryDisk {
   readonly accounting: AccountingState
   readonly history: HistoryState
   readonly schedules: SchedulesDisk
-  /** The random ID of each recent period's sites report: the same every time that period is sent, never tied to anything else. */
-  readonly reportIds: Readonly<Record<Period, string>>
 }
 
 /** The layout of telemetry.json; a file without it predates consent and is not read for counting. */
 const DISK_SCHEMA = 2
-
-/** How many periods' report IDs are kept; an older month has been reported and is not needed again. */
-const KEPT_REPORT_IDS = 3
 
 export const randomHex32 = (): string => randomBytes(16).toString('hex')
 
@@ -43,8 +38,7 @@ function freshDisk (generateId: () => string): TelemetryDisk {
     stream: generateId(),
     accounting: initialState,
     history: initialHistoryState,
-    schedules: { usage: initialKindSchedule, sites: initialKindSchedule },
-    reportIds: {}
+    schedules: { usage: initialKindSchedule, sites: initialKindSchedule }
   }
 }
 
@@ -74,10 +68,10 @@ function parseAccountingState (raw: unknown): AccountingState {
   }
 }
 
-/** An entry made before reports had a schema carries no `schema` and is dropped: it describes a payload that no longer exists. */
+/** An entry written under another payload schema is dropped: it describes a payload that is no longer sent. */
 function parseHistoryState (raw: unknown): HistoryState {
   if (!isRecord(raw) || !Array.isArray(raw['entries'])) return initialHistoryState
-  const entries = raw['entries'].filter((entry): entry is HistoryEntry => isRecord(entry) && isRecord(entry['payload']) && entry['payload']['schema'] === 2 && typeof entry['sentAtMs'] === 'number')
+  const entries = raw['entries'].filter((entry): entry is HistoryEntry => isRecord(entry) && isRecord(entry['payload']) && entry['payload']['schema'] === PAYLOAD_SCHEMA && typeof entry['sentAtMs'] === 'number')
   return { entries }
 }
 
@@ -89,13 +83,6 @@ function parseKindSchedule (raw: unknown): KindSchedule {
     lastSentAtMs: typeof raw['lastSentAtMs'] === 'number' ? raw['lastSentAtMs'] : undefined,
     closedPeriod: typeof raw['closedPeriod'] === 'string' ? raw['closedPeriod'] : undefined
   }
-}
-
-function parseReportIds (raw: unknown): Record<Period, string> {
-  if (!isRecord(raw)) return {}
-  const out: Record<Period, string> = {}
-  for (const [period, id] of Object.entries(raw)) if (typeof id === 'string') out[period] = id
-  return out
 }
 
 /**
@@ -119,8 +106,7 @@ export function parseTelemetryFile (raw: string, generateId: () => string): Tele
     stream,
     accounting: parseAccountingState(data['accounting']),
     history: parseHistoryState(data['history']),
-    schedules: { usage: parseKindSchedule(schedules['usage']), sites: parseKindSchedule(schedules['sites']) },
-    reportIds: parseReportIds(data['reportIds'])
+    schedules: { usage: parseKindSchedule(schedules['usage']), sites: parseKindSchedule(schedules['sites']) }
   }
 }
 
@@ -174,19 +160,6 @@ export class TelemetryStore {
     this.disk = { ...this.disk, schedules: { ...this.disk.schedules, [kind]: schedule } }
   }
 
-  /** The sites report ID of `period`, made the first time it is asked and kept for the periods after. */
-  reportIdFor (period: Period): string {
-    const known = this.disk.reportIds[period]
-    if (known !== undefined) return known
-    const made = this.generateId()
-    const kept = Object.keys(this.disk.reportIds).sort().slice(-(KEPT_REPORT_IDS - 1))
-    const reportIds: Record<Period, string> = {}
-    for (const key of kept) reportIds[key] = this.disk.reportIds[key] ?? ''
-    reportIds[period] = made
-    this.disk = { ...this.disk, reportIds }
-    return made
-  }
-
   /** Forgets everything counted and sent, keeping the stream: what "Delete my data" does on this computer. */
   async eraseMeasurements (): Promise<void> {
     this.disk = { ...freshDisk(this.generateId), stream: this.disk.stream }
@@ -198,13 +171,20 @@ export class TelemetryStore {
     await this.writeNow()
   }
 
-  private async writeNow (): Promise<void> {
-    try {
-      await mkdir(dirname(this.filePath), { recursive: true })
-      await writeFile(this.filePath, serializeTelemetryFile(this.disk), 'utf8')
-    } catch (error) {
-      // Loud, never silent, as bookmarks.ts: losing a write costs at most one checkpoint interval of activeSec.
-      console.error('[orivon] failed to persist telemetry state:', error)
-    }
+  /** Writes queue behind one another: a send finishing and a checkpoint can both write, and two writes to one file at once leave it torn. */
+  private writing: Promise<void> = Promise.resolve()
+
+  private writeNow (): Promise<void> {
+    const next = this.writing.then(async () => {
+      try {
+        await mkdir(dirname(this.filePath), { recursive: true })
+        await writeFile(this.filePath, serializeTelemetryFile(this.disk), 'utf8')
+      } catch (error) {
+        // Loud, never silent, as bookmarks.ts: losing a write costs at most one checkpoint interval of activeSec.
+        console.error('[orivon] failed to persist telemetry state:', error)
+      }
+    })
+    this.writing = next
+    return next
   }
 }

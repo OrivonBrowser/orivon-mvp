@@ -72,6 +72,18 @@ describe('periodsDue', () => {
     expect(periodsDue(october + offset + SNAPSHOT_EVERY_MS, '2026-10', sent, data)).toEqual(['2026-10'])
   })
 
+  it('immediate ignores the random offset and the 24-hour gate, and always stages the running period', () => {
+    expect(periodsDue(october + offset - 1, '2026-10', scheduled, data, SNAPSHOT_EVERY_MS, true)).toEqual(['2026-09', '2026-10'])
+    expect(periodsDue(october + 1, '2026-10', initialKindSchedule, data, SNAPSHOT_EVERY_MS, true)).toEqual(['2026-09', '2026-10'])
+    const sent = { ...scheduled, closedPeriod: '2026-09', lastSentAtMs: october + offset }
+    expect(periodsDue(october + offset + 1000, '2026-10', sent, data, SNAPSHOT_EVERY_MS, true)).toEqual(['2026-10'])
+  })
+
+  it('immediate still stages the closing snapshot once, and only for a period that had data', () => {
+    expect(periodsDue(october + 1, '2026-10', { ...scheduled, closedPeriod: '2026-09' }, data, SNAPSHOT_EVERY_MS, true)).toEqual(['2026-10'])
+    expect(periodsDue(october + 1, '2026-10', scheduled, (period) => period === '2026-10', SNAPSHOT_EVERY_MS, true)).toEqual(['2026-10'])
+  })
+
   it('treats a snapshot sent in an earlier period as not sent in this one', () => {
     const old = { ...scheduled, closedPeriod: '2026-09', lastSentAtMs: september + 5000 }
     expect(periodsDue(october + offset, '2026-10', old, data)).toEqual(['2026-10'])

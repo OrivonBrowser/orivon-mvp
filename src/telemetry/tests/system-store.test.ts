@@ -24,7 +24,7 @@ describe('SystemStore', () => {
     const record = recordChoice('accepted', 123, 'welcome')
     await store.writeConsent(record)
     expect(await store.readConsent()).toEqual(record)
-    expect(JSON.parse(await readFile(join(home, 'consent.json'), 'utf8'))).toEqual({ state: 'accepted', atMs: 123, noticeVersion: 2, source: 'welcome', everAccepted: true })
+    expect(JSON.parse(await readFile(join(home, 'consent.json'), 'utf8'))).toEqual({ state: 'accepted', atMs: 123, noticeVersion: 3, source: 'welcome', everAccepted: true })
   })
 
   it('is shared: a second store on the same folder, the way another profile is, sees the choice at once', async () => {

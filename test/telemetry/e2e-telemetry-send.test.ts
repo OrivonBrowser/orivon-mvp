@@ -8,19 +8,19 @@ import { writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
-import type { ElectronApplication } from 'playwright'
+import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, expect, it } from 'vitest'
 import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { closeElectronApp, navigateToFixture } from '../support/e2e-helpers.js'
 import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
-import { ABSENCE_SETTLE_MS, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, HERMETIC_RESOLVER, findChrome, waitFor } from '../support/smoke-helpers.mjs'
 import { startIngest, telemetryHomeFolder, type Ingest, type IngestRequest } from '../support/telemetry-ingest.js'
 
 afterAll(async () => { expect(await assertNoElectronSurvivors()).toEqual([]) })
 
 const TEST_TIMEOUT_MS = 90_000
 const HEX32 = /^[0-9a-f]{32}$/
-const ACCEPTED = { state: 'accepted', atMs: Date.now(), noticeVersion: 2, source: 'welcome' }
+const ACCEPTED = { state: 'accepted', atMs: Date.now(), noticeVersion: 3, source: 'welcome' }
 
 interface Rig {
   readonly ingest: Ingest
@@ -86,7 +86,7 @@ it('with consent, sends the usage report and the sites report, each holding exac
     const usage = posted(r, '/v1/usage').at(-1)?.body as Record<string, unknown>
     expect(sorted(usage)).toEqual(['activeSec', 'backgroundSec', 'classes', 'installId', 'period', 'region', 'schema', 'stream', 'version'])
     expect(sorted(usage['classes'] as Record<string, unknown>)).toEqual(['web2', 'web25', 'web3'])
-    expect(usage).toMatchObject({ schema: 2 })
+    expect(usage).toMatchObject({ schema: 3 })
     expect(usage['installId']).toMatch(HEX32)
     expect(usage['stream']).toMatch(HEX32)
     expect(['EU', 'US', 'other']).toContain(usage['region'])
@@ -95,13 +95,11 @@ it('with consent, sends the usage report and the sites report, each holding exac
     expect(usage['activeSec'] as number).toBeGreaterThanOrEqual(2)
 
     const sites = posted(r, '/v1/sites').at(-1)?.body as Record<string, unknown>
-    expect(sorted(sites)).toEqual(['period', 'reportId', 'schema', 'sites', 'version'])
-    expect(sites['reportId']).toMatch(HEX32)
+    expect(sorted(sites)).toEqual(['installId', 'period', 'schema', 'sites', 'stream', 'version'])
+    expect(sites).toMatchObject({ schema: 3, installId: usage['installId'], stream: usage['stream'] })
     expect(sorted(sites['sites'] as Record<string, unknown>)).toEqual(['web25:level.eth'])
 
-    // Nothing links the two reports, and neither names a Web2 site.
-    expect(JSON.stringify(sites)).not.toContain(usage['installId'] as string)
-    expect(JSON.stringify(sites)).not.toContain(usage['stream'] as string)
+    // Both reports carry the same install ID and stream, and neither names a Web2 site.
     expect(JSON.stringify(usage)).not.toContain('level.eth')
     expect(JSON.stringify(r.ingest.requests)).not.toContain('127.0.0.1')
     expect(posted(r, '/v1/erase')).toEqual([])
@@ -111,8 +109,37 @@ it('with consent, sends the usage report and the sites report, each holding exac
   }
 }, TEST_TIMEOUT_MS)
 
+it('accepting in Settings sends at once, without waiting for a tick, and quitting sends a last snapshot', async () => {
+  const r = await rig(undefined)
+  let app: ElectronApplication | undefined
+  try {
+    // A tick far longer than the test: nothing below can be a timer's send.
+    app = await launchWith(r, { ORIVON_TELEMETRY_TICK_MS: '600000' })
+    await navigateToFixture(app, 'https://level.eth/', 'level fixture')
+    const chrome = findChrome(app)
+    await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/privacy') })
+    expect(await waitFor(() => app?.windows().some((w) => w.url().startsWith('orivon://settings')) === true)).toBe(true)
+    const page = app.windows().find((w) => w.url().startsWith('orivon://settings')) as Page
+    await page.waitForSelector('#row-usage-statistics #usage-state')
+    expect(r.ingest.requests).toEqual([])
+    await page.locator('#row-usage-statistics .switch').click()
+    expect(await waitFor(() => posted(r, '/v1/usage').length > 0, 15_000)).toBe(true)
+    expect(posted(r, '/v1/usage')[0]?.body).toMatchObject({ schema: 3, period: new Date().toISOString().slice(0, 7) })
+
+    const before = posted(r, '/v1/usage').length
+    await closeElectronApp(app)
+    app = undefined
+    expect(posted(r, '/v1/usage').length).toBeGreaterThan(before)
+    const last = posted(r, '/v1/usage').at(-1)?.body as Record<string, unknown>
+    expect(last['installId']).toBe(posted(r, '/v1/usage')[0]?.body['installId'])
+  } finally {
+    if (app !== undefined) await closeElectronApp(app)
+    await r.stop()
+  }
+}, TEST_TIMEOUT_MS)
+
 it('sends nothing when the person has not chosen, or has refused', async () => {
-  for (const consent of [undefined, { state: 'declined', atMs: Date.now(), noticeVersion: 2, source: 'welcome' }]) {
+  for (const consent of [undefined, { state: 'declined', atMs: Date.now(), noticeVersion: 3, source: 'welcome' }]) {
     const r = await rig(consent)
     let app: ElectronApplication | undefined
     try {
@@ -139,7 +166,7 @@ it('sends nothing after consent is withdrawn, by a choice another profile made a
     await navigateToFixture(app, 'https://level.eth/', 'level fixture')
     expect(await waitFor(() => posted(r, '/v1/usage').length > 0 && posted(r, '/v1/sites').length > 0, 30_000)).toBe(true)
 
-    await writeFile(join(r.home, 'consent.json'), JSON.stringify({ state: 'declined', atMs: Date.now(), noticeVersion: 2, source: 'settings' }), 'utf8')
+    await writeFile(join(r.home, 'consent.json'), JSON.stringify({ state: 'declined', atMs: Date.now(), noticeVersion: 3, source: 'settings' }), 'utf8')
     await new Promise((resolve) => setTimeout(resolve, 1500))
     const before = r.ingest.requests.length
     await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS * 2))

@@ -6,14 +6,14 @@ describe('noticeBlocks', () => {
     const blocks = noticeBlocks([
       '# Privacy notice', '', 'First line', 'of **one** paragraph, see [the page](https://example.org/x).', '',
       '## What it sends', '', '- one `thing`', '- two', '',
-      '| Field | Meaning |', '|---|---|', '| `classes.web3` | Seconds. |', '| `reportId` | A random number. |'
+      '| Field | Meaning |', '|---|---|', '| `classes.web3` | Seconds. |', '| `stream` | A random number. |'
     ].join('\n'))
     expect(blocks).toEqual([
       { kind: 'heading', level: 1, text: 'Privacy notice' },
       { kind: 'paragraph', text: 'First line of one paragraph, see the page.' },
       { kind: 'heading', level: 2, text: 'What it sends' },
       { kind: 'list', items: ['one thing', 'two'] },
-      { kind: 'table', header: ['Field', 'Meaning'], rows: [['classes.web3', 'Seconds.'], ['reportId', 'A random number.']] }
+      { kind: 'table', header: ['Field', 'Meaning'], rows: [['classes.web3', 'Seconds.'], ['stream', 'A random number.']] }
     ])
   })
 
