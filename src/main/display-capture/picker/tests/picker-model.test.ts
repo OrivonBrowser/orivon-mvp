@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { TabState } from '../../../shell/tab-types.js'
 import {
-  audioPlan, budgetImages, cardText, defaultSegment, isPickableTab, MAX_CARD_TEXT, MAX_ICON_CHARS, MAX_THUMB_CHARS, portalCardText,
+  audioPlan, budgetImages, cardText, defaultSegment, isPickableTab, MAX_CARD_TEXT, MAX_ICON_CHARS, MAX_THUMB_CHARS, portalCardText, portalSourceId,
   segmentMode, segmentsFor, THUMB_BUDGET_CHARS
 } from '../picker-model.js'
 import type { PickerCard, PickerPlatform } from '../picker-model.js'
@@ -99,8 +99,18 @@ describe('what a card may carry', () => {
     expect(out.slice(0, kept).every((c) => c.thumb !== null)).toBe(true)
   })
 
-  it('names the system dialog on the one card of a Wayland segment', () => {
-    expect(portalCardText('window').label).toBe('Choose a window in the system dialog')
-    expect(portalCardText('screen').label).toBe('Choose a screen in the system dialog')
+  it('names the system dialog on the one card of a Wayland segment, and says it opens at Share', () => {
+    expect(portalCardText('window')).toEqual({ label: 'Choose a window in the system dialog', sub: 'Your system asks which window once you press Share.' })
+    expect(portalCardText('screen')).toEqual({ label: 'Choose a screen in the system dialog', sub: 'Your system asks which screen once you press Share.' })
+  })
+
+  it('numbers the source ids of a Wayland share far above the capture\'s own and never repeats one', () => {
+    const first = portalSourceId('screen')
+    const second = portalSourceId('window')
+    expect(first).toMatch(/^screen:\d+:0$/)
+    expect(second).toMatch(/^window:\d+:0$/)
+    const number = (id: string): number => Number(id.split(':')[1])
+    expect(number(first)).toBeGreaterThan(2 ** 40)
+    expect(number(second)).toBe(number(first) + 1)
   })
 })

@@ -70,6 +70,15 @@ const result = async (view: Page, key: string, timeoutMs = 15_000): Promise<unkn
   await waitFor(async () => { last = await view.evaluate((k) => (window as unknown as { __r: Record<string, unknown> }).__r[k], key); return last !== undefined }, timeoutMs)
   return last
 }
+/**
+ * What the page's own `CaptureController` says once given to `getDisplayMedia`: a bound one answers, an unbound one
+ * throws `InvalidStateError`.
+ */
+const controllerState = async (view: Page): Promise<{ levels: unknown, zoom: unknown }> => await view.evaluate(() => {
+  const page = window as unknown as { controller: { getSupportedZoomLevels: () => number[], zoomLevel: number | null } }
+  const attempt = <T>(body: () => T): T | string => { try { return body() } catch (error) { return `ERR:${(error as Error).name}` } }
+  return { levels: attempt(() => page.controller.getSupportedZoomLevels()), zoom: attempt(() => page.controller.zoomLevel) }
+})
 const run = async (view: Page, body: string): Promise<void> => {
   await view.evaluate((code) => { (window as unknown as { __next: () => void }).__next = new Function(code) as () => void }, body)
   await view.click('#go')
@@ -136,7 +145,7 @@ it('opens its picker on the page\'s hints, shares an entire screen, shows who sh
     expect(await result(view, 'noscreen')).toBe('ERR:NotAllowedError')
 
     // The entire screen: chosen in the picker, shared as a monitor.
-    await run(view, "window.share('screen', { video: { displaySurface: 'monitor' } })")
+    await run(view, "window.controller = new CaptureController(); window.share('screen', { video: { displaySurface: 'monitor' }, controller: window.controller })")
     picker = await waitOverlay(app, 'screen-share-picker', '.picker-segments')
     expect(await activeSegment(picker)).toBe('Entire screen')
     await picker.waitForSelector('.picker-card')
@@ -144,6 +153,9 @@ it('opens its picker on the page\'s hints, shares an entire screen, shows who sh
     await picker.click('.picker-card')
     await pressShare(picker)
     expect(await result(view, 'screen', 30_000)).toMatchObject({ tracks: 1, state: 'live', surface: 'monitor' })
+    // The page's controller is bound to this capture: it answers as the controller of a screen does (zoom is not
+    // supported there), where an unbound one throws InvalidStateError.
+    expect(await controllerState(view)).toMatchObject({ levels: 'ERR:NotSupportedError', zoom: null })
     expect(await overlayGone(app, 'screen-share-picker')).toBe(true)
 
     // The tab, the address bar and the bar say so.
@@ -204,7 +216,7 @@ it('shares another tab: it comes to the front, keeps painting for the page while
     expect(await waitFor(() => findViewShowing(app, chrome, `${origins.a}/`) !== undefined)).toBe(true)
 
     // The tabs of the window, with this tab first.
-    await run(view, "window.share('tab', { video: true })")
+    await run(view, "window.controller = new CaptureController(); window.share('tab', { video: true, controller: window.controller })")
     const picker = await waitOverlay(app, 'screen-share-picker', '.picker-card')
     expect(await cardLabels(picker)).toEqual(['share-a', 'share-b', 'share-c'])
     expect(await picker.locator('.picker-card').first().locator('.picker-self').textContent()).toBe('This tab')
@@ -215,6 +227,10 @@ it('shares another tab: it comes to the front, keeps painting for the page while
     expect(await picker.locator('.picker-card[aria-selected="true"] .picker-label').allTextContents()).toEqual(['share-b'])
     await pressShare(picker)
     expect(await result(view, 'tab', 30_000)).toMatchObject({ tracks: 1, state: 'live', surface: 'browser', label: 'share-b' })
+    // The page's controller is bound to the share Orivon made: a tab reports its zoom levels and its zoom.
+    const state = await controllerState(view)
+    expect(state.zoom).toBe(100)
+    expect(Array.isArray(state.levels) && state.levels.length > 0).toBe(true)
 
     // The tab picked came to the front, and both tabs carry the marks.
     expect(await waitFor(async () => await chrome.evaluate((id) => document.querySelector(`.tab[data-id="${id}"]`)?.classList.contains('active') === true, second))).toBe(true)
