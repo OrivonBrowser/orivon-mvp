@@ -13,15 +13,19 @@ import {
   type Sender,
   type TransportState
 } from '../transport.js'
-import type { TelemetryPayload } from '../disclosure.js'
+import type { UsagePayload } from '../disclosure.js'
 
-function payloadFor (period: string): TelemetryPayload {
+function payloadFor (period: string): UsagePayload {
   return {
-    installId: '4c2f2f3a-1111-4444-8888-abcde1234567',
-    country: 'IT',
+    schema: 2,
+    installId: '4c2f2f3a111144448888abcde1234567',
+    stream: 'ab'.repeat(16),
+    region: 'EU',
     version: '0.1.0',
     period,
-    perApp: { torrent: { activeSec: 90000, backgroundSec: 412000 } }
+    activeSec: 90000,
+    backgroundSec: 412000,
+    classes: { web3: 0, web25: 0, web2: 90000 }
   }
 }
 
@@ -43,7 +47,7 @@ describe('mayTransmit is consulted on every attemptSend call, not cached at star
 
     expect(sender).not.toHaveBeenCalled()
     expect(result.sent).toBeUndefined()
-    expect(result.state).toBe(state) // nothing changed -- not even attempted
+    expect(result.state.queue).toHaveLength(0) // what an old acceptance staged is dropped, not held for later
   })
 
   it('refuses to call the sender when consent is declined', async () => {
@@ -123,7 +127,7 @@ describe('enqueue is gated on consent -- nothing accumulates before a choice is 
   })
 })
 
-describe('batching -- attemptSend only ever accepts a whole TelemetryPayload, never a raw event', () => {
+describe('batching -- attemptSend only ever accepts a whole UsagePayload, never a raw event', () => {
   it('an empty queue is a safe no-op: the sender is never called', async () => {
     const sender: Sender = vi.fn<Sender>()
     const result = await attemptSend(initialTransportState, 'accepted', sender, () => 0)
@@ -144,7 +148,7 @@ describe('batching -- attemptSend only ever accepts a whole TelemetryPayload, ne
 
   it('re-enqueuing the same period replaces the stale entry instead of duplicating it', () => {
     const stale = payloadFor('2026-09')
-    const fresh: TelemetryPayload = { ...stale, perApp: { torrent: { activeSec: 999999, backgroundSec: 0 } } }
+    const fresh: UsagePayload = { ...stale, activeSec: 999999 }
 
     let state = enqueue(initialTransportState, stale, 'accepted', () => 0)
     state = enqueue(state, fresh, 'accepted', () => 0)
@@ -212,7 +216,7 @@ describe('enqueue resets a stale backoff when the resulting head is a different 
 
     // Same period, updated totals -- still logically the same queued
     // item, so the backoff it already earned should carry over.
-    const refreshed: TelemetryPayload = { ...payloadFor('2026-09'), perApp: { torrent: { activeSec: 1, backgroundSec: 1 } } }
+    const refreshed: UsagePayload = { ...payloadFor('2026-09'), activeSec: 1 }
     state = enqueue(state, refreshed, 'accepted', clock)
 
     expect(state.failureCount).toBe(1)
@@ -229,9 +233,8 @@ describe('the queue cap -- a long offline period does not accumulate unbounded',
 
     expect(state.queue.length).toBeLessThanOrEqual(MAX_QUEUE_SIZE)
     expect(state.queue).toHaveLength(MAX_QUEUE_SIZE)
-    // MAX_QUEUE_SIZE is 1 (owner decision, PR #24, 2026-09-01): only the
-    // very last period enqueued ever survives.
-    expect(state.queue.map((q) => q.payload.period)).toEqual(['period-4'])
+    // MAX_QUEUE_SIZE is 2: the month that closed and the one running.
+    expect(state.queue.map((q) => q.payload.period)).toEqual(['period-3', 'period-4'])
   })
 
   it('respects an explicit override, for a caller (or a test) that wants a smaller cap', () => {

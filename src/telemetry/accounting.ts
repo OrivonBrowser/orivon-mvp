@@ -25,6 +25,9 @@
 
 export type AppId = string
 
+/** The whole browser as one app: every window, standing in until a loaded app has an identity of its own. */
+export const SHELL_APP_ID = 'shell'
+
 /**
  * A UTC calendar month, `'YYYY-MM'`. Matches the `period` field of the
  * ADR-0004 payload.
@@ -45,6 +48,18 @@ export interface PeriodTotals {
 type PerApp = Readonly<Record<AppId, Readonly<Record<Period, PeriodTotals>>>>
 type OpenSessions = Readonly<Record<AppId, number>>
 
+/**
+ * What the active tab shows: `web3:<name>`, `web25:<name>`, `web2` or `internal`, with an empty `<name>`
+ * for a site that may not be named (site-key.ts decides). Accounting only stores it as a label.
+ */
+export type SiteKey = string
+
+/** Active seconds by site, per period. */
+export type PerSite = Readonly<Record<Period, Readonly<Record<SiteKey, number>>>>
+
+/** What counts before any tab has reported. */
+export const INTERNAL_SITE: SiteKey = 'internal'
+
 export type TelemetryEvent =
   | { readonly kind: 'session-start'; readonly atMs: number; readonly app: AppId }
   | { readonly kind: 'session-stop'; readonly atMs: number; readonly app: AppId }
@@ -54,9 +69,15 @@ export type TelemetryEvent =
   | { readonly kind: 'suspend'; readonly atMs: number }
   | { readonly kind: 'resume'; readonly atMs: number }
   | { readonly kind: 'checkpoint'; readonly atMs: number }
+  | { readonly kind: 'site'; readonly atMs: number; readonly site: SiteKey }
 
 export interface AccountingState {
   readonly perApp: PerApp
+  /** The active seconds of the focused app, split by the site in front: every second added to a period's
+   *  `activeSec` is added to exactly one site key, so the keys of a period add up to its `activeSec`. */
+  readonly perSite: PerSite
+  /** The site in front now; credited with the active time that accrues until the next 'site' event. */
+  readonly currentSite: SiteKey
   /** Open session count per app, not a boolean. Two tabs running the same
    *  app overlap into one open session that only closes when the last of
    *  them stops -- see the "second tab keeps it open" test. */
@@ -71,6 +92,8 @@ export interface AccountingState {
 
 export const initialState: AccountingState = {
   perApp: {},
+  perSite: {},
+  currentSite: INTERNAL_SITE,
   openSessions: {},
   focusedApp: undefined,
   lastInteractionAt: undefined,
@@ -140,6 +163,12 @@ function credit (perApp: PerApp, app: AppId, period: Period, bucket: keyof Perio
   }
 }
 
+function creditSite (perSite: PerSite, site: SiteKey, period: Period, seconds: number): PerSite {
+  if (seconds <= 0) return perSite
+  const inPeriod = perSite[period] ?? {}
+  return { ...perSite, [period]: { ...inPeriod, [site]: (inPeriod[site] ?? 0) + seconds } }
+}
+
 function withOpenSession (sessions: OpenSessions, app: AppId): OpenSessions {
   return { ...sessions, [app]: (sessions[app] ?? 0) + 1 }
 }
@@ -201,6 +230,7 @@ function settleTo (state: AccountingState, t: number, idleTimeoutMs: number): Ac
   }
 
   let perApp = state.perApp
+  let perSite = state.perSite
   const idleDeadline = state.lastInteractionAt === undefined ? -Infinity : state.lastInteractionAt + idleTimeoutMs
 
   for (const { start, end, period } of monthSlices(from, t)) {
@@ -210,7 +240,9 @@ function settleTo (state: AccountingState, t: number, idleTimeoutMs: number): Ac
         // slice), background for whatever remains after it.
         const activeUntil = Math.min(end, idleDeadline)
         if (activeUntil > start) {
-          perApp = credit(perApp, app, period, 'activeSec', (activeUntil - start) / 1000)
+          const seconds = (activeUntil - start) / 1000
+          perApp = credit(perApp, app, period, 'activeSec', seconds)
+          perSite = creditSite(perSite, state.currentSite, period, seconds)
         }
         const backgroundFrom = Math.max(start, idleDeadline)
         if (backgroundFrom < end) {
@@ -225,7 +257,7 @@ function settleTo (state: AccountingState, t: number, idleTimeoutMs: number): Ac
     }
   }
 
-  return { ...state, perApp, lastAccountedAt: t }
+  return { ...state, perApp, perSite, lastAccountedAt: t }
 }
 
 /**
@@ -264,6 +296,9 @@ export function applyEvent (state: AccountingState, event: TelemetryEvent, idleT
     case 'resume':
       return { ...settled, suspended: false }
 
+    case 'site':
+      return { ...settled, currentSite: event.site }
+
     case 'checkpoint':
       // No state effect beyond the settle already performed above. Exists
       // only so the caller has a periodic, otherwise-silent moment at
@@ -290,4 +325,19 @@ export function fold (events: readonly TelemetryEvent[], seed: AccountingState =
  *  would otherwise push that check onto every call site. */
 export function totalsFor (state: AccountingState, app: AppId, period: Period): PeriodTotals {
   return state.perApp[app]?.[period] ?? { activeSec: 0, backgroundSec: 0 }
+}
+
+/** Active seconds on `site` in `period`. */
+export function siteSeconds (state: AccountingState, period: Period, site: SiteKey): number {
+  return state.perSite[period]?.[site] ?? 0
+}
+
+/** The newest `keep` periods of the site split; an older month has been reported and is not needed again. */
+export function pruneSitePeriods (state: AccountingState, keep: number): AccountingState {
+  const periods = Object.keys(state.perSite).sort()
+  if (periods.length <= keep) return state
+  const kept = new Set(periods.slice(periods.length - keep))
+  const perSite: Record<Period, Readonly<Record<SiteKey, number>>> = {}
+  for (const period of kept) perSite[period] = state.perSite[period] ?? {}
+  return { ...state, perSite }
 }

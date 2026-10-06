@@ -16,13 +16,13 @@
 // its own (the caller supplies sentAtMs, taken from wherever attemptSend
 // read it), no electron or node:* import.
 
-import type { TelemetryPayload } from './disclosure.js'
+import type { SentPayload } from './disclosure.js'
 
 /** What was sent, and when. `sentAtMs` is the sender's own success
  *  instant -- attemptSend's clock() reading at the moment it resolved
  *  true -- not a value this module invents. */
 export interface HistoryEntry {
-  readonly payload: TelemetryPayload
+  readonly payload: SentPayload
   readonly sentAtMs: number
 }
 
@@ -65,5 +65,6 @@ export function keepNewest<T> (items: readonly T[], max: number): readonly T[] {
  * history the user has already seen.
  */
 export function recordSent (state: HistoryState, entry: HistoryEntry, maxEntries: number = MAX_HISTORY_ENTRIES): HistoryState {
-  return { entries: keepNewest([...state.entries, entry], maxEntries) }
+  const { payload, sentAtMs } = entry // a record that carries more (transport's SentRecord) keeps only what is shown
+  return { entries: keepNewest([...state.entries, { payload, sentAtMs }], maxEntries) }
 }

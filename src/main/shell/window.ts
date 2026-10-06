@@ -203,7 +203,10 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     context: () => context, area: tabBounds, paneArea: () => tabs.activePaneBounds(), activeContents: () => tabs.activeWebContents()
   })
   wireSidePanel(win, { adopt: overlays.adopt, area: tabBounds })
-  const entry: ShellWindow = { window: win, chrome, tabs, overlays, chromeHeight, shortcutsSuspended: () => fullscreen.tabId !== null, relayout: layoutAll }
+  const entry: ShellWindow = {
+    window: win, chrome, tabs, overlays, chromeHeight, shortcutsSuspended: () => fullscreen.tabId !== null, relayout: layoutAll,
+    siteTrustFor: async (url) => await panels.siteInfoController.siteTrustFor(url)
+  }
 
   const context: WindowContext = { window: entry, services }
   const panels = createWindowPanels({ ctx, win, services, tabs, overlays, dirname: import.meta.dirname })

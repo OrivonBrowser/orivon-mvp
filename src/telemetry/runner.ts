@@ -1,285 +1,211 @@
-// Real wiring for accounting.ts/disclosure.ts/transport.ts/history.ts via
-// engine.ts/store.ts/window-focus.ts/schedule.ts: persistence, real main-
-// process lifecycle events, and the real HTTP send. Untested by design:
-// every decision worth getting right lives in the pure/injected functions
-// this file composes, and THOSE are tested (engine.test.ts, window-
-// focus.test.ts, schedule.test.ts, store.test.ts, checkpoint-recovery.test.ts).
+// The Electron wiring of telemetry: the timers, the real windows and power events, the real network,
+// and the functions the Settings page and the welcome screen call. Every decision lives in the pure
+// and injected modules this file composes (service.ts and what it uses), and those are tested.
 //
-// WHY THE ELECTRON IMPORT BELOW IS `import type`, AND WHY REAL ELECTRON
-// VALUES (BaseWindow/powerMonitor/net) ARE IMPORTED DYNAMICALLY INSIDE THE
-// FUNCTIONS THAT USE THEM: same reasoning as update-check-runner.ts's own
-// header -- a top-level static value import from 'electron' is silently
-// broken under this repo's vitest (the package's entry point outside a
-// real Electron process is a string, not the API surface), and this file
-// has no test importing it, so a dynamic import inside each function body
-// is never reached at all while other tests merely import sibling files.
+// WHY THE ELECTRON IMPORT BELOW IS `import type`, AND WHY REAL ELECTRON VALUES (BaseWindow/powerMonitor/net)
+// ARE IMPORTED DYNAMICALLY INSIDE THE FUNCTIONS THAT USE THEM: a top-level static value import from
+// 'electron' is silently broken under the unit tests (outside a real Electron process the package's
+// entry point is a string, not the API surface).
 //
-// TWO REAL DECISIONS THIS FILE MAKES THAT THE OWNER HAS NOT CONFIRMED:
-//   1. SHELL_APP_ID below is a placeholder AppId representing the whole
-//      Orivon process, standing in until a future app loader gives a real
-//      capability-app's identity a source (nothing in this tree connects
-//      a loaded app to a tab yet). docs/open-questions.md A92.
-//   2. TELEMETRY_INGEST_URL is unprovisioned -- ADR-0004 requires a
-//      self-hosted ingest endpoint that does not exist yet anywhere in
-//      this repository or its docs. docs/open-questions.md A93.
+// Telemetry never starts under `npm run dev`, under ORIVON_TELEMETRY=off, or in a private session: then
+// nothing is counted, no machine identifier is read and nothing is sent (mode.ts).
 import type { App } from 'electron'
+import { execFile } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Subsystem } from '../main/registry.js'
-import { applyEvent, periodOf, type AccountingState, type TelemetryEvent } from './accounting.js'
+import { devModeEnabled } from '../main/dev/dev-mode.js'
+import type { SiteKey } from './accounting.js'
+import type { ConsentSource } from './consent.js'
+import type { ErasePayload, SentPayload } from './disclosure.js'
+import type { MachineIdReaders } from './install-id.js'
 import {
-  applyDisclosureChoice,
-  buildDisclosurePayload,
-  DISCLOSURE_OPTIONS,
-  type ConsentState,
-  type DisclosureChoiceId,
-  type DisclosureMeta,
-  type TelemetryPayload
-} from './disclosure.js'
-import { runSendCycle } from './engine.js'
-import type { HistoryState } from './history.js'
-import {
-  CHECKPOINT_INTERVAL_MS,
-  IDLE_INTERACTION_THRESHOLD_SEC,
-  isOffsetStale,
-  pickSendOffsetMs,
-  SEND_CHECK_INTERVAL_MS
-} from './schedule.js'
-import { initialTransportState, type Sender, type TransportState } from './transport.js'
+  IS_TEST_BUILD, endpointUrl, ingestBaseUrl, modeInputsFromEnv, telemetryHome, telemetryOffReason, testOverrides,
+  type Endpoint, type OffReason
+} from './mode.js'
+import { regionOfTimeZone, systemTimeZone } from './region.js'
+import { CHECKPOINT_INTERVAL_MS, IDLE_INTERACTION_THRESHOLD_SEC, SEND_CHECK_INTERVAL_MS } from './schedule.js'
+import { TelemetryService, type TelemetryStatus } from './service.js'
 import { TelemetryStore } from './store.js'
-import { reconcileWindowFocus, type TrackedWindow } from './window-focus.js'
-
-/** See the file header's note and docs/open-questions.md A92. */
-export const SHELL_APP_ID = 'shell'
-
-/** See the file header's note and docs/open-questions.md A93. RFC 2606
- *  `.example` -- guaranteed never to resolve, so this placeholder cannot
- *  silently start receiving real user data before the owner replaces it
- *  with a real endpoint. */
-export const TELEMETRY_INGEST_URL = 'https://telemetry.orivonstack.example/v1/ingest'
+import { SystemStore } from './system-store.js'
+import type { TrackedWindow } from './window-focus.js'
 
 const FETCH_TIMEOUT_MS = 10_000
+const MACHINE_ID_TIMEOUT_MS = 3_000
 
-function telemetryFilePath (app: App): string {
-  // ADR-0003's "Browser state" tier, same as bookmarks.json: plain JSON,
-  // no safeStorage -- an install UUID and a self-declared country are not
-  // secrets the way the identity seed is.
-  return join(app.getPath('userData'), 'telemetry.json')
-}
-
-async function realSender (payload: TelemetryPayload): Promise<boolean> {
+async function post (endpoint: Endpoint, body: SentPayload | ErasePayload): Promise<boolean> {
   const { net } = await import('electron')
+  const base = ingestBaseUrl(IS_TEST_BUILD, testOverrides().url)
   try {
-    const response = await net.fetch(TELEMETRY_INGEST_URL, {
+    const response = await net.fetch(endpointUrl(base, endpoint), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
     })
-    // ADR-0004: "the client ignores the response body entirely" -- status
-    // only, never parsed or read.
+    // The server answers every success with an empty 204; the status is all that is read.
     return response.ok
   } catch {
-    return false // offline, DNS failure, timeout -- attemptSend treats this like any other failed attempt
+    return false // offline, DNS failure, timeout: a failed attempt like any other
   }
 }
 
-const realClock = (): number => Date.now()
+const realSender = async (payload: SentPayload): Promise<boolean> => await post('reportId' in payload ? 'sites' : 'usage', payload)
 
-/** Set once startTelemetry() has loaded the real store, so the read/decide
- *  functions below (for a future disclosure/history UI) see the SAME live
- *  instance the running subsystem is checkpointing, not a stale copy. */
-let runningStore: TelemetryStore | undefined
+const realMachineReaders: MachineIdReaders = {
+  platform: process.platform,
+  readFile: async (path) => {
+    try {
+      return await readFile(path, 'utf8')
+    } catch {
+      return undefined
+    }
+  },
+  run: async (file, args) => await new Promise((resolve) => {
+    execFile(file, [...args], { timeout: MACHINE_ID_TIMEOUT_MS, windowsHide: true }, (error, stdout) => { resolve(error === null ? stdout : undefined) })
+  })
+}
 
-/**
- * The Settings Usage section's live-update source. Module-scoped, not on
- * `runningStore` itself: `startInternalPages` (main/pages/start-internal-
- * pages.ts) subscribes as soon as the process starts, which can be before
- * `startTelemetry` below has finished loading the real store (its own
- * `afterReady` is deliberately not awaited) -- a listener attached to
- * whichever store existed at subscribe time would silently miss every send
- * that happens after the real one replaces it.
- */
+interface Configured {
+  readonly offReason: OffReason | undefined
+  readonly service: Promise<TelemetryService> | undefined
+}
+
+let configured: Configured | undefined
+
 const changeListeners = new Set<() => void>()
 
 function notifyChanged (): void {
   for (const listener of changeListeners) listener()
 }
 
-/** Returns the unsubscribe. Never fires in a private session: `startTelemetry` never runs there, and `decideConsent` is unreachable via telemetry-domain.ts's own `isPrivate` guard. */
+/** Returns the unsubscribe. Fires when a send happened or the choice changed, for the Settings page. */
 export function onTelemetryChanged (listener: () => void): () => void {
   changeListeners.add(listener)
   return () => { changeListeners.delete(listener) }
 }
 
-async function loadedStore (app: App): Promise<TelemetryStore> {
-  if (runningStore !== undefined) return runningStore
-  const store = new TelemetryStore(telemetryFilePath(app))
+async function buildService (app: App): Promise<TelemetryService> {
+  const overrides = testOverrides()
+  const home = telemetryHome({
+    testBuild: IS_TEST_BUILD,
+    overrideHome: overrides.home,
+    development: devModeEnabled(),
+    userData: app.getPath('userData'),
+    appData: app.getPath('appData')
+  })
+  const store = new TelemetryStore(join(app.getPath('userData'), 'telemetry.json'))
   await store.load()
-  return store
+  return new TelemetryService({
+    store,
+    system: new SystemStore(home),
+    version: app.getVersion(),
+    region: () => regionOfTimeZone(systemTimeZone()),
+    machineReaders: realMachineReaders,
+    randomId: () => randomBytes(16).toString('hex'),
+    clock: () => Date.now(),
+    send: realSender,
+    sendErase: async (payload) => await post('erase', payload),
+    ...(overrides.tickMs === undefined ? {} : { offsetWindowMs: 0 }),
+    notify: notifyChanged
+  })
 }
 
-async function startTelemetry (app: App): Promise<void> {
-  const store = new TelemetryStore(telemetryFilePath(app))
-  await store.load()
-  runningStore = store
-
+async function startTelemetry (app: App, servicePromise: Promise<TelemetryService>): Promise<void> {
+  const service = await servicePromise
   const { BaseWindow, powerMonitor } = await import('electron')
+  const tickMs = testOverrides().tickMs
 
-  let accounting: AccountingState = store.getAccountingState()
-  let transport: TransportState = initialTransportState
-  let focusedIds: ReadonlySet<number> = new Set()
-  let offsetPeriod: string | undefined
-  let scheduledSendAtMs = 0
+  const windows = (): TrackedWindow[] => BaseWindow.getAllWindows().map((w) => ({ id: w.id, focused: w.isFocused() }))
+  // Real, OS-level input signal, chosen because no window or tab event exists to feed here instead.
+  const interacting = (): boolean => powerMonitor.getSystemIdleState(IDLE_INTERACTION_THRESHOLD_SEC) === 'active'
 
-  const applyAndStore = (event: TelemetryEvent): void => {
-    accounting = applyEvent(accounting, event)
-    store.setAccountingState(accounting)
-  }
+  // Best-effort: the process could in principle exit before this write lands, the same bounded loss
+  // (one checkpoint interval) an ordinary crash already has. Not worth hanging an ordinary quit.
+  app.on('before-quit', () => { void service.stop() })
+  powerMonitor.on('suspend', () => { service.notePower('suspend') })
+  powerMonitor.on('resume', () => { service.notePower('resume') })
 
-  applyAndStore({ kind: 'session-start', atMs: realClock(), app: SHELL_APP_ID })
-
-  // Best-effort, not guaranteed: `void` here means the process could in
-  // principle exit before this write lands, the same way any other
-  // between-checkpoints termination can. Not treated as a gap worth
-  // blocking quit over (event.preventDefault() + a manual re-quit once
-  // flushed) -- that would make an ordinary quit occasionally hang for a
-  // subsystem with no UI, a worse tradeoff than accepting the same
-  // bounded loss (at most one CHECKPOINT_INTERVAL_MS) an ordinary crash
-  // already has.
-  app.on('before-quit', () => {
-    applyAndStore({ kind: 'session-stop', atMs: realClock(), app: SHELL_APP_ID })
-    void store.checkpoint()
-  })
-  powerMonitor.on('suspend', () => { applyAndStore({ kind: 'suspend', atMs: realClock() }) })
-  powerMonitor.on('resume', () => { applyAndStore({ kind: 'resume', atMs: realClock() }) })
-
-  let checkpointInFlight = false
-  async function checkpointTick (): Promise<void> {
-    if (checkpointInFlight) return // a previous tick is still writing; skip rather than overlap
-    checkpointInFlight = true
+  let checkpointing = false
+  const checkpointTick = async (): Promise<void> => {
+    if (checkpointing) return
+    checkpointing = true
     try {
-      const now = realClock()
-
-      const windows: TrackedWindow[] = BaseWindow.getAllWindows().map((w) => ({ id: w.id, focused: w.isFocused() }))
-      const reconciled = reconcileWindowFocus(focusedIds, windows)
-      focusedIds = reconciled.nextFocusedIds
-      if (reconciled.transition === 'gained-focus') applyAndStore({ kind: 'focus', atMs: now, app: SHELL_APP_ID })
-      else if (reconciled.transition === 'lost-focus') applyAndStore({ kind: 'blur', atMs: now })
-
-      // Real, OS-level input signal, chosen because no window.ts/tabs.ts-
-      // sourced interaction event exists to feed here instead.
-      if (powerMonitor.getSystemIdleState(IDLE_INTERACTION_THRESHOLD_SEC) === 'active') {
-        applyAndStore({ kind: 'interaction', atMs: now })
-      }
-
-      applyAndStore({ kind: 'checkpoint', atMs: now })
-      await store.checkpoint()
+      await service.checkpointTick(windows(), interacting())
+    } catch (error) {
+      console.error('[orivon] telemetry checkpoint failed:', error)
     } finally {
-      checkpointInFlight = false
+      checkpointing = false
     }
   }
-
-  let sendInFlight = false
-  async function sendTick (): Promise<void> {
-    if (sendInFlight) return
-    sendInFlight = true
+  const sendTick = async (): Promise<void> => {
     try {
-      const now = realClock()
-      const period = periodOf(now)
-
-      if (isOffsetStale(offsetPeriod, period)) {
-        offsetPeriod = period
-        scheduledSendAtMs = now + pickSendOffsetMs()
-      }
-      if (now < scheduledSendAtMs) return
-
-      const meta: DisclosureMeta = {
-        installId: store.getInstallId(),
-        country: store.getCountry(),
-        version: app.getVersion(),
-        period
-      }
-      const consentState: ConsentState = store.getConsentState() // read fresh, every tick -- never cached
-
-      const result = await runSendCycle(
-        { accounting: store.getAccountingState(), transport, history: store.getHistoryState() },
-        meta,
-        consentState,
-        realSender,
-        realClock
-      )
-      transport = result.transport
-      store.setHistoryState(result.history)
-      if (result.sent) {
-        await store.checkpoint()
-        // The Settings "what has been sent" page reads getSentHistory(app)
-        // below; a real send is the one moment that answer actually changes.
-        notifyChanged()
-      }
-    } finally {
-      sendInFlight = false
+      await service.sendTick()
+    } catch (error) {
+      console.error('[orivon] telemetry send failed:', error)
     }
   }
-
-  setInterval(() => { void checkpointTick() }, CHECKPOINT_INTERVAL_MS)
-  setInterval(() => { void sendTick() }, SEND_CHECK_INTERVAL_MS)
+  setInterval(() => { void checkpointTick() }, tickMs ?? CHECKPOINT_INTERVAL_MS)
+  setInterval(() => { void sendTick() }, tickMs ?? SEND_CHECK_INTERVAL_MS)
+  void checkpointTick().then(sendTick)
 }
 
 export const telemetrySubsystem: Subsystem = {
   name: 'telemetry',
   afterReady: (ctx) => {
-    // A private session measures nothing about the person and sends nothing.
-    if (ctx.privateSession) return
-    // Deliberately NOT awaited -- same reasoning as updateCheckSubsystem
-    // (update-check-runner.ts): runAfterReady (registry.ts) awaits every
-    // subsystem in order before the shell window is created, and nothing
-    // else in the app depends on telemetry's own init order. Because it is
-    // detached, this subsystem must catch its own errors -- registry.ts's
-    // try/catch only covers what afterReady itself returns/throws
-    // synchronously.
-    void startTelemetry(ctx.app).catch((error) => {
+    const offReason = telemetryOffReason(modeInputsFromEnv(process.env, devModeEnabled(), ctx.privateSession))
+    if (offReason !== undefined) {
+      configured = { offReason, service: undefined }
+      return
+    }
+    // Deliberately NOT awaited, as updateCheckSubsystem: runAfterReady awaits every subsystem in order
+    // before the shell window is created. Detached, it must catch its own errors.
+    const service = buildService(ctx.app)
+    configured = { offReason: undefined, service }
+    void startTelemetry(ctx.app, service).catch((error) => {
       console.error('[orivon] subsystem "telemetry" failed:', error)
     })
   }
 }
 
-// Read/decide functions for a future disclosure screen and "what has been
-// sent" page (deliberately not built here -- see src/telemetry/README.md).
-// Each falls back to loading its own copy
-// of the store if the subsystem has not started yet (should not happen in
-// practice, since runAfterReady always runs before any UI could call
-// these, but a future UI subsystem should not have to know that).
-
-export async function getConsentState (app: App): Promise<ConsentState> {
-  return (await loadedStore(app)).getConsentState()
+/** Why telemetry does not run in this process, or undefined when it does. */
+export function telemetryOff (): OffReason | undefined {
+  return configured?.offReason
 }
 
-export async function decideConsent (app: App, optionId: DisclosureChoiceId): Promise<void> {
-  const option = DISCLOSURE_OPTIONS.find((candidate) => candidate.id === optionId)
-  if (option === undefined) throw new Error(`telemetry: unknown disclosure option id ${JSON.stringify(optionId)}`)
-  await (await loadedStore(app)).setConsentState(applyDisclosureChoice(option))
-  // A second open Settings window's Usage section held the old consent; the
-  // tab that made this choice already redraws itself without waiting for it.
-  notifyChanged()
+async function running (): Promise<TelemetryService | undefined> {
+  return await configured?.service
 }
 
-export async function setCountry (app: App, country: string): Promise<void> {
-  await (await loadedStore(app)).setCountry(country)
+/** The site now in front, from the shell's tab events. Nothing happens when telemetry does not run. */
+export function noteSite (site: SiteKey): void {
+  void running().then((service) => { service?.noteSite(site) })
 }
 
-/** The literal payload ADR-0004 requires the disclosure screen to render
- *  -- "the literal JSON that would be sent", not a description of it. */
-export async function previewDisclosurePayload (app: App): Promise<TelemetryPayload> {
-  const store = await loadedStore(app)
-  const meta: DisclosureMeta = {
-    installId: store.getInstallId(),
-    country: store.getCountry(),
-    version: app.getVersion(),
-    period: periodOf(realClock())
-  }
-  return buildDisclosurePayload(store.getAccountingState(), meta)
+export type StatusReply = { readonly off: OffReason } | { readonly off: undefined, readonly status: TelemetryStatus }
+
+export async function getTelemetryStatus (): Promise<StatusReply> {
+  const service = await running()
+  if (service === undefined) return { off: configured?.offReason ?? 'env' }
+  return { off: undefined, status: await service.status() }
 }
 
-export async function getSentHistory (app: App): Promise<HistoryState> {
-  return (await loadedStore(app)).getHistoryState()
+export async function setTelemetryOn (on: boolean, source: ConsentSource): Promise<boolean> {
+  const service = await running()
+  if (service === undefined) return false
+  await service.setOn(on, source)
+  return true
+}
+
+/** Whether the welcome screen puts the telemetry question: it runs here, and the person has not chosen. */
+export async function welcomeOffersTelemetry (): Promise<boolean> {
+  const service = await running()
+  return service === undefined ? false : await service.offerAtWelcome()
+}
+
+/** True when the request was carried out and the server confirmed. */
+export async function eraseTelemetry (): Promise<boolean> {
+  const service = await running()
+  return service === undefined ? false : await service.erase()
 }

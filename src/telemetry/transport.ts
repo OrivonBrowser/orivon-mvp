@@ -2,7 +2,7 @@
 // outside world -- the network call, the current time -- passed in by the
 // caller, so it is pure and testable with a fake Sender and a fake Clock.
 // See src/telemetry/README.md's Design notes for what "batching" means
-// here and why MAX_QUEUE_SIZE is 1.
+// here and why MAX_QUEUE_SIZE is 2.
 //
 // THE RULE EVERYTHING HERE SERVES: mayTransmit (disclosure.ts) is
 // consulted on every call to attemptSend, not once at startup and cached.
@@ -11,7 +11,7 @@
 // that would violate that, silently, because nothing else here would
 // notice the change.
 
-import { mayTransmit, type ConsentState, type TelemetryPayload } from './disclosure.js'
+import { mayTransmit, type ConsentState, type SentPayload } from './disclosure.js'
 import { keepNewest, type HistoryEntry } from './history.js'
 
 /** Reads the current time. Injected so this module never calls Date.now()
@@ -30,11 +30,11 @@ export type Clock = () => number
  * a throw exactly like `false` (see its try/catch), so a Sender that
  * throws anyway still cannot block or crash the app.
  */
-export type Sender = (payload: TelemetryPayload) => Promise<boolean>
+export type Sender = (payload: SentPayload) => Promise<boolean>
 
 /** One period's payload, waiting to be sent. */
 export interface QueuedPayload {
-  readonly payload: TelemetryPayload
+  readonly payload: SentPayload
   readonly enqueuedAtMs: number
 }
 
@@ -63,11 +63,11 @@ export const initialTransportState: TransportState = {
 
 /**
  * How many periods' worth of unsent payload the queue holds before the
- * oldest is dropped. Owner decision, not an AI-judgment figure like
- * accounting.ts's DEFAULT_IDLE_TIMEOUT_MS -- see README.md's Design notes
- * for why 1. A caller may still override it; see enqueue.
+ * oldest is dropped: the month that just closed and the one running.
+ * Anything older is not kept (ADR-0004 forbids a backlog that rebuilds a
+ * timeline). A caller may still override it; see enqueue.
  */
-export const MAX_QUEUE_SIZE = 1
+export const MAX_QUEUE_SIZE = 2
 
 export const BASE_BACKOFF_MS = 30_000 // 30s
 export const MAX_BACKOFF_MS = 6 * 60 * 60 * 1000 // 6h
@@ -104,7 +104,7 @@ export function computeBackoffMs (failureCount: number): number {
  * must not shove the entry to the back of the queue just because it was
  * touched again.
  */
-function upsert (queue: readonly QueuedPayload[], payload: TelemetryPayload, enqueuedAtMs: number): readonly QueuedPayload[] {
+function upsert (queue: readonly QueuedPayload[], payload: SentPayload, enqueuedAtMs: number): readonly QueuedPayload[] {
   const index = queue.findIndex((entry) => entry.payload.period === payload.period)
   if (index === -1) return [...queue, { payload, enqueuedAtMs }]
   const next = [...queue]
@@ -135,7 +135,7 @@ function upsert (queue: readonly QueuedPayload[], payload: TelemetryPayload, enq
  * queue"; carrying a stale backoff over onto an unrelated payload would
  * gate its very first attempt behind a delay it never earned.
  */
-export function enqueue (state: TransportState, payload: TelemetryPayload, consentState: ConsentState, clock: Clock, maxQueueSize: number = MAX_QUEUE_SIZE): TransportState {
+export function enqueue (state: TransportState, payload: SentPayload, consentState: ConsentState, clock: Clock, maxQueueSize: number = MAX_QUEUE_SIZE): TransportState {
   if (consentState !== 'accepted') return state
 
   const now = clock()
@@ -159,9 +159,14 @@ export function enqueue (state: TransportState, payload: TelemetryPayload, conse
  * send fails, it is not history" holds by construction, not by
  * discipline at the call site.
  */
+/** A send that happened: what went, when, and when its snapshot was taken (a snapshot taken after its month ended is that month's last). */
+export interface SentRecord extends HistoryEntry {
+  readonly enqueuedAtMs: number
+}
+
 export interface SendResult {
   readonly state: TransportState
-  readonly sent: HistoryEntry | undefined
+  readonly sent: SentRecord | undefined
 }
 
 /**
@@ -193,16 +198,13 @@ export function onConsentWithdrawn (state: TransportState): TransportState {
  * more payload after a decline lands. A decline does more than refuse --
  * it purges (onConsentWithdrawn), because a queue that merely goes quiet
  * while declined and drains the moment consent is re-enabled would send a
- * backlog of activity staged while telemetry was supposedly off. An
- * 'undecided' caller, by contrast, leaves state untouched: enqueue (below)
- * already refuses to stage anything before a choice is made, so there is
- * nothing to purge in that case.
+ * backlog of activity staged while telemetry was supposedly off. The same
+ * holds for 'undecided', which a notice-version change turns an old
+ * acceptance into: what was staged under it must not leave either.
  */
 export async function attemptSend (state: TransportState, consentState: ConsentState, sender: Sender, clock: Clock): Promise<SendResult> {
   if (!mayTransmit(consentState)) {
-    return consentState === 'declined'
-      ? { state: onConsentWithdrawn(state), sent: undefined }
-      : { state, sent: undefined }
+    return { state: onConsentWithdrawn(state), sent: undefined }
   }
 
   const head = state.queue[0]
@@ -249,7 +251,7 @@ export async function attemptSend (state: TransportState, consentState: ConsentS
   if (ok) {
     return {
       state: { queue: state.queue.slice(1), failureCount: 0, nextAttemptAtMs: undefined, inFlightSince: undefined },
-      sent: { payload: head.payload, sentAtMs: now }
+      sent: { payload: head.payload, sentAtMs: now, enqueuedAtMs: head.enqueuedAtMs }
     }
   }
 

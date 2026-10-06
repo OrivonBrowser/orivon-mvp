@@ -17,6 +17,7 @@ import { installMediaGrants } from '../media-grants/install-media-grants.js'
 import { installMemorySaver } from '../memory-saver/install-memory-saver.js'
 import { installTabSlots } from '../overlays/install-tab-slots.js'
 import { installTabVisibility } from './install-tab-visibility.js'
+import { installTelemetrySites } from './install-telemetry-sites.js'
 import { installFormWatch } from '../passwords/install-form-watch.js'
 import { installEthGatewayRedirect } from './eth-gateway-redirect.js'
 import { installPrivacyNet } from '../privacy/install-privacy-net.js'
@@ -60,7 +61,8 @@ export const SHELL_INSTALLERS: readonly ShellInstaller[] = [
   installSitePermissions,
   installTabGroups,
   installTabSlots,
-  installTabVisibility
+  installTabVisibility,
+  installTelemetrySites
 ]
 
 /** An installer that throws is logged and skipped: one feature failing to wire must not stop the others or the first window. */
