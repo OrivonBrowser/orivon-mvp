@@ -1,9 +1,9 @@
 /**
  * Starts Orivon from this checkout the way a desktop launcher does, and writes the Linux desktop entry that calls it.
- * A start while Orivon is open goes straight to Electron, which hands the request to the open browser and exits;
- * only a start with nothing open builds first. A dock click then never waits for a build, never rewrites `out/`
- * under a running browser, and its switches (`--new-window`, `--new-private-window`) reach the browser, which
- * `electron-vite preview` would drop.
+ * A start while anything runs this checkout's Electron goes straight to it, and a browser already open takes the
+ * request and the start exits; only a start with nothing running builds first. A dock click then never waits for a
+ * build, never rewrites `out/` under a running browser (a profile or a private session included), and its switches
+ * (`--new-window`, `--new-private-window`) reach the browser, which `electron-vite preview` would drop.
  *
  * The entry is `orivon-source.desktop`, never `orivon.desktop`: that name is the installed package's (ADR-0057), and
  * a file of that name in the user's own directory would hide the package's entry, its actions and its default choice.
@@ -13,58 +13,41 @@
  *   node scripts/launch-from-source.mjs remove
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { homedir, hostname } from 'node:os'
-import { delimiter, dirname, join, resolve } from 'node:path'
+import { homedir } from 'node:os'
+import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isInvokedDirectly } from './cli.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const SCRIPT = fileURLToPath(import.meta.url)
-const USER_DATA_DIR = '--user-data-dir='
-
-/** The pid a Chromium `SingletonLock` link (`<host>-<pid>`) names, when it is this host's; null otherwise. */
-export function lockPid (target, host) {
-  const at = target.lastIndexOf('-')
-  if (at <= 0 || target.slice(0, at) !== host) return null
-  const pid = Number(target.slice(at + 1))
-  return Number.isInteger(pid) && pid > 0 ? pid : null
-}
-
-/** The data directory the start will lock: the one `--user-data-dir=` names, else Electron's default on Linux. */
-export function userDataDir (args, env, home, appName) {
-  for (const arg of args) {
-    if (arg === '--') break
-    if (arg.startsWith(USER_DATA_DIR)) return arg.slice(USER_DATA_DIR.length)
-  }
-  return join(env.XDG_CONFIG_HOME || join(home, '.config'), appName)
-}
-
-function isAlive (pid) {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (error) {
-    return error.code === 'EPERM'
-  }
-}
 
 /**
- * Whether a browser holds the directory's lock. A crash leaves the link behind, so its process must still be alive.
- * @param {string} dir
- * @param {{ readLink?: (path: string) => string, host?: string, alive?: (pid: number) => boolean }} [seams]
+ * Whether a process runs `binary`, read from Linux's `/proc`. Each checkout has its own Electron binary, so this is
+ * every Orivon of this checkout: the default profile, another profile, a private session. False where there is no `/proc`.
+ * @param {string} binary
+ * @param {{ pids?: () => string[], exeOf?: (pid: string) => string }} [seams]
  */
-export function isOpen (dir, { readLink = (path) => readlinkSync(path), host = hostname(), alive = isAlive } = {}) {
-  let target
+export function isRunning (binary, { pids = () => readdirSync('/proc'), exeOf = (pid) => readlinkSync(`/proc/${pid}/exe`) } = {}) {
+  let listed
   try {
-    target = readLink(join(dir, 'SingletonLock'))
+    listed = pids().filter((name) => /^\d+$/.test(name))
   } catch {
     return false
   }
-  const pid = lockPid(target, host)
-  return pid !== null && alive(pid)
+  return listed.some((pid) => {
+    try {
+      return exeOf(pid).replace(/ \(deleted\)$/, '') === binary
+    } catch {
+      return false
+    }
+  })
 }
+
+/** `$XDG_DATA_HOME` when it is an absolute path (the specification says to ignore any other), else `~/.local/share`:
+ * the rule the browser reads the entry back with (`src/main/os/site-shortcut-runner.ts`). */
+export const dataHome = (env, home) => isAbsolute(env.XDG_DATA_HOME ?? '') ? env.XDG_DATA_HOME : join(home, '.local', 'share')
 
 /** A path the entry can name unquoted: the Desktop Entry Specification reserves these characters, and `xdg-settings`
  * takes the program as `Exec`'s first word, quotes and all, so a quoted one would name no program. */
@@ -102,19 +85,18 @@ export function desktopEntry (node, script, root) {
   ].join('\n')
 }
 
-const entryPath = (env, home, name) => join(env.XDG_DATA_HOME || join(home, '.local', 'share'), 'applications', name)
+const entryPath = (env, home, name) => join(dataHome(env, home), 'applications', name)
 
 function run (args) {
-  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
   // A launcher's PATH may not reach this Node, which the build's npx needs; and a shell's ELECTRON_RUN_AS_NODE would
   // turn Electron into plain Node.
   const env = { ...process.env, PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}` }
   delete env.ELECTRON_RUN_AS_NODE
-  if (!isOpen(userDataDir(args, env, homedir(), pkg.productName ?? pkg.name))) {
+  const electron = createRequire(import.meta.url)('electron')
+  if (!isRunning(realpathSync(electron))) {
     const built = spawnSync(process.execPath, [join(ROOT, 'scripts', 'build-ordinary.mjs')], { cwd: ROOT, env, stdio: 'inherit' })
     if (built.status !== 0) process.exit(built.status ?? 1)
   }
-  const electron = createRequire(import.meta.url)('electron')
   const child = spawn(electron, [ROOT, ...args], { env, stdio: 'inherit' })
   child.on('close', (code) => { process.exit(code ?? 1) })
 }

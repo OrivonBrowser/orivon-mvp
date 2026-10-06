@@ -249,8 +249,8 @@ as actions.
 
 On Linux, `node scripts/launch-from-source.mjs install` gives a run from source the same: an "Orivon (source)" entry
 (`~/.local/share/applications/orivon-source.desktop`) with New Window and New Private Window. Its start builds, as
-`npm start` does, only when no Orivon holds the default profile's lock; with one open, a click reaches it at once and
-`out/` is never rebuilt under it. Once the entry is installed, Settings > Default browser can make that run from source
+`npm start` does, only when nothing runs this checkout's Electron (any profile or private session); with one open,
+a click reaches it at once and `out/` is never rebuilt under it. Once the entry is installed, Settings > Default browser can make that run from source
 the default browser. `remove` deletes the entry. Never name an entry of your own `orivon.desktop`: in
 `~/.local/share/applications` it hides the installed package's entry, its actions and its default-browser choice.
 

@@ -1,45 +1,35 @@
 import { describe, expect, it } from 'vitest'
-import { desktopEntry, isOpen, lockPid, userDataDir } from '../launch-from-source.mjs'
+import { dataHome, desktopEntry, isRunning } from '../launch-from-source.mjs'
 
-describe('lockPid', () => {
-  it('reads the pid of a lock this host holds, with a dash in the host name', () => {
-    expect(lockPid('my-laptop-4242', 'my-laptop')).toBe(4242)
-  })
-
-  it('ignores a lock another host holds, and a link that names no pid', () => {
-    expect(lockPid('other-4242', 'my-laptop')).toBeNull()
-    expect(lockPid('my-laptop-', 'my-laptop')).toBeNull()
-    expect(lockPid('my-laptop-x1', 'my-laptop')).toBeNull()
-    expect(lockPid('4242', 'my-laptop')).toBeNull()
-  })
-})
-
-describe('userDataDir', () => {
-  it('is the app name under the config home, the XDG one when set', () => {
-    expect(userDataDir([], {}, '/home/a', 'orivon')).toBe('/home/a/.config/orivon')
-    expect(userDataDir(['--new-window'], { XDG_CONFIG_HOME: '/cfg' }, '/home/a', 'orivon')).toBe('/cfg/orivon')
-  })
-
-  it('is the directory --user-data-dir= names, unless it follows --', () => {
-    expect(userDataDir(['--user-data-dir=/d'], {}, '/home/a', 'orivon')).toBe('/d')
-    expect(userDataDir(['--', '--user-data-dir=/d'], {}, '/home/a', 'orivon')).toBe('/home/a/.config/orivon')
-  })
-})
-
-describe('isOpen', () => {
-  const lock = (target: string) => (path: string): string => {
-    expect(path).toBe('/d/SingletonLock')
-    return target
+describe('isRunning', () => {
+  const BINARY = '/src/orivon/node_modules/electron/dist/electron'
+  const exes: Record<string, string> = { 1: '/usr/lib/systemd/systemd', 40: '/usr/bin/bash', 77: BINARY }
+  const exeOf = (pid: string): string => {
+    const exe = exes[pid]
+    if (exe === undefined) throw new Error('EACCES')
+    return exe
   }
 
-  it('is true when this host holds the lock and its process is alive', () => {
-    expect(isOpen('/d', { readLink: lock('host-7'), host: 'host', alive: () => true })).toBe(true)
+  it('is true when a process runs this checkout\'s binary, whichever profile or session it is', () => {
+    expect(isRunning(BINARY, { pids: () => ['1', 'self', '40', '77'], exeOf })).toBe(true)
   })
 
-  it('is false for a lock a crash left behind, one of another host, and no lock at all', () => {
-    expect(isOpen('/d', { readLink: lock('host-7'), host: 'host', alive: () => false })).toBe(false)
-    expect(isOpen('/d', { readLink: lock('other-7'), host: 'host', alive: () => true })).toBe(false)
-    expect(isOpen('/d', { readLink: () => { throw new Error('ENOENT') }, host: 'host', alive: () => true })).toBe(false)
+  it('counts a binary replaced on disk while it runs', () => {
+    expect(isRunning(BINARY, { pids: () => ['9'], exeOf: () => `${BINARY} (deleted)` })).toBe(true)
+  })
+
+  it('is false for another checkout\'s binary, a process it may not read, and a system with no /proc', () => {
+    expect(isRunning('/other/node_modules/electron/dist/electron', { pids: () => ['1', '40', '77'], exeOf })).toBe(false)
+    expect(isRunning(BINARY, { pids: () => ['1', '2'], exeOf })).toBe(false)
+    expect(isRunning(BINARY, { pids: () => { throw new Error('ENOENT') }, exeOf })).toBe(false)
+  })
+})
+
+describe('dataHome', () => {
+  it('is $XDG_DATA_HOME when absolute, and ~/.local/share otherwise, as the browser reads it back', () => {
+    expect(dataHome({ XDG_DATA_HOME: '/data' }, '/home/a')).toBe('/data')
+    expect(dataHome({ XDG_DATA_HOME: 'relative/data' }, '/home/a')).toBe('/home/a/.local/share')
+    expect(dataHome({}, '/home/a')).toBe('/home/a/.local/share')
   })
 })
 
