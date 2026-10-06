@@ -52,9 +52,9 @@ const SPECS = {
   // Whether pages are written down, and for how long. 90 days is provisional: what a person expects a browser to remember is not yet measured.
   'history.remember': { kind: 'bool', default: true },
   'history.retentionDays': { kind: 'enum', options: ['7', '30', '90', 'forever'], default: '90', labels: { 7: '7 days', 30: '30 days', 90: '90 days', forever: 'Forever' } },
-  // Network privacy: what Orivon tells sites and how it connects. All off or permissive until the person chooses.
+  // Network privacy: what Orivon tells sites and how it connects. Permissive until the person chooses, except the Global Privacy Control signal, which is on.
   'privacy.cookies': { kind: 'enum', options: ['all', 'blockThirdParty'], default: 'all' },
-  'privacy.globalPrivacyControl': { kind: 'bool', default: false },
+  'privacy.globalPrivacyControl': { kind: 'bool', default: true },
   'privacy.doNotTrack': { kind: 'bool', default: false },
   'privacy.httpsOnly': { kind: 'bool', default: false },
   'privacy.secureDns': { kind: 'enum', options: ['off', 'automatic', 'cloudflare', 'quad9'], default: 'off' },

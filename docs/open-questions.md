@@ -1935,18 +1935,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A373: "Ask sites not to sell or share my data" sends the header but sets no `navigator.globalPrivacyControl` **[AI-REC]**
-
-- **Question:** The setting adds `Sec-GPC: 1` to requests; the Global Privacy Control spec also has pages read
-  `navigator.globalPrivacyControl`, which nothing in Orivon defines. Expose it in the tab's main world while the
-  setting is on?
-- **Why it matters:** a consent banner that checks only the property shows its "sell or share" opt-in as if no signal
-  were sent.
-- **Options:** define the property from the ordinary tab's preload, reading the setting when the page loads (rec.;
-  a change applies from the next load); leave the header alone.
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
 ### A365: Maximising under a window manager is not shown to relayout the page area **[AI-REC]**
 
 - **Question:** Under openbox on a virtual X display, `win.maximize()` and `unmaximize()` were followed by no `resize` event for 1.5 s, and the tab view stayed the size the window had before (1272 x 720 in a 1280 x 800 window). Under a private GNOME Shell the same calls gave `maximize`, `move`, `resize` and a laid-out page. Does a window that a window manager maximises keep the old page area on X11, or is it this display?

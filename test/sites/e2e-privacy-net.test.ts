@@ -153,15 +153,15 @@ it('sends Sec-GPC and DNT when they are on, and lets every cookie through', asyn
     expect(seenWith(thirdSeen, 'n=two')?.headers['cookie']).toContain('one=1')
 
     const tab = app.windows().find((w) => w.url().includes(`127.0.0.1:${String(firstPort)}`))
-    expect(typeof await tab?.evaluate(() => (navigator as unknown as { globalPrivacyControl?: unknown }).globalPrivacyControl)).toBe('undefined')
+    expect(await tab?.evaluate(() => (navigator as unknown as { globalPrivacyControl?: unknown }).globalPrivacyControl)).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
   }
 }, TEST_TIMEOUT_MS)
 
-it('sends neither signal by default, and strips a cross-site cookie at both ends when third-party cookies are blocked', async () => {
-  const { app, chrome } = await launched({ 'privacy.cookies': 'blockThirdParty' })
+it('sends neither signal when both are off, and strips a cross-site cookie at both ends when third-party cookies are blocked', async () => {
+  const { app, chrome } = await launched({ 'privacy.cookies': 'blockThirdParty', 'privacy.globalPrivacyControl': false })
   try {
     await visit(chrome, `http://127.0.0.1:${String(firstPort)}/?n=blocked`)
     expect(await waitFor(() => hasSeen(thirdSeen, 'n=blocked'))).toBe(true)
@@ -187,7 +187,7 @@ it('sends neither signal by default, and strips a cross-site cookie at both ends
   }
 }, TEST_TIMEOUT_MS)
 
-it('shows the five rows in Settings, saves a choice, applies it on the next request and accepts secure DNS live', async () => {
+it('shows the five rows in Settings, saves a choice, applies it on the next request, accepts secure DNS live and offers a restart for the signal', async () => {
   const { app, chrome } = await launched({})
   try {
     const userData = await userDataOf(app)
@@ -201,6 +201,10 @@ it('shows the five rows in Settings, saves a choice, applies it on the next requ
     await shoot(page, 'settings-privacy-rows')
 
     await page.locator('#row-do-not-track input[type=checkbox]').click()
+    expect(await page.locator('#row-global-privacy-control-restart').count()).toBe(0)
+    await page.locator('#row-global-privacy-control input[type=checkbox]').click()
+    expect(await waitFor(() => savedSetting(userData, 'privacy.globalPrivacyControl') === false)).toBe(true)
+    expect(await page.locator('#row-global-privacy-control-restart').count()).toBe(1)
     await page.locator('#row-secure-dns select').selectOption('cloudflare')
     await page.locator('#row-cookies select').selectOption('blockThirdParty')
     expect(await waitFor(() => savedSetting(userData, 'privacy.doNotTrack') === true && savedSetting(userData, 'privacy.secureDns') === 'cloudflare' && savedSetting(userData, 'privacy.cookies') === 'blockThirdParty')).toBe(true)
@@ -209,7 +213,8 @@ it('shows the five rows in Settings, saves a choice, applies it on the next requ
     await visit(chrome, `http://127.0.0.1:${String(plainPort)}/after`)
     expect(await waitFor(() => hasSeen(plainSeen, '/after'))).toBe(true)
     expect(seenWith(plainSeen, '/after')?.headers['dnt']).toBe('1')
-    expect(seenWith(plainSeen, '/after')?.headers['sec-gpc']).toBeUndefined()
+    // Global Privacy Control is read when Orivon starts, so turning it off here leaves this run sending it.
+    expect(seenWith(plainSeen, '/after')?.headers['sec-gpc']).toBe('1')
     expect(mainOutput(app)).not.toContain('could not configure secure DNS')
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
