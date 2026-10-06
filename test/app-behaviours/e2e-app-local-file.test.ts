@@ -93,6 +93,18 @@ async function partitionOf (app: ElectronApplication, url: string, names: string
   }, { target: url, candidates: names })
 }
 
+/** Makes the window a little narrower, which the overlay host answers by moving the open panel and starting its guard over. */
+async function narrowWindow (app: ElectronApplication): Promise<void> {
+  const shown = await waitFor(() => app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows().every((win) => win.isVisible())))
+  expect(shown, 'the window was never shown').toBe(true)
+  await app.evaluate(({ BaseWindow }) => {
+    for (const win of BaseWindow.getAllWindows()) {
+      const [width, height] = win.getContentSize()
+      win.setContentSize((width ?? 1280) - 40, height ?? 800)
+    }
+  })
+}
+
 it('[app:local-file-grant] asks with a warning and a double press, grants to that exact file, and finds it all again after a restart', async () => {
   const appUrl = urlOf('app.html')
   const siblingUrl = urlOf('sibling.html')
@@ -114,13 +126,22 @@ it('[app:local-file-grant] asks with a warning and a double press, grants to tha
     expect(said.origin).toContain('app.html')
 
     // One press answers nothing and records nothing, and a second one that comes after the window is a first press again.
-    // A pointer that reached the button during the guard and rests there arms nothing: a press says to move onto the button, and entering it again arms it.
+    // A pointer that rests on the button while the guard starts over (the panel moved under it) arms nothing: a press says to leave and enter again, and entering it again arms it.
     const allow = panel.locator('.q .btn-row .btn[data-button="1"]')
+    await panel.waitForSelector('.q:not(.arming)')
     await allow.hover()
+    await panel.evaluate(() => {
+      const root = document.querySelector('.q')
+      const seen = window as unknown as { guardRestarted: boolean }
+      seen.guardRestarted = false
+      new MutationObserver(() => { if (root?.classList.contains('arming') === true) seen.guardRestarted = true }).observe(root as Element, { attributes: true, attributeFilter: ['class'] })
+    })
+    await narrowWindow(first.app)
+    expect(await waitFor(async () => await panel.evaluate(() => (window as unknown as { guardRestarted: boolean }).guardRestarted)), 'the resize did not restart the guard').toBe(true)
     await panel.waitForSelector('.q:not(.arming)')
     await allow.click()
     await delay(DOUBLE_PRESS_LATE_MS)
-    expect(await panel.locator('.q-hint').textContent()).toContain('Move the pointer onto the button')
+    expect(await panel.locator('.q-hint').textContent()).toContain('Move the pointer off the button and back onto it')
     expect(await questionGone(first.app)).toBe(false)
     expect(existsSync(join(profile, 'local-file-apps.json'))).toBe(false)
     await panel.locator('.q-message').hover()

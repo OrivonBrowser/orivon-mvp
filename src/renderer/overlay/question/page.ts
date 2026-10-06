@@ -14,7 +14,7 @@ import './question.css'
 const AGAIN_LABEL = 'Press again'
 
 /** What a press on a double-press button that is not armed is answered with. */
-const HINT = 'Move the pointer onto the button, then press it twice.'
+const HINT = 'Move the pointer off the button and back onto it (or Tab away and back), then press it twice.'
 
 export const questionPage: OverlayPage = {
   mount (content, overlay: Overlay) {
