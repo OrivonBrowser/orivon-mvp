@@ -188,8 +188,8 @@ Stated here rather than discovered later. All of these are real and none is a bu
   light client that proves `.eth` names starts at launch and follows the chain through
   `ethereum-beacon-api.publicnode.com` and one of three RPCs (`eth.drpc.org`, `rpc.mevblocker.io`,
   `ethereum-rpc.publicnode.com`): about 20 MB an hour, whether or not you open a `.eth` name.
-  Opening one tells those RPCs the name, the IPFS gateways (`trustless-gateway.link`,
-  `ipfs.orbitor.dev`, `ipfs.filebase.io`) the content, and, for some names, `name.web3.storage`,
+  Opening one tells those RPCs the name, the IPFS gateways (`ipfs.orbitor.dev`,
+  `ipfs.filebase.io`, `trustless-gateway.link`) the content, and, for some names, `name.web3.storage`,
   a DNS-over-HTTPS resolver (`cloudflare-dns.com`, `dns.google`) or a server the name's own
   resolver chooses. None of them is trusted for correctness, and Settings lists them all.
   `ORIVON_ETH_LIGHT_CLIENT=off` switches it off for a run, and then no `.eth` name loads.
