@@ -1,0 +1,60 @@
+# Known limitations
+
+What Orivon does not do yet, or does in a way worth knowing before you rely on it. Each one is a
+boundary of this version, written down so you meet it here rather than in use. None is a bug.
+
+## Network privacy
+
+- **Peers see your IP address.** This version has no Tor or proxy routing, so a peer-to-peer app
+  connects from your real address. When a system proxy is set, `orivon.net` refuses to open
+  sockets or resolve names rather than go around the proxy.
+- **No automatic port forwarding.** There is no UPnP, so behind NAT an app listening for peers is
+  reachable only through a port you forward yourself.
+- **No local peer discovery.** The manifest grammar has no multicast bind.
+- **Text typed in the address bar that is not an address goes to a search engine.** DuckDuckGo by
+  default; Settings > Search offers a short list or your own address. Suggestions from the engine
+  as you type are off by default; switched on, each pause in typing sends the text, and a private
+  window never sends it.
+
+## What `.eth` and IPFS reveal
+
+Opening a `.eth` name or an `ipfs://` address is verified on your machine, and it still asks
+servers for data. None of them is trusted to be right; each of them sees what it is asked.
+
+- **The light client contacts Ethereum servers while `.eth` names are in use.** It starts when a
+  `.eth` address is typed or opened and stops about ten minutes after the last one. It also runs
+  once, two minutes after launch, when its newest checkpoint is more than seven days old. It
+  follows the chain through `ethereum-beacon-api.publicnode.com` and one of three RPCs
+  (`eth.drpc.org`, `rpc.mevblocker.io`, `ethereum-rpc.publicnode.com`).
+- **Opening a name tells those RPCs the name.** The IPFS gateways (`ipfs.orbitor.dev`,
+  `ipfs.filebase.io`, `trustless-gateway.link`) learn the content you fetch, and for some names
+  `name.web3.storage`, a DNS-over-HTTPS resolver (`cloudflare-dns.com`, `dns.google`) or a server
+  the name's own resolver chooses learns the name. Settings > Web3 lists them all.
+- **Servers can withhold, not lie.** A server can refuse to answer or answer slowly. It cannot
+  hand you a wrong name record or a wrong byte without the check failing. The light client's root
+  of trust is a chain checkpoint shipped with each release.
+- `ORIVON_ETH_LIGHT_CLIENT=off` switches the light client off for a run; no `.eth` name loads
+  then.
+
+## Apps
+
+- **On a first visit, an app's own code starts before you answer its prompt.** Anything it asks
+  for in that moment is refused; once you accept, the tab reloads and every later visit starts
+  with the grant already held.
+- **Native code runs only as WebAssembly.** A Node addon loads through its WebAssembly build and a
+  spawned program is a WASI program from the app's own files. An app that needs a native binary
+  or a program installed on your system is refused, by name.
+
+## Packages
+
+- **Windows and macOS packages are not signed with a bought certificate.** On Windows,
+  SmartScreen warns on first run (**More info**, then **Run anyway**). On macOS the app is signed
+  ad hoc and not notarized, so the first open is refused: choose **Open Anyway** in **System
+  Settings > Privacy & Security**. [`development/packaging.md`](development/packaging.md) has the
+  detail. Linux packages are not signed on any distribution.
+
+## Usage statistics
+
+- **Nothing is measured or sent until you choose.** Usage statistics are a choice between two
+  buttons, neither preselected; the exact text that would be sent is shown beside them. A private
+  window neither measures nor sends.

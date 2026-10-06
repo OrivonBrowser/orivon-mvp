@@ -54,6 +54,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Every ported app republished naming its home, <app>.orivonstack.eth: Attila's judged level counts only there, and in development under the same names.
 - Google sign-ins survive switching between the installed package and the source run: the source binary encrypts cookies as the package does.
 - ipns:// keys now open, in a tab and as the default Attila provider; a dead public gateway had stalled every lookup past its deadline.
+- README rewritten for launch day: alpha, apps linked by `.eth` name, everyday-browser features up front, limits moved to `docs/known-limitations.md`.
 
 ### In my head
 
