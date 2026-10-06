@@ -24,7 +24,7 @@ const { webRequestOwnerFor } = await import('../../sessions/web-request-owner.js
 const { siteAsks } = await import('../../sessions/site-asks.js')
 
 function rig (values: Record<string, string | boolean>, tab?: object) {
-  const current = { 'privacy.cookies': 'all', 'privacy.secureDns': 'off', 'privacy.globalPrivacyControl': false, 'privacy.doNotTrack': false, 'privacy.httpsOnly': false, ...values } as Record<string, string | boolean>
+  const current = { 'privacy.cookies': 'all', 'privacy.secureDns': 'off', 'privacy.doNotTrack': false, 'privacy.httpsOnly': false, ...values } as Record<string, string | boolean>
   const listeners: Array<(change: { key: string }) => void> = []
   const configureHostResolver = vi.fn()
   const app = { configureHostResolver } as unknown as App
@@ -60,7 +60,7 @@ describe('the privacy-net installer', () => {
     change('privacy.httpsOnly')
     expect(active).toEqual({ onBeforeRequest: 0, onBeforeSendHeaders: 0, onHeadersReceived: 0 })
 
-    for (const key of ['privacy.globalPrivacyControl', 'privacy.doNotTrack']) {
+    for (const key of ['privacy.doNotTrack']) {
       current[key] = true
       change(key)
       expect(owner.onBeforeSendHeaders).toHaveBeenLastCalledWith(20, { urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }, expect.any(Function), expect.any(Function))
@@ -79,11 +79,11 @@ describe('the privacy-net installer', () => {
     expect(active).toEqual({ onBeforeRequest: 0, onBeforeSendHeaders: 0, onHeadersReceived: 0 })
   })
 
-  it('keeps the header handler while a signal or the cookie block still needs it', () => {
-    const { current, change } = rig({ 'privacy.globalPrivacyControl': true, 'privacy.cookies': 'blockThirdParty' })
+  it('keeps the header handler while Do Not Track or the cookie block still needs it', () => {
+    const { current, change } = rig({ 'privacy.doNotTrack': true, 'privacy.cookies': 'blockThirdParty' })
     expect(active).toEqual({ onBeforeRequest: 0, onBeforeSendHeaders: 1, onHeadersReceived: 1 })
-    current['privacy.globalPrivacyControl'] = false
-    change('privacy.globalPrivacyControl')
+    current['privacy.doNotTrack'] = false
+    change('privacy.doNotTrack')
     expect(active.onBeforeSendHeaders).toBe(1)
     current['privacy.cookies'] = 'all'
     change('privacy.cookies')

@@ -3,11 +3,6 @@
 // the web-request owner can tell "no opinion" from "rewrite the headers"
 // (web-request-owner.ts answers a bare `{}` for an unchanged result).
 
-export interface PrivacySignals {
-  readonly gpc: boolean
-  readonly dnt: boolean
-}
-
 /** The key `headers` already holds for `name`, whatever its case. */
 function keyOf (headers: Readonly<Record<string, unknown>>, name: string): string | undefined {
   const wanted = name.toLowerCase()
@@ -34,12 +29,9 @@ function withHeader (headers: Record<string, string>, name: string, value: strin
   return next
 }
 
-/** Adds `Sec-GPC: 1` and `DNT: 1` as asked; a signal that is off leaves the request as it was. */
-export function withPrivacySignals (headers: Record<string, string>, signals: PrivacySignals): Record<string, string> {
-  let next = headers
-  if (signals.gpc) next = withHeader(next, 'Sec-GPC', '1')
-  if (signals.dnt) next = withHeader(next, 'DNT', '1')
-  return next
+/** Adds `DNT: 1` when asked; off leaves the request as it was. Global Privacy Control is not here: the engine sends it (`gpc-switch.ts`). */
+export function withDoNotTrack (headers: Record<string, string>, on: boolean): Record<string, string> {
+  return on ? withHeader(headers, 'DNT', '1') : headers
 }
 
 /** `headers` without the `Cookie` request header. */

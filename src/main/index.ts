@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { app, BaseWindow, dialog, nativeTheme, screen, session } from 'electron'
 import { createShellWindow, resolveDashboardUrl } from './shell/window.js'
 import { fileProtocolFuse } from './local-files/file-fuse.js'
@@ -22,6 +23,8 @@ import { createSubsystemContext, criticalFailureMessage, publishOpenTabs, publis
 import { subsystems } from './subsystems.js'
 import { DebouncedWriter } from './storage/debounced-writer.js'
 import { devOnlySwitches } from './shell/dev-switches.js'
+import { applyGlobalPrivacyControl } from './privacy/gpc-switch.js'
+import { readSettingBeforeReady } from './settings/settings-file.js'
 import { chromeUserAgent } from './shell/user-agent.js'
 import { planIntro } from './shell/intro-state.js'
 import { setTelemetryOn, welcomeOffersTelemetry } from '../telemetry/runner.js'
@@ -112,6 +115,8 @@ const APP_LISTENER_ROOM = 24
 /** Starts the browser this process is. */
 export function boot (runtime: Runtime): void {
   app.setMaxListeners(Math.max(app.getMaxListeners(), APP_LISTENER_ROOM))
+  // Chromium reads the feature at start, so the saved choice is read here, before the settings store exists.
+  applyGlobalPrivacyControl(app.commandLine, readSettingBeforeReady(join(runtime.dir, 'settings.json'), 'privacy.globalPrivacyControl'))
   const beforeReadyFailures = runBeforeReady(subsystems)
   report(beforeReadyFailures)
 
