@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ChromeContext } from '../chrome/context.js'
 import { CHROME_MODULES } from '../chrome/modules.js'
-import { CONTENT_BLOCKED_NOTE, createContentDot } from '../chrome/content-dot.js'
+import { CONTENT_BLOCKED_NOTE, UPDATE_OFFERED_NOTE, createContentDot } from '../chrome/content-dot.js'
 
 afterEach(() => { vi.unstubAllGlobals() })
 
@@ -14,7 +14,7 @@ function mount (present = true) {
   vi.stubGlobal('document', { getElementById: (id: string) => present && id === 'site-permissions-btn' ? key : null })
   const module = createContentDot()
   module.init({} as ChromeContext)
-  const render = (contentBlocked: boolean): void => { module.render?.({ contentBlocked } as never, {} as ChromeContext) }
+  const render = (contentBlocked: boolean, updateOffered = false): void => { module.render?.({ contentBlocked, updateOffered } as never, {} as ChromeContext) }
   return { attrs, render }
 }
 
@@ -30,6 +30,25 @@ describe('the content dot', () => {
     expect(attrs.get('aria-description')).toBe(CONTENT_BLOCKED_NOTE)
     render(false)
     expect(attrs.size).toBe(0)
+  })
+
+  it('marks the key for an app with a new version offered, on its own attribute, and clears it', () => {
+    const { attrs, render } = mount()
+    render(false, true)
+    expect(attrs.has('data-update-offered')).toBe(true)
+    expect(attrs.has('data-content-blocked')).toBe(false)
+    expect(attrs.get('aria-description')).toBe(UPDATE_OFFERED_NOTE)
+    render(false, false)
+    expect(attrs.size).toBe(0)
+  })
+
+  it('names both notes when a site has something blocked and an update offered', () => {
+    const { attrs, render } = mount()
+    render(true, true)
+    expect(attrs.get('aria-description')).toBe(`${CONTENT_BLOCKED_NOTE}. ${UPDATE_OFFERED_NOTE}`)
+    render(true, false)
+    expect(attrs.has('data-update-offered')).toBe(false)
+    expect(attrs.get('aria-description')).toBe(CONTENT_BLOCKED_NOTE)
   })
 
   it('does nothing when the key is not in the page', () => {

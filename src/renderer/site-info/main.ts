@@ -3,6 +3,7 @@ import type { SiteTrust } from '../../main/browsing/site-trust.js'
 import type { ApplyResult, SiteDataSnapshot } from '../../main/ipc/site-info-ipc.js'
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import { closeOnEscape } from '../pages/shared/escape-closes.js'
+import type { ApplyOutcome } from '../../main/install/app-updates.js'
 import { renderMainPage } from './main-view.js'
 import { renderWeb3Page } from './web3-view.js'
 import { renderDataPage } from './data-view.js'
@@ -25,6 +26,8 @@ interface OrivonSiteInfo {
   sitePermissions: () => Promise<SitePermissionsView | null>
   setSitePermission: (kind: string, value: string) => Promise<SitePermissionsView | null>
   revokePickedPath: (pickId: string) => Promise<SiteInfo | null>
+  applyUpdate: (cid: string) => Promise<ApplyOutcome>
+  openHome: () => Promise<void>
   clearBrowserData: () => Promise<void>
   removeCookie: (key: string) => Promise<void>
   clearCookies: () => Promise<void>
@@ -74,6 +77,8 @@ let data: SiteDataSnapshot | null = null
 const staged = new Map<CapabilityKind, boolean>()
 let pendingStaleCapabilities = new Set<CapabilityKind>()
 let showReloadBanner = false
+/** Why the last try at the offered update did not install, shown on its card. */
+let updateFailure: string | null = null
 /** Null for a site with no per-site settings: an app, which its capability rows already cover. */
 let sitePermissions: SitePermissionsView | null = null
 /** Kinds the person set in this visit stay listed even when put back to their default. */
@@ -128,8 +133,10 @@ function renderCurrent (): void {
         onReload: () => { void bridge.reload() }
       },
       onManageExtensions: () => { void bridge.openExtensions() },
-      onReload: () => { void bridge.reload() }
-    })
+      onReload: () => { void bridge.reload() },
+      onApplyUpdate: (cid) => { void applyUpdate(cid) },
+      onOpenHome: () => { void bridge.openHome() }
+    }, updateFailure)
   } else if (page === 'web3') {
     renderWeb3Page(web3Section, trust, () => { page = 'main'; renderCurrent() })
   } else if (page === 'data' && info !== null) {
@@ -146,18 +153,30 @@ function renderCurrent (): void {
   reportContentHeight()
 }
 
+/** Takes the offered update. Main asks the confirmation Trust & Force needs; the tabs reload when it installs, and this popup is done. */
+async function applyUpdate (cid: string): Promise<void> {
+  const outcome = await bridge.applyUpdate(cid)
+  if (outcome.ok) {
+    bridge.close()
+    return
+  }
+  updateFailure = outcome.reason === 'declined' ? null : `Could not switch: ${outcome.reason}`
+  info = await bridge.get()
+  renderCurrent()
+}
+
 async function ensureTrust (): Promise<void> {
   if (trustFetched) return
   trustFetched = true
   trust = await bridge.trust()
-  if (trust?.judged.status === 'pending') setTimeout(() => { void refreshPendingTrust() }, PENDING_RETRY_MS)
+  if (trust?.judged.status === 'pending' || trust?.homePending === true) setTimeout(() => { void refreshPendingTrust() }, PENDING_RETRY_MS)
 }
 
 /** The Web3 Score provider was still being asked: ask again until it answers, then repaint. */
 async function refreshPendingTrust (): Promise<void> {
   trust = await bridge.trust()
   renderCurrent()
-  if (trust?.judged.status === 'pending') setTimeout(() => { void refreshPendingTrust() }, PENDING_RETRY_MS)
+  if (trust?.judged.status === 'pending' || trust?.homePending === true) setTimeout(() => { void refreshPendingTrust() }, PENDING_RETRY_MS)
 }
 
 async function openWeb3 (): Promise<void> {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildSiteTrust, providerIdFor, web3Score, withProviderVerdict } from '../site-trust.js'
+import type { Home } from '../site-trust.js'
 import type { ProviderVerdict } from '../../../trust/score-provider.js'
 import type { PinRecord } from '../../../broker/policy/pin.js'
 import type { NameEvidence } from '../../verifier/name-evidence.js'
@@ -12,6 +13,7 @@ import type { NameEvidence } from '../../verifier/name-evidence.js'
 // reach into another stream's internals).
 
 const ORIGIN = 'https://app.example'
+const HOME: Home = { binding: 'bound', domain: 'app.example' }
 const LOCAL_HASH = 'sha256:' + 'c'.repeat(64)
 
 function pin (overrides: Partial<PinRecord> = {}): PinRecord {
@@ -205,7 +207,7 @@ describe('a Web3 Score provider\'s verdict', () => {
   })
 
   it('shows the judged level over DDOC, names the provider, and leaves the observed level alone', () => {
-    const trust = withProviderVerdict(installed(), judged(3))
+    const trust = withProviderVerdict(installed(), judged(3), HOME)
     expect(trust.displayedLevel).toBe(3)
     expect(trust.level.level).toBe(2)
     expect(web3Score(trust)).toMatchObject({ level: 3, overridden: false, judgedBy: 'Test provider' })
@@ -213,34 +215,34 @@ describe('a Web3 Score provider\'s verdict', () => {
 
   it('keeps the observed Level 2 when the provider judges 1 or 2: those levels are observed, and the judgement only says 3 and 4 are not met', () => {
     for (const level of [1, 2]) {
-      const trust = withProviderVerdict(installed(), judged(level))
+      const trust = withProviderVerdict(installed(), judged(level), HOME)
       expect(trust.displayedLevel).toBe(2)
       expect(trust.judgedShown).toBe(false)
       expect(web3Score(trust)?.judgedBy).toBeUndefined()
     }
-    expect(withProviderVerdict(installed(), judged(3)).judgedShown).toBe(true)
+    expect(withProviderVerdict(installed(), judged(3), HOME).judgedShown).toBe(true)
   })
 
   it('tells the shield to ask again while the provider is still being asked', () => {
-    expect(web3Score(withProviderVerdict(installed(), { status: 'pending', address: 'x' }))?.pending).toBe(true)
-    expect(web3Score(withProviderVerdict(installed(), judged(3)))?.pending).toBe(false)
+    expect(web3Score(withProviderVerdict(installed(), { status: 'pending', address: 'x' }, HOME))?.pending).toBe(true)
+    expect(web3Score(withProviderVerdict(installed(), judged(3), HOME))?.pending).toBe(false)
   })
 
   it('never lifts a page whose DDOC does not hold, whatever the verdict says', () => {
-    const trust = withProviderVerdict(buildSiteTrust(ORIGIN, pin(tree), true, undefined, undefined, 2_000), judged(4))
+    const trust = withProviderVerdict(buildSiteTrust(ORIGIN, pin(tree), true, undefined, undefined, 2_000), judged(4), HOME)
     expect(trust.displayedLevel).toBe(1)
     expect(web3Score(trust)?.judgedBy).toBeUndefined()
   })
 
   it('gives way to a developer override, which is named instead', () => {
-    const trust = withProviderVerdict(buildSiteTrust(ORIGIN, pin(tree), true, undefined, { bundleHash: tree.bundleHash, leaves: tree.assets }, 2_000, undefined, 1), judged(4))
+    const trust = withProviderVerdict(buildSiteTrust(ORIGIN, pin(tree), true, undefined, { bundleHash: tree.bundleHash, leaves: tree.assets }, 2_000, undefined, 1), judged(4), HOME)
     expect(trust.displayedLevel).toBe(1)
     expect(web3Score(trust)).toMatchObject({ overridden: true, judgedBy: undefined })
   })
 
   it('keeps the observed level for every verdict that is not a judgement', () => {
     for (const verdict of [{ status: 'off' }, { status: 'pending', address: 'x' }, { status: 'unreachable', address: 'x', reason: 'down' }, { status: 'no-score', provider: { name: 'P', address: 'x' } }] as const) {
-      expect(withProviderVerdict(installed(), verdict).displayedLevel).toBe(2)
+      expect(withProviderVerdict(installed(), verdict, HOME).displayedLevel).toBe(2)
     }
   })
 })

@@ -7,6 +7,8 @@ export interface VerifierAccess {
   start: () => void
   /** Resolves once the host listens, reports it cannot serve, or the wait's bound passes. */
   ready: () => Promise<void>
+  /** Whether the host can resolve this `.eth` name now: the light client can start, or the name is a developer or test-build one. Unset means no. */
+  servesName?: (name: string) => boolean
 }
 
 let access: VerifierAccess = { start: () => {}, ready: async () => {} }
@@ -14,6 +16,11 @@ let access: VerifierAccess = { start: () => {}, ready: async () => {} }
 /** Set once by the verifier subsystem. */
 export function provideVerifierAccess (provided: VerifierAccess): void {
   access = provided
+}
+
+/** Whether a `.eth` name would load in this run. False until the verifier subsystem says otherwise, so a feature that redirects to a name never sends a person where nothing loads. */
+export function verifierServesName (name: string): boolean {
+  return access.servesName?.(name) === true
 }
 
 /** Whether the text names a host the verifier serves: a `.eth` name or an address, typed with or without a scheme, port or path. */

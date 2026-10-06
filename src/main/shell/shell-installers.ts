@@ -15,6 +15,7 @@ import { installMemorySaver } from '../memory-saver/install-memory-saver.js'
 import { installTabSlots } from '../overlays/install-tab-slots.js'
 import { installTabVisibility } from './install-tab-visibility.js'
 import { installFormWatch } from '../passwords/install-form-watch.js'
+import { installEthGatewayRedirect } from './eth-gateway-redirect.js'
 import { installPrivacyNet } from '../privacy/install-privacy-net.js'
 import { installReader } from '../reader/install-reader.js'
 import { installLoadErrors } from '../sad-tab/install-load-errors.js'
@@ -36,6 +37,7 @@ export const SHELL_INSTALLERS: readonly ShellInstaller[] = [
   installChoosers,
   installContentSettings,
   installDefaultBrowserAsk,
+  installEthGatewayRedirect,
   installFocus,
   installFormWatch,
   installLauncherMenu,

@@ -23,7 +23,7 @@
 import type { PatternSet } from '../../broker/policy/update.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import type { CapabilityKind, Manifest } from '../../contracts/index.js'
-import type { LoadContext, LoadInstalled, LoadResult, Loader } from '../../loader/index.js'
+import type { LoadContext, LoadInstalled, LoadResult, LoadUpdateAvailable, Loader } from '../../loader/index.js'
 import { requestInstallConsent } from './install-consent.js'
 import type { InstallConsentPrompt, PerCapabilityConsentPrompt } from './install-consent.js'
 import { grantChangedCapabilities } from './grant-changed-capabilities.js'
@@ -44,6 +44,10 @@ export interface UpdateOutcomeDeps {
   readonly reconsentPrompt?: ReconsentPrompt
   readonly capabilityPrompt?: CapabilityPromptPrompt
   readonly rollbackChoicePrompt?: RollbackChoicePrompt
+  /** An installed app's name moved: records the offer and asks about it (`../install/app-updates.ts`). Unset, an offer is dropped and the pinned version keeps running. */
+  readonly offerUpdate?: (result: LoadUpdateAvailable, caller?: DialogCaller) => Promise<void>
+  /** The name returned to the pinned content: an offer made for `origin` earlier is withdrawn. */
+  readonly withdrawUpdate?: (origin: string) => void
 }
 
 /**
@@ -90,7 +94,14 @@ export async function driveLoadResult (deps: UpdateOutcomeDeps, result: LoadResu
       return await finishInstall(deps, result, caller)
 
     case 'rejected':
+      return result
+
     case 'up-to-date':
+      if (result.atPinnedContent === true) deps.withdrawUpdate?.(result.canonicalOrigin)
+      return result
+
+    case 'update-available':
+      await deps.offerUpdate?.(result, caller)
       return result
 
     case 'needs-reconsent': {

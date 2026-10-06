@@ -1,4 +1,5 @@
-import { describe, expect, it, type vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { provideVerifierAccess } from '../../verifier/verifier-access.js'
 import { openSnapshot } from '../open-snapshot.js'
 import { fakeTabs } from './tabs-fake.js'
 
@@ -69,5 +70,21 @@ describe('openSnapshot', () => {
     const fake = fakeTabs(false)
     expect(openSnapshot(fake.tabs, { url: 'https://a.example/', title: '', pinned: false }, true)).toBeUndefined()
     expect(fake.calls).toEqual([])
+  })
+})
+
+describe('openSnapshot with the gateway redirect on', () => {
+  afterEach(() => { provideVerifierAccess({ start: () => {}, ready: async () => {} }) })
+
+  it('gives the new tab its saved entries with a gateway address replaced by the .eth name', () => {
+    provideVerifierAccess({ start: () => {}, ready: async () => {}, servesName: () => true })
+    const fake = fakeTabs(true, { services: { settings: { get: () => true } } })
+    const entries = [{ url: 'https://site.eth.limo/a', title: 'One' }, { url: 'https://site.eth.limo/b#f', title: 'Two' }]
+    const id = openSnapshot(fake.tabs, { url: 'https://site.eth.limo/b#f', title: 'Two', pinned: false, entries, index: 1 }, true)
+    const wc = fake.records.get(id ?? '')?.view.webContents as unknown as { navigationHistory: { restore: ReturnType<typeof vi.fn> } }
+    expect(wc.navigationHistory.restore).toHaveBeenCalledExactlyOnceWith({
+      entries: [{ url: 'https://site.eth/a', title: 'One' }, { url: 'https://site.eth/b#f', title: 'Two' }],
+      index: 1
+    })
   })
 })

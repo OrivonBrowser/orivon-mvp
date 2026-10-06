@@ -80,6 +80,14 @@ export async function withOriginQueue<T> (origin: string, task: () => Promise<T>
 }
 
 /**
+ * Runs `task` as if no origin queue were held, for work that must outlive the task that started
+ * it and may queue for the same origin itself (a question left open while the queue moves on).
+ */
+export function outsideOriginQueue<T> (task: () => T): T {
+  return runningChain.exit(task)
+}
+
+/**
  * True if `origin` currently has a live queue entry -- a task running, or
  * still chained behind one. Test-only introspection: production code never
  * needs this, since the whole point of `withOriginQueue` is that a caller

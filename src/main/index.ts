@@ -17,7 +17,7 @@ import { internalSession } from './pages/internal-session.js'
 import { installHistory } from './history/install-history.js'
 import { installDownloads } from './downloads/install-downloads.js'
 import { installDownloadsPeek } from './downloads/auto-open.js'
-import { createSubsystemContext, criticalFailureMessage, publishShowNotice, publishWebsiteScore, publishWindowForSender, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
+import { createSubsystemContext, criticalFailureMessage, publishOpenTabs, publishScoreVerdictFor, publishShowNotice, publishWebsiteScore, publishWindowForSender, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
 import { subsystems } from './subsystems.js'
 import { DebouncedWriter } from './storage/debounced-writer.js'
 import { devOnlySwitches } from './shell/dev-switches.js'
@@ -186,12 +186,16 @@ function boot (runtime: Runtime): void {
     // for the thunks that read ctx.windowForSender only when a real dialog
     // is about to show one.
     publishWindowForSender(ctx, (sender) => shell.windows.findTab(sender)?.window.window)
+    // The same lateness: the app-update offers look at open tabs and ask the chosen Web3 Score provider.
+    publishOpenTabs(ctx, { on: (origin) => shell.windows.liveTabsOn(origin), origins: () => shell.windows.liveTabOrigins() })
+    publishScoreVerdictFor(ctx, shell.scoreProvider.verdictFor)
     // Read lazily by the control channel, which was wired before the settings it reads existed (ADR-0058).
     publishWebsiteScore(ctx, createPageScoreLookup({
       providerAddress: () => shell.settings.get('web3.scoreProvider'),
       isDevEthName,
       fetchJson: netFetchJson,
-      resolveEthContent: verifierEthContentCid
+      resolveEthContent: verifierEthContentCid,
+      manifestAt: async (origin, cid) => await ctx.loader?.manifestAt(origin, cid) ?? { kind: 'unread', reason: 'the loader is not running' }
     }).websiteScore)
     // A refusal the person should read, drawn in the window they are using.
     publishShowNotice(ctx, ({ title, message }) => { void askQuestion({}, { kind: 'notice', title, message, buttons: ['OK'], cancelId: 0 }) })

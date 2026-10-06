@@ -17,6 +17,7 @@
 import type { PinRecord } from '../../broker/policy/pin.js'
 import type { DdocDeclaration } from '../ddoc-declaration.js'
 import type { UpdateCheckRecord } from '../fetch/update-check.js'
+import type { UpdateOfferRecord } from '../update-offer.js'
 
 /** A readable file: its byte length, and its bytes as a stream of chunks -- never the whole file in one buffer. */
 export interface AssetStream {
@@ -139,6 +140,10 @@ export interface LoaderStorage {
   readUpdateCheck(origin: string): Promise<unknown>
   /** Persists `origin`'s last update check, outside `code/`; `undefined` deletes it. */
   writeUpdateCheck(origin: string, record: UpdateCheckRecord | undefined): Promise<void>
+  /** The raw value last passed to `writeUpdateOffer` for `origin`, or undefined; never throws, and the caller parses it (`../update-offer.ts`). */
+  readUpdateOffer(origin: string): Promise<unknown>
+  /** Persists the update offers `origin` was asked not to raise again, outside `code/`; `undefined` deletes the file. */
+  writeUpdateOffer(origin: string, record: UpdateOfferRecord | undefined): Promise<void>
   /**
    * The raw value last passed to `writeDdoc` for `origin`, or undefined when
    * there is none or it cannot be read. Never throws; the caller parses it

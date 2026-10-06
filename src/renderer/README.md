@@ -22,7 +22,8 @@ entirely.
 `src/preload/internal.ts`'s one `request` and `onEvent` and holds no capability of its own: it is
 served with a CSP that allows no network. `intro/` has no preload: it reports "Enter Orivon"
 through its URL hash, which `intro-view.ts` watches. `permissions/permissions-view.ts` imports [`src/protocols/builtin.ts`](../protocols/builtin.ts)
-for pure string work (showing `ipfs://<cid>` as an address).
+for pure string work (showing `ipfs://<cid>` as an address). `site-info/` imports
+[`src/trust/domain-binding.ts`](../trust/domain-binding.ts) for the same, naming the home an app declares.
 
 **What it must never import.** `electron`, `node:*`, or anything under [`src/main/`](../main/).
 This is a sandboxed renderer with no Node; reaching for it means the logic belongs in main.

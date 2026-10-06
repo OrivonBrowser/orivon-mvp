@@ -47,7 +47,7 @@ describe('createLoader: a bundle from a content-addressed origin', () => {
     const storage = memoryStorage()
     await loader(storage, recording('<!doctype html>v1').fetch, async () => CONTENT).load(ORIGIN, NO_GRANTS)
     const again = recording('<!doctype html>v1')
-    expect(await loader(storage, again.fetch, async () => CONTENT).load(ORIGIN, NO_GRANTS)).toEqual({ outcome: 'up-to-date', canonicalOrigin: ORIGIN })
+    expect(await loader(storage, again.fetch, async () => CONTENT).load(ORIGIN, NO_GRANTS)).toEqual({ outcome: 'up-to-date', canonicalOrigin: ORIGIN, atPinnedContent: true })
     expect(again.seen).toEqual([])
   })
 
@@ -56,8 +56,7 @@ describe('createLoader: a bundle from a content-addressed origin', () => {
     await loader(storage, recording('<!doctype html>v1').fetch, async () => CONTENT).load(ORIGIN, NO_GRANTS)
     const next = recording('<!doctype html>v2')
     const result = await loader(storage, next.fetch, async () => ({ ...CONTENT, cid: NEXT_CID })).load(ORIGIN, NO_GRANTS)
-    expect(result.outcome).toBe('needs-reconsent')
-    expect(result.outcome === 'needs-reconsent' && result.content?.cid).toBe(NEXT_CID)
+    expect(result).toMatchObject({ outcome: 'update-available', fromCid: CID, toCid: NEXT_CID })
     expect(next.seen.every((request) => request.root === NEXT_CID)).toBe(true)
   })
 
@@ -71,7 +70,7 @@ describe('createLoader: a bundle from a content-addressed origin', () => {
     expect(pin?.content).toEqual(moved)
     expect(pin?.pinnedAt).toBe(pinnedAt)
     const third = recording('<!doctype html>v1')
-    expect(await loader(storage, third.fetch, async () => moved).load(ORIGIN, NO_GRANTS)).toEqual({ outcome: 'up-to-date', canonicalOrigin: ORIGIN })
+    expect(await loader(storage, third.fetch, async () => moved).load(ORIGIN, NO_GRANTS)).toEqual({ outcome: 'up-to-date', canonicalOrigin: ORIGIN, atPinnedContent: true })
     expect(third.seen).toEqual([])
   })
 

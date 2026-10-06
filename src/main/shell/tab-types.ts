@@ -106,6 +106,8 @@ export interface ShellState extends TabsSnapshot {
   popupsBlocked: number
   /** Whether the active page's site has JavaScript, images or sound switched off, for the mark on the address bar's key. */
   contentBlocked: boolean
+  /** Whether the active page is an installed app whose name points at a version the person has not taken: the dot on the key. */
+  updateOffered: boolean
   /** Which profile this window is, for the chip beside the menu. */
   profile: { name: string, color: string, isPrivate: boolean, shown: boolean }
   /** The extensions loaded now, and whether the toolbar shows the Extensions button (`toolbar.extensions`). */
