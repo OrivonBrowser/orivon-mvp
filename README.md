@@ -236,6 +236,7 @@ against it changing a line. Read those files first if you want to know what Oriv
 | 🍎 **macOS** | `.dmg` for Apple silicon and for Intel |
 
 **[Get the latest release →](https://github.com/OrivonBrowser/orivon-mvp/releases/latest)**
+&nbsp;·&nbsp; also at [`download.orivonstack.eth`](https://download.orivonstack.eth.limo)
 
 Every release is also published on IPFS, and its `ipfs://` address is in the release notes. The
 Windows and macOS packages are not signed with a bought certificate, so each system warns once
