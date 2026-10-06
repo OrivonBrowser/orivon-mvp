@@ -18,8 +18,6 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
-- **`contracts/manifest.ts`, `contracts/capability-api.ts`**: a `Grant.origin` may be the `file:` URL of a document opened from this computer, and its `id` and `secrets` keys last until Orivon quits. Apps that run from a local file must now expect no saved data, keys or grants in the next run. Recheck: every port that can be opened as a local file.
-
 ### Added
 
 - **Default browser, asked properly**: Settings > Default browser, an unticked box on the welcome screen and a question
