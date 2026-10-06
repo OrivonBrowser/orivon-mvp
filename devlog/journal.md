@@ -24,6 +24,8 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - A catalogue of what apps rely on now has a test per row; a broker change that breaks an app fails by name.
 - test/ is grouped into areas, and a new capability, port or app bug has one README saying a row and a spec are required.
 - All six Orivon apps are on IPFS, listed in Explore, and judged by Orivon Attila, our official Web3 Score provider.
+- Explore now opens on Web3 sites alone: Orivon apps and Level 4 judgements, with Web2.5 sites in their own section.
+- Every Explore card now carries its site's own icon tile, shipped with the app and loaded from its origin.
 - An ipfs:// tab icon now waits out slow gateways instead of giving up at 5 s, the likely reason The Lounge showed none.
 - Every ported app now shows visitors in other browsers a panel pointing them to Orivon; it stays hidden inside Orivon, and --no-orivon-hint removes it.
 - Orivon asks to be the default browser from Settings, the welcome screen and weekly; the dock and taskbar offer New Window and New Private Window.
