@@ -354,3 +354,9 @@ In all, 36 findings, 36 confirmed, none refuted.
 | `/code-review` at high effort | PR #112 against `main` | Nine findings, all fixed with a test that failed first: a tab share ended by the shown tab's own navigation, a refusal wiped by a navigation that never commits, two disagreeing "is an app" predicates, a picked tab detached before its share registered, a listener leak, duplicated ticket state, a registry bind that relied on install order, a triple read of every window's tabs, a stale README file name |
 | Security review (read-only, Opus) | The branch's diff | Four findings: a page's own pending request could take the preload's ticket, since Blink queues a frame's media requests, fixed; the indicator follows only the tracks the preload handed out, documented in A401; a declined origin escaped the person's content rules (a regression of the previous fix), fixed; the ticket nonce reached the page's world, fixed |
 | `adversarial-reviewer` (read-only, Opus) | The security boundary, newest code first | CONCERNS, no confirmed critical: the rule that ended a renderer on a ticketless request ran on a clock, so it could crash honest tabs (an extension's content script, a shim app's callback-form `getUserMedia`) and miss a late request, replaced by the preload's confirmation of its own call; a stored site Block was ignored for a registered origin holding no grant, fixed; five smaller notes, fixed |
+
+### `stream/cookie-fuse`: a checkout's binary encrypts cookies as a package's does (2026-10-06)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| `/code-review` at medium effort | PR #131 against `main` | No findings: fuse indices and state bytes, the yml parser in the agreement test, the launcher's cold-start path, the shared keyring entry (both run as `orivon`), and `--password-store=basic` on test launches checked |
