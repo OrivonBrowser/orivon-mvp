@@ -44,7 +44,7 @@ const dashboardOf = (app: ElectronApplication): Page | undefined => app.windows(
 
 /** The URL of the tab view the window is showing, read from the main process, never from the address bar. */
 async function shownTabUrl (app: ElectronApplication): Promise<string | undefined> {
-  const shown = (await windowGeometry(app)).flatMap((w) => w.views).filter((v) => v.visible && !v.url.startsWith('file:'))
+  const shown = (await windowGeometry(app)).flatMap((w) => w.views).filter((v) => v.visible && !v.url.startsWith('orivon-shell:'))
   return shown[0]?.url
 }
 

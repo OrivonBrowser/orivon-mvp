@@ -192,6 +192,9 @@ it(
         await stubNativeDialogs(running)
         const chrome = await waitForChrome(running)
         await waitForAddressBarStable(chrome)
+        // A page of the site comes first: the dashboard before it is not carried into the app's own session.
+        await clickAddressBarRetrying(chrome, `${url}before`)
+        await waitForTab(chrome, { address: `${url}before`, title: 'fixture-a' })
         await clickAddressBarRetrying(chrome, url)
         await waitForTab(chrome, { address: url, title: 'fixture-a' })
 

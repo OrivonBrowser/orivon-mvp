@@ -4,7 +4,9 @@
 tabs (`ADR-0041`). `internal-pages.ts` names them and reads an `orivon://<page>[/path]` address.
 `internal-aliases.ts` reads the names other browsers use for them (`about:version`, `chrome://gpu`), for the address bar alone.
 `route.ts` decides which file such a request may read, and `serve.ts` answers it (with the CSP)
-from the built renderer or the dev server; both are pure. `internal-session.ts` is the one
+from the built renderer or the dev server; both are pure. The same two files serve the shell's own renderer
+entries on `orivon-shell://renderer/...` (`routeShell`, `createShellHandler`, `shellRequestAllowed`), which
+`shell-scheme.ts` installs in the shell session and in the default session, behind a `webRequest` gate. `internal-session.ts` is the one
 in-memory session that serves the scheme, and registers it before the app is ready. `internal-registry.ts`
 records which webContents the shell opened as which page, `internal-tab.ts` keeps such a tab on its page,
 and `internal-ipc.ts` is the single channel pages speak on, checked per call, `pages-domain.ts` lets one page take the person to another,
@@ -18,7 +20,9 @@ ordinary tab); [`../shell/shell-services.ts`](../shell/shell-services.ts) (type 
 [`../shell/renderer-entry.ts`](../shell/renderer-entry.ts)'s `validatedDevServerUrl` (the same
 packaged-build gate every renderer-loading view in `../shell/` applies to `ELECTRON_RENDERER_URL`,
 reused here for the dev server `serve.ts` proxies to); the top-level `channels.ts` and
-`registry.ts`; and [`../../loader/`](../../loader/) (`appRootDirectoryName`, for
+`registry.ts`; [`../shell/shell-session.ts`](../shell/shell-session.ts) (the entries and the scheme's name);
+[`../sessions/web-request-owner.ts`](../sessions/web-request-owner.ts) (the default session's one `webRequest` owner);
+and [`../../loader/`](../../loader/) (`appRootDirectoryName`, for
 `orphaned-app-partitions.ts`'s own on-disk check).
 
 **What it must never import.** [`../../renderer/`](../../renderer/) code (the repo-wide rule), and
@@ -43,6 +47,19 @@ pins a `<base>` into it so the page's relative asset URLs resolve the same at an
 built page's own root, once built; in development, `/pages/<page>/`, since the page's own HTML there
 is unbundled and its relative references (`./main.ts`, `./style.css`) are relative to that folder on
 the dev server, not the served root.
+
+**`route.ts` stays the one place a request's path becomes a path on disk, for two schemes.** `routeInternalRequest`
+reads `orivon://`; `routeShell` reads `orivon-shell://renderer/<path>` with the same segment rules and answers
+differently per session: the shell's gets its own entries and every file under `assets/`, the default session's
+gets the new-tab page and exactly the files `reachableFiles` finds from Vite's manifest, so a website
+asking for another path learns nothing about the build. `.vite/` is never served.
+
+**The default session's copy is gated by what asks, not by headers.** Chromium does not enforce
+`Cross-Origin-Resource-Policy: same-origin` on this scheme (a page and an extension page loaded its script,
+stylesheet and image anyway), so `shell-scheme.ts` registers a `webRequest` handler that cancels every request
+on the scheme except a main-frame navigation and one from the new-tab page's own top frame
+(`shellRequestAllowed`). The tab's `will-frame-navigate` and `will-redirect` refuse a page sending a tab there
+(`../shell/tab-view.ts`). The decision and its measurements are `ADR-0059`.
 
 **Authorisation compares the frame's address to what the shell recorded, not to what the page says.**
 A webContents is an internal page because `TabManager.openInternal` registered it; `authorizeCall`

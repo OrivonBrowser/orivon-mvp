@@ -20,6 +20,7 @@ import { rendererEntryUrl, validatedDevServerUrl } from '../shell/renderer-entry
 import { lockNavigation } from '../shell/lock-navigation.js'
 import { isEchoOfClose } from '../shell/press-stamps.js'
 import { SHELL_PARTITION } from '../shell/shell-session.js'
+import type { ShellEntry } from '../shell/shell-session.js'
 import { onThemeUpdated, resolveThemeColor } from '../shell/theme-colors.js'
 import type { ThemeColorPair } from '../shell/theme-colors.js'
 import { recordPopoverShown, recordViewBackground } from '../shell/view-background-test-hook.js'
@@ -51,12 +52,12 @@ export interface PopoverAnchor {
 export type PopoverAlign = 'left' | 'right'
 
 export interface PopoverSpec {
-  /** The calling module's own `import.meta.dirname` -- `rendererEntryUrl`'s own parameter, unchanged. */
+  /** The calling module's own `import.meta.dirname`, which `preloadRelPath` is relative to. */
   readonly dirname: string
   /** electron-vite dev-server subpath, e.g. `/settings/`. */
   readonly entryPath: string
-  /** Built-output path relative to `dirname`, e.g. `../renderer/permissions/index.html`. */
-  readonly fallbackHtml: string
+  /** The renderer entry this popup loads when built. */
+  readonly entry: ShellEntry
   /** Preload script path relative to `dirname`, e.g. `../preload/permissions.js`. */
   readonly preloadRelPath: string
   /** The `--orivon-<name>-url` flag this popup's own preload gates on -- see e.g. `../../preload/permissions.ts`. */
@@ -190,7 +191,7 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
    * the command channel, and the blur-closes-it behaviour. Shared by a fresh
    * (non-`warm`) open and a `warm` popup's own one-time construction. */
   function construct (extraArgs: readonly string[]): WebContentsView {
-    const url = rendererEntryUrl(spec.dirname, validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL']), spec.entryPath, spec.fallbackHtml)
+    const url = rendererEntryUrl(validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL']), spec.entryPath, spec.entry)
 
     const popup = new WebContentsView({
       webPreferences: {

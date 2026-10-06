@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createInternalHandler, internalCsp, isDevServerRequest, withRootBase } from '../serve.js'
+import { createInternalHandler, createShellHandler, internalCsp, isDevServerRequest, withRootBase } from '../serve.js'
 
 const ROOT = '/app/out/renderer'
 const files = new Map<string, string>([
@@ -120,5 +120,64 @@ describe('isDevServerRequest', () => {
     expect(isDevServerRequest('ws://evil.example/', 'http://localhost:5173')).toBe(false)
     expect(isDevServerRequest('ws://localhost:5173/', undefined)).toBe(false)
     expect(isDevServerRequest('not a url', 'http://localhost:5173')).toBe(false)
+  })
+})
+
+describe('createShellHandler', () => {
+  const shellFiles = new Map<string, string>([
+    [`${ROOT}/index.html`, '<!doctype html><title>chrome</title>'],
+    [`${ROOT}/newtab/index.html`, '<!doctype html><title>newtab</title>'],
+    [`${ROOT}/assets/app-1.js`, 'console.log(2)'],
+    [`${ROOT}/assets/font-1.woff2`, 'font'],
+    [`${ROOT}/.vite/manifest.json`, '{}']
+  ])
+  const read = vi.fn(async (path: string) => {
+    const content = shellFiles.get(path)
+    if (content === undefined) throw new Error(`ENOENT ${path}`)
+    return new TextEncoder().encode(content)
+  })
+  const shell = createShellHandler({ rendererRoot: ROOT, session: 'shell', readFile: read })
+  const dashboard = createShellHandler({ rendererRoot: ROOT, session: 'default', defaultFiles: new Set(['newtab/index.html', 'assets/app-1.js']), readFile: read })
+
+  it('serves a page with the headers a page of the shell needs', async () => {
+    const response = await shell(new Request('orivon-shell://renderer/index.html'))
+    expect(response.status).toBe(200)
+    expect(await response.text()).toContain('chrome')
+    expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8')
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    expect(response.headers.get('cross-origin-resource-policy')).toBe('same-origin')
+    expect(response.headers.get('content-security-policy')).toBe("frame-ancestors 'none'; object-src 'none'; base-uri 'none'")
+  })
+
+  it('serves an asset with its own type and no page policy', async () => {
+    const response = await shell(new Request('orivon-shell://renderer/assets/app-1.js?v=2'))
+    expect(await response.text()).toBe('console.log(2)')
+    expect(response.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
+    expect(response.headers.get('cross-origin-resource-policy')).toBe('same-origin')
+    expect(response.headers.get('content-security-policy')).toBeNull()
+    expect((await shell(new Request('orivon-shell://renderer/assets/font-1.woff2'))).headers.get('content-type')).toBe('font/woff2')
+  })
+
+  it('answers 404, with the same headers, for what it will not serve or cannot find', async () => {
+    for (const url of ['orivon-shell://renderer/.vite/manifest.json', 'orivon-shell://renderer/assets/missing.js', 'orivon-shell://renderer/newtab/index.html', 'orivon-shell://renderer/assets/../../x.js', 'https://renderer/index.html']) {
+      const response = await shell(new Request(url))
+      expect(response.status, url).toBe(404)
+      expect(response.headers.get('cross-origin-resource-policy')).toBe('same-origin')
+    }
+  })
+
+  it('reads nothing outside the renderer directory', async () => {
+    read.mockClear()
+    await shell(new Request('orivon-shell://renderer/assets/..%2f..%2fetc%2fpasswd.js'))
+    await shell(new Request('orivon-shell://renderer/assets/%2e%2e/%2e%2e/x.js'))
+    for (const [path] of read.mock.calls) expect(path.startsWith(`${ROOT}/`)).toBe(true)
+  })
+
+  it('serves the default session the new-tab page and its files, and nothing else of the build', async () => {
+    expect((await dashboard(new Request('orivon-shell://renderer/newtab/index.html'))).status).toBe(200)
+    expect((await dashboard(new Request('orivon-shell://renderer/assets/app-1.js'))).status).toBe(200)
+    expect((await dashboard(new Request('orivon-shell://renderer/index.html'))).status).toBe(404)
+    expect((await dashboard(new Request('orivon-shell://renderer/assets/font-1.woff2'))).status).toBe(404)
   })
 })

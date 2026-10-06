@@ -96,9 +96,8 @@ input:focus-visible {
   gap: 12px;
 }
 /* The logo carries its own circular shape and gradient, so it sits on no
-   plate. Drawn from CSS rather than an <img> so Vite rewrites the URL: the
-   built app loads this page over file://, where a root-relative /logo.png
-   would resolve to the filesystem root. */
+   plate. Drawn from CSS rather than an <img> so Vite rewrites the URL to the
+   hashed file the build serves; a root-relative /logo.png would name no file. */
 .mark {
   width: 40px;
   height: 40px;

@@ -96,6 +96,10 @@ ledger entry, and its derived identity key (ADR-0003, ADR-0005).
 - IPFS- and ENS-delivered apps arrive with build step 6, which settles what they key on
   (CID, ENS name, or a web origin for the name) before the first such grant is persisted.
   *Provisional* until then
+- A **document opened from this computer** is its own origin, keyed on its `file:` URL (empty
+  host, no query or fragment). Its grants, saved data, `id` keys and `secrets` persist keyed to
+  that path, like a website's, with no per-run salt. A moved or renamed file is asked again;
+  another file saved at the same path gets what the path held.
 
 > **This definition must be settled before the first grant is persisted.** Changing it later
 > invalidates every stored grant and orphans every app's data.
@@ -497,7 +501,8 @@ spellings of one of them are two different identities, permanently.
   strips a trailing DNS dot and `URL.origin` does not. And **not** the bare `originFromUrl()`
   underneath it: the frame variant denies when the committed URL and the frame's own origin
   disagree, and skipping that gives a sandboxed opaque-origin document the embedder's grants and
-  identity key (T3, T13b).
+  identity key (T3, T13b). For a document opened from this computer the key is its `file:` URL,
+  so a moved or renamed file has other keys.
 - **`identityId`** is **opaque and broker-generated, never a user-typed name and never derived
   from one.** The user-visible label is stored beside the identity, not used to derive it.
   Otherwise renaming an identity, or merely changing its case, destroys the npub with nothing to

@@ -1,6 +1,6 @@
 /**
  * Launches a packaged Orivon on a throwaway profile and passes once its shell page has rendered from
- * inside app.asar, so a release never carries a package that does not start. The release workflow runs
+ * the shell scheme (served out of app.asar), so a release never carries a package that does not start. The release workflow runs
  * it against the installed deb, the AppImage, the NSIS install and the mounted dmg.
  *
  * Usage: node scripts/run-headless.mjs node scripts/smoke-packaged.mjs <executable>
@@ -14,7 +14,7 @@ import { isInvokedDirectly } from './cli.mjs'
 // A native launch renders in about 10 s; an Intel build under Rosetta, translating Electron cold, can take minutes.
 const STARTUP_TIMEOUT_MS = 300_000
 const PROBE_TIMEOUT_MS = 5_000
-const SHELL_PAGE = /app\.asar\/out\/renderer\/index\.html/
+const SHELL_PAGE = /^orivon-shell:\/\/renderer\/index\.html(?:[?#].*)?$/
 const RENDERED = "document.readyState === 'complete' && document.body !== null && document.body.childElementCount > 0"
 
 /**
@@ -28,7 +28,7 @@ export function devToolsPort (output) {
 }
 
 /**
- * The shell's chrome page among DevTools targets: the window's own page, loaded from the packaged asar.
+ * The shell's chrome page among DevTools targets: the window's own page, loaded from the shell scheme's `renderer` host (the packaged app serves it out of app.asar).
  * @param {Array<{ type: string, url: string, webSocketDebuggerUrl?: string }>} targets
  */
 export function shellTarget (targets) {

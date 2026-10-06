@@ -6,7 +6,7 @@ vi.mock('electron', () => ({ nativeTheme: { shouldUseDarkColors: false, on: () =
 const { followActiveTabBacking } = await import('../window-backing.js')
 const { restingColor } = await import('../sheet-backdrop.js')
 
-const DASHBOARD = 'file:///app/out/renderer/newtab/index.html'
+const DASHBOARD = 'orivon-shell://renderer/newtab/index.html'
 
 interface Rig { colours: string[], change: (activeTabId: string | null) => void, record: TabRecord }
 

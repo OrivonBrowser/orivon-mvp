@@ -48,6 +48,10 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **The shell's own pages load from `orivon-shell:`, not `file:`**, and Electron's file-protocol fuse is off in a package
+  and, after `npm install` or `npm run install:electron`, in a Linux checkout's binary: a `file:` page gets no more reach
+  than a web page. A website cannot load, frame or navigate to a page of the shell. A copied tab, or one that becomes an
+  app, no longer keeps the new-tab page behind it.
 - **A `<name>.eth.limo` or `<name>.eth.link` address opens as `<name>.eth`**, checked on this computer, with its path, query and
   fragment kept; Settings > Web3 turns it off. Data a site keeps under its gateway address stays there and is not seen at
   the `.eth` name.

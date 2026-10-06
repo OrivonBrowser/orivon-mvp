@@ -94,6 +94,8 @@ export function createNavigation (): ChromeModule {
     // A keyboard shortcut in main asks for the address bar.
     event: (payload) => {
       const event = payload as { type?: string, text?: unknown }
+      // The search key gives the field a `?` with no key pressed in it: it is an edit, so a title or icon push before the first letter leaves it.
+      if (event.type === 'focusSearch') edited = true
       if (event.type === 'focusAddress') {
         addressInput?.focus()
         addressInput?.select()

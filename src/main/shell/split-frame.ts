@@ -51,7 +51,7 @@ export class SplitFrame implements SplitBackdrop {
   }
 
   private build (): WebContentsView {
-    const url = rendererEntryUrl(this.dirname, validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL']), '/split-frame/', '../renderer/split-frame/index.html')
+    const url = rendererEntryUrl(validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL']), '/split-frame/', 'split-frame')
     const view = new WebContentsView({
       webPreferences: {
         preload: join(this.dirname, '../preload/split-frame.js'),

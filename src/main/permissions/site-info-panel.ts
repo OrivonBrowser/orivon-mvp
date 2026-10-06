@@ -58,7 +58,7 @@ export function createSiteInfoPanel (
   const popover = createPopoverView(win, contentView, {
     dirname,
     entryPath: '/site-info/',
-    fallbackHtml: '../renderer/site-info/index.html',
+    entry: 'site-info',
     preloadRelPath: '../preload/site-info.js',
     urlArgName: 'orivon-site-info-url',
     align: 'left',

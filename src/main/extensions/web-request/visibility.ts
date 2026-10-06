@@ -1,6 +1,7 @@
 // Which requests an extension's `webRequest` listeners may see: Chrome's
 // rules, in Orivon's terms. The host-access question is answered by the
 // caller (`hasHostAccess`), so this file knows no manifest and no registry.
+import { isShellSchemeUrl } from '../../shell/shell-session.js'
 
 export interface VisibleRequest {
   readonly url: string
@@ -13,6 +14,12 @@ export interface VisibleRequest {
   readonly initiator?: string | undefined
   /** The URL of the page that made the request, when it was a page. */
   readonly pageUrl?: string | undefined
+}
+
+/** A page of the shell's own (`orivon-shell:` for its renderer entries, `orivon:` for its internal pages): no
+ * extension's request rules or listeners ever apply to it, or to what it loads. */
+export function isShellOwnUrl (url: string): boolean {
+  return url.startsWith('orivon:') || isShellSchemeUrl(url)
 }
 
 const WEB_SCHEMES = new Set(['http:', 'https:', 'ws:', 'wss:'])
@@ -45,7 +52,7 @@ function accessUrlOf (url: URL): string {
 }
 
 function initiatorHidden (initiator: URL, extensionId: string): boolean {
-  if (initiator.protocol === 'orivon:' || initiator.protocol === 'chrome:' || initiator.protocol === 'devtools:') return true
+  if (initiator.protocol === 'orivon:' || initiator.protocol === 'orivon-shell:' || initiator.protocol === 'chrome:' || initiator.protocol === 'devtools:') return true
   return initiator.protocol === 'chrome-extension:' && initiator.hostname !== extensionId
 }
 
