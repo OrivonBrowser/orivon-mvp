@@ -162,6 +162,9 @@ async function localPages (app: ElectronApplication, partitions: string[] = [SHA
   }, { part: token, names: partitions })
 }
 
+/** How long a page may take to say what document it holds: the old view of a moved tab is parked and may never answer. */
+const PROTOCOL_ANSWER_MS = 1000
+
 /**
  * The page Playwright shows for the file at `name`: the newest one holding the file's document. A file loaded into a
  * web tab moves to a new view in a local session, and until the old view is retired its blocked load still reports
@@ -173,7 +176,8 @@ async function filePage (app: ElectronApplication, name: string): Promise<Page> 
   expect(await waitFor(async () => {
     for (const w of [...app.windows()].reverse()) {
       if (w.isClosed() || w.url().split('#')[0] !== url) continue
-      if (await w.evaluate(() => location.protocol).catch(() => '') === 'file:') {
+      const protocol = await Promise.race([w.evaluate(() => location.protocol).catch(() => ''), delay(PROTOCOL_ANSWER_MS).then(() => '')])
+      if (protocol === 'file:') {
         found = w
         return true
       }
