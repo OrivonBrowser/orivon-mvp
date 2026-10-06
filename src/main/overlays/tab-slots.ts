@@ -1,14 +1,19 @@
-// Which Orivon surface a tab is showing in each of its two places: a sheet
-// over the tab (`center`) and a prompt under the address pill (`address`). A
-// feature asks for a slot instead of calling `overlays.show`, so two sheets
-// never stack, two prompts never overlap, and a question asked while another
-// tab is in front waits for its tab. Pure over the window's `overlays` and
-// `tabs`: no `electron` import, unit-tested with fake windows.
+// Which Orivon surface a tab is showing in each of its three places: a sheet
+// over the tab (`center`), a prompt under the address pill (`address`) and a
+// cover over the page (`cover`). A feature asks for a slot instead of calling
+// `overlays.show`, so two sheets never stack, two prompts never overlap, and a
+// question asked while another tab is in front waits for its tab. A cover is
+// outside the one-surface-at-a-time rule: it lies under whatever else the tab
+// shows. Pure over the window's `overlays` and `tabs`: no `electron` import,
+// unit-tested with fake windows.
 import type { ShellWindow } from '../shell/window-registry.js'
 import type { OverlayAnchor, OverlayCloseReason } from './overlay-types.js'
 
-/** A sheet over the tab, or a prompt under the address pill. */
-export type TabSlot = 'center' | 'address'
+/** The places a tab queues asks for, one shown at a time: a sheet over the tab, or a prompt under the address pill. */
+type QueuedSlot = 'center' | 'address'
+
+/** A sheet over the tab, a prompt under the address pill, or a cover over the page: at most one, which a newer ask replaces. */
+export type TabSlot = QueuedSlot | 'cover'
 
 export type SlotCloseReason = OverlayCloseReason | 'tab-closed' | 'queue-full'
 
@@ -38,12 +43,12 @@ export const MAX_WAITING = 3
 
 interface Entry { readonly ask: SlotAsk, done: boolean }
 
-/** Per tab: each slot's asks in arrival order (the head is the one to show), and the one on screen. */
-interface TabAsks { center: Entry[], address: Entry[], shown: Entry | null }
+/** Per tab: each queued slot's asks in arrival order (the head is the one to show), the one on screen, and the cover with whether it is on screen. */
+interface TabAsks { center: Entry[], address: Entry[], shown: Entry | null, cover: Entry | null, coverShown: boolean }
 
 export interface TabSlots {
   requestSlot: (ask: SlotAsk) => { cancel: () => void }
-  /** The tab has an ask on screen or waiting: closing the tab's page would drop the person's answer. */
+  /** The tab has a sheet or a prompt on screen or waiting: closing the tab's page would drop the person's answer. A cover holds no answer and never counts. */
   hasAsk: (window: ShellWindow, tabId: string) => boolean
   slotClosed: (window: ShellWindow, overlay: string, reason: OverlayCloseReason) => void
   /** The tab came to the front: its waiting asks may show (after the window's own tab-switch close has run). */
@@ -78,11 +83,29 @@ export function createTabSlots (defer: (run: () => void) => void = queueMicrotas
     return ask.window.tabs.getState().activeTabId === ask.tabId
   }
 
+  /** Shows the tab's cover when its tab is in front and it is not on screen. Run before the head ask, which lies over it. */
+  function presentCover (window: ShellWindow, tabId: string, tab: TabAsks): void {
+    const entry = tab.cover
+    if (entry === null || tab.coverShown || !isActive(entry.ask)) return
+    tab.coverShown = true
+    try {
+      window.overlays.show(entry.ask.overlay, entry.ask.anchor?.(), entry.ask.payload)
+    } catch (error) {
+      console.error(`[tab-slots] showing ${entry.ask.overlay} failed:`, error)
+      tab.cover = null
+      tab.coverShown = false
+      finish(entry, 'request')
+    }
+  }
+
   /** Shows the next ask of this tab when its tab is in front and nothing of it is on screen: one surface
-   * per tab at a time, sheet before prompt, because two popups would close each other. */
+   * per tab at a time, sheet before prompt, because two popups would close each other. A cover is not one
+   * of them: it is shown first, whatever else is on screen. */
   function present (window: ShellWindow, tabId: string): void {
     const tab = tabsOf(window).get(tabId)
-    if (tab === undefined || tab.shown !== null) return
+    if (tab === undefined) return
+    presentCover(window, tabId, tab)
+    if (tab.shown !== null) return
     for (let attempts = 0; attempts < 2 * (MAX_WAITING + 1); attempts++) {
       const next = tab.center[0] ?? tab.address[0]
       if (next === undefined || !isActive(next.ask)) return
@@ -101,12 +124,17 @@ export function createTabSlots (defer: (run: () => void) => void = queueMicrotas
   }
 
   function remove (tab: TabAsks, entry: Entry): void {
-    tab[entry.ask.slot] = tab[entry.ask.slot].filter((other) => other !== entry)
+    const { slot } = entry.ask
+    if (slot === 'cover') {
+      if (tab.cover === entry) { tab.cover = null; tab.coverShown = false }
+      return
+    }
+    tab[slot] = tab[slot].filter((other) => other !== entry)
     if (tab.shown === entry) tab.shown = null
   }
 
   function forget (window: ShellWindow, tabId: string, tab: TabAsks): void {
-    if (tab.shown === null && tab.center.length === 0 && tab.address.length === 0) tabsOf(window).delete(tabId)
+    if (tab.shown === null && tab.cover === null && tab.center.length === 0 && tab.address.length === 0) tabsOf(window).delete(tabId)
   }
 
   /** One ask ends: the next shows, unless the popup was pushed out by another (showing ours would close
@@ -118,7 +146,8 @@ export function createTabSlots (defer: (run: () => void) => void = queueMicrotas
     if (entry.ask.slot === 'center') backdrop().lower(window, tabId)
     finish(entry, reason)
     if (tab === undefined) return
-    if (reason !== 'replaced' && reason !== 'window-closed') present(window, tabId)
+    // A cover is no queue's head: its end advances nothing.
+    if (entry.ask.slot !== 'cover' && reason !== 'replaced' && reason !== 'window-closed') present(window, tabId)
     forget(window, tabId, tab)
   }
 
@@ -126,18 +155,28 @@ export function createTabSlots (defer: (run: () => void) => void = queueMicrotas
     requestSlot (ask) {
       const entry: Entry = { ask, done: false }
       const tabs = tabsOf(ask.window)
-      const tab = tabs.get(ask.tabId) ?? { center: [], address: [], shown: null }
-      if (tab[ask.slot].length > MAX_WAITING) {
-        finish(entry, 'queue-full')
-        return { cancel: () => {} }
+      const tab = tabs.get(ask.tabId) ?? { center: [], address: [], shown: null, cover: null, coverShown: false }
+      if (ask.slot === 'cover') {
+        tabs.set(ask.tabId, tab)
+        const older = tab.cover
+        tab.cover = entry
+        // The overlay stays open for the new ask: it is shown again, so its show runs with the new payload.
+        tab.coverShown = false
+        if (older !== null) finish(older, 'replaced')
+        present(ask.window, ask.tabId)
+      } else {
+        if (tab[ask.slot].length > MAX_WAITING) {
+          finish(entry, 'queue-full')
+          return { cancel: () => {} }
+        }
+        tabs.set(ask.tabId, tab)
+        tab[ask.slot].push(entry)
+        present(ask.window, ask.tabId)
       }
-      tabs.set(ask.tabId, tab)
-      tab[ask.slot].push(entry)
-      present(ask.window, ask.tabId)
       return {
         cancel: () => {
           if (entry.done) return
-          if (tab.shown === entry) {
+          if (tab.shown === entry || (tab.cover === entry && tab.coverShown)) {
             try { ask.window.overlays.close(ask.overlay) } catch (error) { console.error('[tab-slots] closing an overlay failed:', error) }
           }
           if (!entry.done) end(ask.window, ask.tabId, entry, 'request')
@@ -152,6 +191,13 @@ export function createTabSlots (defer: (run: () => void) => void = queueMicrotas
 
     slotClosed (window, overlay, reason) {
       for (const [tabId, tab] of tabsOf(window)) {
+        const covering = tab.cover
+        if (covering !== null && tab.coverShown && covering.ask.overlay === overlay) {
+          // Leaving the tab hides its cover and keeps it, as for any ask.
+          if (reason === 'tab-switch') tab.coverShown = false
+          else end(window, tabId, covering, reason)
+          return
+        }
         const entry = tab.shown
         if (entry === null || entry.ask.overlay !== overlay) continue
         // Leaving the tab hides its ask and keeps it: it shows again when the tab comes back.
@@ -182,13 +228,17 @@ export function createTabSlots (defer: (run: () => void) => void = queueMicrotas
       if (tab === undefined) return
       tabs.delete(tabId)
       const shown = tab.shown
+      const cover = tab.coverShown ? tab.cover : null
       tab.shown = null
-      if (shown !== null) {
-        try { window.overlays.close(shown.ask.overlay) } catch (error) { console.error('[tab-slots] closing an overlay failed:', error) }
+      for (const entry of [shown, cover]) {
+        if (entry === null) continue
+        try { window.overlays.close(entry.ask.overlay) } catch (error) { console.error('[tab-slots] closing an overlay failed:', error) }
       }
-      for (const entry of [...tab.center, ...tab.address]) finish(entry, 'tab-closed')
+      for (const entry of [...tab.center, ...tab.address, ...(tab.cover === null ? [] : [tab.cover])]) finish(entry, 'tab-closed')
       tab.center = []
       tab.address = []
+      tab.cover = null
+      tab.coverShown = false
     }
   }
 }

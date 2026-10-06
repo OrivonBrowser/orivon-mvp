@@ -120,3 +120,44 @@ describe('ProtocolAddresses', () => {
     expect(() => new ProtocolAddresses([ens])).toThrow(/displayScheme ipfs/)
   })
 })
+
+describe('loadingScreenFor', () => {
+  const IPFS_SCREEN = BUILTIN_PROTOCOLS.find((p) => p.id === 'ipfs')?.loadingScreen
+
+  it('gives the screen of the protocol serving an address host', () => {
+    expect(IPFS_SCREEN?.title).toBeTruthy()
+    expect(addresses.loadingScreenFor(`https://${CID}.ipfs.orivon/docs/`)).toBe(IPFS_SCREEN)
+    expect(addresses.loadingScreenFor('https://en-wikipedia--on--ipfs-org.ipns.orivon/')).toBe(IPFS_SCREEN)
+  })
+
+  it('gives it for the scheme endpoint, which redirects to the origin', () => {
+    expect(addresses.loadingScreenFor(`https://ipfs.orivon/${CID}/`)).toBe(IPFS_SCREEN)
+    expect(addresses.loadingScreenFor('https://ipns.orivon/example.com')).toBe(IPFS_SCREEN)
+  })
+
+  it('gives a top-level-domain name with no screen its display scheme protocol screen', () => {
+    expect(addresses.loadingScreenFor('https://vitalik.eth/')).toBe(IPFS_SCREEN)
+  })
+
+  it('prefers a protocol own screen to its display scheme one', () => {
+    const own = { title: 'Reading the chain' }
+    const mine = new ProtocolAddresses([
+      describeProtocol({ id: 'ipfs', schemes: ['ipfs'], topLevelDomains: [], loadingScreen: { title: 'Loading from IPFS' } }),
+      describeProtocol({ id: 'ens', schemes: [], topLevelDomains: ['eth'], displayScheme: 'ipfs', loadingScreen: own })
+    ])
+    expect(mine.loadingScreenFor('https://vitalik.eth/')).toEqual(own)
+    expect(mine.loadingScreenFor(`https://${CID}.ipfs.orivon/`)?.title).toBe('Loading from IPFS')
+  })
+
+  it('is undefined when the protocol declares none and shows no other scheme', () => {
+    const bare = new ProtocolAddresses([describeProtocol({ id: 'plain', schemes: ['plain'], topLevelDomains: [] })])
+    expect(bare.loadingScreenFor(`https://${CID}.plain.orivon/`)).toBeUndefined()
+  })
+
+  it('is undefined for a URL that is not a served address', () => {
+    for (const url of [
+      'https://example.com/', `http://${CID}.ipfs.orivon/`, `https://${CID}.ipfs.orivon:8443/`, `https://${CID}.nope.orivon/`,
+      'https://ipfs.orivon/', 'https://ipfs.orivon', 'ipfs://' + CID, 'not a url', '', 'https://a..eth/'
+    ]) expect(addresses.loadingScreenFor(url)).toBeUndefined()
+  })
+})

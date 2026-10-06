@@ -10,7 +10,7 @@ import { rendererEntryUrl, validatedDevServerUrl } from '../shell/renderer-entry
 import { showContextMenu } from '../shell/context-menu.js'
 import { lockNavigation } from '../shell/lock-navigation.js'
 import { SHELL_PARTITION } from '../shell/shell-session.js'
-import { MENU_POPOVER_BACKGROUND, PANEL_POPOVER_BACKGROUND, resolveThemeColor } from '../shell/theme-colors.js'
+import { INTERNAL_PAGE_BACKGROUND, MENU_POPOVER_BACKGROUND, PANEL_POPOVER_BACKGROUND, resolveThemeColor } from '../shell/theme-colors.js'
 import { recordViewBackground } from '../shell/view-background-test-hook.js'
 import { registerOverlayIpc } from './overlay-ipc.js'
 import type { OverlayPort } from './overlay-ipc.js'
@@ -61,6 +61,7 @@ export interface OverlayViewSpec {
 }
 
 function backgroundFor (surface: OverlayDef['surface']): string {
+  if (surface === 'page') return resolveThemeColor(INTERNAL_PAGE_BACKGROUND)
   return resolveThemeColor(surface === 'menu' ? MENU_POPOVER_BACKGROUND : PANEL_POPOVER_BACKGROUND)
 }
 

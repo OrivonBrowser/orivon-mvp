@@ -12,6 +12,8 @@ export type OverlayPlacement =
   | { kind: 'area', at: 'top-right' | 'top-center' | 'center', width: number }
   /** Beside the page, taking the strip of the window the page area leaves free (see `dockBounds`): full height, and the content never decides its size. */
   | { kind: 'dock' }
+  /** Over the whole page area (the pane of the tab in front, in a split window), whatever the content's height. */
+  | { kind: 'pane' }
 
 /** A chrome rectangle in the chrome view's client pixels, which are window-content pixels too. */
 export interface OverlayAnchor { x: number, y: number, width: number, height: number }
@@ -28,11 +30,11 @@ export interface OverlayDef {
   /** Also the renderer page key and `?overlay=<name>`. */
   readonly name: string
   readonly placement: OverlayPlacement
-  /** Which pre-paint background the view gets. */
-  readonly surface: 'panel' | 'menu'
+  /** Which pre-paint background the view gets: the panel and menu colours of a popover, or `page`, the colour of an Orivon page. */
+  readonly surface: 'panel' | 'menu' | 'page'
   readonly focus: 'take' | 'never'
-  /** A popup closes the other popups; bars coexist below them. */
-  readonly layer: 'popup' | 'bar'
+  /** A popup closes the other popups; bars coexist below them; a cover lies under every bar, adopted panel and popup, and is not a popup. */
+  readonly layer: 'cover' | 'popup' | 'bar'
   readonly closeOn: OverlayCloseOn
   /** What happens to the view when the overlay closes. `fresh` destroys it at once. `warm` keeps it for the next show and
    * destroys it once it has stayed closed for a minute (a view prewarmed and never shown goes the same way); a show or a

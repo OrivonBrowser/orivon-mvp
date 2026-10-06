@@ -11,6 +11,14 @@ import type { DataGatherer, NameResolver, Namespace } from './resolution/provide
  */
 export const ADDRESS_SUFFIX = 'orivon'
 
+/** What the shell says over a tab while one of a protocol's pages loads. The shell draws the screen; a protocol only words it. */
+export interface LoadingScreen {
+  /** One line, 1 to 48 characters. */
+  readonly title: string
+  /** A sentence under it, 1 to 140 characters. */
+  readonly detail?: string
+}
+
 export interface ProtocolDescriptor {
   /** Lowercase letters, digits and hyphens: `'ipfs'`. */
   readonly id: string
@@ -20,6 +28,8 @@ export interface ProtocolDescriptor {
   readonly topLevelDomains: readonly string[]
   /** The address scheme a name under `topLevelDomains` is shown with (`ipfs` for `.eth`); its origin is unchanged. Requires `topLevelDomains` to be non-empty. */
   readonly displayScheme?: string
+  /** Shown over a tab while a page of this protocol loads. A top-level-domain name whose protocol gives none uses its `displayScheme`'s protocol's. */
+  readonly loadingScreen?: LoadingScreen
 }
 
 export interface Protocol {
@@ -31,6 +41,10 @@ export interface Protocol {
 const ID = /^[a-z][a-z0-9-]{0,62}$/
 /** A URL scheme that is also one DNS label, since it becomes a label of the host. */
 const SCHEME = /^[a-z][a-z0-9]{0,30}$/
+const LOADING_TITLE_LIMIT = 48
+const LOADING_DETAIL_LIMIT = 140
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARACTER = /[\x00-\x1f\x7f]/
 const TOP_LEVEL_DOMAIN = /^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/
 /** Schemes the browser already means something by. Every scheme starting with `orivon` is Orivon's own. */
 const RESERVED_SCHEMES: ReadonlySet<string> = new Set([
@@ -47,9 +61,23 @@ export function namespacesOf (descriptor: ProtocolDescriptor): Namespace[] {
   ]
 }
 
+/** `text` trimmed, or a thrown error naming `what` when it is empty, over `limit` or holds a control character. */
+function loadingText (id: string, what: string, text: string, limit: number): string {
+  const trimmed = text.trim()
+  if (trimmed.length === 0 || trimmed.length > limit || CONTROL_CHARACTER.test(trimmed)) {
+    throw new Error(`protocol ${id}: loadingScreen ${what} must be 1 to ${String(limit)} characters with no control character`)
+  }
+  return trimmed
+}
+
+function describeLoadingScreen (id: string, screen: LoadingScreen): LoadingScreen {
+  const title = loadingText(id, 'title', screen.title, LOADING_TITLE_LIMIT)
+  return Object.freeze(screen.detail === undefined ? { title } : { title, detail: loadingText(id, 'detail', screen.detail, LOADING_DETAIL_LIMIT) })
+}
+
 /** Checks a descriptor and returns it frozen. Throws for one the shell could not route or show. */
 export function describeProtocol (descriptor: ProtocolDescriptor): ProtocolDescriptor {
-  const { id, schemes, topLevelDomains, displayScheme } = descriptor
+  const { id, schemes, topLevelDomains, displayScheme, loadingScreen } = descriptor
   if (!ID.test(id)) throw new Error(`protocol id ${JSON.stringify(id)} is not lowercase letters, digits and hyphens`)
   for (const scheme of schemes) {
     if (!SCHEME.test(scheme)) throw new Error(`protocol ${id}: scheme ${JSON.stringify(scheme)} is not lowercase letters and digits`)
@@ -71,7 +99,8 @@ export function describeProtocol (descriptor: ProtocolDescriptor): ProtocolDescr
     id,
     schemes: Object.freeze([...schemes]),
     topLevelDomains: Object.freeze([...topLevelDomains]),
-    ...(displayScheme === undefined ? {} : { displayScheme })
+    ...(displayScheme === undefined ? {} : { displayScheme }),
+    ...(loadingScreen === undefined ? {} : { loadingScreen: describeLoadingScreen(id, loadingScreen) })
   })
 }
 

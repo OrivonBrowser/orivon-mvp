@@ -18,7 +18,8 @@ if (bridge === undefined) {
   showError(content)
 } else {
   const params = new URLSearchParams(location.search)
-  document.body.dataset['surface'] = params.get('surface') === 'menu' ? 'menu' : 'panel'
+  const surface = params.get('surface')
+  document.body.dataset['surface'] = surface === 'menu' || surface === 'page' ? surface : 'panel'
   document.body.dataset['overlay'] = bridge.name
 
   const overlay = createOverlay(bridge)

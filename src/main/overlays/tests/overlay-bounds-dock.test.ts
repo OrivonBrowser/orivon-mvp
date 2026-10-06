@@ -27,3 +27,16 @@ describe('overlayBounds: dock', () => {
     expect(overlayBounds({ kind: 'dock' }, { x: 1, y: 2, width: 3, height: 4 }, frame(area), 1, LIMITS)).toEqual({ x: 840, y: 76, width: 360, height: 724 })
   })
 })
+
+describe('overlayBounds: pane', () => {
+  it('is exactly the area it is given, whatever height its content asks for and whatever the anchor', () => {
+    const area = { x: 0, y: 104, width: 1200, height: 696 }
+    expect(overlayBounds({ kind: 'pane' }, undefined, frame(area), 9999, LIMITS)).toEqual(area)
+    expect(overlayBounds({ kind: 'pane' }, { x: 1, y: 2, width: 3, height: 4 }, frame(area), 1, LIMITS)).toEqual(area)
+  })
+
+  it('is as wide as one pane of a split window', () => {
+    const pane = { x: 600, y: 76, width: 600, height: 724 }
+    expect(overlayBounds({ kind: 'pane' }, undefined, frame(pane), 200, LIMITS)).toEqual(pane)
+  })
+})

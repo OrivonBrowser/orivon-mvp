@@ -40,6 +40,36 @@ describe('describeProtocol', () => {
     expect('displayScheme' in ipfs).toBe(false)
   })
 
+  it('accepts a loading screen, trims it, freezes it and keeps an absent detail absent', () => {
+    const base = { id: 'ipfs', schemes: ['ipfs'], topLevelDomains: [] }
+    const full = describeProtocol({ ...base, loadingScreen: { title: '  Loading from IPFS ', detail: ' Checked. ' } })
+    expect(full.loadingScreen).toEqual({ title: 'Loading from IPFS', detail: 'Checked.' })
+    expect(Object.isFrozen(full.loadingScreen)).toBe(true)
+    const bare = describeProtocol({ ...base, loadingScreen: { title: 'Loading' } })
+    expect(bare.loadingScreen).toEqual({ title: 'Loading' })
+    expect('detail' in (bare.loadingScreen ?? {})).toBe(false)
+    expect('loadingScreen' in describeProtocol(base)).toBe(false)
+  })
+
+  it.each([
+    [{ title: '' }, /loadingScreen title/],
+    [{ title: '   ' }, /loadingScreen title/],
+    [{ title: 'x'.repeat(49) }, /loadingScreen title/],
+    [{ title: 'a\nb' }, /loadingScreen title/],
+    [{ title: 'a\u007fb' }, /loadingScreen title/],
+    [{ title: 'ok', detail: '' }, /loadingScreen detail/],
+    [{ title: 'ok', detail: 'x'.repeat(141) }, /loadingScreen detail/],
+    [{ title: 'ok', detail: 'a\tb' }, /loadingScreen detail/]
+  ])('refuses the loading screen %o', (loadingScreen, message) => {
+    expect(() => describeProtocol({ id: 'p', schemes: ['p'], topLevelDomains: [], loadingScreen })).toThrow(message)
+  })
+
+  it('takes a title of 48 characters and a detail of 140', () => {
+    const screen = describeProtocol({ id: 'p', schemes: ['p'], topLevelDomains: [], loadingScreen: { title: 'x'.repeat(48), detail: 'y'.repeat(140) } }).loadingScreen
+    expect(screen?.title).toHaveLength(48)
+    expect(screen?.detail).toHaveLength(140)
+  })
+
   it('holds for every built-in protocol, whose namespaces never overlap', () => {
     const namespaces = BUILTIN_PROTOCOLS.flatMap((p) => namespacesOf(describeProtocol(p)))
     expect(new Set(namespaces).size).toBe(namespaces.length)
