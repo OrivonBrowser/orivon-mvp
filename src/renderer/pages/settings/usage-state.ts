@@ -1,20 +1,29 @@
-// Usage statistics as the page knows them: whether the person has chosen, the
-// exact text that would be sent, and what has been. The page shows main's words
-// and payload as they are: nothing here decides or rounds anything. `sent`
-// grows in the background as the telemetry runner actually sends; `handle`
-// reloads on `usage.changed` rather than polling for that.
+// Usage statistics as the page knows them: whether they are on, the exact text of the two reports that
+// would be sent, what has been, and the actions the person can take. The page shows main's words and
+// payloads as they are: nothing here decides or rounds anything. `sent` grows in the background as the
+// telemetry runner actually sends; `handle` reloads on `usage.changed` rather than polling for that.
 import type { OrivonInternal } from '../shared/bridge.js'
 
 export interface UsageStatus {
   readonly private: boolean
+  /** Why telemetry does not run in this build or launch: nothing is counted, so nothing can be turned on. */
+  readonly off?: 'development' | 'env' | 'private'
   readonly consent?: 'undecided' | 'accepted' | 'declined'
-  readonly options?: ReadonlyArray<{ readonly id: string, readonly label: string, readonly resultingState: string }>
-  readonly payload?: unknown
+  readonly region?: string
+  /** Null until telemetry is on: the computer is not read before then. */
+  readonly installId?: string | null
+  readonly usage?: unknown
+  readonly sites?: unknown
   readonly sent?: ReadonlyArray<{ readonly payload: unknown, readonly sentAtMs: number }>
 }
 
+export type EraseOutcome = 'working' | 'done' | 'failed'
+
 export class UsageState {
   status: UsageStatus | null = null
+  /** The result of the last Delete my data, until the next change of any kind. */
+  erase: EraseOutcome | null = null
+  noticeOpen = false
   private loading = false
 
   constructor (private readonly bridge: OrivonInternal, private readonly changed: () => void) {}
@@ -37,8 +46,22 @@ export class UsageState {
     this.changed()
   }
 
-  async decide (option: string): Promise<void> {
-    await this.bridge.request('telemetry', { type: 'decide', option })
+  async setOn (on: boolean): Promise<void> {
+    this.erase = null
+    await this.bridge.request('telemetry', { type: 'set', on })
     await this.load()
+  }
+
+  async deleteMyData (): Promise<void> {
+    this.erase = 'working'
+    this.changed()
+    const reply = await this.bridge.request('telemetry', { type: 'erase' }) as { ok?: boolean } | undefined
+    this.erase = reply?.ok === true ? 'done' : 'failed'
+    await this.load()
+  }
+
+  toggleNotice (): void {
+    this.noticeOpen = !this.noticeOpen
+    this.changed()
   }
 }

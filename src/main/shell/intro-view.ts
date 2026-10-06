@@ -2,13 +2,14 @@
 // dashboard tab that has already loaded beneath it. The page (src/renderer/
 // intro/) has no preload: it reports "Enter Orivon" by moving its own URL hash
 // to #leaving (or #leaving-default, when the box that offers to make Orivon the
-// default browser is ticked) and then #entered, which is all this watches. Whether a launch
+// default browser is ticked; or #leaving?default=0|1&telemetry=0|1 when it asked the
+// telemetry question) and then #entered, which is all this watches. Whether a launch
 // shows it at all is ./intro-state.ts.
 import { app, WebContentsView, type BaseWindow } from 'electron'
 import { defaultBrowserHost } from '../os/default-browser-runner.js'
 import { makeDefaultBrowser } from '../os/default-browser.js'
 import { attachShown } from './attach-view.js'
-import type { IntroPlan } from './intro-state.js'
+import { introPageUrl, parseLeaving, type IntroPlan } from './intro-state.js'
 import { rendererEntryUrl, validatedDevServerUrl } from './renderer-entry.js'
 import type { TabManager } from './tabs.js'
 import { SHELL_PARTITION } from './shell-session.js'
@@ -77,11 +78,14 @@ export function showIntro (win: BaseWindow, tabs: Pick<TabManager, 'onStateChang
   webContents.on('will-navigate', (event) => { event.preventDefault() })
   webContents.on('did-navigate-in-page', (_event, url) => {
     const { hash } = new URL(url)
-    if (hash === '#leaving' || hash === '#leaving-default') {
+    const leaving = parseLeaving(hash)
+    if (leaving !== undefined) {
       view.setBackgroundColor(TRANSPARENT)
       void plan.onEntered()
+      // Only the answer to a question the screen was told to ask: a page that did not ask cannot report one.
+      if (plan.offerTelemetry && leaving.telemetry !== undefined) void plan.chooseTelemetry(leaving.telemetry).catch((error: unknown) => { console.error('[orivon] intro: could not record the telemetry choice:', error) })
       // The system asked only when the person ticked the box; a screen that did not offer it cannot report it.
-      if (hash === '#leaving-default' && plan.offerDefault) void makeDefaultBrowser(defaultBrowserHost, wait).catch((error: unknown) => { console.error('[orivon] intro: could not make Orivon the default browser:', error) })
+      if (leaving.makeDefault && plan.offerDefault) void makeDefaultBrowser(defaultBrowserHost, wait).catch((error: unknown) => { console.error('[orivon] intro: could not make Orivon the default browser:', error) })
     } else if (hash === '#entered') {
       dismiss()
       const { activeTabId, tabs: all } = tabs.getState()
@@ -99,5 +103,5 @@ export function showIntro (win: BaseWindow, tabs: Pick<TabManager, 'onStateChang
   tabs.onStateChange(keepOnTop)
   const devServerUrl = validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL'])
   const page = rendererEntryUrl(devServerUrl, '/intro/', 'intro')
-  void webContents.loadURL(plan.offerDefault ? `${page}?default=1` : page)
+  void webContents.loadURL(introPageUrl(page, plan))
 }

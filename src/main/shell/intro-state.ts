@@ -11,6 +11,10 @@ export type IntroMode = typeof MODES[number]
 export interface IntroPlan {
   /** The screen offers to make Orivon the default browser, a box left unticked: decided from facts alone, since asking the system would delay the first window. */
   readonly offerDefault: boolean
+  /** The screen puts the telemetry question in place of its single Enter button: the person has not chosen yet, and telemetry runs in this process. */
+  readonly offerTelemetry: boolean
+  /** Records the answer to that question, for the whole computer. Called once, with the button the person pressed. */
+  readonly chooseTelemetry: (on: boolean) => Promise<void>
   /**
    * Called when the person clicks through. Only `once` remembers it: a launch
    * in `always` mode (`npm run dev`) must not use up the one-time showing a
@@ -50,11 +54,48 @@ export async function markIntroSeen (userDataDir: string): Promise<void> {
   }
 }
 
-export async function planIntro (envValue: string | undefined, userDataDir: string, offerDefault = false): Promise<IntroPlan | undefined> {
+/** What the page reports when it is left: `#leaving`, `#leaving-default`, or `#leaving?default=0|1&telemetry=0|1` when the telemetry question was on it. */
+export interface LeavingReport {
+  readonly makeDefault: boolean
+  /** The button pressed, or undefined when the page asked no telemetry question. */
+  readonly telemetry: boolean | undefined
+}
+
+export function parseLeaving (hash: string): LeavingReport | undefined {
+  if (hash === '#leaving') return { makeDefault: false, telemetry: undefined }
+  if (hash === '#leaving-default') return { makeDefault: true, telemetry: undefined }
+  if (!hash.startsWith('#leaving?')) return undefined
+  const params = new URLSearchParams(hash.slice('#leaving?'.length))
+  const telemetry = params.get('telemetry')
+  return { makeDefault: params.get('default') === '1', telemetry: telemetry === '1' ? true : telemetry === '0' ? false : undefined }
+}
+
+/** The address of the welcome page: what main offers it travels in the query, since the page has no bridge. */
+export function introPageUrl (page: string, plan: Pick<IntroPlan, 'offerDefault' | 'offerTelemetry'>): string {
+  const query = new URLSearchParams()
+  if (plan.offerDefault) query.set('default', '1')
+  if (plan.offerTelemetry) query.set('telemetry', '1')
+  const text = query.toString()
+  return text === '' ? page : `${page}?${text}`
+}
+
+/** What the telemetry question needs from outside: whether it is to be asked, asked only when the screen shows, and where the answer goes. */
+export interface TelemetryQuestion {
+  readonly offered: () => Promise<boolean>
+  readonly choose: (on: boolean) => Promise<void>
+}
+
+export async function planIntro (envValue: string | undefined, userDataDir: string, offerDefault = false, telemetry?: TelemetryQuestion): Promise<IntroPlan | undefined> {
   const mode = introMode(envValue)
   if (envValue !== undefined && envValue !== '' && envValue !== mode) {
     console.warn(`[orivon] intro: ORIVON_INTRO=${envValue} is not always, once or off; using once`)
   }
   if (!shouldShowIntro(mode, await readIntroSeen(userDataDir))) return undefined
-  return { offerDefault, onEntered: mode === 'once' ? () => markIntroSeen(userDataDir) : async () => {} }
+  const offerTelemetry = telemetry !== undefined && await telemetry.offered()
+  return {
+    offerDefault,
+    offerTelemetry,
+    chooseTelemetry: telemetry?.choose ?? (async () => {}),
+    onEntered: mode === 'once' ? () => markIntroSeen(userDataDir) : async () => {}
+  }
 }

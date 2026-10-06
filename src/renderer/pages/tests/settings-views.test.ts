@@ -233,3 +233,42 @@ describe('UsageState.handle', () => {
     expect(new UsageState(bridge, () => {}).handle('settings.changed')).toBe(false)
   })
 })
+
+describe('UsageState actions', () => {
+  function usageWith (replies: Record<string, unknown>): { usage: UsageState, requests: unknown[], changes: () => number } {
+    const requests: unknown[] = []
+    let changes = 0
+    const bridge = { request: async (_domain: string, command: { type: string }) => { requests.push(command); return replies[command.type] } } as unknown as OrivonInternal
+    return { usage: new UsageState(bridge, () => { changes += 1 }), requests, changes: () => changes }
+  }
+
+  it('turns telemetry on or off with one request and then reads the status again', async () => {
+    const { usage, requests } = usageWith({ set: { ok: true }, status: { private: false, consent: 'accepted' } })
+    await usage.setOn(true)
+    expect(requests).toEqual([{ type: 'set', on: true }, { type: 'status' }])
+    expect(usage.status?.consent).toBe('accepted')
+  })
+
+  it('says done when the server confirmed the deletion, failed when it did not, and working meanwhile', async () => {
+    const done = usageWith({ erase: { ok: true }, status: { private: false, consent: 'declined' } })
+    const pending = done.usage.deleteMyData()
+    expect(done.usage.erase).toBe('working')
+    await pending
+    expect(done.usage.erase).toBe('done')
+
+    const failed = usageWith({ erase: { ok: false }, status: { private: false, consent: 'declined' } })
+    await failed.usage.deleteMyData()
+    expect(failed.usage.erase).toBe('failed')
+  })
+
+  it('forgets an old deletion result when the person turns it on again, and redraws when the notice is opened', async () => {
+    const { usage, changes } = usageWith({ erase: { ok: true }, set: { ok: true }, status: { private: false, consent: 'accepted' } })
+    await usage.deleteMyData()
+    await usage.setOn(true)
+    expect(usage.erase).toBeNull()
+    const before = changes()
+    usage.toggleNotice()
+    expect(usage.noticeOpen).toBe(true)
+    expect(changes()).toBe(before + 1)
+  })
+})

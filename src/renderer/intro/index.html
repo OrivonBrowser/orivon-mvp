@@ -35,13 +35,34 @@
             <span class="line line-3" aria-hidden="true"><span class="line-text">DESERVES.</span></span>
           </h1>
 
-          <div class="cta">
+          <div class="cta" id="cta">
             <button class="enter" id="enter" type="button">
               Enter Orivon
               <span class="enter-arrow" aria-hidden="true">→</span>
             </button>
             <span class="cta-note">No extensions · No setup · Free</span>
           </div>
+          <section class="telemetry" id="telemetry-choice" aria-labelledby="telemetry-title" hidden>
+            <h2 class="telemetry-title" id="telemetry-title">Telemetry</h2>
+            <p class="telemetry-text">
+              Orivon has no ads and never sees what you browse. A count of how long it is used, and on which Web3 and
+              Web2.5 sites, is how we know it is worth building. No page addresses, no IP address, never sold.
+            </p>
+            <details class="telemetry-details">
+              <summary>What is sent</summary>
+              <ul>
+                <li>How long Orivon is open and in use each month, and how much of that time is on Web3, Web2.5 and Web2 sites.</li>
+                <li>The names of the Web3 and Web2.5 sites you spend time on and for how long, in a separate report that is not linked to the rest. Web2 sites are never named.</li>
+                <li>A random ID made from your computer that cannot be turned back into anything about you, the app version, and your region (EU, US or other).</li>
+                <li>Never your history, your searches, a page address or your IP address (the server does not keep it). You can change this any time in Settings.</li>
+              </ul>
+            </details>
+            <div class="telemetry-buttons">
+              <button class="telemetry-button" id="enter-with-telemetry" type="button">Enter and share telemetry</button>
+              <button class="telemetry-button" id="enter-without-telemetry" type="button">Enter without telemetry</button>
+            </div>
+            <p class="telemetry-hint" id="telemetry-hint" role="status" aria-live="polite"></p>
+          </section>
           <label class="default-offer" id="default-offer" hidden>
             <input type="checkbox" id="make-default" />
             <span>Make Orivon my default browser</span>

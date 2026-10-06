@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { introMode, markIntroSeen, planIntro, readIntroSeen, shouldShowIntro } from '../intro-state.js'
+import { introMode, introPageUrl, markIntroSeen, parseLeaving, planIntro, readIntroSeen, shouldShowIntro } from '../intro-state.js'
 
 let dir: string
 
@@ -128,5 +128,45 @@ describe('planIntro -- decided before the window exists', () => {
     await planIntro(undefined, dir)
     await planIntro('', dir)
     expect(warn).not.toHaveBeenCalled()
+  })
+})
+
+describe('the telemetry question on the welcome screen', () => {
+  it('is asked only when the screen shows and the outside says it is to be asked, and records the answer where told', async () => {
+    const choose = vi.fn(async (_on: boolean) => {})
+    const asked = vi.fn(async () => true)
+    expect(await planIntro('off', dir, false, { offered: asked, choose })).toBeUndefined()
+    expect(asked).not.toHaveBeenCalled()
+
+    const plan = await planIntro('always', dir, false, { offered: asked, choose })
+    expect(plan?.offerTelemetry).toBe(true)
+    await plan?.chooseTelemetry(false)
+    expect(choose).toHaveBeenCalledWith(false)
+
+    expect((await planIntro('always', dir, false, { offered: async () => false, choose }))?.offerTelemetry).toBe(false)
+    expect((await planIntro('always', dir))?.offerTelemetry).toBe(false)
+  })
+})
+
+describe('parseLeaving and introPageUrl', () => {
+  it('reads the two reports an unquestioned page makes, unchanged', () => {
+    expect(parseLeaving('#leaving')).toEqual({ makeDefault: false, telemetry: undefined })
+    expect(parseLeaving('#leaving-default')).toEqual({ makeDefault: true, telemetry: undefined })
+  })
+
+  it('reads the report of a page that asked the telemetry question: the box and the button pressed', () => {
+    expect(parseLeaving('#leaving?default=1&telemetry=1')).toEqual({ makeDefault: true, telemetry: true })
+    expect(parseLeaving('#leaving?default=0&telemetry=0')).toEqual({ makeDefault: false, telemetry: false })
+    expect(parseLeaving('#leaving?default=0&telemetry=maybe')).toEqual({ makeDefault: false, telemetry: undefined })
+  })
+
+  it('reads nothing from any other hash, #entered included', () => {
+    for (const hash of ['', '#', '#entered', '#leaving-other', '#leaving2?telemetry=1']) expect(parseLeaving(hash)).toBeUndefined()
+  })
+
+  it('puts what main offers in the address and nothing else', () => {
+    expect(introPageUrl('orivon-shell://r/intro/', { offerDefault: false, offerTelemetry: false })).toBe('orivon-shell://r/intro/')
+    expect(introPageUrl('orivon-shell://r/intro/', { offerDefault: true, offerTelemetry: false })).toBe('orivon-shell://r/intro/?default=1')
+    expect(introPageUrl('orivon-shell://r/intro/', { offerDefault: true, offerTelemetry: true })).toBe('orivon-shell://r/intro/?default=1&telemetry=1')
   })
 })

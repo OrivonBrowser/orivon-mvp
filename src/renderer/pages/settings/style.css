@@ -154,7 +154,13 @@
 }
 
 .usage { display: grid; gap: 10px; width: 100%; }
-.usage-buttons { display: flex; gap: 10px; }
+.usage-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+.usage-switch { display: flex; align-items: center; gap: 12px; }
+.usage-body { display: grid; gap: 10px; }
+.usage-notice { padding: 10px 12px; border-radius: 8px; background: var(--wsurface); user-select: text; }
+.usage-notice h3, .usage-notice h4 { margin: 12px 0 6px; }
+.usage-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.usage-table th, .usage-table td { text-align: left; vertical-align: top; padding: 4px 8px; border-bottom: 1px solid var(--wborder); }
 .json { margin: 8px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--wsurface); overflow-x: auto; font-size: 12px; user-select: text; }
 .usage-sent { margin-top: 8px; }
 details > summary { cursor: pointer; }
