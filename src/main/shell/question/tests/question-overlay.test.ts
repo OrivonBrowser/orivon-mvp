@@ -289,6 +289,14 @@ describe('a question whose button needs two presses', () => {
     expect(r.close).toHaveBeenCalledOnce()
   })
 
+  it('keeps the first press when the pointer reports arriving at the button again', () => {
+    const r = ready()
+    r.handler.request({ id: r.id, button: 0 })
+    r.handler.request({ type: 'enter', id: r.id, button: 0 })
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.results).toEqual([{ response: 0, checkboxChecked: false }])
+  })
+
   it('takes a second press after the window as a first one again', () => {
     const r = ready()
     r.handler.request({ id: r.id, button: 0 })

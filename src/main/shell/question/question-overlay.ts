@@ -128,8 +128,9 @@ export function createQuestionPanel (name: string, now: () => number = Date.now)
           if (arrival.type === 'leave') {
             if (armed === arrival.button) disarm()
           } else if (spec.doublePress?.includes(arrival.button) === true && shownAt !== null && now() - shownAt >= GUARD_MS) {
+            // Arriving again while armed is the same pointer moving inside the button: the first press stands.
+            if (armed !== arrival.button) firstPress = null
             armed = arrival.button
-            firstPress = null
           }
           return true
         }
