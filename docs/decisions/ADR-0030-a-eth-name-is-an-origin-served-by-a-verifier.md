@@ -180,8 +180,11 @@ a gateway can hang on a block it does not have while answering everything else f
 and hedges with a second after `hedgeDelayMs` (2 s) if nothing has verified yet -- the first
 verified answer wins, the loser is abandoned (`src/protocols/ipfs/block-fetch.ts`). In-flight fetches for
 the same block are shared per partition, the same way verified blocks already were, so two
-concurrent requests for one asset cost one fetch (`src/protocols/ipfs/blockstore.ts`'s `SharedFetch`). IPNS
-lookups go through the same per-gateway scheduling, sequentially, with no hedging.
+concurrent requests for one asset cost one fetch (`src/protocols/ipfs/blockstore.ts`'s `SharedFetch`). An IPNS
+lookup is raced the same way (`src/protocols/ipfs/race.ts`), the gateways first and the name services after
+them, so a gateway that hangs costs the hedge delay rather than its whole timeout, which is longer than a
+mount's deadline (d-0528). A gateway that had the head start and had sent nothing when its hedge won counts
+as a timeout, so one that hangs on everything cools down instead of costing every request the hedge delay.
 
 **A name past its two-minute freshness window keeps serving its last proven root, stale, for up
 to ten minutes (`STALE_SERVE_MS`, `src/protocols/verifier-host/serve/sites.ts`) while a single background

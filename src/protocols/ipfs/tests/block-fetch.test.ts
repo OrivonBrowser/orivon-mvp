@@ -36,6 +36,28 @@ describe('fetchVerifiedBlock -- hedging', () => {
     expect(gateways.requests).toEqual([`${A}/ipfs/${leafKey}?format=raw`, `${B}/ipfs/${leafKey}?format=raw`])
   })
 
+  it('cools a leader that sent nothing while its hedge won, twice in a row, as it would a hung one', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    gateways.hanging.add(A)
+    const d = deps(gateways, [A, B], { blockTimeoutMs: 30_000 })
+    const [first, second] = [...dag.blocks.keys()].map((key) => CID.parse(key))
+    await fetchVerifiedBlock(first!, d, signal, noRefusal)
+    expect(d.pool.candidates()).toContain(A)
+    await fetchVerifiedBlock(second!, d, signal, noRefusal)
+    expect(d.pool.candidates()).toEqual([B])
+  })
+
+  it('never holds a lost race against a hedge started after the winner', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    gateways.hanging.add(B)
+    const d = { ...deps(gateways, [A, B]), fetch: async (url: string, init: Parameters<typeof gateways.fetch>[1]) => {
+      if (url.startsWith(A)) await new Promise((resolve) => setTimeout(resolve, 60))
+      return await gateways.fetch(url, init)
+    } }
+    for (const key of [...dag.blocks.keys()].slice(0, 2)) await fetchVerifiedBlock(CID.parse(key), d, signal, noRefusal)
+    expect(d.pool.candidates()).toEqual([A, B])
+  })
+
   it('does not hedge when the leader answers within the hedge delay', async () => {
     const gateways = fakeGateways(dag.blocks)
     const d = deps(gateways, [A, B])

@@ -16,6 +16,8 @@ const A = 'https://a.gateway'
 const B = 'https://b.gateway'
 const dag = await buildDag({ 'index.html': 'x' })
 const signal = new AbortController().signal
+// A hedge delay no test waits out: a source that fails must hand over at once, not after it.
+const LIMITS = { blockTimeoutMs: 5000, hedgeDelayMs: 60_000 }
 
 async function ipnsKey (): Promise<{ key: Awaited<ReturnType<typeof generateKeyPair>>, name: string }> {
   const key = await generateKeyPair('Ed25519')
@@ -85,9 +87,50 @@ describe('resolveIpnsKey', () => {
     const gw = fakeGateways(new Map())
     gw.ipns(name, await signed(key, `/ipfs/${dag.root.toString()}`, 5n))
     const sequences = memorySequenceStore()
-    const record = await resolveIpnsKey(name, gw.fetch, { pool: new GatewayPool([A, B], 4), nameServices: [] }, sequences, 5000, signal, () => {})
+    const record = await resolveIpnsKey(name, gw.fetch, { pool: new GatewayPool([A, B], 4), nameServices: [] }, sequences, LIMITS, signal, () => {})
     expect(record).toEqual({ key: name, sequence: 5n, value: `/ipfs/${dag.root.toString()}` })
     expect(sequences.highest(name)).toBe(5n)
+  })
+
+  it('asks the next source once the first has been silent for the hedge delay, and cancels the one still running', async () => {
+    const { key, name } = await ipnsKey()
+    const gw = fakeGateways(new Map())
+    gw.ipns(name, await signed(key, `/ipfs/${dag.root.toString()}`, 5n), [B])
+    let hung: AbortSignal | undefined
+    const fetch: typeof gw.fetch = async (url, init) => {
+      if (!url.startsWith(A)) return await gw.fetch(url, init)
+      hung = init.signal
+      return await new Promise((_resolve, reject) => { init.signal.addEventListener('abort', () => { reject(init.signal.reason) }) })
+    }
+    const pool = new GatewayPool([A, B], 4)
+    const record = await resolveIpnsKey(name, fetch, { pool, nameServices: [] }, memorySequenceStore(), { blockTimeoutMs: 30_000, hedgeDelayMs: 20 }, signal, () => {})
+    expect(record.sequence).toBe(5n)
+    expect(hung?.aborted).toBe(true)
+    // Outrun once while silent is one strike, not yet a cooldown.
+    expect(pool.candidates()).toContain(A)
+  })
+
+  it('stops when the caller stops waiting, starting no source after that', async () => {
+    const { name } = await ipnsKey()
+    const asked: string[] = []
+    const fetch = async (url: string, init: { readonly signal: AbortSignal }): Promise<Response> => {
+      asked.push(url)
+      return await new Promise((_resolve, reject) => { init.signal.addEventListener('abort', () => { reject(init.signal.reason) }) })
+    }
+    const caller = new AbortController()
+    setTimeout(() => { caller.abort() }, 20)
+    await expect(resolveIpnsKey(name, fetch, { pool: new GatewayPool([A, B], 4), nameServices: ['https://names.example'] }, memorySequenceStore(), LIMITS, caller.signal, () => {})).rejects.toMatchObject({ failure: 'unavailable' })
+    expect(asked).toEqual([`${A}/ipns/${name}?format=ipns-record`])
+  })
+
+  it('is unavailable at once when no source is left to ask', async () => {
+    const { name } = await ipnsKey()
+    const pool = new GatewayPool([A], 4)
+    pool.drop(A)
+    const caller = new AbortController()
+    const timer = setTimeout(() => { caller.abort(new Error('still waiting')) }, 1000)
+    await expect(resolveIpnsKey(name, fakeGateways(new Map()).fetch, { pool, nameServices: [] }, memorySequenceStore(), LIMITS, caller.signal, () => {})).rejects.toMatchObject({ failure: 'unavailable', message: expect.stringContaining('no source left to ask') })
+    clearTimeout(timer)
   })
 
   it('waits out a short cooldown when every gateway is cooling, instead of failing untried', async () => {
@@ -97,7 +140,7 @@ describe('resolveIpnsKey', () => {
     const pool = new GatewayPool([A], 4)
     pool.note(A, { kind: 'rate-limited', retryAfterMs: 50 })
     expect(pool.candidates()).toEqual([])
-    const record = await resolveIpnsKey(name, gw.fetch, { pool, nameServices: [] }, memorySequenceStore(), 5000, signal, () => {})
+    const record = await resolveIpnsKey(name, gw.fetch, { pool, nameServices: [] }, memorySequenceStore(), LIMITS, signal, () => {})
     expect(record.sequence).toBe(5n)
   })
 
@@ -107,7 +150,7 @@ describe('resolveIpnsKey', () => {
     gw.ipns(name, await signed(key, `/ipfs/${dag.root.toString()}`, 5n))
     const pool = new GatewayPool([A], 4)
     pool.note(A, { kind: 'rate-limited', retryAfterMs: 15_000 })
-    const record = await resolveIpnsKey(name, gw.fetch, { pool, nameServices: [] }, memorySequenceStore(), 50, signal, () => {})
+    const record = await resolveIpnsKey(name, gw.fetch, { pool, nameServices: [] }, memorySequenceStore(), { ...LIMITS, blockTimeoutMs: 50 }, signal, () => {})
     expect(record.sequence).toBe(5n)
   })
 
@@ -119,7 +162,7 @@ describe('resolveIpnsKey', () => {
     gw.ipns(name, await signed(key, `/ipfs/${dag.root.toString()}`, 5n), [B])
     const pool = new GatewayPool([A, B], 4)
     const refused: Refusal[] = []
-    const record = await resolveIpnsKey(name, gw.fetch, { pool, nameServices: [] }, memorySequenceStore(), 5000, signal, (r) => { refused.push(r) })
+    const record = await resolveIpnsKey(name, gw.fetch, { pool, nameServices: [] }, memorySequenceStore(), LIMITS, signal, (r) => { refused.push(r) })
     expect(record.sequence).toBe(5n)
     expect(refused).toEqual([{ source: A, resource: `/ipns/${name}` }])
     expect(pool.usable()).toEqual([B])
@@ -131,7 +174,7 @@ describe('resolveIpnsKey', () => {
     gw.ipns(name, await signed(key, '/ipfs/bafkqaaa', 3n))
     const sequences = memorySequenceStore()
     sequences.record(name, 4n)
-    await expect(resolveIpnsKey(name, gw.fetch, { pool: new GatewayPool([A], 4), nameServices: [] }, sequences, 5000, signal, () => {})).rejects.toMatchObject({ failure: 'unverifiable' })
+    await expect(resolveIpnsKey(name, gw.fetch, { pool: new GatewayPool([A], 4), nameServices: [] }, sequences, LIMITS, signal, () => {})).rejects.toMatchObject({ failure: 'unverifiable' })
   })
 
   it('asks a name service after the gateways, when no gateway has the record', async () => {
@@ -144,7 +187,7 @@ describe('resolveIpnsKey', () => {
       if (url.startsWith('https://names.example/name/')) return new Response(JSON.stringify({ value: `/ipfs/${dag.root.toString()}`, record: Buffer.from(record).toString('base64') }), { headers: { 'content-type': 'application/json' } })
       return await gw.fetch(url, init)
     }
-    const found = await resolveIpnsKey(name, fetch, { pool: new GatewayPool([A], 4), nameServices: ['https://names.example'] }, memorySequenceStore(), 5000, signal, () => {})
+    const found = await resolveIpnsKey(name, fetch, { pool: new GatewayPool([A], 4), nameServices: ['https://names.example'] }, memorySequenceStore(), LIMITS, signal, () => {})
     expect(found.sequence).toBe(100_001n)
     expect(asked).toEqual([`${A}/ipns/${name}?format=ipns-record`, `https://names.example/name/${name}`])
   })
@@ -155,7 +198,7 @@ describe('resolveIpnsKey', () => {
     const record = await signed(forger, '/ipfs/bafkqaaa', 1n)
     const fetch = async (): Promise<Response> => new Response(JSON.stringify({ record: Buffer.from(record).toString('base64') }))
     const refused: Refusal[] = []
-    await expect(resolveIpnsKey(name, fetch, { pool: new GatewayPool([A], 4), nameServices: ['https://names.example'] }, memorySequenceStore(), 5000, signal, (r) => { refused.push(r) })).rejects.toMatchObject({ failure: 'unverifiable' })
+    await expect(resolveIpnsKey(name, fetch, { pool: new GatewayPool([A], 4), nameServices: ['https://names.example'] }, memorySequenceStore(), LIMITS, signal, (r) => { refused.push(r) })).rejects.toMatchObject({ failure: 'unverifiable' })
     expect(refused.map((r) => r.source)).toContain('https://names.example')
   })
 
@@ -165,14 +208,14 @@ describe('resolveIpnsKey', () => {
     const expired = await createIPNSRecordWithExpiration(key, '/ipfs/bafkqaaa', 1n, new Date(Date.now() - 60_000).toISOString())
     gw.ipns(name, marshalIPNSRecord(expired))
     const pool = new GatewayPool([A], 4)
-    await expect(resolveIpnsKey(name, gw.fetch, { pool, nameServices: [] }, memorySequenceStore(), 5000, signal, () => {})).rejects.toMatchObject({ failure: 'unavailable' })
+    await expect(resolveIpnsKey(name, gw.fetch, { pool, nameServices: [] }, memorySequenceStore(), LIMITS, signal, () => {})).rejects.toMatchObject({ failure: 'unavailable' })
     expect(pool.usable()).toEqual([A])
   })
 })
 
 describe('followPointer', () => {
   const resolvers = (gw: ReturnType<typeof fakeGateways>, txt: Record<string, string> = {}, maxHops = 4): Parameters<typeof followPointer>[1] => ({
-    ipns: async (key, s, onRefusal) => await resolveIpnsKey(key, gw.fetch, { pool: new GatewayPool([A], 4), nameServices: [] }, memorySequenceStore(), 5000, s, onRefusal),
+    ipns: async (key, s, onRefusal) => await resolveIpnsKey(key, gw.fetch, { pool: new GatewayPool([A], 4), nameServices: [] }, memorySequenceStore(), LIMITS, s, onRefusal),
     resolveTxt: async (name) => txt[name] === undefined ? [] : [[`dnslink=${txt[name]!}`]],
     maxHops
   })

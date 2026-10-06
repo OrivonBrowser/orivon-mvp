@@ -63,6 +63,9 @@ Skip routine sessions.
   (`-F` reads the file; `-f` sends the literal string). `gh pr edit` fails the same way as
   `--label`.
 - Label: `gh api -X POST repos/OrivonBrowser/orivon-mvp/issues/<n>/labels -f labels[]=<label>`.
+- Read CI: `gh pr view <n> --json mergeStateStatus,statusCheckRollup`. This `gh`'s `pr checks` has no
+  `--json`, so a script built on it sees no checks and waits for ever. A failed shard's spec:
+  `gh api repos/OrivonBrowser/orivon-mvp/actions/jobs/<job id>/logs`, then grep for ` FAIL `.
 
 ## Context that rarely changes what you do
 
