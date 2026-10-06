@@ -25,7 +25,7 @@ export const privacyNetworkRows: readonly Row[] = [
     help: 'Sends the Global Privacy Control signal, which asks sites not to sell or share your data; some laws, such as California\'s, make sites honour it. Every site sees it as the Sec-GPC: 1 request header and as navigator.globalPrivacyControl in its pages, frames and workers. It is read when Orivon starts, and a private window follows the choice made where it was opened.',
     keywords: ['gpc', 'global privacy control', 'sell', 'share', 'opt out', 'ccpa', 'california', 'tracking', 'signal', 'sec-gpc'],
     group: GROUP,
-    control: { type: 'toggle', key: 'privacy.globalPrivacyControl', disabled: (state) => state.profiles?.isPrivate === true }
+    control: { type: 'toggle', key: 'privacy.globalPrivacyControl', locked: (state) => state.profiles?.isPrivate === true }
   },
   {
     id: 'global-privacy-control-restart',

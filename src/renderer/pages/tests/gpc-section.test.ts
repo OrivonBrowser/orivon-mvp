@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { privacyNetworkRows } from '../settings/sections/privacy-network.js'
+import { toggleState } from '../settings/rows.js'
 import { SettingsState } from '../settings/state.js'
 import type { OrivonInternal } from '../shared/bridge.js'
 import type { Row } from '../settings/model.js'
@@ -38,7 +39,14 @@ describe('the Global Privacy Control rows', () => {
     const { state } = await loaded(false, true, true)
     expect(row('global-privacy-control-restart').visible?.(state)).toBe(false)
     const control = row('global-privacy-control').control
-    expect(control.type === 'toggle' && control.disabled?.(state)).toBe(true)
+    expect(control.type === 'toggle' && control.locked?.(state)).toBe(true)
+  })
+
+  it('show the signal a private window sends, though it cannot change it there', async () => {
+    const { state } = await loaded(true, true, true)
+    const control = row('global-privacy-control').control
+    if (control.type !== 'toggle') throw new Error('not a toggle')
+    expect(toggleState(control, state)).toEqual({ checked: true, disabled: true })
   })
 
   it('ask the application to start again', async () => {
