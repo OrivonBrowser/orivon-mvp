@@ -22,14 +22,19 @@ type CallOutcome = { readonly ok: true, readonly holder: unknown } | { readonly 
  */
 type CallNow = (onSettled: (outcome: CallOutcome) => ShareResult) => void
 
-/** `share` is the id the main world and the DOM hand-off name a share by; the ticket's nonce never leaves this world. */
-type ShareResult = { readonly ok: true, readonly share: string } | { readonly ok: false, readonly name: string, readonly message: string }
+/**
+ * `share` is the id the main world and the DOM hand-off name a share by; the ticket's nonce never leaves this world.
+ * `firstFrame` says the person chooses in the system's dialog now, so the page's call waits for the capture's first frame.
+ */
+type ShareResult = { readonly ok: true, readonly share: string, readonly firstFrame?: true } | { readonly ok: false, readonly name: string, readonly message: string }
 
 /** The tracks one share handed to the page, originals and clones: a share has ended when all of them have. */
 interface ShareRecord {
   readonly nonce: string
   readonly id: string
   readonly tracks: Set<MediaStreamTrack>
+  /** A clone held on the source, outside `tracks`: it never keeps a share alive. */
+  anchor?: MediaStreamTrack
 }
 
 const POLL_MS = 1000
@@ -50,6 +55,7 @@ function settle (record: ShareRecord): void {
   if (!records.has(record.nonce) || !ended(record)) return
   records.delete(record.nonce)
   recordsById.delete(record.id)
+  record.anchor?.stop()
   if (records.size === 0 && poll !== undefined) { clearInterval(poll); poll = undefined }
   ipcRenderer.send(DISPLAY_CAPTURE_CHANNEL, { type: 'tracks-ended', nonce: record.nonce })
 }
@@ -105,9 +111,10 @@ async function share (options: ShareOptions, callNow: CallNow): Promise<ShareRes
   } catch {
     return refusal('NotAllowedError', 'Permission denied')
   }
-  const go = typeof reply === 'object' && reply !== null ? reply as { type?: unknown, nonce?: unknown } : {}
+  const go = typeof reply === 'object' && reply !== null ? reply as { type?: unknown, nonce?: unknown, portal?: unknown } : {}
   if (go.type !== 'go' || typeof go.nonce !== 'string') return refusal('NotAllowedError', 'Permission denied')
   const nonce = go.nonce
+  const portal = go.portal === true
 
   // One synchronous step: main holds the page's request until it has heard both messages, so it can tell this call
   // from any other request that arrives meanwhile. The second message waits a turn of the event loop: a call that
@@ -116,7 +123,7 @@ async function share (options: ShareOptions, callNow: CallNow): Promise<ShareRes
   ipcRenderer.send(DISPLAY_CAPTURE_CHANNEL, { type: 'arm', nonce })
   let concluded: ShareResult | undefined
   const conclude = (outcome: unknown): ShareResult => {
-    concluded ??= receive(nonce, outcome)
+    concluded ??= receive(nonce, outcome, portal)
     if (!concluded.ok) rejectedEarly = true
     return concluded
   }
@@ -136,7 +143,7 @@ async function share (options: ShareOptions, callNow: CallNow): Promise<ShareRes
 }
 
 /** What the real call came to, told to main and kept: the share's id for a stream, the refusal otherwise. */
-function receive (nonce: string, outcome: unknown): ShareResult {
+function receive (nonce: string, outcome: unknown, portal: boolean): ShareResult {
   const stream = isStream(outcome) ? (outcome as { holder: { srcObject: unknown } }).holder.srcObject : undefined
   if (!(stream instanceof MediaStream)) {
     // Main starts the share when it answers the request, before this call knows its outcome, and keeps it unconfirmed.
@@ -151,7 +158,10 @@ function receive (nonce: string, outcome: unknown): ShareResult {
   records.set(nonce, record)
   recordsById.set(record.id, record)
   for (const track of stream.getTracks()) keep(record, track)
-  return { ok: true, share: record.id }
+  if (!portal) return { ok: true, share: record.id }
+  // A second track on the source keeps a page's `applyConstraints` from restarting the capture into a new portal session.
+  try { const anchor = stream.getVideoTracks()[0]?.clone(); if (anchor !== undefined) record.anchor = anchor } catch { /* the share goes on without it */ }
+  return { ok: true, share: record.id, firstFrame: true }
 }
 
 /** A clone the main world made of a track this world handed out, passed over the DOM like the stream was. */
@@ -193,6 +203,12 @@ function wrapInMainWorld (shareInOtherWorld: (options: ShareOptions, callNow: Ca
   const streamProto = MediaStream.prototype
   const nativeStreamClone = streamProto.clone
   const nativeGetTracks = streamProto.getTracks
+  const nativeGetVideoTracks = streamProto.getVideoTracks
+  const NativeProcessor = (globalThis as { MediaStreamTrackProcessor?: new (init: object) => object }).MediaStreamTrackProcessor
+  const readableOf = typeof NativeProcessor === 'function' ? Object.getOwnPropertyDescriptor(NativeProcessor.prototype, 'readable')?.get : undefined
+  const nativeGetReader = typeof ReadableStream === 'function' ? ReadableStream.prototype.getReader : undefined
+  const nativeRead = typeof ReadableStreamDefaultReader === 'function' ? ReadableStreamDefaultReader.prototype.read : undefined
+  const nativeCancel = typeof ReadableStreamDefaultReader === 'function' ? ReadableStreamDefaultReader.prototype.cancel : undefined
   const nativeThen = Promise.prototype.then
   const nativeCreateElement = Document.prototype.createElement
   const setSource = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'srcObject')?.set
@@ -289,6 +305,37 @@ function wrapInMainWorld (shareInOtherWorld: (options: ShareOptions, callNow: Ca
   }
   const refuse = (name: string, message: string): unknown =>
     name === 'TypeError' ? construct(NativeTypeError, [message]) : construct(NativeDOMException, [message, name])
+  /**
+   * Waits for the first frame of the stream's video on a clone of its track that no one else holds, then calls `onFrame`;
+   * `onEnded` when the track ends first (a cancel in the system dialog) or the read fails. Calls `onFrame` at once when
+   * there is nothing to read with, which hands the page its stream sooner and nothing else.
+   */
+  const awaitFirstFrame = (stream: MediaStream, onFrame: () => void, onEnded: () => void): void => {
+    let probe: MediaStreamTrack | undefined
+    let reader: unknown
+    const release = (): void => {
+      try { if (reader !== undefined && typeof nativeCancel === 'function') whenSettled(call(nativeCancel, reader, []), () => {}, () => {}) } catch { /* released with the track */ }
+      try { if (probe !== undefined) call(nativeStop, probe, []) } catch { /* nothing left to stop */ }
+    }
+    try {
+      const track = typeof nativeGetVideoTracks === 'function' ? (call(nativeGetVideoTracks, stream, []) as MediaStreamTrack[])[0] : undefined
+      if (track === undefined || typeof NativeProcessor !== 'function' || typeof readableOf !== 'function' || typeof nativeGetReader !== 'function' || typeof nativeRead !== 'function') { onFrame(); return }
+      probe = call(nativeTrackClone, track, []) as MediaStreamTrack
+      const init = create(null)
+      init.track = probe
+      reader = call(nativeGetReader, call(readableOf, construct(NativeProcessor, [init]), []), [])
+      whenSettled(call(nativeRead, reader, []), (step: unknown) => {
+        const frame = read(step, 'value')
+        const gotFrame = read(step, 'done') !== true
+        try { if (gotFrame) (frame as { close?: () => void }).close?.() } catch { /* a frame the page cannot see */ }
+        release()
+        if (gotFrame) onFrame(); else onEnded()
+      }, () => { release(); onEnded() })
+    } catch {
+      release()
+      onFrame()
+    }
+  }
   const stopAll = (stream: MediaStream): void => {
     try { for (const track of call(nativeGetTracks, stream, []) as MediaStreamTrack[]) call(nativeStop, track, []) } catch { /* nothing left to stop */ }
   }
@@ -339,10 +386,16 @@ function wrapInMainWorld (shareInOtherWorld: (options: ShareOptions, callNow: Ca
           if (!result.ok) { fail(refuse(result.name, result.message)); return }
           const stream = kept
           if (stream === undefined) { fail(refuse('AbortError', 'Failed to start capture')); return }
-          done = true
-          shares.set(stream, result.share)
-          for (const track of call(nativeGetTracks, stream, []) as MediaStreamTrack[]) shares.set(track, result.share)
-          resolve(stream)
+          const hand = (): void => {
+            if (done) return
+            done = true
+            kept = undefined
+            shares.set(stream, result.share)
+            for (const track of call(nativeGetTracks, stream, []) as MediaStreamTrack[]) shares.set(track, result.share)
+            resolve(stream)
+          }
+          if (result.firstFrame === true) awaitFirstFrame(stream, hand, () => { fail(refuse('NotAllowedError', 'Permission denied')) })
+          else hand()
         }
         const callNow: CallNow = (onSettled) => {
           if (started) return

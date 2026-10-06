@@ -292,7 +292,7 @@ describe('the picker overlay', () => {
       r.drawn(id)
       r.handler.request({ type: 'share', id, card: view['cards'].screen[0]['id'], audio: false })
       expect(r.getSources).not.toHaveBeenCalled()
-      expect(await answer).toEqual({ kind: 'screen', source: { id: expect.stringMatching(/^screen:\d+:0$/), name: 'Shared screen' }, systemAudio: false, label: 'Shared screen' })
+      expect(await answer).toEqual({ kind: 'screen', source: { id: expect.stringMatching(/^screen:\d+:0$/), name: 'Shared screen' }, systemAudio: false, label: 'Shared screen', portal: true })
       expect(r.close).toHaveBeenCalled()
     })
 

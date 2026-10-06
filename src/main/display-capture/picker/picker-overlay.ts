@@ -119,7 +119,7 @@ export function createPicker (deps: PickerDeps, { window, services, close, send 
 
   /** Wayland: the choice names a source the capture has never seen, so the system's own dialog opens during the page's call and the person picks there. */
   function shareFromPortal (asked: Question, which: 'window' | 'screen', systemAudio: boolean): void {
-    finish(asked, { kind: which, source: { id: portalSourceId(which), name: PORTAL_LABEL[which] }, systemAudio, label: PORTAL_LABEL[which] })
+    finish(asked, { kind: which, source: { id: portalSourceId(which), name: PORTAL_LABEL[which] }, systemAudio, label: PORTAL_LABEL[which], portal: true })
   }
 
   /** Chromium captures only a tab that is in front of its window, so the tab picked is brought there as the choice resolves (as Chrome does). */

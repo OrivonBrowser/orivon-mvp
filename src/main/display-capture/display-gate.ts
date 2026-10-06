@@ -6,9 +6,12 @@ import type { DisplayPolicy } from './display-policy.js'
 import type { DisplayTickets } from './display-tickets.js'
 import type { ChooseDisplaySource, DisplayChoice, DisplayHints, FailureName } from './types.js'
 
-/** What a pick answers: the nonce the preload presents when it arms the ticket, or why the page is refused. */
+/**
+ * What a pick answers: the nonce the preload presents when it arms the ticket, or why the page is refused. `portal` says
+ * the person chooses in the system's dialog when the capture starts, so the capture has no frame until they have.
+ */
 export type PickReply =
-  | { readonly type: 'go', readonly nonce: string }
+  | { readonly type: 'go', readonly nonce: string, readonly portal?: true }
   | { readonly type: 'refused', readonly reason: 'denied' | 'activation' | 'busy' }
 
 export interface PickRequest {
@@ -126,7 +129,7 @@ export function createDisplayGate (deps: DisplayGateDeps): DisplayGate {
         state.expecting = nonce
         deps.shares.expectCapture(choice.tab, nonce)
       }
-      return { type: 'go', nonce }
+      return choice.kind !== 'tab' && choice.portal === true ? { type: 'go', nonce, portal: true } : { type: 'go', nonce }
     } catch (error) {
       console.error('[display-capture] the picker failed:', error)
       refuse(state, origin)

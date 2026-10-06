@@ -57,6 +57,16 @@ describe('the display gate: picking', () => {
     expect(deps.choose).toHaveBeenCalledWith({ tab: contents, origin: ORIGIN, isApp: false, audio: false, hints: {} }, expect.any(AbortSignal))
   })
 
+  it('says go with portal when the person picks in the system dialog, and never for a tab or a listed source', async () => {
+    const portal: DisplayChoice = { kind: 'screen', source: { id: 'screen:1099511627777:0', name: 'Shared screen' }, systemAudio: false, label: 'Shared screen', portal: true }
+    const listed: DisplayChoice = { kind: 'screen', source: { id: 'screen:0:0', name: 'Entire screen' }, systemAudio: false, label: 'Entire screen' }
+    const tabChoice = { kind: 'tab', tab: tab(), audio: false, label: 'A tab' } as DisplayChoice
+    for (const [choice, reply] of [[portal, { type: 'go', nonce: 'nonce-1', portal: true }], [listed, { type: 'go', nonce: 'nonce-1' }], [tabChoice, { type: 'go', nonce: 'nonce-1' }]] as const) {
+      const { gate, contents } = setup({ choose: vi.fn(async () => await Promise.resolve(choice)) })
+      expect(await gate.pick(contents, REQUEST)).toEqual(reply)
+    }
+  })
+
   it('passes the page\'s audio ask and hints to the picker, and tells it when the page is an app', async () => {
     const { gate, deps, contents } = setup({ policy: { isApp: () => true, mayAsk: () => true, decide: async () => await Promise.resolve(true) } })
     await gate.pick(contents, { audio: true, hints: { displaySurface: 'window' }, activation: true })

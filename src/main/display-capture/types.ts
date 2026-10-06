@@ -39,6 +39,8 @@ export type DisplayChoice =
     /** System audio, which Electron captures only on Windows. */
     readonly systemAudio: boolean
     readonly label: string
+    /** The person picks in the system's dialog when the capture starts (Linux Wayland), so the source is a fresh id and not a listed one. */
+    readonly portal?: true
   }
 
 /** The picker. Resolves null for every way out but Share: cancel, Escape, a navigation, a closed tab, the signal. */
