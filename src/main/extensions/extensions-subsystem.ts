@@ -98,7 +98,7 @@ export const extensionsSubsystem: Subsystem = {
     // later ones): extension-known-permissions.ts's own doc says why.
     installExtensionPermissionWarningFilter()
 
-    // ONE '../', not two: main is bundled into a single out/main/index.js
+    // ONE '../', not two: the browser is bundled into out/main/index.js
     // (electron.vite.config.ts), so import.meta.dirname is out/main/ for
     // every file's code regardless of its original src/ nesting -- the same
     // reason tabs.ts's own join(import.meta.dirname, '../preload/app.js')

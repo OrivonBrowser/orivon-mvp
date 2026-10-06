@@ -14,7 +14,6 @@ export function moveGroupToNewWindow (ctx: WindowContext, groupId: string): bool
   if (group === undefined || members.length === 0 || entry.tabs.tabCount <= members.length || entry.shortcutsSuspended()) return false
   services.commands.openWindow({
     place: cascadeFrom(entry.window.getBounds()),
-    instant: true,
     first: (tabs) => {
       // Only the tab put in front wakes. The one in front here leaves last, so the tab this window falls back to is never
       // another member on its way out.

@@ -14,16 +14,18 @@ vi.mock('electron', () => ({
 
 const { createWindowFrame, showWhenReady } = await import('../window-frame.js')
 
-function fakeWindow (): { win: never, order: string[] } {
+function fakeWindow (): { win: never, order: string[], ready: () => void } {
   const order: string[] = []
+  const listeners: Array<() => void> = []
   const win = {
+    once: (_event: 'ready-to-show', listener: () => void) => { listeners.push(listener) },
     isDestroyed: () => false,
     show: () => { order.push('show') },
     showInactive: () => { order.push('showInactive') },
     setBounds: () => { order.push('setBounds') },
     maximize: () => { order.push('maximize') }
   }
-  return { win: win as never, order }
+  return { win: win as never, order, ready: () => { for (const listener of listeners.splice(0)) listener() } }
 }
 
 const bounds = { x: 1, y: 2, width: 900, height: 600 }
@@ -52,27 +54,74 @@ describe('createWindowFrame', () => {
 describe('showWhenReady', () => {
   it('maximises after asserting the size, so un-maximising returns to it', () => {
     const { win, order } = fakeWindow()
-    showWhenReady({ win, initialBounds: bounds, kiosk: false }, { instant: true, maximized: true })
+    showWhenReady({ win, initialBounds: bounds, kiosk: false }, { maximized: true })
     expect(order).toEqual(['show', 'setBounds', 'maximize'])
   })
 
   it('does not maximise an ordinary window', () => {
     const { win, order } = fakeWindow()
-    showWhenReady({ win, initialBounds: bounds, kiosk: false }, { instant: true })
+    showWhenReady({ win, initialBounds: bounds, kiosk: false }, {})
     expect(order).toEqual(['show', 'setBounds'])
   })
 
-  it('shows an inactive window without taking focus, and says when it is shown', () => {
-    const { win, order } = fakeWindow()
-    const onShown = vi.fn()
-    showWhenReady({ win, initialBounds: bounds, kiosk: false }, { instant: true, inactive: true, onShown })
-    expect(order).toEqual(['showInactive', 'setBounds'])
-    expect(onShown).toHaveBeenCalledTimes(1)
+  it('holds a window that comes up behind until it can paint, then shows it without taking focus', () => {
+    vi.useFakeTimers()
+    try {
+      const { win, order, ready } = fakeWindow()
+      const onShown = vi.fn()
+      showWhenReady({ win, initialBounds: bounds, kiosk: false }, { inactive: true, onShown })
+      expect(order).toEqual([])
+      expect(onShown).not.toHaveBeenCalled()
+      ready()
+      expect(order).toEqual(['showInactive', 'setBounds'])
+      expect(onShown).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('leaves a kiosk window at the whole screen: no size is asserted on it', () => {
     const { win, order } = fakeWindow()
-    showWhenReady({ win, initialBounds: bounds, kiosk: true }, { instant: true, maximized: true })
+    showWhenReady({ win, initialBounds: bounds, kiosk: true }, { maximized: true })
     expect(order).toEqual(['show'])
+  })
+
+  it('shows a window opened in front after the launch\'s first at once, before any event', () => {
+    const { win, order } = fakeWindow()
+    const onShown = vi.fn()
+    showWhenReady({ win, initialBounds: bounds, kiosk: false }, { onShown })
+    expect(order).toEqual(['show', 'setBounds'])
+    expect(onShown).toHaveBeenCalledTimes(1)
+  })
+
+  it('holds the launch\'s first window until it can paint, then shows it once', () => {
+    vi.useFakeTimers()
+    try {
+      const { win, order, ready } = fakeWindow()
+      const onShown = vi.fn()
+      showWhenReady({ win, initialBounds: bounds, kiosk: false }, { firstOfLaunch: true, onShown })
+      expect(order).toEqual([])
+      ready()
+      expect(order).toEqual(['show', 'setBounds'])
+      vi.advanceTimersByTime(2000)
+      expect(order).toEqual(['show', 'setBounds'])
+      expect(onShown).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shows the launch\'s first window after the fallback delay when ready-to-show never comes', () => {
+    vi.useFakeTimers()
+    try {
+      const { win, order } = fakeWindow()
+      showWhenReady({ win, initialBounds: bounds, kiosk: false }, { firstOfLaunch: true })
+      vi.advanceTimersByTime(999)
+      expect(order).toEqual([])
+      vi.advanceTimersByTime(1)
+      expect(order).toEqual(['show', 'setBounds'])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

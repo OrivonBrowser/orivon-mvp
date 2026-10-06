@@ -164,14 +164,15 @@ it('opens its picker on the page\'s hints, shares an entire screen, shows who sh
     const bar = await waitOverlay(app, SHARING_BAR, '.sharing-text')
     expect(await bar.textContent('.sharing-text')).toMatch(/ is sharing your screen$/)
 
-    // Hide takes the bar away; the chip brings it back.
-    await bar.click('button[aria-label="Hide this bar"]')
+    // Hide takes the bar away; the chip brings it back. Each button closes the bar's own page, which Playwright may
+    // see before its click returns: what the click did is read below, not from the click.
+    await bar.click('button[aria-label="Hide this bar"]').catch((error: unknown) => { if (!/Target page, context or browser has been closed/.test(String(error))) throw error })
     expect(await overlayGone(app, SHARING_BAR)).toBe(true)
     await chrome.click('#sharing-chip')
     const again = await waitOverlay(app, SHARING_BAR, '.sharing-text')
 
     // Stop sharing: the page's track ends and its listener ran; every indicator goes.
-    await again.click('text=Stop sharing')
+    await again.click('text=Stop sharing').catch((error: unknown) => { if (!/Target page, context or browser has been closed/.test(String(error))) throw error })
     expect(await result(view, 'ended')).toBe(1)
     expect(await view.evaluate(() => (window as unknown as { __stream: MediaStream }).__stream.getVideoTracks()[0]?.readyState)).toBe('ended')
     expect(await overlayGone(app, SHARING_BAR)).toBe(true)
@@ -265,7 +266,7 @@ it('shares another tab: it comes to the front, keeps painting for the page while
     // Stop in the bar: the track ends and the shared tab is let go of by the window.
     const bar = await waitOverlay(app, SHARING_BAR, '.sharing-text')
     expect(await bar.textContent('.sharing-text')).toMatch(/ is sharing a tab$/)
-    await bar.click('text=Stop sharing')
+    await bar.click('text=Stop sharing').catch((error: unknown) => { if (!/Target page, context or browser has been closed/.test(String(error))) throw error })
     expect(await result(view, 'ended')).toBe(1)
     expect(await waitFor(async () => (await sharedViewAttached()) === undefined)).toBe(true)
     expect(await waitFor(async () => (await tabMark(chrome, second)) === null)).toBe(true)
@@ -315,7 +316,7 @@ it('keeps a shared tab attached when the person leaves it at once, keeps sharing
     expect(await view.evaluate(() => (window as unknown as { __r: Record<string, unknown> }).__r.ended)).toBeUndefined()
     const bar = await waitOverlay(app, SHARING_BAR, '.sharing-text')
 
-    await bar.click('text=Stop sharing')
+    await bar.click('text=Stop sharing').catch((error: unknown) => { if (!/Target page, context or browser has been closed/.test(String(error))) throw error })
     expect(await result(view, 'ended')).toBe(1)
     expect(await waitFor(async () => (await tabMark(chrome, second)) === null)).toBe(true)
     expect(mainOutput(app)).not.toMatch(/reached no display handler/)

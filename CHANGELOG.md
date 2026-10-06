@@ -336,6 +336,8 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Changed
 
+- **A new window opens at once**, from the New window button, `Ctrl+N` or the dock, as a torn-off tab does; a start
+  of an open profile from the dock or a command line hands over in about half the time.
 - **An extension added from now on is not put on the toolbar**; "Pin new extensions to the toolbar" (Settings > Apps) turns it back on.
 
 ### Fixed
