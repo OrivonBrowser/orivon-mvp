@@ -1,8 +1,8 @@
 // A Web3 Score provider that lives on IPFS, as a static build of web3-score-manager does: its `score/` tree is served
-// through the verifier, at `ipfs://<root>/score` or under a DNSLink name at `ipns://<name>/score`. The shield and the
-// Web3 Score page show the level it judges and name it, as they do for a provider on http (e2e-score-provider).
-// Driven through the test seam's gateway, so nothing leaves the machine; signed IPNS keys are not covered, the
-// gateway holds no IPNS records.
+// through the verifier, at `ipfs://<root>/score`, under a DNSLink name at `ipns://<name>/score`, or under a signed
+// IPNS key at `ipns://<key>/score`, as the default provider is. The shield and the Web3 Score page show the level it
+// judges and name it, as they do for a provider on http (e2e-score-provider). Driven through the test seam's
+// gateways, so nothing leaves the machine.
 import { afterAll, expect, it } from 'vitest'
 import type { Server } from 'node:http'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -44,10 +44,14 @@ const PROVIDER_TREE = {
   })
 }
 
-async function judgedThrough (address: (root: string) => string, phase: string): Promise<void> {
+type FixtureGateway = Awaited<ReturnType<typeof startFixtureGateway>>
+
+/** `deadFirst` lists a gateway that never answers ahead of the one holding the provider, as a public gateway that went down stays listed. */
+async function judgedThrough (address: (gateway: FixtureGateway) => string, phase: string, { deadFirst = false } = {}): Promise<void> {
   await runPhase(phase, async (check) => {
-    const gateway = await startFixtureGateway({ provider: PROVIDER_TREE }, { dnslinks: { [DNSLINK_NAME]: 'provider' } })
-    const providerAddress = address(gateway.roots['provider']!)
+    const gateway = await startFixtureGateway({ provider: PROVIDER_TREE }, { dnslinks: { [DNSLINK_NAME]: 'provider' }, ipnsKeys: ['provider'] })
+    const dead = deadFirst ? await startFixtureGateway({}, { hang: true }) : undefined
+    const providerAddress = address(gateway)
     const scored = await startSite('scored fixture', SCORED)
     const unscored = await startSite('unscored fixture', UNSCORED)
     let app: ElectronApplication | undefined
@@ -57,7 +61,7 @@ async function judgedThrough (address: (root: string) => string, phase: string):
         env: {
           ORIVON_DEV_ORIGINS: '1',
           ORIVON_TEST_ETH_FIXTURES: JSON.stringify({}),
-          ORIVON_TEST_IPFS_GATEWAYS: gateway.url,
+          ORIVON_TEST_IPFS_GATEWAYS: [...(dead === undefined ? [] : [dead.url]), gateway.url].join(','),
           ORIVON_TEST_DOH: `${gateway.url}/dns-query`
         },
         seedProfile: async (dir: string) => {
@@ -84,7 +88,8 @@ async function judgedThrough (address: (root: string) => string, phase: string):
       check('its page says the provider has no score for it', plain.text.includes(`${PROVIDER_NAME} has no score for this page`))
 
       const asked = gateway.requests.filter((url) => url.endsWith('?format=raw'))
-      check(`the gateway was asked for raw blocks, and nothing else but name lookups (${gateway.requests.join(', ')})`, asked.length > 0 && gateway.requests.every((url) => url.endsWith('?format=raw') || url.startsWith('/dns-query')))
+      check(`the gateway was asked for raw blocks, and nothing else but name lookups (${gateway.requests.join(', ')})`, asked.length > 0 && gateway.requests.every((url) => url.endsWith('?format=raw') || url.endsWith('?format=ipns-record') || url.startsWith('/dns-query')))
+      if (dead !== undefined) check(`the dead gateway was asked first, and the lookup went on without it (${dead.requests.join(', ')})`, dead.requests[0]?.endsWith('?format=ipns-record') === true)
       expect([judged.level, plain.level]).toEqual(['3', '2'])
       expect(judged.label).toBe(`Website level 3 (Web2.5), judged by ${PROVIDER_NAME} (developer mode)`)
       expect(plain.text).toContain(`${PROVIDER_NAME} has no score for this page`)
@@ -92,14 +97,19 @@ async function judgedThrough (address: (root: string) => string, phase: string):
       if (app !== undefined) await closeElectronApp(app)
       for (const { server } of [scored, unscored] as Array<{ server: Server }>) await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
       await gateway.close()
+      await dead?.close()
     }
   })
 }
 
 it('an ipfs:// provider judges a checked page, and its level shows on the shield and the Web3 Score page', async () => {
-  await judgedThrough((root) => `ipfs://${root}/score`, 'score-provider-ipfs')
+  await judgedThrough((gateway) => `ipfs://${gateway.roots['provider']!}/score`, 'score-provider-ipfs')
 }, TEST_TIMEOUT_MS)
 
 it('an ipns:// provider under a DNSLink name does the same', async () => {
   await judgedThrough(() => `ipns://${DNSLINK_NAME}/score`, 'score-provider-ipns')
+}, TEST_TIMEOUT_MS)
+
+it('an ipns:// provider under a signed key does the same, though the first gateway never answers', async () => {
+  await judgedThrough((gateway) => `ipns://${gateway.keys['provider']!}/score`, 'score-provider-ipns-key', { deadFirst: true })
 }, TEST_TIMEOUT_MS)

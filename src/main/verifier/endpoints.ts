@@ -9,7 +9,9 @@ export const DEFAULT_ENDPOINTS = {
   // Each answer is proven, so any of these may serve a request; the first is the fastest measured.
   executionRpcs: ['https://eth.drpc.org', 'https://rpc.mevblocker.io', 'https://ethereum-rpc.publicnode.com'],
   consensusRpc: 'https://ethereum-beacon-api.publicnode.com',
-  gateways: ['https://trustless-gateway.link', 'https://ipfs.orbitor.dev', 'https://ipfs.filebase.io'],
+  // Asked in this order while all are healthy. trustless-gateway.link is last because it hangs rather than
+  // answers (provisional: it moves back up once it answers again).
+  gateways: ['https://ipfs.orbitor.dev', 'https://ipfs.filebase.io', 'https://trustless-gateway.link'],
   ipnsNameServices: ['https://name.web3.storage'],
   dnsOverHttps: ['https://cloudflare-dns.com/dns-query', 'https://dns.google/resolve']
 } as const

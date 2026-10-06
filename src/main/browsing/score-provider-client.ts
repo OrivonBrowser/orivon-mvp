@@ -30,7 +30,8 @@ export interface ScoreProviderClient {
 
 const ANSWER_KEPT_MS = 10 * 60_000
 const FAILURE_KEPT_MS = 60_000
-const FETCH_TIMEOUT_MS = 10_000
+/** Past the verifier's own 25 s for proving a name: an IPFS-served provider's first answer waits on that proof. */
+const FETCH_TIMEOUT_MS = 30_000
 
 /** The provider's base address with any trailing `/`, query and fragment removed, or undefined
  * when the text names nothing the address bar would open over http(s). */
@@ -139,7 +140,7 @@ export async function netFetchJson (url: string): Promise<FetchedJson> {
     if (bytes === null) return { kind: 'failed', reason: `${url} is larger than 1 MiB.` }
     return { kind: 'ok', body: JSON.parse(new TextDecoder().decode(bytes)) }
   } catch (error) {
-    const reason = error instanceof SyntaxError ? 'is not JSON' : error instanceof Error && error.name === 'TimeoutError' ? 'did not answer within 10 seconds' : 'could not be reached'
+    const reason = error instanceof SyntaxError ? 'is not JSON' : error instanceof Error && error.name === 'TimeoutError' ? `did not answer within ${String(FETCH_TIMEOUT_MS / 1000)} seconds` : 'could not be reached'
     return { kind: 'failed', reason: `${url} ${reason}.` }
   }
 }

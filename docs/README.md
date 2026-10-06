@@ -17,6 +17,12 @@ files, and it is the whole product surface.
 Then [`architecture/security-model.md`](architecture/security-model.md) for what is being
 defended against, and [`glossary.md`](glossary.md) when a term does not parse.
 
+What the browser sends, and to whom, is in [`privacy/`](privacy/):
+[`notice.md`](privacy/notice.md) ([Italian](privacy/notice.it.md)) for the people using it,
+[`outbound-requests.md`](privacy/outbound-requests.md) for the full inventory of requests it makes
+by itself, and, for the maintainers, [`record-of-processing.md`](privacy/record-of-processing.md)
+and [`dpia-screening.md`](privacy/dpia-screening.md).
+
 ## Track 2: To understand a decision
 
 [`decisions/`](decisions/) holds the architecture decision records. Read them before proposing
@@ -36,7 +42,7 @@ is where dates and decision IDs live.
 | [`ADR-0001`](decisions/ADR-0001-flagship-app-bittorrent-streaming.md) | BitTorrent streaming as the flagship. **Withdrawn**: kept as the case for a torrent app, which is an idea |
 | [`ADR-0002`](decisions/ADR-0002-capability-api-is-the-durable-asset.md) | The capability API is the durable asset; the WASM runtime deferred, not cancelled |
 | [`ADR-0003`](decisions/ADR-0003-local-first-storage.md) | Local-first storage, per-origin isolation, no Orivon server for user data |
-| [`ADR-0004`](decisions/ADR-0004-telemetry.md) | Telemetry: opt-out, disclosed, self-hosted, inspectable |
+| [`ADR-0004`](decisions/ADR-0004-telemetry.md) | Telemetry: a first-run explicit choice, self-hosted, inspectable |
 | [`ADR-0005`](decisions/ADR-0005-apps-are-url-addressed-not-bundled.md) | Apps are URL-addressed and cached, never bundled |
 | [`ADR-0006`](decisions/ADR-0006-trust-indicator-from-observed-behaviour.md) | Trust indicator from observed behaviour, not a grade |
 | [`ADR-0007`](decisions/ADR-0007-cached-bundles-served-at-their-own-origin.md) | Cached bundles keep their real origin |

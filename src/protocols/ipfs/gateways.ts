@@ -4,6 +4,7 @@
 // checked by the caller before use.
 
 import { Slots } from '../resolution/slots.js'
+import { Outrun } from './race.js'
 import { GatewayHealth, retryAfterMs } from './gateway-health.js'
 import type { GatewayOutcome } from './gateway-health.js'
 
@@ -148,7 +149,9 @@ export interface GatewayRequest {
  * these never has to catch two different shapes of error. `signal`
  * aborting (the caller no longer needs this attempt, e.g. its sibling in a
  * hedge already won) is `{ kind: 'cancelled' }` and is NOT recorded against
- * the gateway -- it says nothing about how the gateway is doing.
+ * the gateway -- it says nothing about how the gateway is doing -- except
+ * when the reason is `Outrun` and no headers had arrived: a gateway that
+ * had the head start and sent nothing is noted as a timeout.
  */
 export async function askGateway<T> (
   pool: GatewayPool,
@@ -164,7 +167,10 @@ export async function askGateway<T> (
     try {
       response = await fetch(req.url, { headers: { accept: req.accept }, signal: AbortSignal.any([signal, timeout]) })
     } catch (error) {
-      if (signal.aborted) throw new GatewayFailure({ kind: 'cancelled' }, CANCELLED)
+      if (signal.aborted) {
+        if (signal.reason instanceof Outrun) pool.note(gateway, { kind: 'timeout' })
+        throw new GatewayFailure({ kind: 'cancelled' }, CANCELLED)
+      }
       const outcome: RecordedFailure = { kind: timeout.aborted ? 'timeout' : 'unreachable' }
       pool.note(gateway, outcome)
       throw new GatewayFailure(outcome, `${gateway}: ${message(error)}`)

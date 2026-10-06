@@ -34,7 +34,7 @@ This is a synthesis; it does not restate what the linked documents already say.
 | `ADR-0001` | BitTorrent streaming is the flagship |
 | `ADR-0002` | The capability API is the durable asset; the WASM runtime deferred, not cancelled |
 | `ADR-0003` | Local-first storage, per-origin isolation, no Orivon server for user data |
-| `ADR-0004` | Telemetry: opt-out, disclosed, self-hosted, inspectable |
+| `ADR-0004` | Telemetry: a first-run explicit choice, self-hosted, inspectable |
 | `ADR-0005` | Apps are URL-addressed and cached, never bundled |
 | `ADR-0006` | Trust indicator from observed behaviour; attestations over bundle hashes |
 

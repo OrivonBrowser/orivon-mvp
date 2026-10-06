@@ -15,29 +15,35 @@ yet; they are scheduled at the bottom rather than written as placeholders.
 ## 1. Telemetry first-run disclosure
 
 The one item where getting it wrong is a reputational event rather than a bug
-([`ADR-0004`](../decisions/ADR-0004-telemetry.md)).
+([`ADR-0004`](../decisions/ADR-0004-telemetry.md), [`ADR-0063`](../decisions/ADR-0063-telemetry-v2.md)).
 
-**Precondition.** A clean profile. Delete the `userData` directory:
+**Precondition.** A packaged build (a development build never runs telemetry), a clean profile
+and no stored telemetry choice. Delete both directories:
 
 ```bash
-rm -rf ~/.config/orivon        # Linux; use app.getPath('userData') on other platforms
+rm -rf ~/.config/orivon ~/.config/orivon-telemetry   # Linux; app.getPath('userData') and appData elsewhere
 ```
 
 Have a way to observe outbound network traffic before launching: a proxy, `tcpdump`, or the
-devtools network panel. **Reading the source is not sufficient for the last assertion.**
+devtools network panel. **Reading the source is not sufficient for assertions 4 and 5.**
 
-**Input.** Launch the app for the first time.
+**Input.** Launch the app for the first time; choose on the welcome; then open Settings, Usage
+statistics.
 
-**Assertions.** All four must hold:
+**Assertions.** All five must hold:
 
-1. The disclosure screen appears **before** any other UI is usable.
-2. It shows the **literal JSON** that would be sent, not a description of it, not a summary.
-3. **Neither is preselected**, and no keyboard default activates one.
-4. **Nothing has been transmitted** at the moment the screen is displayed. Verified from the
-   traffic observation, not from the code.
+1. The welcome's **Telemetry** block offers two buttons of the same size and style, "Enter and
+   share telemetry" and "Enter without telemetry", and the welcome cannot be left without one.
+2. **Neither is preselected**, and no keyboard default activates one: Enter alone does nothing.
+3. Settings, Usage statistics, shows the **literal JSON** of every report that would be sent,
+   not a description of it, and the notice field table matches it.
+4. **Nothing has been transmitted** before the choice, and nothing ever after "Enter without
+   telemetry". Verified from the traffic observation, not from the code.
+5. After "Enter and share telemetry", the only telemetry destination is
+   `telemetry.orivonstack.com`, and what is sent matches the Settings preview.
 
-**Fails if:** the JSON is summarised, a choice is preselected, or a single request leaves the
-machine before the user chooses.
+**Fails if:** a choice is preselected or reachable by a keyboard default, the JSON is
+summarised, or a single telemetry request leaves the machine without the "share" choice.
 
 ---
 

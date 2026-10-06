@@ -354,3 +354,11 @@ In all, 36 findings, 36 confirmed, none refuted.
 | `/code-review` at high effort | PR #112 against `main` | Nine findings, all fixed with a test that failed first: a tab share ended by the shown tab's own navigation, a refusal wiped by a navigation that never commits, two disagreeing "is an app" predicates, a picked tab detached before its share registered, a listener leak, duplicated ticket state, a registry bind that relied on install order, a triple read of every window's tabs, a stale README file name |
 | Security review (read-only, Opus) | The branch's diff | Four findings: a page's own pending request could take the preload's ticket, since Blink queues a frame's media requests, fixed; the indicator follows only the tracks the preload handed out, documented in A401; a declined origin escaped the person's content rules (a regression of the previous fix), fixed; the ticket nonce reached the page's world, fixed |
 | `adversarial-reviewer` (read-only, Opus) | The security boundary, newest code first | CONCERNS, no confirmed critical: the rule that ended a renderer on a ticketless request ran on a clock, so it could crash honest tabs (an extension's content script, a shim app's callback-form `getUserMedia`) and miss a late request, replaced by the preload's confirmation of its own call; a stored site Block was ignored for a registered origin holding no grant, fixed; five smaller notes, fixed |
+
+### `stream/ipns-key-lookup`: an IPNS key lookup raced like a block, and a gateway that hangs cooled (2026-10-06)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| `/code-review` at medium effort | The branch against `main` | One finding, confirmed and fixed with a test that failed first: with no source left to ask, the race started nothing and waited for ever, where the sequential lookup failed at once |
+| The real verifier host against live gateways, for the default provider's key | `main` and this branch | `main`: 502 after 25 s, the two gateways holding the record never asked; this branch: `provider.json` in 4.8 s |
+| The new signed-key provider spec, run against `main`'s code | `main` with this branch's tests only | Fails: the shield keeps Level 2, the provider unreachable; passes on this branch |
