@@ -46,31 +46,67 @@ export function findChrome (app) {
   return win
 }
 
-/** Ceiling for waitForChromeView and waitForChromeReady. A CI runner has been seen to give a freshly launched
- * chrome view nothing to show or act on for well over ten seconds, twice in a row at the start of a run. */
+/** Ceiling for the chrome waits below. A CI runner has been seen to give a freshly launched chrome view nothing
+ * to show or act on for well over ten seconds, twice in a row at the start of a run. */
 export const CHROME_READY_TIMEOUT_MS = 60_000
 
 /** Consecutive frames the toolbar boxes must keep the same place for waitForChromeReady. */
 const CHROME_STABLE_READS = 3
 
+/** One read of the chrome page is given this long; a page that does not answer is not ready yet, not an error. */
+const CHROME_READ_TIMEOUT_MS = 3_000
+
+/**
+ * Whether `url` is the chrome view's: the built `.../renderer/index.html`, or, when the launch runs the renderer
+ * from a dev server (`ELECTRON_RENDERER_URL`), that server's root.
+ * @param {string} url
+ * @param {string | undefined} rendererUrl
+ */
+export function isChromeUrl (url, rendererUrl) {
+  if (url.endsWith('/renderer/index.html')) return true
+  return rendererUrl !== undefined && url.replace(/\/$/, '') === rendererUrl.replace(/\/$/, '')
+}
+
 /**
  * The chrome view's Playwright page, once Playwright lists it, or undefined after `timeoutMs`. `findChrome` is
  * synchronous and throws on the first read; Playwright lists a window page only some time after main created it,
  * and on a loaded runner a window count that already matches can still be made of other pages.
+ * @param {{ windows: () => Array<{ url: () => string }> }} app
+ * @param {number} [timeoutMs]
+ * @param {string | undefined} [rendererUrl] The dev server's URL, when the launch runs the renderer from one.
  */
-export async function waitForChromeView (app, timeoutMs = CHROME_READY_TIMEOUT_MS) {
+export async function waitForChromeView (app, timeoutMs = CHROME_READY_TIMEOUT_MS, rendererUrl) {
   let found
   await waitFor(() => {
-    found = app.windows().find((w) => w.url().endsWith('/renderer/index.html'))
+    found = app.windows().find((w) => isChromeUrl(w.url(), rendererUrl))
     return found !== undefined
   }, timeoutMs)
   return found
 }
 
+/** One bounded read of the chrome page; null when it does not answer in time. */
+async function readChrome (page, fn) {
+  try {
+    return await evaluateRetrying(page, fn, CHROME_READ_TIMEOUT_MS)
+  } catch (error) {
+    if (/did not settle within/.test(String(error))) return null
+    throw error
+  }
+}
+
 /**
- * Waits until a chrome view can be acted on: its first state has been drawn (a tab is in the strip, which means
- * the page's modules ran and listen for clicks and Enter) and the new-tab button and the address bar keep the
- * same box on consecutive animation frames. Returns whether that held before `timeoutMs`.
+ * Waits until the chrome view's script has run and drawn its first state: a tab is in the strip, so the page's
+ * modules listen for clicks and Enter. Needs no frame, so it holds for a page that is not being painted. Returns
+ * whether that held before `timeoutMs`.
+ */
+export async function waitForChromeDrawn (page, timeoutMs = CHROME_READY_TIMEOUT_MS) {
+  return await waitFor(async () => await readChrome(page, () => document.querySelectorAll('.tab').length > 0) === true, timeoutMs)
+}
+
+/**
+ * Waits until a chrome view can be acted on through Playwright's own actionability checks: its first state is
+ * drawn (waitForChromeDrawn) and the new-tab button and the address bar keep the same box on consecutive
+ * animation frames. Returns whether that held before `timeoutMs`.
  *
  * Playwright lists the chrome page before its script has run. Its own wait inside `.click()` and `.press()`
  * cannot tell that from a broken page: it spends its ten seconds on a frame that has not come, or on an Enter
@@ -82,7 +118,7 @@ export async function waitForChromeReady (page, timeoutMs = CHROME_READY_TIMEOUT
   let previous = null
   let streak = 0
   return await waitFor(async () => {
-    const boxes = await evaluateRetrying(page, () => new Promise((resolve) => {
+    const boxes = await readChrome(page, () => new Promise((resolve) => {
       const noFrame = setTimeout(() => { resolve(null) }, 500)
       requestAnimationFrame(() => {
         clearTimeout(noFrame)
@@ -93,7 +129,7 @@ export async function waitForChromeReady (page, timeoutMs = CHROME_READY_TIMEOUT
         const drawn = document.querySelectorAll('.tab').length > 0
         resolve(drawn ? `${read('#new-tab')};${read('#address')}` : null)
       })
-    }), timeoutMs)
+    }))
     streak = (boxes !== null && boxes === previous) ? streak + 1 : 0
     previous = boxes
     return streak >= CHROME_STABLE_READS - 1

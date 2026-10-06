@@ -50,7 +50,10 @@ const TEST_TIMEOUT_MS = 90_000
 async function launched (): Promise<{ app: ElectronApplication, chrome: Page }> {
   const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
   expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
-  return { app, chrome: findChrome(app) }
+  const chrome = findChrome(app)
+  // The launch waits for the chrome's script and a while for its frames; a spec that clicks needs the frames.
+  expect(await waitForChromeReady(chrome), 'the chrome view never became ready to act on').toBe(true)
+  return { app, chrome }
 }
 
 /** Opens `paths` as tabs, one after the other; the dashboard tab the window starts with stays first. */
