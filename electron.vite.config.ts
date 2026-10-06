@@ -5,6 +5,7 @@ import { defineConfig } from 'electron-vite'
 import { build, normalizePath, type Plugin } from 'vite'
 import { aliasPattern, buildAliasEntries } from './src/shim/module-map.js'
 import { isShimSource } from './src/shim/is-shim-source.js'
+import { privacyNotice } from './scripts/privacy-notice-plugin.js'
 
 export const root = dirname(fileURLToPath(import.meta.url))
 
@@ -279,6 +280,7 @@ export default defineConfig({
   },
   renderer: {
     root: rendererRoot,
+    plugins: [privacyNotice()],
     server: { host: rendererHost, hmr: rendererHmr },
     build: {
       // The new-tab page runs beside websites, and the shell scheme serves it only the files this
