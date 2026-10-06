@@ -9,6 +9,7 @@
 // (`styles/web3-level.css`). Painting only sets attributes, so a repaint never
 // rebuilds either element.
 
+import { siteClassOfLevel } from '../trust/site-class.js'
 import type { ScoreLevel } from '../trust/website-level.js'
 import type { Web3Score } from '../main/browsing/site-trust.js'
 import { path, svg } from './icons.js'
@@ -20,8 +21,8 @@ export type Web3Mark = 'Web2' | 'Web2.5' | 'Web3'
 
 /** Level 1 is Web2, Levels 2 and 3 are Web2.5, Level 4 is Web3. */
 export function web3Mark (level: ScoreLevel): Web3Mark {
-  if (level === 1) return 'Web2'
-  return level === 4 ? 'Web3' : 'Web2.5'
+  const siteClass = siteClassOfLevel(level)
+  return siteClass === 'web2' ? 'Web2' : siteClass === 'web3' ? 'Web3' : 'Web2.5'
 }
 
 /** Builds the shield element, in its "no level yet" state. */

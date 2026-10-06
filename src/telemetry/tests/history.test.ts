@@ -6,18 +6,22 @@ import {
   MAX_HISTORY_ENTRIES,
   type HistoryEntry
 } from '../history.js'
-import type { TelemetryPayload } from '../disclosure.js'
+import type { UsagePayload } from '../disclosure.js'
 import { attemptSend, enqueue, initialTransportState, type Clock, type Sender } from '../transport.js'
 
 // A payload shape stays fixed across a test; only the period usually
 // varies, the way a real caller would advance from month to month.
-function payloadFor (period: string): TelemetryPayload {
+function payloadFor (period: string): UsagePayload {
   return {
-    installId: '4c2f2f3a-1111-4444-8888-abcde1234567',
-    country: 'IT',
+    schema: 2,
+    installId: '4c2f2f3a111144448888abcde1234567',
+    stream: 'ab'.repeat(16),
+    region: 'EU',
     version: '0.1.0',
     period,
-    perApp: { torrent: { activeSec: 90000, backgroundSec: 412000 } }
+    activeSec: 90000,
+    backgroundSec: 412000,
+    classes: { web3: 0, web25: 0, web2: 90000 }
   }
 }
 

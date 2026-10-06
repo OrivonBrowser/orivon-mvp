@@ -39,8 +39,8 @@ export const privacy: Section = {
     {
       id: 'usage-statistics',
       label: 'Usage statistics',
-      help: 'How long Orivon is open and in use, counted by the month and by app. Nothing else: no address, no page, no search. This is the exact text, and you can change your mind at any time.',
-      keywords: ['telemetry', 'analytics', 'statistics', 'usage', 'send', 'report', 'measure', 'consent'],
+      help: 'How long Orivon is open and in use each month, and how much of it on Web3, Web2.5 and Web2 sites, with the names of the Web3 and Web2.5 sites in a separate report. No page address, no search, no IP address. This is the exact text, and you can change your mind at any time.',
+      keywords: ['telemetry', 'analytics', 'statistics', 'usage', 'send', 'report', 'measure', 'consent', 'delete', 'erase', 'privacy notice'],
       control: { type: 'usage' }
     },
     ...privacySiteDataRows,

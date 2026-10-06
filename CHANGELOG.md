@@ -35,6 +35,9 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **Telemetry, chosen on the welcome and switched in Settings**: two equal buttons, neither preselected; when shared, a monthly
+  count of use split into Web3, Web2.5 and Web2 time goes to `telemetry.orivonstack.com`, with public Web3 and Web2.5 sites in a
+  separate unlinked report. Never in a development build or a private window; [`docs/privacy/notice.md`](docs/privacy/notice.md) says all.
 - **"Orivon (source)" in the Linux dock** (`node scripts/launch-from-source.mjs install`), with New Window and New Private Window:
   a click with Orivon open reaches it at once; only a start with nothing open builds first. With it installed, a Linux
   run from source can be made the default browser from Settings.
@@ -336,6 +339,8 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Changed
 
+- **Global Privacy Control is on by default**, and every site sees it both as `Sec-GPC: 1` and as `navigator.globalPrivacyControl`
+  in pages, frames and workers of every session; turning it off makes the property `false`. A change applies at the next start.
 - **A new window opens at once**, from the New window button, `Ctrl+N` or the dock, as a torn-off tab does; a start
   of an open profile from the dock or a command line hands over in about half the time.
 - **An extension added from now on is not put on the toolbar**; "Pin new extensions to the toolbar" (Settings > Apps) turns it back on.

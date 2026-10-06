@@ -174,7 +174,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       end: (pid) => endProcess(tasksEnv, pid),
       focus: (tabId, caller) => focusTab(tasksEnv, tabId, caller.contents)
     }),
-    telemetry: telemetryDomain(app, services.profiles.isPrivate),
+    telemetry: telemetryDomain(services.profiles.isPrivate),
     updates: updatesDomain(
       async () => await checkUpdateNow(app),
       services.profiles.isPrivate,
@@ -216,8 +216,8 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   siteSettings.onChange(() => { services.internalPages.publish('sites.changed', undefined, ['settings']) })
   services.passwords.onChange(() => { services.internalPages.publish('passwords.changed', undefined, ['settings']) })
   services.profiles.onChange(() => { services.internalPages.publish('profiles.changed', undefined, ['settings', 'profiles']) })
-  // Never fires in a private session: startTelemetry never runs there, and
-  // telemetry-domain.ts's own isPrivate guard makes decideConsent unreachable.
+  // Never fires in a private session: telemetry never runs there, and
+  // telemetry-domain.ts's own isPrivate guard makes every change unreachable.
   if (!services.profiles.isPrivate) {
     onTelemetryChanged(() => { services.internalPages.publish('usage.changed', undefined, ['settings']) })
   }

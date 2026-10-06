@@ -1,13 +1,14 @@
 // The Settings sections that report on and control what is particular to
 // Orivon: the apps that hold permissions and taking one back, the Ethereum light
 // client and its switch, usage statistics (off until chosen, the exact text
-// shown), and looking for updates (off until turned on).
+// shown, the switch, Delete my data and the privacy notice), and looking for updates (off until turned on).
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
 import { findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { startIngest, telemetryHomeFolder } from '../support/telemetry-ingest.js'
 import type { DevGrantRequest } from '../../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../../src/contracts/index.js'
 
@@ -97,31 +98,134 @@ it('says how the light client is, and shows its switch off and out of reach whil
   }
 }, TEST_TIMEOUT_MS)
 
-it('shows usage statistics as undecided with the exact text that would be sent, and records a choice either way', async () => {
+async function telemetryOn (home: string, ingestUrl: string): Promise<{ app: ElectronApplication, chrome: Page }> {
+  const app = await launchElectron({
+    appPath: '.',
+    args: [HERMETIC_RESOLVER],
+    env: { ORIVON_TELEMETRY: 'on', ORIVON_TELEMETRY_HOME: home, ORIVON_TELEMETRY_URL: ingestUrl, ORIVON_TELEMETRY_TICK_MS: '60000' }
+  })
+  expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
+  return { app, chrome: findChrome(app) }
+}
+
+const readConsent = (home: string): Record<string, unknown> | undefined => {
+  try { return JSON.parse(readFileSync(join(home, 'consent.json'), 'utf8')) as Record<string, unknown> } catch { return undefined }
+}
+
+it('says telemetry is off for a launch that has it off, and offers no switch to turn it on', async () => {
   const { app, chrome } = await launched()
   try {
-    const userData = await userDataOf(app)
     const page = await openSettings(app, chrome, '/privacy')
     const row = page.locator('#row-usage-statistics')
     await row.waitFor()
-    await page.waitForSelector('#row-usage-statistics .usage')
-    expect(await row.locator('.muted').first().textContent()).toContain('You have not chosen')
-    // Neither button is the chosen one.
-    expect(await row.locator('.usage-buttons .btn.primary').count()).toBe(0)
-    await row.locator('summary', { hasText: 'The exact text' }).click()
-    const json = JSON.parse(await row.locator('pre.json').first().textContent() ?? '{}') as Record<string, unknown>
-    expect(Object.keys(json).sort()).toEqual(['country', 'installId', 'perApp', 'period', 'version'])
-
-    await row.locator('button', { hasText: 'Keep on' }).click()
-    await page.waitForFunction(() => document.querySelector('#row-usage-statistics .muted')?.textContent?.startsWith('On:') === true)
-    expect(await row.locator('.btn.primary').textContent()).toBe('Keep on')
-    expect(await waitFor(() => { try { return JSON.parse(readFileSync(join(userData, 'telemetry.json'), 'utf8')).consent === 'accepted' } catch { return false } })).toBe(true)
-
-    await row.locator('button', { hasText: 'Turn off' }).click()
-    await page.waitForFunction(() => document.querySelector('#row-usage-statistics .muted')?.textContent?.startsWith('Off:') === true)
+    await page.waitForSelector('#row-usage-statistics #usage-state')
+    expect(await row.locator('#usage-state').textContent()).toContain('turned off for this launch')
+    expect(await row.locator('#usage-switch').isDisabled()).toBe(true)
+    expect(await row.locator('#usage-delete').count()).toBe(0)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('shows usage statistics as not chosen yet with the exact text that would be sent, and the switch turns them on and off for the whole computer', async () => {
+  const ingest = await startIngest()
+  const { home, remove } = await telemetryHomeFolder()
+  const { app, chrome } = await telemetryOn(home, ingest.url)
+  try {
+    const page = await openSettings(app, chrome, '/privacy')
+    const row = page.locator('#row-usage-statistics')
+    await row.waitFor()
+    await page.waitForSelector('#row-usage-statistics #usage-state')
+    expect(await row.locator('#usage-state').textContent()).toContain('Not chosen yet')
+    expect(await row.locator('#usage-switch').isChecked()).toBe(false)
+    expect(await row.locator('#usage-install-id').count()).toBe(0)
+    // Nothing was ever sent from this computer, so there is nothing to delete and no button for it.
+    expect(await row.locator('#usage-nothing-sent').textContent()).toBe('Nothing has been sent from this computer.')
+    expect(await row.locator('#usage-delete').count()).toBe(0)
+
+    await row.locator('summary', { hasText: 'What is sent' }).click()
+    const usage = JSON.parse(await row.locator('#usage-json').textContent() ?? '{}') as Record<string, unknown>
+    expect(Object.keys(usage).sort()).toEqual(['activeSec', 'backgroundSec', 'classes', 'installId', 'period', 'region', 'schema', 'stream', 'version'])
+    expect(usage['installId']).toBe('(made when you turn this on)')
+    const sites = JSON.parse(await row.locator('#sites-json').textContent() ?? '{}') as Record<string, unknown>
+    expect(Object.keys(sites).sort()).toEqual(['period', 'reportId', 'schema', 'sites', 'version'])
+    expect(readConsent(home)).toBeUndefined()
+
+    await row.locator('.switch').click()
+    await page.waitForFunction(() => document.querySelector('#usage-state')?.textContent?.startsWith('On.') === true)
+    expect(await waitFor(() => readConsent(home)?.['state'] === 'accepted')).toBe(true)
+    expect(readConsent(home)).toMatchObject({ source: 'settings', noticeVersion: 2 })
+    const installId = await row.locator('#usage-install-id').textContent()
+    expect(installId).toMatch(/^[0-9a-f]{32}$/)
+    expect(JSON.parse(await row.locator('#usage-json').textContent() ?? '{}')).toMatchObject({ installId })
+
+    await row.locator('.switch').click()
+    await page.waitForFunction(() => document.querySelector('#usage-state')?.textContent?.startsWith('Off.') === true)
+    expect(await waitFor(() => readConsent(home)?.['state'] === 'declined')).toBe(true)
+    expect(await row.locator('#usage-install-id').count()).toBe(0)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+    await ingest.close()
+    await remove()
+  }
+}, TEST_TIMEOUT_MS)
+
+it('Delete my data asks the server to erase the install ID, turns telemetry off and says done; and says failed when the server cannot be reached', async () => {
+  const ingest = await startIngest()
+  const { home, remove } = await telemetryHomeFolder()
+  const { app, chrome } = await telemetryOn(home, ingest.url)
+  try {
+    const page = await openSettings(app, chrome, '/privacy')
+    const row = page.locator('#row-usage-statistics')
+    await row.waitFor()
+    await page.waitForSelector('#row-usage-statistics #usage-state')
+    await row.locator('.switch').click()
+    await row.locator('#usage-install-id').waitFor()
+    await row.locator('#usage-delete').waitFor()
+    expect(await row.locator('#usage-nothing-sent').count()).toBe(0)
+    const installId = await row.locator('#usage-install-id').textContent()
+
+    await row.locator('#usage-delete').click()
+    await page.waitForFunction(() => document.querySelector('#usage-erase')?.textContent?.startsWith('Done.') === true)
+    expect(ingest.requests.filter((request) => request.path === '/v1/erase')).toEqual([{ path: '/v1/erase', body: { schema: 2, installId } }])
+    expect(readConsent(home)?.['state']).toBe('declined')
+    expect(await row.locator('#usage-state').textContent()).toContain('Off.')
+
+    // Deleted, so there is nothing left to delete; turned on again, there is, and the server is now gone.
+    expect(await row.locator('#usage-delete').count()).toBe(0)
+    await row.locator('.switch').click()
+    await row.locator('#usage-delete').waitFor()
+    await ingest.close()
+    await row.locator('#usage-delete').click()
+    await page.waitForFunction(() => document.querySelector('#usage-erase')?.textContent?.startsWith('The request did not reach the server') === true)
+  } finally {
+    await closeElectron(app)
+    await remove()
+  }
+}, TEST_TIMEOUT_MS)
+
+it('shows the privacy notice from the page itself, with no network, and draws it as text', async () => {
+  const ingest = await startIngest()
+  const { home, remove } = await telemetryHomeFolder()
+  const { app, chrome } = await telemetryOn(home, ingest.url)
+  try {
+    const page = await openSettings(app, chrome, '/privacy')
+    const row = page.locator('#row-usage-statistics')
+    await row.waitFor()
+    await page.waitForSelector('#row-usage-statistics #usage-notice-toggle')
+    expect(await row.locator('.usage-notice').count()).toBe(0)
+    await row.locator('#usage-notice-toggle').click()
+    await row.locator('.usage-notice').waitFor()
+    expect(await row.locator('.usage-notice h4').allTextContents()).toContain('What telemetry sends')
+    expect(await row.locator('.usage-notice table td').allTextContents()).toContain('classes.web3')
+    expect(await row.locator('.usage-notice img, .usage-notice script, .usage-notice a').count()).toBe(0)
+    expect(ingest.requests).toEqual([])
+  } finally {
+    await closeElectron(app)
+    await ingest.close()
+    await remove()
   }
 }, TEST_TIMEOUT_MS)
 

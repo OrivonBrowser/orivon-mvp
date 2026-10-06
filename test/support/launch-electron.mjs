@@ -278,6 +278,12 @@ export async function launchElectron ({
   // has a fresh profile, so the default would put it over every page a test
   // drives, and the window count tests wait for would include its view.
   if (env['ORIVON_INTRO'] === undefined) env['ORIVON_INTRO'] = 'off'
+  // And telemetry: off unless a spec turns it on, so no run counts, reads this machine's identifier or
+  // sends anything. A spec that needs it sets ORIVON_TELEMETRY=on; its state then lives in the profile's
+  // own temporary folder (below), never the real ~/.config/orivon-telemetry.
+  if (env['ORIVON_TELEMETRY'] === undefined) env['ORIVON_TELEMETRY'] = 'off'
+  // A spec that turns it on sends to a loopback address of its own, or to this closed port: never the real server.
+  if (env['ORIVON_TELEMETRY_URL'] === undefined) env['ORIVON_TELEMETRY_URL'] = 'http://127.0.0.1:9/'
 
   // BUG (found 2026-09-01, real regression): with no --user-data-dir, Electron
   // defaults to this machine's actual `orivon` profile directory
@@ -295,6 +301,7 @@ export async function launchElectron ({
     throw new Error(`reuseProfile must be a profile directory this process made and kept, got ${reuseProfile}`)
   }
   const userDataDir = reuseProfile ?? await mkdtemp(join(tmpdir(), 'orivon-test-'))
+  if (env['ORIVON_TELEMETRY_HOME'] === undefined) env['ORIVON_TELEMETRY_HOME'] = join(userDataDir, 'telemetry-home')
   let app
   try {
     // Inside the same try as the launch, so a throwing seed is cleaned up by

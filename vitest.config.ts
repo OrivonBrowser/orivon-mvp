@@ -4,6 +4,7 @@ import type { Alias } from 'vite'
 import { defineConfig } from 'vitest/config'
 import { aliasPattern, buildAliasEntries } from './src/shim/module-map.js'
 import { isShimSource } from './src/shim/is-shim-source.js'
+import { privacyNotice } from './scripts/privacy-notice-plugin.js'
 
 const root = dirname(fileURLToPath(import.meta.url))
 const SHIM_SOURCE_DIRS = ['src/shim/', 'src/shim-electron/']
@@ -46,6 +47,7 @@ function sqliteEngineAlias (): Alias {
 
 // Node, not a DOM: the unit suite tests pure functions and needs no browser.
 export default defineConfig({
+  plugins: [privacyNotice()],
   resolve: { alias: [...shimModuleAliases(), sqliteEngineAlias()] },
   test: {
     environment: 'node',

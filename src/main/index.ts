@@ -27,6 +27,7 @@ import { applyGlobalPrivacyControl } from './privacy/gpc-switch.js'
 import { readSettingBeforeReady } from './settings/settings-file.js'
 import { chromeUserAgent } from './shell/user-agent.js'
 import { planIntro } from './shell/intro-state.js'
+import { setTelemetryOn, welcomeOffersTelemetry } from '../telemetry/runner.js'
 import { firstWindowOptions } from './shell/first-window.js'
 import { seedClosedStack } from './session-restore/restore.js'
 import { atStartup, readLaunchRequest } from './launch/launch-request.js'
@@ -269,7 +270,7 @@ export function boot (runtime: Runtime): void {
         const plan = firstWindowOptions({ services: shell, isPrivate: false, argv: process.argv, packaged: app.isPackaged, displays: screen.getAllDisplays(), openWindow: (options) => { createShellWindow(ctx, shell, options) } })
         // A first tab that is a local file needs the binary's fuse read, which nothing else at start-up does.
         if (plan.localFiles === true) await fileProtocolFuse()
-        const firstWindow = createShellWindow(ctx, shell, { ...plan, intro: plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData'), offersDefault), firstOfLaunch: true })
+        const firstWindow = createShellWindow(ctx, shell, { ...plan, intro: plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData'), offersDefault, { offered: welcomeOffersTelemetry, choose: async (on) => { await setTelemetryOn(on, 'welcome') } }), firstOfLaunch: true })
         const after = plan.after
         afterFirst = after === undefined ? undefined : () => { after(firstWindow) }
       } finally {

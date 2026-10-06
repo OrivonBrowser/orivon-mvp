@@ -1,175 +1,148 @@
-// The first-run telemetry disclosure: the decidable, testable part of the
-// screen ADR-0004 makes non-optional -- what is shown, what a choice
-// means, when the screen may be shown, and the guarantee that nothing is
-// transmitted before the user chooses. See src/telemetry/README.md and
-// docs/decisions/ADR-0004-telemetry.md; verified operationally (traffic
-// watched, not source read) by docs/development/release-checklist.md
-// item 1.
-//
-// NOT HERE: the rendering. This module makes no electron import, no
-// node:* import, performs no I/O and reads no clock -- every value a
-// caller needs (accounting state, installId, country, version, period,
-// and the persisted consent state itself) is passed in, and every value
-// produced here is returned, never written anywhere. Persistence and the
-// network transport are separate work; this module is what they are
-// required to consult first (mayTransmit) and to render literally
-// (buildDisclosurePayload), not paraphrase.
-//
-// No preselection is a VALUE a test compares below, not a note left for
-// whoever builds the view.
+// What telemetry sends and when it may: the payloads exactly as they go on the wire (the Settings
+// page shows them as literal JSON), the consent state, and the one guard every send consults. Pure:
+// no electron, no I/O, no clock, no randomness. Every value the payloads need beyond the counted
+// time is passed in, and everything produced is returned, never written anywhere.
+import { SHELL_APP_ID, type AccountingState, type Period } from './accounting.js'
+import type { Region } from './region.js'
+import { classOfKey, reportedKey, UNLISTED } from './site-key.js'
 
-import type { AccountingState, AppId, Period, PeriodTotals } from './accounting.js'
+export const PAYLOAD_SCHEMA = 2
 
-// The literal payload
+/** What the install ID reads before the person has turned telemetry on: the machine is not read until then. */
+export const INSTALL_ID_PLACEHOLDER = '(made when you turn this on)'
 
-/**
- * The exact shape ADR-0004 commits to sending -- see its "entire payload"
- * block. Kept as its own type rather than reusing a slice of
- * AccountingState: the wire payload adds fields accounting.ts has no
- * reason to know about (installId, country, version) and narrows to one
- * rounded period.
- */
-export interface TelemetryPayload {
-  readonly installId: string
-  readonly country: string
-  readonly version: string
-  readonly period: Period
-  readonly perApp: Readonly<Record<AppId, PeriodTotals>>
+/** At most this many names in one report; the server refuses more. */
+export const MAX_REPORTED_SITES = 300
+
+export interface ClassSeconds {
+  readonly web3: number
+  readonly web25: number
+  readonly web2: number
 }
 
-/**
- * Everything buildDisclosurePayload needs beyond the accounting state
- * itself -- values this module has no way to produce on its own (no
- * clock, no locale lookup, no RNG for installId). The caller collects
- * these; this module only shapes them.
- */
-export interface DisclosureMeta {
+/** `POST /v1/usage`: the whole browser's time this month so far, and its split by kind of site. */
+export interface UsagePayload {
+  readonly schema: typeof PAYLOAD_SCHEMA
   readonly installId: string
-  readonly country: string
+  readonly stream: string
+  readonly region: Region
+  readonly version: string
+  readonly period: Period
+  readonly activeSec: number
+  readonly backgroundSec: number
+  readonly classes: ClassSeconds
+}
+
+/** `POST /v1/sites`: seconds on each Web3 and Web2.5 site this month so far, under a random report ID that links to nothing else. */
+export interface SitesPayload {
+  readonly schema: typeof PAYLOAD_SCHEMA
+  readonly reportId: string
+  readonly version: string
+  readonly period: Period
+  readonly sites: Readonly<Record<string, number>>
+}
+
+/** `POST /v1/erase`: a request to delete everything held under this install ID. */
+export interface ErasePayload {
+  readonly schema: typeof PAYLOAD_SCHEMA
+  readonly installId: string
+}
+
+export type SentPayload = UsagePayload | SitesPayload
+export type PayloadKind = 'usage' | 'sites'
+
+export interface UsageMeta {
+  readonly installId: string
+  readonly stream: string
+  readonly region: Region
   readonly version: string
   readonly period: Period
 }
 
-/**
- * Whole seconds. accounting.ts deliberately keeps exact fractional
- * seconds through its fold and defers rounding to "whatever later builds
- * [the wire] payload" (see its module comment) -- this is that place.
- * ADR-0004's own example payload shows integers ("activeSec": 90000), so
- * nearest-second rounding runs at this boundary; half a second either way
- * is immaterial against figures in the tens of thousands.
- */
-function roundedTotals (totals: PeriodTotals): PeriodTotals {
-  return {
-    activeSec: Math.round(totals.activeSec),
-    backgroundSec: Math.round(totals.backgroundSec)
+export interface SitesMeta {
+  readonly reportId: string
+  readonly version: string
+  readonly period: Period
+}
+
+/** Whole seconds: accounting keeps fractions, and this is the one place they are rounded. */
+function whole (seconds: number): number {
+  return Math.round(seconds)
+}
+
+function classSeconds (state: AccountingState, period: Period): ClassSeconds {
+  const sums = { web3: 0, web25: 0, web2: 0 }
+  for (const [key, seconds] of Object.entries(state.perSite[period] ?? {})) {
+    const kind = classOfKey(key)
+    if (kind !== undefined) sums[kind] += seconds
   }
+  return { web3: whole(sums.web3), web25: whole(sums.web25), web2: whole(sums.web2) }
 }
 
-/**
- * Every app with a recorded entry for `period`, rounded. Reads
- * AccountingState's own `perApp` field directly rather than calling
- * accounting.ts's `totalsFor` once per known app id: `totalsFor` defaults
- * a missing entry to `{ activeSec: 0, backgroundSec: 0 }`, correct for a
- * caller asking about one specific app, but wrong here -- it would seed
- * the payload with a zero-filled app that simply never ran in `period`.
- * Only apps that actually have an entry for `period` appear.
- */
-function perAppForPeriod (state: AccountingState, period: Period): Readonly<Record<AppId, PeriodTotals>> {
-  const out: Record<AppId, PeriodTotals> = {}
-  for (const app of Object.keys(state.perApp)) {
-    const totals = state.perApp[app]?.[period]
-    if (totals !== undefined) out[app] = roundedTotals(totals)
+/** Seconds per named Web3 and Web2.5 site, rounded, zeros dropped; the smallest names past the cap fold into their class's `(unlisted)`. */
+function reportedSites (state: AccountingState, period: Period): Record<string, number> {
+  const byLabel = new Map<string, number>()
+  for (const [key, seconds] of Object.entries(state.perSite[period] ?? {})) {
+    const kind = classOfKey(key)
+    if (kind !== 'web3' && kind !== 'web25') continue
+    const label = reportedKey(key)
+    byLabel.set(label, (byLabel.get(label) ?? 0) + seconds)
+  }
+  const named = [...byLabel].filter(([label]) => !label.endsWith(`:${UNLISTED}`)).sort((a, b) => b[1] - a[1])
+  const totals = new Map<string, number>([...byLabel].filter(([label]) => label.endsWith(`:${UNLISTED}`)))
+  named.forEach(([label, seconds], index) => {
+    // Two places stay free for the two `(unlisted)` labels.
+    const key = index < MAX_REPORTED_SITES - 2 ? label : `${label.slice(0, label.indexOf(':'))}:${UNLISTED}`
+    totals.set(key, (totals.get(key) ?? 0) + seconds)
+  })
+  const out: Record<string, number> = {}
+  for (const [label, seconds] of totals) {
+    const rounded = whole(seconds)
+    if (rounded > 0) out[label] = rounded
   }
   return out
 }
 
-/**
- * Produces exactly the object the transport sends -- not a description of
- * it, not a summary. This is the function the disclosure screen renders
- * as literal JSON.
- */
-export function buildDisclosurePayload (state: AccountingState, meta: DisclosureMeta): TelemetryPayload {
+export function buildUsagePayload (state: AccountingState, meta: UsageMeta): UsagePayload {
+  const totals = state.perApp[SHELL_APP_ID]?.[meta.period]
   return {
+    schema: PAYLOAD_SCHEMA,
     installId: meta.installId,
-    country: meta.country,
+    stream: meta.stream,
+    region: meta.region,
     version: meta.version,
     period: meta.period,
-    perApp: perAppForPeriod(state, meta.period)
+    activeSec: whole(totals?.activeSec ?? 0),
+    backgroundSec: whole(totals?.backgroundSec ?? 0),
+    classes: classSeconds(state, meta.period)
   }
+}
+
+export function buildSitesPayload (state: AccountingState, meta: SitesMeta): SitesPayload {
+  return { schema: PAYLOAD_SCHEMA, reportId: meta.reportId, version: meta.version, period: meta.period, sites: reportedSites(state, meta.period) }
+}
+
+export function buildErasePayload (installId: string): ErasePayload {
+  return { schema: PAYLOAD_SCHEMA, installId }
+}
+
+/** A sites report with no site in it says nothing, so none is sent. */
+export function hasSites (payload: SitesPayload): boolean {
+  return Object.keys(payload.sites).length > 0
 }
 
 // The consent state: undecided is a real third value
 
-/** What a completed choice settles into. Deliberately excludes
- *  'undecided' at the type level, so nothing typed to return this can
- *  ever hand back the pre-choice state. */
+/** What a completed choice settles into. */
 export type DecidedConsentState = 'accepted' | 'declined'
 
-/**
- * The full state space: the pre-choice state plus either completed
- * choice. Three distinct values, not a boolean -- a boolean has no room
- * for "no choice yet" without overloading one of its two values to also
- * mean "declined", which is the preselection bug this type rules out
- * structurally rather than by convention.
- */
+/** Three distinct values, not a boolean: a boolean has no room for "no choice yet" without overloading "declined". */
 export type ConsentState = 'undecided' | DecidedConsentState
 
-/** What a fresh profile starts in. Exported so every call site shares one definition of "fresh". */
+/** What a person who has not chosen starts in. */
 export const initialConsentState: ConsentState = 'undecided'
 
-/**
- * The first-run screen is gated on this one predicate rather than on a
- * separately tracked "has this run before" flag, so there is exactly one
- * source of truth for whether it may appear -- and once a choice lands in
- * either decided state, this is false for good, which is what keeps a
- * revisited choice from resurrecting the first-run screen.
- */
-export function shouldPresentDisclosure (state: ConsentState): boolean {
-  return state === 'undecided'
-}
-
-// The two options
-
-export type DisclosureChoiceId = 'keep-on' | 'turn-off'
-
-/**
- * id, label and resultingState are the whole shape: what the choice is
- * called, and what it settles the consent state to. How either option is
- * presented is the view's concern and is not encoded here.
- */
-export interface DisclosureOption {
-  readonly id: DisclosureChoiceId
-  readonly label: string
-  readonly resultingState: DecidedConsentState
-}
-
-/**
- * ADR-0004's own button copy, in its own order: "[Keep on] / [Turn
- * off]". A fixed-length tuple, not a plain array, so "exactly two" is a
- * type-level fact and not only a runtime count.
- */
-export const DISCLOSURE_OPTIONS: readonly [DisclosureOption, DisclosureOption] = [
-  { id: 'keep-on', label: 'Keep on', resultingState: 'accepted' },
-  { id: 'turn-off', label: 'Turn off', resultingState: 'declined' }
-]
-
-/**
- * Applies one of DISCLOSURE_OPTIONS -- first-run or revisited alike, the
- * same function serves both. That symmetry is what makes the choice
- * durable and revisitable rather than a one-shot decision: a settings
- * control calling this again later moves directly between 'accepted' and
- * 'declined'. Pure -- the caller persists the result.
- */
-export function applyDisclosureChoice (option: DisclosureOption): DecidedConsentState {
-  return option.resultingState
-}
-
-// The transmit guard
-
-/**
- * The one function the transport (a separate task) is required to consult
- * before sending anything. Silence is not consent.
- */
+/** The one function a send is required to consult first. Silence is not consent. */
 export function mayTransmit (state: ConsentState): boolean {
   return state === 'accepted'
 }

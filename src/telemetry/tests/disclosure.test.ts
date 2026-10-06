@@ -1,182 +1,104 @@
 import { describe, expect, it } from 'vitest'
 import { fold, type TelemetryEvent } from '../accounting.js'
 import {
-  buildDisclosurePayload,
-  DISCLOSURE_OPTIONS,
-  initialConsentState,
-  applyDisclosureChoice,
-  shouldPresentDisclosure,
-  mayTransmit,
-  type DisclosureMeta
+  MAX_REPORTED_SITES, PAYLOAD_SCHEMA, buildErasePayload, buildSitesPayload, buildUsagePayload, hasSites, initialConsentState, mayTransmit
 } from '../disclosure.js'
 
-// Fixed metadata reused across the payload tests. installId is just a
-// plausible-looking string here -- this module never generates one (no
-// RNG, no I/O; see disclosure.ts's module comment) -- a real caller
-// supplies whatever it generated at first run.
-const meta: DisclosureMeta = {
-  installId: '4c2f2f3a-1111-4444-8888-abcde1234567',
-  country: 'IT',
-  version: '0.1.0',
-  period: '2026-09'
+const t0 = Date.UTC(2026, 8, 1, 0, 0, 0)
+const SEC = 1000
+const meta = { installId: 'ab'.repeat(16), stream: 'cd'.repeat(16), region: 'EU' as const, version: '0.1.0', period: '2026-09' }
+
+function browsing (): ReturnType<typeof fold> {
+  const events: TelemetryEvent[] = [
+    { kind: 'session-start', atMs: t0, app: 'shell' },
+    { kind: 'focus', atMs: t0, app: 'shell' },
+    { kind: 'site', atMs: t0, site: 'web3:vitalik.eth' },
+    { kind: 'interaction', atMs: t0 },
+    { kind: 'interaction', atMs: t0 + 50 * SEC },
+    { kind: 'site', atMs: t0 + 100 * SEC, site: 'web25:app.example.org' },
+    { kind: 'interaction', atMs: t0 + 150 * SEC },
+    { kind: 'site', atMs: t0 + 200 * SEC, site: 'web2' },
+    { kind: 'interaction', atMs: t0 + 250 * SEC },
+    { kind: 'site', atMs: t0 + 300 * SEC, site: 'web3:' },
+    { kind: 'interaction', atMs: t0 + 310 * SEC },
+    { kind: 'blur', atMs: t0 + 320 * SEC },
+    { kind: 'checkpoint', atMs: t0 + 400 * SEC }
+  ]
+  return fold(events)
 }
 
-describe('buildDisclosurePayload -- the literal JSON, from real accounting samples', () => {
-  it('matches the ADR-0004 payload shape exactly, for a real multi-app fold', () => {
-    const t0 = Date.UTC(2026, 8, 1, 0, 0, 0) // 2026-09-01T00:00:00Z
-    const events: TelemetryEvent[] = [
-      { kind: 'session-start', atMs: t0, app: 'torrent' },
-      { kind: 'session-start', atMs: t0, app: 'nostrClient' },
-      { kind: 'focus', atMs: t0, app: 'torrent' },
-      { kind: 'interaction', atMs: t0 },
-      { kind: 'session-stop', atMs: t0 + 60_000, app: 'torrent' }, // 60s, focused + interacted
-      { kind: 'session-stop', atMs: t0 + 60_000, app: 'nostrClient' } // 60s, never focused
-    ]
-    const state = fold(events)
-
-    expect(buildDisclosurePayload(state, meta)).toEqual({
-      installId: meta.installId,
-      country: meta.country,
-      version: meta.version,
-      period: meta.period,
-      perApp: {
-        torrent: { activeSec: 60, backgroundSec: 0 },
-        nostrClient: { activeSec: 0, backgroundSec: 60 }
-      }
+describe('buildUsagePayload', () => {
+  it('is the schema 2 usage report: the shell totals, the class split, no site names', () => {
+    const payload = buildUsagePayload(browsing(), meta)
+    expect(payload).toEqual({
+      schema: 2, installId: meta.installId, stream: meta.stream, region: 'EU', version: '0.1.0', period: '2026-09',
+      activeSec: 320, backgroundSec: 80, classes: { web3: 120, web25: 100, web2: 100 }
     })
+    expect(PAYLOAD_SCHEMA).toBe(2)
   })
 
-  it('includes only apps with a recorded entry for the requested period -- no zero-filled padding', () => {
-    const aug = Date.UTC(2026, 7, 15, 0, 0, 0)
-    const sep = Date.UTC(2026, 8, 1, 0, 0, 0)
-    const events: TelemetryEvent[] = [
-      { kind: 'session-start', atMs: aug, app: 'torrent' }, // background, August only
-      { kind: 'session-stop', atMs: aug + 30_000, app: 'torrent' },
-      { kind: 'session-start', atMs: sep, app: 'torrent' },
-      { kind: 'focus', atMs: sep, app: 'torrent' },
-      { kind: 'interaction', atMs: sep },
-      { kind: 'session-stop', atMs: sep + 45_000, app: 'torrent' } // active, September
-    ]
-    const state = fold(events)
-
-    // meta.period is '2026-09': August's 30 backgroundSec must not leak in.
-    expect(buildDisclosurePayload(state, meta).perApp).toEqual({
-      torrent: { activeSec: 45, backgroundSec: 0 }
-    })
+  it('carries no site name: those travel in the sites report, which nothing links to the install ID', () => {
+    expect('sites' in buildUsagePayload(browsing(), meta)).toBe(false)
   })
 
-  it('rounds fractional seconds to the nearest whole second', () => {
-    const t0 = Date.UTC(2026, 8, 1, 0, 0, 0)
-    const events: TelemetryEvent[] = [
-      { kind: 'session-start', atMs: t0, app: 'torrent' },
-      { kind: 'focus', atMs: t0, app: 'torrent' },
-      { kind: 'interaction', atMs: t0 },
-      { kind: 'session-stop', atMs: t0 + 2_400, app: 'torrent' } // 2.4s exactly
-    ]
-    const state = fold(events)
-
-    expect(buildDisclosurePayload(state, meta).perApp).toEqual({
-      torrent: { activeSec: 2, backgroundSec: 0 }
-    })
+  it('counts the browser own pages in activeSec and in no class', () => {
+    const state = fold([
+      { kind: 'session-start', atMs: t0, app: 'shell' }, { kind: 'focus', atMs: t0, app: 'shell' }, { kind: 'interaction', atMs: t0 },
+      { kind: 'checkpoint', atMs: t0 + 60 * SEC }
+    ])
+    expect(buildUsagePayload(state, meta)).toMatchObject({ activeSec: 60, classes: { web3: 0, web25: 0, web2: 0 } })
   })
 
-  it('a fresh profile with no accounting events yet produces an empty perApp, not an error', () => {
-    const state = fold([])
-    expect(buildDisclosurePayload(state, meta)).toEqual({
-      installId: meta.installId,
-      country: meta.country,
-      version: meta.version,
-      period: meta.period,
-      perApp: {}
-    })
+  it('rounds fractional seconds to whole seconds and is all zeros for a profile with nothing counted', () => {
+    const state = fold([
+      { kind: 'session-start', atMs: t0, app: 'shell' }, { kind: 'focus', atMs: t0, app: 'shell' }, { kind: 'interaction', atMs: t0 },
+      { kind: 'checkpoint', atMs: t0 + 1600 }
+    ])
+    expect(buildUsagePayload(state, meta).activeSec).toBe(2)
+    expect(buildUsagePayload(fold([]), meta)).toMatchObject({ activeSec: 0, backgroundSec: 0, classes: { web3: 0, web25: 0, web2: 0 } })
   })
 })
 
-describe('DISCLOSURE_OPTIONS -- exactly two', () => {
-  it('has exactly two options', () => {
-    expect(DISCLOSURE_OPTIONS).toHaveLength(2)
+describe('buildSitesPayload', () => {
+  it('names only Web3 and Web2.5 sites, with an empty name reading (unlisted), and carries no install ID', () => {
+    const payload = buildSitesPayload(browsing(), { reportId: 'ef'.repeat(16), version: '0.1.0', period: '2026-09' })
+    expect(payload).toEqual({
+      schema: 2, reportId: 'ef'.repeat(16), version: '0.1.0', period: '2026-09',
+      sites: { 'web3:vitalik.eth': 100, 'web25:app.example.org': 100, 'web3:(unlisted)': 20 }
+    })
+    expect(JSON.stringify(payload)).not.toContain(meta.installId)
+    expect(JSON.stringify(payload)).not.toContain(meta.stream)
   })
 
-  it('uses the ADR-0004 button copy verbatim', () => {
-    expect(DISCLOSURE_OPTIONS[0].label).toBe('Keep on')
-    expect(DISCLOSURE_OPTIONS[1].label).toBe('Turn off')
+  it('has no sites for a period with none, and says so', () => {
+    expect(hasSites(buildSitesPayload(fold([]), { reportId: 'x', version: '1', period: '2026-09' }))).toBe(false)
+    expect(hasSites(buildSitesPayload(browsing(), { reportId: 'x', version: '1', period: '2026-09' }))).toBe(true)
   })
 
-  it('leads to two different, non-overlapping outcomes', () => {
-    const [a, b] = DISCLOSURE_OPTIONS
-    expect(a.resultingState).not.toBe(b.resultingState)
-    expect(new Set(DISCLOSURE_OPTIONS.map((option) => option.resultingState)).size).toBe(2)
+  it('folds the smallest names into (unlisted) rather than send more than the cap', () => {
+    const perSite: Record<string, number> = {}
+    for (let i = 0; i < MAX_REPORTED_SITES + 40; i += 1) perSite[`web3:site${String(i)}.eth`] = 1000 - i
+    const state = { ...fold([]), perSite: { '2026-09': perSite } }
+    const sites = buildSitesPayload(state, { reportId: 'x', version: '1', period: '2026-09' }).sites
+    expect(Object.keys(sites).length).toBeLessThanOrEqual(MAX_REPORTED_SITES)
+    expect(sites['web3:site0.eth']).toBe(1000)
+    expect(sites['web3:site399.eth']).toBeUndefined()
+    const total = Object.values(sites).reduce((sum, seconds) => sum + seconds, 0)
+    expect(total).toBe(Object.values(perSite).reduce((sum, seconds) => sum + seconds, 0))
   })
 })
 
-describe('undecided is a real third state, distinct from both choices', () => {
-  it('is what a fresh profile starts in', () => {
+describe('buildErasePayload', () => {
+  it('carries the schema and the install ID, nothing else', () => {
+    expect(buildErasePayload('ab'.repeat(16))).toEqual({ schema: 2, installId: 'ab'.repeat(16) })
+  })
+})
+
+describe('mayTransmit: nothing before the choice', () => {
+  it('is true only once the person accepted; undecided is a state of its own', () => {
     expect(initialConsentState).toBe('undecided')
-  })
-
-  it('is neither of the two decided states', () => {
-    expect(initialConsentState).not.toBe('accepted')
-    expect(initialConsentState).not.toBe('declined')
-  })
-
-  it('is not the resultingState of either option', () => {
-    expect(DISCLOSURE_OPTIONS.some((option) => option.resultingState === initialConsentState)).toBe(false)
-  })
-
-  it('is the only state in which the disclosure screen may be shown', () => {
-    expect(shouldPresentDisclosure('undecided')).toBe(true)
-    expect(shouldPresentDisclosure('accepted')).toBe(false)
-    expect(shouldPresentDisclosure('declined')).toBe(false)
-  })
-})
-
-describe('mayTransmit -- nothing before the choice', () => {
-  it('is false in the undecided state', () => {
     expect(mayTransmit('undecided')).toBe(false)
-    expect(mayTransmit(initialConsentState)).toBe(false)
-  })
-
-  it('is false when the user declined', () => {
     expect(mayTransmit('declined')).toBe(false)
-  })
-
-  it('is true only once the user explicitly accepted', () => {
     expect(mayTransmit('accepted')).toBe(true)
-  })
-})
-
-describe('the choice is durable and revisitable', () => {
-  it('once decided, the disclosure screen never reappears -- for either outcome', () => {
-    const declined = applyDisclosureChoice(DISCLOSURE_OPTIONS[1]) // 'Turn off'
-    expect(shouldPresentDisclosure(declined)).toBe(false)
-
-    const accepted = applyDisclosureChoice(DISCLOSURE_OPTIONS[0]) // 'Keep on'
-    expect(shouldPresentDisclosure(accepted)).toBe(false)
-  })
-
-  it('a user who opted out can opt back in', () => {
-    const declined = applyDisclosureChoice(DISCLOSURE_OPTIONS[1])
-    expect(mayTransmit(declined)).toBe(false)
-
-    const acceptedAgain = applyDisclosureChoice(DISCLOSURE_OPTIONS[0])
-    expect(acceptedAgain).toBe('accepted')
-    expect(mayTransmit(acceptedAgain)).toBe(true)
-    expect(shouldPresentDisclosure(acceptedAgain)).toBe(false) // still no first-run screen
-  })
-
-  it('a user who opted in can opt back out, symmetrically', () => {
-    const accepted = applyDisclosureChoice(DISCLOSURE_OPTIONS[0])
-    expect(mayTransmit(accepted)).toBe(true)
-
-    const declinedAgain = applyDisclosureChoice(DISCLOSURE_OPTIONS[1])
-    expect(declinedAgain).toBe('declined')
-    expect(mayTransmit(declinedAgain)).toBe(false)
-    expect(shouldPresentDisclosure(declinedAgain)).toBe(false)
-  })
-
-  it('applyDisclosureChoice can never produce the undecided state', () => {
-    for (const option of DISCLOSURE_OPTIONS) {
-      expect(applyDisclosureChoice(option)).not.toBe('undecided')
-    }
   })
 })

@@ -13,6 +13,7 @@ import { createServer, type ViteDevServer } from 'vite'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron } from '../support/launch-electron.mjs'
 import { HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { privacyNotice } from '../../scripts/privacy-notice-plugin.js'
 import { rendererAlias, rendererHmr, rendererHost, rendererRoot } from '../../electron.vite.config.js'
 import { INTERNAL_PAGES } from '../../src/main/pages/internal-pages.js'
 import type { InternalPageId } from '../../src/main/pages/internal-pages.js'
@@ -51,7 +52,8 @@ beforeAll(async () => {
     root: rendererRoot,
     server: { port, strictPort: true, host: rendererHost, hmr: { ...rendererHmr, port } },
     logLevel: 'silent',
-    resolve: { alias: rendererAlias }
+    resolve: { alias: rendererAlias },
+    plugins: [privacyNotice()]
   })
   await devServer.listen()
   devUrl = `http://${rendererHost}:${String(port)}`

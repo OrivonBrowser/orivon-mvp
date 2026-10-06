@@ -64,7 +64,7 @@ function seedPopupExtension (profile) {
 async function launch (seed) {
   const profile = mkdtempSync(join(tmpdir(), 'orivon-test-probe-'))
   const seeded = seed?.(profile)
-  const env = { ...process.env, ORIVON_WINDOW_NO_FOCUS: '1', ORIVON_INTRO: 'off', ORIVON_ETH_LIGHT_CLIENT: 'off', PULSE_SERVER: 'unix:/nonexistent' }
+  const env = { ...process.env, ORIVON_WINDOW_NO_FOCUS: '1', ORIVON_INTRO: 'off', ORIVON_TELEMETRY: 'off', ORIVON_ETH_LIGHT_CLIENT: 'off', PULSE_SERVER: 'unix:/nonexistent' }
   delete env.ELECTRON_RUN_AS_NODE
   const args = ['.', `--user-data-dir=${profile}`, '--inspect=0', '--alsa-output-device=null', '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1', ...(process.env.PROBE_ARGS ?? '').split(' ').filter(Boolean)]
   const child = spawn(electronPath, args, { cwd: repo, env, stdio: ['ignore', 'pipe', 'pipe'] })

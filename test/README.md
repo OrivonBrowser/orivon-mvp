@@ -32,6 +32,7 @@ spec left at the top of `test/` and a folder with no row. File names keep their 
 | `sites/` | Per-site permissions, privacy, sign-in, certificates and passwords |
 | `page/` | What a page in a tab gets: find, zoom, dialogs, tools, menus, load errors, fullscreen, the reader |
 | `shell-pages/` | Settings, the internal pages, the intro screen and the UI kit |
+| `telemetry/` | What usage statistics send and when: a real send of both reports to a loopback ingest, and nothing sent without consent or after it is withdrawn |
 | `window/` | Launch and start-up, profiles, windows, menus, overlays, shortcuts and theme |
 | `qa/` | The QA machinery proving itself: the layout audit, visual states, the failure-evidence bundle, journeys |
 | [`support/`](support/) | The shared harness: `launch-electron.mjs`, `smoke-helpers.mjs`, `e2e-helpers.ts`, the `qa-*` files, `question-support.ts`, and the unit tests of the teardown and the chrome-ready waits |

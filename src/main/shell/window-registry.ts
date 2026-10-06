@@ -5,6 +5,7 @@
 import type { BaseWindow, WebContents, WebContentsView } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { OverlayHost } from '../overlays/overlay-types.js'
+import type { SiteTrust } from '../browsing/site-trust.js'
 import type { TabManager } from './tabs.js'
 
 export interface ShellWindow {
@@ -17,6 +18,8 @@ export interface ShellWindow {
   readonly chromeHeight: () => number
   /** A page in this window holds the screen (HTML fullscreen), so the browser's keys wait. */
   readonly shortcutsSuspended: () => boolean
+  /** What this window's trust indicator concludes about an address: the Website level it would show. */
+  readonly siteTrustFor?: (url: string) => Promise<SiteTrust | null>
   /** Lays the chrome, the tabs and the overlays out again: what a feature that changes the page area calls. */
   readonly relayout: () => void
 }

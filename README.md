@@ -144,6 +144,7 @@ Orivon is built to be lived in, not opened only when you need a dapp.
 | 🕶️ **Profiles and private windows** | Each profile is a separate browser with its own data. A private window keeps nothing and sends no statistics |
 | 🗂️ **Tabs that scale** | Groups, split view, pinning, tab search, idle tabs put to sleep, tear-off with a live preview, and session restore |
 | 🔒 **Privacy controls** | Global Privacy Control on by default, third-party cookie blocking, Do Not Track, HTTPS-only, DNS over HTTPS, and pop-ups blocked unless you clicked |
+| 📊 **Telemetry only if you say yes** | The first screen asks once, with two equal buttons, and Settings has a switch. A monthly count of use, split into Web3, Web2.5 and Web2 time, goes to Orivon's own server in the EU; never a page address or your IP. The [privacy notice](docs/privacy/notice.md) lists every field |
 | 🧰 **Everything else you expect** | A password manager in your OS keyring, bookmarks and history imported from Chrome, Edge, Brave or Firefox, reader view, printing to PDF, screenshots, screen sharing and picture-in-picture |
 | 🐧 **Linux first** | Native on X11 and Wayland, with packages for Windows and macOS |
 
