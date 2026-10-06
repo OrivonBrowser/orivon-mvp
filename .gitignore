@@ -29,7 +29,7 @@ build/
 coverage/
 
 # Electron / packaging
-release/
+/release/
 *.AppImage
 *.deb
 
