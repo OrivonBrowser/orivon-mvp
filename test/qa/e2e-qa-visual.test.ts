@@ -10,7 +10,8 @@
 // Run: npm run qa:visual      First run on a machine records baselines;
 //      ORIVON_QA_UPDATE_BASELINES=1 re-records after an intended change.
 
-import { writeFileSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
@@ -369,6 +370,45 @@ for (const scheme of SCHEMES) {
       await closeElectron(app)
       await consent.close()
       await dialogs.close()
+    }
+  }, QA_TEST_TIMEOUT_MS)
+
+  it(`a local file's question and its mark look right (${scheme})`, async () => {
+    const folder = realpathSync(mkdtempSync(join(tmpdir(), 'orivon-visual-local-')))
+    writeFileSync(join(folder, 'orivon.json'), MANIFEST)
+    writeFileSync(join(folder, 'app.html'), '<!doctype html><meta charset="utf-8"><title>Local fixture</title><link rel="orivon-manifest" href="orivon.json"><body style="font:16px sans-serif;margin:32px"><h1>Local fixture</h1><p>A file on this computer.</p>')
+    const { app, chrome } = await launchShell({ scheme })
+    try {
+      await stubNativeDialogs(app)
+      await runPhase('visual states of a local file', async (check) => {
+        expect(await waitFor(() => dashboardOf(app) !== undefined)).toBe(true)
+        await prepareWindow(app)
+
+        await clickAddressBarRetrying(chrome, join(folder, 'app.html'))
+        const grant = await waitQuestion(app)
+        await grant.waitForSelector('.q:not(.arming)')
+        const said = await readQuestion(grant)
+        check('the question is a warning that names the file and offers Don\'t allow and a double-click Allow', said.warning && said.title === 'Let a file on this computer use Orivon permissions?' && said.buttons.join('|') === "Don't allow|Double-click to allow", JSON.stringify(said))
+        const grantFit = await panelFits(grant)
+        check('the card sits inside its view, uncut and unscrolled', grantFit.fits, grantFit.detail)
+        await state(check, app, `local-file-question-${scheme}`, {
+          expected: 'A question panel in the warning style floats under the address pill: a header with the path of a file on this computer, the title "Let a file on this computer use Orivon permissions?", a message saying Orivon cannot check files on the computer and that whoever can change the file can change what it does, a list with one row for storing files, and two buttons, Don\'t allow and Double-click to allow, the second the filled one. Text is fully inside the panel in this colour scheme and nothing is cut.',
+          action: 'Typed the path of an HTML file that links a manifest and waited for its question to arm.',
+          ignore: [FIXTURE_ADDRESS, CONSENT_ORIGIN_LINE, { x: 188, y: 98, width: 240, height: 420 }]
+        })
+        await answerQuestion(app, "Don't allow")
+
+        await delay(ABSENCE_SETTLE_MS)
+        await state(check, app, `local-file-mark-${scheme}`, {
+          expected: 'The tab shows a plain page headed "Local fixture". In the address bar a small file icon and the words "Local file" come before the dimmed file path; there is no lock and no "Not secure" warning.',
+          action: 'Declined the question, so the page stays an ordinary local file.',
+          ignore: [{ x: 240, y: 44, width: 400, height: 24 }]
+        })
+        check('no native message box was opened', (await noNativeDialogs(app)).length === 0)
+      })
+    } finally {
+      await closeElectron(app)
+      rmSync(folder, { recursive: true, force: true })
     }
   }, QA_TEST_TIMEOUT_MS)
 
