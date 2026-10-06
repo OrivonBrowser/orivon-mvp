@@ -191,6 +191,13 @@ it('opens beside the page, lists bookmarks, filters, shows history, resizes, rem
     await page.click('.sp-picker')
     await page.waitForSelector('.sp-picker-list:not([hidden])')
     await shoot(app, chrome, page, 'picker')
+    // A second press of the button closes the list it opened, and a third opens it again. The press is held as a
+    // hand holds it: an instant one ends before the list hears that it lost the focus.
+    await page.click('.sp-picker', { delay: 100 })
+    await page.waitForSelector('.sp-picker-list', { state: 'hidden' })
+    expect(await page.getAttribute('.sp-picker', 'aria-expanded')).toBe('false')
+    await page.click('.sp-picker')
+    await page.waitForSelector('.sp-picker-list:not([hidden])')
     await page.click('.sp-choice:has-text("History")')
     await expect.poll(async () => await page.locator('.sp-group').allTextContents()).toEqual(['Today'])
     const visited = await rowTitles(page)

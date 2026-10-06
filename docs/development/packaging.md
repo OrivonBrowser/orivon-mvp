@@ -168,8 +168,8 @@ dpkg -x release/*.deb /tmp/orivon-deb-inspect   # full contents
 cat /tmp/orivon-deb-inspect/usr/share/applications/*.desktop
 
 # Expect a line equivalent to:
-#   MimeType=x-scheme-handler/http;x-scheme-handler/https;
-# (no text/html), and:
+#   MimeType=text/html;application/xhtml+xml;image/svg+xml;application/pdf;x-scheme-handler/http;x-scheme-handler/https;
+# and:
 #   Categories=Network;WebBrowser;
 #   Actions=new-window;new-private-window;
 # followed by a [Desktop Action new-window] and a [Desktop Action new-private-window] section whose Exec
@@ -186,7 +186,9 @@ xdg-settings check default-url-scheme-handler https orivon.desktop
 ```
 
 The file name is `orivon.desktop`, from `linux.executableName` and `desktopName` in `package.json`; confirm it
-with `ls /usr/share/applications | grep -i orivon`. Whether a desktop lists Orivon in its browser list with
+with `ls /usr/share/applications | grep -i orivon`. A file of that name in `~/.local/share/applications` wins
+over it: the dock then starts whatever that file names, and a default-browser choice opens links with it. A run
+from source has its own entry, `orivon-source.desktop` (`scripts/launch-from-source.mjs`). Whether a desktop lists Orivon in its browser list with
 only the two scheme handlers is unmeasured (`docs/open-questions.md` A387).
 
 ## Making "set as default browser" possible: what's config and what isn't

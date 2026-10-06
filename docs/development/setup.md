@@ -62,6 +62,7 @@ Background: [`.claude/skills/orivon-electron/SKILL.md`](../../.claude/skills/ori
 | `npm run dev` | Runs the app with hot reload, on a fresh profile each launch (below). This is the one you want |
 | `npm run build` | Builds `main`, `preload` and `renderer` into `out/` |
 | `npm start` | Runs the built output, without the dev server, on your real profile, as a packaged build does |
+| `node scripts/launch-from-source.mjs install` | Linux: adds "Orivon (source)" to the dock and the app list, with New Window and New Private Window. It runs `npm start`'s build only when no Orivon is open; with one open, a click reaches it at once. `remove` takes it away. Its file is `orivon-source.desktop`: an `orivon.desktop` in `~/.local/share/applications` hides an installed package's entry and its default-browser choice |
 | `npm run typecheck` | `tsc --noEmit`. The compiler is the primary correctness check here |
 | `npm test` | Vitest, `environment: 'node'`. Unit tests only, no DOM |
 | `npm run check:natives` | **Rule 8.** Fails if any dependency needs a compiler. Also runs automatically on `postinstall` |
