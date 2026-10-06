@@ -14,7 +14,7 @@ function setup (answers: Record<string, SiteTrustAnswer | null | 'throw'>) {
   })
   const tracker = new SiteTracker({ classify, emit: (key) => { emitted.push(key) }, now: () => now })
   const release = async (): Promise<void> => { pending.splice(0).forEach((resolve) => { resolve() }); await new Promise((resolve) => setTimeout(resolve, 0)) }
-  return { tracker, emitted, classify, release, advance: (ms: number) => { now += ms } }
+  return { tracker, emitted, classify, release, advance: (ms: number) => { now += ms }, answers }
 }
 
 describe('SiteTracker', () => {
@@ -76,5 +76,44 @@ describe('SiteTracker', () => {
     tracker.show('')
     tracker.show('about:blank')
     expect(emitted).toEqual(['internal'])
+  })
+})
+
+describe('SiteTracker: an answer that is not there yet', () => {
+  it('keeps the cache at two minutes', () => {
+    expect(TRUST_CACHE_TTL_MS).toBe(2 * 60 * 1000)
+  })
+
+  it('never keeps a missing answer, so a page asked about before the loader was up is asked about again', async () => {
+    const { tracker, emitted, release, classify, answers } = setup({ 'vitalik.eth': null })
+    tracker.show('https://vitalik.eth/')
+    await release()
+    expect(emitted).toEqual(['internal', 'web2'])
+    answers['vitalik.eth'] = { level: 4, judged: false }
+    tracker.show('https://vitalik.eth/other')
+    expect(classify).toHaveBeenCalledTimes(2)
+    await release()
+    expect(emitted).toEqual(['internal', 'web2', 'internal', 'web3:vitalik.eth'])
+  })
+
+  it('refresh asks again about the page in front once the answer has expired, without passing through internal, and picks up a higher level', async () => {
+    const { tracker, emitted, release, advance, answers } = setup({ 'app.example.org': { level: 2, judged: false } })
+    tracker.show('https://app.example.org/')
+    await release()
+    answers['app.example.org'] = { level: 4, judged: false }
+    tracker.refresh()
+    await release()
+    expect(emitted).toEqual(['internal', 'web25:app.example.org'])
+    advance(TRUST_CACHE_TTL_MS + 1)
+    tracker.refresh()
+    await release()
+    expect(emitted).toEqual(['internal', 'web25:app.example.org', 'web3:app.example.org'])
+  })
+
+  it('refresh does nothing before any page was shown', () => {
+    const { tracker, emitted, classify } = setup({})
+    tracker.refresh()
+    expect(emitted).toEqual([])
+    expect(classify).not.toHaveBeenCalled()
   })
 })

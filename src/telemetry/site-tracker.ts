@@ -1,14 +1,15 @@
 // Turns "the tab in front now shows this address" into the site key accounting counts under. The
-// trust layer's answer for a site is asked once per origin and kept for ten minutes, so moving around
-// one site costs nothing and a slow answer never holds up counting: until it arrives the seconds go
-// to the browser's own pages (`internal`), and an answer for an address the person has already left is
-// dropped. Pure apart from the injected question and clock.
+// trust layer's answer for a site is asked once per origin and kept for two minutes, so moving around
+// one site costs nothing, a slow answer never holds up counting, and a higher level that appears later
+// is picked up: until an answer arrives the seconds go to the browser's own pages (`internal`), an
+// answer for an address the person has already left is dropped, and a missing answer (the loader not
+// up yet) is never kept. Pure apart from the injected question and clock.
 import { siteClassOfLevel } from '../trust/site-class.js'
 import type { ScoreLevel } from '../trust/website-level.js'
 import type { SiteKey } from './accounting.js'
 import { siteKeyFor } from './site-key.js'
 
-export const TRUST_CACHE_TTL_MS = 10 * 60 * 1000
+export const TRUST_CACHE_TTL_MS = 2 * 60 * 1000
 
 /** What the trust layer concluded about an address: its displayed Website level, and whether a Web3 Score provider judged it. */
 export interface SiteTrustAnswer {
@@ -25,7 +26,7 @@ export interface SiteTrackerDeps {
 }
 
 interface Cached {
-  readonly answer: SiteTrustAnswer | null
+  readonly answer: SiteTrustAnswer
   readonly at: number
 }
 
@@ -48,7 +49,7 @@ export class SiteTracker {
   constructor (private readonly deps: SiteTrackerDeps) {}
 
   /** The tab in front, in the window the person is using, now shows `url` (an empty string: no tab). */
-  show (url: string): void {
+  show (url: string, keepKey = false): void {
     this.showing = url
     const cacheKey = cacheKeyOf(url)
     if (cacheKey === null) {
@@ -67,10 +68,15 @@ export class SiteTracker {
       this.emit('internal')
       return
     }
-    this.emit('internal')
+    if (!keepKey) this.emit('internal')
     void this.ask(cacheKey, url).then((answer) => {
       if (this.showing === url) this.emit(this.keyFor(url, answer))
     })
+  }
+
+  /** Asks again about the page in front when its answer has expired: what the checkpoint tick calls. Keeps counting under the key it has until the new answer comes. */
+  refresh (): void {
+    if (this.showing !== '') this.show(this.showing, true)
   }
 
   private keyFor (url: string, answer: SiteTrustAnswer | null): SiteKey {
@@ -83,7 +89,7 @@ export class SiteTracker {
     const started = this.deps.classify(url)
       .catch(() => null)
       .then((answer) => {
-        this.cache.set(cacheKey, { answer, at: this.deps.now() })
+        if (answer !== null) this.cache.set(cacheKey, { answer, at: this.deps.now() })
         this.asking.delete(cacheKey)
         return answer
       })

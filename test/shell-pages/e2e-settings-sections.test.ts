@@ -140,6 +140,9 @@ it('shows usage statistics as not chosen yet with the exact text that would be s
     expect(await row.locator('#usage-state').textContent()).toContain('Not chosen yet')
     expect(await row.locator('#usage-switch').isChecked()).toBe(false)
     expect(await row.locator('#usage-install-id').count()).toBe(0)
+    // Nothing was ever sent from this computer, so there is nothing to delete and no button for it.
+    expect(await row.locator('#usage-nothing-sent').textContent()).toBe('Nothing has been sent from this computer.')
+    expect(await row.locator('#usage-delete').count()).toBe(0)
 
     await row.locator('summary', { hasText: 'What is sent' }).click()
     const usage = JSON.parse(await row.locator('#usage-json').textContent() ?? '{}') as Record<string, unknown>
@@ -180,6 +183,8 @@ it('Delete my data asks the server to erase the install ID, turns telemetry off 
     await page.waitForSelector('#row-usage-statistics #usage-state')
     await row.locator('.switch').click()
     await row.locator('#usage-install-id').waitFor()
+    await row.locator('#usage-delete').waitFor()
+    expect(await row.locator('#usage-nothing-sent').count()).toBe(0)
     const installId = await row.locator('#usage-install-id').textContent()
 
     await row.locator('#usage-delete').click()
@@ -188,6 +193,10 @@ it('Delete my data asks the server to erase the install ID, turns telemetry off 
     expect(readConsent(home)?.['state']).toBe('declined')
     expect(await row.locator('#usage-state').textContent()).toContain('Off.')
 
+    // Deleted, so there is nothing left to delete; turned on again, there is, and the server is now gone.
+    expect(await row.locator('#usage-delete').count()).toBe(0)
+    await row.locator('.switch').click()
+    await row.locator('#usage-delete').waitFor()
     await ingest.close()
     await row.locator('#usage-delete').click()
     await page.waitForFunction(() => document.querySelector('#usage-erase')?.textContent?.startsWith('The request did not reach the server') === true)

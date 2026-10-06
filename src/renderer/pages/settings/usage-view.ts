@@ -23,7 +23,8 @@ const STATES: Readonly<Record<string, string>> = {
 const ERASE_TEXT: Readonly<Record<string, string>> = {
   working: 'Asking the server to delete your data…',
   done: 'Done. The server was asked to delete everything sent from this computer, and telemetry is off.',
-  failed: 'The request did not reach the server. Telemetry is off; try Delete my data again when you are online.'
+  failed: 'The request did not reach the server. Telemetry is off; try Delete my data again when you are online.',
+  nothing: 'Nothing has been sent from this computer.'
 }
 
 function drawNotice (blocks: readonly NoticeBlock[]): HTMLElement {
@@ -98,7 +99,8 @@ export function renderUsage (state: SettingsState): HTMLElement {
         h('p', { className: 'muted', textContent: 'The sites report, a separate message that nothing links to the usage report.' }),
         h('pre', { className: 'json', id: 'sites-json', textContent: JSON.stringify(status.sites, null, 2) })),
       sentList(status)),
-    h('div', { className: 'usage-buttons' }, off !== undefined ? null : eraseButton, noticeButton),
+    h('div', { className: 'usage-buttons' }, off !== undefined || status.everAccepted !== true ? null : eraseButton, noticeButton),
+    off === undefined && status.everAccepted !== true && erase === null ? h('p', { className: 'muted', id: 'usage-nothing-sent', textContent: ERASE_TEXT['nothing'] ?? '' }) : null,
     erase === null ? null : h('p', { className: 'muted', id: 'usage-erase', role: 'status', textContent: ERASE_TEXT[erase] ?? '' }),
     state.usage.noticeOpen ? drawNotice(noticeBlocks(NOTICE_TEXT)) : null)
 }

@@ -19,6 +19,24 @@ describe('parseConsentRecord', () => {
   })
 })
 
+describe('whether an acceptance ever happened', () => {
+  it('is false until the person accepts, stays true through a later refusal, and is false for a refusal alone', () => {
+    expect(UNDECIDED.everAccepted).toBe(false)
+    expect(recordChoice('declined', NOW, 'welcome').everAccepted).toBe(false)
+    const accepted = recordChoice('accepted', NOW, 'welcome')
+    expect(accepted.everAccepted).toBe(true)
+    expect(recordChoice('declined', NOW + 1, 'settings', NOTICE_VERSION, accepted).everAccepted).toBe(true)
+    expect(recordChoice('accepted', NOW + 2, 'settings', NOTICE_VERSION, UNDECIDED).everAccepted).toBe(true)
+  })
+
+  it('reads a file without the field as false, unless it records an acceptance', () => {
+    expect(parseConsentRecord('{"state":"declined","atMs":1,"noticeVersion":2}').everAccepted).toBe(false)
+    expect(parseConsentRecord('{"state":"accepted","atMs":1,"noticeVersion":2}').everAccepted).toBe(true)
+    expect(parseConsentRecord('{"state":"declined","atMs":1,"noticeVersion":2,"everAccepted":true}').everAccepted).toBe(true)
+    expect(parseConsentRecord('{"state":"declined","atMs":1,"noticeVersion":2,"everAccepted":"yes"}').everAccepted).toBe(false)
+  })
+})
+
 describe('effectiveConsent', () => {
   it('voids an acceptance given under another notice version, and only an acceptance', () => {
     expect(effectiveConsent(recordChoice('accepted', NOW, 'welcome', NOTICE_VERSION - 1))).toBe('undecided')

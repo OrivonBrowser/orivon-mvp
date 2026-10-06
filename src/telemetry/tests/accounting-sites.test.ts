@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fold, pruneSitePeriods, siteSeconds, totalsFor, type TelemetryEvent } from '../accounting.js'
+import { fold, pruneSitePeriods, resetSession, siteSeconds, totalsFor, type TelemetryEvent } from '../accounting.js'
 
 const t0 = Date.UTC(2026, 8, 1, 0, 0, 0)
 const SEC = 1000
@@ -86,5 +86,26 @@ describe('pruneSitePeriods', () => {
     const state = { ...fold([]), perSite: { '2026-05': { web2: 1 }, '2026-06': { web2: 2 }, '2026-07': { web2: 3 }, '2026-08': { web2: 4 } } }
     expect(Object.keys(pruneSitePeriods(state, 2).perSite)).toEqual(['2026-07', '2026-08'])
     expect(pruneSitePeriods(state, 9)).toBe(state)
+  })
+})
+
+describe('resetSession', () => {
+  it('forgets which sessions were open, who was in front and where time was settled to, and keeps every total', () => {
+    const live = fold([
+      { kind: 'session-start', atMs: t0, app: 'shell' }, { kind: 'focus', atMs: t0, app: 'shell' }, { kind: 'site', atMs: t0, site: 'web3:a.eth' },
+      { kind: 'interaction', atMs: t0 }, { kind: 'checkpoint', atMs: t0 + 60 * SEC }
+    ])
+    const after = resetSession(live)
+    expect(after).toMatchObject({ openSessions: {}, focusedApp: undefined, lastInteractionAt: undefined, lastAccountedAt: undefined, suspended: false })
+    expect(after.perApp).toEqual(live.perApp)
+    expect(after.perSite).toEqual(live.perSite)
+  })
+
+  it('credits nothing for the time between the old process and the new one', () => {
+    const live = fold([{ kind: 'session-start', atMs: t0, app: 'shell' }, { kind: 'checkpoint', atMs: t0 + 60 * SEC }])
+    const later = fold([
+      { kind: 'session-start', atMs: t0 + 10 * 24 * 3600 * SEC, app: 'shell' }, { kind: 'checkpoint', atMs: t0 + 10 * 24 * 3600 * SEC + 30 * SEC }
+    ], resetSession(live))
+    expect(totalsFor(later, 'shell', '2026-09').backgroundSec).toBe(90)
   })
 })

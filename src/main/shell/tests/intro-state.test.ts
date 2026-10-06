@@ -148,6 +148,16 @@ describe('the telemetry question on the welcome screen', () => {
   })
 })
 
+describe('a telemetry failure at the welcome screen', () => {
+  it('costs the question and never the screen: the plan is made, without it, and the failure is logged once', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const plan = await planIntro('always', dir, false, { offered: async () => { throw new Error('telemetry is broken') }, choose: async () => {} })
+    expect(plan).toBeDefined()
+    expect(plan?.offerTelemetry).toBe(false)
+    expect(error).toHaveBeenCalledOnce()
+  })
+})
+
 describe('parseLeaving and introPageUrl', () => {
   it('reads the two reports an unquestioned page makes, unchanged', () => {
     expect(parseLeaving('#leaving')).toEqual({ makeDefault: false, telemetry: undefined })

@@ -204,8 +204,8 @@ export async function welcomeOffersTelemetry (): Promise<boolean> {
   return service === undefined ? false : await service.offerAtWelcome()
 }
 
-/** True when the request was carried out and the server confirmed. */
-export async function eraseTelemetry (): Promise<boolean> {
+/** 'done' when the server confirmed, 'failed' when it did not, 'nothing' when nothing was ever sent from this computer. */
+export async function eraseTelemetry (): Promise<'nothing' | 'done' | 'failed'> {
   const service = await running()
-  return service === undefined ? false : await service.erase()
+  return service === undefined ? 'failed' : await service.erase()
 }

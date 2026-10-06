@@ -27,7 +27,7 @@ function stateWith (accounting: AccountingState): SendCycleState {
 }
 
 function context (consent: ConsentState, installId = vi.fn(async () => INSTALL)): SendContext & { installId: ReturnType<typeof vi.fn> } {
-  return { consent, version: '0.1.0', region: 'EU', stream: 'cd'.repeat(16), installId, reportIdFor: () => 'ef'.repeat(16), random: () => 0 }
+  return { consent: async () => consent, version: '0.1.0', region: 'EU', stream: 'cd'.repeat(16), installId, reportIdFor: () => 'ef'.repeat(16), random: () => 0 }
 }
 
 function recordingSender (ok = true): { sender: Sender, sent: SentPayload[] } {
@@ -137,6 +137,28 @@ describe('runSendCycle', () => {
     const after = await runSendCycle(staged.state, context('undecided'), working.sender, now)
     expect(working.sent).toHaveLength(0)
     expect(after.state.usage.transport.queue).toHaveLength(0)
+  })
+})
+
+describe('runSendCycle: consent is read again before every send', () => {
+  it('stops at once when consent is withdrawn while a cycle runs: the report still queued is not posted', async () => {
+    let declined = false
+    const sent: SentPayload[] = []
+    const sender: Sender = async (payload) => { sent.push(payload); declined = true; return true }
+    const ctx: SendContext = { ...context('accepted'), consent: async () => declined ? 'declined' : 'accepted' }
+    const result = await runSendCycle(stateWith(browsingSince(september, 500)), ctx, sender, () => september + 600 * SEC)
+    expect(sent.map((payload) => 'reportId' in payload ? 'sites' : 'usage')).toEqual(['usage'])
+    expect(result.state.sites.transport.queue).toHaveLength(0)
+    expect(result.state.usage.transport.queue).toHaveLength(0)
+  })
+
+  it('reads no machine identifier and stages nothing when the first read says no', async () => {
+    const reads: string[] = []
+    const ctx: SendContext = { ...context('accepted'), consent: async () => { reads.push('read'); return 'declined' } }
+    const installId = vi.fn(async () => INSTALL)
+    await runSendCycle(stateWith(browsingSince(september, 500)), { ...ctx, installId }, async () => true, () => september + 600 * SEC)
+    expect(reads).toHaveLength(1)
+    expect(installId).not.toHaveBeenCalled()
   })
 })
 

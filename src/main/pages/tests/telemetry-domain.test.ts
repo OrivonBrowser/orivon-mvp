@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InternalCaller } from '../internal-ipc.js'
 
 const runner = {
-  getTelemetryStatus: vi.fn(async (): Promise<unknown> => ({ off: undefined, status: { consent: 'undecided', region: 'EU', installId: null, usage: { period: '2026-10' }, sites: { sites: {} }, sent: [{ sentAtMs: 5 }] } })),
+  getTelemetryStatus: vi.fn(async (): Promise<unknown> => ({ off: undefined, status: { consent: 'undecided', region: 'EU', installId: null, everAccepted: false, usage: { period: '2026-10' }, sites: { sites: {} }, sent: [{ sentAtMs: 5 }] } })),
   setTelemetryOn: vi.fn(async (_on: boolean, _source: string) => true),
-  eraseTelemetry: vi.fn(async () => true)
+  eraseTelemetry: vi.fn(async (): Promise<string> => 'done')
 }
 vi.mock('../../../telemetry/runner.js', () => runner)
 
@@ -36,9 +36,11 @@ describe('the telemetry domain', () => {
 
   it('asks for the data to be deleted and reports whether the server confirmed', async () => {
     const domain = telemetryDomain(false)
-    expect(await domain.handle({ type: 'erase' }, CALLER)).toEqual({ ok: true })
-    runner.eraseTelemetry.mockResolvedValueOnce(false)
-    expect(await domain.handle({ type: 'erase' }, CALLER)).toEqual({ ok: false })
+    expect(await domain.handle({ type: 'erase' }, CALLER)).toEqual({ ok: true, nothing: false })
+    runner.eraseTelemetry.mockResolvedValueOnce('failed')
+    expect(await domain.handle({ type: 'erase' }, CALLER)).toEqual({ ok: false, nothing: false })
+    runner.eraseTelemetry.mockResolvedValueOnce('nothing')
+    expect(await domain.handle({ type: 'erase' }, CALLER)).toEqual({ ok: false, nothing: true })
   })
 
   it('has nothing to show and nothing to change in a private session', async () => {

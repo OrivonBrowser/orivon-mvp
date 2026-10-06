@@ -16,9 +16,11 @@ export interface ConsentRecord {
   readonly atMs: number
   readonly noticeVersion: number
   readonly source: ConsentSource
+  /** Whether the person ever accepted: only then can anything have been sent under an install ID, and so be deleted. */
+  readonly everAccepted: boolean
 }
 
-export const UNDECIDED: ConsentRecord = { state: 'undecided', atMs: 0, noticeVersion: 0, source: 'welcome' }
+export const UNDECIDED: ConsentRecord = { state: 'undecided', atMs: 0, noticeVersion: 0, source: 'welcome', everAccepted: false }
 
 /** After a refusal, no surface asks again for this long. */
 export const NO_REASK_MS = 183 * 24 * 60 * 60 * 1000
@@ -38,7 +40,8 @@ export function parseConsentRecord (raw: string | undefined): ConsentRecord {
   if (typeof obj['atMs'] !== 'number' || !Number.isFinite(obj['atMs'])) return UNDECIDED
   if (typeof obj['noticeVersion'] !== 'number') return UNDECIDED
   const source: ConsentSource = obj['source'] === 'settings' ? 'settings' : 'welcome'
-  return { state: obj['state'], atMs: obj['atMs'], noticeVersion: obj['noticeVersion'], source }
+  const everAccepted = obj['state'] === 'accepted' || obj['everAccepted'] === true
+  return { state: obj['state'], atMs: obj['atMs'], noticeVersion: obj['noticeVersion'], source, everAccepted }
 }
 
 export function serializeConsentRecord (record: ConsentRecord): string {
@@ -51,8 +54,8 @@ export function effectiveConsent (record: ConsentRecord, noticeVersion: number =
   return record.state
 }
 
-export function recordChoice (state: 'accepted' | 'declined', atMs: number, source: ConsentSource, noticeVersion: number = NOTICE_VERSION): ConsentRecord {
-  return { state, atMs, noticeVersion, source }
+export function recordChoice (state: 'accepted' | 'declined', atMs: number, source: ConsentSource, noticeVersion: number = NOTICE_VERSION, previous: ConsentRecord = UNDECIDED): ConsentRecord {
+  return { state, atMs, noticeVersion, source, everAccepted: state === 'accepted' || previous.everAccepted }
 }
 
 /** Whether any surface may put the question to the person now. */

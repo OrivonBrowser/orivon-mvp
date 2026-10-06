@@ -10,6 +10,8 @@ export interface UsageStatus {
   readonly off?: 'development' | 'env' | 'private'
   readonly consent?: 'undecided' | 'accepted' | 'declined'
   readonly region?: string
+  /** Whether anything was ever sent from this computer: with no acceptance there is nothing to delete. */
+  readonly everAccepted?: boolean
   /** Null until telemetry is on: the computer is not read before then. */
   readonly installId?: string | null
   readonly usage?: unknown
@@ -17,7 +19,7 @@ export interface UsageStatus {
   readonly sent?: ReadonlyArray<{ readonly payload: unknown, readonly sentAtMs: number }>
 }
 
-export type EraseOutcome = 'working' | 'done' | 'failed'
+export type EraseOutcome = 'working' | 'done' | 'failed' | 'nothing'
 
 export class UsageState {
   status: UsageStatus | null = null
@@ -55,8 +57,8 @@ export class UsageState {
   async deleteMyData (): Promise<void> {
     this.erase = 'working'
     this.changed()
-    const reply = await this.bridge.request('telemetry', { type: 'erase' }) as { ok?: boolean } | undefined
-    this.erase = reply?.ok === true ? 'done' : 'failed'
+    const reply = await this.bridge.request('telemetry', { type: 'erase' }) as { ok?: boolean, nothing?: boolean } | undefined
+    this.erase = reply?.ok === true ? 'done' : reply?.nothing === true ? 'nothing' : 'failed'
     await this.load()
   }
 

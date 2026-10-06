@@ -30,6 +30,9 @@ export interface TelemetryDisk {
   readonly reportIds: Readonly<Record<Period, string>>
 }
 
+/** The layout of telemetry.json; a file without it predates consent and is not read for counting. */
+const DISK_SCHEMA = 2
+
 /** How many periods' report IDs are kept; an older month has been reported and is not needed again. */
 const KEPT_REPORT_IDS = 3
 
@@ -108,6 +111,8 @@ export function parseTelemetryFile (raw: string, generateId: () => string): Tele
     return freshDisk(generateId)
   }
   if (!isRecord(data)) return freshDisk(generateId)
+  // A file written before this layout holds time counted before any consent: nothing of it is kept but the stream.
+  if (data['schema'] !== DISK_SCHEMA) return { ...freshDisk(generateId), stream: typeof data['stream'] === 'string' && /^[0-9a-f]{32}$/.test(data['stream']) ? data['stream'] : generateId() }
   const schedules = isRecord(data['schedules']) ? data['schedules'] : {}
   const stream = typeof data['stream'] === 'string' && /^[0-9a-f]{32}$/.test(data['stream']) ? data['stream'] : generateId()
   return {
@@ -120,7 +125,7 @@ export function parseTelemetryFile (raw: string, generateId: () => string): Tele
 }
 
 export function serializeTelemetryFile (disk: TelemetryDisk): string {
-  return JSON.stringify(disk, null, 2)
+  return JSON.stringify({ schema: DISK_SCHEMA, ...disk }, null, 2)
 }
 
 export class TelemetryStore {

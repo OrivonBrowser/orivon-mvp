@@ -49,24 +49,34 @@ describe('parseTelemetryFile / serializeTelemetryFile', () => {
   })
 
   it('falls back to defaults for a malformed accounting shape, keeping the rest', () => {
-    const raw = JSON.stringify({ stream: 'c3'.repeat(16), accounting: 'not an object', history: { entries: [] } })
+    const raw = JSON.stringify({ schema: 2, stream: 'c3'.repeat(16), accounting: 'not an object', history: { entries: [] } })
     expect(parseTelemetryFile(raw, nextFixed)).toEqual({ ...emptyDisk, stream: 'c3'.repeat(16) })
   })
 
-  it('reads accounting saved before the site split, with an empty split and the browser own pages in front', () => {
+  it('keeps nothing of the counting a file without schema 2 holds: it was counted before any consent', () => {
     const old = { perApp: { shell: { '2026-09': { activeSec: 60, backgroundSec: 30 } } }, openSessions: { shell: 1 }, focusedApp: 'shell', lastInteractionAt: 500, suspended: false, lastAccountedAt: 600 }
-    const parsed = parseTelemetryFile(JSON.stringify({ stream: STREAM, accounting: old }), nextFixed)
-    expect(parsed.accounting).toEqual({ ...old, perSite: {}, currentSite: 'internal' })
+    const parsed = parseTelemetryFile(JSON.stringify({ stream: STREAM, accounting: old, schedules: { usage: { offsetPeriod: '2026-09', offsetMs: 5 } }, reportIds: { '2026-09': 'ee'.repeat(16) } }), nextFixed)
+    expect(parsed.accounting).toEqual(initialState)
+    expect(parsed.schedules).toEqual(emptyDisk.schedules)
+    expect(parsed.reportIds).toEqual({})
+    expect(parsed.stream).toBe(STREAM)
+  })
+
+  it('marks what it writes with schema 2, so what it counted afterwards is kept', () => {
+    const disk: TelemetryDisk = { ...emptyDisk, accounting: { ...initialState, lastAccountedAt: 5 } }
+    expect(JSON.parse(serializeTelemetryFile(disk))).toMatchObject({ schema: 2 })
+    expect(parseTelemetryFile(serializeTelemetryFile(disk), nextFixed).accounting.lastAccountedAt).toBe(5)
   })
 
   it('drops history entries made before reports had a schema', () => {
-    const raw = JSON.stringify({ stream: STREAM, history: { entries: [{ payload: { installId: 'x', country: '', version: '1', period: '2026-08', perApp: {} }, sentAtMs: 1 }, { payload: usage, sentAtMs: 2 }] } })
+    const raw = JSON.stringify({ schema: 2, stream: STREAM, history: { entries: [{ payload: { installId: 'x', country: '', version: '1', period: '2026-08', perApp: {} }, sentAtMs: 1 }, { payload: usage, sentAtMs: 2 }] } })
     expect(parseTelemetryFile(raw, nextFixed).history.entries).toEqual([{ payload: usage, sentAtMs: 2 }])
   })
 
   it('does not read a consent or an install ID out of the profile file: both are system-wide', () => {
     const parsed = parseTelemetryFile(JSON.stringify({ stream: STREAM, consent: 'accepted', installId: 'old', country: 'IT' }), nextFixed)
     expect(Object.keys(parsed).sort()).toEqual(['accounting', 'history', 'reportIds', 'schedules', 'stream'])
+    expect(JSON.parse(serializeTelemetryFile(parsed))).not.toHaveProperty('consent')
   })
 })
 

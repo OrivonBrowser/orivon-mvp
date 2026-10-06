@@ -3,6 +3,8 @@
 // `../../telemetry/site-tracker.ts`; this file only listens.
 import type { BaseWindow, WebContents } from 'electron'
 import { noteSite, telemetryOff } from '../../telemetry/runner.js'
+import { testOverrides } from '../../telemetry/mode.js'
+import { CHECKPOINT_INTERVAL_MS } from '../../telemetry/schedule.js'
 import { SiteTracker } from '../../telemetry/site-tracker.js'
 import type { ShellInstaller } from './shell-installers.js'
 
@@ -36,6 +38,8 @@ export const installTelemetrySites: ShellInstaller = {
         window.on('focus', refresh)
       }
     }
+    // A higher level that appears after the page opened (the loader coming up, a provider's verdict) is picked up here.
+    setInterval(() => { tracker.refresh() }, testOverrides().tickMs ?? CHECKPOINT_INTERVAL_MS).unref()
     services.tabLifecycle.subscribe({
       tabCreated: (contents, window) => { watch(contents, window) },
       tabActivated: refresh,

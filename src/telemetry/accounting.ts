@@ -341,3 +341,12 @@ export function pruneSitePeriods (state: AccountingState, keep: number): Account
   for (const period of kept) perSite[period] = state.perSite[period] ?? {}
   return { ...state, perSite }
 }
+
+/**
+ * What a process that starts from a saved state does first: the sessions the old process had open, the
+ * window in front and the instant time was settled to all belong to it, so an interval it never closed
+ * (a lost write at quit) is never credited to the new one. Every total stays.
+ */
+export function resetSession (state: AccountingState): AccountingState {
+  return { ...state, openSessions: {}, focusedApp: undefined, lastInteractionAt: undefined, suspended: false, lastAccountedAt: undefined }
+}

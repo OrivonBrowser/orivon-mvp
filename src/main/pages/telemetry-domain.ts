@@ -20,8 +20,10 @@ export function telemetryDomain (isPrivate: boolean): InternalDomain {
         case 'set':
           if (typeof request.on !== 'boolean') return { ok: false }
           return { ok: await setTelemetryOn(request.on, 'settings') }
-        case 'erase':
-          return { ok: await eraseTelemetry() }
+        case 'erase': {
+          const outcome = await eraseTelemetry()
+          return { ok: outcome === 'done', nothing: outcome === 'nothing' }
+        }
         default:
           return undefined
       }

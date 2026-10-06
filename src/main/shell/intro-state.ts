@@ -91,7 +91,11 @@ export async function planIntro (envValue: string | undefined, userDataDir: stri
     console.warn(`[orivon] intro: ORIVON_INTRO=${envValue} is not always, once or off; using once`)
   }
   if (!shouldShowIntro(mode, await readIntroSeen(userDataDir))) return undefined
-  const offerTelemetry = telemetry !== undefined && await telemetry.offered()
+  // The first window waits on this: a telemetry failure must cost the question, never the window.
+  const offerTelemetry = telemetry !== undefined && await telemetry.offered().catch((error: unknown) => {
+    console.error('[orivon] intro: could not tell whether to ask about telemetry; not asking:', error)
+    return false
+  })
   return {
     offerDefault,
     offerTelemetry,

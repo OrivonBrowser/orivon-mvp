@@ -261,6 +261,12 @@ describe('UsageState actions', () => {
     expect(failed.usage.erase).toBe('failed')
   })
 
+  it('says there was nothing to delete when main says nothing was ever sent', async () => {
+    const { usage } = usageWith({ erase: { ok: false, nothing: true }, status: { private: false, consent: 'undecided', everAccepted: false } })
+    await usage.deleteMyData()
+    expect(usage.erase).toBe('nothing')
+  })
+
   it('forgets an old deletion result when the person turns it on again, and redraws when the notice is opened', async () => {
     const { usage, changes } = usageWith({ erase: { ok: true }, set: { ok: true }, status: { private: false, consent: 'accepted' } })
     await usage.deleteMyData()

@@ -29,7 +29,8 @@ export interface SendCycleState {
 }
 
 export interface SendContext {
-  readonly consent: ConsentState
+  /** Read again before every send, never held: a withdrawal mid-cycle must stop the next POST. */
+  readonly consent: () => Promise<ConsentState>
   readonly version: string
   readonly region: Region
   /** This profile's random stream. */
@@ -67,7 +68,8 @@ function hasUsageData (accounting: AccountingState, period: string): boolean {
 }
 
 export async function runSendCycle (state: SendCycleState, ctx: SendContext, sender: Sender, clock: Clock): Promise<SendCycleResult> {
-  if (!mayTransmit(ctx.consent)) return { state: withdrawn(state), sent: [] }
+  const first = await ctx.consent()
+  if (!mayTransmit(first)) return { state: withdrawn(state), sent: [] }
 
   const now = clock()
   const period = periodOf(now)
@@ -87,12 +89,18 @@ export async function runSendCycle (state: SendCycleState, ctx: SendContext, sen
     let transport = kindState.transport
     for (const due of periodsDue(now, period, kindState.schedule, hasData, ctx.snapshotEveryMs)) {
       if (due === period && !hasData(due) && kind === 'sites') continue
-      transport = enqueue(transport, payloadFor(due), ctx.consent, clock)
+      transport = enqueue(transport, payloadFor(due), first, clock)
     }
 
     let history = current.history
     for (;;) {
-      const result = await attemptSend(transport, ctx.consent, sender, clock)
+      const consent = await ctx.consent()
+      if (!mayTransmit(consent)) {
+        // Withdrawn since the last read: what is staged is dropped, and neither kind sends again.
+        current = withdrawn({ ...current, history, [kind]: { transport, schedule: kindState.schedule } })
+        return { state: current, sent: sentPayloads }
+      }
+      const result = await attemptSend(transport, consent, sender, clock)
       transport = result.state
       if (result.sent === undefined) break
       history = recordSent(history, { payload: result.sent.payload, sentAtMs: result.sent.sentAtMs })
