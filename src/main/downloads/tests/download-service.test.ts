@@ -428,6 +428,13 @@ describe('a save dialog', () => {
     expect(second.setSaveDialogOptions).toHaveBeenCalledWith({ title: 'Save file', defaultPath: join('/', 'picked', 'g.bin') })
   })
 
+  it('offers a numbered name when the site\'s name is a local file allowed to use Orivon permissions', () => {
+    const { start } = harness([], { askWhere: () => true, reservedPath: (path) => path === join(DIR, 'app.html') })
+    const planted = item('app.html')
+    start(planted)
+    expect(planted.setSaveDialogOptions).toHaveBeenCalledWith({ title: 'Save file', defaultPath: join(DIR, 'app (1).html') })
+  })
+
   it('drops a download whose dialog was dismissed, without an entry', () => {
     const { service, start } = harness([], { askWhere: () => true })
     const first = item()

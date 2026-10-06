@@ -15,6 +15,7 @@ domains live beside what they serve (`../settings/`, `../history/`, `../browsing
 `start-internal-pages.ts` bring it up.
 
 **What it depends on.** `electron`; [`../settings/`](../settings/) (the settings domain);
+[`../local-files/`](../local-files/) (`refuse-file-scheme.ts` for the shell scheme's session, `partition.ts` to clear every local session with site data);
 [`../browsing/omnibox.ts`](../browsing/omnibox.ts) (`sanitizeDirectUrl`, for what a page may open in an
 ordinary tab); [`../shell/shell-services.ts`](../shell/shell-services.ts) (type only);
 [`../shell/renderer-entry.ts`](../shell/renderer-entry.ts)'s `validatedDevServerUrl` (the same

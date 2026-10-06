@@ -108,8 +108,8 @@ export const MAX_LOCAL_FILE_KEY_LENGTH = 2048
  * and a moved or renamed file is asked again. The path is what the URL parser
  * hands back, so dot segments are already resolved. A host (a share), a path
  * starting with `//` (UNC on Windows) and a key over
- * `MAX_LOCAL_FILE_KEY_LENGTH` are refused. `originFromUrl` still answers null
- * for `file:`: a caller not yet switched to this key fails closed.
+ * `MAX_LOCAL_FILE_KEY_LENGTH` are refused. `originFromUrl` answers null
+ * for `file:`, so a caller that derives a web origin denies a local file.
  */
 export function localFileKey (url: string): string | null {
   let parsed: URL

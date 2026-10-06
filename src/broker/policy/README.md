@@ -67,7 +67,7 @@ legitimate-looking `https://x.example` (so do `ws:`, `wss:` and `ftp:`), for a s
 rejects. An unrecognised scheme denies. Why `http:` stays: the comment on the constant.
 `file:` has no `originFromUrl` origin on purpose: a document opened from this computer is keyed by
 `localFileKey` (its empty-host `file:` URL, no query or fragment) and reached through
-`isolationKeyFromUrl` and `callerKeyFromSenderFrame`, so a caller not yet moved to the key fails closed.
+`isolationKeyFromUrl` and `callerKeyFromSenderFrame`, so a caller that derives a web origin denies a local file.
 `isPersistableOrigin` accepts that key, so its grants persist like a website's, keyed to the exact path.
 
 **[`update.ts`](update.ts)'s re-consent rule is a subset check over the granted pattern set,

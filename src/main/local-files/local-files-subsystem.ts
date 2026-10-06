@@ -21,10 +21,10 @@ export const localFilesSubsystem: Subsystem = {
   beforeReady: () => {
     installLocalFileApps(new LocalFileApps(join(app.getPath('userData'), 'local-file-apps.json')))
     app.on('session-created', (created) => { refuseFileScheme(created) })
+    // Overlaps app-ready instead of holding the first window back; `knownFileProtocolFuse()` stays undefined, which refuses a local file, until it ends.
+    void fileProtocolFuse()
   },
   afterReady: async (ctx) => {
-    // Read before any window can open a file: `TabOpener.openLocalFile` asks the answer synchronously.
-    await fileProtocolFuse()
     // The default session may have been created before `beforeReady`'s listener existed.
     refuseFileScheme(session.defaultSession)
     setLocalSessionPreparer((partition) => {

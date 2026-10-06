@@ -17,6 +17,8 @@ export interface LoadErrorDeps {
   readonly ask: typeof requestSlot
   /** Another sheet explains this failure (HTTPS-only upgraded the address and the upgrade failed), so this one stays out. */
   readonly claimed?: (contentsId: number, url: string, code: number) => boolean
+  /** The tab is about to move to another session and load this address there, so the failure is not the page's last word. Asked with the partition the tab is in now. */
+  readonly movesTab?: (partition: string | undefined, url: string, code: number) => boolean
 }
 
 const watched = new WeakSet<WebContents>()
@@ -37,6 +39,7 @@ export function watchLoadErrors (contents: WebContents, deps: LoadErrorDeps): vo
     if (!isMainFrame || code === ERR_ABORTED || isCertError(code) || contents.getURL() !== url) return
     const found = deps.findTab(contents)
     if (found === null || deps.claimed?.(contents.id, url, code) === true) return
+    if (deps.movesTab?.(found.window.tabs.partitionOf(found.tabId), url, code) === true) return
     withdraw()
     pending = deps.ask({
       window: found.window,

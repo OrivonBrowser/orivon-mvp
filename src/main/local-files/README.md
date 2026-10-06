@@ -20,7 +20,8 @@ and this directory is the session side of that.
 Tied to Electron (`ARCHITECTURE.md`'s `src/main/` row): sessions, `protocol.handle` and a byte inside the binary.
 
 **What it depends on.** `electron`, `../../broker/policy/origin.ts` and `grants/origin-hash.ts` (the key and its
-hash), `../../loader/electron/serve.ts` (`liveCspHeaderFor`), `../sessions/web-request-owner.ts`, Node's `fs`.
+hash), `../../broker/adapters/atomic-write.ts` (`local-file-apps.ts`), `../../loader/electron/serve.ts`
+(`liveCspHeaderFor`), `../sessions/web-request-owner.ts`, `../registry.ts` (the subsystem), Node's `fs`.
 
 **What it must never import.** Anything under `../shell/`: the tab code asks this directory which session a
 file belongs in, never the reverse.
@@ -36,8 +37,20 @@ shares its binary's inode with other checkouts). Both are why a page the shell l
 `file:` (`../pages/shell-scheme.ts`). A feature that opens a local file asks `fileProtocolFuse()` first and
 opens only on `'off'`: a checkout whose binary was not flipped (a copy made before the flip, an install that
 skipped it, a macOS or Windows checkout, where the script refuses) reports `'on'` and opens no local file,
-and the handler itself serves nothing then. The subsystem reads the fuse before any window opens, so
-`TabOpener.openLocalFile` can ask `knownFileProtocolFuse()` without waiting.
+and the handler itself serves nothing then. The subsystem starts the read before the app is ready and
+does not wait for it, so a launch pays nothing for it: `TabOpener.openLocalFile` asks
+`knownFileProtocolFuse()` without waiting and refuses until the read has ended, and a caller that opens a
+file at startup awaits `fileProtocolFuse()` itself.
+
+**The sentinel is searched in chunks, and every one must agree.** The wire follows a 32-byte
+sentinel, so a chunk boundary can split it: the tail of each chunk is searched again with the next. A
+universal macOS build has two sentinels; `'off'` needs all of them off. A wire of another version, one
+too short to hold this fuse, or a removed fuse (byte 114) is `'unknown'`. The read therefore runs to the
+end of the file, and is not cached across starts.
+
+**The constants repeat `@electron/fuses`'s.** The main process cannot import a development
+dependency, so the sentinel and the fuse's index and state bytes are copied here, and
+`tests/file-fuse.test.ts` fails when they stop equalling the library's.
 
 **With the fuse off no channel reads another file, so the handler adds no policy of its own.** Measured on
 Electron 44: `fetch`, XHR, module and JSON imports, frames, objects, workers, stylesheet rules and

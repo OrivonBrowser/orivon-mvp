@@ -1,6 +1,7 @@
 // Watches every tab for a page that fails to load, so the load-error sheet can say so (load-error-watch.ts).
 import { requestSlot } from '../overlays/tab-slots.js'
 import { upgradeTracker } from '../privacy/https-fallback.js'
+import { partitionAfterFileBlock } from '../local-files/partition.js'
 import type { ShellInstaller } from '../shell/shell-installers.js'
 import { watchLoadErrors, type LoadErrorDeps } from './load-error-watch.js'
 
@@ -10,7 +11,8 @@ export const installLoadErrors: ShellInstaller = {
     const deps: LoadErrorDeps = {
       findTab: (contents) => services.windows.findTab(contents),
       ask: requestSlot,
-      claimed: (id, url, code) => upgradeTracker.claims(id, url, code)
+      claimed: (id, url, code) => upgradeTracker.claims(id, url, code),
+      movesTab: (partition, url, code) => partitionAfterFileBlock(url, code, true, partition) !== undefined
     }
     services.tabLifecycle.subscribe({
       tabCreated: (contents) => { watchLoadErrors(contents, deps) },

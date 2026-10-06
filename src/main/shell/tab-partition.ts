@@ -4,7 +4,7 @@
 import type { WebContentsView } from 'electron'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.js'
-import { localPartitionFor } from '../local-files/partition.js'
+import { localPartitionFor, partitionAfterFileBlock as fileBlockTarget } from '../local-files/partition.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 
@@ -73,24 +73,15 @@ export function partitionChanged (
   return next === currentPartition ? undefined : { to: next }
 }
 
-/** Chromium's `ERR_BLOCKED_BY_CLIENT`: what a request an embedder's `webRequest` listener cancelled reports. */
-const BLOCKED_BY_CLIENT = -20
-
-/**
- * Where a tab must move when a main-frame load of a `file:` document failed as blocked: the local-files
- * fence cancels a file that belongs to another local session (`../local-files/local-file-fence.ts`),
- * and the file's own session is the answer. Undefined for any other failure, a frame, a URL that is no
- * local file, and a tab already where the file belongs; the last is what stops a swap looping.
- */
+/** Where a tab moves when the fence cancelled its main-frame `file:` load (`../local-files/partition.ts`'s `partitionAfterFileBlock`), as a swap. */
 export function partitionAfterFileBlock (
   failedUrl: string,
   errorCode: number,
   isMainFrame: boolean,
   currentPartition: string | undefined
 ): PartitionSwap | undefined {
-  if (errorCode !== BLOCKED_BY_CLIENT || !isMainFrame) return undefined
-  const target = localPartitionFor(failedUrl)
-  return target === undefined || target === currentPartition ? undefined : { to: target }
+  const to = fileBlockTarget(failedUrl, errorCode, isMainFrame, currentPartition)
+  return to === undefined ? undefined : { to }
 }
 
 /** ADR-0017's `fetch()`-routing gate: a value fixed at `WebContentsView`

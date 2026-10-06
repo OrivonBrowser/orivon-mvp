@@ -36,8 +36,8 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - FreeTube raised to Web3 Score Level 3: running YouTube's code is informed consent when the grant dialog says so and it's the app's purpose.
 - Explore opens on Web3 sites, marks each site Web2, Web2.5 or Web3, and lists 54 more live .eth sites.
 - A page can now ask the person's chosen Web3 Score provider about a site, behind a declared trust.score grant the person answers.
-
 - Local files get persistent sessions: each file an origin of its exact path, fenced from the others; nothing opens one yet.
+
 ### In my head
 
 ### Non-repo

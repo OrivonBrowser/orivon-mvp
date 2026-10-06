@@ -32,3 +32,23 @@ export function allLocalPartitions (): string[] {
   const recorded = (localFileApps()?.list() ?? []).map((key) => localPartitionFor(key))
   return [LOCAL_FILES_PARTITION, ...recorded.filter((partition): partition is string => partition !== undefined)]
 }
+
+/** Chromium's `ERR_BLOCKED_BY_CLIENT`: what a request an embedder's `webRequest` listener cancelled reports. */
+const BLOCKED_BY_CLIENT = -20
+
+/**
+ * Where a tab must move when a main-frame load of a `file:` document failed as blocked: the fence
+ * (`local-file-fence.ts`) cancels a file that belongs to another local session, and the file's own
+ * session is the answer. Undefined for any other failure, a frame, a URL that is no local file, and a
+ * tab already where the file belongs; the last is what stops a swap looping.
+ */
+export function partitionAfterFileBlock (
+  failedUrl: string,
+  errorCode: number,
+  isMainFrame: boolean,
+  currentPartition: string | undefined
+): string | undefined {
+  if (errorCode !== BLOCKED_BY_CLIENT || !isMainFrame) return undefined
+  const target = localPartitionFor(failedUrl)
+  return target === currentPartition ? undefined : target
+}

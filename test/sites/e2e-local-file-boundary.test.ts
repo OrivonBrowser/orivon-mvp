@@ -1,7 +1,7 @@
 // A document opened from this computer is an origin of its own: no web page and no web frame in a local page reaches a
-// file:, a local page reads no other file's bytes or pixels, a file that lands in an ordinary tab (history, a restore, a
-// reload) ends in the session it belongs in, a file recorded as allowed to use Orivon permissions has a session of its
-// own that no other file shares, and a download cannot be named after it. Real clicks drive the pages; the main process
+// file:, a local page reads no other file's bytes or pixels, a file that lands in an ordinary tab (history, a reload)
+// ends in the session it belongs in, a file recorded as allowed to use Orivon permissions has a session of its own that
+// no other file shares, and a download cannot be named after it. Real clicks drive the pages; the main process
 // loads a file into a tab the way history does. Runs on a binary whose file-protocol fuse is off (`npm run install:electron`).
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
@@ -14,7 +14,7 @@ import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
 import { html, launchShell, startServer, visit } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
-import { ABSENCE_SETTLE_MS, delay, tabIds, waitFor } from '../support/smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, delay, popoverShown, tabIds, waitFor } from '../support/smoke-helpers.mjs'
 
 const E2E_TIMEOUT_MS = 240_000
 const SHARED_PARTITION = 'persist:orivon-local-files'
@@ -334,6 +334,9 @@ it('a recorded file has a session of its own: its IndexedDB is unseen by a sibli
     expect(await waitFor(async () => (await localPages(app, partitions)).some((page) => page.url === key && page.partition === partitions[1]))).toBe(true)
     const again = await filePage(app, 'granted.html')
     expect(await result(again)).toEqual(['granted-db'])
+    // The cancelled load is no failure the person needs told of: no load-error sheet is over the page the tab moved to.
+    await delay(ABSENCE_SETTLE_MS)
+    expect(await popoverShown(app, 'overlay=load-error')).toBe(false)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)

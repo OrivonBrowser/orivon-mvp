@@ -11,6 +11,9 @@ export function fenceAllows (url: string, partition: string): boolean {
   return localPartitionFor(url) === partition
 }
 
+/** The kinds of request the fence judges. The session's filter is the union of every handler's, so the handler checks the kind itself. */
+const DOCUMENT_TYPES: ReadonlySet<string> = new Set(['mainFrame', 'subFrame', 'object'])
+
 /**
  * Cancels, in a local session, every document-level `file:` load that belongs to another one. It sees
  * `mainFrame`, `subFrame` and `object` (a frame's `<object>` and `<embed>`) only: scripts, styles and
@@ -23,6 +26,6 @@ export function installLocalFileFence (owner: Pick<WebRequestOwner, 'onBeforeReq
     0,
     { urls: ['file:///*'], types: ['mainFrame', 'subFrame', 'object'] },
     (url) => url.startsWith('file:'),
-    (details, current) => fenceAllows(details.url, partition) ? current : { cancel: true }
+    (details, current) => !DOCUMENT_TYPES.has(details.resourceType) || fenceAllows(details.url, partition) ? current : { cancel: true }
   )
 }

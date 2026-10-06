@@ -79,10 +79,20 @@ describe('installLocalFileFence', () => {
     withRecorded(GRANTED)
     const onBeforeRequest = vi.fn()
     installLocalFileFence({ onBeforeRequest }, LOCAL_FILES_PARTITION)
-    const run = onBeforeRequest.mock.calls[0]?.[3] as (details: { url: string }, current: unknown) => unknown
+    const run = onBeforeRequest.mock.calls[0]?.[3] as (details: { url: string, resourceType: string }, current: unknown) => unknown
     const current = { redirectURL: undefined }
 
-    expect(run({ url: GRANTED }, current)).toEqual({ cancel: true })
-    expect(run({ url: PLAIN }, current)).toBe(current)
+    for (const resourceType of ['mainFrame', 'subFrame', 'object']) expect(run({ url: GRANTED, resourceType }, current)).toEqual({ cancel: true })
+    expect(run({ url: PLAIN, resourceType: 'mainFrame' }, current)).toBe(current)
+  })
+
+  it('leaves a subresource of another session\'s file alone even when the session\'s filter has no types', () => {
+    withRecorded(GRANTED)
+    const onBeforeRequest = vi.fn()
+    installLocalFileFence({ onBeforeRequest }, LOCAL_FILES_PARTITION)
+    const run = onBeforeRequest.mock.calls[0]?.[3] as (details: { url: string, resourceType: string }, current: unknown) => unknown
+    const current = { redirectURL: undefined }
+
+    for (const resourceType of ['image', 'script', 'stylesheet', 'xhr']) expect(run({ url: GRANTED, resourceType }, current)).toBe(current)
   })
 })

@@ -3,6 +3,7 @@ import type { WebRequestOwner } from '../sessions/web-request-owner.js'
 import { createFileHandler } from './file-handler.js'
 import type { FileHandlerDeps } from './file-handler.js'
 import { installLocalFileFence } from './local-file-fence.js'
+import { refuseFileScheme } from './refuse-file-scheme.js'
 
 export interface LocalSessionDeps {
   readonly owner: (target: Session) => Pick<WebRequestOwner, 'onBeforeRequest'>
@@ -19,14 +20,21 @@ const prepared = new WeakSet<Session>()
  */
 export function prepareLocalSession (target: Session, partition: string, deps: LocalSessionDeps): void {
   if (prepared.has(target)) return
+  try {
+    if (target.protocol.isProtocolHandled('file')) target.protocol.unhandle('file')
+    target.protocol.handle('file', createFileHandler({
+      fetchFile: async (request) => await target.fetch(request, { bypassCustomProtocolHandlers: true }),
+      fuse: deps.fuse,
+      extraPolicy: deps.extraPolicy
+    }))
+    installLocalFileFence(deps.owner(target), partition)
+  } catch (error) {
+    // Half done is open: Chromium's own loader without the fence. The 404 goes back and a later call starts again.
+    if (target.protocol.isProtocolHandled('file')) target.protocol.unhandle('file')
+    refuseFileScheme(target)
+    throw error
+  }
   prepared.add(target)
-  if (target.protocol.isProtocolHandled('file')) target.protocol.unhandle('file')
-  target.protocol.handle('file', createFileHandler({
-    fetchFile: async (request) => await target.fetch(request, { bypassCustomProtocolHandlers: true }),
-    fuse: deps.fuse,
-    extraPolicy: deps.extraPolicy
-  }))
-  installLocalFileFence(deps.owner(target), partition)
 }
 
 let preparer: ((partition: string) => void) | undefined

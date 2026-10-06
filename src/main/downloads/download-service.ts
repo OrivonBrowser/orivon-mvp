@@ -134,7 +134,7 @@ export class DownloadService {
     const held = shouldHold(suggested, mime, this.deps.askWhere())
     let savePath = ''
     if (this.deps.askWhere()) {
-      item.setSaveDialogOptions({ title: 'Save file', defaultPath: join(this.lastFolder ?? folder, suggested) })
+      item.setSaveDialogOptions({ title: 'Save file', defaultPath: uniquePath(this.lastFolder ?? folder, suggested, (path) => this.deps.reservedPath?.(path) === true) })
     } else {
       savePath = held ? holdPath(folder, id) : uniquePath(folder, suggested, (path) => this.taken(path))
       item.setSavePath(savePath)

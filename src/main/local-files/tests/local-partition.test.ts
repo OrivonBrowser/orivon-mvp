@@ -48,6 +48,19 @@ describe('prepareLocalSession', () => {
     expect(d.onBeforeRequest).toHaveBeenCalledOnce()
   })
 
+  it('fails closed when the fence cannot be installed: the 404 is back and a later call tries again', () => {
+    const { target, protocol } = fakeSession(false)
+    const failing = deps()
+    failing.onBeforeRequest.mockImplementationOnce(() => { throw new Error('no fence') })
+
+    expect(() => { prepareLocalSession(target, LOCAL_FILES_PARTITION, failing) }).toThrow('no fence')
+    const last = protocol.handle.mock.calls.at(-1)?.[1] as () => Response
+    expect(last().status).toBe(404)
+
+    prepareLocalSession(target, LOCAL_FILES_PARTITION, failing)
+    expect(failing.onBeforeRequest).toHaveBeenCalledTimes(2)
+  })
+
   it('reads files through the session\'s own loader, bypassing its custom handlers', async () => {
     const { target, protocol, fetch } = fakeSession(false)
     prepareLocalSession(target, LOCAL_FILES_PARTITION, deps())

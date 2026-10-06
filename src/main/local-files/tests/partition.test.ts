@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { originHash } from '../../../broker/grants/origin-hash.js'
 import { LocalFileApps, installLocalFileApps } from '../local-file-apps.js'
-import { LOCAL_FILES_PARTITION, allLocalPartitions, isLocalPartition, localPartitionFor } from '../partition.js'
+import { LOCAL_FILES_PARTITION, allLocalPartitions, isLocalPartition, localPartitionFor, partitionAfterFileBlock } from '../partition.js'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -68,5 +68,15 @@ describe('allLocalPartitions', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('partitionAfterFileBlock -- only the fence\'s cancel of a main-frame file moves a tab', () => {
+  it('names the file\'s session, and nothing when the tab is there, or the failure is another one', () => {
+    expect(partitionAfterFileBlock(FILE, -20, true, 'persist:other')).toBe(LOCAL_FILES_PARTITION)
+    expect(partitionAfterFileBlock(FILE, -20, true, LOCAL_FILES_PARTITION)).toBeUndefined()
+    expect(partitionAfterFileBlock(FILE, -6, true, 'persist:other')).toBeUndefined()
+    expect(partitionAfterFileBlock(FILE, -20, false, 'persist:other')).toBeUndefined()
+    expect(partitionAfterFileBlock('https://x.example/', -20, true, 'persist:other')).toBeUndefined()
   })
 })

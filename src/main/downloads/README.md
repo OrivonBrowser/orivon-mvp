@@ -15,7 +15,7 @@ the button, one tracker per window), `bubble-rows.ts` and `downloads-overlay.ts`
 
 **What it depends on.** [`../overlays/`](../overlays/) (`overlay-types.ts`, and `overlays.ts` to tell whether a popup is open); `electron` (`install-downloads.ts`, `folder-runner.ts`, and the `DownloadItem` and
 `WebContents` types); [`../settings/`](../settings/) (the folder and the ask-where choice);
-[`../storage/`](../storage/) (the debounced write); [`../shell/file-dialogs.ts`](../shell/file-dialogs.ts) (the
+[`../storage/`](../storage/) (the debounced write); [`../local-files/local-file-apps.ts`](../local-files/local-file-apps.ts) (`isRecordedLocalPath`, so a download is never named after a recorded file); [`../shell/file-dialogs.ts`](../shell/file-dialogs.ts) (the
 folder picker); [`../pages/internal-ipc.ts`](../pages/internal-ipc.ts) (the shape of a page's domain);
 [`../shell/window-registry.ts`](../shell/window-registry.ts) (to tell a tab from any other page).
 
