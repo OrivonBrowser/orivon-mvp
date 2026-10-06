@@ -46,6 +46,8 @@ export interface UpdateCheckResult {
 export interface WebStoreHost {
   installCrx: (crx: Buffer, expectedId: string, approvedManifest?: string, downloadUrl?: string) => Promise<void>
   uninstall: (id: string) => Promise<void>
+  /** Where to download `id`'s CRX from instead of the store's own URL; `undefined` keeps it. */
+  crxUrl?: ((id: string) => string | undefined) | undefined
 }
 
 // Orivon patch: every optional field below is `T | undefined`, not `T?` --

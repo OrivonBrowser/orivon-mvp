@@ -101,7 +101,7 @@ describe('BrowserActionAPI: tabCapture invocation only ever recorded for a real 
     expect(recorder).not.toHaveBeenCalled()
   })
 
-  it('chrome.action.openPopup() opens/dispatches like a click, but never records an invocation (no gesture)', () => {
+  it('chrome.action.openPopup() opens/dispatches like a click, but never records an invocation (no gesture)', async () => {
     const tab = fakeTab(1)
     const ctx = fakeCtx(tab)
     ctx.store.getWindowById = () => undefined
@@ -109,7 +109,7 @@ describe('BrowserActionAPI: tabCapture invocation only ever recorded for a real 
     ctx.store.getActiveTabFromWindow = () => tab
     const api = new BrowserActionAPI(ctx)
 
-    ;(api as any).openPopup({ extension: { id: OWN_ID } })
+    await (api as any).openPopup({ extension: { id: OWN_ID } })
 
     expect(recorder).not.toHaveBeenCalled()
     // The real, user-visible half of chrome.action.openPopup() still runs:

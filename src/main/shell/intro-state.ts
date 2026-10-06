@@ -9,6 +9,8 @@ const MODES = ['always', 'once', 'off'] as const
 export type IntroMode = typeof MODES[number]
 
 export interface IntroPlan {
+  /** The screen offers to make Orivon the default browser, a box left unticked: decided from facts alone, since asking the system would delay the first window. */
+  readonly offerDefault: boolean
   /**
    * Called when the person clicks through. Only `once` remembers it: a launch
    * in `always` mode (`npm run dev`) must not use up the one-time showing a
@@ -48,11 +50,11 @@ export async function markIntroSeen (userDataDir: string): Promise<void> {
   }
 }
 
-export async function planIntro (envValue: string | undefined, userDataDir: string): Promise<IntroPlan | undefined> {
+export async function planIntro (envValue: string | undefined, userDataDir: string, offerDefault = false): Promise<IntroPlan | undefined> {
   const mode = introMode(envValue)
   if (envValue !== undefined && envValue !== '' && envValue !== mode) {
     console.warn(`[orivon] intro: ORIVON_INTRO=${envValue} is not always, once or off; using once`)
   }
   if (!shouldShowIntro(mode, await readIntroSeen(userDataDir))) return undefined
-  return { onEntered: mode === 'once' ? () => markIntroSeen(userDataDir) : async () => {} }
+  return { offerDefault, onEntered: mode === 'once' ? () => markIntroSeen(userDataDir) : async () => {} }
 }

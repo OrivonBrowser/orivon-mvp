@@ -88,7 +88,7 @@ async function startFixtureServer (): Promise<{ server: Server, origin: string }
   return { server, origin: `http://127.0.0.1:${String(address.port)}` }
 }
 
-/** Finds the popup's own BrowserWindow among every open Playwright page --
+/** Finds the popup's own page among every open Playwright page --
  * it has no `.tab` entry in the strip, so this looks by URL prefix, not by
  * elimination against the chrome/tab views the way tabViews() does. */
 function findPopup (windows: Page[], extensionId: string): Page | undefined {
@@ -160,17 +160,23 @@ it('shows a real extension\'s browser action, its popup runs, and its chrome.tab
       // ---- clicking it opens a popup whose title is set by its own page ----
       await chrome.click(actionSelector)
       const popupOpened = await waitFor(() => findPopup((app as NonNullable<typeof app>).windows(), extensionId) !== undefined)
-      check('clicking the action opens a popup window', popupOpened)
-      let popup = findPopup(app.windows(), extensionId)
-      // Polled, not read once: the popup's own BrowserWindow/Page exists the
+      check('clicking the action opens a popup', popupOpened)
+      // The popup is a view inside the shell window, so a missing one is a failure, never a skipped check.
+      const openPopup = (): Page => {
+        const found = findPopup((app as NonNullable<typeof app>).windows(), extensionId)
+        if (found === undefined) throw new Error('the popup is not open')
+        return found
+      }
+      let popup = openPopup()
+      // Polled, not read once: the popup's page exists the
       // moment it is constructed, well before popup.html's script has run
       // and set the real title (smoke-helpers.mjs's own waitFor rule).
-      const titleSet = popup === undefined ? false : await waitFor(async () => await evaluateRetrying(popup as Page, () => document.title) === 'Action Popup')
-      const popupTitle = popup === undefined ? undefined : await evaluateRetrying(popup, () => document.title)
-      check('the popup window\'s title is set by its own page', titleSet, String(popupTitle))
+      const titleSet = await waitFor(async () => await evaluateRetrying(popup, () => document.title) === 'Action Popup')
+      const popupTitle = await evaluateRetrying(popup, () => document.title)
+      check('the popup\'s title is set by its own page', titleSet, String(popupTitle))
 
       // ---- chrome.tabs.query returns Orivon's open tabs, with their URLs ----
-      if (popup !== undefined) {
+      {
         await popup.click('#query')
         const queryText = await waitForResult(popup, '')
         const queryResult = JSON.parse(queryText) as { tabs: Array<{ id: number, url: string }> }
@@ -178,7 +184,7 @@ it('shows a real extension\'s browser action, its popup runs, and its chrome.tab
       }
 
       // ---- chrome.tabs.create of an http fixture URL opens a real Orivon tab ----
-      if (popup !== undefined) {
+      {
         await popup.fill('#url', allowedUrl)
         const before = await evaluateRetrying(popup, () => document.getElementById('result')?.textContent ?? '')
         await popup.click('#create')
@@ -188,8 +194,8 @@ it('shows a real extension\'s browser action, its popup runs, and its chrome.tab
       }
 
       // ---- chrome.tabs.create of file:/orivon: is refused and opens nothing ----
-      popup = findPopup(app.windows(), extensionId)
-      if (popup !== undefined) {
+      popup = openPopup()
+      {
         const windowCountBefore = app.windows().length
         await popup.fill('#url', 'file:///etc/hostname')
         const before = await evaluateRetrying(popup, () => document.getElementById('result')?.textContent ?? '')
@@ -199,8 +205,8 @@ it('shows a real extension\'s browser action, its popup runs, and its chrome.tab
         check('chrome.tabs.create of file:///etc/hostname opens no new window', app.windows().length === windowCountBefore)
       }
 
-      popup = findPopup(app.windows(), extensionId)
-      if (popup !== undefined) {
+      popup = openPopup()
+      {
         const windowCountBefore = app.windows().length
         await popup.fill('#url', 'orivon://settings')
         const before = await evaluateRetrying(popup, () => document.getElementById('result')?.textContent ?? '')
@@ -212,8 +218,8 @@ it('shows a real extension\'s browser action, its popup runs, and its chrome.tab
 
       // ---- chrome.runtime.openOptionsPage() opens the options page as a
       // real Orivon tab, and the popup's own renderer survives the call ----
-      popup = findPopup(app.windows(), extensionId)
-      if (popup !== undefined) {
+      popup = openPopup()
+      {
         const optionsUrl = `chrome-extension://${extensionId}/options.html`
         await popup.click('#options')
         const opened = await waitFor(() => findTabShowing((app as NonNullable<typeof app>).windows(), chrome, optionsUrl) !== undefined)

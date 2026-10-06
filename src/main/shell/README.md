@@ -7,7 +7,7 @@ window holding it. `window-frame.ts` is the native window itself and `window-opt
 opens. `window.ts` is the composition; its parts are `window-layout.ts` (where the chrome and the page
 area sit: the one place a page area is computed), `window-state.ts` (the `ShellState` push, and which
 overlays a tab switch or a navigation dismisses), `window-panels.ts` (the permissions and site-info
-popovers) and `shell-state-parts.ts` (the `ShellState` fields a feature adds; `state/update-offered.ts` is the one that lights the key icon's dot while the page in front has an update offer, and `pre-partition.ts` stops a link or redirect into a cache-served address before it commits so the pinned files answer, `ADR-0056`). `window-context.ts` is
+popovers, and the extension popup's panel for the overlay host) and `shell-state-parts.ts` (the `ShellState` fields a feature adds; `state/update-offered.ts` is the one that lights the key icon's dot while the page in front has an update offer, and `pre-partition.ts` stops a link or redirect into a cache-served address before it commits so the pinned files answer, `ADR-0056`). `window-context.ts` is
 the `{ window, services }` pair a hook or an overlay handler receives.
 `tabs.ts` owns the tab collection, with `tab-state.ts` (the state a tab reports, plus what each
 `TAB_SIGNALS` entry adds), `tab-navigation.ts`, `tab-open.ts` (every way a tab is created) and
@@ -23,7 +23,7 @@ menu (and `context-menu.ts` the menu a page gets: `page-menu-items.ts` is where 
 whichever window's strip it is dragged over. Where a window cannot read the screen (a native Wayland session, `local-pointer.ts`) the browser's own drag and drop carries the tab instead: `native-tab-drag.ts` holds the drag in progress, `native-drag-plan.ts` is the pure rule for what a drop does, and `drop-catcher.ts` is the transparent view over a window's page while the drag lasts. Split view: `split-model.ts` is the arithmetic and the groups
 of joined tabs, `split-controller.ts` plans which views show where, `pane-host.ts` puts them on screen in
 that order, `split-frame.ts` is the view behind two panes, and `split-drop.ts` says where a dragged tab
-would split the page. `intro-state.ts` and `intro-view.ts` are the welcome screen. `shell-installers.ts` runs each feature directory's installer at start, and `sheet-backdrop.ts` paints the shell's own surface colour behind a sheet that sits over a tab with no background of its own. `tab-backing.ts` picks a view's pre-paint colour when a navigation starts, and `window-backing.ts` keeps the window behind the views in the colour of the tab shown.
+would split the page. `intro-state.ts` and `intro-view.ts` are the welcome screen, and `new-tab-focus.ts` is where the keyboard goes after a new tab opens in front: the address bar, never the tab's own page (a window that lacks the OS focus is left alone, and so is one the welcome screen covers). `shell-installers.ts` runs each feature directory's installer at start, and `sheet-backdrop.ts` paints the shell's own surface colour behind a sheet that sits over a tab with no background of its own. `tab-backing.ts` picks a view's pre-paint colour when a navigation starts, and `window-backing.ts` keeps the window behind the views in the colour of the tab shown.
 `first-window.ts` decides what a cold start opens (the window's last place, the addresses on the command line, a kiosk's page) and `home.ts` is what Home opens.
 The rest answer what a page asks of its window: popups become tabs, HTML fullscreen, the
 few-second exclusive-access notices, the `beforeunload` Leave/Stay question, the external-link
@@ -77,7 +77,7 @@ test-hook.ts` is the e2e-only record of what each was actually set to.
 `grants/origin-hash.ts`, `broker-contracts.ts` types);
 [`../../loader/electron/serve.ts`](../../loader/electron/serve.ts);
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts); and, inside `src/main/`,
-[`../browsing/`](../browsing/), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/),
+[`../browsing/`](../browsing/), [`../extensions/extension-popup-host.ts`](../extensions/extension-popup-host.ts) (`window-panels.ts` adopts its panel), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/),
 [`../shortcuts/`](../shortcuts/) (the command table and the service the menu reads, and the command bus a window runs a chosen command through), [`../overlays/`](../overlays/) (the question panel is an overlay shown through the tab slots),
 [`../consent/grant-prompt-origin.ts`](../consent/grant-prompt-origin.ts) (the origin line every
 permission dialog shows), [`../sessions/`](../sessions/) (the two questions' types, and
@@ -85,7 +85,7 @@ permission dialog shows), [`../sessions/`](../sessions/) (the two questions' typ
 [`../dev/`](../dev/) (the developer-mode flag, the score-level override, the local resolvers),
 [`../verifier/`](../verifier/), the stores and services a window reads ([`../settings/`](../settings/),
 [`../history/`](../history/), [`../zoom/`](../zoom/), [`../devtools/`](../devtools/),
-[`../pages/`](../pages/), [`../launch/`](../launch/)), plus the top-level `channels.ts` and `registry.ts`.
+[`../pages/`](../pages/), [`../launch/`](../launch/)), [`../os/`](../os/) (the welcome screen's default-browser offer, `intro-view.ts`; the launcher menu and the default-browser ask are installers and a window hook the shell runs), [`../startup/`](../startup/) (the restore bar a window's hook offers, and the start-up plan the first window follows), plus the top-level `channels.ts` and `registry.ts`.
 
 **What it must never import.** [`../../renderer/`](../../renderer/) code (the repo-wide rule).
 Locally: [`tab-view.ts`](tab-view.ts), [`tab-types.ts`](tab-types.ts) and

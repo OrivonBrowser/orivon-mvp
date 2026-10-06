@@ -119,6 +119,8 @@ const SPECS = {
   // Load unpacked, Reload for an unpacked extension: off until the person turns it on.
   'extensions.developerMode': { kind: 'bool', default: false },
   // Whether an extension installed from now on gets a place on the toolbar.
+  'extensions.pinInstalled': { kind: 'bool', default: false },
+  // Read only for an extension with no recorded pin (one whose install predates `extensions.pinInstalled`): settings keep non-default values only, so flipping this default would move every such extension that was never chosen for.
   'extensions.pinNew': { kind: 'bool', default: true }
 } as const satisfies Record<string, SettingSpec>
 

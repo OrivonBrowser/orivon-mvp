@@ -6,7 +6,7 @@
 // file, since one bad field must not forget every other extension's choices.
 
 export interface ExtensionPrefs {
-  /** null: follow the `extensions.pinNew` setting. */
+  /** null: no pin was recorded (an install from before `extensions.pinInstalled`), so follow the `extensions.pinNew` setting. */
   readonly pinned: boolean | null
   readonly granted: { readonly permissions: readonly string[], readonly origins: readonly string[] }
   readonly siteAccess: { readonly mode: 'all' | 'sites' | 'click', readonly sites: readonly string[] }

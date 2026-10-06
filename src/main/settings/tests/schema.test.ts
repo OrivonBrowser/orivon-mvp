@@ -56,6 +56,11 @@ describe('the settings schema', () => {
     expect(validateSetting(SETTINGS['search.customUrl'], 'http://search.example/?q=%s')).toBeUndefined()
   })
 
+  it('pins an extension installed from now on only when asked, and keeps the older setting for one with no recorded pin', () => {
+    expect(SETTINGS['extensions.pinInstalled']).toEqual({ kind: 'bool', default: false })
+    expect(SETTINGS['extensions.pinNew'].default).toBe(true)
+  })
+
   it('opens gateway addresses as .eth names unless told not to', () => {
     expect(SETTINGS['web3.ethGatewayRedirect']).toEqual({ kind: 'bool', default: true })
   })

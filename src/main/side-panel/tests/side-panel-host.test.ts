@@ -343,6 +343,15 @@ describe('the guest slot', () => {
     expect(win.sent.at(-1)).toMatchObject({ type: 'view', guest: null })
   })
 
+  it('answers setGuest(null) for a chosen entry with no guest by showing the last of Orivon views again', () => {
+    host.open('downloads')
+    host.choose(entry.id)
+    expect(host.view()).toBe(entry.id)
+    host.setGuest(null)
+    expect(host.view()).toBe('downloads')
+    expect(win.sent.at(-1)).toMatchObject({ type: 'view', view: 'downloads', guest: null })
+  })
+
   it('survives a throwing `closed` and a view that was destroyed', () => {
     const guest = fakeGuestView()
     host.open(entry.id)
@@ -356,6 +365,24 @@ describe('the guest slot', () => {
     host.stop()
     host.setGuest({ id: entry.id, title: 'Notes', view: fakeGuestView().view, closed })
     expect(closed).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('canShow', () => {
+  it('is true with room, false below the minimum width, in a kiosk and once stopped', () => {
+    expect(host.canShow()).toBe(true)
+    win.state.width = 700
+    expect(host.canShow()).toBe(false)
+    win.state.width = 1280
+    win.state.kiosk = true
+    expect(host.canShow()).toBe(false)
+    win.state.kiosk = false
+    host.stop()
+    expect(host.canShow()).toBe(false)
+  })
+
+  it('is false for the inert host of a window that has no panel', () => {
+    expect(sidePanelFor({ window: {} } as never).canShow()).toBe(false)
   })
 })
 

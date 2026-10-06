@@ -1,9 +1,10 @@
 import { mkdir, mkdtemp, readFile, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises'
+import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { GRACE_MS, createPrivateDir, isPrivateDirName, markPrivate, removePrivateDir, sweepPrivateDirs } from '../private-session.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { GRACE_MS, createPrivateDir, isPrivateDirName, markPrivate, removeAfterExit, removePrivateDir, sweepPrivateDirs } from '../private-session.js'
 
 let root: string
 let tmp: string
@@ -92,6 +93,42 @@ describe('removing a private directory', () => {
     await writeFile(join(tmp, 'orivon-private-ghijkl'), 'file')
     expect(removePrivateDir(join(tmp, 'orivon-private-ghijkl'), tmp)).toBe(false)
     expect(removePrivateDir('/', tmp)).toBe(false)
+  })
+})
+
+describe('removing a private directory after its process has ended', () => {
+  it.skipIf(process.platform === 'win32')('removes it once the process is gone, with whatever was written to it meanwhile', async () => {
+    const dir = createPrivateDir(home, home, tmp)
+    await writeFile(join(dir, 'late-write'), 'Chromium writes after quit')
+    const ended = spawnSync(process.execPath, ['-e', ''])
+    expect(removeAfterExit(dir, ended.pid, tmp)).toBe(true)
+    await vi.waitFor(() => { expect(existsSync(dir)).toBe(false) }, { timeout: 5000 })
+  })
+
+  it('names the directory and the process to the cleaner as arguments, never in the command text', () => {
+    const dir = createPrivateDir(home, home, tmp)
+    const spawn = vi.fn(() => ({ on: vi.fn(), unref: vi.fn() }))
+    expect(removeAfterExit(dir, 4242, tmp, 'linux', spawn as never)).toBe(true)
+    const [program, args, options] = spawn.mock.calls[0] as unknown as [string, string[], { detached: boolean, stdio: string }]
+    expect(program).toBe('/bin/sh')
+    expect(args.slice(3)).toEqual(['4242', dir])
+    expect(args[1]).not.toContain(dir)
+    expect(options).toMatchObject({ detached: true, stdio: 'ignore' })
+  })
+
+  it('does nothing for a directory that is not a private one made here, or on Windows, and reports it', () => {
+    const spawn = vi.fn()
+    const other = join(tmp, 'not-private')
+    expect(removeAfterExit(other, 1, tmp, 'linux', spawn as never)).toBe(false)
+    expect(removeAfterExit(join(root, 'orivon-private-abcdef'), 1, tmp, 'linux', spawn as never)).toBe(false)
+    expect(removeAfterExit(join(tmp, 'orivon-private-abcdef'), 1, tmp, 'win32', spawn as never)).toBe(false)
+    expect(spawn).not.toHaveBeenCalled()
+  })
+
+  it('reports a cleaner that could not be started, so the caller removes the directory itself', () => {
+    const dir = createPrivateDir(home, home, tmp)
+    const spawn = vi.fn(() => { throw new Error('no sh') })
+    expect(removeAfterExit(dir, 1, tmp, 'linux', spawn as never)).toBe(false)
   })
 })
 

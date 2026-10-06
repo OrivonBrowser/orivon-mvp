@@ -13,7 +13,8 @@ import { createExtensionCommandKeys } from './extension-commands-runner.js'
 import type { ExtensionCommandKeys, LoadedExtension } from './extension-commands-runner.js'
 import { extensionHost } from './extension-host.js'
 import type { ExtensionPrefsStore } from './extension-prefs.js'
-import { recordTabCaptureInvocation } from './extension-tab-capture-invocation.js'
+import { openSidePanelFor } from './side-panel-runner.js'
+import { recordExtensionInvocation } from './side-panel-gesture.js'
 import { readRegistry } from './registry-runner.js'
 
 export interface InstallCommandKeysOptions {
@@ -76,7 +77,8 @@ export function installExtensionCommands (options: InstallCommandKeysOptions): E
     },
     host: extensionHost,
     keyChanged: (extensionId, change) => { extensionHost()?.getRouter().sendEvent(extensionId, 'commands.onChanged', change) },
-    recordInvocation: recordTabCaptureInvocation,
+    recordInvocation: recordExtensionInvocation,
+    openSidePanel: (extensionId, tab, window) => openSidePanelFor(extensionId, tab, window),
     isHiddenTab: (tab) => {
       if (tab.session !== session.defaultSession) return true
       const origin = originFromUrl(tab.getURL())

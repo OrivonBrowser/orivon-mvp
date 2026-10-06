@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Orivon E2E Tall Popup",
+  "version": "1.0.0",
+  "description": "Fixture extension for test/extensions/e2e-extensions-popup-placement.test.ts: a popup page sized in percent, whose content is 300 by 420 px.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "icon.png"
+  }
+}

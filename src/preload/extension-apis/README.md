@@ -45,6 +45,11 @@ no-op because main reads every listener's answer fresh. Main's half is
 service worker `onInstalled` fires from details main parked at install (`runtime-installed.ts`,
 asked once through `runtime.takeInstalled`).
 
+**`side-panel.ts`** defines `chrome.sidePanel` only when the manifest declares the permission, with strict
+calls (a rejection carries main's own message) and the `onOpened` and `onClosed` events. It sends no claim of user
+activation: this entry runs in the extension's own world, where such a claim can be forged, so main decides from the
+input the browser itself saw (`src/main/extensions/side-panel-gesture.ts`).
+
 **What an entry may use.** `globalThis.__crx` (`crx.d.ts`): `declares(permission)`, `call(name)`
 for a main-side handler, `event(name)` for an event main routes, and `define(ns, build)`. Whether
 a permission is granted is main's answer; `declares` only says the manifest asks for it.

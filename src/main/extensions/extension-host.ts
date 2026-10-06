@@ -18,10 +18,10 @@ import type { Session, WebContents } from 'electron'
 // file for bundling; tsc uses that .d.ts's ambient declaration instead.
 import { ElectronChromeExtensions } from 'orivon:crx-extensions'
 import { setSessionPartitionResolver } from 'orivon:crx-extensions-partition'
-import { setEventListenerFilter, setMessageSenderIdCheck, setRemoteMessageSenderCheck } from 'orivon:crx-extensions-router'
+import { callingExtensionId, setEventListenerFilter, setMessageSenderIdCheck, setRemoteMessageSenderCheck } from 'orivon:crx-extensions-router'
 import { setCookieHostAccessCheck } from 'orivon:crx-extensions-cookies'
 import { setTabUrlAccessCheck, setTabHostAccessCheck } from 'orivon:crx-extensions-tabs'
-import { setTabCaptureInvocationRecorder } from 'orivon:crx-extensions-browser-action'
+import { setOpenPopupAnchor, setPopupHost, setTabCaptureInvocationRecorder } from 'orivon:crx-extensions-browser-action'
 import { setTabCaptureAppRefusalCheck, setTabCaptureConsumedCheck, setTabCaptureGrantRecorder, setTabCaptureInvocationCheck } from 'orivon:crx-extensions-tab-capture'
 import type { ShellServices } from '../shell/shell-services.js'
 import { setPageMenuItemsSource } from '../shell/page-menu-items.js'
@@ -34,7 +34,10 @@ import { EXTENSION_SANDBOX_CSP_FILTER, extensionSandboxCsp } from './extension-s
 import { appOrigin } from '../shell/devtools-app-origin.js'
 import { eventListenerFilter } from './extension-event-filter.js'
 import { closeCurrentPopup, installPopupPolicy } from './extension-popup-policy.js'
-import { buildHostImpl, isExtensionActivatingTab, isLoadedExtension, shellInitiated, type ShellBridge } from './extension-host-impl.js'
+import { extensionPopupHost, wirePopupHost } from './extension-popup-host.js'
+import { hasPendingNavigation, watchNavigations } from './extension-pending-navigation.js'
+import { anchorFor } from './extension-action-anchor.js'
+import { buildHostImpl, EXTENSION_FOCUS_HANDOVER_MS, extensionJustActivatedTab, isExtensionActivatingTab, isLoadedExtension, shellInitiated, type ShellBridge } from './extension-host-impl.js'
 import { watchPinSetting } from './action-pins-runner.js'
 import { watchForMissedServiceWorkerPreload } from './extension-sw-preload-recovery.js'
 import { beginDnrReload, endDnrReload } from './extensions-dnr.js'
@@ -44,11 +47,12 @@ import { senderMatchesClaimedExtensionId } from './extension-sender-id-check.js'
 import { registerSandboxPageQuery } from './extension-sandbox-page-query.js'
 import { apiOrHostAccessFor, hostAccessFor } from './extension-host-access.js'
 import { clearInvocationsForExtension, hasRecentInvocation } from './extension-tab-invocation.js'
-import { recordTabCaptureInvocation } from './extension-tab-capture-invocation.js'
+import { recordExtensionInvocation } from './side-panel-gesture.js'
+import { sidePanelWindowOf } from './side-panel-pages.js'
 
 /** The session's extensions emitter takes one `extension-unloaded` listener from each extension subsystem: the
  * vendored library's eight, the invocation ledger, the dNR engine, the bookmarks and manifest APIs, the command
- * keys and the loaded-extensions feed, which is past Node's warning line of ten. Set here, before the first of them
+ * keys, the side panel and the loaded-extensions feed, which is past Node's warning line of ten. Set here, before the first of them
  * attaches, and above the count with room for a subsystem to come, not unlimited: a listener added per extension or
  * per navigation still warns. */
 export const EXTENSIONS_LISTENER_ROOM = 32
@@ -69,6 +73,7 @@ let pageRecovery: ExtensionPageRecovery<WebContents> | undefined
 export const extensionPagesAroundReload = {
   begin: (id: string): void => { pageRecovery?.begin(id) },
   end: (id: string): void => { pageRecovery?.end(id) },
+  reloading: (id: string): boolean => pageRecovery?.reloading(id) === true,
   sweep: (id: string): void => { pageRecovery?.sweep(id, webContents.getAllWebContents()) }
 }
 
@@ -113,7 +118,7 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
   setCookieHostAccessCheck((manifest, url, extensionId) => hostAccessFor(extensionId, manifest, url))
   setTabUrlAccessCheck((manifest, url, extensionId, tabId) => apiOrHostAccessFor(extensionId, manifest, 'tabs', url, tabId))
   setTabHostAccessCheck((manifest, url, extensionId, tabId) => hostAccessFor(extensionId, manifest, url, tabId))
-  setTabCaptureInvocationRecorder(recordTabCaptureInvocation)
+  setTabCaptureInvocationRecorder(recordExtensionInvocation)
   setTabCaptureInvocationCheck(hasRecentInvocation)
   setTabCaptureGrantRecorder((extensionId, targetTabId) => { mintTabCaptureGrant(extensionId, targetTabId, Date.now()) })
   setTabCaptureConsumedCheck(wasTabCaptureGrantConsumed)
@@ -145,7 +150,7 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
     license: 'GPL-3.0',
     session: session.defaultSession,
     preloadPath,
-    ...buildHostImpl(() => bridge)
+    ...buildHostImpl(() => bridge, callingExtensionId)
   })
 
   // extension-sw-preload-recovery.ts must not import extensions-dnr.ts
@@ -163,9 +168,10 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
   const recovery = createExtensionPageRecovery<WebContents>({
     now: Date.now,
     graceMs: RELOAD_AFTER_GRACE_MS,
-    isEligible: (wc, id) => bridge?.services.windows.findTab(wc) != null && isExtensionOpened(wc, id)
+    isEligible: (wc, id) => sidePanelWindowOf(wc) !== undefined || (bridge?.services.windows.findTab(wc) != null && isExtensionOpened(wc, id))
   })
   app.on('web-contents-created', (_event, wc) => {
+    watchNavigations(wc)
     wc.on('did-fail-load', (_failEvent, errorCode, _description, url, isMainFrame) => {
       if (isMainFrame) recovery.pageFailed(wc, url, errorCode)
     })
@@ -182,6 +188,29 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
   pageRecovery = recovery
 
   installPopupPolicy(hostExtensions, { services: () => bridge?.services, isLoaded: isLoadedExtension })
+  // The popup is a view in its window: Orivon attaches and places it, and gives the keyboard back to the
+  // tab in front. An opened-by-the-extension popup anchors at its own toolbar icon, as a click does.
+  setPopupHost(extensionPopupHost)
+  wirePopupHost({
+    focusTab: (window) => {
+      const owner = bridge?.services.windows.all().find((candidate) => candidate.window === window)
+      const tab = owner?.tabs.activeWebContents()
+      if (tab !== undefined && !tab.isDestroyed()) tab.focus()
+    },
+    // A tab the popup's own extension opens takes the keyboard, and that must not close the popup.
+    keepOpenOnBlur: (popup) => extensionJustActivatedTab(popup),
+    focusHandoverMs: EXTENSION_FOCUS_HANDOVER_MS,
+    // A popup opened over a page that is still navigating survives the blur that page's commit causes.
+    navigationInFlight: (window) => {
+      const owner = bridge?.services.windows.all().find((candidate) => candidate.window === window)
+      const tab = owner?.tabs.activeWebContents()
+      return tab !== undefined && !tab.isDestroyed() && hasPendingNavigation(tab) ? tab : undefined
+    }
+  })
+  setOpenPopupAnchor(async (extensionId, window) => {
+    const owner = bridge?.services.windows.all().find((candidate) => candidate.window === window)
+    return owner === undefined ? undefined : await anchorFor(owner, extensionId)
+  })
 
   return hostExtensions
 }

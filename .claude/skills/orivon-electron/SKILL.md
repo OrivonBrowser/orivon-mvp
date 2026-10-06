@@ -455,3 +455,15 @@ What `test/support/qa-evidence.mjs` and `test/support/qa-visual.ts` rely on, eac
   headless run, so no spec provokes an uncaught exception.
 - **Playwright's mouse stays where the last click left it**, so the button it clicked keeps its
   hover look in every later screenshot. Park the pointer in empty tab-strip space before a capture.
+
+## A main-process SIGSEGV has no names until the release's symbols are matched to the core
+
+`coredumpctl` and `gdb` show Electron frames as raw offsets in the stripped binary. The symbols are in the release's own
+asset, `electron-v<version>-linux-x64-symbols.zip` (GitHub releases of `electron/electron`), as
+`electron.breakpad.syms`. Take the offsets of the frames from the core (`gdb -batch -ex bt` on the dump, minus the
+mapping's load address), then find the `FUNC` record whose start and size cover each one: a record is
+`FUNC [m] <start> <size> <param size> <name>`, all hex, so a short `awk` over the file does it. Frame #0 is the
+answer; the first frame in `Run` of a `...Function` class names the extension API that was running. That is how a
+store install's crash was found: the native status handler of the Chrome Web Store page's API, reached after an
+extension load made the renderer rebuild `chrome.*`. Match the symbols to the exact Electron version in
+`node_modules/electron/package.json`; another version's offsets name a different function without any error.

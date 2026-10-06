@@ -1344,7 +1344,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-
 ### A289: What Orivon does for extensions when it cannot run sandboxed **[RESEARCH]**
 
 - **Question:** Under `--no-sandbox` a `'service-worker'`-type session preload never runs. Sandboxed it
@@ -1725,15 +1724,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A326: Should Orivon offer to become the default browser **[OWNER]**
-
-- **Question:** Settings > About registers Orivon for http and https from a button, on a packaged Linux install only.
-  Should a first launch, or a later one, also offer it?
-- **Why it matters:** links from other programs reach Orivon only once it is registered, and an offer costs trust.
-- **Options:** keep the button only (current); a one-time offer after the first week; an offer at first launch.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A327: A copied password has no confidential marker on the clipboard **[RESEARCH]**
 
 - **Question:** Electron 44's clipboard cannot mark text as excluded from clipboard history, so a password copied from
@@ -1745,8 +1735,9 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 ### A328: The real keyring, a real client-certificate store and the Windows and macOS paths are tested with fakes **[RESEARCH]**
 
-- **Question:** The encrypted password store, the client-certificate chooser, the Windows shortcut link and the macOS and
-  Windows default-browser calls were run only against fakes; the packaged `Exec=` line and desktop file name are unobserved.
+- **Question:** The encrypted password store, the client-certificate chooser, the Windows shortcut link, the macOS
+  and Windows default-browser calls, the NSIS registry script, the macOS target and the installed entry's launcher
+  actions were run only against fakes; the packaged `Exec=` line and desktop file name are unobserved.
 - **Why it matters:** each is a place where a unit test passing says nothing about a real machine.
 - **Options:** a run on a machine with a keyring, an NSS store, Windows and macOS (rec.); a probe per path; leave it.
 - **Who decides:** research first
@@ -1897,14 +1888,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
-### A348: A browser exit right after a Chrome Web Store install is not reproduced **[RESEARCH]**
-
-- **Question:** What exits the browser right after a successful store install, the owner reports, with the extension working after a restart? A live install of a module worker with a welcome tab, an offscreen document and a static ruleset, with a web tab open, and of the real 75 MB AdBlock package, left the process running.
-- **Why it matters:** The report stands unexplained. What the live install did show was every real blocker's worker failing at load (fixed), which looks like "works after a restart" from outside.
-- **Options:** Get the extension id and the terminal output at the exit (rec.); wrap each `session.extensions` listener in `contain()`, which hides the cause; leave it.
-- **Who decides:** research first, with the owner's id and output
-- **Blocks:** nothing
-
 ### A350: A page's `fetch()` cannot follow a `webRequest` redirect to the extension's own file **[RESEARCH]**
 
 - **Question:** How can a page's `fetch()` follow a blocking listener's redirect to the extension's own web-accessible
@@ -2013,16 +1996,65 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A375: The Linux package says Orivon opens HTML files, but a file handed in at launch is dropped **[OWNER]**
+### A380: Does the first-start dropdown still fail after the keyboard fixes? **[OWNER]**
 
-- **Question:** `electron-builder.yml` lists `text/html` in the desktop entry's MimeType, so a file manager can offer
-  Orivon for `report.html` and run it with a `file:///` argument; the launch keeps only http(s) addresses, so nothing
-  opens. Open local files, or stop claiming the type?
-- **Why it matters:** a person who picks Orivon for HTML files sees a new tab or a focused window and no page.
-- **Options:** drop `text/html` from the package, keeping the http and https scheme handlers (rec.; `file:` stays
-  refused as it is in the address bar); open a local HTML file handed in at launch, which needs a rule for `file:`.
+- **Question:** The owner saw the address text hidden after "Enter Orivon" and no dropdown on the first start (probably `npm run dev`, X11 or Wayland). The overlay no longer joins the window before its page commits, and a new tab starts with the keyboard in the bar. Does a first start still show hidden text or no dropdown?
+- **Why it matters:** the one run that reproduced it showed the stolen first letter, not hidden text; if it persists the cause is another one, probably the dev server's slow overlay page.
+- **Options:** retest after merge, saying the display server and whether the bar showed a caret (rec.); if it persists, run the probe against `electron-vite dev` under a window manager.
 - **Who decides:** owner
-- **Blocks:** nothing; check `xdg-settings` on a real package either way
+- **Blocks:** nothing
+
+### A381: Should the first click after Alt+Tab select the whole address? **[AI-REC]**
+
+- **Question:** A window refocus keeps the caret where it was, and the next press counts as a first press: it selects the whole address, as the first press after Enter or Escape does. A caret on that click would need the time between the refocus and the press, which the rule leaves out.
+- **Why it matters:** a person who switches back to Orivon and clicks into the bar to edit the address finds it selected; one more click places a caret.
+- **Options:** accept: the rule stays free of timestamps (rec.); place a caret when a press follows a refocus closely.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A386: A window started from a launcher action may not take the focus on Wayland **[RESEARCH]**
+
+- **Question:** The desktop gives a launched program an activation token so its window may take the focus. Measured in
+  Electron 44 on a private gnome-shell: the token (environment or `--xdg-activation-token`) is consumed before the
+  main script runs, and the running browser's `second-instance` argv holds none, so a new window or private
+  session started from the dock cannot pass it on. Does the new window still come to the front?
+- **Why it matters:** a dock click that opens a window behind others reads as a click that did nothing.
+- **Options:** measure on real GNOME and KDE sessions (rec.); show the window with the compositor's own attention hint.
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A387: Does a desktop list Orivon for web links with only the two scheme handlers? **[RESEARCH]**
+
+- **Question:** The entry lists `x-scheme-handler/http` and `/https` and no `text/html`. GNOME's browser list is
+  believed to key on the schemes, which is unmeasured; the `.deb` has not been installed to check `gio mime`.
+- **Why it matters:** if a desktop needs `text/html` to list a browser, the default-browser button has nothing to set.
+- **Options:** install the built package and read `gio mime x-scheme-handler/https` (rec.); put `text/html` back.
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A382: Chrome stops extensions scripting the Chrome Web Store page; Orivon does not **[RESEARCH]**
+
+- **Question:** Chrome refuses every extension's content scripts, `chrome.scripting` and `webRequest` on the Web Store's own origin. Orivon runs them there, so an extension can rewrite the page that installs extensions. Refuse the store origin as Chrome does?
+- **Why it matters:** the store page asks the person to approve each install; a script that edits that page can change what the approval shows.
+- **Options:** refuse extension scripting on `https://chromewebstore.google.com` in the host-access check (rec., once measured against the extensions people use there, such as a store-rating overlay); leave it.
+- **Who decides:** research first, then the owner
+- **Blocks:** nothing
+
+### A384: How long should the input that lets an extension open its side panel count? **[AI-REC]**
+
+- **Question:** `chrome.sidePanel.open` is accepted within five seconds of input the browser saw on the extension, spent by one open. Chrome's own window and what it counts as input on the extension were not measured.
+- **Why it matters:** too short and an extension that opens its panel after a network answer is refused; too long and one click opens panels for a while.
+- **Options:** keep five seconds (rec.: it matches the length of a page's transient activation); measure Chrome's, and take that.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A385: Does a real wallet extension work with its panel on a toolbar click? **[RESEARCH]**
+
+- **Question:** MetaMask sets `openPanelOnActionClick`, opens its panel from its popup with `open({ windowId })` and returns with `window.close()`; behind a remote flag its worker calls `open({ tabId })` with no gesture. Only a fixture extension has been run against the panel.
+- **Why it matters:** the toolbar click of the extension with the most users now opens a panel instead of its popup.
+- **Options:** run `test/extensions/e2e-extensions-real.test.ts` with `ORIVON_REAL_EXTENSIONS_DIR` set before merging (rec.); do nothing until a report comes in.
+- **Who decides:** research first
+- **Blocks:** nothing
 
 ### A388: A gateway address opened as a .eth name skips what the gateway or an extension would have done **[OWNER]**
 

@@ -1,6 +1,6 @@
 import { app, BaseWindow, dialog, nativeTheme, screen, session } from 'electron'
 import { createShellWindow, resolveDashboardUrl } from './shell/window.js'
-import { openUrlsOnSecondLaunch } from './shell/opener.js'
+import { answerLaunch } from './shell/opener.js'
 import { createShellServices } from './shell/shell-services.js'
 import { runShellInstallers } from './shell/shell-installers.js'
 import { askQuestion } from './shell/question/ask-question.js'
@@ -25,9 +25,12 @@ import { chromeUserAgent } from './shell/user-agent.js'
 import { planIntro } from './shell/intro-state.js'
 import { firstWindowOptions } from './shell/first-window.js'
 import { seedClosedStack } from './session-restore/restore.js'
-import { urlsFromArgv } from './launch/launch-context.js'
+import { atStartup, readLaunchRequest } from './launch/launch-request.js'
+import type { LaunchRequest } from './launch/launch-request.js'
+import { canOfferDefault } from './os/default-browser.js'
+import { defaultBrowserHost } from './os/default-browser-runner.js'
 import { handleOpenUrl } from './os/open-url.js'
-import { sweepPrivateDirs } from './launch/private-session.js'
+import { removeAfterExit, removePrivateDir, sweepPrivateDirs } from './launch/private-session.js'
 import { startLaunch } from './launch/start-launch.js'
 import { runUpdateCheck } from './self-update/update-check-runner.js'
 import { scheduleUpdateChecks } from './self-update/update-schedule.js'
@@ -124,19 +127,28 @@ function boot (runtime: Runtime): void {
   const beforeReadyFailures = runBeforeReady(subsystems)
   report(beforeReadyFailures)
 
-  // A second start of this profile asks it to show itself, and to open what it was given.
-  // The ask can arrive while this one is still starting, so it waits for it.
-  let opener: (urls: string[]) => void = () => {}
+  // A second start of this profile asks it to show itself, to open a window or a private session, and to open what it was given.
+  // The ask can arrive while this one is still starting, so it waits for it. A private session takes no lock, so no second start reaches it.
+  let opener: (request: LaunchRequest) => void = () => {}
   let markStarted: () => void = () => {}
-  const startedUp = new Promise<void>((resolve) => { markStarted = resolve })
-  const requested: string[][] = []
-  const queueLaunch = (urls: string[]): void => {
-    requested.push(urls)
+  let started = false
+  const startedUp = new Promise<void>((resolve) => { markStarted = () => { started = true; resolve() } })
+  const requested: LaunchRequest[] = []
+  const queueLaunch = (request: LaunchRequest): void => {
+    requested.push(started ? request : atStartup(request))
     void startedUp.then(() => { for (const waiting of requested.splice(0)) opener(waiting) })
   }
-  app.on('second-instance', (_event, argv) => { queueLaunch(urlsFromArgv(argv)) })
-  // macOS hands a clicked link to the running app as an event; it joins the same queue.
-  app.on('open-url', (event, url) => { handleOpenUrl(event, url, queueLaunch) })
+  // A private session nobody started from another browser removes its own directory once its process is gone: Chromium
+  // writes more as it quits, so a removal from inside would be undone. The sweep at a later start removes what is left.
+  const madeDir = runtime.madeDir
+  if (madeDir !== undefined) process.once('exit', () => { if (!removeAfterExit(madeDir, process.pid)) removePrivateDir(madeDir) })
+  if (!runtime.isPrivate) {
+    app.on('second-instance', (_event, argv, _workingDirectory, data) => { queueLaunch(readLaunchRequest(data, argv)) })
+    // macOS hands a clicked link to the running app as an event; it joins the same queue.
+    app.on('open-url', (event, url) => { handleOpenUrl(event, url, (urls) => { queueLaunch({ kind: 'open', urls }) }) })
+    // The app declares no document types, so a file handed to it (a drop on the dock icon) is not one to open.
+    app.on('open-file', (event) => { event.preventDefault(); console.error('[orivon] a file was handed to the browser; opening files is not supported') })
+  }
 
   // A private session ends with its last window on every platform: there is nothing to keep resident, and no window to bring back.
   app.on('window-all-closed', () => {
@@ -230,8 +242,12 @@ function boot (runtime: Runtime): void {
       app.once('will-quit', () => { runtime.profiles.clearRunning(runtime.profileId) })
       setTimeout(() => { sweepPrivateDirs(); runtime.profiles.sweepDeleted() }, SWEEP_DELAY_MS).unref()
     }
-    opener = (urls) => {
-      openUrlsOnSecondLaunch(shell.windows.focused(), urls, (options) => { createShellWindow(ctx, shell, options) })
+    opener = (request) => {
+      answerLaunch(request, shell.windows.focused(), {
+        create: (options) => { createShellWindow(ctx, shell, options) },
+        openPrivate: (urls) => shell.profiles.openPrivate(urls),
+        kiosk: shell.kiosk
+      })
     }
     // Marked started only once the first window exists, never before: a
     // second launch arriving in the gap while this one is still choosing its
@@ -255,8 +271,10 @@ function boot (runtime: Runtime): void {
       try {
         // Only this first window can open on the welcome screen: the macOS
         // 'activate' below recreates a window in a process that has already shown it.
+        // Only the default profile's own screen offers it, and a kiosk is no one's browser.
+        const offersDefault = runtime.profileId === 'default' && !shell.kiosk && canOfferDefault(defaultBrowserHost)
         const plan = firstWindowOptions({ services: shell, isPrivate: false, argv: process.argv, displays: screen.getAllDisplays(), openWindow: (options) => { createShellWindow(ctx, shell, options) } })
-        const firstWindow = createShellWindow(ctx, shell, { ...plan, intro: plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData')), firstOfLaunch: true })
+        const firstWindow = createShellWindow(ctx, shell, { ...plan, intro: plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData'), offersDefault), firstOfLaunch: true })
         const after = plan.after
         afterFirst = after === undefined ? undefined : () => { after(firstWindow) }
       } finally {
