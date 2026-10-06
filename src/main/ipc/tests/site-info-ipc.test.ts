@@ -43,7 +43,7 @@ function tabWithCookies (url = `${ORIGIN}/`): { tab: import('electron').WebConte
   return { tab, remove, flushStore }
 }
 
-const EMPTY_INFO: SiteInfo = { origin: ORIGIN, displayOrigin: ORIGIN, claimedName: undefined, asked: false, capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite: [] }
+const EMPTY_INFO: SiteInfo = { origin: ORIGIN, displayOrigin: ORIGIN, claimedName: undefined, homeDomain: undefined, update: undefined, asked: false, capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite: [] }
 
 function fakeController (overrides: Partial<SiteInfoController> = {}): SiteInfoController {
   return {
@@ -54,6 +54,7 @@ function fakeController (overrides: Partial<SiteInfoController> = {}): SiteInfoC
     turnOn: vi.fn(async () => 'ok' as const),
     turnOff: vi.fn(async () => {}),
     revokePickedPath: vi.fn(async () => {}),
+    applyUpdate: vi.fn(async () => ({ ok: true as const })),
     ...overrides
   }
 }
@@ -80,6 +81,74 @@ function register (
   )
   return { reloadActiveTab, openSiteSettings, openExtensions }
 }
+
+describe('registerSiteInfoIpc -- applyUpdate', () => {
+  it('takes the update for the popup\'s fixed origin, whatever origin the command names', async () => {
+    const controller = fakeController()
+    register(controller)
+
+    const result = await dispatch({ type: 'applyUpdate', cid: 'bafyexample', origin: 'https://evil.example' })
+
+    expect(controller.applyUpdate).toHaveBeenCalledWith(ORIGIN, 'bafyexample', undefined)
+    expect(result).toEqual({ ok: true })
+  })
+
+  it('asks in the tab in front, so the question is drawn where the person is looking', async () => {
+    const controller = fakeController()
+    const { tab } = tabWithCookies()
+    register(controller, { activeWebContents: () => tab })
+
+    await dispatch({ type: 'applyUpdate', cid: 'bafyexample' })
+
+    expect(controller.applyUpdate).toHaveBeenCalledWith(ORIGIN, 'bafyexample', expect.objectContaining({ contents: expect.any(Function), stillOn: expect.any(Function) }))
+  })
+
+  it('refuses a CID that is not a string, without reaching the controller', async () => {
+    const controller = fakeController()
+    register(controller)
+
+    for (const cid of [undefined, 7, null, { x: 1 }]) {
+      expect(await dispatch({ type: 'applyUpdate', cid })).toEqual({ ok: false, reason: 'no such offer' })
+    }
+    expect(controller.applyUpdate).not.toHaveBeenCalled()
+  })
+
+  it('refuses the command from a frame that is not the popup\'s own', async () => {
+    const controller = fakeController()
+    register(controller)
+
+    await dispatch({ type: 'applyUpdate', cid: 'bafyexample' }, OTHER_FRAME_URL)
+
+    expect(controller.applyUpdate).not.toHaveBeenCalled()
+  })
+})
+
+describe('registerSiteInfoIpc -- openHome', () => {
+  function registerWithHome (home: string | undefined): ReturnType<typeof vi.fn> {
+    const openHome = vi.fn()
+    const controller = fakeController({ siteInfoFor: vi.fn(async () => ({ ...EMPTY_INFO, homeDomain: home })) })
+    registerSiteInfoIpc(siteInfoWebContents, POPUP_URL, controller, ORIGIN, '/tmp/orivon-test-userdata', () => undefined, () => undefined, () => undefined, () => undefined, undefined, undefined, undefined, undefined, openHome)
+    return openHome
+  }
+
+  it('opens the domain the controller reports as home, and ignores any a command names', async () => {
+    const openHome = registerWithHome('app.eth')
+    await dispatch({ type: 'openHome', domain: 'evil.example' })
+    expect(openHome).toHaveBeenCalledExactlyOnceWith('app.eth')
+  })
+
+  it('does nothing when the manifest names no home', async () => {
+    const openHome = registerWithHome(undefined)
+    await dispatch({ type: 'openHome' })
+    expect(openHome).not.toHaveBeenCalled()
+  })
+
+  it('does nothing for a frame that is not the popup\'s own', async () => {
+    const openHome = registerWithHome('app.eth')
+    await dispatch({ type: 'openHome' }, OTHER_FRAME_URL)
+    expect(openHome).not.toHaveBeenCalled()
+  })
+})
 
 describe('registerSiteInfoIpc -- get / trust', () => {
   it('get calls siteInfoFor with the FIXED origin, never one read from the command', async () => {

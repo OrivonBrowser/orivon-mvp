@@ -1,5 +1,5 @@
 // Orivon as the computer's browser, in the running shell: a link handed over by another program opens in a tab of
-// the running window, Settings says whether Orivon is the default browser and never registers it from an unpackaged
+// the running window, Settings says whether Orivon is the default browser and never registers it from a source
 // run, a newer release is one click away, a page is shared as a copied link or an email, and a site becomes a
 // shortcut in a directory the test chose. The clipboard, the mail program and the default-browser
 // calls are replaced in the main process, so nothing reaches the machine. Set ORIVON_UI_SHOTS_DIR to also write
@@ -83,29 +83,24 @@ async function runToExit (args: string[], userData: string, timeoutMs = 20_000):
   })
 }
 
-interface Recorded { clipboard: string[], opened: string[], setDefault: string[], isDefault: string[], registered: boolean, accept: boolean }
+interface Recorded { clipboard: string[], opened: string[], setDefault: string[], isDefault: string[] }
 
 /** Replaces, in the main process, everything that would reach the machine, and records what was asked of it. */
 async function stubSystem (app: App): Promise<void> {
   await app.evaluate(({ app: electron, clipboard, shell }) => {
     const g = globalThis as unknown as { __os: Recorded }
-    g.__os = { clipboard: [], opened: [], setDefault: [], isDefault: [], registered: false, accept: true }
+    g.__os = { clipboard: [], opened: [], setDefault: [], isDefault: [] }
     clipboard.writeText = ((text: string) => { g.__os.clipboard.push(text) }) as typeof clipboard.writeText
     shell.openExternal = (async (url: string) => { g.__os.opened.push(url) }) as typeof shell.openExternal
     electron.setAsDefaultProtocolClient = ((protocol: string) => {
       g.__os.setDefault.push(protocol)
-      if (g.__os.accept) g.__os.registered = true
-      return g.__os.accept
+      return false
     }) as typeof electron.setAsDefaultProtocolClient
-    electron.isDefaultProtocolClient = ((protocol: string) => { g.__os.isDefault.push(protocol); return g.__os.registered }) as typeof electron.isDefaultProtocolClient
+    electron.isDefaultProtocolClient = ((protocol: string) => { g.__os.isDefault.push(protocol); return false }) as typeof electron.isDefaultProtocolClient
   })
 }
 
 const recorded = async (app: App): Promise<Recorded> => await app.evaluate(() => (globalThis as unknown as { __os: Recorded }).__os)
-
-async function setRecorded (app: App, change: Partial<Pick<Recorded, 'registered' | 'accept'>>): Promise<void> {
-  await app.evaluate((_electron, values) => { Object.assign((globalThis as unknown as { __os: Recorded }).__os, values) }, change)
-}
 
 async function runCommand (chrome: Page, id: string): Promise<void> {
   await chrome.evaluate((command) => { (window as unknown as { orivonShell: { runCommand: (id: string) => void } }).orivonShell.runCommand(command) }, id)
@@ -205,58 +200,85 @@ it('opens an address another program hands over as a tab of the running window, 
   }
 }, TEST_TIMEOUT_MS)
 
-it('says Orivon cannot be made the default browser from a run like this one, offers no button, and never calls the system', async () => {
+interface SeamRecording { isDefault: string[], setDefault: string[], opened: number, registered: boolean }
+
+/** What the test seam's recording host was asked: it stands in for the operating system (ORIVON_TEST_DEFAULT_BROWSER). */
+const seamRecording = async (app: App): Promise<SeamRecording> => await app.evaluate(() => (globalThis as unknown as { __orivonDevDefaultBrowser: SeamRecording }).__orivonDevDefaultBrowser)
+
+it('says why Orivon cannot be made the default browser from a run like this one, offers no button, and never calls the system', async () => {
   const { app, chrome } = await launched()
   try {
     await stubSystem(app)
-    const page = await openSettings(app, chrome, '/about')
+    const page = await openSettings(app, chrome, '/default-browser')
+    expect(await page.locator('.nav-list').innerText()).toContain('Default browser')
     const row = page.locator('#row-default-browser')
     await row.waitFor()
     expect(await row.locator('.row-label').textContent()).toBe('Default browser')
-    expect(await row.locator('.row-control').textContent()).toContain('Available when Orivon is installed from the .deb package.')
+    expect(await row.locator('.row-control').textContent()).toContain('Not available while Orivon runs from its source folder.')
     expect(await row.locator('button').count()).toBe(0)
     await delay(ABSENCE_SETTLE_MS)
     const calls = await recorded(app)
     expect(calls.setDefault).toEqual([])
     expect(calls.isDefault).toEqual([])
-    await shoot(app, page, 'about-default-unavailable')
+    await shoot(app, page, 'default-browser-unavailable')
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
   }
 }, TEST_TIMEOUT_MS)
 
-it('registers for both web protocols when the build is packaged, and says plainly when the system declines', async () => {
-  const { app, chrome } = await launched()
+it('registers for both web protocols when the build is installed, and says plainly when the system declines', async () => {
+  const { app, chrome } = await launched({ env: { ORIVON_TEST_DEFAULT_BROWSER: 'can-set' } })
   try {
-    await stubSystem(app)
-    // Only a packaged build may register, so this run pretends to be one. The calls it makes are the stubs above.
-    await app.evaluate(({ app: electron }) => { Object.defineProperty(electron, 'isPackaged', { value: true, configurable: true }) })
-    const page = await openSettings(app, chrome, '/about')
+    const page = await openSettings(app, chrome, '/default-browser')
     const row = page.locator('#row-default-browser')
     const button = row.getByRole('button', { name: 'Make default' })
     await button.waitFor()
-    await shoot(app, page, 'about-default-can-set')
+    await shoot(app, page, 'default-browser-can-set')
     await button.click()
     expect(await waitFor(async () => (await row.locator('.row-control').textContent())?.includes('Orivon is your default browser.') === true, 10_000)).toBe(true)
     expect(await row.locator('button').count()).toBe(0)
-    expect((await recorded(app)).setDefault).toEqual(['http', 'https'])
-    await shoot(app, page, 'about-default-done')
+    expect((await seamRecording(app)).setDefault).toEqual(['http', 'https'])
+    await shoot(app, page, 'default-browser-done')
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
 
-    await setRecorded(app, { registered: false, accept: false })
-    await page.reload()
-    const again = page.locator('#row-default-browser').getByRole('button', { name: 'Make default' })
-    await again.waitFor()
-    await again.click()
+it('says the system did not accept the change, and gives the command to do it by hand', async () => {
+  const { app, chrome } = await launched({ env: { ORIVON_TEST_DEFAULT_BROWSER: 'declined' } })
+  try {
+    const page = await openSettings(app, chrome, '/default-browser')
+    const button = page.locator('#row-default-browser').getByRole('button', { name: 'Make default' })
+    await button.waitFor()
+    await button.click()
     const problem = page.locator('#row-default-browser .problem')
     await problem.waitFor({ timeout: 10_000 })
     expect(await problem.textContent()).toBe('Your system did not accept the change.')
     // The command to do it by hand sits on the label's side of the row, with a button that copies it.
-    expect(await page.locator('#row-default-browser .command-line code').textContent()).toBe('xdg-settings set default-web-browser orivon.desktop')
+    expect(await page.locator('#row-default-browser .command-line code').textContent()).toBe('xdg-mime default orivon.desktop x-scheme-handler/http x-scheme-handler/https')
     expect(await page.locator('#row-default-browser .command-line button').textContent()).toBe('Copy')
     expect(await page.locator('#row-default-browser').getByRole('button', { name: 'Make default' }).isEnabled()).toBe(true)
-    await shoot(app, page, 'about-default-declined')
+    expect((await seamRecording(app)).setDefault).toEqual(['http', 'https'])
+    await shoot(app, page, 'default-browser-declined')
     expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('reads the answer again when the person comes back to the page', async () => {
+  const { app, chrome } = await launched({ env: { ORIVON_TEST_DEFAULT_BROWSER: 'can-set' } })
+  try {
+    const page = await openSettings(app, chrome, '/default-browser')
+    const row = page.locator('#row-default-browser')
+    await row.getByRole('button', { name: 'Make default' }).waitFor()
+    // The person chose Orivon in the system's own settings while the page was in the background.
+    await app.evaluate(() => { (globalThis as unknown as { __orivonDevDefaultBrowser: SeamRecording }).__orivonDevDefaultBrowser.registered = true })
+    await page.evaluate(() => { document.dispatchEvent(new Event('visibilitychange')) })
+    expect(await waitFor(async () => (await row.locator('.row-control').textContent())?.includes('Orivon is your default browser.') === true, 10_000)).toBe(true)
+    expect((await seamRecording(app)).setDefault).toEqual([])
   } finally {
     await closeElectron(app)
   }
@@ -500,6 +522,7 @@ it('leaves a private window out of it: no default-browser row, no shortcut, and 
     const page = await openSettings(app, chrome, '/about')
     await page.waitForSelector('#row-about-version')
     expect(await page.locator('#row-default-browser').count()).toBe(0)
+    expect(await page.locator('.nav-list').innerText()).not.toContain('Default browser')
     expect((await recorded(app)).setDefault).toEqual([])
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {

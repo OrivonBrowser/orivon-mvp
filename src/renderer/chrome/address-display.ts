@@ -3,8 +3,12 @@ import type { ShellState } from '../../main/shell/tabs.js'
 import { h } from '../pages/shared/dom.js'
 import { warningIcon } from '../pages/shared/icons.js'
 import { formatAddress } from './address-format.js'
+import { createAddressSelect } from './address-select.js'
 import type { ChromeContext, ChromeModule } from './context.js'
 import { must } from './context.js'
+
+/** How far a press may travel and still be a click. */
+const DRAG_PX = 5
 
 const INSECURE_TITLE = 'This site does not use a secure connection. Do not enter passwords or card numbers.'
 
@@ -66,17 +70,34 @@ export function createAddressDisplay (): ChromeModule {
         input.select()
       })
 
-      // The first press on the unfocused bar selects the whole address; a second places the caret.
-      let pressedWhileBlurred = false
-      input.addEventListener('mousedown', () => { pressedWhileBlurred = document.activeElement !== input })
+      // The first press on the bar selects the whole address and a second places the caret; Tab and the shortcuts select
+      // too. A window refocus is not an entry: it keeps the caret where it was (address-select.ts).
+      const entry = createAddressSelect()
+      input.addEventListener('blur', () => { entry.blur(document.activeElement === input) })
+      let pressedAt = { x: 0, y: 0 }
+      let pressedBlurred = false
+      input.addEventListener('mousedown', (event) => {
+        pressedAt = { x: event.clientX, y: event.clientY }
+        pressedBlurred = document.activeElement !== input
+        entry.pointerDown(!pressedBlurred)
+      })
       input.addEventListener('mouseup', (event) => {
-        if (!pressedWhileBlurred) return
-        pressedWhileBlurred = false
+        // The field keeps its old selection while unfocused, so a click and a drag are told apart by the pointer's travel.
+        const dragged = Math.hypot(event.clientX - pressedAt.x, event.clientY - pressedAt.y) > DRAG_PX
+        if (!entry.pointerUp(dragged)) return
         event.preventDefault()
         input.select()
       })
-      // Tab and the shortcuts arrive with no press: they select too.
-      input.addEventListener('focus', () => { if (!pressedWhileBlurred) input.select() })
+      input.addEventListener('focus', () => {
+        if (entry.focus()) input.select()
+        // The field holds its last selection while unfocused, and a press inside it would drag that text rather than select: the focus a press gives comes first, so the selection is cleared there.
+        else if (pressedBlurred) input.setSelectionRange(input.value.length, input.value.length)
+        pressedBlurred = false
+      })
+      input.addEventListener('keydown', () => { entry.keyDown() })
+      // Ctrl+L and a paste from the context menu reach the field with no key press in it.
+      input.addEventListener('select', () => { entry.entered() })
+      input.addEventListener('input', () => { entry.entered() })
       // Escape gives the page's address back, hands the bar to the display and the keyboard to the page. A key another
       // feature already used (closing a list under the bar), or one an input method is composing with, is not a request to leave.
       input.addEventListener('keydown', (event) => {

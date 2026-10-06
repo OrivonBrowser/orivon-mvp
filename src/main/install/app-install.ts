@@ -11,6 +11,7 @@
 
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { patternSetFromGrants } from '../../broker/policy/update.js'
+import type { Broker } from '../../broker/broker-contracts.js'
 import type { LoadContext, LoadResult } from '../../loader/index.js'
 import { withOriginQueue } from './origin-queue.js'
 import { driveLoadResult } from '../consent/update-outcomes.js'
@@ -56,7 +57,7 @@ export type AppInstallDeps = UpdateOutcomeDeps
  * two tabs hitting the same manifest hint near-simultaneously -- never
  * interleave their `Loader.load()` calls into a corrupted on-disk state.
  */
-export async function installFromHint (deps: AppInstallDeps, hintingOrigin: string, hintedUrl: string, caller?: DialogCaller): Promise<LoadResult> {
+export async function installFromHint (deps: AppInstallDeps, hintingOrigin: string, hintedUrl: string, caller?: DialogCaller, fresh = false): Promise<LoadResult> {
   const origin = originFromUrl(hintedUrl)
   if (origin === null) return { outcome: 'rejected', reason: `hintedUrl is not a valid app origin: ${hintedUrl}` }
   if (hintingOrigin !== origin) {
@@ -67,21 +68,8 @@ export async function installFromHint (deps: AppInstallDeps, hintingOrigin: stri
     // Read before anything below can register the origin: serving
     // registration (the loader's onInstalled) and registerApp both do.
     const wasRegistered = deps.broker.app.isRegisteredSync(origin)
-    const [grants, versionFloor, acknowledgedRollbackVersion, declinedCapabilities] = await Promise.all([
-      deps.broker.app.grants(origin),
-      deps.broker.versionFloorFor(origin),
-      deps.broker.rollbackAcknowledgedVersionFor(origin),
-      // The site-info popover's own "off" switch (../permissions/site-
-      // switches.js): the SAME advisory record install-consent declines
-      // already write to (../consent/request-grant.js's addDeclinedCapability),
-      // so this needs no new bookkeeping -- see LoadContext.declinedCapabilities'
-      // own doc for what Loader.load() does with it.
-      deps.broker.declinedCapabilitiesFor(origin)
-    ])
-
-    const hasPersistedGrants = deps.broker.app.persistedAppsSync().some((app) => app.origin === origin && Object.keys(app.grants).length > 0)
-    const context: LoadContext = { grantedPatterns: patternSetFromGrants(grants), versionFloor, acknowledgedRollbackVersion, declinedCapabilities, hasPersistedGrants }
-    const result = await deps.loader.load(hintedUrl, context)
+    const context = await loadContextFor(deps.broker, origin)
+    const result = fresh ? await deps.loader.load(hintedUrl, context, { recheck: true }) : await deps.loader.load(hintedUrl, context)
     // S4-5: registerApp/consent for an accepted install, and driving each
     // of the other four outcomes to a decision, all live in
     // driveLoadResult -- see ./update-outcomes.ts's own header.
@@ -89,4 +77,21 @@ export async function installFromHint (deps: AppInstallDeps, hintingOrigin: stri
     if (driven.outcome !== 'installed' || wasRegistered || !deps.broker.app.isRegisteredSync(origin)) return driven
     return { ...driven, newlyRegistered: true }
   })
+}
+
+/** What `Loader.load()` needs from the broker for `origin`: its grants, floor, acknowledged rollback and switched-off capabilities. */
+export async function loadContextFor (broker: Broker, origin: string): Promise<LoadContext> {
+  const [grants, versionFloor, acknowledgedRollbackVersion, declinedCapabilities] = await Promise.all([
+    broker.app.grants(origin),
+    broker.versionFloorFor(origin),
+    broker.rollbackAcknowledgedVersionFor(origin),
+    // The site-info popover's own "off" switch (../permissions/site-
+    // switches.js): the SAME advisory record install-consent declines
+    // already write to (../consent/request-grant.js's addDeclinedCapability),
+    // so this needs no new bookkeeping -- see LoadContext.declinedCapabilities'
+    // own doc for what Loader.load() does with it.
+    broker.declinedCapabilitiesFor(origin)
+  ])
+  const hasPersistedGrants = broker.app.persistedAppsSync().some((app) => app.origin === origin && Object.keys(app.grants).length > 0)
+  return { grantedPatterns: patternSetFromGrants(grants), versionFloor, acknowledgedRollbackVersion, declinedCapabilities, hasPersistedGrants }
 }

@@ -58,6 +58,11 @@ function fakeLoader (overrides: Partial<Loader> = {}): Loader {
     reconsider: async () => { throw new Error('not stubbed') },
     pinFor: async () => null,
     ddocFor: async () => undefined,
+    applyUpdate: async () => ({ outcome: 'rejected', reason: 'unused' }),
+    quietOffers: async () => ({ quiet: [] }),
+    keepQuiet: async () => {},
+    manifestFor: async () => undefined,
+    manifestAt: async () => ({ kind: 'website' }),
     ...overrides
   }
 }
@@ -249,6 +254,22 @@ describe('createSiteInfoController -- siteTrustFor', () => {
     expect(judged?.judged.status).toBe('judged')
     expect(unchecked?.displayedLevel).toBe(1)
     expect(unchecked?.judged.status).toBe('not-assessable')
+  })
+
+  it('shows a provider\'s Level 4 only at the domain the live manifest names', async () => {
+    const CID = 'bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi'
+    const sourcesFor = (): SiteTrustSources => ({
+      ...NO_TRUST,
+      nameEvidenceFor: async () => ({ content: { source: 'live', cid: CID, pointersVerified: true }, nameProven: true, line: 'n', rows: [] }),
+      providerVerdictFor: async (id) => ({ status: 'judged', provider: { name: 'P', address: 'x' }, evaluation: { id: id ?? '', name: 'App', version: undefined, evaluated: '2026-10-05', trustlessity: { level: 4, privacy: true }, summary: undefined, operations: [], connections: [], evidence: [] } })
+    })
+    const loader = fakeLoader({ manifestAt: async () => ({ kind: 'app', manifest: { ...manifestWith({}), domain: 'app.eth' }, bytes: new Uint8Array() }) })
+    const controller = createSiteInfoController(ctxWith(createBroker(baseDeps()), loader), sourcesFor())
+
+    expect((await controller.siteTrustFor('https://app.eth'))?.displayedLevel).toBe(4)
+    const evil = await controller.siteTrustFor('https://evil.eth')
+    expect(evil?.displayedLevel).toBe(2)
+    expect(evil).toMatchObject({ binding: 'other-home', homeDomain: 'app.eth', judgedElsewhere: true })
   })
 
   it('never asks the local-DDOC source for a pinned origin: its pin is compared instead', async () => {

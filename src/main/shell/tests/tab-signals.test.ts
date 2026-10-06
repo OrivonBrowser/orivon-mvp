@@ -172,7 +172,7 @@ describe('TabManager and the tab signals', () => {
   })
 
   it('gives view-level code the shell\'s services and a way to run a command on the window', () => {
-    const services = { settings: {} }
+    const services = { settings: { get: () => false } }
     const runCommand = vi.fn()
     const manager = newManager({ window: {}, htmlFullscreenChanged: vi.fn(), services, runCommand })
     const id = manager.createTab('https://a.example/')

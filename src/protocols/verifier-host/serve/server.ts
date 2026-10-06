@@ -142,7 +142,11 @@ function pathOf (target: string | undefined, host: string): URL | undefined {
   }
 }
 
-function sendError (res: ServerResponse, shown: string, error: unknown): void {
+/**
+ * `servedRoot` is set only for a failure reached after the name resolved to a root: a 404 that
+ * carries it says that root has no such path, where one without it may say the name has no content.
+ */
+function sendError (res: ServerResponse, shown: string, error: unknown, servedRoot?: string): void {
   const failure = error instanceof ResolutionError ? error.failure : 'unavailable'
   const detail = error instanceof Error ? error.message : String(error)
   const { status, html } = renderErrorPage(failure, shown, detail)
@@ -153,6 +157,7 @@ function sendError (res: ServerResponse, shown: string, error: unknown): void {
     'x-content-type-options': 'nosniff'
   }
   if (failure === 'not-synced') headers['retry-after'] = '10'
+  if (servedRoot !== undefined) headers[CONTENT_ROOT_HEADER] = servedRoot
   res.writeHead(status, headers).end(html)
 }
 
@@ -298,7 +303,7 @@ async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMe
   const left = new AbortController()
   res.once('close', () => { left.abort(new Error('the client went away')) })
   let file: GatheredFile
-  let root: string
+  let root: string | undefined
   const partition = partitionOf(req, host)
   try {
     const { site } = await sites.get(host, partition)
@@ -346,7 +351,7 @@ async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMe
     await sendBody(res, status, headers, file, length, budget, partition, bufferedResponseDeadlineMs, typeof expected === 'string')
   } catch (error) {
     if (res.headersSent) res.destroy()
-    else sendError(res, shown, error)
+    else sendError(res, shown, error, root)
   }
 }
 

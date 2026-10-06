@@ -52,3 +52,16 @@ describe('holdForVerifier', () => {
     expect(ready).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('verifierServesName', () => {
+  it('is false until something provides servesName, and then asks it', async () => {
+    vi.resetModules()
+    const fresh = await import('../verifier-access.js')
+    expect(fresh.verifierServesName('vitalik.eth')).toBe(false)
+    fresh.provideVerifierAccess({ start: () => {}, ready: async () => {} })
+    expect(fresh.verifierServesName('vitalik.eth')).toBe(false)
+    fresh.provideVerifierAccess({ start: () => {}, ready: async () => {}, servesName: (name) => name === 'vitalik.eth' })
+    expect(fresh.verifierServesName('vitalik.eth')).toBe(true)
+    expect(fresh.verifierServesName('other.eth')).toBe(false)
+  })
+})

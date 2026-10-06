@@ -8,8 +8,9 @@ describe('SHELL_INSTALLERS', () => {
     const names = SHELL_INSTALLERS.map((installer) => installer.name)
     expect(new Set(names).size).toBe(names.length)
     expect(names).toEqual([
-      'auth', 'autofill', 'choosers', 'content-settings', 'display-capture', 'display-capture-ui', 'focus', 'form-watch', 'load-errors',
-      'media-grants', 'memory-saver', 'privacy-net', 'questions', 'reader', 'side-panel', 'site-permissions', 'tab-groups', 'tab-slots', 'tab-visibility'
+      'auth', 'autofill', 'choosers', 'content-settings', 'default-browser-ask', 'display-capture', 'display-capture-ui', 'eth-gateway-redirect',
+      'focus', 'form-watch', 'launcher-menu', 'load-errors', 'media-grants', 'memory-saver', 'privacy-net', 'questions', 'reader', 'side-panel',
+      'site-permissions', 'tab-groups', 'tab-slots', 'tab-visibility'
     ])
   })
 

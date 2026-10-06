@@ -13,6 +13,7 @@ import { createBaseManifestCache, setBaseManifestSource } from '../base-manifest
 import { readBaseManifestText } from '../effective-manifest-runner.js'
 import { getCachedStrippedPermissions, slotDirForLoadedExtension } from '../extensions-dnr.js'
 import { parentOf } from '../extension-popup-policy.js'
+import { sidePanelWindowOf } from '../side-panel-pages.js'
 import { installPermissionCheck, type PermissionHeld } from '../extension-permission-check.js'
 import type { ExtensionPrefsStore } from '../extension-prefs.js'
 import { installExtensionApis } from './api-context.js'
@@ -59,7 +60,7 @@ export function installApis (options: InstallApisOptions): PermissionHeld {
       return origin !== null && ctx.broker?.app.hasGrantsSync(origin) === true
     },
     webContentsFromId: (id) => webContents.fromId(id),
-    popupParent: parentOf
+    popupParent: (contents) => parentOf(contents) ?? sidePanelWindowOf(contents)
   }, EXTENSION_APIS)
   return held
 }

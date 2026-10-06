@@ -32,7 +32,7 @@ rather than editing here.
 | [`media-grants/`](media-grants/) | A registered app's camera, microphone and screen: the grants the display gate reads, and the asker that answers the permission gate from them | in memory only: a refusal until the page loads again | the installer only |
 | [`passwords/`](passwords/) | The saved-login store, its Settings domain and the form watcher that feeds it | yes: `passwords.json` | the installer and the runner only |
 | [`auth/`](auth/) | The sign-in sheets an HTTP server asks for and the certificates a connection shows | in memory only: pending challenges, the certificates connections presented | the installer, the clipboard write and the tab navigation count |
-| [`os/`](os/) | What the operating system is told about Orivon: links from other programs, the default-browser registration, shortcuts, sharing | no | the runners only |
+| [`os/`](os/) | What the operating system is told about Orivon: links from other programs, the default-browser registration and its weekly ask, launcher menus, shortcuts, sharing | `default-browser-ask.json` in the default profile | the runners, `install-launcher-menu.ts`, `install-default-browser-ask.ts` and `windows-taskbar-real.ts` |
 | [`autofill/`](autofill/) | Saved postal addresses and the chooser that fills a form from them; this build has only an empty installer | no | the installer only |
 | [`devices/`](devices/) | The choosers for a screen to share and for a USB or HID device; this build has only an empty installer | no | the installer only |
 | [`devtools/`](devtools/) | When developer tools may open on a page, and the question before they open on an app | which tools are open | `devtools-prompt.ts` only |

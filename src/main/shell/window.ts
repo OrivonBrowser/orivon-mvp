@@ -29,7 +29,7 @@ import { pasteAndGo } from './paste-and-go.js'
 import { sendChromeEvent } from './shell-events.js'
 import type { ShellWindowOptions } from './window-options.js'
 import { runWindowHooks } from './window-hooks.js'
-import { showIntro } from './intro-view.js'
+import { introCovers, showIntro } from './intro-view.js'
 import { createWindowFrame, showWhenReady, windowBackgroundColor } from './window-frame.js'
 import { recordViewBackground } from './view-background-test-hook.js'
 import { onThemeUpdated } from './theme-colors.js'
@@ -190,7 +190,9 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
       return contents
     },
     services,
-    runCommand: (id) => { services.commands.run(id, entry) }
+    runCommand: (id) => { services.commands.run(id, entry) },
+    coveredByIntro: () => introCovers(win),
+    focusChrome: () => { if (!chrome.webContents.isDestroyed() && !chrome.webContents.isFocused()) chrome.webContents.focus() }
   })
   // Read by an overlay's handler when it is first used, which is after `entry` exists.
   const overlays = createOverlayHost({
@@ -283,7 +285,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   if (first === undefined) tabs.createTab()
   else first(tabs)
   // After the first tab, so the view stacks above it.
-  if (intro !== undefined) showIntro(win, tabs, intro)
+  if (intro !== undefined) showIntro(win, tabs, intro, () => { services.commands.run('nav.focusAddress', entry) })
   runWindowHooks('opened', context, options)
 
   showWhenReady(frame, { firstOfLaunch, instant, maximized, inactive, onShown: shown })

@@ -2,12 +2,13 @@
 // muted groups it falls under. Kept here, apart from main.ts's rendering and
 // sections/index.ts's ordering, so a new section only has to be added to one
 // list of icons and one map of groups, not worked into the drawing code.
-import { accessibilityIcon, appearanceIcon, appsIcon, developerIcon, downloadIcon, fileIcon, gaugeIcon, homeIcon, infoIcon, keyboardIcon, keyIcon, mapPinIcon, privacyIcon, profilesIcon, searchGlassIcon, slidersIcon, tabsIcon, webIcon } from '../shared/icons.js'
+import { accessibilityIcon, appearanceIcon, appsIcon, compassIcon, developerIcon, downloadIcon, fileIcon, gaugeIcon, homeIcon, infoIcon, keyboardIcon, keyIcon, mapPinIcon, privacyIcon, profilesIcon, searchGlassIcon, slidersIcon, tabsIcon, webIcon } from '../shared/icons.js'
 import type { Section } from './model.js'
 
 export const NAV_ICON: Readonly<Record<string, () => SVGSVGElement>> = {
   appearance: appearanceIcon,
   search: searchGlassIcon,
+  'default-browser': compassIcon,
   startup: homeIcon,
   content: fileIcon,
   accessibility: accessibilityIcon,
@@ -33,6 +34,7 @@ export const NAV_ICON: Readonly<Record<string, () => SVGSVGElement>> = {
 const NAV_GROUP: Readonly<Record<string, string>> = {
   appearance: 'Browsing',
   search: 'Browsing',
+  'default-browser': 'Browsing',
   startup: 'Browsing',
   content: 'Browsing',
   accessibility: 'Browsing',

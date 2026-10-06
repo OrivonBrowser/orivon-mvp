@@ -59,3 +59,14 @@ export function verifierStartDelayMs (): number {
   const delay = Number(process.env['ORIVON_TEST_VERIFIER_START_DELAY_MS'])
   return Number.isFinite(delay) && delay > 0 ? delay : 0
 }
+
+/** The interval a suite asked for between looks at the apps open in tabs, or undefined for the ordinary one. */
+export function parseUpdateWatchMs (env: Readonly<Record<string, string | undefined>>): number | undefined {
+  const every = Number(env['ORIVON_TEST_UPDATE_WATCH_MS'])
+  return Number.isFinite(every) && every >= 100 ? every : undefined
+}
+
+/** Test builds only: how often the apps open in tabs are looked at again; undefined in an ordinary build. */
+export function updateWatchMs (): number | undefined {
+  return SEAM_ENABLED ? parseUpdateWatchMs(process.env) : undefined
+}

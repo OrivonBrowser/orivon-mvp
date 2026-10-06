@@ -10,11 +10,13 @@
 // Run: npm run qa:visual      First run on a machine records baselines;
 //      ORIVON_QA_UPDATE_BASELINES=1 re-records after an intended change.
 
+import { writeFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { runCommand } from '../support/auth-support.js'
+import { focusWebContents, underVirtualDisplay } from '../support/focus-helpers.js'
 import { clickAddressBarRetrying, runPhase } from '../support/e2e-helpers.js'
 import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
 import { answerQuestion, noNativeDialogs, readQuestion, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
@@ -219,6 +221,71 @@ for (const scheme of SCHEMES) {
           expected: 'The welcome screen fills the whole window: headline "The browser Web3 deserves.", an "Enter Orivon" button, nothing of the toolbar or dashboard showing through.',
           action: 'Launched a fresh profile with the welcome screen enabled.'
         })
+      })
+    } finally {
+      await closeElectron(app)
+    }
+  }, QA_TEST_TIMEOUT_MS)
+
+  it(`Settings > Default browser and the welcome screen's offer look right (${scheme})`, async () => {
+    const { app, chrome } = await launchShell({ scheme, env: { ORIVON_INTRO: 'once', ORIVON_TEST_DEFAULT_BROWSER: 'can-set' } })
+    try {
+      await runPhase('visual states of the default-browser surfaces', async (check) => {
+        expect(await waitFor(() => app.windows().some((w) => w.url().includes('/intro/index.html')))).toBe(true)
+        const intro = app.windows().find((w) => w.url().includes('/intro/index.html')) as Page
+        await intro.waitForLoadState('load')
+        await intro.waitForSelector('#default-offer:not([hidden])')
+        // The offer fades in after the headline: wait until it has finished, so the picture shows it whole.
+        expect(await waitFor(async () => Number(await intro.locator('#default-offer').evaluate((el) => getComputedStyle(el).opacity)) === 1)).toBe(true)
+        check('the welcome screen offers the default-browser box unticked', !(await intro.locator('#make-default').isChecked()))
+        await state(check, app, `welcome-default-offer-${scheme}`, {
+          expected: 'The welcome screen fills the window as before and, under the "Enter Orivon" button and its note, a small unticked checkbox with the label "Make Orivon my default browser" in readable light text; nothing overlaps the button or is cut at the window edge.',
+          action: 'Launched a fresh profile with the welcome screen enabled on a build that can register as the default browser.'
+        })
+        await intro.click('#enter')
+        expect(await waitFor(() => !app.windows().some((w) => w.url().includes('/intro/index.html')))).toBe(true)
+
+        const settings = await openInternal(app, chrome, 'settings', '/default-browser')
+        await settings.waitForSelector('#row-default-browser button')
+        check('Settings > Default browser has the section in the navigation and a Make default button', (await settings.locator('.nav-list').innerText()).includes('Default browser') && await settings.getByRole('button', { name: 'Make default' }).isVisible())
+        await state(check, app, `settings-default-browser-${scheme}`, {
+          expected: 'orivon://settings/default-browser is open with "Default browser" selected in the navigation, directly under Search. The section has a short intro line and one row labelled "Default browser" with the help text "Links you click in other programs open in Orivon." and a "Make default" button on its right.',
+          action: 'Opened orivon://settings/default-browser on a build that can register as the default browser.'
+        })
+      })
+    } finally {
+      await closeElectron(app)
+    }
+  }, QA_TEST_TIMEOUT_MS)
+
+  it.skipIf(!underVirtualDisplay())(`the weekly default-browser ask is drawn like every other question (${scheme})`, async () => {
+    const day = 86_400_000
+    const { app, chrome } = await launchShell({
+      scheme,
+      env: { ORIVON_TEST_DEFAULT_BROWSER: 'can-set' },
+      seedProfile: (dir: string) => { writeFileSync(join(dir, 'default-browser-ask.json'), JSON.stringify({ firstSeenAt: Date.now() - 20 * day, lastAskedAt: Date.now() - 9 * day, stopped: false })) }
+    })
+    try {
+      await runPhase('visual state of the default-browser ask', async (check) => {
+        expect(await waitFor(() => dashboardOf(app) !== undefined)).toBe(true)
+        await stubNativeDialogs(app)
+        await prepareWindow(app)
+        await visit(app, chrome, `${server.origin}/`)
+        await focusWebContents(app, `${server.origin}/`)
+        await app.evaluate(() => { void (globalThis as unknown as { __orivonDevDefaultBrowserAskNow?: () => Promise<void> }).__orivonDevDefaultBrowserAskNow?.() })
+        const panel = await waitQuestion(app)
+        await panel.waitForSelector('.q:not(.arming)')
+        const said = await readQuestion(panel)
+        check('the ask has three buttons, the way out first', said.buttons.join('|') === 'Not now|Make default|Don\'t ask again', JSON.stringify(said))
+        const fit = await panelFits(panel)
+        check('the ask card sits inside its view, uncut and unscrolled', fit.fits, fit.detail)
+        await state(check, app, `default-browser-ask-${scheme}`, {
+          expected: 'A question panel floats over the page, directly under the address pill: the title "Make Orivon your default browser?", the message "Links you click in other programs will open in Orivon.", and three readable buttons in a row, Not now, Make default (the filled one) and Don\'t ask again. Text and buttons are fully inside the panel, nothing is cut, and the page and toolbar stay visible around it.',
+          action: 'Seeded a profile first seen 20 days ago and last asked 9 days ago, focused a fixture page and ran the weekly check.',
+          ignore: [FIXTURE_ADDRESS]
+        })
+        await answerQuestion(app, 'Not now')
+        check('no native message box was opened', (await noNativeDialogs(app)).length === 0)
       })
     } finally {
       await closeElectron(app)

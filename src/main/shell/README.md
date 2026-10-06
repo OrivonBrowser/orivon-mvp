@@ -7,13 +7,13 @@ window holding it. `window-frame.ts` is the native window itself and `window-opt
 opens. `window.ts` is the composition; its parts are `window-layout.ts` (where the chrome and the page
 area sit: the one place a page area is computed), `window-state.ts` (the `ShellState` push, and which
 overlays a tab switch or a navigation dismisses), `window-panels.ts` (the permissions and site-info
-popovers) and `shell-state-parts.ts` (the `ShellState` fields a feature adds). `window-context.ts` is
+popovers, and the extension popup's panel for the overlay host) and `shell-state-parts.ts` (the `ShellState` fields a feature adds; `state/update-offered.ts` is the one that lights the key icon's dot while the page in front has an update offer, and `pre-partition.ts` stops a link or redirect into a cache-served address before it commits so the pinned files answer, `ADR-0056`). `window-context.ts` is
 the `{ window, services }` pair a hook or an overlay handler receives.
 `tabs.ts` owns the tab collection, with `tab-state.ts` (the state a tab reports, plus what each
 `TAB_SIGNALS` entry adds), `tab-navigation.ts`, `tab-open.ts` (every way a tab is created) and
 `tab-panes.ts` (which views show where) as its parts; `tab-view.ts`, `tab-partition.ts`,
 `app-tab-watch.ts`, `tab-signals.ts`, `tab-types.ts`, `tab-factory.ts`, `tab-lifecycle.ts` and
-`tab-parking.ts` are the per-tab view. `tab-origin-liveness.ts` is `tab-view.ts`'s own per-origin
+`tab-parking.ts` are the per-tab view; `load-in-tab.ts` is the one test that opens an address in the tab's own view or in a view of the session it needs, shared by the address bar and a link followed inside a tab. `eth-gateway-redirect.ts` opens an ENS gateway address (`<name>.eth.limo`, `<name>.eth.link`) as the `.eth` name it stands for: the web-request handler, which shares the rule in `eth-gateway-rule.ts` (`gatewayRedirectFor`, `gatewayEntries`; no `electron`) with the tab hooks below. `tab-origin-liveness.ts` is `tab-view.ts`'s own per-origin
 live-document counter. `tab-order.ts` is where a tab sits in the strip, `tab-move.ts` moves one between windows keeping the
 same page (and is where a dragged tab's cross-window target -- which window's strip, and where in it -- is
 worked out from the tab centres `strip-centres.ts` reads off the target window's chrome page, shared by the actual move and by `tear-drag.ts`'s own mark), `tab-menu.ts` is its right-click
@@ -23,7 +23,7 @@ menu (and `context-menu.ts` the menu a page gets: `page-menu-items.ts` is where 
 whichever window's strip it is dragged over. Where a window cannot read the screen (a native Wayland session, `local-pointer.ts`) the browser's own drag and drop carries the tab instead: `native-tab-drag.ts` holds the drag in progress, `native-drag-plan.ts` is the pure rule for what a drop does, and `drop-catcher.ts` is the transparent view over a window's page while the drag lasts. Split view: `split-model.ts` is the arithmetic and the groups
 of joined tabs, `split-controller.ts` plans which views show where, `pane-host.ts` puts them on screen in
 that order, `split-frame.ts` is the view behind two panes, and `split-drop.ts` says where a dragged tab
-would split the page. `intro-state.ts` and `intro-view.ts` are the welcome screen. `shell-installers.ts` runs each feature directory's installer at start, and `sheet-backdrop.ts` paints the shell's own surface colour behind a sheet that sits over a tab with no background of its own. `tab-backing.ts` picks a view's pre-paint colour when a navigation starts, and `window-backing.ts` keeps the window behind the views in the colour of the tab shown.
+would split the page. `intro-state.ts` and `intro-view.ts` are the welcome screen, and `new-tab-focus.ts` is where the keyboard goes after a new tab opens in front: the address bar, never the tab's own page (a window that lacks the OS focus is left alone, and so is one the welcome screen covers). `shell-installers.ts` runs each feature directory's installer at start, and `sheet-backdrop.ts` paints the shell's own surface colour behind a sheet that sits over a tab with no background of its own. `tab-backing.ts` picks a view's pre-paint colour when a navigation starts, and `window-backing.ts` keeps the window behind the views in the colour of the tab shown.
 `first-window.ts` decides what a cold start opens (the window's last place, the addresses on the command line, a kiosk's page) and `home.ts` is what Home opens.
 The rest answer what a page asks of its window: popups become tabs, HTML fullscreen, the
 few-second exclusive-access notices, the `beforeunload` Leave/Stay question, the external-link
@@ -77,15 +77,15 @@ test-hook.ts` is the e2e-only record of what each was actually set to.
 `grants/origin-hash.ts`, `broker-contracts.ts` types);
 [`../../loader/electron/serve.ts`](../../loader/electron/serve.ts);
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts); and, inside `src/main/`,
-[`../browsing/`](../browsing/), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/),
+[`../browsing/`](../browsing/), [`../extensions/extension-popup-host.ts`](../extensions/extension-popup-host.ts) (`window-panels.ts` adopts its panel), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/),
 [`../shortcuts/`](../shortcuts/) (the command table and the service the menu reads, and the command bus a window runs a chosen command through), [`../overlays/`](../overlays/) (the question panel is an overlay shown through the tab slots),
 [`../consent/grant-prompt-origin.ts`](../consent/grant-prompt-origin.ts) (the origin line every
 permission dialog shows), [`../sessions/`](../sessions/) (the two questions' types, and
-`permission-gate.ts`'s notification store, handed to the permissions panel),
+`permission-gate.ts`'s notification store, handed to the permissions panel; `web-request-owner.ts` and `handler-while-needed.ts`, for `eth-gateway-redirect.ts`),
 [`../dev/`](../dev/) (the developer-mode flag, the score-level override, the local resolvers),
 [`../verifier/`](../verifier/), the stores and services a window reads ([`../settings/`](../settings/),
 [`../history/`](../history/), [`../zoom/`](../zoom/), [`../devtools/`](../devtools/),
-[`../pages/`](../pages/), [`../launch/`](../launch/)), plus the top-level `channels.ts` and `registry.ts`.
+[`../pages/`](../pages/), [`../launch/`](../launch/)), [`../os/`](../os/) (the welcome screen's default-browser offer, `intro-view.ts`; the launcher menu and the default-browser ask are installers and a window hook the shell runs), [`../startup/`](../startup/) (the restore bar a window's hook offers, and the start-up plan the first window follows), plus the top-level `channels.ts` and `registry.ts`.
 
 **What it must never import.** [`../../renderer/`](../../renderer/) code (the repo-wide rule).
 Locally: [`tab-view.ts`](tab-view.ts), [`tab-types.ts`](tab-types.ts) and
@@ -252,3 +252,32 @@ document starts out visible. The page's preload turns it into `document.visibili
 ([`../../preload/page-visibility.ts`](../../preload/page-visibility.ts)); the decision is in the
 [decision log](../../../docs/decisions/decision-log.md). Limits: subframes are not told, and Chromium's
 own throttling is not what slows a hidden page, only the page backing off when it reads `hidden`.
+
+**[`eth-gateway-redirect.ts`](eth-gateway-redirect.ts): a gateway address opens as the `.eth` name from the first load, through four hooks and one handler.**
+Setting `web3.ethGatewayRedirect` is on by default and applies at once; each hook asks `gatewayRedirectFor`, which answers
+only while the setting is on and the verifier can load the name (`verifierServesName`), so with the light client off or unable
+to start every gateway address opens as it is, except a developer-mode name or a test-build fixture, which the verifier serves without it. The hooks map the address before the load, so the tab's session, the fragment and the address
+bar are those of the name from the start: `resolveTarget` in `tab-navigation.ts` (typed text, the dashboard box, paste-and-go, bookmarks,
+Home), `TabFactory.content()` and `trusted()` (every new tab: middle clicks, links from other programs, startup pages, an
+extension's `tabs.create`), `loadServedAddresses` in `served-address.ts` (a link followed inside a tab in an app's own session, which has no web-request owner, or inside a tab that must move to the name's session or app-tab
+flag: `gatewayLinkTarget` in `load-in-tab.ts` answers only then,
+and the link loads through the address bar's own session test), and
+`windowOpenHandler` (a `target=_blank` link or `window.open` becomes a new tab or window, never a popup that loads the gateway in its
+opener's session). The handler at order 5 on the default session's web-request owner, before HTTPS-only and extensions, catches what
+the hooks leave to it: a link followed inside an ordinary tab (so a `location.replace`, a form's POST body and the referrer are kept), a server redirect to a gateway address (from a tab, or from a popup that keeps its opener), and back and
+forward or a reload of a gateway entry saved while the setting was off. A restored tab and the copy of a sleeping tab map their
+saved entries through `gatewayEntries` before the list is restored, since the view was built for the `.eth` name and can sit in a
+session with no web-request owner. A fragment survives a server redirect (measured by
+`test/web3/e2e-eth-gateway-redirect.test.ts`).
+With the setting on a gateway address never commits, so the address bar and history show `ipfs://<name>.eth/...`; the omnibox's
+"go to" row still shows the typed address. A link inside a tab that must move is loaded from `will-navigate`, which drops a
+form's POST body and the referrer and makes a `location.replace` a new history entry, as for an `ipfs:` link. Limits: an
+extension never sees the gateway address a person navigates to, since the redirect runs before extensions' request handlers and
+the hooks map the address before any request exists, so a block an extension holds for an `eth.limo` host does not fire;
+a `window.open` to a gateway address returns `null` and the new
+tab has no opener, so a page that checks the handle or talks to the page it opened by `postMessage` does not work (an adopted
+popup whose first address is the gateway itself never commits the redirect); the copy of a live tab keeps the gateway entries it
+carried; a server redirect to a gateway address inside a cache-served app's own partition is not caught, since that
+partition has no web-request owner; a name whose content Orivon
+cannot load (Swarm, Arweave, not yet synced, unreachable) shows an error page, and turning the setting off is the way out;
+data a site keeps under its gateway origin stays there and is not seen at the `.eth` name.

@@ -113,6 +113,8 @@ export interface ShellState extends TabsSnapshot {
   sharing?: { readonly kind: DisplaySurfaceKind, readonly origin: string, readonly count: number } | null
   /** Whether the active page's site has JavaScript, images or sound switched off, for the mark on the address bar's key. */
   contentBlocked: boolean
+  /** Whether the active page is an installed app whose name points at a version the person has not taken: the dot on the key. */
+  updateOffered: boolean
   /** Which profile this window is, for the chip beside the menu. */
   profile: { name: string, color: string, isPrivate: boolean, shown: boolean }
   /** The extensions loaded now, and whether the toolbar shows the Extensions button (`toolbar.extensions`). */
@@ -176,6 +178,10 @@ export interface TabShell {
   services?: ShellServices
   /** Runs a command on this window, as a key or a menu row would. Absent in tests: nothing runs. */
   runCommand?: (id: CommandId) => void
+  /** Gives the keyboard back to the chrome's page, unless it already holds it. Absent in tests. */
+  focusChrome?: () => void
+  /** Whether the welcome screen is over this window. Absent in tests: it never is. */
+  coveredByIntro?: () => boolean
 }
 
 /** The view behind two panes: the divider, and an outline round the pane the person is in. */

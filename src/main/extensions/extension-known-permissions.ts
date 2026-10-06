@@ -18,6 +18,7 @@ export const IMPLEMENTED_EXTENSION_PERMISSIONS: readonly string[] = [
   'notifications',
   'offscreen',
   'search',
+  'sidePanel',
   'tabCapture',
   'topSites',
   'webNavigation',

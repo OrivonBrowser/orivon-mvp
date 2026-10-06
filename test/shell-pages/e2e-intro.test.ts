@@ -9,8 +9,9 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, expect, it } from 'vitest'
 import { closeElectronApp } from '../support/e2e-helpers.js'
+import { readFocusLog, startFocusLog } from '../support/focus-helpers.js'
 import { assertNoElectronSurvivors, closeElectron, launchElectron } from '../support/launch-electron.mjs'
-import { ABSENCE_SETTLE_MS, findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, findChrome, HERMETIC_RESOLVER, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 
 afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
@@ -18,11 +19,11 @@ afterAll(async () => {
 
 const TEST_TIMEOUT_MS = 45_000
 
-function launch (mode: string, seed?: (dir: string) => Promise<void>): Promise<ElectronApplication> {
+function launch (mode: string, seed?: (dir: string) => Promise<void>, env: Record<string, string> = {}): Promise<ElectronApplication> {
   return launchElectron({
     appPath: '.',
     args: [HERMETIC_RESOLVER],
-    env: { ORIVON_INTRO: mode },
+    env: { ORIVON_INTRO: mode, ...env },
     ...(seed === undefined ? {} : { seedProfile: seed })
   })
 }
@@ -75,6 +76,14 @@ it('once, on a fresh profile: shows over the whole window, stays on top of a new
     await intro.keyboard.press('Enter')
     expect(await waitFor(() => introPage(app) === undefined && windowCount(app) === 3)).toBe(true)
 
+    // Entering gives the keyboard to the address bar: the new tab in front is a start page, and the bar is where a person types.
+    const chrome = findChrome(app)
+    const barActive = (): Promise<boolean> => chrome.evaluate(() => document.activeElement?.id === 'address')
+    expect(await waitFor(async () => (await focusedUrls()).some((url) => url.includes('/renderer/index.html')) && await barActive())).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS))
+    expect((await focusedUrls()).some((url) => url.includes('/newtab/'))).toBe(false)
+    expect(await barActive()).toBe(true)
+
     const dashboard = dashboardPage(app)
     if (dashboard === undefined) throw new Error('the dashboard tab is gone')
     // The background picture is a real, decodable file at the built path.
@@ -91,6 +100,16 @@ it('once, on a fresh profile: shows over the whole window, stays on top of a new
     const seenFile = join(await userDataDir(app), 'intro.json')
     expect(await waitFor(() => existsSync(seenFile))).toBe(true)
     expect(JSON.parse(await readFile(seenFile, 'utf8'))).toEqual({ seen: true })
+
+    // The first letter typed builds the dropdown, and its page does not take the keyboard from the field.
+    await startFocusLog(app)
+    await chrome.keyboard.type('a', { delay: 25 })
+    expect(await waitFor(() => popoverShown(app, 'overlay=omnibox'))).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS))
+    const taken = await readFocusLog(app)
+    expect(taken.filter((url) => url === 'blank' || url.includes('overlay=omnibox'))).toEqual([])
+    expect((await focusedUrls()).some((url) => url.includes('/renderer/index.html'))).toBe(true)
+    expect(await barActive()).toBe(true)
   } finally {
     // Two tabs are open here, and closing the app under them throws in main (A259).
     await closeElectronApp(app)
@@ -131,6 +150,54 @@ it('always: shows even when seen, and clicking through does not use up the one-t
     await closeElectron(fresh)
   }
 }, TEST_TIMEOUT_MS * 2)
+
+const seamCalls = (app: ElectronApplication): Promise<{ setDefault: string[] }> =>
+  app.evaluate(() => (globalThis as unknown as { __orivonDevDefaultBrowser: { setDefault: string[] } }).__orivonDevDefaultBrowser)
+
+it('offers no default-browser box on a run that cannot register, and registers nothing', async () => {
+  const app = await launch('always')
+  try {
+    expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
+    const intro = introPage(app) as Page
+    expect(await intro.locator('#default-offer').isHidden()).toBe(true)
+    await intro.click('#enter')
+    expect(await waitFor(() => introPage(app) === undefined)).toBe(true)
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('offers an unticked default-browser box where it can register, and Enter without the tick registers nothing', async () => {
+  const app = await launch('always', undefined, { ORIVON_TEST_DEFAULT_BROWSER: 'can-set' })
+  try {
+    expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
+    const intro = introPage(app) as Page
+    expect(await intro.locator('#default-offer').isVisible()).toBe(true)
+    expect(await intro.locator('#make-default').isChecked()).toBe(false)
+    expect((await intro.locator('#default-offer').innerText()).trim()).toBe('Make Orivon my default browser')
+    await intro.click('#enter')
+    expect(await waitFor(() => introPage(app) === undefined)).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS))
+    expect((await seamCalls(app)).setDefault).toEqual([])
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('registers http and https when the box is ticked and Enter Orivon is pressed', async () => {
+  const app = await launch('always', undefined, { ORIVON_TEST_DEFAULT_BROWSER: 'can-set' })
+  try {
+    expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
+    const intro = introPage(app) as Page
+    await intro.check('#make-default')
+    await intro.click('#enter')
+    expect(await waitFor(() => introPage(app) === undefined)).toBe(true)
+    expect(await waitFor(async () => (await seamCalls(app)).setDefault.length === 2, 10_000)).toBe(true)
+    expect((await seamCalls(app)).setDefault).toEqual(['http', 'https'])
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
 
 it('the default test launch opens without it', async () => {
   const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })

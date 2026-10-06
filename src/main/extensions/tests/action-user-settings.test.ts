@@ -16,6 +16,8 @@ vi.mock('orivon:crx-extensions-browser-action', () => ({
   setActionVisibilityCheck: (check: (id: string) => boolean) => { visibility = check },
   setActionMenuBuilder: (builder: typeof menuBuilder) => { menuBuilder = builder }
 }))
+let sidePanelAction: (() => void) | undefined
+vi.mock('../side-panel-runner.js', () => ({ sidePanelMenuAction: () => sidePanelAction }))
 vi.mock('../extensions-view-runner.js', () => ({
   readExtensionFacts: async (entry: { name: string }) => ({ resolvedName: entry.name, resolvedDescription: undefined, iconDataUrl: undefined, manifestFacts: undefined })
 }))
@@ -78,7 +80,7 @@ function rig (): Rig {
 
 const event = (id: string): ApiEvent => ({ type: 'frame', sender: undefined, extension: { id, manifest: {} } })
 
-afterEach(() => { setExtensionsMenuDeps(undefined); visibility = undefined; menuBuilder = undefined })
+afterEach(() => { setExtensionsMenuDeps(undefined); visibility = undefined; menuBuilder = undefined; sidePanelAction = undefined })
 
 describe('chrome.action.getUserSettings', () => {
   it('answers the real pin state, following the setting until the person chooses', () => {
@@ -155,6 +157,16 @@ describe('the right-click menu of an action', () => {
     expect(template.map((item) => item['label'] ?? item['type'])).toEqual(['Alpha', 'separator', 'Options', 'Unpin from Toolbar', 'Manage Extension', 'Remove from Orivon…'])
     expect(template[2]).toMatchObject({ enabled: true })
     expect(menuBuilder?.(B, [])[2]).toMatchObject({ label: 'Options', enabled: false })
+  })
+
+  it('adds Open Side Panel when the side panel runner has an opener for the extension', () => {
+    rig()
+    const open = vi.fn()
+    sidePanelAction = open
+    const template = menuBuilder?.(A, []) ?? []
+    expect(template.map((item) => item['label'] ?? item['type'])).toContain('Open Side Panel')
+    ;(template[2]?.['click'] as () => void)()
+    expect(open).toHaveBeenCalledTimes(1)
   })
 
   it('pins, opens and manages through the focused window', () => {

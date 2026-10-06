@@ -38,13 +38,16 @@ height reports for it and repositions it on every layout instead of closing it (
 handler's optional `moved` runs after each reposition, so a feature that lays something over the dock follows it.
 A dock has square corners. The side panel is the one dock.
 
-**Beside the overlays, the host closes two legacy panels.** The permissions and site-info popovers
+**Beside the overlays, the host closes two legacy panels, and restacks a third thing it never closes.** The permissions and site-info popovers
 stay on `../permissions/popover-view.ts` and are handed to the host with `adopt`, so a tab switch, a
 resize or the window closing dismisses them with every overlay, and showing a popup closes them.
 `close()` with no name closes popups and adopted panels; `closeOverlays()` closes the popups alone,
 for a panel that toggles itself straight after. `relayout()` closes an adopted panel every time, so
 its `close` must be idempotent. `popupOpen()` counts an adopted panel that is open as a popup, so a
 feature that must not open over one (the downloads peek) sees it.
+An extension's open popup is adopted too, with a `close` that does nothing: each state push lifts it above the
+bars, the side panel's guest and a new tab's view, and a tab the popup's own extension opens must not close it,
+so the library closes it itself (`../extensions/extension-popup-host.ts`).
 
 **A toggle leaves an overlay whose handler holds.** `holdsOnToggle()` true (the site prompt while it
 asks a question) makes a toggle of that name do nothing: a button that shares the name (the
@@ -113,7 +116,9 @@ never returned. Why one shared preload is safe, and what a compromised overlay p
 the tab in front), and gives it back on close, except when the
 person clicked into the page (`blur`, where the click already chose) or the tab changed (the new
 active tab gets it). A `never` overlay hands focus straight back if a click gives it any, to what
-this window holds now; the chrome keeps the keys and drives it through `overlays.send`. A `take`
+this window holds now; the chrome keeps the keys and drives it through `overlays.send`. A `never`
+overlay joins the window when its page says `ready`, not at show, because a view attached before its first
+page commits takes the keyboard as it commits. A `take`
 overlay shown in a window while another window of the app has focus does not take it. A `never` overlay that
 shows a text box asks for the keyboard from its handler (`takeFocus`) on the first click into it, and from then
 on behaves as `take` until it closes.

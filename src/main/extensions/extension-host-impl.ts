@@ -14,6 +14,8 @@ import { extensionOpenedUrl } from './extension-url-policy.js'
 import { applyOrivonTabDetails } from './extension-tab-details.js'
 import { markExtensionOpened, openExtensionTab } from './extension-opened-pages.js'
 import { activateTabShowing } from './extension-options-tab.js'
+import { sidePanelGestures } from './side-panel-gesture.js'
+import { sidePanelPages, sidePanelWindowOf } from './side-panel-pages.js'
 
 export interface ShellBridge { ctx: SubsystemContext, services: ShellServices }
 
@@ -35,8 +37,27 @@ export const shellInitiated = new Set<WebContents>()
  * extension can activate a tab, and neither recurses into the other. */
 let tabActivationFromExtension = false
 
+/** Who activated a tab, and where: the extension (when the library names it) and the window the tab is in. */
+interface Activation { extensionId: string | undefined, window: BaseWindow }
+let activating: Activation | undefined
+let lastActivation: (Activation & { at: number }) | undefined
+
 export function isExtensionActivatingTab (): boolean {
   return tabActivationFromExtension
+}
+
+/** How long after an extension activates a tab the keyboard is still on its way to that tab: the popup that
+ * asked for it loses focus a moment after `activateTab` returns, not inside it. */
+export const EXTENSION_FOCUS_HANDOVER_MS = 500
+
+/** Whether `popup`'s own extension activated a tab in the popup's window within the last
+ * `EXTENSION_FOCUS_HANDOVER_MS`, or is doing so now. An activation by another extension, or in another window,
+ * is not the popup's own: its loss of focus is the person's. */
+export function extensionJustActivatedTab (popup: { extensionId: string, parent: BaseWindow }, now: number = Date.now()): boolean {
+  const own = (activation: Activation | undefined): activation is Activation =>
+    activation !== undefined && activation.extensionId === popup.extensionId && activation.window === popup.parent
+  if (tabActivationFromExtension && own(activating)) return true
+  return own(lastActivation) && now - lastActivation.at < EXTENSION_FOCUS_HANDOVER_MS
 }
 
 /** `session.defaultSession.extensions.getExtension` answers `null` for an id
@@ -46,12 +67,26 @@ export function isLoadedExtension (id: string): boolean {
   return session.defaultSession.extensions.getExtension(id) != null
 }
 
+/** Runs `activate`, which activates a tab, as the extension's own doing (see `tabActivationFromExtension`). */
+function activatingTab<T> (by: Activation, activate: () => T): T {
+  tabActivationFromExtension = true
+  activating = by
+  try {
+    return activate()
+  } finally {
+    tabActivationFromExtension = false
+    activating = undefined
+    lastActivation = { ...by, at: Date.now() }
+  }
+}
+
 function windowFor (bridge: ShellBridge, windowId: number | undefined): BaseWindow | undefined {
   if (windowId !== undefined) return bridge.services.windows.all().find((w) => w.window.id === windowId)?.window
   return bridge.services.windows.focused()?.window
 }
 
-export function buildHostImpl (getBridge: () => ShellBridge | undefined): HostImpl {
+/** `callerOf` names the extension whose `chrome.tabs` call is running, when one is. */
+export function buildHostImpl (getBridge: () => ShellBridge | undefined, callerOf: () => string | undefined = () => undefined): HostImpl {
   return {
   createTab: async (details) => {
     const bridge = getBridge()
@@ -64,14 +99,11 @@ export function buildHostImpl (getBridge: () => ShellBridge | undefined): HostIm
     if (details.url !== undefined && target === undefined) {
       throw new Error(`extensions: refused to open ${details.url}`)
     }
-    tabActivationFromExtension = true
-    try {
+    return activatingTab<[WebContents, BaseWindow]>({ extensionId: callerOf(), window: win }, () => {
       const opened = openExtensionTab(shellWindow.tabs, target)
       if (opened === undefined) throw new Error('extensions: tab capacity reached')
       return [opened[1], win]
-    } finally {
-      tabActivationFromExtension = false
-    }
+    })
   },
 
   // The library calls selectTab/removeTab for an extension-initiated
@@ -85,12 +117,7 @@ export function buildHostImpl (getBridge: () => ShellBridge | undefined): HostIm
     if (shellInitiated.has(wc)) return
     const found = getBridge()?.services.windows.findTab(wc)
     if (found == null) return
-    tabActivationFromExtension = true
-    try {
-      found.window.tabs.activateTab(found.tabId)
-    } finally {
-      tabActivationFromExtension = false
-    }
+    activatingTab({ extensionId: callerOf(), window: found.window.window }, () => { found.window.tabs.activateTab(found.tabId) })
   },
 
   removeTab: (wc) => {
@@ -120,7 +147,15 @@ export function buildHostImpl (getBridge: () => ShellBridge | undefined): HostIm
 
   activateTabShowing: (url) => activateTabShowing(getBridge()?.services.windows.all() ?? [], url),
 
-  windowOf: (wc) => getBridge()?.services.windows.all().find((w) => w.chrome.webContents === wc)?.window,
+  // A toolbar's own page, or a side panel's page: the window each acts for.
+  windowOf: (wc) => getBridge()?.services.windows.all().find((w) => w.chrome.webContents === wc)?.window ?? sidePanelWindowOf(wc),
+
+  extensionContexts: (id) => sidePanelPages()
+    .filter((page) => page.contents.getURL().startsWith(`chrome-extension://${id}/`))
+    .map((page) => ({ contextType: 'SIDE_PANEL' as const, contents: page.contents, windowId: page.window.id })),
+
+  // A click on one of the extension's own context-menu items is input the person made on it.
+  menuItemClicked: (id) => { sidePanelGestures.record(id) },
 
   navigateTab: async (wc, url) => {
     const target = extensionOpenedUrl(url, isLoadedExtension)

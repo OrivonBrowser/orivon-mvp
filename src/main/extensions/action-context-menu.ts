@@ -9,6 +9,8 @@ export interface ActionMenuInput {
   readonly pinned: boolean
   /** What the extension's own `contextMenus` asked for under its action. */
   readonly extensionItems: ReadonlyArray<MenuItemConstructorOptions | MenuItem>
+  /** Present only when the extension has a side panel for the tab in front. */
+  readonly openSidePanel?: (() => void) | undefined
   readonly openOptions: () => void
   readonly togglePin: () => void
   readonly manage: () => void
@@ -17,6 +19,7 @@ export interface ActionMenuInput {
 
 export function actionMenuTemplate (input: ActionMenuInput): Array<MenuItemConstructorOptions | MenuItem> {
   const own: MenuItemConstructorOptions[] = [
+    ...(input.openSidePanel === undefined ? [] : [{ label: 'Open Side Panel', click: input.openSidePanel }]),
     { label: 'Options', enabled: input.hasOptions, click: input.openOptions },
     { label: input.pinned ? 'Unpin from Toolbar' : 'Pin to Toolbar', click: input.togglePin },
     { label: 'Manage Extension', click: input.manage },

@@ -160,7 +160,12 @@ describe('installFromHint', () => {
       installFetched: vi.fn(async () => { throw new Error('installFetched was not stubbed for this test') }),
       reconsider: vi.fn(async () => { throw new Error('reconsider was not stubbed for this test') }),
       pinFor: vi.fn(async () => null),
-      ddocFor: vi.fn(async () => undefined)
+      ddocFor: vi.fn(async () => undefined),
+      applyUpdate: vi.fn(async () => ({ outcome: 'rejected' as const, reason: 'unused' })),
+      quietOffers: vi.fn(async () => ({ quiet: [] })),
+      keepQuiet: vi.fn(async () => {}),
+      manifestFor: vi.fn(async () => undefined),
+      manifestAt: vi.fn(async () => ({ kind: 'website' as const }))
     }
     const deps: AppInstallDeps = { broker, loader }
 

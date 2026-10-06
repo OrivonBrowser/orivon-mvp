@@ -65,6 +65,8 @@ interface Slot {
   lastBlurCloseAt: number
   /** A `never` overlay whose handler asked for the keyboard: it behaves as `take` until it closes. */
   focusTaken: boolean
+  /** A `never` overlay shown before its page committed: it joins the window when the page says `ready`. A view attached earlier takes the keyboard as it commits. */
+  attachWhenReady: boolean
   /** Destroys a closed `warm` view once it has gone unused for `IDLE_DESTROY_MS`. */
   idleTimer: ReturnType<typeof setTimeout> | null
 }
@@ -84,7 +86,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     if (slots.has(def.name)) throw new Error(`overlay "${def.name}" is declared twice`)
     slots.set(def.name, {
       def, handler: null, view: null, pageReady: false, awaitingReply: false, pending: null, queued: [], open: false,
-      anchor: undefined, height: def.height?.initial ?? DEFAULT_HEIGHT.initial, returnTo: undefined, lastBlurCloseAt: 0, focusTaken: false, idleTimer: null
+      anchor: undefined, height: def.height?.initial ?? DEFAULT_HEIGHT.initial, returnTo: undefined, lastBlurCloseAt: 0, focusTaken: false, attachWhenReady: false, idleTimer: null
     })
   }
   const adopted: Array<{ close: () => void, isOpen: () => boolean, restack?: (() => void) | undefined }> = []
@@ -152,6 +154,10 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
           if (!current()) return { shown: false }
           slot.pageReady = true
           slot.awaitingReply = true
+          if (slot.attachWhenReady) {
+            slot.attachWhenReady = false
+            if (slot.open && mine !== undefined) joinWindow(slot, mine)
+          }
           const waiting = slot.pending ?? Promise.resolve<OverlayReady>({ shown: false })
           slot.pending = null
           // The events go in the reply itself: sent beside it they could reach the page first, and a page that
@@ -186,6 +192,18 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     return mine
   }
 
+  /** Puts an open overlay's view in the window and counts it as on screen. */
+  function joinWindow (slot: Slot, view: OverlayViewHandle): void {
+    try {
+      view.attach(deps.contentView)
+      restack()
+      recordPopoverShown(view.id, true)
+    } catch (error) {
+      console.error(`[overlay] attaching "${slot.def.name}" failed`, error)
+      closeSlot(slot, 'request')
+    }
+  }
+
   const ensureView = (slot: Slot): OverlayViewHandle =>
     slot.view !== null && !slot.view.isDestroyed() ? slot.view : buildView(slot)
 
@@ -198,6 +216,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     slot.view = null
     slot.pageReady = false
     slot.awaitingReply = false
+    slot.attachWhenReady = false
     slot.pending = null
     slot.queued = []
   }
@@ -234,9 +253,11 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     slot.pending = null
     slot.queued = []
     slot.awaitingReply = false
+    const neverJoined = slot.attachWhenReady
+    slot.attachWhenReady = false
     const view = slot.view
     if (view !== null && !view.isDestroyed()) {
-      if (!disposed) {
+      if (!disposed && !neverJoined) {
         // A view kept for the next show (`warm`, `resident`) stays in the window, hidden: see OverlayViewHandle.hide.
         if (slot.def.keep === 'fresh') view.detach(deps.contentView)
         else view.hide()
@@ -270,11 +291,12 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
 
   function restack (): void {
     if (disposed) return
-    for (const slot of openOrder.filter((other) => other.def.layer === 'bar')) slot.view?.attach(deps.contentView)
+    const joined = (layer: OverlayDef['layer']): Slot[] => openOrder.filter((other) => other.def.layer === layer && !other.attachWhenReady)
+    for (const slot of joined('bar')) slot.view?.attach(deps.contentView)
     for (const panel of adopted) {
       try { panel.restack?.() } catch (error) { console.error('[overlay] restacking an adopted panel failed', error) }
     }
-    for (const slot of openOrder.filter((other) => other.def.layer === 'popup')) slot.view?.attach(deps.contentView)
+    for (const slot of joined('popup')) slot.view?.attach(deps.contentView)
   }
 
   function show (name: string, anchor?: OverlayAnchor, payload?: unknown): void {
@@ -309,9 +331,12 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
       } else {
         slot.pending = result
       }
-      view.attach(deps.contentView)
-      restack()
-      recordPopoverShown(view.id, true)
+      if (slot.def.focus === 'never' && !slot.pageReady) slot.attachWhenReady = true
+      else {
+        view.attach(deps.contentView)
+        restack()
+        recordPopoverShown(view.id, true)
+      }
       if (slot.def.focus === 'take' && !inBackground()) view.focusWhenReady(() => slot.open && slot.view === view)
     } catch (error) {
       console.error(`[overlay] showing "${slot.def.name}" failed`, error)

@@ -1,9 +1,10 @@
 # `test/apps/`: the apps the test suite serves
 
 **What lives here.** The applications this repository's own end-to-end suites load from a URL:
-[`fixture/`](fixture/), the minimal app the broker and loader tests drive, and
-[`freetube/`](freetube/), a YouTube frontend written as an ordinary Orivon app. Each carries its
-own `README.md`.
+[`fixture/`](fixture/), the minimal app the broker and loader tests drive,
+[`freetube/`](freetube/), a YouTube frontend written as an ordinary Orivon app, and
+[`app-update/`](app-update/), the app the update specs install at a `.eth` name and then move the
+name away from. Each carries its own `README.md`.
 
 **What it depends on.** `orivon.*` at runtime, and nothing else.
 

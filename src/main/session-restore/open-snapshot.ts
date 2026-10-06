@@ -1,4 +1,5 @@
 // Opens a saved tab in a window: the one place an address from the closed stack or the session file becomes a tab.
+import { gatewayEntries } from '../shell/eth-gateway-rule.js'
 import { restoreHistory } from '../shell/tab-history.js'
 import type { TabManager } from '../shell/tabs.js'
 import { showTitleUntilLoaded } from './restored-title.js'
@@ -39,6 +40,7 @@ export function openSnapshot (tabs: TabManager, snapshot: TabSnapshot, active: b
   record.pinned = clean.pinned
   showTitleUntilLoaded(record, clean.title)
   rememberOpenedFrom(record, clean)
-  if (clean.entries !== undefined && clean.index !== undefined) restoreHistory(record.view.webContents, clean.entries, clean.index)
+  // The view was built for the address the tab opened as, which can be a session no web-request handler covers.
+  if (clean.entries !== undefined && clean.index !== undefined) restoreHistory(record.view.webContents, gatewayEntries(record.host.services?.settings, clean.entries), clean.index)
   return id
 }

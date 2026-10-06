@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createPageScoreLookup, PAGE_LOOKUP_CAPACITY } from '../page-score-lookup.js'
 import type { PageScoreDeps } from '../page-score-lookup.js'
+import type { ManifestAtRoot } from '../../../loader/fetch/manifest-at-root.js'
 import { bucketOf } from '../score-provider-client.js'
 import type { FetchedJson } from '../score-provider-client.js'
 import { SCORE_STANDARD } from '../../../trust/score-provider.js'
@@ -23,21 +24,26 @@ interface Harness {
   readonly asked: string[]
   readonly resolved: Array<{ host: string, partition: string }>
   readonly clock: { t: number }
+  readonly manifestReads: Array<{ origin: string, cid: string }>
 }
+
+const appNaming = (domain: string | undefined): ManifestAtRoot => ({ kind: 'app', manifest: { domain } as never, bytes: new Uint8Array() })
 
 function harness (files: Record<string, FetchedJson>, over: Partial<PageScoreDeps> = {}, setting = BASE): Harness {
   const asked: string[] = []
   const resolved: Array<{ host: string, partition: string }> = []
   const clock = { t: 0 }
+  const manifestReads: Array<{ origin: string, cid: string }> = []
   const lookup = createPageScoreLookup({
     providerAddress: () => setting,
     isDevEthName: () => false,
     fetchJson: async (url) => { asked.push(url); return files[url] ?? { kind: 'missing' } },
     resolveEthContent: async (host, partition) => { resolved.push({ host, partition }); return host === 'scored.eth' ? ETH_CID : undefined },
+    manifestAt: async (origin, cid) => { manifestReads.push({ origin, cid }); return { kind: 'website' } },
     now: () => clock.t,
     ...over
   })
-  return { lookup, asked, resolved, clock }
+  return { lookup, asked, resolved, clock, manifestReads }
 }
 
 const provided = (id: string, level: number): Record<string, FetchedJson> => ({
@@ -70,6 +76,67 @@ describe('createPageScoreLookup', () => {
     expect(await h.lookup.websiteScore(CALLER_A, 'https://scored.eth/page')).toEqual({ provider: 'Test provider', level: 4 })
     expect(await h.lookup.websiteScore(CALLER_B, 'scored.eth')).toEqual({ provider: 'Test provider', level: 4 })
     expect(h.resolved).toEqual([{ host: 'scored.eth', partition: CALLER_A }, { host: 'scored.eth', partition: CALLER_B }])
+  })
+
+  describe('a judged level counts only where the content\'s manifest names the host asked about', () => {
+    const resolvesBoth = async (host: string): Promise<string | undefined> => host === 'app.eth' || host === 'evil.eth' ? ETH_CID : undefined
+
+    it('gives the level to the name the manifest names, and none to a name that points at the same content', async () => {
+      const h = harness(provided(`cid:${ETH_CID}`, 4), { resolveEthContent: resolvesBoth, manifestAt: async () => appNaming('app.eth') })
+      expect(await h.lookup.websiteScore(CALLER_A, 'https://app.eth')).toEqual({ provider: 'Test provider', level: 4 })
+      expect(await h.lookup.websiteScore(CALLER_A, 'evil.eth')).toEqual({ provider: 'Test provider', level: null })
+    })
+
+    it('reads the manifest of the resolved root through the origin of the name asked about', async () => {
+      const h = harness(provided(`cid:${ETH_CID}`, 3))
+      await h.lookup.websiteScore(CALLER_A, 'https://scored.eth/page')
+      expect(h.manifestReads).toEqual([{ origin: 'https://scored.eth', cid: ETH_CID }])
+    })
+
+    it('gives no level when the manifest names another home or none', async () => {
+      for (const manifest of [appNaming('other.eth'), appNaming(undefined)]) {
+        const h = harness(provided(`cid:${ETH_CID}`, 4), { manifestAt: async () => manifest })
+        expect(await h.lookup.websiteScore(CALLER_A, 'scored.eth')).toEqual({ provider: 'Test provider', level: null })
+      }
+    })
+
+    it('treats a verified absence of a manifest as a website, whose judged level stands', async () => {
+      const h = harness(provided(`cid:${ETH_CID}`, 4), { manifestAt: async () => ({ kind: 'website' }) })
+      expect(await h.lookup.websiteScore(CALLER_A, 'scored.eth')).toEqual({ provider: 'Test provider', level: 4 })
+    })
+
+    it('gives no level when the manifest cannot be read, or the read throws or does not answer in time', async () => {
+      const unread = harness(provided(`cid:${ETH_CID}`, 4), { manifestAt: async () => ({ kind: 'unread', reason: 'down' }) })
+      expect(await unread.lookup.websiteScore(CALLER_A, 'scored.eth')).toEqual({ provider: 'Test provider', level: null })
+      const throws = harness(provided(`cid:${ETH_CID}`, 4), { manifestAt: async () => { throw new Error('boom') } })
+      expect(await throws.lookup.websiteScore(CALLER_A, 'scored.eth')).toEqual({ provider: 'Test provider', level: null })
+      vi.useFakeTimers()
+      try {
+        const slow = harness(provided(`cid:${ETH_CID}`, 4), { manifestAt: async () => await new Promise<ManifestAtRoot>(() => {}) })
+        const asking = slow.lookup.websiteScore(CALLER_A, 'scored.eth')
+        await vi.advanceTimersByTimeAsync(60_000)
+        expect(await asking).toEqual({ provider: 'Test provider', level: null })
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('reads no manifest for a judged level the shield does not bind (1 or 2), or when there is no score', async () => {
+      const low = harness(provided(`cid:${ETH_CID}`, 2), { manifestAt: async () => appNaming('other.eth') })
+      expect(await low.lookup.websiteScore(CALLER_A, 'scored.eth')).toEqual({ provider: 'Test provider', level: 2 })
+      expect(low.manifestReads).toEqual([])
+      const none = harness({ [`${BASE}/provider.json`]: ok(descriptor) })
+      await none.lookup.websiteScore(CALLER_A, 'scored.eth')
+      expect(none.manifestReads).toEqual([])
+    })
+
+    it('binds an ipfs:// address as the shield does: a manifest-less website keeps its level, an app never names a content address', async () => {
+      const website = harness(provided(`cid:${CID}`, 3))
+      expect(await website.lookup.websiteScore(CALLER_A, `ipfs://${CID}`)).toEqual({ provider: 'Test provider', level: 3 })
+      expect(website.manifestReads).toEqual([{ origin: `https://${CID}.ipfs.orivon`, cid: CID }])
+      const app = harness(provided(`cid:${CID}`, 3), { manifestAt: async () => appNaming('app.eth') })
+      expect(await app.lookup.websiteScore(CALLER_A, `ipfs://${CID}`)).toEqual({ provider: 'Test provider', level: null })
+    })
   })
 
   it('names the provider but gives no level for a name that does not resolve', async () => {

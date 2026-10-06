@@ -297,3 +297,25 @@ h1, p { margin: 0; }
 @keyframes from-top-left { from { opacity: 0; transform: translate(-60px, -60px); } }
 @keyframes from-bottom-right { from { opacity: 0; transform: translate(60px, 60px); } }
 @keyframes ticker { to { transform: translateX(-50%); } }
+
+.default-offer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 22px;
+  font-size: 14px;
+  color: rgba(203, 213, 225, 0.78);
+  cursor: pointer;
+  animation: rise-fade 0.55s cubic-bezier(0.22, 1, 0.36, 1) 1.05s both;
+}
+.default-offer[hidden] { display: none; }
+.default-offer input {
+  width: 16px;
+  height: 16px;
+  accent-color: #6366f1;
+  cursor: pointer;
+}
+.default-offer input:focus-visible {
+  outline: 2px solid #a5b4fc;
+  outline-offset: 3px;
+}

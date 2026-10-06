@@ -5,6 +5,7 @@ import {
   Result,
   WebGlStatus,
 } from '../common/constants'
+import { storeOverridesScript } from './store-overrides'
 
 interface WebstorePrivate {
   ExtensionInstallStatus: typeof ExtensionInstallStatus
@@ -300,14 +301,8 @@ function setupChromeWebStoreApi() {
   }
   contextBridge.exposeInMainWorld('electronManagement', management)
 
-  webFrame.executeJavaScript(`
-    (function () {
-      chrome.webstorePrivate = globalThis.electronWebstore;
-      Object.assign(chrome.runtime, electronRuntime);
-      Object.assign(chrome.management, electronManagement);
-      void 0;
-    }());
-  `)
+  // Orivon patch: store-overrides.ts says why this is not three assignments.
+  webFrame.executeJavaScript(storeOverridesScript())
 
   // Fetch app name
   electronWebstore.getFullChromeVersion()

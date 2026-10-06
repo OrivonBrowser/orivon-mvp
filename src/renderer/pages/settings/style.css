@@ -198,6 +198,7 @@ kbd {
 .row-control > .muted { text-align: right; }
 .default-browser { display: inline-flex; align-items: center; gap: 8px; color: var(--wink); font-weight: 500; }
 .default-browser .icon { flex: none; width: 16px; height: 16px; color: var(--wok); }
+.default-browser-handoff { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .default-browser-problem { display: grid; gap: 6px; margin-top: 6px; }
 .default-browser-problem .problem, .default-browser-problem .row-help { margin: 0; }
 .command-line { display: flex; align-items: center; gap: 8px; }

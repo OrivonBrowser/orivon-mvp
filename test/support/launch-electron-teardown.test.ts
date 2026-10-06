@@ -168,19 +168,19 @@ describe('launchElectron', () => {
         seedProfile: async (dir: string) => { await writeFile(join(dir, 'settings.json'), JSON.stringify({ version: 1, values: { 'appearance.bookmarksBar': 'always' } })) }
       })
       expect(seen.colorScheme).toBeNull()
-      expect(seen.settings).toEqual({ version: 1, values: { 'appearance.bookmarksBar': 'always', 'appearance.theme': 'dark' } })
+      expect(seen.settings).toEqual({ version: 1, values: { 'appearance.bookmarksBar': 'always', 'appearance.theme': 'dark', 'web3.scoreProvider': '' } })
     })
 
     it('seeds a profile of its own when nothing else did', async () => {
       const seen = await launchAndInspect({ scheme: 'light' })
       expect(seen.colorScheme).toBeNull()
-      expect(seen.settings).toEqual({ version: 1, values: { 'appearance.theme': 'light' } })
+      expect(seen.settings).toEqual({ version: 1, values: { 'appearance.theme': 'light', 'web3.scoreProvider': '' } })
     })
 
-    it('changes nothing for a launch that does not ask: the page scheme pin stays and no setting is written', async () => {
+    it('seeds no theme for a launch that does not ask, and keeps the page scheme pin; the profile asks no score provider', async () => {
       const seen = await launchAndInspect({})
       expect(seen.hasColorScheme).toBe(false)
-      expect(seen.settings).toBeUndefined()
+      expect(seen.settings).toEqual({ version: 1, values: { 'web3.scoreProvider': '' } })
     })
   })
 

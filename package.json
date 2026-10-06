@@ -13,6 +13,7 @@
   },
   "homepage": "https://github.com/OrivonBrowser/orivon-mvp#readme",
   "main": "out/main/index.js",
+  "desktopName": "orivon.desktop",
   "engines": {
     "node": ">=22.13.0"
   },

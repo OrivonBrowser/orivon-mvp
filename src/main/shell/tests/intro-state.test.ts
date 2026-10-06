@@ -75,6 +75,13 @@ describe('the seen flag on disk', () => {
 })
 
 describe('planIntro -- decided before the window exists', () => {
+  it('offers the default browser only when it is told it may, and the offer is decided without a query', async () => {
+    expect((await planIntro('always', dir))?.offerDefault).toBe(false)
+    expect((await planIntro('always', dir, false))?.offerDefault).toBe(false)
+    expect((await planIntro('always', dir, true))?.offerDefault).toBe(true)
+    expect(await planIntro('off', dir, true)).toBeUndefined()
+  })
+
   it('shows on a fresh profile in once mode, and remembers the click-through', async () => {
     const plan = await planIntro(undefined, dir)
     expect(plan).toBeDefined()

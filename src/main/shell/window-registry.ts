@@ -3,6 +3,7 @@
 // process-wide channel and has to reach the manager of whichever window holds
 // the sending tab.
 import type { BaseWindow, WebContents, WebContentsView } from 'electron'
+import { originFromUrl } from '../../broker/policy/origin.js'
 import type { OverlayHost } from '../overlays/overlay-types.js'
 import type { TabManager } from './tabs.js'
 
@@ -56,5 +57,40 @@ export class WindowRegistry {
       if (tabId !== null) return { window, tabId }
     }
     return null
+  }
+
+  /**
+   * Every live tab, in any window, whose page is on `origin`, the ones the person can see first: the
+   * focused window's active tab, then another window's active tab, then the tabs behind them. Not
+   * `getAllWebContents`: that also holds guests and parked views.
+   */
+  liveTabsOn (origin: string): WebContents[] {
+    const found: Array<{ contents: WebContents, rank: number }> = []
+    for (const [contents, entry] of this.liveTabs()) {
+      if (originFromUrl(contents.getURL()) !== origin) continue
+      const shown = entry.tabs.activeWebContents() === contents
+      found.push({ contents, rank: shown ? (entry.window.isFocused() ? 0 : 1) : 2 })
+    }
+    return found.sort((a, b) => a.rank - b.rank).map((tab) => tab.contents)
+  }
+
+  /** The origins that have a live tab, each once. */
+  liveTabOrigins (): string[] {
+    const origins = new Set<string>()
+    for (const [contents] of this.liveTabs()) {
+      const origin = originFromUrl(contents.getURL())
+      if (origin !== null) origins.add(origin)
+    }
+    return [...origins]
+  }
+
+  private * liveTabs (): Generator<[WebContents, ShellWindow]> {
+    for (const entry of this.windows) {
+      if (entry.window.isDestroyed()) continue
+      for (const id of entry.tabs.ids()) {
+        const contents = entry.tabs.liveWebContents(id)
+        if (contents !== undefined) yield [contents, entry]
+      }
+    }
   }
 }
