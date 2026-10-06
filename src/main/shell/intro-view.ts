@@ -98,6 +98,6 @@ export function showIntro (win: BaseWindow, tabs: Pick<TabManager, 'onStateChang
   win.once('closed', dismiss)
   tabs.onStateChange(keepOnTop)
   const devServerUrl = validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL'])
-  const page = rendererEntryUrl(import.meta.dirname, devServerUrl, '/intro/', '../renderer/intro/index.html')
+  const page = rendererEntryUrl(devServerUrl, '/intro/', 'intro')
   void webContents.loadURL(plan.offerDefault ? `${page}?default=1` : page)
 }

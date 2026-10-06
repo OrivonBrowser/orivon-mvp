@@ -5,6 +5,7 @@ import { boundHistory, rememberOpenedFrom } from '../session-restore/tab-snapsho
 import { closeParkedViews } from '../shell/tab-parking.js'
 import type { SleepingTab } from '../shell/tab-extra-types.js'
 import type { TabRecord } from '../shell/tab-types.js'
+import { withoutShellPages } from '../shell/tab-history.js'
 import { makeTabView, wireView } from '../shell/tab-view.js'
 import type { TabManager } from '../shell/tabs.js'
 import { gatherFacts, realEnv } from './sleep-facts.js'
@@ -88,9 +89,16 @@ export function wakeTab (tabs: TabManager, id: string): void {
   // The view has no address until its first commit, so the session file and the closed-tab stack read what the tab was.
   rememberOpenedFrom(record, { url: kept.url, title: kept.title, pinned: record.pinned === true, ...boundHistory(kept.entries.map(({ url, title }) => ({ url, title })), kept.index) })
   const load = (): void => { void wc.loadURL(kept.url).catch(() => {}) }
+  // The blank view has no new-tab bridge, so the new-tab page stays out of the history it gets back.
+  const history = withoutShellPages(kept.entries, kept.index)
+  if (history === null) {
+    load()
+    tabs.changed()
+    return
+  }
   try {
     // A restore that is refused after it started (a download, a cancelled navigation) leaves the view blank: load the address instead.
-    wc.navigationHistory.restore({ entries: kept.entries, index: kept.index }).catch(() => {
+    wc.navigationHistory.restore(history).catch(() => {
       if (!wc.isDestroyed() && wc.getURL() === '') load()
     })
   } catch {

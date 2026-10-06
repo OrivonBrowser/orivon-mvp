@@ -11,6 +11,7 @@ import type { Session } from 'electron'
 import { INTERNAL_PARTITION, INTERNAL_SCHEME } from './internal-pages.js'
 import { createInternalHandler, isDevServerRequest } from './serve.js'
 import { validatedDevServerUrl } from '../shell/renderer-entry.js'
+import { SHELL_SCHEME } from '../shell/shell-session.js'
 
 /** Its real path, so it lines up with what Vite itself reports for a request
  * under it (Vite resolves symlinks in a module's path) -- this project's own
@@ -37,6 +38,9 @@ export function internalSession (): Session | undefined {
  * pages an origin, `fetch` and a secure context; nothing here bypasses a
  * page's CSP.
  *
+ * `orivon-shell` serves the shell's own renderer entries (shell-scheme.ts): `standard` so a page has an
+ * origin and relative URLs, `secure` for `crypto.randomUUID`; `corsEnabled` and `bypassCSP` stay off.
+ *
  * `crx` is the extensions library's own scheme (ADR-0043), for the
  * `<browser-action-list>` toolbar element's icon requests
  * (`vendor/electron-chrome-extensions/src/browser/api/browser-action.ts`'s
@@ -46,6 +50,7 @@ export function internalSession (): Session | undefined {
 export function registerInternalScheme (): void {
   protocol.registerSchemesAsPrivileged([
     { scheme: INTERNAL_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+    { scheme: SHELL_SCHEME, privileges: { standard: true, secure: true } },
     { scheme: 'crx', privileges: { bypassCSP: true } }
   ])
 }

@@ -296,13 +296,16 @@ it('gives the copy of a tab the pages behind it', async () => {
     expect(await waitFor(async () => (await order(chrome)).length === 3)).toBe(true)
     const copy = (await order(chrome))[2] as string
     await waitForTab(chrome, { address: pageOf('/two') })
-    // The original and the copy hold the same three entries (the new-tab page, /one, /two) and stand on the last: a copy made
-    // while its own load was still running would hold a fourth, duplicate /two, and its first Back would stay on /two.
+    // The original holds three entries (the new-tab page, /one, /two) and the copy the two real pages: the new-tab page is not
+    // carried, since a copy may sit in a session that cannot load it. Each stands on its last entry: a copy made while its own
+    // load was still running would hold a duplicate /two, and its first Back would stay on /two.
     const same = await waitFor(async () => await app.evaluate(({ webContents }, url) => {
       const wcs = webContents.getAllWebContents().filter((w) => w.getURL() === url && !w.isLoading())
-      return wcs.length === 2 && wcs.every((w) => {
+      if (wcs.length !== 2) return false
+      const lengths = wcs.map((w) => w.navigationHistory.getAllEntries().length).sort()
+      return lengths[0] === 2 && lengths[1] === 3 && wcs.every((w) => {
         const entries = w.navigationHistory.getAllEntries().map((entry) => entry.url)
-        return entries.length === 3 && w.navigationHistory.getActiveIndex() === 2 && entries[1]?.endsWith('/one') === true && entries[2] === url
+        return w.navigationHistory.getActiveIndex() === entries.length - 1 && entries.at(-2)?.endsWith('/one') === true && entries.at(-1) === url
       })
     }, pageOf('/two')))
     expect(same, `copy ${copy} does not hold the original's pages`).toBe(true)

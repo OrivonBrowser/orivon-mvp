@@ -208,6 +208,14 @@ describe('runCommand', () => {
     expect(send).toHaveBeenCalledWith('orivon-shell:event', { type: 'module', module: 'address-suggest', payload: { type: 'focusSearch' } })
   })
 
+  it('tells the navigation module too, so the question mark it was given counts as an edit a state push must not undo', () => {
+    const { target, send, deps } = harness([tab('a')], 'a')
+
+    runCommand('nav.focusSearch', target, deps)
+
+    expect(send).toHaveBeenCalledWith('orivon-shell:event', { type: 'module', module: 'navigation', payload: { type: 'focusSearch' } })
+  })
+
   it('saves a page on the first press and opens the bubble; on a saved page it only opens the bubble, and never removes', () => {
     const asked = { type: 'module', module: 'bookmark-star', payload: { open: true } }
     const first = harness([tab('a')], 'a')

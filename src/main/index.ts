@@ -31,6 +31,7 @@ import { canOfferDefault } from './os/default-browser.js'
 import { defaultBrowserHost } from './os/default-browser-runner.js'
 import { handleOpenUrl } from './os/open-url.js'
 import { removeAfterExit, removePrivateDir, sweepPrivateDirs } from './launch/private-session.js'
+import { loadFetchStack } from './startup/fetch-stack.js'
 import { startLaunch } from './launch/start-launch.js'
 import { runUpdateCheck } from './self-update/update-check-runner.js'
 import { scheduleUpdateChecks } from './self-update/update-schedule.js'
@@ -62,6 +63,9 @@ function exitOnUncaught (kind: string, error: unknown): void {
 
 process.on('uncaughtException', (error) => { exitOnUncaught('uncaught exception', error) })
 process.on('unhandledRejection', (reason) => { exitOnUncaught('unhandled promise rejection', reason) })
+
+// Before any subsystem or hook exists (startup/fetch-stack.ts says why).
+loadFetchStack()
 
 // Before any subsystem runs: Electron applies this fallback reliably only when
 // it is set ahead of the first session. Its own default carries `Electron/`

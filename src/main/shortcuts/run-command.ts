@@ -12,7 +12,7 @@ import { toggleBookmarksBar } from '../shell/bookmarks-bar/bar-visibility.js'
 import { moveToNewWindow } from '../shell/tab-move.js'
 import { goHome } from '../shell/home.js'
 import { startNavigation } from '../shell/leave-page-prompt.js'
-import { OMNIBOX_MODULE } from '../omnibox/omnibox-names.js'
+import { NAVIGATION_MODULE, OMNIBOX_MODULE } from '../omnibox/omnibox-names.js'
 import { sendChromeEvent } from '../shell/shell-events.js'
 import { cascadeFrom } from '../shell/window-options.js'
 import type { ShellWindowOptions } from '../shell/window-options.js'
@@ -94,6 +94,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'nav.focusSearch':
       chrome.webContents.focus()
       sendChromeEvent(target, OMNIBOX_MODULE, { type: 'focusSearch' })
+      sendChromeEvent(target, NAVIGATION_MODULE, { type: 'focusSearch' })
       return
     case 'zoom.in': case 'zoom.out': case 'zoom.reset': {
       const origin = active === undefined ? null : originFromUrl(active.url)

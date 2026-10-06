@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { requestVisibleTo, type VisibleRequest } from '../visibility.js'
+import { isShellOwnUrl, requestVisibleTo, type VisibleRequest } from '../visibility.js'
 
 const ME = 'a'.repeat(32)
 const OTHER = 'b'.repeat(32)
@@ -40,7 +40,7 @@ describe('requestVisibleTo', () => {
   })
 
   it('hides a scheme that is not http, https, ws or wss', () => {
-    for (const url of ['data:text/plain,x', 'blob:https://site.example/1', 'file:///tmp/x', 'ftp://site.example/x', 'orivon://newtab/', 'chrome://gpu']) {
+    for (const url of ['data:text/plain,x', 'blob:https://site.example/1', 'file:///tmp/x', 'ftp://site.example/x', 'orivon://newtab/', 'orivon-shell://renderer/newtab/index.html', 'chrome://gpu']) {
       expect(requestVisibleTo(ME, page({ url, initiator: undefined }), all)).toBe(false)
     }
   })
@@ -53,7 +53,7 @@ describe('requestVisibleTo', () => {
   })
 
   it('hides a request made by an Orivon, chrome or devtools document or by another extension\'s page', () => {
-    for (const initiator of ['orivon://newtab', 'chrome://settings', 'devtools://devtools', `chrome-extension://${OTHER}`]) {
+    for (const initiator of ['orivon://newtab', 'orivon-shell://renderer', 'chrome://settings', 'devtools://devtools', `chrome-extension://${OTHER}`]) {
       expect(requestVisibleTo(ME, page({ initiator }), all)).toBe(false)
     }
   })
@@ -95,5 +95,15 @@ describe('requestVisibleTo', () => {
       expect(requestVisibleTo(ME, page({ pageUrl: 'https://app.example/index.html' }), all, isApp)).toBe(false)
       expect(requestVisibleTo(ME, page({ pageUrl: 'https://site.example/index.html' }), all, isApp)).toBe(true)
     })
+  })
+})
+
+describe('isShellOwnUrl', () => {
+  it('is true for the shell\'s own pages and false for everything else', () => {
+    expect(isShellOwnUrl('orivon-shell://renderer/index.html')).toBe(true)
+    expect(isShellOwnUrl('orivon://settings/')).toBe(true)
+    for (const url of ['https://orivon.example/', 'chrome-extension://abc/x', 'file:///x', 'about:blank']) {
+      expect(isShellOwnUrl(url)).toBe(false)
+    }
   })
 })

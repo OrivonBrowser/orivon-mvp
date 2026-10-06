@@ -8,7 +8,7 @@ vi.mock('electron', () => ({ nativeTheme: theme }))
 const { watchBacking } = await import('../tab-backing.js')
 const { isDashboardUrl, restingColor } = await import('../sheet-backdrop.js')
 
-const DASHBOARD = 'file:///app/out/renderer/newtab/index.html'
+const DASHBOARD = 'orivon-shell://renderer/newtab/index.html'
 
 function rig (record: Partial<TabRecord> = {}, shown = true): { wc: EventEmitter & { url: string }, colours: string[] } {
   const wc = Object.assign(new EventEmitter(), { isDestroyed: () => false, id: 1, url: '', getURL (): string { return this.url } })
@@ -28,6 +28,8 @@ describe('isDashboardUrl', () => {
     expect(isDashboardUrl(`${DASHBOARD}?x=1#top`, DASHBOARD)).toBe(true)
     expect(isDashboardUrl('https://example.com/', DASHBOARD)).toBe(false)
     expect(isDashboardUrl('about:blank', DASHBOARD)).toBe(false)
+    expect(isDashboardUrl('data:text/html,hi', DASHBOARD)).toBe(false)
+    expect(isDashboardUrl('file:///tmp/x.html', DASHBOARD)).toBe(false)
   })
 })
 

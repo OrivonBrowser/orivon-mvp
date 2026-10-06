@@ -6,7 +6,7 @@ session into what the first window opens and which windows follow. `startup-open
 (tabs, display-aware placement, taking reopened windows off the closed stack). `startup-domain.ts` answers the
 Settings page's two questions about the pages list. `restore-offer.ts` and `restore-overlay.ts` are the bar
 that offers the last session back after a run that did not end cleanly; `startup-overlays.ts` wires it to the
-real displays.
+real displays. `fetch-stack.ts` loads Node's `fetch`/`Response` implementation before any hook or window exists, so a debugger command cannot arrive in the middle of its lazy load.
 
 **Tied to Electron, partly.** Only `startup-overlays.ts` imports `electron`; the rest takes plain values and
 structural types, so it runs under plain vitest.

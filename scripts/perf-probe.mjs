@@ -109,7 +109,7 @@ async function measure (options) {
       const facts = await app.evaluate(({ app: electronApp, webContents }) => ({
         metrics: electronApp.getAppMetrics().map((m) => ({ pid: m.pid, type: m.type, name: m.name ?? m.serviceName ?? '' })),
         views: webContents.getAllWebContents().flatMap((contents) => {
-          try { return [{ pid: contents.getOSProcessId(), url: contents.getURL().replace(/^file:\/\/.*\/out\//, 'out/').slice(0, 80) }] } catch { return [] }
+          try { return [{ pid: contents.getOSProcessId(), url: contents.getURL().replace(/^orivon-shell:\/\/renderer\//, 'renderer/').slice(0, 80) }] } catch { return [] }
         }),
         toolbar: globalThis.__perfProbe
       }))
