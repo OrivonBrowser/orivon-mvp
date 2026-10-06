@@ -10,7 +10,7 @@ import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import type { ElectronApplication } from 'playwright'
+import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, mainOutput, profileDirOf } from '../support/launch-electron.mjs'
 import { launchShell, QA_TEST_TIMEOUT_MS, visit } from '../support/qa-helpers.js'
@@ -161,3 +161,45 @@ it('[app:local-file-grant] asks with a warning and a double press, grants to tha
     await rm(profile, { recursive: true, force: true })
   }
 }, QA_TEST_TIMEOUT_MS * 2)
+
+/** Opens the privacy page of Settings and returns it. */
+async function privacyPage (app: ElectronApplication, chrome: Page): Promise<Page> {
+  await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/privacy') })
+  let found: Page | undefined
+  expect(await waitFor(() => { found = app.windows().find((window) => window.url().includes('/settings') && !window.isClosed()); return found !== undefined })).toBe(true)
+  return found as Page
+}
+
+it('lists the allowed file on the privacy page, and Delete data takes back its grants, its saved files and its record', async () => {
+  const appUrl = urlOf('app.html')
+  const { app, chrome } = await launchShell()
+  const profile = profileDirOf(app)
+  if (profile === undefined) throw new Error('the launcher did not report a profile directory')
+  try {
+    await stubNativeDialogs(app)
+    void visit(app, chrome, appUrl)
+    const panel = await waitQuestion(app)
+    await panel.waitForSelector('.q:not(.arming)')
+    const allow = panel.locator('.q .btn-row .btn[data-button="1"]')
+    await allow.hover()
+    await allow.click()
+    await allow.click().catch(() => undefined)
+    await seenAt(app, appUrl, (seen) => Array.isArray(seen.grants) && seen.grants.length === 2)
+    const folder = join(profile, 'app-data', createHash('sha256').update(appUrl, 'utf8').digest('hex'))
+    expect(await waitFor(() => existsSync(folder))).toBe(true)
+
+    const page = await privacyPage(app, chrome)
+    const row = page.locator('#local-files .lf-row')
+    await row.first().waitFor({ timeout: 20_000 })
+    expect(await row.first().innerText()).toContain('app.html')
+    // Delete asks twice, like every deleting button on the page.
+    await row.first().locator('button').click()
+    await page.locator('#local-files .lf-row .btn.armed').click()
+    expect(await waitFor(() => !existsSync(folder))).toBe(true)
+    expect(await waitFor(() => (JSON.parse(readFileSync(join(profile, 'local-file-apps.json'), 'utf8')) as { files: string[] }).files.length === 0)).toBe(true)
+    await page.locator('#local-files .empty-state').waitFor({ timeout: 20_000 })
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, QA_TEST_TIMEOUT_MS)
