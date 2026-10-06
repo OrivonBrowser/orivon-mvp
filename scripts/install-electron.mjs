@@ -188,7 +188,7 @@ if (isInvokedDirectly(import.meta.url)) {
       const { status, reason } = await setCheckoutFuses({ binary, checkoutRoot })
       if (status === 'refused' || status === 'failed') {
         const until = status === 'failed' ? 'until `npm run install:electron` sets them' : 'until the reason above no longer holds'
-        console.warn(`\nElectron binary: the fuses stay as Electron ships them (${reason}).\nA run from this checkout opens no local files and reads none of the cookies a package wrote to a shared profile, ${until}.\n`)
+        console.warn(`\nElectron binary: its fuses are not set as a package sets them (${reason}).\nA run from this checkout may open no local files, and may lose every cookie a package wrote to a profile they share, ${until}.\n`)
       } else {
         console.log(`Electron binary: fuses set as a package sets them (${status}).`)
       }
