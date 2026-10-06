@@ -42,8 +42,8 @@ vi.mock('../../browsing/favicon.js', async (importOriginal) => {
 
 const { TabManager } = await import('../tabs.js')
 
-const DASHBOARD_URL = 'http://localhost:5999/newtab/'
 const SHELL_PAGE = 'orivon-shell://renderer/newtab/index.html'
+const DASHBOARD_URL = SHELL_PAGE
 
 function newManager (): InstanceType<typeof TabManager> {
   const contentView = { children: [] as unknown[], addChildView: vi.fn(), removeChildView: vi.fn() }
