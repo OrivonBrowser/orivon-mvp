@@ -103,11 +103,15 @@ Also mandatory:
   sees it. The real path is `node_modules/webtorrent/dist/sw.min.js` — note the `dist/`; a path
   without it looks plausible and fails as a silent 404.
 
-## The file-protocol fuse is off in this repository's binaries
+## The file-protocol fuse is off, and cookie encryption on, in this repository's binaries
 
 On Linux, `npm install` (the `postinstall` hook) and `npm run install:electron` turn `grantFileProtocolExtraPrivileges`
-off in `node_modules/electron/dist/electron` (ADR-0059; a package has it off through `electron-builder.yml`).
-With it off, a `file:` page's module scripts are blocked (a null origin), a canvas read of a sibling image
+off and `enableCookieEncryption` on in `node_modules/electron/dist/electron`, as `electron-builder.yml` sets them for a
+package (`CHECKOUT_FUSES` in `scripts/install-electron.mjs`; a unit test fails when the two disagree). Cookie encryption
+is one-way per profile: a run from source shares the default profile with an installed package (ADR-0057), and a binary
+without the fuse reads none of the cookies the package encrypted and deletes them, signing the person out of every site.
+Every test launch passes `--password-store=basic`, so the cookie key never comes from the desktop's keyring.
+With the file-protocol fuse off, a `file:` page's module scripts are blocked (a null origin), a canvas read of a sibling image
 throws `SecurityError` and `fetch` of a sibling file rejects, so the shell's own pages load from
 `orivon-shell://renderer/...` instead (`src/main/pages/shell-scheme.ts`). After syncing `main`, run
 `npm run install:electron` in each checkout: it writes a new file and renames it over its own path, because a
