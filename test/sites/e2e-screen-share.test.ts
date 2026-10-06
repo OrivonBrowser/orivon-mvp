@@ -164,14 +164,15 @@ it('opens its picker on the page\'s hints, shares an entire screen, shows who sh
     const bar = await waitOverlay(app, SHARING_BAR, '.sharing-text')
     expect(await bar.textContent('.sharing-text')).toMatch(/ is sharing your screen$/)
 
-    // Hide takes the bar away; the chip brings it back.
-    await bar.click('button[aria-label="Hide this bar"]')
+    // Hide takes the bar away; the chip brings it back. Each button closes the bar's own page, which Playwright may
+    // see before its click returns: what the click did is read below, not from the click.
+    await bar.click('button[aria-label="Hide this bar"]').catch((error: unknown) => { if (!/Target page, context or browser has been closed/.test(String(error))) throw error })
     expect(await overlayGone(app, SHARING_BAR)).toBe(true)
     await chrome.click('#sharing-chip')
     const again = await waitOverlay(app, SHARING_BAR, '.sharing-text')
 
     // Stop sharing: the page's track ends and its listener ran; every indicator goes.
-    await again.click('text=Stop sharing')
+    await again.click('text=Stop sharing').catch((error: unknown) => { if (!/Target page, context or browser has been closed/.test(String(error))) throw error })
     expect(await result(view, 'ended')).toBe(1)
     expect(await view.evaluate(() => (window as unknown as { __stream: MediaStream }).__stream.getVideoTracks()[0]?.readyState)).toBe('ended')
     expect(await overlayGone(app, SHARING_BAR)).toBe(true)
