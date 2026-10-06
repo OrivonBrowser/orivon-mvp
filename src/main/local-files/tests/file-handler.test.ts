@@ -34,6 +34,47 @@ describe('localPathOf', () => {
   })
 })
 
+describe('the local-files handler and a folder', () => {
+  const entries = [{ name: 'a.html', isDirectory: false }, { name: 'sub', isDirectory: true }]
+
+  it('answers a folder with the listing of its entries, under a policy that lets nothing run', async () => {
+    const readDirectory = vi.fn(async () => entries)
+    const { handle, fetchFile } = handler({ readDirectory })
+    const response = await handle('file:///home/u/docs')
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8')
+    expect(response.headers.get('content-security-policy')).toContain("default-src 'none'")
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(await response.text()).toContain('href="file:///home/u/docs/a.html"')
+    expect(readDirectory).toHaveBeenCalledWith('/home/u/docs')
+    expect(fetchFile).not.toHaveBeenCalled()
+  })
+
+  it('answers a HEAD for a folder with the headers and no body', async () => {
+    const { handle } = handler({ readDirectory: async () => entries })
+    const response = await handle('file:///home/u/docs/', 'HEAD')
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe('')
+  })
+
+  it('reads the folder only while the fuse is off, and leaves a file and a missing path to the loader', async () => {
+    const readDirectory = vi.fn(async () => undefined)
+    const off = handler({ readDirectory })
+    await off.handle('file:///home/u/a.html')
+    expect(off.fetchFile).toHaveBeenCalledOnce()
+    const on = handler({ readDirectory }, 'on')
+    expect((await on.handle('file:///home/u/docs')).status).toBe(403)
+    expect(readDirectory).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows no listing of a share or a host', async () => {
+    const readDirectory = vi.fn(async () => entries)
+    const { handle } = handler({ readDirectory })
+    expect((await handle('file://server/share/')).status).toBe(403)
+    expect(readDirectory).not.toHaveBeenCalled()
+  })
+})
+
 describe('the local-files handler', () => {
   it('serves the file Chromium would, byte for byte, with no policy of its own on an ordinary file', async () => {
     const { handle, fetchFile } = handler()
