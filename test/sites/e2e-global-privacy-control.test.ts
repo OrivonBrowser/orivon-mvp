@@ -7,7 +7,7 @@ import type { AddressInfo } from 'node:net'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Frame, Page } from 'playwright'
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
 import { launchShell, visit } from '../support/qa-helpers.js'
 import { waitFor } from '../support/smoke-helpers.mjs'
@@ -40,8 +40,6 @@ beforeAll(async () => {
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
   origin = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`
 })
-
-beforeEach(() => { seen = [] })
 
 afterAll(async () => {
   await new Promise<void>((resolve) => { server.close(() => { resolve() }); server.closeAllConnections() })
@@ -101,6 +99,7 @@ async function runCase (options: { setting: boolean | undefined, expected: boole
 }
 
 async function launchedAndVisited (options: { setting: boolean | undefined, expected: boolean, args?: string[] }): Promise<{ app: ElectronApplication, tab: Page }> {
+  seen = []
   const { app, chrome } = await launchShell({ seedProfile: seedSetting(options.setting), args: options.args ?? [] })
   try {
     const tab = await visit(app, chrome, `${origin}/`)

@@ -4,7 +4,9 @@
 be to be accepted (an option from a list, a boolean, an integer in bounds, text of a limited length
 that passes a check). `settings-store.ts` holds the person's choices for this profile in memory and
 in `<userData>/settings.json`, tells listeners about each change, and validates everything it is
-given. `settings-appliers.ts` is what a change does to the rest of the browser for the settings
+given. `settings-file.ts` is what the file's text holds once validated, and `readSettingBeforeReady`, which
+reads one value ahead of everything for a setting Chromium takes at start (Global Privacy Control; the store
+keeps the values it started with, `valuesAtStart`, so the page can say a restart is waiting). `settings-appliers.ts` is what a change does to the rest of the browser for the settings
 whose effect is not read on demand (today the theme).
 
 **What it depends on.** [`../browsing/search-engines.ts`](../browsing/search-engines.ts) (the

@@ -4,8 +4,9 @@
 chosen, the cookies and storage of ordinary websites, the cache, the saved zoom levels, and (only when asked for
 by name) the browser storage of every cache-served app that holds permissions; `privacy-domain.ts` is what the
 Settings page may ask: how much is kept, and to clear. `local-files-domain.ts` is what Settings may ask about local files: the recorded files, deleting one's data, and clearing what the others share. Letting out: the network privacy controls, all on the
-default session's one web-request owner. `net-handlers.ts` holds the three handlers (`Sec-GPC` and `DNT`
-headers, third-party cookie stripping, the HTTPS upgrade); `privacy-headers.ts`, `cookie-policy.ts` and
+default session's one web-request owner. `net-handlers.ts` holds the three handlers (the `DNT` header,
+third-party cookie stripping, the HTTPS upgrade); Global Privacy Control is not one of them, `gpc-switch.ts` decides it
+for the whole process at start; `privacy-headers.ts`, `cookie-policy.ts` and
 `https-only.ts` are their pure decisions, `site-of.ts` the registrable-domain rule they share. A failed upgrade
 is followed by `https-fallback.ts` (the per-tab record), `https-fallback-runner.ts` (the tab's events) and
 `https-state.ts` (this run's exemptions), and ends in the sheet `https-warning-overlay.ts`
@@ -51,12 +52,23 @@ App data does not.
 
 **One part failing does not stop the others.** The result names what could not be cleared.
 
-**The network controls cover the default session only.** That is where ordinary tabs and network-served apps
+**Global Privacy Control is the engine's, for every session, and is read at start.** `gpc-switch.ts` turns on one of
+two Chromium features before the first window, from the saved setting (`../settings/settings-file.ts` reads it ahead of
+the settings store). On, `GlobalPrivacyControlForce` makes the network layer send `Sec-GPC: 1` on every request of every
+session and every page, frame and dedicated, shared or service worker report `navigator.globalPrivacyControl === true`
+through Chromium's own getter on `Navigator.prototype`. Off, the `GlobalPrivacyControl` blink feature gives the same
+getter the value `false`, so a page can tell a browser that does not send the signal from one that cannot. A script
+injected into the page could not reach a worker or a session of its own, and a header added in the web-request owner
+reached the default session only, so neither is used. The price is that a change is read at the next start: Settings
+offers a restart, and a private window follows the profile that opened it. The Chromium feature names are not an
+interface: `test/sites/e2e-global-privacy-control.test.ts` fails on a build that stops honouring them.
+
+**The other network controls cover the default session only.** That is where ordinary tabs and network-served apps
 run. Extension pages and `orivon:` pages are never filtered (the filters name `http` and `https`, and a request
 whose top document is not a web page is treated as first party), and an app's own partition is not covered.
 
 **A handler is on the owner only while a setting needs it, and reads its setting per request.** The HTTPS upgrade is
-registered while `privacy.httpsOnly` is on, the request-header handler while a signal is on or third-party cookies are
+registered while `privacy.httpsOnly` is on, the request-header handler while Do Not Track is on or third-party cookies are
 blocked, and the response-header handler while they are blocked; with every control at its default no request on the
 default session makes a round trip for them. `install-privacy-net.ts` re-evaluates this in the settings listener, so a
 control turned on is registered before the next request, and a handler that is registered still returns what it was
