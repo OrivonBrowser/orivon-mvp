@@ -7,8 +7,8 @@
 //
 // WHY THE ELECTRON IMPORT BELOW IS `import type`, AND WHY REAL ELECTRON
 // VALUES (BaseWindow/powerMonitor/net) ARE IMPORTED DYNAMICALLY INSIDE THE
-// FUNCTIONS THAT USE THEM: same reasoning as update-check-runner.ts's own
-// header -- a top-level static value import from 'electron' is silently
+// FUNCTIONS THAT USE THEM: same reasoning as main/self-update/self-update.ts's
+// `net` import -- a top-level static value import from 'electron' is silently
 // broken under this repo's vitest (the package's entry point outside a
 // real Electron process is a string, not the API surface), and this file
 // has no test importing it, so a dynamic import inside each function body
@@ -230,8 +230,7 @@ export const telemetrySubsystem: Subsystem = {
   afterReady: (ctx) => {
     // A private session measures nothing about the person and sends nothing.
     if (ctx.privateSession) return
-    // Deliberately NOT awaited -- same reasoning as updateCheckSubsystem
-    // (update-check-runner.ts): runAfterReady (registry.ts) awaits every
+    // Deliberately NOT awaited: runAfterReady (registry.ts) awaits every
     // subsystem in order before the shell window is created, and nothing
     // else in the app depends on telemetry's own init order. Because it is
     // detached, this subsystem must catch its own errors -- registry.ts's

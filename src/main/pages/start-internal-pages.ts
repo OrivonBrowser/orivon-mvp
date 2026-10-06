@@ -21,7 +21,6 @@ import { appDomain } from './app-domain.js'
 import { telemetryDomain } from './telemetry-domain.js'
 import { defaultBrowserHost } from '../os/default-browser-runner.js'
 import { osDomain } from '../os/os-domain.js'
-import { checkUpdateNow } from '../self-update/update-check-runner.js'
 import { updatesDomain } from '../self-update/updates-domain.js'
 import { onTelemetryChanged } from '../../telemetry/runner.js'
 import { profilesDomain } from '../launch/profiles-domain.js'
@@ -176,10 +175,10 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     }),
     telemetry: telemetryDomain(app, services.profiles.isPrivate),
     updates: updatesDomain(
-      async () => await checkUpdateNow(app),
+      services.selfUpdate,
       services.profiles.isPrivate,
-      (answer) => { services.internalPages.publish('updates.changed', answer, ['settings']) },
-      (caller, url) => { services.windows.findOwner(caller.contents)?.tabs.createTab(url) }
+      (caller, url) => { services.windows.findOwner(caller.contents)?.tabs.createTab(url) },
+      (caller) => services.windows.findOwner(caller.contents)
     ),
     about: aboutDomain()
   })
@@ -216,6 +215,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   siteSettings.onChange(() => { services.internalPages.publish('sites.changed', undefined, ['settings']) })
   services.passwords.onChange(() => { services.internalPages.publish('passwords.changed', undefined, ['settings']) })
   services.profiles.onChange(() => { services.internalPages.publish('profiles.changed', undefined, ['settings', 'profiles']) })
+  services.selfUpdate.onChange((answer) => { services.internalPages.publish('updates.changed', answer, ['settings']) })
   // Never fires in a private session: startTelemetry never runs there, and
   // telemetry-domain.ts's own isPrivate guard makes decideConsent unreachable.
   if (!services.profiles.isPrivate) {

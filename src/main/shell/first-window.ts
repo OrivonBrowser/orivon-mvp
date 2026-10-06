@@ -23,11 +23,13 @@ export interface FirstWindowInput {
   readonly disk?: OperandDisk
   /** The screens the window may open on; needed only to restore the window's last place. */
   readonly displays?: readonly { readonly bounds: Rect }[]
+  /** This start follows an update that restarted the browser: the last session comes back whatever the start-up setting says. */
+  readonly restoreSession?: boolean
   /** Opens a window; needed only to bring back the windows after the first one. */
   readonly openWindow?: (options: ShellWindowOptions) => void
 }
 
-export function firstWindowOptions ({ services, isPrivate, argv, packaged = true, disk, displays = [], openWindow }: FirstWindowInput): ShellWindowOptions {
+export function firstWindowOptions ({ services, isPrivate, argv, packaged = true, disk, displays = [], restoreSession = false, openWindow }: FirstWindowInput): ShellWindowOptions {
   const options: { -readonly [K in keyof ShellWindowOptions]: ShellWindowOptions[K] } = {}
 
   // A private session records no place, so it has none to restore; a kiosk fills the screen whatever was saved.
@@ -48,7 +50,7 @@ export function firstWindowOptions ({ services, isPrivate, argv, packaged = true
     return options
   }
   const plan = planStartup({
-    mode: services.settings.get('startup.mode'),
+    mode: restoreSession ? 'continue' : services.settings.get('startup.mode'),
     pages: services.settings.get('startup.pages'),
     argvUrls: given,
     previous: services.session.previous(),

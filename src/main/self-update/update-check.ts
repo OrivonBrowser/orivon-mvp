@@ -1,26 +1,14 @@
-// Update check: notifies, never installs.
+// The update check's decision rules: when a look is due, whether a release found is newer than the running version,
+// and whether the person was already told about it. It reads release metadata and never downloads or installs: the
+// signed list, the download and the install are ./update-source.ts, ./download-update.ts and ./update-flow.ts, and
+// the person's say-so is the question in ./update-ask.ts.
 //
-// Owner decision (build-plan.md's "Auto-install is cut" note, 2026-08-25): unsigned
-// electron-updater on Linux verifies only a SHA-512 fetched from the SAME
-// HOST that serves the binary, which is a standing remote-code-execution
-// channel keyed to a GitHub token -- weaker than what ADR-0005 demands of
-// third-party apps, which is the wrong way round for the browser's own
-// binary. v0 checks and notifies, linking to the release. Signing the
-// update manifest with an offline key is the next upgrade.
-//
-// This file therefore contains no download, no signature/hash verification,
-// and no install step, anywhere. The only network call it makes is a read of
-// GitHub's "latest release" metadata.
-//
-// STRUCTURE, innermost (pure) to outermost (real I/O): this file's own
-// decision table, then its checkForUpdate wrapper composing it around an
-// injected fetch -- both here and both tested. The real wiring
-// (persistence, the GitHub fetch, the notification)
-// is ./update-check-runner.ts, untested by design; the semver subset is
-// ./github-release-version.ts. Split across three files (Rule 2,
-// docs/development/code-guidelines.md).
+// STRUCTURE, innermost (pure) to outermost: the decision table, then `checkForUpdate` composing it around an
+// injected fetch, both here and both tested. ./update-checker.ts runs it on a schedule; ./self-update.ts is the
+// real wiring. The semver subset is ./github-release-version.ts.
 
 import { compareVersions, parseVersion } from './github-release-version.js'
+import type { UpdateManifest } from './update-manifest.js'
 
 // ---------------------------------------------------------------------------
 // 1. The pure decision table
@@ -105,8 +93,10 @@ export function decideUpdateNotice (input: DecideUpdateNoticeInput): UpdateNotic
 export interface ReleaseInfo {
   /** Raw version/tag as reported by the source, e.g. "v1.2.3". */
   readonly version: string
-  /** Link to the release page, to hand the user -- never a download URL. */
+  /** Link to the release page, to hand the person: built from known parts, never a download address. */
   readonly url: string
+  /** The signed list of the release's packages, already verified. */
+  readonly manifest?: UpdateManifest
 }
 
 /** Answers null when the source has nothing to report (no release yet, a response it cannot read); rejects when the
@@ -134,7 +124,7 @@ export interface CheckForUpdateResult {
 
 /**
  * `fetchLatestRelease` is a parameter, so this is exercised in tests with a
- * stub. Real wiring (./update-check-runner.ts) supplies the GitHub-backed
+ * stub. Real wiring (./update-source.ts) supplies the GitHub-backed
  * implementation.
  */
 export async function checkForUpdate (input: CheckForUpdateInput): Promise<CheckForUpdateResult> {

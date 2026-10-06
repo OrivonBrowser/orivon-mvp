@@ -23,6 +23,8 @@ import { ProfilesService } from '../launch/profiles-service.js'
 import { devPasswordStorage } from '../passwords/dev-password-storage.js'
 import { openVault } from '../passwords/open-vault.js'
 import type { PasswordVault } from '../passwords/vault.js'
+import { createSelfUpdate } from '../self-update/self-update.js'
+import type { SelfUpdate } from '../self-update/self-update.js'
 import { SiteSettingsStore } from '../site-settings/site-settings-store.js'
 import type { Runtime } from '../launch/start-launch.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
@@ -81,6 +83,8 @@ export interface ShellServices {
   readonly settings: SettingsStore
   /** The Web3 Score provider the person chose, with one cache for every window. */
   readonly scoreProvider: ScoreProviderClient
+  /** The browser's own update: the daily look, the question, the install. A private session never starts it. */
+  readonly selfUpdate: SelfUpdate
   /** The updates offered to installed apps at a name, for the key icon; empty until the app-update subsystem has published. */
   readonly updateOffers: {
     readonly pending: (origin: string) => UpdateOffer | undefined
@@ -152,6 +156,7 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     searchEngines: new SearchEngineStore(join(userDataPath, 'search-engines.json'), { readOnly: runtime.isPrivate }),
     session: runtime.isPrivate || kiosk ? new NullSessionStore() : new SessionStore(join(userDataPath, 'session.json')),
     settings,
+    selfUpdate: createSelfUpdate({ app, windows, isPrivate: runtime.isPrivate }),
     scoreProvider: createScoreProviderClient({ providerAddress: () => settings.get('web3.scoreProvider'), isDevEthName, fetchJson: netFetchJson }),
     updateOffers: {
       pending: (origin) => ctx.appUpdates?.pending(origin),

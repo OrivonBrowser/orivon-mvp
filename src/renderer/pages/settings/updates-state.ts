@@ -9,6 +9,13 @@ interface Answer {
   readonly latest: string | null
   readonly newer: boolean
   readonly url: string | null
+  /** Whether Install is offered, and why not when it is not. Main sends them with every answer. */
+  readonly canInstall?: boolean
+  readonly cannotInstallWhy?: string | null
+  /** How an install that was started is going. */
+  readonly phase?: 'idle' | 'downloading' | 'installing' | 'failed'
+  readonly percent?: number | null
+  readonly failure?: string | null
 }
 
 export class UpdatesState {
@@ -42,6 +49,43 @@ export class UpdatesState {
   /** Opens the release page in a tab of this window. Main builds the address from the answer it kept. */
   async openRelease (): Promise<void> {
     await this.bridge.request('updates', { type: 'openRelease' })
+  }
+
+  private found (): Answer | null {
+    const answer = this.answer
+    return answer === null || answer === 'checking' || answer === 'refused' ? null : answer
+  }
+
+  /** Whether the release found can be installed by this copy, and no install is running. */
+  canInstall (): boolean {
+    const answer = this.found()
+    return answer?.newer === true && answer.canInstall === true && !this.installing()
+  }
+
+  /** Why this copy cannot install the release found; '' when it can, or there is none. */
+  cannotInstallWhy (): string {
+    const answer = this.found()
+    return answer?.newer === true && answer.canInstall !== true ? answer.cannotInstallWhy ?? '' : ''
+  }
+
+  /** True from the first byte of the download until the browser restarts or the install fails. */
+  installing (): boolean {
+    const phase = this.found()?.phase
+    return phase === 'downloading' || phase === 'installing'
+  }
+
+  /** The install's progress or failure in words; '' when nothing is going on. */
+  installWords (): string {
+    const answer = this.found()
+    if (answer?.phase === 'downloading') return `Downloading the update… ${String(answer.percent ?? 0)}%`
+    if (answer?.phase === 'installing') return 'Installing the update…'
+    if (answer?.phase === 'failed') return `Could not install the update. ${answer.failure ?? ''}`.trim()
+    return ''
+  }
+
+  /** Asks main to install the release it found; progress comes back as `updates.changed`. */
+  async install (): Promise<void> {
+    await this.bridge.request('updates', { type: 'install' })
   }
 
   /** What was found, or '' before anything was asked. */

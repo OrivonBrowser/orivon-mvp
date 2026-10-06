@@ -78,8 +78,8 @@ const SPECS = {
   'passwords.offerToSave': { kind: 'bool', default: true },
   'passwords.autofill': { kind: 'bool', default: true },
   'autofill.addresses': { kind: 'bool', default: true },
-  // Whether Orivon asks GitHub, once a day, if a newer release exists. It never installs anything. Off until the owner decides.
-  'updates.check': { kind: 'bool', default: false },
+  // Whether an installed Orivon asks GitHub, once a day, if a newer signed release exists, and offers to install it.
+  'updates.check': { kind: 'bool', default: true },
   // Whether `.eth` names are proven by a light client that runs on this computer. Read when Orivon starts.
   'web3.lightClient': { kind: 'bool', default: true },
   // Where judged Web3 Score levels are read (docs/architecture/web3-score-provider.md). Empty asks nobody.

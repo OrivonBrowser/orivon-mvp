@@ -46,7 +46,7 @@ function freshDisk (generateInstallId: () => string): TelemetryDisk {
  * a malformed accounting number here cannot execute anything. The worst
  * a corrupt file can do is misreport this one install's own telemetry, so
  * falling back to the well-typed default WHOLESALE on any doubt is
- * proportionate, and matches what bookmarks.ts and update-check-runner.ts
+ * proportionate, and matches what bookmarks.ts and self-update/update-state.ts
  * both already do on their own corrupt-file path.
  */
 function parseAccountingState (raw: unknown): AccountingState {

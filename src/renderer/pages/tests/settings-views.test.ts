@@ -92,6 +92,49 @@ describe('what "Check now" says', () => {
   })
 })
 
+describe('installing from Settings', () => {
+  const NEWER = { reached: true, current: '1.0.0', latest: 'v1.1.0', newer: true, url: 'x' }
+  const answered = async (extra: Record<string, unknown>): Promise<UpdatesState> => {
+    const { updates } = state({ ok: true, answer: { ...NEWER, ...extra } })
+    await updates.check()
+    return updates
+  }
+
+  it('offers Install only when main says this copy can, and no install runs', async () => {
+    expect((await answered({ canInstall: true, phase: 'idle' })).canInstall()).toBe(true)
+    expect((await answered({ canInstall: false, cannotInstallWhy: 'Run from source.' })).canInstall()).toBe(false)
+    expect((await answered({})).canInstall()).toBe(false)
+    expect((await answered({ canInstall: true, phase: 'downloading', percent: 5 })).canInstall()).toBe(false)
+  })
+
+  it('says why a copy cannot install, and nothing when it can', async () => {
+    expect((await answered({ canInstall: false, cannotInstallWhy: 'Run from source.' })).cannotInstallWhy()).toBe('Run from source.')
+    expect((await answered({ canInstall: true })).cannotInstallWhy()).toBe('')
+  })
+
+  it('words the download, the install and a failure', async () => {
+    expect((await answered({ canInstall: true, phase: 'downloading', percent: 45 })).installWords()).toBe('Downloading the update… 45%')
+    expect((await answered({ canInstall: true, phase: 'installing' })).installWords()).toBe('Installing the update…')
+    expect((await answered({ canInstall: true, phase: 'failed', failure: 'Not allowed.' })).installWords()).toBe('Could not install the update. Not allowed.')
+    expect((await answered({ canInstall: true, phase: 'idle' })).installWords()).toBe('')
+  })
+
+  it('follows progress pushed by main as `updates.changed`', async () => {
+    const { updates, changes } = state(undefined)
+    updates.handle('updates.changed', { ...NEWER, canInstall: true, phase: 'downloading', percent: 10 })
+    updates.handle('updates.changed', { ...NEWER, canInstall: true, phase: 'downloading', percent: 60 })
+    expect(updates.installWords()).toBe('Downloading the update… 60%')
+    expect(changes).toHaveLength(2)
+  })
+
+  it('asks main to install, naming nothing of its own', async () => {
+    const request = vi.fn(async () => ({ ok: true }))
+    const updates = new UpdatesState({ request } as unknown as OrivonInternal, () => {})
+    await updates.install()
+    expect(request).toHaveBeenCalledWith('updates', { type: 'install' })
+  })
+})
+
 describe('AppsState.handle', () => {
   it('reloads the list on apps.changed', async () => {
     vi.useFakeTimers()

@@ -3,7 +3,7 @@
 // data: rather than the renderer fetching directly, and for why this
 // file's own fetch must clear T12 before it runs.
 //
-// Structure mirrors update-check.ts/update-check-runner.ts: pure parts
+// Structure mirrors self-update/update-check.ts and update-source.ts: pure parts
 // exported and tested (faviconCandidates, isSafeFaviconUrl, readCapped), and
 // one network entry point, fetchFaviconDataUrlCached, thin and defensive
 // around them. net.request, not net.fetch -- redirects need

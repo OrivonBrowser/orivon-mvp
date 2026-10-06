@@ -28,6 +28,10 @@ the launch hands it `openWindow`.
 in front; the restored or listed tabs stay behind it. A private session ignores the choice altogether: it is a
 browser of its own, so it neither restores the last session nor is offered it.
 
+**A start after an update restores the session.** `firstWindowOptions` takes `restoreSession` from the one-shot note the
+update wrote (`../self-update/restart-marker.ts`), and plans the start as `continue` whatever `startup.mode` says; the
+notes of `../self-update/README.md` say when the note is written.
+
 **Both the list and the session file are data, and are read again at launch.** `startup.pages` is
 re-validated line by line with the address bar's own rule (`parsePages`), and the session's tabs go through
 `openSnapshot`, which checks each address once more. Nothing from either reaches the trusted opening path.

@@ -125,18 +125,18 @@ it('shows usage statistics as undecided with the exact text that would be sent, 
   }
 }, TEST_TIMEOUT_MS)
 
-it('keeps looking for updates off until it is turned on', async () => {
+it('looks for updates by default, and stops when it is turned off', async () => {
   const { app, chrome } = await launched()
   try {
     const userData = await userDataOf(app)
     const page = await openSettings(app, chrome, '/about')
     const toggle = page.locator('#row-updates-check input[type=checkbox]')
     await toggle.waitFor({ state: 'attached' })
-    expect(await toggle.isChecked()).toBe(false)
+    expect(await toggle.isChecked()).toBe(true)
     expect(await page.locator('#row-updates-result').count()).toBe(0)
 
     await toggle.click()
-    expect(await waitFor(() => { try { return (JSON.parse(readFileSync(join(userData, 'settings.json'), 'utf8')) as { values: Record<string, unknown> }).values['updates.check'] === true } catch { return false } })).toBe(true)
+    expect(await waitFor(() => { try { return (JSON.parse(readFileSync(join(userData, 'settings.json'), 'utf8')) as { values: Record<string, unknown> }).values['updates.check'] === false } catch { return false } })).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)

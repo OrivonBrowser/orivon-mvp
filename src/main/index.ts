@@ -35,7 +35,8 @@ import { handleOpenFile } from './os/open-file.js'
 import { removeAfterExit, removePrivateDir, sweepPrivateDirs } from './launch/private-session.js'
 import { loadFetchStack } from './startup/fetch-stack.js'
 import { startLaunch } from './launch/start-launch.js'
-import { runUpdateCheck } from './self-update/update-check-runner.js'
+import { takeRestartMarker } from './self-update/restart-marker.js'
+import { isUpdateTestBuild } from './self-update/update-test-seam.js'
 import { scheduleUpdateChecks } from './self-update/update-schedule.js'
 import { configureVerifier, verifierEthContentCid } from './verifier/verifier-subsystem.js'
 import { createPageScoreLookup } from './browsing/page-score-lookup.js'
@@ -235,12 +236,13 @@ function boot (runtime: Runtime): void {
     installDownloads(app, { windows: shell.windows, downloads: shell.downloads, defaultSession: session.defaultSession, discardHeldAtQuit: runtime.isPrivate })
     installDownloadsPeek(shell)
     registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks)
-    // Looks for a newer release once a day when the person has said it may, from the moment they say so; installs nothing.
+    // Looks for a newer signed release once a day while the setting is on (it is, by default) and asks the person what
+    // to do; installs nothing until asked. A run from source never looks by itself: its version says nothing.
     if (!runtime.isPrivate) {
       const stopUpdateChecks = scheduleUpdateChecks({
-        enabled: () => shell.settings.get('updates.check'),
+        enabled: () => shell.settings.get('updates.check') && (app.isPackaged || isUpdateTestBuild()),
         onEnabledChange: (listener) => shell.settings.onChange((change) => { if (change.key === 'updates.check') listener() }),
-        run: async () => { await runUpdateCheck(app).catch((error: unknown) => { console.error('[orivon] the update check failed:', error) }) }
+        run: async () => { await shell.selfUpdate.runScheduled() }
       })
       app.once('will-quit', stopUpdateChecks)
     }
@@ -280,7 +282,7 @@ function boot (runtime: Runtime): void {
         // 'activate' below recreates a window in a process that has already shown it.
         // Only the default profile's own screen offers it, and a kiosk is no one's browser.
         const offersDefault = runtime.profileId === 'default' && !shell.kiosk && canOfferDefault(defaultBrowserHost)
-        const plan = firstWindowOptions({ services: shell, isPrivate: false, argv: process.argv, packaged: app.isPackaged, displays: screen.getAllDisplays(), openWindow: (options) => { createShellWindow(ctx, shell, options) } })
+        const plan = firstWindowOptions({ services: shell, isPrivate: false, argv: process.argv, packaged: app.isPackaged, displays: screen.getAllDisplays(), restoreSession: takeRestartMarker(app.getPath('userData')), openWindow: (options) => { createShellWindow(ctx, shell, options) } })
         // A first tab that is a local file needs the binary's fuse read, which nothing else at start-up does.
         if (plan.localFiles === true) await fileProtocolFuse()
         const firstWindow = createShellWindow(ctx, shell, { ...plan, intro: plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData'), offersDefault), firstOfLaunch: true })

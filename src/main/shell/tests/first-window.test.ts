@@ -157,6 +157,17 @@ describe('firstWindowOptions', () => {
       expect(firstWindowOptions({ services: services({ mode: 'continue' }), isPrivate: false, argv: [] }).first).toBeUndefined()
     })
 
+    it('brings the session back after an update restart, whatever the start-up choice says', () => {
+      for (const mode of ['newTab', 'pages']) {
+        const plan = firstWindowOptions({ services: services({ mode, pages: 'https://p.example/', previous }), isPrivate: false, argv: [], displays: [display], restoreSession: true, openWindow: vi.fn() })
+        const fake = fakeTabs()
+        plan.first?.(fake.tabs)
+        expect(fake.calls.slice(0, 2)).toEqual(['create https://a.example/ back', 'create https://b.example/ back'])
+        expect(plan.after).toBeDefined()
+      }
+      expect(firstWindowOptions({ services: services({ mode: 'newTab', previous }), isPrivate: true, argv: [], restoreSession: true })).toEqual({})
+    })
+
     it('adds the launch address to the restored tabs, in front, and ignores the choice in a private session', () => {
       const plan = firstWindowOptions({ services: services({ mode: 'continue', previous }), isPrivate: false, argv: ['orivon', 'https://link.example/'], displays: [display] })
       const fake = fakeTabs()

@@ -74,10 +74,14 @@ export function renderDefaultBrowserProblem (state: SettingsState): HTMLElement 
     h('div', { className: 'command-line' }, h('code', { textContent: command }), copy))
 }
 
-/** A newer release exists: say which, and offer its page. Nothing is downloaded or installed. */
+/** A newer release exists: say which, install it when this copy can, and always offer its page. */
 export function renderRelease (state: SettingsState): HTMLElement {
   const version = state.updates.available()
+  const status = state.updates.installWords() || state.updates.cannotInstallWhy()
+  const failed = state.updates.installWords().startsWith('Could not')
   return h('div', { className: 'banner info', role: 'status' },
     h('span', { textContent: `Orivon ${version ?? ''} is available.` }),
+    ...(status === '' ? [] : [h('span', { className: failed ? 'problem' : 'muted', textContent: status })]),
+    ...(state.updates.canInstall() ? [h('button', { className: 'btn small primary', type: 'button', textContent: 'Install update', onclick: () => { void state.updates.install() } })] : []),
     h('button', { className: 'btn small', type: 'button', textContent: 'Open release page', onclick: () => { void state.updates.openRelease() } }))
 }

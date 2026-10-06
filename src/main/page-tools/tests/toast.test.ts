@@ -10,7 +10,7 @@ describe('toastView', () => {
 
   it('keeps only the message for work still going on', () => {
     expect(toastView('savingPdf').sticky).toBe(true)
-    expect(Object.entries(TOAST_TEXT).filter(([, entry]) => 'sticky' in entry).map(([code]) => code)).toEqual(['savingPdf'])
+    expect(Object.entries(TOAST_TEXT).filter(([, entry]) => 'sticky' in entry).map(([code]) => code)).toEqual(['savingPdf', 'updateDownloading', 'updateInstalling'])
   })
 
   it('offers Save as PDF from the no-printer message and from no other', () => {
