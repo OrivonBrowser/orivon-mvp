@@ -21,7 +21,7 @@ describe('installPlan', () => {
   it('installs a deb through pkexec with its own agent off, an argument array and the declined exit codes', () => {
     const plan = installPlan('deb', '/ud/pending-update/o.deb', facts())
     expect(plan.steps).toEqual([
-      { op: 'run', command: PKEXEC, args: ['--disable-internal-agent', DPKG, '-i', '/ud/pending-update/o.deb'], declined: [126, 127] },
+      { op: 'run', command: PKEXEC, args: ['--disable-internal-agent', DPKG, '-i', '/ud/pending-update/o.deb'], declined: [126], failures: { 127: 'The system refused the installation, or could not show its password prompt.' } },
       { op: 'relaunch', execPath: '/opt/Orivon/orivon' }
     ])
   })

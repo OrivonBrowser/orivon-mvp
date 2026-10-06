@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { stage, swapFile, swapFolder } from '../install-host.js'
+import { markedRestarter, realInstallHost, stage, swapFile, swapFolder } from '../install-host.js'
 import { runInstall } from '../install-update.js'
 import type { InstallHost } from '../install-update.js'
 import type { InstallPlan } from '../install-plan.js'
@@ -20,7 +20,7 @@ function recorder (exitCodes: Record<string, number> = {}, failOn?: string): { h
       makeFolder: async (path) => { note(`mkdir ${path}`) },
       remove: async (path) => { note(`rm ${path}`) },
       run: async (command) => { note(`run ${command}`); return exitCodes[command] ?? 0 },
-      start: (command) => { note(`start ${command}`) },
+      start: async (command) => { note(`start ${command}`); maybeFail('start') },
       relaunch: (path) => { note(`relaunch ${path}`) },
       quit: () => { note('quit') }
     }
@@ -72,6 +72,23 @@ describe('runInstall', () => {
     expect(result).toEqual({ ok: false, reason: 'pk stopped with an error (exit code 1).', declined: false })
   })
 
+  it('does not quit when the installer could not be started, and says so', async () => {
+    const { host, calls } = recorder({}, 'start')
+    const result = await runInstall({ steps: [{ op: 'start', command: 'setup', args: [] }, { op: 'quit' }], onFailure: [], always: [] }, host)
+    expect(result).toEqual({ ok: false, reason: 'start failed', declined: false })
+    expect(calls).toEqual(['start setup'])
+  })
+
+  it('says what pkexec\'s exit code means when the step names one, and the generic words otherwise', async () => {
+    const steps = [{ op: 'run' as const, command: '/usr/bin/pkexec', args: [], declined: [126], failures: { 127: 'The system refused the installation.' } }]
+    const refused = recorder({ '/usr/bin/pkexec': 127 })
+    expect(await runInstall({ steps, onFailure: [], always: [] }, refused.host)).toEqual({ ok: false, reason: 'The system refused the installation.', declined: false })
+    const other = recorder({ '/usr/bin/pkexec': 1 })
+    expect(await runInstall({ steps, onFailure: [], always: [] }, other.host)).toEqual({ ok: false, reason: 'pkexec stopped with an error (exit code 1).', declined: false })
+    const dismissed = recorder({ '/usr/bin/pkexec': 126 })
+    expect(await runInstall({ steps, onFailure: [], always: [] }, dismissed.host)).toMatchObject({ declined: true })
+  })
+
   it('does not let a cleanup that fails hide the install\'s own result', async () => {
     const { host } = recorder()
     const result = await runInstall({ steps: [{ op: 'relaunch', execPath: 'x' }], onFailure: [], always: [{ op: 'run', command: 'detach', args: [] }] }, { ...host, run: async () => { throw new Error('busy') } })
@@ -113,5 +130,27 @@ describe('the real file steps', () => {
     mkdirSync(join(dir, 'Orivon.app')); writeFileSync(join(dir, 'Orivon.app', 'v'), 'old')
     await expect(swapFolder(join(dir, 'missing-stage'), join(dir, 'Orivon.app'), join(dir, '.old'))).rejects.toThrow()
     expect(readFileSync(join(dir, 'Orivon.app', 'v'), 'utf8')).toBe('old')
+  })
+})
+
+describe('the restarter', () => {
+  it('writes the restart note only when the restart is armed, never earlier', async () => {
+    const events: string[] = []
+    const restarter = markedRestarter({ mark: () => { events.push('mark') }, relaunch: () => { events.push('relaunch') }, quit: () => { events.push('quit') } })
+    const { host } = recorder()
+    const plan: InstallPlan = { steps: [{ op: 'run', command: 'pk', args: [] }, { op: 'relaunch', execPath: 'c' }, { op: 'quit' }], onFailure: [], always: [] }
+    const real = { ...host, run: async () => { events.push('prompt'); return 0 }, relaunch: restarter.relaunch, quit: restarter.quit }
+    await runInstall(plan, real)
+    expect(events).toEqual(['prompt', 'mark', 'relaunch', 'mark', 'quit'])
+  })
+})
+
+describe('starting a program that outlives this one', () => {
+  it('resolves once it has started', async () => {
+    await expect(realInstallHost({ relaunch: () => {}, quit: () => {} }).start(process.execPath, ['-e', ''])).resolves.toBeUndefined()
+  })
+
+  it('rejects when it cannot be started, so the browser is not quit for nothing', async () => {
+    await expect(realInstallHost({ relaunch: () => {}, quit: () => {} }).start(join(tmpdir(), 'orivon-no-such-installer'), [])).rejects.toThrow()
   })
 })

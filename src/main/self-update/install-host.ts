@@ -40,6 +40,14 @@ export interface Restarter {
   readonly quit: () => void
 }
 
+/** A restarter that writes the one-shot restart note at the moment the restart is armed and again as the browser quits, never earlier: a password prompt that takes minutes cannot age it. */
+export function markedRestarter (deps: Restarter & { readonly mark: () => void }): Restarter {
+  return {
+    relaunch: (execPath) => { deps.mark(); deps.relaunch(execPath) },
+    quit: () => { deps.mark(); deps.quit() }
+  }
+}
+
 export function realInstallHost (restarter: Restarter): InstallHost {
   return {
     stage,
@@ -54,11 +62,11 @@ export function realInstallHost (restarter: Restarter): InstallHost {
         else reject(error)
       })
     }),
-    start: (command, args) => {
+    start: async (command, args) => await new Promise<void>((resolve, reject) => {
       const child = spawn(command, [...args], { detached: true, stdio: 'ignore', windowsHide: true })
-      child.on('error', (error) => { console.error('[orivon] could not start the installer:', error.message) })
-      child.unref()
-    },
+      child.once('error', reject)
+      child.once('spawn', () => { child.unref(); resolve() })
+    }),
     relaunch: restarter.relaunch,
     quit: restarter.quit
   }

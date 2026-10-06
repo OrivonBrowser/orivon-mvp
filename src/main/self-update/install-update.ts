@@ -12,8 +12,8 @@ export interface InstallHost {
   readonly remove: (path: string) => Promise<void>
   /** The program's exit code; rejects when it cannot be started. */
   readonly run: (command: string, args: readonly string[]) => Promise<number>
-  /** Starts a program that outlives this process. */
-  readonly start: (command: string, args: readonly string[]) => void
+  /** Starts a program that outlives this process; resolves once it has started and rejects when it could not be. */
+  readonly start: (command: string, args: readonly string[]) => Promise<void>
   /** Arranges for `execPath` to start once this process has quit. */
   readonly relaunch: (execPath: string) => void
   readonly quit: () => void
@@ -32,12 +32,12 @@ async function perform (step: InstallStep, host: InstallHost): Promise<void> {
     case 'swap-folder': return await host.swapFolder(step.staged, step.target, step.backup)
     case 'make-folder': return await host.makeFolder(step.path)
     case 'remove': return await host.remove(step.path)
-    case 'start': host.start(step.command, step.args); return
+    case 'start': return await host.start(step.command, step.args)
     case 'run': {
       const code = await host.run(step.command, step.args)
       if (code === 0) return
       if (step.declined?.includes(code) === true) throw new Declined('You did not allow the installation.')
-      throw new Error(`${basename(step.command)} stopped with an error (exit code ${String(code)}).`)
+      throw new Error(step.failures?.[code] ?? `${basename(step.command)} stopped with an error (exit code ${String(code)}).`)
     }
     case 'relaunch': host.relaunch(step.execPath); return
     case 'quit': host.quit()

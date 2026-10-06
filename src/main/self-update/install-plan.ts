@@ -13,8 +13,8 @@ export type InstallStep =
   | { readonly op: 'swap-folder', readonly staged: string, readonly target: string, readonly backup: string }
   | { readonly op: 'make-folder', readonly path: string }
   | { readonly op: 'remove', readonly path: string }
-  /** Waits for the program. An exit code in `declined` means the person refused or cancelled, not that it failed. */
-  | { readonly op: 'run', readonly command: string, readonly args: readonly string[], readonly declined?: readonly number[] }
+  /** Waits for the program. An exit code in `declined` means the person refused or cancelled, not that it failed; `failures` words the other codes it is known to answer. */
+  | { readonly op: 'run', readonly command: string, readonly args: readonly string[], readonly declined?: readonly number[], readonly failures?: Readonly<Record<number, string>> }
   | { readonly op: 'start', readonly command: string, readonly args: readonly string[] }
   /** Starts `execPath` again once this process has quit, then quits. */
   | { readonly op: 'relaunch', readonly execPath: string }
@@ -37,8 +37,9 @@ export const PKEXEC = '/usr/bin/pkexec'
 export const DPKG = '/usr/bin/dpkg'
 export const HDIUTIL = '/usr/bin/hdiutil'
 export const DITTO = '/usr/bin/ditto'
-/** pkexec's exit codes for "the person dismissed the prompt" and "not authorized". */
-export const PKEXEC_DECLINED = [126, 127] as const
+/** pkexec's exit code for "the person dismissed the dialog"; 127 is not authorized, or no authentication agent to ask (pkexec(1)). */
+export const PKEXEC_DECLINED = [126] as const
+export const PKEXEC_REFUSED = 'The system refused the installation, or could not show its password prompt.'
 /** The flags electron-builder's NSIS installer takes to update in place and start the new copy. */
 export const NSIS_UPDATE_ARGS = ['--updated', '/S', '--force-run'] as const
 const BUNDLE_NAME = 'Orivon.app'
@@ -69,7 +70,7 @@ export function installPlan (kind: InstallerKind, file: string, facts: PlanFacts
     case 'deb':
       return {
         steps: [
-          { op: 'run', command: PKEXEC, args: ['--disable-internal-agent', DPKG, '-i', file], declined: PKEXEC_DECLINED },
+          { op: 'run', command: PKEXEC, args: ['--disable-internal-agent', DPKG, '-i', file], declined: PKEXEC_DECLINED, failures: { 127: PKEXEC_REFUSED } },
           { op: 'relaunch', execPath: facts.execPath }
         ],
         onFailure: none,
