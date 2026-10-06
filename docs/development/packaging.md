@@ -108,6 +108,10 @@ under "On IPFS", which the workflow writes, and in the `ipfs.json` attached to i
 - **Anyone can pin a release too.** The CID depends only on the files and the flags in
   `pin-releases.sh`, so `pin-releases.sh sync` (or `ipfs add` with those flags) on any Kubo node
   reproduces it. Changing the flags changes every CID from the next release on.
+- **The signed update list is not in the folder.** `orivon-update.json` and its signature are attached by the
+  maintainer after the release job (`release-checklist.md`), so they are neither among the files `ipfs.json` lists
+  nor part of the CID, and the node, which downloads only the files `ipfs.json` names, never reads them. The
+  list's hashes are the same files' SHA-256, so the IPFS copy of a package verifies against it too.
 
 The Orivon node runs it from a systemd timer every 15 minutes:
 
@@ -313,14 +317,14 @@ What a real build leaves open. None of them blocks a build.
 
 ## What this document does not cover
 
-**Auto-update.** Cut (`build-plan.md`): unsigned
-`electron-updater` on Linux verifies only a SHA-512 fetched from the same host that serves the
-binary, which is a standing remote-code-execution channel keyed to a GitHub token. v0 checks
-for a new version and notifies instead, which is a separate, already-scoped piece of work, not
-part of this config. `electron-builder.yml` sets `publish: null` explicitly (not just omitted)
-specifically so that a stray `latest-linux.yml`/`app-update.yml` never ships implying an update
-channel that doesn't exist, since electron-builder would otherwise auto-detect a GitHub publish
-target from `package.json`'s `repository` field.
+**Auto-update by `electron-updater`.** Not used: it verifies only a SHA-512 fetched from the same host that
+serves the binary, which is a standing remote-code-execution channel keyed to a GitHub token. Orivon installs
+its own update from a release whose file list an offline key signed (`ADR-0062`; the maintainer signs with
+`scripts/release/sign-update.mjs` after the release job, see `release-checklist.md`). `electron-builder.yml` sets
+`publish: null` explicitly (not just omitted) so that a stray `latest-linux.yml` or `app-update.yml` never ships
+implying a second update channel, since electron-builder would otherwise auto-detect a GitHub publish target
+from `package.json`'s `repository` field. A package therefore carries no `package-type` file either, so
+Orivon tells a deb from other Linux copies by asking the system's package manager who owns its executable.
 
 **Code signing with a bought certificate.** Not configured; §Windows and macOS says what a
 person sees without it, and what adding it takes.

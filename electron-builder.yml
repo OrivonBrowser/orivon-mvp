@@ -78,18 +78,15 @@ npmRebuild: false
 
 publish: null
 # Explicitly disabled, not merely unconfigured. electron-builder auto-detects a GitHub
-# publish target from package.json's `repository` field (this repo has one, pointing at
-# github.com/OrivonBrowser/orivon-mvp), and per electron-builder's own PublishManager,
-# an explicit `null` here -- not just omitting the key -- is what guarantees no
-# `app-update.yml` is written into the packaged resources and no publish config is
-# resolved from any source. Auto-update is cut by owner decision (build-plan.md,
-# 2026-08-25): unsigned `electron-updater` on Linux verifies only a SHA-512 fetched from
-# the same host that serves the binary, which is a standing remote-code-execution
-# channel keyed to a GitHub token. v0 checks and notifies instead (a separate,
-# already-scoped build step) -- this key exists so that decision cannot be silently
-# undone by a future contributor passing `--publish` without reading either doc.
-# The release workflow attaches packages with `gh release upload`, which writes no
-# update metadata.
+# publish target from package.json's `repository` field, and per electron-builder's own
+# PublishManager an explicit `null` here, not just omitting the key, guarantees that no
+# `app-update.yml` is written into the packaged resources. Orivon does not use
+# electron-updater: it installs its own update from a release whose file list an offline key
+# signed (docs/decisions/ADR-0062-*.md). The release workflow attaches packages with
+# `gh release upload`, which writes no update metadata; the maintainer attaches the signed
+# list afterwards (scripts/release/sign-update.mjs).
+# The artifactName patterns below and the deb's default name are the names the browser looks
+# for in that list (src/main/self-update/install-kind.ts, held to this file by its test).
 
 # --- Electron fuses ------------------------------------------------------------------
 # Toggles written into the packaged Electron binary after packing and before signing

@@ -701,16 +701,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A204: `updateCheckSubsystem` is built but never wired **[OWNER]**
-
-- **Question:** Add `updateCheckSubsystem` to `src/main/subsystems.ts`, or confirm the self-update
-  check stays unwired, and why?
-- **Why it matters:** The GitHub-release check is built and unit-tested but never runs in a build.
-- **Options:** wire it after `brokerIpcSubsystem` (no ordering constraint); leave it unwired until
-  a real release exists to check against.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A205: File System Access: prompts for write-back, stored handles and folders **[AI-REC]**
 
 - **Question:** Electron decides File System Access in the synchronous check handler, which cannot
@@ -1260,16 +1250,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   own time and a person with two profiles counts as two installs. The success metric counts people.
 - **Options:** the default profile's directory keeps the id and other profiles send nothing (rec.);
   other profiles share its id; leave it. Each is a small change to `src/telemetry/`.
-- **Who decides:** owner
-- **Blocks:** nothing
-
-### A275: The update check is off until the owner decides **[OWNER]**
-
-- **Question:** Should looking for a newer release be on by default, and should Settings link to it?
-- **Why it matters:** the check asks GitHub once a day and installs nothing (`update-check.ts`); a
-  request to a third party at every start is a decision about what the browser tells one. It only
-  notifies, and Settings gives no way to the release page.
-- **Options:** keep it off, with "Check now" in Settings (rec.); on by default with a disclosure.
 - **Who decides:** owner
 - **Blocks:** nothing
 

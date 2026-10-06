@@ -147,6 +147,12 @@ forgotten.
       old verifies no `.eth` name until the person installs a newer one.
 - [ ] `npm run typecheck && npm test && npm run check:natives && npm run check:contracts` green.
 - [ ] CI green on `main`.
+- [ ] **After the Release workflow is green: sign the release's package list**, on the machine that holds the
+      key: `node scripts/release/sign-update.mjs <tag> --key <update-signing-key> --upload`, then
+      `node scripts/release/sign-update.mjs <tag> --verify`. Until both files are attached an installed browser
+      does not offer the release. Sign again after any re-run of the workflow, which rebuilds the packages; a
+      change of key means shipping the new public key in `src/main/self-update/update-signing-key.ts` in a release
+      the old key signed ([`ADR-0062`](../decisions/ADR-0062-orivon-installs-its-own-update-only-from-a-release-an-offline-key-signed.md)).
 - [ ] After publishing: the Release workflow is green and the release carries the deb, the
       AppImage, the Windows installer, both dmgs and `ipfs.json` ([`packaging.md`](packaging.md)
       §Releases); within about 15 minutes `ipfs://<cid>` from its notes opens in Orivon.

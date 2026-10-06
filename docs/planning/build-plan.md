@@ -237,15 +237,15 @@ docs. This is journey 4.
 signed dmgs, built and launched by CI on each GitHub release and attached to it. Plus a
 documented, tested run-from-source path in the README for Windows and macOS.
 
-**Auto-install is cut.** Unsigned `electron-updater` on Linux
-verifies only a SHA-512 fetched from the *same host* that serves the binary, making it a
-standing remote-code-execution channel keyed to a GitHub token, weaker than what `ADR-0005`
-demands of third-party apps, which is the wrong way round. v0 **checks and notifies**, linking
-to the release. Signing the update manifest with an offline key is the next upgrade.
+**Unsigned auto-update is cut.** `electron-updater` on Linux verifies only a SHA-512 fetched from the
+*same host* that serves the binary, making it a standing remote-code-execution channel keyed to a GitHub
+token, weaker than what `ADR-0005` demands of third-party apps. Orivon looks for a newer stable release once
+a day and offers to install it only when the release carries a file list signed with an offline key
+(`ADR-0062`); a copy that cannot replace itself is offered the release page.
 
 Two packaging facts that shape the choice, verified 2026-08-25:
 - **AppImage is the only seamless auto-update target**; deb/rpm updates require a privilege
-  prompt. Moot for v0 given the above, but it constrains the path after v0.
+  prompt, which Orivon shows through the system's own (`pkexec`).
 - **Only deb can register as the default browser.** `xdg-settings set default-web-browser`
   needs an installed `.desktop` file with the right `MimeType=` entries, and a bare AppImage
   does not self-integrate. For a metric measured in daily-driver hours that is not cosmetic:

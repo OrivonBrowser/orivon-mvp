@@ -197,9 +197,10 @@ was simply overlooked.
   *"connect to any computer on the internet"* in every first-party app's prompt. Integrity is hash-pinning,
   and a site can publish its bundle hash tree, which the Web3 Score page compares with the pin
   (DDOC, `ADR-0029`).
-- **Auto-install of updates, cut.** Unsigned `electron-updater` verifies a hash fetched from the
-  same host that serves the binary, which is a standing remote-code-execution channel and weaker
-  than what is demanded of third-party apps. v0 checks and notifies.
+- **Unsigned auto-update, cut.** `electron-updater` verifies a hash fetched from the same host that
+  serves the binary, which is a standing remote-code-execution channel and weaker than what is
+  demanded of third-party apps. Orivon installs its own update only from a release whose file list an
+  offline Ed25519 key signed, and only when the person says so (`src/main/self-update/`, `ADR-0062`).
 - **`activeSec` rather than uptime**, in the success metric. Not a cut, but the same kind of
   call: some apps do their work in the background, a node syncing or a client seeding, so
   measuring "app open" would let someone who started one and walked away hit the target on day
