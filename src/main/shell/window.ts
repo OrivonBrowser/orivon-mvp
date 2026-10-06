@@ -51,7 +51,7 @@ export function resolveDashboardUrl (): string {
  * `intro`: the process's first window on a launch that opens on the welcome
  * screen (./intro-state.ts). */
 export function createShellWindow (ctx: SubsystemContext, services: ShellServices, options: ShellWindowOptions = {}): BaseWindow {
-  const { intro, first, place, firstOfLaunch, instant, maximized, inactive, shown } = options
+  const { intro, first, place, firstOfLaunch, maximized, inactive, shown } = options
   // Every window of a kiosk process is a kiosk window: a popup's window must not bring the chrome back.
   const { kiosk } = services
   const frame = createWindowFrame(import.meta.dirname, place, services.profiles.isPrivate, kiosk)
@@ -78,9 +78,10 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // an opaque white, painted the instant it is attached -- the SAME white
   // flash tab-view.ts and popover-view.ts fix, for the same reason (this
   // view is attached ahead of its own first paint). The window's own
-  // background (createWindowFrame's `background()`) covers a torn-off
-  // window shown `instant` before either view exists; it does not cover
-  // THIS view's own separate surface once attached. Kept live across an OS
+  // background (createWindowFrame's `background()`) covers a window shown
+  // at once (one opened in front after the launch's first) before either view
+  // exists; it does not cover THIS view's own separate surface once
+  // attached. Kept live across an OS
   // theme change while the window stays open (theme-colors.ts's
   // `onThemeUpdated` below). window-frame.ts sets the window's creation
   // colour and keeps its title-bar overlay live; window-backing.ts owns the
@@ -290,7 +291,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   if (intro !== undefined) showIntro(win, tabs, intro, () => { services.commands.run('nav.focusAddress', entry) })
   runWindowHooks('opened', context, options)
 
-  showWhenReady(frame, { firstOfLaunch, instant, maximized, inactive, onShown: shown })
+  showWhenReady(frame, { firstOfLaunch, maximized, inactive, onShown: shown })
 
   return win
 }

@@ -7,7 +7,7 @@ import type { AddressInfo } from 'node:net'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
-import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
+import { clickAddressBarRetrying, pressKey } from '../support/e2e-helpers.js'
 import { bookmarkUrls, delay, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 let server: Server
@@ -107,6 +107,39 @@ it('the same popover opens in two windows one after the other', async () => {
     expect(await waitFor(async () => await popover?.locator('#empty-state').count() === 1)).toBe(true)
     expect(mainOutput(app)).not.toContain('second handler')
     expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('a new window is shown the moment it is made', async () => {
+  const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
+  try {
+    await firstChrome(app)
+    // Main-process polling at 1 ms: the first time it sees a window, was that window already on screen?
+    await app.evaluate(({ BaseWindow }) => {
+      const seen = new Set<number>(BaseWindow.getAllWindows().map((win) => win.id))
+      const visibleWhenSeen: boolean[] = []
+      const slot = globalThis as unknown as { __visibleWhenSeen: boolean[], __watch: NodeJS.Timeout }
+      slot.__visibleWhenSeen = visibleWhenSeen
+      slot.__watch = setInterval(() => {
+        for (const win of BaseWindow.getAllWindows()) {
+          if (seen.has(win.id)) continue
+          seen.add(win.id)
+          visibleWhenSeen.push(win.isVisible())
+        }
+      }, 1)
+    })
+
+    await pressKey(app, '/renderer/index.html', 'N', ['control'])
+    expect(await waitFor(() => chromePages(app).length === 2)).toBe(true)
+
+    const visibleWhenSeen = await app.evaluate(() => {
+      const slot = globalThis as unknown as { __visibleWhenSeen: boolean[], __watch: NodeJS.Timeout }
+      clearInterval(slot.__watch)
+      return slot.__visibleWhenSeen
+    })
+    expect(visibleWhenSeen).toEqual([true])
   } finally {
     await closeElectron(app)
   }

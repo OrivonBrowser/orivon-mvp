@@ -26,9 +26,9 @@ const OVERLAY_PRIVATE_LIGHT = { color: '#d8cfe8', symbolColor: '#202124' }
 // The window's own background at creation, same values as the overlay's `color` above
 // (== src/renderer/style.css's --wchrome for each theme/private combination)
 // -- Electron paints this the instant the window is created, before either
-// view has a pixel to show, so it is what a tear-off (shown at once, see
-// `instant` below) shows instead of a flash of white. Once a tab is shown the
-// colour is that tab's (window-backing.ts).
+// view has a pixel to show, so it is what a window opened in front after the launch's
+// first (shown at once, see `showWhenReady` below) shows instead of a flash of white.
+// Once a tab is shown the colour is that tab's (window-backing.ts).
 const BACKGROUND_DARK = OVERLAY_DARK.color
 const BACKGROUND_LIGHT = OVERLAY_LIGHT.color
 const BACKGROUND_PRIVATE_DARK = OVERLAY_PRIVATE_DARK.color
@@ -151,20 +151,21 @@ export function createWindowFrame (dirname: string, place: Placement = {}, isPri
 
 export interface ShowOptions {
   /** This is the launch's own first window (window-options.ts's own doc on `ShellWindowOptions.firstOfLaunch`)
-   * -- the only window `ORIVON_WINDOW_NO_FOCUS=1` may show inactive. Every other window always takes focus. */
+   * -- it waits for `ready-to-show`, and it is the only one `ORIVON_WINDOW_NO_FOCUS=1` may show inactive. */
   firstOfLaunch?: boolean | undefined
-  /** Shows the window at once instead of racing `ready-to-show` against the fallback timer -- for a window
-   * whose content (a moved tab) is already rendered elsewhere, so nothing here is worth waiting on. */
-  instant?: boolean | undefined
   /** Maximised once shown, from the size `initialBounds` names: un-maximising returns to it. */
   maximized?: boolean | undefined
-  /** Shown without taking focus, whatever the launch switch says. */
+  /** Shown without taking focus, whatever the launch switch says, once it can paint: it comes up behind the
+   * window in use, so nothing is gained by showing it empty. */
   inactive?: boolean | undefined
   /** Called once the window has been shown. */
   onShown?: (() => void) | undefined
 }
 
-/** Shows the window once it can paint, and once only. */
+/** Shows the window, once only. The launch's first window, and a window that comes up behind (`inactive`), wait for
+ * their first paint, so no empty frame shows while the process is still starting. A window opened in front later is
+ * shown at once: the process is warm, and the creation colour (`windowBackgroundColor`) holds the frame until the
+ * views paint. */
 export function showWhenReady ({ win, initialBounds, kiosk }: WindowFrame, options: ShowOptions = {}): void {
   const skipFocus = NO_FOCUS && options.firstOfLaunch === true
   // Electron's type declarations only put 'ready-to-show' on BrowserWindow's
@@ -213,11 +214,7 @@ export function showWhenReady ({ win, initialBounds, kiosk }: WindowFrame, optio
     }
     options.onShown?.()
   }
-  // A tear-off or a moved-tab window's content is already rendered
-  // somewhere (the tab it is given), so there is nothing worth racing
-  // `ready-to-show` for -- and the background colour set above, not a
-  // wait, is what keeps it from flashing white in the meantime.
-  if (options.instant === true) {
+  if (options.firstOfLaunch !== true && options.inactive !== true) {
     showOnce()
     return
   }

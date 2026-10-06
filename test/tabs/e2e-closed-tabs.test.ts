@@ -76,7 +76,9 @@ async function open (chrome: Page, name: string, expected: string[]): Promise<vo
 async function close (chrome: Page, title: string): Promise<void> {
   const tab = (await strip(chrome)).find((candidate) => candidate.title === title)
   expect(tab, title).toBeDefined()
+  // Closing a window's last tab closes the window, and with it this page, which Playwright may see before the call returns.
   await chrome.evaluate((id) => { (window as unknown as { orivonShell: { closeTab: (i: string) => void } }).orivonShell.closeTab(id) }, tab?.id ?? '')
+    .catch((error: unknown) => { if (!/Target page, context or browser has been closed/.test(String(error))) throw error })
 }
 
 /** The key goes to the page itself, so the page has to exist and be past loading. */

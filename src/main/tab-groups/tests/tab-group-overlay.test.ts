@@ -71,7 +71,7 @@ describe('the group bubble', () => {
     const three = open()
     three.handler.show?.({ id: three.id })
     three.handler.request({ type: 'toWindow' })
-    expect(three.openWindow).toHaveBeenCalledWith(expect.objectContaining({ instant: true, first: expect.any(Function) }))
+    expect(three.openWindow).toHaveBeenCalledWith(expect.objectContaining({ first: expect.any(Function) }))
   })
 
   it('keeps a group that is every tab of its window from leaving it', () => {
