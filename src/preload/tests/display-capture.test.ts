@@ -99,7 +99,13 @@ describe('the wrapper in the page\'s world', () => {
 
 describe('the real call the wrapper makes in the page\'s world', () => {
   class FakeDevices { getDisplayMedia (_options?: unknown): Promise<unknown> { return Promise.resolve(undefined) } }
-  class FakeTrackType { readyState = 'live'; clone (): unknown { return Object.create(Object.getPrototypeOf(this) as object) } stop (this: { readyState: string }): void { this.readyState = 'ended' } }
+  // As the real class: an EventTarget whose state is read through a prototype getter.
+  class FakeTrackType extends EventTarget {
+    state?: string
+    get readyState (): string { return this.state ?? 'live' }
+    clone (): unknown { return Object.create(Object.getPrototypeOf(this) as object) }
+    stop (): void { this.state = 'ended' }
+  }
   class FakeStreamType extends FakeStream { clone (): unknown { return this } }
   class FakeMedia {
     held: unknown
@@ -269,8 +275,8 @@ describe('the real call the wrapper makes in the page\'s world', () => {
   })
 
   it('stops what it was given and refuses when the other world reports a failure after the call succeeded', async () => {
-    const track = new FakeTrack()
-    const devices = await wrapped(function () { return Promise.resolve(new FakeStreamType([track])) }, (_options, callNow) => new Promise((resolve) => {
+    const track = new FakeTrackType()
+    const devices = await wrapped(function () { return Promise.resolve(new FakeStreamType([track as never])) }, (_options, callNow) => new Promise((resolve) => {
       callNow(() => { const result = { ok: false, name: 'AbortError', message: 'Failed to start capture' }; resolve(result); return result })
     }))
     await expect(devices.getDisplayMedia({ video: true })).rejects.toMatchObject({ name: 'AbortError' })
@@ -313,8 +319,11 @@ describe('the real call the wrapper makes in the page\'s world', () => {
     const flush = async (): Promise<void> => { for (let turn = 0; turn < 10; turn++) await Promise.resolve() }
     beforeEach(() => { FakeProcessor.last = undefined })
 
+    class FakeVideoFrame { closed = 0; close (): void { this.closed++ } }
+
     it('keeps the page\'s promise pending until a frame is read from a probe clone, then resolves it and stops the probe', async () => {
       vi.stubGlobal('MediaStreamTrackProcessor', FakeProcessor)
+      vi.stubGlobal('VideoFrame', FakeVideoFrame)
       const original = new CloneTrack()
       const kept = new FakeStreamType([original as never])
       const devices = await wrapped(function () { return Promise.resolve(kept) }, portalShare)
@@ -326,10 +335,17 @@ describe('the real call the wrapper makes in the page\'s world', () => {
       const probe = FakeProcessor.last?.track as CloneTrack
       expect(probe).toBeInstanceOf(CloneTrack)
       expect(probe).not.toBe(original)
-      const frame = { close: vi.fn() }
-      FakeProcessor.last?.controller.enqueue(frame)
-      expect(await pending).toBe(kept)
-      expect(frame.close).toHaveBeenCalledOnce()
+      const pageClose = vi.fn()
+      const nativeClose = FakeVideoFrame.prototype.close
+      FakeVideoFrame.prototype.close = pageClose
+      const frame = new FakeVideoFrame()
+      try {
+        FakeProcessor.last?.controller.enqueue(frame)
+        expect(await pending).toBe(kept)
+      } finally { FakeVideoFrame.prototype.close = nativeClose }
+      // Closed with the close captured at install: a page that replaced it never sees the frame.
+      expect(frame.closed).toBe(1)
+      expect(pageClose).not.toHaveBeenCalled()
       expect(probe.readyState).toBe('ended')
       expect(original.readyState).toBe('live')
     })
@@ -350,15 +366,31 @@ describe('the real call the wrapper makes in the page\'s world', () => {
       expect(probe.readyState).toBe('ended')
     })
 
-    it('refuses the same way when the read fails', async () => {
+    it('hands the stream over when the read fails while the track still runs: a broken probe is not a refusal', async () => {
+      vi.stubGlobal('MediaStreamTrackProcessor', FakeProcessor)
+      const original = new CloneTrack()
+      const kept = new FakeStreamType([original as never])
+      const devices = await wrapped(function () { return Promise.resolve(kept) }, portalShare)
+      const pending = devices.getDisplayMedia({ video: true })
+      await flush()
+      const probe = FakeProcessor.last?.track as CloneTrack
+      FakeProcessor.last?.controller.error(new Error('broken'))
+      expect(await pending).toBe(kept)
+      expect(original.readyState).toBe('live')
+      expect(probe.readyState).toBe('ended')
+    })
+
+    it('refuses, and stops the probe, when the page\'s track ends before a frame: Stop pressed while the system dialog is open', async () => {
       vi.stubGlobal('MediaStreamTrackProcessor', FakeProcessor)
       const original = new CloneTrack()
       const devices = await wrapped(function () { return Promise.resolve(new FakeStreamType([original as never])) }, portalShare)
       const outcome = devices.getDisplayMedia({ video: true }).catch((error: unknown) => error)
       await flush()
-      FakeProcessor.last?.controller.error(new Error('broken'))
+      const probe = FakeProcessor.last?.track as CloneTrack
+      original.stop()
+      original.dispatchEvent(new Event('ended'))
       expect(await outcome).toMatchObject({ name: 'NotAllowedError' })
-      expect(original.readyState).toBe('ended')
+      expect(probe.readyState).toBe('ended')
     })
 
     it('resolves at once when there is no processor to read with', async () => {
@@ -384,7 +416,7 @@ describe('the real call the wrapper makes in the page\'s world', () => {
       vi.stubGlobal('MediaStreamTrackProcessor', forged)
       const pending = devices.getDisplayMedia({ video: true })
       await flush()
-      FakeProcessor.last?.controller.enqueue({ close: vi.fn() })
+      FakeProcessor.last?.controller.enqueue({})
       expect(await pending).toBe(kept)
       expect(forged).not.toHaveBeenCalled()
     })

@@ -204,6 +204,10 @@ function wrapInMainWorld (shareInOtherWorld: (options: ShareOptions, callNow: Ca
   const nativeStreamClone = streamProto.clone
   const nativeGetTracks = streamProto.getTracks
   const nativeGetVideoTracks = streamProto.getVideoTracks
+  const readyStateOf = Object.getOwnPropertyDescriptor(trackProto, 'readyState')?.get
+  const nativeListen = EventTarget.prototype.addEventListener
+  const nativeUnlisten = EventTarget.prototype.removeEventListener
+  const nativeCloseFrame = typeof VideoFrame === 'function' ? VideoFrame.prototype.close : undefined
   const NativeProcessor = (globalThis as { MediaStreamTrackProcessor?: new (init: object) => object }).MediaStreamTrackProcessor
   const readableOf = typeof NativeProcessor === 'function' ? Object.getOwnPropertyDescriptor(NativeProcessor.prototype, 'readable')?.get : undefined
   const nativeGetReader = typeof ReadableStream === 'function' ? ReadableStream.prototype.getReader : undefined
@@ -313,27 +317,40 @@ function wrapInMainWorld (shareInOtherWorld: (options: ShareOptions, callNow: Ca
   const awaitFirstFrame = (stream: MediaStream, onFrame: () => void, onEnded: () => void): void => {
     let probe: MediaStreamTrack | undefined
     let reader: unknown
+    let track: MediaStreamTrack | undefined
+    let settled = false
+    const live = (): boolean => {
+      try { return track === undefined || (typeof readyStateOf === 'function' ? call(readyStateOf, track, []) : (track as { readyState?: unknown }).readyState) !== 'ended' } catch { return true }
+    }
     const release = (): void => {
       try { if (reader !== undefined && typeof nativeCancel === 'function') whenSettled(call(nativeCancel, reader, []), () => {}, () => {}) } catch { /* released with the track */ }
       try { if (probe !== undefined) call(nativeStop, probe, []) } catch { /* nothing left to stop */ }
     }
+    // Answered once: at a frame while the page's track still runs, or when that track ends first (a cancel in the
+    // system dialog, or Stop, which ends it before the person picked). The probe goes either way.
+    const conclude = (gotFrame: boolean): void => {
+      if (settled) return
+      settled = true
+      try { if (track !== undefined) call(nativeUnlisten, track, ['ended', onTrackEnded]) } catch { /* never listened */ }
+      release()
+      if (gotFrame && live()) onFrame(); else onEnded()
+    }
+    const onTrackEnded = (): void => { conclude(false) }
     try {
-      const track = typeof nativeGetVideoTracks === 'function' ? (call(nativeGetVideoTracks, stream, []) as MediaStreamTrack[])[0] : undefined
-      if (track === undefined || typeof NativeProcessor !== 'function' || typeof readableOf !== 'function' || typeof nativeGetReader !== 'function' || typeof nativeRead !== 'function') { onFrame(); return }
+      track = typeof nativeGetVideoTracks === 'function' ? (call(nativeGetVideoTracks, stream, []) as MediaStreamTrack[])[0] : undefined
+      if (track === undefined || typeof NativeProcessor !== 'function' || typeof readableOf !== 'function' || typeof nativeGetReader !== 'function' || typeof nativeRead !== 'function') { settled = true; onFrame(); return }
+      try { call(nativeListen, track, ['ended', onTrackEnded]) } catch { /* the read still ends with the track */ }
       probe = call(nativeTrackClone, track, []) as MediaStreamTrack
       const init = create(null)
       init.track = probe
       reader = call(nativeGetReader, call(readableOf, construct(NativeProcessor, [init]), []), [])
       whenSettled(call(nativeRead, reader, []), (step: unknown) => {
-        const frame = read(step, 'value')
         const gotFrame = read(step, 'done') !== true
-        try { if (gotFrame) (frame as { close?: () => void }).close?.() } catch { /* a frame the page cannot see */ }
-        release()
-        if (gotFrame) onFrame(); else onEnded()
-      }, () => { release(); onEnded() })
+        try { if (gotFrame && typeof nativeCloseFrame === 'function') call(nativeCloseFrame, read(step, 'value'), []) } catch { /* not a frame */ }
+        conclude(gotFrame)
+      }, () => { conclude(true) })
     } catch {
-      release()
-      onFrame()
+      conclude(true)
     }
   }
   const stopAll = (stream: MediaStream): void => {
