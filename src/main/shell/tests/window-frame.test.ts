@@ -64,12 +64,20 @@ describe('showWhenReady', () => {
     expect(order).toEqual(['show', 'setBounds'])
   })
 
-  it('shows an inactive window without taking focus, and says when it is shown', () => {
-    const { win, order } = fakeWindow()
-    const onShown = vi.fn()
-    showWhenReady({ win, initialBounds: bounds, kiosk: false }, { inactive: true, onShown })
-    expect(order).toEqual(['showInactive', 'setBounds'])
-    expect(onShown).toHaveBeenCalledTimes(1)
+  it('holds a window that comes up behind until it can paint, then shows it without taking focus', () => {
+    vi.useFakeTimers()
+    try {
+      const { win, order, ready } = fakeWindow()
+      const onShown = vi.fn()
+      showWhenReady({ win, initialBounds: bounds, kiosk: false }, { inactive: true, onShown })
+      expect(order).toEqual([])
+      expect(onShown).not.toHaveBeenCalled()
+      ready()
+      expect(order).toEqual(['showInactive', 'setBounds'])
+      expect(onShown).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('leaves a kiosk window at the whole screen: no size is asserted on it', () => {
@@ -78,7 +86,7 @@ describe('showWhenReady', () => {
     expect(order).toEqual(['show'])
   })
 
-  it('shows a window after the launch is first at once, before any event', () => {
+  it('shows a window opened in front after the launch\'s first at once, before any event', () => {
     const { win, order } = fakeWindow()
     const onShown = vi.fn()
     showWhenReady({ win, initialBounds: bounds, kiosk: false }, { onShown })

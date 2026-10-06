@@ -241,8 +241,8 @@ export function boot (runtime: Runtime): void {
     // first window's options (planIntro's await, below) would otherwise run
     // the opener with no window open, creating one of its own -- two windows
     // for one launch. The `finally` marks it started even if that throws,
-    // so a startup failure (already fatal via the unhandledRejection handler
-    // above) does not also strand every second launch queued behind it.
+    // so a startup failure (already fatal via start.ts's unhandledRejection handler)
+    // does not also strand every second launch queued behind it.
     if (runtime.isPrivate) {
       try {
         // A private session begins with the page that says what it does, and has no welcome screen: it is the person's own second browser.

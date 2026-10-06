@@ -19,7 +19,8 @@ export function moveToWindow (from: ShellWindow, id: string, to: ShellWindow, in
 }
 
 /** Opens a window for the tab. A window's only tab stays where it is: moving it would only move the window.
- * Like every window after the launch's first, it is shown at once (window-frame.ts's `showWhenReady`). */
+ * Like every window opened in front after the launch's first, it is shown at once (window-frame.ts's
+ * `showWhenReady`). */
 export function moveToNewWindow (from: ShellWindow, id: string, openWindow: (options: ShellWindowOptions) => void, place?: Placement): boolean {
   if (from.tabs.tabCount < 2 || from.shortcutsSuspended()) return false
   openWindow({

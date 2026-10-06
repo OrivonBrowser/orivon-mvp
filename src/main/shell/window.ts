@@ -79,7 +79,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // flash tab-view.ts and popover-view.ts fix, for the same reason (this
   // view is attached ahead of its own first paint). The window's own
   // background (createWindowFrame's `background()`) covers a window shown
-  // at once (every one after the launch's first) before either view
+  // at once (one opened in front after the launch's first) before either view
   // exists; it does not cover THIS view's own separate surface once
   // attached. Kept live across an OS
   // theme change while the window stays open (theme-colors.ts's
