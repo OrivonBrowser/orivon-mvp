@@ -169,7 +169,7 @@ describe('a tab moved to a new window', () => {
 
     moveToNewWindow(from.entry, tab, openWindow)
 
-    expect(openWindow).toHaveBeenCalledWith(expect.objectContaining({ instant: true }))
+    expect(openWindow).toHaveBeenCalledWith(expect.objectContaining({ first: expect.any(Function) }))
   })
 
   it('opens on a new tab when the tab has gone by the time the window is ready', () => {

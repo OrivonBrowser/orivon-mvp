@@ -19,15 +19,12 @@ export interface ShellWindowOptions {
   /** Fills the new window's strip, in place of the new-tab page a window opens with: a tab moved out of another window. */
   readonly first?: (tabs: TabManager) => void
   /** This is the very first window of a launch (index.ts's own two call sites, never anywhere else): the
-   * only window `ORIVON_WINDOW_NO_FOCUS=1` is allowed to open without taking focus (window-frame.ts's
+   * only window that waits for its first paint before it is shown, and the only one
+   * `ORIVON_WINDOW_NO_FOCUS=1` is allowed to open without taking focus (window-frame.ts's
    * `showWhenReady`). Every window opened afterward -- a new window, a tear-off, a moved tab's own window,
    * the macOS `activate` recreation -- is shown and focused regardless of the switch: nothing about opening
    * a SECOND window is the unattended-launch case that switch exists for. */
   readonly firstOfLaunch?: boolean | undefined
-  /** Shown at once, without waiting for `ready-to-show` or its fallback timer (window-frame.ts): a tear-off
-   * or a tab moved into a new window has content already rendered elsewhere, so the wait that masks an
-   * ordinary window's fresh page load only adds a needless delay here. */
-  readonly instant?: boolean | undefined
   /** The window opens maximized, over `place`. */
   readonly maximized?: boolean | undefined
   /** Run once, by the launch, after this window exists, with it: the windows of a restored session that come after the first. */
