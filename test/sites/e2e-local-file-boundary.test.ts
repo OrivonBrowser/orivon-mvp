@@ -162,11 +162,29 @@ async function localPages (app: ElectronApplication, partitions: string[] = [SHA
   }, { part: token, names: partitions })
 }
 
-/** The page Playwright shows for the file at `name`. */
+/** How long a page may take to say what document it holds: the old view of a moved tab is parked and may never answer. */
+const PROTOCOL_ANSWER_MS = 1000
+
+/**
+ * The page Playwright shows for the file at `name`: the newest one holding the file's document. A file loaded into a
+ * web tab moves to a new view in a local session, and until the old view is retired its blocked load still reports
+ * the file's address over an error document; on a slow machine the first page on the address is that one.
+ */
 async function filePage (app: ElectronApplication, name: string): Promise<Page> {
   const url = file(name)
-  expect(await waitFor(() => app.windows().some((w) => w.url().split('#')[0] === url && !w.isClosed()))).toBe(true)
-  return app.windows().find((w) => w.url().split('#')[0] === url && !w.isClosed()) as Page
+  let found: Page | undefined
+  expect(await waitFor(async () => {
+    for (const w of [...app.windows()].reverse()) {
+      if (w.isClosed() || w.url().split('#')[0] !== url) continue
+      const protocol = await Promise.race([w.evaluate(() => location.protocol).catch(() => ''), delay(PROTOCOL_ANSWER_MS).then(() => '')])
+      if (protocol === 'file:') {
+        found = w
+        return true
+      }
+    }
+    return false
+  })).toBe(true)
+  return found as Page
 }
 
 /** Loads `name` into the tab showing `from` from the main process, as history or a restore does: no `will-navigate`, in the session the tab is in. */

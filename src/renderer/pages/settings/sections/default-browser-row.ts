@@ -6,7 +6,7 @@ import type { OsPart, UnavailableWhy } from '../os-part.js'
 import type { SettingsState } from '../state.js'
 
 /** What sets Orivon as the default web link handler on Linux when the button's own attempt is declined. */
-export const LINUX_COMMAND = 'xdg-mime default orivon.desktop x-scheme-handler/http x-scheme-handler/https'
+export const linuxCommand = (entry = 'orivon.desktop'): string => `xdg-mime default ${entry} x-scheme-handler/http x-scheme-handler/https`
 
 /** Why a registration is not offered, in words about the person's situation rather than the program's. */
 const UNAVAILABLE_WORDS: Readonly<Record<UnavailableWhy, string>> = {
@@ -16,6 +16,14 @@ const UNAVAILABLE_WORDS: Readonly<Record<UnavailableWhy, string>> = {
   private: 'Not available in a private window.'
 }
 
+/** On Linux a run from source can be the default once its own entry is installed. */
+const LINUX_SOURCE_WORDS = 'Not available until Orivon (source) is in your app list: run node scripts/launch-from-source.mjs install, or install Orivon.'
+
+export function unavailableWords (reason: UnavailableWhy | undefined, platform: string | undefined): string {
+  if (reason === undefined) return 'Not available here.'
+  return reason === 'source' && platform === 'linux' ? LINUX_SOURCE_WORDS : UNAVAILABLE_WORDS[reason]
+}
+
 export function renderDefaultBrowser (state: SettingsState): HTMLElement {
   const part = state.part<OsPart>('os')
   switch (part.view) {
@@ -23,7 +31,7 @@ export function renderDefaultBrowser (state: SettingsState): HTMLElement {
     case 'default':
       return h('span', { className: 'default-browser is-default' }, checkIcon(), h('span', { textContent: 'Orivon is your default browser.' }))
     case 'unavailable':
-      return h('span', { className: 'muted', textContent: part.reason === undefined ? 'Not available here.' : UNAVAILABLE_WORDS[part.reason] })
+      return h('span', { className: 'muted', textContent: unavailableWords(part.reason, state.about?.platform) })
     case 'can-set': {
       const windows = state.about?.platform === 'win32'
       const button = h('button', {
@@ -50,10 +58,11 @@ export function renderDefaultBrowserProblem (state: SettingsState): HTMLElement 
   if (part.view !== 'can-set' || !part.declined) return null
   const problem = h('p', { className: 'problem', role: 'alert' }, 'Your system did not accept the change.')
   if (state.about?.platform !== 'linux') return problem
+  const command = linuxCommand(part.entry)
   const copy = h('button', { className: 'btn small', type: 'button', textContent: 'Copy' })
   let reset: ReturnType<typeof setTimeout> | undefined
   copy.addEventListener('click', () => {
-    void navigator.clipboard.writeText(LINUX_COMMAND).then(() => 'Copied', () => 'Could not copy').then((text) => {
+    void navigator.clipboard.writeText(command).then(() => 'Copied', () => 'Could not copy').then((text) => {
       copy.textContent = text
       if (reset !== undefined) clearTimeout(reset)
       reset = setTimeout(() => { copy.textContent = 'Copy' }, COPIED_MS)
@@ -62,7 +71,7 @@ export function renderDefaultBrowserProblem (state: SettingsState): HTMLElement 
   return h('div', { className: 'default-browser-problem' },
     problem,
     h('p', { className: 'row-help' }, 'To set it yourself, run this in a terminal:'),
-    h('div', { className: 'command-line' }, h('code', { textContent: LINUX_COMMAND }), copy))
+    h('div', { className: 'command-line' }, h('code', { textContent: command }), copy))
 }
 
 /** A newer release exists: say which, and offer its page. Nothing is downloaded or installed. */

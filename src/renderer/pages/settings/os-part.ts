@@ -9,7 +9,7 @@ import type { SettingsPart } from './settings-parts.js'
 export type DefaultBrowserView = 'loading' | 'default' | 'can-set' | 'unavailable'
 export type UnavailableWhy = 'source' | 'appimage' | 'platform' | 'private'
 
-interface StateReply { readonly state?: unknown, readonly reason?: unknown, readonly handedOff?: unknown }
+interface StateReply { readonly state?: unknown, readonly reason?: unknown, readonly handedOff?: unknown, readonly entry?: unknown }
 
 const VIEWS: readonly DefaultBrowserView[] = ['default', 'can-set', 'unavailable']
 const REASONS: readonly UnavailableWhy[] = ['source', 'appimage', 'platform', 'private']
@@ -23,6 +23,14 @@ function viewOf (reply: unknown): DefaultBrowserView {
 function reasonOf (reply: unknown): UnavailableWhy | undefined {
   const reason = typeof reply === 'object' && reply !== null ? (reply as StateReply).reason : undefined
   return REASONS.find((known) => known === reason)
+}
+
+/** A desktop entry's file name, or nothing: it is shown in a command the person may paste into a terminal. */
+const ENTRY_NAME = /^[a-z0-9-]+\.desktop$/
+
+function entryOf (reply: unknown): string | undefined {
+  const entry = typeof reply === 'object' && reply !== null ? (reply as StateReply).entry : undefined
+  return typeof entry === 'string' && ENTRY_NAME.test(entry) ? entry : undefined
 }
 
 /** Where the person's return can be heard: a hidden page shown again, or the window focused again. */
@@ -47,6 +55,8 @@ export class OsPart implements SettingsPart {
   view: DefaultBrowserView = 'loading'
   /** Why `view` is `unavailable`, when main said. */
   reason: UnavailableWhy | undefined
+  /** Linux: the desktop entry a choice names, when main said. */
+  entry: string | undefined
   /** The button was pressed and main has not answered. */
   busy = false
   /** The last press ended with Orivon still not the default browser. */
@@ -107,5 +117,6 @@ export class OsPart implements SettingsPart {
   private take (reply: unknown): void {
     this.view = viewOf(reply)
     this.reason = this.view === 'unavailable' ? reasonOf(reply) : undefined
+    this.entry = entryOf(reply)
   }
 }

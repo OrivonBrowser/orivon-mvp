@@ -22,6 +22,12 @@ describe('what each platform and launcher may do', () => {
     expect(unavailableReason({ platform: 'sunos', launcher: 'installed' })).toBe('platform')
   })
 
+  it('is available from source on Linux once its own desktop entry is installed, and nowhere else', () => {
+    expect(unavailableReason({ platform: 'linux', launcher: 'source', desktopEntry: 'orivon-source.desktop' })).toBeUndefined()
+    for (const platform of ['win32', 'darwin'] as const) expect(unavailableReason({ platform, launcher: 'source', desktopEntry: 'orivon-source.desktop' })).toBe('source')
+    expect(unavailableReason({ platform: 'linux', launcher: 'appimage', desktopEntry: 'orivon.desktop' })).toBe('appimage')
+  })
+
   it('offers to become the default only where it can', () => {
     expect(canOfferDefault({ platform: 'linux', launcher: 'installed' })).toBe(true)
     expect(canOfferDefault({ platform: 'linux', launcher: 'source' })).toBe(false)
@@ -29,11 +35,12 @@ describe('what each platform and launcher may do', () => {
   })
 })
 
-function host (over: { platform?: NodeJS.Platform, launcher?: Launcher, registered?: { value: boolean } } = {}): DefaultBrowserHost & { isDefault: ReturnType<typeof vi.fn>, setDefault: ReturnType<typeof vi.fn>, openSettings: ReturnType<typeof vi.fn>, setDocumentDefault: ReturnType<typeof vi.fn> } {
+function host (over: { platform?: NodeJS.Platform, launcher?: Launcher, desktopEntry?: string, registered?: { value: boolean } } = {}): DefaultBrowserHost & { isDefault: ReturnType<typeof vi.fn>, setDefault: ReturnType<typeof vi.fn>, openSettings: ReturnType<typeof vi.fn>, setDocumentDefault: ReturnType<typeof vi.fn> } {
   const registered = over.registered ?? { value: false }
   return {
     platform: over.platform ?? 'linux',
     launcher: over.launcher ?? 'installed',
+    ...(over.desktopEntry === undefined ? {} : { desktopEntry: over.desktopEntry }),
     isDefault: vi.fn(async () => registered.value),
     setDefault: vi.fn(() => { registered.value = true; return true }),
     openSettings: vi.fn(async () => {}),
@@ -61,6 +68,24 @@ describe('readDefaultBrowser', () => {
     const half = host()
     half.isDefault.mockImplementation(async (protocol: string) => protocol === 'http')
     expect(await readDefaultBrowser(half)).toEqual({ state: 'can-set' })
+  })
+})
+
+describe('the desktop entry a choice names', () => {
+  it('is in the answer on Linux, for the command a person would run by hand', async () => {
+    expect(await readDefaultBrowser(host({ launcher: 'source', desktopEntry: 'orivon-source.desktop' }))).toEqual({ state: 'can-set', entry: 'orivon-source.desktop' })
+    expect(await readDefaultBrowser(host({ platform: 'darwin', desktopEntry: 'orivon.desktop' }))).toEqual({ state: 'can-set' })
+  })
+
+  it('is registered from source on Linux, waiting for a registration that answers later', async () => {
+    const h = host({ launcher: 'source', desktopEntry: 'orivon-source.desktop' })
+    const registered = { value: false }
+    h.isDefault.mockImplementation(async () => registered.value)
+    h.setDefault.mockImplementation(async () => { await Promise.resolve(); registered.value = true; return true })
+    const result = await makeDefaultBrowser(h, async () => {})
+    expect(h.setDefault.mock.calls.map((call) => call[0])).toEqual(['http', 'https'])
+    expect(h.setDocumentDefault).toHaveBeenCalledTimes(LINUX_DOCUMENT_TYPES.length)
+    expect(result).toEqual({ state: 'default', entry: 'orivon-source.desktop', ok: true, handedOff: false })
   })
 })
 

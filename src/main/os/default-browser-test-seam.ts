@@ -44,6 +44,10 @@ export function recordingHost (mode: SeamMode): DefaultBrowserHost & { readonly 
   }
 }
 
+/** True in a test build only: there a run from source never names its desktop entry, or an end-to-end run from a
+ * checkout whose entry is installed could change the machine's default browser. */
+export const isTestBuild = (): boolean => SEAM_ENABLED
+
 /** Undefined outside a test build, where SEAM_ENABLED is a literal `false` and this whole branch is dead code. */
 export function testDefaultBrowserHost (env: NodeJS.ProcessEnv = process.env): DefaultBrowserHost | undefined {
   if (!SEAM_ENABLED) return undefined

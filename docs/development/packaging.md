@@ -168,8 +168,8 @@ dpkg -x release/*.deb /tmp/orivon-deb-inspect   # full contents
 cat /tmp/orivon-deb-inspect/usr/share/applications/*.desktop
 
 # Expect a line equivalent to:
-#   MimeType=x-scheme-handler/http;x-scheme-handler/https;
-# (no text/html), and:
+#   MimeType=text/html;application/xhtml+xml;image/svg+xml;application/pdf;x-scheme-handler/http;x-scheme-handler/https;
+# and:
 #   Categories=Network;WebBrowser;
 #   Actions=new-window;new-private-window;
 # followed by a [Desktop Action new-window] and a [Desktop Action new-private-window] section whose Exec
@@ -186,7 +186,9 @@ xdg-settings check default-url-scheme-handler https orivon.desktop
 ```
 
 The file name is `orivon.desktop`, from `linux.executableName` and `desktopName` in `package.json`; confirm it
-with `ls /usr/share/applications | grep -i orivon`. Whether a desktop lists Orivon in its browser list with
+with `ls /usr/share/applications | grep -i orivon`. A file of that name in `~/.local/share/applications` wins
+over it: the dock then starts whatever that file names, and a default-browser choice opens links with it. A run
+from source has its own entry, `orivon-source.desktop` (`scripts/launch-from-source.mjs`). Whether a desktop lists Orivon in its browser list with
 only the two scheme handlers is unmeasured (`docs/open-questions.md` A387).
 
 ## Making "set as default browser" possible: what's config and what isn't
@@ -202,11 +204,13 @@ desktop menus rely on. macOS lists the same types as `mac.fileAssociations` at r
 installer script lists them under `Capabilities\FileAssociations` and each extension's `OpenWithProgids`,
 never taking an extension over; neither is read back on a system yet (A397).
 
-The runtime half is application code in `src/main/os/`: only an installed package registers, and only when
-a person clicks (Settings > Default browser, the welcome screen's box, or the weekly question). A source run
-and an AppImage never register, because a registration naming them would point at the Electron binary or at a
-file that moves. On Linux the same click also runs `xdg-mime default orivon.desktop` for `text/html`,
-`application/xhtml+xml` and `application/pdf` (`LINUX_DOCUMENT_TYPES` in `default-browser.ts`).
+The runtime half is application code in `src/main/os/`: an installed package registers, and only when a person
+clicks (Settings > Default browser, the welcome screen's box, or the weekly question). An AppImage never registers,
+because a registration naming it would point at a file that moves, and neither does a run from source on Windows or
+macOS, which would register the Electron binary. A Linux run from source registers its own entry,
+`orivon-source.desktop`, once `scripts/launch-from-source.mjs install` has written it. On Linux the same click also
+runs `xdg-mime default` with that entry for `text/html`, `application/xhtml+xml` and `application/pdf`
+(`LINUX_DOCUMENT_TYPES` in `default-browser.ts`).
 
 ## Launcher actions
 
@@ -215,7 +219,7 @@ actions (`deb.desktop.desktopActions` in `electron-builder.yml`, which run `/opt
 `--new-private-window`); they sit under `deb:` and not `linux:` because electron-builder merges `linux.desktop`
 into the AppImage's entry too, where `Exec` is `AppRun` and `/opt/Orivon` does not exist. On Windows the same two
 are jump-list tasks and on macOS dock-menu items, set by the running program (`src/main/os/install-launcher-menu.ts`).
-A launcher written by hand adds the actions itself (`docs/development/setup.md`).
+A run from source on Linux gets both from `scripts/launch-from-source.mjs install` (`docs/development/setup.md`).
 
 ## Windows and macOS: registering as a browser
 
