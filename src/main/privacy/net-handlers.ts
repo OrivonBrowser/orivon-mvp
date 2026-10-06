@@ -10,11 +10,11 @@ import type { ThirdPartyMemory } from './cookie-policy.js'
 import type { UpgradeTracker } from './https-fallback.js'
 import { upgradeTarget } from './https-only.js'
 import type { HttpsExemptions } from './https-state.js'
-import { withoutCookie, withoutSetCookie, withPrivacySignals } from './privacy-headers.js'
+import { withoutCookie, withoutSetCookie, withDoNotTrack } from './privacy-headers.js'
 
 /** The settings these handlers read. */
 export interface NetSettings {
-  get: (key: 'privacy.cookies' | 'privacy.globalPrivacyControl' | 'privacy.doNotTrack' | 'privacy.httpsOnly') => string | boolean
+  get: (key: 'privacy.cookies' | 'privacy.doNotTrack' | 'privacy.httpsOnly') => string | boolean
 }
 
 export interface NetHandlerDeps {
@@ -52,10 +52,7 @@ export function createNetHandlers (deps: NetHandlerDeps): NetHandlers {
   }
 
   const beforeSendHeaders = (details: OnBeforeSendHeadersListenerDetails, current: RequestHeadersResult): RequestHeadersResult => {
-    let requestHeaders = withPrivacySignals(current.requestHeaders, {
-      gpc: deps.settings.get('privacy.globalPrivacyControl') === true,
-      dnt: deps.settings.get('privacy.doNotTrack') === true
-    })
+    let requestHeaders = withDoNotTrack(current.requestHeaders, deps.settings.get('privacy.doNotTrack') === true)
     if (blocking() && requestIsThirdParty(details)) {
       thirdParties.note(details.id)
       requestHeaders = withoutCookie(requestHeaders)

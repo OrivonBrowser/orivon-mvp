@@ -28,6 +28,8 @@ export interface AboutInfo {
 interface GetReply {
   readonly descriptions: readonly SettingDescription[]
   readonly values: Readonly<Record<string, unknown>>
+  /** The values this process started with, for a setting that is read only then. */
+  readonly atStart: Readonly<Record<string, unknown>>
 }
 
 type Outcome = { readonly ok: true } | { readonly ok: false, readonly reason: string }
@@ -35,6 +37,7 @@ type Outcome = { readonly ok: true } | { readonly ok: false, readonly reason: st
 export class SettingsState {
   readonly descriptions = new Map<string, SettingDescription>()
   private readonly values = new Map<string, unknown>()
+  private readonly valuesAtStart = new Map<string, unknown>()
   about: AboutInfo | null = null
   readonly shortcuts: ShortcutsState
   readonly privacy: PrivacyState
@@ -70,6 +73,7 @@ export class SettingsState {
     const reply = await this.bridge.request('settings', { type: 'get' }) as GetReply
     for (const description of reply.descriptions) this.descriptions.set(description.key, description)
     for (const [key, value] of Object.entries(reply.values)) this.values.set(key, value)
+    for (const [key, value] of Object.entries(reply.atStart)) this.valuesAtStart.set(key, value)
     this.about = await this.bridge.request('about', {}) as AboutInfo
     await this.shortcuts.load()
     await this.privacy.load()
@@ -119,6 +123,11 @@ export class SettingsState {
 
   description (key: string): SettingDescription | undefined {
     return this.descriptions.get(key)
+  }
+
+  /** The value is not what this process started with: a setting read only at start is waiting for a restart. */
+  isChangedSinceStart (key: string): boolean {
+    return this.values.get(key) !== this.valuesAtStart.get(key)
   }
 
   isChanged (key: string): boolean {

@@ -7,9 +7,8 @@ import { dirname } from 'node:path'
 import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 import { DebouncedWriter } from '../storage/debounced-writer.js'
 import { SETTINGS, isSettingKey, validateSetting } from './schema.js'
+import { SETTINGS_FILE_VERSION, settingsFromFile } from './settings-file.js'
 import type { SettingKey, SettingValue, SettingsValues } from './schema.js'
-
-const FILE_VERSION = 1
 
 export type SetResult = { readonly ok: true } | { readonly ok: false, readonly reason: 'unknown-key' | 'invalid-value' }
 
@@ -28,6 +27,7 @@ export class SettingsStore {
   private readonly overrides = new Map<SettingKey, SettingValue>()
   private readonly listeners = new Set<(change: SettingChange) => void>()
   private loading: Promise<void> | null = null
+  private atStart: Readonly<Record<SettingKey, SettingValue>> | null = null
   private readonly writer = new DebouncedWriter(async () => { this.writeNow() })
 
   constructor (private readonly filePath: string) {}
@@ -37,28 +37,20 @@ export class SettingsStore {
    * a browser that will not start over its own settings file is worse than
    * one that forgot a choice. */
   load (): Promise<void> {
-    this.loading ??= this.readFromDisk()
+    this.loading ??= this.readFromDisk().then(() => { this.atStart = this.snapshot().values })
     return this.loading
   }
 
   private async readFromDisk (): Promise<void> {
-    let values: unknown
+    let parsed: unknown
     try {
-      const parsed: unknown = JSON.parse(await readFile(this.filePath, 'utf8'))
-      if (typeof parsed === 'object' && parsed !== null && (parsed as { version?: unknown }).version === FILE_VERSION) {
-        values = (parsed as { values?: unknown }).values
-      }
+      parsed = JSON.parse(await readFile(this.filePath, 'utf8'))
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') console.warn('[orivon] settings file unreadable, using defaults:', error)
       return
     }
-    if (typeof values !== 'object' || values === null) return
-    let dropped = 0
-    for (const [key, value] of Object.entries(values)) {
-      const accepted = isSettingKey(key) ? validateSetting(SETTINGS[key], value) : undefined
-      if (accepted === undefined || !isSettingKey(key)) { dropped += 1; continue }
-      if (accepted !== SETTINGS[key].default) this.overrides.set(key, accepted)
-    }
+    const { overrides, dropped } = settingsFromFile(parsed)
+    for (const [key, value] of overrides) this.overrides.set(key, value)
     if (dropped > 0) console.warn(`[orivon] ${String(dropped)} setting(s) in the settings file were not valid and were ignored`)
   }
 
@@ -75,6 +67,11 @@ export class SettingsStore {
     const values = {} as Record<SettingKey, SettingValue>
     for (const key of Object.keys(SETTINGS) as SettingKey[]) values[key] = this.get(key)
     return { values, changed: [...this.overrides.keys()] }
+  }
+
+  /** Every value as the file gave it at start, for a setting that is read once, when the process starts. */
+  valuesAtStart (): Readonly<Record<SettingKey, SettingValue>> {
+    return this.atStart ?? this.snapshot().values
   }
 
   /** `key` and `value` come from the Settings page, so both are checked. */
@@ -118,7 +115,7 @@ export class SettingsStore {
   private writeNow (): void {
     try {
       mkdirSync(dirname(this.filePath), { recursive: true })
-      writeFileAtomic(this.filePath, JSON.stringify({ version: FILE_VERSION, values: Object.fromEntries(this.overrides) }, null, 2))
+      writeFileAtomic(this.filePath, JSON.stringify({ version: SETTINGS_FILE_VERSION, values: Object.fromEntries(this.overrides) }, null, 2))
     } catch (error) {
       console.error('[orivon] failed to persist settings:', error)
       throw error
