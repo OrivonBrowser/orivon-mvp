@@ -118,6 +118,37 @@ describe('createSiteInfoController -- siteInfoFor / siteSummaryFor', () => {
   })
 })
 
+describe('createSiteInfoController -- a local file', () => {
+  const FILE = 'file:///home/u/notes/app.html'
+
+  it('shows the key for a local file, asked or not, and a local file never has a Web3 Score', async () => {
+    const controller = createSiteInfoController(ctxWith(createBroker(baseDeps()), fakeLoader()), NO_TRUST)
+    expect(await controller.siteSummaryFor(`${FILE}?x=1#top`)).toEqual({ asked: true, warning: false })
+    expect(await controller.siteTrustFor(FILE)).toBeNull()
+    expect((await controller.siteInfoFor(FILE)).origin).toBe(FILE)
+  })
+
+  it('reads a registered local file by its key, query and fragment aside, and turns a capability off for it', async () => {
+    const broker = createBroker(baseDeps())
+    await broker.registerApp(FILE, manifestWith({ fs: { quotaBytes: 1024 } }))
+    await broker.grant(FILE, 'fs', [])
+    const controller = createSiteInfoController(ctxWith(broker), NO_TRUST)
+
+    expect((await controller.siteInfoFor(`${FILE}?x=1`)).capabilityRows.map((row) => [row.capability, row.on])).toEqual([['fs', true]])
+    await controller.turnOff(FILE, 'fs')
+    expect((await controller.siteInfoFor(FILE)).capabilityRows.map((row) => row.on)).toEqual([false])
+  })
+
+  it('deletes a local file\'s data through the function it was given, for a local key only', async () => {
+    const deleted: string[] = []
+    const controller = createSiteInfoController(ctxWith(createBroker(baseDeps())), NO_TRUST, async (key) => { deleted.push(key); return true })
+    expect(await controller.deleteLocalFileData(FILE)).toBe(true)
+    expect(await controller.deleteLocalFileData('https://example.com')).toBe(false)
+    expect(deleted).toEqual([FILE])
+    expect(await createSiteInfoController(ctxWith(undefined), NO_TRUST).deleteLocalFileData(FILE)).toBe(false)
+  })
+})
+
 describe('createSiteInfoController -- turnOn / turnOff', () => {
   it('turnOff revokes and the next siteInfoFor no longer shows the capability as held', async () => {
     const broker = createBroker(baseDeps())

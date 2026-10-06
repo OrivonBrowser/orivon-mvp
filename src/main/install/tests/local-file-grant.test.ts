@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Broker } from '../../../broker/broker-contracts.js'
 import { MAX_MANIFEST_BYTES } from '../../../loader/manifest/manifest.js'
-import { dropLocalFileGrants, grantLocalFile, readFolderManifest } from '../local-file-grant.js'
+import { grantLocalFile, readFolderManifest } from '../local-file-grant.js'
 import type { LocalFileGrantDeps } from '../local-file-grant.js'
 
 const manifestWith = (capabilities: object): string => JSON.stringify({ orivonApiVersion: 0, id: 'dev.example.notes', name: 'Notes', version: '1.0.0', entry: 'index.html', capabilities })
@@ -201,14 +201,5 @@ describe('grantLocalFile', () => {
     expect(await grantLocalFile(r.deps, key, hint, caller)).toMatchObject({ outcome: 'granted-without-install' })
     expect(r.records.has(key)).toBe(false)
     expect(r.grants).toEqual([])
-  })
-})
-
-describe('dropLocalFileGrants', () => {
-  it('revokes every persisted grant and pick of a key and forgets its declined consent', async () => {
-    const r = rig({ persisted: { fs: {}, id: {} }, held: [{ capability: 'fs', patterns: [] }, { capability: 'id', patterns: [] }] })
-    await dropLocalFileGrants(r.broker, key)
-    expect(r.revokePersisted.mock.calls.map(([, capability]) => capability)).toEqual(['fs', 'id'])
-    expect(r.broker.clearDeclinedConsent).toHaveBeenCalledWith(key)
   })
 })

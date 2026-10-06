@@ -53,7 +53,7 @@ export interface TabState {
   splitWith: string | null
   /** One of the shell's own pages (Settings, History, ...). It has no site: no shield, no permissions, nothing to bookmark. */
   isInternal: boolean
-  /** What the address bar may say about the connection: a lock, a warning, or nothing (browsing/connection.ts). */
+  /** What the address bar may say about the connection: a warning, a mark for a local file, or nothing (browsing/connection.ts). */
   connection: Connection
   /** Kept at the strip's start, narrow, and not closed by accident. */
   pinned: boolean

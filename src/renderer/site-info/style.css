@@ -402,3 +402,8 @@ hr {
 .update-failure { color: var(--wdanger); }
 .update-card button { align-self: flex-start; }
 .link-button { align-self: flex-start; padding: 0; border: 0; background: none; color: var(--waccent); font-size: 12px; cursor: pointer; text-decoration: underline; }
+
+/* A local file shows no Web3 Score: a plain note in the place of the connection row. */
+.local-file-note { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; }
+.local-file-note .connection-glance { color: var(--wink-dim); font-size: 12px; }
+#turn-off-local-file { align-self: flex-start; margin: 6px 12px; }

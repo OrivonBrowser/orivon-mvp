@@ -68,6 +68,10 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
     clearCookies: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'clearCookies' } satisfies SiteInfoCommand)
     },
+    /** "Delete data" of the local file this popup was opened for; main reads which file. */
+    deleteLocalFile: async (): Promise<boolean> => {
+      return (await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'deleteLocalFile' } satisfies SiteInfoCommand)) === true
+    },
     reload: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'reload' } satisfies SiteInfoCommand)
     },

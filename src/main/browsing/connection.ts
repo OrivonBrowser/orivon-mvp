@@ -1,9 +1,10 @@
 // What the address bar may claim about a tab's connection. Decided in main from the tab's real URL, never
 // from anything a page says, and only for content the tab fetched itself over http or https.
+import { localFileKey } from '../../broker/policy/origin.js'
 
 /** `secure`: live https. `insecure`: plain http to a public host. `local`: plain http to this machine.
- * `none`: anything the lock or the warning would misdescribe. */
-export type Connection = 'secure' | 'insecure' | 'local' | 'none'
+ * `file`: a document opened from this computer, which was not fetched at all. `none`: anything the lock or the warning would misdescribe. */
+export type Connection = 'secure' | 'insecure' | 'local' | 'file' | 'none'
 
 export interface ConnectionInput {
   /** The URL the tab loaded. */
@@ -36,6 +37,7 @@ export function isLoopbackHost (hostname: string): boolean {
 }
 
 export function connectionOf (input: ConnectionInput): Connection {
+  if (!input.internal && localFileKey(input.url) !== null) return 'file'
   if (input.internal || input.appTab || input.served === true || input.failed === true) return 'none'
   const real = parse(input.url)
   const shown = parse(input.displayUrl)

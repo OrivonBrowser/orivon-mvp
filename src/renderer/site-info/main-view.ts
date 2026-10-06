@@ -71,6 +71,29 @@ function row (kind: Parameters<typeof grantIcon>[0], message: string, warning: b
   return li
 }
 
+/** The path a local-file key names, as a person reads it: no scheme, no percent codes. */
+function pathOfKey (key: string): string {
+  try {
+    return decodeURIComponent(new URL(key).pathname)
+  } catch {
+    return key
+  }
+}
+
+/** What stands in the place of the Web3 Score for a local file: Orivon cannot check it, so it shows no level. */
+function localFileNote (): HTMLElement {
+  const note = document.createElement('div')
+  note.className = 'local-file-note'
+  const label = document.createElement('span')
+  label.className = 'connection-label'
+  label.textContent = 'Local file'
+  const glance = document.createElement('span')
+  glance.className = 'connection-glance'
+  glance.textContent = 'Orivon cannot check files on your computer: no Web3 Score, no pinned copy.'
+  note.append(label, glance)
+  return note
+}
+
 export function renderMainPage (
   container: HTMLElement,
   info: SiteInfo,
@@ -88,7 +111,8 @@ export function renderMainPage (
   header.className = 'site-header'
   const origin = document.createElement('div')
   origin.className = 'site-origin'
-  origin.textContent = info.displayOrigin
+  const isFile = info.origin.startsWith('file:')
+  origin.textContent = isFile ? pathOfKey(info.origin) : info.displayOrigin
   header.append(origin)
   if (info.claimedName !== undefined) {
     const claim = document.createElement('div')
@@ -114,24 +138,28 @@ export function renderMainPage (
   container.append(header)
   if (info.update !== undefined) container.append(renderUpdateCard(info.update, updateFailure, { onApply: callbacks.onApplyUpdate }))
 
-  const connectionRow = document.createElement('button')
-  connectionRow.type = 'button'
-  connectionRow.className = `connection-row ${trust?.connection ?? 'unknown'}`
-  const shield = web3Shield()
-  paintShield(shield, trust?.displayedLevel ?? null)
-  connectionRow.append(shield)
-  const connectionText = document.createElement('span')
-  connectionText.className = 'connection-text'
-  const connectionLabelEl = document.createElement('span')
-  connectionLabelEl.className = 'connection-label'
-  connectionLabelEl.textContent = trust === null ? 'Web3 Score' : connectionLabel(trust.connection)
-  const connectionGlanceEl = document.createElement('span')
-  connectionGlanceEl.className = 'connection-glance'
-  connectionGlanceEl.textContent = trustGlance(trust)
-  connectionText.append(connectionLabelEl, connectionGlanceEl)
-  connectionRow.append(connectionText, chevronIcon())
-  connectionRow.addEventListener('click', callbacks.onOpenWeb3)
-  container.append(connectionRow)
+  if (isFile) {
+    container.append(localFileNote())
+  } else {
+    const connectionRow = document.createElement('button')
+    connectionRow.type = 'button'
+    connectionRow.className = `connection-row ${trust?.connection ?? 'unknown'}`
+    const shield = web3Shield()
+    paintShield(shield, trust?.displayedLevel ?? null)
+    connectionRow.append(shield)
+    const connectionText = document.createElement('span')
+    connectionText.className = 'connection-text'
+    const connectionLabelEl = document.createElement('span')
+    connectionLabelEl.className = 'connection-label'
+    connectionLabelEl.textContent = trust === null ? 'Web3 Score' : connectionLabel(trust.connection)
+    const connectionGlanceEl = document.createElement('span')
+    connectionGlanceEl.className = 'connection-glance'
+    connectionGlanceEl.textContent = trustGlance(trust)
+    connectionText.append(connectionLabelEl, connectionGlanceEl)
+    connectionRow.append(connectionText, chevronIcon())
+    connectionRow.addEventListener('click', callbacks.onOpenWeb3)
+    container.append(connectionRow)
+  }
 
   // The certificate only exists for a page that came over https.
   if (info.origin.startsWith('https://')) {
@@ -157,7 +185,7 @@ export function renderMainPage (
   if (info.capabilityRows.length === 0 && permissions === null) {
     const empty = document.createElement('p')
     empty.className = 'empty-state'
-    empty.textContent = "This site hasn't asked for any permissions."
+    empty.textContent = isFile ? "This file hasn't been allowed to use Orivon permissions." : "This site hasn't asked for any permissions."
     container.append(empty)
   } else {
     const list = document.createElement('ul')
@@ -175,6 +203,16 @@ export function renderMainPage (
       list.append(li)
     }
     container.append(list)
+    // One press stages every held permission off; Confirm below applies it. The file stays recorded, so a later visit still finds its session.
+    if (isFile && info.capabilityRows.some((capRow) => capRow.on)) {
+      const turnOff = document.createElement('button')
+      turnOff.type = 'button'
+      turnOff.id = 'turn-off-local-file'
+      turnOff.className = 'btn-secondary'
+      turnOff.textContent = 'Turn off'
+      turnOff.addEventListener('click', () => { for (const capRow of info.capabilityRows) if (capRow.on) callbacks.onToggle(capRow.capability, false) })
+      container.append(turnOff)
+    }
   }
 
   if (permissions !== null) container.append(renderSitePermissions(permissions, callbacks.permissions))

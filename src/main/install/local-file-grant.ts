@@ -16,6 +16,7 @@ import { patternSetFromCapabilities } from '../../broker/policy/manifest-pattern
 import { patternSetFromGrants } from '../../broker/policy/update.js'
 import type { CapabilityKind } from '../../contracts/index.js'
 import { MAX_MANIFEST_BYTES, parseManifest } from '../../loader/manifest/manifest.js'
+import { dropLocalFileGrants } from '../local-files/drop-local-file-grants.js'
 import { grantChangedCapabilities } from '../consent/grant-changed-capabilities.js'
 import type { InstallConsentPrompt } from '../consent/install-consent.js'
 import type { DialogCaller } from '../consent/request-grant.js'
@@ -73,17 +74,6 @@ export async function readFolderManifest (key: string, hintedUrl: string): Promi
   } catch {
     return reject('the manifest could not be read')
   }
-}
-
-/**
- * Revokes every grant and picked path the ledger keeps for `key`, and forgets a declined question, so that a path nobody
- * recorded starts with nothing. Revoking a persisted grant drops the live one and its handles too.
- */
-export async function dropLocalFileGrants (broker: Broker, key: string): Promise<void> {
-  const persisted = broker.app.persistedAppsSync().find((app) => app.origin === key)
-  for (const capability of Object.keys(persisted?.grants ?? {})) await broker.revokePersisted(key, capability as CapabilityKind)
-  for (const pickId of Object.keys(persisted?.pickedPaths ?? {})) await broker.revokeUserSelectedPath(key, pickId)
-  await broker.clearDeclinedConsent(key)
 }
 
 /**

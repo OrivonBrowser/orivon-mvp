@@ -29,6 +29,7 @@ interface OrivonSiteInfo {
   applyUpdate: (cid: string) => Promise<ApplyOutcome>
   openHome: () => Promise<void>
   clearBrowserData: () => Promise<void>
+  deleteLocalFile: () => Promise<boolean>
   removeCookie: (key: string) => Promise<void>
   clearCookies: () => Promise<void>
   reload: () => Promise<void>
@@ -147,7 +148,8 @@ function renderCurrent (): void {
       onRemoveCookie: (key) => { void removeCookie(key) },
       onClearCookies: () => { press('cookies', clearCookies) },
       onReload: () => { void bridge.reload() },
-      onRevokePickedPath: (pickId) => { void revokePickedPathAndRefresh(pickId) }
+      onRevokePickedPath: (pickId) => { void revokePickedPathAndRefresh(pickId) },
+      ...(info.origin.startsWith('file:') ? { onDeleteLocalFile: () => { press('file', deleteLocalFile) } } : {})
     })
   }
   reportContentHeight()
@@ -225,7 +227,7 @@ async function revokePickedPathAndRefresh (pickId: string): Promise<void> {
 }
 
 /** First press arms a deleting button, the second (within `ARM_MS`) does it. */
-function press (target: 'cookies' | 'site', run: () => Promise<void>): void {
+function press (target: 'cookies' | 'site' | 'file', run: () => Promise<void>): void {
   if (disarmTimer !== undefined) clearTimeout(disarmTimer)
   disarmTimer = undefined
   if (dataView.armed === target) {
@@ -237,7 +239,7 @@ function press (target: 'cookies' | 'site', run: () => Promise<void>): void {
   dataView = { ...dataView, armed: target }
   disarmTimer = setTimeout(() => { dataView = { ...dataView, armed: null }; renderCurrent() }, ARM_MS)
   renderCurrent()
-  document.getElementById(target === 'cookies' ? 'clear-cookies' : 'clear-site')?.focus()
+  document.getElementById(target === 'cookies' ? 'clear-cookies' : target === 'file' ? 'clear-file' : 'clear-site')?.focus()
 }
 
 /** Whatever was deleted, the page reads again and the tab is asked to reload to show it. */
@@ -246,6 +248,13 @@ async function afterDelete (): Promise<void> {
   showReloadBanner = true
   data = await bridge.data()
   renderCurrent()
+}
+
+/** A local file's data is gone and the tab shows the page as it was, so it reloads, into the session every unrecorded file shares. */
+async function deleteLocalFile (): Promise<void> {
+  await bridge.deleteLocalFile()
+  await bridge.reload()
+  bridge.close()
 }
 
 async function clearBrowserData (): Promise<void> {

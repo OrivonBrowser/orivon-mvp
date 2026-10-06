@@ -19,7 +19,7 @@ import type { SiteTrust } from '../browsing/site-trust.js'
 import type { ApplyOutcome } from '../install/app-updates.js'
 import { dialogCallerFor } from '../install/dialog-caller.js'
 import { browserStorageEstimateFor, orivonStorageFor } from '../permissions/site-data-runner.js'
-import { originFromUrl } from '../../broker/policy/origin.js'
+import { isLocalFileKey, originFromUrl } from '../../broker/policy/origin.js'
 import type { CookieView } from '../privacy/cookie-list.js'
 import { cookieViewsFor, removeSiteCookie, removeSiteCookies } from '../privacy/cookie-runner.js'
 import type { BrowserStorageEstimate } from '../permissions/site-data-runner.js'
@@ -70,6 +70,8 @@ export type SiteInfoCommand =
   | { type: 'removeCookie'; key: string }
   | { type: 'clearCookies' }
   | { type: 'reload' }
+  /** "Delete data" of the local file this popup was opened for: no argument, main reads the key. Answers whether every step succeeded. */
+  | { type: 'deleteLocalFile' }
   | { type: 'openSiteSettings' }
   /** The extensions disclosure's own "Manage" link (docs/planning/extensions-
    * exploration.md): opens `orivon://extensions` the same way `openSiteSettings`
@@ -100,7 +102,8 @@ async function collectSiteData (
   const tab = activeWebContents()
   const [orivon, cookies, browserStorage] = await Promise.all([
     orivonStorageFor(userDataPath, origin, declaration?.filesQuotaBytes, declaration?.codeVersion),
-    tab === undefined ? [] : cookieViewsFor(tab.session.cookies, new URL(origin).hostname),
+    // A local file has no cookies of its own: its session keeps them apart from the web, and a host-less address names none.
+    tab === undefined || isLocalFileKey(origin) ? [] : cookieViewsFor(tab.session.cookies, new URL(origin).hostname),
     tab === undefined ? null : browserStorageEstimateFor(tab, origin)
   ])
   return {
@@ -135,7 +138,7 @@ export function registerSiteInfoIpc (
   siteInfoWebContents.ipc.handle(SITE_INFO_COMMAND_CHANNEL, async (
     event: IpcMainInvokeEvent,
     command: SiteInfoCommand
-  ): Promise<void | SiteInfo | SiteTrust | null | SiteDataSnapshot | ApplyResult | SitePermissionsView | ApplyOutcome> => {
+  ): Promise<void | boolean | SiteInfo | SiteTrust | null | SiteDataSnapshot | ApplyResult | SitePermissionsView | ApplyOutcome> => {
     if (!isFromSiteInfoWindow(event, siteInfoWebContents, popupUrl)) return
 
     switch (command.type) {
@@ -201,6 +204,8 @@ export function registerSiteInfoIpc (
       case 'reload':
         reloadActiveTab()
         return
+      case 'deleteLocalFile':
+        return await controller.deleteLocalFileData(origin)
       case 'openSiteSettings':
         openSiteSettings()
         return
