@@ -15,8 +15,9 @@ the realm of the one native call.
 
 - **Natives captured first.** At document start the wrapper captures `Reflect.apply`, `Promise.prototype.then`,
   `Document.prototype.createElement`, the `srcObject` setter, the `name` and `message` getters of
-  `DOMException.prototype`, `Object.create`, `JSON.parse` and `JSON.stringify`, the `DOMException` and `TypeError`
-  constructors and the stream and track methods it needs, before any page script runs. The call and the reading of its outcome use only these.
+  `DOMException.prototype`, `Object.create`, `JSON.parse` and `JSON.stringify`, `Symbol.iterator` and
+  `Symbol.species`, the page's own `navigator.mediaDevices` (the only one the call is made on), the `DOMException` and
+  `TypeError` constructors and the stream and track methods it needs, before any page script runs. The call and the reading of its outcome use only these.
 - **The page's options become data.** When the page calls, the wrapper reads `video`, `audio`, `controller` and
   the hints once, and builds the real options as an object with no prototype: `video` and `audio` are copies made
   of objects with no prototype and no accessor (an array carries an iterator of its own), and the controller is

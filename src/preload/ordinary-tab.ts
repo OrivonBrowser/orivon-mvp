@@ -28,8 +28,9 @@ export function exposeOrdinaryTabSurface (): void {
   // place before any page script reads the state.
   installPageVisibility()
   exposeOrivon()
-  // ADR-0055: the page's getDisplayMedia asks for Orivon's picker; this world makes the real call. A tab's page and a
-  // new-tab page that went to a site get it; an extension's page and an embed do not.
+  // ADR-0055, ADR-0061: the page's getDisplayMedia asks for Orivon's picker; this world arms the ticket and starts the
+  // real call the wrapper makes in the page's world. A tab's page and a new-tab page that went to a site get it; an
+  // extension's page and an embed do not.
   installDisplayCapture()
   // ADR-0046: lets a real app tab's page reach its app's child host, gated
   // on the app-tab flag. Must run AFTER exposeOrivon() and BEFORE

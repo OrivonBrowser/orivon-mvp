@@ -115,10 +115,12 @@ describe('the real call the wrapper makes in the page\'s world', () => {
     vi.stubGlobal('HTMLMediaElement', FakeMedia)
     vi.stubGlobal('window', { addEventListener: vi.fn() })
     vi.stubGlobal('document', new FakeDocument())
+    const devices = new FakeDevices()
+    vi.stubGlobal('navigator', { mediaDevices: devices })
     const { cloneEvent } = await install()
     const wrap = (bridge.executeInMainWorld.mock.calls.at(-1)?.[0] as { func: (share: Share, cloneEvent: string) => void }).func
     wrap(isolated, cloneEvent)
-    return new FakeDevices()
+    return devices
   }
   /** The other world as it behaves once the person picked: it runs the call, and answers its outcome as a share. */
   const answer = (outcome: Outcome): Result => outcome.ok ? { ok: true, share: 'share-id' } : { ok: false, name: outcome.name, message: outcome.message }
@@ -168,6 +170,26 @@ describe('the real call the wrapper makes in the page\'s world', () => {
     const options = seen[0] as { video: Record<string, unknown> }
     expect(Object.getOwnPropertyDescriptor(options.video, 'displaySurface')).toMatchObject({ value: 'monitor' })
     expect(reads).toBe(readsAtCall)
+  })
+
+  it('makes the real call only on the page\'s own MediaDevices: another one, or a page that changed MediaDevices or Symbol, gets the browser\'s own call', async () => {
+    const seen: unknown[] = []
+    const isolated = vi.fn(pickedShare())
+    const devices = await wrapped(function (this: unknown, options) { seen.push(this); return Promise.resolve(new FakeStreamType([])) }, isolated)
+    const other = new FakeDevices()
+    vi.stubGlobal('MediaDevices', function Impostor () {})
+    await (devices.getDisplayMedia as (this: unknown, options: unknown) => Promise<unknown>).call(other, { video: true })
+    expect(isolated).not.toHaveBeenCalled()
+    expect(seen).toEqual([other])
+    const calls: Array<{ video: { advanced: object } }> = []
+    const own = await wrapped(function (options) { calls.push(options as { video: { advanced: object } }); return Promise.resolve(new FakeStreamType([])) }, pickedShare())
+    const savedSymbol = globalThis.Symbol
+    globalThis.Symbol = new Proxy(savedSymbol, { get: (target, key) => key === 'iterator' ? 'page-key' : key === 'species' ? 'page-species' : Reflect.get(target, key) as unknown })
+    let pending: Promise<unknown>
+    try { pending = own.getDisplayMedia({ video: { advanced: [{ frameRate: 5 }] } }) } finally { globalThis.Symbol = savedSymbol }
+    await pending
+    expect(Object.getOwnPropertyDescriptor(calls[0]?.video.advanced, savedSymbol.iterator)).toBeDefined()
+    expect(Object.getOwnPropertyDescriptor(calls[0]?.video.advanced, 'page-key')).toBeUndefined()
   })
 
   it('copies the options with the JSON it captured: a page that replaces JSON afterwards cannot put its own code in the call', async () => {

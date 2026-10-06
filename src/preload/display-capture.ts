@@ -122,7 +122,11 @@ async function share (options: ShareOptions, callNow: CallNow): Promise<ShareRes
   }
   const verdict = new Promise<ShareResult>((resolve) => {
     try {
-      callNow((outcome) => { const result = conclude(outcome); resolve(result); return result })
+      callNow((outcome) => {
+        let result: ShareResult = refusal('AbortError', 'Failed to start capture')
+        try { result = conclude(outcome) } finally { resolve(result) }
+        return result
+      })
     } catch {
       resolve(conclude(undefined))
     }
@@ -199,6 +203,10 @@ function wrapInMainWorld (shareInOtherWorld: (options: ShareOptions, callNow: Ca
   const create = Object.create as (proto: null) => Record<PropertyKey, unknown>
   const keysOf = Object.keys
   const isArray = Array.isArray
+  const iteratorKey = Symbol.iterator
+  const speciesKey = Symbol.species
+  /** The page's own `MediaDevices`, the only one the real call is made on: another realm's is not this tab's top frame. */
+  const pageDevices = navigator.mediaDevices
   const NativeJSON = JSON
   const parse = JSON.parse
   const stringify = JSON.stringify
@@ -235,7 +243,7 @@ function wrapInMainWorld (shareInOtherWorld: (options: ShareOptions, callNow: Ca
         }
         return iterator
       }
-      define(list, Symbol.iterator, { value: iterate })
+      define(list, iteratorKey, { value: iterate })
       return list
     }
     const out = create(null)
@@ -264,7 +272,7 @@ function wrapInMainWorld (shareInOtherWorld: (options: ShareOptions, callNow: Ca
    */
   const whenSettled = (promise: unknown, onValue: (value: never) => void, onReason: (reason: unknown) => void): void => {
     const Derived = function (this: unknown, executor: (resolve: () => void, reject: () => void) => void): void { executor(() => {}, () => {}) }
-    define(Derived, Symbol.species, { value: Derived })
+    define(Derived, speciesKey, { value: Derived })
     define(promise, 'constructor', { value: Derived })
     call(nativeThen, promise, [onValue, onReason])
   }
@@ -287,7 +295,7 @@ function wrapInMainWorld (shareInOtherWorld: (options: ShareOptions, callNow: Ca
 
   devices.getDisplayMedia = new Proxy(nativeGetDisplayMedia, {
     apply (target, self: unknown, args: unknown[]): Promise<MediaStream> {
-      if (!(self instanceof MediaDevices)) return call(target, self, args) as Promise<MediaStream>
+      if (self !== pageDevices) return call(target, self, args) as Promise<MediaStream>
       const options = args[0]
       if (options !== undefined && options !== null && typeof options !== 'object' && typeof options !== 'function') {
         return Promise.reject(new TypeError("Failed to execute 'getDisplayMedia' on 'MediaDevices': The provided value is not of type 'DisplayMediaStreamOptions'."))
@@ -343,7 +351,7 @@ function wrapInMainWorld (shareInOtherWorld: (options: ShareOptions, callNow: Ca
             try { finish(onSettled(outcome)) } catch { fail(refuse('AbortError', 'Failed to start capture')) }
           }
           try {
-            whenSettled(call(nativeGetDisplayMedia, self, [real]), (stream: MediaStream) => {
+            whenSettled(call(nativeGetDisplayMedia, pageDevices, [real]), (stream: MediaStream) => {
               let holder: HTMLVideoElement
               try {
                 holder = call(nativeCreateElement, document, ['video']) as HTMLVideoElement
