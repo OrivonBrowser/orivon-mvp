@@ -54,7 +54,12 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Every ported app republished naming its home, <app>.orivonstack.eth: Attila's judged level counts only there, and in development under the same names.
 - Google sign-ins survive switching between the installed package and the source run: the source binary encrypts cookies as the package does.
 - ipns:// keys now open, in a tab and as the default Attila provider; a dead public gateway had stalled every lookup past its deadline.
+- Telemetry ships: the welcome asks with two equal buttons; it counts Web3, Web2.5 and Web2 time and public Web3 sites, unlinked.
+- Our own telemetry server runs on the EU VPS: no IP kept, 12-month retention; a privacy notice in English and Italian explains everything.
+- Global Privacy Control is on by default, sent by the engine itself to every page, frame and worker, ahead of California's 2027 rule.
 
 ### In my head
+
+- Asking for telemetry with a forced choice, not a pre-ticked box: legal in Europe, and people say yes almost as often.
 
 ### Non-repo
