@@ -86,9 +86,15 @@ export async function readFileProtocolFuse (path: string, chunkBytes = DEFAULT_C
 }
 
 let memo: Promise<FileProtocolFuse> | undefined
+let known: FileProtocolFuse | undefined
 
 /** What the running binary says, read once on first call. */
 export async function fileProtocolFuse (): Promise<FileProtocolFuse> {
-  memo ??= readFileProtocolFuse(fuseFilePath(process.execPath))
+  memo ??= readFileProtocolFuse(fuseFilePath(process.execPath)).then((state) => { known = state; return state })
   return await memo
+}
+
+/** The answer `fileProtocolFuse` gave, for a caller that cannot wait: undefined until the first read has finished, which a caller treats as not off. */
+export function knownFileProtocolFuse (): FileProtocolFuse | undefined {
+  return known
 }

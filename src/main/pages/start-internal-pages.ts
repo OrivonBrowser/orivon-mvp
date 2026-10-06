@@ -1,7 +1,7 @@
 // Brings the shell's own pages to life once the shared services exist: the
 // channel they speak on, and the changes they hear about while open.
-import { LOCAL_FILES_PARTITION } from '../local-files/partition.js'
 import { app, clipboard, session } from 'electron'
+import { allLocalPartitions } from '../local-files/partition.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import { extensionsDomain } from '../extensions/extensions-domain.js'
@@ -137,7 +137,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       zoom: services.zoomStore,
       siteSettings,
       websites: session.defaultSession,
-      localFiles: session.fromPartition(LOCAL_FILES_PARTITION),
+      localFiles: () => allLocalPartitions().map((partition) => session.fromPartition(partition)),
       // Only a CACHE-SERVED app still has a partition of its own to clear:
       // a granted-without-install app shares session.defaultSession, which
       // `websites` above already reaches. Calling session.fromPartition on

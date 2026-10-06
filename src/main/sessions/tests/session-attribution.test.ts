@@ -1,6 +1,10 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { originFromUrl } from '../../../broker/policy/origin.js'
-import { partitionFor } from '../../../broker/grants/origin-hash.js'
+import { originHash, partitionFor } from '../../../broker/grants/origin-hash.js'
+import { LocalFileApps, installLocalFileApps } from '../../local-files/local-file-apps.js'
 import { LOCAL_FILES_PARTITION } from '../../local-files/partition.js'
 import { createSubsystemContext } from '../../registry.js'
 
@@ -174,62 +178,69 @@ describe('senderAttributed -- a network-served origin belongs in the default ses
   })
 })
 
-describe('senderAttributed -- a local file belongs in the local-files session, by its own commit only', () => {
+describe('senderAttributed -- a local file belongs in the session localPartitionFor names, checked live', () => {
   const FILE = 'file:///home/u/app/index.html'
   const SIBLING = 'file:///home/u/app/other.html'
-  const localSession = session.fromPartition(LOCAL_FILES_PARTITION)
+  const sharedSession = session.fromPartition(LOCAL_FILES_PARTITION)
+  const ownSession = session.fromPartition(`persist:local-${originHash(FILE)}`)
+  let dir: string | undefined
 
-  it('attributes a file committed in the local-files session', () => {
+  afterEach(() => {
+    installLocalFileApps(undefined)
+    if (dir !== undefined) rmSync(dir, { recursive: true, force: true })
+    dir = undefined
+  })
+
+  function record (...keys: string[]): void {
+    dir = mkdtempSync(join(tmpdir(), 'orivon-attr-'))
+    const apps = new LocalFileApps(join(dir, 'a.json'))
+    for (const key of keys) apps.add(key)
+    installLocalFileApps(apps)
+  }
+
+  it('attributes a file in the shared local session while it is not recorded, with or without a commit record', () => {
     const { attributed, register } = attributionRig()
-    const { wc, commit } = fakeWebContents(localSession)
+    const { wc, commit } = fakeWebContents(sharedSession)
+
+    expect(attributed(wc, FILE)).toBe(true)
     register(wc)
     commit(`${FILE}?q=1#top`)
-
     expect(attributed(wc, FILE)).toBe(true)
   })
 
-  it('denies a file committed in the default session, and one in an app partition', () => {
-    const { attributed, register } = attributionRig()
+  it('attributes a recorded file only in its own session: the shared one and the default are denied', () => {
+    record(FILE)
+    const { attributed } = attributionRig()
+
+    expect(attributed(fakeWebContents(ownSession).wc, FILE)).toBe(true)
+    expect(attributed(fakeWebContents(sharedSession).wc, FILE)).toBe(false)
+    expect(attributed(fakeWebContents(DEFAULT_SESSION).wc, FILE)).toBe(false)
+  })
+
+  it('denies a file in the default session or in an app partition', () => {
+    const { attributed } = attributionRig()
+
     for (const home of [DEFAULT_SESSION, appPartitionSession]) {
-      const { wc, commit } = fakeWebContents(home)
-      register(wc)
-      commit(FILE)
-      expect(attributed(wc, FILE)).toBe(false)
+      expect(attributed(fakeWebContents(home).wc, FILE)).toBe(false)
     }
   })
 
-  it('denies a key the document never committed, as a sibling or after pushState moved the frame', () => {
-    const { attributed, register } = attributionRig()
-    const { wc, commit } = fakeWebContents(localSession)
-    register(wc)
-    commit(FILE)
-
-    expect(attributed(wc, SIBLING)).toBe(false)
-  })
-
-  it('has no live fallback: a file key with no commit record is denied even in the local-files session', () => {
+  it('denies a recorded file\'s session for its sibling, which belongs in the shared one', () => {
+    record(FILE)
     const { attributed } = attributionRig()
-    const { wc } = fakeWebContents(localSession)
 
-    expect(attributed(wc, FILE)).toBe(false)
+    expect(attributed(fakeWebContents(ownSession).wc, SIBLING)).toBe(false)
+    expect(attributed(fakeWebContents(sharedSession).wc, SIBLING)).toBe(true)
   })
 
-  it('moves with the next commit: after a web page replaces the file, the file key is denied', () => {
-    const { attributed, register } = attributionRig()
-    const { wc, commit } = fakeWebContents(localSession)
-    register(wc)
-    commit(FILE)
-    commit('https://x.example/')
+  it('follows the record live: a file whose record is gone is denied in the session it had', () => {
+    record(FILE)
+    const { attributed } = attributionRig()
+    const { wc } = fakeWebContents(ownSession)
+    expect(attributed(wc, FILE)).toBe(true)
+
+    installLocalFileApps(undefined)
 
     expect(attributed(wc, FILE)).toBe(false)
-  })
-
-  it('does not attribute a web origin to the local-files session', () => {
-    const { attributed, register } = attributionRig()
-    const { wc, commit } = fakeWebContents(localSession)
-    register(wc)
-    commit(APP)
-
-    expect(attributed(wc, APP)).toBe(false)
   })
 })

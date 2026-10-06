@@ -19,7 +19,7 @@ import { publishSenderAttributed } from '../registry.js'
 import { partitionForTarget } from '../shell/tab-view.js'
 import { isChildHostFor } from '../children/child-host.js'
 import { isLocalFileKey, isolationKeyFromUrl } from '../../broker/policy/origin.js'
-import { LOCAL_FILES_PARTITION } from '../local-files/partition.js'
+import { localPartitionFor } from '../local-files/partition.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 
@@ -51,7 +51,6 @@ export const sessionAttributionSubsystem: Subsystem = {
   name: 'session-attribution',
   afterReady: (ctx: SubsystemContext) => {
     const expectedSession = (origin: string): unknown => {
-      if (isLocalFileKey(origin)) return session.fromPartition(LOCAL_FILES_PARTITION)
       const partition = partitionForTarget(origin)
       return partition === undefined ? session.defaultSession : session.fromPartition(partition)
     }
@@ -78,11 +77,13 @@ export const sessionAttributionSubsystem: Subsystem = {
 
     publishSenderAttributed(ctx, (sender, origin) => {
       const wc = sender as WebContents
-      // A local file is attributed only by its own cross-document commit, in the local-files
-      // session: no live fallback, so a pushState onto a sibling's path is denied.
+      // A local file is checked live and strictly, like a cache-served origin: a document's path is
+      // fixed for its life (a same-document navigation cannot change it), so only the session can be
+      // wrong, and it must be the one `localPartitionFor` names at this call. A record removed since the
+      // commit therefore denies the document at once.
       if (isLocalFileKey(origin)) {
-        const record = attributionRecords.get(wc)
-        return record !== undefined && record.origin === origin && record.attributed
+        const partition = localPartitionFor(origin)
+        return partition !== undefined && wc.session === session.fromPartition(partition)
       }
       // An app's own child host (ADR-0046) runs in a session of its own by design.
       if (isChildHostFor(wc, origin)) return true
