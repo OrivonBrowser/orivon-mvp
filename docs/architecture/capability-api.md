@@ -298,9 +298,9 @@ orivon.id.requestIdentity({ kind })  // => Promise<IdentityHandle | null> — co
 //   screens `kind`. Kinds 1/6/7 sign silently; 0, 3, 5, 22242 and any delegation PROMPT.
 
 // --- secrets: one origin-bound, keyring-backed secret (ADR-0033) ---
-orivon.secrets.available()           // => Promise<boolean>  false if ungranted, or the seed is session-only
+orivon.secrets.available()           // => Promise<boolean>  false if ungranted, or the seed is session-only (a local file's is)
 orivon.secrets.encrypt(plaintext)    // => Promise<Uint8Array>  bytes in, bytes out, no encoding option
-orivon.secrets.decrypt(ciphertext)   // => Promise<Uint8Array>  'invalid' for bytes this origin's key did not produce (a local file's key ends at quit)
+orivon.secrets.decrypt(ciphertext)   // => Promise<Uint8Array>  'invalid' for bytes this origin's key did not produce
 
 // --- web: other sites' documents ---
 orivon.web.openContext(origin)       // => Promise<WebContext>  an empty, never-displayed document AS that

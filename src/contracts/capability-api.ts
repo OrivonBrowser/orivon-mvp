@@ -478,16 +478,15 @@ export interface OrivonSecrets {
   /**
    * Whether `encrypt` can succeed right now. `false` when the person holds
    * no live `secrets` grant, OR when the seed this origin's key derives from
-   * is session-only (no OS keyring reachable) -- ciphertext made from a
+   * is session-only (no OS keyring reachable), as it is for a document opened from this
+   * computer, whose keys last until Orivon quits -- ciphertext made from a
    * session-only seed cannot be decrypted after a restart, so an app that
    * checks first can choose not to rely on it rather than lose data
    * silently. Never throws for "no grant"; that is exactly the `false` case.
    */
   available(): Promise<boolean>
   /**
-   * Encrypts `plaintext` with a key derived for this origin alone. A document opened from this
-   * computer gets a key that ends when Orivon quits, so after a restart `decrypt` rejects its
-   * ciphertext as `'invalid'`.
+   * Encrypts `plaintext` with a key derived for this origin alone.
    *
    * Rejects `'denied'` with no live `secrets` grant; `'unavailable'` when
    * the seed is session-only (see `available()`); `'limit'` past
