@@ -121,7 +121,7 @@ Strictly dependency-ordered; each step needs the one before it.
 | 5 | **Node.js apps**: real desktop apps, ported to run from a URL, as the platform's test cases | **under way** in [orivon-ports](https://github.com/OrivonBrowser/orivon-ports): FreeTube, Element, AirGap Vault, ASGARDEX |
 | 6 | **ENS and IPFS**: `.eth` names and IPFS content, verified on your machine rather than trusted to a server | **done**: a `.eth` name loads from IPFS, its name proven by a light client and every byte checked against its CID, and installs like any app ([`ADR-0030`](docs/decisions/ADR-0030-a-eth-name-is-an-origin-served-by-a-verifier.md)). One check is left: a run from source on Windows and macOS with the light client in the tree |
 | 7 | **Trust indicator**: what an app actually did, and what a score provider judged, never a bare grade | groundwork in [`src/trust/`](src/trust/) |
-| 8 | **Telemetry**: with the first-run disclosure | groundwork in [`src/telemetry/`](src/telemetry/) |
+| 8 | **Telemetry**: your choice on the first screen, a switch in Settings, and a privacy notice | in [`src/telemetry/`](src/telemetry/); the notice is [`docs/privacy/notice.md`](docs/privacy/notice.md) |
 | 9 | **Developer mode**: load an unpacked app | |
 | 10 | **Packaging**: deb and AppImage, a Windows installer, macOS dmgs | **built on each GitHub release**: CI packages all three systems, launches each package, and attaches them to the release ([`packaging.md`](docs/development/packaging.md)). Windows and macOS packages are not signed with a bought certificate |
 
@@ -158,6 +158,16 @@ If you want to know what Orivon actually is, read those eight files before anyth
 [`ARCHITECTURE.md`](ARCHITECTURE.md) explains how they fit together, and which design choices
 were deliberate.
 
+## Telemetry
+
+Orivon Browser can measure how long it is used, and how long on Web3, Web2.5 and other sites. It
+is your choice, made on the first screen (unticked in Europe) or in Settings, and nothing is
+measured or sent while it is off. It sends no page addresses, search text or history, never
+writes your IP address to disk, and goes to our own server, not an analytics company. You can see
+what is sent, turn it off and delete what we hold: [`docs/privacy/notice.md`](docs/privacy/notice.md)
+says all of it, and [`docs/privacy/outbound-requests.md`](docs/privacy/outbound-requests.md) lists
+everything else the browser sends on its own.
+
 ## Where to go next
 
 | | |
@@ -184,15 +194,19 @@ Stated here rather than discovered later. All of these are real and none is a bu
   leaves your machine. A privacy-branded browser should say that out loud rather than bury it.
   Suggestions from the search engine as you type are off by default (Settings > Search); turned on,
   each pause in typing sends the text to the engine, and a private window never sends it.
-- **Every launch contacts Ethereum servers, and `.eth` lookups tell servers what you open.** The
-  light client that proves `.eth` names starts at launch and follows the chain through
-  `ethereum-beacon-api.publicnode.com` and one of three RPCs (`eth.drpc.org`, `rpc.mevblocker.io`,
-  `ethereum-rpc.publicnode.com`): about 20 MB an hour, whether or not you open a `.eth` name.
-  Opening one tells those RPCs the name, the IPFS gateways (`ipfs.orbitor.dev`,
-  `ipfs.filebase.io`, `trustless-gateway.link`) the content, and, for some names, `name.web3.storage`,
+- **`.eth` and `ipfs://` lookups tell servers what you open, and the Ethereum light client talks
+  to servers while it runs.** The light client that proves `.eth` names starts when a `.eth` or
+  `ipfs://` address needs it and sleeps ten minutes after the last need; two minutes after
+  launch it also starts once if its stored checkpoint is more than a week old. While it runs it
+  follows the chain through `ethereum-beacon-api.publicnode.com` and one of three RPCs
+  (`eth.drpc.org`, `rpc.mevblocker.io`, `ethereum-rpc.publicnode.com`). Opening a `.eth` name tells
+  those RPCs the name, the IPFS gateways (`ipfs.orbitor.dev`, `ipfs.filebase.io`,
+  `trustless-gateway.link`) the content, and, for some names, `name.web3.storage`,
   a DNS-over-HTTPS resolver (`cloudflare-dns.com`, `dns.google`) or a server the name's own
   resolver chooses. None of them is trusted for correctness, and Settings lists them all.
-  `ORIVON_ETH_LIGHT_CLIENT=off` switches it off for a run, and then no `.eth` name loads.
+  `ORIVON_ETH_LIGHT_CLIENT=off` switches it off for a run, and then no `.eth` name loads. Every
+  other request the browser makes by itself is in
+  [`docs/privacy/outbound-requests.md`](docs/privacy/outbound-requests.md).
 - **A first-ever visit to an app can see an early permission check answered "no" before you've
   answered the one-time install prompt.** The app's own code can start running before that
   dialog resolves. Every visit after the first is unaffected: the grant is already held, and
