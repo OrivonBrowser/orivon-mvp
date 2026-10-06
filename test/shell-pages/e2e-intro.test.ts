@@ -4,7 +4,8 @@
 // click. launch-electron.mjs turns it off by default, so every other suite
 // keeps its two-window launch; each test here asks for a mode explicitly.
 import { existsSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, expect, it } from 'vitest'
@@ -208,6 +209,165 @@ it('the default test launch opens without it', async () => {
     await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS))
     expect(introPage(app)).toBeUndefined()
     expect(windowCount(app)).toBe(2)
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+// The telemetry question: with telemetry running, a person who has not chosen is asked before entering.
+const homes: string[] = []
+afterAll(async () => { await Promise.all(homes.map((home) => rm(home, { recursive: true, force: true }))) })
+
+async function newHome (consent?: unknown): Promise<string> {
+  const home = await mkdtemp(join(tmpdir(), 'orivon-telemetry-home-'))
+  homes.push(home)
+  if (consent !== undefined) await writeFile(join(home, 'consent.json'), JSON.stringify(consent), 'utf8')
+  return home
+}
+
+const askingTelemetry = (home: string, extra: Record<string, string> = {}): Promise<ElectronApplication> =>
+  launch('always', undefined, { ORIVON_TELEMETRY: 'on', ORIVON_TELEMETRY_HOME: home, ...extra })
+
+async function consentOf (home: string): Promise<Record<string, unknown> | undefined> {
+  const path = join(home, 'consent.json')
+  if (!(await waitFor(() => existsSync(path), 10_000))) return undefined
+  return JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>
+}
+
+it('asks the telemetry question in place of the single Enter button, with two equal buttons and neither chosen', async () => {
+  const home = await newHome()
+  const app = await askingTelemetry(home)
+  try {
+    expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
+    const intro = introPage(app) as Page
+    expect(await waitFor(async () => await intro.locator('#telemetry-choice').isVisible())).toBe(true)
+    expect(await intro.locator('#enter').isHidden()).toBe(true)
+    expect(await intro.textContent('#telemetry-title')).toBe('Telemetry')
+    expect(await intro.textContent('#telemetry-choice .telemetry-text')).toContain('never sees what you browse')
+    expect(await intro.locator('#telemetry-choice details li').count()).toBe(4)
+
+    const [withBox, withoutBox] = await Promise.all(['#enter-with-telemetry', '#enter-without-telemetry'].map(async (selector) => await intro.locator(selector).boundingBox()))
+    expect(withBox?.width).toBe(withoutBox?.width)
+    expect(withBox?.height).toBe(withoutBox?.height)
+    const styles = await Promise.all(['#enter-with-telemetry', '#enter-without-telemetry'].map(async (selector) => await intro.locator(selector).evaluate((el) => {
+      const style = getComputedStyle(el)
+      return [el.className, style.backgroundColor, style.color, style.borderColor, style.fontWeight, style.boxShadow]
+    })))
+    expect(styles[0]).toEqual(styles[1])
+    expect(await intro.evaluate(() => document.activeElement?.tagName)).toBe('BODY')
+    expect(await intro.textContent('#enter-with-telemetry')).toBe('Enter and share telemetry')
+    expect(await intro.textContent('#enter-without-telemetry')).toBe('Enter without telemetry')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('does not leave on the Enter key while the choice is open, and says to choose one', async () => {
+  const home = await newHome()
+  const app = await askingTelemetry(home)
+  try {
+    expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
+    const intro = introPage(app) as Page
+    expect(await waitFor(async () => await intro.locator('#telemetry-choice').isVisible())).toBe(true)
+    await intro.keyboard.press('Enter')
+    expect(await waitFor(async () => (await intro.textContent('#telemetry-hint')) === 'Choose one to continue.')).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS))
+    expect(introPage(app)).toBeDefined()
+    expect(existsSync(join(home, 'consent.json'))).toBe(false)
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('Enter and share telemetry records accepted for the whole computer, from the welcome screen', async () => {
+  const home = await newHome()
+  const app = await askingTelemetry(home)
+  try {
+    expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
+    const intro = introPage(app) as Page
+    await intro.click('#enter-with-telemetry')
+    expect(await waitFor(() => introPage(app) === undefined && windowCount(app) === 2)).toBe(true)
+    expect(await consentOf(home)).toMatchObject({ state: 'accepted', source: 'welcome', noticeVersion: 2 })
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('Enter without telemetry records declined, and the keyboard works: Tab to a button, then Enter', async () => {
+  const home = await newHome()
+  const app = await askingTelemetry(home)
+  try {
+    expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
+    const intro = introPage(app) as Page
+    expect(await waitFor(async () => await intro.locator('#telemetry-choice').isVisible())).toBe(true)
+    await intro.keyboard.press('Tab')
+    await intro.keyboard.press('Tab')
+    expect(await intro.evaluate(() => document.activeElement?.id)).toBe('enter-with-telemetry')
+    await intro.keyboard.press('Tab')
+    expect(await intro.evaluate(() => document.activeElement?.id)).toBe('enter-without-telemetry')
+    await intro.keyboard.press('Enter')
+    expect(await waitFor(() => introPage(app) === undefined && windowCount(app) === 2)).toBe(true)
+    expect(await consentOf(home)).toMatchObject({ state: 'declined', source: 'welcome' })
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('does not ask again once the computer has a choice, accepted or declined, and the screen is the ordinary one', async () => {
+  for (const state of ['accepted', 'declined']) {
+    const home = await newHome({ state, atMs: Date.now(), noticeVersion: 2, source: 'settings' })
+    const app = await askingTelemetry(home)
+    try {
+      expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
+      const intro = introPage(app) as Page
+      expect(await intro.locator('#telemetry-choice').isHidden()).toBe(true)
+      expect(await intro.locator('#enter').isVisible()).toBe(true)
+      await intro.click('#enter')
+      expect(await waitFor(() => introPage(app) === undefined && windowCount(app) === 2)).toBe(true)
+      expect(((await consentOf(home)) ?? {})['state']).toBe(state)
+    } finally {
+      await closeElectron(app)
+    }
+  }
+}, TEST_TIMEOUT_MS * 2)
+
+it('asks again when the notice has changed since an acceptance', async () => {
+  const home = await newHome({ state: 'accepted', atMs: Date.now(), noticeVersion: 1, source: 'welcome' })
+  const app = await askingTelemetry(home)
+  try {
+    expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
+    expect(await waitFor(async () => await (introPage(app) as Page).locator('#telemetry-choice').isVisible())).toBe(true)
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('does not ask when telemetry is off for the launch, which is what every other spec gets', async () => {
+  const app = await launch('always')
+  try {
+    expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
+    const intro = introPage(app) as Page
+    expect(await intro.locator('#telemetry-choice').isHidden()).toBe(true)
+    expect(await intro.locator('#enter').isVisible()).toBe(true)
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('keeps the default-browser box working beside the question: ticked, and Enter without telemetry', async () => {
+  const home = await newHome()
+  const app = await askingTelemetry(home, { ORIVON_TEST_DEFAULT_BROWSER: 'can-set' })
+  try {
+    expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
+    const intro = introPage(app) as Page
+    expect(await waitFor(async () => await intro.locator('#telemetry-choice').isVisible())).toBe(true)
+    expect(await intro.locator('#default-offer').isVisible()).toBe(true)
+    await intro.check('#make-default')
+    await intro.click('#enter-without-telemetry')
+    expect(await waitFor(() => introPage(app) === undefined)).toBe(true)
+    expect(await waitFor(async () => (await seamCalls(app)).setDefault.length === 2, 10_000)).toBe(true)
+    expect((await seamCalls(app)).setDefault).toEqual(['http', 'https'])
+    expect(await consentOf(home)).toMatchObject({ state: 'declined' })
   } finally {
     await closeElectron(app)
   }

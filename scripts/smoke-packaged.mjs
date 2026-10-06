@@ -90,7 +90,7 @@ if (isInvokedDirectly(import.meta.url)) {
     process.exit(1)
   }
   const profile = mkdtempSync(join(tmpdir(), 'orivon-packaged-'))
-  const env = { ...process.env, ORIVON_INTRO: 'off', ORIVON_ETH_LIGHT_CLIENT: 'off', ORIVON_WINDOW_NO_FOCUS: '1', PULSE_SERVER: 'unix:/nonexistent' }
+  const env = { ...process.env, ORIVON_INTRO: 'off', ORIVON_TELEMETRY: 'off', ORIVON_ETH_LIGHT_CLIENT: 'off', ORIVON_WINDOW_NO_FOCUS: '1', PULSE_SERVER: 'unix:/nonexistent' }
   delete env.ELECTRON_RUN_AS_NODE
   const args = [`--user-data-dir=${profile}`, '--remote-debugging-port=0', '--alsa-output-device=null']
   const child = spawn(executable, args, { env, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' })

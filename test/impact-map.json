@@ -27,7 +27,7 @@
     { "prefix": "src/nostr", "run": ["@core"] },
     { "prefix": "src/protocols", "run": ["web3"] },
     { "prefix": "src/trust", "run": ["web3", "shell-pages"] },
-    { "prefix": "src/telemetry", "run": ["window"] },
+    { "prefix": "src/telemetry", "run": ["telemetry", "shell-pages", "window"] },
     { "prefix": "src/renderer", "run": ["shell-pages", "window", "qa"] },
     { "prefix": "src/renderer/chrome", "run": ["tabs", "toolbar", "window", "qa"] },
     { "prefix": "src/renderer/drop-catcher", "run": ["tabs"] },
@@ -132,6 +132,7 @@
     { "prefix": "test/shell-pages", "run": ["shell-pages"] },
     { "prefix": "test/sites", "run": ["sites"] },
     { "prefix": "test/tabs", "run": ["tabs"] },
+    { "prefix": "test/telemetry", "run": ["telemetry"] },
     { "prefix": "test/toolbar", "run": ["toolbar"] },
     { "prefix": "test/web3", "run": ["web3"] },
     { "prefix": "test/window", "run": ["window"] }
