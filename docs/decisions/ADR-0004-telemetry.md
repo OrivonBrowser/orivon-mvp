@@ -15,7 +15,7 @@
 Orivon ships usage telemetry that is **self-hosted**, **minimal**, **inspectable in the
 product**, and enabled through a **first-run explicit choice**: the disclosure shows the
 literal payload and offers two answers with no preselected default (ADR-0063 gives the answer its
-form: a checkbox on the welcome screen and a switch in Settings). Nothing is sent before the
+form: two equal buttons on the welcome screen and a switch in Settings). Nothing is sent before the
 user chooses. No third-party analytics service is used,
 ever.
 
@@ -85,7 +85,7 @@ measurement efficiency matters more than the opt-in ceremony.
   unfalsifiable. Measuring is the reason for building it.
 - **Disclosed opt-out** (on, with a way to turn it off). Rejected: an identifier that is sent
   before the person answers is not consent in the EU. A box that starts ticked is the same thing
-  in a smaller form ([ADR-0063](ADR-0063-telemetry-v2.md) §Alternatives).
+  in a smaller form, and the choice that stands is two equal buttons ([ADR-0063](ADR-0063-telemetry-v2.md) §Alternatives).
 - **Silent opt-out** (no first-run disclosure). Rejected. It retains essentially the same data
   as *disclosed* opt-out while carrying all of the reputational risk, and is strictly dominated.
 - **A third-party analytics SaaS** (Google Analytics, Mixpanel, PostHog Cloud). Rejected
@@ -130,7 +130,8 @@ story. The data collected is identical either way, so there is no cost to announ
 - **The metric resolves around month 3.** 25 h/month cannot be observed until ~30 days after
   ship. The build month produces a shipped product, not a measured result.
 - Requires a small self-hosted ingest endpoint, the only server Orivon operates. It must not
-  log IPs, and that should be verifiable from its published configuration.
+  log IPs. (ADR-0063 withdraws the promise to publish its configuration: the server's source is
+  private, and the notice describes what it stores.)
 - The first-run disclosure view and the in-product "what has been sent" page are real, small
   scope items and are **not optional**: they are what makes this defensible.
 - Disabling telemetry must never degrade the product in any way.

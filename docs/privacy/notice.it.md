@@ -9,8 +9,8 @@ informativa è [`notice.md`](notice.md), che è il testo di riferimento se le du
 
 > **In cinque righe**
 >
-> - La telemetria è **una tua scelta**: una casella nella prima schermata e un interruttore nelle
->   Impostazioni. Se è spenta, non si misura e non si invia nulla.
+> - La telemetria è **una tua scelta**: la prima schermata chiede con due pulsanti uguali, e le
+>   Impostazioni hanno un interruttore. Se è spenta, non si misura e non si invia nulla.
 > - Conta il **tempo**: per quanto usi il browser, e per quanto su siti Web3, Web2.5 e altri. Nomina
 >   un sito solo se è un sito Web3 o Web2.5 con un nome pubblico.
 > - **Non invia indirizzi di pagine, testi cercati o cronologia, e il tuo indirizzo IP non viene
@@ -22,8 +22,9 @@ informativa è [`notice.md`](notice.md), che è il testo di riferimento se le du
 
 ## Chi è responsabile
 
-Il titolare del trattamento dei dati di telemetria è [CONTROLLER]. Per qualsiasi cosa in questa
-informativa scrivi a [CONTACT].
+Il titolare del trattamento dei dati di telemetria è [CONTROLLER], una persona fisica, il
+proprietario del progetto. Per qualsiasi cosa in questa informativa scrivi a
+privacy@orivonstack.com.
 
 ## Cosa invia la telemetria
 
@@ -76,12 +77,13 @@ pubblicità, profilazione o vendita, e non lo diamo a nessuno.
 
 **Base giuridica.** Il tuo consenso: articolo 6, paragrafo 1, lettera a) del GDPR. Leggere l'ID
 macchina dal tuo computer e conservarvi un identificativo richiede il tuo consenso anche ai sensi
-dell'articolo 5, paragrafo 3 della direttiva ePrivacy, e la stessa casella lo dà. Nello Spazio
-economico europeo, nel Regno Unito e in Svizzera la casella parte non spuntata, perché una casella
-già spuntata non è consenso. Altrove parte spuntata e puoi toglierla prima di premere Invio
-(provvisorio: lo stato iniziale può cambiare prima del rilascio). Puoi revocare in qualsiasi
-momento nelle Impostazioni; revocare è facile quanto acconsentire, e il browser non peggiora in
-nulla. Se dici di no, non te lo chiediamo di nuovo per sei mesi.
+dell'articolo 5, paragrafo 3 della direttiva ePrivacy, e la stessa risposta lo dà. La prima
+schermata mostra un blocco intitolato **Telemetria** con due pulsanti uguali per aspetto e
+dimensione, **Entra e condividi la telemetria** e **Entra senza telemetria**. Nessuno è
+preselezionato e per entrare devi premerne uno: la tua risposta è quindi un atto chiaro, non una
+casella lasciata com'era. Il blocco compare solo finché non hai risposto. Puoi cambiare idea in
+qualsiasi momento con l'interruttore nelle Impostazioni; revocare è facile quanto acconsentire, e
+il browser non peggiora in nulla. Se hai risposto di no, nulla te lo richiede per sei mesi.
 
 **Un identificativo è un dato personale?** Sì, lo trattiamo come tale. Da esso non possiamo sapere
 chi sei, ma con esso possiamo ritrovare le tue righe: per questo è protetto come un dato personale
@@ -95,31 +97,34 @@ e per questo puoi chiederci di cancellarle.
 - **Rapporti sui siti**: un elenco di siti con i secondi, conservato per il mese; un mese dopo
   la chiusura del mese viene ridotto a totali per sito per tutti gli utenti insieme, e i singoli
   rapporti vengono cancellati.
-- **Il tuo indirizzo IP**: non viene scritto su disco. Il front end web del server non tiene un
-  registro degli accessi. Una copia dell'indirizzo resta in memoria per poco tempo per frenare le
-  raffiche di richieste, e si perde al riavvio.
+- **Il tuo indirizzo IP e lo User-Agent**: non vengono scritti su disco. Il front end web che
+  chiude la connessione cifrata non tiene alcun registro degli accessi. L'indirizzo resta solo in
+  memoria, per limitare ogni indirizzo a 30 richieste in 10 minuti, e si perde al riavvio.
+- **Momento di ricezione**: con una riga si conserva solo il giorno UTC, non l'ora.
 
 ## Chi lo riceve, e dove va
 
 Solo noi. Non c'è un responsabile del trattamento né una società di analisi. Il server è nostro,
-ospitato da noi su `telemetry.orivonstack.com`, su un server virtuale nell'UE preso in affitto da
-OVH (provvisorio finché il contratto di hosting non è confermato). Nulla esce dall'UE. Se cambia,
+su `telemetry.orivonstack.com`, su un server virtuale preso in affitto da OVH SAS a Strasburgo,
+in Francia. Le righe stanno in un database su quel server. Nulla esce dall'UE. Se cambia,
 cambia prima questa informativa e il numero di versione in alto aumenta: il consenso dato prima
-smette di valere e ti viene chiesto di nuovo.
+smette di valere e ti viene chiesto di nuovo. Il codice sorgente del server non è pubblicato;
+questa informativa è la descrizione di ciò che conserva e per quanto tempo.
 
 ## I tuoi diritti
 
 - **Vedere che cosa viene inviato.** Impostazioni > Privacy mostra entrambi i messaggi e un
   elenco di ciò che è stato inviato.
-- **Accesso** alle righe che conserviamo: scrivi a [CONTACT] indicando l'ID di installazione
+- **Accesso** alle righe che conserviamo: scrivi a privacy@orivonstack.com indicando l'ID di installazione
   mostrato nelle Impostazioni.
 - **Cancellazione.** Premi **Cancella i miei dati** nelle Impostazioni: chiede al server di
-  cancellare ogni riga per il tuo ID di installazione, spegne la telemetria e dice se è riuscito.
-  Puoi anche scrivere a [CONTACT] indicando il tuo ID. I rapporti sui siti non hanno un ID di
-  installazione, quindi non possiamo trovare il tuo tra gli altri; escono come parte dei totali
-  descritti sopra.
+  cancellare ogni riga d'uso per il tuo ID di installazione, spegne la telemetria e dice se è
+  riuscito. Puoi anche scrivere a privacy@orivonstack.com indicando il tuo ID. I rapporti sui
+  siti non si possono cancellare tramite l'ID di installazione, perché non lo contengono mai,
+  quindi non possiamo trovare il tuo tra gli altri; escono come parte dei totali mensili per
+  sito descritti sopra.
 - **Revocare il consenso** in qualsiasi momento nelle Impostazioni.
-- **Opposizione, rettifica, limitazione, portabilità.** Scrivi a [CONTACT]; i dati sono solo
+- **Opposizione, rettifica, limitazione, portabilità.** Scrivi a privacy@orivonstack.com; i dati sono solo
   contatori, quindi rettifica e portabilità hanno poco su cui agire, ma risponderemo.
 - **Reclamo** a un'autorità per la protezione dei dati. In Italia è il Garante per la protezione
   dei dati personali, `garanteprivacy.it`; puoi scegliere l'autorità del paese in cui vivi o

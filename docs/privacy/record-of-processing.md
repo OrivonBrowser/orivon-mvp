@@ -7,8 +7,8 @@ record of them.
 
 | | |
 |---|---|
-| Controller | [CONTROLLER] |
-| Contact | [CONTACT] |
+| Controller | [CONTROLLER], a natural person, the owner of the project |
+| Contact | privacy@orivonstack.com |
 | Data protection officer | None designated |
 | Joint controllers, processors | None. The server is run by the controller itself |
 
@@ -17,33 +17,36 @@ record of them.
 | | |
 |---|---|
 | Purpose | Measure active use of the browser (the 25 hours a month metric in the EU and USA) and which classes of site the time is spent on, to decide what to build and to judge the project |
-| Legal basis | Consent, GDPR Article 6(1)(a), and ePrivacy Directive Article 5(3) for reading the machine ID and keeping the identifier on the device. Given by a checkbox on the first screen or the Settings switch; withdrawn by the same switch; a stored consent under an older notice version is void |
+| Legal basis | Consent, GDPR Article 6(1)(a), and ePrivacy Directive Article 5(3) for reading the machine ID and keeping the identifier on the device. Given by pressing one of two equal buttons on the first screen ("Enter and share telemetry" or "Enter without telemetry", neither preselected) or by the Settings switch; withdrawn by the same switch; a stored consent under an older notice version is void |
 | Data subjects | People who turn telemetry on in Orivon Browser, worldwide; the aim is the EU and the USA |
 | Categories of data | A pseudonymous install identifier derived from the machine ID by a one-way hash; a random per-profile stream value; region (EU, US or other, from the time zone); browser version; month; active and background seconds; active seconds per site class; in a separate message with no install identifier, a random monthly report identifier and active seconds per named Web3 or Web2.5 site. The full field list is in [`notice.md`](notice.md) §What telemetry sends |
 | Special categories | Not collected. A named site could suggest an interest by inference (see [`dpia-screening.md`](dpia-screening.md)); that is why per-site data is unlinked from the install identifier |
 | Not collected | Page addresses, paths, search text, page titles, bookmarks, credentials, file names, advertising identifiers, an ordered or timed list of visits. The IP address is not written to disk |
 | Recipients | None. The only persons with access are the project's maintainers |
-| Transfers outside the EU | None. Self-hosted on a virtual server in the EU (OVH; provisional until the hosting contract and region are confirmed) |
-| Retention | Usage rows per install and month: 12 months, then folded into monthly aggregates that carry no install identifier. Site reports: kept for the month; one month after the month closes they are folded into per-site monthly totals for all users and deleted. A request to erase deletes the rows for an install identifier at once |
+| Transfers outside the EU | None. Self-hosted on a virtual server rented from OVH SAS in Strasbourg, France |
+| Retention | Usage rows per install and month: 12 months, then a daily job folds them into monthly aggregates that carry no install identifier. Site reports: kept for the month; one month after the month closes the same job folds them into per-site monthly totals for all users and deletes them. A request to erase deletes every usage row of an install identifier at once |
 | Source of the data | The data subject's own browser; nothing from third parties |
-| Rights handling | Access and erasure by the in-product Delete my data button, or by writing to [CONTACT] with the install identifier shown in Settings; withdrawal in Settings. Site reports cannot be found by install identifier, so they cannot be erased individually; they are in the totals after the period above |
+| Rights handling | Access and erasure by the in-product Delete my data button, or by writing to privacy@orivonstack.com with the install identifier shown in Settings; withdrawal in Settings. Site reports never carry the install identifier, so they cannot be erased by it; they are in the monthly per-site totals after the period above |
 | Automated decisions | None |
 
 ### Security measures
 
-Provisional until the server is deployed and these are checked on it; each is a design
-requirement of [`ADR-0063`](../decisions/ADR-0063-telemetry-v2.md).
+As deployed. The server's source code is not published, so this record and the notice are the
+description of what it stores.
 
-- TLS to the endpoint; the front end keeps no access log.
-- Strict validation of every message (types, ranges, key characters, at most 300 sites); a body
-  larger than 32 KB is refused.
-- A per-address rate limit held in memory only and lost on restart; no address is stored.
+- Caddy terminates TLS for `telemetry.orivonstack.com` and keeps no access log.
+- A Python service validates every message strictly (types, ranges, key characters, at most 300
+  sites), refuses a body larger than 32 KB, and refuses per-site data inside a usage report.
+- Rows are stored in SQLite on the server. No IP address and no User-Agent is written to disk;
+  the address is held in memory only, for a limit of 30 requests per 10 minutes per address, and
+  is lost on restart.
+- Only the UTC day is stored with a row, not the time of receipt.
 - The service runs under a dynamic unprivileged user with a memory cap and a state directory of
-  its own; the database is a local file readable by that user only.
-- No receive time finer than the day is stored.
+  its own.
+- A daily job folds per-install rows older than 12 months into monthly aggregates, and site rows
+  into monthly per-site totals one month after the month closes.
 - The client ignores every response body, so a compromise of the server cannot command a browser.
-- The ingest keys usage rows by install identifier, period and stream, and site rows by report
-  identifier and period; the two tables hold no common key.
+- The usage and site tables hold no common key.
 
 ### Review
 
@@ -52,8 +55,8 @@ at least once a year. The notice version number and this record change together.
 
 ## Other processing as controller
 
-None known. Two items need the owner to confirm, because they are run by the project and not by a
-third party, and this record cannot settle them from the code:
+None known. Two items are listed so they are not forgotten; the first is run by the project and not by
+a third party, and this record cannot settle it from the code:
 
 - **The official Web3 Score provider and the IPFS pinning node that serve it.** The browser asks
   them for a hash bucket of a page (see [`outbound-requests.md`](outbound-requests.md) row 10).

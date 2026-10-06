@@ -9,8 +9,8 @@ behind it is [`outbound-requests.md`](outbound-requests.md), and an Italian vers
 
 > **In five lines**
 >
-> - Telemetry is **your choice**: a checkbox on the first screen and a switch in Settings. Off
->   means nothing is measured and nothing is sent.
+> - Telemetry is **your choice**: the first screen asks with two equal buttons, and Settings has
+>   a switch. Off means nothing is measured and nothing is sent.
 > - It counts **time**: how long the browser is in use, and how long on Web3, Web2.5 and other
 >   sites. It names a site only when the site is a public Web3 or Web2.5 one.
 > - It sends **no page addresses, no search text, no history, and your IP address is never written
@@ -22,8 +22,8 @@ behind it is [`outbound-requests.md`](outbound-requests.md), and an Italian vers
 
 ## Who is responsible
 
-The controller of the telemetry data is [CONTROLLER]. Write to [CONTACT] for anything in this
-notice.
+The controller of the telemetry data is [CONTROLLER], a natural person, the owner of the
+project. Write to privacy@orivonstack.com for anything in this notice.
 
 ## What telemetry sends
 
@@ -72,11 +72,13 @@ advertising, profiling or sale, and we give it to nobody.
 
 **Legal basis.** Your consent: GDPR Article 6(1)(a). Reading the machine ID from your computer
 and keeping an identifier on it also needs your consent under Article 5(3) of the ePrivacy
-Directive, and the same checkbox gives it. In the EEA, the UK and Switzerland the box starts
-unticked, because a box that is already ticked is not consent. Elsewhere it starts ticked, and
-you can untick it before pressing Enter (provisional: the starting state may change before
-release). You can withdraw at any time in Settings; withdrawing is as easy as agreeing, and
-nothing in the browser gets worse for it. If you say no, we do not ask again for six months.
+Directive, and the same answer gives it. The first screen shows a block titled **Telemetry** with
+two buttons of the same look and size, **Enter and share telemetry** and **Enter without
+telemetry**. Neither is preselected, and you must press one to enter; so your answer is a clear
+act, not a box left as it was found. The block is shown only while you have not answered. You can
+change your mind at any time with the switch in Settings; withdrawing is as easy as agreeing,
+and nothing in the browser gets worse for it. If you answered no, nothing asks you again for six
+months.
 
 **Is an identifier personal data?** Yes, we treat it so. We cannot tell who you are from it, but
 with it we can find your rows, which is why it is protected like personal data and why you can ask
@@ -89,28 +91,31 @@ us to delete them.
 - **Site reports**: a list of sites with seconds, kept for the month, then, one month after the
   month closes, folded into totals per site for all users together, and the individual reports
   deleted.
-- **Your IP address**: not written to disk. The server's web front end does not keep an access
-  log. A copy of your address is held in memory for a short time to slow down floods of
-  requests, and is lost on restart.
+- **Your IP address and User-Agent**: not written to disk. The web front end that terminates the
+  encrypted connection keeps no access log. Your address is held in memory only, to limit each
+  address to 30 requests in 10 minutes, and is lost on restart.
+- **Time of receipt**: only the UTC day is stored with a row, not the time.
 
 ## Who gets it, and where it goes
 
-Nobody but us. There is no processor and no analytics company. The server is ours, self-hosted
-at `telemetry.orivonstack.com` on a virtual server in the EU rented from OVH (provisional until
-the hosting contract is confirmed). Nothing leaves the EU. If that changes this notice changes
+Nobody but us. There is no processor and no analytics company. The server is ours, at
+`telemetry.orivonstack.com`, on a virtual server rented from OVH SAS in Strasbourg, France. Its
+rows are in a database on that server. Nothing leaves the EU. If that changes this notice changes
 first, and the version number above goes up, so your earlier consent stops counting and you are
-asked again.
+asked again. The server's source code is not published; this notice is the description of what it
+stores and for how long.
 
 ## Your rights
 
 - **See what is sent.** Settings > Privacy shows both messages and a list of what has been sent.
-- **Access** the rows we hold: write to [CONTACT] with the install ID shown in Settings.
-- **Erase.** Press **Delete my data** in Settings: it asks the server to delete every row for your
-  install ID, turns telemetry off, and says whether it worked. You can also write to [CONTACT]
-  with your install ID. The site reports carry no install ID, so we cannot find yours among them;
-  they leave as part of the totals described above.
+- **Access** the rows we hold: write to privacy@orivonstack.com with the install ID shown in Settings.
+- **Erase.** Press **Delete my data** in Settings: it asks the server to delete every usage row
+  for your install ID, turns telemetry off, and says whether it worked. You can also write to
+  privacy@orivonstack.com with your install ID. Site reports cannot be erased by install ID,
+  because they never carry it, so we cannot find yours among them; they leave as part of the
+  monthly per-site totals described above.
 - **Withdraw consent** at any time in Settings.
-- **Object, correct, restrict, move.** Write to [CONTACT]; the data is only counters, so
+- **Object, correct, restrict, move.** Write to privacy@orivonstack.com; the data is only counters, so
   correction and moving have little to act on, but we will answer.
 - **Complain** to a data protection authority. In Italy that is the Garante per la protezione dei
   dati personali, `garanteprivacy.it`; you may choose the authority of the country where you

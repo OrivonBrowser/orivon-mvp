@@ -161,7 +161,7 @@ were deliberate.
 ## Telemetry
 
 Orivon Browser can measure how long it is used, and how long on Web3, Web2.5 and other sites. It
-is your choice, made on the first screen (unticked in Europe) or in Settings, and nothing is
+is your choice, made with two equal buttons on the first screen or the switch in Settings, and nothing is
 measured or sent while it is off. It sends no page addresses, search text or history, never
 writes your IP address to disk, and goes to our own server, not an analytics company. You can see
 what is sent, turn it off and delete what we hold: [`docs/privacy/notice.md`](docs/privacy/notice.md)

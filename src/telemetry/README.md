@@ -8,8 +8,9 @@ is the text people read, and its field table is compared with the payload types 
 [`testing.md`](../../docs/development/testing.md) §6 says why the accounting is a pure fold with
 its own tests.
 
-The screens exist. The first-run welcome has a **Telemetry** checkbox (unticked when the time
-zone is in Europe, ticked elsewhere; hidden once a choice is stored). Settings has the switch,
+The screens exist. The first-run welcome has a **Telemetry** block with two identical buttons,
+"Enter and share telemetry" and "Enter without telemetry", neither preselected; it is shown only
+while the choice is undecided, and the region decides nothing in it. Settings has the switch,
 the literal text of both messages, the history of what was sent, the install ID, **Delete my
 data**, and the notice.
 
@@ -73,5 +74,5 @@ ID and parsing the platform's output are pure and unit-tested; the readers (a fi
 `ioreg` on macOS, `reg query` on Windows, run with no shell and a short timeout) are passed in.
 
 **A stored acceptance carries the `NOTICE_VERSION` it was given under.** When the constant
-differs, the consent reads as undecided and the welcome checkbox appears again. Bump it with any
+differs, the consent reads as undecided and the welcome block appears again. Bump it with any
 change to a payload or to `docs/privacy/notice.md`.
