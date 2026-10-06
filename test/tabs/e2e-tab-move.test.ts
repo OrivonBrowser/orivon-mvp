@@ -327,6 +327,8 @@ it('shows a tab\'s own new window at once, without waiting on ready-to-show', as
     // Generous bound: this only guards against the OLD 1000ms ready-to-show
     // fallback wait coming back, not a tight performance assertion.
     expect(shownWithin).toBeLessThan(3_000)
+    // The window is shown before its chrome page has drawn the strip: wait for the tab to be drawn.
+    await waitFor(async () => (await titles(second)).length > 0)
     expect(await titles(second)).toEqual(['Page /torn'])
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
