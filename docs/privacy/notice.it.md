@@ -22,7 +22,7 @@ informativa è [`notice.md`](notice.md), che è il testo di riferimento se le du
 
 ## Chi è responsabile
 
-Il titolare del trattamento dei dati di telemetria è [CONTROLLER], una persona fisica, il
+Il titolare del trattamento dei dati di telemetria è Davide Martinico, una persona fisica, il
 proprietario del progetto. Per qualsiasi cosa in questa informativa scrivi a
 privacy@orivonstack.com.
 

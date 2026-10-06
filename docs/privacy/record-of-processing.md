@@ -7,7 +7,7 @@ record of them.
 
 | | |
 |---|---|
-| Controller | [CONTROLLER], a natural person, the owner of the project |
+| Controller | Davide Martinico, a natural person, the owner of the project |
 | Contact | privacy@orivonstack.com |
 | Data protection officer | None designated |
 | Joint controllers, processors | None. The server is run by the controller itself |

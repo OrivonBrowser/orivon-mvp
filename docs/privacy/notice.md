@@ -22,7 +22,7 @@ behind it is [`outbound-requests.md`](outbound-requests.md), and an Italian vers
 
 ## Who is responsible
 
-The controller of the telemetry data is [CONTROLLER], a natural person, the owner of the
+The controller of the telemetry data is Davide Martinico, a natural person, the owner of the
 project. Write to privacy@orivonstack.com for anything in this notice.
 
 ## What telemetry sends
