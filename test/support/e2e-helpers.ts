@@ -15,7 +15,10 @@ import type { ChildProcess } from 'node:child_process'
 import { connect as netConnect } from 'node:net'
 import type { ElectronApplication } from 'playwright'
 import { closeElectron, APP_CLOSE_RACE_MS } from './launch-electron.mjs'
-import { evaluateRetrying, findChrome, findViewShowing, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { evaluateRetrying, findChrome, findViewShowing, waitFor, waitForChromeReady, waitForTab } from './smoke-helpers.mjs'
+
+// Re-exported for a window a spec opens after launch: launchElectron has already waited for the first one.
+export { waitForChromeReady }
 import { BUILTIN_ADDRESSES } from '../../src/protocols/builtin.js'
 /** Ceiling for waitForAddressBarStable below. Named so the budget
  * arithmetic beneath it can reuse the real number instead of retyping
@@ -131,46 +134,6 @@ export async function waitForAddressBarStable (
     }))
     streak = (rect !== null && rect === previous) ? streak + 1 : 0
     previous = rect
-    return streak >= STABLE_READS_REQUIRED - 1
-  }, timeoutMs)
-}
-
-/** Ceiling for waitForChromeReady below: a CI runner has been seen to give a freshly launched chrome view
- * nothing to show or act on for well over ten seconds, twice in a row at the start of a run. */
-export const CHROME_READY_TIMEOUT_MS = 60_000
-
-/**
- * Waits until a freshly launched chrome view can be acted on: its first state has been drawn (a tab is in the
- * strip, which means the page's modules ran and listen for clicks and Enter) and the new-tab button and the
- * address bar have the same box on consecutive animation frames.
- *
- * `launchElectron` returns once main has a window, and Playwright lists the chrome page before its script has
- * run. Playwright's own wait inside `.click()` and `.press()` cannot tell that from a broken page: it spends
- * its ten seconds on a frame that has not come, or on an Enter that submits the form natively because the
- * listener is not there yet (main refuses that navigation and `.press()` waits on it), and reports a timeout
- * with no cause. A read that gets no frame within half a second counts as not ready.
- */
-export async function waitForChromeReady (
-  page: ReturnType<typeof findChrome>,
-  timeoutMs = CHROME_READY_TIMEOUT_MS
-): Promise<boolean> {
-  let previous: string | null = null
-  let streak = 0
-  return await waitFor(async () => {
-    const boxes = await evaluateRetrying(page, () => new Promise<string | null>((resolve) => {
-      const noFrame = setTimeout(() => { resolve(null) }, 500)
-      requestAnimationFrame(() => {
-        clearTimeout(noFrame)
-        const read = (selector: string): string => {
-          const r = document.querySelector(selector)?.getBoundingClientRect()
-          return r === undefined ? '' : `${r.x},${r.y},${r.width},${r.height}`
-        }
-        const drawn = document.querySelectorAll('.tab').length > 0
-        resolve(drawn ? `${read('#new-tab')};${read('#address')}` : null)
-      })
-    }), timeoutMs)
-    streak = (boxes !== null && boxes === previous) ? streak + 1 : 0
-    previous = boxes
     return streak >= STABLE_READS_REQUIRED - 1
   }, timeoutMs)
 }

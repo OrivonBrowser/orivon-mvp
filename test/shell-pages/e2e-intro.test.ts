@@ -24,6 +24,8 @@ function launch (mode: string, seed?: (dir: string) => Promise<void>, env: Recor
     appPath: '.',
     args: [HERMETIC_RESOLVER],
     env: { ORIVON_INTRO: mode, ...env },
+    // The welcome screen covers the chrome view, which draws nothing while it does: there is no ready chrome to wait for.
+    chrome: false,
     ...(seed === undefined ? {} : { seedProfile: seed })
   })
 }

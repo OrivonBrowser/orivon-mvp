@@ -23,6 +23,7 @@ import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { attachCollectors, holdEvidence } from './qa-evidence.mjs'
+import { CHROME_READY_TIMEOUT_MS, waitForChromeReady, waitForChromeView } from './smoke-helpers.mjs'
 
 /**
  * The minimal shape registerLaunchForTeardown/closeElectron actually call --
@@ -206,6 +207,10 @@ async function seedNoScoreProvider (userDataDir) {
  *   helper and unprivileged user namespaces disabled), the launch throws
  *   a clear error instead of returning a window-less app or hanging -- see
  *   waitForShellWindow's SHELL_WINDOW_WAIT_MS bound below.
+ * @param {boolean} [options.chrome] Default true: before returning, wait until the shell's chrome view is
+ *   listed by Playwright and ready (smoke-helpers.mjs's waitForChromeReady), and throw naming what is missing
+ *   if it is not within CHROME_READY_TIMEOUT_MS. A launch whose entry is not the shell (a bare Electron entry
+ *   that opens no chrome) passes `chrome: false`.
  * @param {'light' | 'dark'} [options.scheme] Run the shell in this colour scheme,
  *   the way a real run follows its theme setting. Playwright pins every page it
  *   attaches to `prefers-color-scheme: light` unless the launch passes
@@ -233,7 +238,8 @@ export async function launchElectron ({
   seedProfile,
   sandbox = false,
   scheme,
-  reuseProfile
+  reuseProfile,
+  chrome = true
 } = {}) {
   const env = { ...process.env, ...envOverrides }
   const stripped = []
@@ -387,6 +393,21 @@ export async function launchElectron ({
         'likely no usable Chromium sandbox on this machine (no setuid chrome-sandbox helper, and ' +
         `unprivileged user namespaces disabled). Main process output:\n${output}`
       )
+    }
+  }
+
+  // A window in main is not a chrome view that listens: Playwright lists the page before its script has run,
+  // and on a loaded runner the first frame has taken over ten seconds. A click or Enter sent too early times
+  // out with no cause (or submits the form natively), so the launch does not return until the page is ready.
+  if (chrome) {
+    const view = await waitForChromeView(app)
+    const missing = view === undefined
+      ? `no chrome view was listed in app.windows() (windows: ${app.windows().map((w) => w.url()).join(', ') || 'none'})`
+      : await waitForChromeReady(view) ? undefined : 'the chrome view drew no tab, or no frame, or kept moving its toolbar'
+    if (missing !== undefined) {
+      const output = mainOutput(app)
+      await closeElectron(app)
+      throw new Error(`The shell's chrome view was not ready within ${String(CHROME_READY_TIMEOUT_MS)}ms: ${missing}. Pass chrome: false for a launch that opens none. Main process output:\n${output}`)
     }
   }
 

@@ -101,7 +101,7 @@ afterAll(async () => {
 })
 
 it('the real electron/fetch.ts adapter, against a real local server, inside a real Electron process', async () => {
-  const app = await launchElectron({ appPath: bundlePath })
+  const app = await launchElectron({ appPath: bundlePath, chrome: false })
   try {
     // app.whenReady() inside loader-adapter-entry.ts races independently of
     // launchElectron's own isReal check above -- wait for the hook it
@@ -190,7 +190,7 @@ const RESOLVE_HOST_RULES =
   `--host-resolver-rules=MAP ${MAPPED_HOST} ${MAPPED_ADDRESS}, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`
 
 it('the real electron/resolve.ts adapter, against Chromium\'s own resolver, hermetically', async () => {
-  const app = await launchElectron({ appPath: bundlePath, args: [RESOLVE_HOST_RULES] })
+  const app = await launchElectron({ appPath: bundlePath, args: [RESOLVE_HOST_RULES], chrome: false })
   try {
     const hookInstalled = await waitFor(async () =>
       await app.evaluate(() => typeof globalThis.__orivonLoaderAdapterProbe !== 'undefined'), 10_000)

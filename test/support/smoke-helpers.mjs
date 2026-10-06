@@ -42,8 +42,62 @@ export const ABSENCE_SETTLE_MS = 1_500
  * the dashboard's nested one can never qualify. */
 export function findChrome (app) {
   const win = app.windows().find((w) => w.url().endsWith('/renderer/index.html'))
-  if (win === undefined) throw new Error('chrome view not found in app.windows()')
+  if (win === undefined) throw new Error(`chrome view not found in app.windows(): ${app.windows().map((w) => w.url()).join(', ') || 'no windows'}`)
   return win
+}
+
+/** Ceiling for waitForChromeView and waitForChromeReady. A CI runner has been seen to give a freshly launched
+ * chrome view nothing to show or act on for well over ten seconds, twice in a row at the start of a run. */
+export const CHROME_READY_TIMEOUT_MS = 60_000
+
+/** Consecutive frames the toolbar boxes must keep the same place for waitForChromeReady. */
+const CHROME_STABLE_READS = 3
+
+/**
+ * The chrome view's Playwright page, once Playwright lists it, or undefined after `timeoutMs`. `findChrome` is
+ * synchronous and throws on the first read; Playwright lists a window page only some time after main created it,
+ * and on a loaded runner a window count that already matches can still be made of other pages.
+ */
+export async function waitForChromeView (app, timeoutMs = CHROME_READY_TIMEOUT_MS) {
+  let found
+  await waitFor(() => {
+    found = app.windows().find((w) => w.url().endsWith('/renderer/index.html'))
+    return found !== undefined
+  }, timeoutMs)
+  return found
+}
+
+/**
+ * Waits until a chrome view can be acted on: its first state has been drawn (a tab is in the strip, which means
+ * the page's modules ran and listen for clicks and Enter) and the new-tab button and the address bar keep the
+ * same box on consecutive animation frames. Returns whether that held before `timeoutMs`.
+ *
+ * Playwright lists the chrome page before its script has run. Its own wait inside `.click()` and `.press()`
+ * cannot tell that from a broken page: it spends its ten seconds on a frame that has not come, or on an Enter
+ * that submits the form natively because the listener is not there yet (main refuses that navigation and
+ * `.press()` waits on it), and reports a timeout with no cause. A read that gets no frame within half a second
+ * counts as not ready.
+ */
+export async function waitForChromeReady (page, timeoutMs = CHROME_READY_TIMEOUT_MS) {
+  let previous = null
+  let streak = 0
+  return await waitFor(async () => {
+    const boxes = await evaluateRetrying(page, () => new Promise((resolve) => {
+      const noFrame = setTimeout(() => { resolve(null) }, 500)
+      requestAnimationFrame(() => {
+        clearTimeout(noFrame)
+        const read = (selector) => {
+          const r = document.querySelector(selector)?.getBoundingClientRect()
+          return r === undefined ? '' : `${r.x},${r.y},${r.width},${r.height}`
+        }
+        const drawn = document.querySelectorAll('.tab').length > 0
+        resolve(drawn ? `${read('#new-tab')};${read('#address')}` : null)
+      })
+    }), timeoutMs)
+    streak = (boxes !== null && boxes === previous) ? streak + 1 : 0
+    previous = boxes
+    return streak >= CHROME_STABLE_READS - 1
+  }, timeoutMs)
 }
 
 /** Every popup shell/popover-view.ts and the overlay host build, by its own
