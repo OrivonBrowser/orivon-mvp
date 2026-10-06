@@ -18,6 +18,9 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- **`ipfs-url-opens`**: an `ipns://` key now opens the site its signed record names, as an `ipns://` DNSLink name
+  already did; nothing changes for apps already published. Apps that keep grants across releases may ship under a key.
+  Recheck: none.
 - **`contracts/manifest.ts`**: a manifest may carry `domain`, the one ENS name or DNS host the app calls home; a
   malformed value rejects the manifest and absence is allowed. Apps published under a name set `domain` to that name,
   as a lower-case host with no scheme, port or path. Recheck: every port.
@@ -341,6 +344,9 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 - **A run from source keeps the sign-ins an installed package made**: its binary encrypts cookies as a package's does
   (`npm run install:electron`, and the source launcher on a cold start), so cookies in the profile they share are readable by both.
+- **An `ipns://` key opens, in a tab and as the Web3 Score provider**: its record was asked of one gateway at a time,
+  and one that hangs held the lookup past the 25 s a name may take. Sources are now raced, and a gateway that hangs
+  cools down, so the default provider loads in about 5 s instead of failing.
 - **A second click on the side panel's view picker closes its list**: the list lost the focus to the button, closed, and the
   click opened it again.
 - **The first letter typed into the address bar is no longer lost**: the dropdown's page joins the window once loaded, and

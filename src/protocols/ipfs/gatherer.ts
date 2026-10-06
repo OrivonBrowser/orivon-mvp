@@ -38,7 +38,7 @@ export function createIpfsGatherer (options: IpfsGathererOptions): DataGatherer 
   const cache = new BlockCache()
   const resolvers = {
     ipns: async (key: string, signal: AbortSignal, onRefusal: (refusal: Refusal) => void) =>
-      await resolveIpnsKey(key, options.fetch, { pool, nameServices: options.ipnsNameServices ?? [] }, options.ipnsSequences, limits.blockTimeoutMs, signal, onRefusal),
+      await resolveIpnsKey(key, options.fetch, { pool, nameServices: options.ipnsNameServices ?? [] }, options.ipnsSequences, limits, signal, onRefusal),
     resolveTxt: options.resolveTxt,
     maxHops: limits.maxPointerHops
   }
