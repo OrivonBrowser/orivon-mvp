@@ -34,7 +34,7 @@ spec left at the top of `test/` and a folder with no row. File names keep their 
 | `shell-pages/` | Settings, the internal pages, the intro screen and the UI kit |
 | `window/` | Launch and start-up, profiles, windows, menus, overlays, shortcuts and theme |
 | `qa/` | The QA machinery proving itself: the layout audit, visual states, the failure-evidence bundle, journeys |
-| [`support/`](support/) | The shared harness: `launch-electron.mjs`, `smoke-helpers.mjs`, `e2e-helpers.ts`, the `qa-*` files, `question-support.ts`, and the teardown unit test |
+| [`support/`](support/) | The shared harness: `launch-electron.mjs`, `smoke-helpers.mjs`, `e2e-helpers.ts`, the `qa-*` files, `question-support.ts`, and the unit tests of the teardown and the chrome-ready waits |
 | [`apps/`](apps/), `fixtures/` | The apps and static pages the specs serve |
 
 `impact-map.json` says which of these areas a changed file reaches, and `spec-weights.json` how long each spec
