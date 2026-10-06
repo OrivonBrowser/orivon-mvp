@@ -194,11 +194,13 @@ export default defineConfig({
       __ORIVON_DEV_GRANT_ENABLED__: JSON.stringify(process.env.ORIVON_ENABLE_DEV_GRANT === '1')
     },
     build: {
-      // Two processes: the shell, and the verifier host it forks as a
+      // Three entries: the process start (small, so a second start of an open profile exits early),
+      // the browser it loads once it is the process that stays (index), and the verifier host it forks as a
       // utility process (src/protocols/verifier-host/). Keys are the output names in
       // out/main/, which src/main/verifier/ forks by name.
       rollupOptions: {
         input: {
+          start: resolve(root, 'src/main/start.ts'),
           index: resolve(root, 'src/main/index.ts'),
           'verifier-host': resolve(root, 'src/protocols/verifier-host/entry.ts')
         }

@@ -2,8 +2,9 @@
 
 **What lives here.** The browser shell: the window, tabs, the omnibox, shell IPC, and the
 subsystem registry every other stream plugs into, one directory per job
-([`ADR-0023`](../../docs/decisions/ADR-0023-src-main-is-organised-by-job.md)). `index.ts`,
-`registry.ts`, `subsystems.ts` and `channels.ts` stay at the top level: `registry.ts` and
+([`ADR-0023`](../../docs/decisions/ADR-0023-src-main-is-organised-by-job.md)). `start.ts`
+(the process entry: it takes the single-instance lock before `index.ts`, the rest of the browser, is loaded),
+`index.ts`, `registry.ts`, `subsystems.ts` and `channels.ts` stay at the top level: `registry.ts` and
 `channels.ts` are the seam other packages import as values.
 
 **Tied to Electron, entirely.** Only the pure `<name>.ts` files run under plain vitest.

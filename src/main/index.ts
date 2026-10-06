@@ -34,7 +34,6 @@ import { handleOpenUrl } from './os/open-url.js'
 import { handleOpenFile } from './os/open-file.js'
 import { removeAfterExit, removePrivateDir, sweepPrivateDirs } from './launch/private-session.js'
 import { loadFetchStack } from './startup/fetch-stack.js'
-import { startLaunch } from './launch/start-launch.js'
 import { runUpdateCheck } from './self-update/update-check-runner.js'
 import { scheduleUpdateChecks } from './self-update/update-schedule.js'
 import { configureVerifier, verifierEthContentCid } from './verifier/verifier-subsystem.js'
@@ -47,24 +46,6 @@ import type { Runtime } from './launch/start-launch.js'
 // Do not add `ozone-platform: x11` here without solving its GPU crash on
 // this machine first -- the window-visibility bug it was chasing is really
 // window.ts's `showOnce` (README.md, Design notes).
-
-// Owner's decision, 2026-09-09: an uncaught main-process error is LOGGED and
-// exits. Electron's default is a modal error dialog, and a modal dialog keeps
-// its process alive until a human clicks it -- so on an unattended run every
-// crash became a window left on the developer's screen and an Electron
-// process tree that never exited, accumulating overnight. Registered here,
-// above every other statement, because a throw before this line still gets
-// the dialog.
-//
-// This moves where a crash is REPORTED, and hides nothing: the error is
-// printed in full and the non-zero exit is what a test runner reads.
-function exitOnUncaught (kind: string, error: unknown): void {
-  console.error(`[orivon] ${kind} in the main process:`, error)
-  app.exit(1)
-}
-
-process.on('uncaughtException', (error) => { exitOnUncaught('uncaught exception', error) })
-process.on('unhandledRejection', (reason) => { exitOnUncaught('unhandled promise rejection', reason) })
 
 // Before any subsystem or hook exists (startup/fetch-stack.ts says why).
 loadFetchStack()
@@ -128,7 +109,7 @@ const SWEEP_DELAY_MS = 20_000
 const APP_LISTENER_ROOM = 24
 
 /** Starts the browser this process is. */
-function boot (runtime: Runtime): void {
+export function boot (runtime: Runtime): void {
   app.setMaxListeners(Math.max(app.getMaxListeners(), APP_LISTENER_ROOM))
   const beforeReadyFailures = runBeforeReady(subsystems)
   report(beforeReadyFailures)
@@ -297,8 +278,3 @@ function boot (runtime: Runtime): void {
     }
   })
 }
-
-// Which browser this process is, before anything reads a byte of data: another profile or a private session
-// has a directory of its own, and a second start of a profile already open hands over and stops here.
-const runtime = startLaunch(app, process.argv)
-if (runtime !== null) boot(runtime)
