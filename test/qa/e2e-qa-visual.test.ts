@@ -212,7 +212,7 @@ for (const scheme of SCHEMES) {
   }, QA_TEST_TIMEOUT_MS)
 
   it(`the welcome screen covers the whole window on a fresh profile (${scheme})`, async () => {
-    const { app } = await launchShell({ scheme, env: { ORIVON_INTRO: 'once' } })
+    const { app } = await launchShell({ scheme, env: { ORIVON_INTRO: 'once' }, chrome: false })
     try {
       await runPhase('visual state of the welcome screen', async (check) => {
         expect(await waitFor(() => app.windows().some((w) => w.url().includes('/intro/index.html')))).toBe(true)
@@ -229,7 +229,7 @@ for (const scheme of SCHEMES) {
   }, QA_TEST_TIMEOUT_MS)
 
   it(`Settings > Default browser and the welcome screen's offer look right (${scheme})`, async () => {
-    const { app, chrome } = await launchShell({ scheme, env: { ORIVON_INTRO: 'once', ORIVON_TEST_DEFAULT_BROWSER: 'can-set' } })
+    const { app, chrome } = await launchShell({ scheme, env: { ORIVON_INTRO: 'once', ORIVON_TEST_DEFAULT_BROWSER: 'can-set' }, chrome: false })
     try {
       await runPhase('visual states of the default-browser surfaces', async (check) => {
         expect(await waitFor(() => app.windows().some((w) => w.url().includes('/intro/index.html')))).toBe(true)

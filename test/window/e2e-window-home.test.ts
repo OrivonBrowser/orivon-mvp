@@ -274,7 +274,7 @@ it('opens the web addresses and local files it is started with as tabs, in order
 }, TEST_TIMEOUT_MS)
 
 it('opens a given address under the welcome screen on a first run', async () => {
-  const { app, chrome } = await launchShell({ env: { ORIVON_INTRO: 'always' }, args: [`${server.origin}/a`] })
+  const { app, chrome } = await launchShell({ env: { ORIVON_INTRO: 'always' }, args: [`${server.origin}/a`], chrome: false })
   try {
     expect((await waitForTab(chrome, { address: `${server.origin}/a` })).ok).toBe(true)
     expect(await tabIds(chrome)).toHaveLength(1)

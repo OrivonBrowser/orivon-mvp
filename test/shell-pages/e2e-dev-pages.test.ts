@@ -84,22 +84,22 @@ function findDevChrome (app: ElectronApplication): Page {
  * injects into every page regardless -- a pre-existing, intentional limit
  * on an ordinary tab, unrelated to what this suite is asserting about the
  * shell's own pages. */
-function watchForCspViolations (app: ElectronApplication): string[] {
-  const violations: string[] = []
+function watchForCspViolations (app: ElectronApplication, violations: string[]): void {
   app.on('window', (page) => {
     page.on('console', (msg) => {
       if (page.url().startsWith('orivon://') && /Content Security Policy/i.test(msg.text())) violations.push(`${page.url()}: ${msg.text()}`)
     })
   })
-  return violations
 }
 
 async function launched (extraArgs: readonly string[] = []): Promise<{ app: ElectronApplication, chrome: Page, cspViolations: string[] }> {
+  const cspViolations: string[] = []
   const app = await launchElectron({
     args: [HERMETIC_RESOLVER, ...extraArgs],
-    env: { ELECTRON_RENDERER_URL: devUrl, ORIVON_DEV_ORIGINS: '1' }
+    env: { ELECTRON_RENDERER_URL: devUrl, ORIVON_DEV_ORIGINS: '1' },
+    // From the app's first window on: the launch no longer returns before the chrome has drawn.
+    onLaunch: (launchedApp) => { watchForCspViolations(launchedApp, cspViolations) }
   })
-  const cspViolations = watchForCspViolations(app)
   expect(await waitFor(() => { try { findDevChrome(app); return true } catch { return false } })).toBe(true)
   return { app, chrome: findDevChrome(app), cspViolations }
 }
@@ -152,11 +152,12 @@ it('renders a deep link into settings (orivon://settings/privacy), not a blank p
 }, TEST_TIMEOUT_MS)
 
 it('a private window\'s first page renders real content, in dev mode', async () => {
+  const cspViolations: string[] = []
   const app = await launchElectron({
     args: [HERMETIC_RESOLVER, '--orivon-private'],
-    env: { ELECTRON_RENDERER_URL: devUrl, ORIVON_DEV_ORIGINS: '1' }
+    env: { ELECTRON_RENDERER_URL: devUrl, ORIVON_DEV_ORIGINS: '1' },
+    onLaunch: (launchedApp) => { watchForCspViolations(launchedApp, cspViolations) }
   })
-  const cspViolations = watchForCspViolations(app)
   try {
     expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://private')))).toBe(true)
     const priv = app.windows().find((w) => w.url().startsWith('orivon://private')) as Page

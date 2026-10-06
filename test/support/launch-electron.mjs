@@ -23,6 +23,7 @@ import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { attachCollectors, holdEvidence } from './qa-evidence.mjs'
+import { CHROME_READY_TIMEOUT_MS, waitForChromeDrawn, waitForChromeReady, waitForChromeView } from './smoke-helpers.mjs'
 
 /**
  * The minimal shape registerLaunchForTeardown/closeElectron actually call --
@@ -206,6 +207,14 @@ async function seedNoScoreProvider (userDataDir) {
  *   helper and unprivileged user namespaces disabled), the launch throws
  *   a clear error instead of returning a window-less app or hanging -- see
  *   waitForShellWindow's SHELL_WINDOW_WAIT_MS bound below.
+ * @param {(app: import('playwright').ElectronApplication) => void} [options.onLaunch] Called with the app as
+ *   soon as Playwright has it, before any wait here, for a spec that listens to windows from their first load.
+ * @param {boolean} [options.chrome] Default true: before returning, wait until the shell's chrome view is
+ *   listed by Playwright and has drawn its first tab (smoke-helpers.mjs's waitForChromeDrawn), and throw naming
+ *   what is missing if it is not within CHROME_READY_TIMEOUT_MS; frames are waited for up to
+ *   CHROME_FRAMES_WAIT_MS but never fail the launch. The dev server's root counts as the chrome when
+ *   ELECTRON_RENDERER_URL is set. A launch whose entry is not the shell (a bare Electron entry
+ *   that opens no chrome) passes `chrome: false`.
  * @param {'light' | 'dark'} [options.scheme] Run the shell in this colour scheme,
  *   the way a real run follows its theme setting. Playwright pins every page it
  *   attaches to `prefers-color-scheme: light` unless the launch passes
@@ -233,7 +242,9 @@ export async function launchElectron ({
   seedProfile,
   sandbox = false,
   scheme,
-  reuseProfile
+  reuseProfile,
+  chrome = true,
+  onLaunch
 } = {}) {
   const env = { ...process.env, ...envOverrides }
   const stripped = []
@@ -328,6 +339,7 @@ export async function launchElectron ({
   // same path, instead of the bare `app.close()` this file used to call
   // there (which never removed userDataDir on that path either).
   registerLaunchForTeardown(app, { userDataDir })
+  onLaunch?.(app)
 
   // Applies to every page this app produces, including tab views created
   // later. Without it a click on a selector that cannot match blocks instead
@@ -390,8 +402,31 @@ export async function launchElectron ({
     }
   }
 
+  // A window in main is not a chrome view that listens: Playwright lists the page before its script has run, and
+  // an Enter sent that early submits the address form natively and a click waits on frames that have not come.
+  // So the launch does not return until the page has drawn its first state (a tab in the strip), and throws
+  // naming what is missing if it does not. Frames are another matter: on a loaded runner the first one has taken
+  // over ten seconds, and a launch whose GPU context failed may never paint the chrome at all while its script
+  // runs fine. A spec that only reads and evaluates does not need them, so they are waited for a while and the
+  // launch returns either way; a spec that clicks waits on them itself (waitForChromeReady, e2e-helpers.ts).
+  if (chrome) {
+    const view = await waitForChromeView(app, CHROME_READY_TIMEOUT_MS, env['ELECTRON_RENDERER_URL'])
+    const missing = view === undefined
+      ? `no chrome view was listed in app.windows() (windows: ${app.windows().map((w) => w.url()).join(', ') || 'none'})`
+      : await waitForChromeDrawn(view) ? undefined : 'the chrome view never drew its first tab'
+    if (missing !== undefined) {
+      const output = mainOutput(app)
+      await closeElectron(app)
+      throw new Error(`The shell's chrome view was not ready within ${String(CHROME_READY_TIMEOUT_MS)}ms: ${missing}. Pass chrome: false for a launch that opens none. Main process output:\n${output}`)
+    }
+    await waitForChromeReady(view, CHROME_FRAMES_WAIT_MS)
+  }
+
   return app
 }
+
+/** How long launchElectron() waits for the chrome view's frames to settle before returning anyway. */
+const CHROME_FRAMES_WAIT_MS = 30_000
 
 /** How long launchElectron() waits for the shell window before returning anyway. */
 export const SHELL_WINDOW_WAIT_MS = 15_000

@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
-import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
+import { clickAddressBarRetrying, waitForChromeReady } from '../support/e2e-helpers.js'
 import { findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 let server: Server
@@ -50,7 +50,10 @@ const TEST_TIMEOUT_MS = 90_000
 async function launched (): Promise<{ app: ElectronApplication, chrome: Page }> {
   const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
   expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
-  return { app, chrome: findChrome(app) }
+  const chrome = findChrome(app)
+  // The launch waits for the chrome's script and a while for its frames; a spec that clicks needs the frames.
+  expect(await waitForChromeReady(chrome), 'the chrome view never became ready to act on').toBe(true)
+  return { app, chrome }
 }
 
 /** Opens `paths` as tabs, one after the other; the dashboard tab the window starts with stays first. */
@@ -151,6 +154,7 @@ it('pins and unpins a plain, a grouped and a moved tab again and again with no c
     await chrome.evaluate(() => { (window as unknown as { orivonShell: { newWindow: () => void } }).orivonShell.newWindow() })
     expect(await waitFor(() => app.windows().filter((w) => w.url().endsWith('/renderer/index.html')).length === 2)).toBe(true)
     const second = app.windows().filter((w) => w.url().endsWith('/renderer/index.html')).find((page) => page !== chrome) as Page
+    expect(await waitForChromeReady(second), 'the second window never became ready to act on').toBe(true)
     await clickAddressBarRetrying(second, `${origin}/moved`)
     expect((await waitForTab(second, { address: `${origin}/moved` })).ok).toBe(true)
     const moved = (await tabIds(second))[0] as string

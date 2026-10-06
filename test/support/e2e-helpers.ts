@@ -15,7 +15,10 @@ import type { ChildProcess } from 'node:child_process'
 import { connect as netConnect } from 'node:net'
 import type { ElectronApplication } from 'playwright'
 import { closeElectron, APP_CLOSE_RACE_MS } from './launch-electron.mjs'
-import { evaluateRetrying, findChrome, findViewShowing, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { evaluateRetrying, findChrome, findViewShowing, waitFor, waitForChromeReady, waitForTab } from './smoke-helpers.mjs'
+
+// Re-exported for a window a spec opens after launch: launchElectron has already waited for the first one.
+export { waitForChromeReady }
 import { BUILTIN_ADDRESSES } from '../../src/protocols/builtin.js'
 /** Ceiling for waitForAddressBarStable below. Named so the budget
  * arithmetic beneath it can reuse the real number instead of retyping
