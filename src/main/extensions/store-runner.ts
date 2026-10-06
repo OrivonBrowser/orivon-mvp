@@ -19,6 +19,7 @@ import { patchStoreUpdater, readRegistry } from './registry-runner.js'
 import type { InstallContext, InstallOutcome } from './install-runner.js'
 import { installFromStore, installFromStoreCrx, updateFromStore } from './install-store-runner.js'
 import { uninstall } from './install-lifecycle.js'
+import { storeCrxOverrideUrl } from './store-download-seam.js'
 
 export interface StoreApi {
   readonly installFromStore: (id: string) => Promise<InstallOutcome>
@@ -67,6 +68,7 @@ const verifyCrx: VerifyCrx = (crx, expectedId) => {
  */
 export function buildWebStoreHost (ctx: InstallContext): WebStoreHost {
   return {
+    crxUrl: storeCrxOverrideUrl,
     installCrx: async (crx, expectedId, approvedManifest, downloadUrl) => {
       const existing = readRegistry(ctx.userDataPath).find((entry) => entry.id === expectedId)
       if (existing !== undefined && existing.updater.kind !== 'store') {
@@ -109,7 +111,11 @@ export function recordUpdateCheck (userDataPath: string, result: UpdateCheckResu
 /** `state.session` is the default session for both the store's own IPC and
  * every extension Orivon loads, so an update check's
  * `session.extensions.getAllExtensions()` already sees what Orivon
- * installed with no bookkeeping of its own. */
+ * installed with no bookkeeping of its own.
+ *
+ * A private or guest runtime starts it too, with every install blocked before any question and no
+ * updater: a store tab there must still get the preload's overrides, because the native
+ * `chrome.webstorePrivate` its page would otherwise reach crashes the main process. */
 export async function startWebStore (ctx: InstallContext, preloadPath: string): Promise<StoreApi> {
   const host = buildWebStoreHost(ctx)
 
@@ -118,10 +124,13 @@ export async function startWebStore (ctx: InstallContext, preloadPath: string): 
   await installChromeWebStore({
     session: ctx.session,
     loadExtensions: false,
-    autoUpdate: true,
+    autoUpdate: !ctx.privateSession,
+    // Nothing is installable here: the library then refuses before it fetches the page's icon from the main process.
+    ...(ctx.privateSession ? { allowlist: [] } : {}),
     preloadPath,
     verifyCrx,
     beforeInstall: async ({ manifest, frame }) => {
+      if (ctx.privateSession) return { action: 'deny' }
       const parsed = readExtensionManifest(manifest)
       if (!parsed.ok) return { action: 'deny' }
       // The store page's own tab shows the question; a frame that is already gone leaves the tab in front.

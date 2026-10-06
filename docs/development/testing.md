@@ -387,7 +387,7 @@ that never fires. A spec pins the cause it can see (the structure of the window'
 `scripts/probe-view-visibility.mjs` is that recipe for every view put into a window, with no Playwright: it launches
 the built shell (build it first) on a throwaway profile with `--inspect` on the main process alone, which does
 not touch any page, drives tab switches, splits (the shortcut and the tab menu), navigations in a split pane, sleep and
-wake, a tab moved to a new window and the side panel through the chrome page's own `orivonShell` calls, and after each
+wake, a tab moved to a new window, the side panel and an extension's popup (the `popup` scenario seeds the fixture extension) through the chrome page's own `orivonShell` calls, and after each
 step reads every view's `getVisible()`, its page's `visibilityState` and a `requestAnimationFrame` round trip. Run it
 under `scripts/run-headless.mjs`, with `PROBE_ARGS=--ozone-platform=wayland` under a private compositor, and read its
 step list: a failure names the page that was on screen and hidden. It is not part of the unit suite or CI (it needs a

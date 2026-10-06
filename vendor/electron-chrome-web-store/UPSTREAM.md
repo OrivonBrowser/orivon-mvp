@@ -8,7 +8,7 @@
   MIT text with that author. The monorepo root's `LICENSE` is GPL-3.0; under either licence the
   code combines with Orivon's AGPL-3.0-only.
 - Vendored from: `packages/electron-chrome-web-store/src/` (no build output)
-- Modified: by the Orivon project, as the patches below list; last modified 2026-09-29
+- Modified: by the Orivon project, as the patches below list; last modified 2026-10-05
 
 ## Patches
 
@@ -114,6 +114,24 @@
    to `installExtension` as `approvedManifest`, and `src/browser/installer.ts` hands it to
    `host.installCrx` with the downloaded bytes. Reason: the host refuses a download whose
    manifest asks for more than the person approved.
+
+8. **The store page keeps its own `chrome.webstorePrivate`.** `src/renderer/store-overrides.ts`
+   (new) and `src/renderer/chrome-web-store.preload.ts`: the preload ran
+   `chrome.webstorePrivate = electronWebstore` and two `Object.assign` calls once, and the
+   renderer's own bindings rebuild (it fires whenever an extension loads in the session) restored the
+   native object, which the page's next `getExtensionStatus` poll reached and crashed the main
+   process on. The script now defines `webstorePrivate` and `management` as accessors that refuse
+   redefinition (`management` is the native object merged with `electronManagement`) and merges
+   into `chrome.runtime` only when it exists, each step in its own `try`. A unit test runs the
+   script in `node:vm`; only the end-to-end spec shows Chromium honours the lock.
+9. **A host may name the CRX URL.** `src/browser/types.ts`: `WebStoreHost.crxUrl?(id)`;
+   `src/browser/installer.ts`: `installExtension` downloads from `host.crxUrl?.(id) ??
+   getExtensionCrxURL(id)`. Reason: an end-to-end build serves the CRX from a local fixture
+   server, so the page-driven install runs offline.
+10. **A closed store tab cannot throw from the uninstall notice.** `src/browser/api.ts`:
+    `chrome.management.uninstall` sends `onUninstalled` from a microtask; the send is skipped for a
+    destroyed sender and wrapped in `try`. Reason: the throw was uncaught, and the main process
+    exits on an uncaught exception.
 
 Nothing else changed; upstream code is not reformatted.
 

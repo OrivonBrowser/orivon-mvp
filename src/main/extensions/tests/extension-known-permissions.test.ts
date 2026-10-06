@@ -40,7 +40,7 @@ describe('filterExtensionLoadWarning', () => {
 
   it('IMPLEMENTED_EXTENSION_PERMISSIONS lists the permissions this app actually serves today', () => {
     expect(IMPLEMENTED_EXTENSION_PERMISSIONS).toEqual(
-      expect.arrayContaining(['contextMenus', 'cookies', 'notifications', 'offscreen', 'tabCapture', 'webNavigation']),
+      expect.arrayContaining(['contextMenus', 'cookies', 'notifications', 'offscreen', 'sidePanel', 'tabCapture', 'webNavigation']),
     )
   })
 })

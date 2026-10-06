@@ -7,6 +7,7 @@ import type { ElectronChromeExtensions } from 'orivon:crx-extensions'
 import type { ShellServices } from '../shell/shell-services.js'
 import { extensionOpenedUrl, type IsLoadedExtension } from './extension-url-policy.js'
 import { openExtensionTab } from './extension-opened-pages.js'
+import { sidePanelWindowOf } from './side-panel-pages.js'
 
 export interface PopupPolicyDeps {
   /** undefined until the first window exists. */
@@ -21,13 +22,13 @@ let currentPopup: {
   isDestroyed: () => boolean
   destroy: () => void
   readonly parent?: BaseWindow | undefined
-  readonly browserWindow?: { readonly webContents: WebContents } | undefined
+  readonly webContents: WebContents
 } | undefined
 
 /** The shell window the open popup was opened over, when `contents` is that popup's page. */
 export function parentOf (contents: WebContents): BaseWindow | undefined {
   if (currentPopup === undefined || currentPopup.isDestroyed()) return undefined
-  return currentPopup.browserWindow?.webContents === contents ? currentPopup.parent : undefined
+  return currentPopup.webContents === contents ? currentPopup.parent : undefined
 }
 
 /** Chrome closes an open popup the moment the PERSON switches tabs; the
@@ -46,8 +47,8 @@ export function setupWindowOpenPolicy (contents: WebContents, deps: PopupPolicyD
   contents.setWindowOpenHandler(({ url }) => {
     const services = deps.services()
     if (services !== undefined) {
-      // A popup's own page opens its tab beside the window the popup hangs under; a background page has no window of its own.
-      const win = parentOf(contents) ?? services.windows.focused()?.window
+      // A popup's or a side panel's own page opens its tab beside the window it belongs to; a background page has no window of its own.
+      const win = parentOf(contents) ?? sidePanelWindowOf(contents) ?? services.windows.focused()?.window
       const target = extensionOpenedUrl(url, deps.isLoaded)
       const shellWindow = win === undefined ? undefined : services.windows.all().find((w) => w.window === win)
       if (shellWindow !== undefined && target !== undefined) openExtensionTab(shellWindow.tabs, target)
@@ -59,13 +60,12 @@ export function setupWindowOpenPolicy (contents: WebContents, deps: PopupPolicyD
 /** Gives every popup and MV2 background page the window-open policy above
  * the moment Electron creates it, and closes a popup when the tab it was
  * opened over navigates away. 'browser-action-popup-created' fires
- * synchronously right after the popup's own BrowserWindow is constructed
+ * synchronously right after the popup's own view is constructed
  * (browser-action.ts's own activateClick), before its page has had a chance
  * to load and call window.open() itself. */
 export function installPopupPolicy (host: ElectronChromeExtensions, deps: PopupPolicyDeps): void {
   host.on('browser-action-popup-created', (popup) => {
-    const wc = popup.browserWindow?.webContents
-    if (wc !== undefined) setupWindowOpenPolicy(wc, deps)
+    setupWindowOpenPolicy(popup.webContents, deps)
 
     // Chrome closes a popup the moment the tab it was opened over switches
     // or navigates away -- neither is something popup.ts (generic vendored
@@ -94,7 +94,7 @@ export function installPopupPolicy (host: ElectronChromeExtensions, deps: PopupP
       if (!popup.isDestroyed()) popup.destroy()
     }
     activeTabWc?.on('did-start-navigation', closePopup)
-    popup.browserWindow?.webContents.once('destroyed', () => {
+    popup.webContents.once('destroyed', () => {
       if (currentPopup === popup) currentPopup = undefined
       activeTabWc?.removeListener('did-start-navigation', closePopup)
     })

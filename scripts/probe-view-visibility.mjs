@@ -11,12 +11,13 @@
  * A view that is in the window and in front but hidden fails the step. Exit status 1 on any failure.
  *
  * Usage: node scripts/run-headless.mjs node scripts/probe-view-visibility.mjs [--only=<scenario>] [--json]
- * Scenarios: switch, split, navigate, sleep, panel, windows. PROBE_ARGS adds Electron switches (for instance
+ * Scenarios: switch, split, navigate, sleep, panel, windows, popup. PROBE_ARGS adds Electron switches (for instance
  * --ozone-platform=wayland under a private compositor). PROBE_AFTER_STEP is a shell command run after each step
  * with the step's name in PROBE_STEP: a screenshot of the display, to read the compositor's pixels as well.
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { createHash, generateKeyPairSync } from 'node:crypto'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -41,9 +42,28 @@ function pageServer () {
   })
 }
 
+/** Puts the fixture extension with a toolbar popup into `profile` the way an install would leave it; returns its id. */
+function seedPopupExtension (profile) {
+  const source = join(repo, 'test/apps/extensions/action-popup')
+  const key = generateKeyPairSync('rsa', { modulusLength: 2048 }).publicKey.export({ type: 'spki', format: 'der' }).toString('base64')
+  const id = [...createHash('sha256').update(key, 'base64').digest().subarray(0, 16).toString('hex')].map((ch) => String.fromCharCode(97 + parseInt(ch, 16))).join('')
+  const slot = join(profile, 'extensions', 'action-popup')
+  const target = join(slot, '1.0.0')
+  cpSync(source, target, { recursive: true })
+  const manifest = { ...JSON.parse(readFileSync(join(source, 'manifest.json'), 'utf8')), key }
+  writeFileSync(join(target, 'manifest.json'), JSON.stringify(manifest))
+  writeFileSync(join(slot, 'key.pub'), key)
+  const now = Date.now()
+  const entry = { id, name: manifest.name, version: manifest.version, enabled: true, installedAt: now, updatedAt: now, source: { kind: 'unpacked', from: source }, updater: { kind: 'none', reason: 'probe fixture' }, path: target, stripped: { permissions: [], optionalPermissions: [] } }
+  mkdirSync(join(profile, 'extensions'), { recursive: true })
+  writeFileSync(join(profile, 'extensions', 'registry.json'), JSON.stringify({ extensions: [entry] }))
+  return id
+}
+
 /** The app on a fresh profile with a debugger on its main process; resolves with that process's inspector address. */
-async function launch () {
+async function launch (seed) {
   const profile = mkdtempSync(join(tmpdir(), 'orivon-test-probe-'))
+  const seeded = seed?.(profile)
   const env = { ...process.env, ORIVON_WINDOW_NO_FOCUS: '1', ORIVON_INTRO: 'off', ORIVON_ETH_LIGHT_CLIENT: 'off', PULSE_SERVER: 'unix:/nonexistent' }
   delete env.ELECTRON_RUN_AS_NODE
   const args = ['.', `--user-data-dir=${profile}`, '--inspect=0', '--alsa-output-device=null', '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1', ...(process.env.PROBE_ARGS ?? '').split(' ').filter(Boolean)]
@@ -66,7 +86,7 @@ async function launch () {
     if (child.exitCode === null) child.kill('SIGKILL')
     rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
   }
-  return { wsUrl, close, output: () => log }
+  return { wsUrl, close, output: () => log, seeded }
 }
 
 /** A Runtime.evaluate client for the main process: no domain is enabled, so no page is touched. */
@@ -123,13 +143,15 @@ const HELPERS = `(() => {
   return 'ok'
 })()`
 
+const wants = (name) => only === undefined || only === name
+
 const failures = []
 const report = []
 
 async function main () {
   const { origin: a } = await pageServer()
   const { origin: b } = await pageServer()
-  const app = await launch()
+  const app = await launch(wants('popup') ? seedPopupExtension : undefined)
   try {
     const run = await connect(app.wsUrl)
     for (let waited = 0; ; waited += 250) {
@@ -167,8 +189,6 @@ async function main () {
       report.push({ scenario, step, verdicts, views: views.map((view) => `${view.url.slice(0, 60)} ${view.viewVisible ? 'visible' : 'setVisible(false)'} ${view.state} ${view.raf}`) })
     }
     const partOf = (title) => title.startsWith('Page /') ? title.slice('Page '.length) : '/newtab/'
-    const wants = (name) => only === undefined || only === name
-
     await openTab(`${a}/a`, 'Page /a')
     await openTab(`${a}/b`, 'Page /b')
     await openTab(`${a}/c`, 'Page /c')
@@ -249,6 +269,25 @@ async function main () {
         await expectShown('panel', `open ${round}, the page in front`, [front])
         await shell("runCommand('sidePanel.toggle')")
         await expectShown('panel', `closed ${round}, the page in front`, [front])
+      }
+    }
+
+    if (wants('popup')) {
+      // An extension's popup is a view in the window: opened twice, it is each time shown, painting, and inside the window.
+      const extensionId = app.seeded
+      const popupPart = `chrome-extension://${extensionId}/popup.html`
+      const content = JSON.parse(await run("JSON.stringify(process.mainModule.require('electron').BaseWindow.getAllWindows()[0].getContentBounds())"))
+      const toggle = async () => { await chrome(`document.querySelector('browser-action-list').shadowRoot.getElementById(${JSON.stringify(extensionId)}).click()`) }
+      for (const round of [1, 2]) {
+        await toggle()
+        await waitFor(`the popup, round ${round}`, async () => (await run('__vp.urls()')).some((url) => url.startsWith(popupPart)))
+        await expectShown('popup', `open ${round}`, [popupPart])
+        const view = (await run('__vp.read()')).find((candidate) => candidate.url.startsWith(popupPart))
+        const inside = view !== undefined && view.bounds.x >= 0 && view.bounds.y >= 0 && view.bounds.x + view.bounds.width <= content.width && view.bounds.y + view.bounds.height <= content.height
+        if (!inside) failures.push(`popup / open ${round}: its bounds ${JSON.stringify(view?.bounds)} are not inside the window ${JSON.stringify(content)}`)
+        await toggle()
+        await waitFor(`the popup to close, round ${round}`, async () => !(await run('__vp.urls()')).some((url) => url.startsWith(popupPart)))
+        await expectShown('popup', `closed ${round}, the page in front`, [partOf((await tabs()).find((tab) => tab.active).title)])
       }
     }
 

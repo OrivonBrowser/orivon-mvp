@@ -621,7 +621,7 @@ scripts (isolated and MAIN world, MV2 and MV3), run with the Chromium sandbox on
 | Install: unpacked folder | ✅ | `orivon://extensions` Developer mode (`install-runner.ts`) |
 | Install: `.zip` | ✅ | Symlink entries and path-traversal entries refused |
 | Install: `.crx` (CRX3) | ✅ | Needs the developer's own signature; Orivon's own verifier, not the library's |
-| Install and update from the Chrome Web Store | ✅ | The store's own "Add to Chrome" button; developer signature and the store's publisher proof both checked before any bytes are kept (`ADR-0043`) |
+| Install and update from the Chrome Web Store | ✅ | The store's own "Add to Chrome" button, driven from the store page; developer signature and the store's publisher proof both checked before any bytes are kept (`ADR-0043`). The page keeps its own store API through every extension load beside it, and a private window's store page refuses installs |
 | A held-back update that would widen host access or add a warned permission | ✅ | Shown as pending, not installed silently (T19 subset rule) |
 | Stable id across updates | ✅ | Every loaded copy carries a `key` |
 | Enable / disable | ✅ | Registry entry toggle |
@@ -647,7 +647,7 @@ scripts (isolated and MAIN world, MV2 and MV3), run with the Chromium sandbox on
 | `content_scripts`: `run_at` | ✅ | `document_idle` measured |
 | `background.service_worker`, `"type": "module"` | ✅ | The worker's first start after a fresh load is reloaded once to receive events it raced (Table 7d) |
 | `background.scripts` (MV2 persistent page) | ✅ | Loads (a deprecation warning only, does not block); reachable with the same full extension-page API surface as MV3's service worker |
-| `action` (MV3) / `browser_action` (MV2): `default_popup`, `default_icon`, `default_title` | ✅ | Toolbar button when pinned, badge and popup; an unpinned extension runs from the Extensions menu |
+| `action` (MV3) / `browser_action` (MV2): `default_popup`, `default_icon`, `default_title` | ✅ | Toolbar button when pinned, badge and popup; an unpinned extension runs from the Extensions menu. The popup opens inside the window, under its button (the Extensions button for one run from the menu), at the size of its page |
 | `options_page` | ✅ | Opens in a tab |
 | `options_ui` | ⚠️ | Opens in a tab, same as `options_page`; the embedded (`open_in_new_tab: false`) mode is not implemented |
 | `chrome_url_overrides` (`newtab`, `history`, `bookmarks`) | ❌ | Not honoured: a new tab shows Orivon's own dashboard, History and Bookmarks their own pages; an extension's page can still be opened as a tab with `chrome.tabs.create` |
@@ -656,7 +656,7 @@ scripts (isolated and MAIN world, MV2 and MV3), run with the Chromium sandbox on
 | `externally_connectable` | ✅ | Chromium's own: a page whose address matches gets `chrome.runtime.sendMessage` and `connect`, and the extension's `onMessageExternal` and `onConnectExternal` fire; no Orivon code; the sender's `tab` carries `windowId` 0 |
 | `commands` | ✅ | Suggested keys are bound when free; `_execute_action` activates the extension; rebinding at `orivon://extensions/shortcuts`; Orivon's own shortcuts win; macOS key names are not run on a Mac (`extension-commands.ts`, `extension-commands-runner.ts`) |
 | `omnibox` | ❌ | Orivon's own address bar is unrelated code |
-| `side_panel` | ❌ | `chrome.sidePanel` is a no-op stub (Table 7c); the key drives no real panel surface |
+| `side_panel` | ✅ | `default_path` is the panel every tab shows until `chrome.sidePanel.setOptions` says otherwise, in the window's side panel (Table 7c, 7d) |
 | `host_permissions` | ✅ | Gates `chrome.cookies`/`chrome.tabs`/`insertCSS`/`webNavigation` API access; an optional site the person allowed counts at once (`granted-host-rule.ts`) |
 | `optional_permissions` / `optional_host_permissions` | ✅ | Asked in an Orivon sheet, only for what the manifest declares (`permissions-api.ts`); kept in `prefs.json` across restarts; `remove` takes it back; Orivon's own checks follow at once, Chromium's own at the extension's next quiet reload (`manifest-stage-granted.ts`) |
 | `incognito` (`spanning`/`split`/`not_allowed`) | ➖ | Moot: no private window runs any extension |
@@ -687,7 +687,7 @@ is not the same as it doing anything: read the note, not just the symbol.
 
 | API | Works | Note |
 |---|---|---|
-| `action` (MV3) / `browserAction` (MV2) | ✅ | Toolbar button, badge, title, icon, popup, and `getUserSettings` answering the real pin state with `onUserSettingsChanged` firing; `enable` and `disable` are no-ops (`action-pins-runner.ts`, `preload/extension-apis/action-settings.ts`) |
+| `action` (MV3) / `browserAction` (MV2) | ✅ | Toolbar button, badge, title, icon, popup (opened in the window under the action's button, also from `openPopup`), and `getUserSettings` answering the real pin state with `onUserSettingsChanged` firing; `enable` and `disable` are no-ops (`action-pins-runner.ts`, `preload/extension-apis/action-settings.ts`) |
 | `alarms` | ✅ | `create` + `onAlarm` measured firing |
 | `bookmarks` | ✅ | The tree as Chrome shapes it (bar `1`, other `2`), search, create, update, move, remove and the four change events derived from the store; writes count against Chrome's quota; the reading root is never visible; `javascript:` and `data:` addresses are refused; `onChildrenReordered`, `onImportBegan` and `onImportEnded` never fire (`api/bookmarks-api.ts`) |
 | `commands` | ✅ | `getAll` with the live shortcut, `onCommand` and `onChanged` through the shortcut dispatcher; a command key counts as an invocation on that tab (`extension-commands-runner.ts`, `api/commands-api.ts`) |
@@ -709,10 +709,10 @@ is not the same as it doing anything: read the note, not just the symbol.
 | `privacy` | ⚠️ | Inert `ChromeSetting` placeholders; a `get` call triggers a native "Unknown Extension API" log |
 | `proxy` | ⚠️ | Exists as a namespace; `settings.get` explicitly rejects `"Access to extension API denied."` |
 | `browser` global | ✅ | The same object as `chrome` for every namespace Orivon provides, so an extension that takes `self.browser \|\| self.chrome` gets `permissions`, `webRequest` and the rest (measured with a fixture) |
-| `runtime` | ⚠️ | `id`/`getManifest`/`getURL`/`connect`/`sendMessage`/`openOptionsPage` work; `onMessageExternal` and `onConnectExternal` fire for a matching page (Table 7b); `getContexts` lists the worker, popup, tab pages and offscreen document; `connectNative`/`disconnectNative`/`sendNativeMessage` throw by design (below); `onInstalled` fires once in a service worker after an install or update, with `reason` and, for an update, `previousVersion` (Electron never fires its own); `getManifest` still carries the `declarative_net_request` the extension shipped, which a blocker reads at start-up |
+| `runtime` | ⚠️ | `id`/`getManifest`/`getURL`/`connect`/`sendMessage`/`openOptionsPage` work; `onMessageExternal` and `onConnectExternal` fire for a matching page (Table 7b); `getContexts` lists the worker, popup, tab pages, side panel pages and offscreen document; `connectNative`/`disconnectNative`/`sendNativeMessage` throw by design (below); `onInstalled` fires once in a service worker after an install or update, with `reason` and, for an update, `previousVersion` (Electron never fires its own); `getManifest` still carries the `declarative_net_request` the extension shipped, which a blocker reads at start-up |
 | `scripting` | ✅ | `registerContentScripts` with `world: 'MAIN'` measured running in the page's own world, and an isolated one staying out of it; `executeScript` measured running a real function in a tab and returning its result; it needs host access, and `activeTab` alone is refused (Table 7d) |
 | `search` | ✅ | `query` opens the default engine's results in the current tab, a new tab or a new window (`api/search-api.ts`) |
-| `sidePanel` | ⚠️ | Every method resolves as a no-op; no panel surface opens |
+| `sidePanel` | ✅ | `setOptions` and `getOptions` (global or per tab), `setPanelBehavior` and `getPanelBehavior` (kept across restarts), `getLayout`, `open` (needs the person's input on the extension within five seconds, and a window with room), `close`, `onOpened` and `onClosed`; a tab that is an app's or an Orivon page is no tab to it (`side-panel-api.ts`, `test/extensions/e2e-extensions-side-panel.test.ts`) |
 | `storage.local` | ✅ | Native to Electron |
 | `storage.sync` | ⚠️ | Alias `local`; no real multi-device sync |
 | `storage.managed` | ⚠️ | Empty and read-only, as in Chrome with no policy set; no policy delivery |
@@ -756,6 +756,7 @@ policy source this build has no equivalent of.
 | Extension pages: options tab | ✅ | Both `options_page` and `options_ui` open a tab; the embedded mode of `options_ui` is not implemented |
 | Extension pages: an extension's own full page opened as a tab | ✅ | Same URL policy as any extension-initiated navigation |
 | Extension pages: offscreen documents | ✅ | `chrome.offscreen`; one per extension, never shown (Table 7c) |
+| Extension pages: the side panel | ✅ | The extension's own page in the window's side panel, picked from the panel's list or opened by its toolbar button (when it asks with `openPanelOnActionClick`), its `_execute_side_panel` key or `sidePanel.open()`; a second click or key closes it, and a window below 760 px or a kiosk falls back to the popup; the page follows the tab in front, and its `window.open`, links and `window.close()` open tabs and close the panel (`side-panel-runner.ts`) |
 | Extension popup: closes on focus loss elsewhere in Orivon, on tab switch and navigation | ✅ | |
 | Extension popup: paints its theme colour before first paint | ✅ | |
 | Extension popup: a `chrome.*` call on its first line | ✅ | No longer fails with "unknown extension context" |
@@ -771,7 +772,7 @@ policy source this build has no equivalent of.
 | Storage: `session` | ✅ | Confirmed round-tripping (Table 7c) |
 | Storage: quotas | ✅ | `local` holds 10 MiB (`QUOTA_BYTES` 10485760) and a write past it rejects with Chrome's quota error; `session` rejects past its own quota; `sync` and `managed` report the same limit |
 | i18n / `_locales` | ✅ | Name/description/icon resolution on the extensions page; `chrome.i18n` answers from Electron's own implementation (Table 7c) |
-| Toolbar: pin/unpin, badge, icon, title | ✅ | Pinned per extension from the Extensions menu or the icon's right-click menu; a new extension is pinned by default (`extensions.pinNew`); an unpinned extension runs from the menu and its badge shows on its row (`action-pins-runner.ts`, `extensions-menu-overlay.ts`) |
+| Toolbar: pin/unpin, badge, icon, title | ✅ | Pinned per extension from the Extensions menu or the icon's right-click menu; an extension added from now on is not pinned unless "Pin new extensions to the toolbar" (`extensions.pinInstalled`, off) is on, and one with no recorded pin follows `extensions.pinNew`; an unpinned extension runs from the menu and its badge shows on its row (`action-pins-runner.ts`, `extensions-menu-overlay.ts`) |
 | Toolbar: the Extensions button and its menu | ✅ | Lists every extension with its badge, pin and a More list (options, pin, manage, remove); shown when an extension is loaded, always or never as chosen in Appearance; never in a private window (`extensions-button.ts`, `extensions-menu-overlay.ts`) |
 | Toolbar: enable/disable a button per tab | ❌ | `action.enable` and `action.disable` do nothing, so a button is never greyed out for a tab (`vendor/electron-chrome-extensions/src/renderer/index.ts`) |
 | Site access controls: "on click" / "on specific sites" / "on all sites" picker | ❌ | Not modelled; host access is the manifest's declared patterns, decided at install or update, plus the sites the person allows an extension to ask for (Table 7b) |
@@ -1137,7 +1138,8 @@ the reference set, and whether this build has it.
 | Asking for more access later | ✅ | `chrome.permissions.request` asks in a sheet and the person can take a grant back from the details page (Table 7b) |
 | Bookmarks, history, top sites and search for extensions | ✅ | Over Orivon's own stores; history and top sites never list an app's pages (Table 7c) |
 | `webRequest` | ✅ | Served by Orivon, blocking included for manifest version 2; full uBlock Origin blocks (Table 7c) |
-| `sidePanel`, `userScripts` | ⚠️ | Present as no-ops (Table 7c) |
+| `sidePanel` | ✅ | Real (Table 7c, 7d) |
+| `userScripts` | ⚠️ | Present as no-ops (Table 7c) |
 | Native messaging | 🚫 | Off by design: it would start desktop programs outside the broker |
 | Extensions inside apps a person has granted permissions to | ✅ | Table 7d |
 | Extensions in private windows | ❌ | Table 7d |
@@ -1166,7 +1168,7 @@ the reference set, and whether this build has it.
 | Toolbar customisation | ❌ | Not found |
 | Keyboard shortcuts, remappable | ✅ | Full remapping UI |
 | Gestures (mouse/trackpad) | ❌ | Not found |
-| Side panel | ✅ | Docked beside the page on the right or the left (`sidePanel.side`), 280 to 640 px wide, from `Mod+Alt+B`, the toolbar button or More tools, with Bookmarks, History, a Reading list that stays empty while nothing saves to it, Downloads, and one slot for an extension's view that no extension fills yet; the page narrows rather than being covered, and the panel is hidden below 760 px, in HTML fullscreen and in a kiosk (`src/main/side-panel/`, `src/renderer/overlay/side-panel/`) |
+| Side panel | ✅ | Docked beside the page on the right or the left (`sidePanel.side`), 280 to 640 px wide, from `Mod+Alt+B`, the toolbar button or More tools, with Bookmarks, History, a Reading list that stays empty while nothing saves to it, Downloads, and an extension's own page, listed in the panel's view picker (Table 7d); the page narrows rather than being covered, and the panel is hidden below 760 px, in HTML fullscreen and in a kiosk (`src/main/side-panel/`, `src/renderer/overlay/side-panel/`) |
 | Settings, History and Profiles update live, without a restart | ✅ | Confirmed across Apps, Privacy, Usage, Updates and Profiles settings, History and the Profiles page, including across separate profile processes (`grant-events.ts`, `start-internal-pages.ts`) |
 
 ### Updates, crash reporting, OS integration and misc
@@ -1176,8 +1178,9 @@ the reference set, and whether this build has it.
 | Self-update check | ⚠️ | Asks GitHub once a day for a newer release; Settings > About then offers a button that opens its release page in a tab, and nothing is downloaded or installed (`src/main/self-update/updates-domain.ts`, `release-url.ts`) |
 | Automatic update installation | ❌ | The check above is informational only |
 | Crash reporting | ❌ | No `crashReporter` usage; the Node-shim's own export is an explicit stub |
-| Default-browser registration | ⚠️ | Settings > About registers Orivon for http and https from the button, from a packaged install only (a Linux .deb); a run from source or an AppImage says it is unavailable, and macOS and Windows packaging do not exist (`src/main/os/default-browser.ts`) |
+| Default-browser registration | ⚠️ | An installed package (a Linux .deb) registers Orivon for http and https from a click: Settings > Default browser, a box on the welcome screen, or a question a week after the last one in the default profile ("Don't ask again" from the third week); a run from source or an AppImage says why it cannot and never calls the system. Windows (an NSIS installer script, and Make default opens Windows Settings, where the choice is the person's) and macOS (`setAsDefaultProtocolClient`) are written, packaged by the release workflow and not yet seen in a system's default-app list (`src/main/os/default-browser.ts`, `default-browser-ask.ts`, `build/installer.nsh`) |
 | Open links from other apps (OS-level URL handling) | ✅ | A link handed to the running app opens as a tab: a second launch on Linux and Windows, an `open-url` event on macOS; only http(s) addresses are taken, at most eight; a cold start is `shell/first-window.ts` (`src/main/os/open-url.ts`, `src/main/launch/launch-context.ts`) |
+| Launcher actions: New Window and New Private Window from the dock or taskbar | ⚠️ | The installed .deb's desktop entry lists both, the Windows taskbar's jump list and the macOS dock menu are set by the running program, and a second start with `--new-window` or `--new-private-window` (or no address) opens a window or a private session in the running browser; a file or a `mailto:` handed in opens nothing. The Windows and macOS menus and the entry's actions have never been run on those systems or from an installed package, and a window opened from a dock click on Wayland may not take the focus (`src/main/launch/launch-request.ts`, `src/main/os/install-launcher-menu.ts`, `electron-builder.yml`) |
 | "Create shortcut" for a site/app | ⚠️ | A sheet writes a desktop entry (Linux) or a desktop link (Windows) that opens the site in an ordinary Orivon window; not offered on macOS, in a private window or for a page that is not http(s); the Windows link is untested on Windows (`src/main/os/site-shortcut.ts`, `shortcut-overlay.ts`) |
 | OS integration: handoff / share sheet | ⚠️ | Share in the main menu and the tab menu copies the link, starts an email after a confirmation, or opens the QR code; there is no operating-system share sheet (`src/main/os/share-commands.ts`) |
 | Energy saver / performance mode | ⚠️ | With `performance.energySaver` set to "battery", an idle tab sleeps after 5 minutes on battery, also with the memory saver off; no frame-rate or background-work limit beyond Chromium's own (`src/main/memory-saver/sleep-rules.ts`) |

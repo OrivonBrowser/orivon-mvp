@@ -169,6 +169,10 @@ export interface TabShell {
   services?: ShellServices
   /** Runs a command on this window, as a key or a menu row would. Absent in tests: nothing runs. */
   runCommand?: (id: CommandId) => void
+  /** Gives the keyboard back to the chrome's page, unless it already holds it. Absent in tests. */
+  focusChrome?: () => void
+  /** Whether the welcome screen is over this window. Absent in tests: it never is. */
+  coveredByIntro?: () => boolean
 }
 
 /** The view behind two panes: the divider, and an outline round the pane the person is in. */

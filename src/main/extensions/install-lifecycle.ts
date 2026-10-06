@@ -8,6 +8,7 @@ import { withRegistryLock, writeRegistry } from './registry-runner.js'
 import { clearPersistedRuleState } from './dnr/dnr-runner.js'
 import { deleteExtensionData } from './extension-data.js'
 import { restoreBaseManifest } from './effective-manifest-runner.js'
+import { clearOpenOnActionClick } from './side-panel-behavior-file.js'
 import type { InstallContext } from './install-runner.js'
 
 /** Runs entirely under `withRegistryLock` (registry-runner.ts's own doc):
@@ -19,6 +20,11 @@ export async function uninstall (ctx: InstallContext, id: string): Promise<void>
   await withRegistryLock(ctx.userDataPath, async (registry) => {
     const entry = registry.find((candidate) => candidate.id === id)
     if (entry === undefined) return
+    try {
+      await ctx.closeSidePanels?.(id)
+    } catch (error) {
+      console.error(`[extensions] could not close the side panels of ${id}:`, error)
+    }
     await deleteExtensionData(ctx, id)
     ctx.session.extensions.removeExtension(id)
     rmSync(entry.path, { recursive: true, force: true })
@@ -26,6 +32,7 @@ export async function uninstall (ctx: InstallContext, id: string): Promise<void>
     // ruleset choice too. The slot's key.pub stays: a reinstall into the
     // same slot must resolve to the same id.
     clearPersistedRuleState(dirname(entry.path))
+    clearOpenOnActionClick(dirname(entry.path))
     restoreBaseManifest(dirname(entry.path), undefined)
     ctx.prefs?.forget(id)
     writeRegistry(ctx.userDataPath, registry.filter((candidate) => candidate.id !== id))

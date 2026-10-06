@@ -58,7 +58,7 @@ function stringField (manifest: Record<string, unknown> | undefined, key: string
  * `manifestFacts` undefined and the entry's own recorded name in place of a
  * resolved one, rather than failing the whole list over one damaged entry.
  */
-export async function readExtensionFacts (entry: InstalledExtension): Promise<ExtensionFacts> {
+export async function readExtensionFacts (entry: Pick<InstalledExtension, 'path' | 'name'>): Promise<ExtensionFacts> {
   let rawManifest: Record<string, unknown> | undefined
   try {
     const bytes = await readFile(join(entry.path, 'manifest.json'), 'utf8')

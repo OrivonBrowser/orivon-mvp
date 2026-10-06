@@ -8,6 +8,9 @@
 # run, and macOS packages are ad-hoc signed (`mac.identity` below), so Gatekeeper asks the
 # person to allow the app once. The schema here is electron-builder 26.x's, checked against
 # the installed node_modules/app-builder-lib/scheme.json.
+# The `win` and `mac` blocks also register Orivon with the system as a browser: `protocols`
+# below, and build/installer.nsh for the Windows registry entries. Whether a built package
+# lists Orivon as a browser on Windows and macOS is unverified (*provisional*).
 
 appId: com.orivonstack.orivon
 # Reverse-DNS of orivonstack.com, the project's actual registered domain (already used
@@ -116,8 +119,8 @@ electronFuses:
 # default-web-browser` (Linux) looks for an installed .desktop file whose MimeType=
 # line includes `x-scheme-handler/http` and `x-scheme-handler/https`, and this is the
 # documented, cross-platform electron-builder mechanism that populates it (it would
-# equally populate the macOS Info.plist; the Windows installer writes no registry
-# entries from it).
+# equally populate the macOS Info.plist; the Windows registry entries are written by
+# build/installer.nsh instead).
 # This config key alone does not make Orivon a working browser at the OS level -- the
 # app itself must still call `app.setAsDefaultProtocolClient()` at runtime. That is
 # application code in src/main, out of scope for this file; see
@@ -157,16 +160,10 @@ linux:
   # (Network) to be present alongside it, not instead of it -- most desktop-menu
   # implementations key off both.
 
-  mimeTypes:
-    - text/html
-  # Alongside `protocols.schemes` above, not a duplicate of it: `protocols` covers URL
-  # *schemes* (x-scheme-handler/*), text/html is a document MIME type rather than a
-  # scheme, so it has its own config surface. Together, electron-builder's documented
-  # behaviour is that they compose into one MimeType= line:
-  # `x-scheme-handler/http;x-scheme-handler/https;text/html;`. That composition is
-  # read from current docs, not observed against a real build -- verify the generated
-  # .desktop file's actual MimeType= line the first time this is really packaged (see
-  # docs/development/packaging.md).
+  # No `mimeTypes`: the entry lists only `x-scheme-handler/http` and `/https`, from `protocols`
+  # above. A browser that claims `text/html` is offered every .html file and every `xdg-open` of
+  # a page, and the desktop's browser list is keyed on the two schemes. Opening a local file is
+  # a separate feature (docs/open-questions.md A375).
 
   synopsis: A browser that runs applications Chrome cannot
   description: >-
@@ -213,10 +210,27 @@ deb:
   # not a guess -- "net" would be the wrong adjacent category (network clients/tools
   # generally, not browsers specifically).
 
+  # The installed entry's right-click menu in a dock or taskbar (a freedesktop "desktop action").
+  # Under `deb`, never `linux`: electron-builder merges `linux.desktop` into the AppImage's
+  # entry too, whose `Exec` is AppRun, and an action naming /opt/Orivon would launch nothing there.
+  # The ids are the conventional ones, so GNOME treats `new-window` as the app's own new-window action rather than
+  # adding a second "New Window" item. They and the `orivon.desktop` file name are what a pinned launcher keys on.
+  desktop:
+    entry:
+      Actions: "new-window;new-private-window;"
+    desktopActions:
+      new-window:
+        Name: New Window
+        Exec: /opt/Orivon/orivon --new-window
+      new-private-window:
+        Name: New Private Window
+        Exec: /opt/Orivon/orivon --new-private-window
+
 appImage:
   artifactName: ${productName}-${version}-${arch}.${ext}
 
-# --- Windows and macOS -----------------------------------------------------------------
+# --- Windows and macOS: packages, and registration as a browser --------------------------
+# Only an installed package registers Orivon as a browser (src/main/os/default-browser.ts).
 win:
   target:
     - target: nsis
@@ -224,10 +238,13 @@ win:
         - x64
 
 nsis:
-  # A per-user install needs no administrator, and lets the person choose the folder.
+  # A per-user install needs no administrator and lets the person choose the folder. It writes
+  # the browser's registry entries under HKCU, where Windows reads a user's default apps from;
+  # build/installer.nsh writes them with SHCTX, so a machine-wide install would write HKLM.
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  include: build/installer.nsh
   artifactName: ${productName}-Setup-${version}-${arch}.${ext}
 
 mac:
@@ -237,6 +254,8 @@ mac:
         - arm64
         - x64
   category: public.app-category.productivity
+  # `protocols` above becomes CFBundleURLTypes (http, https). No document types are declared:
+  # opening a local file in Orivon is not offered yet (A375).
   # Ad-hoc signing ("-"), not none: Apple silicon refuses to launch an unsigned binary,
   # and packaging rewrites the Electron binary (fuses, name, Info.plist), so its own
   # signature no longer holds. Hardened runtime is off because it rejects an ad-hoc app

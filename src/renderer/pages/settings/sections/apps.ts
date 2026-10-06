@@ -16,9 +16,10 @@ export const apps: Section = {
     {
       id: 'apps-extensions-pin-new',
       label: 'Pin new extensions to the toolbar',
+      help: 'Extensions you add from now on get a toolbar button.',
       keywords: ['extensions', 'addons', 'plugins', 'puzzle', 'pin', 'toolbar', 'install'],
       group: 'Extensions',
-      control: { type: 'toggle', key: 'extensions.pinNew' }
+      control: { type: 'toggle', key: 'extensions.pinInstalled' }
     },
     {
       id: 'apps-list',

@@ -18,11 +18,21 @@ export const PROFILE_ID = /^[0-9a-f]{12}$/
 const PROFILE_FLAG = '--orivon-profile='
 const PRIVATE_FLAG = '--orivon-private'
 const PRIVATE_DIR_FLAG = '--orivon-private-dir='
+/** What a launcher action passes (a dock or taskbar menu entry, a desktop-entry action). */
+export const NEW_WINDOW_FLAG = '--new-window'
+export const NEW_PRIVATE_WINDOW_FLAG = '--new-private-window'
 
 export type LaunchParse = { readonly ok: true, readonly launch: Launch } | { readonly ok: false, readonly problem: string }
 
+/** The command line up to the first `--`, which ends the switches: what follows is a link or file, and may carry anything. */
+export function switchesOf (argv: readonly string[]): readonly string[] {
+  const end = argv.indexOf('--')
+  return end === -1 ? argv : argv.slice(0, end)
+}
+
 /** The launch the command line asks for. `home` is where the default profile's data is. */
-export function parseLaunch (argv: readonly string[], home: string): LaunchParse {
+export function parseLaunch (command: readonly string[], home: string): LaunchParse {
+  const argv = switchesOf(command)
   const profiles = argv.filter((argument) => argument.startsWith(PROFILE_FLAG))
   const isPrivate = argv.includes(PRIVATE_FLAG)
   if (isPrivate && profiles.length > 0) return { ok: false, problem: 'a private session cannot also be a profile' }
@@ -59,7 +69,7 @@ export function urlsFromArgv (argv: readonly string[], limit = 8): string[] {
   return urls
 }
 
-/** A command line without the addresses on it: starting the browser again opens none of them a second time. */
+/** A command line without the addresses or the launcher actions on it: starting the browser again opens none of them a second time. */
 export function withoutAddresses (argv: readonly string[]): string[] {
-  return argv.filter((argument) => !ADDRESS_ARGUMENT.test(argument))
+  return argv.filter((argument) => !ADDRESS_ARGUMENT.test(argument) && argument !== NEW_WINDOW_FLAG && argument !== NEW_PRIVATE_WINDOW_FLAG)
 }

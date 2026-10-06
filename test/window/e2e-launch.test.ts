@@ -1,7 +1,8 @@
 // Which browser a process is: another profile keeps its data apart, a launch
 // that cannot be understood refuses to start, a second start of a running
-// profile hands over to it, and a private session lives in a directory of its
-// own that holds none of the person's data.
+// profile hands over to it (a bare one opens a new window, `--new-window` and
+// `--new-private-window` ask for one), and a private session lives in a directory
+// of its own that holds none of the person's data.
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { createServer, type Server } from 'node:http'
@@ -13,11 +14,14 @@ import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
 import { clickAddressBarRetrying, pressKey } from '../support/e2e-helpers.js'
-import { bookmarkUrls, delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { privatePeer } from './private-peer.js'
+import type { PrivatePeer } from './private-peer.js'
+import { ABSENCE_SETTLE_MS, bookmarkUrls, delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 let server: Server
 let origin = ''
 const scratch: string[] = []
+const peerPids: number[] = []
 
 beforeAll(async () => {
   server = createServer((request, response) => {
@@ -30,6 +34,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+  for (const pid of peerPids) { try { process.kill(-pid, 'SIGKILL') } catch { /* already gone */ } }
   for (const dir of scratch) rmSync(dir, { recursive: true, force: true })
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
@@ -49,6 +54,9 @@ function seedProfile (home: string): void {
   writeFileSync(join(home, 'profiles', PROFILE, 'profile.json'), JSON.stringify({ version: 1, name: 'Work', color: 'green', created: 1 }))
 }
 
+/** Whether a browser holds the single-instance lock on this directory: Chromium keeps it as a link named SingletonLock, which dangles, so only a listing sees it. */
+const lockHeld = (dir: string): boolean => readdirSync(dir).includes('SingletonLock')
+const windowCount = async (app: ElectronApplication): Promise<number> => await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows().length)
 const userDataOf = async (app: ElectronApplication): Promise<string> => await app.evaluate(({ app: electron }) => electron.getPath('userData'))
 
 /** Runs Orivon to completion, for a launch that is meant to end at once: what it printed, and how it ended. */
@@ -117,6 +125,7 @@ it('hands a second start of a running profile over to it, with the address it wa
     expect(await waitFor(async () => (await tabIds(chrome)).length === 1)).toBe(true)
     const before = 1
 
+    expect(lockHeld(dir)).toBe(true)
     const { code } = await runToExit([`${origin}/from-elsewhere`], dir)
 
     expect(code).toBe(0)
@@ -125,6 +134,106 @@ it('hands a second start of a running profile over to it, with the address it wa
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('opens a new window for a second start that names nothing, and leaves the window in use alone', async () => {
+  const { app, chrome } = await launched()
+  try {
+    const dir = await userDataOf(app)
+    expect(await waitFor(async () => (await tabIds(chrome)).length === 1)).toBe(true)
+    expect(await windowCount(app)).toBe(1)
+
+    expect((await runToExit([], dir)).code).toBe(0)
+
+    expect(await waitFor(async () => (await windowCount(app)) === 2)).toBe(true)
+    expect((await tabIds(chrome)).length).toBe(1)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('opens the address of --new-window in a window of its own', async () => {
+  const { app, chrome } = await launched()
+  try {
+    const dir = await userDataOf(app)
+    expect(await waitFor(async () => (await tabIds(chrome)).length === 1)).toBe(true)
+
+    expect((await runToExit(['--new-window', `${origin}/in-a-window`], dir)).code).toBe(0)
+
+    expect(await waitFor(async () => (await windowCount(app)) === 2)).toBe(true)
+    expect(await waitFor(() => app.windows().some((page) => page.url() === `${origin}/in-a-window`))).toBe(true)
+    expect((await tabIds(chrome)).length).toBe(1)
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('opens nothing for a file or a mail address handed to a running browser', async () => {
+  const { app, chrome } = await launched()
+  try {
+    const dir = await userDataOf(app)
+    expect(await waitFor(async () => (await tabIds(chrome)).length === 1)).toBe(true)
+
+    for (const operand of ['./a.html', 'mailto:someone@example.com']) expect((await runToExit([operand], dir)).code).toBe(0)
+    await delay(ABSENCE_SETTLE_MS)
+
+    expect(await windowCount(app)).toBe(1)
+    expect((await tabIds(chrome)).length).toBe(1)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it.skipIf(process.platform !== 'linux')('hands --new-private-window to the running browser, which starts a private session whose directory goes when it ends', async () => {
+  const { app, chrome } = await launched()
+  let dir = ''
+  try {
+    const userData = await userDataOf(app)
+    expect(await waitFor(async () => (await tabIds(chrome)).length === 1)).toBe(true)
+
+    expect((await runToExit(['--new-private-window'], userData)).code).toBe(0)
+
+    let peer: PrivatePeer | undefined
+    expect(await waitFor(() => { peer = privatePeer(userData); return peer !== undefined })).toBe(true)
+    const found = peer as PrivatePeer
+    peerPids.push(...found.pids)
+    dir = found.dir
+    scratch.push(dir)
+    expect(dir.startsWith(join(tmpdir(), 'orivon-private-'))).toBe(true)
+    expect(await waitFor(() => existsSync(join(dir, '.orivon-private.json')), 30_000)).toBe(true)
+    // The running browser opened no window of its own for it.
+    expect(await windowCount(app)).toBe(1)
+
+    for (const pid of found.pids) { try { process.kill(-pid, 'SIGKILL') } catch { /* already gone */ } }
+    expect(await waitFor(() => !existsSync(dir), 15_000)).toBe(true)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('runs as a private session when --new-private-window starts a browser that is not yet running, leaves the profile unlocked and removes its directory when it ends', async () => {
+  let home = ''
+  const { app } = await launched(['--new-private-window'], (dir) => { home = dir })
+  let dir = ''
+  try {
+    dir = await userDataOf(app)
+    scratch.push(dir)
+    expect(dir.startsWith(join(tmpdir(), 'orivon-private-'))).toBe(true)
+    expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://private')))).toBe(true)
+    // The profile was not claimed: its lock is free, so a start of it runs as a browser of its own instead of handing over to this process.
+    expect(lockHeld(home)).toBe(false)
+    expect(existsSync(join(home, '.orivon-running'))).toBe(false)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+    // Ending the session ends the process, so the call may never answer.
+    await app.evaluate(({ app: electron }) => { electron.quit() }).catch(() => {})
+    expect(await waitFor(() => !existsSync(dir), 15_000)).toBe(true)
+  } finally {
+    await closeElectron(app)
+    if (dir !== '') rmSync(dir, { recursive: true, force: true })
   }
 }, TEST_TIMEOUT_MS)
 

@@ -114,3 +114,35 @@ export async function stubNotifications (app: ElectronApplication): Promise<Noti
     shown: async () => await app.evaluate(() => (globalThis as { __orivonNotificationLog?: unknown[] }).__orivonNotificationLog ?? [])
   }
 }
+
+interface Rect { x: number, y: number, width: number, height: number }
+
+/** An extension's popup among the children of a shell window, with the window's own measures. */
+export interface PopupInView { bounds: Rect, index: number, children: number, content: Rect, windows: number }
+
+/** Where the popup of extension `id` sits, or null while it is not a child of any window. */
+export async function popupView (app: ElectronApplication, id: string): Promise<PopupInView | null> {
+  return await app.evaluate(({ BaseWindow }, extensionId: string) => {
+    const windows = BaseWindow.getAllWindows().length
+    for (const win of BaseWindow.getAllWindows()) {
+      const children = win.contentView.children
+      const index = children.findIndex((child) => (child as unknown as { webContents?: Electron.WebContents }).webContents?.getURL().startsWith(`chrome-extension://${extensionId}/popup.html`) === true)
+      const view = children[index]
+      if (view !== undefined) return { bounds: view.getBounds(), index, children: children.length, content: win.getContentBounds(), windows }
+    }
+    return null
+  }, id)
+}
+
+/** Closes the popup of extension `id` from the main process and waits until it has left its window. */
+export async function closePopup (app: ElectronApplication, id: string): Promise<void> {
+  await app.evaluate(({ BaseWindow }, extensionId: string) => {
+    for (const win of BaseWindow.getAllWindows()) {
+      for (const child of win.contentView.children) {
+        const contents = (child as unknown as { webContents?: Electron.WebContents }).webContents
+        if (contents?.getURL().startsWith(`chrome-extension://${extensionId}/popup.html`) === true) contents.close()
+      }
+    }
+  }, id)
+  if (!(await waitFor(async () => await popupView(app, id) === null))) throw new Error('the popup did not close')
+}

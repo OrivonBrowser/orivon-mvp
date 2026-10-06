@@ -2,8 +2,10 @@
 // keyboard shortcuts, search engines) it began with and nothing else, and removed when the session is over. Deleting it
 // is never claimed to happen inside the dying process: Chromium writes after quit
 // and Windows will not delete a file that is open. The browser that opened the
-// session removes it when the process exits, and the next start of any browser
-// sweeps what a crash left.
+// session removes it when the process exits; a session that made its own directory
+// (no browser opened it) has `removeAfterExit` do it, and the next start of any
+// browser sweeps what a crash or Windows left.
+import { spawn as nodeSpawn } from 'node:child_process'
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir, uptime } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -58,6 +60,25 @@ export function removePrivateDir (dir: string, tmp = tmpdir()): boolean {
     // Retried: on Windows a file Chromium has just closed is briefly still open.
     rmSync(target, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
     return !existsSync(target)
+  } catch {
+    return false
+  }
+}
+
+/** Waits, in a program of its own, for the process `$1` to end and then removes the directory `$2`; gives up waiting after a minute. */
+const CLEANER = 'n=0; while kill -0 "$1" 2>/dev/null && [ "$n" -lt 60 ]; do n=$((n+1)); sleep 1; done; rm -rf -- "$2"'
+
+/** Has the system remove a private directory once the process that used it has ended, which a removal from inside that
+ * process cannot do: Chromium writes after it. False where that cannot be done (no `sh` on Windows) or the directory is
+ * not one made here; the caller then removes it itself and the sweep takes what is left. */
+export function removeAfterExit (dir: string, pid: number, tmp = tmpdir(), platform: NodeJS.Platform = process.platform, spawn: typeof nodeSpawn = nodeSpawn): boolean {
+  const target = resolve(dir)
+  if (platform === 'win32' || dirname(target) !== resolve(tmp) || !isPrivateDirName(basename(target))) return false
+  try {
+    const cleaner = spawn('/bin/sh', ['-c', CLEANER, 'orivon-private-cleanup', String(pid), target], { detached: true, stdio: 'ignore' })
+    cleaner.on('error', () => {})
+    cleaner.unref()
+    return true
   } catch {
     return false
   }

@@ -300,7 +300,7 @@ describe('createOverlayHost: restack order', () => {
   it('attaches every open bar before any popup, whatever the show order', () => {
     const attached: number[] = []
     const { host } = setup([def('pop'), def('bar', { layer: 'bar', focus: 'never', closeOn: CLOSE_LIKE_BAR })])
-    host.show('pop', ANCHOR); host.show('bar')
+    host.show('pop', ANCHOR); host.show('bar'); void views[1]?.spec.port.ready() // a never bar joins once its page is ready
     for (const view of views) view.log.length = 0
     // Record the global order in which the two views are re-added.
     for (const view of views) {
@@ -320,7 +320,7 @@ describe('createOverlayHost: restack with adopted panels', () => {
     const { host } = setup([def('pop'), def('bar', { layer: 'bar', focus: 'never', closeOn: CLOSE_LIKE_BAR })])
     const adopted = panel('adopted', order)
     host.adopt(adopted, adopted.restack)
-    host.show('bar'); host.show('pop', ANCHOR)
+    host.show('bar'); host.show('pop', ANCHOR); void views[0]?.spec.port.ready()
     order.length = 0
     for (const view of views) {
       const push = view.log.push.bind(view.log)

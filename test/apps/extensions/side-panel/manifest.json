@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Orivon E2E Side Panel",
+  "version": "1.0.0",
+  "description": "Fixture extension for test/extensions/e2e-extensions-side-panel.test.ts: a side panel, a popup, a command for the panel and a worker that logs what the browser tells it.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "icon.png"
+  },
+  "side_panel": {
+    "default_path": "panel.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": ["sidePanel", "tabs"],
+  "commands": {
+    "_execute_side_panel": {
+      "suggested_key": { "default": "Alt+Shift+P" },
+      "description": "Toggle the side panel"
+    }
+  }
+}

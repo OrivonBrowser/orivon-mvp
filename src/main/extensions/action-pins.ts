@@ -3,7 +3,7 @@
 // choice, `action-pins-runner.ts` acts on it.
 import type { ExtensionPrefs } from './extension-prefs.js'
 
-/** A person's own choice wins; an extension they never chose for follows the `extensions.pinNew` setting. */
+/** A recorded pin wins, the person's own or the one the install gave it from `extensions.pinInstalled`; an extension with none (installed before that setting) follows `extensions.pinNew`. */
 export function isPinned (prefs: Pick<ExtensionPrefs, 'pinned'>, pinNew: boolean): boolean {
   return prefs.pinned ?? pinNew
 }

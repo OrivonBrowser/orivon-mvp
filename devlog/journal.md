@@ -26,7 +26,9 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - All six Orivon apps are on IPFS, listed in Explore, and judged by Orivon Attila, our official Web3 Score provider.
 - An ipfs:// tab icon now waits out slow gateways instead of giving up at 5 s, the likely reason The Lounge showed none.
 - Every ported app now shows visitors in other browsers a panel pointing them to Orivon; it stays hidden inside Orivon, and --no-orivon-hint removes it.
+- Orivon asks to be the default browser from Settings, the welcome screen and weekly; the dock and taskbar offer New Window and New Private Window.
 - CI's e2e now runs only the specs a change can reach, in parallel shards: minutes instead of forty.
+- Extensions get a real side panel: chrome.sidePanel works, the toolbar click or key opens it, and open() needs the person's own input.
 - Publishing a GitHub release now builds Linux, Windows and macOS packages, launches each in CI, and attaches them.
 - Orivon Attila now judges every Explore site: 62 more evaluations by CID, and its judging rules are written down with worked examples.
 - FreeTube raised to Web3 Score Level 3: running YouTube's code is informed consent when the grant dialog says so and it's the app's purpose.

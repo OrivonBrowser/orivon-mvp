@@ -10,7 +10,7 @@
 // link, form or script navigation that changes a tab's origin is caught by
 // wireView()'s did-navigate handler, which repartitions the same way a typed
 // cross-origin navigation does (repartitionView()'s own doc: the residual).
-import type { LoadURLOptions, View } from 'electron'
+import type { LoadURLOptions, View, WebContents } from 'electron'
 import { join } from 'node:path'
 import { captureFaviconInto } from '../browsing/favicon.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
@@ -26,6 +26,7 @@ import { openTypedViewSource } from '../page-tools/view-source.js'
 import { exitHtmlFullscreen, goBack, goForward, navigateTab, reloadTab } from './tab-navigation.js'
 import type { NavigationEnv } from './tab-navigation.js'
 import { TabOpener } from './tab-open.js'
+import { watchNewTab } from './new-tab-focus.js'
 import { TabPanes } from './tab-panes.js'
 
 export type { TabState, TabsSnapshot, ShellState, Bounds } from './tab-types.js'
@@ -125,7 +126,8 @@ export class TabManager {
       changed: () => { this.changed() },
       atCapacity: () => this.atCapacity(),
       activeId: () => this.activeId,
-      records: () => this.tabs
+      records: () => this.tabs,
+      freshTabInFront: (id, contents) => { this.watchFreshTab(id, contents) }
     }, new TabFactory(this.viewHost, () => ctx.broker, dashboardUrl, shell?.internalPages))
     this.splits = new SplitController({
       order: this.order,
@@ -196,6 +198,23 @@ export class TabManager {
 
   /** True from the moment the window starts closing: no tab may be opened or driven on this manager any more. */
   isDisposed (): boolean { return this.disposed }
+
+  /** Where the keyboard goes for a tab opened on the start page (./new-tab-focus.ts). Only a shell that can run a command has a bar to give it to. */
+  private watchFreshTab (id: string, contents: WebContents): void {
+    const shell = this.shell
+    if (shell?.runCommand === undefined) return
+    watchNewTab(contents, {
+      input: () => ({
+        active: this.activeId === id,
+        // Still the start page: the flag is cleared by the tab's first navigation, and `isNewTab` would read false before it loads.
+        freshNewTab: this.tabs.get(id)?.isDashboardTab === true,
+        windowFocused: !shell.window.isDestroyed() && shell.window.isFocused(),
+        coveredByIntro: shell.coveredByIntro?.() === true
+      }),
+      focusAddressBar: () => { shell.runCommand?.('nav.focusAddress') },
+      returnKeyboard: () => { shell.focusChrome?.() }
+    })
+  }
 
   getState (): TabsSnapshot {
     return {
