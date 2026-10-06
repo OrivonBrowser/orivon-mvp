@@ -8,7 +8,7 @@ import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import type { App } from 'electron'
-import { parseLaunch } from './launch-context.js'
+import { parseLaunch, switchesOf } from './launch-context.js'
 import type { Launch } from './launch-context.js'
 import { launchData, requestFromArgv } from './launch-request.js'
 import { createPrivateDir, isPrivateDirName, markPrivate } from './private-session.js'
@@ -82,7 +82,8 @@ export function startLaunch (app: LaunchApp, argv: readonly string[], env: NodeJ
     }
     if (request.kind === 'private') {
       // Nothing of this profile is open, so the request is this process: a private session beside the profile's data, with
-      // no claim on the profile's lock, which the next start of the profile takes.
+      // no claim on the profile's lock, which the next start of the profile takes. A start of the profile that
+      // reaches the lock in the moment before this release is handed to a process that does not listen, and is lost.
       app.releaseSingleInstanceLock()
       const sessionDir = createPrivateDir(dir, home, tmp)
       launched = { kind: 'private', home, dir: sessionDir }
@@ -96,7 +97,7 @@ export function startLaunch (app: LaunchApp, argv: readonly string[], env: NodeJ
   // Said at once, not once the first window is up: until then a second window of this browser would see the profile as
   // not in use, and Delete would remove it from under a browser that is starting.
   if (launched.kind !== 'private') profiles.markRunning(profileId, process.pid)
-  const inherit = argv.filter((argument) => INHERITED_SWITCHES.some((switchName) => argument === switchName || argument.startsWith(switchName)))
+  const inherit = switchesOf(argv).filter((argument) => INHERITED_SWITCHES.some((switchName) => argument === switchName || argument.startsWith(switchName)))
   // Chromium's own command line as well: a launcher can take a switch back off argv once it has taken effect, and a
   // peer started with the sandbox where this one runs without it aborts on a machine that has none.
   if (!inherit.includes('--no-sandbox') && app.commandLine.hasSwitch('no-sandbox')) inherit.push('--no-sandbox')

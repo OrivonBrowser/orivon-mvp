@@ -1888,14 +1888,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
-### A348: A browser exit right after a Chrome Web Store install is not reproduced **[RESEARCH]**
-
-- **Question:** What exits the browser right after a successful store install, the owner reports, with the extension working after a restart? A live install of a module worker with a welcome tab, an offscreen document and a static ruleset, with a web tab open, and of the real 75 MB AdBlock package, left the process running.
-- **Why it matters:** The report stands unexplained. What the live install did show was every real blocker's worker failing at load (fixed), which looks like "works after a restart" from outside.
-- **Options:** Get the extension id and the terminal output at the exit (rec.); wrap each `session.extensions` listener in `contain()`, which hides the cause; leave it.
-- **Who decides:** research first, with the owner's id and output
-- **Blocks:** nothing
-
 ### A350: A page's `fetch()` cannot follow a `webRequest` redirect to the extension's own file **[RESEARCH]**
 
 - **Question:** How can a page's `fetch()` follow a blocking listener's redirect to the extension's own web-accessible
@@ -2004,16 +1996,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A375: Should Orivon open local HTML and PDF files handed to it? **[OWNER]**
-
-- **Question:** The Linux entry no longer lists `text/html`, so a file manager does not offer Orivon for `report.html`,
-  and a file or a `mailto:` handed to a running Orivon opens nothing (only a web address does). Should Orivon open a
-  local HTML or PDF file, which needs a rule for `file:` that the address bar refuses today?
-- **Why it matters:** a person who double-clicks a saved page expects the browser they chose to show it.
-- **Options:** keep refusing `file:` (rec.); open a local file handed in at launch in a tab marked as a local file.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A380: Does the first-start dropdown still fail after the keyboard fixes? **[OWNER]**
 
 - **Question:** The owner saw the address text hidden after "Enter Orivon" and no dropdown on the first start (probably `npm run dev`, X11 or Wayland). The overlay no longer joins the window before its page commits, and a new tab starts with the keyboard in the bar. Does a first start still show hidden text or no dropdown?
@@ -2047,6 +2029,30 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   believed to key on the schemes, which is unmeasured; the `.deb` has not been installed to check `gio mime`.
 - **Why it matters:** if a desktop needs `text/html` to list a browser, the default-browser button has nothing to set.
 - **Options:** install the built package and read `gio mime x-scheme-handler/https` (rec.); put `text/html` back.
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A382: Chrome stops extensions scripting the Chrome Web Store page; Orivon does not **[RESEARCH]**
+
+- **Question:** Chrome refuses every extension's content scripts, `chrome.scripting` and `webRequest` on the Web Store's own origin. Orivon runs them there, so an extension can rewrite the page that installs extensions. Refuse the store origin as Chrome does?
+- **Why it matters:** the store page asks the person to approve each install; a script that edits that page can change what the approval shows.
+- **Options:** refuse extension scripting on `https://chromewebstore.google.com` in the host-access check (rec., once measured against the extensions people use there, such as a store-rating overlay); leave it.
+- **Who decides:** research first, then the owner
+- **Blocks:** nothing
+
+### A384: How long should the input that lets an extension open its side panel count? **[AI-REC]**
+
+- **Question:** `chrome.sidePanel.open` is accepted within five seconds of input the browser saw on the extension, spent by one open. Chrome's own window and what it counts as input on the extension were not measured.
+- **Why it matters:** too short and an extension that opens its panel after a network answer is refused; too long and one click opens panels for a while.
+- **Options:** keep five seconds (rec.: it matches the length of a page's transient activation); measure Chrome's, and take that.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A385: Does a real wallet extension work with its panel on a toolbar click? **[RESEARCH]**
+
+- **Question:** MetaMask sets `openPanelOnActionClick`, opens its panel from its popup with `open({ windowId })` and returns with `window.close()`; behind a remote flag its worker calls `open({ tabId })` with no gesture. Only a fixture extension has been run against the panel.
+- **Why it matters:** the toolbar click of the extension with the most users now opens a panel instead of its popup.
+- **Options:** run `test/extensions/e2e-extensions-real.test.ts` with `ORIVON_REAL_EXTENSIONS_DIR` set before merging (rec.); do nothing until a report comes in.
 - **Who decides:** research first
 - **Blocks:** nothing
 

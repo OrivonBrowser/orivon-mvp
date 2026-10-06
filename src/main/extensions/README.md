@@ -9,7 +9,8 @@ extension asks to open; the sender-id check on `crx-msg` (`extension-sender-id-c
 service-worker-preload health check and one-time recovery (`extension-sw-preload-recovery.ts`,
 paired with `../../preload/extension-sw-verify.ts` and `../../preload/extension-api.ts`); the
 Chrome Web Store wiring (`store-runner.ts`, `store-download-seam.ts`,
-`store-test-hook.ts`); and the `orivon://extensions` page's main-side half: `extensions-view.ts`
+`store-test-hook.ts`); where an extension's popup sits and how it is put in its window
+(`extension-popup-geometry.ts`, `extension-popup-host.ts`); and the `orivon://extensions` page's main-side half: `extensions-view.ts`
 (the row and details view model), `extensions-view-runner.ts` (reads a manifest, icon and locale
 catalogue off a loaded entry's own folder), `extensions-picker-runner.ts` (the native pickers
 Developer mode's buttons open) and `extensions-domain.ts` (the `InternalDomain` the page's
@@ -29,9 +30,14 @@ vendored preload's own synchronous "is this frame a declared sandbox page" query
 (`EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL`, `../channels.ts`) from the sender's real URL and its
 extension's real loaded manifest -- UPSTREAM.md patch 37's own doc; and `extension-sandbox-csp.ts`
 serves a manifest `sandbox.pages` document Chrome's own CSP `sandbox` directive, so it actually
-gets an opaque origin rather than only withholding `chrome.*` (UPSTREAM.md patch 40).
+gets an opaque origin rather than only withholding `chrome.*` (UPSTREAM.md patch 40); and `chrome.sidePanel`
+(`side-panel-options.ts`, `side-panel-gesture.ts`, `side-panel-api.ts`, `side-panel-driver.ts`,
+`side-panel-runner.ts`, `side-panel-pages.ts`, `side-panel-behavior-file.ts`): an extension's own page shown in a
+window's side panel (`../side-panel/`), opened by its toolbar button, its key or its `open()` call.
 
-**What it depends on.** `electron` (every file except `action-pins-runner.ts`, `action-pins.ts`, `base-manifest-source.ts`, `crx.ts`, `crx3-format.ts`,
+**What it depends on.** `electron` (every file except `side-panel-api.ts`, `side-panel-behavior-file.ts`,
+`side-panel-driver.ts`, `side-panel-gesture.ts`, `side-panel-options.ts`, `side-panel-pages.ts` (types only), `action-pins-runner.ts`, `action-pins.ts`, `base-manifest-source.ts`, `crx.ts`, `crx3-format.ts`,
+`extension-popup-geometry.ts`,
 `details-optional.ts`, `dnr-action-options.ts`, `extension-data.ts`, `dnr-api.ts`, `dnr-match-log.ts`,
 `effective-manifest.ts`, `electron-chrome-extensions-lib.d.ts`, `extension-commands.ts`,
 `extension-host-access.ts`, `extension-known-permissions.ts`, `extension-permission-check.ts`,
@@ -65,7 +71,10 @@ app-refusal check both key on it),
 [`../channels.ts`](../channels.ts)'s `EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL`,
 [`../sessions/tab-capture-grants.ts`](../sessions/tab-capture-grants.ts)'s `mintTabCaptureGrant`
 (durable; `permission-gate.ts`'s own `'media'` carve-out reads the same ledger),
+[`../shell/attach-view.ts`](../shell/attach-view.ts)'s `attachShown` (`extension-popup-host.ts` puts a popup's view in its window the way every other view is),
 [`../settings/`](../settings/) (Developer mode is a setting there),
+[`../side-panel/`](../side-panel/) (the window's panel and its guest slot, which `side-panel-runner.ts` fills),
+[`../site-settings/tab-interaction.ts`](../site-settings/tab-interaction.ts)'s `DELIBERATE_INPUT` (what counts as the person's input on an extension's page),
 [`../shell/window.ts`](../shell/window.ts)'s `createShellWindow`,
 [`../shell/shell-services.ts`](../shell/shell-services.ts)'s `ShellServices` type and
 [`../shell/devtools-app-origin.ts`](../shell/devtools-app-origin.ts)'s `appOrigin` (the same
@@ -102,6 +111,11 @@ same exception, reached only through the virtual specifiers above).
 | `action-pins.ts`, `action-context-menu.ts`, `extensions-menu-model.ts`, `extensions-menu-names.ts`, `extensions-menu-points.ts`, `extensions-menu-deps.ts` | The decision for the toolbar's pins and the Extensions menu -- which extensions sit on the toolbar, the menu's rows and requests, the right-click template, and the slots a feature adds to the menu through |
 | `action-pins-runner.ts`, `extensions-menu-overlay.ts`, `extensions-menu-command.ts`, `loaded-extensions.ts` | The pins acted on (the toolbar list, `chrome.action.getUserSettings`, `onUserSettingsChanged`, the right-click menu), the menu's `OverlayDef`, the `extensions.menu` command and the loaded-extension count the button follows |
 | `permissions-api.ts`, `permission-prompt-overlay.ts` | `chrome.permissions` and the sheet it asks in (an `OverlayDef` queued through `requestSlot`) |
+| `extension-popup-geometry.ts` | The decision for where a popup sits in its window -- no `electron`, unit-tested with no display |
+| `extension-popup-host.ts` | The real I/O for a popup: attaches its view above the window's other views, places it, gives the keyboard back; the panel the overlay host restacks |
+| `extension-pending-navigation.ts` | Which pages have a main-frame navigation that has not yet committed or failed, for a popup opened over one |
+| `side-panel-options.ts`, `side-panel-gesture.ts`, `side-panel-api.ts`, `side-panel-driver.ts`, `side-panel-behavior-file.ts`, `side-panel-pages.ts` | `chrome.sidePanel`'s decisions: what each extension set and which panel a tab shows, the short-lived record of the person's input that `open()` needs, the argument and tab rules of the API, what each window's panel does as tabs and options change, the saved toolbar behaviour, and which window a panel page belongs to (fakes for everything they reach) |
+| `side-panel-runner.ts` | `chrome.sidePanel` in the real browser: the page of an extension's panel (a `WebContentsView` per window and extension), the session's load and unload, the shell's tabs, input on the extension's own pages, the toolbar click |
 | `extension-host.ts`, `extension-host-impl.ts`, `extension-popup-policy.ts`, `extension-options-tab.ts`, `extension-event-filter.ts` | The library wiring: construction and tab lifecycle, the shell callbacks, the popup and background-page window policy, the options page's one tab, the per-listener event filter |
 | `api/` | Main-side handlers for the namespaces Orivon adds to `chrome.*`, and the one permission check (`api/README.md`) |
 | `dnr/`, `dnr-api.ts`, `dnr-action-options.ts`, `dnr-match-log.ts`, `dnr-webrequest.ts`, `extensions-dnr.ts` | `declarativeNetRequest`, applied by Orivon rather than Electron ([`ADR-0051`](../../../docs/decisions/ADR-0051-orivon-applies-extensions-declarativenetrequest-rules-itself.md)): the Electron-free engine and its disk reads (`dnr/README.md`), the `chrome.declarativeNetRequest` handlers and badge counts, and the handlers registered on the session's one `webRequest` owner |
@@ -111,6 +125,19 @@ same exception, reached only through the virtual specifiers above).
 | `extensions-domain.ts` | The `orivon://extensions` page's `InternalDomain` -- validates every request, wires the pieces above to what the page asks |
 
 ## Design notes
+
+**An extension's side panel is a guest of the window's own panel, and `open()` needs the person's input.**
+`side-panel-runner.ts` fills the guest slot of `../side-panel/` with one `WebContentsView` per window and extension,
+in the default session with the popup's web preferences (native dialogs off), and attaches it only after its first load
+has ended, so it takes no keyboard. A page that leaves the extension's own address is cancelled and opened as a tab
+through `extensionOpenedUrl`; a page's `window.close()` closes the panel. `chrome.sidePanel.open` is accepted only within
+five seconds of input the browser process itself saw on that extension: a toolbar click or key, a context-menu item, or a
+click or key on a page at `chrome-extension://<id>/` (`side-panel-gesture.ts`). Nothing a page reports about itself
+counts, and an offscreen document has no input. `open` rejects when nothing can show (no panel for the tab, a window below
+the panel's minimum width, a kiosk), so an extension that falls back to its popup does. A panel for a tab is released when
+a tab without one comes forward and shown again, without the keyboard, when one returns. A reload Orivon makes keeps the
+page (`reloading` in `extension-host.ts`); any other unload, and an uninstall before its storage is emptied, closes it.
+The five seconds are provisional: Chrome's own window is not measured here.
 
 **What the person chose is kept apart from what the extension shipped.** `extension-prefs-runner.ts`
 keeps one record per extension in `<userData>/extensions/prefs.json` (`ExtensionsApi.prefs`; memory
@@ -122,6 +149,35 @@ extension is open, and at the next launch when that never happens). A feature ad
 `MANIFEST_STAGES` (`manifest-stage-granted.ts`, `manifest-stage-site-access.ts`). A store update is
 judged against the base copy, so a choice that narrowed the loaded manifest never makes an update
 look like it asks for more.
+
+**An extension's popup is a view inside the window, so Orivon decides where it goes.** The library
+builds a `WebContentsView` and never attaches it (UPSTREAM.md patch 68); `extension-popup-host.ts`
+mounts it with `attachShown` above the bars, the side panel's guest and a new tab's view, places it
+with `extension-popup-geometry.ts` (right edge on the anchor's, 5 px below it, 8 px inside the window,
+capped to the room), and gives the keyboard back to the page in front only when the popup held it.
+Its `panelFor` is adopted by the overlay host (`../shell/window-panels.ts`): each state push lifts an
+open popup again, and the host never closes it, because a tab the popup's own extension opens in its
+window must not (`extension-host.ts`'s `keepOpenOnBlur`, which names the popup: another extension's tab, or a
+tab in another window, does not count). The popup then takes the keyboard back once that hand-over is over,
+so the next click elsewhere closes it. A popup opened while the page in front is mid-navigation also stays through the blur
+that page's commit causes (`extension-pending-navigation.ts` records which pages have a main-frame navigation that has not
+committed; the library follows the one in front, and a mouse button down in the window still closes it). An anchor is measured in the chrome page, which shares
+the window's content coordinates: the pinned icon, else the Extensions button, else the toolbar's
+right end (`extension-action-anchor.ts`). A virtual display never reports a page's preferred size,
+so the library measures the page's content after half a second, and again while it still renders; a real display's size, and the placement
+on Wayland, are *provisional* until a person's desktop shows them.
+
+**The Chrome Web Store page keeps its own `chrome.webstorePrivate`.** Every extension load makes the
+renderer rebuild `chrome.*`; the preload defines `webstorePrivate` and `management` as accessors that
+refuse redefinition (UPSTREAM.md of `vendor/electron-chrome-web-store`, patch 8), because the native
+`webstorePrivate` crashes the main process when the page's status poll reaches it. `store-runner.ts`
+therefore starts in every runtime: a private or guest one blocks every install by policy before any
+question or icon fetch, and runs no updater.
+
+**Whether a new extension is pinned is decided once, at its install.** `finishInstall` records
+`pinned` from `extensions.pinInstalled` (off) for a fresh install with no pin, before the load, and
+puts it back to unchosen if the load fails; `extensions.pinNew` is read only for an extension with
+no recorded pin (`action-pins.ts`).
 
 **A later permission request is asked, never granted unasked.** `permissions-api.ts` replaces the
 library's `permissions.*` handlers: `optional-permissions.ts` classifies a request against the

@@ -44,6 +44,8 @@ export interface ExtensionPageRecovery<P extends ReloadablePage> {
   readonly begin: (extensionId: string) => void
   /** The extension has been loaded again, or the attempt is over. */
   readonly end: (extensionId: string) => void
+  /** The extension is between `begin` and `end`: an unload now is the reload's own, not a removal. */
+  readonly reloading: (extensionId: string) => boolean
   /** A main-frame load of `url` in `page` failed with `errorCode`. */
   readonly pageFailed: (page: P, url: string, errorCode: number) => void
   /** Pages that already hold a URL of the extension, once it is loaded again. */
@@ -81,6 +83,9 @@ export function createExtensionPageRecovery<P extends ReloadablePage> (deps: Ext
       window.until = deps.now() + deps.graceMs
       for (const [page, url] of window.pending) retry(extensionId, window, page, url)
       window.pending.clear()
+    },
+    reloading (extensionId) {
+      return windows.get(extensionId)?.open === true
     },
     pageFailed (page, url, errorCode) {
       const extensionId = EXTENSION_PAGE.exec(url)?.[1]

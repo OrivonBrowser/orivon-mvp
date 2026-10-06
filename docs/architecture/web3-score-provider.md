@@ -162,6 +162,14 @@ names it. That is why `bucketHexChars` stops at 2. Even at 256 buckets, a provid
 a few sites can guess which one a bucket means. At about 1 KB per evaluation, 256 files of 1 MiB
 hold about 250,000 evaluations.
 
+A page that holds the `trust.score` grant can have Orivon ask about other sites
+([How Orivon uses an answer](#how-orivon-uses-an-answer)). From those lookups the provider learns the
+same thing it learns from a person's own browsing, a bucket, but for every site the page asks about,
+whether or not the person opened it. It therefore learns that this person opened a page that asks
+about this set of sites: the pattern of buckets one page load produces, such as the roughly sixty a
+directory of sites asks for at once. It still never sees an identifier, a name or an address, and the
+grant is the person's consent to that pattern.
+
 ## How Orivon uses an answer
 
 What follows bounds this build of Orivon, not the standard.
@@ -181,3 +189,15 @@ What follows bounds this build of Orivon, not the standard.
   "did not answer" kept for 1 minute. While a slow provider (a cold IPFS fetch) is still loading,
   the shield and the page show the lookup as under way and ask again every 2 seconds until it
   answers.
+- **A page can ask, with a grant.** `orivon.trust.websiteScore(address)` answers the provider's name and
+  the level it judged for the content an `ipfs://` address or a `.eth` name (bare or over `https`) names,
+  for a page that declared and was granted `trust.score` (`ADR-0058`). Without the grant it rejects
+  `denied`. The level is the provider's raw judgement for that content, 1 to 4, with none of the shield's
+  display rules applied: the page applies those itself. Any address that names no content (a web address,
+  a name that does not resolve, content the provider has not evaluated), a provider that does not answer,
+  and a provider description that cannot be read all answer `level: null`, naming the provider by its
+  address in the last case; with no provider chosen it answers `provider: null` and asks nothing.
+- **A page's lookups are its own.** Each calling origin has its own answers kept, and a `.eth` name is
+  resolved in a verifier partition of that origin's own, so one page cannot learn from timing a lookup
+  which sites the person opened or which another page asked about. Lookups are limited per origin to a
+  burst of 128 refilling at 2 a second; past that the call rejects `limit`.

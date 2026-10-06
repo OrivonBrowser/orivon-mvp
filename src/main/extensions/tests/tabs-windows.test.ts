@@ -16,6 +16,7 @@ vi.mock('electron', () => ({
 
 const { ExtensionStore } = await import('../../../../vendor/electron-chrome-extensions/src/browser/store.js')
 const { TabsAPI } = await import('../../../../vendor/electron-chrome-extensions/src/browser/api/tabs.js')
+const { WindowsAPI } = await import('../../../../vendor/electron-chrome-extensions/src/browser/api/windows.js')
 
 let nextId = 1
 function fakeWindow (): any {
@@ -106,6 +107,46 @@ describe('chrome.tabs.query with a window filter', () => {
     ctl.store.lastFocusedWindowId = a.id
     const result = ctl.call('tabs.query', extensionEvent(), { lastFocusedWindow: true })
     expect(result.map((t: any) => t.id)).toEqual([tabA.id])
+  })
+})
+
+describe('the window of a side panel page (UPSTREAM.md patch 70)', () => {
+  function withPanel (): { a: any, b: any, tabA: any, tabB: any, panel: object, ctl: ReturnType<typeof setup>, current: () => any } {
+    const panel = {}
+    const owners = new Map<unknown, unknown>()
+    const ctl = setup({ windowOf: (wc: unknown) => owners.get(wc) })
+    const a = fakeWindow()
+    const b = fakeWindow()
+    const tabA = fakeTab()
+    const tabB = fakeTab()
+    ctl.store.addTab(tabA, a)
+    ctl.store.addTab(tabB, b)
+    ctl.store.lastFocusedWindowId = a.id
+    owners.set(panel, b)
+    const handlers = new Map<string, (...args: any[]) => unknown>()
+    const router = { apiHandler: () => (name: string, fn: (...args: any[]) => unknown) => { handlers.set(name, fn) } }
+    const session = { isPersistent: () => true }
+    new WindowsAPI({ router, store: ctl.store, session } as never)
+    for (const window of [a, b]) Object.assign(window, { isFocused: () => false, getPosition: () => [0, 0], isMaximized: () => false, isMinimized: () => false, isFullScreen: () => false, isAlwaysOnTop: () => false })
+    return { a, b, tabA, tabB, panel, ctl, current: () => handlers.get('windows.getCurrent')?.(extensionEvent(panel), {}) }
+  }
+
+  it('is the window chrome.tabs.query means by currentWindow, not the last focused one', () => {
+    const { tabB, panel, ctl } = withPanel()
+    const result = ctl.call('tabs.query', extensionEvent(panel), { active: true, currentWindow: true })
+    expect(result.map((t: any) => t.id)).toEqual([tabB.id])
+  })
+
+  it('is the window chrome.windows.getCurrent answers', () => {
+    const { b, current } = withPanel()
+    expect(current().id).toBe(b.id)
+  })
+
+  it('leaves a caller the host knows no window for on the last focused window', () => {
+    const { a, ctl } = withPanel()
+    const result = ctl.call('tabs.query', extensionEvent({}), { active: true, currentWindow: true })
+    expect(result).toHaveLength(1)
+    expect(ctl.store.lastFocusedWindowId).toBe(a.id)
   })
 })
 

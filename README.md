@@ -123,7 +123,7 @@ Strictly dependency-ordered; each step needs the one before it.
 | 7 | **Trust indicator**: what an app actually did, and what a score provider judged, never a bare grade | groundwork in [`src/trust/`](src/trust/) |
 | 8 | **Telemetry**: with the first-run disclosure | groundwork in [`src/telemetry/`](src/telemetry/) |
 | 9 | **Developer mode**: load an unpacked app | |
-| 10 | **Packaging**: AppImage and deb | |
+| 10 | **Packaging**: deb and AppImage, a Windows installer, macOS dmgs | **built on each GitHub release**: CI packages all three systems, launches each package, and attaches them to the release ([`packaging.md`](docs/development/packaging.md)). Windows and macOS packages are not signed with a bought certificate |
 
 **Not built yet.** These are choices, not oversights: each is still on the plan, and lands when a
 need calls for it ([`docs/scope.md`](docs/scope.md)): DDOC anchored in DNS · Arweave as
@@ -144,7 +144,7 @@ not browser features.*
 ## The idea underneath
 
 Orivon Browser is built on Electron. The thing built to last is the *interface* apps are written
-against: seven files of TypeScript types in [`src/contracts/`](src/contracts/), with no
+against: eight files of TypeScript types in [`src/contracts/`](src/contracts/), with no
 implementation in them at all.
 
 An app calls `orivon.net.connect()`. Today that reaches a Node socket in an Electron main
@@ -154,7 +154,7 @@ app already written having to change a line.
 That is a property engineered into the design rather than a roadmap. It costs nothing extra now,
 and it means apps written this year aren't thrown away if the thing underneath them changes.
 
-If you want to know what Orivon actually is, read those seven files before anything else.
+If you want to know what Orivon actually is, read those eight files before anything else.
 [`ARCHITECTURE.md`](ARCHITECTURE.md) explains how they fit together, and which design choices
 were deliberate.
 

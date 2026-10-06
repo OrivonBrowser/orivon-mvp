@@ -1,7 +1,8 @@
 // What Settings knows about the computer: whether Orivon is its default browser, and the state of a press of
-// "Make default". The facts are main's; this part keeps the last answer and redraws when it changes, and reads
-// it again when the person comes back to the page (it shows again, or the window is focused again): they may have
-// chosen in the system's own settings meanwhile.
+// "Make default". The facts are main's; this part keeps the last answer and redraws when it changes, and reads it
+// again when the page shows again: the person may have chosen in the system's own settings meanwhile. A window focus
+// reads it only after a press that sent the person to the system to choose, because focus returns with every click
+// from the address bar and each read costs the main process a system call on some platforms.
 import type { OrivonInternal } from '../shared/bridge.js'
 import type { SettingsPart } from './settings-parts.js'
 
@@ -30,13 +31,16 @@ export interface ReturnSources {
   readonly window: Pick<Window, 'addEventListener'>
 }
 
+/** The page showed again, or its window was focused again. */
+export type ReturnCause = 'shown' | 'focus'
+
 /** Calls `listener` each time the person comes back to the page. The system's settings or a confirmation alert usually
  * leaves the page visible, so a window focus counts as much as the page becoming visible. */
-export function onPageReturn (listener: () => void, sources?: ReturnSources): void {
+export function onPageReturn (listener: (cause: ReturnCause) => void, sources?: ReturnSources): void {
   const where = sources ?? (typeof document === 'undefined' || typeof window === 'undefined' ? undefined : { document, window })
   if (where === undefined) return
-  where.document.addEventListener('visibilitychange', () => { if (!where.document.hidden) listener() })
-  where.window.addEventListener('focus', () => { listener() })
+  where.document.addEventListener('visibilitychange', () => { if (!where.document.hidden) listener('shown') })
+  where.window.addEventListener('focus', () => { listener('focus') })
 }
 
 export class OsPart implements SettingsPart {
@@ -49,34 +53,43 @@ export class OsPart implements SettingsPart {
   declined = false
   /** The last press sent the person to the system's settings, where the choice is theirs to make. */
   handedOff = false
+  /** The person came back from that hand-over and the system still says another browser: a prompt it showed is gone by now. */
+  returnedUndecided = false
   private watching = false
+  private reading = false
 
-  constructor (private readonly bridge: OrivonInternal, private readonly notify: () => void, private readonly onReturn: (listener: () => void) => void = onPageReturn) {}
+  constructor (private readonly bridge: OrivonInternal, private readonly notify: () => void, private readonly onReturn: (listener: (cause: ReturnCause) => void) => void = onPageReturn) {}
 
   async load (): Promise<void> {
     this.take(await this.bridge.request('os', { type: 'defaultBrowser' }))
     if (this.watching) return
     this.watching = true
-    this.onReturn(() => { void this.refresh() })
+    this.onReturn((cause) => { void this.refresh(cause) })
   }
 
-  /** Reads the answer again, and redraws when it changed. */
-  async refresh (): Promise<void> {
-    if (this.busy) return
+  /** Reads the answer again on a return, and redraws when it changed. A focus alone counts only after a hand-over; one read answers the focus and the page shown that a single return sends. */
+  async refresh (cause: ReturnCause): Promise<void> {
+    if (this.busy || this.reading || (cause === 'focus' && !this.handedOff)) return
+    this.reading = true
     const before = this.view
+    const undecided = this.returnedUndecided
     try {
       this.take(await this.bridge.request('os', { type: 'defaultBrowser' }))
     } catch {
       return
+    } finally {
+      this.reading = false
     }
-    if (this.view === 'default') this.handedOff = false
-    if (this.view !== before) this.notify()
+    if (this.view !== 'can-set') this.handedOff = false
+    this.returnedUndecided = this.handedOff && this.view === 'can-set'
+    if (this.view !== before || this.returnedUndecided !== undecided) this.notify()
   }
 
   async makeDefault (): Promise<void> {
     if (this.busy) return
     this.busy = true
     this.declined = false
+    this.returnedUndecided = false
     this.notify()
     try {
       const reply = await this.bridge.request('os', { type: 'makeDefault' })

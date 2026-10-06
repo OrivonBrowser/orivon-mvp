@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, profileDirOf } from '../support/launch-electron.mjs'
 import { delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
-import { openExtensionPage, rpc, seedFixture, waitRecovered } from './extensions-e2e-helpers.js'
+import { closePopup, openExtensionPage, popupView, rpc, seedFixture, waitRecovered } from './extensions-e2e-helpers.js'
 
 const SHOTS = process.env['ORIVON_SHOTS_DIR']
 const TEST_TIMEOUT_MS = 240_000
@@ -115,24 +115,22 @@ it('lists the extensions, pins and unpins them, runs one from the menu, and keep
     await menu.click(`[data-key="pin:${popupId}"]`)
     expect(await waitFor(async () => (await toolbarIds(chrome)).length === 0)).toBe(true)
     await menu.click(`[data-key="main:${popupId}"]`)
-    const popupOpened = async (): Promise<boolean> => await app.evaluate(({ BrowserWindow }, id) => BrowserWindow.getAllWindows().some((w) => w.webContents.getURL().startsWith(`chrome-extension://${id}/popup.html`)), popupId)
+    const popupOpened = async (): Promise<boolean> => await popupView(app, popupId) !== null
     expect(await waitFor(popupOpened)).toBe(true)
     expect(await waitFor(async () => !(await menuShown(app)))).toBe(true)
-    const placed = await app.evaluate(({ BrowserWindow }, id) => {
-      const popup = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().startsWith(`chrome-extension://${id}/popup.html`))
-      const parent = popup?.getParentWindow()
-      return popup === undefined || parent === null || parent === undefined ? null : { popup: popup.getBounds(), parent: parent.getBounds() }
-    }, popupId)
+    const placed = await popupView(app, popupId)
     expect(placed).not.toBeNull()
     if (placed !== null) {
-      expect(placed.popup.x + placed.popup.width).toBeLessThanOrEqual(placed.parent.x + placed.parent.width + 2)
-      expect(placed.popup.x).toBeGreaterThanOrEqual(placed.parent.x - 2)
-      expect(placed.popup.y).toBeGreaterThanOrEqual(placed.parent.y)
+      // Inside the window, in content coordinates, and below the toolbar (e2e-extensions-popup-placement.test.ts
+      // checks it against the Extensions button).
+      expect(placed.bounds.x).toBeGreaterThanOrEqual(0)
+      expect(placed.bounds.x + placed.bounds.width).toBeLessThanOrEqual(placed.content.width)
+      expect(placed.bounds.y).toBeGreaterThan(0)
     }
     expect(await waitFor(async () => !(await menuShown(app)))).toBe(true)
     await delay(800)
     expect(await popupOpened()).toBe(true)
-    await app.evaluate(({ BrowserWindow }, id) => { BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().startsWith(`chrome-extension://${id}/popup.html`))?.destroy() }, popupId)
+    await closePopup(app, popupId)
 
     // The command opens the menu; Down, Right, Enter pin the first row again.
     await chrome.evaluate(() => { (window as unknown as { orivonShell: { runCommand: (id: string) => void } }).orivonShell.runCommand('extensions.menu') })

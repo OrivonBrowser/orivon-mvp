@@ -3,14 +3,15 @@
 // keyboard is in another app or the page is src/renderer/tests/navigation.test.ts's: the headless display delivers
 // no blur to the chrome's document when a window or a sibling view takes the keyboard, so the first click after a window
 // refocus is covered by src/renderer/tests/address-select.test.ts only. A new tab opened in front starts with the
-// keyboard in the bar, text typed there before the tab's page loads stays, and the first click on the bar selects its address.
+// keyboard in the bar, text typed there before the tab's page loads stays, a navigation that does not come from the bar
+// shows its address in the focused bar unless the person has typed, and the first click on the bar selects its address.
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { runCommand } from '../support/auth-support.js'
 import { pressKey } from '../support/e2e-helpers.js'
 import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from '../support/qa-helpers.js'
-import { ABSENCE_SETTLE_MS, delay, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, delay, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 const CHROME = '/renderer/index.html'
 let server: FixtureServer
@@ -115,6 +116,51 @@ it('keeps what is typed in the bar while the new tab\'s page takes and gives bac
     await chrome.keyboard.type('ab')
     await delay(ABSENCE_SETTLE_MS)
     await chrome.keyboard.type('c')
+    expect(await address(chrome)).toBe('abc')
+  } finally {
+    await closeElectron(app)
+  }
+}, QA_TEST_TIMEOUT_MS)
+
+/** A navigation of the front new tab that does not come from the bar: its own page moves on, as a script or a link does. */
+async function navigateFromPage (app: ElectronApplication, url: string): Promise<void> {
+  const page = app.windows().find((candidate) => candidate.url().endsWith('/newtab/index.html'))
+  if (page === undefined) throw new Error('no new tab page to navigate')
+  await page.evaluate((target) => { location.href = target }, url)
+}
+
+it('shows the address of a navigation that does not come from the bar, while the new tab\'s bar is focused and untouched', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    const two = `${server.origin}/two`
+    await focusPageInWindow(app, chrome, `${server.origin}/one`)
+    await runCommand(chrome, 'tab.new')
+    await expectBarHoldsKeyboard(app, chrome)
+    expect(await address(chrome)).toBe('')
+    const before = await tabIds(chrome)
+    await navigateFromPage(app, two)
+    expect((await waitForTab(chrome, { title: 'two' })).ok).toBe(true)
+    expect(await tabIds(chrome)).toEqual(before)
+    expect(await waitFor(async () => await address(chrome) === two)).toBe(true)
+    expect(await addressActive(chrome)).toBe(true)
+  } finally {
+    await closeElectron(app)
+  }
+}, QA_TEST_TIMEOUT_MS)
+
+it('keeps what is typed in the bar when the tab navigates from outside it', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    await focusPageInWindow(app, chrome, `${server.origin}/one`)
+    await runCommand(chrome, 'tab.new')
+    await expectBarHoldsKeyboard(app, chrome)
+    const two = `${server.origin}/two`
+    await chrome.keyboard.type('abc')
+    const before = await tabIds(chrome)
+    await navigateFromPage(app, two)
+    expect((await waitForTab(chrome, { title: 'two' })).ok).toBe(true)
+    expect(await tabIds(chrome)).toEqual(before)
+    await delay(ABSENCE_SETTLE_MS)
     expect(await address(chrome)).toBe('abc')
   } finally {
     await closeElectron(app)

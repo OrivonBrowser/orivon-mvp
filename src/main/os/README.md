@@ -37,7 +37,7 @@ the runner never calls the system there; the answer says why, and Settings words
 the Settings button, the welcome screen's box and the weekly question are the three clicks that do. On Windows no
 program may take the choice, so Make default opens Windows Settings and the answer is read again when the person
 returns; macOS registers through `setAsDefaultProtocolClient`. Both paths are written from the platforms'
-documentation and unbuilt (*provisional*, A328).
+documentation and unverified on a real system (*provisional*, A328).
 
 **The weekly ask counts from the last ask, and is created at first sight as if just asked.** A profile seen for the
 first time gets the welcome screen's box instead, so the first weekly question is a week later. "Don't ask again"

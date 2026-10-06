@@ -1,8 +1,8 @@
 # `src/contracts/`: the durable interface
 
 **What lives here.** The complete `orivon.*` surface that apps program against, as TypeScript
-types. Seven files, and reading them in order (`errors` -> `handles` -> `manifest` ->
-`capability-api`) is the fastest way to understand what Orivon actually is.
+types. Eight files, and reading them in order (`errors` -> `handles` -> `manifest` ->
+`capability-api` -> `trust`) is the fastest way to understand what Orivon actually is.
 
 **Changing it.** Beyond the own-PR rule: a change an app would feel needs a line under `### Changed for apps` in
 `CHANGELOG.md`, the snapshot rewritten (`node scripts/app-behaviours/check-contracts-surface.mjs --update`), and
