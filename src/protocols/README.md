@@ -30,7 +30,11 @@ over its message protocol.
    refuses in `resolve` any other spelling: two spellings would be two origins for one site.
 2. **Its descriptor**, `<id>/descriptor.ts`: `describeProtocol({ id, schemes, topLevelDomains })`,
    data only. A protocol with top-level domains may also name `displayScheme`, the address scheme
-   a name under one of them is shown with (`ipfs` for `.eth`); its origin stays unchanged.
+   a name under one of them is shown with (`ipfs` for `.eth`); its origin stays unchanged. It may
+   also give `loadingScreen` (a `title` and an optional `detail`): the words of the screen the shell
+   shows over a tab while one of its pages loads. The shell draws the screen and a protocol only
+   words it. A top-level-domain name whose protocol gives none shows the screen of the protocol
+   serving its `displayScheme`.
 3. **Its entry in [`builtin.ts`](builtin.ts).** From there the shell routes, shows and
    canonicalises it everywhere: address bar, omnibox, links, consent dialogs, the certificate
    check and the resolver rules.

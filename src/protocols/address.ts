@@ -5,8 +5,8 @@
 // the descriptors, so the shell needs no protocol's code to route or show
 // one. Rationale: README.md.
 
-import { ADDRESS_SUFFIX } from './protocol.js'
-import type { ProtocolDescriptor } from './protocol.js'
+import { ADDRESS_SUFFIX, namespacesOf } from './protocol.js'
+import type { LoadingScreen, ProtocolDescriptor } from './protocol.js'
 import type { Namespace } from './resolution/providers.js'
 import { isDnsLabel } from './resolution/dns-name.js'
 
@@ -51,6 +51,7 @@ export class ProtocolAddresses {
   private readonly schemes: ReadonlySet<string>
   private readonly topLevelDomains: ReadonlySet<string>
   private readonly displaySchemesByTld: ReadonlyMap<string, string>
+  private readonly loadingScreens: ReadonlyMap<Namespace, LoadingScreen>
 
   constructor (protocols: readonly ProtocolDescriptor[]) {
     this.schemes = new Set(protocols.flatMap((p) => p.schemes))
@@ -63,6 +64,12 @@ export class ProtocolAddresses {
       for (const tld of protocol.topLevelDomains) displaySchemesByTld.set(tld, protocol.displayScheme)
     }
     this.displaySchemesByTld = displaySchemesByTld
+    const loadingScreens = new Map<Namespace, LoadingScreen>()
+    for (const protocol of protocols) {
+      if (protocol.loadingScreen === undefined) continue
+      for (const namespace of namespacesOf(protocol)) loadingScreens.set(namespace, protocol.loadingScreen)
+    }
+    this.loadingScreens = loadingScreens
   }
 
   /** The scheme a served name is shown with: its own for an address, its protocol's display scheme for a top-level-domain name, if it declares one. */
@@ -164,6 +171,29 @@ export class ProtocolAddresses {
     if (scheme === undefined || endpoint === null) return url
     const [, name = '', path = '/'] = endpoint
     return `${scheme}://${name}${path}${tail}`
+  }
+
+  /**
+   * The screen to show while `url` loads: that of the protocol serving its
+   * host, the scheme endpoint included since it redirects to the origin. A
+   * top-level-domain name whose protocol gives none uses the screen of the
+   * protocol serving the scheme it is shown with. Undefined for any other URL.
+   */
+  loadingScreenFor (url: string): LoadingScreen | undefined {
+    let parsed: URL
+    try {
+      parsed = new URL(url)
+    } catch {
+      return undefined
+    }
+    if (parsed.protocol !== 'https:' || parsed.port !== '') return undefined
+    const served = this.servedName(parsed.hostname)
+    if (served !== undefined) {
+      const shown = this.shownScheme(served)
+      return this.loadingScreens.get(served.namespace) ?? (shown === undefined ? undefined : this.loadingScreens.get(`${shown}:`))
+    }
+    const scheme = this.schemeEndpoint(parsed.hostname)
+    return scheme === undefined || !/^\/[^/]/.test(parsed.pathname) ? undefined : this.loadingScreens.get(`${scheme}:`)
   }
 
   /** displayUrl, for an origin: `https://<label>.ipfs.orivon` is `ipfs://<name>`. */
