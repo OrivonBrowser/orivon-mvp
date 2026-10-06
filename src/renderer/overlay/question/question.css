@@ -19,3 +19,6 @@ body[data-overlay^='question'] .q-warning .q-message { color: var(--wwarn-mark, 
 
 body[data-overlay^='question'] .q-page { border-left: 3px dashed var(--wborder); }
 body[data-overlay^='question'] .q-page .q-message { font-weight: 400; }
+
+/* A double-press button after its first press: it says so, and keeps the look until the second press or the timeout. */
+body[data-overlay^='question'] .btn.pressed { outline: 2px solid var(--wwarn-mark, #c2410c); outline-offset: 2px; }

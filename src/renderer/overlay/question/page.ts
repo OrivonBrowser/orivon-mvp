@@ -9,6 +9,9 @@ import type { QuestionView } from '../../../main/shell/question/question-spec.js
 import { displayOrder, isPageQuestion, isQuestionView, primaryIndex } from './view.js'
 import './question.css'
 
+/** What a double-press button says once it has been pressed and waits for the second press. */
+const AGAIN_LABEL = 'Click again'
+
 export const questionPage: OverlayPage = {
   mount (content, overlay: Overlay) {
     const root = h('div', { className: 'q', tabIndex: -1 })
@@ -35,11 +38,61 @@ export const questionPage: OverlayPage = {
       void overlay.request({ type: 'drawn', id }).then(() => { if (mine === drawing) arm() }, () => { if (mine === drawing) arm() })
     }
 
+    let showing: QuestionView | undefined
+    let pressedTimer: ReturnType<typeof setTimeout> | undefined
+    const buttonFor = (index: number): HTMLElement | null => root.querySelector<HTMLElement>(`[data-button="${String(index)}"]`)
+
+    /** A double-press button shows its own label again: no second press came in time, or the pointer left. */
+    function restoreLabel (index: number): void {
+      clearTimeout(pressedTimer)
+      const button = buttonFor(index)
+      if (button === null || showing === undefined) return
+      button.classList.remove('pressed')
+      button.textContent = showing.buttons[index] ?? ''
+    }
+
     overlay.onEvent((event) => {
-      if (typeof event === 'object' && event !== null && (event as { type?: unknown }).type === 'arm') arm()
+      const kind = typeof event === 'object' && event !== null ? (event as { type?: unknown }).type : undefined
+      if (kind === 'arm') {
+        arm()
+        for (const index of showing?.doublePress ?? []) restoreLabel(index)
+      }
+      if (kind === 'pressed') {
+        const { button: index, ms } = event as { button?: unknown, ms?: unknown }
+        const button = typeof index === 'number' ? buttonFor(index) : null
+        if (button === null || typeof index !== 'number' || typeof ms !== 'number') return
+        button.classList.add('pressed')
+        button.textContent = AGAIN_LABEL
+        clearTimeout(pressedTimer)
+        pressedTimer = setTimeout(() => { restoreLabel(index) }, ms)
+      }
     })
 
+    /** Tells main when the pointer or the focus arrives on a double-press button, and when it leaves: main arms it only then, after the guard. */
+    function watchArrival (id: string, index: number, button: HTMLElement): void {
+      let here = false
+      const arrive = (): void => {
+        if (here) return
+        here = true
+        void overlay.request({ type: 'enter', id, button: index })
+      }
+      const leave = (): void => {
+        if (!here) return
+        here = false
+        restoreLabel(index)
+        void overlay.request({ type: 'leave', id, button: index })
+      }
+      // A move inside the button counts as arriving again: after the guard, a pointer that was already resting on it must move to arm it.
+      button.addEventListener('pointermove', () => { if (root.classList.contains('arming')) here = false; arrive() })
+      button.addEventListener('pointerenter', arrive)
+      button.addEventListener('focus', arrive)
+      button.addEventListener('pointerleave', leave)
+      button.addEventListener('blur', leave)
+    }
+
     function draw (view: QuestionView): void {
+      showing = view
+      clearTimeout(pressedTimer)
       const page = isPageQuestion(view.kind)
       let text: HTMLInputElement | undefined
       let tick: HTMLInputElement | undefined
@@ -70,6 +123,7 @@ export const questionPage: OverlayPage = {
           onclick: () => { answer(index) }
         }, view.buttons[index] ?? '')
         button.dataset['button'] = String(index)
+        if (view.doublePress.includes(index)) watchArrival(view.id, index, button)
         return button
       })
       root.className = `q ${page ? 'q-page' : 'q-browser'}${view.warning ? ' q-warning' : ''}`

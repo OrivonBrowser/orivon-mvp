@@ -94,3 +94,17 @@ describe('viewOf', () => {
     expect(whole).toMatchObject({ title: origin, detail: `x\n${origin}` })
   })
 })
+
+describe('double-press buttons', () => {
+  it('keeps the indexes of buttons that exist, and makes each of them guarded', () => {
+    const spec = normaliseSpec({ kind: 'consent', message: 'm', buttons: ['Allow', 'No'], cancelId: 1, doublePress: [0, 7, -1, 0.5] })
+    expect(spec.doublePress).toEqual([0])
+    expect(spec.guarded).toEqual([0])
+  })
+
+  it('reaches the panel as a list and a window, empty when the question has none', () => {
+    const spec = normaliseSpec({ kind: 'consent', message: 'm', buttons: ['Allow', 'No'], cancelId: 1, doublePress: [0] })
+    expect(viewOf('id', spec)).toMatchObject({ doublePress: [0], doublePressMs: 1500 })
+    expect(viewOf('id', normaliseSpec({ kind: 'notice', message: 'm', buttons: ['OK'], cancelId: 0 })).doublePress).toEqual([])
+  })
+})

@@ -8,7 +8,7 @@ import type { OverlayDef, OverlayHandler, OverlayWindow } from '../../overlays/o
 import { createKeyQuiet } from '../../overlays/key-quiet.js'
 import { slotClosed } from '../../overlays/tab-slots.js'
 import type { ShellWindow } from '../window-registry.js'
-import { GUARD_MS, MAX_INPUT, viewOf, type QuestionResult, type QuestionSpec, type QuestionView } from './question-spec.js'
+import { DOUBLE_PRESS_MS, GUARD_MS, MAX_INPUT, viewOf, type QuestionResult, type QuestionSpec, type QuestionView } from './question-spec.js'
 
 /** Anchored by `crossingAnchor`, so its top edge lies inside the toolbar. */
 export const QUESTION_OVERLAY = 'question'
@@ -66,6 +66,17 @@ function drawnId (command: unknown): string | undefined {
   return typeof record['id'] === 'string' ? record['id'] : undefined
 }
 
+interface Arrival { type: 'enter' | 'leave', id: string, button: number }
+
+/** The page's report that the pointer or the keyboard's focus arrived on, or left, a button: `{ type, id, button }` and nothing else. */
+function asArrival (command: unknown): Arrival | undefined {
+  if (typeof command !== 'object' || command === null) return undefined
+  const record = command as Record<string, unknown>
+  const { type, id, button } = record
+  if (Object.keys(record).length !== 3 || (type !== 'enter' && type !== 'leave')) return undefined
+  return typeof id === 'string' && typeof button === 'number' && Number.isInteger(button) ? { type, id, button } : undefined
+}
+
 function idOf (payload: unknown): string | undefined {
   if (typeof payload !== 'object' || payload === null) return undefined
   const { id } = payload as { id?: unknown }
@@ -79,8 +90,14 @@ export function createQuestionPanel (name: string, now: () => number = Date.now)
     let shownAt: number | null = null
     // A key typed at the page when the question appears, or Tab, Tab, Enter at it, must not reach a guarded button: the keyboard has to be quiet for the guard's length too.
     const keys = createKeyQuiet(now)
+    // A double-press button answers only once the pointer or the focus has arrived on it after the guard, and then on its second press within DOUBLE_PRESS_MS.
+    let armed: number | null = null
+    let firstPress: { button: number, at: number } | null = null
+    const disarm = (): void => { armed = null; firstPress = null }
     return {
       key: (key) => {
+        // Enter and Space press the focused button; any other key leaves a pending double press behind.
+        if (key.key !== 'Enter' && key.key !== ' ') disarm()
         // In a question with a text box the keys typed into it are the answer being written: only Tab, which moves
         // the keyboard onto a button, or a held key restarts the wait. The guard from the drawing still stands.
         const answeringInText = shownId !== null && heldQuestion(shownId)?.spec.input !== undefined
@@ -94,6 +111,7 @@ export function createQuestionPanel (name: string, now: () => number = Date.now)
         shownId = entry.id
         shownAt = null
         keys.reset()
+        disarm()
         return viewOf(entry.id, entry.spec)
       },
 
@@ -103,12 +121,32 @@ export function createQuestionPanel (name: string, now: () => number = Date.now)
           if (drawn === shownId && shownAt === null) shownAt = now()
           return true
         }
+        const arrival = asArrival(command)
+        if (arrival !== undefined) {
+          const spec = arrival.id === shownId ? heldQuestion(arrival.id)?.spec : undefined
+          if (spec === undefined) return undefined
+          if (arrival.type === 'leave') {
+            if (armed === arrival.button) disarm()
+          } else if (spec.doublePress?.includes(arrival.button) === true && shownAt !== null && now() - shownAt >= GUARD_MS) {
+            armed = arrival.button
+            firstPress = null
+          }
+          return true
+        }
         const answer = asAnswer(command)
         const entry = answer === undefined || answer.id !== shownId ? undefined : heldQuestion(answer.id)
         if (answer === undefined || entry === undefined) return undefined
         const { spec } = entry
         if (answer.button < 0 || answer.button >= spec.buttons.length) return undefined
         if (spec.guarded?.includes(answer.button) === true && (shownAt === null || now() - shownAt < GUARD_MS || keys.quietFor() < GUARD_MS)) return undefined
+        if (spec.doublePress?.includes(answer.button) === true) {
+          if (armed !== answer.button) return undefined
+          if (firstPress === null || firstPress.button !== answer.button || now() - firstPress.at > DOUBLE_PRESS_MS) {
+            firstPress = { button: answer.button, at: now() }
+            send({ type: 'pressed', button: answer.button, ms: DOUBLE_PRESS_MS })
+            return undefined
+          }
+        }
         if (answer.text !== undefined && spec.input === undefined) return undefined
         if (answer.checkbox !== undefined && spec.checkboxLabel === undefined) return undefined
         entry.settle({
@@ -124,6 +162,7 @@ export function createQuestionPanel (name: string, now: () => number = Date.now)
       moved: () => {
         if (shownId === null || shownAt === null) return
         shownAt = now()
+        disarm()
         send({ type: 'arm' })
       },
 

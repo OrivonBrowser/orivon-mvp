@@ -3,12 +3,13 @@ import { displayOrder, isPageQuestion, isQuestionView, primaryIndex } from '../v
 
 const view = {
   id: 'abc', kind: 'consent', title: undefined, message: 'Allow?', detail: undefined, warning: false, origin: undefined,
-  buttons: ['Allow', 'Cancel'], cancelId: 1, guarded: [0], focus: 'dialog', input: undefined, checkboxLabel: undefined, guardMs: 500
+  buttons: ['Allow', 'Cancel'], cancelId: 1, guarded: [0], doublePress: [], doublePressMs: 1500, focus: 'dialog', input: undefined, checkboxLabel: undefined, guardMs: 500
 }
 
 describe('isQuestionView', () => {
   it('accepts what main sends', () => {
     expect(isQuestionView(view)).toBe(true)
+    expect(isQuestionView({ ...view, doublePress: [0] })).toBe(true)
     expect(isQuestionView({ ...view, kind: 'page-prompt', input: { initial: 'x', max: 100_000 }, checkboxLabel: 'Stop', title: 't', detail: 'd', origin: 'https://a.example', focus: 0 })).toBe(true)
   })
 
@@ -16,7 +17,8 @@ describe('isQuestionView', () => {
     ['nothing', undefined], ['a string', 'ask'], ['no id', { ...view, id: undefined }], ['a kind it does not know', { ...view, kind: 'grant' }],
     ['no buttons', { ...view, buttons: [] }], ['a button that is not text', { ...view, buttons: ['a', 1] }], ['no guard length', { ...view, guardMs: undefined }],
     ['a guarded list of text', { ...view, guarded: ['0'] }], ['a focus it does not know', { ...view, focus: 'button' }], ['an input without its initial text', { ...view, input: {} }],
-    ['a warning that is not a boolean', { ...view, warning: 'yes' }]
+    ['a warning that is not a boolean', { ...view, warning: 'yes' }],
+    ['a double-press list of text', { ...view, doublePress: ['0'] }], ['no double-press window', { ...view, doublePressMs: undefined }]
   ])('refuses %s', (_name, value) => {
     expect(isQuestionView(value)).toBe(false)
   })
