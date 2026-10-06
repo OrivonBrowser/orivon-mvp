@@ -167,10 +167,10 @@ if (isInvokedDirectly(import.meta.url)) {
       const checkoutRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
       const { status, reason } = await disableFileProtocolFuse({ binary, checkoutRoot })
       if (status === 'refused' || status === 'failed') {
-        console.warn(
-          `\nElectron binary: the file-protocol fuse stays on (${reason}).` +
-          '\nOrivon opens no local files until `npm run install:electron` turns it off.\n'
-        )
+        const next = status === 'failed'
+          ? 'Orivon opens no local files until `npm run install:electron` turns it off.'
+          : 'A run from this checkout opens no local files until the reason above no longer holds.'
+        console.warn(`\nElectron binary: the file-protocol fuse stays on (${reason}).\n${next}\n`)
       } else {
         console.log(`Electron binary: file-protocol fuse off (${status}).`)
       }
