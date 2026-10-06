@@ -5,11 +5,13 @@
 
 body[data-surface='menu'] { --wbg: #f2f2f7; }
 body[data-surface='panel'] { --wbg: #e5e5ec; }
+body[data-surface='page'] { --wbg: #f4f4f8; }
 body[data-surface] { --wborder: color-mix(in srgb, var(--wbg) 82%, black); }
 
 @media (prefers-color-scheme: dark) {
   body[data-surface='menu'] { --wbg: #2b2c31; --wborder: #3b3c42; }
   body[data-surface='panel'] { --wbg: #1e1f24; --wborder: #3b3c42; }
+  body[data-surface='page'] { --wbg: #17181c; }
 }
 
 html, body {
@@ -49,6 +51,9 @@ body::after {
   border-radius: 10px;
   pointer-events: none;
 }
+
+/* A page surface fills the page area flush: it has no card edge. */
+body[data-surface='page']::after { display: none; }
 
 .overlay-error {
   padding: 16px;
