@@ -171,7 +171,7 @@ export interface StateSpec {
   expected: string
   /** What the test did to get here. */
   action: string
-  /** Pages to audit. Default: every visible shell page (file: and orivon:). */
+  /** Pages to audit. Default: every visible shell page (orivon-shell: and orivon:). */
   audit?: { pages?: Page[], verticalScroll?: 'allow' | 'forbid', allow?: AllowedFinding[] }
   ignore?: Rect[]
   allowBlank?: boolean

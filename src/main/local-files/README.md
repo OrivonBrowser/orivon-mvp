@@ -18,12 +18,12 @@ the binary does, and the feature that depends on it asks here.
 ## Design notes
 
 **The fuse is off in a packaged build and in a contributor's binary.** `electron-builder.yml` turns it
-off for a package; `scripts/install-electron.mjs` turns it off in `node_modules/electron/dist` once the
+off for a package; `scripts/install-electron.mjs` turns it off in `node_modules/electron/dist` on Linux once the
 binary is present (writing a new file and renaming it over the old, since a worktree's `node_modules`
 shares its binary's inode with other checkouts). Both are why a page the shell loads never needs
-`file:` (`../pages/shell-scheme.ts`), and why a local file is opened only when this check says `'off'`:
-a checkout whose binary was not flipped (a copy made before the flip, an install that skipped it)
-reports `'on'` and opens no local file until `npm run install:electron` runs there.
+`file:` (`../pages/shell-scheme.ts`). A feature that opens a local file asks `fileProtocolFuse()` first and
+opens only on `'off'`: a checkout whose binary was not flipped (a copy made before the flip, an install that
+skipped it, a macOS or Windows checkout, where the script refuses) reports `'on'` and opens no local file.
 
 **The sentinel is searched in chunks, and every one must agree.** The wire follows a 32-byte
 sentinel, so a chunk boundary can split it: the tail of each chunk is searched again with the next. A

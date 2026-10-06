@@ -155,17 +155,22 @@ it('serves each session only its own files: the shell partition its pages and as
   }
 }, TEST_TIMEOUT_MS)
 
-/** The built new-tab page's own script, as a path the scheme would serve it at. */
-function newtabScript (): string {
-  const manifest = JSON.parse(readFileSync('out/renderer/.vite/manifest.json', 'utf8')) as Record<string, { file: string }>
-  return `${SHELL}${(manifest['newtab/index.html'] as { file: string }).file}`
+/** The files the built new-tab page itself loads, as addresses the scheme would serve them at. */
+function newtabFiles (): { script: string, stylesheet: string, image: string } {
+  const manifest = JSON.parse(readFileSync('out/renderer/.vite/manifest.json', 'utf8')) as Record<string, { file: string, css?: string[], assets?: string[] }>
+  const entry = manifest['newtab/index.html'] as { file: string, css?: string[], assets?: string[] }
+  const image = (entry.assets ?? []).find((file) => file.endsWith('.png')) as string
+  return { script: `${SHELL}${entry.file}`, stylesheet: `${SHELL}${(entry.css ?? [])[0] as string}`, image: `${SHELL}${image}` }
 }
 
 it('gives a loopback page no way to load, frame, navigate to or fetch a page of the shell', async () => {
-  const { app, chrome } = await launchShell()
+  // Pop-ups are allowed for the fixture's origin, so window.open reaches the window-open policy instead of the blocker.
+  const { app, chrome } = await launchShell({
+    seedProfile: async (dir) => { await writeFile(join(dir, 'site-settings.json'), JSON.stringify({ version: 1, sites: { [origin]: { popups: 'allow' } } })) }
+  })
   try {
     const site = await visit(app, chrome, `${origin}/a`)
-    const script = newtabScript()
+    const { script, stylesheet, image } = newtabFiles()
     const outcome = async (make: string): Promise<string> => await site.evaluate((code) =>
       new Promise<string>((resolve) => {
         const el = (0, eval)(code) as HTMLElement
@@ -176,8 +181,8 @@ it('gives a loopback page no way to load, frame, navigate to or fetch a page of 
       }), make)
 
     expect(await outcome(`Object.assign(document.createElement('script'), { src: ${JSON.stringify(script)} })`)).not.toBe('load')
-    expect(await outcome(`Object.assign(document.createElement('link'), { rel: 'stylesheet', href: ${JSON.stringify(script)} })`)).not.toBe('load')
-    expect(await outcome(`Object.assign(new Image(), { src: ${JSON.stringify(`${SHELL}assets/logo-x.png`)} })`)).not.toBe('load')
+    expect(await outcome(`Object.assign(document.createElement('link'), { rel: 'stylesheet', href: ${JSON.stringify(stylesheet)} })`)).not.toBe('load')
+    expect(await outcome(`Object.assign(new Image(), { src: ${JSON.stringify(image)} })`)).not.toBe('load')
     expect(await site.evaluate((target) => fetch(target).then(() => 'fetched', () => 'rejected'), script)).toBe('rejected')
 
     // A frame, a navigation, a redirect and a new window: none reaches the page.
@@ -186,7 +191,10 @@ it('gives a loopback page no way to load, frame, navigate to or fetch a page of 
       frame.src = target
       document.body.appendChild(frame)
       window.open(target)
+      // The control: with pop-ups allowed, an ordinary address does open, so the refusal above is the policy's.
+      window.open('/popup')
     }, `${SHELL}newtab/index.html`)
+    expect(await waitFor(async () => (await urlsOf(app)).includes(`${origin}/popup`))).toBe(true)
     await delay(ABSENCE_SETTLE_MS)
     const shellContents = async (): Promise<string[]> => (await urlsOf(app)).filter((url) => url.includes('/newtab/'))
     const frames = async (): Promise<string[]> => await app.evaluate(({ webContents }, address) =>

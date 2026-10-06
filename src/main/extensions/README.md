@@ -402,8 +402,9 @@ never covered by an extension's host permission: `<all_urls>` leaves `file` out
 `dnr/host-permissions.ts`'s `createHostAccessChecker` and `extension-host-access.ts`'s
 `hasHostAccess` refuse a `file:` request, initiator or url whatever pattern would otherwise match.
 
-**An explicit host pattern names only a web scheme.** `matchesHostPattern` takes a pattern's own scheme
-only for `http`, `https`, `ws`, `wss` and `ftp`, as Chrome's grammar does, so `orivon-shell://*/*`
+**An explicit host pattern names only a scheme of Chrome's grammar.** `matchesHostPattern` takes a pattern's own
+scheme only for `http`, `https`, `ws`, `wss`, `ftp`, `file` and `chrome-extension`: `file` is in the grammar and
+is refused where host access is decided, and `chrome-extension` is there for an extension's own pages. So `orivon-shell://*/*`
 (the new-tab page's scheme) or `orivon://*/*` matches nothing; `web-request/visibility.ts`'s
 `isShellOwnUrl` keeps both schemes out of every extension's request rules and listeners.
 

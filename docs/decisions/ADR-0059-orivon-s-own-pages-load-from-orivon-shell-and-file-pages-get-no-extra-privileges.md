@@ -10,7 +10,7 @@
 
 A built shell loads every one of its own renderer entries from `orivon-shell://renderer/<path inside
 out/renderer>`, never from `file:`, and Electron's `grantFileProtocolExtraPrivileges` fuse is off in every
-packaged build and in every contributor's Electron binary.
+packaged build and in a Linux contributor's Electron binary.
 
 - **One scheme, one origin.** `orivon-shell` is registered `standard` and `secure` and nothing else:
   `corsEnabled`, `bypassCSP` and `allowExtensions` stay false. The host is `renderer`, so the chrome, the
@@ -33,10 +33,10 @@ packaged build and in every contributor's Electron binary.
   `file` (refused where host access is decided) and `chrome-extension`; `<all_urls>` was already limited to
   the web. The extension request rules and listeners skip `orivon-shell:` as they skip `orivon:`.
 - **A copy of a tab does not carry the dashboard.** `carryHistory` and `restoreHistory` drop entries on the
-  scheme and restore nothing when the shown entry is one, since a copy may sit in a session with no handler.
+  scheme and restore nothing when the shown entry is one, since a copy may sit in a session with no handler; a tab woken from memory saving gets the same, its blank view having no dashboard bridge.
 - **The shell session refuses `file:`.** `protocol.handle('file', ...)` on `persist:orivon-shell` answers 404.
-- **The fuse is off everywhere.** `electron-builder.yml` sets `grantFileProtocolExtraPrivileges: false`.
-  `scripts/install-electron.mjs` turns it off in `node_modules/electron/dist` at install, with no opt-out other
+- **The fuse is off in a package and in a Linux checkout.** `electron-builder.yml` sets `grantFileProtocolExtraPrivileges: false`.
+  `scripts/install-electron.mjs` turns it off in `node_modules/electron/dist` at install on Linux, with no opt-out other
   than skipping the binary download, by writing a new file and renaming it over the binary, never writing in
   place. `src/main/local-files/file-fuse.ts` reads the running binary's fuse, memoised, so a feature that needs
   local files can ask whether it is off.
@@ -100,9 +100,12 @@ Run with the fuse off, each in a headless Electron 44 (`app.whenReady().then()`)
 - A website learns nothing from the scheme: every request it makes on it is cancelled the same way, whether
   the path exists or not. The residual is that the default session holds a handler for the scheme, and
   `will-frame-navigate`, `will-redirect` and the `webRequest` handler are all that stand between a site and
-  the dashboard's page and files. A navigation into a window no tab owns (a popup) is refused by the
-  window-open policy (`sanitizeDirectUrl`); a gap there would show as a main-frame request the handler lets
-  through, and the only files it could read are the dashboard's own.
+  the dashboard's page and files. A window a page opens is adopted as a tab with no `sanitizeDirectUrl` pass,
+  so its `will-frame-navigate` and `will-redirect` (wired when the tab is made) are what refuse it the
+  scheme; the spec opens a window with pop-ups allowed and checks that none lands on the dashboard. The
+  `webRequest` handler lets a main-frame request through whichever web contents makes it, so an extension's
+  popup or background page, which is no tab, can show the dashboard, without its bridge. A gap in the tab
+  guards would show as such a request, and the only files it could read are the dashboard's own.
 - Another checkout, and a worktree made by `cp -al`, keeps the fuse on until `npm run install:electron` runs
   there. A symlinked `node_modules` is refused (the flip would rewrite the target's binary), and the script
   warns, exits 0 and leaves the fuse on. A feature that needs it off treats `'unknown'` and `'on'` alike.
@@ -122,6 +125,6 @@ Run with the fuse off, each in a headless Electron 44 (`app.whenReady().then()`)
 ## Reversibility
 
 - **Cost to reverse:** moderate. The scheme is internal and its addresses are not stored; going back to
-  `file:` means flipping the fuse on again, which every checkout then does by script.
+  `file:` means flipping the fuse on again, which every Linux checkout then does by script.
 - **What would make us revisit:** a macOS or Windows measurement that the flip cannot be done safely
   (A394), or a need for the shell's pages to load where the scheme has no handler.
