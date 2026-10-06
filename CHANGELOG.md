@@ -342,6 +342,8 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Fixed
 
+- **A run from source keeps the sign-ins an installed package made**: its binary encrypts cookies as a package's does
+  (`npm run install:electron`, and the source launcher on a cold start), so cookies in the profile they share are readable by both.
 - **An `ipns://` key opens, in a tab and as the Web3 Score provider**: its record was asked of one gateway at a time,
   and one that hangs held the lookup past the 25 s a name may take. Sources are now raced, and a gateway that hangs
   cools down, so the default provider loads in about 5 s instead of failing.

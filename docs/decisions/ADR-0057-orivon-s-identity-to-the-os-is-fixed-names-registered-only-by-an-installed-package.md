@@ -50,7 +50,10 @@ move of the program keeps the person's choices.
 ## Consequences
 
 Renaming any of the names costs every person their pinned button and default-app choice, so a rename needs a
-migration. The Windows and macOS paths are written from the builders' documentation and are *provisional* until
+migration. Sharing one profile holds only while a run from source stores it as a package does: an Electron fuse that
+changes what lands in the profile is set in both, by `electron-builder.yml` for a package and by
+`scripts/install-electron.mjs` for a checkout's binary. Cookie encryption is one: a binary without it reads none of the
+cookies a package encrypted and deletes them, which signs the person out of every site. The Windows and macOS paths are written from the builders' documentation and are *provisional* until
 a package is built on those systems (A328).
 
 ## Reversibility

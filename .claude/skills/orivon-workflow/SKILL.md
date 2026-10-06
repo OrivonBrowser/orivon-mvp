@@ -66,6 +66,9 @@ Skip routine sessions.
 - Read CI: `gh pr view <n> --json mergeStateStatus,statusCheckRollup`. This `gh`'s `pr checks` has no
   `--json`, so a script built on it sees no checks and waits for ever. A failed shard's spec:
   `gh api repos/OrivonBrowser/orivon-mvp/actions/jobs/<job id>/logs`, then grep for ` FAIL `.
+  An empty `statusCheckRollup` is no run yet, never "all passed": checks appear some seconds after a
+  push, and a `DIRTY` PR (a conflict with `main`) starts none until `main` is merged in. A wait loop
+  ends only when the list is non-empty and nothing in it is pending.
 
 ## Context that rarely changes what you do
 

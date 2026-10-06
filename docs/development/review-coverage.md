@@ -362,3 +362,9 @@ In all, 36 findings, 36 confirmed, none refuted.
 | `/code-review` at medium effort | The branch against `main` | One finding, confirmed and fixed with a test that failed first: with no source left to ask, the race started nothing and waited for ever, where the sequential lookup failed at once |
 | The real verifier host against live gateways, for the default provider's key | `main` and this branch | `main`: 502 after 25 s, the two gateways holding the record never asked; this branch: `provider.json` in 4.8 s |
 | The new signed-key provider spec, run against `main`'s code | `main` with this branch's tests only | Fails: the shield keeps Level 2, the provider unreachable; passes on this branch |
+
+### `stream/cookie-fuse`: a checkout's binary encrypts cookies as a package's does (2026-10-06)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| `/code-review` at medium effort | PR #131 against `main` | No findings: fuse indices and state bytes, the yml parser in the agreement test, the launcher's cold-start path, the shared keyring entry (both run as `orivon`), and `--password-store=basic` on test launches checked |

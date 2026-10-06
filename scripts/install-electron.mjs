@@ -11,8 +11,9 @@
  * already expects it, and keeps it idempotent: electron's own install.js exits
  * early once the binary matches the installed version.
  *
- * The same hook then turns the binary's `grantFileProtocolExtraPrivileges` fuse off
- * (`disableFileProtocolFuse`), the way a packaged build has it off: ADR-0059.
+ * The same hook then sets the binary's fuses that a package sets and a run from source
+ * depends on (`setCheckoutFuses`): the file-protocol fuse off (ADR-0059) and cookie
+ * encryption on.
  *
  * Set ELECTRON_SKIP_BINARY_DOWNLOAD=1 to opt out. Nothing in this repo does:
  * the unit suite reaches Electron's own lazy downloader through
@@ -79,32 +80,51 @@ export function electronBinaryPath (installer) {
   }
 }
 
+/**
+ * The fuses a checkout's binary takes from a package, by their `electron-builder.yml` names. With the
+ * file-protocol fuse off, a `file:` page gets no more reach than a web page does (ADR-0059). With cookie
+ * encryption on, the cookie store is written as a package writes it: a run from source and an installed
+ * package share one profile (ADR-0057), and a binary without the fuse reads none of the cookies the other
+ * encrypted, so every site the package was signed in to is signed out.
+ */
+export const CHECKOUT_FUSES = Object.freeze({ grantFileProtocolExtraPrivileges: false, enableCookieEncryption: true })
+
+/** A fuse's state byte in the wire: ASCII '1' and '0'. */
+const ON = 49
+const OFF = 48
+
+/** The wire index of a fuse named as `electron-builder.yml` names it (`FuseV1Options` capitalises the first letter). */
+const indexOf = (FuseV1Options, name) => FuseV1Options[name[0].toUpperCase() + name.slice(1)]
+
 async function flipWithFuses (path) {
   const { flipFuses, FuseV1Options, FuseVersion } = await import('@electron/fuses')
-  await flipFuses(path, { version: FuseVersion.V1, [FuseV1Options.GrantFileProtocolExtraPrivileges]: false })
+  const config = { version: FuseVersion.V1 }
+  for (const [name, on] of Object.entries(CHECKOUT_FUSES)) config[indexOf(FuseV1Options, name)] = on
+  await flipFuses(path, config)
 }
 
-async function currentFileFuse (path) {
+async function fusesMatch (path) {
   const { getCurrentFuseWire, FuseV1Options } = await import('@electron/fuses')
-  return (await getCurrentFuseWire(path))[FuseV1Options.GrantFileProtocolExtraPrivileges]
+  const wire = await getCurrentFuseWire(path)
+  return Object.entries(CHECKOUT_FUSES).every(([name, on]) => wire[indexOf(FuseV1Options, name)] === (on ? ON : OFF))
 }
 
 /**
- * Turns the binary's file-protocol fuse off, writing a new file and renaming it over `binary`: a
- * worktree's `node_modules` is a hard-linked copy of another checkout's, so a write in place would
- * change that checkout's binary too (and fail with ETXTBSY while it runs). Only Linux is flipped:
- * macOS and Windows are refused until the flip is measured there (docs/open-questions.md A394).
+ * Sets the binary's `CHECKOUT_FUSES`, writing a new file and renaming it over `binary`: a worktree's
+ * `node_modules` is a hard-linked copy of another checkout's, so a write in place would change that
+ * checkout's binary too (and fail with ETXTBSY while it runs). Only Linux is flipped: macOS and
+ * Windows are refused until the flip is measured there (docs/open-questions.md A394).
  *
  * @param {object} options
  * @param {string} options.binary The Electron executable.
  * @param {string} options.checkoutRoot The checkout this script belongs to; a binary outside it is refused.
  * @param {NodeJS.Platform} [options.platform]
- * @param {(path: string) => Promise<void>} [options.flip] Turns the fuse off in the file at `path`.
- * @param {(path: string) => Promise<number>} [options.read] The fuse's state byte in the file at `path`.
- * @returns {Promise<{ status: 'already-off' | 'flipped' | 'refused' | 'failed', reason?: string }>}
+ * @param {(path: string) => Promise<void>} [options.flip] Sets the fuses in the file at `path`.
+ * @param {(path: string) => Promise<boolean>} [options.match] Whether the file at `path` has them set already.
+ * @returns {Promise<{ status: 'already-set' | 'flipped' | 'refused' | 'failed', reason?: string }>}
  */
-export async function disableFileProtocolFuse ({
-  binary, checkoutRoot, platform = process.platform, flip = flipWithFuses, read = currentFileFuse
+export async function setCheckoutFuses ({
+  binary, checkoutRoot, platform = process.platform, flip = flipWithFuses, match = fusesMatch
 }) {
   if (platform !== 'linux') {
     return { status: 'refused', reason: `the flip is not measured on ${platform} yet (A394)` }
@@ -119,7 +139,7 @@ export async function disableFileProtocolFuse ({
         reason: `the Electron binary is outside this checkout (${realFile}); flipping it would change a binary other checkouts share`
       }
     }
-    if (await read(file) === 48) return { status: 'already-off' }
+    if (await match(file)) return { status: 'already-set' }
 
     const before = await stat(file)
     try {
@@ -165,14 +185,12 @@ if (isInvokedDirectly(import.meta.url)) {
     const binary = electronBinaryPath(plan.installer)
     if (binary !== undefined) {
       const checkoutRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
-      const { status, reason } = await disableFileProtocolFuse({ binary, checkoutRoot })
+      const { status, reason } = await setCheckoutFuses({ binary, checkoutRoot })
       if (status === 'refused' || status === 'failed') {
-        const next = status === 'failed'
-          ? 'Orivon opens no local files until `npm run install:electron` turns it off.'
-          : 'A run from this checkout opens no local files until the reason above no longer holds.'
-        console.warn(`\nElectron binary: the file-protocol fuse stays on (${reason}).\n${next}\n`)
+        const until = status === 'failed' ? 'until `npm run install:electron` sets them' : 'until the reason above no longer holds'
+        console.warn(`\nElectron binary: its fuses are not set as a package sets them (${reason}).\nA run from this checkout may open no local files, and may lose every cookie a package wrote to a profile they share, ${until}.\n`)
       } else {
-        console.log(`Electron binary: file-protocol fuse off (${status}).`)
+        console.log(`Electron binary: fuses set as a package sets them (${status}).`)
       }
     }
   }
