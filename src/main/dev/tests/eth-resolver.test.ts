@@ -4,7 +4,18 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { buildHostResolverRules, buildSecureOriginList, readDevEthNames } from '../eth-resolver.js'
 
+const BAD_NAMES = [
+  'freetube', '.eth', 'eth', 'FreeTube.eth', 'Orivonstack.eth', 'freetube.com', 'freetube.eth.com',
+  'orivonstack..eth', '.orivonstack.eth', '-x.orivonstack.eth', 'x.-y.eth', 'x_y.eth',
+  'freetube.eth,MAP evil.com 1.2.3.4:80', 'a.b.eth,c.eth', 'a b.eth', 'a:80.eth', 'a/b.eth', '*.eth', 'a*.eth', 'freetube.eth.'
+]
+
 describe('buildHostResolverRules', () => {
+  it('accepts an ENS subname of several labels', () => {
+    expect(buildHostResolverRules({ 'thelounge.orivonstack.eth': 8875, 'a.b.c.eth': 8876 }))
+      .toBe('MAP thelounge.orivonstack.eth 127.0.0.1:8875,MAP a.b.c.eth 127.0.0.1:8876')
+  })
+
   it('builds one MAP clause per name, to its own port', () => {
     expect(buildHostResolverRules({ 'freetube.eth': 8875, 'asgardex.eth': 8876 }))
       .toBe('MAP freetube.eth 127.0.0.1:8875,MAP asgardex.eth 127.0.0.1:8876')
@@ -17,8 +28,8 @@ describe('buildHostResolverRules', () => {
   // Appended verbatim to a command-line switch -- a key or value that is not
   // exactly this shape is dropped rather than trusted, since this file
   // reads a names map from OUTSIDE this process.
-  it('drops a name that is not a plain "label.eth"', () => {
-    for (const bad of ['freetube', 'FreeTube.eth', 'sub.freetube.eth', 'freetube.com', 'freetube.eth,MAP evil.com 1.2.3.4:80']) {
+  it('drops a name that is not dot-separated lowercase labels ending in .eth', () => {
+    for (const bad of BAD_NAMES) {
       expect(buildHostResolverRules({ [bad]: 8875 })).toBe('')
     }
   })
@@ -48,8 +59,8 @@ describe('buildSecureOriginList', () => {
 
   // Spliced into a command-line switch exactly as the MAP clauses are, so
   // the same names file that cannot inject there cannot inject here.
-  it('drops a name that is not a plain "label.eth"', () => {
-    for (const bad of ['freetube', 'FreeTube.eth', 'sub.freetube.eth', 'freetube.com', 'freetube.eth,MAP evil.com 1.2.3.4:80']) {
+  it('drops a name that is not dot-separated lowercase labels ending in .eth', () => {
+    for (const bad of BAD_NAMES) {
       expect(buildSecureOriginList({ [bad]: 8875 })).toBe('')
     }
   })
@@ -59,6 +70,10 @@ describe('buildSecureOriginList', () => {
   // loopback. An entry accepted by one and dropped by the other would
   // declare a name the machine's real resolver answers to be a secure
   // context.
+  it('lists a multi-label subname', () => {
+    expect(buildSecureOriginList({ 'thelounge.orivonstack.eth': 8875 })).toBe('http://thelounge.orivonstack.eth')
+  })
+
   it('accepts exactly the names host-resolver-rules maps, never a superset', () => {
     const names = { 'freetube.eth': 8875, 'Bad.eth': 1, 'asgardex.eth': 8876, 'nope.eth': 99999 }
     expect(buildSecureOriginList(names)).toBe('http://freetube.eth,http://asgardex.eth')

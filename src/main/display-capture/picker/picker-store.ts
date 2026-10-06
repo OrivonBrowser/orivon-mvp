@@ -10,7 +10,7 @@ import type { PickerSegment } from './picker-model.js'
 export type CardRef =
   | { readonly kind: 'tab', readonly tab: WebContents }
   | { readonly kind: 'window' | 'screen', readonly source: { readonly id: string, readonly name: string } }
-  /** The system dialog lists the sources; the share asks it then. */
+  /** The system dialog lists the sources; it opens when the capture starts, after Share. */
   | { readonly kind: 'portal', readonly segment: 'window' | 'screen' }
 
 export interface Question {

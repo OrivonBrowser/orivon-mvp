@@ -286,47 +286,37 @@ describe('the picker overlay', () => {
       expect(r.getSources).not.toHaveBeenCalled()
     })
 
-    it('does not open the system dialog while a window segment is only in view', async () => {
-      const r = rig({ platform: wayland, hints: { displaySurface: 'window' } })
-      r.open()
-      await r.settle()
+    it('asks the system for nothing at Share either: the choice carries a source id the capture has never been given', async () => {
+      const r = rig({ platform: wayland })
+      const { view, id, answer } = r.open()
+      r.drawn(id)
+      r.handler.request({ type: 'share', id, card: view['cards'].screen[0]['id'], audio: false })
       expect(r.getSources).not.toHaveBeenCalled()
+      expect(await answer).toEqual({ kind: 'screen', source: { id: expect.stringMatching(/^screen:\d+:0$/), name: 'Shared screen' }, systemAudio: false, label: 'Shared screen' })
+      expect(r.close).toHaveBeenCalled()
     })
 
-    it('asks for the one type at Share, without thumbnails, and takes the one source it returns', async () => {
-      const r = rig({ platform: wayland, sources: [source('pipewire:42', 'Some window')] })
+    it('answers a window card with a window choice', async () => {
+      const r = rig({ platform: wayland })
       const { view, id, answer } = r.open()
       r.drawn(id)
       r.handler.request({ type: 'segment', id, segment: 'window' })
       r.handler.request({ type: 'share', id, card: view['cards'].window[0]['id'], audio: false })
-      expect(r.getSources).toHaveBeenCalledWith({ types: ['window'], thumbnailSize: { width: 0, height: 0 }, fetchWindowIcons: false })
-      expect(await answer).toEqual({ kind: 'window', source: { id: 'pipewire:42', name: 'Some window' }, systemAudio: false, label: 'Some window' })
+      expect(await answer).toMatchObject({ kind: 'window', source: { id: expect.stringMatching(/^window:\d+:0$/) }, label: 'Shared window' })
     })
 
-    it.each([['none', () => []], ['two', () => [source('a'), source('b')]], ['an error', () => { throw new Error('Failed to get sources.') }]])('answers no when the system dialog returns %s', async (_name, result) => {
-      const r = rig({ platform: wayland })
-      r.getSources.mockImplementation(async () => result())
-      const { view, id, answer } = r.open()
-      r.drawn(id)
-      r.handler.request({ type: 'share', id, card: view['cards'].screen[0]['id'], audio: false })
-      expect(await answer).toBeNull()
-      expect(r.close).toHaveBeenCalled()
-    })
-
-    it('takes nothing else while the system dialog is open, and ignores its answer once the picker closed', async () => {
-      const r = rig({ platform: wayland })
-      let answerPortal: (sources: RawSource[]) => void = () => {}
-      r.getSources.mockImplementation(async () => await new Promise<RawSource[]>((resolve) => { answerPortal = resolve }))
-      const { view, id } = r.open()
-      r.drawn(id)
-      r.handler.request({ type: 'share', id, card: view['cards'].screen[0]['id'], audio: false })
-      r.handler.request({ type: 'share', id, card: view['cards'].tab[1]['id'], audio: false })
-      r.handler.request({ type: 'cancel', id })
-      expect(r.store.get(id)?.settled).toBe(false)
-      r.handler.closed?.('escape')
-      answerPortal([source('s', 'Late')])
-      await r.settle()
-      expect(r.close).not.toHaveBeenCalled()
+    it('gives every share a different source id, above any id the capture numbers itself', async () => {
+      const ids: number[] = []
+      for (let i = 0; i < 2; i++) {
+        const r = rig({ platform: wayland })
+        const { view, id, answer } = r.open()
+        r.drawn(id)
+        r.handler.request({ type: 'share', id, card: view['cards'].screen[0]['id'], audio: false })
+        const choice = await answer
+        ids.push(Number(/^screen:(\d+):0$/.exec(choice !== null && 'source' in choice ? choice.source.id : '')?.[1]))
+      }
+      expect(new Set(ids).size).toBe(2)
+      expect(ids.every((n) => n > 2 ** 40)).toBe(true)
     })
   })
 

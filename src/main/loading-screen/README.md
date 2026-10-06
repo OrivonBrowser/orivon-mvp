@@ -27,9 +27,6 @@ and `destroyed`. The rule it applies, and the overlay's validation, need nothing
 
 ## Design notes
 
-The decision to word a loading screen in a descriptor and draw it in the shell is `d-0522` in
-[`../../../docs/decisions/decision-log.md`](../../../docs/decisions/decision-log.md).
-
 **The screen waits 300 ms.** A load that finishes sooner (a cached site, a reload) never flashes it. The wait
 restarts when a newer navigation to a screened address begins before the screen is up; once it is up, a newer
 one changes its address at once.

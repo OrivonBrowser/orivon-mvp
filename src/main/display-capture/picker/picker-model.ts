@@ -98,8 +98,18 @@ export function budgetImages (cards: readonly PickerCard[]): PickerCard[] {
 /** The one card of a segment the desktop portal answers for. */
 export function portalCardText (segment: 'window' | 'screen'): { label: string, sub: string } {
   return segment === 'window'
-    ? { label: 'Choose a window in the system dialog', sub: 'Orivon asks your system to list your windows.' }
-    : { label: 'Choose a screen in the system dialog', sub: 'Orivon asks your system to list your screens.' }
+    ? { label: 'Choose a window in the system dialog', sub: 'Your system asks which window once you press Share.' }
+    : { label: 'Choose a screen in the system dialog', sub: 'Your system asks which screen once you press Share.' }
+}
+
+/** Far above the ids the capture library numbers its own sources with. */
+const PORTAL_ID_BASE = 2 ** 40
+let portalIds = 0
+
+/** A source id the capture has never seen, so it has no stored pick to restore and asks the system dialog itself; each call is new because a reused id would restore the last pick without asking. See README.md's Design notes. */
+export function portalSourceId (segment: 'window' | 'screen'): string {
+  portalIds += 1
+  return `${segment}:${String(PORTAL_ID_BASE + portalIds)}:0`
 }
 
 export const PERMISSION_TEXT = 'Orivon needs Screen Recording permission to list your windows and screens.'
