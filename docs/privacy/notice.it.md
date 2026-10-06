@@ -158,9 +158,11 @@ come ogni server a cui ti colleghi, e hanno proprie informative sulla privacy.
 
 ## Do Not Track e Global Privacy Control
 
-Orivon Browser non ti traccia tra un sito e l'altro e non fa pubblicità. Quando attivi **Do Not
-Track** o **Global Privacy Control** nelle Impostazioni (entrambi spenti in questa versione), il
-browser aggiunge `DNT: 1` e `Sec-GPC: 1` alle richieste che fa ai siti che visiti. La telemetria
+Orivon Browser non ti traccia tra un sito e l'altro e non fa pubblicità. **Global Privacy
+Control** è attivo finché non lo spegni nelle Impostazioni: ogni sito che visiti riceve `Sec-GPC: 1`
+nelle sue richieste e legge `navigator.globalPrivacyControl` come `true`, e questo gli chiede di
+non vendere né condividere i tuoi dati. **Do Not Track** è spento finché non lo attivi; allora il
+browser aggiunge `DNT: 1`. La telemetria
 di Orivon non guarda quei segnali: segue la scelta sulla telemetria che fai nel browser, che è più
 rigorosa, perché è sempre la tua risposta esplicita.
 

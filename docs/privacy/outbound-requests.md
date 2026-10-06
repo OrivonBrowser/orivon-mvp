@@ -40,7 +40,7 @@ Settings.
 |---|---|---|---|---|---|
 | Search suggestions | The text typed in the address bar, after a short pause, when it is a plain search (not an address, not a keyword search); never in a private window; no cookie, no referrer | The default search engine's suggestion address | No: the typed search text, not a site | `search.suggestions`, off by default | `src/main/omnibox/suggest-fetch.ts:54`; `src/main/omnibox/suggest-net.ts:6`; `src/main/browsing/search-engines.ts:20-27`; `src/main/settings/schema.ts:46` |
 | Secure DNS | Every host name a page needs | Cloudflare, Quad9, or the system's automatic upgrade | **reveals site**: every host name looked up, to the chosen resolver; the person chose it as a trade for the local network not seeing the names | `privacy.secureDns`, off by default | `src/main/privacy/secure-dns.ts:12-13`; `src/main/settings/schema.ts:60` |
-| Do Not Track and Global Privacy Control | A `DNT: 1` and a `Sec-GPC: 1` header on web requests | The sites the person visits | It is a header on requests the person's pages already make; no new request | `privacy.doNotTrack`, `privacy.globalPrivacyControl`, off by default | `src/main/privacy/privacy-headers.ts:37-41`; `src/main/settings/schema.ts:57-58` |
+| Do Not Track and Global Privacy Control | A `DNT: 1` header, and `Sec-GPC: 1` with `navigator.globalPrivacyControl` | The sites the person visits | It is a signal on requests and pages the person already loads; no new request | `privacy.doNotTrack` (off by default), `privacy.globalPrivacyControl` (on by default) | `src/main/privacy/privacy-headers.ts`; `src/main/privacy/gpc-switch.ts`; `src/main/settings/schema.ts:57-58` |
 
 ## Not a request of Orivon's own
 
