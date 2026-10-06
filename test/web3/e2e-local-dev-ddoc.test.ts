@@ -2,7 +2,8 @@
 // Level 2 (src/main/dev/local-ddoc.ts): no domain record can anchor a local
 // address's tree, so the tree it serves is assumed to hold. Proven for both
 // kinds of local origin, a loopback URL and a developer `.eth` name mapped
-// to loopback by the names file, against the real shield, mark and Web3 Score
+// to loopback by the names file (one label, and an ENS subname as
+// orivon-ports names its apps), against the real shield, mark and Web3 Score
 // page, which must say the level counts only in developer mode. A local
 // origin that serves no tree stays Level 1.
 //
@@ -21,9 +22,10 @@ import { findChrome, waitFor } from '../support/smoke-helpers.mjs'
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, navigateToFixture, readShield, runPhase } from '../support/e2e-helpers.js'
 
 const ETH_NAME = 'ddocprobe.eth'
+const ETH_SUBNAME = 'ddocprobe.orivonstack.eth'
 const TREE = JSON.stringify({ bundleHash: 'sha256:' + 'a'.repeat(64), leaves: { '/index.html': 'sha256:' + 'b'.repeat(64) } })
 
-const TEST_TIMEOUT_MS = ADDRESS_BAR_STABLE_TIMEOUT_MS * 3 + DEFAULT_ACTION_TIMEOUT_MS * 9 + APP_CLOSE_RACE_MS + 60_000
+const TEST_TIMEOUT_MS = ADDRESS_BAR_STABLE_TIMEOUT_MS * 4 + DEFAULT_ACTION_TIMEOUT_MS * 12 + APP_CLOSE_RACE_MS + 60_000
 
 afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
@@ -68,7 +70,7 @@ async function readScore (app: ElectronApplication): Promise<Reading> {
   return { level, mark, ...page }
 }
 
-it('in developer mode, a loopback URL and a dev .eth name that serve a DDOC tree are Level 2, named as developer mode; one serving none stays Level 1', async () => {
+it('in developer mode, a loopback URL and dev .eth names (a subname too) that serve a DDOC tree are Level 2, named as developer mode; one serving none stays Level 1', async () => {
   await runPhase('local-dev-ddoc', async (check) => {
     const withTree = await startSite('ddoc fixture', true)
     const withoutTree = await startSite('plain fixture', false)
@@ -76,10 +78,10 @@ it('in developer mode, a loopback URL and a dev .eth name that serve a DDOC tree
     let app: ElectronApplication | undefined
     try {
       const namesFile = join(dir, 'names.json')
-      writeFileSync(namesFile, JSON.stringify({ [ETH_NAME]: withTree.port }))
+      writeFileSync(namesFile, JSON.stringify({ [ETH_NAME]: withTree.port, [ETH_SUBNAME]: withTree.port }))
       app = await launchElectron({ appPath: '.', env: { ORIVON_DEV_ORIGINS: '1', ORIVON_ETH_NAMES_FILE: namesFile } })
 
-      for (const url of [`http://127.0.0.1:${String(withTree.port)}/`, `http://${ETH_NAME}/`]) {
+      for (const url of [`http://127.0.0.1:${String(withTree.port)}/`, `http://${ETH_NAME}/`, `http://${ETH_SUBNAME}/`]) {
         await navigateToFixture(app, url, 'ddoc fixture')
         const reading = await readScore(app)
         check(`${url}: the shield paints Level 2, marked "Web2.5" (${reading.level}/${reading.mark})`, reading.level === '2' && reading.mark === 'Web2.5')
