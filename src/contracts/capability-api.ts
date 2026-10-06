@@ -343,7 +343,10 @@ export interface OrivonFs {
  * for both.
  */
 export interface OrivonId {
-  /** derive(seed, "app", origin). Silent, no prompt. A local file's origin is its `file:` URL; its keys change at quit. */
+  /**
+   * derive(seed, "app", origin). Silent, no prompt. A document opened from this computer is keyed on its
+   * `file:` URL, and its keys change when Orivon quits.
+   */
   publicKey(opts: { curve: string }): Promise<Uint8Array>
   /** Signs `payload` with the same per-origin key `publicKey` returns for this `curve`. Silent, no prompt. */
   sign(opts: { curve: string, payload: Uint8Array }): Promise<Uint8Array>
@@ -482,7 +485,9 @@ export interface OrivonSecrets {
    */
   available(): Promise<boolean>
   /**
-   * Encrypts `plaintext` with a key derived for this origin alone. A local file's key ends at quit.
+   * Encrypts `plaintext` with a key derived for this origin alone. A document opened from this
+   * computer gets a key that ends when Orivon quits, so after a restart `decrypt` rejects its
+   * ciphertext as `'invalid'`.
    *
    * Rejects `'denied'` with no live `secrets` grant; `'unavailable'` when
    * the seed is session-only (see `available()`); `'limit'` past
