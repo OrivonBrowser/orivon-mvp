@@ -43,9 +43,13 @@ export interface PickerAudio {
   readonly systemDefault: boolean
 }
 
-/** The segments offered: the page may ask for no screens. */
-export function segmentsFor (hints: DisplayHints): PickerSegment[] {
-  return hints.monitorTypeSurfaces === 'exclude' ? ['tab', 'window'] : ['tab', 'window', 'screen']
+/**
+ * The segments offered: the page may ask for no screens. Where the system's dialog chooses (`portal`), it offers windows
+ * and screens together, so one segment opens it, unless the page asked for no screens.
+ */
+export function segmentsFor (hints: DisplayHints, mode: SegmentMode = 'list'): PickerSegment[] {
+  if (hints.monitorTypeSurfaces === 'exclude') return ['tab', 'window']
+  return mode === 'portal' ? ['tab', 'screen'] : ['tab', 'window', 'screen']
 }
 
 /** The segment the picker opens on: the surface the page named, or this tab when it prefers the current tab; otherwise tabs. */
@@ -53,7 +57,9 @@ export function defaultSegment (hints: DisplayHints, segments: readonly PickerSe
   const wanted: PickerSegment = hints.preferCurrentTab === true && hints.selfBrowserSurface !== 'exclude'
     ? 'tab'
     : hints.displaySurface === 'window' ? 'window' : hints.displaySurface === 'monitor' ? 'screen' : 'tab'
-  return segments.includes(wanted) ? wanted : 'tab'
+  if (segments.includes(wanted)) return wanted
+  // The system's dialog that also lists windows sits in the screen segment.
+  return wanted === 'window' && segments.includes('screen') ? 'screen' : 'tab'
 }
 
 export function segmentMode (platform: PickerPlatform): SegmentMode {
@@ -99,7 +105,7 @@ export function budgetImages (cards: readonly PickerCard[]): PickerCard[] {
 export function portalCardText (segment: 'window' | 'screen'): { label: string, sub: string } {
   return segment === 'window'
     ? { label: 'Choose a window in the system dialog', sub: 'Your system asks which window once you press Share.' }
-    : { label: 'Choose a screen in the system dialog', sub: 'Your system asks which screen once you press Share.' }
+    : { label: 'Choose a window or screen in the system dialog', sub: 'Your system asks which one once you press Share.' }
 }
 
 /** Far above the ids the capture library numbers its own sources with. */

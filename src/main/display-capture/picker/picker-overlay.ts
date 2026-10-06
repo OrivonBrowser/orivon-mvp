@@ -119,7 +119,7 @@ export function createPicker (deps: PickerDeps, { window, services, close, send 
 
   /** Wayland: the choice names a source the capture has never seen, so the system's own dialog opens during the page's call and the person picks there. */
   function shareFromPortal (asked: Question, which: 'window' | 'screen', systemAudio: boolean): void {
-    finish(asked, { kind: which, source: { id: portalSourceId(which), name: PORTAL_LABEL[which] }, systemAudio, label: PORTAL_LABEL[which] })
+    finish(asked, { kind: which, source: { id: portalSourceId(which), name: PORTAL_LABEL[which] }, systemAudio, label: PORTAL_LABEL[which], portal: true })
   }
 
   /** Chromium captures only a tab that is in front of its window, so the tab picked is brought there as the choice resolves (as Chrome does). */
@@ -172,10 +172,10 @@ export function createPicker (deps: PickerDeps, { window, services, close, send 
       question = asked
       const platform = deps.platform()
       const mode = segmentMode(platform)
-      const segments = segmentsFor(asked.request.hints)
+      const segments = segmentsFor(asked.request.hints, mode)
       const first = defaultSegment(asked.request.hints, segments)
       const { cards: tabs, offers } = tabCards(asked)
-      const other = (which: 'window' | 'screen'): PickerCard[] => mode === 'portal' ? [portalCard(asked, which)] : []
+      const other = (which: 'window' | 'screen'): PickerCard[] => mode === 'portal' && segments.includes(which) ? [portalCard(asked, which)] : []
       feed = createSourceFeed(
         async (type) => await deps.getSources({ types: [type], thumbnailSize: THUMB_SIZE, fetchWindowIcons: type === 'window' }),
         deliver,
@@ -209,7 +209,7 @@ export function createPicker (deps: PickerDeps, { window, services, close, send 
       if (asked.type === 'cancel') {
         finish(open, null)
       } else if (asked.type === 'segment') {
-        if (segmentsFor(open.request.hints).includes(asked.segment)) enter(asked.segment)
+        if (segmentsFor(open.request.hints, segmentMode(deps.platform())).includes(asked.segment)) enter(asked.segment)
       } else if (asked.type === 'open-settings') {
         if (segmentMode(deps.platform()) === 'permission') deps.openSettings(SCREEN_SETTINGS_URL)
       } else if (asked.type === 'share' && shownAt !== null && now() - shownAt >= SHARE_GUARD_MS && keys.quietFor() >= SHARE_GUARD_MS) {

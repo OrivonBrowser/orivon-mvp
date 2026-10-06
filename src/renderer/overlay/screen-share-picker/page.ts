@@ -126,7 +126,7 @@ export const screenSharePickerPage: OverlayPage = {
         replaceChildren(panel, h('p', { className: 'picker-empty', role: 'status' }, loaded[segment] ? `No ${SEGMENT_NOUN[segment]} to share.` : `Looking for ${SEGMENT_NOUN[segment]}...`))
       } else {
         const grid = h('ul', { className: 'picker-grid', role: 'listbox', tabIndex: 0 }, ...list.map(cardElement))
-        grid.setAttribute('aria-label', SEGMENT_LABEL[segment])
+        grid.setAttribute('aria-label', labelOf(segment))
         grid.style.setProperty('--picker-columns', String(COLUMNS))
         replaceChildren(panel, grid)
         const chosen = selection[segment]
@@ -145,10 +145,15 @@ export const screenSharePickerPage: OverlayPage = {
       audioBox.checked = forTab ? tabAudio : systemAudio
     }
 
+    /** Where the system's dialog chooses and no window segment is offered, the screen segment's dialog lists windows too. */
+    function labelOf (which: PickerSegment): string {
+      return which === 'screen' && view !== null && view.modes.screen === 'portal' && !view.segments.includes('window') ? 'Window or screen' : SEGMENT_LABEL[which]
+    }
+
     function drawSegments (): void {
       if (view === null) return
       const buttons = view.segments.map((which) => {
-        const button = h('button', { type: 'button', textContent: SEGMENT_LABEL[which], onclick: () => { switchTo(which) } })
+        const button = h('button', { type: 'button', textContent: labelOf(which), onclick: () => { switchTo(which) } })
         button.setAttribute('role', 'tab')
         button.setAttribute('aria-selected', String(which === segment))
         button.setAttribute('aria-pressed', String(which === segment))
