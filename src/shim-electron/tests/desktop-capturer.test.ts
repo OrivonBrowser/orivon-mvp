@@ -8,7 +8,10 @@ function fakeStream (label = 'Entire screen'): MediaStream & { track: FakeTrack 
   return { getTracks: () => [track], getVideoTracks: () => [track], track } as unknown as MediaStream & { track: FakeTrack }
 }
 
+type Legacy = (constraints: MediaStreamConstraints, success?: (stream: MediaStream) => void, failure?: (error: unknown) => void) => void
+
 interface Fakes {
+  navigator: { webkitGetUserMedia: ReturnType<typeof vi.fn>, getUserMedia: ReturnType<typeof vi.fn> } & { [key: string]: unknown }
   devices: MediaDevices
   getDisplayMedia: ReturnType<typeof vi.fn>
   getUserMedia: ReturnType<typeof vi.fn>
@@ -21,6 +24,7 @@ function fakes (display: () => Promise<MediaStream>, frame = { videoWidth: 1600,
   const getDisplayMedia = vi.fn(display)
   const getUserMedia = vi.fn(async () => fakeStream('camera'))
   const devices = { getDisplayMedia, getUserMedia } as unknown as MediaDevices
+  const navigator = { webkitGetUserMedia: vi.fn(), getUserMedia: vi.fn() }
   const canvases: Fakes['canvases'] = []
   const videos: Fakes['videos'] = []
   const document = {
@@ -43,8 +47,8 @@ function fakes (display: () => Promise<MediaStream>, frame = { videoWidth: 1600,
     }
   } as unknown as Document
   return {
-    f: { devices, getDisplayMedia, getUserMedia, canvases, videos },
-    env: { mediaDevices: devices, document, random: (() => { let n = 0; return () => `id${++n}` })() }
+    f: { navigator, devices, getDisplayMedia, getUserMedia, canvases, videos },
+    env: { mediaDevices: devices, navigator: navigator as unknown as Parameters<typeof createDesktopCapturer>[0]['navigator'], document, random: (() => { let n = 0; return () => `id${++n}` })() }
   }
 }
 
@@ -233,5 +237,77 @@ describe('a stream nobody asked for', () => {
     await f.devices.getUserMedia(desktop(source!.id))
     vi.advanceTimersByTime(UNUSED_STREAM_MS * 2)
     expect(stream.track.stop).not.toHaveBeenCalled()
+  })
+})
+
+describe.each(['webkitGetUserMedia', 'getUserMedia'] as const)('the callback form, navigator.%s', (name) => {
+  const call = (f: Fakes, constraints: unknown): { success: ReturnType<typeof vi.fn>, failure: ReturnType<typeof vi.fn> } => {
+    const success = vi.fn()
+    const failure = vi.fn()
+    ;(f.navigator[name] as unknown as Legacy)(constraints as MediaStreamConstraints, success, failure)
+    return { success, failure }
+  }
+
+  it('serves a held id the stream getSources produced to the success callback, once, and never reaches the browser', async () => {
+    const stream = fakeStream()
+    const { f, env } = fakes(async () => stream)
+    const original = f.navigator[name]
+    const [source] = await createDesktopCapturer(env).getSources()
+    const served = call(f, desktop(source!.id))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(served.success).toHaveBeenCalledWith(stream)
+    expect(served.failure).not.toHaveBeenCalled()
+    const again = call(f, desktop(source!.id))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(again.success).not.toHaveBeenCalled()
+    expect(again.failure).toHaveBeenCalledWith(expect.objectContaining({ name: 'NotAllowedError' }))
+    expect(original).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['an id nothing is held for', desktop('screen:0:0')],
+    ['a tab source', { video: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: 'x' } } }],
+    ['desktop audio alone', { audio: { mandatory: { chromeMediaSource: 'desktop' } } }]
+  ])('refuses %s through the error callback and never reaches the browser, even before the first getSources', async (_label, constraints) => {
+    const { f, env } = fakes(async () => fakeStream())
+    const original = f.navigator[name]
+    createDesktopCapturer(env)
+    const refused = call(f, constraints)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(refused.failure).toHaveBeenCalledWith(expect.objectContaining({ name: 'NotAllowedError' }))
+    expect(original).not.toHaveBeenCalled()
+  })
+
+  it('refuses without a callback and throws nothing', () => {
+    const { f, env } = fakes(async () => fakeStream())
+    createDesktopCapturer(env)
+    expect(() => { (f.navigator[name] as unknown as Legacy)(desktop('screen:0:0')) }).not.toThrow()
+  })
+
+  it('passes every other call through with its callbacks, and keeps `this`', () => {
+    const { f, env } = fakes(async () => fakeStream())
+    const original = f.navigator[name]
+    createDesktopCapturer(env)
+    const success = vi.fn()
+    const failure = vi.fn()
+    ;(f.navigator[name] as unknown as Legacy)({ audio: true }, success, failure)
+    expect(original).toHaveBeenCalledWith({ audio: true }, success, failure)
+    expect(original.mock.contexts[0]).toBe(f.navigator)
+  })
+
+  it('wraps once however many capturers are built over the same navigator', async () => {
+    const { f, env } = fakes(async () => fakeStream())
+    const original = f.navigator[name]
+    createDesktopCapturer(env)
+    createDesktopCapturer(env)
+    ;(f.navigator[name] as unknown as Legacy)({ audio: true })
+    expect(original).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves a navigator without the form alone', () => {
+    const { f, env } = fakes(async () => fakeStream())
+    delete f.navigator[name]
+    expect(() => createDesktopCapturer(env)).not.toThrow()
+    expect(f.navigator[name]).toBeUndefined()
   })
 })

@@ -55,11 +55,15 @@ ported apps use most; naming every real Electron export is not this package's jo
 the stream under an id `orivon-shared:<random>` and resolves that one source: the person chose it, so there is no
 list to enumerate. The app hands the id back through the legacy
 `getUserMedia({ video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId } } })` call, which the shim
-answers from the held stream once. The picker captures video only: audio asked beside it is dropped, and a
+answers from the held stream once, in its promise form or in the callback forms `navigator.webkitGetUserMedia` and
+`navigator.getUserMedia` (success and error callbacks, a turn later), so a legacy call never reaches the browser. The
+picker captures video only: audio asked beside it is dropped, and a
 `getSources` stream carries none. Any other `chromeMediaSource` call (an id nothing holds, `'tab'`, desktop audio
 alone) rejects with `NotAllowedError`, because Electron would otherwise hand that legacy request the entire screen
 with no picker; every other `getUserMedia` call passes through. A stream the app does not take within 60 seconds is
-stopped. A cancelled picker resolves `[]`. `thumbnail` is one frame at `thumbnailSize` (150 by 150 when omitted,
+stopped. A cancelled picker resolves `[]`. An app that calls `getSources` to build its own picker or to refresh
+thumbnails reopens Orivon's picker each time, gets `[]` after a refusal until the page has a fresh gesture, and each
+source the person picks holds a live capture (the sharing indicator stays on) until the app takes it or 60 seconds pass. `thumbnail` is one frame at `thumbnailSize` (150 by 150 when omitted,
 scaled to fit, empty at 0 by 0) with `toDataURL`, `toPNG`, `toJPEG`, `isEmpty` and `getSize`; `display_id` is `''`,
 `appIcon` is `null`, and `fetchWindowIcons` has nothing to fetch. The app needs `media.screen` declared, and
 `navigator.mediaDevices` (a secure context) to be present.

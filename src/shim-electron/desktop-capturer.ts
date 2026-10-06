@@ -1,8 +1,9 @@
 // Electron's `desktopCapturer` on top of the page's own `getDisplayMedia`, so Orivon's picker is what chooses what is
 // shared (ADR-0055). `getSources` runs the picker and resolves the one thing the person chose, as a source whose id
 // the app then hands back through the legacy `getUserMedia({ video: { mandatory: { chromeMediaSource: 'desktop',
-// chromeMediaSourceId } } })` call; the wrapper below answers that call from the stream the picker produced and
-// refuses every other desktop capture, which would reach the display with no picker. Pure over `DesktopCapturerEnv`,
+// chromeMediaSourceId } } })` call, in its promise form or in the callback forms `navigator.webkitGetUserMedia` and
+// `navigator.getUserMedia`; the wrappers below answer that call from the stream the picker produced and refuse
+// every other desktop capture, which would reach the display with no picker. Pure over `DesktopCapturerEnv`,
 // so every branch is unit-tested with fakes.
 
 export interface DesktopCapturerSource {
@@ -32,8 +33,16 @@ export interface ElectronDesktopCapturer {
   getSources: (options?: SourcesOptions) => Promise<DesktopCapturerSource[]>
 }
 
+/** The callback forms of `getUserMedia` an old app calls on `navigator`; each one present is wrapped. */
+export interface LegacyNavigator {
+  webkitGetUserMedia?: LegacyGetUserMedia
+  getUserMedia?: LegacyGetUserMedia
+}
+type LegacyGetUserMedia = (constraints: MediaStreamConstraints, success?: (stream: MediaStream) => void, failure?: (error: unknown) => void) => void
+
 export interface DesktopCapturerEnv {
   readonly mediaDevices: MediaDevices | undefined
+  readonly navigator?: LegacyNavigator | undefined
   readonly document: Pick<Document, 'createElement'>
   readonly random: () => string
 }
@@ -67,12 +76,16 @@ function legacySource (track: unknown): { source?: unknown, id?: unknown } | und
   return { source, id: outer.chromeMediaSourceId ?? inner?.chromeMediaSourceId }
 }
 
-function holdingFor (devices: MediaDevices): Map<string, Held> {
-  let map = held.get(devices)
+/** One held map per `mediaDevices`, or per `navigator` when the page has no devices; every form of the call shares it. */
+function holdingFor (env: Pick<DesktopCapturerEnv, 'mediaDevices' | 'navigator'>): Map<string, Held> | undefined {
+  const owner: object | undefined = env.mediaDevices ?? env.navigator
+  if (owner === undefined) return undefined
+  let map = held.get(owner)
   if (map === undefined) {
     map = new Map()
-    held.set(devices, map)
-    wrapGetUserMedia(devices, map)
+    held.set(owner, map)
+    if (env.mediaDevices !== undefined) wrapGetUserMedia(env.mediaDevices, map)
+    if (env.navigator !== undefined) for (const name of ['webkitGetUserMedia', 'getUserMedia'] as const) wrapLegacy(env.navigator, name, map)
   }
   return map
 }
@@ -86,18 +99,40 @@ function release (map: Map<string, Held>, id: string, stop: boolean): MediaStrea
   return found.stream
 }
 
+/** What a `getUserMedia` call for these constraints gets: a held stream, a refusal, or nothing said (every other call). */
+function answerFor (map: Map<string, Held>, constraints: MediaStreamConstraints | undefined): MediaStream | DOMException | undefined {
+  const video = legacySource(constraints?.video)
+  const audio = legacySource(constraints?.audio)
+  if (video === undefined && audio === undefined) return undefined
+  // Only a held id is served; the audio half of that call is dropped, which the README says.
+  if (video?.source === 'desktop' && typeof video.id === 'string' && (audio === undefined || audio.source === 'desktop')) {
+    const stream = release(map, video.id, false)
+    if (stream !== undefined) return stream
+  }
+  return notAllowed('Orivon shares a screen only through its own picker: call desktopCapturer.getSources first, and pass the id it returned once.')
+}
+
 function wrapGetUserMedia (devices: MediaDevices, map: Map<string, Held>): void {
   const original = devices.getUserMedia.bind(devices)
   devices.getUserMedia = async function getUserMedia (constraints?: MediaStreamConstraints): Promise<MediaStream> {
-    const video = legacySource(constraints?.video)
-    const audio = legacySource(constraints?.audio)
-    if (video === undefined && audio === undefined) return await original(constraints)
-    // Only a held id is served; the audio half of that call is dropped, which the README says.
-    if (video?.source === 'desktop' && typeof video.id === 'string' && (audio === undefined || audio.source === 'desktop')) {
-      const stream = release(map, video.id, false)
-      if (stream !== undefined) return stream
-    }
-    throw notAllowed('Orivon shares a screen only through its own picker: call desktopCapturer.getSources first, and pass the id it returned once.')
+    const answer = answerFor(map, constraints)
+    if (answer === undefined) return await original(constraints)
+    if (answer instanceof DOMException) throw answer
+    return answer
+  }
+}
+
+/** The callback form: served or refused through its callbacks, a turn later as the browser's own would be. */
+function wrapLegacy (navigator: LegacyNavigator, name: 'webkitGetUserMedia' | 'getUserMedia', map: Map<string, Held>): void {
+  const original = navigator[name]
+  if (typeof original !== 'function') return
+  navigator[name] = function getUserMedia (constraints, success, failure) {
+    const answer = answerFor(map, constraints)
+    if (answer === undefined) { original.call(navigator, constraints, success, failure); return }
+    queueMicrotask(() => {
+      if (answer instanceof DOMException) failure?.(answer)
+      else success?.(answer)
+    })
   }
 }
 
@@ -176,13 +211,13 @@ function surfaceHint (types: readonly string[] | undefined): 'window' | 'monitor
 
 export function createDesktopCapturer (env: DesktopCapturerEnv): ElectronDesktopCapturer {
   // Wrapped now, so a refused desktop capture is refused even before the first `getSources`.
-  if (env.mediaDevices !== undefined) holdingFor(env.mediaDevices)
+  holdingFor(env)
 
   return {
     async getSources (options) {
       const devices = env.mediaDevices
-      if (devices === undefined) throw new TypeError('desktopCapturer.getSources needs navigator.mediaDevices, which this page does not have (a secure context is required).')
-      const map = holdingFor(devices)
+      const map = holdingFor(env)
+      if (devices === undefined || map === undefined) throw new TypeError('desktopCapturer.getSources needs navigator.mediaDevices, which this page does not have (a secure context is required).')
       const hint = surfaceHint(options?.types)
       let stream: MediaStream
       try {

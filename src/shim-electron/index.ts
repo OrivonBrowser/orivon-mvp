@@ -12,7 +12,7 @@
 // ordering every other page-facing Orivon consumer already relies on.
 
 import { createApp } from './app.js'
-import { createDesktopCapturer } from './desktop-capturer.js'
+import { createDesktopCapturer, type LegacyNavigator } from './desktop-capturer.js'
 import { createDialog } from './dialog.js'
 import { createIpc } from './ipc.js'
 import { createSafeStorage } from './safe-storage.js'
@@ -48,6 +48,7 @@ export const dialog = createDialog(orivon)
 export const safeStorage = createSafeStorage(orivon)
 export const desktopCapturer = refusingProxy(createDesktopCapturer({
   mediaDevices: (globalThis as { navigator?: Navigator }).navigator?.mediaDevices,
+  navigator: (globalThis as { navigator?: LegacyNavigator }).navigator,
   document: { createElement: ((tag: string) => document.createElement(tag)) as Document['createElement'] },
   random: () => crypto.randomUUID()
 }), (prop) => notConsidered(`desktopCapturer.${prop}`))
