@@ -249,10 +249,9 @@ describe('a local file runs in the local-files session', () => {
     expect(partitionChanged(FILE, appPartition)).toEqual({ to: LOCAL_FILES_PARTITION })
   })
 
-  it('a local file is an app tab only once the broker has registered that exact file', () => {
-    expect(appTabArgsFor(FILE, brokerWith({ registered: [FILE] }))).toEqual(['--orivon-app-tab'])
+  it('a local file is never an app tab, registered or not', () => {
+    expect(appTabArgsFor(FILE, brokerWith({ registered: [FILE] }))).toBeUndefined()
     expect(appTabArgsFor(FILE, brokerWith({ registered: [] }))).toBeUndefined()
-    expect(appTabArgsFor('file:///home/u/app/other.html', brokerWith({ registered: [FILE] }))).toBeUndefined()
   })
 })
 

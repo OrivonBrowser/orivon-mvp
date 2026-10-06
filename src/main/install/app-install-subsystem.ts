@@ -145,13 +145,14 @@ export const appInstallSubsystem: Subsystem = {
       intervalMs: updateWatchMs() ?? OPEN_TAB_CHECK_MS
     })
     const localFileConsent = createLocalFileConsentPrompt()
+    const localFileRefusals = new Set<string>()
     publishInstallApp(ctx, async (hintingOrigin, hintedUrl, caller) => {
       // A file on this computer is no origin a loader can install or a server can vouch for: it is registered
       // against a manifest beside it and let use Orivon permissions by a double press (./local-file-grant.ts).
       if (isLocalFileKey(hintingOrigin)) {
         const records = localFileApps()
         if (records === undefined) return { outcome: 'rejected', reason: 'the record of local files is not available' }
-        const outcome = await withOriginQueue(hintingOrigin, async () => await grantLocalFile({ broker, records, consent: localFileConsent }, hintingOrigin, hintedUrl, caller))
+        const outcome = await withOriginQueue(hintingOrigin, async () => await grantLocalFile({ broker, records, consent: localFileConsent, refused: localFileRefusals }, hintingOrigin, hintedUrl, caller))
         if (outcome.outcome === 'rejected') console.warn(`[app-install] permissions for a local file refused for ${hintingOrigin}: ${outcome.reason}`)
         return outcome
       }

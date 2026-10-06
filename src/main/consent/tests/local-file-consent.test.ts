@@ -39,7 +39,7 @@ describe('createLocalFileConsentPrompt', () => {
     expect(allowed).toBe(true)
 
     const spec = specOf()
-    expect(spec).toMatchObject({ kind: 'consent', warning: true, title: LOCAL_FILE_CONSENT_TITLE, buttons: ["Don't allow", 'Double-click to allow'], cancelId: 0, doublePress: [1], focus: 'dialog' })
+    expect(spec).toMatchObject({ kind: 'consent', warning: true, title: LOCAL_FILE_CONSENT_TITLE, buttons: ["Don't allow", 'Allow (press twice)'], cancelId: 0, doublePress: [1], focus: 'dialog' })
     expect(LOCAL_FILE_CONSENT_TITLE).toBe('Let a file on this computer use Orivon permissions?')
     const text = `${String(spec['message'])}\n${String(spec['detail'])}`
     expect(text).toContain('Orivon cannot check files on your computer: no Web3 Score, no pinned copy.')

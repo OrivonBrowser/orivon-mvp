@@ -1,4 +1,4 @@
-// "Delete data" for a file opened from this computer: its grants, its session, its folder of saved files and keys, and
+// "Delete data" for a file opened from this computer: its grants, its session, its folder of saved files, and
 // its record, so that it is a file nobody has let use Orivon permissions again. What the page stored while it shared the
 // local-files session with every other file is that session's, and has its own button (the privacy page).
 import { rm } from 'node:fs/promises'

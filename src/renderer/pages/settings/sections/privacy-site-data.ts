@@ -21,7 +21,7 @@ export const privacySiteDataRows: readonly Row[] = [
   {
     id: 'local-files',
     label: 'Files on this computer',
-    help: 'Files you let use Orivon permissions. Deleting one removes what it may do, the files and keys it saved, and its stored data; the file itself is not touched.',
+    help: 'Files you let use Orivon permissions. Deleting one removes what it may do, the files it saved, and its stored data; the file itself is not touched.',
     keywords: ['local files', 'file', 'html', 'computer', 'permissions', 'delete', 'saved data'],
     control: { type: 'custom', wide: true, render: renderLocalFiles }
   },

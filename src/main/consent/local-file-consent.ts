@@ -50,7 +50,7 @@ export function createLocalFileConsentPrompt (): InstallConsentPrompt {
         title: LOCAL_FILE_CONSENT_TITLE,
         message: MESSAGE,
         detail,
-        buttons: ["Don't allow", 'Double-click to allow'],
+        buttons: ["Don't allow", 'Allow (press twice)'],
         cancelId: 0,
         doublePress: [1],
         focus: 'dialog'

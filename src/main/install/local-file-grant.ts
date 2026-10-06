@@ -1,6 +1,7 @@
 // A file on this computer is let use Orivon permissions: its manifest is read from beside it, the file is registered
-// against it, and the person is asked once with a double press (`../consent/local-file-consent.ts`). A Yes records the
-// file (`../local-files/local-file-apps.ts`), which is what moves it to a session of its own and lets it hold grants.
+// against it, and the person is asked with a double press (`../consent/local-file-consent.ts`); a No holds for the rest
+// of the run. A Yes records the file (`../local-files/local-file-apps.ts`), which is what moves it to a session of its
+// own and lets it hold grants.
 //
 // Nothing here trusts the file: its manifest is read only from under the folder it lies in, through links that stay in
 // that folder, no larger than a manifest may be; and grants live under the file's exact path, so a different file saved
@@ -28,6 +29,8 @@ export interface LocalFileGrantDeps {
   /** The record of the files let use Orivon permissions (`LocalFileApps`): `add` is false when it could not be written. */
   readonly records: { readonly has: (key: string) => boolean, readonly add: (key: string) => boolean }
   readonly consent: InstallConsentPrompt
+  /** What a No was said to in this run, one entry per file and manifest: it is not asked again until the browser starts again or the file declares something else. */
+  readonly refused: Set<string>
 }
 
 type FolderManifest = { readonly ok: true, readonly text: string } | { readonly ok: false, readonly reason: string }
@@ -78,7 +81,7 @@ export async function readFolderManifest (key: string, hintedUrl: string): Promi
 
 /**
  * Registers the local file `key` against the manifest `hintedUrl` names and asks about whatever it declares and does not
- * yet hold. `newlyRegistered` says the tab must reload: it has to become the file's own app tab, in the file's own session.
+ * yet hold. `newlyRegistered` says the tab must reload: it has to move to the file's own session.
  */
 export async function grantLocalFile (deps: LocalFileGrantDeps, key: string, hintedUrl: string, caller?: DialogCaller): Promise<GrantWithoutInstallOutcome> {
   if (!isLocalFileKey(key)) return { outcome: 'rejected', reason: 'not a local file' }
@@ -104,9 +107,14 @@ export async function grantLocalFile (deps: LocalFileGrantDeps, key: string, hin
     const asks = capabilities.length > 0 && (capabilities.some((capability) => !heldKinds.includes(capability)) || widensHeldGrants(patternSetFromGrants(held), declared))
     if (!asks) return { outcome: 'granted-without-install', canonicalOrigin: key, newlyRegistered: !alreadyRegistered }
 
+    const refusal = `${key}\n${JSON.stringify(declared)}`
+    if (deps.refused.has(refusal)) return { outcome: 'granted-without-install', canonicalOrigin: key, newlyRegistered: false }
     const accepted = await deps.consent(key, manifest, capabilities, heldKinds.filter((kind) => capabilities.includes(kind)), caller)
     if (caller !== undefined && !caller.stillOn(key)) return { outcome: 'granted-without-install', canonicalOrigin: key, newlyRegistered: false }
-    if (!accepted) return { outcome: 'granted-without-install', canonicalOrigin: key, newlyRegistered: false }
+    if (!accepted) {
+      deps.refused.add(refusal)
+      return { outcome: 'granted-without-install', canonicalOrigin: key, newlyRegistered: false }
+    }
     // The record first: a grant a restart could not find the session of would be a grant nobody could take back.
     if (!records.add(key)) return { outcome: 'rejected', reason: 'the file could not be recorded' }
     await broker.clearDeclinedConsent(key)

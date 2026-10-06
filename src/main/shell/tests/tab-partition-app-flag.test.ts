@@ -10,9 +10,9 @@ describe('appTabArgsFor', () => {
     expect(appTabArgsFor('https://other.example/', brokerWith('https://app.example'))).toBeUndefined()
   })
 
-  it('flags a local file by its key, query and fragment aside, once the broker has registered that exact file', () => {
+  it('never flags a local file, even one the broker has registered', () => {
     const broker = brokerWith('file:///home/u/notes/app.html')
-    expect(appTabArgsFor('file:///home/u/notes/app.html?x=1#top', broker)).toEqual([APP_TAB_FLAG])
+    expect(appTabArgsFor('file:///home/u/notes/app.html?x=1#top', broker)).toBeUndefined()
     expect(appTabArgsFor('file:///home/u/notes/other.html', broker)).toBeUndefined()
   })
 

@@ -47,20 +47,24 @@ again, and another file saved at the same path gets what the path held.
   the version floor is not read, as for a website granted without installing.
 - **Network.** A local page sends `Origin: null`, no cookie of the web's, and reaches loopback and the LAN as
   any web page does.
-- **Consent.** A file that links a manifest is asked about once, in the warning style, with a button that
-  answers only on a second press within 1,500 ms of the first, armed after the question's guard and an arrival
+- **Consent.** A file that links a manifest is asked about once per run, in the warning style, with an Allow
+  (press twice) that answers only on a second press within 1,500 ms of the first, armed after the question's guard and an arrival
   of the pointer or the focus on it. The manifest is read only from under the document's folder, through real
   paths that stay inside it and no larger than a manifest may be. A Yes records the file (which is what moves
   it to its own session) and grants all it declares; a held capability that the manifest now widens asks again
   and a Yes replaces it; a path nobody recorded has any persisted grant, pick and refusal dropped before it is
-  asked. A limit no pattern shows (quota, curves, sockets) of a changed manifest applies without a question
+  asked. A No is kept for the rest of the run, per file and manifest, and the question comes back at the next start
+  or when the file declares something else. A limit no pattern shows (quota, curves, sockets) of a changed manifest applies without a question
   (A404). Site info names the file by path, shows no Web3 Score and offers Turn off (the record stays) and
-  Delete data (grants, session, saved files, record); the privacy page lists the recorded files.
+  Delete data (grants, session, saved files, record; the `id` and `secrets` keys are derived from the profile
+  and the path, so a file allowed again at its path has them back); the privacy page lists the recorded files.
 - **Opening.** A file opens only by the person's choice or from the browser's own stores: a typed path or
   `file:` address (in a new tab), a bookmark, history, a restored tab, Open file, the operands of a second
   start and the system's open-file event. A page's link, `window.open`, redirect or an extension cannot open
-  one, and a file dropped on a web page opens as a local file while the page's own navigation to one is
-  stopped (A399). The binary's fuse is read on the first open of a local file in a run, not at start-up.
+  one, and a file dropped on a web page opens as a local file (provisional: no real drop was measured, A399) while
+  the page's own navigation to one is stopped. The open-file event of macOS is provisional too (A397). The binary's fuse is read on the first open of a local file in a run, not at start-up.
+- **No app tab.** A local file, registered or not, never carries the app-tab flag: no routed `fetch`, XHR or
+  WebSocket, no Node shim globals and no child-host connect. Its reach is `window.orivon` and what it granted.
 - **Scripts.** On a document that is itself a local file, a script it loaded from `file:` counts as the page's
   own for `window.orivon` (T52's call-stack rule); on a web document a `file:` frame still counts for nothing.
 - **Claims.** The packages claim HTML, XHTML, SVG and PDF as documents Orivon can open, and as the default

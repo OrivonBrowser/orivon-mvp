@@ -188,7 +188,7 @@ export function renderDataPage (
   if (callbacks.onDeleteLocalFile === undefined) {
     actions.append(destructive('Delete all data for this site', view.armed === 'site', callbacks.onClearBrowserData, 'clear-site', 'You may be signed out of this site'))
   } else {
-    actions.append(destructive('Delete data for this file', view.armed === 'file', callbacks.onDeleteLocalFile, 'clear-file', 'Removes what this file may do, the files and keys it saved, and what its own session kept'))
+    actions.append(destructive('Delete data for this file', view.armed === 'file', callbacks.onDeleteLocalFile, 'clear-file', 'Removes what this file may do, the files it saved, and what its own session kept'))
   }
   container.append(actions)
 

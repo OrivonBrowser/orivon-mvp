@@ -52,7 +52,8 @@ function rig (over: { recorded?: boolean, answer?: boolean, held?: Array<{ capab
   const deps: LocalFileGrantDeps = {
     broker,
     records: { has: (candidate) => records.has(candidate), add: (candidate) => { if (over.addFails === true) return false; records.add(candidate); return true } },
-    consent
+    consent,
+    refused: new Set<string>()
   }
   return { deps, broker, consent, records, grants, revokePersisted, registerApp }
 }
@@ -107,14 +108,33 @@ describe('grantLocalFile', () => {
     expect(r.registerApp).toHaveBeenCalledOnce()
   })
 
-  it('records nothing and grants nothing on No, and asks again at the next visit', async () => {
+  it('records nothing and grants nothing on No, and does not ask again about the same manifest in this run', async () => {
     await writeManifest()
     const r = rig({ answer: false })
     const outcome = await grantLocalFile(r.deps, key, hint)
     expect(outcome.outcome).toBe('granted-without-install')
     expect(r.records.has(key)).toBe(false)
     expect(r.grants).toEqual([])
+    expect(await grantLocalFile(r.deps, key, hint)).toMatchObject({ outcome: 'granted-without-install', newlyRegistered: false })
+    expect(r.consent).toHaveBeenCalledOnce()
+    expect(r.grants).toEqual([])
+  })
+
+  it('asks again after a No when the file now declares something else', async () => {
+    await writeManifest()
+    const r = rig({ answer: false })
     await grantLocalFile(r.deps, key, hint)
+    await writeManifest({ fs: { quotaBytes: 1000 }, id: { curves: ['secp256k1'] } })
+    await grantLocalFile(r.deps, key, hint)
+    expect(r.consent).toHaveBeenCalledTimes(2)
+  })
+
+  it('asks another file with the same manifest on its own, and a Yes after a No still records', async () => {
+    await writeManifest()
+    const r = rig({ answer: false })
+    await grantLocalFile(r.deps, key, hint)
+    const other = pathToFileURL(join(dir, 'notes', 'other.html')).href
+    await grantLocalFile(r.deps, other, hint)
     expect(r.consent).toHaveBeenCalledTimes(2)
   })
 

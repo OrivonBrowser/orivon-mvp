@@ -25,7 +25,9 @@ Tied to Electron (`ARCHITECTURE.md`'s `src/main/` row): sessions, `protocol.hand
 
 **What it depends on.** `electron`, `../../broker/policy/origin.ts` and `grants/origin-hash.ts` (the key and its
 hash), `../../broker/adapters/atomic-write.ts` (`local-file-apps.ts`), `../../loader/electron/serve.ts`
-(`liveCspHeaderFor`), `../sessions/web-request-owner.ts`, `../registry.ts` (the subsystem), Node's `fs`.
+(`liveCspHeaderFor`), `../../loader/index.ts` (`appRootDirectoryName`) and `../../broker/broker-contracts.ts` and
+`../../contracts/index.ts` (the types `delete-local-file-data.ts` and `drop-local-file-grants.ts` ask the broker with),
+`../sessions/web-request-owner.ts`, `../registry.ts` (the subsystem), Node's `fs`.
 
 **What it must never import.** Anything under `../shell/` or `../install/`: the tab code asks this directory which session a
 file belongs in, never the reverse.

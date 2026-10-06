@@ -388,11 +388,11 @@ for (const scheme of SCHEMES) {
         const grant = await waitQuestion(app)
         await grant.waitForSelector('.q:not(.arming)')
         const said = await readQuestion(grant)
-        check('the question is a warning that names the file and offers Don\'t allow and a double-click Allow', said.warning && said.title === 'Let a file on this computer use Orivon permissions?' && said.buttons.join('|') === "Don't allow|Double-click to allow", JSON.stringify(said))
+        check('the question is a warning that names the file and offers Don\'t allow and a press-twice Allow', said.warning && said.title === 'Let a file on this computer use Orivon permissions?' && said.buttons.join('|') === "Don't allow|Allow (press twice)", JSON.stringify(said))
         const grantFit = await panelFits(grant)
         check('the card sits inside its view, uncut and unscrolled', grantFit.fits, grantFit.detail)
         await state(check, app, `local-file-question-${scheme}`, {
-          expected: 'A question panel in the warning style floats under the address pill: a header with the path of a file on this computer, the title "Let a file on this computer use Orivon permissions?", a message saying Orivon cannot check files on the computer and that whoever can change the file can change what it does, a list with one row for storing files, and two buttons, Don\'t allow and Double-click to allow, the second the filled one. Text is fully inside the panel in this colour scheme and nothing is cut.',
+          expected: 'A question panel in the warning style floats under the address pill: a header with the path of a file on this computer, the title "Let a file on this computer use Orivon permissions?", a message saying Orivon cannot check files on the computer and that whoever can change the file can change what it does, a list with one row for storing files, and two buttons, Don\'t allow and Allow (press twice), the second the filled one. Text is fully inside the panel in this colour scheme and nothing is cut.',
           action: 'Typed the path of an HTML file that links a manifest and waited for its question to arm.',
           ignore: [{ x: 240, y: 44, width: 400, height: 24 }, { x: 188, y: 78, width: 320, height: 20 }]
         })
