@@ -2197,6 +2197,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   manifest it registered earlier in the run; a file has none from an earlier run.
 - **Why it matters:** whoever can change the file can raise its quota, which the consent already says in general.
 - **Options:** accept, and say it (rec.); keep the accepted manifest's limits in the record and ask when they grow.
+- **Also:** a recorded file's own `app.requestGrant` asks in the ordinary question; whether it takes the warning too.
 - **Who decides:** owner
 - **Blocks:** nothing
 

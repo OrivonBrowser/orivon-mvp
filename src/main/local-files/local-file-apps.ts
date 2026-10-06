@@ -88,6 +88,11 @@ export function isRecordedLocalFile (key: string): boolean {
   return installed?.has(key) === true
 }
 
+/** Whether `key` is a local-file key nobody let use Orivon permissions: nothing may grant it anything or ask for a grant for it. */
+export function isUnrecordedLocalFile (key: string): boolean {
+  return isLocalFileKey(key) && !isRecordedLocalFile(key)
+}
+
 /** Whether `path`, a file-system path, is a recorded file: what a download or a saved page must not be named after. */
 export function isRecordedLocalPath (path: string): boolean {
   if (installed === undefined) return false

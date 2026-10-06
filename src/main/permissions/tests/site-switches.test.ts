@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createBroker } from '../../../broker/index.js'
 import { APP, baseDeps, manifestWith } from '../../../broker/tests/index.test-helpers.js'
 import type { Broker } from '../../../broker/broker-contracts.js'
+import { installLocalFileApps } from '../../local-files/local-file-apps.js'
 import { turnOffCapability, turnOnCapability } from '../site-switches.js'
 
 // The site-info popover's switches. Proven against a REAL broker
@@ -148,5 +149,17 @@ describe('turnOnCapability', () => {
 
     expect(result).toBe('ok')
     expect(await broker.app.grants(APP)).toEqual(before) // same GrantId: no live handle was torn down for nothing
+  })
+})
+
+describe('turnOnCapability for a local file nobody let use Orivon permissions', () => {
+  it('grants nothing, though the file is registered and declares the capability', async () => {
+    const key = 'file:///home/u/notes/app.html'
+    installLocalFileApps(undefined)
+    const broker = realBroker()
+    await broker.registerApp(key, manifestWith({ fs: { quotaBytes: 1024 } }))
+
+    expect(await turnOnCapability(broker, key, 'fs', [])).toBe('not-registered')
+    expect(await broker.app.grants(key)).toEqual([])
   })
 })

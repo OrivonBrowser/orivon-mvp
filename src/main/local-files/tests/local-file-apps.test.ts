@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { LocalFileApps, MAX_RECORDED_FILES, installLocalFileApps, isRecordedLocalFile, isRecordedLocalPath } from '../local-file-apps.js'
+import { LocalFileApps, MAX_RECORDED_FILES, installLocalFileApps, isRecordedLocalFile, isRecordedLocalPath, isUnrecordedLocalFile } from '../local-file-apps.js'
 
 const FILE = 'file:///home/u/notes/app.html'
 const SIBLING = 'file:///home/u/notes/other.html'
@@ -103,5 +103,20 @@ describe('the installed record, as the rest of the shell asks it', () => {
     expect(isRecordedLocalFile(SIBLING)).toBe(false)
     expect(isRecordedLocalPath('/home/u/notes/app.html')).toBe(true)
     expect(isRecordedLocalPath('/home/u/notes/other.html')).toBe(false)
+  })
+})
+
+describe('isUnrecordedLocalFile', () => {
+  it('is true for a file key nobody recorded, false for a recorded one and for a website', () => {
+    const apps = new LocalFileApps(path)
+    installLocalFileApps(apps)
+    apps.add(FILE)
+    expect(isUnrecordedLocalFile(SIBLING)).toBe(true)
+    expect(isUnrecordedLocalFile(FILE)).toBe(false)
+    expect(isUnrecordedLocalFile('https://app.example')).toBe(false)
+  })
+
+  it('is true for every file key before a record is installed', () => {
+    expect(isUnrecordedLocalFile(FILE)).toBe(true)
   })
 })

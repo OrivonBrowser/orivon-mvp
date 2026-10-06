@@ -20,6 +20,7 @@ questions (switch, notice, confirm Trust & Force, a failed apply) and their word
 [`../../loader/electron/serve.ts`](../../loader/electron/serve.ts)'s `isOriginServedFromCacheSync`
 (`./request-grant-subsystem.ts` only, the same predicate
 [`../permissions/README.md`](../permissions/README.md)'s controller takes injected),
+[`../local-files/local-file-apps.ts`](../local-files/local-file-apps.ts) (`isUnrecordedLocalFile`, which `request-grant.ts` asks so a file nobody allowed cannot ask for a grant),
 [`../../trust/website-level.ts`](../../trust/website-level.ts) (`ScoreLevel` type only),
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts) (the displayed address of a protocol
 origin), [`../dev/score-levels.ts`](../dev/score-levels.ts) (wired in at

@@ -49,7 +49,8 @@ again, and another file saved at the same path gets what the path held.
   any web page does.
 - **Consent.** A file that links a manifest is asked about once per run, in the warning style, with an Allow
   (press twice) that answers only on a second press within 1,500 ms of the first, armed after the question's guard and an arrival
-  of the pointer or the focus on it. The manifest is read only from under the document's folder, through real
+  of the pointer or the focus on it (a pointer that rested on it through the guard arms nothing until it leaves and
+  enters again, and a press before that is answered with a line saying to move onto the button). The manifest is read only from under the document's folder, through real
   paths that stay inside it and no larger than a manifest may be. A Yes records the file (which is what moves
   it to its own session) and grants all it declares; a held capability that the manifest now widens asks again
   and a Yes replaces it; a path nobody recorded has any persisted grant, pick and refusal dropped before it is

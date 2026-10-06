@@ -48,7 +48,10 @@ const APP_JS = `(async () => {
     })
   }
   document.body.dataset.result = JSON.stringify(result)
-})()`
+})()
+document.addEventListener('ask-fs', async () => {
+  document.body.dataset.asked = await window.orivon.app.requestGrant({ capability: 'fs' }).then(String, (error) => 'err:' + (error && error.message))
+})`
 
 beforeAll(() => {
   dir = realpathSync(mkdtempSync(join(tmpdir(), 'orivon-local-app-')))
@@ -111,10 +114,18 @@ it('[app:local-file-grant] asks with a warning and a double press, grants to tha
     expect(said.origin).toContain('app.html')
 
     // One press answers nothing and records nothing, and a second one that comes after the window is a first press again.
-    // The pointer reaches the button during the guard and rests there: it arms once the guard has ended, with no move.
+    // A pointer that reached the button during the guard and rests there arms nothing: a press says to move onto the button, and entering it again arms it.
     const allow = panel.locator('.q .btn-row .btn[data-button="1"]')
     await allow.hover()
     await panel.waitForSelector('.q:not(.arming)')
+    await allow.click()
+    await delay(DOUBLE_PRESS_LATE_MS)
+    expect(await panel.locator('.q-hint').textContent()).toContain('Move the pointer onto the button')
+    expect(await questionGone(first.app)).toBe(false)
+    expect(existsSync(join(profile, 'local-file-apps.json'))).toBe(false)
+    await panel.locator('.q-message').hover()
+    await allow.hover()
+    expect(await panel.locator('.q-hint').textContent()).toBe('')
     await allow.click()
     await delay(DOUBLE_PRESS_LATE_MS)
     expect(await questionGone(first.app)).toBe(false)
@@ -154,6 +165,13 @@ it('[app:local-file-grant] asks with a warning and a double press, grants to tha
     await answerQuestion(second.app, "Don't allow")
     const declined = await seenAt(second.app, siblingUrl, (seen) => Array.isArray(seen.grants))
     expect(declined.grants).toEqual([])
+    // Declining is not a way to ask through the other door: the page's own request answers false and nothing is shown.
+    const siblingPage = second.app.windows().find((window) => window.url().split('#')[0] === siblingUrl && !window.isClosed())
+    await siblingPage?.evaluate(() => { document.dispatchEvent(new Event('ask-fs')) })
+    expect(await waitFor(async () => await siblingPage?.evaluate(() => document.body.dataset['asked']) !== undefined)).toBe(true)
+    expect(await siblingPage?.evaluate(() => document.body.dataset['asked'])).toBe('false')
+    await delay(ABSENCE_SETTLE_MS)
+    expect(await questionGone(second.app)).toBe(true)
     expect((JSON.parse(readFileSync(join(profile, 'local-file-apps.json'), 'utf8')) as { files: string[] }).files).toEqual([appUrl])
     expect(await noNativeDialogs(second.app)).toEqual([])
     expect(mainOutput(second.app)).not.toContain('uncaught exception')
