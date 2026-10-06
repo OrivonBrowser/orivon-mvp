@@ -55,6 +55,7 @@ const realSender = async (payload: SentPayload): Promise<boolean> => await post(
 
 const realMachineReaders: MachineIdReaders = {
   platform: process.platform,
+  systemRoot: process.env['SystemRoot'],
   readFile: async (path) => {
     try {
       return await readFile(path, 'utf8')

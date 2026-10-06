@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { HEX32, deriveInstallId, parseIoregOutput, parseMachineIdFile, parseRegOutput, readMachineId, resolveInstallId, type MachineIdReaders } from '../install-id.js'
+import { HEX32, deriveInstallId, parseIoregOutput, parseMachineIdFile, parseRegOutput, readMachineId, regPath, resolveInstallId, type MachineIdReaders } from '../install-id.js'
 
 const MACHINE = '0123456789abcdef0123456789abcdef'
 
@@ -59,13 +59,14 @@ describe('readMachineId', () => {
     expect(await readMachineId(readers('linux', {}))).toBeUndefined()
   })
 
-  it('asks ioreg on macOS and reg on Windows, and nothing else', async () => {
-    const mac = readers('darwin', {}, { ioreg: '"IOPlatformUUID" = "564D1E8F-AAAA-4BBB-8CCC-0123456789AB"' })
+  it('asks ioreg on macOS and reg on Windows by absolute path, and nothing else', async () => {
+    const mac = readers('darwin', {}, { '/usr/sbin/ioreg': '"IOPlatformUUID" = "564D1E8F-AAAA-4BBB-8CCC-0123456789AB"' })
     expect(await readMachineId(mac)).toBe('564D1E8F-AAAA-4BBB-8CCC-0123456789AB')
-    expect(mac.run).toHaveBeenCalledWith('ioreg', ['-rd1', '-c', 'IOPlatformExpertDevice'])
-    const win = readers('win32', {}, { reg: 'MachineGuid    REG_SZ    8c1d5a2e-0a3b-4c5d-9e8f-001122334455' })
+    expect(mac.run).toHaveBeenCalledWith('/usr/sbin/ioreg', ['-rd1', '-c', 'IOPlatformExpertDevice'])
+    const win = { ...readers('win32', {}, { 'D:\\Win\\System32\\reg.exe': 'MachineGuid    REG_SZ    8c1d5a2e-0a3b-4c5d-9e8f-001122334455' }), systemRoot: 'D:\\Win' }
     expect(await readMachineId(win)).toBe('8c1d5a2e-0a3b-4c5d-9e8f-001122334455')
-    expect(win.run).toHaveBeenCalledWith('reg', ['query', 'HKLM\\SOFTWARE\\Microsoft\\Cryptography', '/v', 'MachineGuid', '/reg:64'])
+    expect(win.run).toHaveBeenCalledWith('D:\\Win\\System32\\reg.exe', ['query', 'HKLM\\SOFTWARE\\Microsoft\\Cryptography', '/v', 'MachineGuid', '/reg:64'])
+    expect(regPath(undefined)).toBe('C:\\Windows\\System32\\reg.exe')
     expect(await readMachineId(readers('freebsd', {}))).toBeUndefined()
   })
 })

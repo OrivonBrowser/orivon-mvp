@@ -54,7 +54,9 @@ Come è scritto `sites`. Ogni chiave è `web3:<nome>` o `web25:<nome>`, per esem
 viene inviato solo se è pubblico: un nome di dominio, un nome ENS, o un sito che il fornitore del
 Web3 Score ha valutato. Un sito che ha solo un identificativo di contenuto grezzo, una chiave IPNS
 o un indirizzo di rete locale o privata, senza un nome valutato, viene sommato al totale della sua
-classe ed elencato come `(unlisted)`. I normali siti Web2 non vengono mai annotati, nemmeno sul
+classe ed elencato come `(unlisted)`. Se un nome è pubblico si giudica dalla sua forma, senza
+cercarlo: un sito Web2.5 con un nome interno sotto un dominio pubblico, come
+`intranet.example.com`, verrebbe nominato. I normali siti Web2 non vengono mai annotati, nemmeno sul
 tuo computer: esistono solo dentro il totale `classes.web2`.
 
 Che cosa resta fuori, detto chiaramente. Nessun indirizzo di pagina, nessun percorso, nessun testo

@@ -34,9 +34,18 @@ export function parseMachineIdFile (content: string): string | undefined {
 
 export interface MachineIdReaders {
   readonly platform: NodeJS.Platform
+  /** Windows' own folder (`%SystemRoot%`), where `reg.exe` is taken from. */
+  readonly systemRoot?: string | undefined
   readonly readFile: (path: string) => Promise<string | undefined>
   /** Runs a program with these arguments and no shell, returning its output, or undefined on any failure or timeout. */
   readonly run: (file: string, args: readonly string[]) => Promise<string | undefined>
+}
+
+/** The programs are named by absolute path: Windows looks for a bare name in the working directory first, where a downloaded file could stand in for it. */
+export const IOREG_PATH = '/usr/sbin/ioreg'
+
+export function regPath (systemRoot: string | undefined): string {
+  return `${systemRoot !== undefined && systemRoot !== '' ? systemRoot : 'C:\\Windows'}\\System32\\reg.exe`
 }
 
 export async function readMachineId (readers: MachineIdReaders): Promise<string | undefined> {
@@ -49,11 +58,11 @@ export async function readMachineId (readers: MachineIdReaders): Promise<string 
     return undefined
   }
   if (readers.platform === 'darwin') {
-    const output = await readers.run('ioreg', ['-rd1', '-c', 'IOPlatformExpertDevice'])
+    const output = await readers.run(IOREG_PATH, ['-rd1', '-c', 'IOPlatformExpertDevice'])
     return output === undefined ? undefined : parseIoregOutput(output)
   }
   if (readers.platform === 'win32') {
-    const output = await readers.run('reg', ['query', 'HKLM\\SOFTWARE\\Microsoft\\Cryptography', '/v', 'MachineGuid', '/reg:64'])
+    const output = await readers.run(regPath(readers.systemRoot), ['query', 'HKLM\\SOFTWARE\\Microsoft\\Cryptography', '/v', 'MachineGuid', '/reg:64'])
     return output === undefined ? undefined : parseRegOutput(output)
   }
   return undefined

@@ -50,7 +50,9 @@ How `sites` is written. Each key is `web3:<name>` or `web25:<name>`, such as `we
 or `web25:app.example.org`, and its value is a number of seconds. `<name>` is sent only when it is
 public: a domain name, an ENS name, or a site the Web3 Score provider has judged. A site that has
 only a raw content identifier, an IPNS key, or a local or private network address, and no judged
-name, is added to its class total and listed as `(unlisted)`. Ordinary Web2 sites are never
+name, is added to its class total and listed as `(unlisted)`. Whether a name is public is judged
+by its form, not looked up: a Web2.5 site at an internal name under a public domain, such as
+`intranet.example.com`, would be named. Ordinary Web2 sites are never
 written down, even on your computer: they exist only inside the `classes.web2` total.
 
 What stays out, said plainly. No page addresses, no paths, no search text, no page titles, no
