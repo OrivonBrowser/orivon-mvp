@@ -170,6 +170,23 @@ describe('the real call the wrapper makes in the page\'s world', () => {
     expect(reads).toBe(readsAtCall)
   })
 
+  it('copies the options with the JSON it captured: a page that replaces JSON afterwards cannot put its own code in the call', async () => {
+    const seen: Array<Record<string, unknown>> = []
+    const devices = await wrapped(function (options) { seen.push(options as Record<string, unknown>); return Promise.resolve(new FakeStreamType([])) }, pickedShare())
+    const saved = { parse: JSON.parse, stringify: JSON.stringify }
+    const pageParse = vi.fn(() => ({ width: () => 'page code' }))
+    JSON.parse = pageParse
+    JSON.stringify = vi.fn(() => '{}')
+    try {
+      await devices.getDisplayMedia({ video: { width: 640 } })
+    } finally {
+      JSON.parse = saved.parse
+      JSON.stringify = saved.stringify
+    }
+    expect(pageParse).not.toHaveBeenCalled()
+    expect(Object.getOwnPropertyDescriptor((seen[0] as { video: object }).video, 'width')).toMatchObject({ value: 640 })
+  })
+
   it('gives the page a refusal with the name the browser gave, read from a DOMException and from a TypeError', async () => {
     const thrown: Array<() => unknown> = [
       () => Promise.reject(new DOMException('Permission denied by system', 'NotAllowedError')),

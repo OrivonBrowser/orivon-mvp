@@ -199,6 +199,9 @@ function wrapInMainWorld (shareInOtherWorld: (options: ShareOptions, callNow: Ca
   const create = Object.create as (proto: null) => Record<PropertyKey, unknown>
   const keysOf = Object.keys
   const isArray = Array.isArray
+  const NativeJSON = JSON
+  const parse = JSON.parse
+  const stringify = JSON.stringify
   const NativePromise = Promise
   const NativeDOMException = DOMException
   const NativeTypeError = TypeError
@@ -212,7 +215,7 @@ function wrapInMainWorld (shareInOtherWorld: (options: ShareOptions, callNow: Ca
   }
   const copy = (value: unknown): unknown => {
     if (value === null || typeof value !== 'object') return typeof value === 'function' ? true : value
-    try { return JSON.parse(JSON.stringify(value)) } catch { return true }
+    try { return call(parse, NativeJSON, [call(stringify, NativeJSON, [value])]) } catch { return true }
   }
   /** The data of a copy with no prototype and no accessor, arrays included, so converting it for the real call runs no page code. */
   const bare = (value: unknown): unknown => {

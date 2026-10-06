@@ -15,8 +15,8 @@ the realm of the one native call.
 
 - **Natives captured first.** At document start the wrapper captures `Reflect.apply`, `Promise.prototype.then`,
   `Document.prototype.createElement`, the `srcObject` setter, the `name` and `message` getters of
-  `DOMException.prototype`, `Object.create`, the `DOMException` and `TypeError` constructors and the stream and
-  track methods it needs, before any page script runs. The call and the reading of its outcome use only these.
+  `DOMException.prototype`, `Object.create`, `JSON.parse` and `JSON.stringify`, the `DOMException` and `TypeError`
+  constructors and the stream and track methods it needs, before any page script runs. The call and the reading of its outcome use only these.
 - **The page's options become data.** When the page calls, the wrapper reads `video`, `audio`, `controller` and
   the hints once, and builds the real options as an object with no prototype: `video` and `audio` are copies made
   of objects with no prototype and no accessor (an array carries an iterator of its own), and the controller is
@@ -38,9 +38,11 @@ the realm of the one native call.
 A `CaptureController` binds to the capture only when it is in the options of the call that starts it. The wrapper
 made the call in the isolated world, which cannot receive the page's controller (a controller is not a type the
 context bridge carries, and no DOM property carries one), so a page's controller never bound. Chromium then
-answers `getSupportedZoomLevels()` and `forwardWheel` with `InvalidStateError: Not actively capturing.`, so
-Captured Surface Control, and with it the presentation setup of sites that use it, failed for every site. A
-meeting site showed a black tile where the presenter's own presentation belonged.
+answers `getSupportedZoomLevels()` with `InvalidStateError: Not actively capturing.` and rejects `forwardWheel`, so
+Captured Surface Control failed for every site that uses it. A meeting site whose presentation setup calls
+`getSupportedZoomLevels()` unguarded showed a black tile where the presenter's own presentation belonged, while a
+plain page on the same desktop showed its preview. That the unbound controller is the cause is *provisional*: what
+settles it is the same site presenting from a build with this change.
 
 ## Alternatives considered
 
@@ -67,8 +69,8 @@ that races the call is handled by the ticket exactly as before. The page can sti
   screen share answers `NotSupportedError` as it does in Chrome.
 - `setFocusBehavior` is refused as too late. Chromium closes the window for the focus decision in the
   microtask after the call's promise resolves, and the page's promise is Orivon's, resolved in that first
-  microtask, so the page's callbacks run after the window has closed (measured). The browser then focuses the
-  shared surface as it does when a page makes no choice. A page that calls it gets `InvalidStateError`.
+  microtask, so the page's callbacks run after the window has closed (measured). A page that calls it gets
+  `InvalidStateError`; Orivon's picker brings a picked tab to the front whatever the page would have chosen.
 - The page's promise is a native promise made by the wrapper, not the one the browser returned.
 - The wrapper depends on more natives that must exist; where one is missing it installs nothing, and the page's
   call meets no ticket and is refused.
