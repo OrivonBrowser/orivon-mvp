@@ -26,6 +26,7 @@ import type { DnrDecision, DnrModifyOps, DnrRequest } from './dnr/types.js'
 import { frameIdOf, initiatorOf, parentFrameIdOf, safeFrame } from './request-frames.js'
 import { hasAnyBadgeCountModeEnabled, recordMatches } from './dnr-match-log.js'
 import { hasFeedbackCapableExtension, onDnrActiveChange } from './extensions-dnr.js'
+import { isShellOwnUrl } from './web-request/visibility.js'
 
 /**
  * Strictly before `RUN_LAST` (the verifier's partition stamp,
@@ -43,12 +44,12 @@ const EXTENSION_ORDER = 1000
  * never as a narrower Electron-level filter here. */
 const DNR_FILTER: WebRequestFilter = { urls: ['<all_urls>'] }
 
-/** Never `chrome-extension:`/`orivon:`. The URLs a
+/** Never `chrome-extension:`, `orivon:` or `orivon-shell:`. The URLs a
  * `webRequest` listener actually sees for those schemes are an extension's
- * own resource loads and Orivon's internal pages, neither of which another
+ * own resource loads and Orivon's own pages, neither of which another
  * extension's rules should touch. */
 function isInScopeUrl(url: string): boolean {
-  return !url.startsWith('chrome-extension:') && !url.startsWith('orivon:')
+  return !url.startsWith('chrome-extension:') && !isShellOwnUrl(url)
 }
 
 interface ScopedRequest {

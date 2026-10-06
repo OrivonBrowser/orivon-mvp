@@ -50,6 +50,15 @@ describe('a second start of a running profile', () => {
   })
 })
 
+describe('the switches a start passes to the browsers it opens', () => {
+  it('are the ones before the end of the switches, never what came after it', () => {
+    const { app } = fakeApp(true)
+    expect(run(app, '--no-sandbox', '--user-data-dir=/data', '--', '--user-data-dir=/elsewhere', 'https://a.example/')?.inherit).toEqual(['--no-sandbox', '--user-data-dir=/data'])
+    const second = fakeApp(true)
+    expect(run(second.app, '--', '--no-sandbox')?.inherit).toEqual([])
+  })
+})
+
 describe('a first start of a profile', () => {
   it('keeps the lock and marks the profile running', () => {
     const { app, release } = fakeApp(true)

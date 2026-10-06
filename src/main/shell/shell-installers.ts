@@ -9,12 +9,16 @@ import { installAuth } from '../auth/install-auth.js'
 import { installAutofill } from '../autofill/install-autofill.js'
 import { installChoosers } from '../devices/install-choosers.js'
 import { installDefaultBrowserAsk } from '../os/install-default-browser-ask.js'
+import { installDisplayCapture } from '../display-capture/install-display-capture.js'
+import { installDisplayUi } from '../display-capture/install-display-ui.js'
 import { installFocus } from '../focus/install-focus.js'
 import { installLauncherMenu } from '../os/install-launcher-menu.js'
+import { installMediaGrants } from '../media-grants/install-media-grants.js'
 import { installMemorySaver } from '../memory-saver/install-memory-saver.js'
 import { installTabSlots } from '../overlays/install-tab-slots.js'
 import { installTabVisibility } from './install-tab-visibility.js'
 import { installFormWatch } from '../passwords/install-form-watch.js'
+import { installEthGatewayRedirect } from './eth-gateway-redirect.js'
 import { installPrivacyNet } from '../privacy/install-privacy-net.js'
 import { installReader } from '../reader/install-reader.js'
 import { installLoadErrors } from '../sad-tab/install-load-errors.js'
@@ -30,16 +34,22 @@ export interface ShellInstaller {
   install: (app: App, services: ShellServices, ctx: SubsystemContext, runtime: Runtime) => void
 }
 
+// Order is the order the per-site askers answer in: the first answer that is not `undefined` wins. `media-grants`
+// must stay ahead of `site-permissions`, which refuses every app origin, so an app's camera goes to its grant.
 export const SHELL_INSTALLERS: readonly ShellInstaller[] = [
   installAuth,
   installAutofill,
   installChoosers,
   installContentSettings,
   installDefaultBrowserAsk,
+  installDisplayCapture,
+  installDisplayUi,
+  installEthGatewayRedirect,
   installFocus,
   installFormWatch,
   installLauncherMenu,
   installLoadErrors,
+  installMediaGrants,
   installMemorySaver,
   installPrivacyNet,
   installQuestions,

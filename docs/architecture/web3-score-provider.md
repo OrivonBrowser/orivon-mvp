@@ -162,11 +162,19 @@ names it. That is why `bucketHexChars` stops at 2. Even at 256 buckets, a provid
 a few sites can guess which one a bucket means. At about 1 KB per evaluation, 256 files of 1 MiB
 hold about 250,000 evaluations.
 
+A page that holds the `trust.score` grant can have Orivon ask about other sites
+([How Orivon uses an answer](#how-orivon-uses-an-answer)). From those lookups the provider learns the
+same thing it learns from a person's own browsing, a bucket, but for every site the page asks about,
+whether or not the person opened it. It therefore learns that this person opened a page that asks
+about this set of sites: the pattern of buckets one page load produces, such as the roughly sixty a
+directory of sites asks for at once. It still never sees an identifier, a name or an address, and the
+grant is the person's consent to that pattern.
+
 ## How Orivon uses an answer
 
 What follows bounds this build of Orivon, not the standard.
 
-- **Off until chosen.** Settings, Web3, "Web3 Score provider". Empty asks nothing of anyone.
+- **Orivon's own provider until changed.** Settings, Web3, "Web3 Score provider" holds the official provider's address, an `ipns://` name, in a profile with none saved; a person who clears it saves the empty value and asks nothing of anyone, and one who types another address asks that one (`ADR-0056`).
 - **Only over DDOC.** A site is looked up only when its observed Website level is 2, so the files
   shown are the files the identifier names: an installed app's bundle hash, or the CID a `.eth`
   name or an `ipfs://` address resolved to. On a local origin in developer mode, the bundle hash
@@ -175,9 +183,37 @@ What follows bounds this build of Orivon, not the standard.
   judged Level 3 or 4 with the provider's name; the page keeps what Orivon itself observed beside
   it. Levels 1 and 2 are observed, so a website evaluation at 1 or 2 only marks 3 and 4 as not
   met, and the shown level stays the observed one.
+- **Only at the domain the manifest names.** A manifest is a leaf of the content address, so a
+  judgement of the content covers the `domain` its manifest names (`capability-api.md`, `domain`),
+  and the level counts only at that host (`ADR-0056`). The same files under another name, a
+  manifest with no `domain` or one that could not be read show the observed level, and the Web3
+  Score page says why. Content with no manifest at all, a website, is judged wherever it is shown.
+  Nothing in the file format changes.
+- **An update at a name is verified by an evaluation.** For an installed app whose name moved, the
+  provider is asked for the new CID without waiting: an evaluation at any level, no lower than the
+  pinned CID's, with a newer version, the domain bound and the pointers verified, turns the notice
+  into the question "switch to the new version?". No evaluation, no provider or an unreachable one
+  leaves the notice and the key icon's Trust & Force update (`ADR-0056`).
 - **Never silences a grant warning.** A judged Level 4 leaves every capability warning in place
   (`ADR-0054`, which narrows `ADR-0037` to the developer override).
 - **Fetched with no credentials**, a 10 second limit per file, answers kept for 10 minutes, and
   "did not answer" kept for 1 minute. While a slow provider (a cold IPFS fetch) is still loading,
   the shield and the page show the lookup as under way and ask again every 2 seconds until it
   answers.
+- **A page can ask, with a grant.** `orivon.trust.websiteScore(address)` answers the provider's name and
+  the level it judged for the content an `ipfs://` address or a `.eth` name (bare or over `https`) names,
+  for a page that declared and was granted `trust.score` (`ADR-0058`). Without the grant it rejects
+  `denied`. The level is the provider's raw judgement for that content, 1 to 4, with none of the shield's
+  display rules applied: the page applies those itself, except the one that decides whether a judged
+  level belongs to the address at all. A Level 3 or 4 is answered only where the shield would count it
+  (`ADR-0056`): the content's manifest names the host asked about, or the content has no manifest (a
+  website). A name that points at an app's judged content without being the app's home, a manifest that
+  names no home or cannot be read, and an `ipfs://` address of an app (no manifest names a `.orivon`
+  host) answer `level: null`. Any address that names no content (a web address,
+  a name that does not resolve, content the provider has not evaluated), a provider that does not answer,
+  and a provider description that cannot be read all answer `level: null`, naming the provider by its
+  address in the last case; with no provider chosen it answers `provider: null` and asks nothing.
+- **A page's lookups are its own.** Each calling origin has its own answers kept, and a `.eth` name is
+  resolved in a verifier partition of that origin's own, so one page cannot learn from timing a lookup
+  which sites the person opened or which another page asked about. Lookups are limited per origin to a
+  burst of 128 refilling at 2 a second; past that the call rejects `limit`.

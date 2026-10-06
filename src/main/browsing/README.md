@@ -5,12 +5,13 @@
 operation), `bookmark-file.ts` (reading and writing the file, pure),
 `bookmarks-domain.ts` (what the Bookmarks page may ask, each field checked), `bookmarks-undo.ts` (what a delete in it can take back),
 `bookmarks-html-export.ts` (the Netscape bookmark file, pure) and `bookmarks-export-runner.ts` (the save dialog and the write),
-`favicon.ts` and its pure byte-sniffing half `favicon-format.ts` (a tab's icon as a `data:` URL),
+`favicon.ts`, its pure byte-sniffing half `favicon-format.ts` (a tab's icon as a `data:` URL) and `favicon-timeout.ts` (how long a fetch may take),
 `search-engines.ts` (the built-in engines, their keywords and suggestion addresses, and the template rule), `search-resolve.ts` and
 `search-current.ts` (which engine a typed search goes to, pure), `search-engine-store.ts` (the engines a person keeps in
 `search-engines.json`; its rules are in `search-engine-rules.ts` and the starting site engines in `site-engines.ts`),
 `favicon-cache.ts` (the icons already fetched), `bookmark-types.ts` (the node, bar item and import shapes, types only), `site-trust.ts` (the Web3 Score page and the
-toolbar shield's data), and `score-provider-client.ts` (asks the chosen Web3 Score provider, `ADR-0054`). `site-trust.ts` is pure: its caller,
+toolbar shield's data), `site-home.ts` (where the content shown says it lives, which decides whether a judged level counts, `ADR-0056`), `score-provider-client.ts` (asks the chosen Web3 Score provider, `ADR-0054`), `page-score-lookup.ts` (what
+`orivon.trust.websiteScore` answers, `ADR-0058`), and `eth-gateway.ts` (which web addresses are an ENS gateway's copy of a `.eth` name, `eth.limo` and `eth.link`, and the `.eth` address each stands for (`ethGatewayTarget`, `isEthGatewayAddress`); pure, with no `electron`; [`../shell/eth-gateway-redirect.ts`](../shell/eth-gateway-redirect.ts) acts on it). `site-trust.ts` is pure: its caller,
 [`../permissions/site-info-controller.ts`](../permissions/site-info-controller.ts), hands it the
 pin, pin coverage, a `.eth` name's evidence and the developer overrides, so it never reaches for
 the loader, the verifier or `../dev/` itself.
@@ -25,6 +26,9 @@ a path string.
 [`../../loader/electron/resolve.ts`](../../loader/electron/resolve.ts),
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts),
 [`../../protocols/ipfs/names.ts`](../../protocols/ipfs/names.ts) (`canonicalCid`),
+[`../../protocols/resolution/dns-name.ts`](../../protocols/resolution/dns-name.ts) (`dnsName`, for `eth-gateway.ts`),
+[`../../broker/transport/token-bucket.ts`](../../broker/transport/token-bucket.ts) and `../../broker/errors.ts`
+(`page-score-lookup.ts`'s rate limit and its `limit` refusal),
 [`../verifier/name-evidence.ts`](../verifier/name-evidence.ts) (types), `node:crypto`,
 `node:fs/promises`, `node:path`, `node:stream`.
 
@@ -34,6 +38,22 @@ dependency on tab-collection state, which keeps it importable under plain vitest
 **Owner stream.** `shell`. Maintenance only.
 
 ## Design notes
+
+**A page's score lookups share nothing with the shell's, or with another page's.** `page-score-lookup.ts` keeps one
+`createScoreProviderClient` per calling origin (the sixteen most recent) and never uses `services.scoreProvider`:
+one cache for everyone would let a page time an answer to learn which sites the person had opened. A `.eth` name is
+resolved in the caller's own verifier partition for the same reason (A256). Each origin also has a token bucket
+(128 lookups, refilling 2 a second): Explore asks about some sixty sites on one load, a page that loops is refused
+`limit`. Every other failure, a provider that is down, a name that does not resolve, an address that names no
+content, answers `level: null`, because none of them is the page's fault.
+
+**A page's score answers the question the shield answers, through the same code.** A judged Level 3 or 4 describes a
+CID, and any name can point at that CID, so `page-score-lookup.ts` reads the manifest at the resolved root with
+`site-home.ts`'s `readHomeAtRoot` and `domain-binding.ts`'s rules (`ADR-0056`) before it answers a level: a name the
+manifest does not name, a manifest with no home or one that cannot be read, and an app's `ipfs://` address all answer
+`level: null`, and a verified absence of a manifest (a website) keeps the level. Only the manifest read is not the
+caller's own: it goes through `Loader.manifestAt` in the name's own partition, and only for a name the provider judged
+3 or 4 (A395).
 
 **A keyword is the first word of a search, never an address.** `search-resolve.ts` takes `<keyword> <terms>` only when
 something follows the keyword, so `w` alone and `w.com` are parsed as before and a keyword cannot stand in for a host.
@@ -86,6 +106,12 @@ browsing with no manifest and no grant, from a URL the page chose. It reuses the
 classification and the loader's resolver rather than a second copy (code-guidelines Rule 3);
 `open-questions.md` A124 is the one way it is weaker than the install path.
 
+**A verifier-served host gets a longer budget** (`VERIFIED_FAVICON_TIMEOUT_MS`, *provisional*). An icon on
+`<cid>.ipfs.orivon` or a `.eth` name is fetched block by block from gateways and checked, so five seconds
+aborts a slow load, and a capture that fails leaves the globe until the page announces another icon set. Such a host
+resolves to loopback, so `isSafeFaviconUrl` passes it only as the declaring page's own origin; the longer budget
+reaches nothing a page could not already load. Real gateways have not measured the number.
+
 **Not bounded, on purpose for now:** repeated `page-favicon-updated` events per tab (bounded per
 event by `MAX_FAVICON_CANDIDATES`, and only public hosts pass the gate; a real bound needs
 per-tab state in `../shell/tabs.ts`).
@@ -94,3 +120,9 @@ per-tab state in `../shell/tabs.ts`).
 (`favicon.ts` holds the provisional numbers), because a page can name any number of icon URLs.
 It stores only an icon its capture kept, never one that landed after the tab moved to another
 origin or a newer icon set.
+
+**[`eth-gateway.ts`](eth-gateway.ts) leaves a gateway address alone when it is not a plain name.** The gateway's own `www` and `dns`
+hosts, a bare `eth.limo`, an address with an explicit port, a trailing-dot host, an `xn--` label (the verifier refuses
+internationalised names) and anything `dnsName` refuses have no `.eth` address to map to, so the page opens as typed. Only
+`eth.limo` and `eth.link` are known gateways; another is one more entry in `ETH_GATEWAY_SUFFIXES` when a need names it.
+The result's host ends in `.eth`, so it is never a gateway address again and a redirect cannot loop.

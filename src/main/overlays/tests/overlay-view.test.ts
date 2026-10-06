@@ -37,7 +37,6 @@ vi.mock('electron', () => ({
     this.setVisible = vi.fn((visible: boolean) => { calls.push(`visible:${String(visible)}`) })
   })
 }))
-vi.mock('../../shell/shell-session.js', () => ({ SHELL_PARTITION: 'persist:orivon-shell' }))
 vi.mock('../../shell/context-menu.js', () => ({ showContextMenu: (...args: unknown[]) => { menus.push(args) } }))
 
 const { createOverlayView, overlayUrl } = await import('../overlay-view.js')
@@ -50,8 +49,8 @@ afterEach(() => { calls.length = 0; theme.dark = false })
 
 describe('overlayUrl', () => {
   it('names the overlay and its surface after the entry', () => {
-    expect(overlayUrl('/app/out/main', { name: 'tab-search', surface: 'panel' }))
-      .toBe('file:///app/out/renderer/overlay/index.html?overlay=tab-search&surface=panel')
+    expect(overlayUrl({ name: 'tab-search', surface: 'panel' }))
+      .toBe('orivon-shell://renderer/overlay/index.html?overlay=tab-search&surface=panel')
   })
 })
 
@@ -71,7 +70,7 @@ describe('createOverlayView', () => {
     createOverlayView(spec())
     expect(state.options).toMatchObject({ webPreferences: {
       preload: '/app/out/preload/overlay.js', partition: 'persist:orivon-shell', sandbox: true, contextIsolation: true, nodeIntegration: false,
-      additionalArguments: ['--orivon-overlay-url=file:///app/out/renderer/overlay/index.html?overlay=demo&surface=panel']
+      additionalArguments: ['--orivon-overlay-url=orivon-shell://renderer/overlay/index.html?overlay=demo&surface=panel']
     } })
   })
 

@@ -7,15 +7,14 @@ window holding it. `window-frame.ts` is the native window itself and `window-opt
 opens. `window.ts` is the composition; its parts are `window-layout.ts` (where the chrome and the page
 area sit: the one place a page area is computed), `window-state.ts` (the `ShellState` push, and which
 overlays a tab switch or a navigation dismisses), `window-panels.ts` (the permissions and site-info
-popovers) and `shell-state-parts.ts` (the `ShellState` fields a feature adds). `window-context.ts` is
+popovers, and the extension popup's panel for the overlay host) and `shell-state-parts.ts` (the `ShellState` fields a feature adds; `state/update-offered.ts` is the one that lights the key icon's dot while the page in front has an update offer, and `pre-partition.ts` stops a link or redirect into a cache-served address before it commits so the pinned files answer, `ADR-0056`). `window-context.ts` is
 the `{ window, services }` pair a hook or an overlay handler receives.
 `tabs.ts` owns the tab collection, with `tab-state.ts` (the state a tab reports, plus what each
 `TAB_SIGNALS` entry adds), `tab-navigation.ts`, `tab-open.ts` (every way a tab is created) and
 `tab-panes.ts` (which views show where) as its parts; `tab-view.ts`, `tab-partition.ts`,
 `app-tab-watch.ts`, `tab-signals.ts`, `tab-types.ts`, `tab-factory.ts`, `tab-lifecycle.ts` and
-`tab-parking.ts` are the per-tab view. `tab-origin-liveness.ts` is `tab-view.ts`'s own per-origin
-live-document counter. A local file's tab is always in the local-files session
-([`../local-files/`](../local-files/)): `tab-partition.ts` routes it there, `tab-factory.ts`'s `localFile` makes it, and the `did-navigate` swap moves a tab that reached a file by history. `tab-order.ts` is where a tab sits in the strip, `tab-move.ts` moves one between windows keeping the
+`tab-parking.ts` are the per-tab view; `load-in-tab.ts` is the one test that opens an address in the tab's own view or in a view of the session it needs, shared by the address bar and a link followed inside a tab. `eth-gateway-redirect.ts` opens an ENS gateway address (`<name>.eth.limo`, `<name>.eth.link`) as the `.eth` name it stands for: the web-request handler, which shares the rule in `eth-gateway-rule.ts` (`gatewayRedirectFor`, `gatewayEntries`; no `electron`) with the tab hooks below. `tab-origin-liveness.ts` is `tab-view.ts`'s own per-origin
+live-document counter. A local file's tab is always in a local-files session ([`../local-files/`](../local-files/)): `tab-partition.ts` routes it there, `tab-factory.ts`'s `localFile` makes it, and the `did-navigate` swap moves a tab that reached a file by history. `tab-order.ts` is where a tab sits in the strip, `tab-move.ts` moves one between windows keeping the
 same page (and is where a dragged tab's cross-window target -- which window's strip, and where in it -- is
 worked out from the tab centres `strip-centres.ts` reads off the target window's chrome page, shared by the actual move and by `tear-drag.ts`'s own mark), `tab-menu.ts` is its right-click
 menu (and `context-menu.ts` the menu a page gets: `page-menu-items.ts` is where the extension host adds its items, `context-menu-groups.ts` holds one function per group, `context-menu-text.ts` cleans what a page controls before it reaches a label, `paste-and-go.ts` is the address bar's clipboard submit), and `window-actions.ts` is what the chrome's buttons and menus ask of their window (`press-stamps.ts` stamps, with main's clock, the press on a popup's button so the click that follows is judged by it), and `chrome-actions.ts`
@@ -42,7 +41,7 @@ view's frame (`split-frame.ts`) every popover built by
 [`../permissions/popover-view.ts`](../permissions/popover-view.ts) (permissions, site info) and
 every overlay view ([`../overlays/`](../overlays/)) set `webPreferences.partition` to `shell-session.ts`'s `SHELL_PARTITION`. Internal pages
 have their own session (ADR-0041). An ordinary tab, and the
-new-tab dashboard (a tab that happens to navigate to `file://`), stay on
+new-tab dashboard (a tab that happens to navigate to `orivon-shell://renderer/newtab/index.html`), stay on
 `session.defaultSession`; the Design notes below say why.
 
 The bookmarks bar's main side is [`bookmarks-bar/`](bookmarks-bar/) (its own README): what the bar shows, the
@@ -78,11 +77,11 @@ test-hook.ts` is the e2e-only record of what each was actually set to.
 `grants/origin-hash.ts`, `broker-contracts.ts` types);
 [`../../loader/electron/serve.ts`](../../loader/electron/serve.ts);
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts); and, inside `src/main/`,
-[`../browsing/`](../browsing/), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/),
+[`../browsing/`](../browsing/), [`../extensions/extension-popup-host.ts`](../extensions/extension-popup-host.ts) (`window-panels.ts` adopts its panel), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/),
 [`../shortcuts/`](../shortcuts/) (the command table and the service the menu reads, and the command bus a window runs a chosen command through), [`../overlays/`](../overlays/) (the question panel is an overlay shown through the tab slots),
 [`../consent/grant-prompt-origin.ts`](../consent/grant-prompt-origin.ts) (the origin line every
 permission dialog shows), [`../sessions/`](../sessions/) (the two questions' types, and
-`permission-gate.ts`'s notification store, handed to the permissions panel),
+`permission-gate.ts`'s notification store, handed to the permissions panel; `web-request-owner.ts` and `handler-while-needed.ts`, for `eth-gateway-redirect.ts`),
 [`../dev/`](../dev/) (the developer-mode flag, the score-level override, the local resolvers),
 [`../verifier/`](../verifier/), the stores and services a window reads ([`../settings/`](../settings/),
 [`../history/`](../history/), [`../zoom/`](../zoom/), [`../devtools/`](../devtools/),
@@ -118,12 +117,23 @@ done to one tab or to those around it in `tab-commands.ts`. `TabViewHost.service
 **[`shell-session.ts`](shell-session.ts): the shell's own views never share a session with a
 tab.** Chrome extensions load into `session.defaultSession`, the session every ordinary tab and
 the dashboard use, and may act on `<all_urls>` there, so a privileged view on that session would
-be reachable the same way. The dashboard stays out of their reach in a packaged build because it
-is `file://` and no extension is given file access. `SHELL_PARTITION` is `persist:` so a
+be reachable the same way. The dashboard is the one page of the shell on that session, and stays out
+of their reach because no extension host pattern names the `orivon-shell:` scheme it loads from
+(`../../broker/policy/extension-host-patterns.ts`). `SHELL_PARTITION` is `persist:` so a
 privileged page may one day use `localStorage` without losing it; none does now.
 `permission-gate.ts` and `verifier-subsystem.ts` cover the partition through
 `app.on('session-created', ...)`, registered in `beforeReady` (`../subsystems.ts`), before
 `createShellWindow` first creates it.
+
+**[`shell-session.ts`](shell-session.ts) also names the renderer entries and where each is served.** A
+built shell loads every entry from `orivon-shell://renderer/<path inside out/renderer>`, never from
+`file:` (`renderer-entry.ts` builds the address; [`../pages/shell-scheme.ts`](../pages/shell-scheme.ts)
+answers it). `SHELL_SESSION_ENTRIES` are served on `SHELL_PARTITION` with every file under `assets/`;
+`DEFAULT_SESSION_ENTRIES` (the dashboard) on the default session, with only the files its own build
+reaches, since a website shares that session. A page of the shell that is copied into another session
+(a duplicated tab, a swap) does not carry its history entry: `tab-history.ts` drops entries on the
+scheme, because no handler answers them there. `wireView` refuses a tab's navigation, frame or
+redirect to the scheme.
 
 **[`tabs.ts`](tabs.ts): a tab changes session by replacing its view.** Electron fixes a
 partition at construction, so every path that can change a tab's origin swaps its
@@ -253,3 +263,32 @@ document starts out visible. The page's preload turns it into `document.visibili
 ([`../../preload/page-visibility.ts`](../../preload/page-visibility.ts)); the decision is in the
 [decision log](../../../docs/decisions/decision-log.md). Limits: subframes are not told, and Chromium's
 own throttling is not what slows a hidden page, only the page backing off when it reads `hidden`.
+
+**[`eth-gateway-redirect.ts`](eth-gateway-redirect.ts): a gateway address opens as the `.eth` name from the first load, through four hooks and one handler.**
+Setting `web3.ethGatewayRedirect` is on by default and applies at once; each hook asks `gatewayRedirectFor`, which answers
+only while the setting is on and the verifier can load the name (`verifierServesName`), so with the light client off or unable
+to start every gateway address opens as it is, except a developer-mode name or a test-build fixture, which the verifier serves without it. The hooks map the address before the load, so the tab's session, the fragment and the address
+bar are those of the name from the start: `resolveTarget` in `tab-navigation.ts` (typed text, the dashboard box, paste-and-go, bookmarks,
+Home), `TabFactory.content()` and `trusted()` (every new tab: middle clicks, links from other programs, startup pages, an
+extension's `tabs.create`), `loadServedAddresses` in `served-address.ts` (a link followed inside a tab in an app's own session, which has no web-request owner, or inside a tab that must move to the name's session or app-tab
+flag: `gatewayLinkTarget` in `load-in-tab.ts` answers only then,
+and the link loads through the address bar's own session test), and
+`windowOpenHandler` (a `target=_blank` link or `window.open` becomes a new tab or window, never a popup that loads the gateway in its
+opener's session). The handler at order 5 on the default session's web-request owner, before HTTPS-only and extensions, catches what
+the hooks leave to it: a link followed inside an ordinary tab (so a `location.replace`, a form's POST body and the referrer are kept), a server redirect to a gateway address (from a tab, or from a popup that keeps its opener), and back and
+forward or a reload of a gateway entry saved while the setting was off. A restored tab and the copy of a sleeping tab map their
+saved entries through `gatewayEntries` before the list is restored, since the view was built for the `.eth` name and can sit in a
+session with no web-request owner. A fragment survives a server redirect (measured by
+`test/web3/e2e-eth-gateway-redirect.test.ts`).
+With the setting on a gateway address never commits, so the address bar and history show `ipfs://<name>.eth/...`; the omnibox's
+"go to" row still shows the typed address. A link inside a tab that must move is loaded from `will-navigate`, which drops a
+form's POST body and the referrer and makes a `location.replace` a new history entry, as for an `ipfs:` link. Limits: an
+extension never sees the gateway address a person navigates to, since the redirect runs before extensions' request handlers and
+the hooks map the address before any request exists, so a block an extension holds for an `eth.limo` host does not fire;
+a `window.open` to a gateway address returns `null` and the new
+tab has no opener, so a page that checks the handle or talks to the page it opened by `postMessage` does not work (an adopted
+popup whose first address is the gateway itself never commits the redirect); the copy of a live tab keeps the gateway entries it
+carried; a server redirect to a gateway address inside a cache-served app's own partition is not caught, since that
+partition has no web-request owner; a name whose content Orivon
+cannot load (Swarm, Arweave, not yet synced, unreachable) shows an error page, and turning the setting off is the way out;
+data a site keeps under its gateway origin stays there and is not seen at the `.eth` name.

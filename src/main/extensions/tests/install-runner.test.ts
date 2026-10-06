@@ -4,7 +4,9 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { generateKeyPairSync } from 'node:crypto'
 import AdmZip from 'adm-zip'
 import { installFromFile, installFromFolder, resolveSlotKey } from '../install-runner.js'
+import { uninstall } from '../install-lifecycle.js'
 import { readRegistry } from '../registry-runner.js'
+import { createExtensionPrefsStore } from '../extension-prefs-runner.js'
 import { takePendingInstalled } from '../runtime-installed.js'
 import { generateId } from '../../../../vendor/electron-chrome-web-store/src/browser/id.js'
 import { ALWAYS_ALLOW, ALWAYS_DENY, FIXTURE_MANIFEST, buildCrx, fakeSession, withTempDir, writeFixtureFolder } from './install-runner-fixtures.js'
@@ -430,6 +432,85 @@ describe('installFromFile', () => {
       const outcome = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW }, folderDir)
       expect(outcome).toEqual({ installed: false, reason: 'another installed extension already uses this id' })
       expect(readRegistry(userDataPath)).toHaveLength(1)
+    })
+  })
+})
+
+describe('a new install and the toolbar', () => {
+  it('pins a fresh install by what pinInstalled says, before it loads, so no icon appears and goes', async () => {
+    for (const wanted of [false, true]) {
+      await withTempDir(async (root) => {
+        const userDataPath = join(root, 'userData')
+        const { session } = fakeSession()
+        const prefs = createExtensionPrefsStore(null)
+        const changed: string[] = []
+        prefs.onChange((id) => { changed.push(id) })
+        let pinnedAtLoad: boolean | null | undefined
+        const original = session.extensions.loadExtension.bind(session.extensions)
+        session.extensions.loadExtension = async (path, options) => {
+          pinnedAtLoad = prefs.get(changed[0] ?? '').pinned
+          return await original(path, options)
+        }
+        const outcome = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW, prefs, pinInstalled: () => wanted }, writeFixtureFolder(root, FIXTURE_MANIFEST))
+        if (!outcome.installed) throw new Error('install failed')
+        expect(prefs.get(outcome.entry.id).pinned).toBe(wanted)
+        expect(pinnedAtLoad).toBe(wanted)
+      })
+    }
+  })
+
+  it('leaves a fresh install unpinned when the context has no setting to ask', async () => {
+    await withTempDir(async (root) => {
+      const { session } = fakeSession()
+      const prefs = createExtensionPrefsStore(null)
+      const outcome = await installFromFolder({ userDataPath: join(root, 'userData'), session, prompt: ALWAYS_ALLOW, prefs }, writeFixtureFolder(root, FIXTURE_MANIFEST))
+      if (!outcome.installed) throw new Error('install failed')
+      expect(prefs.get(outcome.entry.id).pinned).toBe(false)
+    })
+  })
+
+  it('leaves an update where it was: an extension with no recorded pin keeps following the old setting', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const { session } = fakeSession()
+      const prefs = createExtensionPrefsStore(null)
+      const source = writeFixtureFolder(root, FIXTURE_MANIFEST)
+      const first = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW, prefs, pinInstalled: () => true }, source)
+      if (!first.installed) throw new Error('install failed')
+      prefs.update(first.entry.id, { pinned: null })
+      writeFileSync(join(source, 'manifest.json'), JSON.stringify({ ...FIXTURE_MANIFEST, version: '1.1.0' }))
+      const second = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW, prefs, pinInstalled: () => true }, source)
+      if (!second.installed) throw new Error('update failed')
+      expect(prefs.get(first.entry.id).pinned).toBeNull()
+    })
+  })
+
+  it('keeps a pin the person already chose for this extension', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const { session } = fakeSession()
+      const prefs = createExtensionPrefsStore(null)
+      const source = writeFixtureFolder(root, FIXTURE_MANIFEST)
+      const first = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW, prefs, pinInstalled: () => false }, source)
+      if (!first.installed) throw new Error('install failed')
+      await uninstall({ userDataPath, session, prompt: ALWAYS_ALLOW }, first.entry.id)
+      prefs.update(first.entry.id, { pinned: true })
+      const again = await installFromFolder({ userDataPath, session, prompt: ALWAYS_ALLOW, prefs, pinInstalled: () => false }, source)
+      if (!again.installed) throw new Error('install failed')
+      expect(prefs.get(again.entry.id).pinned).toBe(true)
+    })
+  })
+
+  it('puts the pin back to unchosen when the load fails', async () => {
+    await withTempDir(async (root) => {
+      const { session, setFailNextLoad } = fakeSession()
+      const prefs = createExtensionPrefsStore(null)
+      const touched = new Set<string>()
+      prefs.onChange((id) => { touched.add(id) })
+      setFailNextLoad(new Error('boom'))
+      await expect(installFromFolder({ userDataPath: join(root, 'userData'), session, prompt: ALWAYS_ALLOW, prefs, pinInstalled: () => true }, writeFixtureFolder(root, FIXTURE_MANIFEST))).rejects.toThrow('boom')
+      expect(touched.size).toBe(1)
+      for (const id of touched) expect(prefs.get(id).pinned).toBeNull()
     })
   })
 })

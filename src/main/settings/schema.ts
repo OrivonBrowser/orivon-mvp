@@ -7,6 +7,9 @@ import { isHostList, MAX_LISTED_HOSTS } from './list-checks.js'
 import { isEmptyOrAbsolutePath } from './path-checks.js'
 import { CUSTOM_SEARCH_ENGINE, DEFAULT_SEARCH_ENGINE, SEARCH_ENGINES, isValidSearchTemplate } from '../browsing/search-engines.js'
 
+/** The official Web3 Score provider, which a profile that never chose one reads; a person who clears the setting asks nobody. */
+export const DEFAULT_SCORE_PROVIDER = 'ipns://k51qzi5uqu5dli7gc98gxy6jlbarijipfrw1x8z2wfyre3rvhssxvzeummkaff/score'
+
 export type SettingSpec =
   /** `labels` names options that are data, such as a search engine's own name; wording about an option is the page's. */
   | { readonly kind: 'enum', readonly options: readonly string[], readonly default: string, readonly labels?: Readonly<Record<string, string>> }
@@ -80,7 +83,9 @@ const SPECS = {
   // Whether `.eth` names are proven by a light client that runs on this computer. Read when Orivon starts.
   'web3.lightClient': { kind: 'bool', default: true },
   // Where judged Web3 Score levels are read (docs/architecture/web3-score-provider.md). Empty asks nobody.
-  'web3.scoreProvider': { kind: 'text', default: '', maxLength: 2048, check: isEmptyOrAddress },
+  'web3.scoreProvider': { kind: 'text', default: DEFAULT_SCORE_PROVIDER, maxLength: 2048, check: isEmptyOrAddress },
+  // Whether a tab asked to open `<name>.eth.limo` (or `.eth.link`) opens `<name>.eth` instead. Applied at once.
+  'web3.ethGatewayRedirect': { kind: 'bool', default: true },
   // Every tab's page can be inspected unless the person turns it off; where the tools open is theirs too.
   'developer.tools': { kind: 'bool', default: true },
   'developer.dock': { kind: 'enum', options: ['right', 'bottom', 'undocked'], default: 'right' },
@@ -114,6 +119,8 @@ const SPECS = {
   // Load unpacked, Reload for an unpacked extension: off until the person turns it on.
   'extensions.developerMode': { kind: 'bool', default: false },
   // Whether an extension installed from now on gets a place on the toolbar.
+  'extensions.pinInstalled': { kind: 'bool', default: false },
+  // Read only for an extension with no recorded pin (one whose install predates `extensions.pinInstalled`): settings keep non-default values only, so flipping this default would move every such extension that was never chosen for.
   'extensions.pinNew': { kind: 'bool', default: true }
 } as const satisfies Record<string, SettingSpec>
 

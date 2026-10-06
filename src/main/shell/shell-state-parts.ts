@@ -12,9 +12,11 @@ import { extensionsStatePart } from './state/extensions.js'
 import { homeStatePart } from './state/home.js'
 import { loginsStatePart } from '../passwords/logins-state.js'
 import { popupsBlockedStatePart } from './state/popups-blocked.js'
+import { sharingStatePart } from './state/sharing.js'
 import { shortcutsStatePart } from './state/shortcuts.js'
 import { sidePanelStatePart } from './state/side-panel.js'
 import { siteAccessStatePart } from './state/site-access.js'
+import { updateOfferedStatePart } from './state/update-offered.js'
 import type { ShellState, TabsSnapshot } from './tab-types.js'
 import type { WindowContext } from './window-context.js'
 
@@ -37,9 +39,11 @@ export const SHELL_STATE_PARTS: readonly ShellStatePart[] = [
   homeStatePart,
   loginsStatePart,
   popupsBlockedStatePart,
+  sharingStatePart,
   shortcutsStatePart,
   sidePanelStatePart,
-  siteAccessStatePart
+  siteAccessStatePart,
+  updateOfferedStatePart
 ]
 
 /** What every part adds to a push, merged. A part that throws adds nothing to that push. */

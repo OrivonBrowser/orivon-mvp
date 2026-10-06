@@ -24,7 +24,12 @@ const fakeLoader: Loader = {
   installFetched: async () => { throw new Error('installFetched was not stubbed for this test') },
   reconsider: async () => { throw new Error('reconsider was not stubbed for this test') },
   pinFor: async () => null,
-  ddocFor: async () => undefined
+  ddocFor: async () => undefined,
+  applyUpdate: async () => ({ outcome: 'rejected' as const, reason: 'unused' }),
+  quietOffers: async () => ({ quiet: [] }),
+  keepQuiet: async () => {},
+  manifestFor: async () => undefined,
+  manifestAt: async () => ({ kind: 'website' as const })
 }
 
 describe('appInstallSubsystem', () => {

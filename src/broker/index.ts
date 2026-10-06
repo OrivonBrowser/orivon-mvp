@@ -38,6 +38,7 @@ import { createIdCapability } from './capabilities/id.js'
 import { createWebCapability } from './capabilities/web.js'
 import { createEmbedCapability } from './capabilities/embed.js'
 import { createSecretsCapability } from './capabilities/secrets.js'
+import { createTrustCapability } from './capabilities/trust.js'
 import { createFsCapability } from './capabilities/fs.js'
 import { createPickGuardCheck, createUserSelectedCapability } from './capabilities/user-selected.js'
 import { createDeclinedConsentEntryPoints } from './capabilities/declined-consent.js'
@@ -127,6 +128,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   // as `id` above, over the seed `deps.keychain` already provides for it,
   // under a distinct derivation path (./policy/secret-seal.ts).
   const secrets = createSecretsCapability({ deps, ledger, canonical })
+  const trust = createTrustCapability({ ledger, canonical })
 
   // orivon.fs's eight entry points -- readFile, writeFile, confineSync
   // (ADR-0016) plus queue item 2.1's mkdir/readdir/stat/rm/rename. Lifted to
@@ -199,6 +201,11 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     const key = isolationKeyFromUrl(origin)
     if (key === null) return false
     return ledger.grantsFor(key).length > 0
+  }
+
+  function heldSync (origin: string, capability: CapabilityKind): boolean {
+    const key = originFromUrl(origin)
+    return key !== null && ledger.currentGrant(key, capability) !== undefined
   }
 
   /**
@@ -464,12 +471,13 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   }
 
   return {
-    app: { manifest, grants, isRegisteredSync, hasGrantsSync, registeredOriginsSync, persistedAppsSync, hydrateFromPinnedManifest, pickedPaths: pickedPathsFor, socketAllowanceSync },
+    app: { manifest, grants, isRegisteredSync, hasGrantsSync, heldSync, registeredOriginsSync, persistedAppsSync, hydrateFromPinnedManifest, pickedPaths: pickedPathsFor, socketAllowanceSync },
     net,
     id,
     web,
     embed,
     secrets,
+    trust,
     fs,
     registerApp,
     versionFloorFor,

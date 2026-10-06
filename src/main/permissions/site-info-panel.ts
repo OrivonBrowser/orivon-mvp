@@ -46,6 +46,7 @@ export function createSiteInfoPanel (
   openExtensions: () => void,
   openCertificate: () => void,
   sitePermissions: SitePermissionsAccess,
+  openHome: (domain: string) => void,
   dirname: string
 ): SiteInfoPanel {
   // Read by the IPC registration closure below, set on every open BEFORE
@@ -57,14 +58,14 @@ export function createSiteInfoPanel (
   const popover = createPopoverView(win, contentView, {
     dirname,
     entryPath: '/site-info/',
-    fallbackHtml: '../renderer/site-info/index.html',
+    entry: 'site-info',
     preloadRelPath: '../preload/site-info.js',
     urlArgName: 'orivon-site-info-url',
     align: 'left',
     background: PANEL_POPOVER_BACKGROUND,
     activeContents: activeWebContents,
     registerIpc: (webContents, url, onContentHeight) => {
-      registerSiteInfoIpc(webContents, url, controller, openOrigin, userDataPath, activeWebContents, reloadActiveTab, openSiteSettings, openExtensions, onContentHeight, openCertificate, sitePermissions, () => { popover.close() })
+      registerSiteInfoIpc(webContents, url, controller, openOrigin, userDataPath, activeWebContents, reloadActiveTab, openSiteSettings, openExtensions, onContentHeight, openCertificate, sitePermissions, () => { popover.close() }, openHome)
       return () => {}
     }
   })

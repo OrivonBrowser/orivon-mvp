@@ -23,7 +23,9 @@ import { qrPage } from './qr/page.js'
 import { questionPage } from './question/page.js'
 import { restorePage } from './restore/page.js'
 import { sadTabPage } from './sad-tab/page.js'
+import { screenSharePickerPage } from './screen-share-picker/page.js'
 import { screenshotPage } from './screenshot/page.js'
+import { sharingBarPage } from './sharing-bar/page.js'
 import { shortcutSheetPage } from './shortcut-sheet/page.js'
 import { sidePanelPage } from './side-panel/page.js'
 import { sitePromptPage } from './site-prompt/page.js'
@@ -58,7 +60,9 @@ export const OVERLAY_PAGES: Readonly<Record<string, OverlayPage>> = {
   'question-sheet': questionPage,
   restore: restorePage,
   'sad-tab': sadTabPage,
+  'screen-share-picker': screenSharePickerPage,
   screenshot: screenshotPage,
+  'sharing-bar': sharingBarPage,
   'shortcut-sheet': shortcutSheetPage,
   'side-panel': sidePanelPage,
   'site-prompt': sitePromptPage,

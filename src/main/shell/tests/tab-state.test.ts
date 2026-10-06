@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SubsystemContext } from '../../registry.js'
 
 // Pin, mute and the bulk closes, driven through a real TabManager over fake views: what matters is the strip's
@@ -56,10 +56,12 @@ vi.mock('electron', () => ({
 vi.mock('../../../loader/electron/serve.js', () => ({ isOriginServedFromCacheSync: (origin: string) => origin === 'https://app.example' }))
 
 const { TabManager } = await import('../tabs.js')
+const { provideVerifierAccess } = await import('../../verifier/verifier-access.js')
 const { setPinned } = await import('../tab-pin.js')
 const { closeOthers, closeToRight, duplicateTab, newTabToRight, othersToClose, rightToClose, tabMenuFlags, toggleMute, togglePin } = await import('../tab-commands.js')
 
 beforeEach(() => { createdViews.length = 0 })
+afterEach(() => { provideVerifierAccess({ start: () => {}, ready: async () => {} }) })
 
 const APP_CTX = { broker: { app: { isRegisteredSync: (origin: string) => origin === 'https://app.example' }, dropOrigin: async () => {} } } as unknown as SubsystemContext
 
@@ -296,6 +298,19 @@ describe('opening a tab beside another', () => {
     expect(copy.navigationHistory.restore).toHaveBeenCalledWith({ entries: [{ url: 'https://a.example/1', title: 'One' }, { url: 'https://a.example/2', title: 'Two' }], index: 1 })
   })
 
+  it('gives the copy of a sleeping tab the .eth name for a gateway page it kept, while the gateway redirect is on', () => {
+    provideVerifierAccess({ start: () => {}, ready: async () => {}, servesName: () => true })
+    const manager = new TabManager({ children: [], addChildView: vi.fn(), removeChildView: vi.fn() } as never, () => ({ x: 0, y: 0, width: 800, height: 600 }), vi.fn(), 'http://localhost:5999/newtab/', {} as SubsystemContext, { services: { settings: { get: () => true } } } as never)
+    const [a] = strip(manager, 1) as [string]
+    const record = manager.record(a)
+    if (record !== undefined) record.sleeping = { url: 'https://s.eth.limo/2', title: 'Two', favicon: null, entries: [{ url: 'https://s.eth.limo/1', title: 'One' }, { url: 'https://s.eth.limo/2', title: 'Two' }] as never, index: 1, at: 0 }
+
+    duplicateTab(manager, a)
+
+    const copy = createdViews.at(-1)?.webContents as FakeContents
+    expect(copy.navigationHistory.restore).toHaveBeenCalledWith({ entries: [{ url: 'https://s.eth/1', title: 'One' }, { url: 'https://s.eth/2', title: 'Two' }], index: 1 })
+  })
+
   it('has no history to give a copy of a tab that has only its one page', () => {
     const manager = newManager()
     const [a] = strip(manager, 1) as [string]
@@ -450,5 +465,46 @@ describe('muting', () => {
     expect(manager.record(a)?.pinned).toBe(true)
     togglePin(manager, a)
     expect(manager.record(a)?.pinned).toBe(false)
+  })
+})
+
+describe('a gateway address reaching a tab', () => {
+  const gatewayManager = (): InstanceType<typeof TabManager> => {
+    provideVerifierAccess({ start: () => {}, ready: async () => {}, servesName: () => true })
+    return new TabManager({ children: [], addChildView: vi.fn(), removeChildView: vi.fn() } as never, () => ({ x: 0, y: 0, width: 800, height: 600 }), vi.fn(), 'http://localhost:5999/newtab/', APP_CTX, { services: { settings: { get: () => true } } } as never)
+  }
+  const follow = (wc: FakeContents, url: string): boolean => {
+    const event = { url, defaultPrevented: false, preventDefault () { this.defaultPrevented = true } }
+    wc.emit('will-navigate', event)
+    return event.defaultPrevented
+  }
+
+  it('typed into the bar loads as the .eth address, fragment kept', () => {
+    const manager = gatewayManager()
+    const id = manager.createTab('https://news.example/')
+    const wc = createdViews.at(-1)?.webContents as FakeContents
+    manager.navigate(id, 'site.eth.limo/page.html?q=1#f')
+    expect(wc.loadURL).toHaveBeenLastCalledWith('https://site.eth/page.html?q=1#f')
+  })
+
+  it('followed as a link in an ordinary tab is left to the web-request redirect, which keeps a replace, a POST and the referrer', () => {
+    const manager = gatewayManager()
+    manager.createTab('https://news.example/')
+    const views = createdViews.length
+    const wc = createdViews.at(-1)?.webContents as FakeContents
+    wc.loadURL.mockClear()
+    expect(follow(wc, 'https://site.eth.limo/page.html#k')).toBe(false)
+    expect(wc.loadURL).not.toHaveBeenCalled()
+    expect(createdViews.length).toBe(views)
+  })
+
+  it('followed as a link in a cache-served app\'s tab moves the tab to a view of the .eth address\'s session', () => {
+    const manager = gatewayManager()
+    manager.createTab('https://app.example/')
+    const views = createdViews.length
+    const wc = createdViews.at(-1)?.webContents as FakeContents
+    expect(follow(wc, 'https://site.eth.limo/page.html#k')).toBe(true)
+    expect(createdViews.length).toBe(views + 1)
+    expect(createdViews.at(-1)?.webContents.loadURL).toHaveBeenCalledWith('https://site.eth/page.html#k')
   })
 })

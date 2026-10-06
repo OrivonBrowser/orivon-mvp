@@ -1,13 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { rendererEntryUrl, upperDriveLetter, validatedDevServerUrl } from '../renderer-entry.js'
+import { rendererEntryUrl, validatedDevServerUrl } from '../renderer-entry.js'
+import { DEFAULT_SESSION_ENTRIES, SHELL_SESSION_ENTRIES } from '../shell-session.js'
 
 describe('rendererEntryUrl', () => {
   it('serves an entry off the dev server at its nested path', () => {
-    expect(rendererEntryUrl('/out/main', 'http://localhost:5173', '/newtab/', '../renderer/newtab/index.html')).toBe('http://localhost:5173/newtab/')
+    expect(rendererEntryUrl('http://localhost:5173', '/newtab/', 'newtab')).toBe('http://localhost:5173/newtab/')
   })
 
-  it('resolves the built file to a file URL otherwise', () => {
-    expect(rendererEntryUrl('/opt/orivon/out/main', undefined, '/', '../renderer/index.html')).toBe('file:///opt/orivon/out/renderer/index.html')
+  it('names a built entry on the shell scheme, never as a file URL', () => {
+    expect(rendererEntryUrl(undefined, '/', 'index')).toBe('orivon-shell://renderer/index.html')
+    expect(rendererEntryUrl(undefined, '/newtab/', 'newtab')).toBe('orivon-shell://renderer/newtab/index.html')
+    for (const entry of [...SHELL_SESSION_ENTRIES, ...DEFAULT_SESSION_ENTRIES]) {
+      expect(rendererEntryUrl(undefined, '/', entry)).toMatch(/^orivon-shell:\/\/renderer\/(.+\/)?index\.html$/)
+    }
   })
 })
 
@@ -37,17 +42,5 @@ describe('validatedDevServerUrl', () => {
 
   it('rejects a value that does not parse as a URL', () => {
     expect(validatedDevServerUrl(false, 'not a url')).toBeUndefined()
-  })
-})
-
-describe('upperDriveLetter', () => {
-  it('writes a Windows drive letter the way Chromium reports it', () => {
-    expect(upperDriveLetter('file:///c:/Users/x/out/renderer/index.html')).toBe('file:///C:/Users/x/out/renderer/index.html')
-  })
-
-  it('leaves an upper-case drive, a POSIX path and a non-file URL alone', () => {
-    expect(upperDriveLetter('file:///D:/a/index.html')).toBe('file:///D:/a/index.html')
-    expect(upperDriveLetter('file:///opt/c:/index.html')).toBe('file:///opt/c:/index.html')
-    expect(upperDriveLetter('http://localhost:5173/')).toBe('http://localhost:5173/')
   })
 })

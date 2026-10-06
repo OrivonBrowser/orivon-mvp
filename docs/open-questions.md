@@ -929,10 +929,11 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A236: The update check sees a release only when the manifest changes **[OWNER]**
+### A236: The update check at a plain host sees a release only when the manifest changes **[OWNER]**
 
-- **Question:** A 304 ends the conditional check (d-0088), so files shipped under a byte-identical
-  manifest are never picked up. Is "bump `version` every release" a publisher requirement?
+- **Question:** At an https host a 304 ends the conditional check (d-0088), so files shipped under a
+  byte-identical manifest are never picked up there. Is "bump `version` every release" a publisher
+  requirement? (At a name the bundle hash is compared, `ADR-0056`.)
 - **Why it matters:** A publisher who does not change the manifest never ships an update.
 - **Options:** state the requirement; a daily unconditional check; compare the published hash-tree
   root (ADR-0029) with the pin, a cheaper backstop.
@@ -1342,7 +1343,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   the joined path refuses in-root symlinks the check allows); wait for an atomic beneath-root open.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
-
 
 ### A289: What Orivon does for extensions when it cannot run sandboxed **[RESEARCH]**
 
@@ -1888,14 +1888,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner
 - **Blocks:** nothing
 
-### A348: A browser exit right after a Chrome Web Store install is not reproduced **[RESEARCH]**
-
-- **Question:** What exits the browser right after a successful store install, the owner reports, with the extension working after a restart? A live install of a module worker with a welcome tab, an offscreen document and a static ruleset, with a web tab open, and of the real 75 MB AdBlock package, left the process running.
-- **Why it matters:** The report stands unexplained. What the live install did show was every real blocker's worker failing at load (fixed), which looks like "works after a restart" from outside.
-- **Options:** Get the extension id and the terminal output at the exit (rec.); wrap each `session.extensions` listener in `contain()`, which hides the cause; leave it.
-- **Who decides:** research first, with the owner's id and output
-- **Blocks:** nothing
-
 ### A350: A page's `fetch()` cannot follow a `webRequest` redirect to the extension's own file **[RESEARCH]**
 
 - **Question:** How can a page's `fetch()` follow a blocking listener's redirect to the extension's own web-accessible
@@ -2004,23 +1996,13 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A375: Should Orivon open local HTML and PDF files handed to it? **[OWNER]**
-
-- **Question:** The Linux entry no longer lists `text/html`, so a file manager does not offer Orivon for `report.html`,
-  and a file or a `mailto:` handed to a running Orivon opens nothing (only a web address does). Should Orivon open a
-  local HTML or PDF file, which needs a rule for `file:` that the address bar refuses today?
-- **Why it matters:** a person who double-clicks a saved page expects the browser they chose to show it.
-- **Options:** keep refusing `file:` (rec.); open a local file handed in at launch in a tab marked as a local file.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A380: Does the first-start dropdown still fail after the keyboard fixes? **[OWNER]**
 
 - **Question:** The owner saw the address text hidden after "Enter Orivon" and no dropdown on the first start (probably `npm run dev`, X11 or Wayland). The overlay no longer joins the window before its page commits, and a new tab starts with the keyboard in the bar. Does a first start still show hidden text or no dropdown?
 - **Why it matters:** the one run that reproduced it showed the stolen first letter, not hidden text; if it persists the cause is another one, probably the dev server's slow overlay page.
 - **Options:** retest after merge, saying the display server and whether the bar showed a caret (rec.); if it persists, run the probe against `electron-vite dev` under a window manager.
 - **Who decides:** owner
-- **Blocks:** nothing
+- **Blocks:** nothing; check `xdg-settings` on a real package either way
 
 ### A381: Should the first click after Alt+Tab select the whole address? **[AI-REC]**
 
@@ -2050,14 +2032,115 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A392: The file-protocol fuse stays on while the shell's pages are `file:` URLs **[RESEARCH]**
+### A382: Chrome stops extensions scripting the Chrome Web Store page; Orivon does not **[RESEARCH]**
 
-- **Question:** `grantFileProtocolExtraPrivileges` lets a `file:` page fetch `file:` URLs and treats its frames as one
-  origin. The shell's own pages are `file:` URLs in a packaged build, so the fuse stays on, and the local-files guard
-  (`src/main/local-files/`, ADR-0058) is what stops a downloaded page reading other files. Serving the shell's pages
-  from a scheme of Orivon's own would let the fuse go off and the guard become a second lock instead of the only one.
-- **Why it matters:** one guard stands between a downloaded page and the files of the person's account.
-- **Options:** serve the shell's pages from an Orivon scheme and turn the fuse off (rec., a packaging change to measure);
-  keep the guard alone.
+- **Question:** Chrome refuses every extension's content scripts, `chrome.scripting` and `webRequest` on the Web Store's own origin. Orivon runs them there, so an extension can rewrite the page that installs extensions. Refuse the store origin as Chrome does?
+- **Why it matters:** the store page asks the person to approve each install; a script that edits that page can change what the approval shows.
+- **Options:** refuse extension scripting on `https://chromewebstore.google.com` in the host-access check (rec., once measured against the extensions people use there, such as a store-rating overlay); leave it.
+- **Who decides:** research first, then the owner
+- **Blocks:** nothing
+
+### A384: How long should the input that lets an extension open its side panel count? **[AI-REC]**
+
+- **Question:** `chrome.sidePanel.open` is accepted within five seconds of input the browser saw on the extension, spent by one open. Chrome's own window and what it counts as input on the extension were not measured.
+- **Why it matters:** too short and an extension that opens its panel after a network answer is refused; too long and one click opens panels for a while.
+- **Options:** keep five seconds (rec.: it matches the length of a page's transient activation); measure Chrome's, and take that.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A385: Does a real wallet extension work with its panel on a toolbar click? **[RESEARCH]**
+
+- **Question:** MetaMask sets `openPanelOnActionClick`, opens its panel from its popup with `open({ windowId })` and returns with `window.close()`; behind a remote flag its worker calls `open({ tabId })` with no gesture. Only a fixture extension has been run against the panel.
+- **Why it matters:** the toolbar click of the extension with the most users now opens a panel instead of its popup.
+- **Options:** run `test/extensions/e2e-extensions-real.test.ts` with `ORIVON_REAL_EXTENSIONS_DIR` set before merging (rec.); do nothing until a report comes in.
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A388: A gateway address opened as a .eth name skips what the gateway or an extension would have done **[OWNER]**
+
+- **Question:** With "Open .eth.limo addresses as .eth names" on, a name that points at Swarm or Arweave, has not
+  synced, or cannot be reached shows Orivon's error page, and a typed gateway address cannot be opened as it is. The
+  redirect also runs before extensions' request handlers, so a block an extension holds for an `eth.limo` host never fires.
+- **Why it matters:** the gateway would have loaded some of these pages; the only way out is to turn the setting off.
+- **Options:** keep it as it is, both limits named on the compatibility pages (rec.); offer "Open through eth.limo" once
+  on the error page, which needs a decision on what a gateway-served page may do here; run the redirect after
+  extensions' request handlers, and map no address before a request while one with a block on the host is loaded.
 - **Who decides:** owner
 - **Blocks:** nothing
+
+### A389: Is "an evaluation for the exact CID" the right bar for a verified update? **[OWNER]**
+
+- **Question:** An update at a name is verified when the chosen provider has an evaluation for exactly
+  the new CID (any level, no lower than the pinned one's), the version is newer, the manifest's
+  `domain` is the origin's host and the pointers verify (`ADR-0056`). Level 3 or more, or no
+  default provider, would change that.
+- **Why it matters:** the bar decides whether a person is asked "switch?" or told to Trust & Force.
+- **Options:** keep it (rec.: it is what a provider can claim today, and means evaluated, not safe);
+  require Level 3 (fails FreeTube, judged Level 2); revisit when the Security score has levels.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A390: Plain `.eth` websites follow their name with no prompt **[AI-REC]**
+
+- **Question:** Only an installed app is held at its pin and asked about; a `.eth` site that is not an
+  app follows the name live, as a website does. Should a website be offered the same choice?
+- **Why it matters:** a name owner can change what a bookmarked `.eth` website shows, as on any site.
+- **Options:** keep it (rec.: a website has no grants or data to protect and no version to compare);
+  hold websites at a pin too, which breaks every site whose content changes daily.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A391: One key holds the provider and Explore's name **[OWNER]**
+
+- **Question:** The official provider and the Explore catalogue publish from the same server, so one
+  compromise could pass an app's update as verified under its own name (`security-model.md` T81).
+- **Why it matters:** "verified" is only as independent as the provider is from the publisher.
+- **Options:** a separate provider key held elsewhere (rec.); accept it while the apps are the
+  project's own; a second provider the person adds.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A395: A page's score lookup reads a judged name's manifest in the name's own partition **[AI-REC]**
+
+- **Question:** `orivon.trust.websiteScore` reads the manifest of a name the provider judged Level 3 or 4 through the loader, whose requests the verifier serves from that name's own partition, not the caller's.
+- **Why it matters:** a page that times the read learns whether the person has that name warm, the leak A256 closed for the name's resolution (`ADR-0058`). The stamp strips any partition a main-process request sets.
+- **Options:** a verifier request kind that reads one file in a named partition (rec.); a session of its own for these reads; accept it, the read happens only for judged names and at most 128 a burst.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A400: An embedded page cannot share a screen, even with `allow="display-capture"` **[AI-REC]**
+
+- **Question:** Screen sharing needs the tab's preload in the frame that asks, and a tab's preload runs in the top frame only (ADR-0052), so a meeting widget a site embeds in an iframe is refused. Run the preload in subframes, or accept?
+- **Why it matters:** embedded meeting widgets (an iframe API, a support chat) fail to share while their own sites work; most meeting products run in the top frame.
+- **Options:** accept until a person or an app needs it (rec.: subframes would run every preload module in every frame, ad frames included, and reopen ADR-0052); turn on `nodeIntegrationInSubFrames` for tabs with a frame-aware preload audit.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A401: Stop sharing cannot end a screen or window share the page has copied **[AI-REC]**
+
+- **Question:** Electron 44 gives main no way to end a screen or window capture, so Stop ends the tracks the preload handed the page and their clones. A clone made through a same-origin `about:blank` realm the preload does not reach is never reported: the bar and marks follow the tracks the preload knows, so they go when those end while that hidden copy keeps capturing. Accept, or reload the page on Stop?
+- **Why it matters:** a person who presses Stop expects the share to end, and the indicator is only as true as the tracks the preload handed out; closing or reloading the tab always ends it, and Wayland and macOS show the system's own indicator.
+- **Options:** accept and keep closing the tab as the hard stop (rec.: only a page working against the person keeps a hidden copy, and it was granted the share); reload the page on Stop (ends a call with it); ask Electron for a stop in `setDisplayMediaRequestHandler` (settles it).
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A402: Screen sharing on Wayland, Windows and macOS is written but not measured end to end **[RESEARCH]**
+
+- **Question:** Linux X11 is measured end to end. On Wayland the picker hands a window or screen to the desktop portal, and only the portal round trip is measured, not an accepted share; Windows (system audio) and macOS (Screen Recording permission) follow Electron's documentation.
+- **Why it matters:** the owner's own desktop is GNOME on Wayland; a share that fails there fails for the person most likely to try it first.
+- **Options:** a manual share on a real GNOME Wayland desktop and on Windows and macOS before release (rec.); a headless portal backend that accepts by itself (none installed here).
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A394: Can the file-protocol fuse flip run on macOS and Windows? **[RESEARCH]**
+
+- **Question:** `scripts/install-electron.mjs` flips the fuse on Linux only and refuses elsewhere. On macOS the
+  fuse sits in a signed framework (a flip needs an ad hoc re-sign that keeps the bundle valid); Windows refuses a
+  rename over a running `.exe`. Neither is run, and the packaged Linux build was launched once under a headless
+  display, not on a person's machine.
+- **Why it matters:** a refused flip leaves local files closed, which is safe, but a person on macOS or Windows
+  who runs from source never gets them.
+- **Options:** run `npm install` and a package on each system and read the fuse byte (rec.); flip a copy and swap
+  it in on the next start.
+- **Who decides:** research first
+- **Blocks:** local files on macOS and Windows

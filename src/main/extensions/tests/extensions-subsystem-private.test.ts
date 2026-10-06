@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// afterReady in a private or guest runtime: nothing loads, no Web Store hook
-// starts, and every install route refuses. The ordinary runtime is the control.
+// afterReady in a private or guest runtime: nothing loads, the Web Store page's APIs are still
+// served (so a store tab never reaches the native ones) with installs refused, and every install
+// route refuses. The ordinary runtime is the control.
 const loadExtension = vi.fn(async () => ({}))
 const startWebStore = vi.fn(async () => ({
   installFromStore: vi.fn(), checkForUpdates: vi.fn(), updateFromStore: vi.fn()
@@ -20,6 +21,7 @@ vi.mock('../store-runner.js', () => ({ startWebStore }))
 vi.mock('../store-test-hook.js', () => ({ installStoreTestHook: vi.fn() }))
 vi.mock('../extensions-install-test-hook.js', () => ({ installExtensionsInstallTestHook: vi.fn() }))
 vi.mock('../api/install-apis.js', () => ({ installApis }))
+vi.mock('../side-panel-runner.js', () => ({ closeSidePanels: vi.fn(async () => {}) }))
 vi.mock('../install-extension-commands.js', () => ({ installExtensionCommands: () => ({ whenReady: async () => {}, getAll: () => [] }) }))
 vi.mock('../registry-runner.js', () => ({ readRegistry: () => [{ id: 'a'.repeat(32), name: 'x', enabled: true, path: '/slot/1' }] }))
 vi.mock('../../registry.js', () => ({ publishExtensions: (_ctx: unknown, api: unknown) => { published = api } }))
@@ -40,10 +42,11 @@ beforeEach(() => {
 })
 
 describe('extensionsSubsystem.afterReady', () => {
-  it('in a private runtime loads nothing, starts no Web Store hook and refuses every install route', async () => {
+  it('in a private runtime loads nothing, starts the store with installs refused and refuses every install route', async () => {
     await extensionsSubsystem.afterReady!(ctx(true))
     expect(loadExtension).not.toHaveBeenCalled()
-    expect(startWebStore).not.toHaveBeenCalled()
+    expect(startWebStore).toHaveBeenCalledTimes(1)
+    expect((startWebStore.mock.calls[0] as any[])[0].privateSession).toBe(true)
     await expect(published.installFromFolder('/x')).resolves.toEqual(REFUSED)
     await expect(published.installFromFile('/x.crx')).resolves.toEqual(REFUSED)
     await expect(published.installFromStore('a'.repeat(32))).resolves.toEqual(REFUSED)

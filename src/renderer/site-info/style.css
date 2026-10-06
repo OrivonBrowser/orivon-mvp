@@ -392,3 +392,13 @@ hr {
 .judged-summary { margin: 0; font-size: 12px; line-height: 1.45; }
 .part-list .rung-label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
 .part-note { color: var(--wink-dim); font-size: 11px; line-height: 1.4; }
+
+/* The update the key offers for an installed app whose name moved. */
+.update-card { margin: 8px 0; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--wborder); display: flex; flex-direction: column; gap: 6px; }
+.update-card.unverified { border-color: var(--wwarn); background: var(--wwarn-bg); }
+.update-heading { margin: 0; font-weight: 600; }
+.update-verdict, .update-reasons, .update-failure { margin: 0; font-size: 12px; color: var(--wink-dim); }
+.update-reasons { padding-left: 16px; }
+.update-failure { color: var(--wdanger); }
+.update-card button { align-self: flex-start; }
+.link-button { align-self: flex-start; padding: 0; border: 0; background: none; color: var(--waccent); font-size: 12px; cursor: pointer; text-decoration: underline; }

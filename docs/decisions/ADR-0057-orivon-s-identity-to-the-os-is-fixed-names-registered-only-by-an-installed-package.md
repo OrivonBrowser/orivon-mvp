@@ -19,8 +19,8 @@ an AppImage and a private session never register, and say why.
 ## Context
 
 A pinned taskbar button, a default-app choice and a desktop environment's browser list are all keyed on these
-names. `docs/open-questions.md` A326 asked whether the browser should offer to become the default, and A375
-found the package claiming a type it could not open. The earlier rule (`d-0320`) allowed a registration only
+names. A326 asked whether the browser should offer to become the default, and A375 found the package claiming
+a type it could not open (both now in `resolved-questions.md`). The earlier rule (`d-0320`) allowed a registration only
 from a packaged build on a press of the button, which left Windows and macOS with no path and nothing offering.
 
 ## Alternatives considered

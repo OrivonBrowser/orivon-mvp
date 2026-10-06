@@ -103,13 +103,26 @@ Also mandatory:
   sees it. The real path is `node_modules/webtorrent/dist/sw.min.js` — note the `dist/`; a path
   without it looks plausible and fails as a silent 404.
 
-## `file://` counts as a secure context — `serviceWorker.register()` needs no fallback
+## The file-protocol fuse is off in this repository's binaries
 
-Service workers are ordinarily gated to secure contexts (`https:` or `localhost`), and a
-packaged app serves its files over `file://`. **Electron treats a `file://` origin loaded via
-`loadFile()` as a secure context**: `navigator.serviceWorker.register()` succeeds with no flag
-and no workaround, measured in spike gate 3. Don't build a registration fallback speculatively —
-`docs/planning/spike-verdict.md` (its Gate 3 section) has the evidence.
+On Linux, `npm install` (the `postinstall` hook) and `npm run install:electron` turn `grantFileProtocolExtraPrivileges`
+off in `node_modules/electron/dist/electron` (ADR-0059; a package has it off through `electron-builder.yml`).
+With it off, a `file:` page's module scripts are blocked (a null origin), a canvas read of a sibling image
+throws `SecurityError` and `fetch` of a sibling file rejects, so the shell's own pages load from
+`orivon-shell://renderer/...` instead (`src/main/pages/shell-scheme.ts`). After syncing `main`, run
+`npm run install:electron` in each checkout: it writes a new file and renames it over its own path, because a
+`cp -al` worktree shares the binary's inode with the checkout it came from and an in-place write would flip
+that one too (and fail with `ETXTBSY` while it runs). Never `flipFuses` a binary in `node_modules` directly.
+
+## `file://` is a secure context only while the file-protocol fuse is on
+
+Service workers are ordinarily gated to secure contexts (`https:` or `localhost`). **Electron treats a
+`file://` origin loaded via `loadFile()` as a secure context** while `grantFileProtocolExtraPrivileges` is on,
+and `navigator.serviceWorker.register()` then succeeds with no flag and no workaround (spike gate 3,
+`docs/planning/spike-verdict.md`, run with the fuse on). A package and a Linux checkout's binary
+have it off (the section above), so nothing here loads its pages from `file:` and the result does not
+carry over: a page that needs a service worker is served from a scheme or an origin that is a secure context
+by itself.
 
 **What this does not prove:** gate 3 itself is **BLOCKED**, not passed — `register()` succeeding
 is confirmed, but the end-to-end media path through the `<video>` element is still unproven,
@@ -455,3 +468,15 @@ What `test/support/qa-evidence.mjs` and `test/support/qa-visual.ts` rely on, eac
   headless run, so no spec provokes an uncaught exception.
 - **Playwright's mouse stays where the last click left it**, so the button it clicked keeps its
   hover look in every later screenshot. Park the pointer in empty tab-strip space before a capture.
+
+## A main-process SIGSEGV has no names until the release's symbols are matched to the core
+
+`coredumpctl` and `gdb` show Electron frames as raw offsets in the stripped binary. The symbols are in the release's own
+asset, `electron-v<version>-linux-x64-symbols.zip` (GitHub releases of `electron/electron`), as
+`electron.breakpad.syms`. Take the offsets of the frames from the core (`gdb -batch -ex bt` on the dump, minus the
+mapping's load address), then find the `FUNC` record whose start and size cover each one: a record is
+`FUNC [m] <start> <size> <param size> <name>`, all hex, so a short `awk` over the file does it. Frame #0 is the
+answer; the first frame in `Run` of a `...Function` class names the extension API that was running. That is how a
+store install's crash was found: the native status handler of the Chrome Web Store page's API, reached after an
+extension load made the renderer rebuild `chrome.*`. Match the symbols to the exact Electron version in
+`node_modules/electron/package.json`; another version's offsets name a different function without any error.

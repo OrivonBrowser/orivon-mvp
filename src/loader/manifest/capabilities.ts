@@ -17,9 +17,11 @@ import type {
   FsCapability,
   HttpsCapability,
   IdCapability,
+  MediaCapability,
   NetCapability,
   Pattern,
   SecretsCapability,
+  TrustCapability,
   TcpCapability,
   UdpCapability,
   WebCapability
@@ -29,6 +31,7 @@ import { declarableConnectHostRejection, parsePattern as parseConnectPattern, ty
 import { ownProperty } from '../../broker/policy/own-property.js'
 import { webContextOriginRejection } from '../../broker/policy/web-context-origin.js'
 import { readEmbed } from './embed.js'
+import { readMedia } from './media.js'
 import { UNSAFE_TEXT_CHARS, describeValue, extraKey, isAny, isRecord, optionalStringArray, reject } from './manifest.js'
 
 // --- bounds ----------------------------------------------------------------
@@ -47,7 +50,7 @@ const MAX_CURVES = 8
 /** capability-api.md's open item A9, point 1: privileged ports denied outright, at every tier. */
 const MIN_UNPRIVILEGED_PORT = 1024
 
-const CAPABILITIES_KEYS = ['net', 'fs', 'id', 'web', 'secrets', 'protocols']
+const CAPABILITIES_KEYS = ['net', 'fs', 'id', 'web', 'secrets', 'media', 'trust', 'protocols']
 const NET_KEYS = ['tcp', 'udp', 'https', 'concurrentSockets']
 const TCP_KEYS = ['connect', 'listen']
 const UDP_KEYS = ['bind', 'send']
@@ -58,6 +61,7 @@ const ID_CAPABILITY_KEYS = ['curves']
 const WEB_CAPABILITY_KEYS = ['contexts', 'embed']
 /** ADR-0033: `SecretsCapability` declares no fields in v0 -- presence alone is the ask. */
 const SECRETS_CAPABILITY_KEYS: string[] = []
+const TRUST_CAPABILITY_KEYS = ['score']
 
 const SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*$/
 const PORT_RANGE_PATTERN = /^([1-9][0-9]{0,4})(?:-([1-9][0-9]{0,4}))?$/
@@ -447,6 +451,17 @@ function readSecrets (raw: unknown, path: string): SecretsCapability {
   return {}
 }
 
+/** ADR-0058: `score` is presence-only and `true`, the shape `readSecrets` has with one field to carry; `false` is refused, not read as absent. */
+function readTrust (raw: unknown, path: string): TrustCapability {
+  if (!isRecord(raw)) reject(`${path} must be an object, got ${describeValue(raw)}`)
+  const extra = extraKey(raw, TRUST_CAPABILITY_KEYS)
+  if (extra !== null) reject(`${path} has an unrecognised field: ${describeValue(extra)}`)
+  const score = ownProperty(raw, 'score', isAny)
+  if (score === undefined) return {}
+  if (score !== true) reject(`${path}.score must be true, got ${describeValue(score)}`)
+  return { score: true }
+}
+
 /** Reads and validates the `capabilities` sub-tree. Called from manifest.ts's readManifest. */
 export function readCapabilities (raw: unknown, path: string): Capabilities {
   if (!isRecord(raw)) reject(`${path} must be an object, got ${describeValue(raw)}`)
@@ -458,16 +473,20 @@ export function readCapabilities (raw: unknown, path: string): Capabilities {
   const idRaw = ownProperty(raw, 'id', isAny)
   const webRaw = ownProperty(raw, 'web', isAny)
   const secretsRaw = ownProperty(raw, 'secrets', isAny)
+  const mediaRaw = ownProperty(raw, 'media', isAny)
+  const trustRaw = ownProperty(raw, 'trust', isAny)
   const protocols = optionalStringArray(raw, path, 'protocols', MAX_PROTOCOLS, (scheme, i) => {
     validateSchemeName(scheme, `${path}.protocols[${i}]`)
   })
 
-  const result: { net?: NetCapability, fs?: FsCapability, id?: IdCapability, web?: WebCapability, secrets?: SecretsCapability, protocols?: readonly string[] } = {}
+  const result: { net?: NetCapability, fs?: FsCapability, id?: IdCapability, web?: WebCapability, secrets?: SecretsCapability, media?: MediaCapability, trust?: TrustCapability, protocols?: readonly string[] } = {}
   if (netRaw !== undefined) result.net = readNet(netRaw, `${path}.net`)
   if (fsRaw !== undefined) result.fs = readFs(fsRaw, `${path}.fs`)
   if (idRaw !== undefined) result.id = readIdCapability(idRaw, `${path}.id`)
   if (webRaw !== undefined) result.web = readWeb(webRaw, `${path}.web`)
   if (secretsRaw !== undefined) result.secrets = readSecrets(secretsRaw, `${path}.secrets`)
+  if (mediaRaw !== undefined) result.media = readMedia(mediaRaw, `${path}.media`)
+  if (trustRaw !== undefined) result.trust = readTrust(trustRaw, `${path}.trust`)
   if (protocols !== undefined) result.protocols = protocols
   return result
 }

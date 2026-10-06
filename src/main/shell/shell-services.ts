@@ -8,6 +8,7 @@ import { SearchEngineStore } from '../browsing/search-engine-store.js'
 import { InternalPageRegistry } from '../pages/internal-registry.js'
 import { SettingsStore } from '../settings/settings-store.js'
 import { isDevEthName } from '../dev/eth-resolver.js'
+import type { UpdateOffer } from '../install/app-updates.js'
 import { createScoreProviderClient, netFetchJson } from '../browsing/score-provider-client.js'
 import type { ScoreProviderClient } from '../browsing/score-provider-client.js'
 import { SHELL_PARTITION } from './shell-session.js'
@@ -80,6 +81,11 @@ export interface ShellServices {
   readonly settings: SettingsStore
   /** The Web3 Score provider the person chose, with one cache for every window. */
   readonly scoreProvider: ScoreProviderClient
+  /** The updates offered to installed apps at a name, for the key icon; empty until the app-update subsystem has published. */
+  readonly updateOffers: {
+    readonly pending: (origin: string) => UpdateOffer | undefined
+    readonly onChange: (listener: (origin: string) => void) => () => void
+  }
   /** What the person told each site it may do; a private session keeps it in memory. */
   readonly siteSettings: SiteSettingsStore
   readonly shortcuts: ShortcutService
@@ -147,6 +153,10 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     session: runtime.isPrivate || kiosk ? new NullSessionStore() : new SessionStore(join(userDataPath, 'session.json')),
     settings,
     scoreProvider: createScoreProviderClient({ providerAddress: () => settings.get('web3.scoreProvider'), isDevEthName, fetchJson: netFetchJson }),
+    updateOffers: {
+      pending: (origin) => ctx.appUpdates?.pending(origin),
+      onChange: (listener) => ctx.appUpdates?.onChange(listener) ?? (() => {})
+    },
     siteSettings: new SiteSettingsStore(runtime.isPrivate ? null : join(userDataPath, 'site-settings.json')),
     shortcuts: new ShortcutService(shortcutStore, platform),
     shortcutStore,

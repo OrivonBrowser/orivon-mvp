@@ -51,4 +51,36 @@ describe('createSiteAsks', () => {
       error.mockRestore()
     }
   })
+
+  it('asks an asker added first before every asker registered earlier', async () => {
+    const asks = createSiteAsks()
+    asks.add({ name: 'general', request: async () => await Promise.resolve(true), check: () => true })
+    asks.addFirst({ name: 'owner', request: async () => await Promise.resolve(false), check: () => false })
+    expect(await asks.request(TAB, 'media', {})).toBe(false)
+    expect(asks.check(TAB, 'display-capture', 'https://a.example', {})).toBe(false)
+  })
+
+  it('lets the general asker answer when the one added first answers undefined', async () => {
+    const asks = createSiteAsks()
+    asks.add({ name: 'general', request: async () => await Promise.resolve(true) })
+    asks.addFirst({ name: 'owner', request: () => undefined })
+    expect(await asks.request(TAB, 'media', {})).toBe(true)
+  })
+
+  it('tells every asker that a request was granted, and skips one that throws', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const heard = vi.fn()
+      const asks = createSiteAsks()
+      asks.add({ name: 'broken', afterGrant: () => { throw new Error('boom') } })
+      asks.add({ name: 'silent' })
+      asks.add({ name: 'listener', afterGrant: heard })
+      const details = { mediaTypes: [] }
+      asks.afterGrant(TAB, 'media', details)
+      expect(heard).toHaveBeenCalledWith(TAB, 'media', details)
+      expect(error.mock.calls[0]?.[0]).toContain('broken')
+    } finally {
+      error.mockRestore()
+    }
+  })
 })

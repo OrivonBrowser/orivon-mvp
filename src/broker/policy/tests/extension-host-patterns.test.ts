@@ -65,6 +65,33 @@ describe('matchesHostPattern', () => {
   })
 })
 
+describe('explicit schemes', () => {
+  it('never reach the shell\'s own pages, however they are spelled', () => {
+    const dashboard = 'orivon-shell://renderer/newtab/index.html'
+    for (const pattern of ['orivon-shell://*/*', 'orivon-shell://renderer/*', '<all_urls>', '*://*/*']) {
+      expect(matchesHostPattern(pattern, dashboard)).toBe(false)
+    }
+    for (const pattern of ['orivon://*/*', 'orivon://settings/*']) {
+      expect(matchesHostPattern(pattern, 'orivon://settings/')).toBe(false)
+    }
+  })
+
+  it('name only the schemes of Chrome\'s grammar and an extension\'s own pages', () => {
+    expect(matchesHostPattern('chrome-extension://abc/*', 'chrome-extension://abc/x')).toBe(true)
+    for (const [pattern, url] of [['data:///*', 'data:text/html,a'], ['blob://*/*', 'blob:https://a.example/1'], ['chrome://*/*', 'chrome://gpu/'], ['devtools://*/*', 'devtools://devtools/x']]) {
+      expect(matchesHostPattern(pattern as string, url as string), pattern).toBe(false)
+    }
+  })
+
+  it('still name ws, wss, ftp, http and https', () => {
+    expect(matchesHostPattern('ws://a.example/*', 'ws://a.example/x')).toBe(true)
+    expect(matchesHostPattern('wss://a.example/*', 'wss://a.example/x')).toBe(true)
+    expect(matchesHostPattern('ftp://a.example/*', 'ftp://a.example/x')).toBe(true)
+    expect(matchesHostPattern('http://a.example/*', 'http://a.example/x')).toBe(true)
+    expect(matchesHostPattern('https://a.example/*', 'https://a.example/x')).toBe(true)
+  })
+})
+
 describe('matchesAnyHostPattern', () => {
   it('is true when any one pattern in the set matches', () => {
     expect(matchesAnyHostPattern(['https://b.example/*', 'https://a.example/*'], 'https://a.example/x')).toBe(true)

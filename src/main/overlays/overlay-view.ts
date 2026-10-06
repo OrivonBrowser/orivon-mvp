@@ -46,7 +46,7 @@ export interface OverlayViewHandle {
 }
 
 export interface OverlayViewSpec {
-  /** The caller's own `import.meta.dirname`, as `rendererEntryUrl` takes it. */
+  /** The caller's own `import.meta.dirname`, which the preload path is relative to. */
   readonly dirname: string
   readonly def: Pick<OverlayDef, 'name' | 'surface'>
   /** No rounded corners: a view that sits flush against the window's edge. */
@@ -65,13 +65,13 @@ function backgroundFor (surface: OverlayDef['surface']): string {
 }
 
 /** The page's address. The preload's gate and the ipc sender check both compare it character for character. */
-export function overlayUrl (dirname: string, def: Pick<OverlayDef, 'name' | 'surface'>): string {
-  const base = rendererEntryUrl(dirname, validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL']), '/overlay/', '../renderer/overlay/index.html')
+export function overlayUrl (def: Pick<OverlayDef, 'name' | 'surface'>): string {
+  const base = rendererEntryUrl(validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL']), '/overlay/', 'overlay')
   return `${base}?overlay=${encodeURIComponent(def.name)}&surface=${def.surface}`
 }
 
 export function createOverlayView (spec: OverlayViewSpec): OverlayViewHandle {
-  const url = overlayUrl(spec.dirname, spec.def)
+  const url = overlayUrl(spec.def)
   const view = new WebContentsView({
     webPreferences: {
       preload: join(spec.dirname, '../preload/overlay.js'),

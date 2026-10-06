@@ -33,7 +33,8 @@ function fakeOrivon (): Orivon {
     },
     id: { publicKey: async () => new Uint8Array(), sign: async () => new Uint8Array(), requestIdentity: async () => null },
     web: { openContext: unused, setEmbedScript: unused },
-    secrets: { available: unused, encrypt: unused, decrypt: unused }
+    secrets: { available: unused, encrypt: unused, decrypt: unused },
+    trust: { websiteScore: unused }
   }
 }
 
@@ -106,6 +107,14 @@ describe('electron exports this package has not yet considered', () => {
       expect((error as { reason?: string }).reason).toBe('unimplemented')
       expect((error as { api?: string }).api).toBe(`${name}.someMethod`)
     }
+  })
+})
+
+describe('desktopCapturer', () => {
+  it('has a real getSources, which names the missing media devices rather than refusing as unimplemented', async () => {
+    vi.stubGlobal('orivon', fakeOrivon())
+    const mod = await import('../index.js')
+    await expect(mod.desktopCapturer.getSources()).rejects.toThrow(/mediaDevices/)
   })
 })
 

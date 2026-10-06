@@ -53,6 +53,16 @@ describe('hasHostAccess', () => {
   })
 })
 
+describe('the shell\'s own pages', () => {
+  it('are not covered by an explicit pattern naming their scheme', () => {
+    const dashboard = 'orivon-shell://renderer/newtab/index.html'
+    for (const pattern of ['orivon-shell://*/*', 'orivon-shell://renderer/*', '<all_urls>']) {
+      const manifest = { manifest_version: 3, name: 'x', version: '1.0.0', host_permissions: [pattern] }
+      expect(hasHostAccess(manifest, dashboard)).toBe(false)
+    }
+  })
+})
+
 describe('hasApiOrHostAccess', () => {
   it('is true from the API permission alone, with no host access at all', () => {
     expect(hasApiOrHostAccess(MANIFEST_WITH_COOKIES, 'cookies', 'https://anything.example/')).toBe(true)

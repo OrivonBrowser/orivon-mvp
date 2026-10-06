@@ -24,8 +24,15 @@ export const NEW_PRIVATE_WINDOW_FLAG = '--new-private-window'
 
 export type LaunchParse = { readonly ok: true, readonly launch: Launch } | { readonly ok: false, readonly problem: string }
 
+/** The command line up to the first `--`, which ends the switches: what follows is a link or file, and may carry anything. */
+export function switchesOf (argv: readonly string[]): readonly string[] {
+  const end = argv.indexOf('--')
+  return end === -1 ? argv : argv.slice(0, end)
+}
+
 /** The launch the command line asks for. `home` is where the default profile's data is. */
-export function parseLaunch (argv: readonly string[], home: string): LaunchParse {
+export function parseLaunch (command: readonly string[], home: string): LaunchParse {
+  const argv = switchesOf(command)
   const profiles = argv.filter((argument) => argument.startsWith(PROFILE_FLAG))
   const isPrivate = argv.includes(PRIVATE_FLAG)
   if (isPrivate && profiles.length > 0) return { ok: false, problem: 'a private session cannot also be a profile' }

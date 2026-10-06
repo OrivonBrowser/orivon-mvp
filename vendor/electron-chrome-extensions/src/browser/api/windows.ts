@@ -20,8 +20,7 @@ export class WindowsAPI {
   constructor(private ctx: ExtensionContext) {
     const handle = this.ctx.router.apiHandler()
     handle('windows.get', this.get.bind(this))
-    // TODO: how does getCurrent differ from getLastFocused?
-    handle('windows.getCurrent', this.getLastFocused.bind(this))
+    handle('windows.getCurrent', this.getCurrent.bind(this))
     handle('windows.getLastFocused', this.getLastFocused.bind(this))
     handle('windows.getAll', this.getAll.bind(this))
     handle('windows.create', this.create.bind(this))
@@ -145,6 +144,15 @@ export class WindowsAPI {
     const win = this.getWindowFromId(windowId)
     if (!win) return { id: WindowsAPI.WINDOW_ID_NONE }
     return this.toExtensionWindow(event, this.getWindowDetails(win), getInfo?.populate === true)
+  }
+
+  /** Orivon patch (UPSTREAM.md patch 70): the window the host places a calling page in (a side panel's), else the last focused one. */
+  private getCurrent(event: ExtensionEvent, getInfo?: chrome.windows.QueryOptions) {
+    const placed = event.type === 'frame' ? this.ctx.store.impl.windowOf?.(event.sender) : undefined
+    if (placed && !placed.isDestroyed()) {
+      return this.toExtensionWindow(event, this.getWindowDetails(placed), getInfo?.populate === true)
+    }
+    return this.getLastFocused(event, getInfo)
   }
 
   private getLastFocused(event: ExtensionEvent, getInfo?: chrome.windows.QueryOptions) {

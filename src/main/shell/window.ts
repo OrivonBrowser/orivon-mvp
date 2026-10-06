@@ -41,9 +41,9 @@ import { SHELL_PARTITION } from './shell-session.js'
 import { NATIVE_TAB_DRAG_ARGUMENT } from '../channels.js'
 import { pointerIsLocal } from './local-pointer.js'
 
-/** The new-tab page's own URL: the dev server's nested path, or the built file. */
+/** The new-tab page's own URL: the dev server's nested path, or its address on the shell scheme. */
 export function resolveDashboardUrl (): string {
-  return rendererEntryUrl(import.meta.dirname, validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL']), '/newtab/', '../renderer/newtab/index.html')
+  return rendererEntryUrl(validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL']), '/newtab/', 'newtab')
 }
 
 /** One shell window. `services` are what every window of this process shares;
@@ -61,7 +61,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // the preload's expected-URL argument and the load target name the exact
   // same string, the pattern `--orivon-newtab-url` already establishes
   // below for the dashboard.
-  const chromeUrl = rendererEntryUrl(import.meta.dirname, devServerUrl, '/', '../renderer/index.html')
+  const chromeUrl = rendererEntryUrl(devServerUrl, '/', 'index')
   const chrome = new WebContentsView({
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/shell.js'),

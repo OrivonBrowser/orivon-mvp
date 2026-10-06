@@ -27,8 +27,8 @@ import type { LoadResult } from '../../loader/index.js'
 import type { GrantedWithoutInstall } from './grant-without-install.js'
 import { createTokenBucketLimiter } from '../../broker/transport/token-bucket.js'
 import type { RateLimiter } from '../../broker/transport/token-bucket.js'
+import { dialogCallerFor } from './dialog-caller.js'
 import type { DialogCaller } from '../consent/request-grant.js'
-import { holdNavigation } from '../shell/navigation-hold.js'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 
 /** The one shape this file needs from an ipcMain.on event -- structural, matching origin.ts's own SenderFrameLike so a test never needs a real Electron event. */
@@ -95,18 +95,7 @@ export function createManifestHintListener (
     if (attributed !== undefined && !isAttributedSession(event.senderFrame, event.sender, origin, attributed)) return
     if (!limiter.tryConsume(origin)) return
 
-    // Built fresh, never cached: `installApp`'s own consent dialog can be
-    // answered well after this line runs (A153), and both closures below
-    // re-read `event.sender`'s LIVE state at whatever moment the dialog
-    // actually checks them, not the state captured here. A tab already gone
-    // by this point (`event.sender` undefined, or already destroyed) never
-    // resolves a window and never reads as still on `origin`.
-    const caller: DialogCaller = {
-      window: () => event.sender === undefined ? undefined : windowForSender?.(event.sender),
-      contents: () => event.sender,
-      hold: () => holdNavigation(event.sender),
-      stillOn: (checkedOrigin) => event.sender !== undefined && !event.sender.isDestroyed() && callerKeyFromSenderFrame(event.sender.mainFrame) === checkedOrigin
-    }
+    const caller = dialogCallerFor(event.sender, windowForSender)
 
     // installFromHint documents itself as never rejecting outside its own
     // exhaustiveness guard (app-install.ts's own header) -- caught anyway,

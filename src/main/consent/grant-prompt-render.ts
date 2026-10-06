@@ -21,9 +21,11 @@ import type { CapabilityGrantSummary } from './grant-prompt-connect.js'
 import { cappedRows, describeConnectCapability, portsPhrase, WARNING_MARK } from './grant-prompt-connect.js'
 import { patternSetFromCapabilities } from '../../broker/policy/manifest-patterns.js'
 import { describeEmbedGrant } from './grant-prompt-embed.js'
+import { describeMediaGrant } from './grant-prompt-media.js'
 import { extensionsOnSiteLine } from './grant-prompt-extensions.js'
 import type { PatternSet } from '../../broker/policy/update.js'
 import { formatOriginForDisplay } from './grant-prompt-origin.js'
+import { homeLine, originHost } from '../../trust/domain-binding.js'
 import { summaryAtLevel } from './grant-level.js'
 import type { ScoreLevel } from '../../trust/website-level.js'
 // Re-exported so every existing caller and test keeps its import path (this
@@ -177,14 +179,19 @@ export function describeCapabilityGrant (capability: CapabilityKind, patterns: r
       // identity" or "the keyring" itself, either of which would overstate
       // what crosses the boundary.
       return { warning: false, message: 'Encrypt its own data with a key your system keyring protects' }
+    case 'trust.score':
+      return {
+        warning: false,
+        message: 'See what your Web3 Score provider says about other sites',
+        explanation: 'The provider you chose is asked about sites this app names. It sees which group of sites each one falls in, as when Orivon checks a site for you. With no provider chosen, nothing is asked.'
+      }
     case 'media.camera':
     case 'media.microphone':
+    case 'media.screen':
+      return describeMediaGrant(capability)
     case 'clipboard.read':
-      // ADR-0032: contract-only so far -- the loader does not parse
-      // Capabilities.media/clipboard yet (check-manifest-parity.mjs's own
-      // DELIBERATELY_DEFERRED entries), so no live grant can reach this
-      // switch. Thrown, not rendered, until that implementation PR gives
-      // each its real copy.
+      // ADR-0032: no app door yet, so no live grant reaches this switch.
+      // Thrown, not rendered, until one is built and gives it real copy.
       throw new Error(`grant-prompt-render: ${capability} is not renderable yet (ADR-0032)`)
     default: {
       // Exhaustiveness guard, matching app-install.ts's own pattern: a new
@@ -385,11 +392,12 @@ function describeCapabilitySet (
   // the extensions line, rather than opening it -- see the matching
   // comment on `describeGrantRequest`.
   const extensionsLine = extensionsOnSiteLine(extensionsOnSite)
+  const home = homeLine(originHost(origin), manifest.domain)
   return {
     warning,
     title: displayOrigin,
     message,
-    detail: [claim, ...rowLines, ...(extensionsLine === undefined ? [] : [extensionsLine]), displayOrigin].join('\n')
+    detail: [claim, ...(home === undefined ? [] : [home]), ...rowLines, ...(extensionsLine === undefined ? [] : [extensionsLine]), displayOrigin].join('\n')
   }
 }
 

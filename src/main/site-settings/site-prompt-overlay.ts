@@ -9,7 +9,7 @@ import type { OverlayDef, OverlayHandler, OverlayWindow } from '../overlays/over
 import { slotClosed } from '../overlays/tab-slots.js'
 import { commandById } from '../shortcuts/commands.js'
 import { pendingAsk, SITE_PROMPT_OVERLAY } from './ask-site.js'
-import { siteKindById, type SiteKind, type SiteValue } from './kinds.js'
+import { kindRemembers, siteKindById, type SiteKind, type SiteValue } from './kinds.js'
 import { pageAccess, type PageAccess } from './page-access.js'
 import { askView, reviewView, type AskView, type ReviewRow, type ReviewView } from './site-prompt-text.js'
 
@@ -86,7 +86,7 @@ export function createSitePrompt ({ window, services, close, send }: OverlayWind
       const stored = services.siteSettings.get(origin, kind)
       const defaultBlocks = services.settings.get(def.settingKey) === 'block'
       const value: SiteValue = stored ?? (defaultBlocks ? 'block' : 'ask')
-      return [{ kind, label: def.label, value, askOffered: !defaultBlocks }]
+      return [{ kind, label: def.label, value, askOffered: !defaultBlocks, allowOffered: kindRemembers(def, 'allow') }]
     })
   }
 
@@ -147,6 +147,8 @@ export function createSitePrompt ({ window, services, close, send }: OverlayWind
       } else {
         // Only what this page was asked about, on the site it is on now.
         if (!access.entries(tab.wc).some((entry) => entry.kind === asked.kind)) return undefined
+        const def = siteKindById(asked.kind)
+        if (def === undefined || (asked.value !== 'ask' && !kindRemembers(def, asked.value))) return undefined
         if (asked.value === 'ask') services.siteSettings.forget(tab.origin, asked.kind)
         else {
           services.siteSettings.set(tab.origin, asked.kind, asked.value)

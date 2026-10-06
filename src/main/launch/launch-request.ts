@@ -1,7 +1,7 @@
 // What a start of the browser asks for once another one of the same profile is running: show the window, a new
 // window, or a new private window. A launcher action (a dock or taskbar menu entry, a desktop-entry action) is a
 // command-line flag; the running browser reads the request the second start sent it. Pure.
-import { NEW_PRIVATE_WINDOW_FLAG, NEW_WINDOW_FLAG, urlsFromArgv } from './launch-context.js'
+import { NEW_PRIVATE_WINDOW_FLAG, NEW_WINDOW_FLAG, switchesOf, urlsFromArgv } from './launch-context.js'
 
 /** `open` only focuses the window in use, with the addresses in it; `window` and `private` open a new one. */
 export type LaunchKind = 'open' | 'window' | 'private'
@@ -39,10 +39,15 @@ function operandsOf (argv: readonly string[], packaged: boolean): string[] {
 export function requestFromArgv (argv: readonly string[], packaged: boolean): LaunchRequest {
   const operands = operandsOf(argv, packaged)
   const urls = urlsFromArgv(operands)
-  const switches = argv.slice(0, argv.includes('--') ? argv.indexOf('--') : undefined)
+  const switches = switchesOf(argv)
   if (switches.includes(NEW_PRIVATE_WINDOW_FLAG)) return { kind: 'private', urls }
   if (switches.includes(NEW_WINDOW_FLAG) || operands.length === 0) return { kind: 'window', urls }
   return { kind: 'open', urls }
+}
+
+/** A request that arrived while the browser was still starting: a new window with no address is the first window, so it only brings that one forward. */
+export function atStartup (request: LaunchRequest): LaunchRequest {
+  return request.kind === 'window' && request.urls.length === 0 ? { kind: 'open', urls: [] } : request
 }
 
 export function launchData (request: LaunchRequest): LaunchData {

@@ -5,7 +5,7 @@
 folder per overlay with that overlay's page (`auth-sheet/`, `bookmark-edit/`, `bookmark-folder/`, `caret-confirm/`,
 `cert-error/`, `certificate/`, `chooser/`, `downloads/`, `extension-permission/`, `extensions-menu/`, `find/`,
 `https-warning/`, `menu/`, `omnibox/`, `password-fill/` (also the page of `password-suggest`), `password-save/`,
-`popups-blocked/`, `qr/`, `question/` (also the page of `question-sheet`), `restore/`, `sad-tab/`, `screenshot/`, `shortcut-sheet/`, `side-panel/`, `site-prompt/`,
+`popups-blocked/`, `qr/`, `question/` (also the page of `question-sheet`), `restore/`, `sad-tab/`, `screen-share-picker/`, `screenshot/`, `sharing-bar/`, `shortcut-sheet/`, `side-panel/`, `site-prompt/`,
 `tab-group/`, `tab-search/`, `toast/`). `pages.ts` maps an overlay's name to its page, one line each, in name order.
 `kit.ts` is what a page is written against: `mount(root, overlay)`, the bridge's calls, and the parts that report
 the page's height and close it on Escape. A page that throws leaves an error state, and the next show builds it again. `surface.css` and `style.css` paint the shared surface.

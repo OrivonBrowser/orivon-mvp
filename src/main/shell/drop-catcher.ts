@@ -109,7 +109,7 @@ export class DropCatcher implements Catcher {
   }
 
   private build (): WebContentsView {
-    const url = rendererEntryUrl(this.dirname, validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL']), '/drop-catcher/', '../renderer/drop-catcher/index.html')
+    const url = rendererEntryUrl(validatedDevServerUrl(app.isPackaged, process.env['ELECTRON_RENDERER_URL']), '/drop-catcher/', 'drop-catcher')
     const view = new WebContentsView({
       webPreferences: {
         preload: join(this.dirname, '../preload/drop-catcher.js'),

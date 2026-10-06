@@ -2,6 +2,8 @@
 // press in a page chose. The tab collection decides which tab is in front;
 // this puts the plan (./split-controller.ts) on the window through PaneHost.
 import type { View, WebContents, WebContentsView } from 'electron'
+import { shareRegistry } from '../display-capture/bindings.js'
+import { onShareChange } from '../display-capture/indicators/share-events.js'
 import { PaneHost } from './pane-host.js'
 import type { LayoutSizeOf, PageShownOf } from './pane-host.js'
 import type { SplitController } from './split-controller.js'
@@ -45,11 +47,31 @@ const pageShown: PageShownOf = async (view) => {
   }
 }
 
+/**
+ * Whether another page is showing this tab, or the person has just picked it for that: its view then stays in the window,
+ * hidden, when the person switches away. A pick that is not yet a share counts, since the person can leave the tab in the
+ * moment before the share starts, and a view taken out then is not captured.
+ */
+const isBeingShown = (view: View): boolean => {
+  const contents = (view as WebContentsView).webContents as WebContents | undefined
+  if (contents === undefined || contents.isDestroyed()) return false
+  const registry = shareRegistry()
+  return registry.forCaptured(contents).length > 0 || registry.capturePending(contents)
+}
+
 /** The window's PaneHost, plus the tab-aware calls that decide what it shows. */
 export class TabPanes extends PaneHost {
+  private readonly stopWatchingShares: () => void
+
   constructor (private readonly deps: TabPanesHost) {
-    super(deps.contentView, pageLayoutSize, pageShown)
+    super(deps.contentView, pageLayoutSize, pageShown, isBeingShown)
     this.onShownChange(() => { this.announce() })
+    this.stopWatchingShares = onShareChange(() => { this.releaseKept() })
+  }
+
+  /** The window is closing: stops listening for shares. */
+  dispose (): void {
+    this.stopWatchingShares()
   }
 
   /** Tells the lifecycle seam which of the window's tabs are on screen now (./tab-visibility.ts tells each page). */

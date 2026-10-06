@@ -49,7 +49,8 @@ import { dispatchId } from './dispatch/id.js'
 import { dispatchNet } from './dispatch/net.js'
 import { dispatchWeb } from './dispatch/web.js'
 import { dispatchSecrets } from './dispatch/secrets.js'
-import { envelopeId, isControlMethod, isRequestEnvelope, type RequestGrantCtx } from './ipc-validation.js'
+import { dispatchTrust } from './dispatch/trust.js'
+import { envelopeId, isControlMethod, isRequestEnvelope, type ControlCtx } from './ipc-validation.js'
 import type { ControlEvent, PortLike, PortPair, PortTransport } from './relay/port-transport.js'
 import type { RequestEnvelope, ResponseEnvelope } from '../../contracts/index.js'
 
@@ -58,7 +59,7 @@ export type {
   AppRequestGrantParams, ControlMethod, FsPathWithRecursiveParams, FsReaddirParams, FsReadFileParams, FsRenameParams,
   FsStatParams, FsWriteFileParams, IdPublicKeyParams, IdSignParams,
   NetConnectParams, NetCloseParams, NetSetKeepAliveParams, NetSetNoDelayParams, NetUdpBindParams, RequestGrantCtx,
-  SecretsDecryptParams, SecretsEncryptParams,
+  SecretsDecryptParams, SecretsEncryptParams, TrustCtx, TrustWebsiteScoreParams,
   WebCloseParams, WebEvaluateParams, WebOpenContextParams
 } from './ipc-validation.js'
 export type {
@@ -83,7 +84,7 @@ async function dispatch (
   payload: unknown,
   event: ControlEvent,
   transport: PortTransport | undefined,
-  requestGrantCtx: RequestGrantCtx | undefined,
+  requestGrantCtx: ControlCtx | undefined,
   fsTransport: FsTransport | undefined,
   abandoned: AbortSignal,
   windowForSender?: (sender: unknown) => unknown
@@ -151,6 +152,8 @@ async function dispatch (
     case 'secrets.encrypt':
     case 'secrets.decrypt':
       return await dispatchSecrets(broker, origin, method, payload)
+    case 'trust.websiteScore':
+      return await dispatchTrust(broker, origin, method, payload, requestGrantCtx)
     default: {
       // Exhaustiveness check: if ControlMethod (ipc-validation.ts) ever
       // gains a member no case above names, `method` is not assignable to
@@ -230,7 +233,7 @@ export async function handleControlRequest (
   envelope: RequestEnvelope<unknown>,
   transport?: PortTransport,
   limiter?: ControlLimiter,
-  requestGrantCtx?: RequestGrantCtx,
+  requestGrantCtx?: ControlCtx,
   fsTransport?: FsTransport,
   attributed?: (sender: unknown, origin: string) => boolean,
   windowForSender?: (sender: unknown) => unknown
@@ -292,7 +295,7 @@ export function registerBrokerIpc (
   broker: Broker,
   transport: PortTransport,
   limiter?: ControlLimiter,
-  requestGrantCtx?: RequestGrantCtx,
+  requestGrantCtx?: ControlCtx,
   fsTransport?: FsTransport,
   attributed?: (sender: unknown, origin: string) => boolean,
   windowForSender?: (sender: unknown) => unknown

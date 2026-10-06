@@ -18,19 +18,73 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- **`contracts/manifest.ts`**: a manifest may carry `domain`, the one ENS name or DNS host the app calls home; a
+  malformed value rejects the manifest and absence is allowed. Apps published under a name set `domain` to that name,
+  as a lower-case host with no scheme, port or path. Recheck: every port.
+- **`contracts/manifest.ts`**: an app may now declare `media.screen` in `capabilities.media`; nothing changes for
+  existing apps. See `app-screen-declared-shows-the-picker` below.
+- **`app-media-declared-is-asked-once`, `app-media-undeclared-is-refused`**: `media: { camera: true, microphone: true }`
+  in the manifest now works. A declared kind is asked once, in the tab's panel, at the first `getUserMedia`; an
+  undeclared one is refused with no question, as before. Apps that record or call: declare it. Recheck: Element.
+- **`app-screen-declared-shows-the-picker`, `app-screen-undeclared-is-refused`, `electron-desktop-capturer-serves-the-picked-source`**:
+  a declared `media.screen` is asked once, then Orivon's picker opens; the `electron` shim's `desktopCapturer.getSources`
+  returns the one source chosen and its `chromeMediaSource: 'desktop'` call takes it once. Apps that list every screen: use that. Recheck: Element.
+
 ### Added
 
+- **Screen sharing**: a page's `getDisplayMedia` opens Orivon's picker (a tab, a window or the entire screen, with tab
+  audio), the tab and the shared tab show it, a bar offers Stop sharing, and a site can be blocked. Only the call
+  Orivon's preload makes after the pick is granted, so the legacy `chromeMediaSource` capture is refused (ADR-0055).
+- **A registered app's camera, microphone and screen**: `media.camera`, `media.microphone` and `media.screen` are read
+  from the manifest, offered at consent, asked before first use and refused when undeclared; the `electron` shim's
+  `desktopCapturer.getSources` returns the source the person picked.
+  existing apps, and it is not yet granted (the implementation follows).
+- **`contracts/trust.ts`, `contracts/manifest.ts`, `contracts/capability-api.ts`**: new capability kind `trust.score`
+- **`contracts/trust.ts`, `contracts/manifest.ts`, `contracts/capability-api.ts`, `contracts/index.ts`**: new capability kind `trust.score`
+  (declare `"trust": { "score": true }`) and `orivon.trust.websiteScore(address)`, which answers with the Web3 Score
+  provider the person chose and the level it judged for that content. Apps that show a mark per site may declare it
+  and must treat a `null` level, a `denied` rejection and a `limit` rejection as "use what you ship". Recheck: none; no
+  port declares it yet.
+
+### Added
+
+- **The shell's own pages load from `orivon-shell:`, not `file:`**, and Electron's file-protocol fuse is off in a package
+  and, after `npm install` or `npm run install:electron`, in a Linux checkout's binary: a `file:` page gets no more reach
+  than a web page. A website cannot load, frame or navigate to a page of the shell. A copied tab, or one that becomes an
+  app, no longer keeps the new-tab page behind it.
+- **A `<name>.eth.limo` or `<name>.eth.link` address opens as `<name>.eth`**, checked on this computer, with its path, query and
+  fragment kept; Settings > Web3 turns it off. Data a site keeps under its gateway address stays there and is not seen at
+  the `.eth` name.
+- **An installed app at a name moves to new content only when you accept.** Orivon notices a moved name on a visit and in
+  an open tab, fetches only the new manifest, and asks "switch to the new version?" when a Web3 Score provider has judged
+  it; otherwise it says why and the key icon offers Trust & Force update. The version you run keeps running meanwhile.
+- **A manifest `domain` field** names the one ENS name or DNS host an app calls home. A provider's judged level shows
+  only at that name; elsewhere the page shows the observed level and says why, and the install question names the home.
 - **Default browser, asked properly**: Settings > Default browser, an unticked box on the welcome screen and a question
   a week after the last ask (in the default profile, "Don't ask again" from the third week). Only an installed package
   registers; a source run and an AppImage say why not. Windows and macOS packaging is written and unbuilt.
 - **New Window and New Private Window** from the dock, the taskbar and the installed entry's menu, and a second start of
   a running browser with no address (or `--new-window`, `--new-private-window`) now opens a window or a private session.
+- **An extension's side panel** (`chrome.sidePanel`): its page is listed in the panel's view picker, opens from its toolbar
+  button, its `_execute_side_panel` key or `open()` after the person's input, and follows the tab in front.
+- **Packages for Linux, Windows and macOS on every GitHub release**: a deb and an AppImage, a Windows installer and a dmg each
+  for Apple silicon and Intel, each launched by CI before it is attached. Windows and macOS packages are not signed with a
+  bought certificate, so the system asks once before the first run.
+- **Every release is on IPFS** as one folder, `ipfs://<cid>` in its description, pinned by the Orivon node with the two
+  before it; anyone can reproduce the CID and pin it.
+- **A manifest `domain` field** names the one ENS name or DNS host an app calls home; the loader parses it
+  (ADR-0056). Update behaviour that uses it lands with the app-update work.
+- **A page can ask the Web3 Score provider the person chose** (`orivon.trust.websiteScore`, behind a declared `trust.score`
+  grant): the provider's name and the level it judged for an `ipfs://` address or a `.eth` name, from caches and a verifier
+  partition of the page's own, limited to 128 lookups refilling at 2 a second.
 - **`test/` is ordered by area**, with a Layout table in `test/README.md`; a spec left at its top, a folder with no
   row and a dead `test/` path in any tracked file now fail CI, and a new capability kind needs a catalogue line.
 - **An app-behaviour catalogue** names what a working app relies on, one row each, and each row is proven by an
   end-to-end spec whose test is titled with the row's id, so a change that breaks an app fails a test that says which.
 
 - **`npm run perf:probe`** measures each process's CPU and memory through fixed scenes, to compare a change before and after.
+- **Profiles with no Web3 Score provider saved read Orivon's own** (Settings > Web3), existing ones too: a field cleared before
+  this change was never saved, so set it empty again to ask nobody. A provider a person saved keeps.
 - **Web3 Score providers** (Settings > Web3): judged Levels 3 and 4, with a site's operations and connections, from any
   address Orivon opens, asked by hash bucket so a request names a group of sites, not the site. Build one with web3-score-manager.
 - **Tabs can be grouped**: name and colour a group from the tab menu, collapse it to one chip, drag it, move it to its own
@@ -271,11 +325,22 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 - **`npm run dev` starts on a fresh profile every launch** and deletes it at the end, so it behaves as a first run and runs
   beside an open Orivon; `npm start` keeps your real profile. `npm run dev -- --user-data-dir=<dir>` keeps one across launches.
 
+### Changed
+
+- **An extension added from now on is not put on the toolbar**; "Pin new extensions to the toolbar" (Settings > Apps) turns it back on.
+
 ### Fixed
 
 - **The first letter typed into the address bar is no longer lost**: the dropdown's page joins the window once loaded, and
   a window refocus no longer selects the text. A new tab starts with the keyboard in the bar; the first click selects the
   address and a first press that drags keeps its range.
+- **A tab on an `ipfs://` or `.eth` page shows the page's icon on a slow connection**: the icon was fetched with a 5 s budget
+  and the globe stayed for good when the gateways took longer; icons on those hosts now get 60 s.
+- **Installing from the Chrome Web Store page no longer takes the browser down**: the store page keeps its own store API
+  through every extension load, and a private window's store page refuses installs.
+- **An extension's popup opens inside the window**, under its toolbar button or the Extensions button, at the size of its page;
+  after it opens a tab it stays until the next click elsewhere, and one opened while the page behind it is still
+  navigating stays through that page's commit.
 - **Three ways the whole browser could quit are closed**: an app's helper page failing to load, a light-client
   checkpoint the disk refuses to keep, and a profile file holding `null`.
 - **The light client switch applies at the next start, as Settings says**: switching it mid-run no longer changes the

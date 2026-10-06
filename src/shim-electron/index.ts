@@ -12,16 +12,18 @@
 // ordering every other page-facing Orivon consumer already relies on.
 
 import { createApp } from './app.js'
+import { createDesktopCapturer, type LegacyNavigator } from './desktop-capturer.js'
 import { createDialog } from './dialog.js'
 import { createIpc } from './ipc.js'
 import { createSafeStorage } from './safe-storage.js'
 import { BrowserWindow, Menu, Tray } from './desktop-shell.js'
-import { unimplementedMember, withUnimplementedFallback } from './unimplemented.js'
+import { notConsidered, refusingProxy, unimplementedMember, withUnimplementedFallback } from './unimplemented.js'
 import type { Orivon } from '../contracts/capability-api.js'
 
 export { ElectronShimError } from './errors.js'
 export type { ElectronShimReason } from './errors.js'
 export type { ElectronApp } from './app.js'
+export type { DesktopCapturerSource, ElectronDesktopCapturer, ShimNativeImage, SourcesOptions } from './desktop-capturer.js'
 export type { ElectronDialog, OpenDialogOptions, OpenDialogReturnValue } from './dialog.js'
 export type { ElectronIpcMain, ElectronIpcRenderer, IpcEvent, IpcHandler, IpcListener } from './ipc.js'
 export type { DecryptStringAsyncReturnValue, ElectronSafeStorage } from './safe-storage.js'
@@ -44,6 +46,12 @@ const orivon = getOrivon()
 export const app = createApp(orivon)
 export const dialog = createDialog(orivon)
 export const safeStorage = createSafeStorage(orivon)
+export const desktopCapturer = refusingProxy(createDesktopCapturer({
+  mediaDevices: (globalThis as { navigator?: Navigator }).navigator?.mediaDevices,
+  navigator: (globalThis as { navigator?: LegacyNavigator }).navigator,
+  document: { createElement: ((tag: string) => document.createElement(tag)) as Document['createElement'] },
+  random: () => crypto.randomUUID()
+}), (prop) => notConsidered(`desktopCapturer.${prop}`))
 
 const bus = createIpc()
 export const ipcRenderer = bus.ipcRenderer
@@ -74,7 +82,6 @@ export const systemPreferences = unimplementedMember('systemPreferences')
 export const globalShortcut = unimplementedMember('globalShortcut')
 export const nativeTheme = unimplementedMember('nativeTheme')
 export const webFrame = unimplementedMember('webFrame')
-export const desktopCapturer = unimplementedMember('desktopCapturer')
 
 /**
  * The same surface as one object, for `import electron from 'electron'` --

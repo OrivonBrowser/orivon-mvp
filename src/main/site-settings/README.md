@@ -4,7 +4,7 @@
 
 | File | What it is |
 |---|---|
-| `kinds.ts` | `SITE_KINDS`: every kind of thing a site can be asked about or told it may not do, with its label, its setting key and whether a feature enforces it yet |
+| `kinds.ts` | `SITE_KINDS`: every kind of thing a site can be asked about or told it may not do, with its label, its setting key, whether a feature enforces it yet and which answers it keeps (`remembers`: screen sharing keeps only a block, so the controller, the store and the review bubble refuse an allow for it) |
 | `site-settings-store.ts` | `site-settings.json`: the answer (allow or block) per site and kind; a memory-only variant for a private session |
 | `electron-names.ts` | pure: Electron's permission names and details to kinds |
 | `site-asks-engine.ts` | pure: who may ask, what is remembered, when the person is asked, what the page is told |

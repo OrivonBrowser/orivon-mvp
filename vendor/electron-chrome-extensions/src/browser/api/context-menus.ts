@@ -1,8 +1,8 @@
 import { Menu, MenuItem } from 'electron'
-import { MenuItemConstructorOptions } from 'electron/main'
-import { ExtensionContext } from '../context'
-import { ExtensionEvent } from '../router'
-import { ContextMenuType, getIconImage, matchesPattern } from './common'
+import type { MenuItemConstructorOptions } from 'electron/main'
+import type { ExtensionContext } from '../context'
+import type { ExtensionEvent } from '../router'
+import { type ContextMenuType, getIconImage, matchesPattern } from './common'
 
 type ContextItemProps = chrome.contextMenus.CreateProperties & { id: string }
 
@@ -121,8 +121,8 @@ export class ContextMenusAPI {
       id: props.id,
       type: props.type as any,
       label: params ? formatTitle(props.title || '', params) : props.title || '',
-      icon,
-      enabled: props.enabled,
+      ...(icon === undefined ? {} : { icon }),
+      ...(props.enabled === undefined ? {} : { enabled: props.enabled }),
       click: () => {
         this.onClicked(extension.id, props.id, webContents, params)
       },
@@ -161,10 +161,11 @@ export class ContextMenusAPI {
         opts.submenu.forEach((item) => submenu.append(buildFromTemplate(item)))
         opts.submenu = submenu
       }
+      const type = opts.type === 'normal' && opts.submenu ? 'submenu' : opts.type
       return new MenuItem({
         ...opts,
         // Force submenu type when submenu items are present
-        type: opts.type === 'normal' && opts.submenu ? 'submenu' : opts.type,
+        ...(type === undefined ? {} : { type }),
       })
     }
 
@@ -344,6 +345,8 @@ export class ContextMenusAPI {
       srcUrl: params?.srcURL,
     }
 
+    // Orivon patch (UPSTREAM.md patch 70): the host hears of the click first.
+    this.ctx.store.impl.menuItemClicked?.(extensionId, webContents)
     this.ctx.router.sendEvent(extensionId, 'contextMenus.onClicked', data, tab)
   }
 }

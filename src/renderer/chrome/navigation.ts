@@ -9,6 +9,8 @@ export function createNavigation (): ChromeModule {
   let addressInput: HTMLInputElement | undefined
   /** True while the user is editing the address bar -- an incoming state push must not clobber what they are typing. */
   let addressFocused = false
+  /** True from the person's first keystroke, paste or delete in the field until it is given an address again: a focused field nobody has typed in follows the page. */
+  let edited = false
   /** The tab whose address the field was last given: an edit belongs to that tab. */
   let shownTabId: string | null = null
   /** While the field keeps an edit with the keyboard elsewhere (another app, the page): the page's address then. */
@@ -24,8 +26,11 @@ export function createNavigation (): ChromeModule {
     const switched = state.activeTabId !== shownTabId
     const movedOn = awayFrom !== undefined && awayFrom !== address
     shownTabId = state.activeTabId
-    if (!addressFocused || switched || movedOn) {
+    // A focused, untouched field already showing the address is left as it is, so a caret the person placed survives a title or icon push.
+    if (addressFocused && !edited && !switched && !movedOn && addressInput.value === address) return
+    if (!addressFocused || !edited || switched || movedOn) {
       addressInput.value = address
+      edited = false
       if (awayFrom !== undefined) {
         awayFrom = undefined
         addressFocused = false
@@ -63,6 +68,7 @@ export function createNavigation (): ChromeModule {
         addressFocused = true
         awayFrom = undefined
       })
+      input.addEventListener('input', () => { edited = true })
       input.addEventListener('blur', () => {
         // The field is still the one the keyboard comes back to (Alt+Tab, a click into the page): the edit stays.
         if (document.activeElement === input) {
@@ -71,6 +77,7 @@ export function createNavigation (): ChromeModule {
           return
         }
         addressFocused = false
+        edited = false
         const state = ctx.state()
         if (state !== null) render(state, ctx)
       })
@@ -78,6 +85,7 @@ export function createNavigation (): ChromeModule {
         e.preventDefault()
         const id = ctx.state()?.activeTabId
         if (id === null || id === undefined) return
+        edited = false
         shell.navigate(id, input.value)
         input.blur()
       })
@@ -86,6 +94,8 @@ export function createNavigation (): ChromeModule {
     // A keyboard shortcut in main asks for the address bar.
     event: (payload) => {
       const event = payload as { type?: string, text?: unknown }
+      // The search key gives the field a `?` with no key pressed in it: it is an edit, so a title or icon push before the first letter leaves it.
+      if (event.type === 'focusSearch') edited = true
       if (event.type === 'focusAddress') {
         addressInput?.focus()
         addressInput?.select()

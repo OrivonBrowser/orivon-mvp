@@ -27,7 +27,7 @@ seconds, and a test would be paying rent to tell you something you already know.
 | `npm run typecheck` | `tsc --noEmit`. Strict mode with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`, so the compiler is doing a lot of the work a test suite would elsewhere. `tsconfig.json`'s `include` covers `test/**/*.ts`, so this also type-checks `test/capabilities/e2e-capability-boundary.test.ts`, and a type error there fails this always-on check even on a push that never runs the separate `e2e` job below |
 | `npm test` | Vitest. `environment: 'node'`, no DOM. Picks up `src/**/*.test.ts` and `scripts/**/*.test.ts` |
 | `npm run smoke` | Builds and drives the real shell with real clicks. The only check that proves a window appears |
-| `npm run test:e2e` | Builds, then runs [`test/capabilities/e2e-capability-boundary.test.ts`](../../test/capabilities/e2e-capability-boundary.test.ts) (TCP) and [`test/capabilities/e2e-udp-capability.test.ts`](../../test/capabilities/e2e-udp-capability.test.ts) (UDP) via [`test/vitest.e2e.config.ts`](../../test/vitest.e2e.config.ts); see §The end-to-end test below. Runs automatically in CI's `e2e` job on every push and pull request. Needs a display; on Linux with `xvfb-run` installed it uses a virtual one automatically (see [setup.md](setup.md) "The no-focus switch"), so a plain `npm run test:e2e` is safe with no wrapper, and on a platform with no virtual display it runs directly instead, without stealing your keyboard focus |
+| `npm run test:e2e` | Builds, then runs every spec under `test/` (the TCP and UDP boundary specs among them) via [`test/vitest.e2e.config.ts`](../../test/vitest.e2e.config.ts); see §The end-to-end test below. CI runs it in shards: only the specs a change can reach on a pull request, everything on `main` and nightly (§CI). Needs a display; on Linux with `xvfb-run` installed it uses a virtual one automatically (see [setup.md](setup.md) "The no-focus switch"), so a plain `npm run test:e2e` is safe with no wrapper, and on a platform with no virtual display it runs directly instead, without stealing your keyboard focus |
 | `npm run qa` · `qa:visual` · `qa:report` | The QA specs and the inspection sheet; §Visual QA and failure evidence |
 
 Unit tests are **colocated** with what they test: `src/main/tests/omnibox.test.ts` sits beside
@@ -248,8 +248,7 @@ pull request (see §How to run above).
 
 The end-to-end tests drive the shell through Playwright's `_electron` library. It attaches
 cleanly to a `BaseWindow` holding several `WebContentsView`s, which is this shell's composition,
-and the `e2e` job is green on GitHub-hosted `ubuntu-latest` runners for both the `push` and
-`pull_request` events. Match windows by URL through `app.windows()`, never
+and the e2e shards are green on GitHub-hosted `ubuntu-latest` runners. Match windows by URL through `app.windows()`, never
 `app.firstWindow()`: view-add order is not a contract (`scripts/smoke.mjs` has the pattern).
 
 The driver does fail to attach to one window, spike gate 3's, for a cause still unidentified
@@ -388,7 +387,7 @@ that never fires. A spec pins the cause it can see (the structure of the window'
 `scripts/probe-view-visibility.mjs` is that recipe for every view put into a window, with no Playwright: it launches
 the built shell (build it first) on a throwaway profile with `--inspect` on the main process alone, which does
 not touch any page, drives tab switches, splits (the shortcut and the tab menu), navigations in a split pane, sleep and
-wake, a tab moved to a new window and the side panel through the chrome page's own `orivonShell` calls, and after each
+wake, a tab moved to a new window, the side panel and an extension's popup (the `popup` scenario seeds the fixture extension) through the chrome page's own `orivonShell` calls, and after each
 step reads every view's `getVisible()`, its page's `visibilityState` and a `requestAnimationFrame` round trip. Run it
 under `scripts/run-headless.mjs`, with `PROBE_ARGS=--ozone-platform=wayland` under a private compositor, and read its
 step list: a failure names the page that was on screen and hidden. It is not part of the unit suite or CI (it needs a
@@ -398,14 +397,14 @@ outside `attach-view.ts`.
 
 ## Guards
 
-Sixteen checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
+Seventeen checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
 and CI's `check` job runs all of them; [`../../scripts/README.md`](../../scripts/README.md) says
 what each one enforces.
 
 `check:natives` · `check:contracts` · `check:secrets` · `check:vectors` · `check:comments` ·
 `check:size` · `check:questions` · `check:manifest-parity` · `check:page-globals` ·
 `check:dev-grant-absent` · `check:advisories` · `check:devlog` · `check:native-dialogs` ·
-`check:test-paths` · `check:app-behaviours` · `check:contracts-surface` (the last two: §App behaviours)
+`check:test-paths` · `check:impact-map` · `check:app-behaviours` · `check:contracts-surface` (the last two: §App behaviours)
 
 Every one is an exported pure function over a root directory, unit tested against temp fixtures
 (`scripts/tests/`, or `tests/` beside a guard that has its own folder under `scripts/`), with a CLI block
@@ -454,13 +453,25 @@ exercises and it is the one most likely to break silently.
 
 ## CI
 
-[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs on every push and pull
-request: `npm ci` (which fires the Rule 8 guard via `postinstall`), typecheck, unit tests,
-`check:natives`, `check:contracts`, build, plus a separate `e2e` job, also on every push and
-pull request, that builds the real app and runs §The end-to-end test's `npm run test:e2e` under
-`xvfb-run` (no display server on `ubuntu-latest` otherwise). Kept separate from the job above: it
-needs a real Electron build and a display server, takes far longer than the unit suite, and a
-failure there means something different, namely that the capability boundary itself broke, so it reads as
-its own red X. When it fails, the job uploads `qa-artifacts/latest/` (§Visual QA and failure evidence).
+[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) has four kinds of job.
 
-**With no dedicated code reviewer, CI is the reviewer.** A red pull request does not merge.
+- **`check`** runs on every pull request and every push to `main`, and is the required status: `npm ci` (which
+  fires the Rule 8 guard via `postinstall`), typecheck, unit tests, every guard, and the build. About three
+  minutes.
+- **`scope`** decides which e2e specs this run needs, from the event, the changed files and the labels
+  ([`scripts/ci/select-e2e.mjs`](../../scripts/ci/README.md), [`test/impact-map.json`](../../test/impact-map.json)).
+  A pull request runs the specs its changed files can reach; a file the map does not know, or one that wires
+  everything (`package.json`, `src/main/index.ts`, `test/support/`, the workflow), runs all of them. `main`
+  and the nightly run everything. A pull request from a fork runs no e2e until a maintainer adds the `ci:e2e`
+  label; the `ci:e2e-full` label runs everything for any pull request, and a manual dispatch takes `areas`.
+- **`e2e-shard-N`** runs one shard of the selected specs on its own runner: a real Electron build and a display
+  server (`xvfb-run`; no display server on `ubuntu-latest` otherwise). The specs are split by recorded duration
+  ([`test/spec-weights.json`](../../test/spec-weights.json)) into at most ten shards of about four minutes, so the
+  whole suite takes about five minutes of wall time. Each runner is its own machine, so the fixed fixture ports
+  cannot clash. A failed shard uploads `qa-artifacts/latest/` (§Visual QA and failure evidence).
+- **`e2e`** is the one e2e status: it passes when every selected shard passed or nothing was selected. **`e2e-ordinary`**
+  runs the specs that need the build without the developer-only hooks, whenever any e2e is selected.
+
+**With no dedicated code reviewer, CI is the reviewer.** A pull request whose `check` or selected e2e shards are
+red does not merge. The e2e job is not a required status check: the rule is kept by whoever merges, and
+`e2e` is the status to require if the repository ever wants it enforced.

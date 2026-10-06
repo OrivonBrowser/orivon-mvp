@@ -14,7 +14,7 @@ import {
   type ExtraInfoSpec, type RequestFilter, type WebRequestEventName
 } from './web-request/filter.js'
 import { mergeBeforeRequest, mergeRequestHeaders, mergeResponseHeaders, type Reply } from './web-request/merge.js'
-import { requestVisibleTo } from './web-request/visibility.js'
+import { isShellOwnUrl, requestVisibleTo } from './web-request/visibility.js'
 import type { ApiEvent } from './api/api-types.js'
 
 /** After declarativeNetRequest's handlers (1000), so a rule that already
@@ -250,8 +250,8 @@ export function createWebRequestDispatcher (deps: WebRequestDispatcherDeps): Web
     dispatch(event, details, details, false).catch((error: unknown) => { console.error(`[webRequest] ${event} could not be dispatched`, error) })
   }
 
-  /** Everything but the extension's own `orivon:` pages is offered; each extension's visibility rules do the rest. */
-  const offered = (url: string): boolean => !url.startsWith('orivon:')
+  /** Everything but the shell's own pages is offered; each extension's visibility rules do the rest. */
+  const offered = (url: string): boolean => !isShellOwnUrl(url)
 
   function register (event: OwnerEvent): WebRequestHandlerHandle {
     const { owner } = deps

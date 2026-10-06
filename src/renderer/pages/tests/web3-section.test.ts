@@ -49,3 +49,20 @@ describe('the light client state row', () => {
     expect(control.type === 'info' && control.text(stateWith(null))).toBe('')
   })
 })
+
+describe('the gateway redirect row', () => {
+  it('is a toggle on its own setting, always shown and always usable', () => {
+    const candidate = row('web3-eth-gateway')
+    expect(candidate.control.type === 'toggle' && candidate.control.key).toBe('web3.ethGatewayRedirect')
+    for (const status of [null, { forcedOff: true, enabledAtStart: false }, { forcedOff: false, enabledAtStart: true }]) {
+      const state = stateWith(status)
+      expect(candidate.visible?.(state) ?? true).toBe(true)
+      expect(candidate.control.type === 'toggle' && (candidate.control.disabled?.(state) ?? false)).toBe(false)
+    }
+  })
+
+  it('sits after the forced-off row', () => {
+    const ids = web3.rows.map((candidate) => candidate.id)
+    expect(ids.indexOf('web3-eth-gateway')).toBe(ids.indexOf('web3-forced-off') + 1)
+  })
+})

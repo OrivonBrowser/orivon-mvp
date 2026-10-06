@@ -62,7 +62,13 @@ export const TIMEOUT_MS = {
    * I/O. Generous like `grant`'s own budget, but well short of it: this is
    * a background unlock, not a decision a person is asked to make.
    */
-  secrets: 60_000
+  secrets: 60_000,
+  /**
+   * trust.websiteScore (ADR-0058). Must exceed the broker's own worst case, so the broker's specific answer is never
+   * replaced by this transport-level one: a `.eth` name the verifier takes up to 25 s to prove, then the provider's
+   * description and one bucket file at 10 s each, 45 s in all, with room to spare.
+   */
+  trust: 60_000
 } as const
 
 /** Electron's structured-clone refusal: the ARGUMENT was bad, which is the app's to fix, not a broker fault. */

@@ -17,7 +17,7 @@ import { internalSession } from './pages/internal-session.js'
 import { installHistory } from './history/install-history.js'
 import { installDownloads } from './downloads/install-downloads.js'
 import { installDownloadsPeek } from './downloads/auto-open.js'
-import { createSubsystemContext, criticalFailureMessage, publishShowNotice, publishWindowForSender, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
+import { createSubsystemContext, criticalFailureMessage, publishOpenTabs, publishScoreVerdictFor, publishShowNotice, publishWebsiteScore, publishWindowForSender, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
 import { subsystems } from './subsystems.js'
 import { DebouncedWriter } from './storage/debounced-writer.js'
 import { devOnlySwitches } from './shell/dev-switches.js'
@@ -25,7 +25,7 @@ import { chromeUserAgent } from './shell/user-agent.js'
 import { planIntro } from './shell/intro-state.js'
 import { firstWindowOptions } from './shell/first-window.js'
 import { seedClosedStack } from './session-restore/restore.js'
-import { readLaunchRequest } from './launch/launch-request.js'
+import { atStartup, readLaunchRequest } from './launch/launch-request.js'
 import type { LaunchRequest } from './launch/launch-request.js'
 import { canOfferDefault } from './os/default-browser.js'
 import { defaultBrowserHost } from './os/default-browser-runner.js'
@@ -34,7 +34,10 @@ import { removeAfterExit, removePrivateDir, sweepPrivateDirs } from './launch/pr
 import { startLaunch } from './launch/start-launch.js'
 import { runUpdateCheck } from './self-update/update-check-runner.js'
 import { scheduleUpdateChecks } from './self-update/update-schedule.js'
-import { configureVerifier } from './verifier/verifier-subsystem.js'
+import { configureVerifier, verifierEthContentCid } from './verifier/verifier-subsystem.js'
+import { createPageScoreLookup } from './browsing/page-score-lookup.js'
+import { netFetchJson } from './browsing/score-provider-client.js'
+import { isDevEthName } from './dev/eth-resolver.js'
 import { isOriginServedFromCacheSync } from '../loader/electron/serve.js'
 import type { Runtime } from './launch/start-launch.js'
 
@@ -128,10 +131,11 @@ function boot (runtime: Runtime): void {
   // The ask can arrive while this one is still starting, so it waits for it. A private session takes no lock, so no second start reaches it.
   let opener: (request: LaunchRequest) => void = () => {}
   let markStarted: () => void = () => {}
-  const startedUp = new Promise<void>((resolve) => { markStarted = resolve })
+  let started = false
+  const startedUp = new Promise<void>((resolve) => { markStarted = () => { started = true; resolve() } })
   const requested: LaunchRequest[] = []
   const queueLaunch = (request: LaunchRequest): void => {
-    requested.push(request)
+    requested.push(started ? request : atStartup(request))
     void startedUp.then(() => { for (const waiting of requested.splice(0)) opener(waiting) })
   }
   // A private session nobody started from another browser removes its own directory once its process is gone: Chromium
@@ -182,6 +186,17 @@ function boot (runtime: Runtime): void {
     // for the thunks that read ctx.windowForSender only when a real dialog
     // is about to show one.
     publishWindowForSender(ctx, (sender) => shell.windows.findTab(sender)?.window.window)
+    // The same lateness: the app-update offers look at open tabs and ask the chosen Web3 Score provider.
+    publishOpenTabs(ctx, { on: (origin) => shell.windows.liveTabsOn(origin), origins: () => shell.windows.liveTabOrigins() })
+    publishScoreVerdictFor(ctx, shell.scoreProvider.verdictFor)
+    // Read lazily by the control channel, which was wired before the settings it reads existed (ADR-0058).
+    publishWebsiteScore(ctx, createPageScoreLookup({
+      providerAddress: () => shell.settings.get('web3.scoreProvider'),
+      isDevEthName,
+      fetchJson: netFetchJson,
+      resolveEthContent: verifierEthContentCid,
+      manifestAt: async (origin, cid) => await ctx.loader?.manifestAt(origin, cid) ?? { kind: 'unread', reason: 'the loader is not running' }
+    }).websiteScore)
     // A refusal the person should read, drawn in the window they are using.
     publishShowNotice(ctx, ({ title, message }) => { void askQuestion({}, { kind: 'notice', title, message, buttons: ['OK'], cancelId: 0 }) })
     // Before the first window, so it opens in the chosen theme with the chosen

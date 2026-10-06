@@ -25,8 +25,10 @@ import type { Broker } from '../broker/broker-contracts.js'
 import type { Loader, LoadResult } from '../loader/index.js'
 import type { GrantedWithoutInstall } from './install/grant-without-install.js'
 import type { DialogCaller } from './consent/request-grant.js'
-import type { CapabilityRequest } from '../contracts/index.js'
+import type { CapabilityRequest, WebsiteScore } from '../contracts/index.js'
 import type { ExtensionsApi } from './extensions/extensions-subsystem.js'
+import type { AppUpdates } from './install/app-updates.js'
+import type { ProviderVerdict } from '../trust/score-provider.js'
 
 export interface SubsystemContext {
   readonly app: App
@@ -124,6 +126,12 @@ export interface SubsystemContext {
    */
   readonly showNotice: ((notice: { readonly title: string, readonly message: string }) => void) | undefined
   /**
+   * `orivon.trust.websiteScore`'s lookup (ADR-0058), which asks the person's Web3 Score provider through the shell's
+   * settings and network stack. Published in `main/index.ts` once the shell exists, so a reader treats `undefined` as
+   * routine early in startup and reads it at the moment of the call, as `../broker/transport/ipc.ts` does.
+   */
+  readonly websiteScore: ((origin: string, address: string) => Promise<WebsiteScore>) | undefined
+  /**
    * Whether the WebContents making a call is attributed to the origin it
    * claims -- `isAttributedSession`'s (`../broker/policy/origin.js`)
    * injected other half. Every renderer-reachable broker channel
@@ -154,6 +162,26 @@ export interface SubsystemContext {
    * `subsystems.ts`.
    */
   readonly extensions: ExtensionsApi | undefined
+  /**
+   * An installed app's moved name, as offers: what is pending for an origin, and taking one. Published by
+   * `appInstallSubsystem`, closed over the one broker and loader; the key icon and the site-info popover read it.
+   */
+  readonly appUpdates: AppUpdates | undefined
+  /**
+   * The tabs open now, in every window, by origin. Published in `main/index.ts` with `windowForSender`, for the same
+   * reason: the shell's window registry exists only once the shell is built, so a reader treats `undefined` as
+   * routine early in startup and reads it at the moment of use.
+   */
+  readonly openTabs: OpenTabs | undefined
+  /** The chosen Web3 Score provider's verdict on a page identifier (`./browsing/score-provider-client.ts`), published with `openTabs`. */
+  readonly scoreVerdictFor: ((id: string | undefined, waitMs?: number) => Promise<ProviderVerdict>) | undefined
+}
+
+export interface OpenTabs {
+  /** Every live tab, in any window, whose page is on `origin`, the ones the person can see first. */
+  readonly on: (origin: string) => WebContents[]
+  /** The origins that have a live tab, each once. */
+  readonly origins: () => string[]
 }
 
 /**
@@ -188,6 +216,11 @@ const senderAttributedSlot = createPublishedSlot<(sender: unknown, origin: strin
 const extensionsSlot = createPublishedSlot<ExtensionsApi>('extensions', 'a second one could load into a different session than the one every extension actually runs in')
 const windowForSenderSlot = createPublishedSlot<(sender: WebContents) => BaseWindow | undefined>('windowForSender', 'a second one could disagree about which window currently holds a given tab')
 
+const appUpdatesSlot = createPublishedSlot<AppUpdates>('appUpdates', 'a second one could close over a different Broker or Loader and offer updates the first never heard of')
+const openTabsSlot = createPublishedSlot<OpenTabs>('openTabs', 'a second one could disagree about which tabs are open')
+const scoreVerdictForSlot = createPublishedSlot<(id: string | undefined, waitMs?: number) => Promise<ProviderVerdict>>('scoreVerdictFor', 'a second one could ask a different provider than the one the person chose')
+
+const websiteScoreSlot = createPublishedSlot<(origin: string, address: string) => Promise<WebsiteScore>>('websiteScore', 'a second one would keep a second set of per-caller caches, and a page could tell them apart')
 const showNoticeSlot = createPublishedSlot<(notice: { readonly title: string, readonly message: string }) => void>('showNotice', 'a second one could draw a message somewhere the first does not')
 
 class SubsystemContextImpl implements SubsystemContext {
@@ -227,8 +260,24 @@ class SubsystemContextImpl implements SubsystemContext {
     return windowForSenderSlot.get(this)
   }
 
+  get appUpdates (): AppUpdates | undefined {
+    return appUpdatesSlot.get(this)
+  }
+
+  get openTabs (): OpenTabs | undefined {
+    return openTabsSlot.get(this)
+  }
+
+  get scoreVerdictFor (): ((id: string | undefined, waitMs?: number) => Promise<ProviderVerdict>) | undefined {
+    return scoreVerdictForSlot.get(this)
+  }
+
   get showNotice (): ((notice: { readonly title: string, readonly message: string }) => void) | undefined {
     return showNoticeSlot.get(this)
+  }
+
+  get websiteScore (): ((origin: string, address: string) => Promise<WebsiteScore>) | undefined {
+    return websiteScoreSlot.get(this)
   }
 }
 
@@ -283,9 +332,29 @@ export function publishWindowForSender (ctx: SubsystemContext, windowForSender: 
   windowForSenderSlot.publish(ctx, windowForSender)
 }
 
+/** The one sanctioned way to set `ctx.appUpdates` -- see `publishBroker`'s own doc; same guarantee, same reason. */
+export function publishAppUpdates (ctx: SubsystemContext, appUpdates: AppUpdates): void {
+  appUpdatesSlot.publish(ctx, appUpdates)
+}
+
+/** The one sanctioned way to set `ctx.openTabs` -- see `publishBroker`'s own doc; same guarantee, same reason. */
+export function publishOpenTabs (ctx: SubsystemContext, openTabs: OpenTabs): void {
+  openTabsSlot.publish(ctx, openTabs)
+}
+
+/** The one sanctioned way to set `ctx.scoreVerdictFor` -- see `publishBroker`'s own doc; same guarantee, same reason. */
+export function publishScoreVerdictFor (ctx: SubsystemContext, verdictFor: (id: string | undefined, waitMs?: number) => Promise<ProviderVerdict>): void {
+  scoreVerdictForSlot.publish(ctx, verdictFor)
+}
+
 /** The one sanctioned way to set `ctx.showNotice` -- see `publishBroker`'s own doc; same guarantee, same reason. */
 export function publishShowNotice (ctx: SubsystemContext, showNotice: (notice: { readonly title: string, readonly message: string }) => void): void {
   showNoticeSlot.publish(ctx, showNotice)
+}
+
+/** The one sanctioned way to set `ctx.websiteScore` -- see `publishBroker`'s own doc; same guarantee, same reason. */
+export function publishWebsiteScore (ctx: SubsystemContext, websiteScore: (origin: string, address: string) => Promise<WebsiteScore>): void {
+  websiteScoreSlot.publish(ctx, websiteScore)
 }
 
 export interface Subsystem {

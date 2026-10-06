@@ -16,6 +16,8 @@ import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import type { SiteInfo } from '../permissions/site-info.js'
 import type { SiteInfoController } from '../permissions/site-info-controller.js'
 import type { SiteTrust } from '../browsing/site-trust.js'
+import type { ApplyOutcome } from '../install/app-updates.js'
+import { dialogCallerFor } from '../install/dialog-caller.js'
 import { browserStorageEstimateFor, orivonStorageFor } from '../permissions/site-data-runner.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { CookieView } from '../privacy/cookie-list.js'
@@ -59,6 +61,10 @@ export type SiteInfoCommand =
   /** One answer for one kind: `value` is `default`, `allow` or `block`; main refuses a kind that is not offered. */
   | { type: 'setSitePermission'; kind: string; value: string }
   | { type: 'revokePickedPath'; pickId: string }
+  /** Takes the update offered for this popup's origin: `cid` must name exactly the pending offer, and main refuses any other. */
+  | { type: 'applyUpdate'; cid: string }
+  /** "Open <home>": a new tab at the `domain` this origin's manifest names. No argument: main reads the name, the popup never supplies one. */
+  | { type: 'openHome' }
   | { type: 'clearBrowserData' }
   /** One cookie of this site, by the key the last `data` answer gave it. */
   | { type: 'removeCookie'; key: string }
@@ -121,14 +127,15 @@ export function registerSiteInfoIpc (
   onContentHeight: (height: number) => void = () => {},
   openCertificate: () => void = () => {},
   sitePermissions: SitePermissionsAccess = { view: () => null, set: () => null },
-  closePopup: () => void = () => {}
+  closePopup: () => void = () => {},
+  openHome: (domain: string) => void = () => {}
 ): void {
   // On the popup's own webContents: the handler goes with it, and two windows
   // can each have one open.
   siteInfoWebContents.ipc.handle(SITE_INFO_COMMAND_CHANNEL, async (
     event: IpcMainInvokeEvent,
     command: SiteInfoCommand
-  ): Promise<void | SiteInfo | SiteTrust | null | SiteDataSnapshot | ApplyResult | SitePermissionsView> => {
+  ): Promise<void | SiteInfo | SiteTrust | null | SiteDataSnapshot | ApplyResult | SitePermissionsView | ApplyOutcome> => {
     if (!isFromSiteInfoWindow(event, siteInfoWebContents, popupUrl)) return
 
     switch (command.type) {
@@ -156,6 +163,16 @@ export function registerSiteInfoIpc (
         return sitePermissions.view(origin)
       case 'setSitePermission':
         return typeof command.kind === 'string' && typeof command.value === 'string' ? sitePermissions.set(origin, command.kind, command.value) : null
+      case 'applyUpdate': {
+        if (typeof command.cid !== 'string') return { ok: false, reason: 'no such offer' }
+        const tab = activeWebContents()
+        return await controller.applyUpdate(origin, command.cid, tab === undefined ? undefined : dialogCallerFor(tab))
+      }
+      case 'openHome': {
+        const home = (await controller.siteInfoFor(origin)).homeDomain
+        if (home !== undefined) openHome(home)
+        return
+      }
       case 'revokePickedPath':
         await controller.revokePickedPath(origin, command.pickId)
         return await controller.siteInfoFor(origin)

@@ -38,6 +38,7 @@
     "check:app-behaviours": "node scripts/app-behaviours/check-app-behaviours.mjs",
     "check:contracts-surface": "node scripts/app-behaviours/check-contracts-surface.mjs",
     "check:test-paths": "node scripts/check-test-paths.mjs",
+    "check:impact-map": "node scripts/ci/check-impact-map.mjs",
     "install:electron": "node scripts/install-electron.mjs",
     "smoke": "node scripts/build-ordinary.mjs && node scripts/run-headless.mjs node scripts/smoke.mjs",
     "test:e2e": "node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts",
@@ -45,7 +46,9 @@
     "qa:visual": "node scripts/qa.mjs visual",
     "qa:report": "node scripts/qa-report.mjs",
     "perf:probe": "node scripts/perf-probe.mjs",
-    "package:linux": "node scripts/build-ordinary.mjs && electron-builder --linux",
+    "package:linux": "node scripts/build-ordinary.mjs && electron-builder --linux --publish never",
+    "package:win": "node scripts/build-ordinary.mjs && electron-builder --win --publish never",
+    "package:mac": "node scripts/build-ordinary.mjs && electron-builder --mac --publish never",
     "postinstall": "node scripts/check-no-native-modules.mjs && node scripts/install-electron.mjs",
     "check:advisories": "node scripts/check-advisories.mjs"
   },
@@ -77,6 +80,7 @@
     "viem": "^2.56.8"
   },
   "devDependencies": {
+    "@electron/fuses": "1.8.0",
     "@fontsource-variable/inter": "^5.3.0",
     "@libp2p/crypto": "^5.1.23",
     "@playwright/test": "^1.62.1",

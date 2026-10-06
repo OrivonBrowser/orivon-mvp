@@ -196,6 +196,22 @@ describe('wakeTab', () => {
     expect(changed).toHaveBeenCalled()
   })
 
+  it('leaves the new-tab page out of the history it gives back, the index shifted to match', async () => {
+    const { tabs, records } = setup()
+    await sleepTab(tabs, 'a', env())
+    const record = records.get('a')
+    const dashboard = { url: 'orivon-shell://renderer/newtab/index.html', title: 'New tab', pageState: 'x' }
+    const one = { url: 'https://a.example/1', title: 'One', pageState: 'y' }
+    const two = { url: 'https://a.example/2', title: 'Two', pageState: 'z' }
+    if (record?.sleeping != null) record.sleeping = { ...record.sleeping, entries: [dashboard, one, dashboard, two], index: 3 } as never
+    const wc = { ...blank.webContents, isDestroyed: () => false, loadURL: vi.fn(), navigationHistory: { restore: vi.fn(async () => {}) } }
+    if (record !== undefined) record.view = { webContents: wc } as never
+
+    wakeTab(tabs, 'a')
+
+    expect(wc.navigationHistory.restore).toHaveBeenCalledWith({ entries: [one, two], index: 1 })
+  })
+
   it('keeps what the tab was for the session file until the page commits', async () => {
     const { tabs, records } = setup()
     await sleepTab(tabs, 'a', env())

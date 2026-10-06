@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { app, session, utilityProcess } from 'electron'
 import type { Session, WebFrameMain, WebRequestFilter } from 'electron'
 import type { Subsystem } from '../registry.js'
-import { devEthNames } from '../dev/eth-resolver.js'
+import { devEthNames, isDevEthName } from '../dev/eth-resolver.js'
 import type { HostConfig, LightClientState, SiteProvenance } from '../../protocols/verifier-host/protocol.js'
 import type { ContentAddress, PinRecord } from '../../broker/policy/pin.js'
 import { servedByVerifier } from '../../loader/fetch/verifier-origin.js'
@@ -20,7 +20,7 @@ import { ACCEPT, CHROMIUM_VERDICT, verifierCertificateVerdict } from './certific
 import { requestPartition, withPartition } from './partition.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import { contentAddressOf } from './content-address.js'
-import { chooseCheckpoint, slotTimestamp } from './checkpoint.js'
+import { chooseCheckpoint, MAX_CHECKPOINT_AGE_SECONDS, slotTimestamp } from './checkpoint.js'
 import type { CheckpointChoice } from './checkpoint.js'
 import { DEFAULT_ENDPOINTS } from './endpoints.js'
 import { HostSupervisor } from './host-supervisor.js'
@@ -213,6 +213,14 @@ function usableCheckpointAge (): number | undefined {
   return choice.ok ? choice.ageSeconds : undefined
 }
 
+/** Whether a checkpoint the light client can start from is at hand, answered from the choice already made: a gateway address asks on every navigation, and the file is read again only when no chosen checkpoint is usable. */
+function lightClientCanStart (): boolean {
+  if (lightClientSwitchedOff()) return false
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  if (checkpoint?.ok === true && nowSeconds - checkpoint.checkpoint.timestamp <= MAX_CHECKPOINT_AGE_SECONDS) return true
+  return chooseNow().ok
+}
+
 /**
  * Where a protocol origin's content came from and whether DDOC holds, as a tab
  * showing that origin sees it; null when it is not mounted there or the host
@@ -241,14 +249,26 @@ export async function verifierNameEvidence (origin: string, pin: PinRecord | nul
  * Where an origin's bundle is served from, for the loader: undefined for
  * any origin no protocol serves, and a throw when its name cannot be
  * verified now.
+ *
+ * Mounted in `partition` when given, the origin's own otherwise (the one a tab
+ * opening it uses). A caller that is not that origin passes a partition of its
+ * own, so what it asks never warms a name for anyone else (A256).
  */
-export async function verifierContentAddress (origin: string): Promise<ContentAddress | undefined> {
+export async function verifierContentAddress (origin: string, partition?: string): Promise<ContentAddress | undefined> {
   if (!servedByVerifier(origin)) return undefined
   startHost()
   await listeningGate.whenSettled()
   if (supervisor === undefined) throw new Error('the verifier has not started')
-  // The origin's own partition: the one a tab opening it uses.
-  return contentAddressOf(await supervisor.request({ kind: 'mount', host: new URL(origin).hostname, partition: new URL(origin).origin }, MOUNT_TIMEOUT_MS))
+  return contentAddressOf(await supervisor.request({ kind: 'mount', host: new URL(origin).hostname, partition: partition ?? new URL(origin).origin }, MOUNT_TIMEOUT_MS))
+}
+
+/** The content CID a `.eth` host names, proven now in `partition`; undefined when it does not resolve. Never throws. */
+export async function verifierEthContentCid (host: string, partition: string): Promise<string | undefined> {
+  try {
+    return (await verifierContentAddress(`https://${host}`, partition))?.cid
+  } catch {
+    return undefined
+  }
 }
 
 /** The light client's state in words, for the Settings section and the site-info popover. */
@@ -346,7 +366,11 @@ export const verifierSubsystem: Subsystem = {
       privateSession: ctx.privateSession
     })
     startHost = () => { lifecycle.request() }
-    provideVerifierAccess({ start: () => { startHost() }, ready: async () => { await listeningGate.whenSettled() } })
+    provideVerifierAccess({
+      start: () => { startHost() },
+      ready: async () => { await listeningGate.whenSettled() },
+      servesName: (name) => isDevEthName(name) || ethTestSeam()?.fixtures[name] !== undefined || lightClientCanStart()
+    })
     exposeVerifierStart(() => { startHost() })
     lifecycle.refreshAtLaunch()
     app.on('will-quit', () => {

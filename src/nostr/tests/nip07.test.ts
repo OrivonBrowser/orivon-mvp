@@ -55,6 +55,9 @@ function fakeOrivon (requestIdentity: Orivon['id']['requestIdentity']): Orivon {
       available: notImplemented('secrets.available'),
       encrypt: notImplemented('secrets.encrypt'),
       decrypt: notImplemented('secrets.decrypt')
+    },
+    trust: {
+      websiteScore: notImplemented('trust.websiteScore')
     }
   }
 }

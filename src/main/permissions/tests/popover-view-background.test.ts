@@ -109,7 +109,7 @@ afterEach(() => {
 describe('createPopoverView: background colour set before the view is ever shown', () => {
   it('sets the LIGHT colour, before addChildView, when the OS theme is light', () => {
     const popover = createPopoverView(fakeWin() as never, fakeContentView() as never, {
-      dirname: '/app', entryPath: '/menu/', fallbackHtml: '../renderer/menu/index.html',
+      dirname: '/app', entryPath: '/menu/', entry: 'overlay',
       preloadRelPath: '../preload/menu.js', urlArgName: 'orivon-menu-url', align: 'right',
       background: BACKGROUND, registerIpc: () => () => {}
     })
@@ -122,7 +122,7 @@ describe('createPopoverView: background colour set before the view is ever shown
   it('sets the DARK colour when the OS theme is dark', () => {
     nativeThemeState.shouldUseDarkColors = true
     const popover = createPopoverView(fakeWin() as never, fakeContentView() as never, {
-      dirname: '/app', entryPath: '/menu/', fallbackHtml: '../renderer/menu/index.html',
+      dirname: '/app', entryPath: '/menu/', entry: 'overlay',
       preloadRelPath: '../preload/menu.js', urlArgName: 'orivon-menu-url', align: 'right',
       background: BACKGROUND, registerIpc: () => () => {}
     })
@@ -134,7 +134,7 @@ describe('createPopoverView: background colour set before the view is ever shown
 
   it('a non-warm popup is destroyed on close and rebuilt fresh on the next open', () => {
     const popover = createPopoverView(fakeWin() as never, fakeContentView() as never, {
-      dirname: '/app', entryPath: '/permissions/', fallbackHtml: '../renderer/permissions/index.html',
+      dirname: '/app', entryPath: '/permissions/', entry: 'permissions',
       preloadRelPath: '../preload/permissions.js', urlArgName: 'orivon-permissions-url', align: 'right',
       background: BACKGROUND, registerIpc: () => () => {}
     })
@@ -157,7 +157,7 @@ describe('createPopoverView: background colour set before the view is ever shown
 describe('createPopoverView: a `warm` popup', () => {
   it('is NOT built at construction -- every window would otherwise carry a hidden renderer process', () => {
     createPopoverView(fakeWin() as never, fakeContentView() as never, {
-      dirname: '/app', entryPath: '/menu/', fallbackHtml: '../renderer/menu/index.html',
+      dirname: '/app', entryPath: '/menu/', entry: 'overlay',
       preloadRelPath: '../preload/menu.js', urlArgName: 'orivon-menu-url', align: 'right',
       background: BACKGROUND, warm: true, registerIpc: () => () => {}
     })
@@ -167,7 +167,7 @@ describe('createPopoverView: a `warm` popup', () => {
 
   it('prewarm() builds it once, ahead of any toggle -- idempotent on a second call', () => {
     const popover = createPopoverView(fakeWin() as never, fakeContentView() as never, {
-      dirname: '/app', entryPath: '/menu/', fallbackHtml: '../renderer/menu/index.html',
+      dirname: '/app', entryPath: '/menu/', entry: 'overlay',
       preloadRelPath: '../preload/menu.js', urlArgName: 'orivon-menu-url', align: 'right',
       background: BACKGROUND, warm: true, registerIpc: () => () => {}
     })
@@ -180,7 +180,7 @@ describe('createPopoverView: a `warm` popup', () => {
 
   it('prewarm() on a non-warm popup is a no-op: it always builds fresh on its own open anyway', () => {
     const popover = createPopoverView(fakeWin() as never, fakeContentView() as never, {
-      dirname: '/app', entryPath: '/permissions/', fallbackHtml: '../renderer/permissions/index.html',
+      dirname: '/app', entryPath: '/permissions/', entry: 'permissions',
       preloadRelPath: '../preload/permissions.js', urlArgName: 'orivon-permissions-url', align: 'right',
       background: BACKGROUND, registerIpc: () => () => {}
     })
@@ -191,7 +191,7 @@ describe('createPopoverView: a `warm` popup', () => {
 
   it('a toggle reaching a not-yet-prewarmed popup builds it then, the same as any other click', () => {
     const popover = createPopoverView(fakeWin() as never, fakeContentView() as never, {
-      dirname: '/app', entryPath: '/menu/', fallbackHtml: '../renderer/menu/index.html',
+      dirname: '/app', entryPath: '/menu/', entry: 'overlay',
       preloadRelPath: '../preload/menu.js', urlArgName: 'orivon-menu-url', align: 'right',
       background: BACKGROUND, warm: true, registerIpc: () => () => {}
     })
@@ -204,7 +204,7 @@ describe('createPopoverView: a `warm` popup', () => {
   it('hides instead of destroying, and reuses the SAME view on the next show', () => {
     const onShow = vi.fn()
     const popover = createPopoverView(fakeWin() as never, fakeContentView() as never, {
-      dirname: '/app', entryPath: '/menu/', fallbackHtml: '../renderer/menu/index.html',
+      dirname: '/app', entryPath: '/menu/', entry: 'overlay',
       preloadRelPath: '../preload/menu.js', urlArgName: 'orivon-menu-url', align: 'right',
       background: BACKGROUND, warm: true, onShow, registerIpc: () => () => {}
     })
@@ -228,7 +228,7 @@ describe('createPopoverView: a `warm` popup', () => {
 
   it('repaints the warm view on a live OS/app theme change, even while hidden', () => {
     const popover = createPopoverView(fakeWin() as never, fakeContentView() as never, {
-      dirname: '/app', entryPath: '/menu/', fallbackHtml: '../renderer/menu/index.html',
+      dirname: '/app', entryPath: '/menu/', entry: 'overlay',
       preloadRelPath: '../preload/menu.js', urlArgName: 'orivon-menu-url', align: 'right',
       background: BACKGROUND, warm: true, registerIpc: () => () => {}
     })
@@ -253,7 +253,7 @@ describe('createPopoverView: a `warm` popup', () => {
   it('destroys the warm view when the window closes', () => {
     const win = fakeWin()
     const popover = createPopoverView(win as never, fakeContentView() as never, {
-      dirname: '/app', entryPath: '/menu/', fallbackHtml: '../renderer/menu/index.html',
+      dirname: '/app', entryPath: '/menu/', entry: 'overlay',
       preloadRelPath: '../preload/menu.js', urlArgName: 'orivon-menu-url', align: 'right',
       background: BACKGROUND, warm: true, registerIpc: () => () => {}
     })

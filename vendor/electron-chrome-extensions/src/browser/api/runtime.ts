@@ -10,7 +10,7 @@ import type { OffscreenAPI } from './offscreen'
  * it, and no caller measured needs it. */
 interface RuntimeContext {
   contextId: string
-  contextType: 'TAB' | 'POPUP' | 'BACKGROUND' | 'OFFSCREEN_DOCUMENT'
+  contextType: 'TAB' | 'POPUP' | 'BACKGROUND' | 'OFFSCREEN_DOCUMENT' | 'SIDE_PANEL'
   documentOrigin?: string | undefined
   documentUrl?: string
   frameId: number
@@ -74,8 +74,8 @@ export class RuntimeAPI extends EventEmitter {
     // `createDocument()` call then throws "Only a single offscreen document
     // may be created." A real `getContexts` is what Volume Master's own
     // code already prefers; this removes the whole failure class rather
-    // than working around its fallback path. SIDE_PANEL and
-    // DEVELOPER_TOOLS never appear: neither has a real implementation here.
+    // than working around its fallback path. DEVELOPER_TOOLS never
+    // appears: it has no real implementation here; SIDE_PANEL comes from the host (patch 70).
     handle('runtime.getContexts', this.getContexts.bind(this))
   }
 
@@ -113,6 +113,16 @@ export class RuntimeAPI extends EventEmitter {
         contextId: `popup:${String(popup.webContents.id)}`, contextType: 'POPUP',
         documentOrigin: documentOriginOf(url), documentUrl: url,
         frameId: 0, incognito: false, tabId: popup.tabId, windowId: -1,
+      })
+    }
+
+    // Orivon patch (UPSTREAM.md patch 70): the extension's side panel pages, as the host reports them.
+    for (const panel of this.ctx.store.impl.extensionContexts?.(extensionId) ?? []) {
+      const url = panel.contents.getURL()
+      contexts.push({
+        contextId: `sidepanel:${String(panel.contents.id)}`, contextType: panel.contextType,
+        documentOrigin: documentOriginOf(url), documentUrl: url,
+        frameId: 0, incognito: false, tabId: -1, windowId: panel.windowId,
       })
     }
 

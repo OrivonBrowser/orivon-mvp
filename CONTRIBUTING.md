@@ -52,9 +52,9 @@ interface. Do not reinvent without a written reason.
 **7. Don't over-document trivia**, and don't create abstractions for elegance alone. Prefer self explanatory code over long comment sections.
 
 **8. No native modules in Orivon's own dependencies.** No native modules requiring
-compilation; JavaScript and WebAssembly both pass. Windows and macOS are supported by running
-from source, and an `npm install` that needs `node-gyp` is a worse wall than the code-signing
-certificate it was meant to avoid. Enforced by `npm run check:natives`, which runs
+compilation; JavaScript and WebAssembly both pass. Windows and macOS run from source as well as
+from the release packages, and an `npm install` that needs `node-gyp` is a worse wall than the
+code-signing certificate a run from source does without. Enforced by `npm run check:natives`, which runs
 automatically on every install. This bounds this repository's dependencies, not the apps
 Orivon runs: an app qualifies by running in the Node environment, WebAssembly included
 ([`ADR-0036`](docs/decisions/ADR-0036-an-app-qualifies-by-running-in-the-node-environment.md)).
@@ -95,8 +95,11 @@ npm run smoke     # only if you touched src/main/
 
 `npm run smoke` prints a JSON result and a failure list. Read those, not the exit code alone.
 
-All ten checks run in CI on every push. With no dedicated code reviewer, CI is the reviewer: a
-red pull request does not merge, ever.
+`check` (typecheck, unit tests and every guard) runs in CI on every pull request and every push to `main`.
+The end-to-end suite runs the specs a change can reach, in parallel shards; `main` and the nightly run all of
+it. With no dedicated code reviewer, CI is the reviewer: a pull request whose `check` or selected e2e shards are
+red does not merge, ever. A pull request from a fork runs `check` once a maintainer approves the workflow, and
+a maintainer adds the `ci:e2e` label to run its e2e; `ci:e2e-full` runs the whole suite for any pull request.
 
 ## Pull request title and body
 

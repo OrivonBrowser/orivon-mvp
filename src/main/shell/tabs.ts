@@ -23,6 +23,7 @@ import { closeParkedViews } from './tab-parking.js'
 import { buildTabState } from './tab-state.js'
 import type { TabStateEnv } from './tab-state.js'
 import { openTypedViewSource } from '../page-tools/view-source.js'
+import { gatewayRedirectFor } from './eth-gateway-rule.js'
 import { exitHtmlFullscreen, goBack, goForward, navigateTab, reloadTab } from './tab-navigation.js'
 import type { NavigationEnv } from './tab-navigation.js'
 import { TabOpener } from './tab-open.js'
@@ -168,8 +169,8 @@ export class TabManager {
       liveWebContents: (id) => this.liveWebContents(id),
       openInternal: (page, path) => { this.openInternal(page, path) },
       viewSource: (url) => openTypedViewSource(this, url),
-      broker: () => ctx.broker,
-      searchUrl: shell?.searchUrl
+      searchUrl: shell?.searchUrl,
+      gatewayTarget: (url) => gatewayRedirectFor(shell?.services?.settings, url)
     }
     this.stateEnv = { dashboardUrl, partnerOf: (id) => this.splits.groups.partnerOf(id) }
   }
@@ -201,6 +202,7 @@ export class TabManager {
     this.cancelPendingPush()
     this.listeners.clear()
     for (const id of [...this.tabs.keys()]) this.forgetTab(id, true)
+    this.panes.dispose()
   }
 
   /** True from the moment the window starts closing: no tab may be opened or driven on this manager any more. */
