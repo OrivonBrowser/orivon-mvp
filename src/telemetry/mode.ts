@@ -9,10 +9,17 @@ const SEAM_ENABLED = typeof __ORIVON_DEV_GRANT_ENABLED__ !== 'undefined' && __OR
 /** The address reports go to. An ordinary build sends nowhere else. */
 export const TELEMETRY_BASE_URL = 'https://telemetry.orivonstack.com/v1/'
 
-export type OffReason = 'development' | 'env' | 'private'
+/**
+ * Where a development run sends: an address that can never answer. `.invalid` never resolves (RFC 6761),
+ * and where a resolver answers it anyway no certificate can name it, so every send fails as offline does.
+ * `npm run dev` exercises the whole of telemetry, and nothing it measures leaves the machine.
+ */
+export const DEVELOPMENT_BASE_URL = 'https://telemetry.invalid/v1/'
+
+export type OffReason = 'env' | 'private'
 
 export interface ModeInputs {
-  /** `npm run dev`'s developer mode, or electron-vite's dev server. */
+  /** `npm run dev`'s developer mode, or electron-vite's dev server: telemetry runs, and sends to DEVELOPMENT_BASE_URL. */
   readonly development: boolean
   /** `ORIVON_TELEMETRY=off`: set by every test and smoke launch. */
   readonly disabledByEnv: boolean
@@ -22,7 +29,6 @@ export interface ModeInputs {
 /** Why telemetry does not run in this process, or undefined when it may. Off means it never starts: nothing measured, no machine identifier read, nothing sent. */
 export function telemetryOffReason (inputs: ModeInputs): OffReason | undefined {
   if (inputs.privateSession) return 'private'
-  if (inputs.development) return 'development'
   if (inputs.disabledByEnv) return 'env'
   return undefined
 }
@@ -83,10 +89,10 @@ function isLoopbackHttp (value: string): boolean {
   }
 }
 
-/** The base address ending in a slash: the real one, or in a test build a loopback address it was given. */
-export function ingestBaseUrl (testBuild: boolean, overrideUrl: string | undefined): string {
-  if (!testBuild || overrideUrl === undefined || !isLoopbackHttp(overrideUrl)) return TELEMETRY_BASE_URL
-  return overrideUrl.endsWith('/') ? overrideUrl : `${overrideUrl}/`
+/** The base address ending in a slash: in a test build a loopback address it was given, in a development run the unreachable one, otherwise the real one. */
+export function ingestBaseUrl (testBuild: boolean, overrideUrl: string | undefined, development: boolean): string {
+  if (testBuild && overrideUrl !== undefined && isLoopbackHttp(overrideUrl)) return overrideUrl.endsWith('/') ? overrideUrl : `${overrideUrl}/`
+  return development ? DEVELOPMENT_BASE_URL : TELEMETRY_BASE_URL
 }
 
 export type Endpoint = 'usage' | 'sites' | 'erase'

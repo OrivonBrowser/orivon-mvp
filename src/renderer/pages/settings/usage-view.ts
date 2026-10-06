@@ -9,7 +9,6 @@ import type { SettingsState } from './state.js'
 import type { UsageStatus } from './usage-state.js'
 
 const OFF_REASONS: Readonly<Record<string, string>> = {
-  development: 'Telemetry is off in development builds. Nothing is counted or sent.',
   env: 'Telemetry is turned off for this launch. Nothing is counted or sent.',
   private: 'A private window measures and sends nothing.'
 }
