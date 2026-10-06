@@ -30,7 +30,7 @@ import { errnoOf, fail } from './errors.js'
 import { GrantLedger } from './grants/grant-ledger.js'
 import { createGrantsChangeEmitter } from './grants/grant-events.js'
 import { socketAllowance } from './grants/resource-limits.js'
-import { originFromUrl } from './policy/origin.js'
+import { isolationKeyFromUrl } from './policy/origin.js'
 import { widensAuthority } from './policy/update.js'
 import { createListenerRegistry } from './capabilities/listener-registry.js'
 import { createNetCapability } from './capabilities/net.js'
@@ -88,11 +88,11 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
    *
    * Reported as 'internal', matching errors.ts: this is a broker fault --
    * every caller is expected to have already derived a real origin via
-   * `originFromSenderFrame` (T3) before reaching here -- never an app-visible
+   * `callerKeyFromSenderFrame` (T3) before reaching here -- never an app-visible
    * denial.
    */
   function canonical (origin: string): string {
-    const key = originFromUrl(origin)
+    const key = isolationKeyFromUrl(origin)
     if (key === null) throw fail('internal', 'broker method called with a string that is not an origin')
     return key
   }
@@ -192,19 +192,19 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   }
 
   function isRegisteredSync (origin: string): boolean {
-    const key = originFromUrl(origin)
+    const key = isolationKeyFromUrl(origin)
     if (key === null) return false
     return registeredManifest(key) !== undefined
   }
 
   function hasGrantsSync (origin: string): boolean {
-    const key = originFromUrl(origin)
+    const key = isolationKeyFromUrl(origin)
     if (key === null) return false
     return ledger.grantsFor(key).length > 0
   }
 
   function heldSync (origin: string, capability: CapabilityKind): boolean {
-    const key = originFromUrl(origin)
+    const key = isolationKeyFromUrl(origin)
     return key !== null && ledger.currentGrant(key, capability) !== undefined
   }
 
@@ -218,7 +218,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
    * re-registered answers from its pinned manifest's declaration.
    */
   function socketAllowanceSync (origin: string): number {
-    const key = originFromUrl(origin) ?? origin
+    const key = isolationKeyFromUrl(origin) ?? origin
     const pinned = ledger.manifestFor(key) === undefined ? pinnedManifests.get(key) : undefined
     return pinned === undefined ? ledger.socketAllowance(key) : socketAllowance({ manifest: pinned, fsBytesUsed: 0 })
   }

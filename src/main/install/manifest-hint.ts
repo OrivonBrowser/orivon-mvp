@@ -21,7 +21,7 @@
 import { ipcMain } from 'electron'
 import type { WebContents } from 'electron'
 import { MANIFEST_HINT_CHANNEL } from '../channels.js'
-import { isAttributedSession, originFromSenderFrame } from '../../broker/policy/origin.js'
+import { callerKeyFromSenderFrame, isAttributedSession } from '../../broker/policy/origin.js'
 import type { SenderFrameLike } from '../../broker/policy/origin.js'
 import type { LoadResult } from '../../loader/index.js'
 import type { GrantedWithoutInstall } from './grant-without-install.js'
@@ -87,7 +87,7 @@ export function createManifestHintListener (
 ): (event: ManifestHintEvent, hintedUrl: unknown) => void {
   return (event, hintedUrl) => {
     if (typeof hintedUrl !== 'string') return
-    const origin = originFromSenderFrame(event.senderFrame)
+    const origin = callerKeyFromSenderFrame(event.senderFrame)
     if (origin === null) return
     // Same check, same reason, as ../../broker/transport/ipc.ts's own
     // CONTROL_CHANNEL handler -- see isAttributedSession's doc

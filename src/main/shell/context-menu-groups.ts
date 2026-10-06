@@ -3,6 +3,7 @@
 // action the caller did not supply is an item that is not offered, which is how
 // the chrome's own menu stays small. Pure: no Electron value is used.
 import type { ContextMenuParams, MenuItemConstructorOptions } from 'electron'
+import { localFileKey } from '../../broker/policy/origin.js'
 import { sanitizeDirectUrl } from '../browsing/omnibox.js'
 import type { CommandId } from '../shortcuts/commands.js'
 import { menuSafe, queryFrom, searchLabel } from './context-menu-text.js'
@@ -15,6 +16,8 @@ export interface ContextMenuActions {
   copyText: (text: string) => void
   /** Absent in a kiosk, which opens nothing beside the page it shows. */
   openInNewTab?: (url: string) => void
+  /** Offered only for a link in a frame that is itself a local file: opens its `file:` link in a new tab. */
+  openLocalFile?: (url: string) => void
   /** Absent where a split is not offered. */
   openInSplit?: (url: string) => void
   openInWindow?: (url: string) => void
@@ -43,7 +46,7 @@ export interface ContextMenuActions {
 }
 
 export type MenuParams = Pick<ContextMenuParams, 'x' | 'y' | 'linkURL' | 'linkText' | 'srcURL' | 'mediaType' | 'hasImageContents' | 'isEditable' | 'selectionText' | 'editFlags'> &
-  Partial<Pick<ContextMenuParams, 'mediaFlags' | 'misspelledWord' | 'dictionarySuggestions'>>
+  Partial<Pick<ContextMenuParams, 'mediaFlags' | 'misspelledWord' | 'dictionarySuggestions' | 'frameURL'>>
 
 /** What the menu needs to know that the click does not say. */
 export interface ContextMenuContext {
@@ -99,6 +102,11 @@ export function linkGroup (params: MenuParams, actions: ContextMenuActions): Men
     if (inPrivate !== undefined) items.push({ label: 'Open Link in Private Window', click: () => { inPrivate(openable) } })
     const inSplit = actions.openInSplit
     if (inSplit !== undefined) items.push({ label: 'Open Link in Split View', click: () => { inSplit(openable) } })
+  }
+  const local = actions.openLocalFile
+  // Only a link in the local page's own frame: a web frame inside it never opens a file.
+  if (openable === null && local !== undefined && localFileKey(params.linkURL) !== null && localFileKey(params.frameURL ?? '') !== null) {
+    items.push({ label: 'Open Link in New Tab', click: () => { local(params.linkURL) } })
   }
   const save = actions.saveUrl
   const saveable = webAddress(params.linkURL)

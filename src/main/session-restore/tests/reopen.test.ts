@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+const fuse = vi.hoisted(() => ({ known: undefined as string | undefined, read: vi.fn() }))
+vi.mock('../../local-files/file-fuse.js', () => ({ knownFileProtocolFuse: () => fuse.known, fileProtocolFuse: fuse.read }))
+
 import type { CommandDeps } from '../../shortcuts/run-command.js'
 import type { ShellServices } from '../../shell/shell-services.js'
 import { ClosedStack } from '../closed-stack.js'
@@ -28,6 +31,36 @@ function setup (windows: Array<{ id: number, fake: FakeTabs }>) {
   const deps = { services: { closedTabs: stack, windows: { all: () => shells } } as unknown as ShellServices, openWindow, displays: () => displays.current, quit: vi.fn() } as CommandDeps
   return { stack, shells, deps, openWindow, displays }
 }
+
+describe('reopening a local file before the fuse is read', () => {
+  const file = (): NewClosedEntry => ({ kind: 'tab', tab: { url: 'file:///home/a/x.html', title: 'X', pinned: true }, index: 1, windowKey: 1 })
+
+  it('keeps the entry, opens it once the read is in, and opens it once for two presses', async () => {
+    fuse.known = undefined
+    let finish: (state: string) => void = () => undefined
+    fuse.read.mockReturnValue(new Promise((resolve) => { finish = resolve }))
+    const one = fakeTabs()
+    one.order.push('x', 'y', 'z')
+    const { stack, shells, deps } = setup([{ id: 1, fake: one }])
+    stack.push(file())
+    reopenClosed(shells[0] as never, deps)
+    reopenClosed(shells[0] as never, deps)
+    expect(one.calls).toEqual([])
+    expect(stack.size).toBe(1)
+    fuse.known = 'off'
+    finish('off')
+    await vi.waitFor(() => { expect(stack.size).toBe(0) })
+    expect(one.calls).toEqual(['file file:///home/a/x.html front', 'move t1 1', 'changed'])
+  })
+
+  it('reopens a window with a local file at once when the fuse is known', () => {
+    fuse.known = 'off'
+    const { stack, shells, deps, openWindow } = setup([{ id: 1, fake: fakeTabs() }])
+    stack.push({ kind: 'window', window: { ...savedWindow(1), tabs: [{ url: 'file:///home/a/x.html', title: '', pinned: false }] } })
+    reopenClosed(shells[0] as never, deps)
+    expect(openWindow).toHaveBeenCalledTimes(1)
+  })
+})
 
 describe('reopening a closed tab', () => {
   it('brings it back in the window it was closed in, at the place it had, in front', () => {

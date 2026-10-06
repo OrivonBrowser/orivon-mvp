@@ -15,6 +15,7 @@
 import type { IpcMainInvokeEvent, WebContents } from 'electron'
 import type { BookmarkStore } from '../browsing/bookmarks.js'
 import { COMMAND_CHANNEL } from '../channels.js'
+import { navigateFromBrowser, openFromBrowser } from '../shell/open-from-browser.js'
 import type { TabManager } from '../shell/tabs.js'
 import type { SiteInfoController } from '../permissions/site-info-controller.js'
 import { web3Score } from '../browsing/site-trust.js'
@@ -205,7 +206,7 @@ export function registerShellIpc (
         return
       case 'navigate':
         // The address bar's Enter: the page it leads to takes the keyboard, as after a click into it.
-        tabs.navigate(command.id, command.input)
+        void navigateFromBrowser(tabs, command.id, command.input)
         if (tabs.getState().activeTabId === command.id) tabs.liveWebContents(command.id)?.focus()
         return
       case 'back':
@@ -224,18 +225,14 @@ export function registerShellIpc (
         bookmarks.remove(command.url)
         return
       case 'openBookmark': {
-        // Open in the active tab, like typing the URL into the address
-        // bar -- navigate() already runs it through the same omnibox
-        // parsing, and a bookmark URL is always absolute http(s), so it
-        // resolves to `kind: 'url'` unchanged, never a search fallback.
-        // No active tab (the last one just closed) creates a fresh one
+        // Like typing the address into the bar: a bookmarked local file opens
+        // in a tab of its own, anything else is the active tab's navigation
+        // (navigateFromBrowser), and a bookmark URL is always absolute, so it
+        // is never a search fallback. No active tab (the last one just closed) creates a fresh one
         // instead of silently doing nothing.
         const { activeTabId } = tabs.getState()
-        if (activeTabId === null) {
-          tabs.createTab(command.url)
-        } else {
-          tabs.navigate(activeTabId, command.url)
-        }
+        if (activeTabId === null) openFromBrowser(tabs, command.url)
+        else void navigateFromBrowser(tabs, activeTabId, command.url)
         return
       }
       case 'siteSummaryFor':

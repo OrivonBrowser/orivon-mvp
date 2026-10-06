@@ -24,9 +24,9 @@ describe('what the load-error sheet says', () => {
 })
 
 describe('the load-error watcher', () => {
-  const WINDOW = { tabs: {} } as unknown as ShellWindow
+  const WINDOW = { tabs: { partitionOf: (id: string) => id === 't1' ? 'persist:orivon-local-files' : undefined } } as unknown as ShellWindow
 
-  function setup (claimed = false): { contents: EventEmitter & { getURL: () => string, id: number }, asks: SlotAsk[], cancel: ReturnType<typeof vi.fn>, deps: Parameters<typeof watchLoadErrors>[1], shown: { url: string } } {
+  function setup (claimed = false, movesTab: (partition: string | undefined, url: string, code: number) => boolean = () => false): { contents: EventEmitter & { getURL: () => string, id: number }, asks: SlotAsk[], cancel: ReturnType<typeof vi.fn>, deps: Parameters<typeof watchLoadErrors>[1], shown: { url: string } } {
     const shown = { url: '' }
     const contents = Object.assign(new EventEmitter(), { getURL: () => shown.url, id: 7 })
     const asks: SlotAsk[] = []
@@ -36,7 +36,8 @@ describe('the load-error watcher', () => {
       deps: {
         findTab: (candidate) => candidate === (contents as unknown as WebContents) ? { window: WINDOW, tabId: 't1' } : null,
         ask: (ask) => { asks.push(ask); return { cancel } },
-        claimed: () => claimed
+        claimed: () => claimed,
+        movesTab
       }
     }
   }
@@ -67,6 +68,20 @@ describe('the load-error watcher', () => {
     watchLoadErrors(claimed.contents as unknown as WebContents, claimed.deps)
     fail(claimed, -102, 'https://upgraded.example/')
     expect(claimed.asks).toHaveLength(0)
+  })
+
+  it('stays out for a blocked file the tab is about to move to the session it belongs in, and asks the tab\'s own partition', () => {
+    const asked: Array<[string | undefined, string, number]> = []
+    const s = setup(false, (partition, url, code) => { asked.push([partition, url, code]); return true })
+    watchLoadErrors(s.contents as unknown as WebContents, s.deps)
+    fail(s, -20, 'file:///home/u/app/index.html', true, 'ERR_BLOCKED_BY_CLIENT')
+    expect(asked).toEqual([['persist:orivon-local-files', 'file:///home/u/app/index.html', -20]])
+    expect(s.asks).toHaveLength(0)
+
+    const stays = setup(false, () => false)
+    watchLoadErrors(stays.contents as unknown as WebContents, stays.deps)
+    fail(stays, -20, 'file:///home/u/app/index.html', true, 'ERR_BLOCKED_BY_CLIENT')
+    expect(stays.asks).toHaveLength(1)
   })
 
   it('passes no error name that is not one of Chromium\'s', () => {

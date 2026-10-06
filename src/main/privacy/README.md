@@ -3,7 +3,7 @@
 **What lives here.** Two jobs. Forgetting: `clear-data.ts` does "Clear browsing data": history back as far as
 chosen, the cookies and storage of ordinary websites, the cache, the saved zoom levels, and (only when asked for
 by name) the browser storage of every cache-served app that holds permissions; `privacy-domain.ts` is what the
-Settings page may ask: how much is kept, and to clear. Letting out: the network privacy controls, all on the
+Settings page may ask: how much is kept, and to clear. `local-files-domain.ts` is what Settings may ask about local files: the recorded files, deleting one's data, and clearing what the others share. Letting out: the network privacy controls, all on the
 default session's one web-request owner. `net-handlers.ts` holds the three handlers (`Sec-GPC` and `DNT`
 headers, third-party cookie stripping, the HTTPS upgrade); `privacy-headers.ts`, `cookie-policy.ts` and
 `https-only.ts` are their pure decisions, `site-of.ts` the registrable-domain rule they share. A failed upgrade
@@ -24,6 +24,7 @@ page may ask about it. The site-info popover uses the first two through
 (`tab-slots.ts`, the overlay types), [`../../protocols/`](../../protocols/) (which names the verifier routes) and [`../dev/eth-resolver.ts`](../dev/eth-resolver.ts)
 (this run's developer names);
 [`../history/`](../history/) and [`../zoom/`](../zoom/) (what is forgotten through them);
+[`../../broker/grants/origin-hash.ts`](../../broker/grants/origin-hash.ts) (`local-files-domain.ts` names a file by its hash);
 [`../pages/internal-ipc.ts`](../pages/internal-ipc.ts) (the shape of a page's domain).
 
 **What it must never import.** [`../shell/`](../shell/), except `install-privacy-net.ts`, which takes

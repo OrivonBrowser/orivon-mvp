@@ -86,3 +86,11 @@
 .cookie-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; color: var(--wink-dim); font-size: 11px; min-width: 0; }
 .cookie-where { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cookie-more { padding: 6px 8px; color: var(--wink-dim); font-size: 12px; }
+
+/* Files on this computer that were let use Orivon permissions: one row each, its folder under its name. */
+.lf-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.lf-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0; }
+.lf-text { display: flex; flex-direction: column; min-width: 0; }
+.lf-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lf-where { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.lf-skeleton { height: 36px; border-radius: 6px; }

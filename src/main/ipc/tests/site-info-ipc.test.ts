@@ -54,6 +54,7 @@ function fakeController (overrides: Partial<SiteInfoController> = {}): SiteInfoC
     turnOn: vi.fn(async () => 'ok' as const),
     turnOff: vi.fn(async () => {}),
     revokePickedPath: vi.fn(async () => {}),
+    deleteLocalFileData: vi.fn(async () => false),
     applyUpdate: vi.fn(async () => ({ ok: true as const })),
     ...overrides
   }
@@ -486,5 +487,25 @@ describe('registerSiteInfoIpc -- close', () => {
     await dispatch({ type: 'close' }, OTHER_FRAME)
     await new Promise((resolve) => { setImmediate(resolve) })
     expect(close).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('registerSiteInfoIpc -- deleteLocalFile', () => {
+  const FILE = 'file:///home/u/notes/app.html'
+
+  it('deletes the data of the file the popup was opened for, whatever the command carries, and only for the popup itself', async () => {
+    const deleteLocalFileData = vi.fn(async () => true)
+    registerSiteInfoIpc(siteInfoWebContents, POPUP_URL, fakeController({ deleteLocalFileData }), FILE, '/tmp/orivon-test-userdata', () => undefined, vi.fn(), vi.fn(), vi.fn())
+    expect(await dispatch({ type: 'deleteLocalFile', key: 'file:///other.html' })).toBe(true)
+    expect(deleteLocalFileData).toHaveBeenCalledExactlyOnceWith(FILE)
+    expect(await dispatch({ type: 'deleteLocalFile' }, OTHER_FRAME)).toBeUndefined()
+    expect(deleteLocalFileData).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows no cookies for a local file, which has none of its own', async () => {
+    const controller = fakeController({ storageDeclarationFor: vi.fn(async () => null) })
+    const { tab } = tabWithCookies(FILE)
+    registerSiteInfoIpc(siteInfoWebContents, POPUP_URL, controller, FILE, '/tmp/orivon-test-userdata', () => tab, vi.fn(), vi.fn(), vi.fn())
+    expect(await dispatch({ type: 'data' })).toMatchObject({ cookieCount: 0, cookies: [] })
   })
 })

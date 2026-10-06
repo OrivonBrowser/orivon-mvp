@@ -13,6 +13,7 @@ export function isQuestionView (value: unknown): value is QuestionView {
   return typeof id === 'string' && typeof kind === 'string' && KINDS.includes(kind) && typeof message === 'string' &&
     Array.isArray(buttons) && buttons.length > 0 && buttons.every((label) => typeof label === 'string') &&
     typeof cancelId === 'number' && Array.isArray(guarded) && guarded.every((index) => typeof index === 'number') &&
+    Array.isArray(value['doublePress']) && value['doublePress'].every((index) => typeof index === 'number') && typeof value['doublePressMs'] === 'number' &&
     (focus === 'dialog' || typeof focus === 'number') && typeof guardMs === 'number' && typeof value['warning'] === 'boolean' &&
     optionalString(value['title']) && optionalString(value['detail']) && optionalString(value['origin']) && optionalString(value['checkboxLabel']) &&
     (input === undefined || (isRecord(input) && typeof input['initial'] === 'string' && typeof input['max'] === 'number'))

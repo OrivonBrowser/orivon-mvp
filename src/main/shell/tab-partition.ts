@@ -3,7 +3,8 @@
 // Split out of tab-view.ts, which re-exports every name here.
 import type { WebContentsView } from 'electron'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
-import { originFromUrl } from '../../broker/policy/origin.js'
+import { isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.js'
+import { localPartitionFor, partitionAfterFileBlock as fileBlockTarget } from '../local-files/partition.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 
@@ -27,11 +28,17 @@ export const APP_TAB_FLAG = '--orivon-app-tab'
  * session an extension reaches (ADR-0044). Do not add
  * `broker.app.hasGrantsSync` back as an arm here.
  *
+ * A local file always runs in a local-files session, whatever the shell had
+ * it in before: its own once the person has let it use Orivon permissions,
+ * the shared one before (`localPartitionFor`).
+ *
  * `originFromUrl` derives an origin only for `http:`/`https:`, so a
  * `chrome-extension:` target always answers undefined: tabs.ts's
  * openTrusted() relies on this to put an extension-opened tab on
  * session.defaultSession, the one session extensions load into. */
 export function partitionForTarget (target: string): string | undefined {
+  const local = localPartitionFor(target)
+  if (local !== undefined) return local
   const origin = originFromUrl(target)
   if (origin === null) return undefined
   return isOriginServedFromCacheSync(origin) ? partitionFor(origin) : undefined
@@ -61,9 +68,20 @@ export function partitionChanged (
   target: string,
   currentPartition: string | undefined
 ): PartitionSwap | undefined {
-  if (originFromUrl(target) === null) return undefined
+  if (isolationKeyFromUrl(target) === null) return undefined
   const next = partitionForTarget(target)
   return next === currentPartition ? undefined : { to: next }
+}
+
+/** Where a tab moves when the fence cancelled its main-frame `file:` load (`../local-files/partition.ts`'s `partitionAfterFileBlock`), as a swap. */
+export function partitionAfterFileBlock (
+  failedUrl: string,
+  errorCode: number,
+  isMainFrame: boolean,
+  currentPartition: string | undefined
+): PartitionSwap | undefined {
+  const to = fileBlockTarget(failedUrl, errorCode, isMainFrame, currentPartition)
+  return to === undefined ? undefined : { to }
 }
 
 /** ADR-0017's `fetch()`-routing gate: a value fixed at `WebContentsView`

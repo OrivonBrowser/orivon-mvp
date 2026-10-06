@@ -1,7 +1,8 @@
 // The toolbar popovers one window owns: the all-sites permissions list and the
 // site-info card, and what they need to open one from the other. Built once per
 // window and handed to the overlay host, which closes them with every overlay.
-import { app, type BaseWindow } from 'electron'
+import { app, session, type BaseWindow } from 'electron'
+import { deleteLocalFileData } from '../local-files/delete-local-file-data.js'
 import { isOriginServedFromCacheSync, pinCoverageFor } from '../../loader/electron/serve.js'
 import { verifierNameEvidence } from '../verifier/verifier-subsystem.js'
 import { createPermissionsController, createSiteNotificationsController } from '../permissions/permissions.js'
@@ -55,7 +56,8 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, dirnam
   // `scoreLevelOverrideFor`/`deliveryLevelOverrideFor` (`../dev/score-levels.ts`)
   // and `localDdocHashFor` (`../dev/local-ddoc.ts`) are developer-only: no-ops
   // outside developer mode.
-  const siteInfoController = createSiteInfoController(ctx, { isOriginServedFromCacheSync, pinCoverageFor, nameEvidenceFor: verifierNameEvidence, levelOverrideFor: scoreLevelOverrideFor, deliveryOverrideFor: deliveryLevelOverrideFor, localDdocHashFor, providerVerdictFor: services.scoreProvider.verdictFor })
+  const siteInfoController = createSiteInfoController(ctx, { isOriginServedFromCacheSync, pinCoverageFor, nameEvidenceFor: verifierNameEvidence, levelOverrideFor: scoreLevelOverrideFor, deliveryOverrideFor: deliveryLevelOverrideFor, localDdocHashFor, providerVerdictFor: services.scoreProvider.verdictFor },
+    async (key) => await deleteLocalFileData({ broker: ctx.broker, userDataPath: app.getPath('userData'), clearPartition: async (partition) => { await session.fromPartition(partition).clearData() } }, key))
 
   // The permissions surface is a panel inside this window rather than a
   // second one -- ./permissions-panel.ts.

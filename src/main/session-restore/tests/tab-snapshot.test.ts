@@ -30,7 +30,7 @@ describe('snapshotOf', () => {
   it('does not record the new-tab page, a destroyed page, or an address a tab would refuse', () => {
     expect(snapshotOf(recordOf({ isDashboardTab: true }), wcOf({ url: 'https://localhost:5173/newtab/' }))).toBeNull()
     expect(snapshotOf(recordOf(), wcOf({ destroyed: true }))).toBeNull()
-    for (const url of ['view-source:https://a.example/', 'blob:https://a.example/1', 'about:blank', 'javascript:alert(1)', 'file:///etc/passwd', 'chrome://gpu']) {
+    for (const url of ['view-source:https://a.example/', 'blob:https://a.example/1', 'about:blank', 'javascript:alert(1)', 'file://server/share/passwd', 'chrome://gpu']) {
       expect(snapshotOf(recordOf(), wcOf({ url })), url).toBeNull()
     }
   })

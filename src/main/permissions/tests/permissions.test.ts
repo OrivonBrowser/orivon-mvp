@@ -140,6 +140,19 @@ describe('createPermissionsController', () => {
     expect(result?.rows).toHaveLength(1)
   })
 
+  it('forUrl reads a local file by its key, and the all-apps list leaves local files out', async () => {
+    const broker = createBroker(baseDeps())
+    const FILE = 'file:///home/u/notes/app.html'
+    await broker.registerApp(FILE, manifestWith({ fs: {} }))
+    await broker.grant(FILE, 'fs', [])
+    broker.registerApp(APP, manifestWith({ fs: {} }))
+    await broker.grant(APP, 'fs', [])
+    const controller = createPermissionsController(ctxWith(broker))
+
+    expect((await controller.forUrl(`${FILE}?x=1`))?.origin).toBe(FILE)
+    expect((await controller.list()).map((app) => app.origin)).toEqual([APP])
+  })
+
   it('ADR-0037: an injected levelOverrideFor applies per origin, in list()', async () => {
     const broker = createBroker(baseDeps())
     const OTHER = 'https://other.example'

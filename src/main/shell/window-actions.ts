@@ -1,7 +1,7 @@
 // What the chrome's buttons and menus ask of their window beyond the tab
 // collection: opening one popover closes the others, and a tab can be sent to
 // another window. Assembled per window from the pieces window.ts made.
-import { originFromUrl } from '../../broker/policy/origin.js'
+import { isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.js'
 import type { ShellActions } from '../ipc/ipc.js'
 import { copyLinkCommand, emailLinkCommand } from '../os/share-commands.js'
 import { realShareDeps } from '../os/share-runner.js'
@@ -106,7 +106,7 @@ export function shellActions (parts: WindowParts): ShellActions {
     },
     openSiteInfo: (anchor, page, url) => {
       const pressedAt = presses.take(page)
-      const origin = url === undefined ? undefined : originFromUrl(url) ?? undefined
+      const origin = url === undefined ? undefined : isolationKeyFromUrl(url) ?? undefined
       if (origin === undefined) return // no canonical origin -- nothing this popup can show
       panels.permissions.close()
       closeOverlays()

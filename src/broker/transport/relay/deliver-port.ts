@@ -1,5 +1,5 @@
 import { PORT_CHANNEL } from '../../../main/channels.js'
-import { originFromSenderFrame } from '../../policy/origin.js'
+import { callerKeyFromSenderFrame } from '../../policy/origin.js'
 import type { PortDeliveryFrame } from './port-transport.js'
 
 // Handing one freshly-minted MessagePortMain to the frame that asked for it.
@@ -63,7 +63,7 @@ export async function deliverPort (options: PortDeliveryOptions): Promise<void> 
   // Electron documents senderFrame as null once a frame has navigated, which
   // the guard above would also catch -- but that is an undocumented lifetime
   // detail to lean on, and this check does not depend on it.
-  if (originFromSenderFrame(frame) !== origin) {
+  if (callerKeyFromSenderFrame(frame) !== origin) {
     await abandon('the calling frame changed origin before its port could be delivered')
     return
   }

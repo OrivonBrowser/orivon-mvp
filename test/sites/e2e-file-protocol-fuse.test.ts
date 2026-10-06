@@ -1,6 +1,7 @@
 // The Electron binary this suite launches has its file-protocol fuse off: src/main/local-files/file-fuse.ts
 // reads it so, as @electron/fuses does, and a `file:` page in a throwaway session gets no more reach than a
-// web page does (a sibling image taints a canvas, a sibling fetch is refused). Run `npm run install:electron`
+// web page does (a sibling image taints a canvas, a sibling fetch is refused). The session is made here and
+// has its 404 for file: taken off, so what is measured is Chromium's loader. Run `npm run install:electron`
 // when this fails on a checkout whose binary was never flipped.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -39,6 +40,8 @@ it('runs on a binary whose file-protocol fuse is off, and a file: page then reac
     const outcomes = await app.evaluate(async ({ BrowserWindow }, { page, siblingDir, otherDir }) => {
       const win = new BrowserWindow({ show: false, webPreferences: { partition: 'file-fuse-spec', sandbox: true, contextIsolation: true } })
       try {
+        // Every session answers file: with a 404 at creation; this one measures Chromium's own loader.
+        win.webContents.session.protocol.unhandle('file')
         await win.loadFile(page)
         const canvas = (src: string): string => `new Promise((resolve) => { const i = new Image(); i.onload = () => { try { const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d'); x.drawImage(i, 0, 0); x.getImageData(0, 0, 1, 1); resolve('read') } catch (e) { resolve(e.name) } }; i.onerror = () => resolve('image error'); i.src = ${JSON.stringify(src)} })`
         const run = async (script: string): Promise<string> => await win.webContents.executeJavaScript(script)

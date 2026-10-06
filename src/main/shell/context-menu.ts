@@ -56,6 +56,8 @@ export interface ContextMenuHost {
    * browser would bring the chrome the kiosk hides. */
   readonly kiosk?: boolean
   openInNewTab: (url: string) => void
+  /** Present only while the page is a local file: opens one of its `file:` links in a new tab. */
+  openLocalFile?: (url: string) => void
   openInSplit?: (url: string) => void
   openInWindow?: (url: string) => void
   /** Absent in a private window, where there is no way back to the profile. */
@@ -96,6 +98,7 @@ export function showContextMenu (wc: WebContents, params: ContextMenuParams, hos
     pasteAndMatchStyle: onTab(() => { wc.pasteAndMatchStyle() }),
     copyText: (text) => { clipboard.writeText(text) },
     ...(kiosk ? {} : { openInNewTab: host.openInNewTab }),
+    ...(kiosk || host.openLocalFile === undefined ? {} : { openLocalFile: host.openLocalFile }),
     ...(openInSplit === undefined ? {} : { openInSplit }),
     ...(openInWindow === undefined ? {} : { openInWindow }),
     ...(openInPrivate === undefined ? {} : { openInPrivate }),

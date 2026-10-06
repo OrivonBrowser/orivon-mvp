@@ -215,6 +215,13 @@ describe('BookmarkStore', () => {
     expect(store.getAll()).toEqual([])
   })
 
+  it('add() keeps a local file by its path and refuses a file: address with a host', () => {
+    const store = new BookmarkStore(filePath)
+    store.add({ url: 'file:///home/u/notes/app.html', title: 'Notes', favicon: null })
+    store.add({ url: 'file://nas/share/app.html', title: 'Share', favicon: null })
+    expect(store.getAll().map((page) => page.url)).toEqual(['file:///home/u/notes/app.html'])
+  })
+
   it('add() then remove() round-trips through has()', () => {
     const store = new BookmarkStore(filePath)
     expect(store.has('https://a.example/')).toBe(false)

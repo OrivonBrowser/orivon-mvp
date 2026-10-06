@@ -41,9 +41,17 @@ describe('openSnapshot', () => {
     expect(fake.calls).toEqual(['create https://a.example/ back'])
   })
 
+  it('opens a local file through the file path, with its history restored', () => {
+    const fake = fakeTabs()
+    const entries = [{ url: 'file:///home/u/a.html', title: '' }, { url: 'file:///home/u/b.html', title: '' }]
+    const id = openSnapshot(fake.tabs, { url: 'file:///home/u/b.html', title: 'B', pinned: true, entries, index: 1 }, false)
+    expect(fake.calls).toEqual(['file file:///home/u/b.html back'])
+    expect(fake.records.get(id ?? '')?.pinned).toBe(true)
+  })
+
   it('refuses an address a tab would refuse, even from a snapshot that was not checked', () => {
     const fake = fakeTabs()
-    for (const url of ['javascript:alert(1)', 'file:///etc/passwd', 'view-source:https://a.example/', 'chrome://gpu', 'about:blank']) {
+    for (const url of ['javascript:alert(1)', 'file://server/share/passwd', 'view-source:https://a.example/', 'chrome://gpu', 'about:blank']) {
       expect(openSnapshot(fake.tabs, { url, title: '', pinned: false }, true), url).toBeUndefined()
     }
     expect(fake.calls).toEqual([])

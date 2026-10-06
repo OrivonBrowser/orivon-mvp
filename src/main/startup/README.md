@@ -1,8 +1,9 @@
 # `src/main/startup/`: what a start opens
 
 **What lives here.** The plan for a cold start and the offer that follows a crash. `startup-plan.ts` turns
-the start-up choice (`startup.mode`, `startup.pages`), the addresses on the command line and the previous
-session into what the first window opens and which windows follow. `startup-open.ts` carries that out
+the start-up choice (`startup.mode`, `startup.pages`), the addresses on the command line (web addresses and local files) and the previous
+session into what the first window opens and which windows follow, and says whether any of it is a local file, so that the launch
+reads the binary's file-protocol fuse before the window exists (`planOpensLocalFile`). `startup-open.ts` carries that out
 (tabs, display-aware placement, taking reopened windows off the closed stack). `startup-domain.ts` answers the
 Settings page's two questions about the pages list. `restore-offer.ts` and `restore-overlay.ts` are the bar
 that offers the last session back after a run that did not end cleanly; `startup-overlays.ts` wires it to the

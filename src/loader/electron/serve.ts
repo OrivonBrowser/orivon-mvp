@@ -33,6 +33,7 @@ import { createAppRequestHandler, fetchThirdParty, resolveVerifiedBundle } from 
 import { saveCheckRecord } from '../fetch/update-check.js'
 import type { AppRequestHandler, AuthoriseReach } from '../serve/serve.js'
 import { cspHeaderValue } from '../serve/csp.js'
+import type { CspOptions } from '../serve/csp.js'
 import { nodeReachDial } from '../reach/reach.js'
 import { createRedirectChains } from '../reach/redirects.js'
 import { createReachSlotPool } from '../reach/slots.js'
@@ -205,8 +206,8 @@ async function secureHeaderPatternsFor (broker: Broker, origin: string): Promise
 }
 
 /** The CSP a served response carries, from `origin`'s live grants -- shared with src/main/install/granted-origin-csp.ts, so an origin granted without installing runs under the same policy an installed one does. */
-export async function liveCspHeaderFor (broker: Broker, origin: string): Promise<string> {
-  return cspHeaderValue(await grantedConnectPatternsFor(broker, origin), await secureHeaderPatternsFor(broker, origin))
+export async function liveCspHeaderFor (broker: Broker, origin: string, options: CspOptions = {}): Promise<string> {
+  return cspHeaderValue(await grantedConnectPatternsFor(broker, origin), await secureHeaderPatternsFor(broker, origin), options)
 }
 
 /**

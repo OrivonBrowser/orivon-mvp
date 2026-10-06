@@ -8,12 +8,12 @@ export const tiny = 'data:image/png;base64,iVBORw0KGgo='
 export interface Harness {
   ctx: WindowContext
   store: BookmarkStore
-  tabs: { getState: ReturnType<typeof vi.fn>, navigate: ReturnType<typeof vi.fn>, createTab: ReturnType<typeof vi.fn>, ids: ReturnType<typeof vi.fn> }
+  tabs: { getState: ReturnType<typeof vi.fn>, navigate: ReturnType<typeof vi.fn>, createTab: ReturnType<typeof vi.fn>, openLocalFile: ReturnType<typeof vi.fn>, closeTab: ReturnType<typeof vi.fn>, activeWebContents: ReturnType<typeof vi.fn>, ids: ReturnType<typeof vi.fn> }
   overlays: { isOpen: ReturnType<typeof vi.fn>, show: ReturnType<typeof vi.fn>, close: ReturnType<typeof vi.fn> }
   commands: { run: ReturnType<typeof vi.fn>, openWindow: ReturnType<typeof vi.fn> }
   openPrivate: ReturnType<typeof vi.fn>
   settings: { get: ReturnType<typeof vi.fn>, set: ReturnType<typeof vi.fn> }
-  newWindowTabs: { createTab: ReturnType<typeof vi.fn> }
+  newWindowTabs: { createTab: ReturnType<typeof vi.fn>, openLocalFile: ReturnType<typeof vi.fn> }
 }
 
 export function harness (options: { isPrivate?: boolean, active?: string | null, capacity?: number } = {}): Harness {
@@ -24,10 +24,13 @@ export function harness (options: { isPrivate?: boolean, active?: string | null,
     getState: vi.fn(() => ({ tabs: [], activeTabId: options.active === undefined ? 'a' : options.active })),
     navigate: vi.fn(),
     createTab: vi.fn(() => { if (open.length < capacity) open.push('x') }),
+    openLocalFile: vi.fn(() => Promise.resolve('f')),
+    closeTab: vi.fn(),
+    activeWebContents: vi.fn(() => undefined),
     ids: vi.fn(() => open)
   }
   const overlays = { isOpen: vi.fn(() => false), show: vi.fn(), close: vi.fn() }
-  const newWindowTabs = { createTab: vi.fn() }
+  const newWindowTabs = { createTab: vi.fn(), openLocalFile: vi.fn(() => Promise.resolve('f')) }
   const commands = {
     run: vi.fn(),
     openWindow: vi.fn((opened: { first?: (tabs: typeof newWindowTabs) => void }) => { opened.first?.(newWindowTabs) })

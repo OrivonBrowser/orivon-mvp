@@ -14,7 +14,7 @@ the `{ window, services }` pair a hook or an overlay handler receives.
 `tab-panes.ts` (which views show where) as its parts; `tab-view.ts`, `tab-partition.ts`,
 `app-tab-watch.ts`, `tab-signals.ts`, `tab-types.ts`, `tab-factory.ts`, `tab-lifecycle.ts` and
 `tab-parking.ts` are the per-tab view; `load-in-tab.ts` is the one test that opens an address in the tab's own view or in a view of the session it needs, shared by the address bar and a link followed inside a tab. `eth-gateway-redirect.ts` opens an ENS gateway address (`<name>.eth.limo`, `<name>.eth.link`) as the `.eth` name it stands for: the web-request handler, which shares the rule in `eth-gateway-rule.ts` (`gatewayRedirectFor`, `gatewayEntries`; no `electron`) with the tab hooks below. `tab-origin-liveness.ts` is `tab-view.ts`'s own per-origin
-live-document counter. `tab-order.ts` is where a tab sits in the strip, `tab-move.ts` moves one between windows keeping the
+live-document counter. A local file's tab is always in a local-files session ([`../local-files/`](../local-files/)): `tab-partition.ts` routes it there, `tab-factory.ts`'s `localFile` makes it, and a tab that reached a file by history or a reload moves to the session it belongs in, on a 404 (`did-navigate`) or on the fence's -20 (`pre-partition.ts`'s `repartitionOnFileBlock`). `tab-order.ts` is where a tab sits in the strip, `tab-move.ts` moves one between windows keeping the
 same page (and is where a dragged tab's cross-window target -- which window's strip, and where in it -- is
 worked out from the tab centres `strip-centres.ts` reads off the target window's chrome page, shared by the actual move and by `tear-drag.ts`'s own mark), `tab-menu.ts` is its right-click
 menu (and `context-menu.ts` the menu a page gets: `page-menu-items.ts` is where the extension host adds its items, `context-menu-groups.ts` holds one function per group, `context-menu-text.ts` cleans what a page controls before it reaches a label, `paste-and-go.ts` is the address bar's clipboard submit), and `window-actions.ts` is what the chrome's buttons and menus ask of their window (`press-stamps.ts` stamps, with main's clock, the press on a popup's button so the click that follows is judged by it), and `chrome-actions.ts`
@@ -48,10 +48,18 @@ The bookmarks bar's main side is [`bookmarks-bar/`](bookmarks-bar/) (its own REA
 folder menu, the right-click menu and what opens a bookmark. The bubble under the star, which names and files a
 bookmark, and the sheet for "Bookmark all tabs", are [`bookmark-bubble/`](bookmark-bubble/) (its own README).
 
+A tab is opened for an address that the person or a store of the browser's own names through `open-from-browser.ts`: a web
+address is an ordinary tab, a local file goes through `TabOpener.openLocalFile` (which reads the binary's file-protocol
+fuse on the first open of a run, `../local-files/README.md`), and typed text that names a file opens it in a new tab
+(`navigateFromBrowser`). `open-file-command.ts` is Open file (`Ctrl+O`). `local-file-navigation.ts` stops a page's own
+navigation to a file and opens a file dropped on a web page as a local file.
+
 The question panel: every question the browser puts to the person is asked through `question/ask-question.ts`'s
 `askQuestion(target, spec, options)`, which resolves with the pressed button in the shape of Electron's message box.
 `question/question-spec.ts` is the spec and the cleaning every string passes through (pure, no `electron`),
-`question/question-overlay.ts` is the overlay and the map of questions main holds under random ids, and
+`question/question-overlay.ts` is the overlay and the map of questions main holds under random ids (it also decides a
+`doublePress` button: one that answers only on a second press within 1,500 ms, armed after the guard and an arrival of the
+pointer or the focus on it), and
 `question/install-questions.ts` binds the ask to this process's windows. The panel is drawn in the window of the tab
 the question belongs to, under the address pill with its top edge inside the toolbar; a background tab's question waits
 for its tab, a kiosk draws it centred, and only a question asked when no shell window exists opens a native box.
@@ -77,7 +85,7 @@ test-hook.ts` is the e2e-only record of what each was actually set to.
 `grants/origin-hash.ts`, `broker-contracts.ts` types);
 [`../../loader/electron/serve.ts`](../../loader/electron/serve.ts);
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts); and, inside `src/main/`,
-[`../browsing/`](../browsing/), [`../extensions/extension-popup-host.ts`](../extensions/extension-popup-host.ts) (`window-panels.ts` adopts its panel), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/),
+[`../browsing/`](../browsing/), [`../local-files/`](../local-files/) (`partition.ts`, `local-partition.ts`, `file-fuse.ts`: which session a local file's tab runs in), [`../extensions/extension-popup-host.ts`](../extensions/extension-popup-host.ts) (`window-panels.ts` adopts its panel), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/),
 [`../shortcuts/`](../shortcuts/) (the command table and the service the menu reads, and the command bus a window runs a chosen command through), [`../overlays/`](../overlays/) (the question panel is an overlay shown through the tab slots),
 [`../consent/grant-prompt-origin.ts`](../consent/grant-prompt-origin.ts) (the origin line every
 permission dialog shows), [`../sessions/`](../sessions/) (the two questions' types, and

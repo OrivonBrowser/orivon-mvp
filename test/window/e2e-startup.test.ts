@@ -161,7 +161,7 @@ it('continues with every window of the last session: order, the pinned tab, the 
 
 it('drops a tab whose address is refused and a window that is not one, and never throws on a damaged file', async () => {
   const session = JSON.stringify({ version: 1, clean: true, windows: [
-    { active: 0, tabs: [{ url: 'javascript:alert(1)', title: 'x' }, { url: 'file:///etc/passwd' }, 5, null, tabOf('a')] },
+    { active: 0, tabs: [{ url: 'javascript:alert(1)', title: 'x' }, { url: 'file://nas/share/passwd' }, 5, null, tabOf('a')] },
     5, { tabs: 'nope' }, { active: 'x', tabs: [] }
   ] })
   const { app, chrome } = await launchShell({ seedProfile: seed({ settings: { 'startup.mode': 'continue' }, session }) })

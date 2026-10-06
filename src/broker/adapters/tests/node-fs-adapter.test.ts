@@ -30,6 +30,19 @@ describe('nodeFs (the real filesystem adapter)', () => {
     expect(root).toContain(originHash('https://app.example'))
   })
 
+  it('rootFor a local file is under app-data/<hash of its key>, like a website\'s, never named by the path', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-'))
+    const fs = nodeFs(userData)
+    const file = 'file:///home/u/app/index.html'
+
+    const root = fs.rootFor(file)
+
+    expect(root).toBe(join(appDataRoot(userData, file), 'files'))
+    expect(root).toBe(join(userData, 'app-data', originHash(file), 'files'))
+    expect(root).not.toContain('index.html')
+    expect(fs.rootFor('file:///home/u/app/other.html')).not.toBe(root)
+  })
+
   it('writeFile then readFile round-trips, creating parent directories', async () => {
     const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-'))
     const fs = nodeFs(userData)

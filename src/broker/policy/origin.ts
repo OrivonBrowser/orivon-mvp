@@ -97,6 +97,45 @@ export function originFromUrl (url: string): string | null {
   return `${parsed.protocol}//${host}${port}`
 }
 
+/** The longest local-file key: it names a grant row and a data directory, so it is bounded as a host is. */
+export const MAX_LOCAL_FILE_KEY_LENGTH = 2048
+
+/**
+ * The isolation key of a document opened from this computer: its `file:` URL
+ * with an empty host, no query and no fragment, or null for anything else.
+ *
+ * Each file is its own key, so a sibling in the same folder is another origin
+ * and a moved or renamed file is asked again. The path is what the URL parser
+ * hands back, so dot segments are already resolved. A host (a share), a path
+ * starting with `//` (UNC on Windows) and a key over
+ * `MAX_LOCAL_FILE_KEY_LENGTH` are refused. `originFromUrl` answers null
+ * for `file:`, so a caller that derives a web origin denies a local file.
+ */
+export function localFileKey (url: string): string | null {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return null
+  }
+
+  if (parsed.protocol !== 'file:' || parsed.hostname !== '') return null
+  if (parsed.pathname.startsWith('//')) return null
+
+  const key = `file://${parsed.pathname}`
+  return key.length > MAX_LOCAL_FILE_KEY_LENGTH ? null : key
+}
+
+/** True when `key` is exactly what `localFileKey` produces. */
+export function isLocalFileKey (key: string): boolean {
+  return localFileKey(key) === key
+}
+
+/** The key that isolates a document: its web origin, or its local-file key. Null for any other scheme. */
+export function isolationKeyFromUrl (url: string): string | null {
+  return originFromUrl(url) ?? localFileKey(url)
+}
+
 /**
  * RFC 6761 SS6.3 reserves the WHOLE `.localhost` namespace for loopback, not
  * just the bare label -- Chromium resolves the entire subtree that way
@@ -126,14 +165,13 @@ export function isLoopbackHost (host: string): boolean {
 
 /**
  * True only if `origin` (already in `originFromUrl`'s canonical shape) may
- * ever be written to disk -- T13c: "Never persist grants for loopback,
- * `file:` or plain-`http` origins" (security-model.md). Session-scoped,
- * re-prompted every launch, is the answer for everything this returns false
- * for.
+ * ever be written to disk -- T13c: never persist grants for loopback or
+ * plain-`http` origins (security-model.md). Session-scoped, re-prompted every
+ * launch, is the answer for everything this returns false for.
  *
- * `file:` never reaches here at all: `ORIGIN_BEARING_SCHEMES` above already
- * refuses it a derivable origin in the first place. That leaves scheme and
- * host to check:
+ * A local-file key (`localFileKey`) is persistable: its grants and data are
+ * keyed to the exact path and last as a website's do. Any other `file:` string
+ * is refused. For a web origin that leaves scheme and host to check:
  *   - `http:` is refused outright, regardless of host -- the "plain-http"
  *     half of T13c.
  *   - The whole `.localhost` NAMESPACE is refused by name, not just the bare
@@ -168,6 +206,7 @@ export function isPersistableOrigin (origin: string): boolean {
     return false
   }
 
+  if (parsed.protocol === 'file:') return isLocalFileKey(origin)
   if (parsed.protocol !== 'https:') return false
 
   const host = canonicalHost(parsed.hostname)
@@ -267,6 +306,34 @@ export function originFromSenderFrame (frame: SenderFrameLike | null | undefined
   if (originFromUrl(claimed) !== derived) return null
 
   return derived
+}
+
+/** The origin Chromium reports for a document loaded from `file:`. */
+const LOCAL_FILE_FRAME_ORIGIN = 'file://'
+
+/**
+ * Sender frame to the key it speaks for: its web origin as `originFromSenderFrame`
+ * derives it, or, for a document opened from this computer, its local-file key.
+ *
+ * A file document counts only while Chromium reports the file origin: a
+ * sandboxed one is opaque (`'null'`) and is refused as a sandboxed web frame
+ * is. A file URL with a web origin, or a web URL with the file origin, is a
+ * disagreement and is refused.
+ */
+export function callerKeyFromSenderFrame (frame: SenderFrameLike | null | undefined): string | null {
+  const web = originFromSenderFrame(frame)
+  if (web !== null || frame == null) return web
+
+  let url: string | undefined
+  let claimed: string | undefined
+  try {
+    url = frame.url
+    claimed = frame.origin
+  } catch {
+    return null
+  }
+  if (typeof url !== 'string' || claimed !== LOCAL_FILE_FRAME_ORIGIN) return null
+  return localFileKey(url)
 }
 
 /**

@@ -1,5 +1,5 @@
 // The newest pages visited, most recent first. The page groups them by day, in the person's own clock.
-import { sanitizeDirectUrl } from '../../browsing/omnibox.js'
+import { sanitizeBrowserUrl } from '../../browsing/local-file-input.js'
 import { hostOf } from '../panel-types.js'
 import type { PanelViewDef } from '../panel-types.js'
 
@@ -30,7 +30,7 @@ export const historyView: PanelViewDef = {
   resolve ({ services }, id) {
     const key = idOf(id)
     const entry = key === null ? undefined : services.history.pagesByIds([key])[0]
-    return entry === undefined ? null : sanitizeDirectUrl(entry.url)
+    return entry === undefined ? null : sanitizeBrowserUrl(entry.url)
   },
   remove ({ services }, id) {
     const key = idOf(id)

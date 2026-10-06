@@ -1,6 +1,11 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { originFromUrl } from '../../../broker/policy/origin.js'
-import { partitionFor } from '../../../broker/grants/origin-hash.js'
+import { originHash, partitionFor } from '../../../broker/grants/origin-hash.js'
+import { LocalFileApps, installLocalFileApps } from '../../local-files/local-file-apps.js'
+import { LOCAL_FILES_PARTITION } from '../../local-files/partition.js'
 import { createSubsystemContext } from '../../registry.js'
 
 // session-attribution.ts's own subsystem reaches into electron (app, session)
@@ -170,5 +175,72 @@ describe('senderAttributed -- a network-served origin belongs in the default ses
     const { wc } = fakeWebContents(DEFAULT_SESSION)
 
     expect(attributed(wc, APP)).toBe(true)
+  })
+})
+
+describe('senderAttributed -- a local file belongs in the session localPartitionFor names, checked live', () => {
+  const FILE = 'file:///home/u/app/index.html'
+  const SIBLING = 'file:///home/u/app/other.html'
+  const sharedSession = session.fromPartition(LOCAL_FILES_PARTITION)
+  const ownSession = session.fromPartition(`persist:local-${originHash(FILE)}`)
+  let dir: string | undefined
+
+  afterEach(() => {
+    installLocalFileApps(undefined)
+    if (dir !== undefined) rmSync(dir, { recursive: true, force: true })
+    dir = undefined
+  })
+
+  function record (...keys: string[]): void {
+    dir = mkdtempSync(join(tmpdir(), 'orivon-attr-'))
+    const apps = new LocalFileApps(join(dir, 'a.json'))
+    for (const key of keys) apps.add(key)
+    installLocalFileApps(apps)
+  }
+
+  it('attributes a file in the shared local session while it is not recorded, with or without a commit record', () => {
+    const { attributed, register } = attributionRig()
+    const { wc, commit } = fakeWebContents(sharedSession)
+
+    expect(attributed(wc, FILE)).toBe(true)
+    register(wc)
+    commit(`${FILE}?q=1#top`)
+    expect(attributed(wc, FILE)).toBe(true)
+  })
+
+  it('attributes a recorded file only in its own session: the shared one and the default are denied', () => {
+    record(FILE)
+    const { attributed } = attributionRig()
+
+    expect(attributed(fakeWebContents(ownSession).wc, FILE)).toBe(true)
+    expect(attributed(fakeWebContents(sharedSession).wc, FILE)).toBe(false)
+    expect(attributed(fakeWebContents(DEFAULT_SESSION).wc, FILE)).toBe(false)
+  })
+
+  it('denies a file in the default session or in an app partition', () => {
+    const { attributed } = attributionRig()
+
+    for (const home of [DEFAULT_SESSION, appPartitionSession]) {
+      expect(attributed(fakeWebContents(home).wc, FILE)).toBe(false)
+    }
+  })
+
+  it('denies a recorded file\'s session for its sibling, which belongs in the shared one', () => {
+    record(FILE)
+    const { attributed } = attributionRig()
+
+    expect(attributed(fakeWebContents(ownSession).wc, SIBLING)).toBe(false)
+    expect(attributed(fakeWebContents(sharedSession).wc, SIBLING)).toBe(true)
+  })
+
+  it('follows the record live: a file whose record is gone is denied in the session it had', () => {
+    record(FILE)
+    const { attributed } = attributionRig()
+    const { wc } = fakeWebContents(ownSession)
+    expect(attributed(wc, FILE)).toBe(true)
+
+    installLocalFileApps(undefined)
+
+    expect(attributed(wc, FILE)).toBe(false)
   })
 })

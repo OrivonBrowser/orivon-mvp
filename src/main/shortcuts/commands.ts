@@ -62,6 +62,7 @@ export const COMMANDS = [
   { id: 'nav.hardReload', label: 'Reload without the cache', category: 'navigation', default: 'Mod+Shift+R', aliases: ['Ctrl+F5'] },
   { id: 'nav.stop', label: 'Stop loading', category: 'navigation' },
   { id: 'nav.home', label: 'Home page', category: 'navigation', default: 'Alt+Home', macDefault: 'Mod+Shift+H' },
+  { id: 'file.open', label: 'Open file…', category: 'navigation', default: 'Mod+O', yieldToApp: true },
   { id: 'nav.focusAddress', label: 'Go to the address bar', category: 'navigation', default: 'Mod+L', aliases: ['Alt+D'] },
   // F6 is the next-pane key; the address bar keeps Mod+L and Alt+D.
   { id: 'focus.nextPane', label: 'Next pane', category: 'navigation', default: 'F6' },

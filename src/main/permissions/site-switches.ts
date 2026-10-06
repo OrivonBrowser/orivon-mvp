@@ -9,6 +9,7 @@ import { sameOwnPatterns } from '../../broker/policy/update.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import { addDeclinedCapability, clearDeclinedCapability } from '../consent/request-grant.js'
+import { isUnrecordedLocalFile } from '../local-files/local-file-apps.js'
 import { grantChangedCapabilities } from '../consent/grant-changed-capabilities.js'
 
 /**
@@ -52,7 +53,7 @@ export async function turnOnCapability (
   capability: CapabilityKind,
   shownPatterns: readonly Pattern[]
 ): Promise<TurnOnResult> {
-  if (!broker.app.isRegisteredSync(origin)) return 'not-registered'
+  if (!broker.app.isRegisteredSync(origin) || isUnrecordedLocalFile(origin)) return 'not-registered'
 
   let manifest
   try {

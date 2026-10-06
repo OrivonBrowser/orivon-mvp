@@ -24,6 +24,7 @@
 import type { Subsystem } from './registry.js'
 import { permissionGateSubsystem } from './sessions/permission-gate.js'
 import { sessionAttributionSubsystem } from './sessions/session-attribution.js'
+import { localFilesSubsystem } from './local-files/local-files-subsystem.js'
 import { verifierSubsystem } from './verifier/verifier-subsystem.js'
 import { signInIdentitySubsystem } from './shell/sign-in-identity-headers.js'
 import { extensionsSubsystem } from './extensions/extensions-subsystem.js'
@@ -50,6 +51,8 @@ export const subsystems: Subsystem[] = [
   // lazily, once a real request needs it), but must stay ABOVE
   // brokerIpcSubsystem: that subsystem reads ctx.senderAttributed itself.
   sessionAttributionSubsystem,
+  // Where documents opened from this computer run, and what a session answers `file:` with -> src/main/local-files/. Reads ctx.broker only when a request arrives.
+  localFilesSubsystem,
   verifierSubsystem, // .eth names: resolver rules, certificate check, verifier host -> src/main/verifier/. Reads neither ctx.broker nor ctx.loader.
   signInIdentitySubsystem, // Firefox request headers on Google's sign-in hosts -> src/main/shell/sign-in-identity-headers.ts. Reads neither ctx.broker nor ctx.loader.
   // extensions -> src/main/extensions/. Listed here, before anything else

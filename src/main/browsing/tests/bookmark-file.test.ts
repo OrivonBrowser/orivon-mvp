@@ -102,7 +102,7 @@ describe('format 2', () => {
       bar: [
         { id: 'a', kind: 'url', title: 'js', url: 'javascript:alert(1)', added: 1 },
         { id: 'b', kind: 'url', title: 'data', url: 'data:text/html,hi', added: 1 },
-        { id: 'c', kind: 'url', title: 'file', url: 'file:///etc/passwd', added: 1 },
+        { id: 'c', kind: 'url', title: 'file', url: 'file://nas/share/passwd', added: 1 },
         { id: 'd', kind: 'mystery', title: 'x' },
         { id: 'e', kind: 'url', url: 'https://notitle.example/' },
         { id: 'f', kind: 'folder', title: 'F', added: 'soon', children: [{ id: 'g', kind: 'url', title: 'in', url: 'https://in.example/', added: 2 }, 5] },

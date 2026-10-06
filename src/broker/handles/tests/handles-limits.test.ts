@@ -319,10 +319,18 @@ describe('the origin key', () => {
     expect(thrown(() => acquireSocket(t, 'https://APP.example/x')).code).toBe('limit')
   })
 
+  it('keys a local file on its own file: URL, a different table from its sibling', () => {
+    const t = table()
+    const open = (origin: string): unknown => t.acquire({ origin, kind: 'tcpSocket', authorisedBy: { by: 'grant', grantId: TCP_GRANT }, destroy: noop })
+
+    expect(() => open('file:///home/u/app/index.html?x=1')).not.toThrow()
+    expect(() => open('file:///home/u/app/other.html')).not.toThrow()
+  })
+
   it('refuses a string that is not an origin that may key storage', () => {
     const t = table()
 
-    for (const notAnOrigin of ['file:///etc/passwd', 'data:text/html,x', 'blob:https://app.example/u', 'about:blank', 'app.example', '']) {
+    for (const notAnOrigin of ['file://server/share/a.html', 'file:////server/share/a.html', 'data:text/html,x', 'blob:https://app.example/u', 'about:blank', 'app.example', '']) {
       // A broker fault, not an app-visible denial: the app never supplies its
       // own origin, the broker derives it from the sender frame.
       expect(thrown(() => t.acquire({ origin: notAnOrigin, kind: 'tcpSocket', authorisedBy: { by: 'grant', grantId: TCP_GRANT }, destroy: noop })).code).toBe('internal')

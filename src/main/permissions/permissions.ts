@@ -25,7 +25,7 @@
 
 import type { CapabilityKind, Grant, GrantId, Manifest } from '../../contracts/index.js'
 import type { Broker, PickedPath } from '../../broker/broker-contracts.js'
-import { originFromUrl } from '../../broker/policy/origin.js'
+import { isLocalFileKey, isolationKeyFromUrl } from '../../broker/policy/origin.js'
 import { describeCapabilityGrant } from '../consent/grant-prompt-render.js'
 import { summaryAtLevel } from '../consent/grant-level.js'
 import { addDeclinedCapability } from '../consent/request-grant.js'
@@ -214,7 +214,8 @@ export class PermissionsRegistry {
     // was empty for every grant made before the current session -- a person
     // granted an app four hosts, quit, and found Settings empty next launch
     // while the grant was still live (C-01/C-02).
-    for (const origin of broker.app.registeredOriginsSync()) this.#origins.add(origin)
+    // A local file is not an app a person installed: it is listed with the site it is opened from, never here.
+    for (const origin of broker.app.registeredOriginsSync()) if (!isLocalFileKey(origin)) this.#origins.add(origin)
 
     const results: AppPermissions[] = []
     const loaded = new Set<string>()
@@ -247,7 +248,7 @@ export class PermissionsRegistry {
     // above is skipped, so a loaded app is described from live state rather
     // than from whatever disk last recorded.
     for (const app of broker.app.persistedAppsSync()) {
-      if (loaded.has(app.origin)) continue
+      if (loaded.has(app.origin) || isLocalFileKey(app.origin)) continue
       const described = buildPersistedAppPermissions(app, levelOverrideFor(app.origin))
       // An app whose last capability was revoked leaves an empty record behind
       // (`revoke` does not delete the file when the set empties). Showing that
@@ -326,7 +327,7 @@ export function createPermissionsController (ctx: SubsystemContext, levelOverrid
     async forUrl (url) {
       const broker = ctx.broker
       if (broker === undefined) return null
-      const origin = originFromUrl(url)
+      const origin = isolationKeyFromUrl(url)
       if (origin === null) return null
       return await registry.forOrigin(broker, origin, levelOverrideFor(origin))
     },

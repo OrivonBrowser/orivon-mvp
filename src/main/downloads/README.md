@@ -15,7 +15,7 @@ the button, one tracker per window), `bubble-rows.ts` and `downloads-overlay.ts`
 
 **What it depends on.** [`../overlays/`](../overlays/) (`overlay-types.ts`, and `overlays.ts` to tell whether a popup is open); `electron` (`install-downloads.ts`, `folder-runner.ts`, and the `DownloadItem` and
 `WebContents` types); [`../settings/`](../settings/) (the folder and the ask-where choice);
-[`../storage/`](../storage/) (the debounced write); [`../shell/file-dialogs.ts`](../shell/file-dialogs.ts) (the
+[`../storage/`](../storage/) (the debounced write); [`../local-files/local-file-apps.ts`](../local-files/local-file-apps.ts) (`isRecordedLocalPath`, so a download is never named after a recorded file); [`../shell/file-dialogs.ts`](../shell/file-dialogs.ts) (the
 folder picker); [`../pages/internal-ipc.ts`](../pages/internal-ipc.ts) (the shape of a page's domain);
 [`../shell/window-registry.ts`](../shell/window-registry.ts) (to tell a tab from any other page).
 
@@ -32,7 +32,8 @@ outlive a change of the engine beneath it. Setting the path in the `will-downloa
 
 **The path is chosen inside the `will-download` handler, synchronously.** An item whose path is set later, or
 never, stays in progress for ever and writes no file, so the service names the file before `track` returns:
-the folder, the sanitised name, and `file (1).ext` when the name is taken on disk or by a download still running.
+the folder, the sanitised name, and `file (1).ext` when the name is taken on disk, by a download still running, or by
+a local file the person let use Orivon permissions (`reservedPath`): a site cannot plant a file where one lives.
 With "ask where to save" on, the handler instead hands Electron its own dialog options and lists the download once
 the person has answered; an item that ends cancelled with no path was a dismissed dialog and leaves no trace.
 

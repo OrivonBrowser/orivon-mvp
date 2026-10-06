@@ -1,7 +1,7 @@
 import type { TabState } from '../../main/shell/tabs.js'
 import type { ShellState } from '../../main/shell/tabs.js'
 import { h } from '../pages/shared/dom.js'
-import { warningIcon } from '../pages/shared/icons.js'
+import { fileIcon, warningIcon } from '../pages/shared/icons.js'
 import { formatAddress } from './address-format.js'
 import { createAddressSelect } from './address-select.js'
 import type { ChromeContext, ChromeModule } from './context.js'
@@ -12,12 +12,18 @@ const DRAG_PX = 5
 
 const INSECURE_TITLE = 'This site does not use a secure connection. Do not enter passwords or card numbers.'
 
+const FILE_TITLE = 'A file on this computer. It was not fetched from the web, and Orivon cannot check it.'
+
 /** The connection mark, or nothing: a warning only for plain http to a public host. A secure connection is not drawn as
  * a third glyph beside the shield and the site button: the site button's title says it, and so does its popover. */
 function markFor (tab: TabState): HTMLElement | undefined {
   if (tab.connection === 'insecure') {
     return h('span', { className: 'address-mark insecure', title: INSECURE_TITLE, ariaLabel: `Not secure. ${INSECURE_TITLE}` },
       warningIcon(), h('span', { className: 'address-mark-label', ariaHidden: 'true' }, 'Not secure'))
+  }
+  if (tab.connection === 'file') {
+    return h('span', { className: 'address-mark file', title: FILE_TITLE, ariaLabel: `Local file. ${FILE_TITLE}` },
+      fileIcon(), h('span', { className: 'address-mark-label', ariaHidden: 'true' }, 'Local file'))
   }
   return undefined
 }

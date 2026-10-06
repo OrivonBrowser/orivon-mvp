@@ -120,3 +120,14 @@ describe('fuseFilePath', () => {
     )
   })
 })
+
+describe('knownFileProtocolFuse', () => {
+  it('is undefined until the fuse has been read, then what the binary says', async () => {
+    const { fileProtocolFuse, knownFileProtocolFuse } = await import('../file-fuse')
+    expect(knownFileProtocolFuse()).toBeUndefined()
+
+    const answer = await fileProtocolFuse()
+
+    expect(knownFileProtocolFuse()).toBe(answer)
+  })
+})

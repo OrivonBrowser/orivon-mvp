@@ -36,6 +36,16 @@ export function fakeTabs (room = true, host: object = {}): FakeTabs {
       if (active) fake.active = id
       return id
     }),
+    openLocalFileNow: vi.fn((url: string, active = true) => {
+      calls.push(`file ${url} ${active ? 'front' : 'back'}`)
+      const id = add({})
+      if (active) fake.active = id
+      return id
+    }),
+    openLocalFile: vi.fn((url: string, active = true) => {
+      calls.push(`file-later ${url} ${active ? 'front' : 'back'}`)
+      return Promise.resolve(undefined)
+    }),
     openInternal: vi.fn((page: string, path = '/') => {
       calls.push(`internal ${page}${path}`)
       const existing = order.find((id) => records.get(id)?.internalPage === page)

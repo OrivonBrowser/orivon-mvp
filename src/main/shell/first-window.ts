@@ -1,11 +1,14 @@
 // What a cold start opens. The one place that decides it: a feature that changes the first window
 // (a session to restore, a home page, an address on the command line) is a line here, not in index.ts.
-import { urlsFromArgv } from '../launch/launch-context.js'
+import { localFileKey } from '../../broker/policy/origin.js'
+import { launchAddresses } from '../launch/launch-request.js'
+import type { OperandDisk } from '../launch/launch-request.js'
 import { placementFor } from '../window-state/placement.js'
 import type { Rect } from '../window-state/placement.js'
 import { fillFirst, restoreWindows, takeOffStack } from '../startup/startup-open.js'
-import { planStartup } from '../startup/startup-plan.js'
+import { planOpensLocalFile, planStartup } from '../startup/startup-plan.js'
 import { homeAddress } from './home.js'
+import { openNowFromBrowser } from './open-from-browser.js'
 import type { ShellServices } from './shell-services.js'
 import type { ShellWindowOptions } from './window-options.js'
 
@@ -14,13 +17,17 @@ export interface FirstWindowInput {
   readonly isPrivate: boolean
   /** The process's own command line. */
   readonly argv: readonly string[]
+  /** Whether this is a packaged build: a source run's command line starts with the app's own path, which is no operand. */
+  readonly packaged?: boolean
+  /** Where a path operand is read from, and how the disk is asked: the current directory and the real disk unless a test says. */
+  readonly disk?: OperandDisk
   /** The screens the window may open on; needed only to restore the window's last place. */
   readonly displays?: readonly { readonly bounds: Rect }[]
   /** Opens a window; needed only to bring back the windows after the first one. */
   readonly openWindow?: (options: ShellWindowOptions) => void
 }
 
-export function firstWindowOptions ({ services, isPrivate, argv, displays = [], openWindow }: FirstWindowInput): ShellWindowOptions {
+export function firstWindowOptions ({ services, isPrivate, argv, packaged = true, disk, displays = [], openWindow }: FirstWindowInput): ShellWindowOptions {
   const options: { -readonly [K in keyof ShellWindowOptions]: ShellWindowOptions[K] } = {}
 
   // A private session records no place, so it has none to restore; a kiosk fills the screen whatever was saved.
@@ -32,11 +39,12 @@ export function firstWindowOptions ({ services, isPrivate, argv, displays = [], 
 
   // What the start-up choice opens, with the addresses on the command line after it: a person who clicked a link
   // wants that page in front, however the last session ended. A kiosk shows the launch address or the home page instead.
-  const given = urlsFromArgv(argv)
+  const given = launchAddresses(argv, packaged, disk)
   if (services.kiosk) {
     const home = homeAddress(services.settings)
     const addresses = given.length > 0 ? given : home === null ? [] : [home]
-    if (addresses.length > 0) options.first = (tabs) => { addresses.forEach((address, index) => { tabs.createTab(address, index === 0) }) }
+    if (addresses.some((address) => localFileKey(address) !== null)) options.localFiles = true
+    if (addresses.length > 0) options.first = (tabs) => { addresses.forEach((address, index) => { openNowFromBrowser(tabs, address, index === 0) }) }
     return options
   }
   const plan = planStartup({
@@ -47,6 +55,7 @@ export function firstWindowOptions ({ services, isPrivate, argv, displays = [], 
     isPrivate
   })
   const { first } = plan
+  if (planOpensLocalFile(plan)) options.localFiles = true
   if (first.tabs.length > 0 || first.urls.length > 0) options.first = fillFirst(first)
   if (first.saved !== undefined) {
     // The saved window's own size and place replace the last-used window's: they are the ones the session had.

@@ -14,7 +14,7 @@ that do type the contents they take as a small interface, so every tool is teste
 `real-deps.ts` is the one file that touches the file system, the clipboard and the save dialog.
 
 **What it depends on.** `../overlays/` (types), `../shell/` (`file-dialogs.ts`, the window and tab
-types), `../shortcuts/commands.ts` (the id a toast link runs), `../browsing/omnibox.ts` (the address
+types), `../local-files/local-file-apps.ts` (`isRecordedLocalPath`, so a saved page is never named after a recorded file), `../shortcuts/commands.ts` (the id a toast link runs), `../browsing/omnibox.ts` (the address
 gate for `view-source:`).
 
 **What it must never import.** `../shell/tabs.ts` for its class (only its type), a renderer, or
@@ -44,6 +44,8 @@ so it is never asked.
 **The sheet closes before the picture.** The picture is of the page, which the overlay never covers,
 but closing first returns focus to the page and keeps the sheet out of any later capture; the one
 frame of wait is the compositor's.
+
+**The save dialog never starts at a recorded local file.** `savePage` offers the default name through `uniquePath` with `reservedPath` (a local file the person let use Orivon permissions), so "Save" cannot overwrite one by accepting what is offered.
 
 **A file the tab shows is downloaded, not re-saved.** A page of another type (an image, a PDF, plain
 text) saved as HTML would be a wrapper around nothing, so `save-page.ts` downloads the address through

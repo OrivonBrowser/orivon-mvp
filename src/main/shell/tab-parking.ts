@@ -8,6 +8,7 @@
 // stay apart).
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { INTERNAL_PARTITION } from '../pages/internal-pages.js'
+import { isLocalPartition } from '../local-files/partition.js'
 import type { TabRecord } from './tab-types.js'
 import { applyTabSignals } from './tab-signals.js'
 import { carryHistory } from './tab-history.js'
@@ -28,6 +29,8 @@ function closeView (view: WebContentsView): void {
  * unregistered page nor a partition-less view with no derivable origin has
  * anything worth keeping past a navigation away. */
 function parkKeyFor (partition: string | undefined, isAppTab: boolean, origin: string | null): string | undefined {
+  // A local file's view is closed, never parked: the shared session holds every unrecorded file, so a parked view would carry one file's history to the next.
+  if (isLocalPartition(partition)) return undefined
   if (partition !== undefined) return partition
   return isAppTab && origin !== null ? `app:${origin}` : undefined
 }

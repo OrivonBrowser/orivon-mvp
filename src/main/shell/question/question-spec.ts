@@ -22,6 +22,12 @@ export interface QuestionSpec {
   readonly cancelId: number
   /** Indexes that ignore the person for GUARD_MS after every show. */
   readonly guarded?: readonly number[]
+  /**
+   * Indexes that answer only on a second press within `DOUBLE_PRESS_MS` of the first, and only once the pointer (or
+   * the keyboard's focus) has arrived on the button after the guard. Each is guarded too. For a grant that a page
+   * with a file's own authority is to be given.
+   */
+  readonly doublePress?: readonly number[]
   /** `dialog` starts on the panel itself, so a key meant for the page lands on no button; a number starts on that button. */
   readonly focus?: 'dialog' | number
   /** A text box, for a page's `prompt()`. */
@@ -48,6 +54,8 @@ export interface QuestionView {
   readonly buttons: readonly string[]
   readonly cancelId: number
   readonly guarded: readonly number[]
+  readonly doublePress: readonly number[]
+  readonly doublePressMs: number
   readonly focus: 'dialog' | number
   readonly input: { readonly initial: string, readonly max: number } | undefined
   readonly checkboxLabel: string | undefined
@@ -56,6 +64,8 @@ export interface QuestionView {
 
 /** A guarded button ignores clicks and keys for this long after the panel appears, so a click or key meant for the page cannot land on it. */
 export const GUARD_MS = 500
+/** The second press of a double-press button must come within this long of the first. */
+export const DOUBLE_PRESS_MS = 1500
 export const MAX_BUTTONS = 4
 /** The longest text a question's box holds: what a page's own request may carry, so a page's default comes back whole. */
 export const MAX_INPUT = 100_000
@@ -108,6 +118,7 @@ export function normaliseSpec (spec: QuestionSpec): QuestionSpec {
   const page = isPageKind(spec.kind)
   const clean = (text: string, max: number): string => page ? sanitizePageText(text, max) : cleanText(text, max)
   const wanted = spec.focus ?? (needsToolbar(spec) ? 'dialog' : 0)
+  const doublePress = [...new Set(spec.doublePress ?? [])].filter((index) => inRange(index, buttons.length))
   return {
     kind: spec.kind,
     ...(spec.title === undefined ? {} : { title: cleanText(spec.title, MAX_TITLE) }),
@@ -117,7 +128,8 @@ export function normaliseSpec (spec: QuestionSpec): QuestionSpec {
     ...(spec.origin === undefined ? {} : { origin: cleanText(spec.origin, MAX_ORIGIN) }),
     buttons,
     cancelId: inRange(spec.cancelId, buttons.length) ? spec.cancelId : buttons.length - 1,
-    guarded: [...new Set(spec.guarded ?? [])].filter((index) => inRange(index, buttons.length)),
+    guarded: [...new Set([...(spec.guarded ?? []), ...doublePress])].filter((index) => inRange(index, buttons.length)),
+    ...(doublePress.length === 0 ? {} : { doublePress }),
     focus: wanted === 'dialog' || inRange(wanted, buttons.length) ? wanted : 'dialog',
     ...(spec.input === undefined ? {} : { input: { initial: cleanText(spec.input.initial, MAX_INPUT) } }),
     ...(spec.checkboxLabel === undefined ? {} : { checkboxLabel: cleanText(spec.checkboxLabel, MAX_LABEL) })
@@ -154,6 +166,8 @@ export function viewOf (id: string, spec: QuestionSpec): QuestionView {
     buttons: spec.buttons,
     cancelId: spec.cancelId,
     guarded: spec.guarded ?? [],
+    doublePress: spec.doublePress ?? [],
+    doublePressMs: DOUBLE_PRESS_MS,
     focus: spec.focus ?? 'dialog',
     input: spec.input === undefined ? undefined : { initial: spec.input.initial, max: MAX_INPUT },
     checkboxLabel: spec.checkboxLabel,

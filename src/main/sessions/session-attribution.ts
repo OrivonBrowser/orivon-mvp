@@ -18,7 +18,8 @@ import type { Subsystem, SubsystemContext } from '../registry.js'
 import { publishSenderAttributed } from '../registry.js'
 import { partitionForTarget } from '../shell/tab-view.js'
 import { isChildHostFor } from '../children/child-host.js'
-import { originFromUrl } from '../../broker/policy/origin.js'
+import { isLocalFileKey, isolationKeyFromUrl } from '../../broker/policy/origin.js'
+import { localPartitionFor } from '../local-files/partition.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 
@@ -66,7 +67,7 @@ export const sessionAttributionSubsystem: Subsystem = {
     // firing early that matters, not afterReady's own ordering.
     app.on('web-contents-created', (_createdEvent, wc) => {
       wc.on('did-navigate', (_navEvent, url) => {
-        const origin = originFromUrl(url)
+        const origin = isolationKeyFromUrl(url)
         attributionRecords.set(wc, {
           origin,
           attributed: origin !== null && wc.session === expectedSession(origin)
@@ -76,6 +77,14 @@ export const sessionAttributionSubsystem: Subsystem = {
 
     publishSenderAttributed(ctx, (sender, origin) => {
       const wc = sender as WebContents
+      // A local file is checked live and strictly, like a cache-served origin: a document's path is
+      // fixed for its life (a same-document navigation cannot change it), so only the session can be
+      // wrong, and it must be the one `localPartitionFor` names at this call. A record removed since the
+      // commit therefore denies the document at once.
+      if (isLocalFileKey(origin)) {
+        const partition = localPartitionFor(origin)
+        return partition !== undefined && wc.session === session.fromPartition(partition)
+      }
       // An app's own child host (ADR-0046) runs in a session of its own by design.
       if (isChildHostFor(wc, origin)) return true
       // Cache-served origins are checked LIVE and STRICTLY, never through a

@@ -13,7 +13,7 @@
 import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { WebContents } from 'electron'
-import { originFromUrl } from '../../broker/policy/origin.js'
+import { isolationKeyFromUrl } from '../../broker/policy/origin.js'
 import { appDataRoot } from '../../broker/grants/origin-hash.js'
 import { appRootDirectoryName } from '../../loader/index.js'
 
@@ -113,7 +113,7 @@ function readNumber (value: unknown): number | undefined {
  * point is showing what CAN be observed, never guessing past a failure.
  */
 export async function browserStorageEstimateFor (webContents: WebContents, origin: string): Promise<BrowserStorageEstimate | null> {
-  if (webContents.isDestroyed() || originFromUrl(webContents.getURL()) !== origin) return null
+  if (webContents.isDestroyed() || isolationKeyFromUrl(webContents.getURL()) !== origin) return null
 
   const script = {
     code: `(navigator.storage && navigator.storage.estimate)
@@ -131,7 +131,7 @@ export async function browserStorageEstimateFor (webContents: WebContents, origi
   // Re-checked after the await: the tab can navigate away while this was
   // in flight, and a stale answer attributed to the new origin would be
   // exactly the kind of overclaim this popover exists to avoid.
-  if (typeof raw !== 'string' || webContents.isDestroyed() || originFromUrl(webContents.getURL()) !== origin) return null
+  if (typeof raw !== 'string' || webContents.isDestroyed() || isolationKeyFromUrl(webContents.getURL()) !== origin) return null
 
   let parsed: unknown
   try {

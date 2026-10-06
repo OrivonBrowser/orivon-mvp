@@ -6,7 +6,7 @@ import { withoutAddresses } from '../launch/launch-context.js'
 import type { InternalDomain } from './internal-ipc.js'
 
 /** `argv` is the command line this process started with, whose switches (the profile, the data directory) the new one keeps. */
-export function appDomain (app: Pick<App, 'relaunch' | 'quit'>, isPrivate: boolean, argv: readonly string[] = process.argv): InternalDomain {
+export function appDomain (app: Pick<App, 'relaunch' | 'quit' | 'isPackaged'>, isPrivate: boolean, argv: readonly string[] = process.argv): InternalDomain {
   return {
     pages: ['settings'],
     handle: (command) => {
@@ -14,8 +14,8 @@ export function appDomain (app: Pick<App, 'relaunch' | 'quit'>, isPrivate: boole
       if (type !== 'relaunch') return undefined
       if (isPrivate) return { ok: false, reason: 'private' }
       // `quit`, never `exit`: the stores flush before the browser closes.
-      // Without the addresses it was started with: the page launched from another program is not opened again.
-      app.relaunch({ args: withoutAddresses(argv.slice(1)) })
+      // Without the addresses and files it was started with: the page launched from another program is not opened again.
+      app.relaunch({ args: withoutAddresses(argv.slice(1), app.isPackaged) })
       app.quit()
       return { ok: true }
     }

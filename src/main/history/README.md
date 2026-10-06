@@ -7,7 +7,7 @@ is the interface (and the store that keeps nothing), `sqlite-history-store.ts` k
 the History page and the importer read and write through the same database,
 `open-history.ts` opens that file and falls back to the null store when it cannot be used,
 `history-service.ts` applies the person's two settings (whether to remember, and for how long),
-`attach-history.ts` and `install-history.ts` write down each page a tab reaches, and
+`attach-history.ts` and `install-history.ts` write down each page a tab reaches (a local file by its path, a file with a host not at all), and
 `history-ids.ts` and `history-actions.ts` what it may do to rows it names by id (open, copy, forget,
 bring back a closed tab), `favicon-host.ts` the key an icon is kept under, and `history-domain.ts` what the
 History page may ask.

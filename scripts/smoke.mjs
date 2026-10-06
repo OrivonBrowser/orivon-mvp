@@ -554,7 +554,8 @@ async function main () {
     const HOSTILE_INPUTS = [
       { input: "javascript:document.title='PWNED-JS'", marker: 'PWNED-JS' },
       { input: 'data:text/html,<title>PWNED-DATA</title>', marker: 'PWNED-DATA' },
-      { input: 'file:///etc/passwd', marker: undefined },
+      // A file with a host (a share) is no local file: it is refused as every file: address was, while a path or empty-host file: address typed here opens the file in a tab of its own.
+      { input: 'file://nas/share/passwd', marker: undefined },
       // about:blank would be indistinguishable from the fallback, but
       // about:config is not: rejected it lands on about:blank, passed through
       // it commits an about: page. Names Orivon has a page for (about:version)

@@ -1,6 +1,6 @@
 // The bookmark tree: the bar and "Other bookmarks" as folders, or a flat list of matches while a query is typed.
 import type { BookmarkNode } from '../../browsing/bookmark-types.js'
-import { sanitizeDirectUrl } from '../../browsing/omnibox.js'
+import { sanitizeBrowserUrl } from '../../browsing/local-file-input.js'
 import { hostOf } from '../panel-types.js'
 import type { PanelRow, PanelViewDef } from '../panel-types.js'
 
@@ -56,7 +56,7 @@ export const bookmarksView: PanelViewDef = {
   },
   resolve ({ services }, id) {
     const node = services.bookmarks.node(id)
-    return node?.kind === 'url' && node.url !== undefined && listed(services.bookmarks, node) ? sanitizeDirectUrl(node.url) : null
+    return node?.kind === 'url' && node.url !== undefined && listed(services.bookmarks, node) ? sanitizeBrowserUrl(node.url) : null
   },
   remove ({ services }, id) {
     const node = services.bookmarks.node(id)

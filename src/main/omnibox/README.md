@@ -5,7 +5,7 @@ ranking (pure), `suggest-sources.ts` reads the bookmarks, the history and the op
 lists the sources that wait, `suggest-fetch.ts` (with `suggest-parse.ts`) is the one of those that asks the default
 engine for suggestions, `verbatim-row.ts` is the first row ("Go to address" or "Search
 <engine>", decided by the same classifier Enter uses), `omnibox-service.ts` holds one window's rows and what
-choosing one means, `omnibox-window.ts` hands that service the window's stores, `omnibox-actions.ts` is what the
+choosing one means, `omnibox-window.ts` hands that service the window's stores (and reads typed text that names a file on this computer as an address, ahead of the web classifier), `omnibox-actions.ts` is what the
 chrome asks (`omnibox.query`, `select`, `pick`, `close`) and what a choice does to the window, and
 `omnibox-overlay.ts` declares the dropdown, drawn by
 [`../../renderer/overlay/omnibox/`](../../renderer/overlay/omnibox/) and driven by

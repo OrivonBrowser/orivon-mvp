@@ -1,4 +1,8 @@
-import { describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { LocalFileApps, installLocalFileApps } from '../../local-files/local-file-apps.js'
 import { addDeclinedCapability, clearDeclinedCapability, requestGrant } from '../request-grant.js'
 import type { PendingGrantRequests } from '../request-grant.js'
 import { APP, stubBroker } from '../../../broker/transport/tests/ipc.test-helpers.js'
@@ -17,6 +21,37 @@ import { baseDeps, manifestWith } from '../../../broker/tests/index.test-helpers
 // assertions) and then once more against a REAL createBroker (index.ts) so
 // "a real, persisted grant" is not just a mocked promise resolving --
 // see the last describe block.
+
+describe('requestGrant for a local file nobody let use Orivon permissions', () => {
+  const FILE_KEY = 'file:///home/u/notes/app.html'
+  afterEach(() => { installLocalFileApps(undefined) })
+
+  it('resolves false with no question and no grant, though the file is registered and declares the capability', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, { manifest: async () => manifestWith({ fs: { quotaBytes: 1024 } }), declinedCapabilitiesFor: async () => undefined })
+    const consent = vi.fn(async () => true)
+
+    expect(await requestGrant(broker, consent, FILE_KEY, { capability: 'fs' })).toBe(false)
+    expect(consent).not.toHaveBeenCalled()
+    expect(calls.some((call) => call.method === 'grant')).toBe(false)
+  })
+
+  it('asks as for any origin once the file is recorded', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orivon-rg-'))
+    try {
+      const apps = new LocalFileApps(join(dir, 'local-file-apps.json'))
+      apps.add(FILE_KEY)
+      installLocalFileApps(apps)
+      const broker = stubBroker([], { manifest: async () => manifestWith({ fs: { quotaBytes: 1024 } }), declinedCapabilitiesFor: async () => undefined })
+      const consent = vi.fn(async () => false)
+
+      expect(await requestGrant(broker, consent, FILE_KEY, { capability: 'fs' })).toBe(false)
+      expect(consent).toHaveBeenCalledOnce()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('requestGrant (stubbed broker)', () => {
   it('resolves false and never calls grant when the capability is not declared', async () => {

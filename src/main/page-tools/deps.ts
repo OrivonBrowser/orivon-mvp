@@ -7,6 +7,8 @@ export interface PageToolDeps {
   pickSave: (window: BaseWindow | undefined, options: SaveDialogOptions) => Promise<string | undefined>
   /** Where a save dialog starts. */
   downloadsDir: () => string
+  /** A path a save dialog must not start at: a local file the person let use Orivon permissions. */
+  reservedPath?: (path: string) => boolean
   writeFile: (path: string, data: Uint8Array) => Promise<void>
   rename: (from: string, to: string) => Promise<void>
   remove: (path: string) => Promise<void>

@@ -20,6 +20,7 @@
 //      reads a grant back, only ever writes one forward via broker.grant().
 
 import { decideGrantRequest, isCapabilityKind } from '../../broker/policy/request-grant.js'
+import { isUnrecordedLocalFile } from '../local-files/local-file-apps.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import type { CapabilityRequest, Pattern, CapabilityKind } from '../../contracts/index.js'
 
@@ -300,6 +301,10 @@ export async function requestGrant (
   // ADR-0039's `web.embed` keeps the same one door: the install-consent
   // dialog, never a dynamic request.
   if (request.capability === 'web.context' || request.capability === 'web.embed') return false
+
+  // A file on this computer holds grants only after the person let it use Orivon permissions (its own double-press question);
+  // before that, and after a No, a page there cannot ask for one through this door.
+  if (isUnrecordedLocalFile(origin)) return false
 
   if (pending === undefined) return await requestGrantOnce(broker, consent, origin, { ...request, capability: request.capability }, caller, prompts, abandoned)
 

@@ -53,7 +53,7 @@ export interface TabState {
   splitWith: string | null
   /** One of the shell's own pages (Settings, History, ...). It has no site: no shield, no permissions, nothing to bookmark. */
   isInternal: boolean
-  /** What the address bar may say about the connection: a lock, a warning, or nothing (browsing/connection.ts). */
+  /** What the address bar may say about the connection: a warning, a mark for a local file, or nothing (browsing/connection.ts). */
   connection: Connection
   /** Kept at the strip's start, narrow, and not closed by accident. */
   pinned: boolean
@@ -182,6 +182,8 @@ export interface TabShell {
   focusChrome?: () => void
   /** Whether the welcome screen is over this window. Absent in tests: it never is. */
   coveredByIntro?: () => boolean
+  /** Says a local file was not opened (`TabOpener.openLocalFile`). Absent in tests. */
+  localFilesRefused?: () => void
 }
 
 /** The view behind two panes: the divider, and an outline round the pane the person is in. */
@@ -237,6 +239,8 @@ export interface TabViewHost {
   /** A same-origin blob: URL in `partition` (the opener's own) -- popups.ts's own doc.
    * `active`/`loadOptions` -- see `openTab`'s own doc. */
   openBlobTab: (url: string, partition: string | undefined, active?: boolean, loadOptions?: LoadURLOptions) => WebContents | undefined
+  /** `url`, a local file, in a new tab of the local-files session: popups.ts's own doc. */
+  openLocalFile: (url: string, active?: boolean) => Promise<WebContents | undefined>
   /** `url` in a new window instead of this one -- a shift-click (popups.ts's `windowOpenHandler`).
    * `loadOptions` -- see popups.ts's `loadOptionsFor`'s own doc. Undefined when the shell has none
    * (tests): the caller opens an ordinary tab here instead. */

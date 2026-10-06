@@ -34,6 +34,8 @@ export interface ShellWindowOptions {
   readonly after?: ((first: BaseWindow) => void) | undefined
   /** Shown without taking focus or the front: the other windows of a restored session, which must not cover the one holding an address the person asked for. */
   readonly inactive?: boolean | undefined
+  /** Its first tabs include a local file: the launch waits for the binary's fuse to be read before it makes the window (`../local-files/file-fuse.ts`). */
+  readonly localFiles?: boolean | undefined
   /** Called once the window has been shown. */
   readonly shown?: (() => void) | undefined
 }

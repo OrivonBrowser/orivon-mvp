@@ -1,6 +1,7 @@
 // Brings the shell's own pages to life once the shared services exist: the
 // channel they speak on, and the changes they hear about while open.
 import { app, clipboard, session } from 'electron'
+import { allLocalPartitions } from '../local-files/partition.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import { extensionsDomain } from '../extensions/extensions-domain.js'
@@ -44,6 +45,10 @@ import { privacyDomain } from '../privacy/privacy-domain.js'
 import { readerDomain } from '../reader/reader-domain.js'
 import { readerArticles } from '../reader/reader-store.js'
 import { siteDataDomain } from '../privacy/site-data-domain.js'
+import { localFilesDomain } from '../privacy/local-files-domain.js'
+import { deleteLocalFileData } from '../local-files/delete-local-file-data.js'
+import { localFileApps } from '../local-files/local-file-apps.js'
+import { LOCAL_FILES_PARTITION } from '../local-files/partition.js'
 import { siteSettingsControllerFor } from '../site-settings/site-settings-runner.js'
 import { sitesDomain } from '../site-settings/sites-domain.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
@@ -136,6 +141,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       zoom: services.zoomStore,
       siteSettings,
       websites: session.defaultSession,
+      localFiles: () => allLocalPartitions().map((partition) => session.fromPartition(partition)),
       // Only a CACHE-SERVED app still has a partition of its own to clear:
       // a granted-without-install app shares session.defaultSession, which
       // `websites` above already reaches. Calling session.fromPartition on
@@ -149,6 +155,11 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     }),
     sites: sitesDomain(siteSettings, { isPrivate: services.isPrivate }),
     siteData: siteDataDomain(() => session.defaultSession),
+    localFileData: localFilesDomain({
+      list: () => localFileApps()?.list() ?? [],
+      deleteFile: async (key) => await deleteLocalFileData({ broker: ctx.broker, userDataPath: app.getPath('userData'), clearPartition: async (partition) => { await session.fromPartition(partition).clearData() } }, key),
+      clearShared: async () => { await session.fromPartition(LOCAL_FILES_PARTITION).clearData() }
+    }),
     apps: appsDomain({ permissions, userDataPath: app.getPath('userData'), identity: identityKeyStorage }),
     web3: web3Domain({
       view: verifierView,

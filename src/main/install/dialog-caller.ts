@@ -1,7 +1,7 @@
 // The tab a question is about, as `DialogCaller` sees it, built from the webContents that raised it. Shared by
 // the manifest hint listener and the checks of open tabs (./update-watch.ts, the site-info popover's update).
 
-import { originFromSenderFrame } from '../../broker/policy/origin.js'
+import { callerKeyFromSenderFrame } from '../../broker/policy/origin.js'
 import type { SenderFrameLike } from '../../broker/policy/origin.js'
 import type { DialogCaller } from '../consent/request-grant.js'
 import { holdNavigation } from '../shell/navigation-hold.js'
@@ -24,6 +24,6 @@ export function dialogCallerFor (sender: CallerSender | undefined, windowForSend
     window: () => sender === undefined ? undefined : windowForSender?.(sender),
     contents: () => sender,
     hold: () => holdNavigation(sender),
-    stillOn: (checkedOrigin) => sender !== undefined && !sender.isDestroyed() && originFromSenderFrame(sender.mainFrame) === checkedOrigin
+    stillOn: (checkedOrigin) => sender !== undefined && !sender.isDestroyed() && callerKeyFromSenderFrame(sender.mainFrame) === checkedOrigin
   }
 }

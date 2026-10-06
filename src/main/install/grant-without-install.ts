@@ -95,7 +95,7 @@ export type GrantWithoutInstallOutcome =
  * prompt labels as already allowed. Same `widensAuthority` the installed
  * path's update decision uses, restricted to held kinds.
  */
-function widensHeldGrants (held: PatternSet, declared: PatternSet): boolean {
+export function widensHeldGrants (held: PatternSet, declared: PatternSet): boolean {
   const heldKindsOnly: Partial<Record<CapabilityKind, readonly Pattern[]>> = {}
   for (const kind of Object.keys(held) as CapabilityKind[]) {
     const wanted = declared[kind]

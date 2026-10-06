@@ -1,5 +1,6 @@
 import { app, BaseWindow, dialog, nativeTheme, screen, session } from 'electron'
 import { createShellWindow, resolveDashboardUrl } from './shell/window.js'
+import { fileProtocolFuse } from './local-files/file-fuse.js'
 import { answerLaunch } from './shell/opener.js'
 import { createShellServices } from './shell/shell-services.js'
 import { runShellInstallers } from './shell/shell-installers.js'
@@ -30,6 +31,7 @@ import type { LaunchRequest } from './launch/launch-request.js'
 import { canOfferDefault } from './os/default-browser.js'
 import { defaultBrowserHost } from './os/default-browser-runner.js'
 import { handleOpenUrl } from './os/open-url.js'
+import { handleOpenFile } from './os/open-file.js'
 import { removeAfterExit, removePrivateDir, sweepPrivateDirs } from './launch/private-session.js'
 import { loadFetchStack } from './startup/fetch-stack.js'
 import { startLaunch } from './launch/start-launch.js'
@@ -150,8 +152,8 @@ function boot (runtime: Runtime): void {
     app.on('second-instance', (_event, argv, _workingDirectory, data) => { queueLaunch(readLaunchRequest(data, argv)) })
     // macOS hands a clicked link to the running app as an event; it joins the same queue.
     app.on('open-url', (event, url) => { handleOpenUrl(event, url, (urls) => { queueLaunch({ kind: 'open', urls }) }) })
-    // The app declares no document types, so a file handed to it (a drop on the dock icon) is not one to open.
-    app.on('open-file', (event) => { event.preventDefault(); console.error('[orivon] a file was handed to the browser; opening files is not supported') })
+    // A document the system hands to the browser (the file manager's Open with, a drop on the dock icon) opens as the command line's would.
+    app.on('open-file', (event, path) => { handleOpenFile(event, path, (urls) => { queueLaunch({ kind: 'open', urls }) }) })
   }
 
   // A private session ends with its last window on every platform: there is nothing to keep resident, and no window to bring back.
@@ -265,7 +267,8 @@ function boot (runtime: Runtime): void {
         // A private session begins with the page that says what it does, and has no welcome screen: it is the person's own second browser.
         // firstOfLaunch: true -- the ONLY createShellWindow call ORIVON_WINDOW_NO_FOCUS=1 may leave
         // unfocused (window-options.ts's own doc); every other window this process opens always takes focus.
-        const plan = firstWindowOptions({ services: shell, isPrivate: true, argv: process.argv })
+        const plan = firstWindowOptions({ services: shell, isPrivate: true, argv: process.argv, packaged: app.isPackaged })
+        if (plan.localFiles === true) await fileProtocolFuse()
         createShellWindow(ctx, shell, { ...plan, first: plan.first ?? ((tabs) => { tabs.openInternal('private') }), firstOfLaunch: true })
       } finally {
         markStarted()
@@ -277,7 +280,9 @@ function boot (runtime: Runtime): void {
         // 'activate' below recreates a window in a process that has already shown it.
         // Only the default profile's own screen offers it, and a kiosk is no one's browser.
         const offersDefault = runtime.profileId === 'default' && !shell.kiosk && canOfferDefault(defaultBrowserHost)
-        const plan = firstWindowOptions({ services: shell, isPrivate: false, argv: process.argv, displays: screen.getAllDisplays(), openWindow: (options) => { createShellWindow(ctx, shell, options) } })
+        const plan = firstWindowOptions({ services: shell, isPrivate: false, argv: process.argv, packaged: app.isPackaged, displays: screen.getAllDisplays(), openWindow: (options) => { createShellWindow(ctx, shell, options) } })
+        // A first tab that is a local file needs the binary's fuse read, which nothing else at start-up does.
+        if (plan.localFiles === true) await fileProtocolFuse()
         const firstWindow = createShellWindow(ctx, shell, { ...plan, intro: plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData'), offersDefault), firstOfLaunch: true })
         const after = plan.after
         afterFirst = after === undefined ? undefined : () => { after(firstWindow) }

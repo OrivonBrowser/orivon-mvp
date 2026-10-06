@@ -160,10 +160,14 @@ linux:
   # (Network) to be present alongside it, not instead of it -- most desktop-menu
   # implementations key off both.
 
-  # No `mimeTypes`: the entry lists only `x-scheme-handler/http` and `/https`, from `protocols`
-  # above. A browser that claims `text/html` is offered every .html file and every `xdg-open` of
-  # a page, and the desktop's browser list is keyed on the two schemes. Opening a local file is
-  # a separate feature (docs/open-questions.md A375).
+  # The documents Orivon opens, offered under "Open with" for the files it can show. As the default
+  # browser it also takes text/html, xhtml and pdf (src/main/os/default-browser.ts); SVG stays under
+  # "Open with", since an image viewer or editor is what most people want for it.
+  mimeTypes:
+    - text/html
+    - application/xhtml+xml
+    - image/svg+xml
+    - application/pdf
 
   synopsis: A browser that runs applications Chrome cannot
   description: >-
@@ -254,8 +258,30 @@ mac:
         - arm64
         - x64
   category: public.app-category.productivity
-  # `protocols` above becomes CFBundleURLTypes (http, https). No document types are declared:
-  # opening a local file in Orivon is not offered yet (A375).
+  # `protocols` above becomes CFBundleURLTypes (http, https). The document types below are offered
+  # under "Open With" and never taken over: rank Alternate leaves the default to the person, who sets
+  # it in Finder. Provisional until measured on a Mac.
+  fileAssociations:
+    - ext: [html, htm]
+      name: HTML document
+      mimeType: text/html
+      role: Viewer
+      rank: Alternate
+    - ext: xhtml
+      name: XHTML document
+      mimeType: application/xhtml+xml
+      role: Viewer
+      rank: Alternate
+    - ext: svg
+      name: SVG image
+      mimeType: image/svg+xml
+      role: Viewer
+      rank: Alternate
+    - ext: pdf
+      name: PDF document
+      mimeType: application/pdf
+      role: Viewer
+      rank: Alternate
   # Ad-hoc signing ("-"), not none: Apple silicon refuses to launch an unsigned binary,
   # and packaging rewrites the Electron binary (fuses, name, Info.plist), so its own
   # signature no longer holds. Hardened runtime is off because it rejects an ad-hoc app

@@ -86,7 +86,8 @@ comparison guards an engine that allows it. The decision, over the CallSites exc
 name, script name or eval origin CONTAINS a `chrome-extension://` script (refusing more is
 safe); otherwise refuse unless some frame is page code -- checked STARTS-WITH, and only over the
 frame's real script URL (`getFileName()`: an `http:`/`https:` URL, or a `blob:` URL whose inner
-origin is `http(s)`). Page attribution never reads `scriptNameOrSourceURL` or an eval origin: a
+origin is `http(s)`; on a document that is itself a local file, also a `file:` URL, since every script such a
+document loads from `file:` is its own and a web document never has a `file:` frame). Page attribution never reads `scriptNameOrSourceURL` or an eval origin: a
 `//# sourceURL=...` comment on string-compiled code (`eval`, `new Function`, a string passed to
 `setTimeout`) sets its script name to any value without whitespace, and V8 reports that value as
 the eval origin of the code and of every eval nested inside it, so

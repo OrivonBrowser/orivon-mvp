@@ -2144,3 +2144,70 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   it in on the next start.
 - **Who decides:** research first
 - **Blocks:** local files on macOS and Windows
+
+### A396: `localStorage` throws on a local page **[RESEARCH]**
+
+- **Question:** On a `file:` page `localStorage` throws a `SecurityError` (measured, Electron 44), and
+  `sessionStorage` was not measured. A local page using either breaks; IndexedDB, Cache Storage and OPFS work.
+  Other engines allow `localStorage` on `file:`, and the cause here is not isolated (a storage-key check on a
+  local origin is the likeliest).
+- **Why it matters:** a web app written for `localStorage` fails when opened from disk.
+- **Options:** find the Electron setting or flag behind it (rec.); polyfill it over IndexedDB in the tab's
+  preload; leave it and say so on the compatibility page.
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A397: Do the macOS and Windows file claims hold? **[RESEARCH]**
+
+- **Question:** The packages claim HTML, XHTML, SVG and PDF on Linux (`mimeTypes`), and are meant to on macOS
+  (`fileAssociations`) and Windows (`Capabilities\FileAssociations`). Neither has been installed and read back.
+- **Why it matters:** a claim that does not register lists no Orivon under "Open with" for a file.
+- **Options:** install a package on each system and read the registry or Launch Services (rec.); ship Linux only.
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A398: A Yes moves a local file to a session of its own and leaves its earlier storage behind **[OWNER]**
+
+- **Question:** A local file runs in the shared local-files session until the person lets it use Orivon
+  permissions, then in a session of its own; what it stored before is not carried over, and the consent says so.
+  A session for every file from its first open avoids that, at a session in memory (never freed in a run) and a
+  folder on disk for each file ever opened.
+- **Why it matters:** an app that saved data before the Yes starts afresh after it.
+- **Options:** own session once granted (rec.); one per file from the first open.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A399: What `initiator` does a file dropped from the desktop carry? **[RESEARCH]**
+
+- **Question:** A file dropped on a page navigates it to a `file:` address with no `will-navigate` initiator frame
+  if Electron reports a drop as browser-initiated; that is the one case Orivon opens as a local file
+  (`src/main/shell/local-file-navigation.ts`). Whether a real operating-system drop reports `null` was not measured
+  (no probe can synthesise one); if it reports the page, the drop is stopped and nothing opens.
+- **Why it matters:** dragging a document onto a tab is how many people open one; a refusal is safe but silent.
+- **Options:** drop a real file on a headed window on each system and read the event (rec.); open on any drop of a
+  file that no script of the page started.
+- **Who decides:** research first
+- **Blocks:** nothing
+
+### A404: A changed manifest's invisible limits apply to a held local file with no new question **[OWNER]**
+
+- **Question:** A recorded file's grants come back from a fresh manifest read on every open. A widened pattern asks
+  again, but a larger `fs` quota, another `id` curve or more sockets are limits no pattern shows, and nothing keeps
+  the manifest the person answered, so they apply unasked. A website granted without installing compares with the
+  manifest it registered earlier in the run; a file has none from an earlier run.
+- **Why it matters:** whoever can change the file can raise its quota, which the consent already says in general.
+- **Options:** accept, and say it (rec.); keep the accepted manifest's limits in the record and ask when they grow.
+- **Also:** a recorded file's own `app.requestGrant` asks in the ordinary question; whether it takes the warning too.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A405: A local file's `id` key outlives a restart only where an OS keyring holds the seed **[AI-REC]**
+
+- **Question:** The consent says a file's permissions and saved data belong to its path, and its `id` keys are
+  derived from the identity seed like any origin's. With no OS keyring the seed lasts one run (measured in the
+  end-to-end spec: the key differs after a restart), so the keys of a file, as of a website, change.
+- **Why it matters:** an app that signs with `orivon.id` and is opened from disk loses its identity each start on
+  such a machine; `orivon.secrets.available()` says so for secrets only.
+- **Options:** leave it, as for every origin (rec.); say it in the consent when no keyring is reachable.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing

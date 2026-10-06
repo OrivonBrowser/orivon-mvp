@@ -5,6 +5,8 @@
 import type { LoadURLOptions, WebContents, WebContentsView } from 'electron'
 import { internalUrl } from '../pages/internal-pages.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
+import { fileProtocolFuse, knownFileProtocolFuse } from '../local-files/file-fuse.js'
+import type { FileProtocolFuse } from '../local-files/file-fuse.js'
 import type { BuiltTab, TabFactory } from './tab-factory.js'
 import type { TabRecord } from './tab-types.js'
 
@@ -18,6 +20,8 @@ export interface TabOpenerHost {
   records: () => Iterable<readonly [string, TabRecord]>
   /** A tab opened on the start page, in front: where the keyboard goes is decided for it (./new-tab-focus.ts). Absent in tests. */
   freshTabInFront?: (id: string, contents: WebContents) => void
+  /** Tells the person a local file was not opened because this copy of Orivon cannot open one safely. Absent in tests. */
+  localFilesRefused?: () => void
 }
 
 export class TabOpener {
@@ -53,6 +57,31 @@ export class TabOpener {
   openBlobTab (url: string, partition: string | undefined, active = true, loadOptions?: LoadURLOptions): string {
     if (this.host.atCapacity()) return this.host.activeId() ?? ''
     return this.addAndShow(this.factory.blob(url, partition), active, loadOptions)
+  }
+
+  /** A local file in a new tab of its local-files session, whole (query and fragment kept). Undefined for a URL `localFileKey` refuses, at MAX_TABS, and unless the binary's
+   * file-protocol fuse is off: with it on, a local page could read other files, so no tab opens and the person is told. The binary is read on the first open only
+   * (README.md's Design notes), so that one open waits for the answer; every later one is as quick as any other tab. */
+  openLocalFile (url: string, active = true): Promise<string | undefined> {
+    if (this.host.atCapacity()) return Promise.resolve(undefined)
+    if (knownFileProtocolFuse() !== undefined) return Promise.resolve(this.openLocalFileNow(url, active))
+    return fileProtocolFuse().then((fuse) => this.host.atCapacity() ? undefined : this.openWithFuse(url, active, fuse))
+  }
+
+  /** `openLocalFile` for a caller that needs the id at once: undefined, with nothing said, while the fuse has not been read yet. */
+  openLocalFileNow (url: string, active = true): string | undefined {
+    const known = knownFileProtocolFuse()
+    if (known === undefined || this.host.atCapacity()) return undefined
+    return this.openWithFuse(url, active, known)
+  }
+
+  private openWithFuse (url: string, active: boolean, fuse: FileProtocolFuse): string | undefined {
+    if (fuse !== 'off') {
+      this.host.localFilesRefused?.()
+      return undefined
+    }
+    const built = this.factory.localFile(url)
+    return built === undefined ? undefined : this.addAndShow(built, active)
   }
 
   /** createTab() for a trusted caller (the extension host): skips the sanitizeDirectUrl gate that refuses chrome-extension: outright, since its own policy already checked `target`. */

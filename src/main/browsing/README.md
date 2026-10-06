@@ -1,6 +1,6 @@
 # `src/main/browsing/`: what the address bar and tab strip are made of
 
-**What lives here.** `omnibox.ts` (URL or search), `bookmarks.ts` (the bookmark store: the tree in memory and `bookmarks.json` on disk),
+**What lives here.** `omnibox.ts` (URL or search), `local-file-input.ts` (what names a file on this computer: a typed path or `file:` address, and the check a store keeps one under; `omnibox.ts` itself still refuses `file:`), `bookmarks.ts` (the bookmark store: the tree in memory and `bookmarks.json` on disk),
 `bookmark-tree.ts` (the tree and every operation on it, pure), `bookmark-import.ts` (whole trees in and out in one
 operation), `bookmark-file.ts` (reading and writing the file, pure),
 `bookmarks-domain.ts` (what the Bookmarks page may ask, each field checked), `bookmarks-undo.ts` (what a delete in it can take back),

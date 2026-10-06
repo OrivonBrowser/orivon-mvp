@@ -10,6 +10,7 @@ import { reachableFiles, shellDetailsAllowed } from './route.js'
 import type { ManifestChunk } from './route.js'
 import { SHELL_PARTITION, SHELL_SCHEME, isShellSchemeUrl, shellEntryFile } from '../shell/shell-session.js'
 import { webRequestOwnerFor } from '../sessions/web-request-owner.js'
+import { refuseFileScheme } from '../local-files/refuse-file-scheme.js'
 
 /** The files the new-tab page's build reaches, from Vite's manifest. Empty when there is no build (a dev server serves it). */
 function newtabFiles (rendererRoot: string): ReadonlySet<string> {
@@ -30,7 +31,7 @@ export function installShellScheme (dirname: string): void {
   shell.protocol.handle(SHELL_SCHEME, createShellHandler({ rendererRoot, session: 'shell', readFile: read }))
   // The shell's pages load nothing from disk by `file:`: the build is served above, and a page of the shell
   // that names a local file gets a 404.
-  shell.protocol.handle('file', () => new Response('Not found', { status: 404 }))
+  refuseFileScheme(shell)
 
   session.defaultSession.protocol.handle(SHELL_SCHEME, createShellHandler({
     rendererRoot, session: 'default', defaultFiles: newtabFiles(rendererRoot), readFile: read

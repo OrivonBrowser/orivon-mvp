@@ -40,7 +40,7 @@ describe('fillFirst', () => {
 
   it('opens the new tab page when nothing could be opened', () => {
     const fake = fakeTabs()
-    fillFirst({ tabs: [tab('javascript:alert(1)'), tab('file:///etc/passwd')], urls: [] })(fake.tabs)
+    fillFirst({ tabs: [tab('javascript:alert(1)'), tab('file://server/share/passwd')], urls: [] })(fake.tabs)
     expect(fake.calls).toEqual(['create (new tab page) front'])
   })
 

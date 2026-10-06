@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { OverlayWindow } from '../../../overlays/overlay-types.js'
 import type { ShellWindow } from '../../window-registry.js'
 import { createQuestionPanel, heldQuestion, holdQuestion, questionOverlay, questionSheetOverlay, QUESTION_OVERLAY, QUESTION_SHEET_OVERLAY, releaseQuestion } from '../question-overlay.js'
-import { GUARD_MS, normaliseSpec, type QuestionResult, type QuestionSpec } from '../question-spec.js'
+import { DOUBLE_PRESS_MS, GUARD_MS, normaliseSpec, type QuestionResult, type QuestionSpec } from '../question-spec.js'
 
 const SPEC: QuestionSpec = normaliseSpec({ kind: 'consent', message: 'Allow?', buttons: ['Allow', 'Cancel'], cancelId: 1, guarded: [0] })
 
@@ -257,5 +257,152 @@ describe('the question handler', () => {
     releaseQuestion(r.id)
     expect(heldQuestion(r.id)).toBeUndefined()
     expect(r.handler.show?.({ id: r.id })).toBeUndefined()
+  })
+})
+
+describe('a question whose button needs two presses', () => {
+  const DOUBLE: QuestionSpec = normaliseSpec({ kind: 'consent', message: 'Allow?', buttons: ['Allow', 'Cancel'], cancelId: 1, doublePress: [0], warning: true })
+
+  /** Drawn, the guard passed and the pointer arrived on the button. */
+  function ready (button = 0) {
+    const r = rig(DOUBLE)
+    r.handler.show?.({ id: r.id })
+    draw(r)
+    r.clock.now += GUARD_MS
+    r.handler.request({ type: 'enter', id: r.id, button })
+    return r
+  }
+
+  it('takes a double-press button as a guarded one, so it waits for the guard too', () => {
+    expect(DOUBLE.guarded).toEqual([0])
+    expect(DOUBLE_PRESS_MS).toBe(1500)
+  })
+
+  it('answers on the second press within the window, and not on the first', () => {
+    const r = ready()
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.results).toEqual([])
+    expect(r.send).toHaveBeenCalledWith({ type: 'pressed', button: 0, ms: DOUBLE_PRESS_MS })
+    r.clock.now += 200
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.results).toEqual([{ response: 0, checkboxChecked: false }])
+    expect(r.close).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the first press when the pointer reports arriving at the button again', () => {
+    const r = ready()
+    r.handler.request({ id: r.id, button: 0 })
+    r.handler.request({ type: 'enter', id: r.id, button: 0 })
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.results).toEqual([{ response: 0, checkboxChecked: false }])
+  })
+
+  it('takes a second press after the window as a first one again', () => {
+    const r = ready()
+    r.handler.request({ id: r.id, button: 0 })
+    r.clock.now += DOUBLE_PRESS_MS + 1
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.results).toEqual([])
+    r.clock.now += 100
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.results).toHaveLength(1)
+  })
+
+  it('ignores a press when the pointer never arrived on the button after the guard', () => {
+    const r = rig(DOUBLE)
+    r.handler.show?.({ id: r.id })
+    draw(r)
+    r.clock.now += GUARD_MS * 4
+    r.handler.request({ id: r.id, button: 0 })
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.results).toEqual([])
+  })
+
+  it('tells the page to move onto the button when it is pressed before it was armed', () => {
+    const r = rig(DOUBLE)
+    r.handler.show?.({ id: r.id })
+    draw(r)
+    r.clock.now += GUARD_MS * 4
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.send).toHaveBeenCalledWith({ type: 'hint', button: 0 })
+    expect(r.send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'pressed' }))
+  })
+
+  it('ignores an arrival inside the guard, and an arrival at another button', () => {
+    const early = rig(DOUBLE)
+    early.handler.show?.({ id: early.id })
+    draw(early)
+    early.clock.now += GUARD_MS - 1
+    early.handler.request({ type: 'enter', id: early.id, button: 0 })
+    early.clock.now += GUARD_MS
+    early.handler.request({ id: early.id, button: 0 })
+    early.handler.request({ id: early.id, button: 0 })
+    expect(early.results).toEqual([])
+
+    const wrong = ready(1)
+    wrong.handler.request({ id: wrong.id, button: 0 })
+    wrong.handler.request({ id: wrong.id, button: 0 })
+    expect(wrong.results).toEqual([])
+  })
+
+  it('disarms when the pointer leaves the button, and forgets the first press', () => {
+    const r = ready()
+    r.handler.request({ id: r.id, button: 0 })
+    r.handler.request({ type: 'leave', id: r.id, button: 0 })
+    r.handler.request({ id: r.id, button: 0 })
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.results).toEqual([])
+  })
+
+  it('disarms on another key, but not on the Enter or Space that presses the button', () => {
+    const r = ready()
+    r.handler.request({ id: r.id, button: 0 })
+    r.handler.key?.({ key: 'a', isAutoRepeat: false })
+    r.clock.now += GUARD_MS
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.results).toEqual([])
+
+    const again = ready()
+    again.handler.request({ id: again.id, button: 0 })
+    again.handler.key?.({ key: 'Enter', isAutoRepeat: false })
+    again.clock.now += 10
+    again.handler.request({ id: again.id, button: 0 })
+    expect(again.results).toHaveLength(1)
+  })
+
+  it('disarms when the panel moves under the pointer and starts the guard over', () => {
+    const r = ready()
+    r.handler.moved?.()
+    r.clock.now += GUARD_MS
+    r.handler.request({ id: r.id, button: 0 })
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.results).toEqual([])
+  })
+
+  it('does not let a double press carry over to the next show', () => {
+    const r = ready()
+    r.handler.request({ id: r.id, button: 0 })
+    r.handler.show?.({ id: r.id })
+    draw(r)
+    r.clock.now += GUARD_MS
+    r.handler.request({ id: r.id, button: 0 })
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.results).toEqual([])
+  })
+
+  it('answers a single press on a button that is not a double-press one', () => {
+    const r = ready()
+    r.handler.request({ id: r.id, button: 1 })
+    expect(r.results).toEqual([{ response: 1, checkboxChecked: false }])
+  })
+
+  it('takes an arrival report only as { type, id, button } for the question on screen', () => {
+    const r = ready()
+    r.handler.request({ type: 'enter', id: r.id, button: 0, extra: 1 })
+    r.handler.request({ type: 'leave', id: r.id, button: 0 })
+    r.handler.request({ type: 'enter', id: 'other', button: 0 })
+    r.handler.request({ id: r.id, button: 0 })
+    r.handler.request({ id: r.id, button: 0 })
+    expect(r.results).toEqual([])
   })
 })

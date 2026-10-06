@@ -27,6 +27,13 @@ describe('starting a download', () => {
     expect(service.list()).toHaveLength(2)
   })
 
+  it('numbers a name that is a local file allowed to use Orivon permissions, so a site cannot plant one', () => {
+    const { start } = harness([], { reservedPath: (path) => path === join(DIR, 'app.html') })
+    const planted = item('app.html')
+    start(planted)
+    expect(planted.setSavePath).toHaveBeenCalledWith(join(DIR, 'app (1).html'))
+  })
+
   it('makes the name safe before it joins it to the folder', () => {
     const { start } = harness()
     const evil = item('../../etc/passwd')
@@ -419,6 +426,13 @@ describe('a save dialog', () => {
     const second = item('g.bin')
     start(second)
     expect(second.setSaveDialogOptions).toHaveBeenCalledWith({ title: 'Save file', defaultPath: join('/', 'picked', 'g.bin') })
+  })
+
+  it('offers a numbered name when the site\'s name is a local file allowed to use Orivon permissions', () => {
+    const { start } = harness([], { askWhere: () => true, reservedPath: (path) => path === join(DIR, 'app.html') })
+    const planted = item('app.html')
+    start(planted)
+    expect(planted.setSaveDialogOptions).toHaveBeenCalledWith({ title: 'Save file', defaultPath: join(DIR, 'app (1).html') })
   })
 
   it('drops a download whose dialog was dismissed, without an entry', () => {

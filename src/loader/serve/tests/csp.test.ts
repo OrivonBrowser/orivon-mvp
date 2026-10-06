@@ -17,6 +17,14 @@ describe('cspHeaderValue -- what a pinned bundle may do with its own bytes', () 
     expect(directive(EMPTY, 'script-src')).toEqual(["'self'", "'unsafe-eval'", "'wasm-unsafe-eval'"])
   })
 
+  it('admits inline script only when asked, and keeps every other directive as it was', () => {
+    const inline = cspHeaderValue([], [], { inlineScripts: true })
+    expect(directive(inline, 'script-src')).toEqual(["'self'", "'unsafe-eval'", "'wasm-unsafe-eval'", "'unsafe-inline'"])
+    expect(inline.replace(" 'unsafe-inline'", '').split('; ').filter((d) => !d.startsWith('script-src')))
+      .toEqual(EMPTY.split('; ').filter((d) => !d.startsWith('script-src')))
+    expect(cspHeaderValue([], [], {})).toBe(EMPTY)
+  })
+
   it('admits data: and blob: images, fonts and media -- local schemes with no network reach', () => {
     for (const name of ['img-src', 'font-src', 'media-src']) {
       expect([name, directive(EMPTY, name)]).toEqual([name, ["'self'", 'data:', 'blob:']])

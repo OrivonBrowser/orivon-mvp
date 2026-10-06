@@ -170,4 +170,18 @@ describe('orivon.id -- the ordinary consent-made grant (empty patterns, A153/man
     broker.registerApp(APP, manifestWith({ id: { curves: ['P-256', 'secp256k1'] } }))
     await expect(broker.id.publicKey(APP, { curve: 'secp256k1' })).rejects.toMatchObject({ code: 'internal' }) // secp256k1 itself is unimplemented (see the test above) -- 'internal', not 'denied', proves the manifest check passed
   })
+
+  it('a local file\'s key is its exact path: two brokers on one seed derive the same key, another path another key', async () => {
+    const FILE = 'file:///home/u/notes/app.html'
+    const publicKeyOf = async (path: string): Promise<Uint8Array> => {
+      const broker = createBroker(baseDeps({ keychain: { getSeed: async () => SEED } }))
+      broker.registerApp(path, manifestWith({ id: { curves: ['P-256'] } }))
+      await broker.grant(path, 'id', ['P-256'])
+      return await broker.id.publicKey(path, { curve: 'P-256' })
+    }
+
+    expect(await publicKeyOf(FILE)).toEqual(await publicKeyOf(FILE))
+    expect(await publicKeyOf(FILE)).not.toEqual(await publicKeyOf('file:///home/u/notes/moved.html'))
+    expect(await publicKeyOf(FILE)).toEqual(await derivePublicKey({ seed: SEED, label: 'app', scope: FILE, curve: 'P-256' }))
+  })
 })

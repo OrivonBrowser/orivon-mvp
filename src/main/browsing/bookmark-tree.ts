@@ -4,7 +4,7 @@
 // move O(1) in the node count; an operation copies the maps once, which is cheap at the node cap.
 import { randomBytes } from 'node:crypto'
 import type { BookmarkNode, BookmarkRoot } from './bookmark-types.js'
-import { sanitizeDirectUrl } from './omnibox.js'
+import { sanitizeBrowserUrl } from './local-file-input.js'
 
 export const MAX_NODES = 20_000
 /** What an id looks like: the bookmarks page names a folder in its address and the page's requests name rows, and both
@@ -183,7 +183,7 @@ export function updateNode (tree: BookmarkTree, id: string, patch: NodePatch): B
   const next: BookmarkNode = { ...node }
   if (patch.title !== undefined) next.title = clipTitle(patch.title)
   if (patch.url !== undefined) {
-    const safe = node.kind === 'url' ? sanitizeDirectUrl(patch.url) : null
+    const safe = node.kind === 'url' ? sanitizeBrowserUrl(patch.url) : null
     if (safe === null) return null
     next.url = safe
   }

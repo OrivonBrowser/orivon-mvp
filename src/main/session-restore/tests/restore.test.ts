@@ -25,7 +25,7 @@ describe('fillTabs', () => {
 
   it('opens the new-tab page when nothing in the window may be opened', () => {
     const fake = fakeTabs()
-    fillTabs(saved(['javascript:alert(1)', 'file:///etc/passwd']))(fake.tabs)
+    fillTabs(saved(['javascript:alert(1)', 'file://server/share/passwd']))(fake.tabs)
     expect(fake.calls).toEqual(['create (new tab page) front'])
   })
 

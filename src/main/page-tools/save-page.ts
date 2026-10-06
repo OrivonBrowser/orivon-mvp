@@ -2,6 +2,7 @@
 // `.mhtml` file, by the extension typed; anything else the tab shows (an image, a PDF, plain text)
 // is downloaded as the file it is. A path only ever comes from the save dialog.
 import { downloadAsked } from '../downloads/asked-downloads.js'
+import { uniquePath } from '../downloads/download-model.js'
 import { join } from 'node:path'
 import type { ShellWindow } from '../shell/window-registry.js'
 import type { PageToolDeps } from './deps.js'
@@ -97,9 +98,10 @@ export async function savePage (window: ShellWindow, page: { wc: SaveContents, t
   if (!/^https?:/i.test(url)) { showToast(window, 'cannotSave'); return }
   if (wc.isCrashed()) { showToast(window, 'saveFailed'); return }
   const document = isSavableDocument(url, await contentTypeOf(wc))
+  const start = (name: string): string => uniquePath(deps.downloadsDir(), name, deps.reservedPath ?? (() => false))
   const chosen = await deps.pickSave(window.window, document
-    ? { title: 'Save page as', defaultPath: join(deps.downloadsDir(), safeFileName(page.title, 'html')), filters: FILTERS }
-    : { title: 'Save as', defaultPath: join(deps.downloadsDir(), downloadName(url)) })
+    ? { title: 'Save page as', defaultPath: start(safeFileName(page.title, 'html')), filters: FILTERS }
+    : { title: 'Save as', defaultPath: start(downloadName(url)) })
   if (chosen === undefined) return
   const path = document ? withExtension(chosen, 'html') : chosen
   try {

@@ -28,10 +28,15 @@ export const canOfferDefault = (facts: DefaultBrowserFacts): boolean => unavaila
 
 type WebProtocol = 'http' | 'https'
 
+/** What Orivon asks the desktop to open with it, on top of the web protocols, where it is the default browser on Linux. SVG is left under Open with. */
+export const LINUX_DOCUMENT_TYPES: readonly string[] = ['text/html', 'application/xhtml+xml', 'application/pdf']
+
 /** What the operating system says and does, behind calls a test replaces. */
 export interface DefaultBrowserHost extends DefaultBrowserFacts {
   isDefault: (protocol: WebProtocol) => Promise<boolean>
   setDefault: (protocol: WebProtocol) => boolean
+  /** Linux: makes Orivon the program that opens `mimeType`. Absent where the system asks the person instead. */
+  setDocumentDefault?: (mimeType: string) => Promise<boolean>
   /** Windows lets only the person choose a default browser: this opens the page where they do. */
   openSettings: () => Promise<void>
 }
@@ -78,6 +83,15 @@ export async function makeDefaultBrowser (host: DefaultBrowserHost, wait: (ms: n
       host.setDefault(protocol)
     } catch (error) {
       console.error(`[os] could not register for ${protocol}`, error)
+    }
+  }
+  if (host.platform === 'linux') {
+    for (const type of LINUX_DOCUMENT_TYPES) {
+      try {
+        await host.setDocumentDefault?.(type)
+      } catch (error) {
+        console.error(`[os] could not register for ${type}`, error)
+      }
     }
   }
   await wait(SETTLE_MS)

@@ -21,10 +21,12 @@ registers Electron's own `onBeforeRequest`/`onBeforeSendHeaders`/`onHeadersRecei
 it covers, composing every registered handler through `web-request-compose.ts`'s pure ordering
 logic; see this file's Design notes below. `session-attribution.ts` publishes
 `ctx.senderAttributed` (`../registry.ts`): whether a WebContents is attributed to the origin it
-claims, decided at that document's own commit and reused afterward rather than re-decided live,
+claims, decided at that document's own commit and reused afterward rather than re-decided live (except a cache-served origin and a local file, checked live),
 reusing [`../shell/tab-view.ts`](../shell/tab-view.ts)'s own `partitionForTarget` rule so every
 renderer-reachable broker channel can refuse a call whose WebContents never committed the origin
-it claims in the session it belongs in.
+it claims in the session it belongs in. A local file's key is attributed only while the tab's session is the
+one `localPartitionFor` names ([`../local-files/`](../local-files/)), checked at every call: the path of
+a document is fixed for its life, so only the session can be wrong.
 
 **What it depends on.** `electron`, [`../../contracts/`](../../contracts/) (`LIMITS`),
 [`../../broker/`](../../broker/) (`grants/origin-hash.ts`, `grants/node-ledger-storage.ts`'s
@@ -32,7 +34,7 @@ it claims in the session it belongs in.
 [`../../loader/electron/serve.ts`](../../loader/electron/serve.ts),
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts), [`../shell/`](../shell/) (the native
 question `external-link-prompt.ts`; `showing-window.ts`;
-`exclusive-access-notice.ts`; `lock-navigation.ts`; `tab-view.ts`'s `partitionForTarget`), the
+`exclusive-access-notice.ts`; `lock-navigation.ts`; `tab-view.ts`'s `partitionForTarget`), [`../local-files/`](../local-files/)'s `partition.ts`, the
 top-level `registry.ts`. Only `permission-gate.ts`, `web-context-host.ts`, `web-request-owner.ts`
 and `session-attribution.ts` import `electron`: the decision files, `web-request-compose.ts`
 included, are unit-tested under plain vitest.
@@ -147,7 +149,9 @@ navigation that already triggers `../shell/tab-view.ts`'s own partition swap for
 cross-origin move. A cache-served (pinned) origin is the one exception, checked live and strictly
 regardless of any record, because its bundle is only ever intercepted inside its own partition
 (`ADR-0007`): a document attributed to it must run there at every call, not merely at whatever
-moment it committed.
+moment it committed. A local file is the other: the path of a document is fixed for its life, so
+only its session can be wrong, and that must be the one `localPartitionFor` names at this call (a
+record removed since the commit denies the document at once).
 
 **[`web-context-host.ts`](web-context-host.ts): two WebRTC belts, and why the discard-port
 proxy does not break the context's own `fetch()`.** `protocol.handle` and

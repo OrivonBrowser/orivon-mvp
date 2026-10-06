@@ -6,13 +6,16 @@ continue from it. `tab-snapshot.ts` says what is written down about a tab, `clos
 `closed-tabs.ts` are the stack and what fills it, `reopen.ts` brings an entry back and words the menu hint,
 `session-types.ts` and `session-store.ts` are the file and its one reader, `session-recorder.ts` and
 `session-hook.ts` write the open windows down, and `restore.ts` and `open-snapshot.ts` open saved windows
-and tabs again (`fillTabs`, `optionsFor`, `seedClosedStack`).
+and tabs again (`fillTabs`, `optionsFor`, `seedClosedStack`); `fuse-wait.ts` holds back a restore or a reopen
+that contains a local file until the binary's file-protocol fuse has been read.
 
 **What it depends on.** `electron` (`session-hook.ts`, and `WebContents` in `tab-snapshot.ts`);
 [`../shell/`](../shell/) (types of tabs, windows and hooks; `tab-lifecycle.ts`; `eth-gateway-rule.ts`, the rule that maps a saved gateway address);
 [`../storage/`](../storage/) (the debounced write); [`../browsing/omnibox.ts`](../browsing/omnibox.ts)
 (the one rule for which addresses a tab may open); [`../window-state/placement.ts`](../window-state/placement.ts)
-(where a saved window may open on the displays there are now); [`../pages/internal-pages.ts`](../pages/internal-pages.ts).
+(where a saved window may open on the displays there are now); [`../pages/internal-pages.ts`](../pages/internal-pages.ts); [`../local-files/file-fuse.ts`](../local-files/file-fuse.ts) and
+[`../../broker/policy/origin.ts`](../../broker/policy/origin.ts) (`fuse-wait.ts`: a saved local file opens only once the fuse is read, so a restore
+or a reopen that holds one waits for it); [`../browsing/local-file-input.ts`](../browsing/local-file-input.ts).
 
 **What it must never import.** [`../../renderer/`](../../renderer/) code. Not `src/main/sessions/`, which
 is about what an Electron `Session` may do and is unrelated.

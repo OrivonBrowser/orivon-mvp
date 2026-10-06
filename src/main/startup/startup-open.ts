@@ -1,4 +1,5 @@
 // Puts the plan's tabs into a window and brings saved windows back, each through the display-aware placement.
+import { openNowFromBrowser } from '../shell/open-from-browser.js'
 import { openSnapshot } from '../session-restore/open-snapshot.js'
 import { optionsFor } from '../session-restore/restore.js'
 import type { Displays } from '../session-restore/restore.js'
@@ -18,7 +19,7 @@ export function fillFirst (first: StartupPlan['first']): (tabs: TabManager) => v
       if (!tabs.hasRoom()) break
       opened.push(openSnapshot(tabs, tab, false) ?? '')
     }
-    first.urls.forEach((url, index) => { tabs.createTab(url, index === 0) })
+    first.urls.forEach((url, index) => { openNowFromBrowser(tabs, url, index === 0) })
     const wanted = opened[first.saved?.active ?? 0]
     const front = wanted !== undefined && wanted !== '' ? wanted : opened.find((id) => id !== '')
     if (first.urls.length === 0) {

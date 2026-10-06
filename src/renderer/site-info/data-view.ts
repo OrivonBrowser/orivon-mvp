@@ -27,7 +27,7 @@ function formatBytes (bytes: number): string {
 export interface DataPageView {
   readonly cookiesOpen: boolean
   /** The button that has had its first click, waiting for its second. */
-  readonly armed: 'cookies' | 'site' | null
+  readonly armed: 'cookies' | 'site' | 'file' | null
   /** Something was deleted since the page opened, so the tab still shows what it had. */
   readonly deleted: boolean
 }
@@ -40,6 +40,8 @@ export interface DataPageCallbacks {
   readonly onClearCookies: () => void
   readonly onReload: () => void
   readonly onRevokePickedPath: (pickId: string) => void
+  /** Present only for a local file: deletes its grants, saved data and record. */
+  readonly onDeleteLocalFile?: () => void
 }
 
 /** A line of explanation under the control it is about. */
@@ -183,7 +185,11 @@ export function renderDataPage (
   const actions = document.createElement('div')
   actions.className = 'data-actions'
   if (data.cookies.length > 0) actions.append(destructive('Delete all cookies for this site', view.armed === 'cookies', callbacks.onClearCookies, 'clear-cookies'))
-  actions.append(destructive('Delete all data for this site', view.armed === 'site', callbacks.onClearBrowserData, 'clear-site', 'You may be signed out of this site'))
+  if (callbacks.onDeleteLocalFile === undefined) {
+    actions.append(destructive('Delete all data for this site', view.armed === 'site', callbacks.onClearBrowserData, 'clear-site', 'You may be signed out of this site'))
+  } else {
+    actions.append(destructive('Delete data for this file', view.armed === 'file', callbacks.onDeleteLocalFile, 'clear-file', 'Removes what this file may do, the files it saved, and what its own session kept'))
+  }
   container.append(actions)
 
   container.append(document.createElement('hr'))

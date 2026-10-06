@@ -37,6 +37,7 @@ function fakeSiteInfo (overrides: Partial<SiteInfoController> = {}): SiteInfoCon
     turnOn: vi.fn(async () => 'not-registered' as const),
     turnOff: vi.fn(async () => {}),
     revokePickedPath: vi.fn(async () => {}),
+    deleteLocalFileData: vi.fn(async () => false),
     applyUpdate: vi.fn(async () => ({ ok: false as const, reason: 'no such offer' })),
     ...overrides
   }

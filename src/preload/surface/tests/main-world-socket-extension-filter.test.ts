@@ -10,7 +10,7 @@
 import vm from 'node:vm'
 import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { installOrivon } from '../main-world-socket.js'
 import { LIMITS, fakeBridge, fakeSocketBridgeResult } from './main-world-socket.test-helpers.js'
 
@@ -30,6 +30,8 @@ function hasSource (text: unknown, needles: readonly string[]): boolean {
   return typeof text === 'string' && applyOwn(someOwn, needles, [(needle: string) => applyOwn(indexOfOwn, text, [needle]) !== -1])
 }
 interface CallerFrame { fileName?: string, scriptNameOrSourceURL?: string, evalOrigin?: string }
+// installOrivon's own is read from `window.location` when it runs; a test sets this one.
+let fileDocument = false
 function callerIsRefused (frames: readonly CallerFrame[]): boolean {
   const isExtension = (f: CallerFrame): boolean =>
     hasSource(f.fileName, ['chrome-extension://']) || hasSource(f.scriptNameOrSourceURL, ['chrome-extension://']) || hasSource(f.evalOrigin, ['chrome-extension://'])
@@ -40,7 +42,7 @@ function callerIsRefused (frames: readonly CallerFrame[]): boolean {
   // detection above, a spoofed prefix elsewhere in the string must not count.
   const startsWithAny = (text: unknown, prefixes: readonly string[]): boolean =>
     typeof text === 'string' && applyOwn(someOwn, prefixes, [(prefix: string) => applyOwn(startsWithOwn, text, [prefix])])
-  const isPage = (f: CallerFrame): boolean => startsWithAny(f.fileName, ['http://', 'https://', 'blob:http://', 'blob:https://'])
+  const isPage = (f: CallerFrame): boolean => startsWithAny(f.fileName, ['http://', 'https://', 'blob:http://', 'blob:https://']) || (fileDocument && startsWithAny(f.fileName, ['file://']))
   if (applyOwn(someOwn, frames, [isExtension])) return true
   return !applyOwn(someOwn, frames, [isPage])
 }
@@ -99,6 +101,17 @@ describe('callerIsRefused (pure decision rule)', () => {
   it('refuses an extension eval origin', () => { expect(callerIsRefused([EXTENSION_EVAL])).toBe(true) })
   it('refuses a blob: frame with no http(s) inner origin', () => { expect(callerIsRefused([BLOB_OPAQUE])).toBe(true) })
   it('refuses an opaque (file:) frame with no page or extension source at all', () => { expect(callerIsRefused([OPAQUE])).toBe(true) })
+  it('allows a file: frame only when the document is itself a local file, and refuses an extension frame there all the same', () => {
+    fileDocument = true
+    try {
+      expect(callerIsRefused([OPAQUE])).toBe(false)
+      expect(callerIsRefused([OPAQUE, EXTENSION_FILE])).toBe(true)
+      expect(callerIsRefused([{ scriptNameOrSourceURL: 'file:///home/user/script.js' }])).toBe(true)
+    } finally {
+      fileDocument = false
+    }
+    expect(callerIsRefused([OPAQUE])).toBe(true)
+  })
   it('refuses an empty frame list (no attribution at all -- fail closed)', () => { expect(callerIsRefused([])).toBe(true) })
   it('refuses when an extension frame and a page frame are BOTH present -- the extension rule wins', () => {
     expect(callerIsRefused([PAGE_HTTPS, EXTENSION_FILE])).toBe(true)
@@ -164,6 +177,21 @@ describe('installOrivon: real caller attribution', () => {
     installOrivon(fakeBridge(fakeSocketBridgeResult()), LIMITS, target)
     const orivon = target.orivon as { app: { manifest: () => Promise<unknown> } }
     await expect(asPageFrame(async () => await orivon.app.manifest())).resolves.toEqual({ orivonApiVersion: 0 })
+  })
+
+  it('a script a local file loaded from file: succeeds on that document, and is refused on a web one', async () => {
+    const asFileFrame = frameNamed('file:///home/user/notes/app.js')
+    vi.stubGlobal('window', { location: { protocol: 'file:' } })
+    try {
+      const local: Record<string, unknown> = {}
+      installOrivon(fakeBridge(fakeSocketBridgeResult()), LIMITS, local)
+      await expect(asFileFrame(async () => await (local.orivon as { app: { manifest: () => Promise<unknown> } }).app.manifest())).resolves.toEqual({ orivonApiVersion: 0 })
+    } finally {
+      vi.unstubAllGlobals()
+    }
+    const web: Record<string, unknown> = {}
+    installOrivon(fakeBridge(fakeSocketBridgeResult()), LIMITS, web)
+    await expect(asFileFrame(async () => await (web.orivon as { app: { manifest: () => Promise<unknown> } }).app.manifest())).rejects.toMatchObject({ name: 'OrivonError', code: 'denied' })
   })
 
   it('an extension-frame caller is refused with the denied shape', async () => {

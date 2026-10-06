@@ -1,9 +1,10 @@
 // What the History page asks for by the id of a row it shows: open it, copy it, bring back a closed tab. The page
 // never names an address, so none is ever opened on its say-so; each is read from the history here.
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
-import { sanitizeDirectUrl } from '../browsing/omnibox.js'
+import { sanitizeBrowserUrl } from '../browsing/local-file-input.js'
 import type { CommandBus } from '../shortcuts/command-bus.js'
 import type { ClosedEntry, ClosedStack } from '../session-restore/closed-stack.js'
+import { navigateFromBrowser, openFromBrowser } from '../shell/open-from-browser.js'
 import { cascadeFrom } from '../shell/window-options.js'
 import type { ShellWindow, WindowRegistry } from '../shell/window-registry.js'
 import type { InternalCaller } from '../pages/internal-ipc.js'
@@ -33,23 +34,23 @@ function openAll (urls: readonly string[], disposition: Disposition, caller: Int
   const { window: shell, tabId } = found
   switch (disposition) {
     case 'tab':
-      shell.tabs.navigate(tabId, urls[0] as string)
-      for (const url of urls.slice(1)) shell.tabs.createTab(url, false)
+      void navigateFromBrowser(shell.tabs, tabId, urls[0] as string)
+      for (const url of urls.slice(1)) openFromBrowser(shell.tabs, url, false)
       return
     case 'newTab':
-      for (const url of urls) shell.tabs.createTab(url, url === urls[0])
+      for (const url of urls) openFromBrowser(shell.tabs, url, url === urls[0])
       return
     case 'background':
-      for (const url of urls) shell.tabs.createTab(url, false)
+      for (const url of urls) openFromBrowser(shell.tabs, url, false)
       return
     case 'window':
-      deps.commands.openWindow({ place: cascadeFrom(shell.window.getBounds()), first: (tabs) => { for (const url of urls) tabs.createTab(url) } })
+      deps.commands.openWindow({ place: cascadeFrom(shell.window.getBounds()), first: (tabs) => { for (const url of urls) openFromBrowser(tabs, url) } })
   }
 }
 
 /** The addresses of the pages with these ids that a tab may open. */
 function addressesOf (history: HistoryService, ids: readonly number[]): string[] {
-  return history.pagesByIds(ids).map((page) => page.url).filter((url) => sanitizeDirectUrl(url) !== null)
+  return history.pagesByIds(ids).map((page) => page.url).filter((url) => sanitizeBrowserUrl(url) !== null)
 }
 
 function closedRow (entry: ClosedEntry, icons: Readonly<Record<string, string>>): object {

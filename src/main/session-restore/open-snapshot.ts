@@ -1,5 +1,6 @@
 // Opens a saved tab in a window: the one place an address from the closed stack or the session file becomes a tab.
 import { gatewayEntries } from '../shell/eth-gateway-rule.js'
+import { openNowFromBrowser } from '../shell/open-from-browser.js'
 import { restoreHistory } from '../shell/tab-history.js'
 import type { TabManager } from '../shell/tabs.js'
 import { showTitleUntilLoaded } from './restored-title.js'
@@ -34,8 +35,8 @@ export function openSnapshot (tabs: TabManager, snapshot: TabSnapshot, active: b
     }
     return opened.id
   }
-  const id = tabs.createTab(clean.url, active)
-  const record = tabs.record(id)
+  const id = openNowFromBrowser(tabs, clean.url, active)
+  const record = id === undefined ? undefined : tabs.record(id)
   if (record === undefined) return undefined
   record.pinned = clean.pinned
   showTitleUntilLoaded(record, clean.title)

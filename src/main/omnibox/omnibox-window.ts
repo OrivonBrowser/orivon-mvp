@@ -1,5 +1,6 @@
 // The suggestions of one window: what its service reads from the shell's stores, and where a slow source's
 // rows are sent. A window has one service, made on the first query and kept as long as the window.
+import { parseLocalFileInput } from '../browsing/local-file-input.js'
 import { parseOmniboxInput } from '../browsing/omnibox.js'
 import { currentDefault, resolveCurrent } from '../browsing/search-current.js'
 import { fillTemplate, SEARCH_ENGINES } from '../browsing/search-engines.js'
@@ -37,7 +38,11 @@ function openTabs ({ window, services: shell }: WindowContext): SuggestTab[] {
 function depsFor (ctx: WindowContext): OmniboxDeps {
   const { window, services: shell } = ctx
   const searchUrl = (query: string): string => resolveCurrent(shell, query).url
-  const classify = (text: string): ReturnType<typeof parseOmniboxInput> => parseOmniboxInput(text, isDevEthName, searchUrl)
+  /** A file on this computer first: only a person typing here may name one (`../browsing/local-file-input.ts`). */
+  const classify = (text: string): ReturnType<typeof parseOmniboxInput> => {
+    const file = parseLocalFileInput(text)
+    return file === null ? parseOmniboxInput(text, isDevEthName, searchUrl) : { kind: 'url', url: file }
+  }
   const isInternal = (candidate: string): boolean => parseInternalUrl(candidate) !== null || aliasToInternal(candidate) !== null || viewSourceTarget(candidate) !== null
   /** The text Enter would send to the default engine as typed: no address, no page of the shell, no keyword, no `?`. */
   const isPlainSearch = (text: string): boolean =>

@@ -5,6 +5,12 @@ import type { ConnectionInput } from '../connection.js'
 const page = (url: string, extra: Partial<ConnectionInput> = {}): ConnectionInput => ({ url, displayUrl: url, appTab: false, internal: false, ...extra })
 
 describe('connectionOf', () => {
+  it('marks a local file as one, never as a connection, and gives a file with a host nothing', () => {
+    expect(connectionOf(page('file:///home/u/notes/app.html'))).toBe('file')
+    expect(connectionOf(page('file:///home/u/notes/app.html', { appTab: true }))).toBe('file')
+    expect(connectionOf(page('file://nas/share/app.html'))).toBe('none')
+  })
+
   it('trusts live https', () => {
     expect(connectionOf(page('https://example.com/a?b=1'))).toBe('secure')
   })
@@ -45,7 +51,7 @@ describe('connectionOf', () => {
 
   it('gives nothing to the shell\'s own pages or to other schemes', () => {
     expect(connectionOf(page('https://orivon.settings/', { internal: true }))).toBe('none')
-    for (const url of ['orivon://settings/', 'about:blank', 'file:///tmp/a.html', 'view-source:https://example.com/', 'data:text/html,hi', '']) {
+    for (const url of ['orivon://settings/', 'about:blank', 'view-source:https://example.com/', 'data:text/html,hi', '']) {
       expect(connectionOf(page(url)), url).toBe('none')
     }
   })

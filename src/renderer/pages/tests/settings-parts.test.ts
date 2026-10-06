@@ -101,7 +101,7 @@ describe('the sections a feature fills', () => {
     }
   })
 
-  it('has the two site-data rows for the Privacy section', () => {
-    expect(privacySiteDataRows.map((row) => row.id)).toEqual(['site-data-total', 'site-data'])
+  it('has the two site-data rows and the two local-file rows for the Privacy section', () => {
+    expect(privacySiteDataRows.map((row) => row.id)).toEqual(['site-data-total', 'site-data', 'local-files', 'local-files-shared'])
   })
 })

@@ -50,6 +50,25 @@ describe('clearing browsing data', () => {
     expect(app.clearData).not.toHaveBeenCalled()
   })
 
+  it('clears every local-files session with site data and with the cache, and not otherwise', async () => {
+    const { deps } = setup()
+    const shared = { clearData: vi.fn(async () => {}), clearStorageData: vi.fn(async () => {}) }
+    const own = { clearData: vi.fn(async () => {}), clearStorageData: vi.fn(async () => {}) }
+    const withLocal = { ...deps, localFiles: () => [shared, own] }
+
+    await clearBrowsingData({ ...NOTHING, history: 'all', zoomLevels: true }, withLocal)
+    expect(shared.clearData).not.toHaveBeenCalled()
+
+    await clearBrowsingData({ ...NOTHING, siteData: true }, withLocal)
+    for (const local of [shared, own]) {
+      expect((local.clearData.mock.calls as unknown[][])[0]?.[0]).toEqual({ dataTypes: expect.arrayContaining(['cookies', 'localStorage', 'indexedDB']) })
+      expect(local.clearStorageData).toHaveBeenCalledWith({ storages: ['cachestorage'] })
+    }
+
+    await clearBrowsingData({ ...NOTHING, cache: true }, withLocal)
+    for (const local of [shared, own]) expect(local.clearData).toHaveBeenLastCalledWith({ dataTypes: ['cache'] })
+  })
+
   it('clears an app\'s storage only when asked for by name', async () => {
     const { deps, app, websites } = setup()
     await clearBrowsingData({ ...NOTHING, appData: true }, deps)

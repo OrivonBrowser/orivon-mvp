@@ -34,6 +34,13 @@ describe('savePage, a web page', () => {
     }))
   })
 
+  it('starts at a name beside a local file allowed to use Orivon permissions, never at that file', async () => {
+    const { window } = fakeWindow()
+    const deps = { ...fakeDeps(), reservedPath: (path: string) => path === '/home/me/Downloads/A post.html' }
+    await savePage(window, page(contents()), deps)
+    expect(deps.pickSave).toHaveBeenCalledWith(window.window, expect.objectContaining({ defaultPath: '/home/me/Downloads/A post (1).html' }))
+  })
+
   it('saves a complete page for .html and a single file for .mhtml, then names the file', async () => {
     for (const [path, format] of [['/out/a.html', 'HTMLComplete'], ['/out/a.mhtml', 'MHTML']] as const) {
       const { window, show } = fakeWindow()

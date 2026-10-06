@@ -2,7 +2,7 @@
 // small view of the store: it reads the folders and adds trees, and never names a node by anything but the
 // id the store gave it.
 import type { BookmarkNode, BookmarkTreeInput } from '../browsing/bookmark-types.js'
-import { sanitizeDirectUrl } from '../browsing/omnibox.js'
+import { sanitizeBrowserUrl } from '../browsing/local-file-input.js'
 import type { SourceBookmarks } from './import-types.js'
 
 /** The part of the bookmark store an import uses. */
@@ -29,12 +29,12 @@ export function countPages (inputs: readonly BookmarkTreeInput[]): number {
 }
 
 /** The address as the store keeps it, so a page in the source is found when it is already there. */
-const keyOf = (url: string | undefined): string => sanitizeDirectUrl(url ?? '') ?? (url ?? '')
+const keyOf = (url: string | undefined): string => sanitizeBrowserUrl(url ?? '') ?? (url ?? '')
 
 /** The tree without the pages the store would refuse: they are counted as skipped, and must not make a folder for nothing. */
 function withoutInvalid (inputs: readonly BookmarkTreeInput[]): BookmarkTreeInput[] {
   return inputs.flatMap((item): BookmarkTreeInput[] => {
-    if (item.kind === 'url') return sanitizeDirectUrl(item.url ?? '') === null ? [] : [item]
+    if (item.kind === 'url') return sanitizeBrowserUrl(item.url ?? '') === null ? [] : [item]
     return [{ ...item, children: withoutInvalid(item.children ?? []) }]
   })
 }

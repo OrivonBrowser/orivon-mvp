@@ -6,7 +6,7 @@
 // popover (code-guidelines.md Rule 2).
 
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
-import { originFromUrl } from '../../broker/policy/origin.js'
+import { isLocalFileKey, isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.js'
 import type { SubsystemContext } from '../registry.js'
 import { buildSiteInfo } from './site-info.js'
 import type { SiteInfo, SiteUpdate } from './site-info.js'
@@ -81,9 +81,11 @@ export interface SiteInfoController {
   turnOn: (origin: string, capability: CapabilityKind, shownPatterns: readonly Pattern[]) => Promise<TurnOnResult>
   turnOff: (origin: string, capability: CapabilityKind) => Promise<void>
   revokePickedPath: (origin: string, pickId: string) => Promise<void>
+  /** "Delete data" of a local file: its grants, session, saved files and record. False for a key that is not one, or when a step failed. */
+  deleteLocalFileData: (key: string) => Promise<boolean>
 }
 
-export function createSiteInfoController (ctx: SubsystemContext, trustSources: SiteTrustSources): SiteInfoController {
+export function createSiteInfoController (ctx: SubsystemContext, trustSources: SiteTrustSources, deleteLocalFile: (key: string) => Promise<boolean> = async () => false): SiteInfoController {
   // The extensions disclosure (docs/planning/extensions-exploration.md) -- see
   // README.md's Design notes for why this is computed once, ahead of the
   // registered/unregistered branch `siteInfoFor` makes below.
@@ -107,7 +109,8 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
   }
 
   async function builtSiteInfoFor (url: string): Promise<SiteInfo> {
-    const origin = originFromUrl(url)
+    // A local file is its own key; every other address is its web origin.
+    const origin = isolationKeyFromUrl(url)
     // No canonical origin (about:, chrome://, a malformed url) -- nothing
     // to show, and no address for `broker` to look anything up under.
     if (origin === null) return EMPTY_SITE_INFO(url)
@@ -132,7 +135,7 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
   return {
     async siteSummaryFor (url) {
       const info = await siteInfoFor(url)
-      return { asked: info.asked || /^https?:\/\//.test(info.origin), warning: info.capabilityRows.some((r) => r.warning) || info.pickedPathRows.some((r) => r.warning) }
+      return { asked: info.asked || /^https?:\/\//.test(info.origin) || isLocalFileKey(info.origin), warning: info.capabilityRows.some((r) => r.warning) || info.pickedPathRows.some((r) => r.warning) }
     },
 
     siteInfoFor,
@@ -157,7 +160,7 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     },
 
     async storageDeclarationFor (url) {
-      const origin = originFromUrl(url)
+      const origin = isolationKeyFromUrl(url)
       const broker = ctx.broker
       if (origin === null || broker === undefined || !broker.app.isRegisteredSync(origin)) return null
       let manifest
@@ -191,6 +194,10 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
       const broker = ctx.broker
       if (broker === undefined) return
       await broker.revokeUserSelectedPath(origin, pickId)
+    },
+
+    async deleteLocalFileData (key) {
+      return isLocalFileKey(key) ? await deleteLocalFile(key) : false
     }
   }
 }

@@ -69,7 +69,21 @@ export function urlsFromArgv (argv: readonly string[], limit = 8): string[] {
   return urls
 }
 
-/** A command line without the addresses or the launcher actions on it: starting the browser again opens none of them a second time. */
-export function withoutAddresses (argv: readonly string[]): string[] {
-  return argv.filter((argument) => !ADDRESS_ARGUMENT.test(argument) && argument !== NEW_WINDOW_FLAG && argument !== NEW_PRIVATE_WINDOW_FLAG)
+/**
+ * `args` (the command line after the program) with only its switches left, and the app path of a run from source:
+ * starting the browser again opens no address, local file or path operand a second time, however it was named
+ * (a link, a `file:` URI, a plain path, or anything after `--`), and no launcher action either.
+ */
+export function withoutAddresses (args: readonly string[], packaged = true): string[] {
+  const kept: string[] = []
+  let appPathPending = !packaged
+  for (const argument of switchesOf(args)) {
+    if (argument.startsWith('-')) {
+      if (argument !== NEW_WINDOW_FLAG && argument !== NEW_PRIVATE_WINDOW_FLAG) kept.push(argument)
+    } else if (appPathPending) {
+      appPathPending = false
+      kept.push(argument)
+    }
+  }
+  return kept
 }

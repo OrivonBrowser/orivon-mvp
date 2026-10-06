@@ -9,6 +9,7 @@ import type { ShellWindow } from '../shell/window-registry.js'
 import { closeOthers, closeToRight, duplicateTab, toggleMute, togglePin } from '../shell/tab-commands.js'
 import { openBookmarkAllTabs, starCommand } from '../shell/bookmark-bubble/open-edit.js'
 import { toggleBookmarksBar } from '../shell/bookmarks-bar/bar-visibility.js'
+import { openFileCommand } from '../shell/open-file-command.js'
 import { moveToNewWindow } from '../shell/tab-move.js'
 import { goHome } from '../shell/home.js'
 import { startNavigation } from '../shell/leave-page-prompt.js'
@@ -58,6 +59,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
 
   switch (id) {
     case 'tab.new': tabs.createTab(); return
+    case 'file.open': void openFileCommand(target); return
     case 'tab.close': if (active !== undefined) tabs.closeTab(active.id); return
     case 'tab.next': case 'tab.previous': {
       const next = shownNeighbour(tabs, activeTabId, id === 'tab.next' ? 1 : -1)

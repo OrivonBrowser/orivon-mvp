@@ -64,3 +64,6 @@
 .address-mark .icon { width: 14px; height: 14px; }
 .address-mark.insecure { color: var(--winsecure); }
 .address-mark-label { font-size: 12px; font-weight: 600; }
+
+/* A document opened from this computer: named, in the bar's own tone and never with a lock. */
+.address-mark.file { color: var(--wink); }

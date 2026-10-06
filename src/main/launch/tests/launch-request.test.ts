@@ -4,6 +4,8 @@ import { atStartup, readLaunchRequest, requestFromArgv } from '../launch-request
 const SOURCE = ['/usr/lib/electron', '/home/p/orivon']
 const PACKAGED = ['/opt/Orivon/orivon']
 
+const NOTHING_THERE = { cwd: '/work', platform: 'linux' as const, kindOf: () => undefined }
+
 describe('requestFromArgv', () => {
   it('is a window when a source run names no operand, and when a packaged run names none', () => {
     expect(requestFromArgv([...SOURCE, '--no-sandbox', '--user-data-dir=/x'], false)).toEqual({ kind: 'window', urls: [] })
@@ -16,9 +18,21 @@ describe('requestFromArgv', () => {
   })
 
   it('is an open with no address for an operand that is not a web address, so it only focuses', () => {
-    expect(requestFromArgv([...SOURCE, './a.html'], false)).toEqual({ kind: 'open', urls: [] })
-    expect(requestFromArgv([...PACKAGED, 'mailto:x@y.example'], true)).toEqual({ kind: 'open', urls: [] })
-    expect(requestFromArgv([...PACKAGED, 'file:///etc/passwd'], true)).toEqual({ kind: 'open', urls: [] })
+    expect(requestFromArgv([...SOURCE, './a.html'], false, NOTHING_THERE)).toEqual({ kind: 'open', urls: [] })
+    expect(requestFromArgv([...PACKAGED, 'mailto:x@y.example'], true, NOTHING_THERE)).toEqual({ kind: 'open', urls: [] })
+    expect(requestFromArgv([...PACKAGED, 'file://server/share/a.html'], true, NOTHING_THERE)).toEqual({ kind: 'open', urls: [] })
+  })
+
+  it('opens a file: URI and an existing path, resolved against the directory of the start', () => {
+    const disk = { cwd: '/work', platform: 'linux' as const, kindOf: (path: string) => path === '/work/notes/a.html' ? 'file' as const : undefined }
+    expect(requestFromArgv([...PACKAGED, 'notes/a.html', 'file:///tmp/b.html', 'missing.html'], true, disk))
+      .toEqual({ kind: 'open', urls: ['file:///work/notes/a.html', 'file:///tmp/b.html'] })
+    expect(requestFromArgv([...SOURCE, 'notes/a.html'], false, disk)).toEqual({ kind: 'open', urls: ['file:///work/notes/a.html'] })
+  })
+
+  it('never reads the app path of a source run as a file', () => {
+    const disk = { cwd: '/work', platform: 'linux' as const, kindOf: () => 'directory' as const }
+    expect(requestFromArgv(['/usr/lib/electron', '.'], false, disk)).toEqual({ kind: 'window', urls: [] })
   })
 
   it('is a window with its addresses for --new-window', () => {
@@ -60,6 +74,12 @@ describe('readLaunchRequest', () => {
   it('is what the second start sent, when it is well formed', () => {
     expect(readLaunchRequest({ orivonLaunch: 1, kind: 'window', urls: ['https://a.example/'] }, argv)).toEqual({ kind: 'window', urls: ['https://a.example/'] })
     expect(readLaunchRequest({ orivonLaunch: 1, kind: 'private', urls: [] }, argv)).toEqual({ kind: 'private', urls: [] })
+  })
+
+  it('keeps a local file the second start sent, and falls back on a list with a malformed one', () => {
+    expect(readLaunchRequest({ orivonLaunch: 1, kind: 'open', urls: ['file:///tmp/a.html', 'https://a.example/'] }, argv))
+      .toEqual({ kind: 'open', urls: ['file:///tmp/a.html', 'https://a.example/'] })
+    expect(readLaunchRequest({ orivonLaunch: 1, kind: 'open', urls: ['file://server/share/a.html'] }, argv)).toEqual({ kind: 'open', urls: ['https://from-argv.example/'] })
   })
 
   it('falls back to opening the addresses on the command line for anything else', () => {

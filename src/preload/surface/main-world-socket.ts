@@ -331,6 +331,8 @@ export function installOrivon (
     return typeof text === 'string' && applyOwn(someOwn, needles, [(needle: string) => applyOwn(indexOfOwn, text, [needle]) !== -1])
   }
   interface CallerFrame { fileName?: string, scriptNameOrSourceURL?: string, evalOrigin?: string }
+  // A document that is itself a local file runs scripts it loaded from `file:`, as a web page does from http(s); a web document has no `file:` frame of its own to count.
+  const fileDocument = typeof window !== 'undefined' && window.location.protocol === 'file:'
   /** Pure over already-captured frames (the wrapper's own already excluded). A verbatim top-level copy lives in tests/main-world-socket-extension-filter.test.ts -- one test there asserts the two never drift; this one cannot be imported (file header). */
   function callerIsRefused (frames: readonly CallerFrame[]): boolean {
     const isExtension = (f: CallerFrame): boolean =>
@@ -338,7 +340,7 @@ export function installOrivon (
     // A real script's fileName only, STARTS-WITH -- never scriptNameOrSourceURL or an eval origin, both of which a `//# sourceURL=...` comment rewrites. README.md's Design notes.
     const startsWithAny = (text: unknown, prefixes: readonly string[]): boolean =>
       typeof text === 'string' && applyOwn(someOwn, prefixes, [(prefix: string) => applyOwn(startsWithOwn, text, [prefix])])
-    const isPage = (f: CallerFrame): boolean => startsWithAny(f.fileName, ['http://', 'https://', 'blob:http://', 'blob:https://'])
+    const isPage = (f: CallerFrame): boolean => startsWithAny(f.fileName, ['http://', 'https://', 'blob:http://', 'blob:https://']) || (fileDocument && startsWithAny(f.fileName, ['file://']))
     if (applyOwn(someOwn, frames, [isExtension])) return true
     return !applyOwn(someOwn, frames, [isPage])
   }

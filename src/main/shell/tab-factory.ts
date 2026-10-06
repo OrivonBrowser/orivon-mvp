@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import type { WebContentsView } from 'electron'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { sanitizeDirectUrl } from '../browsing/omnibox.js'
+import { localPartitionFor } from '../local-files/partition.js'
 import { INTERNAL_PARTITION } from '../pages/internal-pages.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
 import type { InternalPageRegistry } from '../pages/internal-registry.js'
@@ -143,6 +144,19 @@ export class TabFactory {
     wireView(id, record)
     this.host.tabLifecycle?.tabCreated(view.webContents, this.host.window)
     return { id, record, target }
+  }
+
+  /** A document from this computer: the session it belongs in (`localPartitionFor`), the ordinary preload (its `orivon` is refused for lack of a grant), never the app-tab flag.
+   * `url` is loaded whole; undefined when it is not a local file. */
+  localFile (url: string): (BuiltTab & { readonly target: string }) | undefined {
+    const partition = localPartitionFor(url)
+    if (partition === undefined) return undefined
+    const view = makeTabView(this.appPreload, partition, undefined, { target: url })
+    const id = makeTabId()
+    const record = this.recordFor(view, partition)
+    wireView(id, record)
+    this.host.tabLifecycle?.tabCreated(view.webContents, this.host.window)
+    return { id, record, target: url }
   }
 
   /** One of the shell's own pages. Its view lives in the internal session with the

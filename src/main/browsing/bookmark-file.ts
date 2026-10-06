@@ -5,7 +5,7 @@ import { decodeDataUrl, MAX_FAVICON_BYTES, toDataUrl } from './favicon-format.js
 import { ID_PATTERN, MAX_DEPTH, MAX_NODES, ROOTS, clipTitle, emptyDraft, freshId, randomId } from './bookmark-tree.js'
 import type { BookmarkTree, IdSource, TreeDraft } from './bookmark-tree.js'
 import type { BookmarkNode, BookmarkRoot } from './bookmark-types.js'
-import { sanitizeDirectUrl } from './omnibox.js'
+import { sanitizeBrowserUrl } from './local-file-input.js'
 
 export const FILE_VERSION = 2
 
@@ -61,7 +61,7 @@ function readNode (raw: unknown, parent: string, depth: number, draft: TreeDraft
   // manager page can only name a node whose id looks like one.
   const id = typeof given === 'string' && ID_PATTERN.test(given) && !draft.nodes.has(given) ? given : freshId(draft.nodes, newId)
   if (raw['kind'] === 'url') {
-    const url = typeof raw['url'] === 'string' ? sanitizeDirectUrl(raw['url']) : null
+    const url = typeof raw['url'] === 'string' ? sanitizeBrowserUrl(raw['url']) : null
     if (url === null) return null
     const node: BookmarkNode = { id, parent, kind: 'url', title, url, favicon: readFavicon(raw), added }
     if (typeof raw['read'] === 'boolean') node.read = raw['read']
@@ -93,7 +93,7 @@ function readLegacy (list: readonly unknown[], added: number, newId: IdSource): 
     if (!isRecord(entry)) continue
     const { url, title } = entry
     if (typeof url !== 'string' || typeof title !== 'string') continue
-    const safe = sanitizeDirectUrl(url)
+    const safe = sanitizeBrowserUrl(url)
     if (safe === null) continue
     const id = freshId(draft.nodes, newId)
     draft.nodes.set(id, { id, parent: 'bar', kind: 'url', title: clipTitle(title), url: safe, favicon: readFavicon(entry), added })

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { canOfferDefault, isSameProgram, makeDefaultBrowser, readDefaultBrowser, SETTLE_MS, unavailableReason } from '../default-browser.js'
+import { canOfferDefault, isSameProgram, LINUX_DOCUMENT_TYPES, makeDefaultBrowser, readDefaultBrowser, SETTLE_MS, unavailableReason } from '../default-browser.js'
 import type { DefaultBrowserHost, Launcher } from '../default-browser.js'
 
 const PLATFORMS: readonly NodeJS.Platform[] = ['linux', 'win32', 'darwin']
@@ -29,14 +29,15 @@ describe('what each platform and launcher may do', () => {
   })
 })
 
-function host (over: { platform?: NodeJS.Platform, launcher?: Launcher, registered?: { value: boolean } } = {}): DefaultBrowserHost & { isDefault: ReturnType<typeof vi.fn>, setDefault: ReturnType<typeof vi.fn>, openSettings: ReturnType<typeof vi.fn> } {
+function host (over: { platform?: NodeJS.Platform, launcher?: Launcher, registered?: { value: boolean } } = {}): DefaultBrowserHost & { isDefault: ReturnType<typeof vi.fn>, setDefault: ReturnType<typeof vi.fn>, openSettings: ReturnType<typeof vi.fn>, setDocumentDefault: ReturnType<typeof vi.fn> } {
   const registered = over.registered ?? { value: false }
   return {
     platform: over.platform ?? 'linux',
     launcher: over.launcher ?? 'installed',
     isDefault: vi.fn(async () => registered.value),
     setDefault: vi.fn(() => { registered.value = true; return true }),
-    openSettings: vi.fn(async () => {})
+    openSettings: vi.fn(async () => {}),
+    setDocumentDefault: vi.fn(() => Promise.resolve(true))
   }
 }
 
@@ -131,6 +132,33 @@ describe('makeDefaultBrowser', () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => {})
     expect(await makeDefaultBrowser(failing, async () => {})).toEqual({ state: 'can-set', ok: false, handedOff: false })
     log.mockRestore()
+  })
+})
+
+describe('the document types a default browser takes', () => {
+  it('are html, xhtml and pdf, and not svg, which stays under Open with', () => {
+    expect(LINUX_DOCUMENT_TYPES).toEqual(['text/html', 'application/xhtml+xml', 'application/pdf'])
+  })
+
+  it('are registered on Linux with the web protocols, one type at a time', async () => {
+    const h = host()
+    await makeDefaultBrowser(h, async () => {})
+    expect(h.setDocumentDefault.mock.calls.map(([type]) => type)).toEqual([...LINUX_DOCUMENT_TYPES])
+  })
+
+  it('survive one type that cannot be registered', async () => {
+    const h = host()
+    h.setDocumentDefault.mockImplementationOnce(() => { throw new Error('xdg-mime failed') })
+    await makeDefaultBrowser(h, async () => {})
+    expect(h.setDocumentDefault).toHaveBeenCalledTimes(LINUX_DOCUMENT_TYPES.length)
+  })
+
+  it('are left to the person on macOS and Windows, and never touched from source or an AppImage', async () => {
+    for (const over of [{ platform: 'darwin' as const }, { platform: 'win32' as const }, { launcher: 'source' as const }, { launcher: 'appimage' as const }]) {
+      const h = host(over)
+      await makeDefaultBrowser(h, async () => {})
+      expect(h.setDocumentDefault).not.toHaveBeenCalled()
+    }
   })
 })
 

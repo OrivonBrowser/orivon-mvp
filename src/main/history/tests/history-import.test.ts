@@ -13,7 +13,7 @@ describe('selectImportRows', () => {
   it('keeps the addresses the recorder keeps, and drops the rest', () => {
     const kept = select([
       row('https://a.test/', NOW - 1), row('http://b.test/', NOW - 2), row('ipfs://bafy/x', NOW - 3), row('ipns://k/y', NOW - 4),
-      row('javascript:alert(1)', NOW - 5), row('file:///etc/passwd', NOW - 6), row('chrome://settings', NOW - 7), row('about:blank', NOW - 8),
+      row('javascript:alert(1)', NOW - 5), row('file://nas/share/passwd', NOW - 6), row('chrome://settings', NOW - 7), row('about:blank', NOW - 8),
       row('orivon://history', NOW - 9), row('data:text/html,hi', NOW - 10), row('not a url', NOW - 11), row('view-source:https://a.test/', NOW - 12)
     ])
     expect(kept.map((entry) => entry.url)).toEqual(['https://a.test/', 'http://b.test/', 'ipfs://bafy/x', 'ipns://k/y'])

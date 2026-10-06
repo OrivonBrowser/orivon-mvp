@@ -30,7 +30,7 @@ describe('parseSession', () => {
   })
 
   it('drops a tab that a tab could not open, and a window that is not one', () => {
-    const parsed = parseSession(file([window([tab(1), { url: 'javascript:alert(1)' }, { url: 'file:///etc/passwd' }, { url: 'view-source:https://a.example/' }, 'x', tab(2)]), 'x', null, { tabs: 'x' }]))
+    const parsed = parseSession(file([window([tab(1), { url: 'javascript:alert(1)' }, { url: 'file://server/share/passwd' }, { url: 'view-source:https://a.example/' }, 'x', tab(2)]), 'x', null, { tabs: 'x' }]))
     expect(parsed?.windows).toHaveLength(1)
     expect(parsed?.windows[0]?.tabs.map((entry) => entry.url)).toEqual(['https://a.example/1', 'https://a.example/2'])
   })

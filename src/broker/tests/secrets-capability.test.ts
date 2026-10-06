@@ -123,3 +123,31 @@ describe('orivon.secrets.decrypt', () => {
     expect(await broker.secrets.decrypt(APP, wire)).toEqual(new Uint8Array([1, 2, 3]))
   })
 })
+
+describe('orivon.secrets for a local file', () => {
+  const FILE = 'file:///home/u/notes/app.html'
+
+  it('opens ciphertext after a restart: a second broker on the same seed and path decrypts it', async () => {
+    const first = createBroker(baseDeps({ keychain: persistentKeychain() }))
+    first.registerApp(FILE, manifestWith({ secrets: {} }))
+    await first.grant(FILE, 'secrets', [])
+    const wire = await first.secrets.encrypt(FILE, new TextEncoder().encode('kept'))
+
+    const second = createBroker(baseDeps({ keychain: persistentKeychain() }))
+    second.registerApp(FILE, manifestWith({ secrets: {} }))
+    await second.grant(FILE, 'secrets', [])
+    expect(await second.secrets.decrypt(FILE, wire)).toEqual(new TextEncoder().encode('kept'))
+  })
+
+  it('is invalid for ciphertext a sibling file sealed', async () => {
+    const broker = createBroker(baseDeps({ keychain: persistentKeychain() }))
+    const SIBLING = 'file:///home/u/notes/other.html'
+    for (const key of [FILE, SIBLING]) {
+      broker.registerApp(key, manifestWith({ secrets: {} }))
+      await broker.grant(key, 'secrets', [])
+    }
+    const wire = await broker.secrets.encrypt(SIBLING, new Uint8Array([1]))
+
+    await expect(broker.secrets.decrypt(FILE, wire)).rejects.toMatchObject({ code: 'invalid' })
+  })
+})
