@@ -48,6 +48,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Orivon run from source gets its own Linux dock entry: instant when open, and it can now be set as the default browser.
 - Screen sharing on Wayland now shares the monitor you pick; two identical monitors had confused GNOME's restore of the choice.
 - A page's CaptureController now binds to Orivon's share, so Meet's tab zoom and scroll work; its black presenter tile awaits a retest.
+- Every ported app republished naming its home, <app>.orivonstack.eth: Attila's judged level counts only there, and in development under the same names.
 
 ### In my head
 
