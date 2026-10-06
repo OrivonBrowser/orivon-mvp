@@ -32,8 +32,10 @@ interface SavedWindow { bounds?: { x: number, y: number, width: number, height: 
 const url = (name: string): string => `${server.origin}/${name}`
 const tabOf = (name: string, pinned = false): SavedTab => ({ url: url(name), title: `page ${name}`, pinned })
 
-const seed = (files: { settings?: Record<string, unknown>, session?: string }) => async (dir: string): Promise<void> => {
+/** `updateNote`: when the one-shot note an update restart leaves was written, in epoch ms. */
+const seed = (files: { settings?: Record<string, unknown>, session?: string, updateNote?: number }) => async (dir: string): Promise<void> => {
   await mkdir(dir, { recursive: true })
+  if (files.updateNote !== undefined) await writeFile(join(dir, 'restore-after-update'), String(files.updateNote))
   if (files.settings !== undefined) await writeFile(join(dir, 'settings.json'), JSON.stringify({ version: 1, values: files.settings }))
   if (files.session !== undefined) await writeFile(join(dir, 'session.json'), files.session)
 }
@@ -107,6 +109,33 @@ it('opens one new tab page on a fresh profile, and on the default choice whateve
     expect(chromePages(app)).toHaveLength(1)
     expect(await windowCount(app)).toBe(1)
     expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('after an update restart continues with the last session whatever the start-up choice says, and uses the note up', async () => {
+  const session = sessionText([{ active: 0, tabs: [tabOf('a'), tabOf('b')] }])
+  const { app } = await launchShell({ seedProfile: seed({ settings: { 'startup.mode': 'newTab' }, session, updateNote: Date.now() }) })
+  try {
+    const restored = await windowShowing(app, 'page a')
+    await waitTitles(restored, ['page a', 'page b'])
+    const dir = await userDataOf(app)
+    expect(await waitFor(async () => await readFile(join(dir, 'restore-after-update'), 'utf8').then(() => false, () => true))).toBe(true)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('ignores the note of an install that never finished, and removes it', async () => {
+  const session = sessionText([{ active: 0, tabs: [tabOf('a')] }])
+  const { app, chrome } = await launchShell({ seedProfile: seed({ session, updateNote: Date.now() - 60 * 60_000 }) })
+  try {
+    await waitTitles(chrome, ['New Tab'])
+    expect(await windowCount(app)).toBe(1)
+    const dir = await userDataOf(app)
+    expect(await readFile(join(dir, 'restore-after-update'), 'utf8').then(() => true, () => false)).toBe(false)
   } finally {
     await closeElectron(app)
   }
