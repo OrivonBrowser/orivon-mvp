@@ -17,6 +17,12 @@ describe('segmentsFor', () => {
     expect(segmentsFor({ monitorTypeSurfaces: 'include' })).toEqual(['tab', 'window', 'screen'])
     expect(segmentsFor({ monitorTypeSurfaces: 'exclude' })).toEqual(['tab', 'window'])
   })
+
+  it('offers one segment for the system dialog, which lists windows and screens together, unless the page asks for no monitors', () => {
+    expect(segmentsFor({}, 'portal')).toEqual(['tab', 'screen'])
+    expect(segmentsFor({ monitorTypeSurfaces: 'exclude' }, 'portal')).toEqual(['tab', 'window'])
+    expect(segmentsFor({}, 'permission')).toEqual(['tab', 'window', 'screen'])
+  })
 })
 
 describe('defaultSegment', () => {
@@ -35,6 +41,10 @@ describe('defaultSegment', () => {
 
   it('falls back to tabs when the segment asked for is not offered', () => {
     expect(defaultSegment({ displaySurface: 'monitor' }, ['tab', 'window'])).toBe('tab')
+  })
+
+  it('opens a page that asks for a window on the system dialog\'s segment, which lists windows too', () => {
+    expect(defaultSegment({ displaySurface: 'window' }, ['tab', 'screen'])).toBe('screen')
   })
 })
 
@@ -101,7 +111,7 @@ describe('what a card may carry', () => {
 
   it('names the system dialog on the one card of a Wayland segment, and says it opens at Share', () => {
     expect(portalCardText('window')).toEqual({ label: 'Choose a window in the system dialog', sub: 'Your system asks which window once you press Share.' })
-    expect(portalCardText('screen')).toEqual({ label: 'Choose a screen in the system dialog', sub: 'Your system asks which screen once you press Share.' })
+    expect(portalCardText('screen')).toEqual({ label: 'Choose a window or screen in the system dialog', sub: 'Your system asks which one once you press Share.' })
   })
 
   it('numbers the source ids of a Wayland share far above the capture\'s own and never repeats one', () => {
