@@ -16,18 +16,20 @@ describe('shellTarget', () => {
   const page = (url: string): { type: string, url: string, webSocketDebuggerUrl: string } =>
     ({ type: 'page', url, webSocketDebuggerUrl: 'ws://127.0.0.1:1/devtools/page/1' })
 
-  it('finds the chrome page loaded from the asar on each system', () => {
-    const linux = page('file:///opt/Orivon/resources/app.asar/out/renderer/index.html')
-    const windows = page('file:///C:/Users/runner/AppData/Local/Programs/Orivon/resources/app.asar/out/renderer/index.html')
-    const mac = page('file:///Volumes/Orivon/Orivon.app/Contents/Resources/app.asar/out/renderer/index.html')
-    for (const target of [linux, windows, mac]) expect(shellTarget([page('about:blank'), target])).toBe(target)
+  it('finds the chrome page by its shell-scheme address, the same on every system', () => {
+    const chrome = page('orivon-shell://renderer/index.html')
+    const withQuery = page('orivon-shell://renderer/index.html?window=2')
+    for (const target of [chrome, withQuery]) expect(shellTarget([page('about:blank'), target])).toBe(target)
   })
 
-  it('ignores a build run from source, other renderer pages and non-page targets', () => {
+  it('ignores other shell pages, a website that quotes the address, the old file address and non-page targets', () => {
     expect(shellTarget([
-      page('file:///home/dev/orivon/out/renderer/index.html'),
-      page('file:///opt/Orivon/resources/app.asar/out/renderer/intro/index.html'),
-      { type: 'service_worker', url: 'file:///opt/Orivon/resources/app.asar/out/renderer/index.html' }
+      page('orivon-shell://renderer/newtab/index.html'),
+      page('orivon-shell://renderer/intro/index.html'),
+      page('https://site.example/?next=orivon-shell://renderer/index.html'),
+      page('https://site.example/orivon-shell://renderer/index.html'),
+      page('file:///opt/Orivon/resources/app.asar/out/renderer/index.html'),
+      { type: 'service_worker', url: 'orivon-shell://renderer/index.html' }
     ])).toBeUndefined()
   })
 })
