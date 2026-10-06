@@ -14,10 +14,12 @@ while the choice is undecided, and the region decides nothing in it. Settings ha
 the literal text of both messages, the history of what was sent, the install ID, **Delete my
 data**, and the notice.
 
-**What runs, and when.** Telemetry starts only in `npm run start` and packaged builds, outside a
-private window, and with `ORIVON_TELEMETRY` not set to `off`. A development build (`npm run dev`),
-a private window and an `off` run start nothing: no measuring, no machine-ID read, no send. The
-e2e launch helper sets `off` and a temporary telemetry home unless a spec opts in.
+**What runs, and when.** Telemetry starts outside a private window and with `ORIVON_TELEMETRY`
+not set to `off`. A private window and an `off` run start nothing: no measuring, no machine-ID
+read, no send. A development build (`npm run dev`) runs all of it against its own temporary
+telemetry home, but sends to `https://telemetry.invalid/v1/`, which never answers, so every send
+fails as offline does and nothing reaches the server. The e2e launch helper sets `off` and a
+temporary telemetry home unless a spec opts in.
 
 **Identity and consent are per computer and per operating-system user, not per profile.** The
 consent file and, only where the machine ID cannot be read, a fallback ID live in

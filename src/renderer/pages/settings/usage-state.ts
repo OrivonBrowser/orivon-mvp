@@ -7,7 +7,7 @@ import type { OrivonInternal } from '../shared/bridge.js'
 export interface UsageStatus {
   readonly private: boolean
   /** Why telemetry does not run in this build or launch: nothing is counted, so nothing can be turned on. */
-  readonly off?: 'development' | 'env' | 'private'
+  readonly off?: 'env' | 'private'
   readonly consent?: 'undecided' | 'accepted' | 'declined'
   readonly region?: string
   /** Whether anything was ever sent from this computer: with no acceptance there is nothing to delete. */

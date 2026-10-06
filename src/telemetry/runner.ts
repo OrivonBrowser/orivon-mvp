@@ -7,8 +7,9 @@
 // 'electron' is silently broken under the unit tests (outside a real Electron process the package's
 // entry point is a string, not the API surface).
 //
-// Telemetry never starts under `npm run dev`, under ORIVON_TELEMETRY=off, or in a private session: then
-// nothing is counted, no machine identifier is read and nothing is sent (mode.ts).
+// Telemetry never starts under ORIVON_TELEMETRY=off or in a private session: then nothing is counted, no
+// machine identifier is read and nothing is sent. Under `npm run dev` it runs, but sends to an address
+// that cannot answer (mode.ts).
 import type { App } from 'electron'
 import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
@@ -36,7 +37,7 @@ const MACHINE_ID_TIMEOUT_MS = 3_000
 
 async function post (endpoint: Endpoint, body: SentPayload | ErasePayload): Promise<boolean> {
   const { net } = await import('electron')
-  const base = ingestBaseUrl(IS_TEST_BUILD, testOverrides().url)
+  const base = ingestBaseUrl(IS_TEST_BUILD, testOverrides().url, modeInputsFromEnv(process.env, devModeEnabled(), false).development)
   try {
     const response = await net.fetch(endpointUrl(base, endpoint), {
       method: 'POST',

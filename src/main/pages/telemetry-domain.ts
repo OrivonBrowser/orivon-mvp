@@ -1,8 +1,8 @@
 // What the Settings page may ask about usage statistics: whether they are on, the literal text of the
 // two reports that would be sent and what has been sent, to turn them on or off, and to delete what the
 // server holds. Nothing is sent before a choice (ADR-0004), so an undecided state is shown as undecided
-// and never as either answer. A private session measures nothing, and a development build or a test
-// launch never runs telemetry: neither has anything to decide.
+// and never as either answer. A private session measures nothing, and a test launch never runs
+// telemetry: neither has anything to decide.
 import { eraseTelemetry, getTelemetryStatus, setTelemetryOn } from '../../telemetry/runner.js'
 import type { InternalDomain } from './internal-ipc.js'
 

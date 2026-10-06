@@ -21,8 +21,8 @@ describe('the telemetry domain', () => {
   })
 
   it('says why telemetry is not running when it is not, and offers nothing else', async () => {
-    runner.getTelemetryStatus.mockResolvedValueOnce({ off: 'development' })
-    expect(await telemetryDomain(false).handle({ type: 'status' }, CALLER)).toEqual({ private: false, off: 'development' })
+    runner.getTelemetryStatus.mockResolvedValueOnce({ off: 'env' })
+    expect(await telemetryDomain(false).handle({ type: 'status' }, CALLER)).toEqual({ private: false, off: 'env' })
   })
 
   it('turns telemetry on or off for the person, with a real boolean and nothing else', async () => {

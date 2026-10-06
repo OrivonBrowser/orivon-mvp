@@ -40,8 +40,10 @@ response channel) and widens what is measured and how the person chooses.
    closing snapshot of a month sent once after it ends: at a month's start, one more of each. Nothing queues beyond one message.
 7. **Erase.** `POST /v1/erase` with the install identifier, from a "Delete my data" button that
    also turns telemetry off.
-8. **Where it never runs.** Development builds (`npm run dev`), a private window, and any run with
-   `ORIVON_TELEMETRY=off` start no measuring, read no machine ID and send nothing.
+8. **Where it never runs.** A private window and any run with `ORIVON_TELEMETRY=off` start no
+   measuring, read no machine ID and send nothing. A development build (`npm run dev`) runs all of
+   it but sends to `https://telemetry.invalid/v1/`, which never answers, so nothing reaches the
+   server (d-0544).
 9. **`NOTICE_VERSION`.** A stored acceptance whose notice version differs from the code's counts
    as undecided, so after a change to the payload or the notice nothing is sent until the person
    turns telemetry on again in Settings. The welcome does not ask again, since it shows once per

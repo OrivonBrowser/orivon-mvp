@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { TELEMETRY_BASE_URL, endpointUrl, ingestBaseUrl, modeInputsFromEnv, telemetryHome, telemetryOffReason, testOverrides } from '../mode.js'
+import { DEVELOPMENT_BASE_URL, TELEMETRY_BASE_URL, endpointUrl, ingestBaseUrl, modeInputsFromEnv, telemetryHome, telemetryOffReason, testOverrides } from '../mode.js'
 
 describe('telemetryOffReason', () => {
   const on = { development: false, disabledByEnv: false, privateSession: false }
 
-  it('runs in an ordinary session and in none of the other three', () => {
+  it('runs in an ordinary session and a development run, and in neither of the other two', () => {
     expect(telemetryOffReason(on)).toBeUndefined()
-    expect(telemetryOffReason({ ...on, development: true })).toBe('development')
+    expect(telemetryOffReason({ ...on, development: true })).toBeUndefined()
     expect(telemetryOffReason({ ...on, disabledByEnv: true })).toBe('env')
     expect(telemetryOffReason({ ...on, privateSession: true })).toBe('private')
   })
@@ -43,15 +43,21 @@ describe('telemetryHome', () => {
 
 describe('ingestBaseUrl', () => {
   it('is the real address in an ordinary build, whatever the environment says', () => {
-    expect(ingestBaseUrl(false, 'http://127.0.0.1:9/')).toBe(TELEMETRY_BASE_URL)
+    expect(ingestBaseUrl(false, 'http://127.0.0.1:9/', false)).toBe(TELEMETRY_BASE_URL)
     expect(TELEMETRY_BASE_URL).toBe('https://telemetry.orivonstack.com/v1/')
   })
 
+  it('is an address that cannot answer in a development run, so nothing reaches the server', () => {
+    expect(ingestBaseUrl(false, undefined, true)).toBe(DEVELOPMENT_BASE_URL)
+    expect(ingestBaseUrl(true, 'http://example.com/', true)).toBe(DEVELOPMENT_BASE_URL)
+    expect(new URL(DEVELOPMENT_BASE_URL).hostname.endsWith('.invalid')).toBe(true)
+  })
+
   it('takes a loopback http address in a test build, and nothing else', () => {
-    expect(ingestBaseUrl(true, 'http://127.0.0.1:4100/v1')).toBe('http://127.0.0.1:4100/v1/')
-    expect(ingestBaseUrl(true, 'http://localhost:4100/')).toBe('http://localhost:4100/')
+    expect(ingestBaseUrl(true, 'http://127.0.0.1:4100/v1', false)).toBe('http://127.0.0.1:4100/v1/')
+    expect(ingestBaseUrl(true, 'http://localhost:4100/', true)).toBe('http://localhost:4100/')
     for (const bad of ['https://127.0.0.1/', 'http://example.com/', 'http://192.168.1.2/', 'nope', undefined]) {
-      expect(ingestBaseUrl(true, bad)).toBe(TELEMETRY_BASE_URL)
+      expect(ingestBaseUrl(true, bad, false)).toBe(TELEMETRY_BASE_URL)
     }
   })
 
