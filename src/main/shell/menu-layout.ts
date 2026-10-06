@@ -40,6 +40,7 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
   'tab.new',
   'window.new',
   'window.newPrivate',
+  'file.open',
   '-',
   'history.open',
   { item: 'tab.reopen', hint: ({ services }) => hintFor(services.closedTabs) },

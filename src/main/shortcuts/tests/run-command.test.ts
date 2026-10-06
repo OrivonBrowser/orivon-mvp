@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { leaveAllowed } from '../../shell/leave-page-prompt.js'
 import type { ShellWindow } from '../../shell/window-registry.js'
 import { COMMANDS } from '../commands.js'
+import { openFileCommand } from '../../shell/open-file-command.js'
 import { runCommand } from '../run-command.js'
 import type { CommandDeps } from '../run-command.js'
 import type { ShellServices } from '../../shell/shell-services.js'
@@ -13,6 +14,7 @@ import * as shareCommands from '../../os/share-commands.js'
 vi.mock('../../page-tools/page-commands.js', () => Object.fromEntries(['print', 'pdf', 'save', 'viewSource', 'screenshot', 'pip'].map((name) => [`${name}Command`, vi.fn(async () => {})])))
 vi.mock('../../page-tools/real-deps.js', () => ({ realDeps: { real: true } }))
 vi.mock('../../os/share-commands.js', () => ({ copyLinkCommand: vi.fn(), emailLinkCommand: vi.fn(async () => {}) }))
+vi.mock('../../shell/open-file-command.js', () => ({ openFileCommand: vi.fn(async () => {}) }))
 vi.mock('../../os/share-runner.js', () => ({ realShareDeps: { realShare: true } }))
 
 interface Tab { id: string, url: string, displayUrl: string, title: string, isNewTab: boolean, isInternal: boolean, splitWith: string | null, pinned: boolean, muted: boolean }
@@ -119,6 +121,12 @@ describe('runCommand', () => {
     const { target, calls, deps } = harness([tab('a', { isInternal: true, url: 'orivon://settings', displayUrl: 'orivon://settings' })], 'a')
     runCommand('site.shortcut', target, deps)
     expect(calls['overlayShow']).not.toHaveBeenCalled()
+  })
+
+  it('opens the file picker for Open file', () => {
+    const { target, deps } = harness([tab('a')], 'a')
+    runCommand('file.open', target, deps)
+    expect(openFileCommand).toHaveBeenCalledWith(target)
   })
 
   it('handles every command there is', () => {

@@ -15,6 +15,7 @@ import { pageMenuItems } from './page-menu-items.js'
 import { forgetNavigation, leaveAllowed } from './leave-page-prompt.js'
 import { watchPageDialogs } from './page-dialogs.js'
 import { windowOpenHandler } from './popups.js'
+import { watchFileNavigation } from './local-file-navigation.js'
 import { repartitionBeforeCommit, repartitionOnFileBlock } from './pre-partition.js'
 import { keepsOpenerSession, openerCutNeeded, popupTargetIsApp } from './popup-opener.js'
 import { DEFAULT_BACKGROUND } from './theme-colors.js'
@@ -161,6 +162,7 @@ export function wireView (id: string, record: TabRecord): void {
   }
   wc.on('will-frame-navigate', refuseShellPage)
   wc.on('will-redirect', refuseShellPage)
+  watchFileNavigation(wc, (url) => { if (shown()) void record.host.openLocalFile(url, true) })
   repartitionBeforeCommit(wc, id, record, shown)
   repartitionOnFileBlock(wc, id, record, shown)
   wc.on('did-navigate', (_event, navigatedUrl: string) => {
