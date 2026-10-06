@@ -467,7 +467,7 @@ export interface TrustCapability { readonly score?: true }
  */
 export interface Grant {
   readonly id: GrantId
-  /** The web origin: scheme + host + port. Deliberately the web's definition. */
+  /** Web origin: scheme + host + port. A local file's is its `file:` URL (empty host, no query or fragment); its grants persist like a website's. */
   readonly origin: string
   readonly capability: CapabilityKind
   /** What was granted. Empty for capabilities that carry no patterns. */
