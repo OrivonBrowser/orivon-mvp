@@ -7,7 +7,7 @@
 //
 // STORAGE TIER: ADR-0003's "Browser state" row, plain JSON under <userData>, no safeStorage: a random
 // stream and counted seconds are not secrets the way the identity seed is.
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { INTERNAL_SITE, initialState, type AccountingState } from './accounting.js'
@@ -178,7 +178,10 @@ export class TelemetryStore {
     const next = this.writing.then(async () => {
       try {
         await mkdir(dirname(this.filePath), { recursive: true })
-        await writeFile(this.filePath, serializeTelemetryFile(this.disk), 'utf8')
+        // Written beside and renamed over: a quit can end the process mid-write, and a torn file would be read back as a fresh one.
+        const tmp = `${this.filePath}.${String(process.pid)}.tmp`
+        await writeFile(tmp, serializeTelemetryFile(this.disk), 'utf8')
+        await rename(tmp, this.filePath)
       } catch (error) {
         // Loud, never silent, as bookmarks.ts: losing a write costs at most one checkpoint interval of activeSec.
         console.error('[orivon] failed to persist telemetry state:', error)

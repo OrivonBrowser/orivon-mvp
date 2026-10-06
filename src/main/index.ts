@@ -98,12 +98,13 @@ async function flushStoresBeforeQuit (): Promise<void> {
 
 // Every way of quitting passes here: a quit command, the last window closing
 // or the system asking. The first pass holds the quit while the stores flush,
-// then quits again.
+// then quits again. A second quit during the wait joins the same pass.
 let storesFlushed = false
+let quitFlush: Promise<void> | undefined
 app.on('before-quit', (event) => {
   if (storesFlushed) return
   event.preventDefault()
-  void flushStoresBeforeQuit().then(() => {
+  quitFlush ??= flushStoresBeforeQuit().then(() => {
     storesFlushed = true
     app.quit()
   })
