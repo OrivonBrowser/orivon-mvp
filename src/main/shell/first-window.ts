@@ -8,7 +8,7 @@ import type { Rect } from '../window-state/placement.js'
 import { fillFirst, restoreWindows, takeOffStack } from '../startup/startup-open.js'
 import { planOpensLocalFile, planStartup } from '../startup/startup-plan.js'
 import { homeAddress } from './home.js'
-import { openFromBrowser } from './open-from-browser.js'
+import { openNowFromBrowser } from './open-from-browser.js'
 import type { ShellServices } from './shell-services.js'
 import type { ShellWindowOptions } from './window-options.js'
 
@@ -44,7 +44,7 @@ export function firstWindowOptions ({ services, isPrivate, argv, packaged = true
     const home = homeAddress(services.settings)
     const addresses = given.length > 0 ? given : home === null ? [] : [home]
     if (addresses.some((address) => localFileKey(address) !== null)) options.localFiles = true
-    if (addresses.length > 0) options.first = (tabs) => { addresses.forEach((address, index) => { openFromBrowser(tabs, address, index === 0) }) }
+    if (addresses.length > 0) options.first = (tabs) => { addresses.forEach((address, index) => { openNowFromBrowser(tabs, address, index === 0) }) }
     return options
   }
   const plan = planStartup({

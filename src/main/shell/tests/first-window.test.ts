@@ -26,7 +26,7 @@ function services (extra: { kiosk?: boolean, saved?: unknown, home?: string, mod
 function opened (first: ((tabs: never) => void) | undefined): Array<[string, boolean]> {
   const calls: Array<[string, boolean]> = []
   const record = (url: string, active: boolean): void => { calls.push([url, active]) }
-  first?.({ createTab: record, openLocalFile: (url: string, active: boolean) => { record(url, active); return Promise.resolve('t') } } as never)
+  first?.({ createTab: record, openLocalFileNow: (url: string, active: boolean) => { record(url, active); return 't' }, openLocalFile: (url: string, active: boolean) => { record(url, active); return Promise.resolve('t') } } as never)
   return calls
 }
 

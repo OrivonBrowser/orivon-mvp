@@ -3,8 +3,10 @@
 // line, keep-on-top, a private session that records nothing, and a kiosk.
 // Set ORIVON_UI_SHOTS_DIR to also write screenshots of the new surfaces.
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { pressKey } from '../support/e2e-helpers.js'
@@ -254,16 +256,20 @@ it('writes the place it is moved to, and the next launch opens there', async () 
   }
 }, TEST_TIMEOUT_MS)
 
-it('opens the http(s) addresses it is started with as tabs, the first in front, and nothing else', async () => {
-  const { app, chrome } = await launchShell({ args: [`${server.origin}/a`, 'file:///etc/hosts', 'javascript:alert(1)', `${server.origin}/b`] })
+it('opens the web addresses and local files it is started with as tabs, in order, the first in front, and nothing else', async () => {
+  const folder = await mkdtemp(join(await realpath(tmpdir()), 'orivon-start-file-'))
+  const local = join(folder, 'local.html')
+  await writeFile(local, '<!doctype html><title>Local c</title><p>c</p>')
+  const { app, chrome } = await launchShell({ args: [`${server.origin}/a`, pathToFileURL(local).href, 'javascript:alert(1)', `${server.origin}/b`, 'file://nas/share/x.html'] })
   try {
-    expect(await waitFor(async () => (await tabIds(chrome)).length === 2)).toBe(true)
+    expect(await waitFor(async () => (await tabIds(chrome)).length === 3)).toBe(true)
     expect((await waitForTab(chrome, { address: `${server.origin}/a` })).ok).toBe(true)
     const titles = async (): Promise<string[]> => await evaluateRetrying(chrome, () => Array.from(document.querySelectorAll('.tab .title')).map((el) => el.textContent ?? ''))
-    expect(await waitFor(async () => (await titles()).join() === 'Page a,Page b')).toBe(true)
+    expect(await waitFor(async () => (await titles()).join() === 'Page a,Local c,Page b')).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
+    await rm(folder, { recursive: true, force: true })
   }
 }, TEST_TIMEOUT_MS)
 

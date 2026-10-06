@@ -272,8 +272,8 @@ it('a local file holds no cookie and no permission, and replaceState onto a sibl
     expect(state['replaced']).toBe('threw')
     expect(state['cookie']).toBe('')
     expect(state['localStorage']).toBe('threw')
-    expect(String(state['grants'])).not.toMatch(/^granted:/)
-    expect(String(state['grants'])).toMatch(/denied|no-api/)
+    // The page's own script may ask, as any page's may; a file nobody allowed holds nothing.
+    expect(state['grants']).toBe('granted:[]')
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
