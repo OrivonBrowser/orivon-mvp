@@ -12,7 +12,7 @@ const details = (url: string, disposition: Details['disposition'] = 'foreground-
   url, frameName: '', features: '', disposition, referrer: { url: '', policy: 'default' }
 })
 
-const FILE_OPENER: Opener = { url: 'file:///home/u/app/index.html', partition: 'orivon-local-files' }
+const FILE_OPENER: Opener = { url: 'file:///home/u/app/index.html', partition: 'persist:orivon-local-files' }
 const WEB_OPENER: Opener = { url: 'https://news.example/story', partition: undefined }
 const SIBLING = 'file:///home/u/app/other.html'
 
@@ -61,13 +61,12 @@ describe('windowOpenHandler and a file: target', () => {
     expect(host.openTab).not.toHaveBeenCalled()
   })
 
-  it('refuses a file while a frame of the opener tab is a web page, since it may be the caller', () => {
+  it('opens a sibling from a granted local file too, whose session is its own', () => {
     const { host, openLocalFile } = hostWith()
 
-    const result = windowOpenHandler(host, () => ({ ...FILE_OPENER, hasWebFrame: true }))(details(SIBLING))
+    windowOpenHandler(host, () => ({ ...FILE_OPENER, partition: 'persist:local-abc' }))(details(SIBLING))
 
-    expect(result).toEqual({ action: 'deny' })
-    expect(openLocalFile).not.toHaveBeenCalled()
+    expect(openLocalFile).toHaveBeenCalledWith(SIBLING, true)
   })
 
   it.each([

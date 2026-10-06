@@ -2,7 +2,7 @@
 import type { WebContents } from 'electron'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { isNavigationHeld } from './navigation-hold.js'
-import { partitionChanged } from './tab-partition.js'
+import { partitionAfterFileBlock, partitionChanged } from './tab-partition.js'
 import { repartitionView } from './tab-parking.js'
 import type { TabRecord } from './tab-types.js'
 
@@ -43,4 +43,23 @@ export function repartitionBeforeCommit (wc: WebContents, id: string, record: Ta
   }
   wc.on('will-navigate', handle)
   wc.on('will-redirect', handle)
+}
+
+/**
+ * A `file:` document the tab's session does not serve is cancelled by the local-files fence
+ * (`../local-files/local-file-fence.ts`), which reports a failed main-frame load with -20. The
+ * tab then moves to the session the file belongs in and loads it there: the case the pre-commit
+ * check above cannot see, such as a reload after the file was recorded or Back to an old entry.
+ */
+export function repartitionOnFileBlock (wc: WebContents, id: string, record: TabRecord, shown: () => boolean): void {
+  const view = record.view
+  wc.on('did-fail-load', (_event, errorCode, _description, failedUrl, isMainFrame) => {
+    if (!shown() || record.isDashboardTab || record.internalPage !== null) return
+    const swap = partitionAfterFileBlock(failedUrl, errorCode, isMainFrame, record.partition)
+    if (swap?.to === undefined) return
+    const nextPartition = swap.to
+    setImmediate(() => {
+      if (record.view === view && !wc.isDestroyed()) repartitionView(id, record, failedUrl, nextPartition)
+    })
+  })
 }

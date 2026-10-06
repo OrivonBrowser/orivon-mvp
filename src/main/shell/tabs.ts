@@ -133,6 +133,7 @@ export class TabManager {
       activate: (id) => { this.activateTab(id) },
       changed: () => { this.changed() },
       atCapacity: () => this.atCapacity(),
+      localFilesRefused: () => { shell?.localFilesRefused?.() },
       activeId: () => this.activeId,
       records: () => this.tabs,
       freshTabInFront: (id, contents) => { this.watchFreshTab(id, contents) }
@@ -234,9 +235,6 @@ export class TabManager {
 
   /** A new tab: `active` and `loadOptions` are tab-open.ts's. */
   createTab (url?: string, active = true, loadOptions?: LoadURLOptions): string { return this.opener.createTab(url, active, loadOptions) }
-
-  /** Whether `id` still shows the new-tab page: the flag a navigation away clears. */
-  isDashboardTab (id: string): boolean { return this.tabs.get(id)?.isDashboardTab === true }
 
   /** A local file in a new tab of the local-files session; undefined for anything `localFileKey` refuses. */
   openLocalFile (url: string, active = true): string | undefined { return this.opener.openLocalFile(url, active) }

@@ -13,8 +13,6 @@ export type PopupRoute = 'adopt' | 'new-tab'
 export interface PopupOpener {
   readonly url: string
   readonly partition: string | undefined
-  /** True while any frame of the opener's tab is a web page: a handler cannot tell which frame is opening. */
-  readonly hasWebFrame?: boolean
 }
 
 /** A window feature that severs the opener, matched as a whole name. */
@@ -198,9 +196,10 @@ export function windowOpenHandler (
     // Every browser opens a middle click or a plain ctrl+click behind the current tab.
     const active = details.disposition !== 'background-tab'
     if (isFileTarget(details.url)) {
-      // Only a page that is itself a local file, with no web frame that could be the caller, may open
-      // another; it never gets a window to script (a sibling is its own origin), so it is never adopted.
-      if (localFileKey(details.url) !== null && localFileKey(from.url) !== null && from.hasWebFrame !== true) host.openLocalFile?.(details.url, active)
+      // Only a page that is itself a local file may open another, and it never gets a window to script
+      // (a sibling is its own origin), so it is never adopted. A web frame inside a local page cannot
+      // reach here: Chromium refuses its `file:` target before any handler runs.
+      if (localFileKey(details.url) !== null && localFileKey(from.url) !== null) host.openLocalFile?.(details.url, active)
       return { action: 'deny' }
     }
     const loadOptions = loadOptionsFor(details)

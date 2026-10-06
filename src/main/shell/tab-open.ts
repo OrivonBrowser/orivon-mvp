@@ -5,6 +5,7 @@
 import type { LoadURLOptions, WebContents, WebContentsView } from 'electron'
 import { internalUrl } from '../pages/internal-pages.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
+import { knownFileProtocolFuse } from '../local-files/file-fuse.js'
 import type { BuiltTab, TabFactory } from './tab-factory.js'
 import type { TabRecord } from './tab-types.js'
 
@@ -18,6 +19,8 @@ export interface TabOpenerHost {
   records: () => Iterable<readonly [string, TabRecord]>
   /** A tab opened on the start page, in front: where the keyboard goes is decided for it (./new-tab-focus.ts). Absent in tests. */
   freshTabInFront?: (id: string, contents: WebContents) => void
+  /** Tells the person a local file was not opened because this copy of Orivon cannot open one safely. Absent in tests. */
+  localFilesRefused?: () => void
 }
 
 export class TabOpener {
@@ -55,9 +58,14 @@ export class TabOpener {
     return this.addAndShow(this.factory.blob(url, partition), active, loadOptions)
   }
 
-  /** A local file in a new tab of the local-files session, whole (query and fragment kept). Undefined for a URL `localFileKey` refuses, or at MAX_TABS. */
+  /** A local file in a new tab of its local-files session, whole (query and fragment kept). Undefined for a URL `localFileKey` refuses, at MAX_TABS, and while the binary's
+   * file-protocol fuse is not known to be off: with it on, a local page could read other files, so no tab opens and the person is told. */
   openLocalFile (url: string, active = true): string | undefined {
     if (this.host.atCapacity()) return undefined
+    if (knownFileProtocolFuse() !== 'off') {
+      this.host.localFilesRefused?.()
+      return undefined
+    }
     const built = this.factory.localFile(url)
     return built === undefined ? undefined : this.addAndShow(built, active)
   }

@@ -182,6 +182,8 @@ export interface TabShell {
   focusChrome?: () => void
   /** Whether the welcome screen is over this window. Absent in tests: it never is. */
   coveredByIntro?: () => boolean
+  /** Says a local file was not opened (`TabOpener.openLocalFile`). Absent in tests. */
+  localFilesRefused?: () => void
 }
 
 /** The view behind two panes: the divider, and an outline round the pane the person is in. */

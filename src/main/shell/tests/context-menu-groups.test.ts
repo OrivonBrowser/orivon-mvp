@@ -89,7 +89,7 @@ describe('link group on a local file', () => {
   it('offers only a new tab for a file link, and only when the page is a local file', () => {
     const local = vi.fn()
     const withLocal = { ...full(), openLocalFile: local } as Actions
-    const template = contextMenuTemplate(params({ linkURL: FILE_LINK, linkText: 'other' }), withLocal, false, ctx)
+    const template = contextMenuTemplate(params({ linkURL: FILE_LINK, linkText: 'other', frameURL: 'file:///home/u/app/index.html' }), withLocal, false, ctx)
 
     expect(labels(template)).toEqual(['Open Link in New Tab', 'Copy Link Address', 'Copy Link Text'])
     click(template, 'Open Link in New Tab')
@@ -98,6 +98,13 @@ describe('link group on a local file', () => {
 
   it('offers no way to open a file link on a page that is not a local file', () => {
     const template = contextMenuTemplate(params({ linkURL: FILE_LINK, linkText: 'other' }), full(), false, ctx)
+
+    expect(labels(template)).toEqual(['Copy Link Address', 'Copy Link Text'])
+  })
+
+  it('offers no way to open a file link from a web frame inside a local page', () => {
+    const withLocal = { ...full(), openLocalFile: vi.fn() } as Actions
+    const template = contextMenuTemplate(params({ linkURL: FILE_LINK, linkText: 'other', frameURL: 'https://ads.example/frame' }), withLocal, false, ctx)
 
     expect(labels(template)).toEqual(['Copy Link Address', 'Copy Link Text'])
   })

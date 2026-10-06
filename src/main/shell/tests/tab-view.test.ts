@@ -1,8 +1,12 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { originFromUrl } from '../../../broker/policy/origin.js'
-import { partitionFor } from '../../../broker/grants/origin-hash.js'
+import { originHash, partitionFor } from '../../../broker/grants/origin-hash.js'
 import type { Broker } from '../../../broker/broker-contracts.js'
+import { LocalFileApps, installLocalFileApps } from '../../local-files/local-file-apps.js'
 import { LOCAL_FILES_PARTITION } from '../../local-files/partition.js'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 // tab-view.ts imports WebContentsView from 'electron' at module scope, so
 // even these pure functions cannot be imported without mocking it first --
@@ -23,7 +27,7 @@ vi.mock('../../../loader/electron/serve.js', () => ({
   isOriginServedFromCacheSync: (origin: string) => served.has(origin)
 }))
 
-const { appTabArgsFor, appTabFlagChanged, captureTabPage, leftDashboard, makeTabView, partitionChanged, partitionForTarget, popupTargetIsApp } = await import('../tab-view.js')
+const { appTabArgsFor, appTabFlagChanged, captureTabPage, makeTabView, partitionAfterFileBlock, partitionChanged, partitionForTarget, popupTargetIsApp } = await import('../tab-view.js')
 
 const APP = 'https://app.example'
 const SITE = 'https://news.example'
@@ -228,7 +232,7 @@ describe('a local file runs in the local-files session', () => {
     expect(partitionForTarget(`${FILE}?q=1#top`)).toBe(LOCAL_FILES_PARTITION)
   })
 
-  it('partitionForTarget leaves a file with a host to the default session, where the guard serves it nothing', () => {
+  it('partitionForTarget leaves a file with a host to the default session, where no file is served', () => {
     expect(partitionForTarget('file://server/share/a.html')).toBeUndefined()
   })
 
@@ -250,24 +254,68 @@ describe('a local file runs in the local-files session', () => {
   })
 })
 
-describe('leftDashboard -- which committed document still counts as the new-tab page', () => {
-  const BUILT = 'file:///opt/orivon/out/renderer/newtab/index.html'
-  const DEV = 'http://localhost:5173/newtab/'
+describe('a recorded local file runs in a session of its own', () => {
+  const FILE = 'file:///home/u/app/index.html'
+  const SIBLING = 'file:///home/u/app/other.html'
+  const OWN = `persist:local-${originHash(FILE)}`
+  let dir: string
 
-  it('keeps the flag on the dashboard itself, whatever query or fragment it carries', () => {
-    expect(leftDashboard(BUILT, BUILT)).toBe(false)
-    expect(leftDashboard(`${BUILT}#top`, BUILT)).toBe(false)
-    expect(leftDashboard(DEV, DEV)).toBe(false)
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'orivon-tabview-'))
+    const apps = new LocalFileApps(join(dir, 'a.json'))
+    apps.add(FILE)
+    installLocalFileApps(apps)
+  })
+  afterEach(() => {
+    installLocalFileApps(undefined)
+    rmSync(dir, { recursive: true, force: true })
   })
 
-  it('clears it for any other local file, which a built dashboard and every file share a web origin of null with', () => {
-    expect(leftDashboard('file:///home/u/app/index.html', BUILT)).toBe(true)
-    expect(leftDashboard('file:///opt/orivon/out/renderer/index.html', BUILT)).toBe(true)
+  it('partitionForTarget names the file\'s own session, and the shared one for its sibling', () => {
+    expect(partitionForTarget(`${FILE}?q=1`)).toBe(OWN)
+    expect(partitionForTarget(SIBLING)).toBe(LOCAL_FILES_PARTITION)
   })
 
-  it('clears it for a website and for a blank page', () => {
-    expect(leftDashboard(SITE, BUILT)).toBe(true)
-    expect(leftDashboard(SITE, DEV)).toBe(true)
-    expect(leftDashboard('about:blank', BUILT)).toBe(true)
+  it('partitionChanged moves a tab between the shared session and a recorded file\'s, both ways', () => {
+    expect(partitionChanged(FILE, LOCAL_FILES_PARTITION)).toEqual({ to: OWN })
+    expect(partitionChanged(SIBLING, OWN)).toEqual({ to: LOCAL_FILES_PARTITION })
+    expect(partitionChanged(FILE, OWN)).toBeUndefined()
+  })
+})
+
+describe('partitionAfterFileBlock -- the fence cancelled a file load, so the tab moves to the file\'s session once', () => {
+  const FILE = 'file:///home/u/app/index.html'
+  const OWN = `persist:local-${originHash(FILE)}`
+  let dir: string
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'orivon-tabview-'))
+    const apps = new LocalFileApps(join(dir, 'a.json'))
+    apps.add(FILE)
+    installLocalFileApps(apps)
+  })
+  afterEach(() => {
+    installLocalFileApps(undefined)
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('moves a tab in the shared session to the recorded file\'s own on a blocked main-frame load', () => {
+    expect(partitionAfterFileBlock(FILE, -20, true, LOCAL_FILES_PARTITION)).toEqual({ to: OWN })
+  })
+
+  it('does nothing once the tab is where the file belongs, so a block can never loop', () => {
+    expect(partitionAfterFileBlock(FILE, -20, true, OWN)).toBeUndefined()
+  })
+
+  it('moves a tab back to the shared session when the record is gone', () => {
+    installLocalFileApps(undefined)
+    expect(partitionAfterFileBlock(FILE, -20, true, OWN)).toEqual({ to: LOCAL_FILES_PARTITION })
+  })
+
+  it('ignores any other failure, a frame, and a URL that is not a local file', () => {
+    expect(partitionAfterFileBlock(FILE, -6, true, LOCAL_FILES_PARTITION)).toBeUndefined()
+    expect(partitionAfterFileBlock(FILE, -20, false, LOCAL_FILES_PARTITION)).toBeUndefined()
+    expect(partitionAfterFileBlock('https://x.example/', -20, true, LOCAL_FILES_PARTITION)).toBeUndefined()
+    expect(partitionAfterFileBlock('file://host/a.html', -20, true, LOCAL_FILES_PARTITION)).toBeUndefined()
   })
 })
