@@ -10,12 +10,12 @@ an `OverlayDef` to [`overlays.ts`](overlays.ts) and a page to
 | File | Job |
 |---|---|
 | `overlay-types.ts` | `OverlayDef`, `OverlayHost`, placements and close reasons: the contract a feature writes against |
-| `overlay-bounds.ts` | Pure geometry: where an overlay sits, and how tall it may be; `dockBounds` for the strip beside the page |
+| `overlay-bounds.ts` | Pure geometry: where an overlay sits, and how tall it may be; `dockBounds` for the strip beside the page, the whole pane for a `pane` |
 | `overlay-ipc.ts` | The one channel a page speaks on, with its sender check |
 | `overlay-view.ts` | One `WebContentsView`: construction, background, navigation lock, focus |
 | `overlay-host.ts` | Per window: when a view exists, where it sits, when it closes, where focus goes |
 | `overlays.ts` | `OVERLAYS`, the registry of every feature's `OverlayDef` |
-| `tab-slots.ts`, `install-tab-slots.ts` | `requestSlot`: which surface a tab shows in its two places, a sheet over the page and a prompt under the address pill, so two never stack and a question waits for its tab |
+| `tab-slots.ts`, `install-tab-slots.ts` | `requestSlot`: which surface a tab shows in its three places, a sheet over the page, a prompt under the address pill and a cover over the page, so two sheets never stack and a question waits for its tab |
 
 **Tied to Electron.** `overlay-view.ts` and `overlay-host.ts` import `electron` values;
 `overlay-types.ts`, `overlay-bounds.ts` and `overlay-ipc.ts` need only its types. The types and
@@ -37,6 +37,23 @@ page area leaves free (`dockBounds`: the page area's x says which side), full he
 height reports for it and repositions it on every layout instead of closing it (`closeOn.layout: false`); the
 handler's optional `moved` runs after each reposition, so a feature that lays something over the dock follows it.
 A dock has square corners. The side panel is the one dock.
+
+**A pane is the page area, and a cover lies under everything else.** `{ kind: 'pane' }` takes the pane of the tab in
+front (`paneArea()`, else the whole tab area) exactly: the host ignores the page's height reports and repositions it
+on every layout, and its corners are square, like a dock. `layer: 'cover'` puts a view under every bar, adopted panel
+and popup: `restack()` attaches covers first, and a `never` overlay that joins the window when its page is ready does
+so through `restack()` too, so a cover never lands over a sheet that was already up. A cover is not a popup: showing it
+closes nothing, and `close()` and `closeOverlays()` leave it open. This is what keeps a page's `alert()` (the question
+sheet), a sign-in sheet or a permission prompt visible over the loading screen: a page blocked on `alert()` never
+reaches its document-ready event, so a screen that hid the sheet would hang the tab. `surface: 'page'` paints an
+Orivon page's own colour (`INTERNAL_PAGE_BACKGROUND`, the `--wbg` of `surface.css`) and no card edge.
+
+**A cover is outside the one-surface-at-a-time rule of the tab slots.** `requestSlot` with `slot: 'cover'` keeps at most
+one cover per tab: a newer one ends the older with `replaced` and shows the same view again with the new payload, so
+the address changes in place with no flicker. A cover shows whenever its tab is in front and is shown before the tab's
+head ask, so it lies under it; a tab switch hides it and keeps it, as for the other slots. It never raises the sheet
+backdrop, because it paints its own full surface, and `hasAsk` ignores it: a cover holds no answer, so closing the
+tab's page never drops anything the person gave.
 
 **Beside the overlays, the host closes two legacy panels, and restacks a third thing it never closes.** The permissions and site-info popovers
 stay on `../permissions/popover-view.ts` and are handed to the host with `adopt`, so a tab switch, a

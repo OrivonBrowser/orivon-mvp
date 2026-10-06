@@ -42,7 +42,7 @@ vi.mock('../../shell/context-menu.js', () => ({ showContextMenu: (...args: unkno
 const { createOverlayView, overlayUrl } = await import('../overlay-view.js')
 
 const PORT = { ready: vi.fn(), request: vi.fn(), size: vi.fn(), close: vi.fn() }
-const spec = (surface: 'panel' | 'menu' = 'panel'): Parameters<typeof createOverlayView>[0] =>
+const spec = (surface: 'panel' | 'menu' | 'page' = 'panel'): Parameters<typeof createOverlayView>[0] =>
   ({ dirname: '/app/out/main', def: { name: 'demo', surface }, port: PORT, onBlur: vi.fn(), onFocus: vi.fn(), onGone: vi.fn() })
 
 afterEach(() => { calls.length = 0; theme.dark = false })
@@ -64,6 +64,15 @@ describe('createOverlayView', () => {
     theme.dark = true
     createOverlayView(spec('menu'))
     expect(calls[0]).toBe('background:#2b2c31')
+  })
+
+  it('takes the page surface\'s colour, which is an internal page\'s, light and dark', () => {
+    createOverlayView(spec('page'))
+    expect(calls[0]).toBe('background:#f4f4f8')
+    calls.length = 0
+    theme.dark = true
+    createOverlayView(spec('page'))
+    expect(calls[0]).toBe('background:#17181c')
   })
 
   it('is sandboxed, isolated, in the shell partition, and told its own exact address', () => {

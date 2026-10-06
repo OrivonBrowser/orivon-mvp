@@ -1,0 +1,64 @@
+/* The loading screen: one centred column on an Orivon page's surface, filling the page area. */
+
+/* The page fills the view, so the column is centred in it whatever its height. */
+body[data-overlay='loading-screen'] #scroll { display: flex; overflow: hidden; }
+body[data-overlay='loading-screen'] #content { display: flex; flex: 1 1 auto; align-items: center; justify-content: center; }
+
+body[data-overlay='loading-screen'] .loading-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 360px;
+  padding: 0 24px;
+  text-align: center;
+  animation: loading-screen-in 200ms ease-out both;
+}
+
+body[data-overlay='loading-screen'] p { margin: 0; }
+body[data-overlay='loading-screen'] .loading-screen-title { color: var(--wink); font-size: 15px; font-weight: 600; }
+body[data-overlay='loading-screen'] .loading-screen-address {
+  max-width: 100%;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--wink-dim);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+body[data-overlay='loading-screen'] .loading-screen-detail { margin-top: 14px; color: var(--wink-dim); font-size: 12px; }
+
+/* An indeterminate bar: a faint track and a segment of the accent sliding across it. */
+body[data-overlay='loading-screen'] .loading-screen-bar {
+  position: relative;
+  width: 160px;
+  height: 2px;
+  margin-top: 16px;
+  overflow: hidden;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--waccent) 18%, transparent);
+}
+body[data-overlay='loading-screen'] .loading-screen-slide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+  border-radius: 1px;
+  background: var(--waccent-text);
+  animation: loading-screen-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes loading-screen-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes loading-screen-slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@keyframes loading-screen-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+
+/* surface.css switches every animation off for reduced motion; the pulse is the one thing that stays, slow and without travel. */
+@media (prefers-reduced-motion: reduce) {
+  body[data-overlay='loading-screen'] .loading-screen-slide {
+    left: 30%;
+    transform: none;
+    animation: loading-screen-pulse 2.4s ease-in-out infinite !important;
+  }
+}

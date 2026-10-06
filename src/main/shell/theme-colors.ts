@@ -34,7 +34,7 @@ export const DASHBOARD_BACKGROUND: ThemeColorPair = { light: '#394244', dark: AP
  * returning it to this, not to an arbitrary white. */
 export const DEFAULT_BACKGROUND = '#FFFFFF'
 
-/** Literally pages/shared/tokens.css's own `--wbg` pair (Settings, History, Extensions, ...): an internal page's first paint, and what a crashed page shows behind the sad-tab card. */
+/** Literally pages/shared/tokens.css's own `--wbg` pair (Settings, History, Extensions, ...): an internal page's first paint, what a crashed page shows behind the sad-tab card, and the `page` overlay surface (the same pair in renderer/overlay/surface.css). */
 export const INTERNAL_PAGE_BACKGROUND: ThemeColorPair = { light: '#f4f4f8', dark: '#17181c' }
 
 /** Literally the `--wbg` pair of `body[data-surface='menu']` in renderer/overlay/surface.css. */
