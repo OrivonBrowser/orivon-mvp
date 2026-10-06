@@ -108,7 +108,7 @@ Solo noi. Non c'è un responsabile del trattamento né una società di analisi. 
 su `telemetry.orivonstack.com`, su un server virtuale preso in affitto da OVH SAS a Strasburgo,
 in Francia. Le righe stanno in un database su quel server. Nulla esce dall'UE. Se cambia,
 cambia prima questa informativa e il numero di versione in alto aumenta: il consenso dato prima
-smette di valere e ti viene chiesto di nuovo. Il codice sorgente del server non è pubblicato;
+smette di valere finché non la riattivi nelle Impostazioni. Il codice sorgente del server non è pubblicato;
 questa informativa è la descrizione di ciò che conserva e per quanto tempo.
 
 ## I tuoi diritti
@@ -169,5 +169,5 @@ rigorosa, perché è sempre la tua risposta esplicita.
 ## Modifiche
 
 Quando un messaggio cambia o ne viene aggiunto uno, il numero di versione in alto aumenta. Un
-consenso dato con una versione precedente smette di valere, il browser te lo chiede di nuovo, e
-nel frattempo non si invia nulla.
+consenso dato con una versione precedente smette di valere: non si invia nulla finché non riattivi
+la telemetria nelle Impostazioni.

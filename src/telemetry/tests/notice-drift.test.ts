@@ -6,7 +6,10 @@ import { describe, expect, it } from 'vitest'
 import { fold } from '../accounting.js'
 import { buildErasePayload, buildSitesPayload, buildUsagePayload } from '../disclosure.js'
 
-const NOTICE = join(import.meta.dirname, '../../../docs/privacy/notice.md')
+const NOTICES = [
+  { file: join(import.meta.dirname, '../../../docs/privacy/notice.md'), heading: 'What telemetry sends' },
+  { file: join(import.meta.dirname, '../../../docs/privacy/notice.it.md'), heading: 'Cosa invia la telemetria' }
+]
 
 /** Dotted paths of every key, going into objects but treating `sites` (a map of site names) as one field. */
 function fieldPaths (value: unknown, prefix = ''): string[] {
@@ -17,8 +20,8 @@ function fieldPaths (value: unknown, prefix = ''): string[] {
   })
 }
 
-function noticeFields (text: string): string[] {
-  const section = text.split(/^## /m).find((part) => part.startsWith('What telemetry sends'))
+function noticeFields (text: string, heading = 'What telemetry sends'): string[] {
+  const section = text.split(/^## /m).find((part) => part.startsWith(heading))
   if (section === undefined) return []
   return section.split('\n')
     .filter((line) => line.startsWith('|'))
@@ -32,9 +35,9 @@ describe('the privacy notice and the payloads', () => {
   const sites = buildSitesPayload(state, { reportId: 'ef'.repeat(16), version: '0.1.0', period: '2026-10' })
   const erase = buildErasePayload('ab'.repeat(16))
 
-  it('lists exactly the fields of the three payloads, no more and no fewer', () => {
+  it.each(NOTICES)('lists exactly the fields of the three payloads in $file', ({ file, heading }) => {
     const sent = new Set([usage, sites, erase].flatMap((payload) => fieldPaths(payload)))
-    const listed = new Set(noticeFields(readFileSync(NOTICE, 'utf8')))
+    const listed = new Set(noticeFields(readFileSync(file, 'utf8'), heading))
     expect([...listed].filter((field) => !sent.has(field))).toEqual([])
     expect([...sent].filter((field) => !listed.has(field))).toEqual([])
   })

@@ -101,8 +101,8 @@ us to delete them.
 Nobody but us. There is no processor and no analytics company. The server is ours, at
 `telemetry.orivonstack.com`, on a virtual server rented from OVH SAS in Strasbourg, France. Its
 rows are in a database on that server. Nothing leaves the EU. If that changes this notice changes
-first, and the version number above goes up, so your earlier consent stops counting and you are
-asked again. The server's source code is not published; this notice is the description of what it
+first, and the version number above goes up, so your earlier consent stops counting until you
+turn telemetry on again. The server's source code is not published; this notice is the description of what it
 stores and for how long.
 
 ## Your rights
@@ -159,5 +159,5 @@ browser, which is stricter, because it is always your explicit answer.
 ## Changes
 
 When a message changes or a new one is added, the notice version at the top goes up. A consent
-given under an earlier version stops counting, the browser asks again, and nothing is sent in
-between.
+given under an earlier version stops counting: nothing is sent until you turn telemetry on
+again in Settings.

@@ -43,7 +43,10 @@ response channel) and widens what is measured and how the person chooses.
 8. **Where it never runs.** Development builds (`npm run dev`), a private window, and any run with
    `ORIVON_TELEMETRY=off` start no measuring, read no machine ID and send nothing.
 9. **`NOTICE_VERSION`.** A stored acceptance whose notice version differs from the code's counts
-   as undecided, so a change to the payload or the notice asks again.
+   as undecided, so after a change to the payload or the notice nothing is sent until the person
+   turns telemetry on again in Settings. The welcome does not ask again, since it shows once per
+   profile; a prompt for that case is not built (*provisional*: settled when a version bump
+   first happens with real users).
 10. **Retention.** Per-install rows 12 months, then only aggregates; site reports folded into
     monthly per-site totals one month after the month closes.
 
