@@ -13,7 +13,7 @@ interface Answer {
   readonly canInstall?: boolean
   readonly cannotInstallWhy?: string | null
   /** How an install that was started is going. */
-  readonly phase?: 'idle' | 'downloading' | 'installing' | 'failed'
+  readonly phase?: 'idle' | 'downloading' | 'installing' | 'restarting' | 'failed'
   readonly percent?: number | null
   readonly failure?: string | null
 }
@@ -29,6 +29,15 @@ export class UpdatesState {
     this.answer = payload as Answer
     this.changed()
     return true
+  }
+
+  /** What main already knows, asked without looking: a release found earlier, or an install under way. Silent when there is neither. */
+  async load (): Promise<void> {
+    const reply = await this.bridge.request('updates', { type: 'state' }) as { ok?: boolean, answer?: Answer } | undefined
+    const known = reply?.ok === true ? reply.answer : undefined
+    if (known === undefined || (!known.newer && (known.phase ?? 'idle') === 'idle')) return
+    this.answer = known
+    this.changed()
   }
 
   async check (): Promise<void> {
@@ -68,10 +77,10 @@ export class UpdatesState {
     return answer?.newer === true && answer.canInstall !== true ? answer.cannotInstallWhy ?? '' : ''
   }
 
-  /** True from the first byte of the download until the browser restarts or the install fails. */
+  /** True from the first byte of the download until the browser restarts or the install fails: a restart that a page's unload guard holds back counts. */
   installing (): boolean {
     const phase = this.found()?.phase
-    return phase === 'downloading' || phase === 'installing'
+    return phase === 'downloading' || phase === 'installing' || phase === 'restarting'
   }
 
   /** The install's progress or failure in words; '' when nothing is going on. */
@@ -79,6 +88,7 @@ export class UpdatesState {
     const answer = this.found()
     if (answer?.phase === 'downloading') return `Downloading the update… ${String(answer.percent ?? 0)}%`
     if (answer?.phase === 'installing') return 'Installing the update…'
+    if (answer?.phase === 'restarting') return 'Orivon restarts to finish the update.'
     if (answer?.phase === 'failed') return `Could not install the update. ${answer.failure ?? ''}`.trim()
     return ''
   }

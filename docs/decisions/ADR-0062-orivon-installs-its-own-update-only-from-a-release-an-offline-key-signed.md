@@ -76,6 +76,9 @@ matter and a mirror or an IPFS copy of a package verifies the same way.
   after the last re-run.
 - **A deb install runs the package's maintainer scripts as root,** after the person confirms in the system prompt;
   the package is the signed one.
+- **The downloaded package can be replaced between the hash check and the root install.** A process running as the
+  same user can swap the file in that gap. Such a process can already ask pkexec for itself, so this build accepts it.
+  Closing the gap would mean the password prompt names a shell rather than dpkg.
 
 ## Reversibility
 

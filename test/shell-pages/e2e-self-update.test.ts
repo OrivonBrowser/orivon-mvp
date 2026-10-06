@@ -177,6 +177,23 @@ run('asks once per version: Not now is remembered and a second look is silent', 
   }
 }, TEST_TIMEOUT_MS)
 
+run('after Not now, Settings > About shows the release and Install update without pressing Check now', async () => {
+  const { app, chrome } = await launched()
+  try {
+    await lookNow(app)
+    await waitQuestion(app)
+    await answerQuestion(app, 'Not now')
+    expect(await waitFor(async () => await questionGone(app))).toBe(true)
+    const page = await openAbout(app, chrome)
+    const banner = page.locator('.banner', { hasText: 'Orivon 1.2.0 is available.' })
+    await banner.waitFor()
+    expect(await banner.locator('button', { hasText: 'Install update' }).count()).toBe(1)
+    expect(await banner.locator('button', { hasText: 'Open release page' }).count()).toBe(1)
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
 run('raises no question for a package list whose signature does not match', async () => {
   const { app, userData } = await launched({ tamper: 'signature' })
   try {

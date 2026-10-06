@@ -127,6 +127,34 @@ describe('installing from Settings', () => {
     expect(changes).toHaveLength(2)
   })
 
+  it('words the restart, and offers no second install while it waits', async () => {
+    const updates = await answered({ canInstall: true, phase: 'restarting' })
+    expect(updates.installWords()).toBe('Orivon restarts to finish the update.')
+    expect(updates.canInstall()).toBe(false)
+    expect(updates.installing()).toBe(true)
+  })
+
+  it('loads what main already knows, with no check, so the banner is there when Settings opens', async () => {
+    const request = vi.fn(async () => ({ ok: true, answer: { ...NEWER, canInstall: true, phase: 'idle' } }))
+    const updates = new UpdatesState({ request } as unknown as OrivonInternal, () => {})
+    await updates.load()
+    expect(request).toHaveBeenCalledWith('updates', { type: 'state' })
+    expect(updates.available()).toBe('1.1.0')
+    expect(updates.canInstall()).toBe(true)
+  })
+
+  it('shows nothing of an answer that holds no release and no install, and nothing for a refusal', async () => {
+    const quiet = new UpdatesState({ request: async () => ({ ok: true, answer: { reached: true, current: '1.0.0', latest: null, newer: false, url: null, phase: 'idle' } }) } as unknown as OrivonInternal, () => {})
+    await quiet.load()
+    expect(quiet.words()).toBe('')
+    const refused = new UpdatesState({ request: async () => ({ ok: false, reason: 'private' }) } as unknown as OrivonInternal, () => {})
+    await refused.load()
+    expect(refused.words()).toBe('')
+    const silent = new UpdatesState({ request: async () => undefined } as unknown as OrivonInternal, () => {})
+    await silent.load()
+    expect(silent.words()).toBe('')
+  })
+
   it('asks main to install, naming nothing of its own', async () => {
     const request = vi.fn(async () => ({ ok: true }))
     const updates = new UpdatesState({ request } as unknown as OrivonInternal, () => {})

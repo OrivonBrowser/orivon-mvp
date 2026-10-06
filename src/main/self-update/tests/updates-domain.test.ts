@@ -79,9 +79,18 @@ describe('the updates domain', () => {
     expect(manual.install).not.toHaveBeenCalled()
   })
 
-  it('does not start a second install while one runs', async () => {
-    const { api, install } = updates({ ...NEWER, phase: 'downloading', percent: 3 })
-    expect(await updatesDomain(api, false).handle({ type: 'install' }, CALLER)).toEqual({ ok: true })
-    expect(install).not.toHaveBeenCalled()
+  it('does not start a second install while one downloads, installs or restarts', async () => {
+    for (const phase of ['downloading', 'installing', 'restarting'] as const) {
+      const { api, install } = updates({ ...NEWER, phase })
+      expect(await updatesDomain(api, false).handle({ type: 'install' }, CALLER)).toEqual({ ok: true })
+      expect(install).not.toHaveBeenCalled()
+    }
+  })
+
+  it('answers what is known without looking, for a Settings page that opens after the daily check', async () => {
+    const { api } = updates()
+    expect(await updatesDomain(api, false).handle({ type: 'state' }, CALLER)).toEqual({ ok: true, answer: NEWER })
+    expect(api.checkNow).not.toHaveBeenCalled()
+    expect(await updatesDomain(api, true).handle({ type: 'state' }, CALLER)).toEqual({ ok: false, reason: 'private' })
   })
 })

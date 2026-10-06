@@ -17,7 +17,7 @@ export function updatesDomain (
     pages: ['settings'],
     handle: async (command, caller) => {
       const type = typeof command === 'object' && command !== null ? (command as { type?: unknown }).type : undefined
-      if (type !== 'check' && type !== 'openRelease' && type !== 'install') return undefined
+      if (type !== 'check' && type !== 'openRelease' && type !== 'install' && type !== 'state') return undefined
       if (isPrivate) return { ok: false, reason: 'private' }
       if (type === 'openRelease') {
         const tag = updates.foundTag()
@@ -25,12 +25,14 @@ export function updatesDomain (
         openPage(caller, releaseUrl(tag))
         return { ok: true }
       }
+      // What main already knows, with no network: for a Settings page that opens after the daily check.
+      if (type === 'state') return { ok: true, answer: updates.answer() }
       if (type === 'install') {
         const answer = updates.answer()
         if (!answer.newer) return { ok: false, reason: 'none' }
         if (!answer.canInstall) return { ok: false, reason: 'unavailable' }
         // The install reports through `updates.changed`; the reply only says it started.
-        if (answer.phase !== 'downloading' && answer.phase !== 'installing') void updates.install(windowOf(caller))
+        if (answer.phase === 'idle' || answer.phase === 'failed') void updates.install(windowOf(caller))
         return { ok: true }
       }
       return { ok: true, answer: await updates.checkNow() }

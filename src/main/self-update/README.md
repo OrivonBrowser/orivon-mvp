@@ -60,7 +60,9 @@ Windows installer takes over and starts the new copy. The macOS swap is *provisi
 
 **An update restart restores the session.** Before the restart a one-shot note (`restart-marker.ts`) is written
 in the profile's folder; the next start takes it, removes it, and opens the last session whatever `startup.mode`
-says. A note older than fifteen minutes belongs to an install that never finished and is ignored.
+says. The note is written when the restart is armed, not before the install, so a slow password prompt cannot age it, and a
+note older than fifteen minutes belongs to an install that never finished and is ignored. If a page's unload guard cancels
+the quit, the update is already on disk and the armed relaunch stays, so the next quit starts the new copy.
 
 **The check is on by default in installed packages and never runs by itself from source.** "Check now" works from
 source and offers the release page. A private session looks at nothing.
