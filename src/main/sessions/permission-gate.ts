@@ -15,6 +15,7 @@ import { noteExclusiveAccess, type ExclusiveAccess } from '../shell/exclusive-ac
 import { confirmExternalLink } from '../shell/external-link-prompt.js'
 import { windowShowing } from '../shell/showing-window.js'
 import { EXCLUSIVE_ACCESS, isAllowed } from './allowed-permissions.js'
+import { handleDisplayMedia } from './display-media-handler.js'
 import { createExternalLinks } from './external-links.js'
 import { askSite } from '../site-settings/ask-site.js'
 import { NotificationDecisions } from './notification-decisions.js'
@@ -59,9 +60,12 @@ const siteNotifications = createSiteNotifications<object, WebContents>({
   isApp: (origin) => isAppOrigin(origin)
 })
 
-/** Answers a request that waits on the person. */
-function answerWhenAsked (answer: Promise<boolean>, callback: (granted: boolean) => void): void {
-  answer.then(callback, () => { callback(false) })
+/** Answers a request that waits on the person. `granted` runs right after a `true` has been told to Electron. */
+function answerWhenAsked (answer: Promise<boolean>, callback: (granted: boolean) => void, granted?: () => void): void {
+  answer.then((value) => {
+    callback(value)
+    if (value) granted?.()
+  }, () => { callback(false) })
 }
 
 /** Before the answer, so the shell is watching when the page enters
@@ -82,7 +86,10 @@ function denyByDefault (target: Session): void {
   target.setPermissionRequestHandler((contents, permission, callback, details) => {
     // A per-site asker answers first, for the names it owns and only in a tab.
     const sited = siteAsks.request(contents, permission, details)
-    if (sited !== undefined) return answerWhenAsked(sited, callback)
+    // An asker's `afterGrant` relies on Electron running the display handler synchronously inside `callback(true)`
+    // (measured on Electron 44): a handler that ran later would make the display asker end every honest share. The
+    // twenty-shares spec in `test/sites/e2e-screen-share-gate.test.ts` is the one that would catch the change.
+    if (sited !== undefined) return answerWhenAsked(sited, callback, () => { siteAsks.afterGrant(contents, permission, details) })
     // A page an app shows in a <webview> reaches another program only if the
     // app decides to, through its own grants (ADR-0047): never through a prompt here.
     if (permission === 'openExternal') return contents.getType() === 'webview' ? callback(false) : answerWhenAsked(externalLinks(contents, details), callback)
@@ -118,10 +125,10 @@ function denyByDefault (target: Session): void {
   // entirely") -- deny outright rather than falling through to whatever a
   // device chooser dialog would otherwise return.
   target.setDevicePermissionHandler(() => false)
-  // setDisplayMediaRequestHandler deliberately left UNSET: this fix denies
-  // getDisplayMedia, and Electron's own default with no handler installed
-  // is exactly that. Installing one is only needed to build a real
-  // screen-share picker, which is a feature, not this fix.
+  // Electron runs this only for a `media` request the handlers above granted, and Electron itself offers no
+  // source without one: the default answers nothing (the page's call fails), and the display-capture gate binds
+  // the handler that answers for a share the person picked (src/main/display-capture/).
+  target.setDisplayMediaRequestHandler(handleDisplayMedia)
 }
 
 export const permissionGateSubsystem: Subsystem = {

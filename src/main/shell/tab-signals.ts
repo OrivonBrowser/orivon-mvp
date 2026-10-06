@@ -13,6 +13,7 @@ import { groupSignal } from '../tab-groups/group-signal.js'
 import { pendingAddressSignal } from './signals/pending-address.js'
 import { readerSignal } from '../reader/reader-signal.js'
 import { stopKeySignal } from './signals/stop-key.js'
+import { sharingSignal } from './signals/sharing.js'
 import { sleepSignal } from '../memory-saver/sleep-signal.js'
 import type { TabRecord, TabState } from './tab-types.js'
 import { restoredTitle } from '../session-restore/restored-title.js'
@@ -47,6 +48,7 @@ export const TAB_SIGNALS: readonly TabSignal[] = [
   pendingAddressSignal,
   readerSignal,
   restoredTitle,
+  sharingSignal,
   sleepSignal,
   stopKeySignal
 ]

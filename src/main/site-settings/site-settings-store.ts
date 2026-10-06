@@ -8,7 +8,7 @@ import { dirname } from 'node:path'
 import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { DebouncedWriter } from '../storage/debounced-writer.js'
-import { siteKindById, type SiteKind } from './kinds.js'
+import { kindRemembers, siteKindById, type SiteKind } from './kinds.js'
 
 /** A stored answer. "Ask" is the absence of one. */
 export type SiteDecision = 'allow' | 'block'
@@ -54,7 +54,8 @@ export class SiteSettingsStore {
 
   set (origin: string, kind: SiteKind, value: SiteDecision): void {
     this.load()
-    if (originFromUrl(origin) !== origin || siteKindById(kind) === undefined || !isDecision(value)) return
+    const def = siteKindById(kind)
+    if (originFromUrl(origin) !== origin || def === undefined || !isDecision(value) || !kindRemembers(def, value)) return
     const kinds = this.sites.get(origin) ?? new Map<SiteKind, SiteDecision>()
     if (kinds.get(kind) === value) return
     kinds.set(kind, value)
@@ -114,7 +115,7 @@ export class SiteSettingsStore {
     await this.writer?.flush()
   }
 
-  /** Reads the file on first use. A file that is missing, corrupt or of another version starts the store empty, and an entry whose origin, kind or value is not one this build would itself have written is dropped: the file is the person's to edit. */
+  /** Reads the file on first use. A file that is missing, corrupt or of another version starts the store empty, and an entry whose origin, kind or value is not one this build would itself have written (a kind that remembers only a block, stored as an allow) is dropped: the file is the person's to edit. */
   private load (): void {
     if (this.loaded) return
     this.loaded = true
@@ -134,7 +135,7 @@ export class SiteSettingsStore {
       const kept = new Map<SiteKind, SiteDecision>()
       for (const [kind, value] of Object.entries(kinds)) {
         const def = siteKindById(kind)
-        if (def !== undefined && isDecision(value)) kept.set(def.id, value)
+        if (def !== undefined && isDecision(value) && kindRemembers(def, value)) kept.set(def.id, value)
       }
       if (kept.size > 0) this.sites.set(origin, kept)
     }

@@ -8,7 +8,7 @@ test whose title names the behaviour.
 | File | Role |
 |---|---|
 | [`catalogue.md`](catalogue.md) | One row per behaviour: id, the sentence, who relies on it, and the end-to-end spec that proves it. Ends with the **Capability coverage** table, one line per capability kind |
-| `e2e-app-*.test.ts` | Generic specs for what no other area proves: stored data across a restart, the page platform on an app origin, the broker's TCP, quota, path and TLS rules |
+| `e2e-app-*.test.ts` | Generic specs for what no other area proves: stored data across a restart, the page platform on an app origin, the broker's TCP, quota, path and TLS rules, an app's camera, microphone and screen |
 | `app-behaviour-support.ts` | The helper they share: a loopback server on port 0, the developer-only grant, a page call that `window.orivon` answers |
 | `contracts-surface.txt` | `src/contracts/` without its comments: every export, capability kind, error code and `LIMITS` value an app can write against |
 | [`../../scripts/app-behaviours/`](../../scripts/app-behaviours/README.md) | The two guards that keep all of this true, and their tests |

@@ -2002,7 +2002,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Why it matters:** the one run that reproduced it showed the stolen first letter, not hidden text; if it persists the cause is another one, probably the dev server's slow overlay page.
 - **Options:** retest after merge, saying the display server and whether the bar showed a caret (rec.); if it persists, run the probe against `electron-vite dev` under a window manager.
 - **Who decides:** owner
-- **Blocks:** nothing
+- **Blocks:** nothing; check `xdg-settings` on a real package either way
 
 ### A381: Should the first click after Alt+Tab select the whole address? **[AI-REC]**
 
@@ -2106,4 +2106,28 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Why it matters:** a page that times the read learns whether the person has that name warm, the leak A256 closed for the name's resolution (`ADR-0058`). The stamp strips any partition a main-process request sets.
 - **Options:** a verifier request kind that reads one file in a named partition (rec.); a session of its own for these reads; accept it, the read happens only for judged names and at most 128 a burst.
 - **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A400: An embedded page cannot share a screen, even with `allow="display-capture"` **[AI-REC]**
+
+- **Question:** Screen sharing needs the tab's preload in the frame that asks, and a tab's preload runs in the top frame only (ADR-0052), so a meeting widget a site embeds in an iframe is refused. Run the preload in subframes, or accept?
+- **Why it matters:** embedded meeting widgets (an iframe API, a support chat) fail to share while their own sites work; most meeting products run in the top frame.
+- **Options:** accept until a person or an app needs it (rec.: subframes would run every preload module in every frame, ad frames included, and reopen ADR-0052); turn on `nodeIntegrationInSubFrames` for tabs with a frame-aware preload audit.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A401: Stop sharing cannot end a screen or window share the page has copied **[AI-REC]**
+
+- **Question:** Electron 44 gives main no way to end a screen or window capture, so Stop ends the tracks the preload handed the page and their clones. A clone made through a same-origin `about:blank` realm the preload does not reach is never reported: the bar and marks follow the tracks the preload knows, so they go when those end while that hidden copy keeps capturing. Accept, or reload the page on Stop?
+- **Why it matters:** a person who presses Stop expects the share to end, and the indicator is only as true as the tracks the preload handed out; closing or reloading the tab always ends it, and Wayland and macOS show the system's own indicator.
+- **Options:** accept and keep closing the tab as the hard stop (rec.: only a page working against the person keeps a hidden copy, and it was granted the share); reload the page on Stop (ends a call with it); ask Electron for a stop in `setDisplayMediaRequestHandler` (settles it).
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
+
+### A402: Screen sharing on Wayland, Windows and macOS is written but not measured end to end **[RESEARCH]**
+
+- **Question:** Linux X11 is measured end to end. On Wayland the picker hands a window or screen to the desktop portal, and only the portal round trip is measured, not an accepted share; Windows (system audio) and macOS (Screen Recording permission) follow Electron's documentation.
+- **Why it matters:** the owner's own desktop is GNOME on Wayland; a share that fails there fails for the person most likely to try it first.
+- **Options:** a manual share on a real GNOME Wayland desktop and on Windows and macOS before release (rec.); a headless portal backend that accepts by itself (none installed here).
+- **Who decides:** research first
 - **Blocks:** nothing

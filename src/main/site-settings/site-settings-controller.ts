@@ -5,7 +5,7 @@
 // row that said "Camera allowed" for one would say something the gate does not do. No `electron` import.
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { SettingKey } from '../settings/schema.js'
-import { SITE_KINDS, type SiteKind, type SiteKindDef, type SiteValue } from './kinds.js'
+import { kindRemembers, SITE_KINDS, type SiteKind, type SiteKindDef, type SiteValue } from './kinds.js'
 import type { SiteDecision, SiteSettingsListener } from './site-settings-store.js'
 
 /** What a select offers: the setting's own answer, or a stored one. */
@@ -109,9 +109,10 @@ export function createSiteSettingsController (deps: SiteSettingsControllerDeps):
   const stored = (origin: string, kind: SiteKind): SiteDecision | undefined =>
     kind === 'notifications' ? notifications.get(origin) : store.get(origin, kind)
 
-  function optionsFor (current: SiteChoice, defaultValue: SiteValue): ChoiceOption[] {
+  function optionsFor (kind: SiteKindDef, current: SiteChoice, defaultValue: SiteValue): ChoiceOption[] {
     const options: ChoiceOption[] = [{ value: 'default', label: `Use default (${VALUE_WORD[defaultValue]})` }]
     for (const decision of ['allow', 'block'] as const) {
+      if (!kindRemembers(kind, decision)) continue
       // A choice that says what "default" already says is offered only while it is what is stored.
       if (decision !== defaultValue || current === decision) options.push({ value: decision, label: VALUE_WORD[decision] })
     }
@@ -121,7 +122,7 @@ export function createSiteSettingsController (deps: SiteSettingsControllerDeps):
   function rowFor (origin: string, kind: SiteKindDef): SiteKindRow {
     const value = stored(origin, kind.id) ?? 'default'
     const defaultValue = defaultOf(kind)
-    return { kind: kind.id, label: kind.label, group: kind.group, value, defaultValue, options: optionsFor(value, defaultValue) }
+    return { kind: kind.id, label: kind.label, group: kind.group, value, defaultValue, options: optionsFor(kind, value, defaultValue) }
   }
 
   return {
@@ -131,6 +132,7 @@ export function createSiteSettingsController (deps: SiteSettingsControllerDeps):
       const def = typeof kind === 'string' ? byId.get(kind) : undefined
       if (def === undefined || !isWebOrigin(origin) || deps.isApp(origin) || !CHOICES.includes(value as SiteChoice)) return false
       const choice = value as SiteChoice
+      if (choice !== 'default' && !kindRemembers(def, choice)) return false
       if (def.id === 'notifications') {
         if (choice === 'default') notifications.forget(origin)
         else notifications.set(origin, choice)

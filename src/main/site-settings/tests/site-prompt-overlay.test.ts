@@ -220,8 +220,8 @@ describe('the site-prompt overlay', () => {
       expect(review(r)).toMatchObject({
         mode: 'review', origin: SITE, settingsLink: commandById('siteSettings.open')?.pending !== true,
         rows: [
-          { kind: 'camera', label: 'Camera', value: 'block', askOffered: false },
-          { kind: 'location', label: 'Location', value: 'allow', askOffered: true }
+          { kind: 'camera', label: 'Camera', value: 'block', askOffered: false, allowOffered: true },
+          { kind: 'location', label: 'Location', value: 'allow', askOffered: true, allowOffered: true }
         ]
       })
     })
@@ -249,6 +249,17 @@ describe('the site-prompt overlay', () => {
       expect(r.access.entries(r.contents).find((entry) => entry.kind === 'camera')?.state).toBe('allowed')
       r.handler.request({ type: 'set', kind: 'location', value: 'block' })
       expect(r.store.get(SITE, 'location')).toBe('block')
+    })
+
+    it('offers no Allow for screen sharing and stores nothing when one is sent', () => {
+      const r = reviewRig()
+      r.access.note(r.contents, SITE, 'screenShare', 'blocked')
+      const rows = (review(r)?.['rows'] ?? []) as Array<Record<string, unknown>>
+      expect(rows.find((row) => row['kind'] === 'screenShare')).toMatchObject({ allowOffered: false })
+      expect(r.handler.request({ type: 'set', kind: 'screenShare', value: 'allow' })).toBeUndefined()
+      expect(r.store.get(SITE, 'screenShare')).toBeUndefined()
+      expect(r.handler.request({ type: 'set', kind: 'screenShare', value: 'block' })).toEqual({ kind: 'screenShare', value: 'block' })
+      expect(r.store.get(SITE, 'screenShare')).toBe('block')
     })
 
     it('forgets the answer for Ask', () => {

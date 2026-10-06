@@ -110,6 +110,14 @@ describe('electron exports this package has not yet considered', () => {
   })
 })
 
+describe('desktopCapturer', () => {
+  it('has a real getSources, which names the missing media devices rather than refusing as unimplemented', async () => {
+    vi.stubGlobal('orivon', fakeOrivon())
+    const mod = await import('../index.js')
+    await expect(mod.desktopCapturer.getSources()).rejects.toThrow(/mediaDevices/)
+  })
+})
+
 describe('the default export', () => {
   it('serves every named export as properties of one object, unchanged', async () => {
     vi.stubGlobal('orivon', fakeOrivon())

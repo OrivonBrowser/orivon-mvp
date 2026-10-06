@@ -12,6 +12,7 @@ import { extensionsStatePart } from './state/extensions.js'
 import { homeStatePart } from './state/home.js'
 import { loginsStatePart } from '../passwords/logins-state.js'
 import { popupsBlockedStatePart } from './state/popups-blocked.js'
+import { sharingStatePart } from './state/sharing.js'
 import { shortcutsStatePart } from './state/shortcuts.js'
 import { sidePanelStatePart } from './state/side-panel.js'
 import { siteAccessStatePart } from './state/site-access.js'
@@ -38,6 +39,7 @@ export const SHELL_STATE_PARTS: readonly ShellStatePart[] = [
   homeStatePart,
   loginsStatePart,
   popupsBlockedStatePart,
+  sharingStatePart,
   shortcutsStatePart,
   sidePanelStatePart,
   siteAccessStatePart,

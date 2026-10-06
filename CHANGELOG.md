@@ -22,6 +22,22 @@ public surface of `src/contracts/` (named `contracts/<file>`).
   malformed value rejects the manifest and absence is allowed. Apps published under a name set `domain` to that name,
   as a lower-case host with no scheme, port or path. Recheck: every port.
 - **`contracts/manifest.ts`**: an app may now declare `media.screen` in `capabilities.media`; nothing changes for
+  existing apps. See `app-screen-declared-shows-the-picker` below.
+- **`app-media-declared-is-asked-once`, `app-media-undeclared-is-refused`**: `media: { camera: true, microphone: true }`
+  in the manifest now works. A declared kind is asked once, in the tab's panel, at the first `getUserMedia`; an
+  undeclared one is refused with no question, as before. Apps that record or call: declare it. Recheck: Element.
+- **`app-screen-declared-shows-the-picker`, `app-screen-undeclared-is-refused`, `electron-desktop-capturer-serves-the-picked-source`**:
+  a declared `media.screen` is asked once, then Orivon's picker opens; the `electron` shim's `desktopCapturer.getSources`
+  returns the one source chosen and its `chromeMediaSource: 'desktop'` call takes it once. Apps that list every screen: use that. Recheck: Element.
+
+### Added
+
+- **Screen sharing**: a page's `getDisplayMedia` opens Orivon's picker (a tab, a window or the entire screen, with tab
+  audio), the tab and the shared tab show it, a bar offers Stop sharing, and a site can be blocked. Only the call
+  Orivon's preload makes after the pick is granted, so the legacy `chromeMediaSource` capture is refused (ADR-0055).
+- **A registered app's camera, microphone and screen**: `media.camera`, `media.microphone` and `media.screen` are read
+  from the manifest, offered at consent, asked before first use and refused when undeclared; the `electron` shim's
+  `desktopCapturer.getSources` returns the source the person picked.
   existing apps, and it is not yet granted (the implementation follows).
 - **`contracts/trust.ts`, `contracts/manifest.ts`, `contracts/capability-api.ts`**: new capability kind `trust.score`
 - **`contracts/trust.ts`, `contracts/manifest.ts`, `contracts/capability-api.ts`, `contracts/index.ts`**: new capability kind `trust.score`

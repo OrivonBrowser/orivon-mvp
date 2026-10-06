@@ -29,6 +29,8 @@ export interface ReviewRow {
   readonly value: SiteValue
   /** The default for the kind is to block, so "Ask" would change nothing. */
   readonly askOffered: boolean
+  /** The kind keeps an allow; screen sharing is asked each time and only ever stores a block. */
+  readonly allowOffered: boolean
 }
 
 export interface ReviewView {

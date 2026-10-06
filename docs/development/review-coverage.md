@@ -345,3 +345,12 @@ In all, 36 findings, 36 confirmed, none refuted.
 |---|---|---|
 | `/code-review` at medium effort | PR #100 against `main` | One finding, confirmed and fixed: the slow-gateway spec waited the default 8 s for a page that needs two 3 s blocks in turn |
 | Reproduction with the fixture gateway and a page loading large files from its own host, at 800 ms per block | The 5 s build and this branch | 5 s: the icon fetch fails at 5001 ms and the tab keeps the globe; this branch: the icon shows at 14.3 s |
+
+### `stream/screen-share`: screen sharing, the app media door and the shim's `desktopCapturer` (2026-10-06)
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| Conductor hand-review of the gate lane | `src/main/display-capture/` and the tab preload | One race closed: a page's legacy request sent just before the preload's call could sit alone past the quiet window, which counted from its arrival; the window now counts from the later of the last arrival and the preload's called message, with a 50 ms early-arrival slack measured over 140 real shares |
+| `/code-review` at high effort | PR #112 against `main` | Nine findings, all fixed with a test that failed first: a tab share ended by the shown tab's own navigation, a refusal wiped by a navigation that never commits, two disagreeing "is an app" predicates, a picked tab detached before its share registered, a listener leak, duplicated ticket state, a registry bind that relied on install order, a triple read of every window's tabs, a stale README file name |
+| Security review (read-only, Opus) | The branch's diff | Four findings: a page's own pending request could take the preload's ticket, since Blink queues a frame's media requests, fixed; the indicator follows only the tracks the preload handed out, documented in A401; a declined origin escaped the person's content rules (a regression of the previous fix), fixed; the ticket nonce reached the page's world, fixed |
+| `adversarial-reviewer` (read-only, Opus) | The security boundary, newest code first | CONCERNS, no confirmed critical: the rule that ended a renderer on a ticketless request ran on a clock, so it could crash honest tabs (an extension's content script, a shim app's callback-form `getUserMedia`) and miss a late request, replaced by the preload's confirmation of its own call; a stored site Block was ignored for a registered origin holding no grant, fixed; five smaller notes, fixed |
