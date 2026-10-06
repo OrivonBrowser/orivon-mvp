@@ -28,6 +28,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Every Explore card now carries its site's own icon tile, shipped with the app and loaded from its origin.
 - An ipfs:// tab icon now waits out slow gateways instead of giving up at 5 s, the likely reason The Lounge showed none.
 - Every ported app now shows visitors in other browsers a panel pointing them to Orivon; it stays hidden inside Orivon, and --no-orivon-hint removes it.
+- Orivon can now update itself: a new stable release is offered in a question, and installed only from a package our offline key signed.
 - Orivon asks to be the default browser from Settings, the welcome screen and weekly; the dock and taskbar offer New Window and New Private Window.
 - CI's e2e now runs only the specs a change can reach, in parallel shards: minutes instead of forty.
 - The shell's own pages no longer load from `file:`, and Electron's file-protocol fuse is off in every binary: local files can ship without extra privileges.

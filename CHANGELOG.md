@@ -32,6 +32,9 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **Update from the browser**: an installed Orivon asks, once per version, when a signed stable release is out: Install update,
+  Download from GitHub or Not now; Settings > About checks at once. Only a package a release-signed list names is installed,
+  and the browser restarts with its windows and tabs back. The check is now on by default (`ADR-0062`).
 - **"Orivon (source)" in the Linux dock** (`node scripts/launch-from-source.mjs install`), with New Window and New Private Window:
   a click with Orivon open reaches it at once; only a start with nothing open builds first. With it installed, a Linux
   run from source can be made the default browser from Settings.
