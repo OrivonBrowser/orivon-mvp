@@ -277,12 +277,13 @@ describe('the picker overlay', () => {
   describe('Linux Wayland', () => {
     const wayland = { wayland: true }
 
-    it('shows one card each for windows and screens and asks the system for nothing until Share', () => {
+    it('shows one card for the system dialog, which lists windows and screens together, and asks the system for nothing until Share', () => {
       const r = rig({ platform: wayland })
       const { view } = r.open()
+      expect(view['segments']).toEqual(['tab', 'screen'])
       expect(view['modes']).toEqual({ window: 'portal', screen: 'portal' })
-      expect(view['cards'].window.map((card: Record<string, unknown>) => card['label'])).toEqual(['Choose a window in the system dialog'])
-      expect(view['cards'].screen.map((card: Record<string, unknown>) => card['label'])).toEqual(['Choose a screen in the system dialog'])
+      expect(view['cards'].window).toEqual([])
+      expect(view['cards'].screen.map((card: Record<string, unknown>) => card['label'])).toEqual(['Choose a window or screen in the system dialog'])
       expect(r.getSources).not.toHaveBeenCalled()
     })
 
@@ -296,8 +297,8 @@ describe('the picker overlay', () => {
       expect(r.close).toHaveBeenCalled()
     })
 
-    it('answers a window card with a window choice', async () => {
-      const r = rig({ platform: wayland })
+    it('answers a window card with a window choice when the page asked for no monitors', async () => {
+      const r = rig({ platform: wayland, hints: { monitorTypeSurfaces: 'exclude' } })
       const { view, id, answer } = r.open()
       r.drawn(id)
       r.handler.request({ type: 'segment', id, segment: 'window' })
