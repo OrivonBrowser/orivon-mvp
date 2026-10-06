@@ -160,8 +160,8 @@ export function createSelfUpdate ({ app, windows, isPrivate }: SelfUpdateDeps): 
   }
   function showProgress (state: FlowState): void {
     const version = flow.release()?.version.replace(/^v/, '') ?? ''
-    if (state.phase === 'downloading') toast(target, 'updateDownloading', `Orivon ${version} · ${String(state.percent ?? 0)}%`)
-    else if (state.phase === 'installing') toast(target, 'updateInstalling', `Orivon ${version}`)
+    if (state.phase === 'downloading') toast(target, 'updateDownloading', `${version} · ${String(state.percent ?? 0)}%`)
+    else if (state.phase === 'installing') toast(target, 'updateInstalling', `${version}…`)
     else if (state.phase === 'failed') toast(target, 'updateFailed')
   }
 

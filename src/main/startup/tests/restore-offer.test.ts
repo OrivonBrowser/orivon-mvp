@@ -32,7 +32,7 @@ describe('the crash offer', () => {
     expect(show).toHaveBeenCalledWith('restore')
   })
 
-  it('stays quiet for a later window, a clean end, the continue choice, a private session and a kiosk', () => {
+  it('stays quiet for a later window, a clean end, the continue choice, a private session, a kiosk and a start that already restored the session', () => {
     for (const [over, options] of [
       [{}, {}],
       [{}, { firstOfLaunch: false }],
@@ -40,6 +40,7 @@ describe('the crash offer', () => {
       [{ mode: 'continue' }, { firstOfLaunch: true }],
       [{ isPrivate: true }, { firstOfLaunch: true }],
       [{ kiosk: true }, { firstOfLaunch: true }],
+      [{}, { firstOfLaunch: true, sessionRestored: true }],
       [{ previous: null }, { firstOfLaunch: true }]
     ] as const) {
       const { ctx, show } = setup(over)

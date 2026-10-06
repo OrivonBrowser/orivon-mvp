@@ -35,10 +35,10 @@ describe('installPlan', () => {
   it('mounts the disk image read-only, copies the app beside the old one, swaps folders and always detaches', () => {
     const plan = installPlan('mac', '/ud/o.dmg', facts({ platform: 'darwin', execPath: '/Applications/Orivon.app/Contents/MacOS/Orivon' }))
     expect(plan.steps.map((step) => step.op)).toEqual(['make-folder', 'run', 'run', 'run', 'swap-folder', 'relaunch'])
-    expect(plan.steps[1]).toEqual({ op: 'run', command: 'hdiutil', args: ['attach', '-nobrowse', '-readonly', '-mountpoint', '/tmp/orivon-update-1/mount', '/ud/o.dmg'] })
-    expect(plan.steps[2]).toEqual({ op: 'run', command: 'ditto', args: ['/tmp/orivon-update-1/mount/Orivon.app', '/Applications/.Orivon.app.update'] })
+    expect(plan.steps[1]).toEqual({ op: 'run', command: '/usr/bin/hdiutil', args: ['attach', '-nobrowse', '-readonly', '-mountpoint', '/tmp/orivon-update-1/mount', '/ud/o.dmg'] })
+    expect(plan.steps[2]).toEqual({ op: 'run', command: '/usr/bin/ditto', args: ['/tmp/orivon-update-1/mount/Orivon.app', '/Applications/.Orivon.app.update'] })
     expect(plan.steps[4]).toEqual({ op: 'swap-folder', staged: '/Applications/.Orivon.app.update', target: '/Applications/Orivon.app', backup: '/Applications/.Orivon.app.old' })
-    expect(plan.always).toEqual([{ op: 'run', command: 'hdiutil', args: ['detach', '-force', '/tmp/orivon-update-1/mount'] }, { op: 'remove', path: '/tmp/orivon-update-1/mount' }])
+    expect(plan.always).toEqual([{ op: 'run', command: '/usr/bin/hdiutil', args: ['detach', '-force', '/tmp/orivon-update-1/mount'] }, { op: 'remove', path: '/tmp/orivon-update-1/mount' }])
     expect(plan.onFailure).toEqual([{ op: 'remove', path: '/Applications/.Orivon.app.update' }])
   })
 

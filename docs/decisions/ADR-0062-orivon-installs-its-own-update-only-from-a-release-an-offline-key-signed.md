@@ -66,6 +66,10 @@ matter and a mirror or an IPFS copy of a package verifies the same way.
   browser install a package of their own: a changed package fails its signed hash, a changed list fails the
   signature, an old signed list under a new tag fails the version check, and an old release is never newer.
   They can withhold updates, or make the install fail with a refusal the person sees.
+- **What signing does not cover.** The maintainer signs the packages the release holds when the script runs. An
+  attacker who replaces a package before then, or changes the workflow that builds it, has their package signed too.
+  Signing soon after the release job finishes keeps that window short; closing it needs builds anyone can
+  reproduce, which this build does not have.
 - **What they cannot be stopped from.** A person who opens "Download from GitHub" and installs by hand gets
   what GitHub serves, as before. Packages carry no vendor code-signing certificate on Windows or macOS.
 - **A release re-run changes the packages.** The signature then no longer matches: the maintainer signs again

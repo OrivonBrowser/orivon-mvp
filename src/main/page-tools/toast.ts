@@ -51,8 +51,8 @@ export const TOAST_TEXT = {
   linkCopyFailed: { text: 'Could not copy the link', tone: 'error' },
   mailFailed: { text: 'Could not open your mail program', tone: 'error' },
   noAddress: { text: 'This page has no address to share', tone: 'info' },
-  updateDownloading: { text: 'Downloading the update', tone: 'info', sticky: true },
-  updateInstalling: { text: 'Installing the update…', tone: 'info', sticky: true },
+  updateDownloading: { text: 'Downloading Orivon', tone: 'info', sticky: true },
+  updateInstalling: { text: 'Installing Orivon', tone: 'info', sticky: true },
   updateFailed: { text: 'Could not install the update', tone: 'error' },
   localFilesUnsafe: { text: 'This copy of Orivon cannot open files from this computer safely.', tone: 'error' }
 } as const satisfies Record<string, ToastText>

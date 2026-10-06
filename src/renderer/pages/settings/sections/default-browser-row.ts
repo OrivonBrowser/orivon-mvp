@@ -80,8 +80,10 @@ export function renderRelease (state: SettingsState): HTMLElement {
   const status = state.updates.installWords() || state.updates.cannotInstallWhy()
   const failed = state.updates.installWords().startsWith('Could not')
   return h('div', { className: 'banner info', role: 'status' },
-    h('span', { textContent: `Orivon ${version ?? ''} is available.` }),
-    ...(status === '' ? [] : [h('span', { className: failed ? 'problem' : 'muted', textContent: status })]),
-    ...(state.updates.canInstall() ? [h('button', { className: 'btn small primary', type: 'button', textContent: 'Install update', onclick: () => { void state.updates.install() } })] : []),
-    h('button', { className: 'btn small', type: 'button', textContent: 'Open release page', onclick: () => { void state.updates.openRelease() } }))
+    h('span', { className: 'banner-text' },
+      h('span', { textContent: `Orivon ${version ?? ''} is available.` }),
+      ...(status === '' ? [] : [h('span', { className: failed ? 'problem' : 'muted', textContent: status })])),
+    h('span', { className: 'banner-actions' },
+      ...(state.updates.canInstall() ? [h('button', { className: 'btn small primary', type: 'button', textContent: 'Install update', onclick: () => { void state.updates.install() } })] : []),
+      h('button', { className: 'btn small', type: 'button', textContent: 'Open release page', onclick: () => { void state.updates.openRelease() } })))
 }

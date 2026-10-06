@@ -38,6 +38,8 @@ export interface ShellWindowOptions {
   readonly localFiles?: boolean | undefined
   /** Called once the window has been shown. */
   readonly shown?: (() => void) | undefined
+  /** The launch already brought the previous session back, whatever the start-up setting says: the start after an update. */
+  readonly sessionRestored?: boolean | undefined
 }
 
 /** A window opened from another one sits a little down and to the right of it, so the two are told apart. */

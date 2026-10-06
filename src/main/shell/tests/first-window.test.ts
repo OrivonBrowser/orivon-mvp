@@ -164,7 +164,9 @@ describe('firstWindowOptions', () => {
         plan.first?.(fake.tabs)
         expect(fake.calls.slice(0, 2)).toEqual(['create https://a.example/ back', 'create https://b.example/ back'])
         expect(plan.after).toBeDefined()
+        expect(plan.sessionRestored).toBe(true)
       }
+      expect(firstWindowOptions({ services: services({ mode: 'continue', previous }), isPrivate: false, argv: [], displays: [display] }).sessionRestored).toBeUndefined()
       expect(firstWindowOptions({ services: services({ mode: 'newTab', previous }), isPrivate: true, argv: [], restoreSession: true })).toEqual({})
     })
 

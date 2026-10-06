@@ -8,9 +8,8 @@
 // one network entry point, fetchFaviconDataUrlCached, thin and defensive
 // around them. net.request, not net.fetch -- redirects need
 // per-hop T12 checks, the same reason loader/electron/fetch.ts's netFetch
-// avoids net.fetch's own redirect handling -- imported dynamically -- same
-// reasoning as update-check-runner.ts's file header: outside a real
-// Electron process (i.e. under vitest), `electron`'s entry point is a path
+// avoids net.fetch's own redirect handling -- imported dynamically, because
+// outside a real Electron process (i.e. under vitest), `electron`'s entry point is a path
 // STRING, and a top-level import would silently bind `undefined` rather
 // than throw.
 
@@ -373,8 +372,7 @@ const faviconCache = new FaviconCache(MAX_CACHED_FAVICONS, MAX_CACHED_FAVICON_CH
 /** The one exported function that reaches the network, answered from
  * faviconCache when it can be. Returns null on any failure (offline,
  * timeout, oversized, wrong type, T12 refusal on the first hop or on any
- * redirect target) -- never throws by contract, matching
- * update-check-runner.ts's fetchLatestGithubRelease. A result is cached only
+ * redirect target) -- never throws by contract. A result is cached only
  * if `stillWanted()` holds when it lands: a capture that has already been
  * dropped must not fill the cache. */
 export async function fetchFaviconDataUrlCached (url: string, pageUrl: string, stillWanted: () => boolean): Promise<string | null> {

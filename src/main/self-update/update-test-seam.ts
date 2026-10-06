@@ -34,8 +34,9 @@ export function updateSeam (env: NodeJS.ProcessEnv = process.env): UpdateSeam | 
   return { source: source === '' ? undefined : source, key: key === '' ? undefined : key, record }
 }
 
-/** True in a test build: the scheduled check then runs from source too, so an end-to-end run can reach it. */
-export const isUpdateTestBuild = (): boolean => SEAM_ENABLED
+/** True in a test build whose spec serves its own releases: the scheduled check then runs from source too. Any other
+ * end-to-end launch never looks, so no spec asks GitHub, and none is shown an update its version 0.0.0 makes look new. */
+export const hasUpdateTestSource = (env: NodeJS.ProcessEnv = process.env): boolean => updateSeam(env)?.source !== undefined
 
 export function recordInstall (entry: RecordedInstall): void {
   if (!SEAM_ENABLED) return

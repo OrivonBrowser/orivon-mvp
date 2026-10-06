@@ -60,6 +60,7 @@ export function firstWindowOptions ({ services, isPrivate, argv, packaged = true
   if (planOpensLocalFile(plan)) options.localFiles = true
   if (first.tabs.length > 0 || first.urls.length > 0) options.first = fillFirst(first)
   if (first.saved !== undefined) {
+    if (restoreSession) options.sessionRestored = true
     // The saved window's own size and place replace the last-used window's: they are the ones the session had.
     const saved = placementFor({ bounds: first.saved.bounds, maximized: first.saved.maximized }, displays)
     if (saved.place !== undefined) options.place = saved.place

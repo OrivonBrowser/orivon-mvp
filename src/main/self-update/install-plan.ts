@@ -35,6 +35,8 @@ export interface PlanFacts extends InstallFacts {
 
 export const PKEXEC = '/usr/bin/pkexec'
 export const DPKG = '/usr/bin/dpkg'
+export const HDIUTIL = '/usr/bin/hdiutil'
+export const DITTO = '/usr/bin/ditto'
 /** pkexec's exit codes for "the person dismissed the prompt" and "not authorized". */
 export const PKEXEC_DECLINED = [126, 127] as const
 /** The flags electron-builder's NSIS installer takes to update in place and start the new copy. */
@@ -82,14 +84,14 @@ export function installPlan (kind: InstallerKind, file: string, facts: PlanFacts
       return {
         steps: [
           { op: 'make-folder', path: mount },
-          { op: 'run', command: 'hdiutil', args: ['attach', '-nobrowse', '-readonly', '-mountpoint', mount, file] },
-          { op: 'run', command: 'ditto', args: [join(mount, BUNDLE_NAME), staged] },
-          { op: 'run', command: 'hdiutil', args: ['detach', mount] },
+          { op: 'run', command: HDIUTIL, args: ['attach', '-nobrowse', '-readonly', '-mountpoint', mount, file] },
+          { op: 'run', command: DITTO, args: [join(mount, BUNDLE_NAME), staged] },
+          { op: 'run', command: HDIUTIL, args: ['detach', mount] },
           { op: 'swap-folder', staged, target: bundle, backup: join(dirname(bundle), `.${BUNDLE_NAME}.old`) },
           { op: 'relaunch', execPath: facts.execPath }
         ],
         onFailure: [{ op: 'remove', path: staged }],
-        always: [{ op: 'run', command: 'hdiutil', args: ['detach', '-force', mount] }, { op: 'remove', path: mount }]
+        always: [{ op: 'run', command: HDIUTIL, args: ['detach', '-force', mount] }, { op: 'remove', path: mount }]
       }
     }
   }

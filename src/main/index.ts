@@ -36,7 +36,7 @@ import { removeAfterExit, removePrivateDir, sweepPrivateDirs } from './launch/pr
 import { loadFetchStack } from './startup/fetch-stack.js'
 import { startLaunch } from './launch/start-launch.js'
 import { takeRestartMarker } from './self-update/restart-marker.js'
-import { isUpdateTestBuild } from './self-update/update-test-seam.js'
+import { hasUpdateTestSource } from './self-update/update-test-seam.js'
 import { scheduleUpdateChecks } from './self-update/update-schedule.js'
 import { configureVerifier, verifierEthContentCid } from './verifier/verifier-subsystem.js'
 import { createPageScoreLookup } from './browsing/page-score-lookup.js'
@@ -240,7 +240,7 @@ function boot (runtime: Runtime): void {
     // to do; installs nothing until asked. A run from source never looks by itself: its version says nothing.
     if (!runtime.isPrivate) {
       const stopUpdateChecks = scheduleUpdateChecks({
-        enabled: () => shell.settings.get('updates.check') && (app.isPackaged || isUpdateTestBuild()),
+        enabled: () => shell.settings.get('updates.check') && (app.isPackaged || hasUpdateTestSource()),
         onEnabledChange: (listener) => shell.settings.onChange((change) => { if (change.key === 'updates.check') listener() }),
         run: async () => { await shell.selfUpdate.runScheduled() }
       })
