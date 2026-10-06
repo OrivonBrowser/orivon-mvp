@@ -76,6 +76,17 @@ requests, suspicion, a wrong nonce, the early slack, the timeout) lets go of the
 the page's destruction does the same through the gate. The display handler voids the ticket when the granted request names a
 frame that is gone or is not the tab's top frame any more, so the asker's check after the grant ends no honest renderer.
 
+**The real call is made in the page's world, so the page's `CaptureController` binds.** A controller binds only to the call that
+carries it in its options, and the context bridge cannot hand one to the isolated world. The preload's wrapper therefore builds,
+from natives captured before any page script ran, a closure that makes the one native call, and the isolated world starts it in
+the step that arms the ticket ([`ADR-0061`](../../../docs/decisions/ADR-0061-the-page-s-share-call-runs-in-its-own-world-so-its-capturecontroller-binds.md)).
+What keeps the call Orivon's: the options are a prototype-free copy made when the page calls (arrays carry an iterator of their own),
+so converting them runs no page code; the controller is checked by the browser; the native promise is read with the captured
+`then` after it was given its own constructor and species, and its failure is named by the captured `DOMException` getters, so a
+changed `Promise`, `Error` or `DOMException` forges nothing; the isolated world's verdict returns as the result of a bridge call and
+settles the page's promise in the turn the call settled, and a share the isolated world could not confirm has its tracks stopped.
+The page's promise is the wrapper's, so `setFocusBehavior` finds its window closed (A407).
+
 **On Wayland the picker lists nothing, and the capture asks the system dialog itself.** The desktop portal restores a pick by a monitor's make, model and serial (a window's by app and title), so two identical monitors are one monitor to it: a listing first would hand the capture a stored pick that restores the first of them, whichever the person chose. Share on a Wayland card therefore answers with a source id from [`picker-model.ts`](picker/picker-model.ts)'s `portalSourceId` that the capture never issued, so no stored pick exists for it and the capture opens its own portal session, in which the person chooses. Each share takes an id never used before: a reused id could hold the previous share's pick and restore it with no dialog. The page's call resolves while the system dialog is still open, and cancelling there ends the track, which the preload reports and the registry turns into the end of the share.
 
 **A tab that is not showing in a window cannot be shared.** Chromium refuses to capture the view of a background tab and the

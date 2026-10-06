@@ -2211,3 +2211,14 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** leave it, as for every origin (rec.); say it in the consent when no keyring is reachable.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
+
+### A407: A page's `setFocusBehavior` is refused as too late **[RESEARCH]**
+
+- **Question:** A page that passes a `CaptureController` and calls `setFocusBehavior` when its `getDisplayMedia` promise
+  resolves gets `InvalidStateError: The window of opportunity for focus-decision is closed.` Chromium closes that
+  window in the microtask after the call resolves; the page's promise is Orivon's and resolves in the first one.
+- **Why it matters:** a site that decides whether the shared surface takes focus cannot, and the surface is focused.
+- **Options:** accept (rec.); make the native call when the page calls, with main holding the request until the
+  person picks, so the page's callbacks are reactions of the browser's own promise (a change to the ticket and picker).
+- **Who decides:** research first
+- **Blocks:** nothing

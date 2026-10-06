@@ -1,20 +1,26 @@
-// Screen sharing for a page in a tab (ADR-0055). The page's `getDisplayMedia` is wrapped in its own world: the
-// wrapper only asks, and this world makes the real call after the person picked, so the permission gate can tell that
+// Screen sharing for a page in a tab (ADR-0055, ADR-0061). The page's `getDisplayMedia` is wrapped in its own world:
+// the wrapper asks, and after the person picked this world arms the ticket and runs the real call that the wrapper
+// prepared in the page's world, so the page's `CaptureController` binds to it and the permission gate can tell that
 // call from every other `media` request. The wrapper is not a boundary: a call that goes around it meets no ticket in
-// main and is refused there. The wrapper reads the options Electron never passes to main, and a stream handed back
-// is kept here so that Stop reaches its tracks, clones included.
+// main and is refused there. The wrapper reads the options Electron never passes to main, and the stream is kept
+// here so that Stop reaches its tracks, clones included.
 import { contextBridge, ipcRenderer } from 'electron'
 import { DISPLAY_CAPTURE_CHANNEL, DISPLAY_CAPTURE_PICK_CHANNEL, DISPLAY_CAPTURE_STOP_CHANNEL } from '../main/channels.js'
 
-/** What the main world asks of this one for a call: the page's options, already reduced to what can be copied. */
+/** What the main world asks of this one for a call: whether the page wants audio, and the hints the picker opens on. */
 interface ShareOptions {
   readonly audio: boolean
-  readonly video: unknown
-  readonly audioConstraints: unknown
   readonly hints: Record<string, unknown>
-  /** The event the main world listens for to receive the stream; named by the main world, fresh for each call. */
-  readonly handOff: string
 }
+
+/** What the main world's call came to: the stream, held by a detached element, or the refusal read from its error. */
+type CallOutcome = { readonly ok: true, readonly holder: unknown } | { readonly ok: false, readonly name: string, readonly message: string }
+
+/**
+ * Starts the real call in the main world, once, and hands its outcome to the callback, whose answer comes back to the
+ * main world at once: the page's promise settles in the turn the call did, which a capture controller needs.
+ */
+type CallNow = (onSettled: (outcome: CallOutcome) => ShareResult) => void
 
 /** `share` is the id the main world and the DOM hand-off name a share by; the ticket's nonce never leaves this world. */
 type ShareResult = { readonly ok: true, readonly share: string } | { readonly ok: false, readonly name: string, readonly message: string }
@@ -63,10 +69,18 @@ function policyAllows (): boolean {
   return typeof source?.allowsFeature !== 'function' || source.allowsFeature('display-capture')
 }
 
-function errorOf (error: unknown): ShareResult {
-  const name = typeof error === 'object' && error !== null && typeof (error as { name?: unknown }).name === 'string' ? (error as { name: string }).name : 'AbortError'
-  const message = typeof error === 'object' && error !== null && typeof (error as { message?: unknown }).message === 'string' ? (error as { message: string }).message : 'Failed to start capture'
-  return refusal(name, message)
+/** Whether the main world's call came back with a stream held by an element: anything else is a refusal. */
+function isStream (outcome: unknown): boolean {
+  if (typeof outcome !== 'object' || outcome === null || (outcome as { ok?: unknown }).ok !== true) return false
+  const holder = (outcome as { holder?: unknown }).holder
+  return typeof holder === 'object' && holder !== null && (holder as { srcObject?: unknown }).srcObject instanceof MediaStream
+}
+
+function failureOf (outcome: unknown): ShareResult {
+  const read = (key: string): unknown => typeof outcome === 'object' && outcome !== null ? (outcome as Record<string, unknown>)[key] : undefined
+  const name = read('name')
+  const message = read('message')
+  return refusal(typeof name === 'string' ? name : 'AbortError', typeof message === 'string' ? message : 'Failed to start capture')
 }
 
 /** The failure name main reads: one of the few it knows, and `AbortError` for any other. */
@@ -80,20 +94,7 @@ function randomName (prefix: string): string {
   return `${prefix}-${Array.from(words, (word) => word.toString(36)).join('')}`
 }
 
-/** Hands the stream to the main world through the DOM: an element carries it, and an event the main world named announces it. */
-function handOver (stream: MediaStream, event: string, id: string): boolean {
-  const root = document.documentElement
-  if (root === null) return false
-  const holder = document.createElement('video')
-  holder.srcObject = stream
-  holder.setAttribute('data-orivon-share', id)
-  root.append(holder)
-  holder.dispatchEvent(new Event(event, { bubbles: true }))
-  holder.remove()
-  return true
-}
-
-async function share (options: ShareOptions): Promise<ShareResult> {
+async function share (options: ShareOptions, callNow: CallNow): Promise<ShareResult> {
   if (!window.isSecureContext) return refusal('NotAllowedError', 'Permission denied')
   if (!policyAllows()) return refusal('NotAllowedError', 'Access to the feature "display-capture" is disallowed by permissions policy.')
   let reply: unknown
@@ -112,24 +113,32 @@ async function share (options: ShareOptions): Promise<ShareResult> {
   // from any other request that arrives meanwhile. The second message waits a turn of the event loop: a call that
   // fails at once has failed before it and says so.
   let rejectedEarly = false
-  let request: Promise<MediaStream>
   ipcRenderer.send(DISPLAY_CAPTURE_CHANNEL, { type: 'arm', nonce })
-  try {
-    request = navigator.mediaDevices.getDisplayMedia({ video: options.video as boolean | MediaTrackConstraints, audio: options.audio ? options.audioConstraints as boolean | MediaTrackConstraints : false })
-  } catch (error) {
-    request = Promise.reject(error)
+  let concluded: ShareResult | undefined
+  const conclude = (outcome: unknown): ShareResult => {
+    concluded ??= receive(nonce, outcome)
+    if (!concluded.ok) rejectedEarly = true
+    return concluded
   }
-  void request.catch(() => { rejectedEarly = true })
+  const verdict = new Promise<ShareResult>((resolve) => {
+    try {
+      callNow((outcome) => { const result = conclude(outcome); resolve(result); return result })
+    } catch {
+      resolve(conclude(undefined))
+    }
+  })
   setTimeout(() => { ipcRenderer.send(DISPLAY_CAPTURE_CHANNEL, { type: 'called', nonce, rejectedEarly }) }, 0)
+  return await verdict
+}
 
-  let stream: MediaStream
-  try {
-    stream = await request
-  } catch (error) {
+/** What the real call came to, told to main and kept: the share's id for a stream, the refusal otherwise. */
+function receive (nonce: string, outcome: unknown): ShareResult {
+  const stream = isStream(outcome) ? (outcome as { holder: { srcObject: unknown } }).holder.srcObject : undefined
+  if (!(stream instanceof MediaStream)) {
     // Main starts the share when it answers the request, before this call knows its outcome, and keeps it unconfirmed.
     // Chromium can still fail to start the capture (a tab it cannot capture), and a refusal here means the request main
     // served was another one's: either way main is told this call failed and why, and decides what ends.
-    const failure = errorOf(error)
+    const failure = failureOf(outcome)
     ipcRenderer.send(DISPLAY_CAPTURE_CHANNEL, { type: 'failed', nonce, name: reportedName(failure) })
     return failure
   }
@@ -138,11 +147,6 @@ async function share (options: ShareOptions): Promise<ShareResult> {
   records.set(nonce, record)
   recordsById.set(record.id, record)
   for (const track of stream.getTracks()) keep(record, track)
-  if (!handOver(stream, options.handOff, record.id)) {
-    for (const track of stream.getTracks()) track.stop()
-    settle(record)
-    return refusal('AbortError', 'Failed to start capture')
-  }
   return { ok: true, share: record.id }
 }
 
@@ -170,28 +174,72 @@ function onStop (_event: unknown, payload: unknown): void {
 
 /**
  * Runs in the page's main world through `contextBridge.executeInMainWorld`, so it closes over nothing from this
- * module. `shareInOtherWorld` is the function above; `cloneEvent` is a name made fresh for each document.
+ * module. `shareInOtherWorld` is the function above; `cloneEvent` is a name made fresh for each document. The real
+ * `getDisplayMedia` call is made here, by `callNow`, from natives captured before any page script ran, so that the
+ * page's `CaptureController` binds to it (see src/main/display-capture/README.md, Design notes).
  */
-function wrapInMainWorld (shareInOtherWorld: (options: ShareOptions) => Promise<ShareResult>, cloneEvent: string): void {
+function wrapInMainWorld (shareInOtherWorld: (options: ShareOptions, callNow: CallNow) => Promise<ShareResult>, cloneEvent: string): void {
   // `MediaDevices` is exposed to secure contexts only: an error page and a blank page have none, and nothing to wrap.
   if (typeof MediaDevices === 'undefined') return
   const devices = MediaDevices.prototype
   const nativeGetDisplayMedia = devices.getDisplayMedia
   const trackProto = MediaStreamTrack.prototype
   const nativeTrackClone = trackProto.clone
+  const nativeStop = trackProto.stop
   const streamProto = MediaStream.prototype
   const nativeStreamClone = streamProto.clone
-  if (typeof nativeGetDisplayMedia !== 'function') return
+  const nativeGetTracks = streamProto.getTracks
+  const nativeThen = Promise.prototype.then
+  const nativeCreateElement = Document.prototype.createElement
+  const setSource = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'srcObject')?.set
+  const domName = Object.getOwnPropertyDescriptor(DOMException.prototype, 'name')?.get
+  const domMessage = Object.getOwnPropertyDescriptor(DOMException.prototype, 'message')?.get
+  const ownDescriptor = Object.getOwnPropertyDescriptor
+  const define = Object.defineProperty
+  const create = Object.create as (proto: null) => Record<PropertyKey, unknown>
+  const keysOf = Object.keys
+  const isArray = Array.isArray
+  const NativePromise = Promise
+  const NativeDOMException = DOMException
+  const NativeTypeError = TypeError
+  if (typeof nativeGetDisplayMedia !== 'function' || typeof setSource !== 'function' || typeof domName !== 'function' || typeof domMessage !== 'function') return
   const call = Reflect.apply
+  const construct = Reflect.construct
   /** The share each track or stream the page was handed belongs to. */
   const shares = new WeakMap<object, string>()
   const read = (source: unknown, key: string): unknown => {
     try { return source === null || source === undefined ? undefined : (source as Record<string, unknown>)[key] } catch { return undefined }
   }
   const copy = (value: unknown): unknown => {
-    if (value === null || typeof value !== 'object') return value
+    if (value === null || typeof value !== 'object') return typeof value === 'function' ? true : value
     try { return JSON.parse(JSON.stringify(value)) } catch { return true }
   }
+  /** The data of a copy with no prototype and no accessor, arrays included, so converting it for the real call runs no page code. */
+  const bare = (value: unknown): unknown => {
+    if (value === null || typeof value !== 'object') return value
+    const source = value as Record<string, unknown>
+    if (isArray(value)) {
+      const list: unknown[] = []
+      for (let index = 0; index < value.length; index++) list[index] = bare(value[index])
+      const iterate = (): unknown => {
+        let next = 0
+        const iterator = create(null)
+        iterator.next = (): unknown => {
+          const step = create(null)
+          step.done = next >= list.length
+          step.value = next < list.length ? list[next++] : undefined
+          return step
+        }
+        return iterator
+      }
+      define(list, Symbol.iterator, { value: iterate })
+      return list
+    }
+    const out = create(null)
+    for (const key of keysOf(source)) out[key] = bare(source[key])
+    return out
+  }
+  const bareCopy = (value: unknown): unknown => { try { return bare(copy(value)) } catch { return true } }
   /** A hint the page gave as a string, or as `{ ideal }` / `{ exact }`, when it is one of `allowed`. */
   const choice = (value: unknown, allowed: readonly string[]): string | undefined => {
     const text = typeof value === 'string' ? value : (typeof read(value, 'ideal') === 'string' ? read(value, 'ideal') : read(value, 'exact'))
@@ -207,6 +255,32 @@ function wrapInMainWorld (shareInOtherWorld: (options: ShareOptions) => Promise<
     holder.dispatchEvent(new Event(cloneEvent, { bubbles: true }))
     holder.remove()
   }
+  /**
+   * `then` on a native promise with the page unable to stand in for it: the promise names its own constructor and
+   * species, so no `Promise` property the page changed is read.
+   */
+  const whenSettled = (promise: unknown, onValue: (value: never) => void, onReason: (reason: unknown) => void): void => {
+    const Derived = function (this: unknown, executor: (resolve: () => void, reject: () => void) => void): void { executor(() => {}, () => {}) }
+    define(Derived, Symbol.species, { value: Derived })
+    define(promise, 'constructor', { value: Derived })
+    call(nativeThen, promise, [onValue, onReason])
+  }
+  /** The name and message of a native rejection, read with the getters captured at install. */
+  const refusalOf = (error: unknown): CallOutcome => {
+    try {
+      return { ok: false, name: call(domName, error, []) as string, message: call(domMessage, error, []) as string }
+    } catch {
+      // Not a DOMException: the conversion of the options failed, which is a TypeError whose message is its own property.
+      let message: unknown
+      try { message = ownDescriptor(error as object, 'message')?.value } catch { message = undefined }
+      return { ok: false, name: 'TypeError', message: typeof message === 'string' ? message : 'Failed to start capture' }
+    }
+  }
+  const refuse = (name: string, message: string): unknown =>
+    name === 'TypeError' ? construct(NativeTypeError, [message]) : construct(NativeDOMException, [message, name])
+  const stopAll = (stream: MediaStream): void => {
+    try { for (const track of call(nativeGetTracks, stream, []) as MediaStreamTrack[]) call(nativeStop, track, []) } catch { /* nothing left to stop */ }
+  }
 
   devices.getDisplayMedia = new Proxy(nativeGetDisplayMedia, {
     apply (target, self: unknown, args: unknown[]): Promise<MediaStream> {
@@ -217,6 +291,7 @@ function wrapInMainWorld (shareInOtherWorld: (options: ShareOptions) => Promise<
       }
       const video = read(options, 'video')
       const audio = read(options, 'audio')
+      const controller = read(options, 'controller')
       if (video === false) {
         return Promise.reject(new TypeError("Failed to execute 'getDisplayMedia' on 'MediaDevices': Display capture requires video: video must not be false."))
       }
@@ -228,28 +303,67 @@ function wrapInMainWorld (shareInOtherWorld: (options: ShareOptions) => Promise<
         const value = choice(read(options, key), ['include', 'exclude'])
         if (value !== undefined) hints[key] = value
       }
-      const words = crypto.getRandomValues(new Uint32Array(4))
-      const handOff = `orivon-share-${Array.from(words, (word) => word.toString(36)).join('')}`
-      let stream: MediaStream | undefined
-      const receive = (event: Event): void => {
-        const holder = event.target as HTMLVideoElement | null
-        const carried = holder === null ? null : holder.srcObject
-        if (stream === undefined && carried instanceof MediaStream) stream = carried
-      }
-      window.addEventListener(handOff, receive, true)
       const asked = audio !== undefined && audio !== false && audio !== null
-      return shareInOtherWorld({
-        audio: asked, video: video === undefined || video === null ? true : copy(video), audioConstraints: asked ? copy(audio) : false, hints, handOff
-      }).then((result) => {
-        window.removeEventListener(handOff, receive, true)
-        if (!result.ok) throw result.name === 'TypeError' ? new TypeError(result.message) : new DOMException(result.message, result.name)
-        if (stream === undefined) throw new DOMException('Failed to start capture', 'AbortError')
-        shares.set(stream, result.share)
-        for (const track of stream.getTracks()) shares.set(track, result.share)
-        return stream
-      }, (error: unknown) => {
-        window.removeEventListener(handOff, receive, true)
-        throw error
+      // The options of the real call, built now so that converting them later reads data and runs no page code. A
+      // controller is passed as given: the browser checks it is a `CaptureController` and says so when it is not.
+      const real = create(null)
+      real.video = video === undefined || video === null ? true : bareCopy(video)
+      real.audio = asked ? bareCopy(audio) : false
+      if (controller !== undefined) real.controller = controller
+      /** The stream the real call returned, kept for the page until the other world has taken its tracks. */
+      let kept: MediaStream | undefined
+      let started = false
+      return new NativePromise<MediaStream>((resolve, reject) => {
+        let done = false
+        const fail = (reason: unknown): void => {
+          if (done) return
+          done = true
+          const stream = kept
+          kept = undefined
+          if (stream !== undefined) stopAll(stream)
+          reject(reason)
+        }
+        const finish = (result: ShareResult): void => {
+          if (done) return
+          if (!result.ok) { fail(refuse(result.name, result.message)); return }
+          const stream = kept
+          if (stream === undefined) { fail(refuse('AbortError', 'Failed to start capture')); return }
+          done = true
+          shares.set(stream, result.share)
+          for (const track of call(nativeGetTracks, stream, []) as MediaStreamTrack[]) shares.set(track, result.share)
+          resolve(stream)
+        }
+        const callNow: CallNow = (onSettled) => {
+          if (started) return
+          started = true
+          const settle = (outcome: CallOutcome): void => {
+            try { finish(onSettled(outcome)) } catch { fail(refuse('AbortError', 'Failed to start capture')) }
+          }
+          try {
+            whenSettled(call(nativeGetDisplayMedia, self, [real]), (stream: MediaStream) => {
+              let holder: HTMLVideoElement
+              try {
+                holder = call(nativeCreateElement, document, ['video']) as HTMLVideoElement
+                call(setSource, holder, [stream])
+              } catch {
+                stopAll(stream)
+                settle({ ok: false, name: 'AbortError', message: 'Failed to start capture' })
+                return
+              }
+              kept = stream
+              settle({ ok: true, holder })
+            }, (error) => { settle(refusalOf(error)) })
+          } catch (error) {
+            settle(refusalOf(error))
+          }
+        }
+        try {
+          // A refusal before the call, or a failure of the bridge, comes through the promise; once the call is made the
+          // answer comes with its outcome.
+          whenSettled(shareInOtherWorld({ audio: asked, hints }, callNow), (result: ShareResult) => { if (!started) finish(result) }, fail)
+        } catch (error) {
+          fail(error)
+        }
       })
     }
   })
@@ -291,7 +405,7 @@ export function installDisplayCapture (): void {
     const cloneEvent = `orivon-clone-${Array.from(words, (word) => word.toString(36)).join('')}`
     window.addEventListener(cloneEvent, onClone, true)
     ipcRenderer.on(DISPLAY_CAPTURE_STOP_CHANNEL, onStop)
-    contextBridge.executeInMainWorld({ func: wrapInMainWorld, args: [(options: ShareOptions) => share(options), cloneEvent] })
+    contextBridge.executeInMainWorld({ func: wrapInMainWorld, args: [(options: ShareOptions, callNow: CallNow) => share(options, callNow), cloneEvent] })
   } catch (error) {
     console.error('[orivon] screen sharing not wrapped', error)
   }
