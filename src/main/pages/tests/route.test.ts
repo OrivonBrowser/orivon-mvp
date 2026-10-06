@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { reachableFiles, routeInternalRequest, routeShell, shellRequestAllowed } from '../route.js'
+import { reachableFiles, routeInternalRequest, routeShell, shellDetailsAllowed, shellRequestAllowed } from '../route.js'
 import { DEFAULT_SESSION_ENTRIES, SHELL_SESSION_ENTRIES } from '../../shell/shell-session.js'
 
 describe('routeInternalRequest', () => {
@@ -239,5 +239,24 @@ describe('shellRequestAllowed', () => {
     expect(shellRequestAllowed({ resourceType: 'script', frame: from(DASHBOARD, false) })).toBe(false)
     expect(shellRequestAllowed({ resourceType: 'script', frame: from('https://a.example/?u=orivon-shell://renderer/newtab/index.html') })).toBe(false)
     expect(shellRequestAllowed({ resourceType: 'script', frame: from('orivon-shell://renderer/index.html') })).toBe(false)
+  })
+})
+
+describe('shellDetailsAllowed', () => {
+  const DASHBOARD = 'orivon-shell://renderer/newtab/index.html'
+
+  it('reads a frame as Electron gives it: the top frame has no parent', () => {
+    expect(shellDetailsAllowed({ resourceType: 'script', frame: { url: DASHBOARD, parent: null } })).toBe(true)
+    expect(shellDetailsAllowed({ resourceType: 'script', frame: { url: DASHBOARD, parent: {} } })).toBe(false)
+    expect(shellDetailsAllowed({ resourceType: 'script' })).toBe(false)
+  })
+
+  it('refuses a request whose frame cannot be read', () => {
+    const gone = { resourceType: 'image', get frame (): never { throw new Error('Render frame was disposed') } }
+    expect(shellDetailsAllowed(gone)).toBe(false)
+    const noUrl = { resourceType: 'image', frame: { get url (): string { throw new Error('gone') }, parent: null } }
+    expect(shellDetailsAllowed(noUrl)).toBe(false)
+    const noParent = { resourceType: 'mainFrame', frame: { url: DASHBOARD, get parent (): never { throw new Error('gone') } } }
+    expect(shellDetailsAllowed(noParent)).toBe(false)
   })
 })

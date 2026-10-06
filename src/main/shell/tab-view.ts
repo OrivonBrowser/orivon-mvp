@@ -16,7 +16,7 @@ import { windowOpenHandler } from './popups.js'
 import { keepsOpenerSession, openerCutNeeded, popupTargetIsApp } from './popup-opener.js'
 import { DEFAULT_BACKGROUND } from './theme-colors.js'
 import { isDashboardUrl, sheetBackdropOf } from './sheet-backdrop.js'
-import { SHELL_SCHEME } from './shell-session.js'
+import { isShellSchemeUrl } from './shell-session.js'
 import { recordViewBackground } from './view-background-test-hook.js'
 import { watchBacking } from './tab-backing.js'
 import { repartitionView } from './tab-parking.js'
@@ -151,7 +151,7 @@ export function wireView (id: string, record: TabRecord): void {
   // A page in a tab may not send it, or any of its frames, to a page of the shell. The new-tab page is loaded
   // by the main process and reached again by Back, neither of which fires these events.
   const refuseShellPage = (event: { readonly url: string, preventDefault: () => void }): void => {
-    if (event.url.startsWith(`${SHELL_SCHEME}:`)) event.preventDefault()
+    if (isShellSchemeUrl(event.url)) event.preventDefault()
   }
   wc.on('will-frame-navigate', refuseShellPage)
   wc.on('will-redirect', refuseShellPage)

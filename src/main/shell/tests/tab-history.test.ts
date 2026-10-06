@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { WebContents } from 'electron'
-import { carryHistory, restoreHistory } from '../tab-history.js'
+import { carryHistory, restoreHistory, withoutShellPages } from '../tab-history.js'
 
 function contents (entries: Array<{ url: string, title: string, pageState?: string }> = [], index = 0): { wc: WebContents, calls: string[], restore: ReturnType<typeof vi.fn> } {
   const calls: string[] = []
@@ -30,6 +30,20 @@ describe('restoreHistory', () => {
 })
 
 const DASHBOARD = { url: 'orivon-shell://renderer/newtab/index.html', title: 'New tab' }
+
+describe('withoutShellPages', () => {
+  const one = { url: 'https://a.example/1', title: 'One', pageState: 'p' }
+  const two = { url: 'https://a.example/2', title: 'Two' }
+
+  it('drops the shell\'s pages and moves the index to the entry that was shown', () => {
+    expect(withoutShellPages([DASHBOARD, one, DASHBOARD, two], 3)).toEqual({ entries: [one, two], index: 1 })
+  })
+
+  it('answers null when the shown entry is a shell page or the index is out of range', () => {
+    expect(withoutShellPages([one, DASHBOARD], 1)).toBeNull()
+    expect(withoutShellPages([one], 4)).toBeNull()
+  })
+})
 
 describe('a history that holds the shell\'s own pages', () => {
   it('is restored without them, the index shifted to the page that was shown', () => {

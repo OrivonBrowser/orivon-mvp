@@ -8,6 +8,9 @@ export const SHELL_PARTITION = 'persist:orivon-shell'
 export const SHELL_SCHEME = 'orivon-shell'
 export const SHELL_HOST = 'renderer'
 
+/** Whether `url` is on the shell's scheme, whatever its host or path. */
+export const isShellSchemeUrl = (url: string): boolean => url.startsWith(`${SHELL_SCHEME}:`)
+
 /** The entries that run in `SHELL_PARTITION`; they may read every file under `assets/`. Keys of the renderer's `rollupOptions.input`. */
 export const SHELL_SESSION_ENTRIES = ['index', 'intro', 'permissions', 'site-info', 'overlay', 'split-frame', 'drop-catcher'] as const
 

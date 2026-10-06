@@ -6,9 +6,9 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { session } from 'electron'
 import { createShellHandler } from './serve.js'
-import { reachableFiles, shellRequestAllowed } from './route.js'
+import { reachableFiles, shellDetailsAllowed } from './route.js'
 import type { ManifestChunk } from './route.js'
-import { SHELL_PARTITION, SHELL_SCHEME, shellEntryFile } from '../shell/shell-session.js'
+import { SHELL_PARTITION, SHELL_SCHEME, isShellSchemeUrl, shellEntryFile } from '../shell/shell-session.js'
 import { webRequestOwnerFor } from '../sessions/web-request-owner.js'
 
 /** The files the new-tab page's build reaches, from Vite's manifest. Empty when there is no build (a dev server serves it). */
@@ -37,18 +37,11 @@ export function installShellScheme (dirname: string): void {
   }))
   // The default session is a website's too, and Chromium lets any page load a standard scheme's files as a
   // script, style or image, whatever the response's Cross-Origin-Resource-Policy says (ADR-0059). So only the
-  // new-tab page's own top frame, and a tab's navigation to it, get through.
+  // new-tab page's own top frame, and a main-frame navigation to it, get through.
   webRequestOwnerFor(session.defaultSession).onBeforeRequest(
     0,
     { urls: [`${SHELL_SCHEME}://*/*`] },
-    (url) => url.startsWith(`${SHELL_SCHEME}:`),
-    (details, current) => {
-      const frame = details.frame ?? null
-      const allowed = shellRequestAllowed({
-        resourceType: details.resourceType,
-        frame: frame === null ? null : { url: frame.url, isTopFrame: frame.parent === null }
-      })
-      return allowed ? current : { cancel: true }
-    }
+    isShellSchemeUrl,
+    (details, current) => shellDetailsAllowed(details) ? current : { cancel: true }
   )
 }

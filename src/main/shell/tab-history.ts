@@ -1,9 +1,22 @@
 // A tab given pages behind it: a copy of a tab, and a tab brought back from the last session. Back goes where Back
 // in the original would.
 import type { WebContents } from 'electron'
-import { SHELL_SCHEME } from './shell-session.js'
+import { isShellSchemeUrl } from './shell-session.js'
 
-const isShellPage = (url: string): boolean => url.startsWith(`${SHELL_SCHEME}:`)
+/**
+ * `entries` without the shell's own pages, `index` moved to the entry that was shown. Null when the shown entry
+ * is one of them or `index` is out of range. The shell's pages are served in one session only
+ * (../pages/shell-scheme.ts), so in a copy, a swapped view or a woken tab they would be an entry Back reaches
+ * and nothing answers.
+ */
+export function withoutShellPages<T extends { readonly url: string }> (entries: readonly T[], index: number): { entries: T[], index: number } | null {
+  const shown = entries[index]
+  if (shown === undefined || isShellSchemeUrl(shown.url)) return null
+  return {
+    entries: entries.filter(({ url }) => !isShellSchemeUrl(url)),
+    index: entries.slice(0, index).filter(({ url }) => !isShellSchemeUrl(url)).length
+  }
+}
 
 /**
  * Gives `wc` a back and forward list, ending on entry `index`. The load its tab was created with is stopped
@@ -14,15 +27,11 @@ const isShellPage = (url: string): boolean => url.startsWith(`${SHELL_SCHEME}:`)
  * restored leaves the tab on its address alone and answers false.
  */
 export function restoreHistory (wc: WebContents, entries: ReadonlyArray<{ readonly url: string, readonly title: string }>, index: number, then?: string): boolean {
-  const shown = entries[index]
-  if (shown === undefined || isShellPage(shown.url)) return false
-  // The shell's own pages are served in one session only (../pages/shell-scheme.ts): in a copy they would be
-  // an entry Back reaches and nothing answers, so they stay behind.
-  const kept = entries.filter(({ url }) => !isShellPage(url))
-  const keptIndex = entries.slice(0, index).filter(({ url }) => !isShellPage(url)).length
+  const kept = withoutShellPages(entries, index)
+  if (kept === null) return false
   try {
     wc.stop()
-    wc.navigationHistory.restore({ entries: kept.map(({ url, title }) => ({ url, title })), index: keptIndex }).catch(() => {})
+    wc.navigationHistory.restore({ entries: kept.entries.map(({ url, title }) => ({ url, title })), index: kept.index }).catch(() => {})
     if (then === undefined) wc.reload()
     else void wc.loadURL(then)
     return true
