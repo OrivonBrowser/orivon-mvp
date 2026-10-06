@@ -1,5 +1,6 @@
 import { exposeOrivon } from './surface/orivon.js'
 import { exposeFetchRoute } from './expose-fetch-route.js'
+import { installDisplayCapture } from './display-capture.js'
 import { exposeShimGlobals } from './expose-shim-globals.js'
 import { exposeChildHostConnect } from './expose-child-host-connect.js'
 import { installEmbedEventRelay } from './embed-event-relay.js'
@@ -27,6 +28,9 @@ export function exposeOrdinaryTabSurface (): void {
   // place before any page script reads the state.
   installPageVisibility()
   exposeOrivon()
+  // ADR-0055: the page's getDisplayMedia asks for Orivon's picker; this world makes the real call. A tab's page and a
+  // new-tab page that went to a site get it; an extension's page and an embed do not.
+  installDisplayCapture()
   // ADR-0046: lets a real app tab's page reach its app's child host, gated
   // on the app-tab flag. Must run AFTER exposeOrivon() and BEFORE
   // exposeFetchRoute(): its entries take their page-caller check from the

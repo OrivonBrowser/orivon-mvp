@@ -29,6 +29,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Orivon asks to be the default browser from Settings, the welcome screen and weekly; the dock and taskbar offer New Window and New Private Window.
 - CI's e2e now runs only the specs a change can reach, in parallel shards: minutes instead of forty.
 - The shell's own pages no longer load from `file:`, and Electron's file-protocol fuse is off in every binary: local files can ship without extra privileges.
+- Screen sharing works: a picker for tabs, windows and screens, Stop and indicators; only Orivon's own capture call is ever granted.
 - Extensions get a real side panel: chrome.sidePanel works, the toolbar click or key opens it, and open() needs the person's own input.
 - Publishing a GitHub release now builds Linux, Windows and macOS packages, launches each in CI, and attaches them.
 - Orivon Attila now judges every Explore site: 62 more evaluations by CID, and its judging rules are written down with worked examples.

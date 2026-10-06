@@ -16,6 +16,7 @@
 @import './styles/site-access.css';
 @import './styles/content-dot.css';
 @import './styles/popups-chip.css';
+@import './styles/sharing-chip.css';
 @import './styles/tab-crashed.css';
 @import './styles/password-key.css';
 @import './styles/tab-groups.css';
@@ -93,6 +94,12 @@
 :root { --wwarn-mark: #c2410c; }
 @media (prefers-color-scheme: dark) {
   :root { --wwarn-mark: #f97316; }
+}
+
+/* A screen share running, as a mark that must be seen on the chrome (the sharing chip and a tab's mark). */
+:root { --wshare-mark: #b91c1c; }
+@media (prefers-color-scheme: dark) {
+  :root { --wshare-mark: #f87171; }
 }
 
 * { box-sizing: border-box; }

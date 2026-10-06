@@ -17,7 +17,7 @@ export function isReviewView (value: unknown): value is ReviewView {
   if (!isRecord(value) || value['mode'] !== 'review' || typeof value['origin'] !== 'string' || typeof value['settingsLink'] !== 'boolean') return false
   const { rows } = value
   return Array.isArray(rows) && rows.length > 0 && rows.every((row) => isRecord(row) && typeof row['kind'] === 'string' && typeof row['label'] === 'string' &&
-    (row['value'] === 'ask' || row['value'] === 'allow' || row['value'] === 'block') && typeof row['askOffered'] === 'boolean')
+    (row['value'] === 'ask' || row['value'] === 'allow' || row['value'] === 'block') && typeof row['askOffered'] === 'boolean' && typeof row['allowOffered'] === 'boolean')
 }
 
 /** The segment a Left or Right key reaches from `index` among `count`, without wrapping. */

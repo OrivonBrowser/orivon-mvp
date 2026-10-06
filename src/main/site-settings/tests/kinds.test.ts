@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SETTINGS, validateSetting } from '../../settings/schema.js'
-import { SITE_KINDS, siteKindById } from '../kinds.js'
+import { kindRemembers, SITE_KINDS, siteKindById } from '../kinds.js'
 
 describe('SITE_KINDS', () => {
   it('lists each kind once', () => {
@@ -24,12 +24,21 @@ describe('SITE_KINDS', () => {
   })
 
   it('marks a kind available only once its feature enforces it', () => {
-    expect(SITE_KINDS.filter((kind) => kind.available).map((kind) => kind.id)).toEqual(['camera', 'microphone', 'location', 'clipboardRead', 'midi', 'idle', 'windowManagement', 'notifications', 'popups', 'javascript', 'images', 'sound', 'autoDownloads'])
+    expect(SITE_KINDS.filter((kind) => kind.available).map((kind) => kind.id)).toEqual(['camera', 'microphone', 'location', 'clipboardRead', 'midi', 'idle', 'windowManagement', 'notifications', 'popups', 'javascript', 'images', 'sound', 'autoDownloads', 'screenShare'])
   })
 
   it('finds a kind by id and answers undefined for anything else', () => {
     expect(siteKindById('camera')?.label).toBe('Camera')
     expect(siteKindById('toString')).toBeUndefined()
     expect(siteKindById(3)).toBeUndefined()
+  })
+
+  it('lets only screen sharing keep a block and nothing else restrict its answers', () => {
+    expect(SITE_KINDS.filter((kind) => kind.remembers !== undefined).map((kind) => [kind.id, kind.remembers])).toEqual([['screenShare', ['block']]])
+    const screen = siteKindById('screenShare')
+    const camera = siteKindById('camera')
+    if (screen === undefined || camera === undefined) throw new Error('missing kind')
+    expect([kindRemembers(screen, 'block'), kindRemembers(screen, 'allow')]).toEqual([true, false])
+    expect([kindRemembers(camera, 'block'), kindRemembers(camera, 'allow')]).toEqual([true, true])
   })
 })

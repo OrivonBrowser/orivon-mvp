@@ -28,7 +28,11 @@ vi.mock('../tab-drag.js', async (importOriginal) => ({
 }))
 vi.mock('../pages/shared/icons.js', async () => {
   const { FakeNode } = await import('./fake-dom.js')
-  return { speakerIcon: () => new FakeNode('svg'), speakerOffIcon: () => new FakeNode('svg'), warningIcon: () => new FakeNode('svg') }
+  return { speakerIcon: () => new FakeNode('svg'), speakerOffIcon: () => new FakeNode('svg'), warningIcon: () => new FakeNode('svg'), eyeIcon: () => new FakeNode('svg') }
+})
+vi.mock('../pages/shared/site-kind-icons.js', async () => {
+  const { FakeNode } = await import('./fake-dom.js')
+  return { SITE_KIND_ICONS: { screenShare: () => new FakeNode('svg') } }
 })
 
 const { createTabStrip } = await import('../chrome/tab-strip.js')
@@ -277,6 +281,31 @@ describe('the decorators on a kept element', () => {
     expect(el.querySelector('.tab-audio')).toBeNull()
     expect(el.classList.contains('has-sound')).toBe(false)
     expect(el.getAttribute('aria-label')).toBe('a')
+  })
+
+  it('marks the page that shares and the tab being shown, and removes the mark when the share ends', () => {
+    const strip = setup([decorateTabBadges])
+    strip.push(state([tab('a'), tab('b')]))
+    expect(strip.tabEl('a').querySelector('.tab-share')).toBeNull()
+
+    strip.push(state([tab('a', { sharing: 'screen' }), tab('b', { shared: true })]))
+    const sharing = strip.tabEl('a').querySelector('.tab-share')
+    expect(sharing?.getAttribute('aria-label')).toBe('Sharing your screen')
+    expect(sharing?.classList.contains('sharing')).toBe(true)
+    expect(strip.tabEl('a').getAttribute('aria-label')).toBe('a, sharing your screen')
+    const shown = strip.tabEl('b').querySelector('.tab-share')
+    expect(shown?.getAttribute('aria-label')).toBe('This tab is being shared')
+    expect(shown?.classList.contains('shared')).toBe(true)
+
+    strip.push(state([tab('a'), tab('b')]))
+    expect(strip.tabEl('a').querySelector('.tab-share')).toBeNull()
+    expect(strip.tabEl('b').querySelector('.tab-share')).toBeNull()
+  })
+
+  it('marks a pinned tab that shares on the corner of its icon', () => {
+    const strip = setup([decorateTabBadges])
+    strip.push(state([tab('a', { pinned: true, sharing: 'window' })]))
+    expect(strip.tabEl('a').querySelector('.tab-share-mark')?.getAttribute('aria-label')).toBe('Sharing a window')
   })
 
   it('takes the close button off a pinned tab and gives it back when the tab is unpinned', () => {

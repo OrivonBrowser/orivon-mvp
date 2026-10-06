@@ -38,7 +38,7 @@ export const DEV_MARKERS = [
   'ORIVON_TEST_SIGN_IN_HOSTS', '__orivonSweepNow', '__orivonSleepIgnoreCapture',
   '__orivonDevPasswordStorage', 'ORIVON_TEST_PASSWORD_KEYRING',
   'ORIVON_TEST_IMPORT_HOME', 'ORIVON_TEST_SUGGEST_URL', 'ORIVON_TEST_VERIFIER_START_DELAY_MS', 'ORIVON_TEST_LOCAL_POINTER',
-  'ORIVON_TEST_DEFAULT_BROWSER', '__orivonDevDefaultBrowser', '__orivonDevDefaultBrowserAskNow'
+  '__orivonDevDisplayChooser', 'ORIVON_TEST_DEFAULT_BROWSER', '__orivonDevDefaultBrowser', '__orivonDevDefaultBrowserAskNow'
 ]
 
 /** Retained as the single-marker name earlier callers import. */

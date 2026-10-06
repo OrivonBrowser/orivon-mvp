@@ -14,6 +14,7 @@ import type { Attention } from '../downloads/download-attention.js'
 import type { TabLifecycle } from './tab-lifecycle.js'
 import type { ShellServices } from './shell-services.js'
 import type { CommandId } from '../shortcuts/commands.js'
+import type { DisplaySurfaceKind } from '../display-capture/types.js'
 import type { SiteKind } from '../site-settings/kinds.js'
 import type { SleepingTab, TabGroupState } from './tab-extra-types.js'
 
@@ -70,6 +71,10 @@ export interface TabState {
   sleeping?: boolean
   /** The page looks like an article the reader view can show. Absent reads as false. */
   readable?: boolean
+  /** What the page is sharing with the person's screen, while it shares (its newest share). Absent when it is not sharing. */
+  sharing?: DisplaySurfaceKind
+  /** Another page is showing this tab's contents. Absent reads as false. */
+  shared?: boolean
 }
 
 /** What TabManager itself knows. Bookmarks are a separate store
@@ -104,6 +109,8 @@ export interface ShellState extends TabsSnapshot {
   siteAccess: ReadonlyArray<{ readonly kind: SiteKind, readonly state: 'allowed' | 'blocked', readonly label: string }>
   /** How many windows the active page tried to open and was refused, for the pop-up chip. */
   popupsBlocked: number
+  /** The active page's own screen share, for the address bar's chip; null when it is not sharing. */
+  sharing?: { readonly kind: DisplaySurfaceKind, readonly origin: string, readonly count: number } | null
   /** Whether the active page's site has JavaScript, images or sound switched off, for the mark on the address bar's key. */
   contentBlocked: boolean
   /** Whether the active page is an installed app whose name points at a version the person has not taken: the dot on the key. */

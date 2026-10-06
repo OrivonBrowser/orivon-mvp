@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
+import { bindShareRegistry } from '../../display-capture/bindings.js'
+import type { ShareRegistry } from '../../display-capture/types.js'
 import { TabPanes } from '../tab-panes.js'
 
 const AREA = { x: 0, y: 40, width: 800, height: 560 }
@@ -8,9 +10,10 @@ function setup (shell?: unknown): {
   tab: (id: string) => void
   activate: (id: string) => void
   pageGone: (id: string) => void
+  view: (id: string) => { webContents: unknown, setVisible: ReturnType<typeof vi.fn>, removed: boolean }
 } {
   const children: string[] = ['chrome']
-  const views = new Map<string, { name: string, webContents: { isDestroyed: () => boolean } | undefined, setBounds: ReturnType<typeof vi.fn>, setVisible: ReturnType<typeof vi.fn> }>()
+  const views = new Map<string, { name: string, removed: boolean, webContents: { isDestroyed: () => boolean } | undefined, setBounds: ReturnType<typeof vi.fn>, setVisible: ReturnType<typeof vi.fn> }>()
   const records = new Map<string, { view: unknown }>()
   let active: string | null = null
   const contentView = {
@@ -21,7 +24,7 @@ function setup (shell?: unknown): {
       if (at !== -1 || index === undefined) children.push(child.name)
       else children.splice(Math.min(index, children.length), 0, child.name)
     }),
-    removeChildView: vi.fn((child: { name: string }) => { const at = children.indexOf(child.name); if (at !== -1) children.splice(at, 1) })
+    removeChildView: vi.fn((child: { name: string, removed?: boolean }) => { child.removed = true; const at = children.indexOf(child.name); if (at !== -1) children.splice(at, 1) })
   }
   const panes = new TabPanes({
     contentView: contentView as never,
@@ -38,13 +41,14 @@ function setup (shell?: unknown): {
   return {
     panes,
     tab: (id) => {
-      const view = { name: id, webContents: { isDestroyed: () => false }, setBounds: vi.fn(), setVisible: vi.fn() }
+      const view = { name: id, removed: false, webContents: { isDestroyed: () => false }, setBounds: vi.fn(), setVisible: vi.fn() }
       views.set(id, view)
       records.set(id, { view })
     },
     activate: (id) => { active = id; panes.sync() },
     // What Electron leaves on a view whose page has closed: no webContents at all.
-    pageGone: (id) => { const view = views.get(id); if (view !== undefined) view.webContents = undefined }
+    pageGone: (id) => { const view = views.get(id); if (view !== undefined) view.webContents = undefined },
+    view: (id) => views.get(id) as never
   }
 }
 
@@ -59,5 +63,35 @@ describe('TabPanes: telling the lifecycle which tabs are on screen', () => {
     expect(() => { panes.hide('closing') }).not.toThrow()
     const [, tabs] = shownChanged.mock.calls.at(-1) ?? []
     expect((tabs as Array<{ shown: boolean }>).map((entry) => entry.shown)).toEqual([false])
+  })
+})
+
+describe('TabPanes: a tab that was picked for a share', () => {
+  it('stays in the window, hidden, when the person leaves it before the share is registered, and is let go when the pick ends', () => {
+    const pending = new Set<unknown>()
+    const listeners = new Set<() => void>()
+    const registry: ShareRegistry = {
+      list: () => [], forRequester: () => [], forCaptured: () => [],
+      capturePending: (contents) => pending.has(contents),
+      onChange: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+      stop: () => {}
+    }
+    bindShareRegistry(registry)
+    try {
+      const { panes, tab, activate, view } = setup()
+      tab('requester')
+      tab('picked')
+      activate('picked')
+      pending.add(view('picked').webContents)
+      activate('requester')
+      expect(view('picked').setVisible).toHaveBeenCalledWith(false)
+      expect(view('picked').removed).toBe(false)
+      pending.clear()
+      for (const listener of [...listeners]) listener()
+      expect(view('picked').removed).toBe(true)
+      panes.dispose()
+    } finally {
+      bindShareRegistry(undefined)
+    }
   })
 })

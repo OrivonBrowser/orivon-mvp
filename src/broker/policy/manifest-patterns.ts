@@ -60,6 +60,13 @@ export function patternSetFromCapabilities (capabilities: Capabilities): Pattern
   // `trust.score` (ADR-0058) is presence-only too, and `trust: {}` declares nothing.
   if (capabilities.trust?.score === true) set['trust.score'] = []
 
+  // ADR-0032, ADR-0055: each declared flag is its own kind with no patterns
+  // ("which camera" is not an app's to choose). Mapped so that a manifest
+  // update that newly declares one reads as widening in `widensAuthority`.
+  if (capabilities.media?.camera === true) set['media.camera'] = []
+  if (capabilities.media?.microphone === true) set['media.microphone'] = []
+  if (capabilities.media?.screen === true) set['media.screen'] = []
+
   // ADR-0019: web.contexts IS the pattern list for 'web.context' -- each
   // declared origin is compared exactly against a grant's own patterns
   // (manifest.ts's WebCapability.contexts doc), the same "presence carries

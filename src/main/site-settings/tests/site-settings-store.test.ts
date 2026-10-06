@@ -151,4 +151,21 @@ describe('SiteSettingsStore', () => {
     store.forgetOrigin(SITE)
     expect(store.forOrigin(SITE).size).toBe(0)
   })
+
+  it('keeps a block for a kind that remembers only a block, and refuses an allow', () => {
+    const store = new SiteSettingsStore(null)
+    store.set(SITE, 'screenShare', 'allow')
+    expect(store.get(SITE, 'screenShare')).toBeUndefined()
+    store.set(SITE, 'screenShare', 'block')
+    expect(store.get(SITE, 'screenShare')).toBe('block')
+  })
+
+  it('drops a stored allow for a kind that remembers only a block, on read', () => {
+    const file = tempFile(JSON.stringify({ version: 1, sites: { [SITE]: { screenShare: 'allow', camera: 'allow' }, 'https://b.example': { screenShare: 'block' } } }))
+    const store = new SiteSettingsStore(file)
+    expect(store.entries()).toEqual([
+      { origin: SITE, kind: 'camera', value: 'allow' },
+      { origin: 'https://b.example', kind: 'screenShare', value: 'block' }
+    ])
+  })
 })

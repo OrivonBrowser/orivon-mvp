@@ -3,6 +3,8 @@
 import { authSheetOverlay } from '../auth/auth-sheet-real.js'
 import { certErrorOverlay } from '../auth/cert-error-overlay.js'
 import { certificateOverlay } from '../auth/certificate-real.js'
+import { screenSharePickerOverlay } from '../display-capture/picker/picker-real.js'
+import { sharingBarOverlay } from '../display-capture/indicators/sharing-bar.js'
 import { chooserOverlay } from '../auth/chooser-overlay.js'
 import { caretConfirmOverlay } from '../focus/caret-confirm-overlay.js'
 import { downloadsOverlay, downloadsPeekOverlay } from '../downloads/downloads-overlay.js'
@@ -57,7 +59,9 @@ export const OVERLAYS: readonly OverlayDef[] = [
   questionSheetOverlay,
   restoreOverlay,
   sadTabOverlay,
+  screenSharePickerOverlay,
   screenshotOverlay,
+  sharingBarOverlay,
   shortcutOverlay,
   sidePanelOverlay,
   sitePromptOverlay,

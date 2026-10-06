@@ -7,6 +7,7 @@ import type {
   HttpsCapability,
   IdCapability,
   Manifest,
+  MediaCapability,
   NetCapability,
   TcpCapability,
   UdpCapability,
@@ -31,13 +32,11 @@ import type {
 type Full<T> = Required<T>
 
 type FullManifest = Omit<Full<Manifest>, 'capabilities'> & {
-  // ADR-0032/ADR-0033: 'media', 'clipboard' and 'secrets' excluded with the
-  // same deferred reasoning 'web' carried in the contracts-only PR that
-  // added it -- the real parser does not accept any of the three yet
-  // either (their PARITY_MAP loader arrays do not exist until the stacked
-  // implementation PR), so a kitchen-sink manifest naming them would fail
-  // the round-trip this file exists to prove.
+  // 'clipboard' (ADR-0032) has no app door and 'secrets' (ADR-0033) has no
+  // fields, so a kitchen-sink manifest naming them would fail the round-trip
+  // or prove nothing.
   readonly capabilities: Omit<Full<Capabilities>, 'net' | 'fs' | 'id' | 'web' | 'media' | 'clipboard' | 'secrets' | 'trust'> & {
+    readonly media: Full<MediaCapability>
     readonly trust: Full<TrustCapability>
     readonly net: Omit<Full<NetCapability>, 'tcp' | 'udp' | 'https'> & {
       readonly tcp: Full<TcpCapability>
@@ -77,6 +76,7 @@ const KITCHEN_SINK: FullManifest = {
     fs: { quotaBytes: 104857600 },
     id: { curves: ['secp256k1'] },
     web: { contexts: ['https://kitchen-sink.example'], embed: { origins: ['*'] } },
+    media: { camera: true, microphone: true, screen: true },
     trust: { score: true }
   }
 }

@@ -25,9 +25,20 @@ function windowFake (): EventEmitter & { minimized: boolean, isMinimized: () => 
   return emitter
 }
 
-function setup () {
+function captureFake () {
+  const captured = new Set<unknown>()
+  const listeners = new Set<() => void>()
+  return {
+    captured,
+    watch: { isCaptured: (contents: unknown) => captured.has(contents), onChange: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } } },
+    change: (): void => { for (const listener of [...listeners]) listener() },
+    listeners
+  }
+}
+
+function setup (captures?: ReturnType<typeof captureFake>) {
   const lifecycle = new TabLifecycle()
-  const stop = startTabVisibility(lifecycle)
+  const stop = startTabVisibility(lifecycle, captures?.watch as never)
   const win = windowFake()
   const a = page()
   const b = page()
@@ -214,5 +225,43 @@ describe('startTabVisibility', () => {
     stop()
     expect(pageOff).not.toHaveBeenCalled()
     expect(windowOff).not.toHaveBeenCalled()
+  })
+
+  it('keeps a shared tab visible behind another tab, and tells it hidden when the share ends', () => {
+    const captures = captureFake()
+    const { show, a, b, sent } = setup(captures)
+    show({ a: true, b: false })
+    expect(sent(b)).toEqual([true])
+    captures.captured.add(b)
+    captures.change()
+    expect(sent(b)).toEqual([true, false])
+    show({ a: false, b: false })
+    show({ a: true, b: false })
+    expect(sent(b)).toEqual([true, false])
+    captures.captured.delete(b)
+    captures.change()
+    expect(sent(b)).toEqual([true, false, true])
+    expect(sent(a)).toEqual([true, false])
+  })
+
+  it('does not tell a shared tab it is hidden when it goes to the back, and tells it once the share has ended', () => {
+    const captures = captureFake()
+    const { show, a, b, sent } = setup(captures)
+    show({ a: true, b: false })
+    captures.captured.add(a)
+    show({ a: false, b: true })
+    expect(sent(a)).toEqual([])
+    captures.captured.delete(a)
+    captures.change()
+    expect(sent(a)).toEqual([true])
+    expect(sent(b)).toEqual([true, false])
+  })
+
+  it('stops listening for shares when stopped', () => {
+    const captures = captureFake()
+    const { stop } = setup(captures)
+    expect(captures.listeners.size).toBe(1)
+    stop()
+    expect(captures.listeners.size).toBe(0)
   })
 })

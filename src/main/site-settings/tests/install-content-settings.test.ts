@@ -30,7 +30,7 @@ const { SCRIPT_BLOCK_POLICY } = await import('../content-rules.js')
 
 const SITE = 'https://shop.example'
 
-function rig (values: Record<string, string> = {}, windows: unknown[] = []) {
+function rig (values: Record<string, string> = {}, windows: unknown[] = [], ctx: object = {}) {
   const store = new SiteSettingsStore(null)
   const settingsListeners: Array<(change: { key: string }) => void> = []
   const onStart = vi.fn()
@@ -42,7 +42,7 @@ function rig (values: Record<string, string> = {}, windows: unknown[] = []) {
     tabLifecycle: { subscribe },
     downloads: { onStart }
   } as unknown as ShellServices
-  installContentSettings.install({} as never, services, {} as never, {} as never)
+  installContentSettings.install({} as never, services, ctx as never, {} as never)
   return { store, subscribe, onStart, values, changeSetting: (key: string) => { for (const listener of settingsListeners) listener({ key }) } }
 }
 
@@ -137,6 +137,22 @@ describe('the content-settings installer', () => {
       store.set(SITE, 'javascript', 'block')
       const result = headersHandler()(page, { responseHeaders: { 'Content-Security-Policy': ["default-src 'self'"], 'Content-Type': ['text/html'] } })
       expect(result.responseHeaders['Content-Security-Policy']).toEqual(["default-src 'self'", SCRIPT_BLOCK_POLICY])
+    })
+
+    it('still blocks scripts on an origin the broker registered but that holds no grants, as a declined app origin is', () => {
+      const ctx = { broker: { app: { isRegisteredSync: () => true, hasGrantsSync: () => false } } }
+      const { store } = rig({}, [], ctx)
+      store.set(SITE, 'javascript', 'block')
+      const result = headersHandler()(page, { responseHeaders: { 'Content-Type': ['text/html'] } })
+      expect(result.responseHeaders['Content-Security-Policy']).toEqual([SCRIPT_BLOCK_POLICY])
+    })
+
+    it('leaves an origin that holds grants alone: an app\'s permissions are its manifest\'s', () => {
+      const ctx = { broker: { app: { isRegisteredSync: () => true, hasGrantsSync: () => true } } }
+      const { store } = rig({}, [], ctx)
+      store.set(SITE, 'javascript', 'block')
+      const current = { responseHeaders: { 'Content-Type': ['text/html'] } }
+      expect(headersHandler()(page, current)).toBe(current)
     })
 
     it('takes the service workers off a site told to block JavaScript, and off every site when blocking becomes the default', () => {

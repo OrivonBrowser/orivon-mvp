@@ -6,6 +6,7 @@ why it is safe; this table is what turns each one on.
 | File | What it does | Gate |
 |---|---|---|
 | `dev-grant.ts` | Grants a capability from Node code already in the process (Playwright's `evaluate()`) | Compiled out unless `ORIVON_ENABLE_DEV_GRANT=1` at build time |
+| `dev-display-chooser.ts` | Stands in for the screen-share picker: a spec binds it to pick the first screen, a tab by address or nothing, and reads back what the gate asked | Compiled out unless `ORIVON_ENABLE_DEV_GRANT=1` at build time |
 | `dev-mode.ts` | The one reader of developer mode | `ORIVON_DEV_ORIGINS=1`, set only by `scripts/dev.mjs` |
 | `eth-resolver.ts` | orivon-ports' developer `.eth` names, for [`../verifier/`](../verifier/)'s resolver rules | Developer mode and `ORIVON_ETH_NAMES_FILE` |
 | `score-levels.ts` | Overrides the displayed Website and Delivery level per origin ([`ADR-0037`](../../../docs/decisions/ADR-0037-a-level-4-site-s-grants-are-shown-without-warnings.md)) | Developer mode and `ORIVON_SCORE_LEVELS_FILE` |
@@ -17,7 +18,8 @@ needs no developer mode for that.
 
 **Tied to Electron.** `local-ddoc.ts` only, importing `net` lazily.
 
-**What it depends on.** `node:fs`, `electron` (`local-ddoc.ts`),
+**What it depends on.** `node:fs`, `electron` (`local-ddoc.ts`; a type in `dev-display-chooser.ts`),
+[`../display-capture/`](../display-capture/) (`dev-display-chooser.ts`: the chooser binding and the choice types),
 [`../../contracts/`](../../contracts/),
 [`../../loader/ddoc-declaration.ts`](../../loader/ddoc-declaration.ts),
 [`../install/grant-without-install.ts`](../install/grant-without-install.ts),
