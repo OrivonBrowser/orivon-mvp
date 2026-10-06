@@ -20,6 +20,8 @@ export interface DownloadDeps {
   fallbackFolder: () => string
   askWhere: () => boolean
   fileExists: (path: string) => boolean
+  /** A path no download may be saved to even when nothing is there: a local file the person let use Orivon permissions. */
+  reservedPath?: (path: string) => boolean
   /** Makes the folder when it is missing; false when it cannot be made or written. */
   ensureFolder: (dir: string) => boolean
   /** Whether files can be written into an existing folder. */
@@ -300,9 +302,9 @@ export class DownloadService {
     return false
   }
 
-  /** Whether a file could not take this name: it is on disk, or a download in progress is about to put one there. */
+  /** Whether a file could not take this name: it is on disk, reserved, or a download in progress is about to put one there. */
   private taken (path: string): boolean {
-    return this.deps.fileExists(path) || this.entries.some((entry) => isActive(entry) && entry.savePath === path)
+    return this.deps.fileExists(path) || this.deps.reservedPath?.(path) === true || this.entries.some((entry) => isActive(entry) && entry.savePath === path)
   }
 
   private usableFolder (): string {

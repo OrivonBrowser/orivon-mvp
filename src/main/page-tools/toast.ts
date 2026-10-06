@@ -50,7 +50,8 @@ export const TOAST_TEXT = {
   linkCopied: { text: 'Link copied', tone: 'ok' },
   linkCopyFailed: { text: 'Could not copy the link', tone: 'error' },
   mailFailed: { text: 'Could not open your mail program', tone: 'error' },
-  noAddress: { text: 'This page has no address to share', tone: 'info' }
+  noAddress: { text: 'This page has no address to share', tone: 'info' },
+  localFilesUnsafe: { text: 'This copy of Orivon cannot open files from this computer safely.', tone: 'error' }
 } as const satisfies Record<string, ToastText>
 
 export type ToastCode = keyof typeof TOAST_TEXT
