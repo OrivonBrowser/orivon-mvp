@@ -25,7 +25,7 @@ afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
 
 interface Rig { deps: LocalFileGrantDeps, broker: Broker, consent: ReturnType<typeof vi.fn>, records: Set<string>, grants: Array<{ id: string, capability: string, patterns: readonly string[] }>, revokePersisted: ReturnType<typeof vi.fn>, registerApp: ReturnType<typeof vi.fn> }
 
-function rig (over: { recorded?: boolean, answer?: boolean, held?: Array<{ capability: string, patterns: readonly string[] }>, persisted?: Record<string, unknown>, registered?: boolean, addFails?: boolean } = {}): Rig {
+function rig (over: { recorded?: boolean, answer?: boolean, held?: Array<{ capability: string, patterns: readonly string[] }>, persisted?: Record<string, unknown>, registered?: boolean, addFails?: boolean, inOwnSession?: boolean } = {}): Rig {
   const records = new Set<string>(over.recorded === true ? [key] : [])
   const grants = (over.held ?? []).map((entry, index) => ({ id: `g${String(index)}`, ...entry }))
   const revokePersisted = vi.fn(async (_origin: string, capability: string) => { const at = grants.findIndex((grant) => grant.capability === capability); if (at >= 0) grants.splice(at, 1); return true })
@@ -53,6 +53,7 @@ function rig (over: { recorded?: boolean, answer?: boolean, held?: Array<{ capab
     broker,
     records: { has: (candidate) => records.has(candidate), add: (candidate) => { if (over.addFails === true) return false; records.add(candidate); return true } },
     consent,
+    inOwnSession: () => over.inOwnSession === true,
     refused: new Set<string>()
   }
   return { deps, broker, consent, records, grants, revokePersisted, registerApp }
@@ -160,8 +161,21 @@ describe('grantLocalFile', () => {
 
   it('does not say to reload for a recorded file that was already registered this run', async () => {
     await writeManifest()
-    const r = rig({ recorded: true, registered: true, held: [{ capability: 'fs', patterns: [] }] })
+    const r = rig({ recorded: true, registered: true, inOwnSession: true, held: [{ capability: 'fs', patterns: [] }] })
     expect(await grantLocalFile(r.deps, key, hint)).toMatchObject({ newlyRegistered: false })
+  })
+
+  it('says to reload a second tab on a file already granted, whose tab is still in the shared session', async () => {
+    await writeManifest()
+    const r = rig({ recorded: true, registered: true, inOwnSession: false, held: [{ capability: 'fs', patterns: [] }] })
+    expect(await grantLocalFile(r.deps, key, hint)).toMatchObject({ outcome: 'granted-without-install', newlyRegistered: true })
+    expect(r.consent).not.toHaveBeenCalled()
+  })
+
+  it('says to reload a tab left in the shared session after a No on a file that is recorded', async () => {
+    await writeManifest({ fs: { quotaBytes: 1000 }, id: { curves: ['secp256k1'] } })
+    const r = rig({ recorded: true, registered: true, answer: false, inOwnSession: false, held: [{ capability: 'fs', patterns: [] }] })
+    expect(await grantLocalFile(r.deps, key, hint)).toMatchObject({ newlyRegistered: true })
   })
 
   it('asks again when a recorded file now declares a capability it does not hold, and keeps what it held when the answer is No', async () => {
@@ -209,9 +223,16 @@ describe('grantLocalFile', () => {
   it('treats a manifest with no capability as nothing to ask', async () => {
     await writeManifest({})
     const r = rig()
-    expect(await grantLocalFile(r.deps, key, hint)).toMatchObject({ outcome: 'granted-without-install' })
+    expect(await grantLocalFile(r.deps, key, hint)).toMatchObject({ outcome: 'granted-without-install', newlyRegistered: false })
     expect(r.consent).not.toHaveBeenCalled()
     expect(r.records.has(key)).toBe(false)
+  })
+
+  it('never asks a tab to reload for a manifest with no capability, on any load of the run', async () => {
+    await writeManifest({})
+    const r = rig()
+    expect(await grantLocalFile(r.deps, key, hint)).toMatchObject({ newlyRegistered: false })
+    expect(await grantLocalFile(r.deps, key, hint)).toMatchObject({ newlyRegistered: false })
   })
 
   it('ignores the answer of a prompt for a tab that moved on, and records nothing', async () => {

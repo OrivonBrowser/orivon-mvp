@@ -29,6 +29,8 @@ export interface LocalFileGrantDeps {
   /** The record of the files let use Orivon permissions (`LocalFileApps`): `add` is false when it could not be written. */
   readonly records: { readonly has: (key: string) => boolean, readonly add: (key: string) => boolean }
   readonly consent: InstallConsentPrompt
+  /** Whether the tab that raised the hint already runs in the session `key` belongs in (`localPartitionFor`): false for a tab still in the shared local-files session. */
+  readonly inOwnSession: (caller: DialogCaller | undefined, key: string) => boolean
   /** What a No was said to in this run, one entry per file and manifest: it is not asked again until the browser starts again or the file declares something else. */
   readonly refused: Set<string>
 }
@@ -81,7 +83,9 @@ export async function readFolderManifest (key: string, hintedUrl: string): Promi
 
 /**
  * Registers the local file `key` against the manifest `hintedUrl` names and asks about whatever it declares and does not
- * yet hold. `newlyRegistered` says the tab must reload: it has to move to the file's own session.
+ * yet hold. `newlyRegistered` says the tab must reload: a recorded file's tab has to be in the file's own session, and
+ * the reload is what moves it there (the load is blocked by the fence of the session it is in, and the tab follows the
+ * file: `../shell/pre-partition.ts`). A file nobody recorded never moves, so its tab is never reloaded.
  */
 export async function grantLocalFile (deps: LocalFileGrantDeps, key: string, hintedUrl: string, caller?: DialogCaller): Promise<GrantWithoutInstallOutcome> {
   if (!isLocalFileKey(key)) return { outcome: 'rejected', reason: 'not a local file' }
@@ -105,15 +109,19 @@ export async function grantLocalFile (deps: LocalFileGrantDeps, key: string, hin
     const held = await broker.app.grants(key)
     const heldKinds = held.map((grant) => grant.capability)
     const asks = capabilities.length > 0 && (capabilities.some((capability) => !heldKinds.includes(capability)) || widensHeldGrants(patternSetFromGrants(held), declared))
-    if (!asks) return { outcome: 'granted-without-install', canonicalOrigin: key, newlyRegistered: !alreadyRegistered }
+    // Recorded files only: this tab, and any other tab on the same file, must end in the file's own session, and a
+    // file registered for the first time this run is reloaded once so its page starts with its grants held.
+    const settled = (): { readonly outcome: 'granted-without-install', readonly canonicalOrigin: string, readonly newlyRegistered: boolean } =>
+      ({ outcome: 'granted-without-install', canonicalOrigin: key, newlyRegistered: records.has(key) && (!alreadyRegistered || !deps.inOwnSession(caller, key)) })
+    if (!asks) return settled()
 
     const refusal = `${key}\n${JSON.stringify(declared)}`
-    if (deps.refused.has(refusal)) return { outcome: 'granted-without-install', canonicalOrigin: key, newlyRegistered: false }
+    if (deps.refused.has(refusal)) return settled()
     const accepted = await deps.consent(key, manifest, capabilities, heldKinds.filter((kind) => capabilities.includes(kind)), caller)
-    if (caller !== undefined && !caller.stillOn(key)) return { outcome: 'granted-without-install', canonicalOrigin: key, newlyRegistered: false }
+    if (caller !== undefined && !caller.stillOn(key)) return settled()
     if (!accepted) {
       deps.refused.add(refusal)
-      return { outcome: 'granted-without-install', canonicalOrigin: key, newlyRegistered: false }
+      return settled()
     }
     // The record first: a grant a restart could not find the session of would be a grant nobody could take back.
     if (!records.add(key)) return { outcome: 'rejected', reason: 'the file could not be recorded' }

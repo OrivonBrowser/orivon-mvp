@@ -202,6 +202,48 @@ it('[app:local-file-grant] asks with a warning and a double press, grants to tha
   }
 }, QA_TEST_TIMEOUT_MS * 2)
 
+/** Every page open at `url` that has reported a result satisfying `wanted`. */
+async function pagesSeenAt (app: ElectronApplication, url: string, wanted: (seen: Seen) => boolean): Promise<number> {
+  let count = 0
+  for (const page of app.windows().filter((window) => window.url().split('#')[0] === url && !window.isClosed())) {
+    const raw = await page.evaluate(() => document.body?.dataset['result']).catch(() => undefined)
+    if (raw !== undefined && wanted(JSON.parse(raw) as Seen)) count++
+  }
+  return count
+}
+
+it('[app:local-file-grant] moves a second tab on the same file into the file\'s own session when the first is allowed', async () => {
+  const appUrl = urlOf('app.html')
+  const { app, chrome } = await launchShell()
+  try {
+    await stubNativeDialogs(app)
+    void visit(app, chrome, appUrl)
+    await waitQuestion(app)
+    // A second tab opens the same file while the question is open: it runs in the shared session and asks the same question, which waits its turn.
+    await chrome.click('#new-tab')
+    void visit(app, chrome, appUrl)
+    expect(await waitFor(async () => (await app.evaluate(({ webContents }, target) => webContents.getAllWebContents().filter((wc) => !wc.isDestroyed() && wc.getURL().split('#')[0] === target).length, appUrl)) >= 2)).toBe(true)
+    await chrome.click('.tab:not(.active)')
+    const shown = await waitQuestion(app)
+    await shown.waitForSelector('.q:not(.arming)')
+    const allow = shown.locator('.q .btn-row .btn[data-button="1"]')
+    await allow.hover()
+    await allow.click()
+    await allow.click().catch(() => undefined)
+
+    const both = await waitFor(async () => await pagesSeenAt(app, appUrl, (seen) => Array.isArray(seen.grants) && seen.grants.length === 2) >= 2, 60_000)
+    expect(both, 'the second tab never ended up able to use its permissions').toBe(true)
+    const partitions = await app.evaluate(({ session, webContents }, { target, own }) => webContents.getAllWebContents()
+      .filter((wc) => !wc.isDestroyed() && wc.getURL().split('#')[0] === target)
+      .map((wc) => wc.session === session.fromPartition(own)), { target: appUrl, own: ownPartition(appUrl) })
+    expect(partitions.length).toBeGreaterThanOrEqual(2)
+    expect(partitions.every(Boolean)).toBe(true)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, QA_TEST_TIMEOUT_MS * 2)
+
 /** Opens the privacy page of Settings and returns it. */
 async function privacyPage (app: ElectronApplication, chrome: Page): Promise<Page> {
   await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/privacy') })

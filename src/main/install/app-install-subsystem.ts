@@ -28,6 +28,8 @@ import { grantableWithoutInstall, grantWithoutInstall } from './grant-without-in
 import { grantLocalFile } from './local-file-grant.js'
 import { createLocalFileConsentPrompt } from '../consent/local-file-consent.js'
 import { localFileApps } from '../local-files/local-file-apps.js'
+import { localPartitionFor } from '../local-files/partition.js'
+import type { DialogCaller } from '../consent/request-grant.js'
 import { isLocalFileKey } from '../../broker/policy/origin.js'
 import { defaultSessionGrantedOriginCsp, GRANTED_ORIGIN_CSP_FILTER } from './granted-origin-csp.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
@@ -152,7 +154,12 @@ export const appInstallSubsystem: Subsystem = {
       if (isLocalFileKey(hintingOrigin)) {
         const records = localFileApps()
         if (records === undefined) return { outcome: 'rejected', reason: 'the record of local files is not available' }
-        const outcome = await withOriginQueue(hintingOrigin, async () => await grantLocalFile({ broker, records, consent: localFileConsent, refused: localFileRefusals }, hintingOrigin, hintedUrl, caller))
+        const inOwnSession = (asker: DialogCaller | undefined, key: string): boolean => {
+          const partition = localPartitionFor(key)
+          const contents = asker?.contents?.() as { session?: unknown } | undefined
+          return partition !== undefined && contents?.session === session.fromPartition(partition)
+        }
+        const outcome = await withOriginQueue(hintingOrigin, async () => await grantLocalFile({ broker, records, consent: localFileConsent, inOwnSession, refused: localFileRefusals }, hintingOrigin, hintedUrl, caller))
         if (outcome.outcome === 'rejected') console.warn(`[app-install] permissions for a local file refused for ${hintingOrigin}: ${outcome.reason}`)
         return outcome
       }
