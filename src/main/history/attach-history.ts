@@ -3,9 +3,10 @@
 // of the shell's own, not an error page, not something that is only a download.
 import type { WebContents } from 'electron'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
+import { sanitizeLocalFileUrl } from '../browsing/local-file-input.js'
 import type { HistoryService } from './history-service.js'
 
-/** The schemes a person could open again from a list. */
+/** The schemes a person could open again from a list. A local file is kept too (`file:` below), only for a path with no host. */
 const RECORDED_SCHEMES = new Set(['http:', 'https:', 'ipfs:', 'ipns:'])
 
 export interface HistoryHost {
@@ -17,7 +18,9 @@ export interface HistoryHost {
 export function historyAddress (url: string): string | null {
   const shown = BUILTIN_ADDRESSES.displayUrl(url)
   try {
-    return RECORDED_SCHEMES.has(new URL(shown).protocol) ? shown : null
+    const { protocol } = new URL(shown)
+    if (protocol === 'file:') return sanitizeLocalFileUrl(shown)
+    return RECORDED_SCHEMES.has(protocol) ? shown : null
   } catch {
     return null
   }

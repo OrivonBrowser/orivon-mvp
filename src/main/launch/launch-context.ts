@@ -53,6 +53,8 @@ export function flagsFor (launch: { kind: 'profile', id: string } | { kind: 'pri
 }
 
 const ADDRESS_ARGUMENT = /^https?:\/\//i
+/** What a restart drops: the addresses, and the `file:` URIs a desktop entry passes. */
+const DROPPED_ARGUMENT = /^(https?:\/\/|file:)/i
 
 /** The http and https addresses on a command line, for a second launch to open. Never a scheme the address bar would refuse. */
 export function urlsFromArgv (argv: readonly string[], limit = 8): string[] {
@@ -71,5 +73,5 @@ export function urlsFromArgv (argv: readonly string[], limit = 8): string[] {
 
 /** A command line without the addresses or the launcher actions on it: starting the browser again opens none of them a second time. */
 export function withoutAddresses (argv: readonly string[]): string[] {
-  return argv.filter((argument) => !ADDRESS_ARGUMENT.test(argument) && argument !== NEW_WINDOW_FLAG && argument !== NEW_PRIVATE_WINDOW_FLAG)
+  return argv.filter((argument) => !DROPPED_ARGUMENT.test(argument) && argument !== NEW_WINDOW_FLAG && argument !== NEW_PRIVATE_WINDOW_FLAG)
 }

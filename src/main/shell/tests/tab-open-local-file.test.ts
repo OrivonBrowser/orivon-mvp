@@ -71,3 +71,27 @@ describe('TabOpener.openLocalFile and the binary\'s file-protocol fuse', () => {
     expect(refused).not.toHaveBeenCalled()
   })
 })
+
+describe('TabOpener.openLocalFileNow', () => {
+  it('opens at once while the fuse answer is in and off', () => {
+    const { opener, add } = setup()
+    expect(opener.openLocalFileNow(FILE)).toBe('t1')
+    expect(add).toHaveBeenCalledOnce()
+  })
+
+  it('does nothing, and says nothing, while the answer is not in yet', () => {
+    known.fuse = undefined
+    const { opener, add, refused } = setup()
+    expect(opener.openLocalFileNow(FILE)).toBeUndefined()
+    expect(add).not.toHaveBeenCalled()
+    expect(refused).not.toHaveBeenCalled()
+    expect(known.reads).toBe(0)
+  })
+
+  it('refuses and says so when the answer is on', () => {
+    known.fuse = 'on'
+    const { opener, refused } = setup()
+    expect(opener.openLocalFileNow(FILE)).toBeUndefined()
+    expect(refused).toHaveBeenCalledOnce()
+  })
+})

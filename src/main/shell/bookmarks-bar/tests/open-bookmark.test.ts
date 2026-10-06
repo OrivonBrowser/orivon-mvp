@@ -29,6 +29,26 @@ describe('opening a bookmark', () => {
     expect(openPrivate).toHaveBeenCalledWith('https://a.example/')
   })
 
+  it('opens a bookmarked local file as one, wherever it is opened, and never in a private session', () => {
+    const { ctx, store, tabs, newWindowTabs, openPrivate, commands } = harness()
+    const file = 'file:///home/u/notes/app.html'
+    const page = store.addUrl({ url: file, title: 'Notes' }) as NonNullable<ReturnType<typeof store.addUrl>>
+
+    expect(openBookmark(ctx, page.id, 'current')).toBe(true)
+    expect(tabs.openLocalFile).toHaveBeenLastCalledWith(file, true)
+    openBookmark(ctx, page.id, 'background')
+    expect(tabs.openLocalFile).toHaveBeenLastCalledWith(file, false)
+    openBookmark(ctx, page.id, 'tab')
+    expect(tabs.openLocalFile).toHaveBeenLastCalledWith(file, true)
+    openBookmark(ctx, page.id, 'window')
+    expect(commands.openWindow).toHaveBeenCalledTimes(1)
+    expect(newWindowTabs.openLocalFile).toHaveBeenCalledWith(file, true)
+    expect(openBookmark(ctx, page.id, 'private')).toBe(false)
+    expect(openPrivate).not.toHaveBeenCalled()
+    expect(tabs.createTab).not.toHaveBeenCalled()
+    expect(tabs.navigate).not.toHaveBeenCalled()
+  })
+
   it('opens no second private session from a private window', () => {
     const { ctx, store, openPrivate } = harness({ isPrivate: true })
     const page = store.addUrl({ url: 'https://a.example/', title: 'A' }) as NonNullable<ReturnType<typeof store.addUrl>>

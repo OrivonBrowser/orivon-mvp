@@ -27,8 +27,12 @@ describe('historyAddress', () => {
     expect(historyAddress('http://127.0.0.1:8080/')).toBe('http://127.0.0.1:8080/')
   })
 
+  it('keeps a local file by its path, as the page the person could open again', () => {
+    expect(historyAddress('file:///home/x/notes/page.html?q=1#top')).toBe('file:///home/x/notes/page.html?q=1#top')
+  })
+
   it('refuses a page that is not one', () => {
-    for (const url of ['file:///home/x/page.html', 'about:blank', 'orivon://settings/', 'chrome-error://chromewebdata/', 'javascript:alert(1)', 'data:text/html,hi', 'blob:https://a.example/1', 'not a url', '']) {
+    for (const url of ['file://nas/share/page.html', 'file:////nas/share/page.html', 'about:blank', 'orivon://settings/', 'chrome-error://chromewebdata/', 'javascript:alert(1)', 'data:text/html,hi', 'blob:https://a.example/1', 'not a url', '']) {
       expect(historyAddress(url), url).toBeNull()
     }
   })
@@ -89,7 +93,7 @@ describe('attachHistory', () => {
     contents.emit('did-navigate', {}, 'https://a.example/missing', 404)
     contents.emit('did-navigate', {}, 'https://a.example/error', 500)
     contents.emit('did-navigate', {}, 'chrome-error://chromewebdata/', 0)
-    contents.emit('did-navigate', {}, 'file:///dashboard/index.html', 0)
+    contents.emit('did-navigate', {}, 'file://nas/dashboard/index.html', 0)
     expect(visit).not.toHaveBeenCalled()
 
     const shell = attached(false)

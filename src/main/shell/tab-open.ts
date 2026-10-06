@@ -64,9 +64,15 @@ export class TabOpener {
    * (README.md's Design notes), so that one open waits for the answer; every later one is as quick as any other tab. */
   openLocalFile (url: string, active = true): Promise<string | undefined> {
     if (this.host.atCapacity()) return Promise.resolve(undefined)
-    const known = knownFileProtocolFuse()
-    if (known !== undefined) return Promise.resolve(this.openWithFuse(url, active, known))
+    if (knownFileProtocolFuse() !== undefined) return Promise.resolve(this.openLocalFileNow(url, active))
     return fileProtocolFuse().then((fuse) => this.host.atCapacity() ? undefined : this.openWithFuse(url, active, fuse))
+  }
+
+  /** `openLocalFile` for a caller that needs the id at once: undefined, with nothing said, while the fuse has not been read yet. */
+  openLocalFileNow (url: string, active = true): string | undefined {
+    const known = knownFileProtocolFuse()
+    if (known === undefined || this.host.atCapacity()) return undefined
+    return this.openWithFuse(url, active, known)
   }
 
   private openWithFuse (url: string, active: boolean, fuse: FileProtocolFuse): string | undefined {

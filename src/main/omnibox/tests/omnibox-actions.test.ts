@@ -15,7 +15,7 @@ function fakeWindow (tabs: FakeTab[], activeTabId: string | null) {
   const manager = {
     getState: () => ({ tabs, activeTabId }),
     ids: () => tabs.map((entry) => entry.id),
-    navigate: vi.fn(), createTab: vi.fn(), openInternal: vi.fn(), activateTab: vi.fn(), closeTab: vi.fn(),
+    navigate: vi.fn(), createTab: vi.fn(), openLocalFile: vi.fn(() => Promise.resolve('f1')), openInternal: vi.fn(), activateTab: vi.fn(), closeTab: vi.fn(),
     activeWebContents: () => ({ focus: vi.fn() })
   }
   return {
@@ -160,6 +160,33 @@ describe('the omnibox chrome actions', () => {
       expect(here.manager.navigate).not.toHaveBeenCalled()
     })
 
+    it('opens a typed path or file: address as a local file in a new tab, and drops the empty tab it was typed on', async () => {
+      const { run, here, anchor } = setup()
+      run('omnibox.query', { text: '/home/u/notes/app.html', typing: false, anchor })
+      run('omnibox.pick', { index: 0, disposition: 'current' })
+      expect(here.manager.openLocalFile).toHaveBeenCalledWith('file:///home/u/notes/app.html', true)
+      expect(here.manager.navigate).not.toHaveBeenCalled()
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(here.manager.closeTab).toHaveBeenCalledWith('t2')
+    })
+
+    it('opens a local file in the background when asked, and keeps the tab it was typed on', () => {
+      const { run, here, anchor } = setup()
+      run('omnibox.query', { text: 'file:///home/u/a.html', typing: false, anchor })
+      run('omnibox.pick', { index: 0, disposition: 'background' })
+      expect(here.manager.openLocalFile).toHaveBeenCalledWith('file:///home/u/a.html', false)
+      expect(here.manager.closeTab).not.toHaveBeenCalled()
+    })
+
+    it('offers a page of history that is a local file, and opens it as one', () => {
+      const { run, here, anchor } = setup({ history: [{ url: 'file:///home/u/notes/app.html', title: 'Notes' }] })
+      run('omnibox.query', { text: 'notes', typing: false, anchor })
+      run('omnibox.pick', { index: 1, disposition: 'tab' })
+      expect(here.manager.openLocalFile).toHaveBeenCalledWith('file:///home/u/notes/app.html', true)
+      expect(here.manager.createTab).not.toHaveBeenCalled()
+    })
+
     it('opens one of the shell\'s own pages through its own opener', () => {
       const { run, here, anchor } = setup()
       run('omnibox.query', { text: 'orivon://history', typing: false, anchor })
@@ -260,6 +287,12 @@ describe('the omnibox chrome actions', () => {
       expect(run('omnibox.pick', { index: 1, disposition: 'current' })).toBe(false)
     })
 
+    it('counts a typed local file as a page that was typed', () => {
+      const { run, markTyped } = setup()
+      run('omnibox.close', { typed: '/home/u/a.html' })
+      expect(markTyped).toHaveBeenCalledWith('file:///home/u/a.html')
+    })
+
     it('counts what was submitted as typed when it is an address, and only then', () => {
       const { run, markTyped } = setup()
       run('omnibox.close', { typed: 'example.com' })
@@ -268,6 +301,7 @@ describe('the omnibox chrome actions', () => {
       run('omnibox.close', { typed: 'some search words' })
       run('omnibox.close', { typed: '? example.com' })
       run('omnibox.close', { typed: 'javascript:alert(1)' })
+      run('omnibox.close', { typed: 'file://server/share/a.html' })
       run('omnibox.close', { typed: 7 })
       run('omnibox.close', { typed: 'a'.repeat(3000) })
       run('omnibox.close', undefined)

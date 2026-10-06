@@ -3,7 +3,7 @@
 import { MAX_DEPTH, MAX_NODES, childrenOf, clipTitle, depthOf, freshId, nodeCount } from './bookmark-tree.js'
 import type { BookmarkTree, IdSource, TreeDraft } from './bookmark-tree.js'
 import type { BookmarkNode, BookmarkRoot, BookmarkTreeInput } from './bookmark-types.js'
-import { sanitizeDirectUrl } from './omnibox.js'
+import { sanitizeBrowserUrl } from './local-file-input.js'
 import { sanitizeStoredFavicon } from './bookmark-file.js'
 
 export interface ImportResult {
@@ -32,7 +32,7 @@ export function importNodes (tree: BookmarkTree, parent: string, input: readonly
       if (budget <= 0) break
       const stamp = typeof item.added === 'number' && Number.isFinite(item.added) ? item.added : now
       if (item.kind === 'url') {
-        const url = typeof item.url === 'string' ? sanitizeDirectUrl(item.url) : null
+        const url = typeof item.url === 'string' ? sanitizeBrowserUrl(item.url) : null
         if (url === null) continue
         const id = freshId(draft.nodes, newId)
         draft.nodes.set(id, { id, parent: into, kind: 'url', title: clipTitle(String(item.title ?? '')), url, favicon: sanitizeStoredFavicon(item.favicon), added: stamp })

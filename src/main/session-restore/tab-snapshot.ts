@@ -2,7 +2,7 @@
 // Never the page's form state or scroll position: a snapshot is read by anything running as the person,
 // and it is checked again on every read (`sanitizeSnapshot`).
 import type { WebContents } from 'electron'
-import { sanitizeDirectUrl } from '../browsing/omnibox.js'
+import { sanitizeBrowserUrl } from '../browsing/local-file-input.js'
 import { internalUrl, isInternalPageId, parseInternalUrl } from '../pages/internal-pages.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
 import type { TabRecord } from '../shell/tab-types.js'
@@ -43,7 +43,7 @@ function cleanTitle (value: unknown): string {
 
 function cleanUrl (value: unknown): string | null {
   if (typeof value !== 'string' || value.length > MAX_URL_LENGTH) return null
-  return sanitizeDirectUrl(value)
+  return sanitizeBrowserUrl(value)
 }
 
 /** The entries of a history list that are addresses a tab may open, with the shown one's new position; null when the shown one is not among them. */

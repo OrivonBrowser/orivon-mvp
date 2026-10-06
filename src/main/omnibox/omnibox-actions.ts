@@ -7,7 +7,9 @@ import { openTypedViewSource } from '../page-tools/view-source.js'
 import type { ChromeAction } from '../shell/chrome-actions.js'
 import { sendChromeEvent } from '../shell/shell-events.js'
 import type { WindowContext } from '../shell/window-context.js'
+import { parseLocalFileInput } from '../browsing/local-file-input.js'
 import { parseOmniboxInput } from '../browsing/omnibox.js'
+import { navigateFromBrowser, openFromBrowser } from '../shell/open-from-browser.js'
 import { prewarmVerifier } from '../verifier/verifier-access.js'
 import { OMNIBOX_MODULE, OMNIBOX_OVERLAY } from './omnibox-names.js'
 import { existingOmnibox, omniboxFor } from './omnibox-window.js'
@@ -85,7 +87,8 @@ export const omniboxClose: ChromeAction = (payload, ctx) => {
   ctx.window.overlays.close(OMNIBOX_OVERLAY)
   const typed = isRecord(payload) ? payload['typed'] : undefined
   if (typeof typed === 'string' && typed.length <= MAX_QUERY_LENGTH) {
-    const result = parseOmniboxInput(typed)
+    const file = parseLocalFileInput(typed)
+    const result = file === null ? parseOmniboxInput(typed) : { kind: 'url', url: file }
     if (result.kind === 'url') ctx.services.history.markTyped(result.url)
   }
   return undefined
@@ -116,17 +119,20 @@ function perform (ctx: WindowContext, outcome: Outcome): void {
   const source = viewSourceTarget(outcome.target)
   if (outcome.disposition === 'current') {
     const active = tabs.getState().activeTabId
-    if (active !== null) tabs.navigate(active, outcome.target)
+    if (active !== null) void navigateFromBrowser(tabs, active, outcome.target)
   } else if (internal !== null) {
     tabs.openInternal(internal.page, internal.path)
   } else if (source !== null) {
     openTypedViewSource(tabs, source)
   } else {
-    tabs.createTab(outcome.target, outcome.disposition === 'tab')
+    openFromBrowser(tabs, localFileOf(outcome.target) ?? outcome.target, outcome.disposition === 'tab')
   }
   // The page in front, the one chosen unless it opened behind, takes the keyboard from the address bar.
   tabs.activeWebContents()?.focus()
 }
+
+/** The file address a typed path or a `file:` row stands for, or null when `target` is not one. */
+const localFileOf = (target: string): string | null => parseLocalFileInput(target)
 
 /** Activates the tab, in its own window, and leaves behind no empty new tab the choice was made from. */
 function switchToTab (ctx: WindowContext, tabId: string): void {

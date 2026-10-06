@@ -1,5 +1,6 @@
 // What a cold start opens, decided from plain values: the start-up choice, the pages list, the addresses on the
 // command line and the previous session. Nothing here touches a window.
+import { localFileKey } from '../../broker/policy/origin.js'
 import { parseOmniboxInput } from '../browsing/omnibox.js'
 import { MAX_LISTED_ADDRESSES } from '../settings/address-checks.js'
 import type { SavedSession, SavedWindow } from '../session-restore/session-types.js'
@@ -58,6 +59,13 @@ export function planStartup (input: StartupInput): StartupPlan {
   const [saved, ...more] = mode === 'continue' ? usableWindows(input.previous) : []
   if (saved === undefined) return { first: { tabs: [], urls }, more: [] }
   return { first: { tabs: saved.tabs, urls, saved }, more }
+}
+
+/** Whether the plan puts a local file in a tab, so that the first window must wait for the binary's fuse to be read (`../local-files/file-fuse.ts`) before it opens it. */
+export function planOpensLocalFile (plan: StartupPlan): boolean {
+  const isFile = (url: string): boolean => localFileKey(url) !== null
+  const windows = plan.first.saved === undefined ? [] : [plan.first.saved, ...plan.more]
+  return plan.first.urls.some(isFile) || plan.first.tabs.some((tab) => isFile(tab.url)) || windows.some((window) => window.tabs.some((tab) => isFile(tab.url)))
 }
 
 /** After a crash the bar offers the session back, unless the start-up choice already brought it. */

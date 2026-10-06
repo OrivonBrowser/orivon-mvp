@@ -88,4 +88,8 @@ describe('withoutAddresses', () => {
     expect(withoutAddresses(['/usr/bin/orivon', '--new-window', '--new-private-window', '--no-sandbox', 'https://a.example/']))
       .toEqual(['/usr/bin/orivon', '--no-sandbox'])
   })
+
+  it('drops a file: URI too', () => {
+    expect(withoutAddresses(['/usr/bin/orivon', 'file:///tmp/a.html', '--no-sandbox'])).toEqual(['/usr/bin/orivon', '--no-sandbox'])
+  })
 })

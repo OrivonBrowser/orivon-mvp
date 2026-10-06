@@ -51,7 +51,7 @@ describe('the History page acting on a row by id', () => {
     expect(options.place).toMatchObject({ x: 38, y: 48 })
     const createTab = vi.fn()
     options.first({ createTab })
-    expect(createTab).toHaveBeenCalledWith('https://a.example/')
+    expect(createTab).toHaveBeenCalledWith('https://a.example/', true)
   })
 
   it('refuses an id that is not a whole number, a disposition it does not know, and an address a tab may not open', () => {

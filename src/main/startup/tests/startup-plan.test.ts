@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SavedSession, SavedWindow } from '../../session-restore/session-types.js'
-import { parsePages, planStartup, shouldOfferRestore, usableWindows } from '../startup-plan.js'
+import { parsePages, planOpensLocalFile, planStartup, shouldOfferRestore, usableWindows } from '../startup-plan.js'
 import type { StartupInput } from '../startup-plan.js'
 
 const window = (urls: string[], pinned = false): SavedWindow => ({
@@ -108,5 +108,23 @@ describe('shouldOfferRestore', () => {
   it('does not when there was no session or nothing in it to bring back', () => {
     expect(shouldOfferRestore('newTab', null, false)).toBe(false)
     expect(shouldOfferRestore('newTab', session([window([])], false), false)).toBe(false)
+  })
+})
+
+describe('planOpensLocalFile', () => {
+  it('is false for a plan of web addresses and the shell\'s own pages', () => {
+    expect(planOpensLocalFile(planStartup(input({ argvUrls: ['https://a.example/'] })))).toBe(false)
+  })
+
+  it('is true for a launch address, a restored tab or a tab of a later window that is a local file', () => {
+    expect(planOpensLocalFile(planStartup(input({ argvUrls: ['file:///tmp/a.html'] })))).toBe(true)
+    expect(planOpensLocalFile(planStartup(input({ mode: 'continue', previous: session([window(['https://a.example/', 'file:///tmp/a.html'])]) })))).toBe(true)
+    expect(planOpensLocalFile(planStartup(input({ mode: 'continue', previous: session([window(['https://a.example/']), window(['file:///tmp/a.html'])]) })))).toBe(true)
+  })
+
+  it('is false when a tab only has a local file behind it in its history', () => {
+    const tab = { url: 'https://a.example/', title: '', pinned: false, entries: [{ url: 'file:///tmp/a.html', title: '' }, { url: 'https://a.example/', title: '' }], index: 1 }
+    const previous = session([{ ...window([]), tabs: [tab] }])
+    expect(planOpensLocalFile(planStartup(input({ mode: 'continue', previous })))).toBe(false)
   })
 })

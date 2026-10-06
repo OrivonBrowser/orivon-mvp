@@ -239,6 +239,9 @@ export class TabManager {
   /** A local file in a new tab of the local-files session; undefined for anything `localFileKey` refuses. */
   openLocalFile (url: string, active = true): Promise<string | undefined> { return this.opener.openLocalFile(url, active) }
 
+  /** `openLocalFile` for a caller that needs the id at once; undefined while the first open has not read the binary's fuse. */
+  openLocalFileNow (url: string, active = true): string | undefined { return this.opener.openLocalFileNow(url, active) }
+
   /** A same-origin blob: URL a no-guest popup open wants, in the opener's `partition`. */
   openBlobTab (url: string, partition: string | undefined, active = true, loadOptions?: LoadURLOptions): string { return this.opener.openBlobTab(url, partition, active, loadOptions) }
 

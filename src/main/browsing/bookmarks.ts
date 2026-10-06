@@ -13,7 +13,7 @@ import {
 } from './bookmark-tree.js'
 import type { BookmarkTree, IdSource, NodePatch } from './bookmark-tree.js'
 import type { BookmarkNode, BookmarkTreeInput } from './bookmark-types.js'
-import { sanitizeDirectUrl } from './omnibox.js'
+import { sanitizeBrowserUrl } from './local-file-input.js'
 import { DebouncedWriter } from '../storage/debounced-writer.js'
 
 export { WRITE_DEBOUNCE_MS } from '../storage/debounced-writer.js'
@@ -111,7 +111,7 @@ export class BookmarkStore {
   // Writes
 
   addUrl (input: AddUrlInput): BookmarkNode | null {
-    const url = sanitizeDirectUrl(input.url)
+    const url = sanitizeBrowserUrl(input.url)
     if (url === null) return null
     const added = addNode(this.tree, { kind: 'url', title: input.title, url, favicon: sanitizeStoredFavicon(input.favicon), added: this.clock() }, input.parent ?? 'bar', input.index, this.newId)
     if (added === null) return null
@@ -159,7 +159,7 @@ export class BookmarkStore {
 
   /** Adds a page to the end of the bar; one already at the top of the bar keeps its place and takes the new title. */
   add (entry: BookmarkInput): void {
-    const url = sanitizeDirectUrl(entry.url)
+    const url = sanitizeBrowserUrl(entry.url)
     if (url === null) return
     const existing = childrenOf(this.tree, 'bar').find((node) => node.url === url)
     if (existing === undefined) {

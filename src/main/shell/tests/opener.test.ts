@@ -30,7 +30,7 @@ describe('answering an open request', () => {
     expect(target.window.restore).not.toHaveBeenCalled()
     expect(target.window.show).toHaveBeenCalledTimes(1)
     expect(target.window.focus).toHaveBeenCalledTimes(1)
-    expect(target.tabs.createTab).toHaveBeenCalledWith('https://a.example/')
+    expect(target.tabs.createTab).toHaveBeenCalledWith('https://a.example/', true)
     expect(create).not.toHaveBeenCalled()
   })
 
@@ -43,7 +43,7 @@ describe('answering an open request', () => {
     expect(target.window.restore).toHaveBeenCalledTimes(1)
     expect(target.window.show).toHaveBeenCalledTimes(1)
     expect(target.window.focus).toHaveBeenCalledTimes(1)
-    expect(target.tabs.createTab).toHaveBeenCalledWith('https://b.example/')
+    expect(target.tabs.createTab).toHaveBeenCalledWith('https://b.example/', true)
     expect(create).not.toHaveBeenCalled()
   })
 
@@ -56,7 +56,7 @@ describe('answering an open request', () => {
     const options = create.mock.calls[0]?.[0] as ShellWindowOptions
     const tabs = { createTab: vi.fn() }
     options.first?.(tabs as unknown as TabManager)
-    expect(tabs.createTab).toHaveBeenCalledWith('https://c.example/')
+    expect(tabs.createTab).toHaveBeenCalledWith('https://c.example/', true)
   })
 
   it('opens a new window on its own new-tab page when a second launch names no url', () => {
@@ -78,7 +78,7 @@ describe('answering a window request', () => {
     expect(create).toHaveBeenCalledTimes(1)
     const tabs = { createTab: vi.fn() }
     ;(create.mock.calls[0]?.[0] as ShellWindowOptions).first?.(tabs as unknown as TabManager)
-    expect(tabs.createTab).toHaveBeenCalledWith('https://a.example/')
+    expect(tabs.createTab).toHaveBeenCalledWith('https://a.example/', true)
     expect(target.window.restore).not.toHaveBeenCalled()
     expect(target.window.show).not.toHaveBeenCalled()
     expect(target.window.focus).not.toHaveBeenCalled()

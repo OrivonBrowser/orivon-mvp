@@ -242,7 +242,7 @@ describe('importNodes and exportNodes', () => {
   const input = [
     { kind: 'url' as const, title: 'One', url: 'https://one.example/', added: 5 },
     { kind: 'folder' as const, title: 'Dir', children: [{ kind: 'url' as const, title: 'Two', url: 'https://two.example/' }, { kind: 'url' as const, title: 'Bad', url: 'javascript:alert(1)' }] },
-    { kind: 'url' as const, title: 'Also bad', url: 'file:///etc/passwd' }
+    { kind: 'url' as const, title: 'Also bad', url: 'file://nas/share/passwd' }
   ]
 
   it('adds the tree in one go, counts pages, and drops what cannot be opened', () => {

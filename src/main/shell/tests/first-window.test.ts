@@ -24,9 +24,10 @@ function services (extra: { kiosk?: boolean, saved?: unknown, home?: string, mod
 }
 
 function opened (first: ((tabs: never) => void) | undefined): Array<[string, boolean]> {
-  const createTab = vi.fn()
-  first?.({ createTab } as never)
-  return createTab.mock.calls.map(([url, active]) => [url as string, active as boolean])
+  const calls: Array<[string, boolean]> = []
+  const record = (url: string, active: boolean): void => { calls.push([url, active]) }
+  first?.({ createTab: record, openLocalFile: (url: string, active: boolean) => { record(url, active); return Promise.resolve('t') } } as never)
+  return calls
 }
 
 describe('firstWindowOptions', () => {
@@ -47,11 +48,24 @@ describe('firstWindowOptions', () => {
   })
 
   it('opens the addresses on the command line as tabs, the first in front', () => {
-    const plan = firstWindowOptions({ services: services(), isPrivate: false, argv: ['orivon', '--x', 'https://a.example/', 'file:///etc/passwd', 'http://b.example/'] })
+    const plan = firstWindowOptions({ services: services(), isPrivate: false, argv: ['orivon', '--x', 'https://a.example/', 'file://server/share/x', 'http://b.example/'] })
     expect(opened(plan.first)).toEqual([['https://a.example/', true], ['http://b.example/', false]])
   })
 
-  it('opens at most eight, and only web addresses', () => {
+  it('opens a local file on the command line the way it opens a web address, in order', () => {
+    const disk = { cwd: '/work', platform: 'linux' as const, kindOf: (path: string) => path === '/work/a.html' ? 'file' as const : undefined }
+    const plan = firstWindowOptions({ services: services(), isPrivate: false, argv: ['orivon', 'a.html', 'https://b.example/', 'file:///tmp/c.html', 'missing.html'], disk })
+    expect(opened(plan.first)).toEqual([['file:///work/a.html', true], ['https://b.example/', false], ['file:///tmp/c.html', false]])
+  })
+
+  it('says a start that opens a local file does, so the launch reads the fuse before the window exists', () => {
+    const disk = { cwd: '/work', platform: 'linux' as const, kindOf: () => undefined }
+    expect(firstWindowOptions({ services: services(), isPrivate: false, argv: ['orivon', 'file:///tmp/c.html'], disk }).localFiles).toBe(true)
+    expect(firstWindowOptions({ services: services(), isPrivate: false, argv: ['orivon', 'https://a.example/'], disk }).localFiles).toBeUndefined()
+    expect(firstWindowOptions({ services: services({ kiosk: true }), isPrivate: false, argv: ['orivon', 'file:///tmp/c.html'], disk }).localFiles).toBe(true)
+  })
+
+  it('opens at most eight, and only web addresses and local files', () => {
     const argv = Array.from({ length: 12 }, (_, n) => `https://${String(n)}.example/`)
     expect(opened(firstWindowOptions({ services: services(), isPrivate: false, argv }).first)).toHaveLength(8)
     expect(firstWindowOptions({ services: services(), isPrivate: false, argv: ['javascript:alert(1)', 'data:text/html,x', 'orivon://settings', 'notaurl'] }).first).toBeUndefined()
@@ -64,7 +78,7 @@ describe('firstWindowOptions', () => {
 
   it('shows a kiosk the address it was given, else its home page, else the new tab page', () => {
     const kiosk = { kiosk: true, home: 'example.com' }
-    expect(opened(firstWindowOptions({ services: services(kiosk), isPrivate: false, argv: ['https://a.example/'] }).first)).toEqual([['https://a.example/', true]])
+    expect(opened(firstWindowOptions({ services: services(kiosk), isPrivate: false, argv: ['orivon', 'https://a.example/'] }).first)).toEqual([['https://a.example/', true]])
     expect(opened(firstWindowOptions({ services: services(kiosk), isPrivate: false, argv: [] }).first)).toEqual([['https://example.com/', true]])
     expect(firstWindowOptions({ services: services({ kiosk: true }), isPrivate: false, argv: [] }).first).toBeUndefined()
   })
@@ -144,7 +158,7 @@ describe('firstWindowOptions', () => {
     })
 
     it('adds the launch address to the restored tabs, in front, and ignores the choice in a private session', () => {
-      const plan = firstWindowOptions({ services: services({ mode: 'continue', previous }), isPrivate: false, argv: ['https://link.example/'], displays: [display] })
+      const plan = firstWindowOptions({ services: services({ mode: 'continue', previous }), isPrivate: false, argv: ['orivon', 'https://link.example/'], displays: [display] })
       const fake = fakeTabs()
       plan.first?.(fake.tabs)
       expect(fake.calls).toEqual(['create https://a.example/ back', 'create https://b.example/ back', 'create https://link.example/ front'])
