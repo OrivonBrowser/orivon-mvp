@@ -5,7 +5,7 @@ import { createAppMediaAsker } from '../app-media-asker.js'
 
 const APP = 'https://app.example'
 
-interface Setup { held?: AppMediaKind[], allow?: AppMediaKind[], tabUrl?: string, isTab?: boolean, isApp?: (origin: string) => boolean }
+interface Setup { held?: AppMediaKind[], allow?: AppMediaKind[], tabUrl?: string, isTab?: boolean, isApp?: (origin: string) => boolean, blocked?: (origin: string, kind: AppMediaKind) => boolean }
 
 function setup (options: Setup = {}) {
   const held = new Set<AppMediaKind>(options.held ?? [])
@@ -22,6 +22,7 @@ function setup (options: Setup = {}) {
     isTab: () => options.isTab ?? true,
     urlOf: () => options.tabUrl ?? `${APP}/index.html`,
     isApp: options.isApp ?? ((origin) => origin === APP),
+    blocked: options.blocked ?? (() => false),
     grants
   })
   const ask = (permission: string, details: object): Promise<boolean> | undefined => asker.request?.(tab, permission, { isMainFrame: true, securityOrigin: `${APP}/`, requestingUrl: `${APP}/index.html`, ...details })
@@ -90,7 +91,7 @@ describe('the app media asker: a request', () => {
   it('is false when the page left the app while the question was open', async () => {
     let url = `${APP}/index.html`
     const grants: AppMediaGrants = { held: () => true, request: async () => { url = 'https://elsewhere.example/'; return true } }
-    const asker = createAppMediaAsker({ isTab: () => true, urlOf: () => url, isApp: (origin) => origin === APP, grants })
+    const asker = createAppMediaAsker({ isTab: () => true, urlOf: () => url, isApp: (origin) => origin === APP, blocked: () => false, grants })
     expect(await asker.request?.({} as WebContents, 'media', { isMainFrame: true, securityOrigin: `${APP}/`, mediaTypes: ['video'] })).toBe(false)
   })
 })
@@ -128,5 +129,30 @@ describe('the app media asker: a check', () => {
 
   it('refuses when the tab shows another origin than the one the check names', () => {
     expect(setup({ held: ['media.camera'], tabUrl: 'https://other.example/' }).check('media', { mediaType: 'video' })).toBe(false)
+  })
+})
+
+describe('the app media asker: the person\'s block on a registered origin that holds no grant', () => {
+  const blocksCamera = (_origin: string, kind: AppMediaKind): boolean => kind === 'media.camera'
+
+  it('refuses a request for a blocked kind before the grant is asked, and still asks for the kinds that are not blocked', async () => {
+    const { ask, request } = setup({ allow: ['media.camera', 'media.microphone'], blocked: blocksCamera })
+    expect(await ask('media', { mediaTypes: ['video'] })).toBe(false)
+    expect(await ask('media', { mediaTypes: ['audio', 'video'] })).toBe(false)
+    expect(request).not.toHaveBeenCalled()
+    expect(await ask('media', { mediaTypes: ['audio'] })).toBe(true)
+    expect(request.mock.calls.map((call) => call[2])).toEqual(['media.microphone'])
+  })
+
+  it('refuses the synchronous check for a blocked kind even when a grant is held, and answers from the grant for the rest', () => {
+    const { check } = setup({ held: ['media.camera', 'media.microphone'], blocked: blocksCamera })
+    expect(check('media', { mediaType: 'video' })).toBe(false)
+    expect(check('media', { mediaType: 'audio' })).toBe(true)
+  })
+
+  it('is asked with the origin the page runs on', async () => {
+    const blocked = vi.fn(() => true)
+    await setup({ blocked }).ask('media', { mediaTypes: ['video'] })
+    expect(blocked).toHaveBeenCalledWith(APP, 'media.camera')
   })
 })

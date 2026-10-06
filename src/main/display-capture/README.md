@@ -12,7 +12,7 @@ the window shows while a share runs.
 | `display-asker.ts` | The per-site asker that owns the `media` request with no device type, grants it only against a ticket, answers the `display-capture` check, and after a grant makes sure the display handler took the choice |
 | `end-unexpected-capture.ts` | The backstop for a capture that is not the picked one: ends the tab's renderer and logs why |
 | `frame-key.ts` | The ticket key of a tab's top frame |
-| `display-policy.ts` | Pure: whether a page may be shown the picker (a website unless blocked, an app with its `media.screen` grant) |
+| `display-policy.ts` | Pure: whether a page may be shown the picker (a website unless blocked, an app with its `media.screen` grant; the person's block first for a registered origin that holds no grant) |
 | `display-gate.ts` | Pure: from the page's pick to the ticket: who asked, one picker per tab, fresh activation after a refusal (kept across a navigation, for the refused origin), the picker, the arm and called steps |
 | `display-ipc.ts` | The tab preload's channels, read strictly: the sender is a tab's top frame, the payload has exactly its keys |
 | `display-handler.ts` | What the session's display handler answers: the ticket's choice as Electron's streams; starts the share |
@@ -24,7 +24,7 @@ the window shows while a share runs.
 | `indicators/` | What shows while a share runs: the sharing bar overlay (`sharing-bar.ts`), the sentences (`shares.ts`), one subscription to the bound registry (`share-events.ts`). The tab badges and the address-bar chip read the registry through `../shell/signals/sharing.ts` and `../shell/state/sharing.ts` |
 
 **What it depends on.** `electron`, [`../channels.ts`](../channels.ts), [`../dev/dev-display-chooser.ts`](../dev/dev-display-chooser.ts) (the test-only picker the installer exposes in an e2e build), [`../sessions/`](../sessions/) (the permission gate and its per-site asker
-registry), [`../site-settings/`](../site-settings/) (the `screenShare` kind, the stored block, `isRegisteredAppOrigin`),
+registry), [`../site-settings/`](../site-settings/) (the `screenShare` kind, the stored block, `isAppOrigin` and `isRegisteredAppOrigin`),
 [`../overlays/`](../overlays/) (the picker and the bar), [`../shell/`](../shell/) (the windows, tabs and tab
 signals), [`../consent/grant-prompt-origin.ts`](../consent/grant-prompt-origin.ts) (how a site is written for the person) and [`../memory-saver/media-in-use.ts`](../memory-saver/media-in-use.ts).
 

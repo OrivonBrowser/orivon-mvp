@@ -40,7 +40,10 @@ a website, an embed, a request with no device type and every other permission.
 
 **A registered app, not an app that holds a grant.** The asker's test for an app is "holds a grant or is served from
 the cache, or has a manifest registered". An app whose person declined everything at install holds no grant, and
-must not turn into a website that is asked per site.
+must not turn into a website that is asked per site. Site settings do show such an origin as a website, and let the
+person store a block for it: that block (the site's own, or the `sites.camera` and `sites.microphone` default) wins
+over the app branch, read before any grant is asked, and only for an origin that holds no grant and is not served
+from the cache. An origin that holds a grant is the manifest's, never the person's site rule.
 
 **A no is remembered per page load.** The request-grant flow does not record a deny, so a page calling
 `getUserMedia` in a loop would raise a question each time. The grants remember a refusal for the kind on the page

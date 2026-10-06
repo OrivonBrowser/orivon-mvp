@@ -14,6 +14,12 @@ export interface AppMediaAskerDeps {
   urlOf: (tab: WebContents) => string
   /** A registered app's origin, held grants or not: a declined install leaves an app with none. */
   isApp: (origin: string) => boolean
+  /**
+   * The person's stored or default block for the kind applies to this origin: true only where their site rules still
+   * apply (a registered origin that holds no grant and is not served from the cache, which site settings show as a
+   * website). It wins over the app's grant.
+   */
+  blocked: (origin: string, kind: AppMediaKind) => boolean
   grants: AppMediaGrants
 }
 
@@ -51,6 +57,8 @@ export function createAppMediaAsker (deps: AppMediaAskerDeps): SiteAsker {
     // A frame never asks: the page's own code is the only caller an app's grant is for.
     if (details.isMainFrame !== true) return false
     if (asOrigin(details.securityOrigin ?? details.requestingUrl) !== origin) return false
+    // The person's block is read before any question is asked: a page wanting a blocked kind is asked about none.
+    if (kinds.some((kind) => deps.blocked(origin, kind))) return false
     // One at a time, and none after a no: a page that wants both and is refused the first has its answer.
     for (const kind of kinds) {
       if (!await deps.grants.request(tab, origin, kind)) return false
@@ -82,7 +90,7 @@ export function createAppMediaAsker (deps: AppMediaAskerDeps): SiteAsker {
       if (given.embeddingOrigin !== undefined && asOrigin(given.embeddingOrigin) !== origin) return false
       if (given.securityOrigin !== undefined && asOrigin(given.securityOrigin) !== origin) return false
       if (tabOrigin(contents) !== origin) return false
-      return deps.grants.held(origin, kind)
+      return !deps.blocked(origin, kind) && deps.grants.held(origin, kind)
     }
   }
 }

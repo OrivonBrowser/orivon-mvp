@@ -20,7 +20,7 @@ function install (granted: Set<string>, requestGrant: SubsystemContext['requestG
     requestGrant,
     windowForSender: () => 'the window'
   } as unknown as SubsystemContext
-  const services = { windows: { findTab: () => ({}) } } as unknown as ShellServices
+  const services = { windows: { findTab: () => ({}) }, settings: { get: () => 'ask' }, siteSettings: { get: () => undefined } } as unknown as ShellServices
   installMediaGrants.install({} as never, services, ctx, {} as never)
 }
 

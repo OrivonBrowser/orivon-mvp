@@ -11,7 +11,7 @@ import { siteAsks } from '../sessions/site-asks.js'
 import { DISPLAY_CAPTURE_STOP_CHANNEL } from '../channels.js'
 import type { ShellInstaller } from '../shell/shell-installers.js'
 import { windowShowing } from '../shell/showing-window.js'
-import { isRegisteredAppOrigin } from '../site-settings/app-origin.js'
+import { isAppOrigin, isRegisteredAppOrigin } from '../site-settings/app-origin.js'
 import { pageAccess } from '../site-settings/page-access.js'
 import { appMediaGrants, bindShareRegistry, chooseDisplaySource } from './bindings.js'
 import { createDisplayAsker } from './display-asker.js'
@@ -61,6 +61,7 @@ export const installDisplayCapture: ShellInstaller = {
     const isTab = (contents: WebContents): boolean => services.windows.findTab(contents) !== null
     const policy = createDisplayPolicy({
       isApp: (origin) => isRegisteredAppOrigin(ctx, origin),
+      isAppOrigin: (origin) => isAppOrigin(ctx, origin),
       blockedByDefault: () => services.settings.get('sites.screenShare') === 'block',
       storedBlock: (origin) => services.siteSettings.get(origin, 'screenShare') === 'block',
       noteBlocked: (tab, origin) => { pageAccess.note(tab, origin, 'screenShare', 'blocked') },

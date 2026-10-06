@@ -6,11 +6,16 @@ import type { WebContents } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { DialogCaller } from '../consent/request-grant.js'
 import { bindAppMediaGrants } from '../display-capture/bindings.js'
+import type { AppMediaKind } from '../display-capture/types.js'
 import { siteAsks } from '../sessions/site-asks.js'
 import type { ShellInstaller } from '../shell/shell-installers.js'
-import { isRegisteredAppOrigin } from '../site-settings/app-origin.js'
+import { isAppOrigin, isRegisteredAppOrigin } from '../site-settings/app-origin.js'
 import { createAppMediaAsker } from './app-media-asker.js'
 import { createAppMediaGrants } from './app-media-grants.js'
+
+/** The site setting each app media kind shares its name with: the person's block is stored under it. */
+const SITE_KIND = { 'media.camera': 'camera', 'media.microphone': 'microphone', 'media.screen': 'screenShare' } as const satisfies Record<AppMediaKind, string>
+const DEFAULT_KEY = { 'media.camera': 'sites.camera', 'media.microphone': 'sites.microphone', 'media.screen': 'sites.screenShare' } as const satisfies Record<AppMediaKind, string>
 
 /** The tab that asked, as the question and its guards need it: read live, so a page that moved on or a closed tab is seen. */
 function callerFor (tab: WebContents, windowFor: ((sender: WebContents) => unknown) | undefined): DialogCaller {
@@ -39,6 +44,8 @@ export const installMediaGrants: ShellInstaller = {
       isTab: (contents) => services.windows.findTab(contents) !== null,
       urlOf: (tab) => tab.getURL(),
       isApp: (origin) => isRegisteredAppOrigin(ctx, origin),
+      // Site settings show a registered origin with no grant as a website and let the person store a block for it.
+      blocked: (origin, kind) => !isAppOrigin(ctx, origin) && (services.siteSettings.get(origin, SITE_KIND[kind]) === 'block' || services.settings.get(DEFAULT_KEY[kind]) === 'block'),
       grants
     }))
   }

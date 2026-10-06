@@ -50,6 +50,13 @@ describe('installDisplayCapture', () => {
     expect(siteAsks.check(tab(), 'display-capture', SITE, { isMainFrame: true })).toBe(false)
   })
 
+  it('applies the person\'s stored block to a registered origin that holds no grant, before the app branch', () => {
+    const app = new EventEmitter()
+    const ctx = { broker: { app: { isRegisteredSync: () => true, hasGrantsSync: () => false } } }
+    installDisplayCapture.install(app as never, { windows: { findTab: () => ({}) }, settings: { get: () => 'ask' }, siteSettings: { get: (origin: string) => origin === SITE ? 'block' : undefined } } as never, ctx as never, {} as never)
+    expect(siteAsks.check(tab(), 'display-capture', SITE, { isMainFrame: true })).toBe(false)
+  })
+
   it('treats a registered app with no grants as an app: its display permission is refused, as the app media asker would', () => {
     const app = new EventEmitter()
     const ctx = { broker: { app: { isRegisteredSync: () => true, hasGrantsSync: () => false } } }
