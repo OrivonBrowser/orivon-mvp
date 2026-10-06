@@ -73,8 +73,19 @@ describe('grantableWithoutInstall', () => {
     expect(grantableWithoutInstall('http://FreeTube.ETH', true)).toBe(true)
   })
 
-  it('refuses a name that merely ends with the letters "eth" without the dot, and a multi-label one', () => {
-    for (const origin of ['http://acecameth', 'http://sub.freetube.eth']) {
+  it('accepts an ENS subname of several labels, in developer mode over http only', () => {
+    for (const origin of ['http://thelounge.orivonstack.eth', 'http://a.b.c.eth']) {
+      expect(grantableWithoutInstall(origin, true)).toBe(true)
+      expect(grantableWithoutInstall(origin, false)).toBe(false)
+    }
+    expect(grantableWithoutInstall('https://thelounge.orivonstack.eth', true)).toBe(false)
+  })
+
+  it('refuses a name that merely ends with the letters "eth" without the dot, and a malformed one', () => {
+    for (const origin of [
+      'http://acecameth', 'http://.eth', 'http://orivonstack..eth', 'http://-x.orivonstack.eth', 'http://x.-y.eth',
+      'http://thelounge.orivonstack.com', 'http://eth'
+    ]) {
       expect(grantableWithoutInstall(origin, true)).toBe(false)
     }
   })
