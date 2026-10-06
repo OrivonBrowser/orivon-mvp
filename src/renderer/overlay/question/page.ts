@@ -6,11 +6,12 @@
 import { h, replaceChildren } from '../../pages/shared/dom.js'
 import type { Overlay, OverlayPage } from '../kit.js'
 import type { QuestionView } from '../../../main/shell/question/question-spec.js'
+import { createArrival } from './arrival.js'
 import { displayOrder, isPageQuestion, isQuestionView, primaryIndex } from './view.js'
 import './question.css'
 
 /** What a double-press button says once it has been pressed and waits for the second press. */
-const AGAIN_LABEL = 'Click again'
+const AGAIN_LABEL = 'Press again'
 
 export const questionPage: OverlayPage = {
   mount (content, overlay: Overlay) {
@@ -20,13 +21,18 @@ export const questionPage: OverlayPage = {
     let armTimer: ReturnType<typeof setTimeout> | undefined
     let guardMs = 0
     let drawing = 0
+    let arrivals: Array<ReturnType<typeof createArrival>> = []
 
     /** Buttons look not ready, and a guarded one is not sent, for the guard's length from now. */
     function arm (): void {
       clearTimeout(armTimer)
+      for (const arrival of arrivals) arrival.restarted()
       if (guardMs <= 0) return
       root.classList.add('arming')
-      armTimer = setTimeout(() => { root.classList.remove('arming') }, guardMs)
+      armTimer = setTimeout(() => {
+        root.classList.remove('arming')
+        for (const arrival of arrivals) arrival.guardEnded()
+      }, guardMs)
     }
 
     /** Main starts its clock when it takes this report, so the page's own look-ready timer starts from the reply, never before it. */
@@ -70,28 +76,24 @@ export const questionPage: OverlayPage = {
 
     /** Tells main when the pointer or the focus arrives on a double-press button, and when it leaves: main arms it only then, after the guard. */
     function watchArrival (id: string, index: number, button: HTMLElement): void {
-      let here = false
-      const arrive = (): void => {
-        if (here) return
-        here = true
-        void overlay.request({ type: 'enter', id, button: index })
-      }
-      const leave = (): void => {
-        if (!here) return
-        here = false
-        restoreLabel(index)
-        void overlay.request({ type: 'leave', id, button: index })
-      }
-      // A move inside the button counts as arriving again: after the guard, a pointer that was already resting on it must move to arm it.
-      button.addEventListener('pointermove', () => { if (root.classList.contains('arming')) here = false; arrive() })
-      button.addEventListener('pointerenter', arrive)
-      button.addEventListener('focus', arrive)
-      button.addEventListener('pointerleave', leave)
-      button.addEventListener('blur', leave)
+      const arrival = createArrival({
+        send: (type) => { void overlay.request({ type, id, button: index }) },
+        isArming: () => root.classList.contains('arming'),
+        isOver: () => button.matches(':hover') || document.activeElement === button,
+        left: () => { restoreLabel(index) }
+      })
+      arrivals.push(arrival)
+      // A move inside the button counts as arriving: a pointer that rested on it through the guard only has to move to arm it.
+      button.addEventListener('pointermove', arrival.arrive)
+      button.addEventListener('pointerenter', arrival.arrive)
+      button.addEventListener('focus', arrival.arrive)
+      button.addEventListener('pointerleave', arrival.leave)
+      button.addEventListener('blur', arrival.leave)
     }
 
     function draw (view: QuestionView): void {
       showing = view
+      arrivals = []
       clearTimeout(pressedTimer)
       const page = isPageQuestion(view.kind)
       let text: HTMLInputElement | undefined

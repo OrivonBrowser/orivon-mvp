@@ -107,13 +107,14 @@ it('[app:local-file-grant] asks with a warning and a double press, grants to tha
     expect(said.warning).toBe(true)
     expect(said.message).toContain('Orivon cannot check files on your computer')
     expect(said.message).toContain('Whoever can change this file can change what it does')
-    expect(said.buttons).toEqual(["Don't allow", 'Double-click to allow'])
+    expect(said.buttons).toEqual(["Don't allow", 'Allow (press twice)'])
     expect(said.origin).toContain('app.html')
 
     // One press answers nothing and records nothing, and a second one that comes after the window is a first press again.
-    await panel.waitForSelector('.q:not(.arming)')
+    // The pointer reaches the button during the guard and rests there: it arms once the guard has ended, with no move.
     const allow = panel.locator('.q .btn-row .btn[data-button="1"]')
     await allow.hover()
+    await panel.waitForSelector('.q:not(.arming)')
     await allow.click()
     await delay(DOUBLE_PRESS_LATE_MS)
     expect(await questionGone(first.app)).toBe(false)
