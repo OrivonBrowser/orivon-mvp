@@ -271,13 +271,13 @@ for (const scheme of SCHEMES) {
         expect(await waitFor(async () => Number(await intro.locator('#telemetry-choice').evaluate((el) => getComputedStyle(el).opacity)) === 1 && Number(await intro.locator('#default-offer').evaluate((el) => getComputedStyle(el).opacity)) === 1)).toBe(true)
         check('the single Enter button is gone and neither of the two buttons has the focus', await intro.locator('#enter').isHidden() && await intro.evaluate(() => document.activeElement?.tagName) === 'BODY')
         await state(check, app, `welcome-telemetry-choice-${scheme}`, {
-          expected: 'The welcome screen fills the window with its headline. Where the "Enter Orivon" button was there is a bordered block titled "Telemetry", a short paragraph that starts "Orivon has no ads and never sees what you browse", a "What is sent" line, and two buttons of the same size and the same look side by side, "Enter and share telemetry" and "Enter without telemetry", neither filled more than the other. Under the block, the unticked "Make Orivon my default browser" box. All text is readable and nothing overlaps or is cut at the window edge.',
+          expected: 'The welcome screen fills the window with its headline. Where the "Enter Orivon" button was there is a bordered block titled "Telemetry", a short paragraph that starts "Orivon has no ads and keeps your history on your computer", a "What is sent" line, and two buttons of the same size and the same look side by side, "Enter and share telemetry" and "Enter without telemetry", neither filled more than the other. Under the block, the unticked "Make Orivon my default browser" box. All text is readable and nothing overlaps or is cut at the window edge.',
           action: 'Launched a fresh profile with the welcome screen enabled and telemetry running, on a build that can register as the default browser.'
         })
         await intro.click('#telemetry-choice summary')
         await intro.waitForSelector('#telemetry-choice details[open]')
         await state(check, app, `welcome-telemetry-details-${scheme}`, {
-          expected: 'The same screen with "What is sent" open: a solid card of four short bullets sits directly above the Telemetry block and covers the lower lines of the headline while it is open; the Telemetry block and its two same-size buttons have not moved, and the card stays inside the window.',
+          expected: 'The same screen with "What is sent" open: a solid card of four short bullets sits directly above the Telemetry block, and the big headline is hidden while it is open (no part of it shows around the card); the Telemetry block and its two same-size buttons have not moved, and the card stays inside the window.',
           action: 'Opened "What is sent" on the welcome screen telemetry question.'
         })
       })

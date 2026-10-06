@@ -2,7 +2,7 @@
 
 Versione dell'informativa: 2
 
-Orivon Browser tiene la tua navigazione sul tuo computer. Questa pagina dice che cosa ne esce,
+Orivon Browser tiene la cronologia della tua navigazione sul tuo computer. Questa pagina dice che cosa ne esce,
 perché, e che cosa puoi fare. È scritta per chi usa il browser; l'elenco tecnico che la sostiene
 è [`outbound-requests.md`](outbound-requests.md) (in inglese), e la versione in inglese di questa
 informativa è [`notice.md`](notice.md), che è il testo di riferimento se le due differiscono.

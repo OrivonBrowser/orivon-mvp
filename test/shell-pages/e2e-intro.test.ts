@@ -243,7 +243,7 @@ it('asks the telemetry question in place of the single Enter button, with two eq
     expect(await waitFor(async () => await intro.locator('#telemetry-choice').isVisible())).toBe(true)
     expect(await intro.locator('#enter').isHidden()).toBe(true)
     expect(await intro.textContent('#telemetry-title')).toBe('Telemetry')
-    expect(await intro.textContent('#telemetry-choice .telemetry-text')).toContain('never sees what you browse')
+    expect(await intro.textContent('#telemetry-choice .telemetry-text')).toContain('keeps your history on your computer')
     expect(await intro.locator('#telemetry-choice details li').count()).toBe(4)
 
     const [withBox, withoutBox] = await Promise.all(['#enter-with-telemetry', '#enter-without-telemetry'].map(async (selector) => await intro.locator(selector).boundingBox()))

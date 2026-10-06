@@ -2,7 +2,7 @@
 
 Notice version: 2
 
-Orivon Browser keeps your browsing on your computer. This page says what leaves it, why, and
+Orivon Browser keeps your browsing history on your computer. This page says what leaves it, why, and
 what you can do about it. It is written for the person using the browser; the engineering list
 behind it is [`outbound-requests.md`](outbound-requests.md), and an Italian version is
 [`notice.it.md`](notice.it.md).

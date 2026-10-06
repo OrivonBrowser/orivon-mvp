@@ -368,6 +368,8 @@ h1, p { margin: 0; }
   background: rgb(15, 23, 42);
   line-height: 1.5;
 }
+/* The open list covers the headline's lower lines; hiding the headline leaves no sliver of it above the list. */
+body:has(.telemetry-details[open]) .headline { visibility: hidden; }
 .telemetry-buttons {
   display: flex;
   gap: 12px;
