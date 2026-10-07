@@ -1,7 +1,9 @@
 # ADR-0063: Telemetry v2: site classes, one identity per machine, an active choice
 
 - **Status:** accepted; supersedes [ADR-0004](ADR-0004-telemetry.md) in part (its payload, its
-  install identifier, its country field, and its promise to publish the ingest configuration)
+  install identifier, its country field, and its promise to publish the ingest configuration).
+  **Superseded in part by [ADR-0064](ADR-0064-telemetry-country-and-start-send.md)**: item 4's
+  region (the payload names the country) and item 6's cadence (both reports also go at start)
 - **Date:** 2026-10-06
 - **Type:** product / security
 - **Decided by:** **owner**

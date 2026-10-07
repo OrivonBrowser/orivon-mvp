@@ -39,10 +39,11 @@ describe('countryOfTimeZone', () => {
     expect(countryOfTimeZone('Not/AZone')).toBe('unknown')
   })
 
-  it('is always two capitals or unknown, for every zone the runtime knows', () => {
-    for (const zone of Intl.supportedValuesOf('timeZone')) {
-      expect(countryOfTimeZone(zone)).toMatch(/^([A-Z]{2}|unknown)$/)
-    }
+  // The region data and the canonical names come from two ICU calls; were they ever to name zones
+  // differently, every lookup would read unknown, and this is the test that would say so.
+  it('finds a country for every zone the runtime lists', () => {
+    const missing = Intl.supportedValuesOf('timeZone').filter((zone) => !/^[A-Z]{2}$/.test(countryOfTimeZone(zone)))
+    expect(missing).toEqual([])
   })
 })
 

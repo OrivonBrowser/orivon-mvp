@@ -1,6 +1,6 @@
 # Informativa sulla privacy
 
-Versione dell'informativa: 3
+Versione dell'informativa: 4
 
 Orivon Browser tiene la cronologia della tua navigazione sul tuo computer. Questa pagina dice che cosa ne esce,
 perché, e che cosa puoi fare. È scritta per chi usa il browser; l'elenco tecnico che la sostiene
@@ -28,8 +28,8 @@ privacy@orivonstack.com.
 
 ## Cosa invia la telemetria
 
-Partono due messaggi: quando attivi la telemetria, circa una volta al giorno dopo di allora,
-quando chiudi il browser, e una volta in più all'inizio del mese per chiudere i totali del mese
+Partono due messaggi: quando attivi la telemetria, quando apri e quando chiudi il browser, circa
+una volta al giorno nel frattempo, e una volta in più all'inizio del mese per chiudere i totali del mese
 precedente. Un altro messaggio parte quando chiedi di cancellare i tuoi dati. In Impostazioni > Privacy vedi il testo esatto di ciascuno, prima e dopo
 l'invio.
 
@@ -38,7 +38,7 @@ l'invio.
 | `schema` | tutti | La versione del formato del messaggio, un numero |
 | `installId` | rapporto d'uso, rapporto sui siti, richiesta di cancellazione | Un identificativo di questo computer, di 32 caratteri. Deriva dall'ID macchina del sistema operativo passato in una funzione di hash a senso unico, quindi non si può risalire all'ID macchina. È lo stesso per tutti i profili del browser su questo computer, e per una versione avviata dai sorgenti e una installata. Viene creato solo dopo che attivi la telemetria. Lo porta anche il rapporto sui siti, così i rapporti falsificati da un programma si distinguono dai tuoi |
 | `stream` | rapporto d'uso, rapporto sui siti | Un valore casuale creato una volta per ogni profilo del browser. Due profili aperti insieme vengono contati entrambi e sommati come un solo computer grazie all'ID di installazione, quindi non sono due persone |
-| `region` | rapporto d'uso | `EU`, `US` oppure `other`, ricavato sul tuo computer dal suo fuso orario. Non viene mai preso dal tuo indirizzo IP |
+| `country` | rapporto d'uso | Il paese del fuso orario del tuo computer, come codice di due lettere quale `IT` o `US`, ricavato sul tuo computer dall'impostazione del fuso orario; `unknown` quando il fuso orario non indica un paese, come `UTC`. È il paese del fuso orario, non la prova di dove ti trovi, e non viene mai preso dal tuo indirizzo IP |
 | `version` | rapporto d'uso, rapporto sui siti | La versione di Orivon Browser |
 | `period` | rapporto d'uso, rapporto sui siti | Il mese, per esempio `2026-10`. Il messaggio è un totale del mese finora, inviato di nuovo con un totale più grande nei giorni seguenti |
 | `activeSec` | rapporto d'uso | Secondi del mese in cui usavi il browser: finestra in primo piano e tu attivo |
@@ -66,8 +66,8 @@ mese: è la cosa più vicina a un'informazione di navigazione che inviamo. Viene
 di installazione: i siti in cui passi il tempo sono quindi collegati a quell'ID per il mese e per
 il mese dopo, e poi restano solo come totali per sito senza ID, come dice la sezione seguente.
 
-Inviato quando attivi la telemetria, circa una volta al giorno, quando chiudi il browser, e una
-volta in più all'inizio del mese per chiudere i totali del mese precedente. Non si invia nulla da una versione di sviluppo, da una
+Inviato quando attivi la telemetria, quando apri e quando chiudi il browser, circa una volta al
+giorno nel frattempo, e una volta in più all'inizio del mese per chiudere i totali del mese precedente. Non si invia nulla da una versione di sviluppo, da una
 finestra privata, o quando è impostato `ORIVON_TELEMETRY=off`. Non si invia nulla prima che tu
 scelga. Il browser ignora tutto ciò che il server risponde: il server non può cambiare
 impostazioni né inviare comandi.
@@ -96,7 +96,7 @@ e per questo puoi chiederci di cancellarle.
 ## Che cosa conserviamo, e per quanto tempo
 
 - **Righe d'uso**, una per computer, profilo e mese: 12 mesi, poi restano solo totali che non si
-  possono ricondurre a un computer (il numero di utenti attivi, la ripartizione per regione e per
+  possono ricondurre a un computer (il numero di utenti attivi, la ripartizione per paese e per
   classe).
 - **Rapporti sui siti**: un elenco di siti con i secondi, con il tuo ID di installazione,
   conservato per il mese; un mese dopo la chiusura del mese viene ridotto a totali per sito per

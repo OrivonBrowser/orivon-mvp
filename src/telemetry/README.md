@@ -10,7 +10,7 @@ its own tests.
 
 The screens exist. The first-run welcome has a **Telemetry** block with two identical buttons,
 "Enter and share telemetry" and "Enter without telemetry", neither preselected; it is shown only
-while the choice is undecided, and the region decides nothing in it. Settings has the switch,
+while the choice is undecided, and the country decides nothing in it. Settings has the switch,
 the literal text of both messages, the history of what was sent, the install ID, **Delete my
 data**, and the notice.
 
@@ -29,12 +29,14 @@ keyed one-way hash of the operating system's machine ID, computed after consent;
 keeps its own accounting, history, queue and random `stream` under its own data directory, so
 two profiles open together are both counted and summed as one computer on the server.
 
-**Two messages and an erase.** A usage report (install ID, stream, region from the time zone,
+**Two messages and an erase.** A usage report (install ID, stream, country from the time zone,
 version, month, active and background seconds, seconds per site class) and a site report (the
 same install ID and stream, version, month and seconds per named Web3 or Web2.5 site) go to
 `telemetry.orivonstack.com` as month-to-date totals the server upserts: when the person turns
-telemetry on, once a day at a random offset, and when the browser quits (`service.ts`'s
-`sendNow` and `quit`; `runner.ts`'s `beforeQuit`, inside the quit bound in `main/index.ts`). The
+telemetry on, ten seconds after the browser starts, once a day at a random offset, and when the
+browser quits (`service.ts`'s `sendNow` and `quit`; `runner.ts`'s start send and `beforeQuit`, the
+last inside the quit bound in `main/index.ts`). The country is the time zone's, looked up in the
+runtime's ICU region data (`country.ts`), so no zone table is kept here. The
 server counts a site report only when a usage report accounts for it. The erase request carries
 the install ID and removes both. The client ignores every response body.
 

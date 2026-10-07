@@ -157,8 +157,9 @@ async function startTelemetry (app: App, servicePromise: Promise<TelemetryServic
   }
   // Both reports go once at start, past the random offset and the daily gate; the server keeps the newest
   // of a month's reports. Delayed because this runs before the first window exists, and the first send
-  // reads the machine identifier and the country. A quit inside the delay still sends.
-  void checkpointTick().then(() => { setTimeout(() => { void sendAtStart() }, tickMs ?? START_SEND_DELAY_MS) })
+  // reads the machine identifier and the country. A quit inside the delay still sends. A test tick
+  // shortens the delay, never lengthens it.
+  void checkpointTick().then(() => { setTimeout(() => { void sendAtStart() }, Math.min(tickMs ?? START_SEND_DELAY_MS, START_SEND_DELAY_MS)) })
 }
 
 export const telemetrySubsystem: Subsystem = {

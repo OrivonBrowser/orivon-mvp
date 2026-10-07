@@ -48,10 +48,11 @@ async function rig (consent: unknown): Promise<Rig> {
   }
 }
 
-async function launchWith (r: Rig, env: Record<string, string> = {}): Promise<ElectronApplication> {
+async function launchWith (r: Rig, env: Record<string, string> = {}, seedProfile?: (dir: string) => Promise<void>): Promise<ElectronApplication> {
   const app = await launchElectron({
     appPath: '.',
     args: [HERMETIC_RESOLVER],
+    ...(seedProfile === undefined ? {} : { seedProfile }),
     env: {
       ORIVON_TELEMETRY: 'on',
       ORIVON_TELEMETRY_HOME: r.home,
@@ -132,6 +133,31 @@ it('accepting in Settings sends at once, without waiting for a tick, and quittin
     expect(posted(r, '/v1/usage').length).toBeGreaterThan(before)
     const last = posted(r, '/v1/usage').at(-1)?.body as Record<string, unknown>
     expect(last['installId']).toBe(posted(r, '/v1/usage')[0]?.body['installId'])
+  } finally {
+    if (app !== undefined) await closeElectronApp(app)
+    await r.stop()
+  }
+}, TEST_TIMEOUT_MS)
+
+it('sends the usage report and the site report when the browser starts, before any timer', async () => {
+  const r = await rig(ACCEPTED)
+  let app: ElectronApplication | undefined
+  try {
+    // A first run counts seconds on the .eth site; its profile's counting is kept for the second.
+    app = await launchWith(r)
+    await navigateToFixture(app, 'https://level.eth/', 'level fixture')
+    expect(await waitFor(() => posted(r, '/v1/sites').length > 0, 30_000)).toBe(true)
+    const counted = readFileSync(join(await app.evaluate(({ app: electron }) => electron.getPath('userData')), 'telemetry.json'), 'utf8')
+    await closeElectronApp(app)
+    app = undefined
+
+    // The second run's timers tick every ten minutes, so nothing inside this test is a timer's send.
+    const start = r.ingest.requests.length
+    app = await launchWith(r, { ORIVON_TELEMETRY_TICK_MS: '600000' }, async (dir) => { await writeFile(join(dir, 'telemetry.json'), counted, 'utf8') })
+    const sinceStart = (path: string): IngestRequest[] => r.ingest.requests.slice(start).filter((request) => request.path === path)
+    expect(await waitFor(() => sinceStart('/v1/usage').length > 0 && sinceStart('/v1/sites').length > 0, 30_000)).toBe(true)
+    expect(sorted(sinceStart('/v1/sites')[0]?.body['sites'] as Record<string, unknown>)).toEqual(['web25:level.eth'])
+    expect(sinceStart('/v1/sites')[0]?.body['installId']).toBe(sinceStart('/v1/usage')[0]?.body['installId'])
   } finally {
     if (app !== undefined) await closeElectronApp(app)
     await r.stop()
