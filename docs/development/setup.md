@@ -92,8 +92,9 @@ the directory at start. Other profiles the launch makes live inside it, so while
 is still open the directory is kept, and the next `npm run dev` deletes it.
 
 A new profile, in `npm run dev`, `npm start` or a package, starts with the five bookmarks of the bar and uBlock Origin
-installed and pinned to the toolbar (`src/main/default-profile/`); only a profile with no `bookmarks.json`
-and no `extensions/registry.json` gets them, so removing one is never undone. `npm install`, `npm run dev` and
+installed and pinned to the toolbar (`src/main/default-profile/`); only a profile Orivon has
+never run on gets them (no `history.db`, `bookmarks.json` or `extensions/registry.json` when it starts), so removing
+one is never undone and an existing profile, even one with no bookmarks or extensions, keeps what it has. `npm install`, `npm run dev` and
 `npm start` fetch uBlock Origin's release file into `resources/default-profile/extensions/` (git ignores it) when
 it is missing; with no network the browser starts without it, and `node scripts/fetch-bundled-extensions.mjs`
 retries. `ORIVON_DEFAULT_PROFILE=off` starts a profile blank:

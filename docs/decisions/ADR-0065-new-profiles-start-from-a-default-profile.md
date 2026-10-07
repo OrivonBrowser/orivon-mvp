@@ -16,10 +16,11 @@ A new profile of Orivon starts with:
 5. **"Orivon Featured" on the new tab** (Explore, The Lounge, FreeTube, ASGARDEX, Element), drawn with the tile
    the bookmarks use; the Torrent and Nostr tiles are gone.
 
-Items 3 and 4 are schema defaults (`src/main/settings/schema.ts`). Items 1 and 2 are seeds, and each store seeds
-itself only when its own file does not exist: `bookmarks.json` for the bar, `extensions/registry.json` for uBlock
-Origin. A person who removes a bookmark, empties the bar or removes uBlock Origin is never given them back, and a
-profile that predates this keeps what it has. A private window installs no extension and has the bookmarks.
+Items 3 and 4 are schema defaults (`src/main/settings/schema.ts`). Items 1 and 2 are seeds, and they apply
+to a profile Orivon has never run on: when the browser starts, none of `history.db`, `bookmarks.json` and
+`extensions/registry.json` exists in its folder (`settings.json` does not count). That is decided once, before any
+store opens a file. A person who removes a bookmark, empties the bar or removes uBlock Origin is never given them
+back, and an existing profile keeps what it has, even one with no bookmarks or no extensions. A private window installs no extension and has the bookmarks.
 `ORIVON_DEFAULT_PROFILE=off` skips both seeds; the end-to-end harness sets it, `npm run dev` leaves it on.
 
 uBlock Origin is fetched, not committed: `resources/default-profile/bundled-extensions.json` pins a release asset

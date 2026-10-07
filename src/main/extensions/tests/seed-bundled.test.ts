@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { seedBundledExtensions } from '../seed-bundled.js'
-import { readRegistry, registryFileExists } from '../registry-runner.js'
+import { readRegistry } from '../registry-runner.js'
 import { FIXTURE_MANIFEST, buildCrx, fakeSession, withTempDir } from './install-runner-fixtures.js'
 
 describe('seedBundledExtensions', () => {
@@ -13,12 +13,12 @@ describe('seedBundledExtensions', () => {
       writeFileSync(join(dir, 'extensions', 'a.crx'), buildCrx(FIXTURE_MANIFEST))
       writeFileSync(join(dir, 'bundled-extensions.json'), JSON.stringify([{ file: 'a.crx', name: 'A', pinned: true }]))
       const userDataPath = join(root, 'userData')
-      expect(registryFileExists(userDataPath)).toBe(false)
+      expect(existsSync(join(userDataPath, 'extensions', 'registry.json'))).toBe(false)
 
       await seedBundledExtensions({ userDataPath, session: fakeSession().session, prompt: async () => { throw new Error('asked') } }, dir)
 
       expect(readRegistry(userDataPath)).toHaveLength(1)
-      expect(registryFileExists(userDataPath)).toBe(true)
+      expect(existsSync(join(userDataPath, 'extensions', 'registry.json'))).toBe(true)
     })
   })
 

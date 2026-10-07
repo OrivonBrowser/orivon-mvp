@@ -319,7 +319,8 @@ and the window hold at the moments a navigation starts.
 **A blank profile, unless a spec asks.** `launchElectron` sets `ORIVON_DEFAULT_PROFILE=off`, so a launch starts
 with no bookmarks and no extension, as most specs assume; the welcome screen (`ORIVON_INTRO`), telemetry and the
 Ethereum light client are off the same way. A spec that proves what a new profile starts with passes
-`env: { ORIVON_DEFAULT_PROFILE: 'on' }` ([`e2e-default-profile`](../../test/window/e2e-default-profile.test.ts)); it needs the
+`env: { ORIVON_DEFAULT_PROFILE: 'on' }` ([`e2e-default-profile`](../../test/window/e2e-default-profile.test.ts)); it also relaunches the profile to prove nothing is added back, including to
+one that has history but no bookmarks or extensions; it needs the
 fetched uBlock Origin file (`node scripts/fetch-bundled-extensions.mjs`, which `npm install` runs).
 
 **Failure evidence, for every e2e spec.** [`launch-electron.mjs`](../../test/support/launch-electron.mjs)

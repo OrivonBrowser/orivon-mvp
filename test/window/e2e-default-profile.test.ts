@@ -2,7 +2,7 @@
 // Extensions button shown, and "Orivon Featured" on the new tab; and that none of it comes back once the person
 // removed it. Set ORIVON_UI_SHOTS_DIR to also write a screenshot of the window. Every other spec runs with ORIVON_DEFAULT_PROFILE=off (test/support/launch-electron.mjs).
 import { existsSync, mkdirSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, expect, it } from 'vitest'
@@ -104,6 +104,20 @@ it('starts a new profile with the bookmarks, uBlock Origin pinned, the Extension
     expect((await barItems(second.chrome)).map((item) => item.title)).toEqual(BAR.slice(1))
     expect(readRegistry(dir)).toEqual([])
   } finally {
-    await closeElectron(second.app)
+    await closeElectron(second.app, { keepProfile: true })
+  }
+
+  // A profile the browser already ran on, with no bookmarks and no extensions, is not new: history.db is what it left.
+  await rm(bookmarksFile)
+  await rm(join(dir, 'extensions', 'registry.json'))
+  expect(existsSync(join(dir, 'history.db'))).toBe(true)
+  const third = await launched(dir)
+  try {
+    expect(await waitFor(() => dashboardOf(third.app) !== undefined)).toBe(true)
+    expect(await barItems(third.chrome)).toEqual([])
+    expect(existsSync(join(dir, 'bookmarks.json'))).toBe(false)
+    expect(existsSync(join(dir, 'extensions', 'registry.json'))).toBe(false)
+  } finally {
+    await closeElectron(third.app)
   }
 }, TEST_TIMEOUT_MS)

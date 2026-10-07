@@ -2,7 +2,8 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { bundledExtensions, DEFAULT_BOOKMARKS, defaultBookmarks, defaultProfileDir, defaultProfileOn } from '../default-profile.js'
+import { bundledExtensions, DEFAULT_BOOKMARKS, defaultBookmarks, defaultProfileDir, defaultProfileOn, isNewProfile } from '../default-profile.js'
+import { decideDefaultProfile, startsFromDefaultProfile } from '../profile-start.js'
 import { sanitizeBrowserUrl } from '../../browsing/local-file-input.js'
 
 const REAL_ICONS = join(import.meta.dirname, '../../../../resources/default-profile')
@@ -83,5 +84,61 @@ describe('bundledExtensions', () => {
     const report = vi.fn()
     expect(await bundledExtensions(dir, report)).toEqual([])
     expect(report).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('isNewProfile', () => {
+  const put = async (file: string): Promise<void> => {
+    await mkdir(join(dir, file, '..'), { recursive: true })
+    await writeFile(join(dir, file), '')
+  }
+
+  it('is true for a folder with none of the files a run leaves, even one holding only settings.json', async () => {
+    expect(isNewProfile(dir)).toBe(true)
+    await put('settings.json')
+    expect(isNewProfile(dir)).toBe(true)
+  })
+
+  it.each(['history.db', 'bookmarks.json', 'extensions/registry.json'])('is false once %s exists, whatever it holds', async (file) => {
+    await put(file)
+    expect(isNewProfile(dir)).toBe(false)
+  })
+
+  it('counts a corrupt registry.json as a file that exists', async () => {
+    await mkdir(join(dir, 'extensions'))
+    await writeFile(join(dir, 'extensions', 'registry.json'), '{ not json')
+    expect(isNewProfile(dir)).toBe(false)
+  })
+
+  it('asks only the injected existence check', () => {
+    expect(isNewProfile('/nowhere', () => false)).toBe(true)
+    expect(isNewProfile('/nowhere', (path) => path.endsWith('history.db'))).toBe(false)
+  })
+})
+
+describe('decideDefaultProfile', () => {
+  it('is false before any decision, then holds what the start decided', () => {
+    expect(startsFromDefaultProfile()).toBe(false)
+    decideDefaultProfile(dir, {})
+    expect(startsFromDefaultProfile()).toBe(true)
+  })
+
+  it('keeps the answer once the start has written files of the profile', async () => {
+    decideDefaultProfile(dir, {})
+    await writeFile(join(dir, 'history.db'), '')
+    expect(startsFromDefaultProfile()).toBe(true)
+  })
+
+  it('is false for a profile that already has files, and when the switch is off', async () => {
+    await writeFile(join(dir, 'bookmarks.json'), '')
+    decideDefaultProfile(dir, {})
+    expect(startsFromDefaultProfile()).toBe(false)
+    const blank = await mkdtemp(join(tmpdir(), 'default-profile-blank-'))
+    try {
+      decideDefaultProfile(blank, { ORIVON_DEFAULT_PROFILE: 'off' })
+      expect(startsFromDefaultProfile()).toBe(false)
+    } finally {
+      await rm(blank, { recursive: true, force: true })
+    }
   })
 })

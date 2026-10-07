@@ -6,7 +6,7 @@
 // does), and each slot's own `key.pub` and the manifest-key canonicalization
 // that install-runner.ts's `finishInstall` resolves a `key` through.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
 import { createPublicKey, generateKeyPairSync } from 'node:crypto'
 import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
@@ -18,11 +18,6 @@ function extensionsDir (userDataPath: string): string {
 
 function registryPath (userDataPath: string): string {
   return join(extensionsDir(userDataPath), 'registry.json')
-}
-
-/** Whether this profile has ever installed an extension: the registry file is written by the first install and never removed. */
-export function registryFileExists (userDataPath: string): boolean {
-  return existsSync(registryPath(userDataPath))
 }
 
 /**

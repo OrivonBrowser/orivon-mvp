@@ -1,5 +1,6 @@
 // What a new profile starts with: the bookmarks of its bar and the extensions installed for it. This file
 // only describes them and reads their files; the stores that keep them seed themselves from it.
+import { existsSync } from 'node:fs'
 import { access, readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import type { BookmarkTreeInput } from '../browsing/bookmark-types.js'
@@ -9,6 +10,16 @@ export const DEFAULT_PROFILE_ENV = 'ORIVON_DEFAULT_PROFILE'
 /** `off` skips every seed, so a profile starts blank; anything else, and no value, seeds. */
 export function defaultProfileOn (env: NodeJS.ProcessEnv): boolean {
   return env[DEFAULT_PROFILE_ENV] !== 'off'
+}
+
+/** The files a run of the browser leaves in a profile: the history opened by every ordinary launch, the bookmarks and
+ * the extensions registry. `settings.json` is not one: a folder holding only it was never run. */
+export const PROFILE_FILES = ['history.db', 'bookmarks.json', join('extensions', 'registry.json')] as const
+
+/** Whether the browser has never run on this profile folder. A file that exists counts however little it holds, so a
+ * profile with no bookmarks or extensions, or with a damaged registry, is not new. */
+export function isNewProfile (dir: string, exists: (path: string) => boolean = existsSync): boolean {
+  return !PROFILE_FILES.some((file) => exists(join(dir, file)))
 }
 
 /** Where the default profile's files are: beside the app in a package, in the repository's `resources/` otherwise.
