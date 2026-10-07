@@ -277,6 +277,28 @@ describe('a swap across partitions keeps the list on the tab', () => {
     expect(manager.getState().tabs[0]).toMatchObject({ canGoBack: true, canGoForward: false })
   })
 
+  it('leaves the lists as they were when the page refuses the step, and a link clicked afterwards is a new page', async () => {
+    served.add(APP)
+    const manager = managerWith(new Set([APP]))
+    const id = manager.createTab('https://site.example/a')
+    commit(createdViews[0] as RecordedView, ['https://site.example/a', 'https://site.example/b'], 1)
+    manager.navigate(id, `${APP}/start`)
+    commit(createdViews[1] as RecordedView, [`${APP}/start`], 0)
+    manager.back(id)
+    const back = createdViews[2] as RecordedView
+    commit(back, ['https://site.example/b'], 0)
+
+    // Back to a, in the same view; the page asks "Leave this page?" and the person stays: the load never commits.
+    back.webContents.loadURL.mockRejectedValueOnce(new Error('ERR_ABORTED (-3)'))
+    manager.back(id)
+    expect(back.webContents.loadURL).toHaveBeenLastCalledWith('https://site.example/a')
+    await new Promise((resolve) => { setImmediate(resolve) })
+
+    commit(back, ['https://site.example/b', 'https://site.example/c'], 1)
+    expect(back.webContents.navigationHistory.entries).toEqual([page('https://site.example/b'), page('https://site.example/c')])
+    expect(manager.getState().tabs[0]).toMatchObject({ canGoBack: true, canGoForward: false })
+  })
+
   it('ends the pages ahead when the tab goes to a new page instead of Forward', () => {
     served.add(APP)
     const manager = managerWith(new Set([APP]))

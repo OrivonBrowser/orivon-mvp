@@ -73,8 +73,10 @@ export function listOf (wc: WebContents): { entries: HistoryEntry[], index: numb
  * are in the tab's outer history already, and going back to the page a parked app left for would load it inside the
  * app's session. A parked view's own blank page committing late is not the page it came back for. */
 export function settleOuterHistory (record: { outer?: OuterHistory }, wc: WebContents, url: string, sameDocument = false): void {
-  const outer = record.outer
+  let outer = record.outer
   if (outer === undefined) return
+  // A step in the tab's own view has committed (load-in-tab.ts's `stepOutOfView`).
+  if (outer.pending !== undefined && !sameDocument && url !== 'about:blank') outer = outer.pending
   const history = wc.navigationHistory
   if (outer.trimOnCommit === true) {
     if (sameDocument || url === 'about:blank') return

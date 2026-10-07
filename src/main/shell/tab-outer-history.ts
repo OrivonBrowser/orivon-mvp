@@ -16,6 +16,8 @@ export interface OuterHistory {
   readonly trimOnCommit?: boolean
   /** The view's list at its last commit, to tell a new page (which ends `forward`) from a step through the list. */
   readonly seen?: { readonly urls: readonly string[], readonly active: number }
+  /** The lists a step in the tab's own view leads to, taken once its page commits. */
+  readonly pending?: OuterHistory
 }
 
 export const EMPTY_OUTER: OuterHistory = { back: [], forward: [] }

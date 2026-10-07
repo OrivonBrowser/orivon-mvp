@@ -21,7 +21,11 @@ export function repartitionForTarget (id: string, record: TabRecord, target: str
 
 /** Back from the first page of the tab's view, or Forward from its last, to the page of the tab's outer history
  * beyond it (tab-outer-history.ts). It loads in a view of its own session, as an address typed into the bar would;
- * in the tab's own view when that is one. False when there is no such page. */
+ * in the tab's own view when that is one. False when there is no such page.
+ *
+ * A swap asks the page nothing, so it moves the lists at once. A load in the tab's own view can be refused by the
+ * page's leave question, so the moved lists wait as `pending` for the page to commit (tab-history.ts's
+ * `settleOuterHistory`), and a load that ends without committing leaves the lists as they were. */
 export function stepOutOfView (id: string, record: TabRecord, direction: 'back' | 'forward'): boolean {
   const wc = record.view.webContents
   if (wc.isDestroyed()) return false
@@ -29,9 +33,20 @@ export function stepOutOfView (id: string, record: TabRecord, direction: 'back' 
   const outer = record.outer ?? EMPTY_OUTER
   const step = direction === 'back' ? stepBack(outer, entries, index) : stepForward(outer, entries, index)
   if (step === null) return false
-  record.outer = step.outer
   const target = step.target.url
-  if (!repartitionForTarget(id, record, target, true)) startNavigation(wc, () => { wc.loadURL(target).catch(() => {}) })
+  record.outer = step.outer
+  if (!repartitionForTarget(id, record, target, true)) {
+    record.outer = outer
+    const next = step.outer
+    startNavigation(wc, () => {
+      record.outer = { ...(record.outer ?? EMPTY_OUTER), pending: next }
+      wc.loadURL(target).catch(() => {
+        if (record.outer?.pending !== next) return
+        const { pending: _ended, ...kept } = record.outer
+        record.outer = kept
+      })
+    })
+  }
   record.host.emitState()
   return true
 }
