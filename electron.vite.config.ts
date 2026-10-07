@@ -6,6 +6,7 @@ import { build, normalizePath, type Plugin } from 'vite'
 import { aliasPattern, buildAliasEntries } from './src/shim/module-map.js'
 import { isShimSource } from './src/shim/is-shim-source.js'
 import { privacyNotice } from './scripts/privacy-notice-plugin.js'
+import { buildCommit } from './scripts/build-commit.js'
 
 export const root = dirname(fileURLToPath(import.meta.url))
 
@@ -192,7 +193,8 @@ export default defineConfig({
     // header and scripts/check-dev-grant-absent.mjs, which proves this
     // against the actual compiled output.
     define: {
-      __ORIVON_DEV_GRANT_ENABLED__: JSON.stringify(process.env.ORIVON_ENABLE_DEV_GRANT === '1')
+      __ORIVON_DEV_GRANT_ENABLED__: JSON.stringify(process.env.ORIVON_ENABLE_DEV_GRANT === '1'),
+      __ORIVON_COMMIT__: JSON.stringify(buildCommit(root))
     },
     build: {
       // Three entries: the process start (small, so a second start of an open profile exits early),
@@ -312,6 +314,7 @@ export default defineConfig({
           'page-reader': resolve(root, 'src/renderer/pages/reader/index.html'),
           'page-extensions': resolve(root, 'src/renderer/pages/extensions/index.html'),
           'page-tasks': resolve(root, 'src/renderer/pages/tasks/index.html'),
+          'page-report': resolve(root, 'src/renderer/pages/report/index.html'),
           'site-info': resolve(root, 'src/renderer/site-info/index.html'),
           overlay: resolve(root, 'src/renderer/overlay/index.html'),
           'split-frame': resolve(root, 'src/renderer/split-frame/index.html'),

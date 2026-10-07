@@ -38,8 +38,10 @@ import { appInstallSubsystem } from './install/app-install-subsystem.js'
 import { manifestHintSubsystem } from './install/manifest-hint.js'
 import { telemetrySubsystem } from '../telemetry/runner.js'
 import { pagesSubsystem } from './pages/pages-subsystem.js'
+import { diagnosticsSubsystem } from './diagnostics/diagnostics-runner.js'
 
 export const subsystems: Subsystem[] = [
+  diagnosticsSubsystem, // native crash dumps, collected here and never uploaded -> src/main/diagnostics/. Reads neither ctx.broker nor ctx.loader.
   // Listed first, ahead of everything else here: its beforeReady attaches
   // a listener that must exist before Electron can create ANY session,
   // including one a later entry's own beforeReady might trigger. Reads

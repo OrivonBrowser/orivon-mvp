@@ -17,18 +17,20 @@ const FACTS: AboutFacts = {
   programPath: '/opt/orivon/orivon',
   profilePath: '/home/a/.config/orivon',
   downloadsPath: '/home/a/Downloads',
+  commit: 'abcdef012345',
   isPrivate: false
 }
 
 describe('the About table', () => {
-  it('lists the twelve rows in order, with the system in one line', () => {
+  it('lists the thirteen rows in order, with the system in one line', () => {
     const rows = aboutRows(FACTS)
     expect(rows.map((row) => row.label)).toEqual([
-      'Orivon', 'Electron', 'Chromium', 'Node.js', 'V8', 'Operating system', 'Language',
+      'Orivon', 'Commit', 'Electron', 'Chromium', 'Node.js', 'V8', 'Operating system', 'Language',
       'User agent', 'Command line', 'Program location', 'Profile folder', 'Downloads folder'
     ])
     expect(rows.find((row) => row.label === 'Operating system')?.value).toBe('Linux 6.8.0 (x64)')
     expect(rows.find((row) => row.label === 'Orivon')?.value).toBe('0.4.2')
+    expect(rows.find((row) => row.label === 'Commit')).toEqual({ label: 'Commit', value: 'abcdef012345', mono: true })
   })
 
   it('names the operating system for each platform, and an unknown one as reported', () => {
@@ -60,7 +62,7 @@ describe('the About table', () => {
 
   it('copies as one "Label: value" line per row', () => {
     const text = aboutText(aboutRows(FACTS))
-    expect(text.split('\n')).toHaveLength(12)
+    expect(text.split('\n')).toHaveLength(13)
     expect(text.split('\n')[0]).toBe('Orivon: 0.4.2')
     expect(text).toContain('Program location: /opt/orivon/orivon')
   })

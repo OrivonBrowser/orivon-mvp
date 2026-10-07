@@ -19,6 +19,7 @@ import { onVerifierChange, verifierView } from '../verifier/verifier-subsystem.j
 import { web3Domain } from '../verifier/web3-domain.js'
 import { appDomain } from './app-domain.js'
 import { telemetryDomain } from './telemetry-domain.js'
+import { reportDomainFor } from '../diagnostics/report-runner.js'
 import { defaultBrowserHost } from '../os/default-browser-runner.js'
 import { osDomain } from '../os/os-domain.js'
 import { checkUpdateNow } from '../self-update/update-check-runner.js'
@@ -181,6 +182,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       (answer) => { services.internalPages.publish('updates.changed', answer, ['settings']) },
       (caller, url) => { services.windows.findOwner(caller.contents)?.tabs.createTab(url) }
     ),
+    report: reportDomainFor(services, ctx),
     about: aboutDomain()
   })
   extensions.prefs.onChange(() => { services.internalPages.publish('extensions.changed', undefined, ['extensions']) })

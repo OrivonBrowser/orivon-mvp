@@ -4,11 +4,13 @@ import { app, clipboard, session } from 'electron'
 import type { SettingsStore } from '../settings/settings-store.js'
 import type { AboutFacts } from './about-info.js'
 import type { GpuReading } from './about-domain.js'
+import { BUILD_COMMIT } from '../diagnostics/build-commit.js'
 
 export function readAboutFacts (settings: Pick<SettingsStore, 'get'>, isPrivate: boolean): AboutFacts {
   const chosenDownloads = settings.get('downloads.folder')
   return {
     orivon: app.getVersion(),
+    commit: BUILD_COMMIT,
     electron: process.versions.electron,
     chromium: process.versions.chrome,
     node: process.versions.node,

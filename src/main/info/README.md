@@ -14,7 +14,7 @@ rest is pure and runs under plain vitest.
 
 **What it depends on.** `electron`; [`../pages/`](../pages/) (the domain type and the page ids);
 [`../shell/`](../shell/) (the window registry and the app-tab set, read-only); [`../settings/`](../settings/)
-(the downloads folder shown in the table).
+(the downloads folder shown in the table); [`../diagnostics/`](../diagnostics/) (`build-commit.ts`, the commit row).
 
 **What it must never import.** [`../../renderer/`](../../renderer/), and anything in `../shell/` that
 would let it change a window other than activating a tab.
