@@ -110,7 +110,7 @@ Four reversals worth knowing about, because they are the ones people still repea
 | Question | Read |
 |---|---|
 | What does Orivon do today, and what is next? | [`features.md`](features.md), [`roadmap.md`](roadmap.md) |
-| What is the longer-term vision? | The owner's OrivonBook drafts hold. The older [orivon-docs](https://github.com/OrivonBrowser/orivon-docs) site is outdated: verify anything taken from it with the owner before treating it as true |
+| What is the longer-term vision? | The owner's OrivonBook holds. The older [orivon-docs](https://github.com/OrivonBrowser/orivon-docs) site is outdated: verify anything taken from it with the owner before treating it as true |
 | What do apps program against? | [`architecture/capability-api.md`](architecture/capability-api.md) |
 | What does a handle do? | [`architecture/handle-contracts.md`](architecture/handle-contracts.md) |
 | What identifies an app's content, and how is a change to it noticed? | [`architecture/bundle-hash.md`](architecture/bundle-hash.md), [`ADR-0009`](decisions/ADR-0009-the-bundle-hash-is-an-app-s-content-identity.md) |
