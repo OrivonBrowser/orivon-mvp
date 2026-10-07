@@ -46,6 +46,8 @@ async function launched (options: { days?: [number, number], firstSeenMsAgo?: nu
     appPath: '.',
     args: [HERMETIC_RESOLVER, ...(options.args ?? [])],
     env: { ORIVON_TEST_DEFAULT_BROWSER: options.mode ?? 'can-set' },
+    // The case's own clock, or none at all: the launch helper's not-due clock is for specs about something else.
+    freshDefaultBrowserAsk: true,
     seedProfile: (dir: string) => {
       userData = dir
       if (options.firstSeenMsAgo !== undefined) {

@@ -181,6 +181,21 @@ async function seedNoScoreProvider (userDataDir) {
 }
 
 /**
+ * A launch with the default-browser test seam on asks to be the default browser half a minute into a fresh
+ * profile's use (src/main/os/default-browser-ask.ts), which would open a question over whatever a long spec
+ * drives. Unless the seed wrote the ask's own clock, it starts as asked just now: the next ask is a week away.
+ */
+async function seedDefaultBrowserAskNotDue (userDataDir) {
+  const file = join(userDataDir, 'default-browser-ask.json')
+  try {
+    await readFile(file)
+  } catch {
+    const now = Date.now()
+    await writeFile(file, JSON.stringify({ firstSeenAt: now, lastAskedAt: now, stopped: false }))
+  }
+}
+
+/**
  * @param {object} [options]
  * @param {string} [options.appPath] Directory of the app to run. Defaults to
  *   the repo root (the real app); tests may pass a fixture directory.
@@ -223,6 +238,9 @@ async function seedNoScoreProvider (userDataDir) {
  *   profile's `appearance.theme` is written (merged into a seeded
  *   settings.json), so the first paint and every page agree and the desktop's
  *   own theme cannot leak in.
+ * @param {boolean} [options.freshDefaultBrowserAsk] With ORIVON_TEST_DEFAULT_BROWSER set, a profile whose
+ *   seed wrote no default-browser ask clock gets one that is not due (seedDefaultBrowserAskNotDue); true
+ *   leaves it fresh, for a spec of the first ask itself.
  * @param {string} [options.reuseProfile] A profile directory from an earlier
  *   launch in this process, kept by closeElectron(app, { keepProfile: true }),
  *   for a test that relaunches on the state the first run wrote. Only a
@@ -244,6 +262,7 @@ export async function launchElectron ({
   scheme,
   reuseProfile,
   chrome = true,
+  freshDefaultBrowserAsk = false,
   onLaunch
 } = {}) {
   const env = { ...process.env, ...envOverrides }
@@ -311,6 +330,7 @@ export async function launchElectron ({
     // the same catch rather than leaking the directory it was given.
     if (seedProfile !== undefined) await seedProfile(userDataDir)
     if (reuseProfile === undefined) await seedNoScoreProvider(userDataDir)
+    if (reuseProfile === undefined && env['ORIVON_TEST_DEFAULT_BROWSER'] !== undefined && !freshDefaultBrowserAsk) await seedDefaultBrowserAskNotDue(userDataDir)
     if (scheme !== undefined) await seedTheme(userDataDir, scheme)
     app = await electron.launch({
       // The binary encrypts cookies (scripts/install-electron.mjs), so Chromium reads its key at every start; on
