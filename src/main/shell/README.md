@@ -13,7 +13,7 @@ the `{ window, services }` pair a hook or an overlay handler receives.
 `TAB_SIGNALS` entry adds), `tab-navigation.ts`, `tab-open.ts` (every way a tab is created) and
 `tab-panes.ts` (which views show where) as its parts; `tab-view.ts`, `tab-partition.ts`,
 `app-tab-watch.ts`, `tab-signals.ts`, `tab-types.ts`, `tab-factory.ts`, `tab-lifecycle.ts` and
-`tab-parking.ts` are the per-tab view; `load-in-tab.ts` is the one test that opens an address in the tab's own view or in a view of the session it needs, shared by the address bar and a link followed inside a tab. `eth-gateway-redirect.ts` opens an ENS gateway address (`<name>.eth.limo`, `<name>.eth.link`) as the `.eth` name it stands for: the web-request handler, which shares the rule in `eth-gateway-rule.ts` (`gatewayRedirectFor`, `gatewayEntries`; no `electron`) with the tab hooks below. `tab-origin-liveness.ts` is `tab-view.ts`'s own per-origin
+`tab-parking.ts` are the per-tab view; `load-in-tab.ts` is the one test that opens an address in the tab's own view or in a view of the session it needs, shared by the address bar and a link followed inside a tab, and the step Back or Forward past the view's own list. `tab-outer-history.ts` (no `electron`) holds the pages of a tab's history that its view does not hold. `eth-gateway-redirect.ts` opens an ENS gateway address (`<name>.eth.limo`, `<name>.eth.link`) as the `.eth` name it stands for: the web-request handler, which shares the rule in `eth-gateway-rule.ts` (`gatewayRedirectFor`, `gatewayEntries`; no `electron`) with the tab hooks below. `tab-origin-liveness.ts` is `tab-view.ts`'s own per-origin
 live-document counter. A local file's tab is always in a local-files session ([`../local-files/`](../local-files/)): `tab-partition.ts` routes it there, `tab-factory.ts`'s `localFile` makes it, and a tab that reached a file by history or a reload moves to the session it belongs in, on a 404 (`did-navigate`) or on the fence's -20 (`pre-partition.ts`'s `repartitionOnFileBlock`). `tab-order.ts` is where a tab sits in the strip, `tab-move.ts` moves one between windows keeping the
 same page (and is where a dragged tab's cross-window target -- which window's strip, and where in it -- is
 worked out from the tab centres `strip-centres.ts` reads off the target window's chrome page, shared by the actual move and by `tear-drag.ts`'s own mark), `tab-menu.ts` is its right-click
@@ -155,12 +155,21 @@ the dashboard's dev-mode URL is a real `http(s)` address, so its own first `did-
 read as an origin change; the handler excludes the dashboard explicitly.
 
 **Residual: `did-navigate` fires after commit**, so the new origin's page has rendered once in
-the old partition and may already have read from it. Intercepting before commit would cost a
-fresh view and a lost history entry on every cross-origin link; it is open as A109. A swap within one
+the old partition and may already have read from it. Intercepting every cross-origin link before
+commit would cost a fresh view each time. A swap within one
 session (an origin newly registered as an app, an opener being cut, a typed address that flips the
 app-tab flag) carries the back and forward list over with `NavigationHistory.restore`; a typed address
-that has not committed loads after the pages up to the one being left. Only a swap across partitions
-starts a new list.
+that has not committed loads after the pages up to the one being left.
+
+**[`tab-outer-history.ts`](tab-outer-history.ts): a swap across partitions keeps the tab's history
+outside the new view.** Electron restores a list only into a view that has loaded nothing, and a
+returning parked view has, so the pages the new view does not hold stay on the tab record
+(`TabRecord.outer`). Back past the view's first page and Forward past its last load the next of them
+in a view of its own session (`load-in-tab.ts`'s `stepOutOfView`), in the tab's own view when that is
+one, and that view then holds the page alone; a view's own list never holds a page of another session,
+so no step loads a page in the wrong one. A new page ends what was ahead, as in any browser; the
+toolbar, the page menu and the HTTPS warning read the joined list. A copied or restored tab carries
+only its view's own list.
 
 **One process, several windows: what is per window and what is shared.** Per window: the chrome view, the
 `TabManager`, the popovers, the fullscreen and notice state, and the IPC handlers on the chrome view and the
@@ -186,7 +195,9 @@ closes the view, because closing announces its own end at once and that call mus
 **[`tab-parking.ts`](tab-parking.ts): a view leaving an app's partition is parked, not closed.** A
 page's `sessionStorage` lives in its view, not its partition (measured in Electron 44), so a
 fresh view would break an OIDC login that keeps its state there while the provider has the tab.
-Only app partitions are parked; the open-web side of a swap still loses its history.
+Only app partitions are parked. A returning parked view is left holding only the page it came back
+to (`tab-history.ts`'s `settleOuterHistory`): the pages before it are the tab's outer history, and
+the page the app left for, which committed in the parked view, would otherwise load in its session.
 
 **[`tab-origin-liveness.ts`](tab-origin-liveness.ts): how many live tabs sit at each origin is
 tracked module-wide, not per `TabManager`.** Two windows' tabs on the same origin share one broker
