@@ -31,8 +31,8 @@ for any widening of the payload; a country is finer than a region, so it is a wi
   time zone is the closer proxy, and it is what the region already used.
 - **A zone-to-country table in this repository** (from tzdata's `zone.tab`). Rejected: ICU in
   Electron already holds it and is updated with Electron; a copy here would drift. The cost of the
-  ICU route is a scan of the two-letter codes, about 50 ms on a match and 150 ms on a miss,
-  remembered per zone for the life of the process.
+  ICU route is one scan of the two-letter codes into a zone-to-country map, about 150 ms, kept
+  for the life of the process.
 - **Country from the IP address at the server.** Rejected for ADR-0063's reason: the server would
   have to read the address to store a field.
 - **Sending both region and country.** Rejected: the region is a function of the country, so the
