@@ -63,6 +63,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Second sign-out traced to `npm start` skipping the cookie fuse; it now sets the fuses before every launch, or refuses to launch.
 - Telemetry now names the country from the time zone instead of EU/US, and both reports also go at browser start.
 - After a privacy-notice change, Orivon asks for telemetry again at next start, saying what changed, instead of silently stopping.
+- Report a problem: users describe a crash and see the full report, logs and optional crash dump before Send; our server receives it.
 
 ### In my head
 
