@@ -17,7 +17,7 @@ decided elsewhere; nothing here assumes an order relative to other work.
 [DNS resolution](https://docs.orivonstack.com/docs/implementations/dns-resolution),
 [Data gathering](https://docs.orivonstack.com/docs/implementations/data-gathering), and
 [Native DDOC](https://docs.orivonstack.com/docs/implementations/native-ddoc-specs). In this
-repository: [`scope.md`](../scope.md) (both features sit in its OUT table until EI-0
+repository: the retired `scope.md` (both features sit in its OUT table until EI-0
 lands), [ADR-0006](../decisions/ADR-0006-trust-indicator-from-observed-behaviour.md) (the trust
 indicator, which EI-0 amends), and
 [ADR-0007](../decisions/ADR-0007-cached-bundles-served-at-their-own-origin.md) (a bundle is

@@ -76,8 +76,7 @@ code. L4 is listed so it is not re-derived: the container document already parks
 grants, inside its app's renderer sandbox, exactly as `ADR-0036` states for L0. WASI's own
 capability model (a program sees only the directories it was handed, "preopens") maps cleanly
 onto `orivon.fs`'s per-origin root, but it is enforced by the broker, never by the host. This is
-not `orivon-runtime`, the Wasmtime host `ADR-0002` defers for containment and mobile, and it
-does not bring that forward.
+not a separate WebAssembly runtime, and it does not bring one forward.
 
 ## 2. Measured in this tree
 

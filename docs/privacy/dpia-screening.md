@@ -14,7 +14,7 @@ reports have [their own screening](#bug-reports) below.
 | 2 | Automated decisions with legal or similar effect | No | No decision is made about anyone |
 | 3 | Systematic monitoring | Partly | Active and background seconds are counted continuously and sent daily and at each browser start and quit. It is measurement of use of one product, not of a public place or of what the person reads, and it is off until the person chooses to share |
 | 4 | Sensitive data or highly personal data | Partly | No special-category data is collected. A site name could suggest one by inference (a site about health, politics or religion that has a public Web3 or Web2.5 name). The named-site seconds of one install, linked to its identifier for at most two months, are the nearest thing to this |
-| 5 | Large scale | No | The aim is on the order of a hundred active users. Re-screen if that grows by an order of magnitude |
+| 5 | Large scale | No | A small population of active users. Re-screen if that grows by an order of magnitude |
 | 6 | Matching or combining datasets | No | The usage and site reports share one install identifier because they serve one telemetry purpose, have one controller and are both disclosed. WP248 criterion 6 is about datasets from different processing operations or different controllers; nothing is joined with other sources |
 | 7 | Vulnerable data subjects | No | Adult users of a technical product; no children or employees are targeted |
 | 8 | Innovative use or new technology | No | A counter and a hash. Not novel |
@@ -53,7 +53,7 @@ settles it. It is a close call on three points, and the record says so rather th
 | 2 | Automated decisions | No | None |
 | 3 | Systematic monitoring | No | Nothing is collected unless the person writes a report and presses Send, once per report |
 | 4 | Sensitive or highly personal data | Partly | Nothing sensitive is asked for, but the description is free text, a log line or the page address can name a site, and a crash dump is a memory snapshot that can hold fragments of what was open or typed. The address and the dump are unticked by default, and every report is deleted after 90 days |
-| 5 | Large scale | No | A few reports from a population of about a hundred active users |
+| 5 | Large scale | No | A few reports from a small population of active users |
 | 6 | Matching or combining datasets | No | A report carries a random identifier and is not linked to telemetry or to anything else |
 | 7 | Vulnerable data subjects | No | As for telemetry |
 | 8 | Innovative use or new technology | Partly | A maintainer may give a report to an AI coding assistant (Claude, by Anthropic, in the United States) to find the cause. That is a new tool, though it is used only to read a report the person chose to send, and the person is told before sending |

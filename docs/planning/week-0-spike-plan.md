@@ -13,7 +13,7 @@ preload holds the raw port in the isolated world and exposes only `contextBridge
 Playwright `_electron` for driving the app, `webtorrent@3.0.21`, `streamx` for the shim's
 stream shapes.
 
-**Spec:** [`build-plan.md`](build-plan.md) §Week 0 · [`audit-2026-08-25.md`](audit-2026-08-25.md) ·
+**Spec:** the retired build plan, §Week 0 · [`audit-2026-08-25.md`](audit-2026-08-25.md) ·
 [`capability-api.md`](../architecture/capability-api.md) §Throughput
 
 ---

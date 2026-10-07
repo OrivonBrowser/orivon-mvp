@@ -1,7 +1,7 @@
 # A torrent app: what is already known
 
 **An idea, not a build step.** A BitTorrent streaming app is listed under
-[`scope.md`](../scope.md) §LATER: nobody is building it, and nothing in this repository
+[`roadmap.md`](../roadmap.md) (Later): nobody is building it, and nothing in this repository
 waits on it. [`ADR-0001`](../decisions/ADR-0001-flagship-app-bittorrent-streaming.md) has the
 case for building one. This page keeps what the week-0 spike and the planning around it
 established, so whoever picks the idea up does not re-derive it.
@@ -15,7 +15,7 @@ described below is the app.
 
 `webtorrent` via the shim, player UI, magnet input, file list, resume. Ships as a pre-built app
 asset, never as a shell dependency: `node-datachannel` is a hard transitive dependency and needs
-a C++ toolchain, which breaks run-from-source ([`build-plan.md`](build-plan.md) §Platform policy).
+a C++ toolchain, which breaks run-from-source (CLAUDE.md Rule 8).
 
 A naive renderer bundle is **WebRTC-only**: webtorrent's `browser` field maps `net`,
 `bittorrent-dht`, `ut_pex`, `utp` and `conn-pool` to `false`, which is Brave parity. The fix is

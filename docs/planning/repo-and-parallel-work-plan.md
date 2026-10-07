@@ -456,7 +456,7 @@ export interface OrivonError extends Error {
   readonly code: OrivonErrorCode
   /**
    * The underlying engine's own detail -- a Node errno today (ECONNREFUSED,
-   * ENOENT), whatever WASI or Mojo expose later. ADVISORY AND UNVERSIONED: an
+   * ENOENT), whatever another host exposes later. ADVISORY AND UNVERSIONED: an
    * app branching on this codes against the engine, not against Orivon. It
    * exists so orivon-node-shim can reconstruct a faithful Node Error, because
    * `err.code === 'ECONNREFUSED'` is a real Node idiom that must keep working.
@@ -1563,8 +1563,8 @@ Link out to `orivon-docs` for the long-term vision; **do not restate it** (`CLAU
 The five-minute "how does this work". Required content:
 
 1. **The one load-bearing idea.** The durable asset is the capability API (`orivon.*`), not the
-   engine beneath it: Node broker now, Wasmtime later, Chromium/Mojo later, invisible to apps
-   already written. That property, not Electron, is what keeps the Chromium path open
+   engine beneath it: a Node broker now, and a change of engine invisible to apps
+   already written. That property, not Electron, is what the interface keeps
    (`ADR-0002`).
 2. **The diagram**, as a fenced ASCII block:
    ```
@@ -1581,7 +1581,7 @@ The five-minute "how does this work". Required content:
    ```
 3. **Directory map**: a table of every top-level directory and its one-line purpose, matching
    the boundary READMEs from Task 5. Mark `spike/` explicitly as historical evidence.
-4. **What survives a Chromium fork and what is knowingly disposable** (`CLAUDE.md` Rule 5):
+4. **What survives a change of engine and what is knowingly disposable** (`CLAUDE.md` Rule 5):
    `src/contracts/` and the broker's policy functions survive; the Electron shell, the preload
    bridging and `orivon-node-shim` are disposable.
 5. **Two facts that will otherwise be rediscovered painfully**, each in a sentence with a link:

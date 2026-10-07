@@ -70,9 +70,8 @@ everything the server answers: the server cannot change settings or send command
 
 ## Why, and on what basis
 
-**Purpose.** To learn whether people actually use the browser, measured as active users, with
-active meaning 25 hours a month, in Europe and the United States, and which kinds of site they
-spend time on. We use it to decide what to build and to judge the project. We do not use it for
+**Purpose.** To measure how many people use Orivon actively and on which kinds of site they
+spend time. We use it to decide what to build and to judge the project. We do not use it for
 advertising, profiling or sale, and we give it to nobody.
 
 **Legal basis.** Your consent: GDPR Article 6(1)(a). Reading the machine ID from your computer

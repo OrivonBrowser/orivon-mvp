@@ -77,8 +77,7 @@ impostazioni né inviare comandi.
 
 ## Perché, e con quale base giuridica
 
-**Finalità.** Capire se le persone usano davvero il browser, misurato in utenti attivi (attivo
-significa 25 ore al mese), in Europa e negli Stati Uniti, e su quali tipi di sito passano il
+**Finalità.** Misurare quante persone usano Orivon in modo attivo e su quali tipi di sito passano il
 tempo. Lo usiamo per decidere che cosa costruire e per valutare il progetto. Non lo usiamo per
 pubblicità, profilazione o vendita, e non lo diamo a nessuno.
 

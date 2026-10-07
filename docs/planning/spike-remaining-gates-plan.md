@@ -4,7 +4,7 @@
 > gate 4 and the write-up. Steps use checkbox (`- [ ]`) syntax.
 >
 > **Companion documents:** [`week-0-spike-plan.md`](week-0-spike-plan.md) (original plan and
-> the known-good renderer recipe) · [`build-plan.md`](build-plan.md) §Week 0 (gate criteria).
+> the known-good renderer recipe) · the retired build plan's §Week 0 (gate criteria).
 
 **Goal:** finish the week-0 spike and produce a verdict the owner can act on.
 

@@ -249,7 +249,7 @@ disk; the choice is not shown to the person for now, only logged.
   That is the point of developer mode; stronger sandboxing is expected in the future, not now.
 - A compromised build machine or a malicious release. There is no reproducible build and, on
   Linux, no signing.
-- Traffic analysis. There is no Tor integration today.
+- Traffic analysis. There is no Tor support today.
 - A DNS rebind between the app loader's address check and its install fetch. The fetch goes through Chromium's network stack, which cannot dial a pinned address, so the check narrows the window and does not close it.
 - A public name with a trusted certificate that resolves to a LAN address, reached under a `*:443` grant. A certificate binds a name, not an address, and `connectSecure` does not resolve; only literal addresses are checked there.
 - A script running inside the real site, or an extension's content script on it, reading a form field Orivon has filled from the password store. It reads the field exactly as it reads one the person typed.
