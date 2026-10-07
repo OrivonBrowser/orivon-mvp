@@ -9,7 +9,7 @@ behind it is [`outbound-requests.md`](outbound-requests.md), and an Italian vers
 
 > **In five lines**
 >
-> - Telemetry is **your choice**: the first screen asks with two equal buttons, and Settings has
+> - Telemetry is **your choice**: a window asks as you enter, with two equal buttons, and Settings has
 >   a switch. Off means nothing is measured and nothing is sent.
 > - It counts **time**: how long the browser is in use, and how long on Web3, Web2.5 and other
 >   sites. It names a site only when the site is a public Web3 or Web2.5 one.
@@ -77,14 +77,15 @@ advertising, profiling or sale, and we give it to nobody.
 
 **Legal basis.** Your consent: GDPR Article 6(1)(a). Reading the machine ID from your computer
 and keeping an identifier on it also needs your consent under Article 5(3) of the ePrivacy
-Directive, and the same answer gives it. The first screen shows a block titled **Telemetry** with
-two buttons of the same look and size, **Enter and share telemetry** and **Enter without
-telemetry**. Neither is preselected, and you must press one to enter; so your answer is a clear
-act, not a box left as it was found. The block is shown only while you have not answered. You can
+Directive, and the same answer gives it. When you press **Enter Orivon** on the first screen, a
+window titled **Support us for free through telemetry** opens over the browser, with two buttons
+of the same look and size, **Accept** and **Deny**. Neither is preselected, and you must press one
+to enter; so your answer is a clear act, not a box left as it was found. The window is shown only
+while you have not answered. You can
 change your mind at any time with the switch in Settings; withdrawing is as easy as agreeing,
 and nothing in the browser gets worse for it. If you answered no, nothing asks you again for six
 months. If you agreed and this notice later changes what is sent, nothing is sent under the new
-version until you answer again: the next time Orivon starts, the same block asks you, with a
+version until you answer again: the next time Orivon starts, the same window asks you, with a
 line saying what changed.
 
 **Is an identifier personal data?** Yes, we treat it so. We cannot tell who you are from it, but

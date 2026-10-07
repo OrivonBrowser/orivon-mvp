@@ -349,15 +349,17 @@ h1, p { margin: 0; }
   z-index: 30;
   display: flex;
   flex-direction: column;
-  padding: 40px 16px;
+  padding: 24px 16px;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(165, 180, 252, 0.3) transparent;
 }
 .consent[hidden] { display: none; }
 /* margin: auto centres it while it fits and lets the page scroll from its top when it does not. */
 .consent-card {
-  width: min(480px, 100%);
+  width: min(520px, 100%);
   margin: auto;
-  padding: 30px 30px 22px;
+  padding: 28px 30px 20px;
   border: 1px solid rgba(165, 180, 252, 0.2);
   border-radius: 28px;
   background: linear-gradient(165deg, rgba(55, 48, 163, 0.42) 0%, rgba(15, 23, 42, 0.8) 52%, rgba(15, 23, 42, 0.86) 100%);
@@ -372,7 +374,7 @@ h1, p { margin: 0; }
 .consent-mark {
   display: flex;
   justify-content: center;
-  margin-bottom: 18px;
+  margin-bottom: 16px;
 }
 .consent-mark img {
   display: block;
@@ -480,12 +482,17 @@ h1, p { margin: 0; }
   outline: 2px solid #a5b4fc;
   outline-offset: 2px;
 }
+/* It scrolls inside the card, so the open list never pushes the buttons out of a short window. */
 .consent-details ul {
+  max-height: clamp(110px, calc(100vh - 610px), 320px);
   margin: 10px 0 0;
   padding: 12px 16px 12px 32px;
+  overflow-y: auto;
   border-radius: 16px;
   background: rgba(2, 6, 23, 0.35);
   line-height: 1.5;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(165, 180, 252, 0.3) transparent;
   animation: fade 0.3s ease;
 }
 .consent-details li + li { margin-top: 6px; }
@@ -525,6 +532,7 @@ h1, p { margin: 0; }
   font-size: 12.5px;
   color: rgba(165, 180, 252, 0.9);
 }
+.consent-hint:empty { display: none; }
 
 @keyframes card-in { from { opacity: 0; transform: translateY(18px) scale(0.97); } }
 @keyframes breathe { 50% { box-shadow: 0 0 0 10px rgba(99, 102, 241, 0.06), 0 8px 36px rgba(99, 102, 241, 0.55); } }

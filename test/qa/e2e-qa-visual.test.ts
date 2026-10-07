@@ -254,11 +254,12 @@ for (const scheme of SCHEMES) {
         await intro.waitForLoadState('load')
         await intro.click('#enter')
         await intro.waitForSelector('#consent:not([hidden])')
-        // The card rises in and the welcome scene softens out of focus: wait until both have finished.
+        // The card rises in, the welcome scene softens out of focus and the browser's picture fades in over it: wait until all three have finished.
         expect(await waitFor(async () => Number(await intro.locator('.consent-card').evaluate((el) => getComputedStyle(el).opacity)) === 1 && await intro.locator('#welcome').evaluate((el) => getComputedStyle(el).filter) === 'blur(18px)' && Number(await intro.locator('#welcome').evaluate((el) => getComputedStyle(el).opacity)) === 0.4)).toBe(true)
+        expect(await waitFor(async () => Number(await intro.locator('#behind').evaluate((el) => getComputedStyle(el).opacity)) === 1, 10_000)).toBe(true)
         check('neither of the two buttons has the focus', await intro.evaluate(() => document.activeElement?.tagName) === 'BODY')
         await state(check, app, `welcome-telemetry-popup-${scheme}`, {
-          expected: 'The welcome screen is still behind, blurred and dimmed so its headline cannot be read. In the middle, a rounded dark-indigo card: the round Orivon logo with a soft glow, the title "Support us for free through telemetry", a short paragraph that starts "Orivon is free, has no ads, and keeps your history on your computer", a panel of four short promises in two columns each with a small green check, a "See exactly what is sent" link with a chevron, and two pill buttons of the same size and look side by side, "Accept" and "Deny", neither filled more than the other. All text is readable and the card stays inside the window.',
+          expected: 'Behind, the browser (its toolbar and the new-tab page) blurred past reading and dimmed, filling the whole window. In the middle, a rounded dark-indigo card: the round Orivon logo with a soft glow, the title "Support us for free through telemetry", a short paragraph that starts "Orivon is free, has no ads, and keeps your history on your computer", a panel of four short promises in two columns each with a small green check, a "See exactly what is sent" link with a chevron, and two pill buttons of the same size and look side by side, "Accept" and "Deny", neither filled more than the other. All text is readable and the card stays inside the window.',
           action: 'Launched a fresh profile with the welcome screen enabled and telemetry running, and clicked "Enter Orivon".'
         })
         await intro.click('.consent-details summary')

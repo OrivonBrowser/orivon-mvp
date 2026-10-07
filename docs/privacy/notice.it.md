@@ -9,7 +9,7 @@ informativa è [`notice.md`](notice.md), che è il testo di riferimento se le du
 
 > **In cinque righe**
 >
-> - La telemetria è **una tua scelta**: la prima schermata chiede con due pulsanti uguali, e le
+> - La telemetria è **una tua scelta**: all'ingresso una finestra chiede con due pulsanti uguali, e le
 >   Impostazioni hanno un interruttore. Se è spenta, non si misura e non si invia nulla.
 > - Conta il **tempo**: per quanto usi il browser, e per quanto su siti Web3, Web2.5 e altri. Nomina
 >   un sito solo se è un sito Web3 o Web2.5 con un nome pubblico.
@@ -84,16 +84,17 @@ pubblicità, profilazione o vendita, e non lo diamo a nessuno.
 
 **Base giuridica.** Il tuo consenso: articolo 6, paragrafo 1, lettera a) del GDPR. Leggere l'ID
 macchina dal tuo computer e conservarvi un identificativo richiede il tuo consenso anche ai sensi
-dell'articolo 5, paragrafo 3 della direttiva ePrivacy, e la stessa risposta lo dà. La prima
-schermata mostra un blocco intitolato **Telemetria** con due pulsanti uguali per aspetto e
-dimensione, **Entra e condividi la telemetria** e **Entra senza telemetria**. Nessuno è
+dell'articolo 5, paragrafo 3 della direttiva ePrivacy, e la stessa risposta lo dà. Quando premi
+**Enter Orivon** nella prima schermata, sopra il browser si apre una finestra intitolata
+**Support us for free through telemetry** ("sostienici gratis con la telemetria") con due
+pulsanti uguali per aspetto e dimensione, **Accept** (accetta) e **Deny** (rifiuta). Nessuno è
 preselezionato e per entrare devi premerne uno: la tua risposta è quindi un atto chiaro, non una
-casella lasciata com'era. Il blocco compare solo finché non hai risposto. Puoi cambiare idea in
+casella lasciata com'era. La finestra compare solo finché non hai risposto. Puoi cambiare idea in
 qualsiasi momento con l'interruttore nelle Impostazioni; revocare è facile quanto acconsentire, e
 il browser non peggiora in nulla. Se hai risposto di no, nulla te lo richiede per sei mesi. Se
 hai acconsentito e questa informativa cambia poi ciò che viene inviato, con la nuova versione non
-si invia nulla finché non rispondi di nuovo: al successivo avvio di Orivon lo stesso blocco te lo
-chiede, con una riga che dice che cosa è cambiato.
+si invia nulla finché non rispondi di nuovo: al successivo avvio di Orivon la stessa finestra te
+lo chiede, con una riga che dice che cosa è cambiato.
 
 **Un identificativo è un dato personale?** Sì, lo trattiamo come tale. Da esso non possiamo sapere
 chi sei, ma con esso possiamo ritrovare le tue righe: per questo è protetto come un dato personale

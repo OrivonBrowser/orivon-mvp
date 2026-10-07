@@ -255,21 +255,36 @@ it('keeps the welcome page as it is, and "Enter Orivon" opens the telemetry popu
   }
 }, TEST_TIMEOUT_MS)
 
-it('draws the browser main hands back under the popup, blurred, and fades it in whole', async () => {
+it('shows the browser under the popup, blurred: main captures the toolbar and the page and the popup fades them in whole', async () => {
   const home = await newHome()
   const app = await askingTelemetry(home)
   try {
     expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
     const intro = introPage(app) as Page
     await openPopup(intro)
-    // This display captures no view (the GPU-less xvfb), so the test hands in what main would: two views by their box in percent.
-    const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
-    await intro.evaluate((url) => {
-      document.dispatchEvent(new CustomEvent('browser-behind', { detail: [{ left: 0, top: 0, width: 100, height: 8, url }, { left: 0, top: 8, width: 100, height: 92, url }, { left: 0, top: 0, width: 1, height: 1, url: 'https://example.com/x.png' }] }))
-    }, pixel)
-    expect(await waitFor(async () => await intro.locator('#behind').evaluate((el) => el.classList.contains('shown')))).toBe(true)
-    expect(await intro.locator('#behind img').count()).toBe(2)
-    expect(await intro.locator('#behind img').nth(1).evaluate((el) => [(el as HTMLElement).style.top, (el as HTMLElement).style.height, getComputedStyle(el).filter])).toEqual(['8%', '92%', 'blur(26px) saturate(1.25)'])
+    expect(await waitFor(async () => await intro.locator('#behind').evaluate((el) => el.classList.contains('shown')), 10_000)).toBe(true)
+    const layers = await intro.locator('#behind img').evaluateAll((images) => images.map((el) => {
+      const image = el as HTMLImageElement
+      // Something was drawn: a capture of a view that never painted is one flat, see-through colour.
+      const canvas = document.createElement('canvas')
+      canvas.width = image.naturalWidth
+      canvas.height = image.naturalHeight
+      const context = canvas.getContext('2d') as CanvasRenderingContext2D
+      context.drawImage(image, 0, 0)
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
+      let opaque = 0
+      for (let at = 3; at < pixels.length; at += 4) if ((pixels[at] ?? 0) > 0) opaque++
+      return { top: parseFloat(image.style.top), height: parseFloat(image.style.height), width: parseFloat(image.style.width), png: image.src.startsWith('data:image/png;base64,'), opaque: opaque / (pixels.length / 4), filter: getComputedStyle(image).filter }
+    }))
+    // The chrome's rows at the top, and the dashboard tab under them down to the bottom edge.
+    expect(layers.length).toBeGreaterThanOrEqual(2)
+    expect(layers.some((layer) => layer.top === 0 && layer.height < 20)).toBe(true)
+    expect(layers.some((layer) => layer.top > 0 && Math.abs(layer.top + layer.height - 100) < 0.01 && layer.width === 100)).toBe(true)
+    for (const layer of layers) {
+      expect(layer.png).toBe(true)
+      expect(layer.opaque).toBeGreaterThan(0.9)
+      expect(layer.filter).toBe('blur(26px) saturate(1.25)')
+    }
   } finally {
     await closeElectron(app)
   }

@@ -67,6 +67,8 @@ export function layoutAudit (options = {}) {
   const INTERACTIVE = 'a[href], button, input:not([type=hidden]), select, textarea, summary, [role=button], [role=link], [role=tab], [role=menuitem], [role=checkbox], [role=switch], [tabindex]:not([tabindex="-1"])'
   for (const el of document.body.querySelectorAll(INTERACTIVE)) {
     if (el.getClientRects().length === 0) continue
+    // An inert control takes no click and no focus: a page under a modal is meant to be covered by it.
+    if (el.closest('[inert]') !== null) continue
     const s = getComputedStyle(el)
     if (s.visibility !== 'visible' || s.pointerEvents === 'none') continue
     const r = rectOf(el)

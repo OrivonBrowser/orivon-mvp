@@ -8,9 +8,10 @@ is the text people read, and its field table is compared with the payload types 
 [`testing.md`](../../docs/development/testing.md) §6 says why the accounting is a pure fold with
 its own tests.
 
-The screens exist. The first-run welcome has a **Telemetry** block with two identical buttons,
-"Enter and share telemetry" and "Enter without telemetry", neither preselected; it is shown only
-while the choice is undecided, and the country decides nothing in it. An acceptance given under an
+The screens exist. On a first run, "Enter Orivon" on the welcome screen opens a popup over the
+browser, blurred behind it, titled "Support us for free through telemetry", with two identical
+buttons, "Accept" and "Deny", neither preselected; it is shown only while the choice is undecided,
+and the country decides nothing in it. An acceptance given under an
 older `NOTICE_VERSION` brings the question back at the next start, with the lines of
 `NOTICE_CHANGES` saying what changed since; a refusal is not asked again for six months. Settings has the switch,
 the literal text of both messages, the history of what was sent, the install ID, **Delete my
@@ -83,6 +84,6 @@ ID and parsing the platform's output are pure and unit-tested; the readers (a fi
 `ioreg` on macOS, `reg query` on Windows, run with no shell and a short timeout) are passed in.
 
 **A stored acceptance carries the `NOTICE_VERSION` it was given under.** When the constant
-differs, the consent reads as undecided and the welcome block appears again. Bump it with any
+differs, the consent reads as undecided and the popup appears again, on its own at the next start. Bump it with any
 change to a telemetry payload or to what `docs/privacy/notice.md` says about telemetry; its
 bug-report section is outside it, because a report is agreed to one at a time ([`ADR-0065`](../../docs/decisions/ADR-0065-bug-reports-leave-only-on-send.md)).

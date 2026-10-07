@@ -27,23 +27,22 @@ rm -rf ~/.config/orivon ~/.config/orivon-telemetry   # Linux; app.getPath('userD
 Have a way to observe outbound network traffic before launching: a proxy, `tcpdump`, or the
 devtools network panel. **Reading the source is not sufficient for assertions 4 and 5.**
 
-**Input.** Launch the app for the first time; choose on the welcome; then open Settings, Usage
+**Input.** Launch the app for the first time; press "Enter Orivon" and choose; then open Settings, Usage
 statistics.
 
 **Assertions.** All five must hold:
 
-1. The welcome's **Telemetry** block offers two buttons of the same size and style, "Enter and
-   share telemetry" and "Enter without telemetry", and the welcome cannot be left without one.
+1. "Enter Orivon" opens the popup **Support us for free through telemetry**, with two buttons of
+   the same size and style, "Accept" and "Deny", and the welcome cannot be left without one.
 2. **Neither is preselected**, and no keyboard default activates one: Enter alone does nothing.
 3. Settings, Usage statistics, shows the **literal JSON** of every report that would be sent,
    not a description of it, and the notice field table matches it.
-4. **Nothing has been transmitted** before the choice, and nothing ever after "Enter without
-   telemetry". Verified from the traffic observation, not from the code.
-5. After "Enter and share telemetry", the only telemetry destination is
+4. **Nothing has been transmitted** before the choice, and nothing ever after "Deny". Verified from the traffic observation, not from the code.
+5. After "Accept", the only telemetry destination is
    `telemetry.orivonstack.com`, and what is sent matches the Settings preview.
 
 **Fails if:** a choice is preselected or reachable by a keyboard default, the JSON is
-summarised, or a single telemetry request leaves the machine without the "share" choice.
+summarised, or a single telemetry request leaves the machine without "Accept".
 
 ---
 

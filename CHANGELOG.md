@@ -345,6 +345,9 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Changed
 
+- **Telemetry is asked in a popup after "Enter Orivon"**: the welcome screen is back to its single button, and the popup
+  "Support us for free through telemetry" sits over the browser, blurred behind it, with equal "Accept" and "Deny" buttons.
+- **The welcome screen's default-browser box is gone**: the default-browser question now first comes half a minute into first use, then weekly.
 - **A run from source is a program of its own**: it keeps its data in `orivon-source` with its own lock and dock icon, beside an
   installed package now named "Orivon Browser". Its profile starts empty (`docs/development/setup.md` says how to bring data across).
 - **Global Privacy Control is on by default**, and every site sees it both as `Sec-GPC: 1` and as `navigator.globalPrivacyControl`

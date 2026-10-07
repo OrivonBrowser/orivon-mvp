@@ -171,6 +171,25 @@ run('asks the first time half a minute after the profile was first seen in use, 
   }
 }, TEST_TIMEOUT_MS)
 
+run('asks by itself on a fresh profile, half a minute after the window is first in use and not before', async () => {
+  const { app, file } = await launched({})
+  try {
+    // No askNow: the browser's own clock. Its first look (10 s after start) finds the window in use and starts the count.
+    expect(await waitFor(() => file() !== undefined, 20_000)).toBe(true)
+    const seenAt = file()?.firstSeenAt ?? 0
+    expect(file()?.lastAskedAt).toBeNull()
+    await delay(Math.max(0, seenAt + 25_000 - Date.now()))
+    expect(await questionGone(app)).toBe(true)
+    const said = await readQuestion(await waitQuestion(app, 20_000))
+    expect(Date.now() - seenAt).toBeGreaterThanOrEqual(30_000)
+    expect(said.buttons).toEqual(['Not now', 'Make default'])
+    await answerQuestion(app, 'Not now')
+    expect(await waitFor(() => (file()?.lastAskedAt ?? 0) >= seenAt + 30_000)).toBe(true)
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
 run('asks nothing of a window that is not in use', async () => {
   const { app, chrome } = await launched({ days: [15, 8] })
   try {

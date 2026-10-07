@@ -93,7 +93,7 @@ permission dialog shows), [`../sessions/`](../sessions/) (the two questions' typ
 [`../dev/`](../dev/) (the developer-mode flag, the score-level override, the local resolvers),
 [`../verifier/`](../verifier/), the stores and services a window reads ([`../settings/`](../settings/),
 [`../history/`](../history/), [`../zoom/`](../zoom/), [`../devtools/`](../devtools/),
-[`../pages/`](../pages/), [`../launch/`](../launch/)), [`../os/`](../os/) (the welcome screen's default-browser offer, `intro-view.ts`; the launcher menu and the default-browser ask are installers and a window hook the shell runs), [`../startup/`](../startup/) (the restore bar a window's hook offers, and the start-up plan the first window follows), plus the top-level `channels.ts` and `registry.ts`.
+[`../pages/`](../pages/), [`../launch/`](../launch/)), [`../os/`](../os/) (the launcher menu and the default-browser ask are installers and a window hook the shell runs), [`../startup/`](../startup/) (the restore bar a window's hook offers, and the start-up plan the first window follows), plus the top-level `channels.ts` and `registry.ts`.
 
 **What it must never import.** [`../../renderer/`](../../renderer/) code (the repo-wide rule).
 Locally: [`tab-view.ts`](tab-view.ts), [`tab-types.ts`](tab-types.ts) and
