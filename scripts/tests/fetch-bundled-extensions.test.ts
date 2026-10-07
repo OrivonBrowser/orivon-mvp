@@ -3,7 +3,6 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-// @ts-expect-error: an .mjs script with no declaration file
 import { fetchBundledExtensions } from '../fetch-bundled-extensions.mjs'
 
 const BYTES = Buffer.from('a pretend extension')

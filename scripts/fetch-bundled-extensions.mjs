@@ -33,7 +33,7 @@ async function hasDigest(path, digest) {
  * means every extension is in place.
  *
  * @param {string} [profileDir] The default-profile folder, for a test to point elsewhere.
- * @param {typeof fetch} [fetchImpl]
+ * @param {(url: string, init?: object) => Promise<{ ok: boolean, status: number, arrayBuffer: () => Promise<ArrayBuffer | SharedArrayBuffer> }>} [fetchImpl] The download, for a test to replace.
  * @returns {Promise<string[]>}
  */
 export async function fetchBundledExtensions(profileDir = DEFAULT_PROFILE_DIR, fetchImpl = fetch) {
