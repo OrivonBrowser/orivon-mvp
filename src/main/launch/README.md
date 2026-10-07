@@ -4,7 +4,7 @@
 private session (`ADR-0042`), and what follows from that. `launch-context.ts` reads the command line;
 `launch-request.ts` is what a start asks for (open the addresses, a new window, a new private window) and the check
 on a request that arrives from another process; `local-operand.ts` reads an operand that names a file on this computer (a
-`file:` URI, or an existing path read against the directory the start was made in); `start-launch.ts` runs first of all, points the data directory at the
+`file:` URI, or an existing path read against the directory the start was made in); `start-launch.ts` runs first of all, gives a run from source a name and data directory of its own (ADR-0057; the names are in `program-names.ts`), points the data directory at the
 right place and steps aside if that profile is already open; `profile-store.ts` is the profiles (one directory each, with a `profile.json`);
 `private-session.ts` makes, marks, removes and sweeps the directories of private sessions;
 `pid-liveness.ts` is the one check both it and `profile-store.ts` use to tell a marker's process from one

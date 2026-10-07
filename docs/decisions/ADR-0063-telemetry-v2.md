@@ -156,7 +156,8 @@ stays in the payload for the metric, from the time zone, and decides nothing in 
 
 ## Reversibility
 - **Cost to reverse:** cheap to narrow (drop per-site, drop a class); expensive
-  to widen, as ADR-0004 says: any further field needs a new ADR and a notice version bump.
+  to widen: any further field needs a decision-log row, a notice version bump with its
+  `NOTICE_CHANGES` line, and the notice's field table (d-0553).
 - **What would make us revisit:** a supervisory authority or counsel finding the
   machine-derived identifier needs more than consent, or the notice needing the server's source
   published to be credible; the consent rate in the EU making the metric unmeasurable; or a measured

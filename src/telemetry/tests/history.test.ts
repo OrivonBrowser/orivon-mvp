@@ -8,12 +8,13 @@ import {
 } from '../history.js'
 import type { UsagePayload } from '../disclosure.js'
 import { attemptSend, enqueue, initialTransportState, type Clock, type Sender } from '../transport.js'
+import { PAYLOAD_SCHEMA } from '../disclosure.js'
 
 // A payload shape stays fixed across a test; only the period usually
 // varies, the way a real caller would advance from month to month.
 function payloadFor (period: string): UsagePayload {
   return {
-    schema: 4,
+    schema: PAYLOAD_SCHEMA,
     installId: '4c2f2f3a111144448888abcde1234567',
     stream: 'ab'.repeat(16),
     country: 'IT',
