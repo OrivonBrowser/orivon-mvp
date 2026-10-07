@@ -260,7 +260,7 @@ loader, shim) takes the `ci:e2e-full` label, so the whole suite runs before it m
    is not reviewed at all.
 3. **Rebase on `main`** before opening the PR, and run the full gate locally:
    ```bash
-   npm run typecheck && npm test && npm run check:natives && npm run check:contracts
+   npm run typecheck && npm run test:changed && npm run check:natives && npm run check:contracts
    npm run smoke     # only if you touched src/main/
    ```
 4. **Open the PR**, titled and described per

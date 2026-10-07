@@ -4,7 +4,7 @@
 - **Date:** 2026-10-05
 - **Type:** architecture
 - **Decided by:** AI recommendation accepted by default; the owner chose the Linux run-from-source exception, and
-  that a run from source is a program of its own (`d-0553`)
+  that a run from source is a program of its own (`d-0554`)
 
 ## Decision
 

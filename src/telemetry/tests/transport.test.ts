@@ -14,10 +14,11 @@ import {
   type TransportState
 } from '../transport.js'
 import type { UsagePayload } from '../disclosure.js'
+import { PAYLOAD_SCHEMA } from '../disclosure.js'
 
 function payloadFor (period: string): UsagePayload {
   return {
-    schema: 4,
+    schema: PAYLOAD_SCHEMA,
     installId: '4c2f2f3a111144448888abcde1234567',
     stream: 'ab'.repeat(16),
     country: 'IT',
