@@ -138,6 +138,14 @@ extraResources:
 # system's resources folder (process.resourcesPath) so a packaged build can load it; a
 # run from source reads the repo's build/icon.png. Best-effort for the window itself:
 # GNOME's dock keys off the .desktop entry instead (StartupWMClass=orivon below).
+  - from: resources/default-profile
+    to: default-profile
+    filter:
+      - "**/*"
+      - "!README.md"
+# What a new profile starts with (src/main/default-profile/): the bundled extensions list, its
+# fetched .crx files and the bookmark icons. `package:*` fetches the .crx files first, so a
+# package never lacks them.
 
 linux:
   target:
