@@ -24,7 +24,8 @@ export interface DefaultBookmark {
   icon: string
 }
 
-/** The bar of a new profile, in order. The addresses are kept exactly as the bar shows them. */
+/** The bar of a new profile, in order. The store keeps each address as it keeps a starred page's: an `ipfs://` name
+ * at the origin it is served at (`ipfs://vitalik.eth` is `https://vitalik.eth/`), which is the URL its tab shows. */
 export const DEFAULT_BOOKMARKS: readonly DefaultBookmark[] = [
   { title: 'Uniswap', url: 'https://app.uniswap.org', icon: 'uniswap.png' },
   { title: 'James Carnley', url: 'ipfs://jamescarnley.eth/', icon: 'jamescarnley.png' },
