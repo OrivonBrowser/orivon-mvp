@@ -75,7 +75,7 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
    macOS. JavaScript and WebAssembly pass. This bounds this repository's `npm install`, never
    the apps Orivon runs (ADR-0036).
 9. **Say which scope a sentence bounds**: this build, this repository, or the project. Never
-   state a boundary of this version as permanent, or an aspiration as a plan here. Worked
+   state a boundary of this build as permanent, or an aspiration as a plan here. Worked
    examples: `docs/development/readability-log.md` section What these rounds changed.
 10. **Remove worktrees once their work is on `main`**: `node scripts/worktree-gc.mjs --remove`.
 11. **A rule the owner states twice goes into the repository in the same session**: a hook, a
