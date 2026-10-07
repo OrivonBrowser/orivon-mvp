@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { childProcessName, processName, rendererLine, shellPageName } from '../shell-console.js'
+import { childProcessName, isOrdinaryEnd, processName, rendererLine, shellPageName } from '../shell-console.js'
 
 describe('shellPageName', () => {
   it('names an orivon:// page, an entry of the built shell and the dev server\'s entries', () => {
@@ -49,5 +49,30 @@ describe('childProcessName', () => {
     expect(childProcessName({ type: 'Utility', serviceName: 'network.mojom.NetworkService', name: 'Network Service' })).toBe('Utility:network.mojom.NetworkService')
     expect(childProcessName({ type: 'Utility', serviceName: undefined, name: 'Audio Service' })).toBe('Utility:Audio Service')
     expect(childProcessName({ type: 'Utility', serviceName: undefined, name: undefined })).toBe('Utility')
+  })
+})
+
+describe('isOrdinaryEnd', () => {
+  it('is true for a clean exit of either kind', () => {
+    expect(isOrdinaryEnd('renderer', 'clean-exit', false)).toBe(true)
+    expect(isOrdinaryEnd('child', 'clean-exit', false)).toBe(true)
+  })
+
+  it('is true for a utility process Orivon killed itself, and for a memory eviction of either kind', () => {
+    expect(isOrdinaryEnd('child', 'killed', false)).toBe(true)
+    expect(isOrdinaryEnd('child', 'memory-eviction', false)).toBe(true)
+    expect(isOrdinaryEnd('renderer', 'memory-eviction', false)).toBe(true)
+  })
+
+  it('keeps a renderer that was killed, which the operating system may have done, unless the browser is quitting', () => {
+    expect(isOrdinaryEnd('renderer', 'killed', false)).toBe(false)
+    expect(isOrdinaryEnd('renderer', 'killed', true)).toBe(true)
+  })
+
+  it('keeps the crashes', () => {
+    for (const reason of ['crashed', 'oom', 'launch-failed', 'integrity-failure', 'abnormal-exit']) {
+      expect(isOrdinaryEnd('renderer', reason, true)).toBe(false)
+      expect(isOrdinaryEnd('child', reason, true)).toBe(false)
+    }
   })
 })

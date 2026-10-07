@@ -6,10 +6,10 @@ import { join } from 'node:path'
 import { app, crashReporter } from 'electron'
 import type { WebContents } from 'electron'
 import type { Subsystem } from '../registry.js'
-import { setCrashLookups } from './crash-lookup.js'
+import { setCrashLookups, takeEndedOnPurpose } from './crash-lookup.js'
 import { DiagnosticsService } from './diagnostics-service.js'
 import { captureConsole } from './log-ring.js'
-import { childProcessName, processName, rendererLine, shellPageName } from './shell-console.js'
+import { childProcessName, isOrdinaryEnd, processName, rendererLine, shellPageName } from './shell-console.js'
 import { isShellSchemeUrl } from '../shell/shell-session.js'
 
 let service: DiagnosticsService | undefined
@@ -72,7 +72,7 @@ export function startDiagnostics (runtime: { readonly dir: string, readonly isPr
 
     app.on('web-contents-created', (_event, contents) => { attachRendererLog(contents, started) })
     app.on('render-process-gone', (_event, contents, details) => {
-      if (details.reason === 'clean-exit' || (details.reason === 'killed' && quitting) || contents.isDestroyed()) return
+      if (isOrdinaryEnd('renderer', details.reason, quitting) || contents.isDestroyed() || takeEndedOnPurpose(contents.id)) return
       const url = contents.getURL()
       started.record({
         kind: 'renderer',
@@ -86,7 +86,7 @@ export function startDiagnostics (runtime: { readonly dir: string, readonly isPr
       })
     })
     app.on('child-process-gone', (_event, details) => {
-      if (details.reason === 'clean-exit' || (details.reason === 'killed' && quitting)) return
+      if (isOrdinaryEnd('child', details.reason, quitting)) return
       const name = childProcessName({ type: details.type, serviceName: details.serviceName, name: details.name })
       started.record({ kind: 'child-process', process: name, reason: details.reason, exitCode: details.exitCode, message: `The ${name} process ended: ${details.reason}.`, stack: '' })
     })

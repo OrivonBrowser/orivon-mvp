@@ -2,6 +2,7 @@
 // service: diagnostics-runner.ts fills these once at start. Before that, and in a unit test, nothing is found.
 
 let pageCrash: (webContentsId: number) => string | undefined = () => undefined
+const endedOnPurpose = new Set<number>()
 let lastRun: () => string | undefined = () => undefined
 
 export function setCrashLookups (lookups: { readonly page: typeof pageCrash, readonly lastRun: typeof lastRun }): void {
@@ -22,4 +23,14 @@ export function lastRunCrashId (): string | undefined {
 /** Where a report about a crash opens. */
 export function reportPath (crashId: string | undefined): string {
   return crashId === undefined ? '/' : `/crash/${crashId}`
+}
+
+/** A page's renderer that Orivon is about to end because the person asked (the task manager): its death is not a crash to record. */
+export function markEndedOnPurpose (webContentsId: number): void {
+  endedOnPurpose.add(webContentsId)
+}
+
+/** Whether that page's death was marked, and forgets the mark. */
+export function takeEndedOnPurpose (webContentsId: number): boolean {
+  return endedOnPurpose.delete(webContentsId)
 }

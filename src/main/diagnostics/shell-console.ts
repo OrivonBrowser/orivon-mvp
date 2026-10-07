@@ -57,3 +57,15 @@ export function childProcessName (child: ChildFacts): string {
   const service = child.serviceName ?? child.name
   return service === undefined || service === '' ? 'Utility' : `Utility:${service}`
 }
+
+/**
+ * Whether a process that went away did so in the course of things, so there is nothing to report. Orivon itself
+ * kills its utility processes (an idle sleep, a closed capture, the task manager); the system reclaims a renderer
+ * under memory pressure; a quit ends every process. A renderer that was killed outside a quit stays a record,
+ * since the operating system may have ended it.
+ */
+export function isOrdinaryEnd (scope: 'renderer' | 'child', reason: string, quitting: boolean): boolean {
+  if (reason === 'clean-exit' || reason === 'memory-eviction') return true
+  if (reason !== 'killed') return false
+  return scope === 'child' || quitting
+}

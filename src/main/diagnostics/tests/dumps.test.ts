@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { listDumps, pruneDumps } from '../dump-files.js'
-import { DUMP_MATCH_MS, DUMP_MAX_AGE_MS, DUMP_MAX_BYTES, dumpFits, dumpFor, dumpsToDelete, DUMPS_KEPT } from '../dumps.js'
+import { DUMP_MATCH_MS, DUMP_MAX_AGE_MS, DUMP_MAX_BYTES, dumpFits, dumpFor, dumpsToDelete, DUMPS_KEPT, uncleanExitDump } from '../dumps.js'
+import { stamp } from '../crash-records.js'
+import type { CrashRecord } from '../crash-records.js'
 import type { DumpFile } from '../dumps.js'
 
 const NOW = 1_800_000_000_000
@@ -19,6 +21,33 @@ describe('dumpFor', () => {
 
   it('takes the closest when several fit, a later one included', () => {
     expect(dumpFor(NOW, [dump('a', 50_000), dump('b', -5_000), dump('c', 20_000)])?.path).toBe('b')
+  })
+})
+
+describe('dumpFor with a lower bound', () => {
+  it('never takes a dump written before the bound, even one within the minute', () => {
+    expect(dumpFor(NOW, [dump('earlier', 30_000)], NOW)).toBeUndefined()
+    expect(dumpFor(NOW, [dump('earlier', 30_000), dump('later', -30_000)], NOW)?.path).toBe('later')
+    expect(dumpFor(NOW, [dump('at', 0)], NOW)?.path).toBe('at')
+  })
+})
+
+describe('uncleanExitDump', () => {
+  const marker = { sessionId: 's1', pid: 1, startedAt: NOW - 3_600_000 }
+  const fatal = (atMs: number): CrashRecord => ({ id: 'a'.repeat(16), sessionId: 's1', kind: 'renderer', at: stamp(atMs), process: 'tab', reason: 'crashed', exitCode: 1, message: '', stack: '' })
+
+  it('is the newest dump written during that run', () => {
+    expect(uncleanExitDump(marker, [], [dump('a', 3_000_000), dump('b', 2_000_000), dump('old', 4_000_000)])).toBe(NOW - 2_000_000)
+  })
+
+  it('leaves out a dump within a minute of another record of that run: it belongs to that record', () => {
+    const owned = dump('owned', 1_000_000)
+    expect(uncleanExitDump(marker, [fatal(NOW - 1_000_000 + 20_000)], [owned])).toBeUndefined()
+    expect(uncleanExitDump(marker, [fatal(NOW - 1_000_000 + 20_000)], [owned, dump('free', 2_000_000)])).toBe(NOW - 2_000_000)
+  })
+
+  it('is not held back by records of other runs, or by its own kind of record', () => {
+    expect(uncleanExitDump(marker, [{ ...fatal(NOW - 1_000_000), sessionId: 's0' }, { ...fatal(NOW - 1_000_000), kind: 'unclean-exit' }], [dump('x', 1_000_000)])).toBe(NOW - 1_000_000)
   })
 })
 

@@ -18,7 +18,7 @@ is pure, or reads and writes plain files, and runs under plain vitest.
 **What it depends on.** `electron` (the runners); [`../pages/`](../pages/) (the internal-domain type, the page ids);
 [`../shell/`](../shell/) (the window registry and the shell scheme, types and one constant); [`../settings/`](../settings/)
 (the setting names, to pick which ones a report states); [`../../telemetry/mode.ts`](../../telemetry/mode.ts) (where
-reports go, and the test-build override); [`../registry.ts`](../registry.ts) (the `Subsystem` type).
+reports go, and the test-build override); [`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts) (the write that lands whole or not at all); [`../registry.ts`](../registry.ts) (the `Subsystem` type).
 
 **What it must never import.** [`../../renderer/`](../../renderer/), and anything that could reach the person's
 files, passwords or browsing: a report is built from the facts passed to it, never from a store read here.

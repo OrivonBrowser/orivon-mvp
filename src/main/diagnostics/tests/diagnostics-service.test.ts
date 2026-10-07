@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { DiagnosticsService } from '../diagnostics-service.js'
+import { DiagnosticsService, LOG_GONE_LINE } from '../diagnostics-service.js'
 import type { ServiceEnv } from '../diagnostics-service.js'
 
 let root: string
@@ -76,6 +76,37 @@ describe('a run that does not', () => {
     const record = second.lastRunCrash()
     expect(record).toMatchObject({ kind: 'unclean-exit', at: '2026-10-07T10:10:00Z', reason: 'crashed' })
     expect(second.dumpOf(record as never)?.path.endsWith('a.dmp')).toBe(true)
+  })
+
+  it('does not take the dump of a crash the run recorded for its own: the exit has none, and starts when the run did', () => {
+    const first = new DiagnosticsService(env())
+    first.begin()
+    clock += 600_000
+    dump('renderer.dmp', clock)
+    const renderer = first.record({ kind: 'renderer', process: 'tab', reason: 'crashed', exitCode: 1, message: '', stack: '' })
+    clock += 3_000_000
+    const second = new DiagnosticsService(env())
+    second.begin()
+    const exit = second.lastRunCrash()
+    expect(exit).toMatchObject({ kind: 'unclean-exit', reason: 'abnormal-exit', at: '2026-10-07T10:00:00Z' })
+    expect(second.dumpOf(exit as never)).toBeUndefined()
+    expect(second.dumpOf(renderer)?.path.endsWith('renderer.dmp')).toBe(true)
+  })
+
+  it('does not match a dump an earlier run left to a later run that ended with none of its own', () => {
+    new DiagnosticsService(env()).begin()
+    dump('first-run.dmp', clock + 20_000)
+    clock += 30_000
+    const second = new DiagnosticsService(env())
+    second.begin()
+    expect(second.dumpOf(second.lastRunCrash() as never)?.path.endsWith('first-run.dmp')).toBe(true)
+    second.markReported(second.lastRunCrash()?.id as string, 'b'.repeat(32))
+    clock += 120_000
+    const third = new DiagnosticsService(env())
+    third.begin()
+    const exit = third.lastRunCrash()
+    expect(exit).toMatchObject({ reason: 'abnormal-exit', at: '2026-10-07T10:00:30Z' })
+    expect(third.dumpOf(exit as never)).toBeUndefined()
   })
 
   it('does not offer a crash that was already reported', () => {
@@ -152,6 +183,48 @@ describe('the log of a report', () => {
     expect(second.logLines(fatal).some((line) => line.includes('this run'))).toBe(false)
     expect(second.logLines().some((line) => line.includes('this run'))).toBe(true)
     expect(second.logLines(second.record({ kind: 'renderer', process: 'tab', reason: 'crashed', exitCode: 1, message: '', stack: '' })).some((line) => line.includes('this run'))).toBe(true)
+  })
+})
+
+describe('the log of an older crash', () => {
+  const crashIn = (service: DiagnosticsService) => service.record({ kind: 'renderer', process: 'tab', reason: 'crashed', exitCode: 1, message: '', stack: '' })
+
+  it('is the previous run\'s file after an orderly quit too, since the file says which run wrote it', () => {
+    const first = new DiagnosticsService(env())
+    first.begin()
+    first.log('error', 'first run line')
+    const crash = crashIn(first)
+    first.end()
+    const second = new DiagnosticsService(env())
+    second.begin()
+    second.log('log', 'second run line')
+    const lines = second.logLines(crash)
+    expect(lines[0]).toContain(first.sessionId)
+    expect(lines.some((line) => line.includes('first run line'))).toBe(true)
+    expect(lines.some((line) => line.includes('second run line'))).toBe(false)
+  })
+
+  it('is one line saying it is gone when the run is older than the previous one, and never another run\'s', () => {
+    const first = new DiagnosticsService(env())
+    first.begin()
+    const crash = crashIn(first)
+    first.end()
+    const second = new DiagnosticsService(env())
+    second.begin()
+    second.log('log', 'second run line')
+    second.end()
+    const third = new DiagnosticsService(env())
+    third.begin()
+    expect(third.logLines(crash)).toEqual([LOG_GONE_LINE])
+    expect(third.logSourceOf(crash)).toBe('none')
+  })
+
+  it('says which run the current log is in its file, and keeps that out of the ring', () => {
+    const service = new DiagnosticsService(env())
+    service.log('log', 'hello')
+    service.end()
+    expect(readFileSync(join(root, 'diagnostics', 'logs', 'current.log'), 'utf8').split('\n')[0]).toContain(service.sessionId)
+    expect(service.logLines().some((line) => line.includes(service.sessionId))).toBe(false)
   })
 })
 

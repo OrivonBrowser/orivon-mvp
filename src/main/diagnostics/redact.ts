@@ -1,9 +1,17 @@
 // Strips the person's home directory out of text before it is shown or sent: the one piece of a path that
 // names them. Everything else in a stack or a log line is Orivon's own.
 
-/** The directory spelled both ways a message may carry it: a Windows path is written with either slash. */
+/** The directory spelled the ways a message may carry it: a Windows path is written with either slash, and a file address percent-encodes it. Longest first, so a longer spelling is never cut short by a shorter one. */
 function variants (home: string): string[] {
-  return [...new Set([home, home.replaceAll('\\', '/')])].filter((variant) => variant.length > 1 && variant !== '/')
+  const plain = [home, home.replaceAll('\\', '/')]
+  const spelled = new Set(plain.flatMap((variant) => {
+    try {
+      return [variant, encodeURI(variant)]
+    } catch {
+      return [variant]
+    }
+  }))
+  return [...spelled].filter((variant) => variant.length > 1 && variant !== '/').sort((a, b) => b.length - a.length)
 }
 
 function escapeForRegExp (text: string): string {

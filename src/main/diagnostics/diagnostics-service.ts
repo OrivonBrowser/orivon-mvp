@@ -6,8 +6,8 @@ import { errorFacts, idFromBytes, lastRunCrash, stamp, uncleanExitRecord } from 
 import type { CrashKind, CrashRecord } from './crash-records.js'
 import { CrashStore, RunMarkerFile } from './crash-store.js'
 import { listDumps, pruneDumps } from './dump-files.js'
-import { dumpFor } from './dumps.js'
-import { LogFile, readLogTail } from './log-file.js'
+import { dumpFor, uncleanExitDump } from './dumps.js'
+import { LogFile, logHeader, readLogTail, sessionOfLog } from './log-file.js'
 import { LOG_RING_LINES, LogRing } from './log-ring.js'
 import type { LogLevel } from './log-ring.js'
 import { cut, LIMITS } from './report-payload.js'
@@ -22,6 +22,12 @@ export interface ServiceEnv {
   readonly randomBytes: (count: number) => Uint8Array
   readonly pid: number
 }
+
+/** Whose log a report about a crash carries: this run's (the ring), the previous run's file, or none that is still kept. */
+export type LogSource = 'current' | 'previous' | 'none'
+
+/** The one line a report carries in place of a log that is gone, so a reader knows it is not missing by mistake. */
+export const LOG_GONE_LINE = '--- the log of that run is no longer kept ---'
 
 export interface NewCrash {
   readonly kind: CrashKind
@@ -41,12 +47,12 @@ export class DiagnosticsService {
   private readonly store: CrashStore
   private readonly marker: RunMarkerFile
   private previousCrashId: string | undefined
-  private previousSessionId: string | undefined
+  private previousLogSession: string | undefined
   private fatal: CrashRecord | undefined
 
   constructor (private readonly env: ServiceEnv) {
     this.sessionId = idFromBytes(env.randomBytes(8))
-    this.logFile = new LogFile(`${env.dir}/logs`)
+    this.logFile = new LogFile(`${env.dir}/logs`, logHeader(this.sessionId))
     this.store = new CrashStore(env.dir, env.now())
     this.marker = new RunMarkerFile(env.dir)
   }
@@ -56,21 +62,30 @@ export class DiagnosticsService {
     this.logFile.append(this.ring.push(level, text, new Date(this.env.now())))
   }
 
-  /** The log a report about `record` carries: the previous run's own file when the crash was that run's, since this run's has only begun; this run's otherwise. */
+  /** Whose log a report about `record` carries. Only the previous run's file is kept beside this run's, and it says which run it is. */
+  logSourceOf (record?: CrashRecord): LogSource {
+    if (record === undefined || record.sessionId === this.sessionId) return 'current'
+    return record.sessionId === this.previousLogSession ? 'previous' : 'none'
+  }
+
+  /** The lines of that log: the previous run's file keeps its header line, which says which run it is. */
+  logLinesFrom (source: LogSource): string[] {
+    if (source === 'current') return this.ring.lines()
+    return source === 'previous' ? readLogTail(`${this.env.dir}/logs/previous.log`, LOG_RING_LINES) : [LOG_GONE_LINE]
+  }
+
   logLines (record?: CrashRecord): string[] {
-    if (record !== undefined && record.sessionId === this.previousSessionId) return readLogTail(`${this.env.dir}/logs/previous.log`, LOG_RING_LINES)
-    return this.ring.lines()
+    return this.logLinesFrom(this.logSourceOf(record))
   }
 
   /** Reads what the last run left, records an unclean exit, marks this run as running and clears old dumps. */
   begin (): void {
     const now = this.env.now()
     const previous = this.marker.read()
-    const dumps = previous === undefined ? [] : listDumps(this.env.crashDumpsDir).filter((dump) => dump.mtimeMs >= previous.startedAt)
-    const newestDump = dumps.reduce<number | undefined>((best, dump) => best === undefined || dump.mtimeMs > best ? dump.mtimeMs : best, undefined)
-    const unclean = uncleanExitRecord(previous, this.store.list(), idFromBytes(this.env.randomBytes(8)), newestDump)
+    const dumpAt = previous === undefined ? undefined : uncleanExitDump(previous, this.store.list(), listDumps(this.env.crashDumpsDir))
+    const unclean = uncleanExitRecord(previous, this.store.list(), idFromBytes(this.env.randomBytes(8)), dumpAt)
     if (unclean !== undefined) this.store.add(unclean, now)
-    this.previousSessionId = previous?.sessionId
+    this.previousLogSession = sessionOfLog(`${this.env.dir}/logs/previous.log`)
     this.previousCrashId = lastRunCrash(this.store.list(), previous?.sessionId)?.id
     this.marker.write({ sessionId: this.sessionId, pid: this.env.pid, startedAt: now })
     pruneDumps(this.env.crashDumpsDir, now)
@@ -138,8 +153,9 @@ export class DiagnosticsService {
     this.store.markReported(crashId, reportId)
   }
 
-  /** The dump written within a minute of this crash, when Crashpad left one. */
+  /** The dump written within a minute of this crash, when Crashpad left one. A run that ended without one starts at its `at`, so nothing earlier is its. */
   dumpOf (record: CrashRecord): ReturnType<typeof dumpFor> {
-    return dumpFor(Date.parse(record.at), listDumps(this.env.crashDumpsDir))
+    const at = Date.parse(record.at)
+    return dumpFor(at, listDumps(this.env.crashDumpsDir), record.kind === 'unclean-exit' ? at : undefined)
   }
 }

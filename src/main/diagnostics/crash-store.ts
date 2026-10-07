@@ -1,16 +1,16 @@
 // The files under `<userData>/diagnostics/` that hold crash facts: the crash records and the run marker.
 // Every write is synchronous and atomic (a temporary file renamed into place), because a fatal error
 // writes its record on the way out of the process, and a half-written file would lose the older ones too.
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 import { parseMarker, parseRecords, pruneRecords, withRecord, withReported } from './crash-records.js'
 import type { CrashRecord, RunMarker } from './crash-records.js'
 
-export function writeFileAtomic (path: string, text: string): void {
+/** Writes `text` to `path` whole or not at all, making the folder first: the diagnostics folder may not exist yet. */
+export function writeDiagnosticsFile (path: string, text: string): void {
   mkdirSync(dirname(path), { recursive: true })
-  const temporary = `${path}.${process.pid}.tmp`
-  writeFileSync(temporary, text)
-  renameSync(temporary, path)
+  writeFileAtomic(path, text)
 }
 
 export function readFileOr (path: string): string | undefined {
@@ -51,7 +51,7 @@ export class CrashStore {
 
   private save (): void {
     try {
-      writeFileAtomic(this.path, JSON.stringify(this.records))
+      writeDiagnosticsFile(this.path, JSON.stringify(this.records))
     } catch {
       // The record stays in memory for this run; a full disk must not become a second failure.
     }
@@ -72,7 +72,7 @@ export class RunMarkerFile {
 
   write (marker: RunMarker): void {
     try {
-      writeFileAtomic(this.path, JSON.stringify(marker))
+      writeDiagnosticsFile(this.path, JSON.stringify(marker))
     } catch {
       // Without it a crash goes unnoticed at the next start; nothing worse.
     }

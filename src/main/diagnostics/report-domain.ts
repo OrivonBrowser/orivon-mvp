@@ -9,6 +9,7 @@ import type { DumpFile } from './dumps.js'
 import { newest } from './crash-records.js'
 import type { CrashRecord } from './crash-records.js'
 import type { Diagnostics } from './diagnostics-facts.js'
+import type { LogSource } from './diagnostics-service.js'
 import { eraseReport, FAILURE_TEXT, sendReport } from './report-channel.js'
 import type { Post } from './report-channel.js'
 import { buildPayload, cut, isSendable, LIMITS, previewText, wireBody } from './report-payload.js'
@@ -44,8 +45,9 @@ export interface ReportDeps {
   readonly sent: SentSource
   /** The facts about this computer and this build, read now. */
   readonly diagnostics: () => Promise<Diagnostics>
-  /** The log for a report about `crash`, or the current one. */
-  readonly logLines: (crash: CrashRecord | undefined) => string[]
+  /** Whose log a report about `crash` carries (this run's when there is no crash). */
+  readonly logSource: (crash: CrashRecord | undefined) => LogSource
+  readonly logLines: (source: LogSource) => string[]
   readonly readDump: (dump: DumpFile) => string
   /** 32 lowercase hex characters, random. */
   readonly newReportId: () => string
@@ -59,13 +61,13 @@ export interface ReportDeps {
 
 interface Snapshot {
   readonly diagnostics: Diagnostics
-  /** The log lines for each crash chosen so far (`''` for none), each read once. */
-  readonly logs: Map<string, string[]>
+  /** The log lines of each source asked for so far, each read once: several crashes of one run share one. */
+  readonly logs: Map<LogSource, string[]>
 }
 
 /** The report ID a page will use: one per report, kept across a failed send of the same text so the server counts the retry once, and replaced when the text changed. */
 interface Pending {
-  snapshot: Snapshot | undefined
+  snapshot: Promise<Snapshot> | undefined
   fresh: string | undefined
   failed: { readonly fingerprint: string, readonly reportId: string } | undefined
 }
@@ -106,28 +108,29 @@ function crashRow (record: CrashRecord, dump: DumpFile | undefined): Record<stri
 export function reportDomain (deps: ReportDeps): InternalDomain {
   const pending = new Map<number, Pending>()
   const pendingFor = (contentsId: number): Pending => {
-    let entry = pending.get(contentsId)
-    if (entry === undefined) {
-      entry = { snapshot: undefined, fresh: undefined, failed: undefined }
-      pending.set(contentsId, entry)
-      // Each holds up to a few megabytes of log; a page that was closed does not tell this, so only the latest few are kept.
-      for (const [id] of [...pending].slice(0, Math.max(0, pending.size - OPEN_FORMS))) pending.delete(id)
-    }
+    const entry = pending.get(contentsId) ?? { snapshot: undefined, fresh: undefined, failed: undefined }
+    // Moved to the newest end on every use: a page being used is never the one dropped for a newer one.
+    pending.delete(contentsId)
+    pending.set(contentsId, entry)
+    // Each holds up to a few megabytes of log; a page that was closed does not tell this, so only the latest few are kept.
+    for (const [id] of [...pending].slice(0, Math.max(0, pending.size - OPEN_FORMS))) pending.delete(id)
     return entry
   }
 
-  async function snapshotOf (entry: Pending): Promise<Snapshot> {
-    entry.snapshot ??= { diagnostics: await deps.diagnostics(), logs: new Map() }
-    return entry.snapshot
+  /** The promise itself is kept, so requests that arrive together share one reading of the facts. */
+  function snapshotOf (entry: Pending): Promise<Snapshot> {
+    const made = entry.snapshot ??= deps.diagnostics().then((diagnostics) => ({ diagnostics, logs: new Map<LogSource, string[]>() }))
+    made.catch(() => { if (entry.snapshot === made) entry.snapshot = undefined })
+    return made
   }
 
-  /** The report for these choices, with the ID it would go under. */
-  async function build (entry: Pending, choices: ReportChoices): Promise<{ payload: ReportPayload, fingerprint: string }> {
+  /** The report for these choices, with the ID it would go under. Only a send reads the dump's bytes; `bytes` is what the body will measure either way. */
+  async function build (entry: Pending, choices: ReportChoices, readingDump: boolean): Promise<{ payload: ReportPayload, fingerprint: string, bytes: number }> {
     const snapshot = await snapshotOf(entry)
     const crash = choices.crashId === null ? undefined : deps.crashes.crash(choices.crashId)
     const dump = crash === undefined ? undefined : deps.crashes.dumpOf(crash)
-    const logKey = crash?.id ?? ''
-    if (!snapshot.logs.has(logKey)) snapshot.logs.set(logKey, deps.logLines(crash))
+    const source = deps.logSource(crash)
+    if (!snapshot.logs.has(source)) snapshot.logs.set(source, deps.logLines(source))
     const make = (reportId: string, readDump: (file: DumpFile) => string): ReportPayload => buildPayload({
       reportId,
       version: deps.version,
@@ -136,14 +139,18 @@ export function reportDomain (deps: ReportDeps): InternalDomain {
       choices,
       crash,
       diagnostics: snapshot.diagnostics,
-      log: snapshot.logs.get(logKey) ?? [],
+      log: snapshot.logs.get(source) ?? [],
       dump: dump !== undefined && dumpFits(dump) ? { bytes: dump.bytes, base64: () => readDump(dump) } : undefined
     })
     // The fingerprint leaves out the dump's bytes: reading a few megabytes to compare two attempts is not needed, since the crash chosen and the box ticked say the same.
-    const fingerprint = wireBody(make('', () => ''))
+    const empty = make('', () => '')
+    const fingerprint = wireBody(empty)
     entry.fresh ??= deps.newReportId()
     const reportId = entry.failed?.fingerprint === fingerprint ? entry.failed.reportId : entry.fresh
-    return { payload: make(reportId, deps.readDump), fingerprint }
+    const payload = readingDump ? make(reportId, deps.readDump) : make(reportId, () => '')
+    // Base64 is four characters for every three bytes, and needs no escaping in JSON, so the body's size is known from the file's.
+    const bytes = Buffer.byteLength(wireBody(payload)) + (readingDump || payload.dump === null ? 0 : 4 * Math.ceil(payload.dump.bytes / 3))
+    return { payload, fingerprint, bytes }
   }
 
   return {
@@ -164,12 +171,12 @@ export function reportDomain (deps: ReportDeps): InternalDomain {
           }
         }
         case 'preview': {
-          const { payload } = await build(entry, asChoices(request['choices'], deps.crashes))
-          return { text: previewText(payload), sendable: isSendable(payload), bytes: Buffer.byteLength(wireBody(payload)) }
+          const { payload, bytes } = await build(entry, asChoices(request['choices'], deps.crashes), false)
+          return { text: previewText(payload), sendable: isSendable(payload), bytes }
         }
         case 'send': {
           const choices = asChoices(request['choices'], deps.crashes)
-          const { payload, fingerprint } = await build(entry, choices)
+          const { payload, fingerprint } = await build(entry, choices, true)
           if (!isSendable(payload)) return { ok: false, why: 'empty', text: 'Say what happened before you send.' }
           const outcome = await sendReport(deps.post, deps.base(), payload)
           if (!outcome.ok) {
@@ -194,7 +201,7 @@ export function reportDomain (deps: ReportDeps): InternalDomain {
           return { ok: true, sent: deps.sent.all() }
         }
         case 'copy': {
-          const { payload } = await build(entry, asChoices(request['choices'], deps.crashes))
+          const { payload } = await build(entry, asChoices(request['choices'], deps.crashes), false)
           if (!isSendable(payload)) return { ok: false }
           deps.copy(reportMarkdown(payload))
           return { ok: true }

@@ -2,6 +2,7 @@ import type { WebContents } from 'electron'
 import { describe, expect, it, vi } from 'vitest'
 import type { CrashRecord } from '../crash-records.js'
 import { buildDiagnostics } from '../diagnostics-facts.js'
+import { wireBody } from '../report-payload.js'
 import { reportDomain } from '../report-domain.js'
 import type { ReportDeps, TestKind } from '../report-domain.js'
 import type { SentReport } from '../sent-reports.js'
@@ -18,12 +19,13 @@ interface Harness {
   reported: Array<[string, string | undefined]>
   tests: Array<[TestKind, number]>
   ids: string[]
+  dumpReads: number
   status: { code: number | 'throw' }
   handle: (command: unknown, id?: number) => Promise<Record<string, unknown>>
 }
 
 function setup (overrides: Partial<ReportDeps> = {}): Harness {
-  const harness = { posts: [], copied: [], sent: [], reported: [], tests: [], ids: [], status: { code: 204 } } as unknown as Harness
+  const harness = { posts: [], copied: [], sent: [], reported: [], tests: [], ids: [], dumpReads: 0, status: { code: 204 } } as unknown as Harness
   let counter = 0
   const records: CrashRecord[] = [CRASH]
   harness.deps = {
@@ -43,8 +45,9 @@ function setup (overrides: Partial<ReportDeps> = {}): Harness {
       remove: (reportId) => { harness.sent = harness.sent.filter((entry) => entry.reportId !== reportId) }
     },
     diagnostics: async () => buildDiagnostics(FACTS),
-    logLines: (crash) => crash === undefined ? ['line one'] : ['line one', 'crash log'],
-    readDump: () => 'AAECAw==',
+    logSource: (crash) => crash === undefined ? 'current' : 'previous',
+    logLines: (source) => source === 'current' ? ['line one'] : ['line one', 'crash log'],
+    readDump: () => { harness.dumpReads += 1; return 'AAECAw==' },
     newReportId: () => { counter += 1; const id = counter.toString(16).padStart(32, '0'); harness.ids.push(id); return id },
     post: async (url, body) => {
       harness.posts.push({ url, body })
@@ -227,5 +230,73 @@ describe('the report domain', () => {
     expect(vi.mocked(h.deps.openNotice).mock.calls[0]?.[0].id).toBe(3)
     expect(await h.handle({ type: 'nope' })).toBeUndefined()
     expect(await h.handle('text')).toBeUndefined()
+  })
+})
+
+describe('what a preview costs', () => {
+  it('never reads the dump to preview or copy, and its size is what the sent body measures', async () => {
+    const h = setup()
+    await h.handle({ type: 'state' })
+    const withDump = { ...CHOICES, dump: true }
+    const preview = await h.handle({ type: 'preview', choices: withDump })
+    await h.handle({ type: 'copy', choices: withDump })
+    expect(h.dumpReads).toBe(0)
+    await h.handle({ type: 'send', choices: withDump })
+    expect(h.dumpReads).toBe(1)
+    expect(preview['bytes']).toBe(Buffer.byteLength(h.posts[0]?.body ?? ''))
+  })
+
+  it('measures the base64 of a dump whose size is not a multiple of three', async () => {
+    for (const bytes of [1, 2, 3, 4, 5, 1000]) {
+      const dumpOf = { path: '/x/a.dmp', mtimeMs: DUMP.mtimeMs, bytes }
+      const h = setup()
+      h.deps = { ...h.deps, crashes: { ...h.deps.crashes, dumpOf: () => dumpOf }, readDump: () => Buffer.alloc(bytes, 7).toString('base64') }
+      const domain = reportDomain(h.deps)
+      const handle = async (command: unknown): Promise<Record<string, unknown>> => await domain.handle(command, caller()) as Record<string, unknown>
+      await handle({ type: 'state' })
+      const preview = await handle({ type: 'preview', choices: { ...CHOICES, dump: true } })
+      await handle({ type: 'send', choices: { ...CHOICES, dump: true } })
+      expect(preview['bytes']).toBe(Buffer.byteLength(wireBody(JSON.parse(h.posts[0]?.body ?? ''))))
+    }
+  })
+})
+
+describe('the facts of a page', () => {
+  it('are asked for once when two requests arrive together', async () => {
+    let asked = 0
+    const h = setup({ diagnostics: async () => { asked += 1; await new Promise((resolve) => setTimeout(resolve, 5)); return buildDiagnostics(FACTS) } })
+    await Promise.all([h.handle({ type: 'preview', choices: CHOICES }, 8), h.handle({ type: 'preview', choices: CHOICES }, 8), h.handle({ type: 'copy', choices: CHOICES }, 8)])
+    expect(asked).toBe(1)
+  })
+})
+
+describe('the logs of a page', () => {
+  it('are kept by where they come from, not by the crash, and read once each', async () => {
+    const reads: string[] = []
+    const other = { ...CRASH, id: 'fedcba9876543210' }
+    const h = setup({ logSource: () => 'previous', logLines: (source) => { reads.push(source); return ['x'] } })
+    const records = [CRASH, other]
+    h.deps = { ...h.deps, crashes: { ...h.deps.crashes, crash: (id) => records.find((record) => record.id === id), crashes: () => records } }
+    const domain = reportDomain(h.deps)
+    const handle = async (command: unknown): Promise<Record<string, unknown>> => await domain.handle(command, caller()) as Record<string, unknown>
+    await handle({ type: 'state' })
+    await handle({ type: 'preview', choices: CHOICES })
+    await handle({ type: 'preview', choices: { ...CHOICES, crashId: other.id } })
+    await handle({ type: 'preview', choices: { ...CHOICES, crashId: null } })
+    expect(reads).toEqual(['previous'])
+  })
+
+  it('belong to the pages used most lately: the one opened first survives while it is being used', async () => {
+    let reads = 0
+    const h = setup({ logLines: () => { reads += 1; return ['x'] } })
+    await h.handle({ type: 'state' }, 1)
+    await h.handle({ type: 'preview', choices: CHOICES }, 1)
+    for (const id of [2, 3, 4]) await h.handle({ type: 'state' }, id)
+    await h.handle({ type: 'preview', choices: CHOICES }, 1)
+    await h.handle({ type: 'state' }, 5)
+    await h.handle({ type: 'preview', choices: CHOICES }, 1)
+    expect(reads).toBe(1)
+    await h.handle({ type: 'preview', choices: CHOICES }, 2)
+    expect(reads).toBe(2)
   })
 })

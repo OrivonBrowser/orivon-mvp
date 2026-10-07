@@ -56,6 +56,9 @@ export class ReportState {
   private readonly listeners = new Set<() => void>()
   private timer: ReturnType<typeof setTimeout> | undefined
   private previewSeq = 0
+  /** The newest preview request that has been answered. */
+  private shownSeq = 0
+  private loaded = false
 
   constructor (private readonly bridge: OrivonInternal = internalBridge()) {}
 
@@ -83,6 +86,9 @@ export class ReportState {
       if (reply === undefined) throw new Error('no answer')
       this.info = reply
       this.failed = false
+      // The log can name a page of this window, which a private session promises not to keep: it is the person's call to include it.
+      if (reply.private && !this.loaded) this.choices.log = false
+      this.loaded = true
       if (preselect !== null && reply.crashes.some((row) => row.id === preselect)) this.choices.crashId = preselect
     } catch {
       this.failed = true
@@ -103,9 +109,9 @@ export class ReportState {
   set (change: Partial<Choices>): void {
     Object.assign(this.choices, change)
     this.keepChoicesAvailable()
-    this.changed()
     if (this.timer !== undefined) clearTimeout(this.timer)
-    this.timer = setTimeout(() => { void this.refreshPreview() }, PREVIEW_DELAY_MS)
+    this.timer = setTimeout(() => { this.timer = undefined; void this.refreshPreview() }, PREVIEW_DELAY_MS)
+    this.changed()
   }
 
   async refreshPreview (): Promise<void> {
@@ -118,11 +124,18 @@ export class ReportState {
       if (seq !== this.previewSeq) return
       this.preview = null
     }
+    this.shownSeq = seq
     this.changed()
   }
 
+  /** A change was made that the preview has not caught up with: a request is waiting out its delay or has not been answered. */
+  get previewPending (): boolean {
+    return this.timer !== undefined || this.shownSeq !== this.previewSeq
+  }
+
+  /** Only what the preview showed can be sent, so Send waits for the preview of the present choices. */
   get canSend (): boolean {
-    return !this.sending && this.preview?.sendable === true
+    return !this.sending && !this.previewPending && this.preview?.sendable === true
   }
 
   async send (): Promise<void> {

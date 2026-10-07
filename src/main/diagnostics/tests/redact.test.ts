@@ -16,6 +16,13 @@ describe('redactHome', () => {
     expect(redactHome('c:\\users\\ann\\x', 'C:\\Users\\Ann', true)).toBe('~\\x')
   })
 
+  it('also reads a home that a file address spells with percent escapes', () => {
+    expect(redactHome('file:///home/jos%C3%A9/x', '/home/josé')).toBe('file://~/x')
+    expect(redactHome('file:///C:/Users/Ann%20Smith/x.html', 'C:\\Users\\Ann Smith')).toBe('file:///~/x.html')
+    expect(redactHome('file:///c:/users/ann%20smith/x.html', 'C:\\Users\\Ann Smith', true)).toBe('file:///~/x.html')
+    expect(redactHome('file:///home/jos%C3%A9x/x', '/home/josé')).toBe('file:///home/jos%C3%A9x/x')
+  })
+
   it('does nothing for a home that is empty or the root, which would otherwise rewrite every path', () => {
     expect(redactHome('/etc/passwd', '/')).toBe('/etc/passwd')
     expect(redactHome('/etc/passwd', '')).toBe('/etc/passwd')

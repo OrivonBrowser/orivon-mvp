@@ -3,6 +3,7 @@
 // tasks-model.ts's; everything here touches live Electron objects.
 import { app, webContents as allContents } from 'electron'
 import type { WebContents } from 'electron'
+import { markEndedOnPurpose, takeEndedOnPurpose } from '../diagnostics/crash-lookup.js'
 import { appTabViews } from '../shell/tab-partition.js'
 import type { WindowRegistry } from '../shell/window-registry.js'
 import { buildTasks, canEnd, totalsOf } from './tasks-model.js'
@@ -108,10 +109,12 @@ export function endProcess (env: TasksEnv, pid: unknown): boolean {
   // already given to something else is then never touched.
   const hosted = entries.find((entry) => entry.pid === pid && entry.contents !== undefined && !entry.contents.isDestroyed())?.contents
   if (hosted === undefined) return false
+  markEndedOnPurpose(hosted.id)
   try {
     hosted.forcefullyCrashRenderer()
     return true
   } catch {
+    takeEndedOnPurpose(hosted.id)
     return false
   }
 }

@@ -1,6 +1,6 @@
 // The reports this computer has sent, newest 20: enough to delete one from the server later. The report itself
 // is not kept, only its ID, when it was sent, which crash it was about, and a line saying what it said.
-import { readFileOr, writeFileAtomic } from './crash-store.js'
+import { readFileOr, writeDiagnosticsFile } from './crash-store.js'
 import { join } from 'node:path'
 
 export interface SentReport {
@@ -66,7 +66,7 @@ export class SentStore {
 
   private save (): void {
     try {
-      writeFileAtomic(this.path, JSON.stringify(this.list))
+      writeDiagnosticsFile(this.path, JSON.stringify(this.list))
     } catch {
       // The list is a convenience; a full disk must not fail the send that just succeeded.
     }
