@@ -8,7 +8,7 @@
 // any origin that is not local, there is no answer and no fetch.
 
 import { DDOC_PATH, MAX_DDOC_BYTES, parseDdocDeclaration } from '../../loader/ddoc-declaration.js'
-import { readCapped } from '../browsing/favicon.js'
+import { readCapped } from '../browsing/favicon-fetch.js'
 import { grantableWithoutInstall } from '../install/grant-without-install.js'
 import { devModeEnabled } from './dev-mode.js'
 

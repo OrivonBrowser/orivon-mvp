@@ -4,7 +4,7 @@
 import { createHash } from 'node:crypto'
 import { MAX_SCORE_FILE_BYTES, SCORE_STANDARD, findEvaluation, parseDescriptor } from '../../trust/score-provider.js'
 import type { ProviderDescriptor, ProviderVerdict } from '../../trust/score-provider.js'
-import { readCapped } from './favicon.js'
+import { readCapped } from './favicon-fetch.js'
 import { parseOmniboxInput } from './omnibox.js'
 
 export type FetchedJson =

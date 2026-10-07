@@ -3,6 +3,7 @@
 **What lives here.** How Settings, History, Import, Downloads, Profiles, Private, Extensions, About and the task manager exist as pages in
 tabs (`ADR-0041`). `internal-pages.ts` names them and reads an `orivon://<page>[/path]` address.
 `internal-aliases.ts` reads the names other browsers use for them (`about:version`, `chrome://gpu`), for the address bar alone.
+`internal-icons.ts` is each page's tab icon, which the tab shows whatever the page declares.
 `route.ts` decides which file such a request may read, and `serve.ts` answers it (with the CSP)
 from the built renderer or the dev server; both are pure. The same two files serve the shell's own renderer
 entries on `orivon-shell://renderer/...` (`routeShell`, `createShellHandler`, `shellRequestAllowed`), which

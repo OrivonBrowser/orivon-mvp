@@ -136,13 +136,54 @@ export function sniffImageType (bytes: Uint8Array): SniffedImageType | null {
   return null
 }
 
+/** The icon size a tab shows, at twice the scale: what a multi-image `.ico` is cut down to. */
+const ICO_KEPT_SIZE = 32
+const ICO_HEADER_BYTES = 6
+const ICO_ENTRY_BYTES = 16
+
+/**
+ * A type-1 `.ico` holding several images, cut to the one closest to ICO_KEPT_SIZE (the larger, then the deeper colour,
+ * on a tie), so a site's icon fits what history and the tab list keep: a common 16, 32 and 64 px icon is 22 KB whole
+ * and 4 KB as its 32 px image. Anything that does not parse as such an icon comes back unchanged.
+ */
+export function oneIcoImage (bytes: Uint8Array): Uint8Array {
+  if (!startsWith(bytes, ICO) || bytes.length < ICO_HEADER_BYTES) return bytes
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const count = view.getUint16(4, true)
+  if (count < 2 || bytes.length < ICO_HEADER_BYTES + count * ICO_ENTRY_BYTES) return bytes
+  let best: { entry: number, size: number, depth: number, length: number, offset: number } | undefined
+  for (let i = 0; i < count; i++) {
+    const entry = ICO_HEADER_BYTES + i * ICO_ENTRY_BYTES
+    const size = bytes[entry] === 0 ? 256 : bytes[entry]!
+    const depth = view.getUint16(entry + 6, true)
+    const length = view.getUint32(entry + 8, true)
+    const offset = view.getUint32(entry + 12, true)
+    if (length === 0 || offset + length > bytes.length) return bytes
+    const better = best === undefined ||
+      Math.abs(size - ICO_KEPT_SIZE) < Math.abs(best.size - ICO_KEPT_SIZE) ||
+      (Math.abs(size - ICO_KEPT_SIZE) === Math.abs(best.size - ICO_KEPT_SIZE) && (size > best.size || (size === best.size && depth > best.depth)))
+    if (better) best = { entry, size, depth, length, offset }
+  }
+  if (best === undefined) return bytes
+  const out = new Uint8Array(ICO_HEADER_BYTES + ICO_ENTRY_BYTES + best.length)
+  const outView = new DataView(out.buffer)
+  out.set(bytes.subarray(0, 4))
+  outView.setUint16(4, 1, true)
+  // The entry's size, colour and length fields as they were; only its offset moves.
+  out.set(bytes.subarray(best.entry, best.entry + 12), ICO_HEADER_BYTES)
+  outView.setUint32(ICO_HEADER_BYTES + 12, ICO_HEADER_BYTES + ICO_ENTRY_BYTES, true)
+  out.set(bytes.subarray(best.offset, best.offset + best.length), ICO_HEADER_BYTES + ICO_ENTRY_BYTES)
+  return out
+}
+
 /** `bytes` as a base64 `data:` URL labelled by sniffImageType, or `null` for
  * anything it does not recognise. The only way this codebase builds an
  * icon's `data:` URL, so a label always matches the bytes it names. */
 export function toDataUrl (bytes: Uint8Array): string | null {
   const type = sniffImageType(bytes)
   if (type === null) return null
-  return `data:${type};base64,${Buffer.from(bytes).toString('base64')}`
+  const kept = type === 'image/x-icon' ? oneIcoImage(bytes) : bytes
+  return `data:${type};base64,${Buffer.from(kept).toString('base64')}`
 }
 
 /** A `data:` URL's payload, decoded and capped -- `null` for anything past

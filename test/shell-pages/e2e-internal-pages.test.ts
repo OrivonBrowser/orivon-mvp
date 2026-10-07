@@ -33,6 +33,7 @@ const TEST_TIMEOUT_MS = 60_000
 
 const internalPages = (app: ElectronApplication): Page[] => app.windows().filter((w) => w.url().startsWith('orivon://'))
 const settingsPage = (app: ElectronApplication): Page | undefined => app.windows().find((w) => w.url().startsWith('orivon://settings'))
+const activeTabIcon = async (chrome: Page): Promise<string | null> => await chrome.evaluate(() => document.querySelector('.tab.active .fav img')?.getAttribute('src') ?? null)
 
 async function launched (): Promise<{ app: ElectronApplication, chrome: Page }> {
   const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
@@ -126,10 +127,12 @@ it('sends an unknown place to the first section, and a tab that goes to a websit
     const page = await openSettings(app, chrome, '/no-such-section')
     expect((await waitForTab(chrome, { address: 'orivon://settings/appearance' })).ok).toBe(true)
     expect(await page.locator('.nav-item.current').textContent()).toBe('Appearance')
+    expect(await waitFor(async () => (await activeTabIcon(chrome))?.startsWith('data:image/svg+xml;base64,') === true), 'the tab shows the Settings icon').toBe(true)
 
     await clickAddressBarRetrying(chrome, siteUrl)
 
     expect((await waitForTab(chrome, { address: siteUrl })).ok).toBe(true)
+    expect(await waitFor(async () => await activeTabIcon(chrome) === null), 'the website, which declares no icon, does not keep the Settings icon').toBe(true)
     expect(await waitFor(() => internalPages(app).length === 0)).toBe(true)
     const site = app.windows().find((w) => w.url() === siteUrl) as Page
     expect(await site.evaluate(() => typeof (window as unknown as { orivonInternal?: unknown }).orivonInternal)).toBe('undefined')

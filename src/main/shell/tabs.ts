@@ -101,7 +101,7 @@ export class TabManager {
       emitState: () => { this.changedSoon() },
       // Which document declared the icon, and whether this record is still the one the map holds when the fetch lands.
       captureFavicon: async (id, record, favicons) => {
-        await captureFaviconInto(record, favicons, () => record.view.webContents.getURL(), () => this.tabs.get(id) === record, () => { this.changed() })
+        await captureFaviconInto(record, favicons, () => record.view.webContents.getURL(), () => this.tabs.get(id) === record, () => { this.changed() }, record.view.webContents.session)
       },
       forgetTab: (id) => { this.forgetTab(id, false) },
       openTab: (url, active, loadOptions) => this.liveWebContents(this.openedByPage(() => this.createTab(url, active, loadOptions))),
