@@ -21,7 +21,10 @@ address exactly as its address bar resolves the same text, so a protocol Orivon 
 a protocol a provider can be published on, with no change here.
 
 Below, `P` is that address with any trailing `/`, query and fragment removed. Every file a client
-fetches is a path under `P`.
+fetches is a path under `P`. When `P/provider.json` does not exist and `P` does not already end in
+`/score`, Orivon asks `P/score/provider.json`, and if that answers, `P/score` is `P` from then on:
+a person types the name a provider is known by (`attila.example.eth`), and a web3-score-manager
+build publishes its files in the `score/` folder under it.
 
 ## What a client fetches
 

@@ -32,6 +32,8 @@ const ANSWER_KEPT_MS = 10 * 60_000
 const FAILURE_KEPT_MS = 60_000
 /** Past the verifier's own 25 s for proving a name: an IPFS-served provider's first answer waits on that proof. */
 const FETCH_TIMEOUT_MS = 30_000
+/** The folder a web3-score-manager build puts the provider's files in, under the site that publishes them. */
+const PUBLISHED_FOLDER = 'score'
 
 /** The provider's base address with any trailing `/`, query and fragment removed, or undefined
  * when the text names nothing the address bar would open over http(s). */
@@ -73,10 +75,19 @@ export function createScoreProviderClient (deps: ScoreProviderDeps): ScoreProvid
     | { readonly kind: 'described', readonly base: string, readonly descriptor: ProviderDescriptor }
 
   async function describe (address: string): Promise<Described> {
-    const base = providerBase(address, deps.isDevEthName)
-    if (base === undefined) return { kind: 'unreachable', verdict: { status: 'unreachable', address, reason: 'It is not an address Orivon can open.' } }
-    const descriptorUrl = `${base}/provider.json`
-    const fetched = await cachedFetch(descriptorUrl)
+    const typed = providerBase(address, deps.isDevEthName)
+    if (typed === undefined) return { kind: 'unreachable', verdict: { status: 'unreachable', address, reason: 'It is not an address Orivon can open.' } }
+    const descriptorUrl = `${typed}/provider.json`
+    let base = typed
+    let fetched = await cachedFetch(descriptorUrl)
+    // A person types the name a provider is known by; web3-score-manager publishes its files in `score/` under it.
+    if (fetched.kind === 'missing' && !typed.endsWith(`/${PUBLISHED_FOLDER}`)) {
+      const inFolder = await cachedFetch(`${typed}/${PUBLISHED_FOLDER}/provider.json`)
+      if (inFolder.kind !== 'missing') {
+        base = `${typed}/${PUBLISHED_FOLDER}`
+        fetched = inFolder
+      }
+    }
     if (fetched.kind === 'missing') return { kind: 'unreachable', verdict: { status: 'unreachable', address, reason: `${descriptorUrl} does not exist.` } }
     if (fetched.kind === 'failed') return { kind: 'unreachable', verdict: { status: 'unreachable', address, reason: fetched.reason } }
     const descriptor = parseDescriptor(fetched.body)
