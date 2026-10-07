@@ -115,7 +115,7 @@ of the shape:
 "Comment-only" is a claim about intent, not a fact the guard checks for you — verify it the same
 way any other change is verified:
 
-- `npm run typecheck && npm test && npm run check:comments && npm run check:size` on every file,
+- `npm run typecheck && npm run test:changed && npm run check:comments && npm run check:size` on every file,
   always.
 - `npm run check:vectors` for anything under `src/broker/policy/` — it re-reads `derive.ts` as
   raw text, so a comment mentioning the `CURVE_ORDER` hex values a second time fails it exactly
