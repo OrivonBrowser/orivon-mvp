@@ -35,7 +35,7 @@ spec left at the top of `test/` and a folder with no row. File names keep their 
 | `telemetry/` | What usage statistics send and when: a real send of both reports to a loopback ingest, and nothing sent without consent or after it is withdrawn |
 | `window/` | Launch and start-up, profiles, windows, menus, overlays, shortcuts and theme |
 | `qa/` | The QA machinery proving itself: the layout audit, visual states, the failure-evidence bundle, journeys |
-| [`support/`](support/) | The shared harness: `launch-electron.mjs`, `smoke-helpers.mjs`, `e2e-helpers.ts`, the `qa-*` files, `question-support.ts`, and the unit tests of the teardown and the chrome-ready waits |
+| [`support/`](support/) | The shared harness: `launch-electron.mjs` (and `profile-seeds.mjs`, what it writes into a fresh profile), `smoke-helpers.mjs`, `e2e-helpers.ts`, the `qa-*` files, `question-support.ts`, and the unit tests of the teardown and the chrome-ready waits |
 | [`apps/`](apps/), `fixtures/` | The apps and static pages the specs serve |
 
 `impact-map.json` says which of these areas a changed file reaches, and `spec-weights.json` how long each spec

@@ -68,6 +68,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Fixed a browser crash on any menu click while an app's background host ran; Back now survives moving between sites and apps.
 - Developer tools now dock beside the page as set; Explore keeps each site in one section and is republished on IPFS.
 - New profiles start set up: uBlock Origin pinned, five Web3 bookmarks with icons, Attila scoring, and an "Orivon Featured" apps row on the new tab.
+- Telemetry now asks in a calm popup over the blurred browser after "Enter Orivon"; the default-browser question arrives 30 s into first use.
 
 ### In my head
 

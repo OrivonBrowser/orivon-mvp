@@ -38,17 +38,18 @@ desktop entry a choice would name) and the runner never calls the system there. 
 from source whose own entry, `orivon-source.desktop`, starts this checkout: a choice there names the entry, so it
 registers that entry with `xdg-settings` and `xdg-mime`, the tools Electron's own calls run for `orivon.desktop`. A
 test build never sees the entry, so an end-to-end run cannot change the machine's default; the answer says why, and Settings words it. Nothing registers at start-up:
-the Settings button, the welcome screen's box and the weekly question are the three clicks that do. On Windows no
+the Settings button and the question are the two clicks that do. On Windows no
 program may take the choice, so Make default opens Windows Settings and the answer is read again when the person
 returns; macOS registers through `setAsDefaultProtocolClient`. Both paths are written from the platforms'
 documentation and unverified on a real system (*provisional*, A328).
 
-**The weekly ask counts from the last ask, and is created at first sight as if just asked.** A profile seen for the
-first time gets the welcome screen's box instead, so the first weekly question is a week later. "Don't ask again"
-appears two weeks after first sight; a clock set back is reset to now, and a corrupt file is made again. The check
-looks at the clock every hour and asks the system only when a question is due, because on Linux that is a spawned
-`xdg-settings check` that holds the main process. It asks only in a visible window the person is using, with no
-welcome screen over it and no restore bar in it; otherwise it waits, so it can never fall back to a native box.
+**The first ask comes half a minute into first use, and each later one a week after the last.** The clock starts
+the first time the check finds a window in use, so time on the welcome screen and its telemetry popup does not
+count; a missing or corrupt file is a profile not seen yet. "Don't ask again" appears two weeks after first sight,
+and a clock set back is reset to now. The check looks at the clock when the next ask falls due (at least hourly)
+and asks the system only when a question is due, because on Linux that is a spawned `xdg-settings check` that holds
+the main process. It asks only in a visible window the person is using, with no welcome screen over it and no
+restore bar in it; otherwise it looks again every ten seconds, so it can never fall back to a native box.
 
 **A launcher entry is the program and a flag, never the switches of this run.** The system keeps the command past this
 process, so `launcher-tasks.ts` builds it from `peerCommand` and the flag alone: a `--user-data-dir` or `--no-sandbox`

@@ -1,6 +1,7 @@
-// The weekly ask to become the default browser, in the running shell. The operating system is replaced by the test
-// seam's recording host (ORIVON_TEST_DEFAULT_BROWSER), so nothing here changes the machine's default; the ask's
-// own clock is a file in the profile that each case writes in advance, so no case waits a week.
+// The ask to become the default browser, half a minute into first use and then weekly, in the running shell. The
+// operating system is replaced by the test seam's recording host (ORIVON_TEST_DEFAULT_BROWSER), so nothing here
+// changes the machine's default; the ask's own clock is a file in the profile that each case writes in advance, so no
+// case waits a week, or the half minute.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -34,19 +35,25 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-interface AskFile { firstSeenAt: number, lastAskedAt: number, stopped: boolean }
+interface AskFile { firstSeenAt: number, lastAskedAt: number | null, stopped: boolean }
 interface Launched { app: ElectronApplication, chrome: Page, file: () => AskFile | undefined, startedAt: number }
 
-/** Starts with the ask's clock set `days` ago (first seen, last asked), or with no file at all. The page in front has the focus: an ask waits for a window in use. */
-async function launched (options: { days?: [number, number], mode?: string, args?: string[] }): Promise<Launched> {
+/** Starts with the ask's clock set `days` ago (first seen, last asked), or first seen `firstSeenMsAgo` and never asked, or with no file at all. The page in front has the focus: an ask waits for a window in use. */
+async function launched (options: { days?: [number, number], firstSeenMsAgo?: number, mode?: string, args?: string[] }): Promise<Launched> {
   const startedAt = Date.now()
   let userData = ''
   const app = await launchElectron({
     appPath: '.',
     args: [HERMETIC_RESOLVER, ...(options.args ?? [])],
     env: { ORIVON_TEST_DEFAULT_BROWSER: options.mode ?? 'can-set' },
+    // The case's own clock, or none at all: the launch helper's not-due clock is for specs about something else.
+    freshDefaultBrowserAsk: true,
     seedProfile: (dir: string) => {
       userData = dir
+      if (options.firstSeenMsAgo !== undefined) {
+        const state: AskFile = { firstSeenAt: startedAt - options.firstSeenMsAgo, lastAskedAt: null, stopped: false }
+        writeFileSync(join(dir, FILE), JSON.stringify(state))
+      }
       if (options.days === undefined) return
       const [first, last] = options.days
       const state: AskFile = { firstSeenAt: startedAt - first * DAY_MS, lastAskedAt: startedAt - last * DAY_MS, stopped: false }
@@ -63,7 +70,7 @@ async function launched (options: { days?: [number, number], mode?: string, args
   return { app, chrome, file, startedAt }
 }
 
-/** Runs the weekly check now. The call returns once the question is answered, so it is not awaited. */
+/** Runs the check now. The call returns once the question is answered, so it is not awaited. */
 async function askNow (app: ElectronApplication): Promise<void> {
   await app.evaluate(() => { void (globalThis as unknown as { __orivonDevDefaultBrowserAskNow?: () => Promise<void> }).__orivonDevDefaultBrowserAskNow?.() })
 }
@@ -135,7 +142,7 @@ run('asks with two buttons in the second week, before "Don\'t ask again" is offe
   }
 }, TEST_TIMEOUT_MS)
 
-run('asks nothing on a fresh profile, and starts its clock', async () => {
+run('asks nothing on a fresh profile, and starts its clock once a window is in use', async () => {
   const { app, file, startedAt } = await launched({})
   try {
     await askNow(app)
@@ -144,8 +151,42 @@ run('asks nothing on a fresh profile, and starts its clock', async () => {
     expect(await questionGone(app)).toBe(true)
     expect(file()?.stopped).toBe(false)
     expect(file()?.firstSeenAt).toBeGreaterThanOrEqual(startedAt)
-    expect(file()?.lastAskedAt).toBe(file()?.firstSeenAt)
+    expect(file()?.lastAskedAt).toBeNull()
     expect((await recording(app)).isDefault).toEqual([])
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+run('asks the first time half a minute after the profile was first seen in use, with two buttons', async () => {
+  const { app, file, startedAt } = await launched({ firstSeenMsAgo: 31_000 })
+  try {
+    await askNow(app)
+    const said = await readQuestion(await waitQuestion(app))
+    expect(said.title).toBe('Make Orivon your default browser?')
+    expect(said.buttons).toEqual(['Not now', 'Make default'])
+    await answerQuestion(app, 'Not now')
+    expect(await waitFor(() => (file()?.lastAskedAt ?? 0) >= startedAt)).toBe(true)
+    expect((await recording(app)).setDefault).toEqual([])
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+run('asks by itself on a fresh profile, half a minute after the window is first in use and not before', async () => {
+  const { app, file } = await launched({})
+  try {
+    // No askNow: the browser's own clock. Its first look (10 s after start) finds the window in use and starts the count.
+    expect(await waitFor(() => file() !== undefined, 20_000)).toBe(true)
+    const seenAt = file()?.firstSeenAt ?? 0
+    expect(file()?.lastAskedAt).toBeNull()
+    await delay(Math.max(0, seenAt + 25_000 - Date.now()))
+    expect(await questionGone(app)).toBe(true)
+    const said = await readQuestion(await waitQuestion(app, 20_000))
+    expect(Date.now() - seenAt).toBeGreaterThanOrEqual(30_000)
+    expect(said.buttons).toEqual(['Not now', 'Make default'])
+    await answerQuestion(app, 'Not now')
+    expect(await waitFor(() => (file()?.lastAskedAt ?? 0) >= seenAt + 30_000)).toBe(true)
   } finally {
     await closeElectron(app)
   }

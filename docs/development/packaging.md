@@ -209,7 +209,7 @@ installer script lists them under `Capabilities\FileAssociations` and each exten
 never taking an extension over; neither is read back on a system yet (A397).
 
 The runtime half is application code in `src/main/os/`: an installed package registers, and only when a person
-clicks (Settings > Default browser, the welcome screen's box, or the weekly question). An AppImage never registers,
+clicks (Settings > Default browser, or the question the default profile asks). An AppImage never registers,
 because a registration naming it would point at a file that moves, and neither does a run from source on Windows or
 macOS, which would register the Electron binary. A Linux run from source registers its own entry,
 `orivon-source.desktop`, once `scripts/launch-from-source.mjs install` has written it. On Linux the same click also

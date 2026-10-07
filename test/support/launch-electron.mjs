@@ -19,11 +19,12 @@
 // .claude/skills/orivon-electron/SKILL.md for the full incident writeup.
 import { _electron as electron } from 'playwright'
 import { rmSync } from 'node:fs'
-import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { attachCollectors, holdEvidence } from './qa-evidence.mjs'
 import { CHROME_READY_TIMEOUT_MS, waitForChromeDrawn, waitForChromeReady, waitForChromeView } from './smoke-helpers.mjs'
+import { seedDefaultBrowserAskNotDue, seedNoScoreProvider, seedTheme } from './profile-seeds.mjs'
 
 /**
  * The minimal shape registerLaunchForTeardown/closeElectron actually call --
@@ -158,28 +159,6 @@ export function registerLaunchForTeardown (app, { userDataDir } = {}) {
   }
 }
 
-/** Writes one value into the profile's settings file, keeping every value a seed already put there; `ifAbsent` leaves a value the seed set. */
-async function seedSetting (userDataDir, key, value, { ifAbsent = false } = {}) {
-  const file = join(userDataDir, 'settings.json')
-  let stored = { version: 1, values: {} }
-  try { stored = JSON.parse(await readFile(file, 'utf8')) } catch { /* no file yet */ }
-  if (ifAbsent && stored.values?.[key] !== undefined) return
-  await mkdir(userDataDir, { recursive: true })
-  await writeFile(file, JSON.stringify({ ...stored, values: { ...stored.values, [key]: value } }))
-}
-
-async function seedTheme (userDataDir, scheme) {
-  await seedSetting(userDataDir, 'appearance.theme', scheme)
-}
-
-/**
- * A fresh profile asks no Web3 Score provider unless its seed names one: the default provider is a
- * network address, and a test run contacts nothing it did not start.
- */
-async function seedNoScoreProvider (userDataDir) {
-  await seedSetting(userDataDir, 'web3.scoreProvider', '', { ifAbsent: true })
-}
-
 /**
  * @param {object} [options]
  * @param {string} [options.appPath] Directory of the app to run. Defaults to
@@ -223,6 +202,9 @@ async function seedNoScoreProvider (userDataDir) {
  *   profile's `appearance.theme` is written (merged into a seeded
  *   settings.json), so the first paint and every page agree and the desktop's
  *   own theme cannot leak in.
+ * @param {boolean} [options.freshDefaultBrowserAsk] With ORIVON_TEST_DEFAULT_BROWSER set, a profile whose
+ *   seed wrote no default-browser ask clock gets one that is not due (seedDefaultBrowserAskNotDue); true
+ *   leaves it fresh, for a spec of the first ask itself.
  * @param {string} [options.reuseProfile] A profile directory from an earlier
  *   launch in this process, kept by closeElectron(app, { keepProfile: true }),
  *   for a test that relaunches on the state the first run wrote. Only a
@@ -244,6 +226,7 @@ export async function launchElectron ({
   scheme,
   reuseProfile,
   chrome = true,
+  freshDefaultBrowserAsk = false,
   onLaunch
 } = {}) {
   const env = { ...process.env, ...envOverrides }
@@ -311,6 +294,7 @@ export async function launchElectron ({
     // the same catch rather than leaking the directory it was given.
     if (seedProfile !== undefined) await seedProfile(userDataDir)
     if (reuseProfile === undefined) await seedNoScoreProvider(userDataDir)
+    if (reuseProfile === undefined && env['ORIVON_TEST_DEFAULT_BROWSER'] !== undefined && !freshDefaultBrowserAsk) await seedDefaultBrowserAskNotDue(userDataDir)
     if (scheme !== undefined) await seedTheme(userDataDir, scheme)
     app = await electron.launch({
       // The binary encrypts cookies (scripts/install-electron.mjs), so Chromium reads its key at every start; on

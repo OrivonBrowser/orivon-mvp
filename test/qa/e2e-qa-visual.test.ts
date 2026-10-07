@@ -228,24 +228,10 @@ for (const scheme of SCHEMES) {
     }
   }, QA_TEST_TIMEOUT_MS)
 
-  it(`Settings > Default browser and the welcome screen's offer look right (${scheme})`, async () => {
-    const { app, chrome } = await launchShell({ scheme, env: { ORIVON_INTRO: 'once', ORIVON_TEST_DEFAULT_BROWSER: 'can-set' }, chrome: false })
+  it(`Settings > Default browser looks right (${scheme})`, async () => {
+    const { app, chrome } = await launchShell({ scheme, env: { ORIVON_TEST_DEFAULT_BROWSER: 'can-set' } })
     try {
-      await runPhase('visual states of the default-browser surfaces', async (check) => {
-        expect(await waitFor(() => app.windows().some((w) => w.url().includes('/intro/index.html')))).toBe(true)
-        const intro = app.windows().find((w) => w.url().includes('/intro/index.html')) as Page
-        await intro.waitForLoadState('load')
-        await intro.waitForSelector('#default-offer:not([hidden])')
-        // The offer fades in after the headline: wait until it has finished, so the picture shows it whole.
-        expect(await waitFor(async () => Number(await intro.locator('#default-offer').evaluate((el) => getComputedStyle(el).opacity)) === 1)).toBe(true)
-        check('the welcome screen offers the default-browser box unticked', !(await intro.locator('#make-default').isChecked()))
-        await state(check, app, `welcome-default-offer-${scheme}`, {
-          expected: 'The welcome screen fills the window as before and, under the "Enter Orivon" button and its note, a small unticked checkbox with the label "Make Orivon my default browser" in readable light text; nothing overlaps the button or is cut at the window edge.',
-          action: 'Launched a fresh profile with the welcome screen enabled on a build that can register as the default browser.'
-        })
-        await intro.click('#enter')
-        expect(await waitFor(() => !app.windows().some((w) => w.url().includes('/intro/index.html')))).toBe(true)
-
+      await runPhase('visual state of Settings > Default browser', async (check) => {
         const settings = await openInternal(app, chrome, 'settings', '/default-browser')
         await settings.waitForSelector('#row-default-browser button')
         check('Settings > Default browser has the section in the navigation and a Make default button', (await settings.locator('.nav-list').innerText()).includes('Default browser') && await settings.getByRole('button', { name: 'Make default' }).isVisible())
@@ -259,26 +245,28 @@ for (const scheme of SCHEMES) {
     }
   }, QA_TEST_TIMEOUT_MS)
 
-  it(`the welcome screen's telemetry question looks right, closed and with what is sent open (${scheme})`, async () => {
-    const { app } = await launchShell({ scheme, env: { ORIVON_INTRO: 'once', ORIVON_TELEMETRY: 'on', ORIVON_TEST_DEFAULT_BROWSER: 'can-set' }, chrome: false })
+  it(`the telemetry popup "Enter Orivon" opens looks right, closed and with what is sent open (${scheme})`, async () => {
+    const { app } = await launchShell({ scheme, env: { ORIVON_INTRO: 'once', ORIVON_TELEMETRY: 'on' }, chrome: false })
     try {
-      await runPhase('visual states of the welcome screen telemetry question', async (check) => {
+      await runPhase('visual states of the telemetry popup', async (check) => {
         expect(await waitFor(() => app.windows().some((w) => w.url().includes('/intro/index.html')))).toBe(true)
         const intro = app.windows().find((w) => w.url().includes('/intro/index.html')) as Page
         await intro.waitForLoadState('load')
-        await intro.waitForSelector('#telemetry-choice:not([hidden])')
-        // The block and the box fade in after the headline: wait until both have finished.
-        expect(await waitFor(async () => Number(await intro.locator('#telemetry-choice').evaluate((el) => getComputedStyle(el).opacity)) === 1 && Number(await intro.locator('#default-offer').evaluate((el) => getComputedStyle(el).opacity)) === 1)).toBe(true)
-        check('the single Enter button is gone and neither of the two buttons has the focus', await intro.locator('#enter').isHidden() && await intro.evaluate(() => document.activeElement?.tagName) === 'BODY')
-        await state(check, app, `welcome-telemetry-choice-${scheme}`, {
-          expected: 'The welcome screen fills the window with its headline. Where the "Enter Orivon" button was there is a bordered block titled "Telemetry", a short paragraph that starts "Orivon has no ads and keeps your history on your computer", a "What is sent" line, and two buttons of the same size and the same look side by side, "Enter and share telemetry" and "Enter without telemetry", neither filled more than the other. Under the block, the unticked "Make Orivon my default browser" box. All text is readable and nothing overlaps or is cut at the window edge.',
-          action: 'Launched a fresh profile with the welcome screen enabled and telemetry running, on a build that can register as the default browser.'
+        await intro.click('#enter')
+        await intro.waitForSelector('#consent:not([hidden])')
+        // The card rises in, the welcome scene softens out of focus and the browser's picture fades in over it: wait until all three have finished.
+        expect(await waitFor(async () => Number(await intro.locator('.consent-card').evaluate((el) => getComputedStyle(el).opacity)) === 1 && await intro.locator('#welcome').evaluate((el) => getComputedStyle(el).filter) === 'blur(18px)' && Number(await intro.locator('#welcome').evaluate((el) => getComputedStyle(el).opacity)) === 0.4)).toBe(true)
+        expect(await waitFor(async () => Number(await intro.locator('#behind').evaluate((el) => getComputedStyle(el).opacity)) === 1, 10_000)).toBe(true)
+        check('neither of the two buttons has the focus', await intro.evaluate(() => document.activeElement?.tagName) === 'BODY')
+        await state(check, app, `welcome-telemetry-popup-${scheme}`, {
+          expected: 'Behind, the browser (its toolbar and the new-tab page) blurred past reading and dimmed, filling the whole window. In the middle, a rounded dark-indigo card: the round Orivon logo with a soft glow, the title "Support us for free through telemetry", a short paragraph that starts "Orivon is free, has no ads, and keeps your history on your computer", a panel of four short promises in two columns each with a small green check, a "See exactly what is sent" link with a chevron, and two pill buttons of the same size and look side by side, "Accept" and "Deny", neither filled more than the other. All text is readable and the card stays inside the window.',
+          action: 'Launched a fresh profile with the welcome screen enabled and telemetry running, and clicked "Enter Orivon".'
         })
-        await intro.click('#telemetry-choice summary')
-        await intro.waitForSelector('#telemetry-choice details[open]')
+        await intro.click('.consent-details summary')
+        await intro.waitForSelector('.consent-details[open]')
         await state(check, app, `welcome-telemetry-details-${scheme}`, {
-          expected: 'The same screen with "What is sent" open: a solid card of four short bullets sits directly above the Telemetry block, and the big headline is hidden while it is open (no part of it shows around the card); the Telemetry block and its two same-size buttons have not moved, and the card stays inside the window.',
-          action: 'Opened "What is sent" on the welcome screen telemetry question.'
+          expected: 'The same popup with "See exactly what is sent" open: the chevron points up and a darker rounded panel of four short bullets sits under the link, inside the card; the card grew downwards with the buttons still under it, and if it no longer fits the window it scrolls rather than being cut.',
+          action: 'Opened "See exactly what is sent" on the telemetry popup.'
         })
       })
     } finally {

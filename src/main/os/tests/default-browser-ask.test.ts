@@ -1,13 +1,36 @@
 import { describe, expect, it } from 'vitest'
-import { askDue, askedNow, canStop, DAY_MS, firstSight, readAskState, stoppedAsking } from '../default-browser-ask.js'
+import { askDue, askDueAt, askedNow, canStop, DAY_MS, FIRST_ASK_AFTER_MS, firstSight, readAskState, stoppedAsking } from '../default-browser-ask.js'
 
 const NOW = 1_800_000_000_000
 const daysLater = (days: number): number => NOW + days * DAY_MS
 
-describe('the weekly ask', () => {
+describe('the first ask', () => {
   const state = firstSight(NOW)
 
-  it('is not due on the day it was seen, nor on day 6', () => {
+  it('comes half a minute after the profile is first seen in use, not before', () => {
+    expect(FIRST_ASK_AFTER_MS).toBe(30_000)
+    expect(askDueAt(state)).toBe(NOW + FIRST_ASK_AFTER_MS)
+    expect(askDue(state, NOW)).toBe(false)
+    expect(askDue(state, NOW + FIRST_ASK_AFTER_MS - 1)).toBe(false)
+    expect(askDue(state, NOW + FIRST_ASK_AFTER_MS)).toBe(true)
+  })
+
+  it('offers no "Don\'t ask again" yet', () => {
+    expect(canStop(state, NOW + FIRST_ASK_AFTER_MS)).toBe(false)
+  })
+
+  it('is followed by the weekly ask, counted from its answer', () => {
+    const answered = askedNow(state, NOW + FIRST_ASK_AFTER_MS)
+    expect(answered.firstSeenAt).toBe(NOW)
+    expect(askDue(answered, NOW + FIRST_ASK_AFTER_MS + 7 * DAY_MS - 1)).toBe(false)
+    expect(askDue(answered, NOW + FIRST_ASK_AFTER_MS + 7 * DAY_MS)).toBe(true)
+  })
+})
+
+describe('the weekly ask', () => {
+  const state = askedNow(firstSight(NOW), NOW)
+
+  it('is not due on the day it was last asked, nor on day 6', () => {
     expect(askDue(state, daysLater(0))).toBe(false)
     expect(askDue(state, daysLater(6))).toBe(false)
     expect(askDue(state, NOW + 7 * DAY_MS - 1)).toBe(false)
@@ -35,27 +58,30 @@ describe('the weekly ask', () => {
     expect(askDue(later, daysLater(15))).toBe(true)
   })
 
-  it('never asks again once stopped, however long it has been', () => {
-    const stopped = stoppedAsking(state)
-    expect(stopped.stopped).toBe(true)
-    expect(askDue(stopped, daysLater(365))).toBe(false)
+  it('never asks again once stopped, however long it has been, first ask or not', () => {
+    for (const stopped of [stoppedAsking(state), stoppedAsking(firstSight(NOW))]) {
+      expect(stopped.stopped).toBe(true)
+      expect(askDueAt(stopped)).toBeUndefined()
+      expect(askDue(stopped, daysLater(365))).toBe(false)
+    }
   })
 })
 
 describe('reading the state back', () => {
-  it('reads what was written', () => {
+  it('reads what was written, a first sight included', () => {
     const written = { firstSeenAt: NOW - 20 * DAY_MS, lastAskedAt: NOW - 3 * DAY_MS, stopped: false }
     expect(readAskState(JSON.stringify(written), NOW)).toEqual({ state: written, repaired: false })
+    expect(readAskState(JSON.stringify(firstSight(NOW - 5_000)), NOW)).toEqual({ state: firstSight(NOW - 5_000), repaired: false })
   })
 
-  it('makes a state of its own when the file is missing, asked just now', () => {
-    expect(readAskState(undefined, NOW)).toEqual({ state: firstSight(NOW), repaired: true })
-    expect(firstSight(NOW)).toEqual({ firstSeenAt: NOW, lastAskedAt: NOW, stopped: false })
+  it('has no state when the file is missing: the profile has not been seen in use', () => {
+    expect(readAskState(undefined, NOW)).toEqual({ state: undefined, repaired: false })
+    expect(firstSight(NOW)).toEqual({ firstSeenAt: NOW, lastAskedAt: null, stopped: false })
   })
 
-  it('makes it again when the file is corrupt or has the wrong shape', () => {
-    for (const text of ['', 'not json', '[]', 'null', '{"firstSeenAt":"x","lastAskedAt":1,"stopped":false}', '{"firstSeenAt":1,"lastAskedAt":1}', '{"firstSeenAt":-1,"lastAskedAt":1,"stopped":false}']) {
-      expect(readAskState(text, NOW), text).toEqual({ state: firstSight(NOW), repaired: true })
+  it('has none either when the file is corrupt or has the wrong shape', () => {
+    for (const text of ['', 'not json', '[]', 'null', '{"firstSeenAt":"x","lastAskedAt":1,"stopped":false}', '{"firstSeenAt":1,"lastAskedAt":1}', '{"firstSeenAt":-1,"lastAskedAt":1,"stopped":false}', '{"firstSeenAt":1,"lastAskedAt":"x","stopped":false}']) {
+      expect(readAskState(text, NOW), text).toEqual({ state: undefined, repaired: false })
     }
   })
 
@@ -64,10 +90,11 @@ describe('reading the state back', () => {
     const { state, repaired } = readAskState(JSON.stringify(ahead), NOW)
     expect(repaired).toBe(true)
     expect(state).toEqual({ firstSeenAt: NOW, lastAskedAt: NOW, stopped: false })
-    expect(askDue(state, daysLater(7))).toBe(true)
+    expect(askDue(state as NonNullable<typeof state>, daysLater(7))).toBe(true)
+    expect(readAskState(JSON.stringify({ firstSeenAt: NOW + DAY_MS, lastAskedAt: null, stopped: false }), NOW)).toEqual({ state: firstSight(NOW), repaired: true })
   })
 
   it('keeps a stop through a read', () => {
-    expect(readAskState(JSON.stringify({ firstSeenAt: NOW - DAY_MS, lastAskedAt: NOW - DAY_MS, stopped: true }), NOW).state.stopped).toBe(true)
+    expect(readAskState(JSON.stringify({ firstSeenAt: NOW - DAY_MS, lastAskedAt: NOW - DAY_MS, stopped: true }), NOW).state?.stopped).toBe(true)
   })
 })

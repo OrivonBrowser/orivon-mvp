@@ -3,8 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <!-- The welcome screen: a full-window view above the shell on a launch that
-         opens on it (src/main/shell/intro-view.ts). No preload and no network:
-         it reports "Enter Orivon" to the shell through the URL hash alone. -->
+         opens on it (src/main/shell/intro-view.ts), and the telemetry popup it
+         opens. No preload and no network: it reports to the shell through the
+         URL hash alone. -->
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'none'"
@@ -17,7 +18,7 @@
       <div class="scrim"></div>
       <div class="drag-strip"></div>
 
-      <main class="welcome">
+      <main class="welcome" id="welcome">
         <header class="top-bar">
           <div class="brand">
             <img class="brand-logo" src="../assets/logo.png" alt="Orivon" />
@@ -42,32 +43,6 @@
             </button>
             <span class="cta-note">No extensions · No setup · Free</span>
           </div>
-          <section class="telemetry" id="telemetry-choice" aria-labelledby="telemetry-title" hidden>
-            <h2 class="telemetry-title" id="telemetry-title">Telemetry</h2>
-            <div class="telemetry-changed" id="telemetry-changed" hidden></div>
-            <p class="telemetry-text">
-              Orivon has no ads and keeps your history on your computer. A monthly count of how long it is used, and on
-              which Web3 and Web2.5 sites, is how we know it is worth building. No page addresses, no IP address, never sold.
-            </p>
-            <details class="telemetry-details">
-              <summary>What is sent</summary>
-              <ul>
-                <li>How long Orivon is open and in use each month, and how much of that time is on Web3, Web2.5 and Web2 sites.</li>
-                <li>The names of the Web3 and Web2.5 sites you spend time on and for how long, in a separate report under the same ID, so a forged report can be told apart. Web2 sites are never named.</li>
-                <li>An ID made one way from your computer's own identifier, the same for every profile, which cannot be turned back into it; the app version; and your country, from your time zone.</li>
-                <li>Never your history, your searches, a page address or your IP address (the server does not keep it). You can change this any time in Settings.</li>
-              </ul>
-            </details>
-            <div class="telemetry-buttons">
-              <button class="telemetry-button" id="enter-with-telemetry" type="button">Enter and share telemetry</button>
-              <button class="telemetry-button" id="enter-without-telemetry" type="button">Enter without telemetry</button>
-            </div>
-            <p class="telemetry-hint" id="telemetry-hint" role="status" aria-live="polite"></p>
-          </section>
-          <label class="default-offer" id="default-offer" hidden>
-            <input type="checkbox" id="make-default" />
-            <span>Make Orivon my default browser</span>
-          </label>
         </section>
 
         <div class="ticker" aria-hidden="true">
@@ -96,6 +71,42 @@
           <div class="disc disc-0"></div>
         </div>
       </main>
+
+      <!-- The browser under this view, blurred: main hands its pictures in once the popup asks (intro-view.ts). -->
+      <div class="behind" id="behind" aria-hidden="true"></div>
+
+      <div class="consent" id="consent" hidden>
+        <section class="consent-card" role="dialog" aria-modal="true" aria-labelledby="consent-title" aria-describedby="consent-lead">
+          <div class="consent-mark" aria-hidden="true"><img src="../assets/logo.png" alt="" /></div>
+          <h2 class="consent-title" id="consent-title">Support us for free through telemetry</h2>
+          <div class="consent-changed" id="consent-changed" hidden></div>
+          <p class="consent-lead" id="consent-lead">
+            Orivon is free, has no ads, and keeps your history on your computer. If you accept, it sends us a small
+            monthly count of how long you use it, and on which Web3 and Web2.5 sites. That is how we know Orivon is
+            worth building, and it costs you nothing.
+          </p>
+          <ul class="consent-promises">
+            <li>No page addresses, searches or history</li>
+            <li>Your IP address is never kept</li>
+            <li>Never sold, never used for ads</li>
+            <li>Change your mind any time in Settings</li>
+          </ul>
+          <details class="consent-details">
+            <summary>See exactly what is sent</summary>
+            <ul>
+              <li>How long Orivon is open and in use each month, and how much of that time is spent on Web3, Web2.5 and Web2 sites.</li>
+              <li>The names of the Web3 and Web2.5 sites you spend time on, and for how long. Web2 sites are never named. They travel in a separate report under the same ID, so a forged report can be told apart.</li>
+              <li>An ID made one way from your computer's own identifier, the same for every profile, which cannot be turned back into it; the app version; and your country, from your time zone.</li>
+              <li>Never your history, your searches, a page address or your IP address (the server does not keep it).</li>
+            </ul>
+          </details>
+          <div class="consent-buttons">
+            <button class="consent-button" id="telemetry-accept" type="button">Accept</button>
+            <button class="consent-button" id="telemetry-deny" type="button">Deny</button>
+          </div>
+          <p class="consent-hint" id="telemetry-hint" role="status" aria-live="polite"></p>
+        </section>
+      </div>
     </div>
     <script type="module" src="./main.ts"></script>
   </body>

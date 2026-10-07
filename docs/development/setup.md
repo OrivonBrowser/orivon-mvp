@@ -219,7 +219,7 @@ Settings shows what it is doing.
 | `ORIVON_ETH_LIGHT_CLIENT=off` | Keeps the light client from starting, so the run contacts no Ethereum server and every real `.eth` name fails closed. `test/support/launch-electron.mjs` sets it for every smoke and e2e launch unless a test asks otherwise |
 | `ORIVON_LIVE_ETH=1` | Runs `src/protocols/verifier-host/light-client/tests/live-ens.test.ts`, which resolves real names through the light client against mainnet. Skipped otherwise |
 | `ORIVON_TEST_ETH_FIXTURES`, `ORIVON_TEST_IPFS_GATEWAYS`, `ORIVON_TEST_DOH` | Test builds only (`npm run test:e2e` builds one): `.eth` names mapped to content with no light client, and the gateway and DNS-over-HTTPS endpoints to fetch it from. An ordinary build contains none of this (`npm run check:dev-grant-absent`) |
-| `ORIVON_TEST_DEFAULT_BROWSER=can-set\|default\|declined` | Test builds only: stands a recording host in for the operating system's default-browser calls, so Settings, the welcome screen's box and the weekly ask can be driven with nothing reaching the machine (`src/main/os/default-browser-test-seam.ts`). An ordinary build contains none of this |
+| `ORIVON_TEST_DEFAULT_BROWSER=can-set\|default\|declined` | Test builds only: stands a recording host in for the operating system's default-browser calls, so Settings and the default-browser question can be driven with nothing reaching the machine (`src/main/os/default-browser-test-seam.ts`). An ordinary build contains none of this |
 | `ORIVON_TEST_LOCAL_POINTER=1` | Test builds only: treats the pointer's screen position as unknown, as on a native Wayland session, so a tab drag is the browser's own drag and drop on a virtual X display (`src/main/shell/local-pointer.ts`). An ordinary build contains none of this |
 
 Each release ships a checkpoint for the light client, refreshed with
@@ -248,9 +248,9 @@ today, but npm warns that it will stop working, so use the first form. An `ORIVO
 in the environment is used as it stands, and the flag beats it. To see the `once` showing again
 on a profile that has passed it, delete `intro.json` from the profile directory.
 
-The welcome screen also offers a box, unticked, to make Orivon the default browser, on a build installed from a
-package and on a Linux run from source whose entry is installed (below); other runs from source never show it
-(`docs/development/packaging.md`).
+While telemetry is undecided (`ORIVON_TELEMETRY=on` in development), "Enter Orivon" opens the telemetry popup over
+the blurred browser before it lets the person in; when only a changed notice is due, on a screen already seen, the
+popup shows alone.
 
 ---
 

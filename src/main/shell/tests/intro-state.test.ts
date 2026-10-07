@@ -75,11 +75,9 @@ describe('the seen flag on disk', () => {
 })
 
 describe('planIntro -- decided before the window exists', () => {
-  it('offers the default browser only when it is told it may, and the offer is decided without a query', async () => {
-    expect((await planIntro('always', dir))?.offerDefault).toBe(false)
-    expect((await planIntro('always', dir, false))?.offerDefault).toBe(false)
-    expect((await planIntro('always', dir, true))?.offerDefault).toBe(true)
-    expect(await planIntro('off', dir, true)).toBeUndefined()
+  it('opens on the welcome page whenever it shows for the screen itself', async () => {
+    expect((await planIntro('always', dir))?.welcome).toBe(true)
+    expect((await planIntro(undefined, dir))?.welcome).toBe(true)
   })
 
   it('shows on a fresh profile in once mode, and remembers the click-through', async () => {
@@ -135,15 +133,15 @@ describe('the telemetry question on the welcome screen', () => {
   it('is asked only when the screen shows and the outside says it is to be asked, and records the answer where told', async () => {
     const choose = vi.fn(async (_on: boolean) => {})
     const asked = vi.fn(async () => true)
-    expect(await planIntro('off', dir, false, { offered: asked, choose })).toBeUndefined()
+    expect(await planIntro('off', dir, { offered: asked, choose })).toBeUndefined()
     expect(asked).not.toHaveBeenCalled()
 
-    const plan = await planIntro('always', dir, false, { offered: asked, choose })
+    const plan = await planIntro('always', dir, { offered: asked, choose })
     expect(plan?.offerTelemetry).toBe(true)
     await plan?.chooseTelemetry(false)
     expect(choose).toHaveBeenCalledWith(false)
 
-    expect((await planIntro('always', dir, false, { offered: async () => false, choose }))?.offerTelemetry).toBe(false)
+    expect((await planIntro('always', dir, { offered: async () => false, choose }))?.offerTelemetry).toBe(false)
     expect((await planIntro('always', dir))?.offerTelemetry).toBe(false)
   })
 })
@@ -151,7 +149,7 @@ describe('the telemetry question on the welcome screen', () => {
 describe('a telemetry failure at the welcome screen', () => {
   it('costs the question and never the screen: the plan is made, without it, and the failure is logged once', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const plan = await planIntro('always', dir, false, { offered: async () => { throw new Error('telemetry is broken') }, choose: async () => {} })
+    const plan = await planIntro('always', dir, { offered: async () => { throw new Error('telemetry is broken') }, choose: async () => {} })
     expect(plan).toBeDefined()
     expect(plan?.offerTelemetry).toBe(false)
     expect(error).toHaveBeenCalledOnce()
@@ -160,14 +158,14 @@ describe('a telemetry failure at the welcome screen', () => {
 
 describe('the telemetry question asked again after the notice changed', () => {
   const lines = ['The usage report names your country.']
-  const question = (renewal: () => Promise<readonly string[] | undefined>, offered = async () => false): Parameters<typeof planIntro>[3] => ({ offered, choose: async () => {}, renewal })
+  const question = (renewal: () => Promise<readonly string[] | undefined>, offered = async () => false): Parameters<typeof planIntro>[2] => ({ offered, choose: async () => {}, renewal })
 
-  it('shows on a screen already seen, with the question, the lines and no default-browser offer, and writes nothing on entering', async () => {
+  it('shows the popup alone on a screen already seen, with the question and the lines, and writes nothing on answering', async () => {
     await markIntroSeen(dir)
     const before = await readFile(join(dir, 'intro.json'), 'utf8')
-    const plan = await planIntro('once', dir, true, question(async () => lines))
+    const plan = await planIntro('once', dir, question(async () => lines))
     expect(plan).toBeDefined()
-    expect(plan?.offerDefault).toBe(false)
+    expect(plan?.welcome).toBe(false)
     expect(plan?.offerTelemetry).toBe(true)
     expect(plan?.changes).toEqual(lines)
     await plan?.onEntered()
@@ -176,62 +174,61 @@ describe('the telemetry question asked again after the notice changed', () => {
 
   it('does not show on a screen already seen when nothing is due', async () => {
     await markIntroSeen(dir)
-    expect(await planIntro('once', dir, true, question(async () => undefined))).toBeUndefined()
-    expect(await planIntro('once', dir, true, { offered: async () => false, choose: async () => {} })).toBeUndefined()
+    expect(await planIntro('once', dir, question(async () => undefined))).toBeUndefined()
+    expect(await planIntro('once', dir, { offered: async () => false, choose: async () => {} })).toBeUndefined()
   })
 
   it('never shows in off mode, however much is due', async () => {
     await markIntroSeen(dir)
     const renewal = vi.fn(async () => lines)
-    expect(await planIntro('off', dir, true, question(renewal))).toBeUndefined()
+    expect(await planIntro('off', dir, question(renewal))).toBeUndefined()
     expect(renewal).not.toHaveBeenCalled()
   })
 
   it('carries the lines on a first showing whose consent is a stale acceptance', async () => {
-    const plan = await planIntro('once', dir, true, question(async () => lines, async () => true))
-    expect(plan?.offerDefault).toBe(true)
+    const plan = await planIntro('once', dir, question(async () => lines, async () => true))
+    expect(plan?.welcome).toBe(true)
     expect(plan?.offerTelemetry).toBe(true)
     expect(plan?.changes).toEqual(lines)
   })
 
   it('carries no lines when nothing is due, and a failure costs the question and never the window', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-    expect((await planIntro('always', dir, false, question(async () => undefined)))?.changes).toEqual([])
-    const plan = await planIntro('always', dir, false, question(async () => { throw new Error('broken') }, async () => true))
+    expect((await planIntro('always', dir, question(async () => undefined)))?.changes).toEqual([])
+    const plan = await planIntro('always', dir, question(async () => { throw new Error('broken') }, async () => true))
     expect(plan?.offerTelemetry).toBe(true)
     expect(plan?.changes).toEqual([])
     await markIntroSeen(dir)
-    expect(await planIntro('once', dir, false, question(async () => { throw new Error('broken') }))).toBeUndefined()
+    expect(await planIntro('once', dir, question(async () => { throw new Error('broken') }))).toBeUndefined()
     expect(error).toHaveBeenCalled()
   })
 })
 
 describe('parseLeaving and introPageUrl', () => {
-  it('reads the two reports an unquestioned page makes, unchanged', () => {
-    expect(parseLeaving('#leaving')).toEqual({ makeDefault: false, telemetry: undefined })
-    expect(parseLeaving('#leaving-default')).toEqual({ makeDefault: true, telemetry: undefined })
+  it('reads the report a page makes when it asked nothing', () => {
+    expect(parseLeaving('#leaving')).toEqual({ telemetry: undefined })
   })
 
-  it('reads the report of a page that asked the telemetry question: the box and the button pressed', () => {
-    expect(parseLeaving('#leaving?default=1&telemetry=1')).toEqual({ makeDefault: true, telemetry: true })
-    expect(parseLeaving('#leaving?default=0&telemetry=0')).toEqual({ makeDefault: false, telemetry: false })
-    expect(parseLeaving('#leaving?default=0&telemetry=maybe')).toEqual({ makeDefault: false, telemetry: undefined })
+  it('reads the button pressed on the telemetry popup', () => {
+    expect(parseLeaving('#leaving?telemetry=1')).toEqual({ telemetry: true })
+    expect(parseLeaving('#leaving?telemetry=0')).toEqual({ telemetry: false })
+    expect(parseLeaving('#leaving?telemetry=maybe')).toEqual({ telemetry: undefined })
   })
 
-  it('reads nothing from any other hash, #entered included', () => {
-    for (const hash of ['', '#', '#entered', '#leaving-other', '#leaving2?telemetry=1']) expect(parseLeaving(hash)).toBeUndefined()
+  it('reads nothing from any other hash, #asking and #entered included', () => {
+    for (const hash of ['', '#', '#asking', '#entered', '#leaving-default', '#leaving-other', '#leaving2?telemetry=1']) expect(parseLeaving(hash)).toBeUndefined()
   })
 
   it('puts what main offers in the address and nothing else', () => {
-    expect(introPageUrl('orivon-shell://r/intro/', { offerDefault: false, offerTelemetry: false })).toBe('orivon-shell://r/intro/')
-    expect(introPageUrl('orivon-shell://r/intro/', { offerDefault: true, offerTelemetry: false })).toBe('orivon-shell://r/intro/?default=1')
-    expect(introPageUrl('orivon-shell://r/intro/', { offerDefault: true, offerTelemetry: true })).toBe('orivon-shell://r/intro/?default=1&telemetry=1')
+    expect(introPageUrl('orivon-shell://r/intro/', { offerTelemetry: false })).toBe('orivon-shell://r/intro/')
+    expect(introPageUrl('orivon-shell://r/intro/', { welcome: true, offerTelemetry: true })).toBe('orivon-shell://r/intro/?telemetry=1')
+    expect(introPageUrl('orivon-shell://r/intro/', { welcome: false, offerTelemetry: true })).toBe('orivon-shell://r/intro/?welcome=0&telemetry=1')
   })
 
   it('carries each change line as its own parameter, which the page reads back whole', () => {
     const changes = ['Country, from your time zone & sent at start.', 'A second line: with "quotes"']
-    const url = introPageUrl('orivon-shell://r/intro/', { offerDefault: false, offerTelemetry: true, changes })
+    const url = introPageUrl('orivon-shell://r/intro/', { offerTelemetry: true, changes })
     expect(new URL(url).searchParams.getAll('changed')).toEqual(changes)
-    expect(introPageUrl('orivon-shell://r/intro/', { offerDefault: false, offerTelemetry: true, changes: [] })).toBe('orivon-shell://r/intro/?telemetry=1')
+    expect(introPageUrl('orivon-shell://r/intro/', { offerTelemetry: true, changes: [] })).toBe('orivon-shell://r/intro/?telemetry=1')
   })
 })
