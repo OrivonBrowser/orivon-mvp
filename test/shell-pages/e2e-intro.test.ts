@@ -13,6 +13,7 @@ import { closeElectronApp } from '../support/e2e-helpers.js'
 import { readFocusLog, startFocusLog } from '../support/focus-helpers.js'
 import { assertNoElectronSurvivors, closeElectron, launchElectron } from '../support/launch-electron.mjs'
 import { ABSENCE_SETTLE_MS, findChrome, HERMETIC_RESOLVER, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
+import { NOTICE_CHANGES, NOTICE_VERSION } from '../../src/telemetry/consent.js'
 
 afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
@@ -288,7 +289,7 @@ it('Enter and share telemetry records accepted for the whole computer, from the 
     const intro = introPage(app) as Page
     await intro.click('#enter-with-telemetry')
     expect(await waitFor(() => introPage(app) === undefined && windowCount(app) === 2)).toBe(true)
-    expect(await consentOf(home)).toMatchObject({ state: 'accepted', source: 'welcome', noticeVersion: 4 })
+    expect(await consentOf(home)).toMatchObject({ state: 'accepted', source: 'welcome', noticeVersion: NOTICE_VERSION })
   } finally {
     await closeElectron(app)
   }
@@ -316,7 +317,7 @@ it('Enter without telemetry records declined, and the keyboard works: Tab to a b
 
 it('does not ask again once the computer has a choice, accepted or declined, and the screen is the ordinary one', async () => {
   for (const state of ['accepted', 'declined']) {
-    const home = await newHome({ state, atMs: Date.now(), noticeVersion: 4, source: 'settings' })
+    const home = await newHome({ state, atMs: Date.now(), noticeVersion: NOTICE_VERSION, source: 'settings' })
     const app = await askingTelemetry(home)
     try {
       expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
@@ -376,7 +377,7 @@ it('keeps the default-browser box working beside the question: ticked, and Enter
 
 // An acceptance given under an older notice is asked again at the next start, on a screen already seen.
 const seenProfile = (dir: string): Promise<void> => writeFile(join(dir, 'intro.json'), '{"seen":true}', 'utf8')
-const staleAcceptance = { state: 'accepted', atMs: Date.UTC(2026, 8, 1), noticeVersion: 3, source: 'welcome', everAccepted: true }
+const staleAcceptance = { state: 'accepted', atMs: Date.UTC(2026, 8, 1), noticeVersion: NOTICE_VERSION - 1, source: 'welcome', everAccepted: true }
 const renewing = (home: string): Promise<ElectronApplication> =>
   launch('once', seenProfile, { ORIVON_TELEMETRY: 'on', ORIVON_TELEMETRY_HOME: home })
 
@@ -391,13 +392,13 @@ it('asks again after the notice changed: the question, the change line, no defau
     expect(await intro.locator('#default-offer').isHidden()).toBe(true)
     expect(await intro.locator('#telemetry-changed').isVisible()).toBe(true)
     expect(await intro.textContent('#telemetry-changed p')).toBe('Telemetry changed since you agreed:')
-    expect(await intro.locator('#telemetry-changed li').allTextContents()).toEqual(['The usage report names your country, from your time zone, instead of EU, US or other, and both reports are also sent when Orivon starts.'])
+    expect(await intro.locator('#telemetry-changed li').allTextContents()).toEqual([NOTICE_CHANGES[NOTICE_VERSION]])
     expect(await intro.locator('#enter-with-telemetry').isVisible()).toBe(true)
     expect(await intro.locator('#enter-without-telemetry').isVisible()).toBe(true)
     await intro.click('#enter-with-telemetry')
     expect(await waitFor(() => introPage(app) === undefined && windowCount(app) === 2)).toBe(true)
-    expect(await waitFor(async () => (await consentOf(home))?.['noticeVersion'] === 4)).toBe(true)
-    expect(await consentOf(home)).toMatchObject({ state: 'accepted', source: 'welcome', noticeVersion: 4 })
+    expect(await waitFor(async () => (await consentOf(home))?.['noticeVersion'] === NOTICE_VERSION)).toBe(true)
+    expect(await consentOf(home)).toMatchObject({ state: 'accepted', source: 'welcome', noticeVersion: NOTICE_VERSION })
   } finally {
     await closeElectron(app)
   }
@@ -412,7 +413,7 @@ it('asks again after the notice changed: the question, the change line, no defau
 }, TEST_TIMEOUT_MS * 2)
 
 it('does not ask again for an acceptance given under the current notice, on a screen already seen', async () => {
-  const home = await newHome({ ...staleAcceptance, noticeVersion: 4 })
+  const home = await newHome({ ...staleAcceptance, noticeVersion: NOTICE_VERSION })
   const app = await renewing(home)
   try {
     expect(await waitFor(() => windowCount(app) === 2)).toBe(true)

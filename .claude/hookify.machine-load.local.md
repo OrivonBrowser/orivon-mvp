@@ -15,7 +15,8 @@ than once. Before running this:
 - Run one heavy command at a time across every session and agent: typecheck, the unit suite,
   a build, e2e, smoke. Wait for another one to end rather than starting beside it.
 - Lower its priority and width: `nice -n 15`, and `npx vitest run --maxWorkers=2`.
-- Run only the test files you touched while working; the whole unit suite once at the end.
+- Run only the tests your change can affect: `npm run test:changed`. The whole unit suite runs
+  in CI on the pull request.
 - The whole e2e suite runs in CI on the pull request. Locally, run named e2e files only.
 - Subagents may work in parallel, but their heavy commands queue: never two of yours running
   tests at once.

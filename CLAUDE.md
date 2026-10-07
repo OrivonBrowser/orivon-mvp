@@ -40,7 +40,7 @@ shortcut in `src/main/` costs a refactor of code tied to Electron; a shortcut in
 - Explore with an `Explore` agent, not `cat`. Never print a file over 300 lines: use `sed -n`
   ranges or `grep -n`.
 - Never read `docs/open-questions.md` whole; grep for the ID.
-- Filter test and guard output to its summary lines (`npm test 2>&1 | tail -5`).
+- Filter test and guard output to its summary lines (`npm run test:changed 2>&1 | tail -5`).
 - Plans stay under 2,000 words, live in a file, and are cited by path, never pasted back.
 
 ## Rules
@@ -81,16 +81,24 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
 13. **Ask questions trough the tool** and never stop working until feedback/decision from owner is the only real bottleneck, owner may be sleeping, and his response should not be the reason for you to stop unless there is no other way around.
 14. **Merge session changes in a PR's by yourself**, unless owner decision is critical. Same for orivon-ports repo operations as well. This is preferred for faster development. Most of the times if you wait for my approval to merge a PR to main you will end un in a conflict loop, since development goes so fast. If you don't merge it state it very clearly at the end of the prompt. Don't do it when the user just asks for a quick reply.
 15. **Prevent heavy work from crashing VSCodium**, you should still stay highly productive, but pay attention on heavy tasks that may crash VSCodium at all, that shouldn't never happen
-16. **Use latest Opus for planning and latest Sonnet for execution**, unless the user asks otherwise.
+16. **Use latest Opus for planning and latest Sonnet for execution** on work past the fast lane (Rule 18), unless the user asks otherwise.
+17. **Fix long-term AI optimization issues**, if you find any issue you incur as AI and wastes too many tokens, ensure that the future AI's doesn't fall for the same issue as well, apply a long term automated or simpler solution to that problem or procedure
+18. **Take the fast lane for a small change**: about ten code files or fewer, nothing in
+    `src/contracts/`, `src/shared/`, the broker, preload, IPC or consent code, and no new
+    dependency. The session that plans it implements it: no plan file, no subagent. A decision
+    gets a decision-log row, an ADR only when Rule 1 applies, and no other page is edited just to
+    cite it. Locally run `npm run test:changed` and the e2e specs `select-e2e` names; CI runs both
+    whole suites. Prove a new test fails without the change only for a bug fix or a security
+    check. `node scripts/ai/session-report.mjs` shows where a session's time went.
 
 ## Commands
 
 | Command | When |
 |---|---|
 | `npm run typecheck` | After any `.ts` change; it covers `test/` as well as `src/` |
-| `npm test` | Unit tests (Vitest) |
+| `npm run test:changed` | The unit tests your change can affect, against `origin/main` (`-- --base <ref>`; `-- --all` for everything). A bare `npm test` or `npx vitest run` is blocked: CI runs the whole suite on every PR |
 | `npm run check:<name>` | The seventeen guards in `docs/development/testing.md` §Guards; CI runs each |
-| `node scripts/ci/select-e2e.mjs --base origin/main` | Prints the e2e areas and specs CI would run for your change (`--explain` says why). Run the named specs of them locally, never the whole suite; nothing enforces it |
+| `node scripts/ci/select-e2e.mjs --base origin/main` | Prints the e2e areas and specs CI would run for your change (`--explain` says why). Run the named specs of them locally, never the whole suite; a bare `npm run test:e2e` is blocked |
 | `npm run smoke` | The real shell launches and works. Read its JSON failure list, not the exit code |
 | `npm run test:e2e` | The Electron end-to-end suite; a failed spec leaves its evidence in `qa-artifacts/latest/` |
 | `npm run qa`, `qa:visual`, `qa:report` | Before calling a UI, flow or boundary change done; `orivon-qa` says which, and how to read the screenshots |
@@ -136,7 +144,7 @@ at the step named here. **Check this table at the start of every build step.**
 |---|---|---|
 | `typescript-lsp` | Automatic on `.ts` edits | Type errors across main, preload and renderer. Trust its diagnostics over your own reading of a type |
 | `security-guidance` | Automatic: on edits, when you stop, and on every `git commit` | Path traversal (T1), local-network reach (T12), secrets. Address or explicitly acknowledge every finding |
-| `hookify` rules in `.claude/hookify.*.local.md` | Automatic on edits and shell commands | Thirteen rules. **Block (8):** native modules (in code and in `package.json`), insecure `webPreferences`, non-TypeScript sources, an Electron launch that bypasses `scripts/run-headless.mjs` or could take focus, in-place branch switches (`git pull`/`checkout`/`switch`, `gh pr checkout`) and tree-wide discards (`reset --hard`, `clean -f`, `stash drop`). **Warn (5):** hardcoded storage paths, vision features not built yet, file-header essays, comments that narrate the change instead of the code, and live pages that narrate their own history (Rule 2). When the owner corrects the same thing twice, add a rule with `/hookify`. Start its `file_path` pattern with `^(?:.*/)?` before the directory name, because a repo-root anchor never matches the absolute path an edit passes, and the rule dies silently. There is no `not_regex_match` operator, and an unknown operator kills the whole rule (A55) |
+| `hookify` rules in `.claude/hookify.*.local.md` | Automatic on edits and shell commands | Fifteen rules. **Block (9):** native modules (in code and in `package.json`), insecure `webPreferences`, non-TypeScript sources, an Electron launch that bypasses `scripts/run-headless.mjs` or could take focus, in-place branch switches (`git pull`/`checkout`/`switch`, `gh pr checkout`), tree-wide discards (`reset --hard`, `clean -f`, `stash drop`), and a whole unit or e2e suite run locally. **Warn (6):** hardcoded storage paths, vision features not built yet, file-header essays, comments that narrate the change instead of the code, live pages that narrate their own history (Rule 2), and a heavy command on a machine that crashes under load. When the owner corrects the same thing twice, add a rule with `/hookify`. Start its `file_path` pattern with `^(?:.*/)?` before the directory name, because a repo-root anchor never matches the absolute path an edit passes, and the rule dies silently. There is no `not_regex_match` operator, and an unknown operator kills the whole rule (A55) |
 | `superpowers` | Process, automatic via its session hook | `brainstorming` before new work, `writing-plans` for anything multi-step, `test-driven-development` for every broker or policy function, `systematic-debugging` on any failure, `verification-before-completion` before claiming done |
 | `context7` (MCP) | **Manual: before writing code against Electron or webtorrent APIs** | `protocol.handle`, `utilityProcess`, `MessagePortMain`, `WebContentsView`, `session` partitions, `safeStorage`; webtorrent 3.x internals. Training data is stale for this stack (Electron 44), so check a signature live before trusting the remembered one |
 | `playwright` (MCP) | **Manual: the localhost fixture app** | Driving a real web page. The Electron e2e uses the `_electron` library, not this |

@@ -11,7 +11,7 @@
    the literal body before it goes, report ID included, built by the main process from facts and
    log lines taken once per form, so the preview is what is sent.
    Each report is its own consent; it does not depend on the telemetry choice, and it carries a
-   random report identifier, never the telemetry install identifier (d-0554).
+   random report identifier, never the telemetry install identifier (d-0555).
 2. **One message, one deletion.** `POST /v1/report` on the telemetry server, schema 1:
    `reportId`, `description`, `contact`, `version`, and four optional parts, each `null` when left
    out: `crash` (the recorded problem: kind, time, process, reason, exit code, message, stack),
@@ -23,7 +23,7 @@
    with the payload.
 3. **Crash dumps are opt-in.** Electron's crash handler (Crashpad) runs with its upload switched
    off, so native crash dumps stay in the profile. A dump goes with a report only when the person
-   ticks its box, which is never ticked when the form opens; at most 5 MB (d-0555).
+   ticks its box, which is never ticked when the form opens; at most 5 MB (d-0556).
 4. **What the browser keeps to make a report useful.** In the profile's `diagnostics` folder: the
    main process's log of this run and the previous one, records of the last 30 problems (a
    main-process error, a renderer or child process that stopped, an exit that was not orderly)
@@ -33,15 +33,15 @@
    screening asks for): **Technical details** and **Recent log** are ticked when the form opens, the
    log not in a private window; the page address and the dump are not. A report is sent even under `ORIVON_TELEMETRY=off`, which
    governs telemetry, because a report is the person's own act. The server takes at most 6 reports
-   an hour per address, 500 a day, and 2 GB of dumps (d-0558).
+   an hour per address, 500 a day, and 2 GB of dumps (d-0559).
 6. **Retention and recipients.** The server keeps a report, with its dump, 90 days from the day it
    arrives. The maintainers read reports, and may give one to an AI coding assistant, today Claude
    by Anthropic PBC in the United States, to find the cause; the form says so beside Send, and the
-   transfer rests on the sender's explicit consent, GDPR Article 49(1)(a) (d-0557). Whether a
+   transfer rests on the sender's explicit consent, GDPR Article 49(1)(a) (d-0558). Whether a
    processing agreement covers it is [A408](../open-questions.md).
 7. **`NOTICE_VERSION` stays 4.** The version tracks what the telemetry consent covers. Bug reports
    add a section to the notice without changing telemetry, so no telemetry acceptance is voided and
-   nobody is asked again (d-0556).
+   nobody is asked again (d-0557).
 
 ## Context
 The owner asked for crash and bug reports that carry what a developer, or an AI assistant, needs

@@ -15,7 +15,7 @@ yet; they are scheduled at the bottom rather than written as placeholders.
 ## 1. Telemetry first-run disclosure
 
 The one item where getting it wrong is a reputational event rather than a bug
-([`ADR-0004`](../decisions/ADR-0004-telemetry.md), [`ADR-0063`](../decisions/ADR-0063-telemetry-v2.md), [`ADR-0064`](../decisions/ADR-0064-telemetry-country-and-start-send.md)).
+([`ADR-0004`](../decisions/ADR-0004-telemetry.md), [`ADR-0063`](../decisions/ADR-0063-telemetry-v2.md)).
 
 **Precondition.** A packaged build (a development build never runs telemetry), a clean profile
 and no stored telemetry choice. Delete both directories:

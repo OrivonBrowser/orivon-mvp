@@ -254,9 +254,14 @@ a click reaches it at once and `out/` is never rebuilt under it. Once the entry 
 the default browser. `remove` deletes the entry. Never name an entry of your own `orivon.desktop`: in
 `~/.local/share/applications` it hides the installed package's entry, its actions and its default-browser choice.
 
-A run from source and an installed package share the default profile's data and its lock, so whichever starts first
-receives the other's starts. On Windows and macOS a run from source never registers as the default browser, and on
-Windows its taskbar button has an identity of its own (`com.orivonstack.orivon.source`).
+A run from source and an installed package are two programs (ADR-0057). A run from source keeps its data in
+`<appData>/orivon-source` (`~/.config/orivon-source` on Linux) with a lock of its own, names its windows
+`orivon-source` and titles them "Orivon (source)", so the dock shows it under its own warm-coloured icon beside the
+package's "Orivon Browser". `npm start` and the entry's own start rewrite an installed entry that an older checkout
+wrote. A start with `--user-data-dir` uses that directory instead. To give a run from source the data of the package's
+profile, copy or move `~/.config/orivon` to `~/.config/orivon-source` while neither runs: both binaries store it alike. On Windows and macOS a run from source never
+registers as the default browser, and on Windows its taskbar button has an identity of its own
+(`com.orivonstack.orivon.source`).
 
 ---
 

@@ -167,8 +167,7 @@ you disagree with one, the ADR is where the objections are already answered.
 - **Telemetry is an explicit choice on first run.** The metric requires measurement; the first
   screen asks with two equal buttons, nothing preselected, nothing sent before you choose, and
   Settings shows the literal messages ([`ADR-0004`](docs/decisions/ADR-0004-telemetry.md),
-  [`ADR-0063`](docs/decisions/ADR-0063-telemetry-v2.md),
-  [`ADR-0064`](docs/decisions/ADR-0064-telemetry-country-and-start-send.md)).
+  [`ADR-0063`](docs/decisions/ADR-0063-telemetry-v2.md)).
 - **Trust is shown as a level with its evidence, never as a bare grade.** The address bar's Web3
   Score shield and the Web3 Score page it opens lead with the canonical Website level, coloured
   red/orange/yellow/green, and a mark at the pill's right end names it: Web2 (Level 1), Web2.5

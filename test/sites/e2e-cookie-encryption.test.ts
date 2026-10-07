@@ -1,7 +1,6 @@
 // A run from source keeps its cookies as an installed package does: its binary has cookie encryption on
-// (scripts/install-electron.mjs sets it, as electron-builder.yml does for a package), so the two can share one
-// profile (ADR-0057). A binary without the fuse reads none of the cookies a package encrypted, and every site the
-// package was signed in to is signed out. Two launches on one profile: the first stores a persistent cookie, the
+// (scripts/install-electron.mjs sets it, as electron-builder.yml does for a package; ADR-0057). A binary without the
+// fuse reads none of the cookies an encrypting one wrote, and every site the profile was signed in to is signed out. Two launches on one profile: the first stores a persistent cookie, the
 // second reads it back; between them the row is on disk and its value is not. Run `npm run install:electron` when
 // this fails on a checkout whose binary was never flipped.
 import { readFile, rm } from 'node:fs/promises'

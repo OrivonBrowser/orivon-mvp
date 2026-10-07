@@ -64,9 +64,11 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Telemetry now names the country from the time zone instead of EU/US, and both reports also go at browser start.
 - After a privacy-notice change, Orivon asks for telemetry again at next start, saying what changed, instead of silently stopping.
 - Report a problem: users describe a crash and see the full report, logs and optional crash dump before Send; our server receives it.
+- Running from source is now its own program: separate profile and warm dock icon, beside the installed "Orivon Browser".
 
 ### In my head
 
+- AI runs were slow from process, not code: a fast lane for small changes, related-only local tests, and a session time report.
 - Asking for telemetry with a forced choice, not a pre-ticked box: legal in Europe, and people say yes almost as often.
 
 ### Non-repo

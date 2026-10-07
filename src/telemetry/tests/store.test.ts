@@ -7,6 +7,7 @@ import type { UsagePayload } from '../disclosure.js'
 import { initialHistoryState } from '../history.js'
 import { initialKindSchedule } from '../schedule.js'
 import { parseTelemetryFile, serializeTelemetryFile, TelemetryStore, type TelemetryDisk } from '../store.js'
+import { PAYLOAD_SCHEMA } from '../disclosure.js'
 
 const STREAM = 'a1'.repeat(16)
 const nextFixed = (): string => STREAM
@@ -19,7 +20,7 @@ const emptyDisk: TelemetryDisk = {
 }
 
 const usage: UsagePayload = {
-  schema: 4, installId: 'b2'.repeat(16), stream: STREAM, country: 'IT', version: '0.1.0', period: '2026-09',
+  schema: PAYLOAD_SCHEMA, installId: 'b2'.repeat(16), stream: STREAM, country: 'IT', version: '0.1.0', period: '2026-09',
   activeSec: 1, backgroundSec: 2, classes: { web3: 1, web25: 0, web2: 0 }
 }
 
