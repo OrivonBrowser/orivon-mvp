@@ -143,7 +143,7 @@ report before you send it, and a box for each part you can leave out.
 | Field | What it is |
 |---|---|
 | `schema` | The version of the message layout, a number |
-| `reportId` | A random identifier made when you press Send, and shown to you afterwards so you can refer to the report. It is not linked to the telemetry install ID or to anything else on your computer |
+| `reportId` | A random identifier made with the report, shown in the form's preview and again after sending so you can refer to the report. It is not linked to the telemetry install ID or to anything else on your computer |
 | `description` | What you wrote about the problem |
 | `contact` | How to reach you, if you wrote it: an email address, or a name on GitHub or Matrix. Empty if you did not |
 | `version` | The version of Orivon Browser |
@@ -169,8 +169,9 @@ scaling of each screen; how much memory each kind of Orivon process uses; how ma
 tabs are open, and whether the window is private; your installed extensions (name, identifier,
 version, on or off); the values of a few settings that change how Orivon behaves (theme, cookies,
 Global Privacy Control, Do Not Track, HTTPS-only, the secure DNS mode, memory and energy saver,
-start-up mode, spell checking, developer tools, extension developer mode, update checks), never
-an address or a folder; and the last ten problems Orivon recorded (kind, time, process, reason,
+start-up mode, spell checking, developer tools, extension developer mode, update checks, the
+Ethereum light client, and opening `.eth.limo` addresses as `.eth` names), never an address or a
+folder; and the last ten problems Orivon recorded (kind, time, process, reason,
 exit code), without their messages or addresses. In every part of a report, the path of your home
 folder is replaced by `~`.
 

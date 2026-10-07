@@ -92,8 +92,8 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
   'profiles.open',
   'settings.open',
   '-',
-  'report.open',
-  'about.open',
+  // A submenu, so the report entry costs no row: in a window 800 px tall the menu already scrolls.
+  { submenu: 'Help', items: ['report.open', 'about.open'] },
   'app.quit'
 ]
 

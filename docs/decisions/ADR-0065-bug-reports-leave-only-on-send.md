@@ -8,7 +8,8 @@
 ## Decision
 1. **Only on Send.** A bug report is written in a form (`orivon://report`) and leaves only when
    the person presses Send. Nothing is sent by itself, after a crash or otherwise. The form shows
-   the literal body before it goes, built by the main process, so the preview is what is sent.
+   the literal body before it goes, report ID included, built by the main process from facts and
+   log lines taken once per form, so the preview is what is sent.
    Each report is its own consent; it does not depend on the telemetry choice, and it carries a
    random report identifier, never the telemetry install identifier (d-0554).
 2. **One message, one deletion.** `POST /v1/report` on the telemetry server, schema 1:

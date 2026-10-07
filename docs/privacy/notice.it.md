@@ -157,7 +157,7 @@ casella per ogni parte che puoi lasciare fuori.
 | Campo | Che cos'è |
 |---|---|
 | `schema` | La versione della struttura del messaggio, un numero |
-| `reportId` | Un identificativo casuale creato quando premi Invia, e mostrato dopo perché tu possa citare la segnalazione. Non è collegato all'ID di installazione della telemetria né ad altro sul tuo computer |
+| `reportId` | Un identificativo casuale creato con la segnalazione, mostrato nell'anteprima del modulo e di nuovo dopo l'invio perché tu possa citarla. Non è collegato all'ID di installazione della telemetria né ad altro sul tuo computer |
 | `description` | Ciò che hai scritto sul problema |
 | `contact` | Come raggiungerti, se l'hai scritto: un indirizzo email, o un nome su GitHub o Matrix. Vuoto se non l'hai scritto |
 | `version` | La versione di Orivon Browser |
@@ -185,7 +185,8 @@ estensioni installate (nome, identificativo, versione, attiva o no); i valori di
 impostazioni che cambiano il comportamento di Orivon (tema, cookie, Global Privacy Control, Do Not
 Track, solo HTTPS, la modalità del DNS sicuro, risparmio di memoria ed energia, modalità di avvio,
 controllo ortografico, strumenti per sviluppatori, modalità sviluppatore delle estensioni, controllo
-degli aggiornamenti), mai un indirizzo o una cartella; e gli ultimi dieci problemi registrati da
+degli aggiornamenti, il light client di Ethereum, e l'apertura degli indirizzi `.eth.limo` come nomi
+`.eth`), mai un indirizzo o una cartella; e gli ultimi dieci problemi registrati da
 Orivon (tipo, ora, processo, motivo, codice di uscita), senza i loro messaggi o indirizzi. In ogni
 parte di una segnalazione, il percorso della tua cartella home è sostituito da `~`.
 

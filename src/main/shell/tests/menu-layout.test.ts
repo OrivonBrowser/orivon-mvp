@@ -61,6 +61,15 @@ describe('the main menu layout', () => {
     check(menuItems(ctx))
   })
 
+  it('keeps Report a problem and About Orivon in a Help submenu, just above Quit', async () => {
+    const { ctx } = await setup()
+    const items = menuItems(ctx)
+    const help = items.find((item) => item.kind === 'submenu' && item.label === 'Help')
+    expect(help !== undefined && 'items' in help ? help.items.map((item) => 'id' in item ? item.id : item.kind) : []).toEqual(['report.open', 'about.open'])
+    expect(items.at(-2)).toBe(help)
+    expect(items.at(-1)).toMatchObject({ kind: 'command', id: 'app.quit' })
+  })
+
   it('has the zoom row after the history group, and More tools as a submenu', async () => {
     const { ctx } = await setup()
     const items = menuItems(ctx)
