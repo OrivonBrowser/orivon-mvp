@@ -67,6 +67,10 @@ function namedBy (name) {
 function main (argv) {
   const at = argv.indexOf('--base')
   const base = at === -1 ? 'origin/main' : argv[at + 1]
+  if (base === undefined || base.startsWith('--')) {
+    console.error('test:changed: --base needs a ref, such as origin/main or ORIG_HEAD.')
+    return 2
+  }
   const plan = argv.includes('--all') ? { mode: 'full', reason: '--all' } : planTestRun(changedPaths(base), namedBy)
   if (plan.mode === 'none') {
     console.log(`test:changed: nothing a unit test covers differs from ${base}.`)
