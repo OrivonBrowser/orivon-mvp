@@ -1,5 +1,5 @@
 // A Web3 Score provider that lives on IPFS, as a static build of web3-score-manager does: its `score/` tree is served
-// through the verifier, at `ipfs://<root>/score`, under a DNSLink name at `ipns://<name>/score`, or under a signed
+// through the verifier, at `ipfs://<root>/score`, under a DNSLink name typed bare as `ipns://<name>`, or under a signed
 // IPNS key at `ipns://<key>/score`, as the default provider is. The shield and the Web3 Score page show the level it
 // judges and name it, as they do for a provider on http (e2e-score-provider). Driven through the test seam's
 // gateways, so nothing leaves the machine.
@@ -106,8 +106,8 @@ it('an ipfs:// provider judges a checked page, and its level shows on the shield
   await judgedThrough((gateway) => `ipfs://${gateway.roots['provider']!}/score`, 'score-provider-ipfs')
 }, TEST_TIMEOUT_MS)
 
-it('an ipns:// provider under a DNSLink name does the same', async () => {
-  await judgedThrough(() => `ipns://${DNSLINK_NAME}/score`, 'score-provider-ipns')
+it('an ipns:// provider under a DNSLink name does the same, typed as the bare name without its score/ folder', async () => {
+  await judgedThrough(() => `ipns://${DNSLINK_NAME}`, 'score-provider-ipns')
 }, TEST_TIMEOUT_MS)
 
 it('an ipns:// provider under a signed key does the same, though the first gateway never answers', async () => {
