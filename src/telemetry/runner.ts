@@ -52,7 +52,7 @@ async function post (endpoint: Endpoint, body: SentPayload | ErasePayload): Prom
   }
 }
 
-const realSender = async (payload: SentPayload): Promise<boolean> => await post('reportId' in payload ? 'sites' : 'usage', payload)
+const realSender = async (payload: SentPayload): Promise<boolean> => await post('sites' in payload ? 'sites' : 'usage', payload)
 
 const realMachineReaders: MachineIdReaders = {
   platform: process.platform,
@@ -123,9 +123,6 @@ async function startTelemetry (app: App, servicePromise: Promise<TelemetryServic
   // Real, OS-level input signal, chosen because no window or tab event exists to feed here instead.
   const interacting = (): boolean => assumeActive || powerMonitor.getSystemIdleState(IDLE_INTERACTION_THRESHOLD_SEC) === 'active'
 
-  // Best-effort: the process could in principle exit before this write lands, the same bounded loss
-  // (one checkpoint interval) an ordinary crash already has. Not worth hanging an ordinary quit.
-  app.on('before-quit', () => { void service.stop() })
   powerMonitor.on('suspend', () => { service.notePower('suspend') })
   powerMonitor.on('resume', () => { service.notePower('resume') })
 
@@ -155,6 +152,7 @@ async function startTelemetry (app: App, servicePromise: Promise<TelemetryServic
 
 export const telemetrySubsystem: Subsystem = {
   name: 'telemetry',
+  beforeQuit: async () => { await (await running())?.quit() },
   afterReady: (ctx) => {
     const offReason = telemetryOffReason(modeInputsFromEnv(process.env, devModeEnabled(), ctx.privateSession))
     if (offReason !== undefined) {

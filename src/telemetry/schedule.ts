@@ -88,16 +88,20 @@ export function withOffsetFor (schedule: KindSchedule, period: string, random: (
 /**
  * The periods whose snapshot should be staged now, the one that just closed first. Nothing before the
  * period's random offset has passed; then the closing snapshot of the previous period once, if it had
- * any data, and the running period's month-to-date snapshot at most once every 24 hours.
+ * any data, and the running period's month-to-date snapshot at most once every 24 hours. `immediate`
+ * (the moment of an acceptance, and of a quit) skips the offset and the 24-hour gate: the running
+ * period is always staged, and the closing snapshot still goes once.
  */
-export function periodsDue (nowMs: number, period: string, schedule: KindSchedule, hasData: (period: string) => boolean, everyMs: number = SNAPSHOT_EVERY_MS): string[] {
-  if (schedule.offsetPeriod !== period) return []
-  if (nowMs < periodStartMs(period) + schedule.offsetMs) return []
+export function periodsDue (nowMs: number, period: string, schedule: KindSchedule, hasData: (period: string) => boolean, everyMs: number = SNAPSHOT_EVERY_MS, immediate: boolean = false): string[] {
+  if (!immediate) {
+    if (schedule.offsetPeriod !== period) return []
+    if (nowMs < periodStartMs(period) + schedule.offsetMs) return []
+  }
   const due: string[] = []
   const previous = previousPeriod(period)
   if (schedule.closedPeriod !== previous && hasData(previous)) due.push(previous)
   const sentThisPeriod = schedule.lastSentAtMs !== undefined && schedule.lastSentAtMs >= periodStartMs(period)
-  if (!sentThisPeriod || nowMs - (schedule.lastSentAtMs ?? 0) >= everyMs) due.push(period)
+  if (immediate || !sentThisPeriod || nowMs - (schedule.lastSentAtMs ?? 0) >= everyMs) due.push(period)
   return due
 }
 

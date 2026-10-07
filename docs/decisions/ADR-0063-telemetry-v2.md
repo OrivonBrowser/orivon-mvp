@@ -17,9 +17,10 @@ response channel) and widens what is measured and how the person chooses.
    sent as `(unlisted)`.
 2. **Two messages.** A usage report (`POST /v1/usage`) with the install identifier, a per-profile
    stream, a region, the version, the month and the seconds. A site report (`POST /v1/sites`)
-   with a random report identifier per profile and month and the per-site seconds. The site
-   report carries **no install identifier**, and the server refuses per-site data inside a usage
-   report.
+   under the same install identifier and stream, with the per-site seconds (d-0545). The server
+   refuses per-site data inside a usage report, counts a site report only when a usage report of
+   the same install, stream and month accounts for its seconds, and refuses an install identifier
+   found sending forged ones for 12 months.
 3. **One identity per machine.** The install identifier is the first 32 hex characters of an
    HMAC-SHA-256 of the operating system's machine ID, so every profile, a run from source and an
    installed package, and a reinstall on one computer are one install. It is made, and the
@@ -36,10 +37,14 @@ response channel) and widens what is measured and how the person chooses.
    consent per operating-system user, kept under the user's config directory and read fresh on
    every send, so every profile obeys it. A refusal is not asked again for six months. The
    region never drives a default.
-6. **Cadence.** A month-to-date snapshot about once a day, upserted by the server, with the
-   closing snapshot of a month sent once after it ends: at a month's start, one more of each. Nothing queues beyond one message.
+6. **Cadence.** A month-to-date snapshot of each message when the person turns telemetry on and
+   when the browser quits, and about once a day between, upserted by the server, with the
+   closing snapshot of a month sent once after it ends: at a month's start, one more of each
+   (d-0546). The acceptance and the quit skip the random offset and the daily gate; the quit
+   shares the two-second bound of the other quit work. Nothing queues beyond one message.
 7. **Erase.** `POST /v1/erase` with the install identifier, from a "Delete my data" button that
-   also turns telemetry off.
+   also turns telemetry off. It deletes the usage rows and the site reports of that identifier
+   (d-0545).
 8. **Where it never runs.** A private window and any run with `ORIVON_TELEMETRY=off` start no
    measuring, read no machine ID and send nothing. A development build (`npm run dev`) runs all of
    it but sends to `https://telemetry.invalid/v1/`, which never answers, so nothing reaches the
@@ -49,15 +54,17 @@ response channel) and widens what is measured and how the person chooses.
    turns telemetry on again in Settings. The welcome does not ask again, since it shows once per
    profile; a prompt for that case is not built (*provisional*: settled when a version bump
    first happens with real users).
-10. **Retention.** Per-install rows 12 months, then only aggregates; site reports folded into
-    monthly per-site totals one month after the month closes.
+10. **Retention.** Per-install usage rows 12 months, then only aggregates; site reports, which
+    carry the install identifier until then, folded into monthly per-site totals with no
+    identifier one month after the month closes, and every site row deleted (d-0545). An
+    excluded install identifier is kept 12 months.
 
 11. **Where it runs.** `https://telemetry.orivonstack.com`, an OVH SAS virtual server in
     Strasbourg, France, so nothing leaves the EU. Caddy terminates TLS with no access log; a
     Python service stores rows in SQLite; no IP address or User-Agent is written to disk; the
     address is held in memory only for a limit of 30 requests per 10 minutes; one UTC day is
-    stored per row; a daily job applies the retention above. Erase deletes every usage row of an
-    install identifier; site reports cannot be erased by it, since they never carry it.
+    stored per row; a daily job applies the retention above. Erase deletes every usage row and
+    every site report of an install identifier.
 12. **The server's source is private.** ADR-0004 promised that the ingest configuration would
     be published so that "no IP is logged" could be checked. That promise is withdrawn: the
     owner keeps the server's source private. What replaces it is the description of storage,
@@ -81,10 +88,14 @@ screening and ePrivacy Article 5(3).
 - **A random per-profile identifier, as ADR-0004 required.** Lost to the metric: it counts one
   person as several. The cost accepted is ADR-0004's own objection, a device-derived identifier
   that survives a reinstall; the answers are the one-way keyed hash, reading it only after
-  consent, keeping it out of the per-site message, and the erase button.
-- **Per-site seconds inside the usage report (linked).** It gives the cleanest per-person
-  picture and is the simplest server. Rejected: a stable identifier plus a list of named sites is
-  a browsing profile; unlinked, it is a month's set of sites for a random identifier.
+  consent, keeping the named sites linked to it for two months only, and the erase button.
+- **Per-site seconds inside the usage report.** The simplest server. Rejected: the named sites
+  would stay as long as the usage row, 12 months, where a separate site report is folded into
+  totals with no identifier after two months.
+- **A site report under a random report identifier, linked to nothing.** Rejected (d-0545): a
+  forged report could not be told from a real one, counted once per reporter or erased, and
+  anyone could skew the per-site totals by posting. The linked report lets the server check each
+  site report against its usage report and delete an install that forges.
 - **A checkbox, ticked or unticked, beside the Enter button.** A pre-ticked box is not consent:
   the Court of Justice held in *Planet49* (C-673/17) that a pre-ticked box does not give valid
   consent to storing or reading information on a device, and Article 4(11) of the GDPR asks for an

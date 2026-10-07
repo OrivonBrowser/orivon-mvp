@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  createSubsystemContext, criticalFailureMessage, publishBroker, publishInstallApp, publishLoader, publishRequestGrant, runAfterReady, runBeforeReady,
+  createSubsystemContext, criticalFailureMessage, publishBroker, publishInstallApp, publishLoader, publishRequestGrant, runAfterReady, runBeforeQuit, runBeforeReady,
   type Subsystem
 } from '../registry.js'
 import type { App } from 'electron'
@@ -339,5 +339,37 @@ describe('criticalFailureMessage', () => {
     expect(message).not.toBeNull()
     expect(message).toMatch(/broker/)
     expect(message).not.toMatch(/telemetry down/)
+  })
+})
+
+describe('runBeforeQuit', () => {
+  it('runs every beforeQuit at once, not one after the other', async () => {
+    const order: string[] = []
+    const make = (name: string, ms: number): Subsystem => ({
+      name,
+      beforeQuit: async () => {
+        order.push(`${name}-start`)
+        await new Promise((resolve) => setTimeout(resolve, ms))
+        order.push(`${name}-end`)
+      }
+    })
+    await runBeforeQuit([make('slow', 20), make('fast', 1)])
+    expect(order).toEqual(['slow-start', 'fast-start', 'fast-end', 'slow-end'])
+  })
+
+  it('skips a subsystem that declares no beforeQuit, and returns no failures for an empty list', async () => {
+    expect(await runBeforeQuit([{ name: 'passive' }])).toEqual([])
+    expect(await runBeforeQuit([])).toEqual([])
+  })
+
+  it('collects a throw as a beforeQuit failure, still runs the others, and never rejects', async () => {
+    const boom = new Error('send failed')
+    const ran = vi.fn(async () => {})
+    const failures = await runBeforeQuit([
+      { name: 'telemetry', beforeQuit: async () => { throw boom } },
+      { name: 'other', beforeQuit: ran }
+    ])
+    expect(ran).toHaveBeenCalledOnce()
+    expect(failures).toEqual([{ name: 'telemetry', phase: 'beforeQuit', error: boom, critical: false }])
   })
 })

@@ -5,7 +5,7 @@
 // in; nothing here could cache a previous call's answer.
 import { SHELL_APP_ID, periodOf, type AccountingState } from './accounting.js'
 import {
-  buildSitesPayload, buildUsagePayload, hasSites, mayTransmit,
+  INSTALL_ID_PLACEHOLDER, buildSitesPayload, buildUsagePayload, hasSites, mayTransmit,
   type ConsentState, type PayloadKind, type SentPayload
 } from './disclosure.js'
 import { recordSent, type HistoryState } from './history.js'
@@ -37,13 +37,16 @@ export interface SendContext {
   readonly stream: string
   /** Called only once consent is live: reading the machine is not allowed before then. */
   readonly installId: () => Promise<string>
-  /** The random report ID of a period's sites report, the same one every time that period is asked. */
-  readonly reportIdFor: (period: string) => string
   readonly random?: () => number
   /** The width a period's random offset is drawn from; a test build may narrow it to nothing. */
   readonly offsetWindowMs?: number
   /** How often a running month's snapshot goes again; a test build may shorten it from a day. */
   readonly snapshotEveryMs?: number
+  /**
+   * Everything there is goes now, past the random offset and the daily gate: the moment of an
+   * acceptance, and of a quit. A backoff from an earlier failure is cleared, so one attempt per kind is made.
+   */
+  readonly immediate?: boolean
 }
 
 export interface SendCycleResult {
@@ -81,13 +84,13 @@ export async function runSendCycle (state: SendCycleState, ctx: SendContext, sen
     let kindState: KindState = { ...current[kind], schedule: withOffsetFor(current[kind].schedule, period, ctx.random, ctx.offsetWindowMs) }
     const payloadFor = (target: string): SentPayload => kind === 'usage'
       ? buildUsagePayload(current.accounting, { installId, stream: ctx.stream, region: ctx.region, version: ctx.version, period: target })
-      : buildSitesPayload(current.accounting, { reportId: ctx.reportIdFor(target), version: ctx.version, period: target })
+      : buildSitesPayload(current.accounting, { installId, stream: ctx.stream, version: ctx.version, period: target })
     const hasData = (target: string): boolean => kind === 'usage'
       ? hasUsageData(current.accounting, target)
-      : hasSites(buildSitesPayload(current.accounting, { reportId: '', version: ctx.version, period: target }))
+      : hasSites(buildSitesPayload(current.accounting, { installId: INSTALL_ID_PLACEHOLDER, stream: ctx.stream, version: ctx.version, period: target }))
 
-    let transport = kindState.transport
-    for (const due of periodsDue(now, period, kindState.schedule, hasData, ctx.snapshotEveryMs)) {
+    let transport = ctx.immediate === true ? { ...kindState.transport, nextAttemptAtMs: undefined } : kindState.transport
+    for (const due of periodsDue(now, period, kindState.schedule, hasData, ctx.snapshotEveryMs, ctx.immediate === true)) {
       if (due === period && !hasData(due) && kind === 'sites') continue
       transport = enqueue(transport, payloadFor(due), first, clock)
     }

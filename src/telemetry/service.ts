@@ -178,15 +178,36 @@ export class TelemetryService {
     await this.writeLocal()
   }
 
+  /**
+   * One send chain: a send starts after the one running, never beside it. The timer's tick skips when one
+   * runs; an acceptance and a quit wait for it, because they must go.
+   */
+  private send (immediate: boolean): Promise<void> {
+    const previous = this.sending ?? Promise.resolve()
+    const running = previous.catch(() => {}).then(async () => await this.runSend(immediate))
+    const tracked = running.finally(() => { if (this.sending === tracked) this.sending = undefined })
+    this.sending = tracked
+    return tracked
+  }
+
   /** What the send timer does: send whatever is due, or, when consent is not live, empty every queue. */
   async sendTick (): Promise<void> {
     if (this.sending !== undefined) return
-    const running = this.runSend().finally(() => { this.sending = undefined })
-    this.sending = running
-    await running
+    await this.send(false)
   }
 
-  private async runSend (): Promise<void> {
+  /** Sends everything there is, past the random offset and the daily gate: what an acceptance and a quit do. */
+  async sendNow (): Promise<void> {
+    await this.send(true)
+  }
+
+  /** The browser is quitting: close the counting down and write it, then send the last snapshot. */
+  async quit (): Promise<void> {
+    await this.stop()
+    await this.sendNow()
+  }
+
+  private async runSend (immediate: boolean): Promise<void> {
     const generation = this.generation
     this.cycle = { ...this.cycle, accounting: this.accounting }
     const result = await runSendCycle(this.cycle, {
@@ -195,9 +216,9 @@ export class TelemetryService {
       region: this.deps.region(),
       stream: this.deps.store.getStream(),
       installId: () => this.installId(),
-      reportIdFor: (period) => this.deps.store.reportIdFor(period),
       ...(this.deps.offsetWindowMs === undefined ? {} : { offsetWindowMs: this.deps.offsetWindowMs }),
-      ...(this.deps.snapshotEveryMs === undefined ? {} : { snapshotEveryMs: this.deps.snapshotEveryMs })
+      ...(this.deps.snapshotEveryMs === undefined ? {} : { snapshotEveryMs: this.deps.snapshotEveryMs }),
+      ...(immediate ? { immediate } : {})
     }, this.deps.send, this.deps.clock)
     // A withdrawal or an erase happened while this ran: what it found out is stale, and writing it back would undo them.
     if (generation !== this.generation) return
@@ -221,6 +242,8 @@ export class TelemetryService {
     }
     await this.syncMeasuring()
     await this.writeLocal()
+    // Not awaited: the welcome screen and Settings do not wait on the network for the send an acceptance starts.
+    if (on) this.sendNow().catch((error) => { console.error('[orivon] telemetry send failed:', error) })
     this.deps.notify()
   }
 
@@ -252,7 +275,7 @@ export class TelemetryService {
       everAccepted: (await this.consentRecord()).everAccepted,
       installId,
       usage: buildUsagePayload(this.accounting, { installId: installId ?? INSTALL_ID_PLACEHOLDER, stream: this.deps.store.getStream(), region: this.deps.region(), version: this.deps.version, period }),
-      sites: buildSitesPayload(this.accounting, { reportId: this.deps.store.reportIdFor(period), version: this.deps.version, period }),
+      sites: buildSitesPayload(this.accounting, { installId: installId ?? INSTALL_ID_PLACEHOLDER, stream: this.deps.store.getStream(), version: this.deps.version, period }),
       sent: this.deps.store.getHistoryState().entries
     }
   }

@@ -30,10 +30,13 @@ keeps its own accounting, history, queue and random `stream` under its own data 
 two profiles open together are both counted and summed as one computer on the server.
 
 **Two messages and an erase.** A usage report (install ID, stream, region from the time zone,
-version, month, active and background seconds, seconds per site class) and an unlinked site
-report (a random monthly report ID and seconds per named Web3 or Web2.5 site) go to
-`telemetry.orivonstack.com`, each at most once a day as a month-to-date total the server
-upserts. The erase request carries the install ID. The client ignores every response body.
+version, month, active and background seconds, seconds per site class) and a site report (the
+same install ID and stream, version, month and seconds per named Web3 or Web2.5 site) go to
+`telemetry.orivonstack.com` as month-to-date totals the server upserts: when the person turns
+telemetry on, once a day at a random offset, and when the browser quits (`service.ts`'s
+`sendNow` and `quit`; `runner.ts`'s `beforeQuit`, inside the quit bound in `main/index.ts`). The
+server counts a site report only when a usage report accounts for it. The erase request carries
+the install ID and removes both. The client ignores every response body.
 
 **Mostly durable.** `accounting.ts`, `disclosure.ts`, `transport.ts` and `history.ts` are pure;
 `runner.ts` wires them to Electron, and `store.ts` to disk.

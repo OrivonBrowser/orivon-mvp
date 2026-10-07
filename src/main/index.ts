@@ -19,7 +19,7 @@ import { internalSession } from './pages/internal-session.js'
 import { installHistory } from './history/install-history.js'
 import { installDownloads } from './downloads/install-downloads.js'
 import { installDownloadsPeek } from './downloads/auto-open.js'
-import { createSubsystemContext, criticalFailureMessage, publishOpenTabs, publishScoreVerdictFor, publishShowNotice, publishWebsiteScore, publishWindowForSender, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
+import { createSubsystemContext, criticalFailureMessage, publishOpenTabs, publishScoreVerdictFor, publishShowNotice, publishWebsiteScore, publishWindowForSender, runAfterReady, runBeforeQuit, runBeforeReady, type SubsystemFailure } from './registry.js'
 import { subsystems } from './subsystems.js'
 import { DebouncedWriter } from './storage/debounced-writer.js'
 import { devOnlySwitches } from './shell/dev-switches.js'
@@ -77,10 +77,13 @@ function report (failures: SubsystemFailure[]): void {
 
 // A change made within the debounce window of the browser closing (a starred
 // page, a setting) must not be silently lost -- that is precisely what
-// DebouncedWriter.flushAll() exists to prevent, so quit waits for it.
+// DebouncedWriter.flushAll() exists to prevent, so quit waits for it. A
+// subsystem's own quit work (telemetry's last send) runs beside it and shares
+// the same bound.
 // Bounded, not indefinite: flushAll() itself never rejects (a slow or failed
-// store reports its own failure), and the race below caps the wait so a stuck
-// disk turns into a lost change in that one store rather than a browser that
+// store reports its own failure), runBeforeQuit never rejects either, and the
+// race below caps the wait so a stuck disk or a dead network turns into a lost
+// change in that one store, or a skipped send, rather than a browser that
 // will not close. The bound is generous relative to the 300ms debounce
 // (WRITE_DEBOUNCE_MS) plus ordinary disk latency, and short enough that a
 // user closing the window does not perceive a hang.
@@ -88,19 +91,20 @@ const QUIT_FLUSH_TIMEOUT_MS = 2000
 
 async function flushStoresBeforeQuit (): Promise<void> {
   await Promise.race([
-    DebouncedWriter.flushAll(),
+    Promise.all([DebouncedWriter.flushAll(), runBeforeQuit(subsystems).then(report)]),
     new Promise<void>((resolve) => setTimeout(resolve, QUIT_FLUSH_TIMEOUT_MS))
   ])
 }
 
 // Every way of quitting passes here: a quit command, the last window closing
 // or the system asking. The first pass holds the quit while the stores flush,
-// then quits again.
+// then quits again. A second quit during the wait joins the same pass.
 let storesFlushed = false
+let quitFlush: Promise<void> | undefined
 app.on('before-quit', (event) => {
   if (storesFlushed) return
   event.preventDefault()
-  void flushStoresBeforeQuit().then(() => {
+  quitFlush ??= flushStoresBeforeQuit().then(() => {
     storesFlushed = true
     app.quit()
   })

@@ -63,6 +63,16 @@ describe('TelemetryService', () => {
 
   const focused = [{ id: 1, focused: true }]
 
+  /** Accepts and lets the send an acceptance starts finish, then forgets it: a test of a later send starts clean. */
+  async function acceptAndSettle (): Promise<void> {
+    await service.setOn(true, 'welcome')
+    await service.sendNow()
+    sent = []
+    order = []
+  }
+
+  const historyLength = (): number => store.getHistoryState().entries.length
+
   async function browse (seconds: number, site: string): Promise<void> {
     service.noteSite(site)
     await service.checkpointTick(focused, true)
@@ -85,13 +95,44 @@ describe('TelemetryService', () => {
   })
 
   it('counts and sends once accepted, under the ID derived from the machine', async () => {
-    await service.setOn(true, 'welcome')
+    await acceptAndSettle()
     await browse(60, 'web3:vitalik.eth')
+    await service.sendNow()
+    const usage = sent.find((payload) => !('sites' in payload))
+    expect(usage).toMatchObject({ schema: 3, installId: deriveInstallId(MACHINE), stream: 'ab'.repeat(16), region: 'EU', period: '2026-10', activeSec: 60, classes: { web3: 60, web25: 0, web2: 0 } })
+    expect(sent.find((payload) => 'sites' in payload)).toMatchObject({ installId: deriveInstallId(MACHINE), stream: 'ab'.repeat(16), sites: { 'web3:vitalik.eth': 60 } })
+    expect((await service.status()).sent.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('accepting sends the usage and sites reports at once, without waiting for a tick or the random offset', async () => {
+    service.noteSite('web3:vitalik.eth')
+    await service.checkpointTick(focused, true)
+    await service.setOn(true, 'welcome')
+    await service.checkpointTick(focused, true)
+    now += 60 * SEC
+    await service.checkpointTick(focused, true)
+    await vi.waitFor(() => { expect(sent.length).toBeGreaterThanOrEqual(1) })
     await service.sendTick()
-    const usage = sent.find((payload) => !('reportId' in payload))
-    expect(usage).toMatchObject({ schema: 2, installId: deriveInstallId(MACHINE), stream: 'ab'.repeat(16), region: 'EU', period: '2026-10', activeSec: 60, classes: { web3: 60, web25: 0, web2: 0 } })
-    expect(sent.find((payload) => 'reportId' in payload)).toMatchObject({ sites: { 'web3:vitalik.eth': 60 } })
-    expect((await service.status()).sent).toHaveLength(2)
+    expect(sent.some((payload) => !('sites' in payload))).toBe(true)
+    expect(machineReads).toBeGreaterThan(0)
+  })
+
+  it('quitting sends a last snapshot that includes the session just closed', async () => {
+    await acceptAndSettle()
+    await browse(60, 'web3:vitalik.eth')
+    now += 30 * SEC
+    await service.quit()
+    const usage = sent.filter((payload) => !('sites' in payload)).at(-1)
+    // The 30 seconds after the last checkpoint are in it: stop() closed the session before the send.
+    expect(usage).toMatchObject({ period: '2026-10', activeSec: 90 })
+    expect(sent.filter((payload) => 'sites' in payload).at(-1)).toMatchObject({ sites: { 'web3:vitalik.eth': 90 } })
+    expect(store.getAccountingState().openSessions).toEqual({})
+  })
+
+  it('quitting with telemetry off sends nothing', async () => {
+    await service.quit()
+    expect(sent).toEqual([])
+    expect(machineReads).toBe(0)
   })
 
   it('starts counting on the site that was already in front when it was turned on', async () => {
@@ -106,9 +147,9 @@ describe('TelemetryService', () => {
 
   it('withdrawal stops counting and drops what was queued, and nothing pending is sent later', async () => {
     sendOk = false
-    await service.setOn(true, 'welcome')
+    await acceptAndSettle()
     await browse(60, 'web3:vitalik.eth')
-    await service.sendTick()
+    await service.sendNow()
     expect(sent.length).toBeGreaterThan(0)
     const before = sent.length
 
@@ -125,7 +166,7 @@ describe('TelemetryService', () => {
   })
 
   it('reads a choice another profile made, at the next tick', async () => {
-    await new SystemStore(join(dir, 'home')).writeConsent({ state: 'accepted', atMs: start, noticeVersion: 2, source: 'welcome', everAccepted: true })
+    await new SystemStore(join(dir, 'home')).writeConsent({ state: 'accepted', atMs: start, noticeVersion: 3, source: 'welcome', everAccepted: true })
     await service.checkpointTick(focused, true)
     now += 40 * SEC
     await service.checkpointTick(focused, true)
@@ -159,7 +200,7 @@ describe('TelemetryService', () => {
   })
 
   it('writes the counted time to disk at each checkpoint', async () => {
-    await service.setOn(true, 'welcome')
+    await acceptAndSettle()
     await browse(60, 'web2')
     const reloaded = new TelemetryStore(join(dir, 'profile', 'telemetry.json'))
     await reloaded.load()
@@ -184,11 +225,11 @@ describe('TelemetryService', () => {
   })
 
   it('delete my data waits for a send in flight: its result is discarded, its POST lands before the erase, and no history is left', async () => {
-    await service.setOn(true, 'welcome')
+    await acceptAndSettle()
     await browse(60, 'web3:vitalik.eth')
     let open: () => void = () => {}
     gate = new Promise<void>((resolve) => { open = resolve })
-    const tick = service.sendTick()
+    const tick = service.sendNow()
     while (!order.includes('send-start')) await new Promise((resolve) => setTimeout(resolve, 1))
 
     const erasing = service.erase()
@@ -207,11 +248,12 @@ describe('TelemetryService', () => {
   })
 
   it('turning it off mid-send discards the finishing send and never writes its history back', async () => {
-    await service.setOn(true, 'welcome')
+    await acceptAndSettle()
+    const settled = historyLength()
     await browse(60, 'web3:vitalik.eth')
     let open: () => void = () => {}
     gate = new Promise<void>((resolve) => { open = resolve })
-    const tick = service.sendTick()
+    const tick = service.sendNow()
     while (!order.includes('send-start')) await new Promise((resolve) => setTimeout(resolve, 1))
     const turningOff = service.setOn(false, 'settings')
     await new Promise((resolve) => setTimeout(resolve, 30))
@@ -219,7 +261,25 @@ describe('TelemetryService', () => {
     gate = undefined
     await Promise.all([tick, turningOff])
     expect(order.filter((entry) => entry === 'send-start')).toHaveLength(1)
-    expect(store.getHistoryState().entries).toEqual([])
+    expect(historyLength()).toBe(settled)
+  })
+
+  it('withdrawal stops a send chained behind one in flight', async () => {
+    await acceptAndSettle()
+    const settled = historyLength()
+    await browse(60, 'web3:vitalik.eth')
+    let open: () => void = () => {}
+    gate = new Promise<void>((resolve) => { open = resolve })
+    const first = service.sendNow()
+    while (!order.includes('send-start')) await new Promise((resolve) => setTimeout(resolve, 1))
+    const chained = service.quit()
+    const turningOff = service.setOn(false, 'settings')
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    open()
+    gate = undefined
+    await Promise.all([first, chained, turningOff])
+    expect(order.filter((entry) => entry === 'send-start')).toHaveLength(1)
+    expect(historyLength()).toBe(settled)
   })
 
   it('does not credit the time between a process that lost its quit write and the next one', async () => {

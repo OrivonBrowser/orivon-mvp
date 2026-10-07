@@ -27,7 +27,7 @@ function stateWith (accounting: AccountingState): SendCycleState {
 }
 
 function context (consent: ConsentState, installId = vi.fn(async () => INSTALL)): SendContext & { installId: ReturnType<typeof vi.fn> } {
-  return { consent: async () => consent, version: '0.1.0', region: 'EU', stream: 'cd'.repeat(16), installId, reportIdFor: () => 'ef'.repeat(16), random: () => 0 }
+  return { consent: async () => consent, version: '0.1.0', region: 'EU', stream: 'cd'.repeat(16), installId, random: () => 0 }
 }
 
 function recordingSender (ok = true): { sender: Sender, sent: SentPayload[] } {
@@ -42,11 +42,44 @@ describe('runSendCycle', () => {
     const { sender, sent } = recordingSender()
     const result = await runSendCycle(stateWith(browsingSince(september, 500)), context('accepted'), sender, now)
 
-    expect(sent.map((payload) => 'reportId' in payload ? 'sites' : 'usage')).toEqual(['usage', 'sites'])
-    expect(sent[0]).toMatchObject({ schema: 2, installId: INSTALL, period: '2026-09', activeSec: 500, classes: { web3: 500 } })
-    expect(sent[1]).toMatchObject({ schema: 2, reportId: 'ef'.repeat(16), sites: { 'web3:vitalik.eth': 500 } })
+    expect(sent.map((payload) => 'sites' in payload ? 'sites' : 'usage')).toEqual(['usage', 'sites'])
+    expect(sent[0]).toMatchObject({ schema: 3, installId: INSTALL, period: '2026-09', activeSec: 500, classes: { web3: 500 } })
+    expect(sent[1]).toMatchObject({ schema: 3, installId: INSTALL, stream: 'cd'.repeat(16), sites: { 'web3:vitalik.eth': 500 } })
     expect(result.state.history.entries.map((entry) => entry.payload)).toEqual(sent)
     expect(result.state.usage.transport.queue).toHaveLength(0)
+  })
+
+  it('carries the same install ID and stream on the sites report as on the usage report', async () => {
+    const { sender, sent } = recordingSender()
+    await runSendCycle(stateWith(browsingSince(september, 500)), context('accepted'), sender, now)
+    const [usage, sites] = sent
+    expect(sites).toMatchObject({ installId: (usage as { installId: string }).installId, stream: (usage as { stream: string }).stream })
+    expect(Object.keys(sites ?? {})).toEqual(['schema', 'installId', 'stream', 'version', 'period', 'sites'])
+  })
+
+  it('immediate sends both kinds before the random offset has passed', async () => {
+    const late = { ...context('accepted'), random: () => 0.5, immediate: true }
+    const waiting = recordingSender()
+    await runSendCycle(stateWith(browsingSince(september, 500)), { ...late, immediate: false }, waiting.sender, now)
+    expect(waiting.sent).toHaveLength(0)
+    const { sender, sent } = recordingSender()
+    await runSendCycle(stateWith(browsingSince(september, 500)), late, sender, now)
+    expect(sent.map((payload) => 'sites' in payload ? 'sites' : 'usage')).toEqual(['usage', 'sites'])
+  })
+
+  it('immediate clears the backoff of an earlier failure and tries once, without a retry loop', async () => {
+    const failing = recordingSender(false)
+    const staged = await runSendCycle(stateWith(browsingSince(september, 500)), context('accepted'), failing.sender, now)
+    expect(staged.state.usage.transport.nextAttemptAtMs).toBeDefined()
+
+    const still = recordingSender()
+    const gated = await runSendCycle(staged.state, context('accepted'), still.sender, now)
+    expect(still.sent).toHaveLength(0)
+    expect(gated.state.usage.transport.queue).toHaveLength(1)
+
+    const again = recordingSender(false)
+    await runSendCycle(staged.state, { ...context('accepted'), immediate: true }, again.sender, now)
+    expect(again.sent.map((payload) => 'sites' in payload ? 'sites' : 'usage')).toEqual(['usage', 'sites'])
   })
 
   it('does not read the machine or call the sender while consent is undecided or declined', async () => {
@@ -87,13 +120,13 @@ describe('runSendCycle', () => {
 
     at = october + 60 * SEC
     const inOctober = await runSendCycle(inSeptember.state, context('accepted'), sender, clock)
-    const usage = sent.filter((payload) => !('reportId' in payload))
+    const usage = sent.filter((payload) => !('sites' in payload))
     expect(usage.map((payload) => payload.period)).toEqual(['2026-09', '2026-10'])
     sent.length = 0
 
     at += 25 * 3600 * SEC
     await runSendCycle(inOctober.state, context('accepted'), sender, clock)
-    expect(sent.filter((payload) => !('reportId' in payload)).map((payload) => payload.period)).toEqual(['2026-10'])
+    expect(sent.filter((payload) => !('sites' in payload)).map((payload) => payload.period)).toEqual(['2026-10'])
   })
 
   it('sends no sites report when no Web3 or Web2.5 site was counted', async () => {
@@ -104,7 +137,7 @@ describe('runSendCycle', () => {
     ])
     await runSendCycle(stateWith(accounting), context('accepted'), sender, now)
     expect(sent).toHaveLength(1)
-    expect('reportId' in (sent[0] ?? {})).toBe(false)
+    expect('sites' in (sent[0] ?? {})).toBe(false)
   })
 
   it('keeps a failed report queued with backoff engaged and records nothing', async () => {
@@ -147,7 +180,7 @@ describe('runSendCycle: consent is read again before every send', () => {
     const sender: Sender = async (payload) => { sent.push(payload); declined = true; return true }
     const ctx: SendContext = { ...context('accepted'), consent: async () => declined ? 'declined' : 'accepted' }
     const result = await runSendCycle(stateWith(browsingSince(september, 500)), ctx, sender, () => september + 600 * SEC)
-    expect(sent.map((payload) => 'reportId' in payload ? 'sites' : 'usage')).toEqual(['usage'])
+    expect(sent.map((payload) => 'sites' in payload ? 'sites' : 'usage')).toEqual(['usage'])
     expect(result.state.sites.transport.queue).toHaveLength(0)
     expect(result.state.usage.transport.queue).toHaveLength(0)
   })

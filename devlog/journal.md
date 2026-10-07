@@ -58,6 +58,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Our own telemetry server runs on the EU VPS: no IP kept, 12-month retention; a privacy notice in English and Italian explains everything.
 - Global Privacy Control is on by default, sent by the engine itself to every page, frame and worker, ahead of California's 2027 rule.
 - README rewritten for launch day: alpha, apps linked by `.eth` name, everyday-browser features up front, limits moved to `docs/known-limitations.md`.
+- Telemetry site reports now carry the install ID, so spam can be excluded; reports also go at once on accept and on quit.
 
 ### In my head
 

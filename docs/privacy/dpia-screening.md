@@ -12,9 +12,9 @@ Two or more met usually means a DPIA is needed. Scope: the telemetry described i
 | 1 | Evaluation or scoring, including profiling | No | The seconds counted describe the browser's use, not a judgement of a person. The Web3 Score rates sites, not people, and is not sent |
 | 2 | Automated decisions with legal or similar effect | No | No decision is made about anyone |
 | 3 | Systematic monitoring | Partly | Active and background seconds are counted continuously and sent daily. It is measurement of use of one product, not of a public place or of what the person reads, and it is off until the person chooses to share |
-| 4 | Sensitive data or highly personal data | Not directly | No special-category data is collected. A site name could suggest one by inference (a site about health, politics or religion that has a public Web3 or Web2.5 name). The per-site seconds of one profile for one month are the nearest thing to this |
+| 4 | Sensitive data or highly personal data | Partly | No special-category data is collected. A site name could suggest one by inference (a site about health, politics or religion that has a public Web3 or Web2.5 name). The named-site seconds of one install, linked to its identifier for at most two months, are the nearest thing to this |
 | 5 | Large scale | No | The aim is on the order of a hundred active users. Re-screen if that grows by an order of magnitude |
-| 6 | Matching or combining datasets | No | The site report carries no install identifier; the server keeps the two tables with no common key. Nothing is joined with other sources |
+| 6 | Matching or combining datasets | No | The usage and site reports share one install identifier because they serve one telemetry purpose, have one controller and are both disclosed. WP248 criterion 6 is about datasets from different processing operations or different controllers; nothing is joined with other sources |
 | 7 | Vulnerable data subjects | No | Adult users of a technical product; no children or employees are targeted |
 | 8 | Innovative use or new technology | No | A counter and a hash. Not novel |
 | 9 | Prevents people exercising a right or using a service | No | Declining changes nothing in the browser. The first screen offers two equal buttons, neither preselected |
@@ -23,24 +23,25 @@ Two or more met usually means a DPIA is needed. Scope: the telemetry described i
 
 **A full DPIA is not required for the design as it stands**, because at most criteria 3 and 4 are
 partly met, the data are counters, consent is an active, unambiguous choice and withdrawable, the volume is small, and the
-per-site data is unlinked from the identifier. This is a close call on two points, and the record
-says so rather than hiding them:
+named-site rows keep the identifier for at most two months. The margin is narrow, and this result is *provisional*: the legal review before a public launch
+settles it. It is a close call on two points, and the record says so rather than hiding them:
 
 1. **The install identifier is derived from the machine's own ID.** It is a one-way hash, so the
    machine ID cannot be read from it, and it is made only after consent. But it is a stable device
    identifier: the same on every profile, and it survives a reinstall of the browser. Anyone who
    knows the machine ID of a computer (any program running on it can read it) and the derivation
    can compute the identifier for that computer. It is treated as personal data for that reason.
-   It is the reason the identifier is limited to counters and kept out of the per-site message.
-2. **The per-site report is the closest thing to browsing information.** It carries no install
-   identifier and a random identifier that changes every month, but the server sees the sender's IP
-   address at the moment of the request, and for a small population a rare site name could narrow
-   who sent a report. The IP address is not written to disk (it is held in memory only, for a per-address rate limit), and the public name rule keeps ordinary
+   It is the reason the identifier is limited to counters and to named-site seconds for at most two months.
+2. **The per-site report is the closest thing to browsing information.** It carries the install
+   identifier, so for the month and the month after, the sites one computer spent time on are
+   linked to it, and for a small population a rare site name could narrow who that is. After that
+   the rows are folded into totals with no identifier. The IP address is not written to disk (it
+   is held in memory only, for a per-address rate limit), and the public name rule keeps ordinary
    Web2 sites out of it altogether.
 
 ## Re-screen when
 
-- The per-site report is linked to the install identifier or merged into the usage report.
+- Site rows are kept past one month after their month closes.
 - A field is added to either message, or any per-page information is considered.
 - The number of active users grows by an order of magnitude, or the first-run choice is replaced by a preselected
   option.

@@ -15,12 +15,11 @@ const emptyDisk: TelemetryDisk = {
   stream: STREAM,
   accounting: initialState,
   history: initialHistoryState,
-  schedules: { usage: initialKindSchedule, sites: initialKindSchedule },
-  reportIds: {}
+  schedules: { usage: initialKindSchedule, sites: initialKindSchedule }
 }
 
 const usage: UsagePayload = {
-  schema: 2, installId: 'b2'.repeat(16), stream: STREAM, region: 'EU', version: '0.1.0', period: '2026-09',
+  schema: 3, installId: 'b2'.repeat(16), stream: STREAM, region: 'EU', version: '0.1.0', period: '2026-09',
   activeSec: 1, backgroundSec: 2, classes: { web3: 1, web25: 0, web2: 0 }
 }
 
@@ -33,8 +32,7 @@ describe('parseTelemetryFile / serializeTelemetryFile', () => {
       schedules: {
         usage: { offsetPeriod: '2026-09', offsetMs: 5, lastSentAtMs: 7, closedPeriod: '2026-08' },
         sites: initialKindSchedule
-      },
-      reportIds: { '2026-09': 'd4'.repeat(16) }
+      }
     }
     expect(parseTelemetryFile(serializeTelemetryFile(disk), nextFixed)).toEqual(disk)
   })
@@ -55,10 +53,9 @@ describe('parseTelemetryFile / serializeTelemetryFile', () => {
 
   it('keeps nothing of the counting a file without schema 2 holds: it was counted before any consent', () => {
     const old = { perApp: { shell: { '2026-09': { activeSec: 60, backgroundSec: 30 } } }, openSessions: { shell: 1 }, focusedApp: 'shell', lastInteractionAt: 500, suspended: false, lastAccountedAt: 600 }
-    const parsed = parseTelemetryFile(JSON.stringify({ stream: STREAM, accounting: old, schedules: { usage: { offsetPeriod: '2026-09', offsetMs: 5 } }, reportIds: { '2026-09': 'ee'.repeat(16) } }), nextFixed)
+    const parsed = parseTelemetryFile(JSON.stringify({ stream: STREAM, accounting: old, schedules: { usage: { offsetPeriod: '2026-09', offsetMs: 5 } } }), nextFixed)
     expect(parsed.accounting).toEqual(initialState)
     expect(parsed.schedules).toEqual(emptyDisk.schedules)
-    expect(parsed.reportIds).toEqual({})
     expect(parsed.stream).toBe(STREAM)
   })
 
@@ -68,14 +65,14 @@ describe('parseTelemetryFile / serializeTelemetryFile', () => {
     expect(parseTelemetryFile(serializeTelemetryFile(disk), nextFixed).accounting.lastAccountedAt).toBe(5)
   })
 
-  it('drops history entries made before reports had a schema', () => {
-    const raw = JSON.stringify({ schema: 2, stream: STREAM, history: { entries: [{ payload: { installId: 'x', country: '', version: '1', period: '2026-08', perApp: {} }, sentAtMs: 1 }, { payload: usage, sentAtMs: 2 }] } })
+  it('drops history entries written under another payload schema', () => {
+    const raw = JSON.stringify({ schema: 2, stream: STREAM, history: { entries: [{ payload: { installId: 'x', country: '', version: '1', period: '2026-08', perApp: {} }, sentAtMs: 1 }, { payload: { ...usage, schema: 2 }, sentAtMs: 3 }, { payload: usage, sentAtMs: 2 }] } })
     expect(parseTelemetryFile(raw, nextFixed).history.entries).toEqual([{ payload: usage, sentAtMs: 2 }])
   })
 
   it('does not read a consent or an install ID out of the profile file: both are system-wide', () => {
     const parsed = parseTelemetryFile(JSON.stringify({ stream: STREAM, consent: 'accepted', installId: 'old', country: 'IT' }), nextFixed)
-    expect(Object.keys(parsed).sort()).toEqual(['accounting', 'history', 'reportIds', 'schedules', 'stream'])
+    expect(Object.keys(parsed).sort()).toEqual(['accounting', 'history', 'schedules', 'stream'])
     expect(JSON.parse(serializeTelemetryFile(parsed))).not.toHaveProperty('consent')
   })
 })
@@ -125,17 +122,11 @@ describe('TelemetryStore', () => {
     expect(reloaded.getSchedule('sites').offsetMs).toBe(9)
   })
 
-  it('gives the same report ID for a period every time, a new one for the next, and keeps only the newest three', () => {
-    let n = 0
-    const store = new TelemetryStore(filePath, () => String(n++).padStart(32, '0'))
-    const september = store.reportIdFor('2026-09')
-    expect(store.reportIdFor('2026-09')).toBe(september)
-    const october = store.reportIdFor('2026-10')
-    expect(october).not.toBe(september)
-    store.reportIdFor('2026-11')
-    store.reportIdFor('2026-12')
-    expect(store.reportIdFor('2026-10')).toBe(october)
-    expect(store.reportIdFor('2026-09')).not.toBe(september)
+  it('reads a file that still holds the old per-period report IDs, and drops them', () => {
+    const raw = JSON.stringify({ schema: 2, stream: STREAM, reportIds: { '2026-09': 'd4'.repeat(16) } })
+    const parsed = parseTelemetryFile(raw, nextFixed)
+    expect(parsed).toEqual(emptyDisk)
+    expect(JSON.parse(serializeTelemetryFile(parsed))).not.toHaveProperty('reportIds')
   })
 
   it('erases what was counted and sent but keeps the stream', async () => {
@@ -144,7 +135,6 @@ describe('TelemetryStore', () => {
     store.setAccountingState({ ...initialState, lastAccountedAt: 5 })
     store.setHistoryState({ entries: [{ payload: usage, sentAtMs: 1 }] })
     store.setSchedule('usage', { ...initialKindSchedule, offsetMs: 3 })
-    store.reportIdFor('2026-09')
     await store.eraseMeasurements()
 
     const onDisk = parseTelemetryFile(await readFile(filePath, 'utf8'), () => 'zz')
