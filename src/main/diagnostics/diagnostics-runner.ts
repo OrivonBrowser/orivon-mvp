@@ -37,6 +37,8 @@ function devOrigin (): string | undefined {
 
 function attachRendererLog (contents: WebContents, log: DiagnosticsService): void {
   contents.on('console-message', ({ level, message, sourceId, lineNumber }) => {
+    // Before anything is looked up: a website can log thousands of lines a second, and only warnings and errors are kept.
+    if (level !== 'warning' && level !== 'error') return
     const page = shellPageName(contents.isDestroyed() ? '' : contents.getURL(), devOrigin())
     if (page === undefined) return
     const line = rendererLine(level, page, message, sourceId, lineNumber)
