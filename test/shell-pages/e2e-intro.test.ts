@@ -157,49 +157,21 @@ it('always: shows even when seen, and clicking through does not use up the one-t
   }
 }, TEST_TIMEOUT_MS * 2)
 
-const seamCalls = (app: ElectronApplication): Promise<{ setDefault: string[] }> =>
-  app.evaluate(() => (globalThis as unknown as { __orivonDevDefaultBrowser: { setDefault: string[] } }).__orivonDevDefaultBrowser)
+const seamCalls = (app: ElectronApplication): Promise<{ setDefault: string[], isDefault: string[] }> =>
+  app.evaluate(() => (globalThis as unknown as { __orivonDevDefaultBrowser: { setDefault: string[], isDefault: string[] } }).__orivonDevDefaultBrowser)
 
-it('offers no default-browser box on a run that cannot register, and registers nothing', async () => {
-  const app = await launch('always')
-  try {
-    expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
-    const intro = introPage(app) as Page
-    expect(await intro.locator('#default-offer').isHidden()).toBe(true)
-    await intro.click('#enter')
-    expect(await waitFor(() => introPage(app) === undefined)).toBe(true)
-  } finally {
-    await closeElectron(app)
-  }
-}, TEST_TIMEOUT_MS)
-
-it('offers an unticked default-browser box where it can register, and Enter without the tick registers nothing', async () => {
+it('offers no default-browser box, even where it can register, and entering registers nothing', async () => {
   const app = await launch('always', undefined, { ORIVON_TEST_DEFAULT_BROWSER: 'can-set' })
   try {
     expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
     const intro = introPage(app) as Page
-    expect(await intro.locator('#default-offer').isVisible()).toBe(true)
-    expect(await intro.locator('#make-default').isChecked()).toBe(false)
-    expect((await intro.locator('#default-offer').innerText()).trim()).toBe('Make Orivon my default browser')
+    expect(await intro.locator('#enter').isVisible()).toBe(true)
+    expect(await intro.locator('input[type="checkbox"]').count()).toBe(0)
+    expect(await intro.locator('text=default browser').count()).toBe(0)
     await intro.click('#enter')
     expect(await waitFor(() => introPage(app) === undefined)).toBe(true)
     await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS))
     expect((await seamCalls(app)).setDefault).toEqual([])
-  } finally {
-    await closeElectron(app)
-  }
-}, TEST_TIMEOUT_MS)
-
-it('registers http and https when the box is ticked and Enter Orivon is pressed', async () => {
-  const app = await launch('always', undefined, { ORIVON_TEST_DEFAULT_BROWSER: 'can-set' })
-  try {
-    expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
-    const intro = introPage(app) as Page
-    await intro.check('#make-default')
-    await intro.click('#enter')
-    expect(await waitFor(() => introPage(app) === undefined)).toBe(true)
-    expect(await waitFor(async () => (await seamCalls(app)).setDefault.length === 2, 10_000)).toBe(true)
-    expect((await seamCalls(app)).setDefault).toEqual(['http', 'https'])
   } finally {
     await closeElectron(app)
   }
@@ -237,59 +209,99 @@ async function consentOf (home: string): Promise<Record<string, unknown> | undef
   return JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>
 }
 
-it('asks the telemetry question in place of the single Enter button, with two equal buttons and neither chosen', async () => {
+/** Clicks "Enter Orivon" on a page that asks, and waits for the popup to be fully in. */
+async function openPopup (intro: Page): Promise<void> {
+  await intro.click('#enter')
+  expect(await waitFor(async () => await intro.locator('#consent').isVisible())).toBe(true)
+  expect(await waitFor(async () => Number(await intro.locator('.consent-card').evaluate((el) => getComputedStyle(el).opacity)) === 1)).toBe(true)
+}
+
+it('keeps the welcome page as it is, and "Enter Orivon" opens the telemetry popup over it: two equal buttons, neither chosen', async () => {
   const home = await newHome()
   const app = await askingTelemetry(home)
   try {
     expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
     const intro = introPage(app) as Page
-    expect(await waitFor(async () => await intro.locator('#telemetry-choice').isVisible())).toBe(true)
-    expect(await intro.locator('#enter').isHidden()).toBe(true)
-    expect(await intro.textContent('#telemetry-title')).toBe('Telemetry')
-    expect(await intro.textContent('#telemetry-choice .telemetry-text')).toContain('keeps your history on your computer')
-    expect(await intro.locator('#telemetry-choice details li').count()).toBe(4)
-    expect(await intro.locator('#telemetry-choice details li').nth(1).textContent()).toContain('in a separate report under the same ID, so a forged report can be told apart. Web2 sites are never named.')
+    // The welcome page carries no question of its own: the single button, and nothing about telemetry until it is pressed.
+    expect(await waitFor(async () => await intro.locator('#enter').isVisible())).toBe(true)
+    expect(await intro.locator('#consent').isHidden()).toBe(true)
+    await openPopup(intro)
+    expect(new URL(intro.url()).hash).toBe('#asking')
+    // Still on the welcome screen, which now holds nothing to press: the popup is the only way in.
+    expect(introPage(app)).toBeDefined()
+    expect(await intro.locator('#welcome').getAttribute('inert')).not.toBeNull()
+    expect(await intro.textContent('#consent-title')).toBe('Support us for free through telemetry')
+    expect(await intro.getAttribute('.consent-card', 'role')).toBe('dialog')
+    expect(await intro.textContent('#consent-lead')).toContain('keeps your history on your computer')
+    expect(await intro.locator('.consent-promises li').allTextContents()).toEqual(['No page addresses, searches or history', 'Your IP address is never kept', 'Never sold, never used for ads', 'Change your mind any time in Settings'])
+    expect(await intro.locator('.consent-details li').count()).toBe(4)
+    expect(await intro.locator('.consent-details li').nth(1).textContent()).toContain('Web2 sites are never named. They travel in a separate report under the same ID, so a forged report can be told apart.')
+    expect(await intro.locator('.consent-details li').nth(2).textContent()).toContain('your country, from your time zone')
 
-    const [withBox, withoutBox] = await Promise.all(['#enter-with-telemetry', '#enter-without-telemetry'].map(async (selector) => await intro.locator(selector).boundingBox()))
-    expect(withBox?.width).toBe(withoutBox?.width)
-    expect(withBox?.height).toBe(withoutBox?.height)
-    const styles = await Promise.all(['#enter-with-telemetry', '#enter-without-telemetry'].map(async (selector) => await intro.locator(selector).evaluate((el) => {
+    const [acceptBox, denyBox] = await Promise.all(['#telemetry-accept', '#telemetry-deny'].map(async (selector) => await intro.locator(selector).boundingBox()))
+    expect(acceptBox?.width).toBe(denyBox?.width)
+    expect(acceptBox?.height).toBe(denyBox?.height)
+    const styles = await Promise.all(['#telemetry-accept', '#telemetry-deny'].map(async (selector) => await intro.locator(selector).evaluate((el) => {
       const style = getComputedStyle(el)
       return [el.className, style.backgroundColor, style.color, style.borderColor, style.fontWeight, style.boxShadow]
     })))
     expect(styles[0]).toEqual(styles[1])
     expect(await intro.evaluate(() => document.activeElement?.tagName)).toBe('BODY')
-    expect(await intro.textContent('#enter-with-telemetry')).toBe('Enter and share telemetry')
-    expect(await intro.textContent('#enter-without-telemetry')).toBe('Enter without telemetry')
-  } finally {
-    await closeElectron(app)
-  }
-}, TEST_TIMEOUT_MS)
-
-it('does not leave on the Enter key while the choice is open, and says to choose one', async () => {
-  const home = await newHome()
-  const app = await askingTelemetry(home)
-  try {
-    expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
-    const intro = introPage(app) as Page
-    expect(await waitFor(async () => await intro.locator('#telemetry-choice').isVisible())).toBe(true)
-    await intro.keyboard.press('Enter')
-    expect(await waitFor(async () => (await intro.textContent('#telemetry-hint')) === 'Choose one to continue.')).toBe(true)
-    await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS))
-    expect(introPage(app)).toBeDefined()
+    expect(await intro.textContent('#telemetry-accept')).toBe('Accept')
+    expect(await intro.textContent('#telemetry-deny')).toBe('Deny')
     expect(existsSync(join(home, 'consent.json'))).toBe(false)
   } finally {
     await closeElectron(app)
   }
 }, TEST_TIMEOUT_MS)
 
-it('Enter and share telemetry records accepted for the whole computer, from the welcome screen', async () => {
+it('draws the browser main hands back under the popup, blurred, and fades it in whole', async () => {
   const home = await newHome()
   const app = await askingTelemetry(home)
   try {
     expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
     const intro = introPage(app) as Page
-    await intro.click('#enter-with-telemetry')
+    await openPopup(intro)
+    // This display captures no view (the GPU-less xvfb), so the test hands in what main would: two views by their box in percent.
+    const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+    await intro.evaluate((url) => {
+      document.dispatchEvent(new CustomEvent('browser-behind', { detail: [{ left: 0, top: 0, width: 100, height: 8, url }, { left: 0, top: 8, width: 100, height: 92, url }, { left: 0, top: 0, width: 1, height: 1, url: 'https://example.com/x.png' }] }))
+    }, pixel)
+    expect(await waitFor(async () => await intro.locator('#behind').evaluate((el) => el.classList.contains('shown')))).toBe(true)
+    expect(await intro.locator('#behind img').count()).toBe(2)
+    expect(await intro.locator('#behind img').nth(1).evaluate((el) => [(el as HTMLElement).style.top, (el as HTMLElement).style.height, getComputedStyle(el).filter])).toEqual(['8%', '92%', 'blur(26px) saturate(1.25)'])
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('does not leave on the Enter key while the popup is open, and says to choose one', async () => {
+  const home = await newHome()
+  const app = await askingTelemetry(home)
+  try {
+    expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
+    const intro = introPage(app) as Page
+    await openPopup(intro)
+    await intro.keyboard.press('Enter')
+    await intro.keyboard.press('Escape')
+    expect(await waitFor(async () => (await intro.textContent('#telemetry-hint')) === 'Choose Accept or Deny to continue.')).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS))
+    expect(introPage(app)).toBeDefined()
+    expect(await intro.locator('#consent').isVisible()).toBe(true)
+    expect(existsSync(join(home, 'consent.json'))).toBe(false)
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('Accept records accepted for the whole computer, from the welcome screen, and lets the person in', async () => {
+  const home = await newHome()
+  const app = await askingTelemetry(home)
+  try {
+    expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
+    const intro = introPage(app) as Page
+    await openPopup(intro)
+    await intro.click('#telemetry-accept')
     expect(await waitFor(() => introPage(app) === undefined && windowCount(app) === 2)).toBe(true)
     expect(await consentOf(home)).toMatchObject({ state: 'accepted', source: 'welcome', noticeVersion: NOTICE_VERSION })
   } finally {
@@ -297,18 +309,20 @@ it('Enter and share telemetry records accepted for the whole computer, from the 
   }
 }, TEST_TIMEOUT_MS)
 
-it('Enter without telemetry records declined, and the keyboard works: Tab to a button, then Enter', async () => {
+it('Deny records declined, and the keyboard works: Tab to a button, then Enter', async () => {
   const home = await newHome()
   const app = await askingTelemetry(home)
   try {
     expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
     const intro = introPage(app) as Page
-    expect(await waitFor(async () => await intro.locator('#telemetry-choice').isVisible())).toBe(true)
+    await openPopup(intro)
+    // The welcome page under it is inert: the first Tab lands in the popup, on "See exactly what is sent".
     await intro.keyboard.press('Tab')
+    expect(await intro.evaluate(() => document.activeElement?.tagName)).toBe('SUMMARY')
     await intro.keyboard.press('Tab')
-    expect(await intro.evaluate(() => document.activeElement?.id)).toBe('enter-with-telemetry')
+    expect(await intro.evaluate(() => document.activeElement?.id)).toBe('telemetry-accept')
     await intro.keyboard.press('Tab')
-    expect(await intro.evaluate(() => document.activeElement?.id)).toBe('enter-without-telemetry')
+    expect(await intro.evaluate(() => document.activeElement?.id)).toBe('telemetry-deny')
     await intro.keyboard.press('Enter')
     expect(await waitFor(() => introPage(app) === undefined && windowCount(app) === 2)).toBe(true)
     expect(await consentOf(home)).toMatchObject({ state: 'declined', source: 'welcome' })
@@ -317,14 +331,13 @@ it('Enter without telemetry records declined, and the keyboard works: Tab to a b
   }
 }, TEST_TIMEOUT_MS)
 
-it('does not ask again once the computer has a choice, accepted or declined, and the screen is the ordinary one', async () => {
+it('does not ask again once the computer has a choice, accepted or declined: Enter Orivon goes straight in', async () => {
   for (const state of ['accepted', 'declined']) {
     const home = await newHome({ state, atMs: Date.now(), noticeVersion: NOTICE_VERSION, source: 'settings' })
     const app = await askingTelemetry(home)
     try {
       expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
       const intro = introPage(app) as Page
-      expect(await intro.locator('#telemetry-choice').isHidden()).toBe(true)
       expect(await intro.locator('#enter').isVisible()).toBe(true)
       await intro.click('#enter')
       expect(await waitFor(() => introPage(app) === undefined && windowCount(app) === 2)).toBe(true)
@@ -335,12 +348,14 @@ it('does not ask again once the computer has a choice, accepted or declined, and
   }
 }, TEST_TIMEOUT_MS * 2)
 
-it('asks again when the notice has changed since an acceptance', async () => {
+it('asks again on a first showing when the notice has changed since an acceptance', async () => {
   const home = await newHome({ state: 'accepted', atMs: Date.now(), noticeVersion: 1, source: 'welcome' })
   const app = await askingTelemetry(home)
   try {
     expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
-    expect(await waitFor(async () => await (introPage(app) as Page).locator('#telemetry-choice').isVisible())).toBe(true)
+    const intro = introPage(app) as Page
+    await openPopup(intro)
+    expect(await intro.locator('#consent-changed').isVisible()).toBe(true)
   } finally {
     await closeElectron(app)
   }
@@ -351,27 +366,9 @@ it('does not ask when telemetry is off for the launch, which is what every other
   try {
     expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
     const intro = introPage(app) as Page
-    expect(await intro.locator('#telemetry-choice').isHidden()).toBe(true)
     expect(await intro.locator('#enter').isVisible()).toBe(true)
-  } finally {
-    await closeElectron(app)
-  }
-}, TEST_TIMEOUT_MS)
-
-it('keeps the default-browser box working beside the question: ticked, and Enter without telemetry', async () => {
-  const home = await newHome()
-  const app = await askingTelemetry(home, { ORIVON_TEST_DEFAULT_BROWSER: 'can-set' })
-  try {
-    expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
-    const intro = introPage(app) as Page
-    expect(await waitFor(async () => await intro.locator('#telemetry-choice').isVisible())).toBe(true)
-    expect(await intro.locator('#default-offer').isVisible()).toBe(true)
-    await intro.check('#make-default')
-    await intro.click('#enter-without-telemetry')
-    expect(await waitFor(() => introPage(app) === undefined)).toBe(true)
-    expect(await waitFor(async () => (await seamCalls(app)).setDefault.length === 2, 10_000)).toBe(true)
-    expect((await seamCalls(app)).setDefault).toEqual(['http', 'https'])
-    expect(await consentOf(home)).toMatchObject({ state: 'declined' })
+    await intro.click('#enter')
+    expect(await waitFor(() => introPage(app) === undefined && windowCount(app) === 2)).toBe(true)
   } finally {
     await closeElectron(app)
   }
@@ -383,21 +380,21 @@ const staleAcceptance = { state: 'accepted', atMs: Date.UTC(2026, 8, 1), noticeV
 const renewing = (home: string): Promise<ElectronApplication> =>
   launch('once', seenProfile, { ORIVON_TELEMETRY: 'on', ORIVON_TELEMETRY_HOME: home })
 
-it('asks again after the notice changed: the question, the change line, no default-browser offer, and one answer ends it', async () => {
+it('asks again after the notice changed: the popup alone, with the change line, and one answer ends it', async () => {
   const home = await newHome(staleAcceptance)
   const app = await renewing(home)
   try {
     expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
     const intro = introPage(app) as Page
-    expect(await waitFor(async () => await intro.locator('#telemetry-choice').isVisible())).toBe(true)
+    expect(await waitFor(async () => await intro.locator('#consent').isVisible())).toBe(true)
+    expect(await intro.locator('#welcome').isHidden()).toBe(true)
     expect(await intro.locator('#enter').isHidden()).toBe(true)
-    expect(await intro.locator('#default-offer').isHidden()).toBe(true)
-    expect(await intro.locator('#telemetry-changed').isVisible()).toBe(true)
-    expect(await intro.textContent('#telemetry-changed p')).toBe('Telemetry changed since you agreed:')
-    expect(await intro.locator('#telemetry-changed li').allTextContents()).toEqual([NOTICE_CHANGES[NOTICE_VERSION]])
-    expect(await intro.locator('#enter-with-telemetry').isVisible()).toBe(true)
-    expect(await intro.locator('#enter-without-telemetry').isVisible()).toBe(true)
-    await intro.click('#enter-with-telemetry')
+    expect(await intro.locator('#consent-changed').isVisible()).toBe(true)
+    expect(await intro.textContent('#consent-changed p')).toBe('What changed since you agreed:')
+    expect(await intro.locator('#consent-changed li').allTextContents()).toEqual([NOTICE_CHANGES[NOTICE_VERSION]])
+    expect(await intro.locator('#telemetry-accept').isVisible()).toBe(true)
+    expect(await intro.locator('#telemetry-deny').isVisible()).toBe(true)
+    await intro.click('#telemetry-accept')
     expect(await waitFor(() => introPage(app) === undefined && windowCount(app) === 2)).toBe(true)
     expect(await waitFor(async () => (await consentOf(home))?.['noticeVersion'] === NOTICE_VERSION)).toBe(true)
     expect(await consentOf(home)).toMatchObject({ state: 'accepted', source: 'welcome', noticeVersion: NOTICE_VERSION })

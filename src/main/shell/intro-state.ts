@@ -9,9 +9,9 @@ const MODES = ['always', 'once', 'off'] as const
 export type IntroMode = typeof MODES[number]
 
 export interface IntroPlan {
-  /** The screen offers to make Orivon the default browser, a box left unticked: decided from facts alone, since asking the system would delay the first window. */
-  readonly offerDefault: boolean
-  /** The screen puts the telemetry question in place of its single Enter button: the person has not chosen yet, and telemetry runs in this process. */
+  /** The welcome page comes first. False when only the telemetry question is due, on a screen already seen: the popup shows alone. */
+  readonly welcome: boolean
+  /** "Enter Orivon" opens the telemetry popup over the browser before it lets the person in: they have not chosen yet, and telemetry runs in this process. */
   readonly offerTelemetry: boolean
   /** What changed in the telemetry notice since the person agreed, one sentence each; empty unless the question is a renewal. */
   readonly changes: readonly string[]
@@ -56,26 +56,23 @@ export async function markIntroSeen (userDataDir: string): Promise<void> {
   }
 }
 
-/** What the page reports when it is left: `#leaving`, `#leaving-default`, or `#leaving?default=0|1&telemetry=0|1` when the telemetry question was on it. */
+/** What the page reports when it is left: `#leaving`, or `#leaving?telemetry=0|1` when it asked the telemetry question. */
 export interface LeavingReport {
-  readonly makeDefault: boolean
   /** The button pressed, or undefined when the page asked no telemetry question. */
   readonly telemetry: boolean | undefined
 }
 
 export function parseLeaving (hash: string): LeavingReport | undefined {
-  if (hash === '#leaving') return { makeDefault: false, telemetry: undefined }
-  if (hash === '#leaving-default') return { makeDefault: true, telemetry: undefined }
+  if (hash === '#leaving') return { telemetry: undefined }
   if (!hash.startsWith('#leaving?')) return undefined
-  const params = new URLSearchParams(hash.slice('#leaving?'.length))
-  const telemetry = params.get('telemetry')
-  return { makeDefault: params.get('default') === '1', telemetry: telemetry === '1' ? true : telemetry === '0' ? false : undefined }
+  const telemetry = new URLSearchParams(hash.slice('#leaving?'.length)).get('telemetry')
+  return { telemetry: telemetry === '1' ? true : telemetry === '0' ? false : undefined }
 }
 
 /** The address of the welcome page: what main offers it travels in the query, since the page has no bridge. */
-export function introPageUrl (page: string, plan: Pick<IntroPlan, 'offerDefault' | 'offerTelemetry'> & { readonly changes?: readonly string[] }): string {
+export function introPageUrl (page: string, plan: Pick<IntroPlan, 'offerTelemetry'> & { readonly welcome?: boolean, readonly changes?: readonly string[] }): string {
   const query = new URLSearchParams()
-  if (plan.offerDefault) query.set('default', '1')
+  if (plan.welcome === false) query.set('welcome', '0')
   if (plan.offerTelemetry) query.set('telemetry', '1')
   for (const line of plan.changes ?? []) query.append('changed', line)
   const text = query.toString()
@@ -90,7 +87,7 @@ export interface TelemetryQuestion {
   readonly renewal?: () => Promise<readonly string[] | undefined>
 }
 
-export async function planIntro (envValue: string | undefined, userDataDir: string, offerDefault = false, telemetry?: TelemetryQuestion): Promise<IntroPlan | undefined> {
+export async function planIntro (envValue: string | undefined, userDataDir: string, telemetry?: TelemetryQuestion): Promise<IntroPlan | undefined> {
   const mode = introMode(envValue)
   if (envValue !== undefined && envValue !== '' && envValue !== mode) {
     console.warn(`[orivon] intro: ORIVON_INTRO=${envValue} is not always, once or off; using once`)
@@ -105,15 +102,15 @@ export async function planIntro (envValue: string | undefined, userDataDir: stri
   const chooseTelemetry = telemetry?.choose ?? (async () => {})
   if (!show) {
     if (renewal === undefined) return undefined
-    // The screen was seen and its default-browser offer made at that showing; entering marks nothing.
-    return { offerDefault: false, offerTelemetry: true, changes: renewal, chooseTelemetry, onEntered: async () => {} }
+    // The screen was seen: the popup asks alone, and answering it marks nothing.
+    return { welcome: false, offerTelemetry: true, changes: renewal, chooseTelemetry, onEntered: async () => {} }
   }
   const offered = telemetry !== undefined && await telemetry.offered().catch((error: unknown) => {
     console.error('[orivon] intro: could not tell whether to ask about telemetry; not asking:', error)
     return false
   })
   return {
-    offerDefault,
+    welcome: true,
     offerTelemetry: offered || renewal !== undefined,
     changes: renewal ?? [],
     chooseTelemetry,

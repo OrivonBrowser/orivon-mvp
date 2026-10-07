@@ -32,8 +32,6 @@ import { firstWindowOptions } from './shell/first-window.js'
 import { seedClosedStack } from './session-restore/restore.js'
 import { atStartup, readLaunchRequest } from './launch/launch-request.js'
 import type { LaunchRequest } from './launch/launch-request.js'
-import { canOfferDefault } from './os/default-browser.js'
-import { defaultBrowserHost } from './os/default-browser-runner.js'
 import { handleOpenUrl } from './os/open-url.js'
 import { handleOpenFile } from './os/open-file.js'
 import { removeAfterExit, removePrivateDir, sweepPrivateDirs } from './launch/private-session.js'
@@ -285,12 +283,10 @@ export function boot (runtime: Runtime): void {
       try {
         // Only this first window can open on the welcome screen: the macOS
         // 'activate' below recreates a window in a process that has already shown it.
-        // Only the default profile's own screen offers it, and a kiosk is no one's browser.
-        const offersDefault = runtime.profileId === 'default' && !shell.kiosk && canOfferDefault(defaultBrowserHost)
         const plan = firstWindowOptions({ services: shell, isPrivate: false, argv: process.argv, packaged: app.isPackaged, displays: screen.getAllDisplays(), openWindow: (options) => { createShellWindow(ctx, shell, options) } })
         // A first tab that is a local file needs the binary's fuse read, which nothing else at start-up does.
         if (plan.localFiles === true) await fileProtocolFuse()
-        const firstWindow = createShellWindow(ctx, shell, { ...plan, intro: plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData'), offersDefault, { offered: welcomeOffersTelemetry, renewal: telemetryRenewal, choose: async (on) => { await setTelemetryOn(on, 'welcome') } }), firstOfLaunch: true })
+        const firstWindow = createShellWindow(ctx, shell, { ...plan, intro: plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData'), { offered: welcomeOffersTelemetry, renewal: telemetryRenewal, choose: async (on) => { await setTelemetryOn(on, 'welcome') } }), firstOfLaunch: true })
         const after = plan.after
         afterFirst = after === undefined ? undefined : () => { after(firstWindow) }
       } finally {

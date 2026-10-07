@@ -1,15 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ShellWindow } from '../../shell/window-registry.js'
-import { DAY_MS, firstSight } from '../default-browser-ask.js'
+import { DAY_MS, FIRST_ASK_AFTER_MS, firstSight } from '../default-browser-ask.js'
 import type { AskState } from '../default-browser-ask.js'
 import type { DefaultBrowserHost, Launcher } from '../default-browser.js'
-import { askPlace, createDefaultBrowserCheck, installDefaultBrowserAsk } from '../install-default-browser-ask.js'
+import { askPlace, createDefaultBrowserCheck, installDefaultBrowserAsk, RETRY_MS } from '../install-default-browser-ask.js'
 import type { AskPlace } from '../install-default-browser-ask.js'
 
 const NOW = 1_800_000_000_000
+const HOUR_MS = 60 * 60 * 1000
 const PLACE = { window: {}, tabId: 't1' } as unknown as AskPlace
 
-interface Setup { run: () => Promise<void>, written: AskState[], asked: ReturnType<typeof vi.fn>, host: DefaultBrowserHost & { isDefault: ReturnType<typeof vi.fn>, setDefault: ReturnType<typeof vi.fn> }, place: ReturnType<typeof vi.fn> }
+interface Setup { run: () => Promise<number>, written: AskState[], asked: ReturnType<typeof vi.fn>, host: DefaultBrowserHost & { isDefault: ReturnType<typeof vi.fn>, setDefault: ReturnType<typeof vi.fn> }, place: ReturnType<typeof vi.fn> }
 
 function setup (over: { state?: AskState | string, now?: number, place?: AskPlace | undefined, response?: number, registered?: boolean, launcher?: Launcher } = {}): Setup {
   const written: AskState[] = []
@@ -39,18 +40,37 @@ function setup (over: { state?: AskState | string, now?: number, place?: AskPlac
 const seen = (daysAgo: number, askedDaysAgo = daysAgo): AskState => ({ firstSeenAt: NOW - daysAgo * DAY_MS, lastAskedAt: NOW - askedDaysAgo * DAY_MS, stopped: false })
 
 describe('the weekly default-browser check', () => {
-  it('writes a first sight and asks nothing, and queries nobody, on a profile it has not seen', async () => {
+  it('writes a first sight once a window is in use on a profile it has not seen, asks nothing, and looks again when the first ask falls due', async () => {
     const s = setup()
-    await s.run()
+    expect(await s.run()).toBe(FIRST_ASK_AFTER_MS)
     expect(s.written).toEqual([firstSight(NOW)])
     expect(s.asked).not.toHaveBeenCalled()
     expect(s.host.isDefault).not.toHaveBeenCalled()
-    expect(s.place).not.toHaveBeenCalled()
   })
 
-  it('does not query the system or look for a window before an ask is due', async () => {
+  it('does not start the clock while no window is in use, the welcome screen and its popup included, and looks again soon', async () => {
+    const s = setup({ place: undefined })
+    expect(await s.run()).toBe(RETRY_MS)
+    expect(s.written).toEqual([])
+    expect(s.host.isDefault).not.toHaveBeenCalled()
+  })
+
+  it('asks the first time half a minute after the first sight, with two buttons, and the answer starts the weekly count', async () => {
+    const early = setup({ state: firstSight(NOW - FIRST_ASK_AFTER_MS + 10_000) })
+    expect(await early.run()).toBe(10_000)
+    expect(early.asked).not.toHaveBeenCalled()
+
+    const s = setup({ state: firstSight(NOW - FIRST_ASK_AFTER_MS), response: 1 })
+    expect(await s.run()).toBe(HOUR_MS)
+    const spec = (s.asked.mock.calls[0] as [AskPlace, { buttons: string[], title: string }])[1]
+    expect(spec.title).toBe('Make Orivon your default browser?')
+    expect(spec.buttons).toEqual(['Make default', 'Not now'])
+    expect(s.written).toEqual([{ firstSeenAt: NOW - FIRST_ASK_AFTER_MS, lastAskedAt: NOW, stopped: false }])
+  })
+
+  it('does not query the system or look for a window before an ask is due, and looks again within the hour', async () => {
     const s = setup({ state: seen(6) })
-    await s.run()
+    expect(await s.run()).toBe(HOUR_MS)
     expect(s.host.isDefault).not.toHaveBeenCalled()
     expect(s.place).not.toHaveBeenCalled()
     expect(s.asked).not.toHaveBeenCalled()
@@ -105,9 +125,9 @@ describe('the weekly default-browser check', () => {
     expect(s.written).toEqual([{ firstSeenAt: NOW - 8 * DAY_MS, lastAskedAt: NOW, stopped: false }])
   })
 
-  it('waits, and records nothing, when no window is in a state to be asked in', async () => {
+  it('waits, records nothing, and looks again soon when no window is in a state to be asked in', async () => {
     const s = setup({ state: seen(8), place: undefined })
-    await s.run()
+    expect(await s.run()).toBe(RETRY_MS)
     expect(s.asked).not.toHaveBeenCalled()
     expect(s.host.isDefault).not.toHaveBeenCalled()
     expect(s.written).toEqual([])
@@ -120,9 +140,9 @@ describe('the weekly default-browser check', () => {
     expect(s.written).toEqual([])
   })
 
-  it('makes the state again when its file is corrupt, and asks nothing that day', async () => {
+  it('treats a corrupt file as a profile not seen yet: a first sight, and nothing asked', async () => {
     const s = setup({ state: 'garbage{' })
-    await s.run()
+    expect(await s.run()).toBe(FIRST_ASK_AFTER_MS)
     expect(s.written).toEqual([firstSight(NOW)])
     expect(s.asked).not.toHaveBeenCalled()
   })

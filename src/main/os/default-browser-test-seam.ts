@@ -20,7 +20,7 @@ export interface Recording {
 declare global {
   // `var`: TypeScript requires it for a `declare global` augmentation.
   var __orivonDevDefaultBrowser: Recording | undefined
-  var __orivonDevDefaultBrowserAskNow: (() => Promise<void>) | undefined
+  var __orivonDevDefaultBrowserAskNow: (() => Promise<unknown>) | undefined
 }
 
 export function parseSeamMode (raw: string | undefined): SeamMode | undefined {
@@ -59,6 +59,6 @@ export function testDefaultBrowserHost (env: NodeJS.ProcessEnv = process.env): D
 }
 
 /** Lets a test run the weekly check now, instead of waiting for its timer. */
-export function exposeAskNow (check: () => Promise<void>): void {
+export function exposeAskNow (check: () => Promise<unknown>): void {
   if (SEAM_ENABLED) globalThis.__orivonDevDefaultBrowserAskNow = check
 }
