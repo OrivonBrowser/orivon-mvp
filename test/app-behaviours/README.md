@@ -21,7 +21,7 @@ area. The catalogue links them, and each carries `[app:<id>]` in the title of th
 | You are... | Then |
 |---|---|
 | **Adding a capability kind** or an `orivon.*` member (`src/contracts/`, `src/broker/`) | Add its line under **Capability coverage**, and a row for each thing an app can now count on, each with a spec. CI fails a kind with no line. The contract change also changes `contracts-surface.txt` and needs a *Changed for apps* line |
-| **Porting an app** (`../orivon-ports`, its porting guide Step 7) | List what the app relies on and look each up here. A behaviour with no proven row is a row and a spec in this folder, or `not covered: <reason>`; never a spec that names the app |
+| **Porting an app** (`../orivon-ports`, its porting guide Step 7) | List what the app relies on and look each up here. A gap the port finds is fixed generically in Orivon, never patched in the port. A behaviour with no proven row is a row and a spec in this folder, or `not covered: <reason>`; never a spec that names the app |
 | **Fixing a bug an app reported** | The fix comes with a row and a spec that fail without it |
 | **Changing or removing a row's sentence**, or downgrading a row to `not covered` | Edit the row and add a line under `### Changed for apps` in `CHANGELOG.md`: the id, what apps must now do, which ports to recheck. CI fails the pull request without it |
 | **Changing `src/contracts/`** | `node scripts/app-behaviours/check-contracts-surface.mjs --update`, and a *Changed for apps* line naming `` `contracts/<file>` `` |
@@ -29,7 +29,8 @@ area. The catalogue links them, and each carries `[app:<id>]` in the title of th
 ## Adding a row
 
 1. State the behaviour generically and observably ("data an app writes to IndexedDB survives a browser
-   restart"), never as one app's feature. Name a port only if a tracked page already names it.
+   restart"), never as one app's feature. The title and the file name carry the behaviour; the app
+   that inspired the row is named, if at all, in a code comment ([`CLAUDE.md`](../../CLAUDE.md) Rule 20).
 2. Find the e2e spec that proves it through the real shell (page, preload, IPC, broker, network or disk). A
    unit test may be listed beside it but never proves a row alone: it exercises a function in isolation,
    cannot see a wiring that broke, and is edited in the same pull request as the code it tests. Where no spec

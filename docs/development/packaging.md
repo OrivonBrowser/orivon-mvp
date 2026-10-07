@@ -9,20 +9,21 @@ Orivon is packaged for three systems by [`electron-builder`](https://www.electro
 | Windows (x64) | `Orivon-Setup-<version>-x64.exe`, an NSIS installer | no: SmartScreen warns on first run |
 | macOS | `Orivon-<version>-arm64.dmg` (Apple silicon) and `Orivon-<version>-x64.dmg` (Intel) | ad hoc: Gatekeeper asks once |
 
-Each GitHub release builds all of them and attaches them to itself (§Releases). No certificate is
-bought, so Windows and macOS packages are not trusted by their systems out of the box
-(§Windows and macOS). Running from source stays supported on every system
-([`setup.md`](setup.md)).
+The three systems are equal, and Linux is supported on X11 and Wayland both. Each GitHub release
+builds all of them and attaches them to itself (section Releases). No certificate is bought, so
+Windows and macOS packages are not trusted by their systems out of the box (section Windows and
+macOS). Running from source stays supported on every system ([`setup.md`](setup.md)); its users
+and the package users count the same, and their telemetry works identically.
 
 > **Status.** CI builds every package on its own system, installs or mounts it, and launches it
-> until the shell page renders (§Releases). **Not yet checked against a real build:** the
+> until the shell page renders (section Releases). **Not yet checked against a real build:** the
 > desktop-entry contents, the `MimeType=`/`Categories=` composition, and the `xdg-settings`
-> registration flow. §Known gaps lists what is and is not confirmed.
+> registration flow. section Known gaps lists what is and is not confirmed.
 
 ## `deb` is the primary artefact
 
-Not a coin flip between two equally good options. The project's success metric is measured in
-daily-driver hours ([`docs/scope.md`](../scope.md)), and only an **installed package**
+Not a coin flip between two equally good options. The success metric is measured in
+daily-driver hours, and only an **installed package**
 can put a `.desktop` file where `xdg-settings` looks for it. `xdg-settings
 set default-web-browser` walks `/usr/share/applications/`, not the filesystem in general, and a
 bare AppImage never places anything there on its own, and electron-builder's own docs say plainly
@@ -34,8 +35,8 @@ So:
 - **`AppImage`** is for trying Orivon without installing anything. It still carries the same
   `.desktop` metadata internally (electron-builder generates one for every Linux target from the
   shared `linux:` config), but nothing copies it into `~/.local/share/applications/` for you. A
-  first-run "install desktop entry" flow that does that from inside the running app is planned
-  (`build-plan.md` "Packaging"), and nothing in this config makes it impossible.
+  first-run "install desktop entry" flow that does that from inside the running app is not built,
+  and nothing in this config makes it impossible.
 
 ## How to build
 
@@ -313,20 +314,23 @@ What a real build leaves open. None of them blocks a build.
   dedicated packaging/releases address instead.
 - **`electron-builder` is pinned at `^26.15.3`** in `package.json`, npm's actual `latest` tag.
   v27 exists only as alpha prereleases and some of its documented behaviour does not hold for
-  26.x; see §Version notes below.
+  26.x; see section Version notes below.
 
 ## What this document does not cover
 
-**Auto-update.** Cut (`build-plan.md`): unsigned
+**Auto-update.** Unsigned
 `electron-updater` on Linux verifies only a SHA-512 fetched from the same host that serves the
-binary, which is a standing remote-code-execution channel keyed to a GitHub token. v0 checks
-for a new version and notifies instead, which is a separate, already-scoped piece of work, not
+binary, which is a standing remote-code-execution channel keyed to a GitHub token, so it is not
+used. Today Orivon checks for a new version and notifies; installing one is not built, and the
+person downloads the package from the release page. A signed self-update is expected next
+([`roadmap.md`](../roadmap.md)): it checks by default, installs only after the person answers
+"Yes, install", and always offers the manual download. It is a separate piece of work, not
 part of this config. `electron-builder.yml` sets `publish: null` explicitly (not just omitted)
 specifically so that a stray `latest-linux.yml`/`app-update.yml` never ships implying an update
 channel that doesn't exist, since electron-builder would otherwise auto-detect a GitHub publish
 target from `package.json`'s `repository` field.
 
-**Code signing with a bought certificate.** Not configured; §Windows and macOS says what a
+**Code signing with a bought certificate.** Not configured; section Windows and macOS says what a
 person sees without it, and what adding it takes.
 
 ## Version notes: 26.x, not v27
