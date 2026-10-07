@@ -77,7 +77,6 @@ const SPECS = {
   // Whether Orivon offers to keep a login a person types, and to fill one they saved.
   'passwords.offerToSave': { kind: 'bool', default: true },
   'passwords.autofill': { kind: 'bool', default: true },
-  'autofill.addresses': { kind: 'bool', default: true },
   // Whether Orivon asks GitHub, once a day, if a newer release exists. It never installs anything. Off until the owner decides.
   'updates.check': { kind: 'bool', default: false },
   // Whether `.eth` names are proven by a light client that runs on this computer. Read when Orivon starts.
