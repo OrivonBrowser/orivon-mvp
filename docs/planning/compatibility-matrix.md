@@ -774,7 +774,7 @@ policy source this build has no equivalent of.
 | Storage: quotas | ✅ | `local` holds 10 MiB (`QUOTA_BYTES` 10485760) and a write past it rejects with Chrome's quota error; `session` rejects past its own quota; `sync` and `managed` report the same limit |
 | i18n / `_locales` | ✅ | Name/description/icon resolution on the extensions page; `chrome.i18n` answers from Electron's own implementation (Table 7c) |
 | Toolbar: pin/unpin, badge, icon, title | ✅ | Pinned per extension from the Extensions menu or the icon's right-click menu; an extension added from now on is not pinned unless "Pin new extensions to the toolbar" (`extensions.pinInstalled`, off) is on, and one with no recorded pin follows `extensions.pinNew`; an unpinned extension runs from the menu and its badge shows on its row (`action-pins-runner.ts`, `extensions-menu-overlay.ts`) |
-| Toolbar: the Extensions button and its menu | ✅ | Lists every extension with its badge, pin and a More list (options, pin, manage, remove); shown when an extension is loaded, always or never as chosen in Appearance; never in a private window (`extensions-button.ts`, `extensions-menu-overlay.ts`) |
+| Toolbar: the Extensions button and its menu | ✅ | Lists every extension with its badge, pin and a More list (options, pin, manage, remove); shown always by default, or only while an extension is loaded, or never, as chosen in Appearance; never in a private window (`extensions-button.ts`, `extensions-menu-overlay.ts`) |
 | Toolbar: enable/disable a button per tab | ❌ | `action.enable` and `action.disable` do nothing, so a button is never greyed out for a tab (`vendor/electron-chrome-extensions/src/renderer/index.ts`) |
 | Site access controls: "on click" / "on specific sites" / "on all sites" picker | ❌ | Not modelled; host access is the manifest's declared patterns, decided at install or update, plus the sites the person allows an extension to ask for (Table 7b) |
 | Site access controls: `activeTab` (temporary grant on click) | ❌ | Refused: `scripting.executeScript` with only `activeTab` is rejected with "Cannot access contents of the page", before and after a toolbar click, and `tabs.query` keeps hiding the tab's address; only `tabCapture` honours an invocation (Table 7c) |
@@ -1133,7 +1133,7 @@ the reference set, and whether this build has it.
 | Install/update from the Chrome Web Store | ✅ | Table 7a |
 | Content scripts (isolated + `"world": "MAIN"`, in frames/subframes) | ✅ | Table 7b |
 | Service worker with core `chrome.*` APIs | ✅ | Table 7c |
-| Toolbar button, badge, popup | ✅ | Extensions button and menu; pinned icons; the popup anchors under the button; a new extension is pinned by default (Table 7d) |
+| Toolbar button, badge, popup | ✅ | Extensions button and menu; pinned icons; the popup anchors under the button; a new extension is pinned only when the setting says so, and uBlock Origin, which a new profile starts with, is pinned (Table 7d) |
 | Options page | ✅ | Opens in a tab, also from the menu and the icon's right-click menu (Table 7b) |
 | Extension popup stays open, and closes only on focus loss, tab switch or navigation | ✅ | Table 7d |
 | `chrome.offscreen`, `chrome.tabCapture`, `chrome.runtime.getContexts` | ✅ | Table 7c/7d; Volume Master captures a tab it was invoked on |

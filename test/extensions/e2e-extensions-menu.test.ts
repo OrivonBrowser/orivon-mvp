@@ -210,8 +210,8 @@ it('shows an empty menu with a way to the store when the button is always shown 
   }
 }, TEST_TIMEOUT_MS)
 
-it('has no button in a private window, and none by default without an extension', async () => {
-  const withNone = await launched({})
+it('has no button in a private window, and none under the auto setting without an extension', async () => {
+  const withNone = await launched({ seed: async (dir) => { await writeFile(join(dir, 'settings.json'), JSON.stringify({ version: 1, values: { 'toolbar.extensions': 'auto' } })) } })
   try {
     await delay(1_000)
     expect(await buttonShown(withNone.chrome)).toBe(false)

@@ -30,6 +30,8 @@ coverage/
 
 # Electron / packaging
 release/
+# Fetched by scripts/fetch-bundled-extensions.mjs from pinned release assets, never committed.
+resources/default-profile/extensions/
 *.AppImage
 *.deb
 

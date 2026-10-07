@@ -350,7 +350,9 @@ browser-action-list::part(badge) {
 
 /* A narrow window (it stops at 500px, window-frame.ts's MIN_WINDOW_WIDTH): the address field is the only
    part of the row that gives way, so the two placeholders in the cluster go, the gaps tighten, and the
-   extension buttons stop at one whole button (two leave the field about 64px wide at the minimum). */
+   extension buttons stop at one whole button. At 540px and below, while the Extensions button is shown, the
+   pinned buttons go too and the Extensions menu, which lists every extension, is where they are reached:
+   Home, the Extensions button and one pinned button leave the field 96px wide at 532px, its floor. */
 @container (max-width: 640px) {
   .toolbar { padding: 0 8px; }
   .bookmarkbtn { margin: 0 4px; }
@@ -361,4 +363,8 @@ browser-action-list::part(badge) {
   browser-action-list { max-width: 32px; overflow: hidden; }
   browser-action-list::part(action) { flex: none; }
   .profile-chip { max-width: 72px; }
+}
+
+@container (max-width: 540px) {
+  .toolbar:has(#extensions-menu-btn:not([hidden])) browser-action-list { display: none; }
 }

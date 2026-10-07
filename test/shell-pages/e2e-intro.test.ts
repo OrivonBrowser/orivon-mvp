@@ -56,6 +56,8 @@ it('once, on a fresh profile: shows over the whole window, stays on top of a new
 
     expect(await intro.getAttribute('h1.headline', 'aria-label')).toBe('The browser Web3 deserves.')
     expect(await intro.textContent('#enter')).toContain('Enter Orivon')
+    // A view in a window not shown yet has no viewport (0 x 0); the window shows once the chrome has painted.
+    expect(await waitFor(async () => await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.isVisible() === true))).toBe(true)
     const content = await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getContentBounds())
     expect(await intro.evaluate(() => [innerWidth, innerHeight])).toEqual([content?.width, content?.height])
 

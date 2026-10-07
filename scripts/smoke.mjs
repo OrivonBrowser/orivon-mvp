@@ -224,16 +224,14 @@ async function main () {
         JSON.stringify(dashboardShell)
       )
 
-      const tiles = await evaluateRetrying(dashboardView, () =>
-        Array.from(document.querySelectorAll('.tile')).map((el) => ({
-          label: el.querySelector('.tile-label')?.textContent,
-          disabled: el.disabled
-        }))
-      )
+      const tiles = await evaluateRetrying(dashboardView, () => ({
+        title: document.querySelector('#featured-section .tile-section-title')?.textContent,
+        labels: Array.from(document.querySelectorAll('#featured-grid .tile .tile-label')).map((el) => el.textContent),
+        inert: Array.from(document.querySelectorAll('#featured-grid .tile')).filter((el) => el.disabled).length
+      }))
       check(
-        'the Torrent and Nostr app tiles are present and disabled -- both are ideas, not in this build',
-        tiles.some((t) => t.label === 'Torrent' && t.disabled) &&
-          tiles.some((t) => t.label === 'Nostr' && t.disabled),
+        'the dashboard shows Orivon Featured: Explore, The Lounge, FreeTube, ASGARDEX and Element, each a live tile',
+        /^orivon featured$/i.test(tiles.title ?? '') && tiles.labels.join() === 'Explore,The Lounge,FreeTube,ASGARDEX,Element' && tiles.inert === 0,
         JSON.stringify(tiles)
       )
 

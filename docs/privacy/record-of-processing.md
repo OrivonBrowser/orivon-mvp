@@ -88,7 +88,7 @@ None known. Two items are listed so they are not forgotten; the first is run by 
 a third party, and this record cannot settle it from the code:
 
 - **The official Web3 Score provider and the IPFS pinning node that serve it.** The browser asks
-  them for a hash bucket of a page (see [`outbound-requests.md`](outbound-requests.md) row 10).
+  them for a hash bucket of a page (see [`outbound-requests.md`](outbound-requests.md) row 10), and the provider's address is an ENS name, so a lookup of that name goes with it.
   Whether those servers keep request logs, and for how long, is not recorded here. If they do, it
   is a second activity of this record.
 - **Release hosting.** Downloads and the update check go to GitHub, which is its own controller.

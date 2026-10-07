@@ -25,6 +25,7 @@ reaches everyone who never touched it, and "changed from default" is a fact of t
 comparison against a copy of the defaults the page would have to carry.
 The Web3 Score provider is such a default, an address (`DEFAULT_SCORE_PROVIDER`): a profile that
 has none saved reads it; clearing the setting saves the empty value, which asks nobody.
+The Extensions button's `always` is a default of the same kind: a profile that never chose shows the button, one that chose `auto` or `never` keeps that.
 
 **Every value is validated where it enters, and again where it is read from disk.** The Settings page
 is trusted UI, but the store does not take its word: an unknown key or a value the schema refuses is

@@ -4,6 +4,9 @@
 import { join } from 'node:path'
 import { app, safeStorage, session } from 'electron'
 import { BookmarkStore } from '../browsing/bookmarks.js'
+import { defaultBookmarks } from '../default-profile/default-profile.js'
+import { startsFromDefaultProfile } from '../default-profile/profile-start.js'
+import { currentDefaultProfileDir } from '../default-profile/default-profile-dir.js'
 import { SearchEngineStore } from '../browsing/search-engine-store.js'
 import { InternalPageRegistry } from '../pages/internal-registry.js'
 import { SettingsStore } from '../settings/settings-store.js'
@@ -122,7 +125,7 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
   // A private session writes down no pages: it never opens a history file at all.
   const openedHistory = runtime.isPrivate ? { store: new NullHistoryStore(), problem: null } : openHistory(join(userDataPath, 'history.db'))
   return {
-    bookmarks: new BookmarkStore(join(userDataPath, 'bookmarks.json')),
+    bookmarks: new BookmarkStore(join(userDataPath, 'bookmarks.json'), undefined, undefined, startsFromDefaultProfile() ? () => defaultBookmarks(currentDefaultProfileDir()) : undefined),
     closedTabs,
     commands: new CommandBus(),
     devtools: new DevToolsService(settings, {

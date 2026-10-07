@@ -35,6 +35,9 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **A new profile starts with something in it**: five bookmarks in the bar, uBlock Origin installed and pinned to the toolbar, the Extensions
+  button shown, and "Orivon Featured" (Explore, The Lounge, FreeTube, ASGARDEX, Element) on the new tab in place of the Torrent and Nostr tiles. The Web3 Score
+  provider is now `ipfs://attila.orivonstack.eth/score` for a profile that never chose one. Removing a bookmark or uBlock Origin is never undone.
 - **Report a problem** (menu, `Alt+Shift+I`, a crashed tab's Report button, or the bar after Orivon closed unexpectedly): a form
   for a description, with the recorded crash, technical details and recent log attached and shown in full before Send; a crash dump
   only if ticked. Nothing leaves without Send. Orivon now keeps a log, crash records and local crash dumps in the profile.

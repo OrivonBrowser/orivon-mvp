@@ -1,7 +1,8 @@
 import type { Bookmark } from '../../main/browsing/bookmarks.js'
 import { faviconElement } from '../icons.js'
+import { FEATURED } from './featured.js'
 
-// The dashboard's whole job: a search box and real bookmark tiles -- see
+// The dashboard's whole job: a search box, the featured apps and real bookmark tiles -- see
 // index.html's own header for the scope note.
 
 interface OrivonNewTab {
@@ -29,6 +30,7 @@ const searchForm = document.querySelector<HTMLFormElement>('#search-form')
 const searchInput = document.querySelector<HTMLInputElement>('#search-input')
 const bookmarksSection = document.querySelector<HTMLElement>('#bookmarks-section')
 const bookmarksGrid = document.querySelector<HTMLDivElement>('#bookmarks-grid')
+const featuredGrid = document.querySelector<HTMLDivElement>('#featured-grid')
 
 if (shell !== undefined) {
   searchInput?.focus()
@@ -44,6 +46,10 @@ if (shell !== undefined) {
     if (value.length > 0) shell.navigate(value)
   })
 
+  if (featuredGrid !== null) {
+    for (const entry of FEATURED) featuredGrid.append(tileFor(shell, entry.title, entry.url, entry.icon))
+  }
+
   if (bookmarksSection !== null && bookmarksGrid !== null) {
     void renderBookmarks(shell, bookmarksSection, bookmarksGrid)
   }
@@ -58,22 +64,27 @@ async function renderBookmarks (
   if (bookmarks.length === 0) return
 
   for (const bookmark of bookmarks) {
-    const tile = document.createElement('button')
-    tile.className = 'tile'
-    tile.type = 'button'
-    tile.title = bookmark.url
-
-    const icon = faviconElement(bookmark.favicon)
-    icon.setAttribute('class', 'tile-icon')
-
-    const label = document.createElement('span')
-    label.className = 'tile-label'
-    label.textContent = bookmark.title.length > 0 ? bookmark.title : bookmark.url
-
-    tile.append(icon, label)
-    tile.addEventListener('click', () => { shell.navigate(bookmark.url) })
-    grid.append(tile)
+    grid.append(tileFor(shell, bookmark.title.length > 0 ? bookmark.title : bookmark.url, bookmark.url, bookmark.favicon))
   }
 
   section.hidden = false
+}
+
+/** One tile, the same for a bookmark and a featured app: it opens `url` and shows `icon`, or the globe when there is none. */
+function tileFor (shell: OrivonNewTab, title: string, url: string, icon: string | null): HTMLButtonElement {
+  const tile = document.createElement('button')
+  tile.className = 'tile'
+  tile.type = 'button'
+  tile.title = url
+
+  const image = faviconElement(icon)
+  image.setAttribute('class', 'tile-icon')
+
+  const label = document.createElement('span')
+  label.className = 'tile-label'
+  label.textContent = title
+
+  tile.append(image, label)
+  tile.addEventListener('click', () => { shell.navigate(url) })
+  return tile
 }

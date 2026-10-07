@@ -91,6 +91,19 @@ and a dev launch runs beside an open Orivon instead of handing over to it. The c
 the directory at start. Other profiles the launch makes live inside it, so while one of them
 is still open the directory is kept, and the next `npm run dev` deletes it.
 
+A new profile, in `npm run dev`, `npm start` or a package, starts with the five bookmarks of the bar and uBlock Origin
+installed and pinned to the toolbar (`src/main/default-profile/`); only a profile Orivon has
+never run on gets them (no `history.db`, `bookmarks.json` or `extensions/registry.json` when it starts), so removing
+one is never undone and an existing profile, even one with no bookmarks or extensions, keeps what it has. `npm install`, `npm run dev` and
+`npm start` fetch uBlock Origin's release file into `resources/default-profile/extensions/` (git ignores it) when
+it is missing; with no network the browser starts without it, and `node scripts/fetch-bundled-extensions.mjs`
+retries. `ORIVON_DEFAULT_PROFILE=off` starts a profile blank:
+
+| `ORIVON_DEFAULT_PROFILE` | Behaviour |
+|---|---|
+| `on` (or unset) | A new profile gets the bookmarks and uBlock Origin. What `npm run dev`, `npm start` and a package do |
+| `off` | Neither. `test/support/launch-electron.mjs` sets it for every smoke and e2e launch unless a test asks otherwise |
+
 To keep a dev profile across launches, name one: `npm run dev -- --user-data-dir=<dir>`. A
 named directory is never deleted. To test on your real profile, use `npm start`.
 
