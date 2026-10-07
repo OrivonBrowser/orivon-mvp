@@ -27,14 +27,14 @@ describe('repartitionForTarget', () => {
     partitionChanged.mockReturnValue({ to: undefined })
     const tab = record('persist:app')
     expect(repartitionForTarget('t1', tab, 'https://site.eth/')).toBe(true)
-    expect(repartitionView).toHaveBeenCalledExactlyOnceWith('t1', tab, 'https://site.eth/', undefined)
+    expect(repartitionView).toHaveBeenCalledExactlyOnceWith('t1', tab, 'https://site.eth/', undefined, false)
   })
 
   it('swaps within the session when only the app-tab flag differs', () => {
     appTabFlagChanged.mockReturnValue(true)
     const tab = record('persist:app')
     expect(repartitionForTarget('t1', tab, 'https://site.eth/')).toBe(true)
-    expect(repartitionView).toHaveBeenCalledExactlyOnceWith('t1', tab, 'https://site.eth/', 'persist:app')
+    expect(repartitionView).toHaveBeenCalledExactlyOnceWith('t1', tab, 'https://site.eth/', 'persist:app', false)
   })
 
   it('does nothing when the session and the flag are the tab\'s', () => {
@@ -53,7 +53,7 @@ describe('loadInTab', () => {
   it('moves a tab in a cache-served app\'s session to the default one instead of loading there', () => {
     partitionChanged.mockReturnValue({ to: undefined })
     loadInTab('t1', record('persist:app'), 'https://site.eth/')
-    expect(repartitionView).toHaveBeenCalledWith('t1', expect.anything(), 'https://site.eth/', undefined)
+    expect(repartitionView).toHaveBeenCalledWith('t1', expect.anything(), 'https://site.eth/', undefined, false)
     expect(loadURL).not.toHaveBeenCalled()
   })
 })

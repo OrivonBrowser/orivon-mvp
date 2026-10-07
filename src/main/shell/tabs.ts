@@ -98,6 +98,8 @@ export class TabManager {
       paneClicked: (id) => { this.panes.clicked(id) },
       openInSplit: (id, url) => { if (!this.atCapacity()) this.splits.split(id, this.createTab(url), 'right') },
       reload: (id) => { this.reload(id) },
+      back: (id) => { this.back(id) },
+      forward: (id) => { this.forward(id) },
       emitState: () => { this.changedSoon() },
       // Which document declared the icon, and whether this record is still the one the map holds when the fetch lands.
       captureFavicon: async (id, record, favicons) => {

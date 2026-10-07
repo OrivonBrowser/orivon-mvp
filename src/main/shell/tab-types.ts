@@ -9,6 +9,7 @@ import type { Broker } from '../../broker/broker-contracts.js'
 import type { Connection } from '../browsing/connection.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
 import type { InternalPageRegistry } from '../pages/internal-registry.js'
+import type { OuterHistory } from './tab-outer-history.js'
 import type { DevToolsGate } from '../devtools/devtools-service.js'
 import type { Attention } from '../downloads/download-attention.js'
 import type { TabLifecycle } from './tab-lifecycle.js'
@@ -224,6 +225,9 @@ export interface TabViewHost {
   openInSplit: (id: string, url: string) => void
   /** The tab's own reload, which restarts a navigation that has not committed (tab-navigation.ts's reloadTab). */
   reload: (id: string) => void
+  /** The tab's own Back and Forward, which reach the pages its view does not hold (tab-navigation.ts's goBack). */
+  back: (id: string) => void
+  forward: (id: string) => void
   emitState: () => void
   captureFavicon: (id: string, record: TabRecord, favicons: string[]) => Promise<void>
   forgetTab: (id: string) => void
@@ -318,4 +322,6 @@ export interface TabRecord {
   reader?: { source: string, address?: string } | null
   /** The main frame's address while a navigation has started and not yet committed, failed or stopped (inflight-url.ts). Absent when none is in flight. */
   inflightUrl?: string
+  /** The pages of the tab's history that its view does not hold (tab-outer-history.ts). Absent reads as none. */
+  outer?: OuterHistory
 }

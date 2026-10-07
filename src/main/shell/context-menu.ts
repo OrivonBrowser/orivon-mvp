@@ -65,7 +65,14 @@ export interface ContextMenuHost {
   /** Opens an address in a tab put in front: what a search of the selection does. */
   openInFront?: (url: string) => void
   /** Present for a tab's menu and absent for the chrome's, whose menu holds only edit items. `bare`: an internal page or the new-tab page. */
-  readonly page?: { readonly bare: () => boolean, readonly viewSource?: () => boolean, readonly readable?: () => boolean, readonly reload?: () => void }
+  readonly page?: {
+    readonly bare: () => boolean
+    readonly viewSource?: () => boolean
+    readonly readable?: () => boolean
+    readonly reload?: () => void
+    /** The tab's own Back and Forward, which reach past the view's list (tab-navigation.ts's goBack). Absent: the view's list alone. */
+    readonly history?: { readonly canGoBack: () => boolean, readonly canGoForward: () => boolean, readonly back: () => void, readonly forward: () => void }
+  }
   /** What the menu reads: the search engine and the spelling switch. Absent in tests. */
   readonly services?: Pick<ShellServices, 'settings'>
   /** Runs a command on the window: Save, Print, Screenshot, View Source, Picture in Picture. */
@@ -113,12 +120,13 @@ export function showContextMenu (wc: WebContents, params: ContextMenuParams, hos
   }
   if (host.page !== undefined) {
     actions.saveUrl = (url) => { onTab(() => { downloadAsked(wc, url) })() }
+    const history = host.page.history
     actions.navigate = {
-      canGoBack: wc.navigationHistory.canGoBack(),
-      canGoForward: wc.navigationHistory.canGoForward(),
+      canGoBack: history?.canGoBack() ?? wc.navigationHistory.canGoBack(),
+      canGoForward: history?.canGoForward() ?? wc.navigationHistory.canGoForward(),
       // Started as the toolbar's buttons start them, so "Leave" in the page's leave question runs them again.
-      back: onTab(() => { startNavigation(wc, () => { wc.navigationHistory.goBack() }) }),
-      forward: onTab(() => { startNavigation(wc, () => { wc.navigationHistory.goForward() }) }),
+      back: onTab(() => { if (history !== undefined) history.back(); else startNavigation(wc, () => { wc.navigationHistory.goBack() }) }),
+      forward: onTab(() => { if (history !== undefined) history.forward(); else startNavigation(wc, () => { wc.navigationHistory.goForward() }) }),
       reload: onTab(() => { if (host.page?.reload !== undefined) host.page.reload(); else startNavigation(wc, () => { wc.reload() }) })
     }
     actions.replaceMisspelling = (word) => { onTab(() => { wc.replaceMisspelling(word) })() }

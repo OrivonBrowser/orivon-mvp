@@ -13,7 +13,7 @@ interface FakeContents extends EventEmitter {
   isLoading: () => boolean
   getURL: () => string
   getTitle: () => string
-  navigationHistory: { canGoBack: () => boolean, canGoForward: () => boolean }
+  navigationHistory: { canGoBack: () => boolean, canGoForward: () => boolean, getAllEntries: () => Array<{ url: string, title: string }>, getActiveIndex: () => number }
   setWindowOpenHandler: ReturnType<typeof vi.fn>
   ipc: { on: ReturnType<typeof vi.fn> }
   close: ReturnType<typeof vi.fn>
@@ -30,7 +30,7 @@ function makeFakeWebContents (): FakeContents {
   emitter.isLoading = () => false
   emitter.getURL = () => 'https://a.example/'
   emitter.getTitle = () => ''
-  emitter.navigationHistory = { canGoBack: () => false, canGoForward: () => false }
+  emitter.navigationHistory = { canGoBack: () => false, canGoForward: () => false, getAllEntries: () => [], getActiveIndex: () => -1 }
   emitter.setWindowOpenHandler = vi.fn()
   emitter.ipc = { on: vi.fn() }
   emitter.close = vi.fn(() => { destroyed = true; emitter.emit('destroyed') })

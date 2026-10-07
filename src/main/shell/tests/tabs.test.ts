@@ -22,6 +22,7 @@ interface FakeHistory {
   getActiveIndex: () => number
   length: () => number
   getEntryAtIndex: (index: number) => { url: string }
+  getAllEntries: () => Array<{ url: string, title: string }>
   removeEntryAtIndex: (index: number) => boolean
 }
 
@@ -46,6 +47,7 @@ function makeFakeHistory (): FakeHistory {
     getActiveIndex: () => history.active,
     length: () => history.entries.length,
     getEntryAtIndex: (index) => ({ url: history.entries[index] ?? '' }),
+    getAllEntries: () => history.entries.map((url) => ({ url, title: '' })),
     removeEntryAtIndex: (index) => {
       if (index === history.active || index < 0 || index >= history.entries.length) return false
       history.entries.splice(index, 1)
@@ -620,17 +622,91 @@ describe('TabManager -- a tab coming back to an app it left gets the app\'s own 
     expect(b.webContents.close).not.toHaveBeenCalled()
   })
 
-  it('drops the provider\'s page and the blank page from the app\'s history once the tab is back', () => {
-    const { app, provider } = leftForProvider()
+  it('leaves the app\'s view holding only the page it came back to, and keeps the pages before it as the tab\'s Back', () => {
+    const { manager, app, provider } = leftForProvider()
+    provider.webContents.navigationHistory.entries = [`${APP}/start`, 'https://idp.example/authorize']
+    provider.webContents.navigationHistory.active = 1
     provider.webContents.emit('did-navigate', {}, `${APP}/callback`)
 
     const history = app.webContents.navigationHistory
+    // The blank page the view was parked on can commit after the tab is back: it is not the page it came back for.
+    history.entries = [`${APP}/start`, 'https://idp.example/authorize', 'about:blank']
+    history.active = 2
+    app.webContents.emit('did-navigate', {}, 'about:blank')
+    expect(history.entries).toHaveLength(3)
+
     history.entries = [`${APP}/start`, 'https://idp.example/authorize', 'about:blank', `${APP}/callback`]
     history.active = 3
     app.webContents.emit('did-navigate', {}, `${APP}/callback`)
 
-    expect(history.entries).toEqual([`${APP}/start`, `${APP}/callback`])
-    expect(history.active).toBe(1)
+    expect(history.entries).toEqual([`${APP}/callback`])
+    expect(history.active).toBe(0)
+    expect(manager.getState().tabs[0]?.canGoBack).toBe(true)
+  })
+
+  it('steps Back out of the app\'s view to the site before it, in that site\'s session, and Forward into the app\'s kept view again', () => {
+    const manager = newManager(ctxWithRegisteredOrigins(APP))
+    const id = manager.createTab('https://site.example/a')
+    const site = createdViews[0] as RecordedView
+    const commit = (view: RecordedView, entries: string[], active: number): void => {
+      view.webContents.navigationHistory.entries = entries
+      view.webContents.navigationHistory.active = active
+      view.webContents.emit('did-navigate', {}, entries[active])
+    }
+    commit(site, ['https://site.example/a', 'https://site.example/b'], 1)
+    manager.navigate(id, `${APP}/start`)
+    const app = createdViews[1] as RecordedView
+    commit(app, [`${APP}/start`], 0)
+    expect(manager.getState().tabs[0]?.canGoBack).toBe(true)
+
+    manager.back(id)
+    const back = createdViews[2] as RecordedView
+    expect(back.webContents.loadURL).toHaveBeenLastCalledWith('https://site.example/b')
+    expect(partitionOf(back)).toBeUndefined()
+    expect(manager.getState().tabs[0]?.canGoForward).toBe(true)
+    commit(back, ['https://site.example/b'], 0)
+
+    // The page before is in the same session: it loads in the same view, which then holds it alone.
+    manager.back(id)
+    expect(createdViews).toHaveLength(3)
+    expect(back.webContents.loadURL).toHaveBeenLastCalledWith('https://site.example/a')
+    commit(back, ['https://site.example/b', 'https://site.example/a'], 1)
+    expect(back.webContents.navigationHistory.entries).toEqual(['https://site.example/a'])
+    expect(manager.getState().tabs[0]?.canGoBack).toBe(false)
+
+    manager.forward(id)
+    commit(back, ['https://site.example/a', 'https://site.example/b'], 1)
+    manager.forward(id)
+    expect(createdViews).toHaveLength(3)
+    expect(manager.activeWebContents()).toBe(app.webContents)
+    expect(app.webContents.loadURL).toHaveBeenLastCalledWith(`${APP}/start`)
+    commit(app, [`${APP}/start`, 'about:blank', `${APP}/start`], 2)
+    expect(app.webContents.navigationHistory.entries).toEqual([`${APP}/start`])
+    expect(manager.getState().tabs[0]).toMatchObject({ canGoBack: true, canGoForward: false })
+  })
+
+  it('ends the pages ahead when the tab goes to a new page instead of Forward', () => {
+    const manager = newManager(ctxWithRegisteredOrigins(APP))
+    const id = manager.createTab('https://site.example/a')
+    const site = createdViews[0] as RecordedView
+    site.webContents.navigationHistory.entries = ['https://site.example/a']
+    site.webContents.navigationHistory.active = 0
+    manager.navigate(id, `${APP}/start`)
+    const app = createdViews[1] as RecordedView
+    app.webContents.navigationHistory.entries = [`${APP}/start`]
+    app.webContents.navigationHistory.active = 0
+    app.webContents.emit('did-navigate', {}, `${APP}/start`)
+    manager.back(id)
+    const back = createdViews[2] as RecordedView
+    back.webContents.navigationHistory.entries = ['https://site.example/a']
+    back.webContents.navigationHistory.active = 0
+    back.webContents.emit('did-navigate', {}, 'https://site.example/a')
+    expect(manager.getState().tabs[0]?.canGoForward).toBe(true)
+
+    back.webContents.navigationHistory.entries = ['https://site.example/a', 'https://site.example/c']
+    back.webContents.navigationHistory.active = 1
+    back.webContents.emit('did-navigate', {}, 'https://site.example/c')
+    expect(manager.getState().tabs[0]?.canGoForward).toBe(false)
   })
 
   it('acts for the tab again once it is back: leaving a second time swaps as the first did', () => {

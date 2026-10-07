@@ -149,9 +149,12 @@ it('[app:sessionstorage-survives-cross-origin-return] an app finds its sessionSt
       // any more -- it shares the default session with the provider it just
       // visited, same as every other site.
       check("the tab is in the shared default session", seen.inDefaultSession, JSON.stringify(seen))
-      check("the app's history holds only its own pages, the start page among them",
-        seen.canGoBack && seen.history.every((url) => url.startsWith(appOrigin)) && seen.history.includes(`${appOrigin}/start`),
-        JSON.stringify(seen))
+      // The pages before it, the start page and the provider's, stay the tab's own Back (src/main/shell/tab-outer-history.ts):
+      // the kept view holds only the page it came back to, so no Back inside it loads the provider's page in the app's view.
+      const back = await waitForTab(chrome, { address: callbackUrl, backDisabled: false })
+      check("the app's view holds only the page it came back to, and the tab's Back still reaches the pages before it",
+        seen.history.length === 1 && seen.history[0] === callbackUrl && back.ok,
+        JSON.stringify({ seen, toolbar: back.info }))
       check("no view is left on the provider's page", seen.providerViews === 0, JSON.stringify(seen))
     } finally {
       if (app !== undefined) await closeElectronApp(app)

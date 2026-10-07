@@ -2,17 +2,37 @@
 // the session the address needs. Shared by the address bar and a link followed inside a tab.
 import { repartitionView } from './tab-parking.js'
 import { gatewayRedirectFor } from './eth-gateway-rule.js'
+import { startNavigation } from './leave-page-prompt.js'
+import { listOf } from './tab-history.js'
+import { EMPTY_OUTER, stepBack, stepForward } from './tab-outer-history.js'
 import { appTabFlagChanged, partitionChanged } from './tab-partition.js'
 import type { TabRecord } from './tab-types.js'
 
 /** Moves the tab to a view of `target`'s session when the tab's own is not it, or its app-tab flag differs
  * (repartitionView's doc). False when the tab's view fits and the caller loads `target` in it. */
-export function repartitionForTarget (id: string, record: TabRecord, target: string): boolean {
+export function repartitionForTarget (id: string, record: TabRecord, target: string, step = false): boolean {
   const swap = partitionChanged(target, record.partition)
   if (swap === undefined && !appTabFlagChanged(target, record.view, record.host.broker)) return false
   // swap.to can itself be undefined (PartitionSwap's own doc) -- ??
   // would wrongly read that as "no swap" and keep the old partition.
-  repartitionView(id, record, target, swap !== undefined ? swap.to : record.partition)
+  repartitionView(id, record, target, swap !== undefined ? swap.to : record.partition, step)
+  return true
+}
+
+/** Back from the first page of the tab's view, or Forward from its last, to the page of the tab's outer history
+ * beyond it (tab-outer-history.ts). It loads in a view of its own session, as an address typed into the bar would;
+ * in the tab's own view when that is one. False when there is no such page. */
+export function stepOutOfView (id: string, record: TabRecord, direction: 'back' | 'forward'): boolean {
+  const wc = record.view.webContents
+  if (wc.isDestroyed()) return false
+  const { entries, index } = listOf(wc)
+  const outer = record.outer ?? EMPTY_OUTER
+  const step = direction === 'back' ? stepBack(outer, entries, index) : stepForward(outer, entries, index)
+  if (step === null) return false
+  record.outer = step.outer
+  const target = step.target.url
+  if (!repartitionForTarget(id, record, target, true)) startNavigation(wc, () => { wc.loadURL(target).catch(() => {}) })
+  record.host.emitState()
   return true
 }
 
