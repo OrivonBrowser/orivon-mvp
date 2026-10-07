@@ -9,7 +9,7 @@ import {
   type ConsentState, type PayloadKind, type SentPayload
 } from './disclosure.js'
 import { recordSent, type HistoryState } from './history.js'
-import type { Region } from './region.js'
+import type { Country } from './country.js'
 import { afterSent, initialKindSchedule, periodsDue, withOffsetFor, type KindSchedule } from './schedule.js'
 import { attemptSend, enqueue, initialTransportState, type Clock, type Sender, type TransportState } from './transport.js'
 
@@ -32,7 +32,7 @@ export interface SendContext {
   /** Read again before every send, never held: a withdrawal mid-cycle must stop the next POST. */
   readonly consent: () => Promise<ConsentState>
   readonly version: string
-  readonly region: Region
+  readonly country: Country
   /** This profile's random stream. */
   readonly stream: string
   /** Called only once consent is live: reading the machine is not allowed before then. */
@@ -83,7 +83,7 @@ export async function runSendCycle (state: SendCycleState, ctx: SendContext, sen
   for (const kind of KINDS) {
     let kindState: KindState = { ...current[kind], schedule: withOffsetFor(current[kind].schedule, period, ctx.random, ctx.offsetWindowMs) }
     const payloadFor = (target: string): SentPayload => kind === 'usage'
-      ? buildUsagePayload(current.accounting, { installId, stream: ctx.stream, region: ctx.region, version: ctx.version, period: target })
+      ? buildUsagePayload(current.accounting, { installId, stream: ctx.stream, country: ctx.country, version: ctx.version, period: target })
       : buildSitesPayload(current.accounting, { installId, stream: ctx.stream, version: ctx.version, period: target })
     const hasData = (target: string): boolean => kind === 'usage'
       ? hasUsageData(current.accounting, target)

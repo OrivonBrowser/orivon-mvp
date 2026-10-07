@@ -9,7 +9,7 @@ export interface UsageStatus {
   /** Why telemetry does not run in this build or launch: nothing is counted, so nothing can be turned on. */
   readonly off?: 'env' | 'private'
   readonly consent?: 'undecided' | 'accepted' | 'declined'
-  readonly region?: string
+  readonly country?: string
   /** Whether anything was ever sent from this computer: with no acceptance there is nothing to delete. */
   readonly everAccepted?: boolean
   /** Null until telemetry is on: the computer is not read before then. */

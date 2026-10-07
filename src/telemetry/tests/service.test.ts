@@ -34,7 +34,7 @@ describe('TelemetryService', () => {
       store,
       system,
       version: '0.1.0',
-      region: () => 'EU',
+      country: () => 'IT',
       machineReaders: { platform: 'linux', readFile: async () => { machineReads += 1; return MACHINE }, run: async () => undefined },
       randomId: () => 'cd'.repeat(16),
       clock: () => now,
@@ -99,7 +99,7 @@ describe('TelemetryService', () => {
     await browse(60, 'web3:vitalik.eth')
     await service.sendNow()
     const usage = sent.find((payload) => !('sites' in payload))
-    expect(usage).toMatchObject({ schema: 3, installId: deriveInstallId(MACHINE), stream: 'ab'.repeat(16), region: 'EU', period: '2026-10', activeSec: 60, classes: { web3: 60, web25: 0, web2: 0 } })
+    expect(usage).toMatchObject({ schema: 4, installId: deriveInstallId(MACHINE), stream: 'ab'.repeat(16), country: 'IT', period: '2026-10', activeSec: 60, classes: { web3: 60, web25: 0, web2: 0 } })
     expect(sent.find((payload) => 'sites' in payload)).toMatchObject({ installId: deriveInstallId(MACHINE), stream: 'ab'.repeat(16), sites: { 'web3:vitalik.eth': 60 } })
     expect((await service.status()).sent.length).toBeGreaterThanOrEqual(2)
   })
@@ -115,6 +115,23 @@ describe('TelemetryService', () => {
     await service.sendTick()
     expect(sent.some((payload) => !('sites' in payload))).toBe(true)
     expect(machineReads).toBeGreaterThan(0)
+  })
+
+  it('quitting sends a usage report and a sites report together', async () => {
+    await acceptAndSettle()
+    await browse(60, 'web3:vitalik.eth')
+    await service.quit()
+    expect(sent.filter((payload) => !('sites' in payload))).toHaveLength(1)
+    expect(sent.filter((payload) => 'sites' in payload)).toHaveLength(1)
+  })
+
+  it('sendNow, which the start of the browser uses, goes past the random offset and the daily gate, again and again', async () => {
+    await acceptAndSettle()
+    await browse(60, 'web3:vitalik.eth')
+    await service.sendNow()
+    expect(sent.map((payload) => 'sites' in payload)).toEqual([false, true])
+    await service.sendNow()
+    expect(sent.map((payload) => 'sites' in payload)).toEqual([false, true, false, true])
   })
 
   it('quitting sends a last snapshot that includes the session just closed', async () => {
@@ -166,7 +183,7 @@ describe('TelemetryService', () => {
   })
 
   it('reads a choice another profile made, at the next tick', async () => {
-    await new SystemStore(join(dir, 'home')).writeConsent({ state: 'accepted', atMs: start, noticeVersion: 3, source: 'welcome', everAccepted: true })
+    await new SystemStore(join(dir, 'home')).writeConsent({ state: 'accepted', atMs: start, noticeVersion: 4, source: 'welcome', everAccepted: true })
     await service.checkpointTick(focused, true)
     now += 40 * SEC
     await service.checkpointTick(focused, true)

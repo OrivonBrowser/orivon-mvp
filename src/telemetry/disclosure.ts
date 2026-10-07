@@ -3,10 +3,10 @@
 // no electron, no I/O, no clock, no randomness. Every value the payloads need beyond the counted
 // time is passed in, and everything produced is returned, never written anywhere.
 import { SHELL_APP_ID, type AccountingState, type Period } from './accounting.js'
-import type { Region } from './region.js'
+import type { Country } from './country.js'
 import { classOfKey, reportedKey, UNLISTED } from './site-key.js'
 
-export const PAYLOAD_SCHEMA = 3
+export const PAYLOAD_SCHEMA = 4
 
 /** What the install ID reads before the person has turned telemetry on: the machine is not read until then. */
 export const INSTALL_ID_PLACEHOLDER = '(made when you turn this on)'
@@ -25,7 +25,7 @@ export interface UsagePayload {
   readonly schema: typeof PAYLOAD_SCHEMA
   readonly installId: string
   readonly stream: string
-  readonly region: Region
+  readonly country: Country
   readonly version: string
   readonly period: Period
   readonly activeSec: number
@@ -58,7 +58,7 @@ export type PayloadKind = 'usage' | 'sites'
 export interface UsageMeta {
   readonly installId: string
   readonly stream: string
-  readonly region: Region
+  readonly country: Country
   readonly version: string
   readonly period: Period
 }
@@ -114,7 +114,7 @@ export function buildUsagePayload (state: AccountingState, meta: UsageMeta): Usa
     schema: PAYLOAD_SCHEMA,
     installId: meta.installId,
     stream: meta.stream,
-    region: meta.region,
+    country: meta.country,
     version: meta.version,
     period: meta.period,
     activeSec: whole(totals?.activeSec ?? 0),
