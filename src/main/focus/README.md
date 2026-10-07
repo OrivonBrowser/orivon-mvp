@@ -1,6 +1,6 @@
 # `src/main/focus/`: moving the keyboard through the window
 
-**What lives here.** F6 and Shift+F6 across the address bar, toolbar, tab strip, bookmarks bar, any pane docked
+**What lives here.** Which web contents holds the keyboard; F6 and Shift+F6 across the address bar, toolbar, tab strip, bookmarks bar, any pane docked
 beside the page (`external-panes.ts`) and the page; and caret browsing.
 
 | File | What it is |
@@ -13,6 +13,7 @@ beside the page (`external-panes.ts`) and the page; and caret browsing.
 | `caret-signal.ts` | the tab signal that gives each page the setting as it is made, returns, or leaves the new-tab page |
 | `caret-confirm-overlay.ts` | the sheet F7 shows before turning it on, through a centre slot of `../overlays/tab-slots.ts` |
 | `install-focus.ts` | the installer: a change to the setting reaches every open tab |
+| `focused-contents-guard.ts` | `installFocusedContentsGuard`: Electron's `webContents.getFocusedWebContents()`, which its menus call on every click, without asking an offscreen contents (that call kills the main process) |
 
 **What it depends on.** `electron` and [`../shell/`](../shell/) (types, `sendChromeEvent`, the tab-signal type and
 the installer type), [`../overlays/`](../overlays/) (the slot queue and the overlay type) and

@@ -38,6 +38,7 @@ import { handleOpenUrl } from './os/open-url.js'
 import { handleOpenFile } from './os/open-file.js'
 import { removeAfterExit, removePrivateDir, sweepPrivateDirs } from './launch/private-session.js'
 import { loadFetchStack } from './startup/fetch-stack.js'
+import { installFocusedContentsGuard } from './focus/focused-contents-guard.js'
 import { runUpdateCheck } from './self-update/update-check-runner.js'
 import { scheduleUpdateChecks } from './self-update/update-schedule.js'
 import { configureVerifier, verifierEthContentCid } from './verifier/verifier-subsystem.js'
@@ -53,6 +54,9 @@ import type { Runtime } from './launch/start-launch.js'
 
 // Before any subsystem or hook exists (startup/fetch-stack.ts says why).
 loadFetchStack()
+
+// Before the first menu exists: Electron's menus ask it on every click (focus/focused-contents-guard.ts).
+installFocusedContentsGuard()
 
 // Before any subsystem runs: Electron applies this fallback reliably only when
 // it is set ahead of the first session. Its own default carries `Electron/`
