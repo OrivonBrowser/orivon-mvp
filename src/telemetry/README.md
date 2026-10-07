@@ -10,7 +10,9 @@ its own tests.
 
 The screens exist. The first-run welcome has a **Telemetry** block with two identical buttons,
 "Enter and share telemetry" and "Enter without telemetry", neither preselected; it is shown only
-while the choice is undecided, and the country decides nothing in it. Settings has the switch,
+while the choice is undecided, and the country decides nothing in it. An acceptance given under an
+older `NOTICE_VERSION` brings the question back at the next start, with the lines of
+`NOTICE_CHANGES` saying what changed since; a refusal is not asked again for six months. Settings has the switch,
 the literal text of both messages, the history of what was sent, the install ID, **Delete my
 data**, and the notice.
 

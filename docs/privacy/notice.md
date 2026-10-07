@@ -80,7 +80,9 @@ telemetry**. Neither is preselected, and you must press one to enter; so your an
 act, not a box left as it was found. The block is shown only while you have not answered. You can
 change your mind at any time with the switch in Settings; withdrawing is as easy as agreeing,
 and nothing in the browser gets worse for it. If you answered no, nothing asks you again for six
-months.
+months. If you agreed and this notice later changes what is sent, nothing is sent under the new
+version until you answer again: the next time Orivon starts, the same block asks you, with a
+line saying what changed.
 
 **Is an identifier personal data?** Yes, we treat it so. We cannot tell who you are from it, but
 with it we can find your rows, which is why it is protected like personal data and why you can ask

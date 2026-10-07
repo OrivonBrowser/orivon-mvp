@@ -87,7 +87,10 @@ dimensione, **Entra e condividi la telemetria** e **Entra senza telemetria**. Ne
 preselezionato e per entrare devi premerne uno: la tua risposta è quindi un atto chiaro, non una
 casella lasciata com'era. Il blocco compare solo finché non hai risposto. Puoi cambiare idea in
 qualsiasi momento con l'interruttore nelle Impostazioni; revocare è facile quanto acconsentire, e
-il browser non peggiora in nulla. Se hai risposto di no, nulla te lo richiede per sei mesi.
+il browser non peggiora in nulla. Se hai risposto di no, nulla te lo richiede per sei mesi. Se
+hai acconsentito e questa informativa cambia poi ciò che viene inviato, con la nuova versione non
+si invia nulla finché non rispondi di nuovo: al successivo avvio di Orivon lo stesso blocco te lo
+chiede, con una riga che dice che cosa è cambiato.
 
 **Un identificativo è un dato personale?** Sì, lo trattiamo come tale. Da esso non possiamo sapere
 chi sei, ma con esso possiamo ritrovare le tue righe: per questo è protetto come un dato personale

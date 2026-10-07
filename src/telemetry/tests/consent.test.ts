@@ -80,6 +80,8 @@ describe('asking again after the notice changed', () => {
     expect(renewalDue(recordChoice('accepted', NOW, 'welcome'))).toBe(false)
     expect(renewalDue(recordChoice('declined', NOW, 'welcome', NOTICE_VERSION - 1))).toBe(false)
     expect(renewalDue(UNDECIDED)).toBe(false)
+    // An older build sharing the consent file with a newer one sends nothing under the newer acceptance, and asks nothing either.
+    expect(renewalDue(recordChoice('accepted', NOW, 'welcome', NOTICE_VERSION + 1))).toBe(false)
   })
 
   it('lists what changed since the version the person agreed to, skipping versions with no sentence', () => {
