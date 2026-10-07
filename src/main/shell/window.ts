@@ -110,7 +110,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // path; the built path matches electron.vite.config.ts's `newtab` entry.
   const dashboardUrl = resolveDashboardUrl()
 
-  // Bookmarks (scope.md, ADR-0003) are a store of their own, shared by every
+  // Bookmarks (ADR-0003) are a store of their own, shared by every
   // window of this process and not folded into TabManager: tabs and bookmarks
   // change independently and neither needs to know the other exists.
   // The bookmarks bar is rendered only when it is asked for or has an item in

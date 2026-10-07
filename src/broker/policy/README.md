@@ -8,8 +8,7 @@ private-address classification, path confinement, origin derivation, the update 
 **What it must never import.** **`electron`, `node:fs`, `node:net`, `node:dns`, or anything
 that performs I/O.** This is what lets `createBroker({ dial, resolve, now, fs, keychain })` run
 every capability test against stubs, with no Electron and no network
-([`build-plan.md`](../../../docs/planning/build-plan.md) §Week 0, and
-[`../index.ts`](../index.ts)'s header). An I/O step a decision needs is injected, as `paths.ts`'s
+([`../index.ts`](../index.ts)'s header). An I/O step a decision needs is injected, as `paths.ts`'s
 `realpath` is. If you want an `electron` import here, the function is doing two jobs: split the
 decision from the effect, and put the effect one level up.
 

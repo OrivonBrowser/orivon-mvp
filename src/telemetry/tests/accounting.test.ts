@@ -13,8 +13,8 @@ import {
 // than Date.now() -- the whole point of the fold is that it needs no clock,
 // so the tests supply exact timestamps and assert exact totals, never
 // "greater than zero". A passing assertion like that would not have caught
-// the bug this module exists to prevent (scope.md's corrected Success
-// metric section): background time silently counted as active.
+// the bug this module exists to prevent: background time silently counted as
+// active.
 
 describe('session start/stop: background accrual with no focus', () => {
   const app = 'torrent'

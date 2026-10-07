@@ -3,7 +3,7 @@
 // request/response, so this file is one-directional by construction.
 //
 // Sender check, same pattern as the senderFrame -> origin check
-// build-plan.md's "Testing" section requires for the broker's T3 defense:
+// the broker's T3 defense requires:
 // every handler verifies event.senderFrame is EXACTLY the chrome view's top
 // frame, by identity, AND that it is still at the chrome's own URL, before
 // doing anything (`isFromChrome`). Identity keeps out every tab's page, if

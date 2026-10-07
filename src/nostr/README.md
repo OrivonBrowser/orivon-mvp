@@ -9,7 +9,7 @@ must be the same on every client site, which a per-origin app key cannot give
 **What it must never import.** [`src/broker/`](../broker/) internals.
 
 **Owner stream.** `nostr`, parked: Nostr identity is an idea, not a build step
-([`scope.md`](../../docs/scope.md) §LATER).
+([`docs/roadmap.md`](../../docs/roadmap.md), Later).
 
 **No raw signing oracle.** `signEvent` takes a structured object; the broker serialises and
 screens `kind`. Kinds 1/6/7 sign silently after the connect prompt; 0, 3, 5, 22242 and any

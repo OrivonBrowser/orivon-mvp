@@ -35,6 +35,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **Docs: a features list and a roadmap** replace the scope page and the build plan; the README leads with a browser built for owning and a platform for apps Chrome cannot run.
 - **A new profile starts with something in it**: five bookmarks in the bar, uBlock Origin installed and pinned to the toolbar, the Extensions
   button shown, and "Orivon Featured" (Explore, The Lounge, FreeTube, ASGARDEX, Element) on the new tab in place of the Torrent and Nostr tiles. The Web3 Score
   provider is now `ipfs://attila.orivonstack.eth/score` for a profile that never chose one. Removing a bookmark or uBlock Origin is never undone.

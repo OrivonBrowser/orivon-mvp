@@ -1,6 +1,6 @@
 // Owns every tab's WebContentsView and the state pushed to the chrome UI.
 //
-// Main holds truth (build-plan.md's shell architecture, this session's plan):
+// Main holds truth (the shell's architecture):
 // the chrome view sends commands (newTab, navigate, back, ...) and receives a
 // full ShellState snapshot after every change. It never derives tab state
 // itself.

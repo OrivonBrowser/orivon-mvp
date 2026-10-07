@@ -7,8 +7,7 @@ import type { Manifest } from '../../contracts/index.js'
 import { LIMITS } from '../../contracts/index.js'
 import { IN_FLIGHT_QUEUE_LIMIT } from '../handles/in-flight.js'
 
-// This is the assembly step build-plan.md's "Structural decision, day 1"
-// exists for: everything under ./policy/ is a decision function, and this
+// This is the assembly step the broker's structural decision exists for: everything under ./policy/ is a decision function, and this
 // suite is what proves createBroker actually MAKES the decision from the
 // GRANTED set, never the manifest's DECLARED one (open-questions.md A18) --
 // the single idea the whole task is about.

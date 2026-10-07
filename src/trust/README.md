@@ -1,8 +1,7 @@
 # `src/trust/`: the trust indicator
 
-**What lives here.** The Website level this browser can observe (Level 1 or 2 of the canonical
-[Web3 scores](https://docs.orivonstack.com/docs/implementations/web3-score) page;
-`website-level.ts`), the Delivery level on that page's Connection-to-network scale
+**What lives here.** The Website level this browser can observe (Level 1 or 2 of the Web3 Score
+scale in the root `README.md`; `website-level.ts`), the Delivery level on the Connection-to-network scale
 (`delivery-ladder.ts`), the connection ladder built from the broker's per-app connection log (a
 different axis, still unwired: nothing observes per-app connections yet), operation scoring, and
 the same-host hash tree check (`ddoc.ts`), whether a judged level counts at the address it is shown at

@@ -44,7 +44,7 @@ export const MIN_WINDOW_HEIGHT = 400
 
 // Dev/test tooling only -- never gated on app.isPackaged or "is this a
 // production build" (run-from-source is a real shipping path on Windows and
-// macOS, build-plan.md; a real user's window must always take focus).
+// macOS, CLAUDE.md Rule 8; a real user's window must always take focus).
 // showInactive() shows the window without activating it, so a build or e2e
 // run started while the owner is typing elsewhere does not steal keystrokes.
 // Set by `npm run dev`, and by test/support/launch-electron.mjs for every Electron

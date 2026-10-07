@@ -14,7 +14,7 @@
 
 appId: com.orivonstack.orivon
 # Reverse-DNS of orivonstack.com, the project's actual registered domain (already used
-# for docs.orivonstack.com and the OrivonStack forum -- docs/inventory.md). Not invented
+# for docs.orivonstack.com and the OrivonStack forum). Not invented
 # for this file.
 productName: Orivon
 # The name a user sees installed on their machine, the same as README.md's own
@@ -82,10 +82,9 @@ publish: null
 # github.com/OrivonBrowser/orivon-mvp), and per electron-builder's own PublishManager,
 # an explicit `null` here -- not just omitting the key -- is what guarantees no
 # `app-update.yml` is written into the packaged resources and no publish config is
-# resolved from any source. Auto-update is cut by owner decision (build-plan.md,
-# 2026-08-25): unsigned `electron-updater` on Linux verifies only a SHA-512 fetched from
-# the same host that serves the binary, which is a standing remote-code-execution
-# channel keyed to a GitHub token. v0 checks and notifies instead (a separate,
+# resolved from any source. Unsigned auto-install is not built: unsigned `electron-updater` on
+# Linux verifies only a SHA-512 fetched from the same host that serves the binary, which is a
+# standing remote-code-execution channel keyed to a GitHub token. Orivon checks and notifies instead (a separate,
 # already-scoped build step) -- this key exists so that decision cannot be silently
 # undone by a future contributor passing `--publish` without reading either doc.
 # The release workflow attaches packages with `gh release upload`, which writes no
@@ -155,7 +154,7 @@ linux:
   # deb listed first because it is the PRIMARY artefact, not an equal alternative to
   # AppImage -- only an installed package can register a .desktop file where
   # `xdg-settings` can find it, and the project's success metric is measured in
-  # daily-driver hours (docs/scope.md). A bare AppImage cannot self-integrate:
+  # daily-driver hours. A bare AppImage cannot self-integrate:
   # electron-builder's own docs state plainly that since electron-builder 21, AppImages
   # do not automatically create desktop files, associate file types, or register with
   # the application menu. AppImage remains the trial artefact; the

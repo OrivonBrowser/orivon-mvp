@@ -1,11 +1,11 @@
 // Update check: notifies, never installs.
 //
-// Owner decision (build-plan.md's "Auto-install is cut" note, 2026-08-25): unsigned
+// Unsigned auto-install is not built: unsigned
 // electron-updater on Linux verifies only a SHA-512 fetched from the SAME
 // HOST that serves the binary, which is a standing remote-code-execution
 // channel keyed to a GitHub token -- weaker than what ADR-0005 demands of
 // third-party apps, which is the wrong way round for the browser's own
-// binary. v0 checks and notifies, linking to the release. Signing the
+// binary. This file checks and notifies, linking to the release. Signing the
 // update manifest with an offline key is the next upgrade.
 //
 // This file therefore contains no download, no signature/hash verification,
