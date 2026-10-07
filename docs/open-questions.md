@@ -297,15 +297,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** per-app engagement numbers
 
-### A93: The telemetry ingest endpoint does not exist **[OWNER]**
-
-- **Question:** Where is the self-hosted ingest endpoint `ADR-0004` requires, and who provisions it?
-- **Why it matters:** `TELEMETRY_INGEST_URL` (`src/telemetry/runner.ts`) is an unresolvable
-  `.example` address, so no event reaches a server and active use cannot be counted.
-- **Options:** provision a self-hosted endpoint and set the URL; keep telemetry off until then.
-- **Who decides:** owner
-- **Blocks:** enabling telemetry for real users
-
 ### A106: `net.listen` accept backpressure is a broker queue, not the OS backlog **[AI-REC]**
 
 - **Question:** Amend `handle-contracts.md` §TcpServer and §Conformance item 7, which promise
@@ -1253,16 +1244,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A274: A second profile counts as a second install in usage statistics **[OWNER]**
-
-- **Question:** Should a second profile send its own usage statistics, or share the default's install id?
-- **Why it matters:** telemetry's install id is kept in the data directory, so each profile reports its
-  own time and a person with two profiles counts as two installs. The success metric counts people.
-- **Options:** the default profile's directory keeps the id and other profiles send nothing (rec.);
-  other profiles share its id; leave it. Each is a small change to `src/telemetry/`.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A275: The update check is off until the owner decides **[OWNER]**
 
 - **Question:** Should looking for a newer release be on by default, and should Settings link to it?
@@ -1319,16 +1300,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** list apps from what is pinned as well as granted, once a real app is installed without a
   grant (rec.).
 - **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
-### A282: The first-run usage statistics screen is not built **[OWNER]**
-
-- **Question:** Where in the welcome flow does the usage statistics question sit?
-- **Why it matters:** `ADR-0004` calls for a first-run screen with the exact text and two buttons,
-  neither preselected. Settings has the same choice, undecided until made and nothing sent before it,
-  but no screen asks on first run.
-- **Options:** build it on the welcome flow once the owner says where (rec.).
-- **Who decides:** owner
 - **Blocks:** nothing
 
 ### A283: Fs confinement checks a path, then the adapter opens it by name **[AI-REC]**

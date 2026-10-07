@@ -14,8 +14,7 @@ const BOOLS: ReadonlyArray<[key: keyof typeof SETTINGS, fallback: boolean]> = [
   ['privacy.doNotTrack', false],
   ['privacy.httpsOnly', false],
   ['passwords.offerToSave', true],
-  ['passwords.autofill', true],
-  ['autofill.addresses', true]
+  ['passwords.autofill', true]
 ]
 
 describe('the site and privacy settings', () => {
