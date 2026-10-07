@@ -8,7 +8,7 @@
 import {
   applyEvent, periodOf, pruneSitePeriods, resetSession, INTERNAL_SITE, SHELL_APP_ID, type AccountingState, type SiteKey, type TelemetryEvent
 } from './accounting.js'
-import { NOTICE_VERSION, effectiveConsent, recordChoice, shouldOfferAtWelcome, type ConsentRecord, type ConsentSource } from './consent.js'
+import { NOTICE_VERSION, changesSince, effectiveConsent, recordChoice, renewalDue, shouldOfferAtWelcome, type ConsentRecord, type ConsentSource } from './consent.js'
 import {
   INSTALL_ID_PLACEHOLDER, buildErasePayload, buildSitesPayload, buildUsagePayload, type ConsentState, type ErasePayload,
   type SitesPayload, type UsagePayload
@@ -95,6 +95,12 @@ export class TelemetryService {
 
   async offerAtWelcome (): Promise<boolean> {
     return shouldOfferAtWelcome(await this.consentRecord(), this.deps.clock())
+  }
+
+  /** The sentences for the welcome screen's renewal question when an acceptance is due to be asked again, else undefined. */
+  async renewalAtStart (): Promise<readonly string[] | undefined> {
+    const record = await this.consentRecord()
+    return renewalDue(record) ? changesSince(record) : undefined
   }
 
   private installIdFor (): Promise<string> {

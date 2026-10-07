@@ -158,6 +158,54 @@ describe('a telemetry failure at the welcome screen', () => {
   })
 })
 
+describe('the telemetry question asked again after the notice changed', () => {
+  const lines = ['The usage report names your country.']
+  const question = (renewal: () => Promise<readonly string[] | undefined>, offered = async () => false): Parameters<typeof planIntro>[3] => ({ offered, choose: async () => {}, renewal })
+
+  it('shows on a screen already seen, with the question, the lines and no default-browser offer, and writes nothing on entering', async () => {
+    await markIntroSeen(dir)
+    const before = await readFile(join(dir, 'intro.json'), 'utf8')
+    const plan = await planIntro('once', dir, true, question(async () => lines))
+    expect(plan).toBeDefined()
+    expect(plan?.offerDefault).toBe(false)
+    expect(plan?.offerTelemetry).toBe(true)
+    expect(plan?.changes).toEqual(lines)
+    await plan?.onEntered()
+    expect(await readFile(join(dir, 'intro.json'), 'utf8')).toBe(before)
+  })
+
+  it('does not show on a screen already seen when nothing is due', async () => {
+    await markIntroSeen(dir)
+    expect(await planIntro('once', dir, true, question(async () => undefined))).toBeUndefined()
+    expect(await planIntro('once', dir, true, { offered: async () => false, choose: async () => {} })).toBeUndefined()
+  })
+
+  it('never shows in off mode, however much is due', async () => {
+    await markIntroSeen(dir)
+    const renewal = vi.fn(async () => lines)
+    expect(await planIntro('off', dir, true, question(renewal))).toBeUndefined()
+    expect(renewal).not.toHaveBeenCalled()
+  })
+
+  it('carries the lines on a first showing whose consent is a stale acceptance', async () => {
+    const plan = await planIntro('once', dir, true, question(async () => lines, async () => true))
+    expect(plan?.offerDefault).toBe(true)
+    expect(plan?.offerTelemetry).toBe(true)
+    expect(plan?.changes).toEqual(lines)
+  })
+
+  it('carries no lines when nothing is due, and a failure costs the question and never the window', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect((await planIntro('always', dir, false, question(async () => undefined)))?.changes).toEqual([])
+    const plan = await planIntro('always', dir, false, question(async () => { throw new Error('broken') }, async () => true))
+    expect(plan?.offerTelemetry).toBe(true)
+    expect(plan?.changes).toEqual([])
+    await markIntroSeen(dir)
+    expect(await planIntro('once', dir, false, question(async () => { throw new Error('broken') }))).toBeUndefined()
+    expect(error).toHaveBeenCalled()
+  })
+})
+
 describe('parseLeaving and introPageUrl', () => {
   it('reads the two reports an unquestioned page makes, unchanged', () => {
     expect(parseLeaving('#leaving')).toEqual({ makeDefault: false, telemetry: undefined })
@@ -178,5 +226,12 @@ describe('parseLeaving and introPageUrl', () => {
     expect(introPageUrl('orivon-shell://r/intro/', { offerDefault: false, offerTelemetry: false })).toBe('orivon-shell://r/intro/')
     expect(introPageUrl('orivon-shell://r/intro/', { offerDefault: true, offerTelemetry: false })).toBe('orivon-shell://r/intro/?default=1')
     expect(introPageUrl('orivon-shell://r/intro/', { offerDefault: true, offerTelemetry: true })).toBe('orivon-shell://r/intro/?default=1&telemetry=1')
+  })
+
+  it('carries each change line as its own parameter, which the page reads back whole', () => {
+    const changes = ['Country, from your time zone & sent at start.', 'A second line: with "quotes"']
+    const url = introPageUrl('orivon-shell://r/intro/', { offerDefault: false, offerTelemetry: true, changes })
+    expect(new URL(url).searchParams.getAll('changed')).toEqual(changes)
+    expect(introPageUrl('orivon-shell://r/intro/', { offerDefault: false, offerTelemetry: true, changes: [] })).toBe('orivon-shell://r/intro/?telemetry=1')
   })
 })

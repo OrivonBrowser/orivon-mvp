@@ -13,6 +13,8 @@ export interface IntroPlan {
   readonly offerDefault: boolean
   /** The screen puts the telemetry question in place of its single Enter button: the person has not chosen yet, and telemetry runs in this process. */
   readonly offerTelemetry: boolean
+  /** What changed in the telemetry notice since the person agreed, one sentence each; empty unless the question is a renewal. */
+  readonly changes: readonly string[]
   /** Records the answer to that question, for the whole computer. Called once, with the button the person pressed. */
   readonly chooseTelemetry: (on: boolean) => Promise<void>
   /**
@@ -71,10 +73,11 @@ export function parseLeaving (hash: string): LeavingReport | undefined {
 }
 
 /** The address of the welcome page: what main offers it travels in the query, since the page has no bridge. */
-export function introPageUrl (page: string, plan: Pick<IntroPlan, 'offerDefault' | 'offerTelemetry'>): string {
+export function introPageUrl (page: string, plan: Pick<IntroPlan, 'offerDefault' | 'offerTelemetry'> & { readonly changes?: readonly string[] }): string {
   const query = new URLSearchParams()
   if (plan.offerDefault) query.set('default', '1')
   if (plan.offerTelemetry) query.set('telemetry', '1')
+  for (const line of plan.changes ?? []) query.append('changed', line)
   const text = query.toString()
   return text === '' ? page : `${page}?${text}`
 }
@@ -83,6 +86,8 @@ export function introPageUrl (page: string, plan: Pick<IntroPlan, 'offerDefault'
 export interface TelemetryQuestion {
   readonly offered: () => Promise<boolean>
   readonly choose: (on: boolean) => Promise<void>
+  /** The change lines when an acceptance given under an older notice is due to be asked again, else undefined. */
+  readonly renewal?: () => Promise<readonly string[] | undefined>
 }
 
 export async function planIntro (envValue: string | undefined, userDataDir: string, offerDefault = false, telemetry?: TelemetryQuestion): Promise<IntroPlan | undefined> {
@@ -90,16 +95,28 @@ export async function planIntro (envValue: string | undefined, userDataDir: stri
   if (envValue !== undefined && envValue !== '' && envValue !== mode) {
     console.warn(`[orivon] intro: ORIVON_INTRO=${envValue} is not always, once or off; using once`)
   }
-  if (!shouldShowIntro(mode, await readIntroSeen(userDataDir))) return undefined
-  // The first window waits on this: a telemetry failure must cost the question, never the window.
-  const offerTelemetry = telemetry !== undefined && await telemetry.offered().catch((error: unknown) => {
+  if (mode === 'off') return undefined
+  const show = shouldShowIntro(mode, await readIntroSeen(userDataDir))
+  // The first window waits on both questions: a telemetry failure must cost the question, never the window.
+  const renewal = await telemetry?.renewal?.().catch((error: unknown) => {
+    console.error('[orivon] intro: could not tell whether the telemetry notice changed; not asking again:', error)
+    return undefined
+  })
+  const chooseTelemetry = telemetry?.choose ?? (async () => {})
+  if (!show) {
+    if (renewal === undefined) return undefined
+    // The screen was seen and its default-browser offer made at that showing; entering marks nothing.
+    return { offerDefault: false, offerTelemetry: true, changes: renewal, chooseTelemetry, onEntered: async () => {} }
+  }
+  const offered = telemetry !== undefined && await telemetry.offered().catch((error: unknown) => {
     console.error('[orivon] intro: could not tell whether to ask about telemetry; not asking:', error)
     return false
   })
   return {
     offerDefault,
-    offerTelemetry,
-    chooseTelemetry: telemetry?.choose ?? (async () => {}),
+    offerTelemetry: offered || renewal !== undefined,
+    changes: renewal ?? [],
+    chooseTelemetry,
     onEntered: mode === 'once' ? () => markIntroSeen(userDataDir) : async () => {}
   }
 }

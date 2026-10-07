@@ -19,6 +19,22 @@ const query = new URLSearchParams(location.search)
 if (query.get('default') === '1') offer?.removeAttribute('hidden')
 const asksTelemetry = query.get('telemetry') === '1'
 
+// The lines arrive in the URL, so they are only ever set as text.
+function showChanges (lines: readonly string[]): void {
+  const box = document.getElementById('telemetry-changed')
+  if (box === null || lines.length === 0) return
+  const lead = document.createElement('p')
+  lead.textContent = 'Telemetry changed since you agreed:'
+  const list = document.createElement('ul')
+  for (const line of lines) {
+    const item = document.createElement('li')
+    item.textContent = line
+    list.append(item)
+  }
+  box.append(lead, list)
+  box.removeAttribute('hidden')
+}
+
 function leave (report: string): void {
   // "leaving" first, so the shell makes its view transparent before the fade
   // shows what is under it.
@@ -35,6 +51,7 @@ if (asksTelemetry) {
   // The person has not chosen, so no button has the focus and none is the way in: Enter does nothing until one is pressed.
   cta?.setAttribute('hidden', '')
   question?.removeAttribute('hidden')
+  showChanges(query.getAll('changed'))
   let left = false
   const choose = (on: boolean): void => {
     if (left) return

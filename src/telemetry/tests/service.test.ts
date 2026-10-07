@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { totalsFor } from '../accounting.js'
 import { deriveInstallId } from '../install-id.js'
 import type { SentPayload } from '../disclosure.js'
+import { NOTICE_CHANGES, NOTICE_VERSION, recordChoice } from '../consent.js'
 import { TelemetryService } from '../service.js'
 import { TelemetryStore } from '../store.js'
 import { SystemStore } from '../system-store.js'
@@ -214,6 +215,18 @@ describe('TelemetryService', () => {
     expect(await service.offerAtWelcome()).toBe(true)
     await service.setOn(false, 'welcome')
     expect(await service.offerAtWelcome()).toBe(false)
+  })
+
+  it('asks again at the start only when an acceptance was given under an older notice, and says what changed', async () => {
+    expect(await service.renewalAtStart()).toBeUndefined()
+    await system.writeConsent(recordChoice('accepted', start, 'welcome', NOTICE_VERSION - 1))
+    expect(await service.renewalAtStart()).toEqual([NOTICE_CHANGES[NOTICE_VERSION]])
+    await system.writeConsent(recordChoice('declined', start, 'welcome', NOTICE_VERSION - 1))
+    expect(await service.renewalAtStart()).toBeUndefined()
+    await system.writeConsent(recordChoice('accepted', start, 'welcome', 1))
+    expect(await service.renewalAtStart()).toEqual(expect.arrayContaining([NOTICE_CHANGES[NOTICE_VERSION]]))
+    await acceptAndSettle()
+    expect(await service.renewalAtStart()).toBeUndefined()
   })
 
   it('writes the counted time to disk at each checkpoint', async () => {

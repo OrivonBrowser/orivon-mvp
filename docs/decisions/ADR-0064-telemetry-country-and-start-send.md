@@ -48,8 +48,8 @@ are on disk, and the start send carries them.
 - The country is finer than the region. For a small population, an install in a country with few
   users is easier to single out in the per-install rows and in the monthly aggregates; the DPIA
   screening is re-done for it (`docs/privacy/dpia-screening.md`).
-- Everyone who accepted under notice version 3 sends nothing until they turn telemetry on again
-  in Settings: the welcome does not ask again (ADR-0063 item 9, still *provisional*).
+- Everyone who accepted under notice version 3 sends nothing until they answer again: the next
+  start shows the welcome's telemetry question with a line saying what changed (d-0552).
 - A time zone is not residence: a traveller, a VPN user, or anyone who sets another zone is
   counted in that zone's country.
 - Each browser start is one more pair of requests to the server, which sees the time of each.

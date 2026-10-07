@@ -3,7 +3,9 @@
 - **Status:** accepted; supersedes [ADR-0004](ADR-0004-telemetry.md) in part (its payload, its
   install identifier, its country field, and its promise to publish the ingest configuration).
   **Superseded in part by [ADR-0064](ADR-0064-telemetry-country-and-start-send.md)**: item 4's
-  region (the payload names the country) and item 6's cadence (both reports also go at start)
+  region (the payload names the country) and item 6's cadence (both reports also go at start).
+  Item 9's provisional "the welcome does not ask again" is settled by d-0552: an acceptance under
+  an older notice is asked again at the next start
 - **Date:** 2026-10-06
 - **Type:** product / security
 - **Decided by:** **owner**
