@@ -132,7 +132,7 @@ for (const scheme of SCHEMES) {
         expect(await waitFor(() => dashboardOf(app) !== undefined)).toBe(true)
         await (dashboardOf(app) as Page).waitForLoadState('load')
         await state(check, app, `dashboard-startup-${scheme}`, {
-          expected: 'New-tab dashboard: wallpaper, the Orivon mark and name, a search box, an APPS row with tiles that have icons and labels; one tab titled "New Tab" in the strip; toolbar with back, forward and reload dimmed.',
+          expected: 'New-tab dashboard: wallpaper, the Orivon mark and name, a search box, an "Orivon Featured" row of five tiles (Explore, The Lounge, FreeTube, ASGARDEX, Element) that have icons and labels; one tab titled "New Tab" in the strip; toolbar with back, forward and reload dimmed.',
           action: 'Launched a fresh profile and waited for the dashboard to load.'
         })
 

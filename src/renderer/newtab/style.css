@@ -158,7 +158,7 @@ input:focus-visible {
   color: var(--wink);
   transition: border-color 150ms ease;
 }
-.tile:not(:disabled):hover {
+.tile:hover {
   border-color: color-mix(in srgb, var(--waccent) 50%, transparent);
 }
 /* The same box whether the tile got the site's real favicon or the globe
