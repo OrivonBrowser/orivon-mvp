@@ -47,6 +47,7 @@ import { netFetchJson } from './browsing/score-provider-client.js'
 import { isDevEthName } from './dev/eth-resolver.js'
 import { isOriginServedFromCacheSync } from '../loader/electron/serve.js'
 import type { Runtime } from './launch/start-launch.js'
+import { recordFatal as recordFatalCrash, setPageClassifier, startDiagnostics } from './diagnostics/diagnostics-runner.js'
 
 // Do not add `ozone-platform: x11` here without solving its GPU crash on
 // this machine first -- the window-visibility bug it was chasing is really
@@ -120,8 +121,15 @@ const SWEEP_DELAY_MS = 20_000
 /** `web-contents-created` takes a listener from each installer; past Node's default of ten it warns of a leak that is not one. */
 const APP_LISTENER_ROOM = 24
 
+/** Called by `start.ts` when an error ends the process: the crash record the next start offers a report for. */
+export function recordFatal (kind: string, error: unknown): void {
+  recordFatalCrash(kind, error)
+}
+
 /** Starts the browser this process is. */
 export function boot (runtime: Runtime): void {
+  // First of all, so the log holds everything this run printed and the marker is down before anything can fail.
+  startDiagnostics({ dir: runtime.dir, isPrivate: runtime.isPrivate })
   app.setMaxListeners(Math.max(app.getMaxListeners(), APP_LISTENER_ROOM))
   // Chromium reads the feature at start, so the saved choice is read here, before the settings store exists.
   applyGlobalPrivacyControl(app.commandLine, readSettingBeforeReady(join(runtime.dir, 'settings.json'), 'privacy.globalPrivacyControl'))
@@ -215,6 +223,7 @@ export function boot (runtime: Runtime): void {
     configureVerifier({ lightClientEnabled: () => shell.settings.get('web3.lightClient'), windows: () => shell.windows.all(), servedFromCache: isOriginServedFromCacheSync })
     shell.history.prune()
     startInternalPages(shell, ctx)
+    setPageClassifier((contents) => ({ internalPage: shell.internalPages.pageOf(contents), isTab: shell.windows.findTab(contents) !== null }))
     // Another profile's own process can rename, add, remove or start one --
     // profiles-watcher.ts's own header on why this is the one store the
     // filesystem itself has to announce.

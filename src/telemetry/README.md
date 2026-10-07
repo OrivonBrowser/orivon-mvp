@@ -84,4 +84,5 @@ ID and parsing the platform's output are pure and unit-tested; the readers (a fi
 
 **A stored acceptance carries the `NOTICE_VERSION` it was given under.** When the constant
 differs, the consent reads as undecided and the welcome block appears again. Bump it with any
-change to a payload or to `docs/privacy/notice.md`.
+change to a telemetry payload or to what `docs/privacy/notice.md` says about telemetry; its
+bug-report section is outside it, because a report is agreed to one at a time ([`ADR-0065`](../../docs/decisions/ADR-0065-bug-reports-leave-only-on-send.md)).

@@ -1,9 +1,10 @@
-# DPIA screening for product telemetry
+# DPIA screening for product telemetry and bug reports
 
 A screening, not a full impact assessment: it asks whether one is required under GDPR Article 35,
 using the nine criteria of the Article 29 Working Party guidelines WP248 (endorsed by the EDPB).
-Two or more met usually means a DPIA is needed. Scope: the telemetry described in
-[`notice.md`](notice.md) and [`record-of-processing.md`](record-of-processing.md).
+Two or more met usually means a DPIA is needed. Scope: the telemetry and the bug reports described
+in [`notice.md`](notice.md) and [`record-of-processing.md`](record-of-processing.md); the bug
+reports have [their own screening](#bug-reports) below.
 
 ## The criteria
 
@@ -44,6 +45,27 @@ settles it. It is a close call on three points, and the record says so rather th
    outlive them. The rows are pseudonymous and the totals carry no identifier; this is why a
    country with very few installs is a reason to re-screen.
 
+## Bug reports
+
+| # | Criterion | Met? | Why |
+|---|---|---|---|
+| 1 | Evaluation or scoring | No | A report describes a fault of the browser, not the person |
+| 2 | Automated decisions | No | None |
+| 3 | Systematic monitoring | No | Nothing is collected unless the person writes a report and presses Send, once per report |
+| 4 | Sensitive or highly personal data | Partly | Nothing sensitive is asked for, but the description is free text, a log line or the page address can name a site, and a crash dump is a memory snapshot that can hold fragments of what was open or typed. The address and the dump are unticked by default, and every report is deleted after 90 days |
+| 5 | Large scale | No | A few reports from a population of about a hundred active users |
+| 6 | Matching or combining datasets | No | A report carries a random identifier and is not linked to telemetry or to anything else |
+| 7 | Vulnerable data subjects | No | As for telemetry |
+| 8 | Innovative use or new technology | Partly | A maintainer may give a report to an AI coding assistant (Claude, by Anthropic, in the United States) to find the cause. That is a new tool, though it is used only to read a report the person chose to send, and the person is told before sending |
+| 9 | Prevents exercising a right or using a service | No | Not sending changes nothing in the browser |
+
+**A full DPIA is not required for bug reports as designed**: criteria 4 and 8 are partly met,
+but each report is a separate act of the person with the content in front of them, the volume is
+small, the most revealing parts are off by default, and everything goes after 90 days. Two partly
+met criteria is the threshold WP248 names, so this result is *provisional* on the same legal
+review as the telemetry one, and on [`open-questions.md`](../open-questions.md) A408 (the
+processor terms for the AI assistant).
+
 ## Re-screen when
 
 - Site rows are kept past one month after their month closes.
@@ -53,6 +75,8 @@ settles it. It is a close call on three points, and the record says so rather th
 - The number of active users grows by an order of magnitude, or the first-run choice is replaced by a preselected
   option.
 - The server is moved, a processor is added, or an IP address is written anywhere.
+- A bug report starts to be sent without the person pressing Send, a crash dump is ticked by
+  default, reports are kept longer than 90 days, or reports are given to a second AI provider.
 - A national supervisory authority's list of processing that needs a DPIA is found to include this
   processing. That list has not been checked for each country; this is not settled here.
 

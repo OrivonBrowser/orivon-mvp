@@ -129,7 +129,7 @@ it('marks a crashed tab, shows the card with Reload focused, and stays until tol
     expect(await card.locator('.sheet-title').textContent()).toBe('This page stopped working')
     expect(await card.locator('.sad-body').textContent()).toBe('Something went wrong while showing this page. Reloading usually fixes it.')
     expect(await card.locator('.sad-address').getAttribute('title')).toBe(here())
-    expect(await card.locator('.sad .btn').allTextContents()).toEqual(['Close tab', 'Reload'])
+    expect(await card.locator('.sad .btn').allTextContents()).toEqual(['Report', 'Close tab', 'Reload'])
     expect(await waitFor(async () => await activeFocus(card) === 'Reload')).toBe(true)
     expect(await app.evaluate(({ webContents }) => webContents.getAllWebContents().find((wc) => wc.getURL().includes('overlay=sad-tab'))?.isFocused() === true)).toBe(true)
 
@@ -143,7 +143,7 @@ it('marks a crashed tab, shows the card with Reload focused, and stays until tol
     await delay(400)
     expect(await cardShown(app)).toBe(true)
 
-    // Tab moves between the two buttons.
+    // Tab moves between the buttons.
     await card.keyboard.press('Shift+Tab')
     expect(await activeFocus(card)).toBe('Close tab')
     await card.keyboard.press('Tab')

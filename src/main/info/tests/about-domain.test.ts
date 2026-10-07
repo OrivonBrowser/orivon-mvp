@@ -4,7 +4,7 @@ import { infoDomain } from '../about-domain.js'
 import type { AboutFacts } from '../about-info.js'
 
 const FACTS: AboutFacts = {
-  orivon: '1.0.0', electron: '44', chromium: '152', node: '24', v8: '15', platform: 'linux', osVersion: '6', arch: 'x64',
+  orivon: '1.0.0', commit: 'abc', electron: '44', chromium: '152', node: '24', v8: '15', platform: 'linux', osVersion: '6', arch: 'x64',
   language: 'en', userAgent: 'UA', commandLine: 'orivon', programPath: '/o', profilePath: '/p', downloadsPath: '/d', isPrivate: false
 }
 const CALLER = {} as InternalCaller
@@ -25,7 +25,7 @@ describe('the About domain', () => {
   it('answers the version table', async () => {
     const reply = await setup().call({ type: 'version' }) as { rows: Array<{ label: string }> }
     expect(reply.rows[0]?.label).toBe('Orivon')
-    expect(reply.rows).toHaveLength(12)
+    expect(reply.rows).toHaveLength(13)
   })
 
   it('answers the graphics report with features, devices and the raw text', async () => {
