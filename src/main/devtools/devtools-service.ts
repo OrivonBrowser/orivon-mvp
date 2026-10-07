@@ -5,6 +5,7 @@
 import type { WebContents } from 'electron'
 import type { SettingsStore } from '../settings/settings-store.js'
 import { showConsolePanel } from './open-console.js'
+import { moveToRight, openingMode } from './dock-side.js'
 
 export interface DevToolsDeps {
   /** The app whose permissions a page's console would act with, or null for a page that is not one. Decided by the
@@ -101,7 +102,9 @@ export class DevToolsService implements DevToolsGate {
   }
 
   private show (contents: WebContents): void {
-    contents.openDevTools({ mode: this.settings.get('developer.dock') })
+    const dock = this.settings.get('developer.dock')
+    contents.openDevTools({ mode: openingMode(dock) })
+    if (dock === 'right') moveToRight(contents)
     this.open.add(contents)
     // A tab torn down with its tools open may no longer be able to name this page.
     const forget = (): void => { this.open.delete(contents) }

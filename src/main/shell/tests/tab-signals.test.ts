@@ -12,7 +12,7 @@ interface FakeContents extends EventEmitter {
   isLoading: () => boolean
   getURL: () => string
   getTitle: () => string
-  navigationHistory: { canGoBack: () => boolean, canGoForward: () => boolean, getActiveIndex: () => number, length: () => number, getEntryAtIndex: () => { url: string }, removeEntryAtIndex: () => boolean }
+  navigationHistory: { canGoBack: () => boolean, canGoForward: () => boolean, getActiveIndex: () => number, length: () => number, getEntryAtIndex: () => { url: string }, getAllEntries: () => Array<{ url: string, title: string }>, removeEntryAtIndex: () => boolean }
   setWindowOpenHandler: ReturnType<typeof vi.fn>
   ipc: { on: ReturnType<typeof vi.fn> }
   close: ReturnType<typeof vi.fn>
@@ -28,7 +28,7 @@ function makeFakeWebContents (): FakeContents {
   emitter.isLoading = () => false
   emitter.getURL = () => ''
   emitter.getTitle = () => ''
-  emitter.navigationHistory = { canGoBack: () => false, canGoForward: () => false, getActiveIndex: () => 0, length: () => 0, getEntryAtIndex: () => ({ url: '' }), removeEntryAtIndex: () => false }
+  emitter.navigationHistory = { canGoBack: () => false, canGoForward: () => false, getActiveIndex: () => 0, length: () => 0, getEntryAtIndex: () => ({ url: '' }), getAllEntries: () => [], removeEntryAtIndex: () => false }
   emitter.setWindowOpenHandler = vi.fn()
   emitter.ipc = { on: vi.fn() }
   emitter.close = vi.fn(() => { destroyed = true; emitter.emit('destroyed') })

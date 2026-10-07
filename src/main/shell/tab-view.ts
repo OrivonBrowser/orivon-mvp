@@ -24,6 +24,7 @@ import { isShellSchemeUrl } from './shell-session.js'
 import { recordViewBackground } from './view-background-test-hook.js'
 import { watchBacking } from './tab-backing.js'
 import { repartitionView } from './tab-parking.js'
+import { settleOuterHistory } from './tab-history.js'
 import { parseInternalUrl } from '../pages/internal-pages.js'
 import { canViewSource } from '../page-tools/view-source.js'
 import { sitePopups } from '../site-settings/site-popups.js'
@@ -172,6 +173,8 @@ export function wireView (id: string, record: TabRecord): void {
     // about:blank load is where a session teardown for the origin just left
     // actually fires.
     trackDocumentOrigin(wc, navigatedUrl, record.host.broker)
+    // Ahead of the gate as well: a tab moved to another view in the background still keeps its history straight.
+    if (record.view === view) settleOuterHistory(record, wc, navigatedUrl)
     if (!shown()) return
     record.host.paneCommitted(id)
     // History's icon only while history is remembering: a private window reads nothing kept on disk.
@@ -257,7 +260,10 @@ export function wireView (id: string, record: TabRecord): void {
     }
     record.host.emitState()
   })
-  wc.on('did-navigate-in-page', () => { record.host.emitState() })
+  wc.on('did-navigate-in-page', (_event, url: string, isMainFrame: boolean) => {
+    if (isMainFrame && record.view === view) settleOuterHistory(record, wc, url, true)
+    record.host.emitState()
+  })
   watchBacking(view, record, shown)
   wc.on('did-start-loading', () => { record.host.emitState() })
   wc.on('did-stop-loading', () => { record.host.emitState() })
@@ -328,7 +334,18 @@ export function wireView (id: string, record: TabRecord): void {
       openInWindow: (url) => { record.host.openWindow(url) },
       // A private window has no way back to the profile: it offers no second private session.
       ...(services === undefined || services.isPrivate ? {} : { openInPrivate: (url: string) => { services.profiles.openPrivate(url) } }),
-      page: { bare: () => record.internalPage !== null || record.isDashboardTab, viewSource: () => canViewSource(record, wc.getURL()), readable: () => readableNow(wc), reload: () => { record.host.reload(id) } },
+      page: {
+        bare: () => record.internalPage !== null || record.isDashboardTab,
+        viewSource: () => canViewSource(record, wc.getURL()),
+        readable: () => readableNow(wc),
+        reload: () => { record.host.reload(id) },
+        history: {
+          canGoBack: () => wc.navigationHistory.canGoBack() || (record.outer?.back.length ?? 0) > 0,
+          canGoForward: () => wc.navigationHistory.canGoForward() || (record.outer?.forward.length ?? 0) > 0,
+          back: () => { record.host.back(id) },
+          forward: () => { record.host.forward(id) }
+        }
+      },
       ...(services === undefined ? {} : { services }),
       runCommand,
       ...(devtools?.allowed(wc) === true ? { inspect: (x: number, y: number) => { void devtools.inspect(wc, x, y) } } : {}),

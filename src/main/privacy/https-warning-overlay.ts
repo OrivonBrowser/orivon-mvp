@@ -41,7 +41,7 @@ export function createHttpsWarning ({ window, close }: OverlayWindow, state: Htt
       const failed = id === undefined ? undefined : state.failed.get(id)
       if (id === undefined || failed === undefined) { tabId = null; return undefined }
       tabId = id
-      return { host: failed.host, canGoBack: window.tabs.liveWebContents(id)?.navigationHistory.canGoBack() === true }
+      return { host: failed.host, canGoBack: window.tabs.getState().tabs.find((tab) => tab.id === id)?.canGoBack === true }
     },
     request: (command) => {
       const asked = asCommand(command)
@@ -55,7 +55,7 @@ export function createHttpsWarning ({ window, close }: OverlayWindow, state: Htt
         window.tabs.navigate(id, failed.from)
         return undefined
       }
-      const canGoBack = window.tabs.liveWebContents(id)?.navigationHistory.canGoBack() === true
+      const canGoBack = window.tabs.getState().tabs.find((tab) => tab.id === id)?.canGoBack === true
       close()
       if (canGoBack) window.tabs.back(id)
       else window.tabs.closeTab(id)

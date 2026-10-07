@@ -9,7 +9,7 @@ import { parseInternalUrl } from '../pages/internal-pages.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
 import { BLANK_URL } from './tab-factory.js'
 import { startNavigation } from './leave-page-prompt.js'
-import { repartitionForTarget } from './load-in-tab.js'
+import { repartitionForTarget, stepOutOfView } from './load-in-tab.js'
 import type { TabRecord } from './tab-types.js'
 import { EXIT_FULLSCREEN_WORLD_ID } from './tab-view.js'
 
@@ -65,16 +65,27 @@ async function load (contents: WebContents, target: string): Promise<void> {
   } catch { /* aborted by the page's own question, or failed: either is shown by the tab itself */ }
 }
 
+/** Back in the view's own list, or past its first page into the tab's outer history (load-in-tab.ts's `stepOutOfView`). */
 export function goBack (env: NavigationEnv, id: string): void {
   const contents = env.liveWebContents(id)
   const history = contents?.navigationHistory
-  if (contents !== undefined && history?.canGoBack() === true) startNavigation(contents, () => { history.goBack() })
+  if (contents === undefined || history === undefined) return
+  if (history.canGoBack()) startNavigation(contents, () => { history.goBack() })
+  else {
+    const record = env.record(id)
+    if (record !== undefined) stepOutOfView(id, record, 'back')
+  }
 }
 
 export function goForward (env: NavigationEnv, id: string): void {
   const contents = env.liveWebContents(id)
   const history = contents?.navigationHistory
-  if (contents !== undefined && history?.canGoForward() === true) startNavigation(contents, () => { history.goForward() })
+  if (contents === undefined || history === undefined) return
+  if (history.canGoForward()) startNavigation(contents, () => { history.goForward() })
+  else {
+    const record = env.record(id)
+    if (record !== undefined) stepOutOfView(id, record, 'forward')
+  }
 }
 
 /** The address of the last committed entry: `getURL()` can already read a navigation that is still in flight. */

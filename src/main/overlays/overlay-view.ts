@@ -145,9 +145,8 @@ export interface FocusCandidate extends FocusTarget {
   isFocused: () => boolean
 }
 
-/** Which of these holds keyboard focus, if any. Only views the window knows are live are asked:
- * `webContents.getFocusedWebContents()` can answer one that is being torn down (an app's child host
- * after its page ends), and reading it then kills the main process. */
+/** Which of these holds keyboard focus, if any. Only the window's own views are asked: they are never offscreen,
+ * and `isFocused()` on an offscreen one (an app's child host) kills the main process. */
 export function focusedContents (candidates: ReadonlyArray<FocusCandidate | undefined>): FocusTarget | undefined {
   return candidates.find((candidate) => candidate !== undefined && !candidate.isDestroyed() && candidate.isFocused())
 }

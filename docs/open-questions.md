@@ -316,19 +316,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A109: Entering or leaving an app across partitions swaps the view and loses history **[AI-REC]**
-
-- **Question:** Should a view swap across partitions (into or out of an app that has a partition of its
-  own) keep back/forward history, and should a cross-origin navigation be caught before it commits?
-- **Why it matters:** The swapped-in view starts with empty history. `did-navigate` swaps after
-  commit, so the new origin's first render can read the old partition.
-- **Options:** carry history over with `NavigationHistory.restore()` as a swap within one session already
-  does (rec.; entries from another origin would load inside the app's session); intercept with
-  `will-navigate`/`will-redirect`, a fresh view per cross-origin click; accept both, as
-  `src/main/shell/README.md` discloses.
-- **Who decides:** owner, before a restore across partitions is built
-- **Blocks:** nothing
-
 ### A111: `window.nostr` cannot reach a page until `id.requestIdentity` exists **[AI-REC]**
 
 - **Question:** When is `window.nostr` (`src/nostr/nip07.ts`) injected into pages?
@@ -916,9 +903,9 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Question:** The shell swaps partitions after commit (`did-navigate`) and reloads as a `GET`, so
   a `POST` across an app boundary loses its body; a replay would submit twice.
 - **Why it matters:** A sign-in or payment flow posting across an app boundary breaks.
-- **Options:** A109's pre-commit interception, choosing the partition before the request (rec.).
+- **Options:** intercept a cross-partition navigation before it commits (`will-navigate`, `will-redirect`) and choose the partition before the request (rec.).
 - **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing; depends on A109
+- **Blocks:** nothing
 
 ### A235: The inlined `buffer` package runs in sloppy mode **[AI-REC]**
 

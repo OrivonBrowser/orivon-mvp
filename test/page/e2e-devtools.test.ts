@@ -199,6 +199,36 @@ async function recordToolCalls (app: ElectronApplication, address: string): Prom
 const toolCalls = async (app: ElectronApplication): Promise<ToolCall[]> =>
   await app.evaluate(() => (globalThis as unknown as { __calls: ToolCall[] }).__calls)
 
+/** The page's own size, and the side its tools' frontend says they are docked on. */
+async function dockedAt (app: ElectronApplication, address: string): Promise<{ size: string, side: unknown }> {
+  return await app.evaluate(async ({ webContents }, part) => {
+    const contents = webContents.getAllWebContents().find((candidate) => candidate.getURL().includes(part))
+    const size = await contents?.executeJavaScript('[innerWidth, innerHeight].join("x")') as string
+    const side = await contents?.devToolsWebContents?.executeJavaScript(`import('./ui/legacy/legacy.js').then((m) => m.DockController.DockController.instance().dockSide())`).catch(() => null)
+    return { size, side }
+  }, address)
+}
+
+// The shell's window draws its own title bar controls, and Electron undocks tools asked to dock on the right of
+// such a window: "Beside the page" must still dock them there (src/main/devtools/dock-side.ts).
+for (const [dock, side, shrinks] of [['right', 'right', 0], ['bottom', 'bottom', 1]] as const) {
+  it(`docks the tools ${dock === 'right' ? 'beside' : 'under'} the page, inside the window, when the setting says so`, async () => {
+    const { app, chrome } = await launched(async (dir) => { await writeFile(join(dir, 'settings.json'), JSON.stringify({ version: 1, values: { 'developer.dock': dock } })) })
+    try {
+      const address = `${siteOrigin}/page`
+      await open(app, chrome, address)
+      const before = (await dockedAt(app, address)).size.split('x').map(Number)
+      await pressKey(app, address, 'F12')
+      expect(await waitFor(async () => (await dockedAt(app, address)).side === side, 8_000)).toBe(true)
+      const after = (await dockedAt(app, address)).size.split('x').map(Number)
+      expect(after[shrinks], `the page gives the tools room: ${String(before)} -> ${String(after)}`).toBeLessThan(before[shrinks] as number)
+      expect(after[1 - shrinks]).toBe(before[1 - shrinks])
+    } finally {
+      await closeElectron(app)
+    }
+  }, TEST_TIMEOUT_MS)
+}
+
 it('opens and closes the tools after the key event has returned, never inside it', async () => {
   const { app, chrome } = await launched()
   try {

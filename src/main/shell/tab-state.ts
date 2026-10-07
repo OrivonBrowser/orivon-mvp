@@ -18,7 +18,7 @@ export interface TabStateEnv {
 /** `record` and `wc` are undefined for a tab already gone or whose webContents is destroyed. */
 export function buildTabState (id: string, record: TabRecord | undefined, wc: WebContents | undefined, env: TabStateEnv): TabState {
   const url = wc?.getURL() ?? ''
-  return {
+  const state: TabState = {
     id,
     url,
     displayUrl: BUILTIN_ADDRESSES.displayUrl(url),
@@ -38,4 +38,8 @@ export function buildTabState (id: string, record: TabRecord | undefined, wc: We
     crashed: record?.crashed ?? null,
     ...(record === undefined ? {} : signalState(record, wc))
   }
+  // The pages the tab's view does not hold are still Back and Forward (tab-outer-history.ts).
+  const outer = record?.outer
+  if (outer === undefined) return state
+  return { ...state, canGoBack: state.canGoBack || outer.back.length > 0, canGoForward: state.canGoForward || outer.forward.length > 0 }
 }

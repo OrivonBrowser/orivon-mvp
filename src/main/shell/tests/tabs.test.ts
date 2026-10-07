@@ -22,6 +22,7 @@ interface FakeHistory {
   getActiveIndex: () => number
   length: () => number
   getEntryAtIndex: (index: number) => { url: string }
+  getAllEntries: () => Array<{ url: string, title: string }>
   removeEntryAtIndex: (index: number) => boolean
 }
 
@@ -46,6 +47,7 @@ function makeFakeHistory (): FakeHistory {
     getActiveIndex: () => history.active,
     length: () => history.entries.length,
     getEntryAtIndex: (index) => ({ url: history.entries[index] ?? '' }),
+    getAllEntries: () => history.entries.map((url) => ({ url, title: '' })),
     removeEntryAtIndex: (index) => {
       if (index === history.active || index < 0 || index >= history.entries.length) return false
       history.entries.splice(index, 1)
@@ -620,17 +622,26 @@ describe('TabManager -- a tab coming back to an app it left gets the app\'s own 
     expect(b.webContents.close).not.toHaveBeenCalled()
   })
 
-  it('drops the provider\'s page and the blank page from the app\'s history once the tab is back', () => {
-    const { app, provider } = leftForProvider()
+  it('leaves the app\'s view holding only the page it came back to, and keeps the pages before it as the tab\'s Back', () => {
+    const { manager, app, provider } = leftForProvider()
+    provider.webContents.navigationHistory.entries = [`${APP}/start`, 'https://idp.example/authorize']
+    provider.webContents.navigationHistory.active = 1
     provider.webContents.emit('did-navigate', {}, `${APP}/callback`)
 
     const history = app.webContents.navigationHistory
+    // The blank page the view was parked on can commit after the tab is back: it is not the page it came back for.
+    history.entries = [`${APP}/start`, 'https://idp.example/authorize', 'about:blank']
+    history.active = 2
+    app.webContents.emit('did-navigate', {}, 'about:blank')
+    expect(history.entries).toHaveLength(3)
+
     history.entries = [`${APP}/start`, 'https://idp.example/authorize', 'about:blank', `${APP}/callback`]
     history.active = 3
     app.webContents.emit('did-navigate', {}, `${APP}/callback`)
 
-    expect(history.entries).toEqual([`${APP}/start`, `${APP}/callback`])
-    expect(history.active).toBe(1)
+    expect(history.entries).toEqual([`${APP}/callback`])
+    expect(history.active).toBe(0)
+    expect(manager.getState().tabs[0]?.canGoBack).toBe(true)
   })
 
   it('acts for the tab again once it is back: leaving a second time swaps as the first did', () => {

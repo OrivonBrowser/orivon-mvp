@@ -20,7 +20,7 @@ function rig (canGoBack: boolean): Rig {
   const closeTab = vi.fn()
   const close = vi.fn()
   const win = {
-    window: { tabs: { liveWebContents: (id: string) => id === 'a' ? { navigationHistory: { canGoBack: () => canGoBack } } : undefined, navigate, back, closeTab } },
+    window: { tabs: { getState: () => ({ tabs: [{ id: 'a', canGoBack }] }), navigate, back, closeTab } },
     close
   } as unknown as OverlayWindow
   return { handler: createHttpsWarning(win, state), state, navigate, back, closeTab, close }
