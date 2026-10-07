@@ -23,7 +23,7 @@ export { circle, line, path, rect, svg }
 
 /** Generic favicon stand-in -- the fallback inside faviconElement below,
  * for anything with no real favicon yet or whose favicon fails to load.
- * Real favicons are fetched by src/main/favicon.ts. */
+ * Real favicons are fetched by src/main/browsing/favicon-fetch.ts. */
 export function globeIcon (): SVGSVGElement {
   const el = svg('0 0 24 24')
   el.append(
@@ -38,7 +38,7 @@ export function globeIcon (): SVGSVGElement {
 /** A favicon as an `<img>`, or the generic globe when there is none.
  *
  * Always a `data:` URL, never the site's own https one: main fetches every
- * favicon and re-encodes it (src/main/favicon.ts) precisely so no privileged
+ * favicon and re-encodes it (src/main/browsing/favicon-fetch.ts) precisely so no privileged
  * view makes a network request for an icon, and the CSPs here are
  * `img-src 'self' data:` to match. Shared by the tab strip, the bookmarks bar
  * and the dashboard's tiles -- all three answer the same question, so this is

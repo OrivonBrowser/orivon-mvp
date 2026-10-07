@@ -9,7 +9,7 @@ import { sanitizeBrowserUrl } from './local-file-input.js'
 
 export const FILE_VERSION = 2
 
-/** A stored favicon is only ever a `data:` image, capped at the size favicon.ts enforces on the wire: base64's
+/** A stored favicon is only ever a `data:` image, capped at the size favicon-fetch.ts enforces on the wire: base64's
  * 4/3 expansion plus slack for the media-type prefix. */
 export const MAX_STORED_FAVICON_CHARS = Math.ceil(MAX_FAVICON_BYTES * 4 / 3) + 64
 

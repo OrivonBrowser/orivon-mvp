@@ -49,7 +49,7 @@ export async function localDdocHashFor (origin: string): Promise<string | undefi
 
 // net.fetch, not Node's fetch: only Chromium's resolver honours the
 // --host-resolver-rules that map a developer `.eth` name to loopback.
-// Imported dynamically, as favicon.ts's header explains.
+// Imported dynamically, as favicon-fetch.ts's header explains.
 async function netFetchCapped (url: string, cap: number): Promise<Uint8Array | null> {
   const { net } = await import('electron')
   try {

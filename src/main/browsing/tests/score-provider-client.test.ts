@@ -72,6 +72,13 @@ describe('createScoreProviderClient', () => {
     expect(asked).toEqual([`${BASE}/provider.json`, `${BASE}/website/4c.json`])
   })
 
+  it('finds the provider in its `score/` folder when the address names the site that publishes it', async () => {
+    const site = 'http://127.0.0.1:7860'
+    const { verdictFor, asked } = client(withAsgardex, `${site}/`)
+    expect(await verdictFor(ASGARDEX)).toMatchObject({ status: 'judged', provider: { name: 'Test provider', address: `${site}/` } })
+    expect(asked).toEqual([`${site}/provider.json`, `${BASE}/provider.json`, `${BASE}/website/4c.json`])
+  })
+
   it('never puts the identifier itself in a request', async () => {
     const { verdictFor, asked } = client(withAsgardex)
     await verdictFor(ASGARDEX)
