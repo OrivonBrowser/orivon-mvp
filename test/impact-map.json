@@ -57,6 +57,7 @@
     { "prefix": "src/main/focus", "run": ["page", "window"] },
     { "prefix": "src/main/history", "run": ["library", "toolbar"] },
     { "prefix": "src/main/import", "run": ["library"] },
+    { "prefix": "src/main/diagnostics", "run": ["shell-pages", "tabs", "window"] },
     { "prefix": "src/main/info", "run": ["shell-pages"] },
     { "prefix": "src/main/install", "run": ["@core"] },
     { "prefix": "src/main/ipc", "run": ["@core"] },

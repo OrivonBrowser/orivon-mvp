@@ -14,7 +14,7 @@ entirely.
 | [`overlay/`](overlay/) | The one page every overlay shows: the main menu, and a page per feature that shows Orivon HTML above the page (`src/main/overlays/`) |
 | [`drop-catcher/`](drop-catcher/) | The empty transparent page of the view laid over a window's page while a tab is dragged (`src/main/shell/drop-catcher.ts`); its preload does the listening |
 | [`split-frame/`](split-frame/) | The view behind the two panes of a split: the divider, the ring round the pane in use, and where a dragged tab would go |
-| [`pages/`](pages/) | The shell's own pages, each a tab (`orivon://settings`, `history`, `downloads`, `bookmarks`, `import`, `about`, `tasks`, `profiles`, `private`, `extensions`), on the tokens and controls in `pages/shared/` |
+| [`pages/`](pages/) | The shell's own pages, each a tab (`orivon://settings`, `history`, `downloads`, `bookmarks`, `import`, `about`, `tasks`, `profiles`, `private`, `extensions`, `report`), on the tokens and controls in `pages/shared/` |
 
 **What it depends on.** The chrome view on `src/preload/shell.ts`'s commands, typed by that file's
 `OrivonShell` so a dropped command fails the typecheck, and `newtab/` on

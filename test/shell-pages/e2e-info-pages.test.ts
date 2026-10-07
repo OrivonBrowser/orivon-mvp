@@ -79,7 +79,7 @@ it('shows the version table and the graphics report, with Copy details, at real 
     expect(rows['Electron']).toBe(facts.electron)
     expect(rows['Orivon']).toBe(facts.orivon)
     expect(Object.keys(rows)).toEqual([
-      'Orivon', 'Electron', 'Chromium', 'Node.js', 'V8', 'Operating system', 'Language',
+      'Orivon', 'Commit', 'Electron', 'Chromium', 'Node.js', 'V8', 'Operating system', 'Language',
       'User agent', 'Command line', 'Program location', 'Profile folder', 'Downloads folder'
     ])
     expect(rows['User agent']).toContain(`Chrome/${facts.chromium.split('.')[0] ?? ''}`)

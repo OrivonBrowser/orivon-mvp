@@ -10,7 +10,7 @@ record of them.
 | Controller | Davide Martinico, a natural person, the owner of the project |
 | Contact | privacy@orivonstack.com |
 | Data protection officer | None designated |
-| Joint controllers, processors | None. The server is run by the controller itself |
+| Joint controllers, processors | No joint controller. The server is run by the controller itself. For bug reports only, Anthropic PBC (United States) acts as a processor when a maintainer gives a report to Claude (Activity 2) |
 
 ## Activity 1: product telemetry
 
@@ -54,8 +54,33 @@ description of what it stores.
 
 ### Review
 
-Reviewed whenever a payload field, a retention period, the hosting or the controller changes, and
-at least once a year. The notice version number and this record change together.
+Reviewed whenever a payload field, a retention period, the hosting, a processor or the controller
+changes, and at least once a year. The notice version number and Activity 1 change together;
+Activity 2 changes with the notice's Bug reports section, whose consent is asked per report.
+
+## Activity 2: bug reports
+
+| | |
+|---|---|
+| Purpose | Find and fix the problem a person reports, with the technical details that let a maintainer reproduce it |
+| Legal basis | Consent, GDPR Article 6(1)(a), given for each report by pressing Send in the report form, which shows the literal report first. The transfer to the United States below rests on explicit consent, Article 49(1)(a), asked next to the Send button with the risk named in the notice |
+| Data subjects | People who send a report from Orivon Browser |
+| Categories of data | A random report identifier; the person's description; optional contact details (an email address or a GitHub or Matrix name); the browser version; when the report concerns a recorded problem, its kind, time, process, reason, exit code, error message and call stack; unless unticked, technical details of the computer and browser and Orivon's recent log lines; only if ticked, the address of the crashed page and a crash dump (a memory snapshot of the crashed process). The full field list is in [`notice.md`](notice.md) §Bug reports you send |
+| Special categories | Not asked for. The description, a log line, a page address or a crash dump could contain anything the person had open or typed; that is why the page address and the dump are unticked by default and the dump is kept 90 days like the rest |
+| Not collected | The telemetry install identifier or anything that links a report to telemetry; the IP address is not written to disk |
+| Recipients | The project's maintainers. Anthropic PBC, as a processor, when a maintainer gives a report to its Claude coding assistant to find the cause |
+| Transfers outside the EU | To Anthropic PBC in the United States, for the analysis above, on the person's explicit consent (Article 49(1)(a)). Whether a data processing agreement with Anthropic covers this use is open ([`open-questions.md`](../open-questions.md) A408). Stored reports stay on the server in Strasbourg, France |
+| Retention | 90 days from the day of receipt, then the report and its crash dump are deleted by the same daily job. A deletion request removes both at once |
+| Source of the data | The data subject's own browser; nothing from third parties |
+| Rights handling | Deletion by the **Delete from server** button beside each sent report in the form, or by writing to privacy@orivonstack.com with the report ID; access and the other rights by writing |
+| Automated decisions | None |
+
+### Security measures
+
+- The same server, TLS front end and rules as Activity 1: no access log, no IP address or User-Agent on disk, only the UTC day stored.
+- A report is validated strictly (key set, types, lengths, a crash dump must decode and start with the minidump signature), at most 8 MB with its dump and 5 MB for the dump; other requests keep the 32 KB limit.
+- At most 6 reports an hour per address (in memory only), a daily cap on stored reports, and a cap on the space crash dumps take.
+- Crash dumps are files readable only by the service's user. Reports are read on the server by the maintainers with a command-line tool; a report given to an AI assistant is given whole or in part by a maintainer, never by the server.
 
 ## Other processing as controller
 

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { OverlayHandler, OverlayWindow } from '../../overlays/overlay-types.js'
+import { setCrashLookups } from '../../diagnostics/crash-lookup.js'
 import { sadTabOverlay } from '../sad-tab-overlay.js'
 import { markUnresponsive } from '../sad-tab-state.js'
 import type { TabRecord } from '../../shell/tab-types.js'
@@ -13,6 +14,8 @@ interface Rig {
   gone: Set<string>
 }
 
+const openInternal = vi.fn()
+
 function rig (records: Record<string, TabRecord>, address = 'https://example.com/page'): Rig {
   const reload = vi.fn()
   const closeTab = vi.fn()
@@ -22,9 +25,10 @@ function rig (records: Record<string, TabRecord>, address = 'https://example.com
     window: {
       tabs: {
         record: (id: string) => gone.has(id) ? undefined : records[id],
-        liveWebContents: (id: string) => gone.has(id) || records[id] === undefined ? undefined : { reload },
+        liveWebContents: (id: string) => gone.has(id) || records[id] === undefined ? undefined : { reload, id: 77 },
         getState: () => ({ tabs: Object.keys(records).map((id) => ({ id, displayUrl: address })) }),
-        closeTab
+        closeTab,
+        openInternal
       }
     },
     close
@@ -86,6 +90,18 @@ describe('the sad-tab overlay', () => {
       r.handler.request({ type: 'close-tab' })
       expect(r.closeTab).toHaveBeenCalledWith('a')
       expect(r.close.mock.invocationCallOrder[0]).toBeLessThan(r.closeTab.mock.invocationCallOrder[0] ?? 0)
+    })
+
+    it('opens the report page at the crash record of the page that died', () => {
+      setCrashLookups({ page: (id) => id === 77 ? '0123456789abcdef' : undefined, lastRun: () => undefined })
+      const r = rig({ a: crashed('crashed') })
+      r.handler.show?.({ id: 'a' })
+      r.handler.request({ type: 'report' })
+      expect(openInternal).toHaveBeenCalledWith('report', '/crash/0123456789abcdef')
+      expect(r.reload).not.toHaveBeenCalled()
+      setCrashLookups({ page: () => undefined, lastRun: () => undefined })
+      r.handler.request({ type: 'report' })
+      expect(openInternal).toHaveBeenLastCalledWith('report', '/')
     })
 
     it('waits: closes without touching the page, and the hang stays quiet', () => {
