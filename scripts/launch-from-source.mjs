@@ -8,7 +8,7 @@
  *
  * The entry is `orivon-source.desktop`, never `orivon.desktop`: that name is the installed package's (ADR-0057), and
  * a file of that name in the user's own directory would hide the package's entry, its actions and its default choice.
- * A run from source names its windows `orivon-source` (`SOURCE_PROGRAM` in `src/main/launch/start-launch.ts`), so the
+ * A run from source names its windows `orivon-source` (`SOURCE_PROGRAM` in `src/main/launch/program-names.ts`), so the
  * dock files them under this entry and its icon, never under the package's.
  *
  *   node scripts/launch-from-source.mjs run [switches and addresses...]

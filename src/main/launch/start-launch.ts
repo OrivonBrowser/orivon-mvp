@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import type { App } from 'electron'
 import { parseLaunch, switchesOf } from './launch-context.js'
+import { SOURCE_PROGRAM } from './program-names.js'
 import type { Launch } from './launch-context.js'
 import { launchData, requestFromArgv } from './launch-request.js'
 import { createPrivateDir, isPrivateDirName, markPrivate } from './private-session.js'
@@ -35,10 +36,6 @@ export interface Runtime {
 const INHERITED_SWITCHES = ['--user-data-dir=', '--no-sandbox']
 
 type LaunchApp = Pick<App, 'getPath' | 'setPath' | 'exit' | 'requestSingleInstanceLock' | 'releaseSingleInstanceLock' | 'isPackaged' | 'getAppPath' | 'commandLine' | 'setName' | 'setDesktopName'>
-
-/** What a run from source is called where an installed package says `orivon`: its data directory, its window class
- * and its Linux desktop entry (`scripts/launch-from-source.mjs`). */
-export const SOURCE_PROGRAM = 'orivon-source'
 
 /**
  * A run from source is a program of its own beside an installed package (ADR-0057): its own profile and lock, and a

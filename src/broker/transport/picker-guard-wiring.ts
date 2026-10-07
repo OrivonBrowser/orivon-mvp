@@ -11,6 +11,7 @@
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { App } from 'electron'
+import { PACKAGE_PROGRAM, SOURCE_PROGRAM } from '../../main/launch/program-names.js'
 import { isPrivateDirName } from '../../main/launch/private-session.js'
 
 /**
@@ -20,20 +21,25 @@ import { isPrivateDirName } from '../../main/launch/private-session.js'
  * profile's own directory, where `ProfileStore` keeps every other
  * profile's `profiles/<id>` subdirectory, has to be reconstructed the same
  * way Electron computes `userData` by default, rather than read back off
- * `app` (which is this process's own, possibly-overridden answer).
+ * `app` (which is this process's own, possibly-overridden answer). The
+ * other Orivon program on the computer (an installed package beside a run
+ * from source, ADR-0057) holds the same person's data, so its directory is
+ * named too.
  */
-function defaultProfileHome (app: Pick<App, 'getPath' | 'getName'>): string {
-  return join(app.getPath('appData'), app.getName())
+function defaultProfileHomes (app: Pick<App, 'getPath' | 'getName'>): readonly string[] {
+  const appData = app.getPath('appData')
+  return [...new Set([app.getName(), PACKAGE_PROGRAM, SOURCE_PROGRAM])].map((name) => join(appData, name))
 }
 
 /**
- * The default profile's own directory -- every OTHER profile lives inside it
- * (`profiles/<id>`), so `../policy/picker-blocklist.ts`'s own ancestor-or-
- * equal rule already refuses a pick under any of them, including one made
- * after this call, without this needing to name it separately.
+ * Each program's default profile directory -- every OTHER profile lives
+ * inside one (`profiles/<id>`), so `../policy/picker-blocklist.ts`'s own
+ * ancestor-or-equal rule already refuses a pick under any of them,
+ * including one made after this call, without this needing to name it
+ * separately.
  */
 export function additionalProtectedRoots (app: Pick<App, 'getPath' | 'getName'>): readonly string[] {
-  return [defaultProfileHome(app)]
+  return defaultProfileHomes(app)
 }
 
 /**

@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SOURCE_PROGRAM, startLaunch, takeSourceIdentity } from '../start-launch.js'
+import { PACKAGE_PROGRAM, SOURCE_PROGRAM } from '../program-names.js'
+import { startLaunch, takeSourceIdentity } from '../start-launch.js'
 
 let home = ''
 let tmp = ''
@@ -125,7 +126,7 @@ describe('a run from source', () => {
     const dir = join(home, SOURCE_PROGRAM)
     expect(setPath).toHaveBeenCalledWith('userData', dir)
     expect(existsSync(dir)).toBe(true)
-    expect(SOURCE_PROGRAM).not.toBe('orivon')
+    expect(SOURCE_PROGRAM).not.toBe(PACKAGE_PROGRAM)
   })
 
   it('names its windows after its own desktop entry, so the dock gives it an icon of its own', () => {

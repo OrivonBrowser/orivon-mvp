@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { SOURCE_PROGRAM } from '../../src/main/launch/start-launch.js'
+import { PACKAGE_PROGRAM, SOURCE_PROGRAM } from '../../src/main/launch/program-names.js'
 import { dataHome, desktopEntry, isRunning, refreshEntry, SOURCE_WINDOW_CLASS } from '../launch-from-source.mjs'
 
 describe('isRunning', () => {
@@ -53,8 +53,10 @@ describe('desktopEntry', () => {
     expect(SOURCE_WINDOW_CLASS).toBe(SOURCE_PROGRAM)
     expect(entry).toContain(`StartupWMClass=${SOURCE_PROGRAM}\n`)
     const packaged = readFileSync(join(import.meta.dirname, '..', '..', 'electron-builder.yml'), 'utf8').match(/^\s*StartupWMClass:\s*(\S+)/m)?.[1]
-    expect(packaged).toBe('orivon')
+    expect(packaged).toBe(PACKAGE_PROGRAM)
     expect(SOURCE_PROGRAM).not.toBe(packaged)
+    const pkg = JSON.parse(readFileSync(join(import.meta.dirname, '..', '..', 'package.json'), 'utf8')) as { name: string, desktopName: string }
+    expect([pkg.name, pkg.desktopName]).toEqual([PACKAGE_PROGRAM, `${PACKAGE_PROGRAM}.desktop`])
   })
 
   it('names the program unquoted, as xdg-settings reads it, and lists the web types in the main group', () => {
