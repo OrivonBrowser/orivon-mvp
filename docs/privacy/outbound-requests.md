@@ -31,6 +31,8 @@ address of the connection. That is true of any request and is not repeated per r
 | 14 | Extension's own requests (filter lists and the like) | Whatever the extension asks for, such as an ad blocker fetching its filter lists | The hosts that extension names, within the host permissions the person granted it | By the extension's own schedule | No for filter lists. The extension decides; Orivon does not read the traffic. Provisional: not measured here | The extension's own settings, or remove it | `src/main/extensions/` (no Orivon code issues these) |
 | 14a | uBlock Origin's filter-list updates | uBlock Origin, which a new profile starts with, installed and pinned, fetches the filter lists it has enabled (its default lists, from the hosts each names) and checks for newer ones on its own schedule; a request carries no identifier from Orivon | The hosts of its filter lists, as uBlock Origin's own list manager shows them | By uBlock Origin's schedule, from the first start of a profile that began with it | No: a list's address names no person or site. Provisional: not measured here | uBlock Origin's own settings (Filter lists), or remove it from the Extensions page; a profile that removed it is never given it again | `src/main/default-profile/`; `resources/default-profile/bundled-extensions.json` |
 | 15 | Spell-check dictionaries | A download of a dictionary, once per language | Chromium's dictionary host; the address is Chromium's, not set in Orivon's code | On first use of a language while spell checking is on | No; it names a language | Settings, `spellcheck.enabled` (on by default) | `src/main/spellcheck/spellcheck.ts:19`; `src/main/spellcheck/README.md`; `src/main/settings/schema.ts:103` |
+| 16 | Bug report | The report the person wrote and saw in full: a random report ID, their description and optional contact, the version, the recorded problem if one was chosen, and, as ticked in the form, technical details, recent log lines, the crashed page's address and a crash dump | `telemetry.orivonstack.com` (`/v1/report`) | Only when the person presses Send in the report form (`orivon://report`), with telemetry on or off; never by itself | Only if the person ticks the crashed page's address, or a log line or a crash dump holds one | Not sending a report | `src/main/diagnostics/` |
+| 17 | Bug report deletion | The report ID | `telemetry.orivonstack.com` (`/v1/report-erase`) | Only when the person presses Delete from server beside a report they sent | No | Not pressing it | `src/main/diagnostics/` |
 
 ## Switched on by the person
 
@@ -59,6 +61,8 @@ Settings.
 
 ## What is not listed because it does not exist
 
-No analytics SaaS, no crash reporter, no advertising identifier, no remote configuration. The
+No analytics SaaS, no automatic crash upload, no advertising identifier, no remote configuration.
+Electron's crash handler writes crash dumps to the profile with its upload switched off; a dump
+leaves only inside a bug report the person sends with the dump ticked (row 16). The
 client ignores the body of every response from the telemetry server, so the server cannot change
 what the browser does.

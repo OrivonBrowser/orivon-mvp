@@ -1,4 +1,4 @@
-# ADR-0065: A new profile starts from a default profile
+# ADR-0066: A new profile starts from a default profile
 
 - **Status:** accepted
 - **Date:** 2026-10-07

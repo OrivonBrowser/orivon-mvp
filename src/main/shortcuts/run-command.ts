@@ -148,6 +148,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'passwords.open': tabs.openInternal('settings', '/passwords'); return
     case 'siteSettings.open': tabs.openInternal('settings', '/sites'); return
     case 'about.open': tabs.openInternal('about'); return
+    case 'report.open': tabs.openInternal('report'); return
     case 'extensions.open': tabs.openInternal('extensions'); return
     case 'extensions.menu': toggleExtensionsMenu(target, services.isPrivate); return
     case 'import.open': tabs.openInternal('import'); return

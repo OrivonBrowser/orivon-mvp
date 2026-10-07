@@ -2210,3 +2210,15 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   person picks, so the page's callbacks are reactions of the browser's own promise (a change to the ticket and picker).
 - **Who decides:** research first
 - **Blocks:** nothing
+
+### A408: Whether a data processing agreement covers giving bug reports to Claude **[OWNER]**
+
+- **Question:** The notice says a maintainer may give a bug report to Claude, Anthropic's coding assistant, and the
+  transfer rests on the sender's explicit consent (GDPR Article 49(1)(a)). As a processor, Anthropic should also be
+  bound by a processing agreement (Article 28); whether the plan the maintainers use has one, and whether its terms
+  let report contents be used for training, is not recorded.
+- **Why it matters:** without an Article 28 agreement the consent covers the transfer but not the processor's duties.
+- **Options:** use an Anthropic offering with a processing agreement and no training on inputs (rec.); give reports
+  to Claude only after removing personal data by hand; stop giving reports to an AI and rewrite the notice.
+- **Who decides:** owner
+- **Blocks:** nothing in the code; the notice's AI paragraph is *provisional* until it is settled
