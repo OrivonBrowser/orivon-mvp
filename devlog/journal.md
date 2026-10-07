@@ -65,6 +65,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - After a privacy-notice change, Orivon asks for telemetry again at next start, saying what changed, instead of silently stopping.
 - Report a problem: users describe a crash and see the full report, logs and optional crash dump before Send; our server receives it.
 - Running from source is now its own program: separate profile and warm dock icon, beside the installed "Orivon Browser".
+- New profiles start set up: uBlock Origin pinned, five Web3 bookmarks with icons, Attila scoring, and an "Orivon Featured" apps row on the new tab.
 
 ### In my head
 

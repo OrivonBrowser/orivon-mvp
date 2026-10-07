@@ -20,7 +20,7 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "node scripts/build-ordinary.mjs",
-    "start": "node scripts/install-electron.mjs --fuses && node scripts/launch-from-source.mjs refresh && node scripts/build-ordinary.mjs && electron-vite preview --skipBuild",
+    "start": "node scripts/install-electron.mjs --fuses && node scripts/launch-from-source.mjs refresh && node scripts/fetch-bundled-extensions.mjs && node scripts/build-ordinary.mjs && electron-vite preview --skipBuild",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p vendor/tsconfig.json",
     "test": "vitest run",
     "check:natives": "node scripts/check-no-native-modules.mjs",
@@ -47,10 +47,10 @@
     "qa:visual": "node scripts/qa.mjs visual",
     "qa:report": "node scripts/qa-report.mjs",
     "perf:probe": "node scripts/perf-probe.mjs",
-    "package:linux": "node scripts/build-ordinary.mjs && electron-builder --linux --publish never",
-    "package:win": "node scripts/build-ordinary.mjs && electron-builder --win --publish never",
-    "package:mac": "node scripts/build-ordinary.mjs && electron-builder --mac --publish never",
-    "postinstall": "node scripts/check-no-native-modules.mjs && node scripts/install-electron.mjs",
+    "package:linux": "node scripts/fetch-bundled-extensions.mjs --required && node scripts/build-ordinary.mjs && electron-builder --linux --publish never",
+    "package:win": "node scripts/fetch-bundled-extensions.mjs --required && node scripts/build-ordinary.mjs && electron-builder --win --publish never",
+    "package:mac": "node scripts/fetch-bundled-extensions.mjs --required && node scripts/build-ordinary.mjs && electron-builder --mac --publish never",
+    "postinstall": "node scripts/check-no-native-modules.mjs && node scripts/install-electron.mjs && node scripts/fetch-bundled-extensions.mjs",
     "check:advisories": "node scripts/check-advisories.mjs"
   },
   "dependencies": {

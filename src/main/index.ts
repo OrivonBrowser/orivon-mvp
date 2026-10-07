@@ -46,6 +46,7 @@ import { netFetchJson } from './browsing/score-provider-client.js'
 import { isDevEthName } from './dev/eth-resolver.js'
 import { isOriginServedFromCacheSync } from '../loader/electron/serve.js'
 import type { Runtime } from './launch/start-launch.js'
+import { decideDefaultProfile } from './default-profile/profile-start.js'
 import { recordFatal as recordFatalCrash, setPageClassifier, startDiagnostics } from './diagnostics/diagnostics-runner.js'
 
 // Do not add `ozone-platform: x11` here without solving its GPU crash on
@@ -126,6 +127,8 @@ export function recordFatal (kind: string, error: unknown): void {
 export function boot (runtime: Runtime): void {
   // First of all, so the log holds everything this run printed and the marker is down before anything can fail.
   startDiagnostics({ dir: runtime.dir, isPrivate: runtime.isPrivate })
+  // Read before any store or subsystem opens a file of the profile.
+  decideDefaultProfile(runtime.dir, process.env)
   app.setMaxListeners(Math.max(app.getMaxListeners(), APP_LISTENER_ROOM))
   // Chromium reads the feature at start, so the saved choice is read here, before the settings store exists.
   applyGlobalPrivacyControl(app.commandLine, readSettingBeforeReady(join(runtime.dir, 'settings.json'), 'privacy.globalPrivacyControl'))

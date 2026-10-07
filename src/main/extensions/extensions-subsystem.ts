@@ -11,6 +11,9 @@ import { session, webContents } from 'electron'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { publishExtensions } from '../registry.js'
 import { readRegistry } from './registry-runner.js'
+import { startsFromDefaultProfile } from '../default-profile/profile-start.js'
+import { currentDefaultProfileDir } from '../default-profile/default-profile-dir.js'
+import { seedBundledExtensions } from './seed-bundled.js'
 import { installFromFile, installFromFolder, type InstallContext, type InstallOutcome, type InstallWhere } from './install-runner.js'
 import { setEnabled, uninstall } from './install-lifecycle.js'
 import { createExtensionInstallPrompt } from './extension-install-prompt.js'
@@ -125,11 +128,15 @@ export const extensionsSubsystem: Subsystem = {
     const commandKeys = installExtensionCommands({ ctx, prefs, userDataPath })
     provideCommandKeys(commandKeys)
 
+    // Decided at boot, before any file of the profile was opened: an existing profile keeps what it has.
+    const seeds = !ctx.privateSession && startsFromDefaultProfile()
+
     // A private or guest runtime runs no extension: nothing loads and every
     // install route refuses; the store page's hook still starts (below).
     if (!ctx.privateSession) await loadEnabledExtensions(userDataPath)
 
     const install: InstallContext = { userDataPath, session: session.defaultSession, prompt: createExtensionInstallPrompt(), prefs, privateSession: ctx.privateSession, pinInstalled: () => shellServices()?.settings.get('extensions.pinInstalled') === true, clearExtensionStorage: async (id) => { await clearChromeStorage(session.defaultSession, id) }, closeSidePanels }
+    if (seeds) await seedBundledExtensions(install, currentDefaultProfileDir())
     const preloadPath = join(import.meta.dirname, '../preload/web-store.js')
     // Started in every runtime: a store tab in a private window must never reach the native
     // `chrome.webstorePrivate`. In a private one installs are denied inside it.

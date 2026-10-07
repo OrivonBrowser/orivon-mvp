@@ -61,6 +61,10 @@ describe('the settings schema', () => {
     expect(SETTINGS['extensions.pinNew'].default).toBe(true)
   })
 
+  it('shows the Extensions button from the first start', () => {
+    expect(SETTINGS['toolbar.extensions'].default).toBe('always')
+  })
+
   it('opens gateway addresses as .eth names unless told not to', () => {
     expect(SETTINGS['web3.ethGatewayRedirect']).toEqual({ kind: 'bool', default: true })
   })
@@ -68,7 +72,7 @@ describe('the settings schema', () => {
 
 describe('the Web3 Score provider setting', () => {
   it('defaults to the official provider, an address the setting itself accepts, and lets a person clear it', () => {
-    expect(DEFAULT_SCORE_PROVIDER).toBe('ipns://k51qzi5uqu5dli7gc98gxy6jlbarijipfrw1x8z2wfyre3rvhssxvzeummkaff/score')
+    expect(DEFAULT_SCORE_PROVIDER).toBe('ipfs://attila.orivonstack.eth/score')
     expect(SETTINGS['web3.scoreProvider'].default).toBe(DEFAULT_SCORE_PROVIDER)
     expect(validateSetting(SETTINGS['web3.scoreProvider'], DEFAULT_SCORE_PROVIDER)).toBe(DEFAULT_SCORE_PROVIDER)
     expect(validateSetting(SETTINGS['web3.scoreProvider'], '')).toBe('')

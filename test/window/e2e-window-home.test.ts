@@ -16,6 +16,8 @@ import { ABSENCE_SETTLE_MS, activeTabInfo, delay, evaluateRetrying, findViewShow
 
 const SHOTS_DIR = process.env['ORIVON_UI_SHOTS_DIR']
 const TEST_TIMEOUT_MS = 90_000
+// The container width (toolbar.css) at and below which pinned extension buttons give way to the Extensions button.
+const PINNED_BUTTONS_WIDTH = 540
 
 let server: FixtureServer
 beforeAll(async () => {
@@ -165,16 +167,50 @@ it('with no home page, Home opens the new tab page and never swaps a loaded page
   }
 }, TEST_TIMEOUT_MS)
 
+const MIN_WIDTH = 500
+
+const setWidth = async (app: ElectronApplication, chrome: Page, width: number): Promise<void> => {
+  await app.evaluate(({ BaseWindow }, w) => { BaseWindow.getAllWindows()[0]?.setSize(w, 400) }, width)
+  // The chrome view takes the new width a moment after the window does.
+  expect(await waitFor(async () => (await chrome.evaluate(() => window.innerWidth)) === width)).toBe(true)
+}
+
+const addActionButtons = (chrome: Page, count: number): Promise<boolean> => chrome.evaluate((n) => {
+  const root = document.querySelector('browser-action-list')?.shadowRoot
+  if (root === null || root === undefined) return false
+  for (let i = 0; i < n; i += 1) {
+    const node = document.createElement('button')
+    node.className = 'action'
+    ;(node as unknown as { part: string }).part = 'action'
+    root.appendChild(node)
+  }
+  return true
+}, count)
+
+const toolbarRow = (chrome: Page) => chrome.evaluate(() => {
+  const list = document.querySelector('browser-action-list')
+  const root = list?.shadowRoot
+  const box = list?.getBoundingClientRect()
+  return {
+    listShown: list !== null && getComputedStyle(list).display !== 'none',
+    listRight: box?.right ?? 0,
+    widths: [...(root?.querySelectorAll('.action') ?? [])].map((node) => node.getBoundingClientRect().width),
+    rights: [...(root?.querySelectorAll('.action') ?? [])].map((node) => node.getBoundingClientRect().right),
+    extensionsButton: (document.querySelector<HTMLElement>('#extensions-menu-btn')?.getBoundingClientRect().width ?? 0) > 0,
+    field: document.querySelector<HTMLInputElement>('#address')?.getBoundingClientRect().width ?? 0
+  }
+})
+
 it('stops the window at its minimum size, and the address field still has room there', async () => {
-  const { app, chrome } = await launchShell({ seedProfile: settingsJson({ 'toolbar.home': true }) })
+  const { app, chrome } = await launchShell({ seedProfile: settingsJson({ 'toolbar.home': true, 'toolbar.extensions': 'never' }) })
   try {
     expect(await waitFor(async () => await homeShown(chrome))).toBe(true)
-    expect(await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getMinimumSize())).toEqual([500, 400])
+    expect(await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getMinimumSize())).toEqual([MIN_WIDTH, 400])
     expect(await waitFor(async () => await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.isVisible() === true))).toBe(true)
     await app.evaluate(({ BaseWindow }) => { BaseWindow.getAllWindows()[0]?.setSize(300, 200) })
     expect(await waitFor(async () => (await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getSize())) !== undefined)).toBe(true)
     const size = await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getSize() ?? [0, 0])
-    expect(size[0]).toBeGreaterThanOrEqual(500)
+    expect(size[0]).toBeGreaterThanOrEqual(MIN_WIDTH)
     expect(size[1]).toBeGreaterThanOrEqual(400)
     // The chrome view takes the new width a moment after the window does.
     expect(await waitFor(async () => (await chrome.evaluate(() => window.innerWidth)) <= 520)).toBe(true)
@@ -183,29 +219,46 @@ it('stops the window at its minimum size, and the address field still has room t
 
     // Four extension buttons (the library's own element and class, built by hand since no extension is
     // installed): the list shows one whole button and clips the rest, instead of squeezing all four.
-    const buttons = await chrome.evaluate(() => {
-      const list = document.querySelector('browser-action-list')
-      const root = list?.shadowRoot
-      if (list === null || list === undefined || root === null || root === undefined) return null
-      for (let i = 0; i < 4; i += 1) {
-        const node = document.createElement('button')
-        node.className = 'action'
-        ;(node as unknown as { part: string }).part = 'action'
-        root.appendChild(node)
-      }
-      const box = list.getBoundingClientRect()
-      return {
-        listRight: box.right,
-        widths: [...root.querySelectorAll('.action')].map((node) => node.getBoundingClientRect().width),
-        rights: [...root.querySelectorAll('.action')].map((node) => node.getBoundingClientRect().right),
-        field: document.querySelector<HTMLInputElement>('#address')?.getBoundingClientRect().width ?? 0
-      }
-    })
-    expect(buttons).not.toBeNull()
-    expect(buttons?.widths).toEqual([32, 32, 32, 32])
-    expect(buttons?.rights[0] ?? 1e9).toBeLessThanOrEqual((buttons?.listRight ?? 0) + 0.5)
-    expect(buttons?.rights[1] ?? 0).toBeGreaterThan((buttons?.listRight ?? 1e9) + 0.5)
-    expect(buttons?.field ?? 0).toBeGreaterThanOrEqual(96)
+    expect(await addActionButtons(chrome, 4)).toBe(true)
+    const buttons = await toolbarRow(chrome)
+    expect(buttons.widths).toEqual([32, 32, 32, 32])
+    expect(buttons.rights[0] ?? 1e9).toBeLessThanOrEqual(buttons.listRight + 0.5)
+    expect(buttons.rights[1] ?? 0).toBeGreaterThan(buttons.listRight + 0.5)
+    expect(buttons.field).toBeGreaterThanOrEqual(96)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('with the Extensions button shown, the pinned buttons wait in its menu at the minimum size, and the address field keeps its room', async () => {
+  const { app, chrome } = await launchShell({ seedProfile: settingsJson({ 'toolbar.home': true }) })
+  try {
+    expect(await waitFor(async () => await homeShown(chrome))).toBe(true)
+    expect(await waitFor(async () => await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.isVisible() === true))).toBe(true)
+    await setWidth(app, chrome, MIN_WIDTH)
+    const atMinimum = await toolbarRow(chrome)
+    expect(atMinimum.extensionsButton).toBe(true)
+    expect(atMinimum.field).toBeGreaterThanOrEqual(96)
+
+    expect(await addActionButtons(chrome, 4)).toBe(true)
+    const crowded = await toolbarRow(chrome)
+    expect(crowded.listShown).toBe(false)
+    expect(crowded.extensionsButton).toBe(true)
+    expect(crowded.field).toBeGreaterThanOrEqual(96)
+
+    // Just above the width where the list gives way, one whole pinned button is back and the field still has room.
+    await setWidth(app, chrome, PINNED_BUTTONS_WIDTH + 10)
+    const roomy = await toolbarRow(chrome)
+    expect(roomy.listShown).toBe(true)
+    expect(roomy.widths).toEqual([32, 32, 32, 32])
+    expect(roomy.rights[0] ?? 1e9).toBeLessThanOrEqual(roomy.listRight + 0.5)
+    expect(roomy.rights[1] ?? 0).toBeGreaterThan(roomy.listRight + 0.5)
+    expect(roomy.field).toBeGreaterThanOrEqual(96)
+
+    // At the width itself the list is already gone.
+    await setWidth(app, chrome, PINNED_BUTTONS_WIDTH)
+    expect((await toolbarRow(chrome)).listShown).toBe(false)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)

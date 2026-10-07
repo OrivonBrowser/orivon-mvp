@@ -278,6 +278,9 @@ export async function launchElectron ({
   // has a fresh profile, so the default would put it over every page a test
   // drives, and the window count tests wait for would include its view.
   if (env['ORIVON_INTRO'] === undefined) env['ORIVON_INTRO'] = 'off'
+  // And the default profile: off unless a spec asks for it, so a launch starts with no bookmarks and no
+  // extension, as every spec written before it assumes (src/main/default-profile/).
+  if (env['ORIVON_DEFAULT_PROFILE'] === undefined) env['ORIVON_DEFAULT_PROFILE'] = 'off'
   // And telemetry: off unless a spec turns it on, so no run counts, reads this machine's identifier or
   // sends anything. A spec that needs it sets ORIVON_TELEMETRY=on; its state then lives in the profile's
   // own temporary folder (below), never the real ~/.config/orivon-telemetry.

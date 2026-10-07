@@ -8,7 +8,7 @@ import { isEmptyOrAbsolutePath } from './path-checks.js'
 import { CUSTOM_SEARCH_ENGINE, DEFAULT_SEARCH_ENGINE, SEARCH_ENGINES, isValidSearchTemplate } from '../browsing/search-engines.js'
 
 /** The official Web3 Score provider, which a profile that never chose one reads; a person who clears the setting asks nobody. */
-export const DEFAULT_SCORE_PROVIDER = 'ipns://k51qzi5uqu5dli7gc98gxy6jlbarijipfrw1x8z2wfyre3rvhssxvzeummkaff/score'
+export const DEFAULT_SCORE_PROVIDER = 'ipfs://attila.orivonstack.eth/score'
 
 export type SettingSpec =
   /** `labels` names options that are data, such as a search engine's own name; wording about an option is the page's. */
@@ -98,8 +98,8 @@ const SPECS = {
   'toolbar.home': { kind: 'bool', default: false },
   // 'auto' shows the button while a download is under way or was recent.
   'toolbar.downloads': { kind: 'enum', options: ['auto', 'always', 'never'], default: 'auto' },
-  // 'auto' shows the Extensions button while at least one extension is installed.
-  'toolbar.extensions': { kind: 'enum', options: ['auto', 'always', 'never'], default: 'auto' },
+  // 'auto' shows the Extensions button while at least one extension is installed; 'always' is the default, so a new profile has the button before anything is installed.
+  'toolbar.extensions': { kind: 'enum', options: ['auto', 'always', 'never'], default: 'always' },
   'spellcheck.enabled': { kind: 'bool', default: true },
   // The reader view's own text settings; the size is in pixels, as text.
   'reader.font': { kind: 'enum', options: ['sans', 'serif'], default: 'sans' },

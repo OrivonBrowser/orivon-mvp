@@ -132,7 +132,7 @@ for (const scheme of SCHEMES) {
         expect(await waitFor(() => dashboardOf(app) !== undefined)).toBe(true)
         await (dashboardOf(app) as Page).waitForLoadState('load')
         await state(check, app, `dashboard-startup-${scheme}`, {
-          expected: 'New-tab dashboard: wallpaper, the Orivon mark and name, a search box, an APPS row with tiles that have icons and labels; one tab titled "New Tab" in the strip; toolbar with back, forward and reload dimmed.',
+          expected: 'New-tab dashboard: wallpaper, the Orivon mark and name, a search box, an "Orivon Featured" row of five tiles (Explore, The Lounge, FreeTube, ASGARDEX, Element) that have icons and labels; one tab titled "New Tab" in the strip; toolbar with back, forward and reload dimmed.',
           action: 'Launched a fresh profile and waited for the dashboard to load.'
         })
 
@@ -332,7 +332,7 @@ for (const scheme of SCHEMES) {
           action: 'Resized the window content to 800x600 on the dashboard.'
         }, { width: 800, height: 600 })
         await state(check, app, `dashboard-500x400-${scheme}`, {
-          expected: 'At the smallest size a window can have, 500x400, the toolbar is one row: back, forward, reload, the star, an address field wide enough to read an address in, the all-sites button, the side-panel button and the menu. The identity placeholder and the node-status dot are gone, and nothing is cut or overlaps.',
+          expected: 'At the smallest size a window can have, 500x400, the toolbar is one row: back, forward, reload, the star, an address field wide enough to read an address in, the all-sites button, the Extensions button, the side-panel button and the menu. The identity placeholder and the node-status dot are gone, and nothing is cut or overlaps.',
           action: 'Resized the window content to 500x400, the minimum, on the dashboard.'
         }, { width: 500, height: 400 })
       })
