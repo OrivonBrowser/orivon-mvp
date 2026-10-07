@@ -48,7 +48,10 @@ npm run package:win     # on Windows
 npm run package:mac     # on macOS: both architectures
 ```
 
-Each runs the ordinary build first (`scripts/build-ordinary.mjs`: `out/main`, `out/preload`,
+Each first runs `node scripts/fetch-bundled-extensions.mjs --required`, which downloads the extensions a new profile starts with
+(uBlock Origin, pinned to a release and its sha256 in `resources/default-profile/bundled-extensions.json`) and fails the
+package when one cannot be fetched or does not match, so a release never ships without them. `electron-builder.yml`
+copies `resources/default-profile/` into the package's resources folder. Each then runs the ordinary build (`scripts/build-ordinary.mjs`: `out/main`, `out/preload`,
 `out/renderer`, with the developer-only grant path stripped), then `electron-builder` for that
 system with `--publish never`. `electron-builder` does not build the app itself: it packages
 whatever is in `out/`. Build each system on that system: a Windows installer can be built

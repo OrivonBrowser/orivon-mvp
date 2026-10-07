@@ -316,6 +316,12 @@ every state once per scheme (`ORIVON_QA_SCHEMES=light` or `dark` narrows it, and
 own baseline), and [`e2e-theme-backing`](../../test/window/e2e-theme-backing.test.ts) reads the colours a view
 and the window hold at the moments a navigation starts.
 
+**A blank profile, unless a spec asks.** `launchElectron` sets `ORIVON_DEFAULT_PROFILE=off`, so a launch starts
+with no bookmarks and no extension, as most specs assume; the welcome screen (`ORIVON_INTRO`), telemetry and the
+Ethereum light client are off the same way. A spec that proves what a new profile starts with passes
+`env: { ORIVON_DEFAULT_PROFILE: 'on' }` ([`e2e-default-profile`](../../test/window/e2e-default-profile.test.ts)); it needs the
+fetched uBlock Origin file (`node scripts/fetch-bundled-extensions.mjs`, which `npm install` runs).
+
 **Failure evidence, for every e2e spec.** [`launch-electron.mjs`](../../test/support/launch-electron.mjs)
 starts recording each launched app ([`qa-evidence.mjs`](../../test/support/qa-evidence.mjs)) and, at close,
 snapshots its final state. [`qa-setup.ts`](../../test/support/qa-setup.ts), a Vitest setup file, writes that
