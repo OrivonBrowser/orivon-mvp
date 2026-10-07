@@ -41,6 +41,7 @@
     "check:impact-map": "node scripts/ci/check-impact-map.mjs",
     "install:electron": "node scripts/install-electron.mjs",
     "smoke": "node scripts/build-ordinary.mjs && node scripts/run-headless.mjs node scripts/smoke.mjs",
+    "test:changed": "node scripts/test-changed.mjs",
     "test:e2e": "node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts",
     "qa": "node scripts/qa.mjs all",
     "qa:visual": "node scripts/qa.mjs visual",

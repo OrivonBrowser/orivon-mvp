@@ -9,6 +9,7 @@ import { NOTICE_CHANGES, NOTICE_VERSION, recordChoice } from '../consent.js'
 import { TelemetryService } from '../service.js'
 import { TelemetryStore } from '../store.js'
 import { SystemStore } from '../system-store.js'
+import { PAYLOAD_SCHEMA } from '../disclosure.js'
 
 const SEC = 1000
 const MACHINE = '0123456789abcdef0123456789abcdef'
@@ -100,7 +101,7 @@ describe('TelemetryService', () => {
     await browse(60, 'web3:vitalik.eth')
     await service.sendNow()
     const usage = sent.find((payload) => !('sites' in payload))
-    expect(usage).toMatchObject({ schema: 4, installId: deriveInstallId(MACHINE), stream: 'ab'.repeat(16), country: 'IT', period: '2026-10', activeSec: 60, classes: { web3: 60, web25: 0, web2: 0 } })
+    expect(usage).toMatchObject({ schema: PAYLOAD_SCHEMA, installId: deriveInstallId(MACHINE), stream: 'ab'.repeat(16), country: 'IT', period: '2026-10', activeSec: 60, classes: { web3: 60, web25: 0, web2: 0 } })
     expect(sent.find((payload) => 'sites' in payload)).toMatchObject({ installId: deriveInstallId(MACHINE), stream: 'ab'.repeat(16), sites: { 'web3:vitalik.eth': 60 } })
     expect((await service.status()).sent.length).toBeGreaterThanOrEqual(2)
   })
@@ -184,7 +185,7 @@ describe('TelemetryService', () => {
   })
 
   it('reads a choice another profile made, at the next tick', async () => {
-    await new SystemStore(join(dir, 'home')).writeConsent({ state: 'accepted', atMs: start, noticeVersion: 4, source: 'welcome', everAccepted: true })
+    await new SystemStore(join(dir, 'home')).writeConsent({ state: 'accepted', atMs: start, noticeVersion: NOTICE_VERSION, source: 'welcome', everAccepted: true })
     await service.checkpointTick(focused, true)
     now += 40 * SEC
     await service.checkpointTick(focused, true)

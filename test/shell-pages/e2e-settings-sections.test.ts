@@ -11,6 +11,8 @@ import { findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers
 import { startIngest, telemetryHomeFolder } from '../support/telemetry-ingest.js'
 import type { DevGrantRequest } from '../../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../../src/contracts/index.js'
+import { PAYLOAD_SCHEMA } from '../../src/telemetry/disclosure.js'
+import { NOTICE_VERSION } from '../../src/telemetry/consent.js'
 
 afterAll(async () => { expect(await assertNoElectronSurvivors()).toEqual([]) })
 
@@ -155,7 +157,7 @@ it('shows usage statistics as not chosen yet with the exact text that would be s
     await row.locator('.switch').click()
     await page.waitForFunction(() => document.querySelector('#usage-state')?.textContent?.startsWith('On.') === true)
     expect(await waitFor(() => readConsent(home)?.['state'] === 'accepted')).toBe(true)
-    expect(readConsent(home)).toMatchObject({ source: 'settings', noticeVersion: 4 })
+    expect(readConsent(home)).toMatchObject({ source: 'settings', noticeVersion: NOTICE_VERSION })
     const installId = await row.locator('#usage-install-id').textContent()
     expect(installId).toMatch(/^[0-9a-f]{32}$/)
     expect(JSON.parse(await row.locator('#usage-json').textContent() ?? '{}')).toMatchObject({ installId })
@@ -189,7 +191,7 @@ it('Delete my data asks the server to erase the install ID, turns telemetry off 
 
     await row.locator('#usage-delete').click()
     await page.waitForFunction(() => document.querySelector('#usage-erase')?.textContent?.startsWith('Done.') === true)
-    expect(ingest.requests.filter((request) => request.path === '/v1/erase')).toEqual([{ path: '/v1/erase', body: { schema: 4, installId } }])
+    expect(ingest.requests.filter((request) => request.path === '/v1/erase')).toEqual([{ path: '/v1/erase', body: { schema: PAYLOAD_SCHEMA, installId } }])
     expect(readConsent(home)?.['state']).toBe('declined')
     expect(await row.locator('#usage-state').textContent()).toContain('Off.')
 
