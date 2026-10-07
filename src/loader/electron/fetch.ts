@@ -13,7 +13,7 @@ export const electronFetch: Fetch = async (url, pinnedAddresses, signal, headers
   // Dynamically imported: outside a real Electron process (i.e. under
   // vitest), `electron`'s entry point is a path STRING, and a top-level
   // import would silently bind `undefined` rather than throw -- same
-  // reasoning as main/favicon.ts and main/update-check-runner.ts.
+  // reasoning as main/browsing/favicon-fetch.ts and main/update-check-runner.ts.
   const { net } = await import('electron')
 
   // `pinnedAddresses` is install-origin.ts's validated literal set, resolved

@@ -59,7 +59,7 @@ holds and persists the tree of folders and pages, and this directory renders the
 The star, the folder menu, the edit bubble, the address suggestions and the downloads bubble are
 overlays in [`overlay/`](overlay/), not chrome rows.
 
-**Favicons arrive as `data:` URLs.** `src/main/browsing/favicon.ts` fetches, caps and re-encodes
+**Favicons arrive as `data:` URLs.** `src/main/browsing/favicon-fetch.ts` fetches, caps and re-encodes
 them, so this view's CSP stays `img-src 'self' data:`; the renderer never fetches one itself.
 
 **Icons are hand-drawn inline SVG**, no icon font or library (Rule 8;

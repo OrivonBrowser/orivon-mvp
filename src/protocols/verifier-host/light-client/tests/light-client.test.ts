@@ -5,7 +5,7 @@ import type { LightClient } from '../../service.js'
 
 // startHeliosLightClient dynamically imports '@a16z/helios' (its own file
 // header explains why: the light client's own module-scope side effects,
-// same reasoning as favicon.ts's dynamic 'electron' import elsewhere in
+// same reasoning as favicon-fetch.ts's dynamic 'electron' import elsewhere in
 // this codebase), so the mock has to be registered before it is ever
 // evaluated -- vi.mock is hoisted above this file's own imports regardless
 // of where it is written, which is what makes that work.

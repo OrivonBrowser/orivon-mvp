@@ -101,7 +101,7 @@ export class TabManager {
       emitState: () => { this.changedSoon() },
       // Which document declared the icon, and whether this record is still the one the map holds when the fetch lands.
       captureFavicon: async (id, record, favicons) => {
-        await captureFaviconInto(record, favicons, () => record.view.webContents.getURL(), () => this.tabs.get(id) === record, () => { this.changed() })
+        await captureFaviconInto(record, favicons, () => record.view.webContents.getURL(), () => this.tabs.get(id) === record, () => { this.changed() }, record.view.webContents.session)
       },
       forgetTab: (id) => { this.forgetTab(id, false) },
       openTab: (url, active, loadOptions) => this.liveWebContents(this.openedByPage(() => this.createTab(url, active, loadOptions))),
@@ -409,7 +409,7 @@ export class TabManager {
   reload (id: string): void { reloadTab(this.navigation, id) }
 
   /** The icon this tab is currently showing, already fetched, size-capped
-   * and re-encoded to a `data:` URL by favicon.ts. `null` when the page
+   * and re-encoded to a `data:` URL by favicon-fetch.ts. `null` when the page
    * declares none, or when its fetch has not landed yet. Read when a page
    * is starred, so the bookmark keeps the icon rather than the shell going
    * back to the network for one (bookmarks.ts's `favicon`). */

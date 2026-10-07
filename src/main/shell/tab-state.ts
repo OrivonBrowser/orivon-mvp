@@ -1,6 +1,7 @@
 // One tab's TabState, the record the chrome UI renders from -- read off the
 // tab's record and live webContents at the moment state is pushed.
 import type { WebContents } from 'electron'
+import { internalPageIcon } from '../pages/internal-icons.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { BLANK_URL } from './tab-factory.js'
 import { signalState } from './tab-signals.js'
@@ -25,7 +26,8 @@ export function buildTabState (id: string, record: TabRecord | undefined, wc: We
     canGoBack: wc?.navigationHistory.canGoBack() ?? false,
     canGoForward: wc?.navigationHistory.canGoForward() ?? false,
     loading: wc?.isLoading() ?? false,
-    favicon: record?.favicon ?? null,
+    // The shell's own page carries the shell's icon for it, whatever the page declares.
+    favicon: record?.internalPage != null ? internalPageIcon(record.internalPage) : record?.favicon ?? null,
     isNewTab: url === BLANK_URL || (record?.isDashboardTab === true && url === env.dashboardUrl),
     splitWith: env.partnerOf(id),
     isInternal: record?.internalPage != null,

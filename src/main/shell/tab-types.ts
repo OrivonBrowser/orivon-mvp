@@ -29,7 +29,7 @@ export interface TabState {
   loading: boolean
   /** A data: URL, or null (no real favicon yet -- the chrome renders a
    * generic globe). Never the source https:// URL directly -- see
-   * favicon.ts's header for why the fetch happens in main. */
+   * favicon-fetch.ts's header for why the fetch happens in main. */
   favicon: string | null
   /** True for the dashboard (a fresh tab's real content, src/renderer/
    * newtab/) or the literal about:blank fallback (a rejected navigation

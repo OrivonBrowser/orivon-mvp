@@ -1,4 +1,4 @@
-// favicon.ts's memory of icons it has already fetched, as `data:` URLs keyed
+// favicon-fetch.ts's memory of icons it has already fetched, as `data:` URLs keyed
 // by the candidate URL asked for. Pure, so it is tested with no Electron.
 
 /** Least recently used dropped first, bounded by entry count and by total

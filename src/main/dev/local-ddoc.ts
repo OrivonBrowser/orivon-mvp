@@ -8,7 +8,7 @@
 // any origin that is not local, there is no answer and no fetch.
 
 import { DDOC_PATH, MAX_DDOC_BYTES, parseDdocDeclaration } from '../../loader/ddoc-declaration.js'
-import { readCapped } from '../browsing/favicon.js'
+import { readCapped } from '../browsing/favicon-fetch.js'
 import { grantableWithoutInstall } from '../install/grant-without-install.js'
 import { devModeEnabled } from './dev-mode.js'
 
@@ -49,7 +49,7 @@ export async function localDdocHashFor (origin: string): Promise<string | undefi
 
 // net.fetch, not Node's fetch: only Chromium's resolver honours the
 // --host-resolver-rules that map a developer `.eth` name to loopback.
-// Imported dynamically, as favicon.ts's header explains.
+// Imported dynamically, as favicon-fetch.ts's header explains.
 async function netFetchCapped (url: string, cap: number): Promise<Uint8Array | null> {
   const { net } = await import('electron')
   try {

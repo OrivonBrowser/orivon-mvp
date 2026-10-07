@@ -23,7 +23,7 @@ needs no developer mode for that.
 [`../../contracts/`](../../contracts/),
 [`../../loader/ddoc-declaration.ts`](../../loader/ddoc-declaration.ts),
 [`../install/grant-without-install.ts`](../install/grant-without-install.ts),
-[`../browsing/favicon.ts`](../browsing/favicon.ts)'s `readCapped`,
+[`../browsing/favicon-fetch.ts`](../browsing/favicon-fetch.ts)'s `readCapped`,
 [`../../broker/`](../../broker/) (`broker-contracts.ts`, `policy/origin.ts`),
 [`../../trust/`](../../trust/) (types), the top-level `registry.ts`.
 

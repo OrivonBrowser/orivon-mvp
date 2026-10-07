@@ -59,6 +59,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Global Privacy Control is on by default, sent by the engine itself to every page, frame and worker, ahead of California's 2027 rule.
 - README rewritten for launch day: alpha, apps linked by `.eth` name, everyday-browser features up front, limits moved to `docs/known-limitations.md`.
 - Telemetry site reports now carry the install ID, so spam can be excluded; reports also go at once on accept and on quit.
+- Tab icons fixed: installed apps load theirs from the pin, multi-size `.ico` trimmed, Settings and other shell pages get their own icons.
 
 ### In my head
 

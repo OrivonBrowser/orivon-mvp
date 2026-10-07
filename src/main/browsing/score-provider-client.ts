@@ -4,7 +4,7 @@
 import { createHash } from 'node:crypto'
 import { MAX_SCORE_FILE_BYTES, SCORE_STANDARD, findEvaluation, parseDescriptor } from '../../trust/score-provider.js'
 import type { ProviderDescriptor, ProviderVerdict } from '../../trust/score-provider.js'
-import { readCapped } from './favicon.js'
+import { readCapped } from './favicon-fetch.js'
 import { parseOmniboxInput } from './omnibox.js'
 
 export type FetchedJson =
@@ -139,7 +139,7 @@ export function createScoreProviderClient (deps: ScoreProviderDeps): ScoreProvid
 }
 
 // net.fetch, not Node's fetch: only Chromium's stack honours the resolver rules that send `.eth`
-// and `*.orivon` to the verifier. Imported dynamically, as favicon.ts's header explains. Redirects
+// and `*.orivon` to the verifier. Imported dynamically, as favicon-fetch.ts's header explains. Redirects
 // are followed because an `ipfs://` address is first served at a path that redirects to its own origin.
 export async function netFetchJson (url: string): Promise<FetchedJson> {
   const { net } = await import('electron')

@@ -59,7 +59,7 @@ rather than editing here.
 | [`startup/`](startup/) | What a cold start opens (the new tab page, last session, chosen pages) and the offer to restore after a crash | no | `startup-overlays.ts` only |
 | [`settings/`](settings/) | What the person set, validated, persisted and told to whoever listens | `settings.json` on disk | no |
 | [`storage/`](storage/) | The debounced, single-flight disk write every small persisted file shares | no | no |
-| [`browsing/`](browsing/) | What the address bar and tab strip are made of | bookmarks and search engines on disk | `favicon.ts` only |
+| [`browsing/`](browsing/) | What the address bar and tab strip are made of | bookmarks and search engines on disk | `favicon-fetch.ts` only |
 | [`ipc/`](ipc/) | The chrome-to-main channels, one sender check each | no | yes |
 | [`consent/`](consent/) | Decide what to ask, say it in words, show the dialog | no | the `-prompt` files only |
 | [`permissions/`](permissions/) | The grant list a person can revoke from, and the per-site popover | no | the two `-panel` files and `popover-view.ts` |

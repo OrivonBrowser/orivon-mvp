@@ -368,3 +368,4 @@ In all, 36 findings, 36 confirmed, none refuted.
 | Mechanism | Scope | Outcome |
 |---|---|---|
 | `/code-review` at medium effort | PR #131 against `main` | No findings: fuse indices and state bytes, the yml parser in the agreement test, the launcher's cold-start path, the shared keyring entry (both run as `orivon`), and `--password-store=basic` on test launches checked |
+| `/code-review` at medium effort | PR #138 against `main` | No findings: the `favicon-fetch.ts` split moves code unchanged except the per-hop session, the T12 gate still runs before the cache and on every redirect, `oneIcoImage` bounds-checks every entry, and the verifier-host early return still records the origin; the URL-keyed icon cache shared across sessions predates the PR |

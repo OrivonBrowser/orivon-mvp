@@ -7,6 +7,7 @@ import { assertNoElectronSurvivors, launchElectron, mainOutput, DEFAULT_ACTION_T
 import { findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
 import { existsSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { originHash } from '../../src/broker/grants/origin-hash.js'
 import { answerEveryQuestion, stubNativeDialogs } from '../support/question-support.js'
@@ -192,3 +193,71 @@ it('shows the icon of an ipfs:// page while the page itself is loading large fil
     }
   })
 }, TEST_TIMEOUT_MS + 90_000)
+
+it('shows the icon of an installed .eth app from its pin after a restart, with its name and the gateway gone', async () => {
+  await runPhase('ipfs-favicon-installed-restart', async (check) => {
+    const gateway = await startFixtureGateway({
+      site: {
+        'index.html': '<!doctype html><meta charset="utf-8"><title>icon app</title><link rel="icon" href="assets/icon.png"><link rel="orivon-manifest" href="/.well-known/orivon.json"><body>icon</body>',
+        'other.html': '<!doctype html><meta charset="utf-8"><title>other page</title><link rel="icon" href="assets/other.png"><body>other</body>',
+        'assets/icon.png': PNG,
+        'assets/other.png': OTHER_PNG,
+        '.well-known/orivon.json': JSON.stringify(MANIFEST)
+      }
+    })
+    const site = gateway.roots['site']!
+    const env = (names: Record<string, string>): Record<string, string> => ({ ORIVON_TEST_ETH_FIXTURES: JSON.stringify(names), ORIVON_TEST_IPFS_GATEWAYS: gateway.url, ORIVON_TEST_DOH: `${gateway.url}/dns-query` })
+    const startVerifier = async (running: Awaited<ReturnType<typeof launchElectron>>): Promise<void> => {
+      const listening = await waitFor(async () => await running.evaluate(() => { const seam = (globalThis as { __orivonDevEthFixtures?: { listening: boolean, start?: () => void } }).__orivonDevEthFixtures; seam?.start?.(); return seam?.listening === true }), 20_000)
+      if (!listening) throw new Error('the verifier host never reported listening')
+    }
+    let gatewayClosed = false
+    let app: Awaited<ReturnType<typeof launchElectron>> | undefined
+    let profile: string | undefined
+    try {
+      app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env: env({ 'icons.eth': `ipfs://${site}` }) })
+      const first = app
+      await stubNativeDialogs(first)
+      answerEveryQuestion(first)
+      await startVerifier(first)
+      profile = await first.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
+      const pinFile = join(profile, 'apps', originHash('https://icons.eth'), 'pin.json')
+      await waitFor(() => first.windows().length === 2)
+      const chrome = findChrome(first)
+      await waitForAddressBarStable(chrome)
+      await clickAddressBarRetrying(chrome, 'https://icons.eth/')
+      const loaded = await waitForTab(chrome, { title: 'icon app' })
+      const pinned = await waitFor(() => existsSync(pinFile), 25_000)
+      const reloaded = await waitFor(() => mainOutput(first).includes('reloading the tab that reported it'), 25_000)
+      const remembered = await waitFor(async () => await hasIcon(chrome), 15_000)
+      check(`the app installed and its first page showed its icon (${JSON.stringify(loaded.info)})`, loaded.ok && pinned && reloaded && remembered)
+      app = undefined
+      await closeElectronApp(first, APP_CLOSE_RACE_MS, { keepProfile: true })
+      await gateway.close()
+      gatewayClosed = true
+
+      // The name no longer resolves and the gateway is gone, as when ENS or IPNS cannot answer: the verifier can serve
+      // nothing, so the page and its icon both have to come from the pin. The icon history kept for the host is
+      // index.html's, so only the pin can give other.html's own.
+      app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env: env({}), reuseProfile: profile })
+      const second = app
+      await stubNativeDialogs(second)
+      answerEveryQuestion(second)
+      await startVerifier(second)
+      await waitFor(() => second.windows().length === 2)
+      const chromeAgain = findChrome(second)
+      await waitForAddressBarStable(chromeAgain)
+      await clickAddressBarRetrying(chromeAgain, 'https://icons.eth/other.html')
+      const other = await waitForTab(chromeAgain, { title: 'other page' })
+      check(`its other page opened from the pin (${JSON.stringify(other.info)})`, other.ok)
+      const shown = await waitFor(async () => await hasIcon(chromeAgain, OTHER_PNG), 15_000)
+      check(`the tab shows that page's own icon, from the pin (shown: ${String(await tabIcon(chromeAgain))})`, shown)
+      expect(other.ok).toBe(true)
+      expect(shown).toBe(true)
+    } finally {
+      if (app !== undefined) await closeElectronApp(app)
+      if (!gatewayClosed) await gateway.close()
+      if (profile !== undefined) await rm(profile, { recursive: true, force: true })
+    }
+  })
+}, TEST_TIMEOUT_MS * 2)

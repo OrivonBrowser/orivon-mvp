@@ -98,11 +98,11 @@ vi.mock('electron', () => ({
 }))
 
 // F35 regression test below needs to force fetchFaviconDataUrlCached to
-// reject on demand -- everything else keeps the real favicon.ts (pure
+// reject on demand -- everything else keeps the real favicon-fetch.ts (pure
 // functions like pickFaviconUrl are exercised for real elsewhere in this
 // file's tab-creation flow).
-vi.mock('../../browsing/favicon.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../browsing/favicon.js')>()
+vi.mock('../../browsing/favicon-fetch.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../browsing/favicon-fetch.js')>()
   return { ...actual, fetchFaviconDataUrlCached: vi.fn().mockResolvedValue(null) }
 })
 
@@ -115,7 +115,7 @@ vi.mock('../../../loader/electron/serve.js', () => ({
 }))
 
 const { TabManager } = await import('../tabs.js')
-const { fetchFaviconDataUrlCached } = await import('../../browsing/favicon.js')
+const { fetchFaviconDataUrlCached } = await import('../../browsing/favicon-fetch.js')
 
 const fakeContentView = { children: [] as unknown[], addChildView: vi.fn(), removeChildView: vi.fn() }
 const fakeBounds = { x: 0, y: 0, width: 800, height: 600 }

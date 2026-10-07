@@ -5,7 +5,7 @@
 operation), `bookmark-file.ts` (reading and writing the file, pure),
 `bookmarks-domain.ts` (what the Bookmarks page may ask, each field checked), `bookmarks-undo.ts` (what a delete in it can take back),
 `bookmarks-html-export.ts` (the Netscape bookmark file, pure) and `bookmarks-export-runner.ts` (the save dialog and the write),
-`favicon.ts`, its pure byte-sniffing half `favicon-format.ts` (a tab's icon as a `data:` URL) and `favicon-timeout.ts` (how long a fetch may take),
+`favicon.ts` (which icon a tab shows, and the capture), `favicon-fetch.ts` (the fetch and its T12 gate), its pure byte-sniffing half `favicon-format.ts` (a tab's icon as a `data:` URL) and `favicon-timeout.ts` (how long a fetch may take),
 `search-engines.ts` (the built-in engines, their keywords and suggestion addresses, and the template rule), `search-resolve.ts` and
 `search-current.ts` (which engine a typed search goes to, pure), `search-engine-store.ts` (the engines a person keeps in
 `search-engines.json`; its rules are in `search-engine-rules.ts` and the starting site engines in `site-engines.ts`),
@@ -16,7 +16,7 @@ toolbar shield's data), `site-home.ts` (where the content shown says it lives, w
 pin, pin coverage, a `.eth` name's evidence and the developer overrides, so it never reaches for
 the loader, the verifier or `../dev/` itself.
 
-**Tied to Electron.** `favicon.ts` and `score-provider-client.ts` import `electron`, only
+**Tied to Electron.** `favicon-fetch.ts` and `score-provider-client.ts` import `electron`, only
 dynamically and only for `net.fetch`: outside a real Electron process the package's entry point is
 a path string.
 
@@ -108,16 +108,27 @@ classification and the loader's resolver rather than a second copy (code-guideli
 
 **A verifier-served host gets a longer budget** (`VERIFIED_FAVICON_TIMEOUT_MS`, *provisional*). An icon on
 `<cid>.ipfs.orivon` or a `.eth` name is fetched block by block from gateways and checked, so five seconds
-aborts a slow load, and a capture that fails leaves the globe until the page announces another icon set. Such a host
+aborts a slow load. Such a host
 resolves to loopback, so `isSafeFaviconUrl` passes it only as the declaring page's own origin; the longer budget
-reaches nothing a page could not already load. Real gateways have not measured the number.
+reaches nothing a page could not already load. Real gateways have not measured the number. A capture that still
+fails there keeps the site's icon the tab already shows (history's, or this tab's own) instead of the globe: on such
+a host a failure means gateways too slow to answer, not a page without an icon.
+
+**An icon on the page's own origin is asked for through the page's session; any other through the default one.**
+An installed app's page is served from its pin by its own session's handler, so its icon comes from the same pin,
+offline and at once, where the default session would wait on the verifier resolving the name and gateways
+answering. An icon on another host stays on the default session, because an app's session refuses a host the app
+holds no grant for. Either way the request carries no credentials and no cookies.
+
+**A multi-image `.ico` is cut to the one image closest to 32 px** (`oneIcoImage`), the size a tab draws at twice
+the scale, so a site's icon fits what history and the tab list keep (`MAX_HISTORY_FAVICON_CHARS`).
 
 **Not bounded, on purpose for now:** repeated `page-favicon-updated` events per tab (bounded per
 event by `MAX_FAVICON_CANDIDATES`, and only public hosts pass the gate; a real bound needs
 per-tab state in `../shell/tabs.ts`).
 
 **`faviconCache` is bounded** by entry count and total size, least recently used dropped first
-(`favicon.ts` holds the provisional numbers), because a page can name any number of icon URLs.
+(`favicon-fetch.ts` holds the provisional numbers), because a page can name any number of icon URLs.
 It stores only an icon its capture kept, never one that landed after the tab moved to another
 origin or a newer icon set.
 

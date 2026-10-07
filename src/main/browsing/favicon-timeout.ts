@@ -1,4 +1,4 @@
-// How long a tab's icon may take to fetch. Pure: no Electron import, so favicon.ts stays importable under plain vitest.
+// How long a tab's icon may take to fetch. Pure: no Electron import, so favicon-fetch.ts stays importable under plain vitest.
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 
 export const FAVICON_TIMEOUT_MS = 5_000

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { decodeDataUrl, looksLikeSvg, sniffImageType, toDataUrl } from '../favicon-format.js'
+import { decodeDataUrl, looksLikeSvg, oneIcoImage, sniffImageType, toDataUrl } from '../favicon-format.js'
 
 // A byte-order mark is invisible in an editor and in a diff, so one written
 // literally into the sniffer or its tests cannot be reviewed.
@@ -214,5 +214,56 @@ describe('decodeDataUrl', () => {
 
   it('rejects a non-data URL', () => {
     expect(decodeDataUrl('https://example.com/icon.png', 1024)).toBeNull()
+  })
+})
+
+/** A type-1 `.ico` with one image per `[size, depth, fill]`, each image `size` bytes of `fill`. */
+function ico (images: ReadonlyArray<readonly [number, number, number]>): Uint8Array {
+  const header = 6 + images.length * 16
+  const out = new Uint8Array(header + images.reduce((sum, [size]) => sum + size, 0))
+  const view = new DataView(out.buffer)
+  view.setUint16(2, 1, true)
+  view.setUint16(4, images.length, true)
+  let offset = header
+  images.forEach(([size, depth, fill], i) => {
+    const entry = 6 + i * 16
+    out[entry] = size === 256 ? 0 : size
+    out[entry + 1] = size === 256 ? 0 : size
+    view.setUint16(entry + 4, 1, true)
+    view.setUint16(entry + 6, depth, true)
+    view.setUint32(entry + 8, size, true)
+    view.setUint32(entry + 12, offset, true)
+    out.fill(fill, offset, offset + size)
+    offset += size
+  })
+  return out
+}
+
+describe('oneIcoImage', () => {
+  it('keeps only the 32 px image of a 16, 32 and 64 px icon', () => {
+    const kept = oneIcoImage(ico([[16, 32, 1], [32, 32, 2], [64, 32, 3]]))
+    expect(kept).toEqual(ico([[32, 32, 2]]))
+  })
+
+  it('prefers the larger image, then the deeper colour, at the same distance from 32 px', () => {
+    expect(oneIcoImage(ico([[16, 32, 1], [48, 8, 2]]))).toEqual(ico([[48, 8, 2]]))
+    expect(oneIcoImage(ico([[32, 8, 1], [32, 32, 2]]))).toEqual(ico([[32, 32, 2]]))
+  })
+
+  it('leaves a one-image icon, a cursor, another format and a broken directory as they are', () => {
+    const single = ico([[16, 32, 1]])
+    expect(oneIcoImage(single)).toBe(single)
+    const cursor = ico([[16, 32, 1], [32, 32, 2]])
+    cursor[2] = 2
+    expect(oneIcoImage(cursor)).toBe(cursor)
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2])
+    expect(oneIcoImage(png)).toBe(png)
+    const pastTheEnd = ico([[16, 32, 1], [32, 32, 2]])
+    new DataView(pastTheEnd.buffer).setUint32(6 + 16 + 12, 10_000, true)
+    expect(oneIcoImage(pastTheEnd)).toBe(pastTheEnd)
+  })
+
+  it('is what toDataUrl encodes for a multi-image icon', () => {
+    expect(toDataUrl(ico([[16, 32, 1], [32, 32, 2], [64, 32, 3]]))).toBe(`data:image/x-icon;base64,${Buffer.from(ico([[32, 32, 2]])).toString('base64')}`)
   })
 })
