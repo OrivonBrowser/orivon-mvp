@@ -30,8 +30,8 @@
    kept 30 days, and the newest 10 crash dumps kept 30 days. A private session's folder goes when
    the session ends, and no page address is recorded for it.
 5. **Defaults the owner did not set** (*provisional*: settled by the legal review the DPIA
-   screening asks for): **Technical details** and **Recent log** are ticked when the form opens; the
-   page address and the dump are not. A report is sent even under `ORIVON_TELEMETRY=off`, which
+   screening asks for): **Technical details** and **Recent log** are ticked when the form opens, the
+   log not in a private window; the page address and the dump are not. A report is sent even under `ORIVON_TELEMETRY=off`, which
    governs telemetry, because a report is the person's own act. The server takes at most 6 reports
    an hour per address, 500 a day, and 2 GB of dumps (d-0558).
 6. **Retention and recipients.** The server keeps a report, with its dump, 90 days from the day it

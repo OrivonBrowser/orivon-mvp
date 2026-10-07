@@ -169,7 +169,7 @@ casella per ogni parte che puoi lasciare fuori.
 | `crash.message` | Il messaggio d'errore, se c'era |
 | `crash.stack` | In quale punto del codice di Orivon è avvenuto l'errore (lo stack delle chiamate) |
 | `diagnostics` | Dettagli tecnici, inviati quando **Dettagli tecnici** è spuntato, come è all'apertura del modulo. Che cosa contiene è elencato sotto |
-| `log` | Le ultime righe che Orivon ha scritto nel proprio registro, al massimo 1.000, inviate quando **Registro recente** è spuntato, come è all'apertura del modulo. Una riga può nominare una pagina o un file su cui Orivon stava lavorando |
+| `log` | Le ultime righe che Orivon ha scritto nel proprio registro, al massimo 1.000, inviate quando **Registro recente** è spuntato, come è all'apertura del modulo, tranne in una finestra privata, dove parte non spuntato. Una riga può nominare una pagina o un file su cui Orivon stava lavorando |
 | `page` | L'indirizzo della pagina che si è bloccata, inviato solo se spunti **L'indirizzo della pagina bloccata**. Mai offerto per una finestra privata |
 | `dump.base64` | Il dump del crash, inviato solo se spunti **Il dump del crash**: un'istantanea della memoria del processo che si è bloccato, al massimo 5 MB. Può contenere frammenti delle pagine aperte, compreso ciò che vi avevi scritto. A differenza del resto, il modulo non può mostrarne il contenuto |
 | `dump.bytes` | La dimensione del dump del crash |

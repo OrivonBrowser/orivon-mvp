@@ -155,7 +155,7 @@ report before you send it, and a box for each part you can leave out.
 | `crash.message` | The error message, if there was one |
 | `crash.stack` | Where in Orivon's code the error happened (the call stack) |
 | `diagnostics` | Technical details, sent when **Technical details** is ticked, as it is when the form opens. What it holds is listed below |
-| `log` | The last lines Orivon wrote to its own log, at most 1,000, sent when **Recent log** is ticked, as it is when the form opens. A line can name a page or a file Orivon was working with |
+| `log` | The last lines Orivon wrote to its own log, at most 1,000, sent when **Recent log** is ticked, as it is when the form opens, except in a private window, where it starts unticked. A line can name a page or a file Orivon was working with |
 | `page` | The address of the page that crashed, sent only if you tick **The crashed page's address**. Never offered for a private window |
 | `dump.base64` | The crash dump, sent only if you tick **The crash dump**: a snapshot of the memory of the process that crashed, at most 5 MB. It can hold fragments of the pages that were open, including what you typed into them. Unlike the rest, the form cannot show its contents |
 | `dump.bytes` | The size of the crash dump |
