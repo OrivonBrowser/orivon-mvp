@@ -23,7 +23,7 @@ ever.
 identifier" under GDPR, so pure opt-out sat in gray territory a privacy-branded browser cannot
 afford. An explicit choice is defensible as consent and keeps more data than opt-in.)*
 
-**The payload of this ADR** (the payload in force is ADR-0063's; this one shows what the three
+**The payload of this ADR** (the payload in force is ADR-0063's, with ADR-0064's country; this one shows what the three
 changes below remove and keep):
 ```jsonc
 {

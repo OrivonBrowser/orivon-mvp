@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InternalCaller } from '../internal-ipc.js'
 
 const runner = {
-  getTelemetryStatus: vi.fn(async (): Promise<unknown> => ({ off: undefined, status: { consent: 'undecided', region: 'EU', installId: null, everAccepted: false, usage: { period: '2026-10' }, sites: { sites: {} }, sent: [{ sentAtMs: 5 }] } })),
+  getTelemetryStatus: vi.fn(async (): Promise<unknown> => ({ off: undefined, status: { consent: 'undecided', country: 'IT', installId: null, everAccepted: false, usage: { period: '2026-10' }, sites: { sites: {} }, sent: [{ sentAtMs: 5 }] } })),
   setTelemetryOn: vi.fn(async (_on: boolean, _source: string) => true),
   eraseTelemetry: vi.fn(async (): Promise<string> => 'done')
 }

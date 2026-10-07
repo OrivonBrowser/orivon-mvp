@@ -27,7 +27,7 @@ function stateWith (accounting: AccountingState): SendCycleState {
 }
 
 function context (consent: ConsentState, installId = vi.fn(async () => INSTALL)): SendContext & { installId: ReturnType<typeof vi.fn> } {
-  return { consent: async () => consent, version: '0.1.0', region: 'EU', stream: 'cd'.repeat(16), installId, random: () => 0 }
+  return { consent: async () => consent, version: '0.1.0', country: 'IT', stream: 'cd'.repeat(16), installId, random: () => 0 }
 }
 
 function recordingSender (ok = true): { sender: Sender, sent: SentPayload[] } {
@@ -43,8 +43,8 @@ describe('runSendCycle', () => {
     const result = await runSendCycle(stateWith(browsingSince(september, 500)), context('accepted'), sender, now)
 
     expect(sent.map((payload) => 'sites' in payload ? 'sites' : 'usage')).toEqual(['usage', 'sites'])
-    expect(sent[0]).toMatchObject({ schema: 3, installId: INSTALL, period: '2026-09', activeSec: 500, classes: { web3: 500 } })
-    expect(sent[1]).toMatchObject({ schema: 3, installId: INSTALL, stream: 'cd'.repeat(16), sites: { 'web3:vitalik.eth': 500 } })
+    expect(sent[0]).toMatchObject({ schema: 4, installId: INSTALL, period: '2026-09', activeSec: 500, classes: { web3: 500 } })
+    expect(sent[1]).toMatchObject({ schema: 4, installId: INSTALL, stream: 'cd'.repeat(16), sites: { 'web3:vitalik.eth': 500 } })
     expect(result.state.history.entries.map((entry) => entry.payload)).toEqual(sent)
     expect(result.state.usage.transport.queue).toHaveLength(0)
   })

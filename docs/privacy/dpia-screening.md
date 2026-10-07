@@ -11,7 +11,7 @@ Two or more met usually means a DPIA is needed. Scope: the telemetry described i
 |---|---|---|---|
 | 1 | Evaluation or scoring, including profiling | No | The seconds counted describe the browser's use, not a judgement of a person. The Web3 Score rates sites, not people, and is not sent |
 | 2 | Automated decisions with legal or similar effect | No | No decision is made about anyone |
-| 3 | Systematic monitoring | Partly | Active and background seconds are counted continuously and sent daily. It is measurement of use of one product, not of a public place or of what the person reads, and it is off until the person chooses to share |
+| 3 | Systematic monitoring | Partly | Active and background seconds are counted continuously and sent daily and at each browser start and quit. It is measurement of use of one product, not of a public place or of what the person reads, and it is off until the person chooses to share |
 | 4 | Sensitive data or highly personal data | Partly | No special-category data is collected. A site name could suggest one by inference (a site about health, politics or religion that has a public Web3 or Web2.5 name). The named-site seconds of one install, linked to its identifier for at most two months, are the nearest thing to this |
 | 5 | Large scale | No | The aim is on the order of a hundred active users. Re-screen if that grows by an order of magnitude |
 | 6 | Matching or combining datasets | No | The usage and site reports share one install identifier because they serve one telemetry purpose, have one controller and are both disclosed. WP248 criterion 6 is about datasets from different processing operations or different controllers; nothing is joined with other sources |
@@ -24,7 +24,7 @@ Two or more met usually means a DPIA is needed. Scope: the telemetry described i
 **A full DPIA is not required for the design as it stands**, because at most criteria 3 and 4 are
 partly met, the data are counters, consent is an active, unambiguous choice and withdrawable, the volume is small, and the
 named-site rows keep the identifier for at most two months. The margin is narrow, and this result is *provisional*: the legal review before a public launch
-settles it. It is a close call on two points, and the record says so rather than hiding them:
+settles it. It is a close call on three points, and the record says so rather than hiding them:
 
 1. **The install identifier is derived from the machine's own ID.** It is a one-way hash, so the
    machine ID cannot be read from it, and it is made only after consent. But it is a stable device
@@ -38,11 +38,18 @@ settles it. It is a close call on two points, and the record says so rather than
    the rows are folded into totals with no identifier. The IP address is not written to disk (it
    is held in memory only, for a per-address rate limit), and the public name rule keeps ordinary
    Web2 sites out of it altogether.
+3. **The usage report names the country of the time zone.** A country is coarser than any
+   address and is worked out on the computer, but in a small population a country with one or
+   two installs narrows who they are, in the per-install rows and in the monthly totals that
+   outlive them. The rows are pseudonymous and the totals carry no identifier; this is why a
+   country with very few installs is a reason to re-screen.
 
 ## Re-screen when
 
 - Site rows are kept past one month after their month closes.
 - A field is added to either message, or any per-page information is considered.
+- A country's monthly totals come from so few installs that one person's use can be read from
+  them.
 - The number of active users grows by an order of magnitude, or the first-run choice is replaced by a preselected
   option.
 - The server is moved, a processor is added, or an IP address is written anywhere.

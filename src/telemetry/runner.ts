@@ -25,7 +25,7 @@ import {
   IS_TEST_BUILD, endpointUrl, ingestBaseUrl, modeInputsFromEnv, telemetryHome, telemetryOffReason, testOverrides,
   type Endpoint, type OffReason
 } from './mode.js'
-import { regionOfTimeZone, systemTimeZone } from './region.js'
+import { countryOfTimeZone, systemTimeZone } from './country.js'
 import { CHECKPOINT_INTERVAL_MS, IDLE_INTERACTION_THRESHOLD_SEC, SEND_CHECK_INTERVAL_MS } from './schedule.js'
 import { TelemetryService, type TelemetryStatus } from './service.js'
 import { TelemetryStore } from './store.js'
@@ -34,6 +34,7 @@ import type { TrackedWindow } from './window-focus.js'
 
 const FETCH_TIMEOUT_MS = 10_000
 const MACHINE_ID_TIMEOUT_MS = 3_000
+const START_SEND_DELAY_MS = 10_000
 
 async function post (endpoint: Endpoint, body: SentPayload | ErasePayload): Promise<boolean> {
   const { net } = await import('electron')
@@ -103,7 +104,7 @@ async function buildService (app: App): Promise<TelemetryService> {
     store,
     system: new SystemStore(home),
     version: app.getVersion(),
-    region: () => regionOfTimeZone(systemTimeZone()),
+    country: () => countryOfTimeZone(systemTimeZone()),
     machineReaders: realMachineReaders,
     randomId: () => randomBytes(16).toString('hex'),
     clock: () => Date.now(),
@@ -147,7 +148,18 @@ async function startTelemetry (app: App, servicePromise: Promise<TelemetryServic
   }
   setInterval(() => { void checkpointTick() }, tickMs ?? CHECKPOINT_INTERVAL_MS)
   setInterval(() => { void sendTick() }, tickMs ?? SEND_CHECK_INTERVAL_MS)
-  void checkpointTick().then(sendTick)
+  const sendAtStart = async (): Promise<void> => {
+    try {
+      await service.sendNow()
+    } catch (error) {
+      console.error('[orivon] telemetry send failed:', error)
+    }
+  }
+  // Both reports go once at start, past the random offset and the daily gate; the server keeps the newest
+  // of a month's reports. Delayed because this runs before the first window exists, and the first send
+  // reads the machine identifier and the country. A quit inside the delay still sends. A test tick
+  // shortens the delay, never lengthens it.
+  void checkpointTick().then(() => { setTimeout(() => { void sendAtStart() }, Math.min(tickMs ?? START_SEND_DELAY_MS, START_SEND_DELAY_MS)) })
 }
 
 export const telemetrySubsystem: Subsystem = {

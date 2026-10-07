@@ -7,7 +7,7 @@ import type { ConsentState } from './disclosure.js'
  * Bump on any change to what is sent or to the notice that describes it: an acceptance given under an
  * older version no longer counts, so nothing is sent until the person chooses again.
  */
-export const NOTICE_VERSION = 3
+export const NOTICE_VERSION = 4
 
 export type ConsentSource = 'welcome' | 'settings'
 

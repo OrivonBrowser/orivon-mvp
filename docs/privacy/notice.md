@@ -1,6 +1,6 @@
 # Privacy notice
 
-Notice version: 3
+Notice version: 4
 
 Orivon Browser keeps your browsing history on your computer. This page says what leaves it, why, and
 what you can do about it. It is written for the person using the browser; the engineering list
@@ -27,7 +27,7 @@ project. Write to privacy@orivonstack.com for anything in this notice.
 
 ## What telemetry sends
 
-Two messages leave: when you turn telemetry on, about once a day after that, when you quit the browser, and once more at the start of a month to close the previous month's totals. One more message leaves when you ask us to delete your data.
+Two messages leave: when you turn telemetry on, when you start and when you quit the browser, about once a day in between, and once more at the start of a month to close the previous month's totals. One more message leaves when you ask us to delete your data.
 Settings > Privacy shows the literal text of each before and after it is sent.
 
 | Field | Message | What it is |
@@ -35,7 +35,7 @@ Settings > Privacy shows the literal text of each before and after it is sent.
 | `schema` | all | The version of the message layout, a number |
 | `installId` | usage report, site report, erase request | An identifier for this computer, 32 characters. It comes from the operating system's machine ID run through a one-way hash, so it cannot be turned back into the machine ID. It is the same for every profile of the browser on this computer, and for a build run from source and an installed one. It is made only after you turn telemetry on. The site report carries it too, so that reports a program forged can be told from yours |
 | `stream` | usage report, site report | A random value made once for each browser profile. Two profiles open at the same time are each counted, and added up as one computer by the install ID, so they are not two people |
-| `region` | usage report | `EU`, `US` or `other`, worked out on your computer from its time zone. It is never taken from your IP address |
+| `country` | usage report | The country of your computer's time zone, as a two-letter code such as `IT` or `US`, worked out on your computer from the time zone setting; `unknown` when the time zone names no country, such as `UTC`. It is the time zone's country, not proof of where you are, and it is never taken from your IP address |
 | `version` | usage report, site report | The version of Orivon Browser |
 | `period` | usage report, site report | The month, such as `2026-10`. The message is a total for the month so far, sent again with a larger total on later days |
 | `activeSec` | usage report | Seconds in the month you were using the browser: the window focused and you active |
@@ -61,7 +61,7 @@ spent on each over a month; it is the closest thing to browsing information we s
 the sites you spend time on are linked to that ID for the month and the month after, and then
 kept only as per-site totals with no ID, as the next section says.
 
-Sent when you turn telemetry on, about once a day, when you quit the browser, and at the start of a month once more to close the previous month's totals. Nothing is sent from a development build, from a private window, or
+Sent when you turn telemetry on, when you start and when you quit the browser, about once a day in between, and at the start of a month once more to close the previous month's totals. Nothing is sent from a development build, from a private window, or
 when `ORIVON_TELEMETRY=off` is set. Nothing is sent before you choose. The browser ignores
 everything the server answers: the server cannot change settings or send commands.
 
@@ -89,7 +89,7 @@ us to delete them.
 ## What we keep, and for how long
 
 - **Usage rows**, one per computer and profile and month: 12 months, then only totals that cannot
-  be traced to a computer remain (the number of active users, the split by region and class).
+  be traced to a computer remain (the number of active users, the split by country and class).
 - **Site reports**: a list of sites with seconds, with your install ID, kept for the month, then,
   one month after the month closes, folded into totals per site for all users together, and the
   individual reports deleted. Until then each row carries your install ID; afterwards no ID.

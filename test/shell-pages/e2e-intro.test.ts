@@ -287,7 +287,7 @@ it('Enter and share telemetry records accepted for the whole computer, from the 
     const intro = introPage(app) as Page
     await intro.click('#enter-with-telemetry')
     expect(await waitFor(() => introPage(app) === undefined && windowCount(app) === 2)).toBe(true)
-    expect(await consentOf(home)).toMatchObject({ state: 'accepted', source: 'welcome', noticeVersion: 3 })
+    expect(await consentOf(home)).toMatchObject({ state: 'accepted', source: 'welcome', noticeVersion: 4 })
   } finally {
     await closeElectron(app)
   }
@@ -315,7 +315,7 @@ it('Enter without telemetry records declined, and the keyboard works: Tab to a b
 
 it('does not ask again once the computer has a choice, accepted or declined, and the screen is the ordinary one', async () => {
   for (const state of ['accepted', 'declined']) {
-    const home = await newHome({ state, atMs: Date.now(), noticeVersion: 3, source: 'settings' })
+    const home = await newHome({ state, atMs: Date.now(), noticeVersion: 4, source: 'settings' })
     const app = await askingTelemetry(home)
     try {
       expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)

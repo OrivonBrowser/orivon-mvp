@@ -13,10 +13,10 @@ import { attemptSend, enqueue, initialTransportState, type Clock, type Sender } 
 // varies, the way a real caller would advance from month to month.
 function payloadFor (period: string): UsagePayload {
   return {
-    schema: 3,
+    schema: 4,
     installId: '4c2f2f3a111144448888abcde1234567',
     stream: 'ab'.repeat(16),
-    region: 'EU',
+    country: 'IT',
     version: '0.1.0',
     period,
     activeSec: 90000,

@@ -93,7 +93,7 @@ export function renderUsage (state: SettingsState): HTMLElement {
       status.installId === null || status.installId === undefined ? null : h('p', { className: 'muted' }, 'Your install ID: ', h('code', { id: 'usage-install-id', textContent: status.installId })),
       h('details', null,
         h('summary', { textContent: 'What is sent' }),
-        h('p', { className: 'muted', textContent: 'The usage report, the exact text. Your region comes from your time zone.' }),
+        h('p', { className: 'muted', textContent: 'The usage report, the exact text. Your country comes from your time zone.' }),
         h('pre', { className: 'json', id: 'usage-json', textContent: JSON.stringify(status.usage, null, 2) }),
         h('p', { className: 'muted', textContent: 'The sites report, sent under the same install ID as the usage report.' }),
         h('pre', { className: 'json', id: 'sites-json', textContent: JSON.stringify(status.sites, null, 2) })),

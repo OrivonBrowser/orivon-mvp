@@ -16,7 +16,7 @@ import {
 import { initialKindState, runSendCycle, withdrawn, type SendCycleState } from './engine.js'
 import type { HistoryEntry } from './history.js'
 import { resolveInstallId, type MachineIdReaders } from './install-id.js'
-import type { Region } from './region.js'
+import type { Country } from './country.js'
 import type { SystemStore } from './system-store.js'
 import type { TelemetryStore } from './store.js'
 import type { Sender } from './transport.js'
@@ -26,7 +26,7 @@ export interface ServiceDeps {
   readonly store: TelemetryStore
   readonly system: SystemStore
   readonly version: string
-  readonly region: () => Region
+  readonly country: () => Country
   readonly machineReaders: MachineIdReaders
   readonly randomId: () => string
   readonly clock: () => number
@@ -42,7 +42,7 @@ export interface ServiceDeps {
 
 export interface TelemetryStatus {
   readonly consent: ConsentState
-  readonly region: Region
+  readonly country: Country
   /** Whether the person ever accepted: with no acceptance nothing was sent, so there is nothing to delete. */
   readonly everAccepted: boolean
   /** The ID this computer reports under, once telemetry is on; null before, because the machine is not read until then. */
@@ -213,7 +213,7 @@ export class TelemetryService {
     const result = await runSendCycle(this.cycle, {
       consent: () => this.consent(),
       version: this.deps.version,
-      region: this.deps.region(),
+      country: this.deps.country(),
       stream: this.deps.store.getStream(),
       installId: () => this.installId(),
       ...(this.deps.offsetWindowMs === undefined ? {} : { offsetWindowMs: this.deps.offsetWindowMs }),
@@ -271,10 +271,10 @@ export class TelemetryService {
     const period = periodOf(this.deps.clock())
     return {
       consent,
-      region: this.deps.region(),
+      country: this.deps.country(),
       everAccepted: (await this.consentRecord()).everAccepted,
       installId,
-      usage: buildUsagePayload(this.accounting, { installId: installId ?? INSTALL_ID_PLACEHOLDER, stream: this.deps.store.getStream(), region: this.deps.region(), version: this.deps.version, period }),
+      usage: buildUsagePayload(this.accounting, { installId: installId ?? INSTALL_ID_PLACEHOLDER, stream: this.deps.store.getStream(), country: this.deps.country(), version: this.deps.version, period }),
       sites: buildSitesPayload(this.accounting, { installId: installId ?? INSTALL_ID_PLACEHOLDER, stream: this.deps.store.getStream(), version: this.deps.version, period }),
       sent: this.deps.store.getHistoryState().entries
     }
