@@ -9,6 +9,8 @@ const startWebStore = vi.fn(async () => ({
 }))
 const installApis = vi.fn()
 let published: any
+let registryExists = true
+const seedBundledExtensions = vi.fn(async () => {})
 
 vi.mock('electron', () => ({ session: { defaultSession: { extensions: { loadExtension } } } }))
 vi.mock('../extension-host.js', () => ({ createExtensionHost: () => ({ getRouter: () => ({}) }), extensionPagesAroundReload: {} }))
@@ -23,7 +25,9 @@ vi.mock('../extensions-install-test-hook.js', () => ({ installExtensionsInstallT
 vi.mock('../api/install-apis.js', () => ({ installApis }))
 vi.mock('../side-panel-runner.js', () => ({ closeSidePanels: vi.fn(async () => {}) }))
 vi.mock('../install-extension-commands.js', () => ({ installExtensionCommands: () => ({ whenReady: async () => {}, getAll: () => [] }) }))
-vi.mock('../registry-runner.js', () => ({ readRegistry: () => [{ id: 'a'.repeat(32), name: 'x', enabled: true, path: '/slot/1' }] }))
+vi.mock('../registry-runner.js', () => ({ readRegistry: () => [{ id: 'a'.repeat(32), name: 'x', enabled: true, path: '/slot/1' }], registryFileExists: () => registryExists }))
+vi.mock('../seed-bundled.js', () => ({ seedBundledExtensions }))
+vi.mock('../../default-profile/default-profile-dir.js', () => ({ currentDefaultProfileDir: () => '/default-profile' }))
 vi.mock('../../registry.js', () => ({ publishExtensions: (_ctx: unknown, api: unknown) => { published = api } }))
 
 const { extensionsSubsystem } = await import('../extensions-subsystem.js')
@@ -38,6 +42,9 @@ beforeEach(() => {
   loadExtension.mockClear()
   startWebStore.mockClear()
   installApis.mockClear()
+  seedBundledExtensions.mockClear()
+  registryExists = true
+  vi.unstubAllEnvs()
   published = undefined
 })
 
@@ -66,5 +73,25 @@ describe('extensionsSubsystem.afterReady', () => {
     expect(loadExtension).toHaveBeenCalledTimes(1)
     expect(startWebStore).toHaveBeenCalledTimes(1)
     expect(installApis).toHaveBeenCalledTimes(1)
+  })
+
+  it('seeds the bundled extensions into an ordinary profile that has no registry yet, and into no other', async () => {
+    registryExists = false
+    await extensionsSubsystem.afterReady!(ctx(false))
+    expect(seedBundledExtensions).toHaveBeenCalledTimes(1)
+    expect(seedBundledExtensions.mock.calls[0]).toEqual([expect.objectContaining({ userDataPath: '/profile' }), '/default-profile'])
+
+    seedBundledExtensions.mockClear()
+    registryExists = true
+    await extensionsSubsystem.afterReady!(ctx(false))
+    expect(seedBundledExtensions).not.toHaveBeenCalled()
+  })
+
+  it('seeds nothing in a private runtime, or when the default profile is switched off', async () => {
+    registryExists = false
+    await extensionsSubsystem.afterReady!(ctx(true))
+    vi.stubEnv('ORIVON_DEFAULT_PROFILE', 'off')
+    await extensionsSubsystem.afterReady!(ctx(false))
+    expect(seedBundledExtensions).not.toHaveBeenCalled()
   })
 })

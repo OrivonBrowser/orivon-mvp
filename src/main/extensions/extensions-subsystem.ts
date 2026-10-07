@@ -10,7 +10,10 @@ import { join } from 'node:path'
 import { session, webContents } from 'electron'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { publishExtensions } from '../registry.js'
-import { readRegistry } from './registry-runner.js'
+import { readRegistry, registryFileExists } from './registry-runner.js'
+import { defaultProfileOn } from '../default-profile/default-profile.js'
+import { currentDefaultProfileDir } from '../default-profile/default-profile-dir.js'
+import { seedBundledExtensions } from './seed-bundled.js'
 import { installFromFile, installFromFolder, type InstallContext, type InstallOutcome, type InstallWhere } from './install-runner.js'
 import { setEnabled, uninstall } from './install-lifecycle.js'
 import { createExtensionInstallPrompt } from './extension-install-prompt.js'
@@ -125,11 +128,16 @@ export const extensionsSubsystem: Subsystem = {
     const commandKeys = installExtensionCommands({ ctx, prefs, userDataPath })
     provideCommandKeys(commandKeys)
 
+    // Read before anything can write the registry: a file that exists, even an empty list, means the person
+    // already decided what is installed.
+    const startsFromDefaultProfile = !ctx.privateSession && defaultProfileOn(process.env) && !registryFileExists(userDataPath)
+
     // A private or guest runtime runs no extension: nothing loads and every
     // install route refuses; the store page's hook still starts (below).
     if (!ctx.privateSession) await loadEnabledExtensions(userDataPath)
 
     const install: InstallContext = { userDataPath, session: session.defaultSession, prompt: createExtensionInstallPrompt(), prefs, privateSession: ctx.privateSession, pinInstalled: () => shellServices()?.settings.get('extensions.pinInstalled') === true, clearExtensionStorage: async (id) => { await clearChromeStorage(session.defaultSession, id) }, closeSidePanels }
+    if (startsFromDefaultProfile) await seedBundledExtensions(install, currentDefaultProfileDir())
     const preloadPath = join(import.meta.dirname, '../preload/web-store.js')
     // Started in every runtime: a store tab in a private window must never reach the native
     // `chrome.webstorePrivate`. In a private one installs are denied inside it.

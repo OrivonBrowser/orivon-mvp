@@ -4,8 +4,8 @@ Read by [`src/main/default-profile/`](../../src/main/default-profile/), which sa
 
 **`bundled-extensions.json`.** The extensions a new profile installs, pinned to a release asset and its
 sha256. `scripts/fetch-bundled-extensions.mjs` downloads each into `extensions/` (git ignores it) and refuses
-a file whose digest differs. uBlock Origin 1.75.0 is signed by its developer's key, so it installs under its
-own stable id, `cjpalhdlnbpafiamejdnhcphjbkeiagm`. A newer release is a change to the entry's version, url
+a file whose digest differs. uBlock Origin 1.75.0 is signed by its developer's release key, so it installs under the
+id that key gives, `fkgkibajhfbepljeaefdnfnegdcjomkh`, on every profile (the Chrome Web Store's copy has another id). A newer release is a change to the entry's version, url
 and sha256; a profile that already has uBlock Origin keeps the version it has.
 
 **`bookmark-icons/`.** Each bookmark's icon, 96 by 96 pixels, shown only to name the site it belongs to; the

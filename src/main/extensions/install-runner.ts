@@ -112,6 +112,8 @@ export interface PendingInstall {
    * to refuse anyway if it widens what is granted) -- installFromStoreCrx's
    * own doc says which of its callers sets this and which does not. */
   readonly preApproved?: boolean
+  /** Pins (or not) a fresh install, in place of the `pinInstalled` setting: the choice of the one who bundled it. */
+  readonly pin?: boolean
   /** Writes the loaded copy at `targetDir`, with `manifestJson` (already
    * carrying its resolved `key`) in place of `manifest.json` -- everything
    * install-runner.ts's caller-specific step (folder copy, or the
@@ -249,7 +251,7 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
   // A fresh install with no pin of the person's own is pinned, or not, by the setting as it is now, before the
   // load so the toolbar never shows an icon that goes. A failed load puts it back to unchosen below.
   const recordedPin = ctx.prefs !== undefined && previousInSlot.length === 0 && ctx.prefs.get(id).pinned === null
-  if (recordedPin) ctx.prefs?.update(id, { pinned: ctx.pinInstalled?.() ?? false })
+  if (recordedPin) ctx.prefs?.update(id, { pinned: pending.pin ?? ctx.pinInstalled?.() ?? false })
   const forgetPin = (): void => { if (recordedPin) ctx.prefs?.update(id, { pinned: null }) }
 
   if (enabled) {
@@ -344,6 +346,16 @@ export async function installFromFolder (ctx: InstallContext, dir: string, where
  * slot is derived from the file's own bytes, never from a claimed identity.
  */
 export async function installFromFile (ctx: InstallContext, filePath: string, where?: InstallWhere): Promise<InstallOutcome> {
+  return await installPackedFile(ctx, filePath, where, {})
+}
+
+/** Installs a packed extension that ships with Orivon, with no question: the person chose Orivon, not this extension,
+ * so there is nobody to ask and the signed file is the whole of what is checked. `pinned` is whether its icon is in the toolbar. */
+export async function installBundled (ctx: InstallContext, filePath: string, options: { readonly pinned: boolean }): Promise<InstallOutcome> {
+  return await installPackedFile(ctx, filePath, undefined, { preApproved: true, pin: options.pinned })
+}
+
+async function installPackedFile (ctx: InstallContext, filePath: string, where: InstallWhere | undefined, extra: Pick<PendingInstall, 'preApproved' | 'pin'>): Promise<InstallOutcome> {
   const refused = refusePrivateInstall(ctx)
   if (refused !== undefined) return refused
   const bytes = Buffer.from(readFileSync(filePath))
@@ -366,6 +378,7 @@ export async function installFromFile (ctx: InstallContext, filePath: string, wh
     source: { kind: 'file', fileName: filePath },
     updater: { kind: 'none', reason: 'installed from a local file' },
     slot,
+    ...extra,
     ...(crx === undefined ? {} : { developerPublicKey: crx.developerPublicKey }),
     write: (targetDir, manifestJson) => {
       unpackZip(archive, targetDir)
