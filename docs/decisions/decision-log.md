@@ -21,7 +21,7 @@ guessed. Rows with no ID were lifted out of the prose of the documents named bes
 
 | ID | Date | Decision | Cited by |
 |---|---|---|---|
-| `d-0017` | 2026-09-05 | Accepting a below-floor version persists it as the new pin; remembered per origin and never re-prompted | [`ADR-0013`](ADR-0013-rollback-is-warned-and-chosen-not-blocked.md) |
+| `d-0017` | 2026-09-05 | Accepting a below-floor version persists it as the new pin; the acknowledgement is remembered per origin for that exact version, so a rollback to any other version asks again | [`ADR-0013`](ADR-0013-rollback-is-warned-and-chosen-not-blocked.md) |
 | `d-0020` | 2026-09-06 | `window.orivon`'s `net` surface is built on `contextBridge.executeInMainWorld` | [`ADR-0014`](ADR-0014-main-world-streams-via-experimental-api.md) |
 | `d-0021` | | `WriteMessage.chunk` must never exceed `LIMITS.writeWindowBytes`; the caller splits | `src/contracts/ipc.ts` |
 | `d-0022` | 2026-09-06 | The user-facing grant prompt is built at build step 4, not step 2 | `../planning/build-plan.md`, `../open-questions.md` A36 |
@@ -446,7 +446,7 @@ moved here so those documents can state the behaviour without the provenance.
 | 2026-09-10 | The async rule narrows to network operations; `fs` gains `readFileSync` | ADR-0016, `../architecture/capability-api.md` |
 | 2026-09-15 | `main` syncs with `origin` by `--ff-only`, unprompted on a clean tree; on a dirty tree the agent reports and does not act | `CLAUDE.md` |
 | 2026-09-21 | Ported third-party apps and the porting harness move to `orivon-ports`; `apps/` here keeps the flagship and the test fixtures | ADR-0020, `CLAUDE.md`, `ARCHITECTURE.md` |
-| 2026-09-22 | A port couples to the shell through storage assertions, not only a test path; where those assertions belong is unsettled | ADR-0020, open-questions B5 |
+| 2026-09-22 | A port couples to the shell through storage assertions, not only a test path; where those assertions belong is unsettled | ADR-0020, open-questions B7 |
 | 2026-09-22 | The apps the test suite serves move to `test/apps/`; there is no top-level `apps/` directory. `test/apps/` is carved out of Rule 2's "test file" definition so the comment and size guards keep covering it | ADR-0020, `CLAUDE.md`, `ARCHITECTURE.md`, `../development/code-guidelines.md` |
 | 2026-09-22 | `apps/torrent/` is removed; the flagship has no directory here until build step 5 opens, and `build-plan.md` holds its design | ADR-0001, `../planning/build-plan.md`, `../scope.md` |
 | 2026-09-22 | `src/main/` is organised into nine job-named directories, following the naming convention (not the directory count) `src/broker/` set | ADR-0023, ADR-0015 |
