@@ -137,7 +137,8 @@ extraResources:
 # The icon src/main/shell/window-frame.ts hands to BaseWindow, copied into every
 # system's resources folder (process.resourcesPath) so a packaged build can load it; a
 # run from source reads the repo's build/icon.png. Best-effort for the window itself:
-# GNOME's dock keys off the .desktop entry instead (StartupWMClass=orivon below).
+# GNOME's dock keys off the .desktop entry instead (StartupWMClass=orivon below). A run
+# from source shows build/icon-source.png, under a window class of its own (ADR-0057).
 
 linux:
   target:
@@ -194,17 +195,15 @@ linux:
 
   desktop:
     entry:
-      Name: Orivon
+      Name: Orivon Browser
       Comment: A browser that runs applications Chrome cannot
       Type: Application
       Terminal: false
       StartupWMClass: orivon
-      # Matches executableName above so window-manager/taskbar matching keys off the
-      # same string window and launcher agree on. Unconfirmed against a real packaged
-      # launch's actual WM_CLASS -- src/main sets no explicit app name today (checked:
-      # no `app.setName`/`BrowserWindow` title override exists in src/main/*.ts as of
-      # this writing), so Electron's runtime default may not match this string until
-      # someone sets one. Worth a first-build check, not a blocker.
+      # A packaged build's window class: Electron names its windows after package.json's
+      # `name` (WM_CLASS "orivon", "orivon"; the Wayland app id comes from `desktopName`,
+      # orivon.desktop). A run from source renames itself `orivon-source` before its first
+      # window (src/main/launch/start-launch.ts), so the dock never files it here.
 
 deb:
   packageCategory: web

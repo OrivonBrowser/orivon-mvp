@@ -108,8 +108,9 @@ Also mandatory:
 On Linux, `npm install` (the `postinstall` hook) and `npm run install:electron` turn `grantFileProtocolExtraPrivileges`
 off and `enableCookieEncryption` on in `node_modules/electron/dist/electron`, as `electron-builder.yml` sets them for a
 package (`CHECKOUT_FUSES` in `scripts/install-electron.mjs`; a unit test fails when the two disagree). Cookie encryption
-is one-way per profile: a run from source shares the default profile with an installed package (ADR-0057), and a binary
-without the fuse reads none of the cookies the package encrypted and deletes them, signing the person out of every site.
+is one-way per profile: a binary without the fuse reads none of the cookies an encrypting binary wrote and deletes them,
+signing the person out of every site. A run from source has a profile of its own (`~/.config/orivon-source`, ADR-0057),
+which the fuse keeps readable when it moves between a checkout and a package.
 Every test launch passes `--password-store=basic`, so the cookie key never comes from the desktop's keyring.
 With the file-protocol fuse off, a `file:` page's module scripts are blocked (a null origin), a canvas read of a sibling image
 throws `SecurityError` and `fetch` of a sibling file rejects, so the shell's own pages load from

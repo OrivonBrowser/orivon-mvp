@@ -103,8 +103,8 @@ npm install      # or symlink the main checkout's: ln -s <repo>/node_modules nod
 A new worktree starts without `node_modules`, so it needs one of those two.
 
 **Run `npm run install:electron` in a checkout after syncing `main` once.** It sets the fuses a package
-sets that a run from source depends on, in that checkout's Electron binary: the file-protocol fuse off
-(ADR-0059) and cookie encryption on (ADR-0057). A checkout's binary keeps Electron's own fuses until the
+sets in that checkout's Electron binary, so a run from source stores and loads as a package does: the
+file-protocol fuse off (ADR-0059) and cookie encryption on (ADR-0057). A checkout's binary keeps Electron's own fuses until the
 script runs there; `npm install` runs it too, `npm start` runs it (`--fuses`) before every launch and
 on Linux launches nothing unless they are set, and `scripts/launch-from-source.mjs` runs it when nothing runs
 the binary. A worktree whose

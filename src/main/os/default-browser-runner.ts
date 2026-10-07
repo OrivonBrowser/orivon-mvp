@@ -62,7 +62,7 @@ async function xdg (tool: 'xdg-mime' | 'xdg-settings', args: string[]): Promise<
   }
 }
 
-// Electron's own calls name `desktopName` from package.json, the installed package's entry; a run from source names its
+// Electron's own calls name the installed package's entry (`desktopName` in package.json); a run from source names its
 // own, with the same tool Electron runs.
 const systemHost: DefaultBrowserHost = {
   get platform () { return process.platform },
