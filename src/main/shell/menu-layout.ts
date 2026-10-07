@@ -92,6 +92,7 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
   'profiles.open',
   'settings.open',
   '-',
+  'report.open',
   'about.open',
   'app.quit'
 ]
