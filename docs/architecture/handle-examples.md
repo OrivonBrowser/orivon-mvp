@@ -158,7 +158,7 @@ anything that can reach this handle sign literally anything under the user's ide
 ```ts
 async function publishNote(content: string): Promise<void> {
   const identity = await orivon.id.requestIdentity({ kind: 'nostr' })
-  if (identity === null) return // user declined the connect prompt
+  if (identity === null) return // the person declined, or the connect was refused
 
   const pubkey = await identity.publicKey()
   const unsigned = {

@@ -23,16 +23,16 @@ is replaced per library (§Where WASM fits). Where Orivon's Node environment fal
 Node, [`compatibility-matrix.md`](../planning/compatibility-matrix.md) lists the gap, and each
 gap is taken case by case.
 
-## What this implies for this version
+## What this implies today
 
-**This version's apps are tier 2.** Build step 5 ports Node.js and Electron desktop apps (FreeTube,
+**Today's apps are tier 2.** Orivon ports Node.js and Electron desktop apps (FreeTube,
 Element, AirGap Vault, ASGARDEX), each its own unmodified frontend plus one bridge file, in
-`orivon-ports`. Tier 2 is where the thesis is most literal: software that had to be a desktop app
+`orivon-ports`. Tier 2 is where the platform is most literal: software that had to be a desktop app
 because a web page could not reach the network or the disk.
 
 **Nostr would be tier 1, at ~1 day.** Orivon would inject `window.nostr` (NIP-07) backed by
 `orivon.id`, and every existing Nostr web client would work unmodified with no extension
-installed. It is an idea, not a build step (`../scope.md` §LATER).
+installed. It is an idea, not a build step (`../roadmap.md`).
 
 **Mastodon was considered and rejected** (ADR-0001). Its *client* is tier 1, but the system
 is not trustless: identity is `@user@instance`, owned by the instance admin, and the feed
@@ -45,7 +45,7 @@ has. It is an idea, not a build step; `../planning/torrent-app.md` keeps what is
 Reuse is available even there: `webtorrent-desktop` is MIT-licensed Electron with a working
 player UI whose components can be lifted.
 
-**Bisq is tier 3** and is not in this version. Its UI is JavaFX, so nothing is reusable: it needs
+**Bisq is tier 3** and is a later direction (`../roadmap.md`). Its UI is JavaFX, so nothing is reusable: it needs
 both a new frontend *and* a bundled JVM, for an app used episodically rather than daily.
 
 > **A fourth path for tier 3, parked:**
@@ -55,9 +55,9 @@ both a new frontend *and* a bundled JVM, for an app used episodically rather tha
 > waits on `hid` (below). Not built, unverified, and it reopens `subprocess`. But the
 > "must rewrite" column above is not the only option, and that document says what it would cost.
 
-**What tier 2 actually reaches in v0.** Ledger Live, Trezor Suite and Frame are
-**hardware-wallet applications requiring `hid`/USB**, which `capability-api.md` excludes from v0
-entirely, for every tier. The apps build step 5 ports are the v0 examples; the wallet cluster
+**What tier 2 actually reaches today.** Ledger Live, Trezor Suite and Frame are
+**hardware-wallet applications requiring `hid`/USB**, which `capability-api.md` excludes
+entirely, for every tier. The apps ported today are the examples; the wallet cluster
 waits on `hid`, a capability not built yet.
 
 **"Swap Node calls for the shim" understates the shim's real surface.** Running `webtorrent` in a
@@ -132,9 +132,8 @@ also opens sockets through `orivon.net`. The same shape is what native modules a
 become for a ported app: an addon's WebAssembly build, a WASI program or component for `spawn`, a
 Web Worker for `fork`. Native machine code never runs for an app.
 
-**Not `orivon-runtime`.** The Wasmtime host `ADR-0002` defers is a separate thing, still not
-built. Its real jobs are narrower: containment for untrusted third-party code, and portability to
-mobile.
+**Not a sandbox.** This layer authorises; it does not contain. WebAssembly grows inside it, and a
+switch to a WebAssembly runtime is a possible future option, not a plan.
 
 ## Licensing caution
 

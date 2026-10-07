@@ -34,7 +34,7 @@ A bundle is **rejected before hashing**, with no root computed, if any of the fo
 > Checking it means JSON-parsing the app's own manifest (untrusted bytes from a possibly
 > hostile host) inside what is otherwise a pure byte-level function with no parse step and no
 > interesting failure modes. **The check still happens; it belongs to the app loader**
-> (`build-plan.md` step 4), which must parse the manifest anyway. A reimplementer of *this*
+> (the app loader), which must parse the manifest anyway. A reimplementer of *this*
 > document is not expected to perform it, and an implementation that skips it is conformant.
 
 ## Canonical path
@@ -63,7 +63,7 @@ running the fetch URL through a URL parser. A tool that starts from filenames fo
 A `file:` URL parses perfectly well and has a `pathname` that reads exactly like an asset path,
 since `file:///etc/passwd` gives `/etc/passwd`, and must never be able to produce one. App assets are
 fetched over https at the app's real origin (`ADR-0007`); `http:` is admitted only for the
-localhost dev fixture (`build-plan.md` step 4).
+localhost dev fixture (the app loader).
 
 Verified empirically (Node 24.11.1, 2026-08-26; see `ADR-0009`'s coordination notes for the
 Electron-context caveat):

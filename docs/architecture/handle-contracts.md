@@ -1,4 +1,4 @@
-# Handle contracts: v0 specification
+# Handle contracts specification
 
 > This document defines the five handle types named but not specified in
 > `capability-api.md` §v0 surface: `TcpSocket`, `TcpServer`, `UdpSocket`, `FileHandle`,
@@ -67,10 +67,10 @@ class OrivonError extends Error {
   bug, not a case to silently ignore. Adding a code is a breaking change once
   `orivonApiVersion` reaches 1; see §Versioning.
 - `platformCode` carries the underlying engine's own detail, a Node errno today
-  (`ECONNREFUSED`, `ENOENT`, ...), whatever WASI or Mojo expose later. **Advisory and
+  (`ECONNREFUSED`, `ENOENT`, ...), whatever another host exposes later. **Advisory and
   unversioned.** An app that branches on `platformCode` is coding against the engine
-  underneath, not against Orivon, and that code may need adjustment across the Node →
-  Wasmtime → Chromium/Mojo transitions design rule 7 anticipates. It exists so
+  underneath, not against Orivon, and that code may need adjustment if the engine
+  underneath changes, as design rule 7 anticipates. It exists so
   `orivon-node-shim` can reconstruct a faithful Node `Error` (`err.code === 'ECONNREFUSED'`
   is a real Node idiom and must keep working through the shim).
 - **`denied` never carries a `platformCode`, and is uniform across every reason for denial.**
@@ -418,8 +418,8 @@ interface UdpSocket extends Handle {
   list routinely names addresses outside a grant, so the first excluded peer would kill a working
   swarm. Counting keeps `denied` uniform as well: the app learns *that* a send was dropped, never
   which pattern excluded it (§Errors). Not yet confirmed; `open-questions.md` A87.
-- No multicast support in v0 (`addMembership`/`dropMembership` are not part of this
-  contract), matching the recorded v0 limitation that local peer discovery is unavailable.
+- No multicast support (`addMembership`/`dropMembership` are not part of this
+  contract), matching the recorded limitation that local peer discovery is unavailable.
 
 ## §FileHandle
 
@@ -461,7 +461,7 @@ interface FileHandle extends Handle {
 - Positional `read`/`write` mirror `fs.promises.FileHandle` and match what a torrent writer
   actually does: piece *N* is written at offset `N × pieceLength`, not appended sequentially.
   The stream factories (`readable`/`writable`) serve the bulk-transfer paths, such as feeding
-  `<video>` from a downloaded region (`build-plan.md` §5, the range-capable custom-scheme
+  `<video>` from a downloaded region (the range-capable custom-scheme
   media path).
 - **`position` is explicit and required on every positional call, and there is no implicit file
   cursor on this handle.** A cursor is mutable state shared across an async IPC boundary,
@@ -520,7 +520,7 @@ interface IdentityHandle extends Handle {
 - `close()` releases *this app's* reference to the handle. It does **not** disconnect the
   named identity from the origin, since disconnecting an identity is a user-initiated action in
   browser chrome, not something an app can trigger by closing its own handle. Without this
-  rule, an app could force a fresh connect prompt on demand by closing and immediately
+  rule, an app could force a fresh connect on demand by closing and immediately
   re-requesting, which is exactly the prompt-fatigue outcome named identities exist to avoid.
 
 ## §Revocation: the cascade
@@ -687,7 +687,7 @@ The versioned surface, subject to `orivonApiVersion` major-bump-plus-ADR rules o
 reaches 1, is: the `OrivonErrorCode` enum, the five handle interfaces in this document, and
 the close/half-close semantics table. `platformCode` string values are explicitly **not**
 part of the versioned surface; they may change as the underlying engine changes (Node errno
-today, WASI or Mojo equivalents later) without that counting as a breaking change to this
+today, another host's equivalents later) without that counting as a breaking change to this
 specification.
 
 ## §Conformance checklist
