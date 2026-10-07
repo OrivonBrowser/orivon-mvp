@@ -216,6 +216,12 @@ export async function welcomeOffersTelemetry (): Promise<boolean> {
   return service === undefined ? false : await service.offerAtWelcome()
 }
 
+/** The change lines when the person's earlier acceptance is due to be asked again at this start, else undefined (also when telemetry does not run here). */
+export async function telemetryRenewal (): Promise<readonly string[] | undefined> {
+  const service = await running()
+  return service === undefined ? undefined : await service.renewalAtStart()
+}
+
 /** 'done' when the server confirmed, 'failed' when it did not, 'nothing' when nothing was ever sent from this computer. */
 export async function eraseTelemetry (): Promise<'nothing' | 'done' | 'failed'> {
   const service = await running()

@@ -245,6 +245,7 @@ it('asks the telemetry question in place of the single Enter button, with two eq
     expect(await intro.textContent('#telemetry-title')).toBe('Telemetry')
     expect(await intro.textContent('#telemetry-choice .telemetry-text')).toContain('keeps your history on your computer')
     expect(await intro.locator('#telemetry-choice details li').count()).toBe(4)
+    expect(await intro.locator('#telemetry-choice details li').nth(1).textContent()).toContain('in a separate report under the same ID, so a forged report can be told apart. Web2 sites are never named.')
 
     const [withBox, withoutBox] = await Promise.all(['#enter-with-telemetry', '#enter-without-telemetry'].map(async (selector) => await intro.locator(selector).boundingBox()))
     expect(withBox?.width).toBe(withoutBox?.width)
@@ -368,6 +369,55 @@ it('keeps the default-browser box working beside the question: ticked, and Enter
     expect(await waitFor(async () => (await seamCalls(app)).setDefault.length === 2, 10_000)).toBe(true)
     expect((await seamCalls(app)).setDefault).toEqual(['http', 'https'])
     expect(await consentOf(home)).toMatchObject({ state: 'declined' })
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+// An acceptance given under an older notice is asked again at the next start, on a screen already seen.
+const seenProfile = (dir: string): Promise<void> => writeFile(join(dir, 'intro.json'), '{"seen":true}', 'utf8')
+const staleAcceptance = { state: 'accepted', atMs: Date.UTC(2026, 8, 1), noticeVersion: 3, source: 'welcome', everAccepted: true }
+const renewing = (home: string): Promise<ElectronApplication> =>
+  launch('once', seenProfile, { ORIVON_TELEMETRY: 'on', ORIVON_TELEMETRY_HOME: home })
+
+it('asks again after the notice changed: the question, the change line, no default-browser offer, and one answer ends it', async () => {
+  const home = await newHome(staleAcceptance)
+  const app = await renewing(home)
+  try {
+    expect(await waitFor(() => introPage(app) !== undefined)).toBe(true)
+    const intro = introPage(app) as Page
+    expect(await waitFor(async () => await intro.locator('#telemetry-choice').isVisible())).toBe(true)
+    expect(await intro.locator('#enter').isHidden()).toBe(true)
+    expect(await intro.locator('#default-offer').isHidden()).toBe(true)
+    expect(await intro.locator('#telemetry-changed').isVisible()).toBe(true)
+    expect(await intro.textContent('#telemetry-changed p')).toBe('Telemetry changed since you agreed:')
+    expect(await intro.locator('#telemetry-changed li').allTextContents()).toEqual(['The usage report names your country, from your time zone, instead of EU, US or other, and both reports are also sent when Orivon starts.'])
+    expect(await intro.locator('#enter-with-telemetry').isVisible()).toBe(true)
+    expect(await intro.locator('#enter-without-telemetry').isVisible()).toBe(true)
+    await intro.click('#enter-with-telemetry')
+    expect(await waitFor(() => introPage(app) === undefined && windowCount(app) === 2)).toBe(true)
+    expect(await waitFor(async () => (await consentOf(home))?.['noticeVersion'] === 4)).toBe(true)
+    expect(await consentOf(home)).toMatchObject({ state: 'accepted', source: 'welcome', noticeVersion: 4 })
+  } finally {
+    await closeElectron(app)
+  }
+  const second = await renewing(home)
+  try {
+    expect(await waitFor(() => windowCount(second) === 2)).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS))
+    expect(introPage(second)).toBeUndefined()
+  } finally {
+    await closeElectron(second)
+  }
+}, TEST_TIMEOUT_MS * 2)
+
+it('does not ask again for an acceptance given under the current notice, on a screen already seen', async () => {
+  const home = await newHome({ ...staleAcceptance, noticeVersion: 4 })
+  const app = await renewing(home)
+  try {
+    expect(await waitFor(() => windowCount(app) === 2)).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS))
+    expect(introPage(app)).toBeUndefined()
   } finally {
     await closeElectron(app)
   }

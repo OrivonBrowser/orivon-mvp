@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  NOTICE_VERSION, NO_REASK_MS, UNDECIDED, effectiveConsent, mayAskAgain, parseConsentRecord, recordChoice, serializeConsentRecord, shouldOfferAtWelcome
+  NOTICE_CHANGES, NOTICE_VERSION, NO_REASK_MS, UNDECIDED, changesSince, effectiveConsent, mayAskAgain, parseConsentRecord, recordChoice, renewalDue, serializeConsentRecord, shouldOfferAtWelcome
 } from '../consent.js'
 
 const NOW = Date.UTC(2026, 9, 6)
@@ -66,5 +66,32 @@ describe('asking again', () => {
     expect(shouldOfferAtWelcome(recordChoice('accepted', NOW, 'welcome'), NOW)).toBe(false)
     expect(shouldOfferAtWelcome(recordChoice('declined', NOW, 'settings'), NOW)).toBe(false)
     expect(shouldOfferAtWelcome(recordChoice('declined', NOW, 'settings'), NOW + 10 * NO_REASK_MS)).toBe(false)
+  })
+})
+
+describe('asking again after the notice changed', () => {
+  it('has a plain sentence for the current notice version, so a bump cannot ship without one', () => {
+    expect(NOTICE_CHANGES[NOTICE_VERSION]).toBeTypeOf('string')
+    expect(NOTICE_CHANGES[NOTICE_VERSION]).not.toBe('')
+  })
+
+  it('is due only for an acceptance given under an older version', () => {
+    expect(renewalDue(recordChoice('accepted', NOW, 'welcome', NOTICE_VERSION - 1))).toBe(true)
+    expect(renewalDue(recordChoice('accepted', NOW, 'welcome'))).toBe(false)
+    expect(renewalDue(recordChoice('declined', NOW, 'welcome', NOTICE_VERSION - 1))).toBe(false)
+    expect(renewalDue(UNDECIDED)).toBe(false)
+  })
+
+  it('lists what changed since the version the person agreed to, skipping versions with no sentence', () => {
+    const lines = { 3: 'three', 4: 'four', 6: 'six' }
+    expect(changesSince(recordChoice('accepted', NOW, 'welcome', 3), 4, lines)).toEqual(['four'])
+    expect(changesSince(recordChoice('accepted', NOW, 'welcome', 2), 4, lines)).toEqual(['three', 'four'])
+    expect(changesSince(recordChoice('accepted', NOW, 'welcome', 2), 6, lines)).toEqual(['three', 'four', 'six'])
+    expect(changesSince(recordChoice('accepted', NOW, 'welcome', 4), 4, lines)).toEqual([])
+    expect(changesSince(recordChoice('accepted', NOW, 'welcome', 4), 5, lines)).toEqual([])
+  })
+
+  it('reads the real table: an acceptance under the previous version gets the current sentence', () => {
+    expect(changesSince(recordChoice('accepted', NOW, 'welcome', NOTICE_VERSION - 1))).toEqual([NOTICE_CHANGES[NOTICE_VERSION]])
   })
 })

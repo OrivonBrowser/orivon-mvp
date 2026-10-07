@@ -70,3 +70,23 @@ export function mayAskAgain (record: ConsentRecord, nowMs: number, noticeVersion
 export function shouldOfferAtWelcome (record: ConsentRecord, nowMs: number, noticeVersion: number = NOTICE_VERSION): boolean {
   return effectiveConsent(record, noticeVersion) === 'undecided' && mayAskAgain(record, nowMs, noticeVersion)
 }
+
+/** One plain sentence for each notice version that changed what is sent, shown to a person who agreed to an older one. */
+export const NOTICE_CHANGES: Readonly<Record<number, string>> = {
+  4: 'The usage report names your country, from your time zone, instead of EU, US or other, and both reports are also sent when Orivon starts.'
+}
+
+/** An acceptance given under an older notice is asked again at the next start; a refusal waits out its six months. */
+export function renewalDue (record: ConsentRecord, noticeVersion: number = NOTICE_VERSION): boolean {
+  return record.state === 'accepted' && record.noticeVersion !== noticeVersion
+}
+
+/** The sentences for the versions after the one the person agreed to, up to the current one, oldest first. */
+export function changesSince (record: ConsentRecord, noticeVersion: number = NOTICE_VERSION, changes: Readonly<Record<number, string>> = NOTICE_CHANGES): string[] {
+  const lines: string[] = []
+  for (let version = record.noticeVersion + 1; version <= noticeVersion; version++) {
+    const line = changes[version]
+    if (line !== undefined) lines.push(line)
+  }
+  return lines
+}
