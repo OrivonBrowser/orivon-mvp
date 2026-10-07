@@ -60,6 +60,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - README rewritten for launch day: alpha, apps linked by `.eth` name, everyday-browser features up front, limits moved to `docs/known-limitations.md`.
 - Telemetry site reports now carry the install ID, so spam can be excluded; reports also go at once on accept and on quit.
 - Tab icons fixed: installed apps load theirs from the pin, multi-size `.ico` trimmed, Settings and other shell pages get their own icons.
+- Second sign-out traced to `npm start` skipping the cookie fuse; it now sets the fuses before every launch, or refuses to launch.
 
 ### In my head
 

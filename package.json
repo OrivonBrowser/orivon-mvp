@@ -20,7 +20,7 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "node scripts/build-ordinary.mjs",
-    "start": "node scripts/build-ordinary.mjs && electron-vite preview --skipBuild",
+    "start": "node scripts/install-electron.mjs --fuses && node scripts/build-ordinary.mjs && electron-vite preview --skipBuild",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p vendor/tsconfig.json",
     "test": "vitest run",
     "check:natives": "node scripts/check-no-native-modules.mjs",
