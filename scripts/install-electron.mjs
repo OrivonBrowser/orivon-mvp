@@ -161,24 +161,23 @@ export async function setCheckoutFuses ({
 }
 
 /**
- * Sets the fuses of the binary `installer` put in place and says what happened. Returns false when they could not be
- * set: a launch from this checkout would then delete every cookie a package encrypted in the profile they share.
+ * Sets the fuses of the binary `installer` put in place and says what happened.
  *
  * @param {string} installer Path of electron's `install.js`.
- * @returns {Promise<boolean>}
+ * @returns {Promise<'already-set' | 'flipped' | 'refused' | 'failed' | 'absent'>}
  */
 async function reportFuses (installer) {
   const binary = electronBinaryPath(installer)
-  if (binary === undefined) return true
+  if (binary === undefined) return 'absent'
   const checkoutRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
   const { status, reason } = await setCheckoutFuses({ binary, checkoutRoot })
   if (status === 'refused' || status === 'failed') {
     const until = status === 'failed' ? 'until `npm run install:electron` sets them' : 'until the reason above no longer holds'
     console.warn(`\nElectron binary: its fuses are not set as a package sets them (${reason}).\nA run from this checkout may open no local files, and may lose every cookie a package wrote to a profile they share, ${until}.\n`)
-    return status === 'refused'
+  } else {
+    console.log(`Electron binary: fuses set as a package sets them (${status}).`)
   }
-  console.log(`Electron binary: fuses set as a package sets them (${status}).`)
-  return true
+  return status
 }
 
 if (isInvokedDirectly(import.meta.url)) {
@@ -186,9 +185,12 @@ if (isInvokedDirectly(import.meta.url)) {
 
   if (process.argv.includes('--fuses')) {
     // `npm start` launches this checkout's binary on the profile a package shares (ADR-0057), so it sets the fuses
-    // first and launches nothing when they could not be set.
+    // first. On Linux it launches nothing unless they are set: a binary without cookie encryption deletes every
+    // cookie the package encrypted. Elsewhere the flip is not measured yet (A394), so a refusal only warns. With no
+    // binary there is nothing to launch, and `electron-vite preview` says so.
     const installer = resolveInstaller()
-    if (installer !== undefined && !(await reportFuses(installer))) process.exit(1)
+    const status = installer === undefined ? 'absent' : await reportFuses(installer)
+    if (status === 'failed' || (status === 'refused' && process.platform === 'linux')) process.exit(1)
   } else if (plan.action === 'skip') {
     console.log(`Electron binary: not fetched, ${SKIP} is set.`)
   } else if (plan.action === 'absent') {
