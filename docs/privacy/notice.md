@@ -20,10 +20,13 @@ behind it is [`outbound-requests.md`](outbound-requests.md), and an Italian vers
 > - You can **see exactly what is sent**, **turn it off at any time**, and **delete what we hold**
 >   with one button.
 
+Bug reports are separate from telemetry: one leaves only when you write it and press Send. See
+[Bug reports you send](#bug-reports-you-send).
+
 ## Who is responsible
 
-The controller of the telemetry data is Davide Martinico, a natural person, the owner of the
-project. Write to privacy@orivonstack.com for anything in this notice.
+The controller of the telemetry data and of the bug reports you send is Davide Martinico, a
+natural person, the owner of the project. Write to privacy@orivonstack.com for anything in this notice.
 
 ## What telemetry sends
 
@@ -108,7 +111,8 @@ us to delete them.
 
 Nobody but us. There is no processor and no analytics company. The server is ours, at
 `telemetry.orivonstack.com`, on a virtual server rented from OVH SAS in Strasbourg, France. Its
-rows are in a database on that server. Nothing leaves the EU. If that changes this notice changes
+rows are in a database on that server. Telemetry data never leaves the EU (a bug report you send
+can: see [Bug reports you send](#bug-reports-you-send)). If that changes this notice changes
 first, and the version number above goes up, so your earlier consent stops counting until you
 turn telemetry on again. The server's source code is not published; this notice is the description of what it
 stores and for how long.
@@ -128,11 +132,78 @@ stores and for how long.
   dati personali, `garanteprivacy.it`; you may choose the authority of the country where you
   live or work.
 
+## Bug reports you send
+
+A bug report is separate from telemetry. It leaves only when you write one and press **Send**,
+with telemetry on or off, and pressing Send once sends that one report and nothing later. You open
+the form with **Report a problem** in the menu, with the **Report** button on a tab that crashed,
+or from the bar Orivon shows after it closed unexpectedly. The form shows the literal text of the
+report before you send it, and a box for each part you can leave out.
+
+| Field | What it is |
+|---|---|
+| `schema` | The version of the message layout, a number |
+| `reportId` | A random identifier made when you press Send, and shown to you afterwards so you can refer to the report. It is not linked to the telemetry install ID or to anything else on your computer |
+| `description` | What you wrote about the problem |
+| `contact` | How to reach you, if you wrote it: an email address, or a name on GitHub or Matrix. Empty if you did not |
+| `version` | The version of Orivon Browser |
+| `crash.kind` | When the report is about a problem Orivon recorded: whether Orivon itself hit an error, a page or another part of Orivon stopped, or Orivon closed unexpectedly. The whole `crash` part is empty when you choose no recorded problem |
+| `crash.at` | When that happened, to the second, in UTC |
+| `crash.process` | Which part stopped, such as `main`, `tab` or `GPU` |
+| `crash.reason` | The reason the system gave, such as `crashed` or `oom` (out of memory) |
+| `crash.exitCode` | The exit code of the process that stopped, a number |
+| `crash.message` | The error message, if there was one |
+| `crash.stack` | Where in Orivon's code the error happened (the call stack) |
+| `diagnostics` | Technical details, sent when **Technical details** is ticked, as it is when the form opens. What it holds is listed below |
+| `log` | The last lines Orivon wrote to its own log, at most 1,000, sent when **Recent log** is ticked, as it is when the form opens. A line can name a page or a file Orivon was working with |
+| `page` | The address of the page that crashed, sent only if you tick **The crashed page's address**. Never offered for a private window |
+| `dump.base64` | The crash dump, sent only if you tick **The crash dump**: a snapshot of the memory of the process that crashed, at most 5 MB. It can hold fragments of the pages that were open, including what you typed into them. Unlike the rest, the form cannot show its contents |
+| `dump.bytes` | The size of the crash dump |
+
+What `diagnostics` holds: the build of Orivon (its source revision and how it was installed), the
+Electron, Chromium, Node.js and V8 versions, and how long Orivon had been running; the operating
+system and its version, the processor type and count, the memory installed and free, the
+language, and the desktop session (X11 or Wayland, and the desktop's name); the graphics card's
+vendor and device numbers, its driver version, and which graphics features are on; the size and
+scaling of each screen; how much memory each kind of Orivon process uses; how many windows and
+tabs are open, and whether the window is private; your installed extensions (name, identifier,
+version, on or off); the values of a few settings that change how Orivon behaves (theme, cookies,
+Global Privacy Control, Do Not Track, HTTPS-only, the secure DNS mode, memory and energy saver,
+start-up mode, spell checking, developer tools, extension developer mode, update checks), never
+an address or a folder; and the last ten problems Orivon recorded (kind, time, process, reason,
+exit code), without their messages or addresses. In every part of a report, the path of your home
+folder is replaced by `~`.
+
+**Why, and on what basis.** To find and fix the problem you report. Your consent, GDPR Article
+6(1)(a): you write the report, see what it holds, and press Send; without that nothing leaves.
+
+**Who reads it.** The maintainers. To find the cause, they may give a report to an AI coding
+assistant, today Claude, made by Anthropic PBC in the United States, which then processes it on
+our behalf. That is a transfer outside the EU; the form says so next to the Send button, and
+pressing Send is your explicit agreement to it (GDPR Article 49(1)(a)). The risk is the one of
+any transfer to the United States: its authorities may have access to data held there, under
+rules that differ from the EU's. Nobody else receives a report.
+
+**What we keep, and for how long.** The report as sent, on the same server as telemetry, 90 days
+from the day it arrives, then deleted with its crash dump. Only the UTC day is stored with it. Your
+IP address is not written to disk; it is held in memory only, to limit each address to 6 reports
+an hour. The browser reads nothing of the server's answer except whether the report arrived.
+
+**Your rights.** The form lists the reports you sent, each with **Delete from server**, which
+deletes it and its crash dump at once. You can also write to privacy@orivonstack.com with the
+report ID, for access, deletion or anything else; the rights and the complaint route in
+[Your rights](#your-rights) apply to reports too.
+
+**What stays on your computer.** So that a report can say what went wrong, Orivon keeps, in its
+own profile folder: its log of this run and of the previous one, a record of the last 30
+problems (from the last 30 days), and up to 10 crash dumps from the last 30 days. None of it
+leaves unless you send a report that includes it. A private window's records go when it closes.
+
 ## Everything else the browser sends by itself
 
-Telemetry is the only thing that reaches a server of ours. The browser also makes requests of
-its own to other servers, which we do not operate and from which we receive nothing. Each one
-below is in [`outbound-requests.md`](outbound-requests.md) with the file that makes it.
+Telemetry, and the bug reports you choose to send, are the only things that reach a server of
+ours. The browser also makes requests of its own to other servers, which we do not operate and
+from which we receive nothing. Each one below is in [`outbound-requests.md`](outbound-requests.md) with the file that makes it.
 
 | What | To whom | Why, and the basis | You can |
 |---|---|---|---|
@@ -165,6 +236,8 @@ browser, which is stricter, because it is always your explicit answer.
 
 ## Changes
 
-When a message changes or a new one is added, the notice version at the top goes up. A consent
-given under an earlier version stops counting: nothing is sent until you turn telemetry on
-again in Settings.
+When a telemetry message changes or a new one is added, the notice version at the top goes up. A
+consent given under an earlier version stops counting: nothing is sent until you turn telemetry
+on again in Settings. A bug report is not under that consent: you give it for each report, with
+the whole report in front of you, so a change to what a report holds is written here and shown
+in the form, without the version going up.

@@ -4,8 +4,9 @@
 import type { ConsentState } from './disclosure.js'
 
 /**
- * Bump on any change to what is sent or to the notice that describes it: an acceptance given under an
- * older version no longer counts, so nothing is sent until the person chooses again.
+ * Bump on any change to what telemetry sends or to what the notice says about it: an acceptance given
+ * under an older version no longer counts, so nothing is sent until the person chooses again. The
+ * notice's bug-report section is not under it: a report is agreed to one at a time, in full view.
  */
 export const NOTICE_VERSION = 4
 

@@ -20,9 +20,12 @@ informativa è [`notice.md`](notice.md), che è il testo di riferimento se le du
 > - Puoi **vedere esattamente che cosa viene inviato**, **spegnerla quando vuoi** e **cancellare
 >   ciò che conserviamo** con un pulsante.
 
+Le segnalazioni di problemi sono separate dalla telemetria: una parte solo quando la scrivi e
+premi Invia. Vedi [Le segnalazioni di problemi che invii](#le-segnalazioni-di-problemi-che-invii).
+
 ## Chi è responsabile
 
-Il titolare del trattamento dei dati di telemetria è Davide Martinico, una persona fisica, il
+Il titolare del trattamento dei dati di telemetria e delle segnalazioni di problemi che invii è Davide Martinico, una persona fisica, il
 proprietario del progetto. Per qualsiasi cosa in questa informativa scrivi a
 privacy@orivonstack.com.
 
@@ -118,7 +121,8 @@ e per questo puoi chiederci di cancellarle.
 
 Solo noi. Non c'è un responsabile del trattamento né una società di analisi. Il server è nostro,
 su `telemetry.orivonstack.com`, su un server virtuale preso in affitto da OVH SAS a Strasburgo,
-in Francia. Le righe stanno in un database su quel server. Nulla esce dall'UE. Se cambia,
+in Francia. Le righe stanno in un database su quel server. I dati di telemetria non escono mai dall'UE (una segnalazione di problemi che invii può uscirne:
+vedi [Le segnalazioni di problemi che invii](#le-segnalazioni-di-problemi-che-invii)). Se cambia,
 cambia prima questa informativa e il numero di versione in alto aumenta: il consenso dato prima
 smette di valere finché non la riattivi nelle Impostazioni. Il codice sorgente del server non è pubblicato;
 questa informativa è la descrizione di ciò che conserva e per quanto tempo.
@@ -141,9 +145,82 @@ questa informativa è la descrizione di ciò che conserva e per quanto tempo.
   dei dati personali, `garanteprivacy.it`; puoi scegliere l'autorità del paese in cui vivi o
   lavori.
 
+## Le segnalazioni di problemi che invii
+
+Una segnalazione di problemi è separata dalla telemetria. Parte solo quando ne scrivi una e premi
+**Invia**, con la telemetria accesa o spenta, e premere Invia una volta invia quella segnalazione e
+nient'altro dopo. Apri il modulo con **Segnala un problema** nel menu, con il pulsante **Segnala**
+su una scheda che si è bloccata, o dalla barra che Orivon mostra dopo essersi chiuso in modo
+inatteso. Il modulo mostra il testo letterale della segnalazione prima che tu la invii, e una
+casella per ogni parte che puoi lasciare fuori.
+
+| Campo | Che cos'è |
+|---|---|
+| `schema` | La versione della struttura del messaggio, un numero |
+| `reportId` | Un identificativo casuale creato quando premi Invia, e mostrato dopo perché tu possa citare la segnalazione. Non è collegato all'ID di installazione della telemetria né ad altro sul tuo computer |
+| `description` | Ciò che hai scritto sul problema |
+| `contact` | Come raggiungerti, se l'hai scritto: un indirizzo email, o un nome su GitHub o Matrix. Vuoto se non l'hai scritto |
+| `version` | La versione di Orivon Browser |
+| `crash.kind` | Quando la segnalazione riguarda un problema registrato da Orivon: se Orivon stesso ha incontrato un errore, se una pagina o un'altra parte di Orivon si è fermata, o se Orivon si è chiuso in modo inatteso. L'intera parte `crash` è vuota quando non scegli un problema registrato |
+| `crash.at` | Quando è successo, al secondo, in UTC |
+| `crash.process` | Quale parte si è fermata, ad esempio `main`, `tab` o `GPU` |
+| `crash.reason` | Il motivo indicato dal sistema, ad esempio `crashed` o `oom` (memoria esaurita) |
+| `crash.exitCode` | Il codice di uscita del processo che si è fermato, un numero |
+| `crash.message` | Il messaggio d'errore, se c'era |
+| `crash.stack` | In quale punto del codice di Orivon è avvenuto l'errore (lo stack delle chiamate) |
+| `diagnostics` | Dettagli tecnici, inviati quando **Dettagli tecnici** è spuntato, come è all'apertura del modulo. Che cosa contiene è elencato sotto |
+| `log` | Le ultime righe che Orivon ha scritto nel proprio registro, al massimo 1.000, inviate quando **Registro recente** è spuntato, come è all'apertura del modulo. Una riga può nominare una pagina o un file su cui Orivon stava lavorando |
+| `page` | L'indirizzo della pagina che si è bloccata, inviato solo se spunti **L'indirizzo della pagina bloccata**. Mai offerto per una finestra privata |
+| `dump.base64` | Il dump del crash, inviato solo se spunti **Il dump del crash**: un'istantanea della memoria del processo che si è bloccato, al massimo 5 MB. Può contenere frammenti delle pagine aperte, compreso ciò che vi avevi scritto. A differenza del resto, il modulo non può mostrarne il contenuto |
+| `dump.bytes` | La dimensione del dump del crash |
+
+Che cosa contiene `diagnostics`: la build di Orivon (la sua revisione del codice sorgente e come è
+stato installato), le versioni di Electron, Chromium, Node.js e V8, e da quanto tempo Orivon era in
+esecuzione; il sistema operativo e la sua versione, il tipo e il numero di processori, la memoria
+installata e libera, la lingua, e la sessione del desktop (X11 o Wayland, e il nome del desktop); i
+numeri del produttore e del modello della scheda grafica, la versione del suo driver, e quali
+funzioni grafiche sono attive; le dimensioni e la scala di ogni schermo; quanta memoria usa ogni
+tipo di processo di Orivon; quante finestre e schede sono aperte, e se la finestra è privata; le
+estensioni installate (nome, identificativo, versione, attiva o no); i valori di alcune
+impostazioni che cambiano il comportamento di Orivon (tema, cookie, Global Privacy Control, Do Not
+Track, solo HTTPS, la modalità del DNS sicuro, risparmio di memoria ed energia, modalità di avvio,
+controllo ortografico, strumenti per sviluppatori, modalità sviluppatore delle estensioni, controllo
+degli aggiornamenti), mai un indirizzo o una cartella; e gli ultimi dieci problemi registrati da
+Orivon (tipo, ora, processo, motivo, codice di uscita), senza i loro messaggi o indirizzi. In ogni
+parte di una segnalazione, il percorso della tua cartella home è sostituito da `~`.
+
+**Perché, e con quale base giuridica.** Per trovare e correggere il problema che segnali. Il tuo
+consenso, articolo 6(1)(a) del GDPR: scrivi la segnalazione, vedi che cosa contiene, e premi Invia;
+senza questo non parte nulla.
+
+**Chi la legge.** I manutentori. Per trovarne la causa, possono dare una segnalazione a un
+assistente di programmazione basato su IA, oggi Claude, prodotto da Anthropic PBC negli Stati
+Uniti, che la tratta per nostro conto. È un trasferimento fuori dall'UE; il modulo lo dice accanto al
+pulsante Invia, e premere Invia è il tuo consenso esplicito (articolo 49(1)(a) del GDPR). Il rischio
+è quello di ogni trasferimento negli Stati Uniti: le loro autorità possono avere accesso ai dati
+che vi sono conservati, con regole diverse da quelle dell'UE. Nessun altro riceve una segnalazione.
+
+**Che cosa conserviamo, e per quanto tempo.** La segnalazione così come è stata inviata, sullo
+stesso server della telemetria, per 90 giorni dal giorno in cui arriva, poi cancellata con il suo
+dump. Con essa si conserva solo il giorno UTC. Il tuo indirizzo IP non viene scritto su disco; è
+tenuto solo in memoria, per limitare ogni indirizzo a 6 segnalazioni l'ora. Della risposta del
+server il browser legge solo se la segnalazione è arrivata.
+
+**I tuoi diritti.** Il modulo elenca le segnalazioni che hai inviato, ciascuna con **Cancella dal
+server**, che la cancella subito insieme al suo dump. Puoi anche scrivere a privacy@orivonstack.com
+indicando l'ID della segnalazione, per l'accesso, la cancellazione o altro; i diritti e la via del
+reclamo in [I tuoi diritti](#i-tuoi-diritti) valgono anche per le segnalazioni.
+
+**Che cosa resta sul tuo computer.** Perché una segnalazione possa dire che cosa è andato storto,
+Orivon conserva, nella cartella del proprio profilo: il suo registro di questa esecuzione e della
+precedente, una traccia degli ultimi 30 problemi (degli ultimi 30 giorni), e fino a 10 dump degli
+ultimi 30 giorni. Nulla di questo esce se non invii una segnalazione che lo include. Le tracce di
+una finestra privata se ne vanno quando si chiude.
+
 ## Tutto il resto che il browser invia da solo
 
-La telemetria è l'unica cosa che arriva a un nostro server. Il browser fa anche richieste proprie
+La telemetria, e le segnalazioni di problemi che scegli di inviare, sono le sole cose che arrivano
+a un nostro server. Il browser fa anche richieste proprie
 ad altri server, che non gestiamo e da cui non riceviamo nulla. Ciascuna è in
 [`outbound-requests.md`](outbound-requests.md) con il file che la effettua.
 
@@ -179,6 +256,8 @@ rigorosa, perché è sempre la tua risposta esplicita.
 
 ## Modifiche
 
-Quando un messaggio cambia o ne viene aggiunto uno, il numero di versione in alto aumenta. Un
-consenso dato con una versione precedente smette di valere: non si invia nulla finché non riattivi
-la telemetria nelle Impostazioni.
+Quando un messaggio della telemetria cambia o ne viene aggiunto uno, il numero di versione in alto
+aumenta. Un consenso dato con una versione precedente smette di valere: non si invia nulla finché
+non riattivi la telemetria nelle Impostazioni. Una segnalazione di problemi non dipende da quel
+consenso: lo dai per ogni segnalazione, con la segnalazione intera davanti, quindi un cambiamento
+in ciò che contiene è scritto qui e mostrato nel modulo, senza che la versione aumenti.
