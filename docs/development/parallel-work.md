@@ -105,7 +105,8 @@ A new worktree starts without `node_modules`, so it needs one of those two.
 **Run `npm run install:electron` in a checkout after syncing `main` once.** It sets the fuses a package
 sets that a run from source depends on, in that checkout's Electron binary: the file-protocol fuse off
 (ADR-0059) and cookie encryption on (ADR-0057). A checkout's binary keeps Electron's own fuses until the
-script runs there; `npm install` runs it too, and so does `scripts/launch-from-source.mjs` when nothing runs
+script runs there; `npm install` runs it too, `npm start` runs it (`--fuses`) before every launch and
+launches nothing when the fuses cannot be set, and `scripts/launch-from-source.mjs` runs it when nothing runs
 the binary. A worktree whose
 `node_modules` is a hard-linked copy (`cp -al`) shares the binary's inode with the checkout it came from:
 the script writes a new file and renames it over its own path, so the other checkout's binary is never

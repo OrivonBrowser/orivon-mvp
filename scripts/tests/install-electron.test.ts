@@ -237,3 +237,16 @@ describe('electron-builder.yml', () => {
     expect(yml).toMatch(/^ {2}grantFileProtocolExtraPrivileges: false$/m)
   })
 })
+
+describe('package.json', () => {
+  // A script that launches this checkout's binary runs it on the profile a package shares: launched before the
+  // fuses are set, it deletes every sign-in the package saved there.
+  it('sets the fuses before any script launches the binary', async () => {
+    const pkg = JSON.parse(await readFile(join(import.meta.dirname, '..', '..', 'package.json'), 'utf8')) as { scripts: Record<string, string> }
+    const launching = Object.entries(pkg.scripts).filter(([, command]) => /electron-vite preview|(^|\s)electron\s/.test(command))
+    expect(launching.map(([name]) => name)).toContain('start')
+    for (const [name, command] of launching) {
+      expect(command.split('&&')[0]?.trim(), name).toBe('node scripts/install-electron.mjs --fuses')
+    }
+  })
+})
