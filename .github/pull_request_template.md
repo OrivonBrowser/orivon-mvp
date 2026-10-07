@@ -101,11 +101,12 @@
   Anywhere you deviated from a document, chose between two defensible options, or
   made a call nobody has confirmed. Mark anything provisional as provisional.
 
-  A decision that sticks earns a row in docs/decisions/decision-log.md (or an ADR).
+  An owner decision, or a reversal of one, earns a row in docs/decisions/decision-log.md.
   The page it governs states the behaviour, never the provenance.
 
-  Open questions filed: list the A-numbers, taken from MAIN's highest, not your
-  branch's (parallel-work.md, "Open-question numbers").
+  Open questions are filed only when you are truly blocked and only the owner can answer.
+  List the A-numbers, taken from MAIN's highest, not your branch's (parallel-work.md,
+  "Open-question numbers").
 
   Load-bearing and architectural? That is an ADR, not this section -- write it and
   cite it here.

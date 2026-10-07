@@ -30,17 +30,18 @@ their history. The one status a page must still carry is *provisional*: a
 recommendation presented as a decision is how a project ends up defending a choice nobody
 actually made.
 
-**3. Surface contradictions; do not smooth them over.** File them in
-[`docs/open-questions.md`](docs/open-questions.md), in the shape its header gives; a resolved
-entry becomes one row in
-[`docs/decisions/resolved-questions.md`](docs/decisions/resolved-questions.md). When a page turns out to be wrong, rewrite
-it to be right rather than leaving a correction under the wrong text, and record the change in
-the decision log. The page states what is true now; the log remembers that it changed.
+**3. Surface contradictions; do not smooth them over.** A contradiction you can settle from the
+repository is fixed in place and named in the pull request. One that only the owner can answer
+is filed in [`docs/open-questions.md`](docs/open-questions.md), in the shape its header gives; a
+resolved entry becomes one row in
+[`docs/decisions/resolved-questions.md`](docs/decisions/resolved-questions.md). When a page turns
+out to be wrong, rewrite it to be right rather than leaving a correction under the wrong text.
+The page states what is true now; git remembers that it changed.
 
-**4. Build a feature when a need calls for it.** Any feature of the long-term vision may be
-picked up once a real app, a user or the success metric needs it, and
-[`docs/scope.md`](docs/scope.md) records it as it lands. The vision is large and coherent and
-seductive, and the developer is solo: name the need before building.
+**4. Build a feature when a need calls for it.** A feature is picked up once a real app, a user,
+a roadmap item ([`docs/roadmap.md`](docs/roadmap.md)) or the success metric needs it, and
+[`docs/features.md`](docs/features.md) records it as it lands. The ambition is large and the
+team is small: name the need before building.
 
 **5. Label every component durable or tied to Electron.** For each component, state whether it
 would outlive a change of the engine beneath it. [`ARCHITECTURE.md`](ARCHITECTURE.md) has the
