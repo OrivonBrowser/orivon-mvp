@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { startLaunch } from '../start-launch.js'
+import { SOURCE_PROGRAM, startLaunch, takeSourceIdentity } from '../start-launch.js'
 
 let home = ''
 let tmp = ''
@@ -107,5 +107,50 @@ describe('a first start of a profile', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     expect(run(app, '--orivon-profile=0123456789ab')).toBeNull()
     expect(exit).toHaveBeenCalledWith(2)
+  })
+})
+
+describe('a run from source', () => {
+  function sourceApp (switches: readonly string[] = [], isPackaged = false): { app: Parameters<typeof takeSourceIdentity>[0], setName: ReturnType<typeof vi.fn>, setDesktopName: ReturnType<typeof vi.fn>, setPath: ReturnType<typeof vi.fn> } {
+    const setName = vi.fn()
+    const setDesktopName = vi.fn()
+    const setPath = vi.fn()
+    const app = { isPackaged, setName, setDesktopName, setPath, getPath: () => home, commandLine: { hasSwitch: (name: string) => switches.includes(name) } }
+    return { app: app as unknown as Parameters<typeof takeSourceIdentity>[0], setName, setDesktopName, setPath }
+  }
+
+  it('keeps its data in a directory of its own, never the one an installed package uses', () => {
+    const { app, setPath } = sourceApp()
+    takeSourceIdentity(app, 'linux')
+    const dir = join(home, SOURCE_PROGRAM)
+    expect(setPath).toHaveBeenCalledWith('userData', dir)
+    expect(existsSync(dir)).toBe(true)
+    expect(SOURCE_PROGRAM).not.toBe('orivon')
+  })
+
+  it('names its windows after its own desktop entry, so the dock gives it an icon of its own', () => {
+    const { app, setName, setDesktopName } = sourceApp()
+    takeSourceIdentity(app, 'linux')
+    expect(setName).toHaveBeenCalledWith(SOURCE_PROGRAM)
+    expect(setDesktopName).toHaveBeenCalledWith(`${SOURCE_PROGRAM}.desktop`)
+  })
+
+  it('names no desktop entry where there is none', () => {
+    const { app, setDesktopName } = sourceApp()
+    takeSourceIdentity(app, 'win32')
+    expect(setDesktopName).not.toHaveBeenCalled()
+  })
+
+  it('keeps a data directory named on its command line', () => {
+    const { app, setName, setPath } = sourceApp(['user-data-dir'])
+    takeSourceIdentity(app, 'linux')
+    expect(setName).toHaveBeenCalledWith(SOURCE_PROGRAM)
+    expect(setPath).not.toHaveBeenCalled()
+  })
+
+  it('changes nothing in an installed package', () => {
+    const { app, setName, setDesktopName, setPath } = sourceApp([], true)
+    takeSourceIdentity(app, 'linux')
+    for (const call of [setName, setDesktopName, setPath]) expect(call).not.toHaveBeenCalled()
   })
 })

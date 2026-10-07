@@ -339,6 +339,8 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Changed
 
+- **A run from source is a program of its own**: it keeps its data in `orivon-source` with its own lock and dock icon, beside an
+  installed package now named "Orivon Browser". Its profile starts empty (`docs/development/setup.md` says how to bring data across).
 - **Global Privacy Control is on by default**, and every site sees it both as `Sec-GPC: 1` and as `navigator.globalPrivacyControl`
   in pages, frames and workers of every session; turning it off makes the property `false`. A change applies at the next start.
 - **A new window opens at once**, from the New window button, `Ctrl+N` or the dock, as a torn-off tab does; a start

@@ -4,7 +4,7 @@
 // a private session or its addresses). Runs before anything asks for the data
 // directory, because a store that had already read the default directory
 // could not be moved.
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import type { App } from 'electron'
@@ -34,10 +34,30 @@ export interface Runtime {
 /** Where the data is, and whether the sandbox is on: what a peer must be told the way this process was. Nothing else on the command line is passed on (a debugger's port would collide). */
 const INHERITED_SWITCHES = ['--user-data-dir=', '--no-sandbox']
 
-type LaunchApp = Pick<App, 'getPath' | 'setPath' | 'exit' | 'requestSingleInstanceLock' | 'releaseSingleInstanceLock' | 'isPackaged' | 'getAppPath' | 'commandLine'>
+type LaunchApp = Pick<App, 'getPath' | 'setPath' | 'exit' | 'requestSingleInstanceLock' | 'releaseSingleInstanceLock' | 'isPackaged' | 'getAppPath' | 'commandLine' | 'setName' | 'setDesktopName'>
+
+/** What a run from source is called where an installed package says `orivon`: its data directory, its window class
+ * and its Linux desktop entry (`scripts/launch-from-source.mjs`). */
+export const SOURCE_PROGRAM = 'orivon-source'
+
+/**
+ * A run from source is a program of its own beside an installed package (ADR-0057): its own profile and lock, and a
+ * window the dock never files under the package's icon. A launch that names its directory (`--user-data-dir`: a test,
+ * `npm run dev`) keeps it. Before anything reads the data directory: Electron has already set it from the name.
+ */
+export function takeSourceIdentity (app: Pick<LaunchApp, 'isPackaged' | 'setName' | 'setDesktopName' | 'getPath' | 'setPath' | 'commandLine'>, platform: NodeJS.Platform = process.platform): void {
+  if (app.isPackaged) return
+  app.setName(SOURCE_PROGRAM)
+  if (platform === 'linux') app.setDesktopName(`${SOURCE_PROGRAM}.desktop`)
+  if (app.commandLine.hasSwitch('user-data-dir')) return
+  const dir = join(app.getPath('appData'), SOURCE_PROGRAM)
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
+  app.setPath('userData', dir)
+}
 
 /** Null when this process is not to go on: a launch that could not be understood, or a profile that is already open. */
 export function startLaunch (app: LaunchApp, argv: readonly string[], env: NodeJS.ProcessEnv = process.env, execPath = process.execPath, tmp = tmpdir()): Runtime | null {
+  takeSourceIdentity(app)
   const home = app.getPath('userData')
   const fail = (problem: string): null => {
     console.error(`[orivon] cannot start: ${problem}`)

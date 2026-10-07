@@ -98,8 +98,8 @@ describe('CHECKOUT_FUSES', () => {
     for (const [name, on] of Object.entries(CHECKOUT_FUSES)) expect(packaged[name], name).toBe(on)
   })
 
-  // A run from source and an installed package share one profile: a binary that does not encrypt
-  // cookies reads none of those the other wrote, and every site the package was signed in to is signed out.
+  // A run from source stores its profile as a package does: a binary that does not encrypt cookies reads
+  // none of those an encrypting one wrote, and every site the profile was signed in to is signed out.
   it('encrypts cookies whenever a package does', async () => {
     const packaged = await packagedFuses()
     expect(packaged['enableCookieEncryption']).toBe(true)
@@ -239,8 +239,8 @@ describe('electron-builder.yml', () => {
 })
 
 describe('package.json', () => {
-  // A script that launches this checkout's binary runs it on the profile a package shares: launched before the
-  // fuses are set, it deletes every sign-in the package saved there.
+  // A script that launches this checkout's binary runs it on a profile with encrypted cookies: launched before
+  // the fuses are set, it deletes every sign-in saved there.
   it('sets the fuses before any script launches the binary', async () => {
     const pkg = JSON.parse(await readFile(join(import.meta.dirname, '..', '..', 'package.json'), 'utf8')) as { scripts: Record<string, string> }
     const launching = Object.entries(pkg.scripts).filter(([, command]) => /electron-vite preview|(^|\s)electron\s/.test(command))

@@ -187,8 +187,9 @@ xdg-settings check default-url-scheme-handler https orivon.desktop
 
 The file name is `orivon.desktop`, from `linux.executableName` and `desktopName` in `package.json`; confirm it
 with `ls /usr/share/applications | grep -i orivon`. A file of that name in `~/.local/share/applications` wins
-over it: the dock then starts whatever that file names, and a default-browser choice opens links with it. A run
-from source has its own entry, `orivon-source.desktop` (`scripts/launch-from-source.mjs`). Whether a desktop lists Orivon in its browser list with
+over it: the dock then starts whatever that file names, and a default-browser choice opens links with it. The entry is named "Orivon Browser", as
+the window's title is. A run from source has its own entry, `orivon-source.desktop` (`scripts/launch-from-source.mjs`),
+and names its windows `orivon-source`, so the dock never shows it under the package's icon (ADR-0057). Whether a desktop lists Orivon in its browser list with
 only the two scheme handlers is unmeasured (`docs/open-questions.md` A387).
 
 ## Making "set as default browser" possible: what's config and what isn't

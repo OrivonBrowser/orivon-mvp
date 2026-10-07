@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest'
-import { dataHome, desktopEntry, isRunning } from '../launch-from-source.mjs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { SOURCE_PROGRAM } from '../../src/main/launch/start-launch.js'
+import { dataHome, desktopEntry, isRunning, refreshEntry, SOURCE_WINDOW_CLASS } from '../launch-from-source.mjs'
 
 describe('isRunning', () => {
   const BINARY = '/src/orivon/node_modules/electron/dist/electron'
@@ -42,8 +46,15 @@ describe('desktopEntry', () => {
     expect(entry).toContain('Actions=new-window;new-private-window;\n')
     expect(entry).toContain('[Desktop Action new-window]\nName=New Window\nExec=/usr/bin/node /src/orivon/scripts/launch-from-source.mjs run --new-window\n')
     expect(entry).toContain('[Desktop Action new-private-window]\nName=New Private Window\nExec=/usr/bin/node /src/orivon/scripts/launch-from-source.mjs run --new-private-window\n')
-    expect(entry).toContain('Icon=/src/orivon/build/icon.png\n')
-    expect(entry).toContain('StartupWMClass=orivon\n')
+    expect(entry).toContain('Icon=/src/orivon/build/icon-source.png\n')
+  })
+
+  it('claims the windows a run from source makes, and never the installed package\'s', () => {
+    expect(SOURCE_WINDOW_CLASS).toBe(SOURCE_PROGRAM)
+    expect(entry).toContain(`StartupWMClass=${SOURCE_PROGRAM}\n`)
+    const packaged = readFileSync(join(import.meta.dirname, '..', '..', 'electron-builder.yml'), 'utf8').match(/^\s*StartupWMClass:\s*(\S+)/m)?.[1]
+    expect(packaged).toBe('orivon')
+    expect(SOURCE_PROGRAM).not.toBe(packaged)
   })
 
   it('names the program unquoted, as xdg-settings reads it, and lists the web types in the main group', () => {
@@ -56,5 +67,29 @@ describe('desktopEntry', () => {
     for (const root of ['/my src/orivon', '/src/"o"', '/src/$HOME', '/src/100%', '/src/a\\b', '/src/a\nExec=x', '/src/a;b', '/src/(a)', '/src/~a']) {
       expect(() => desktopEntry('/usr/bin/node', `${root}/scripts/launch-from-source.mjs`, root)).toThrow(/cannot name/)
     }
+  })
+})
+
+describe('refreshEntry', () => {
+  const script = '/src/orivon/scripts/launch-from-source.mjs'
+  const entry = desktopEntry('/usr/bin/node', script, '/src/orivon')
+  let dir = ''
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'orivon-entry-')) })
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
+
+  it('rewrites an entry of this checkout that an older checkout wrote', () => {
+    const path = join(dir, 'orivon-source.desktop')
+    writeFileSync(path, entry.replace(`StartupWMClass=${SOURCE_PROGRAM}`, 'StartupWMClass=orivon'))
+    expect(refreshEntry(path, entry, script)).toBe('refreshed')
+    expect(readFileSync(path, 'utf8')).toBe(entry)
+    expect(refreshEntry(path, entry, script)).toBe('current')
+  })
+
+  it('never creates an entry, nor touches one that starts another checkout', () => {
+    const path = join(dir, 'orivon-source.desktop')
+    expect(refreshEntry(path, entry, script)).toBe('absent')
+    writeFileSync(path, entry.replaceAll('/src/orivon', '/elsewhere/orivon'))
+    expect(refreshEntry(path, entry, script)).toBe('other')
+    expect(readFileSync(path, 'utf8')).toContain('/elsewhere/orivon')
   })
 })

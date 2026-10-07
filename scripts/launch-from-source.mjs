@@ -8,9 +8,12 @@
  *
  * The entry is `orivon-source.desktop`, never `orivon.desktop`: that name is the installed package's (ADR-0057), and
  * a file of that name in the user's own directory would hide the package's entry, its actions and its default choice.
+ * A run from source names its windows `orivon-source` (`SOURCE_PROGRAM` in `src/main/launch/start-launch.ts`), so the
+ * dock files them under this entry and its icon, never under the package's.
  *
  *   node scripts/launch-from-source.mjs run [switches and addresses...]
  *   node scripts/launch-from-source.mjs install    writes ~/.local/share/applications/orivon-source.desktop
+ *   node scripts/launch-from-source.mjs refresh    rewrites that entry if it starts this checkout and is out of date
  *   node scripts/launch-from-source.mjs remove
  */
 import { spawn, spawnSync } from 'node:child_process'
@@ -24,6 +27,9 @@ import { setCheckoutFuses } from './install-electron.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const SCRIPT = fileURLToPath(import.meta.url)
+const ENTRY_FILE = 'orivon-source.desktop'
+/** The window class and Wayland app id a run from source takes: the entry claims its windows by it. */
+export const SOURCE_WINDOW_CLASS = 'orivon-source'
 
 /**
  * Whether a process runs `binary`, read from Linux's `/proc`. Each checkout has its own Electron binary, so this is
@@ -69,10 +75,10 @@ export function desktopEntry (node, script, root) {
     'Type=Application',
     'Name=Orivon (source)',
     exec('%U'),
-    `Icon=${join(root, 'build', 'icon.png')}`,
+    `Icon=${join(root, 'build', 'icon-source.png')}`,
     'Terminal=false',
     'Categories=Network;WebBrowser;',
-    'StartupWMClass=orivon',
+    `StartupWMClass=${SOURCE_WINDOW_CLASS}`,
     `MimeType=${MIME_TYPES}`,
     'Actions=new-window;new-private-window;',
     '',
@@ -89,12 +95,43 @@ export function desktopEntry (node, script, root) {
 
 const entryPath = (env, home, name) => join(dataHome(env, home), 'applications', name)
 
+/**
+ * Rewrites the installed entry at `path` when it starts this checkout and differs from `entry`, so an entry written by
+ * an older checkout keeps claiming the windows this one makes. An entry that is absent or starts another checkout is
+ * left alone: only `install` creates one.
+ * @returns {'absent' | 'other' | 'current' | 'refreshed'}
+ */
+export function refreshEntry (path, entry, script) {
+  let text
+  try {
+    text = readFileSync(path, 'utf8')
+  } catch {
+    return 'absent'
+  }
+  if (!text.includes(script)) return 'other'
+  if (text === entry) return 'current'
+  writeFileSync(path, entry)
+  return 'refreshed'
+}
+
+function refreshOwnEntry () {
+  if (process.platform !== 'linux') return
+  try {
+    if (refreshEntry(entryPath(process.env, homedir(), ENTRY_FILE), desktopEntry(process.execPath, SCRIPT, ROOT), SCRIPT) === 'refreshed') {
+      console.log('[launch-from-source] updated the Orivon (source) desktop entry')
+    }
+  } catch (error) {
+    console.warn(`[launch-from-source] the desktop entry was not updated: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
 async function run (args) {
   // A launcher's PATH may not reach this Node, which the build's npx needs; and a shell's ELECTRON_RUN_AS_NODE would
   // turn Electron into plain Node.
   const env = { ...process.env, PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}` }
   delete env.ELECTRON_RUN_AS_NODE
   const electron = createRequire(import.meta.url)('electron')
+  refreshOwnEntry()
   if (!isRunning(realpathSync(electron))) {
     // Syncing `main` runs no `npm install`, so a fuse that a later checkout sets is set here, while nothing runs the binary.
     const fuses = await setCheckoutFuses({ binary: electron, checkoutRoot: ROOT })
@@ -108,9 +145,11 @@ async function run (args) {
 
 if (isInvokedDirectly(import.meta.url)) {
   const [, , command, ...args] = process.argv
-  const path = entryPath(process.env, homedir(), 'orivon-source.desktop')
+  const path = entryPath(process.env, homedir(), ENTRY_FILE)
   if (command === 'run') {
     await run(args)
+  } else if (command === 'refresh') {
+    refreshOwnEntry()
   } else if ((command === 'install' || command === 'remove') && process.platform !== 'linux') {
     console.error('[launch-from-source] the desktop entry is a Linux one')
     process.exit(1)
@@ -129,7 +168,7 @@ if (isInvokedDirectly(import.meta.url)) {
     rmSync(path, { force: true })
     console.log(`[launch-from-source] removed ${path}`)
   } else {
-    console.error('usage: node scripts/launch-from-source.mjs run [args...] | install | remove')
+    console.error('usage: node scripts/launch-from-source.mjs run [args...] | install | refresh | remove')
     process.exit(1)
   }
 }

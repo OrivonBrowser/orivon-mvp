@@ -83,9 +83,9 @@ export function electronBinaryPath (installer) {
 /**
  * The fuses a checkout's binary takes from a package, by their `electron-builder.yml` names. With the
  * file-protocol fuse off, a `file:` page gets no more reach than a web page does (ADR-0059). With cookie
- * encryption on, the cookie store is written as a package writes it: a run from source and an installed
- * package share one profile (ADR-0057), and a binary without the fuse reads none of the cookies the other
- * encrypted, so every site the package was signed in to is signed out.
+ * encryption on, the cookie store is written as a package writes it (ADR-0057). Encryption is one-way per
+ * profile: a binary without the fuse reads none of the cookies an encrypting binary wrote and deletes them, so
+ * every site the profile was signed in to is signed out.
  */
 export const CHECKOUT_FUSES = Object.freeze({ grantFileProtocolExtraPrivileges: false, enableCookieEncryption: true })
 
@@ -184,9 +184,9 @@ if (isInvokedDirectly(import.meta.url)) {
   const plan = electronInstallPlan(process.env)
 
   if (process.argv.includes('--fuses')) {
-    // `npm start` launches this checkout's binary on the profile a package shares (ADR-0057), so it sets the fuses
-    // first. On Linux it launches nothing unless they are set: a binary without cookie encryption deletes every
-    // cookie the package encrypted. Elsewhere the flip is not measured yet (A394), so a refusal only warns. With no
+    // `npm start` launches this checkout's binary on a profile whose cookies are encrypted (ADR-0057), so it sets the
+    // fuses first. On Linux it launches nothing unless they are set: a binary without cookie encryption deletes every
+    // cookie the profile holds. Elsewhere the flip is not measured yet (A394), so a refusal only warns. With no
     // binary there is nothing to launch, and `electron-vite preview` says so.
     const installer = resolveInstaller()
     const status = installer === undefined ? 'absent' : await reportFuses(installer)
