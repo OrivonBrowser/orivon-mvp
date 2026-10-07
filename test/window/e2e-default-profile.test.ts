@@ -1,7 +1,7 @@
 // What a new profile starts with: five bookmarks with icons, uBlock Origin installed and pinned, the
 // Extensions button shown, and "Orivon Featured" on the new tab; and that none of it comes back once the person
-// removed it. Every other spec runs with ORIVON_DEFAULT_PROFILE=off (test/support/launch-electron.mjs).
-import { existsSync } from 'node:fs'
+// removed it. Set ORIVON_UI_SHOTS_DIR to also write a screenshot of the window. Every other spec runs with ORIVON_DEFAULT_PROFILE=off (test/support/launch-electron.mjs).
+import { existsSync, mkdirSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
@@ -80,6 +80,12 @@ it('starts a new profile with the bookmarks, uBlock Origin pinned, the Extension
       const image = tile.querySelector('img')
       return image !== null && image.complete && image.naturalWidth > 0
     }))).every(Boolean))).toBe(true)
+    const shots = process.env['ORIVON_UI_SHOTS_DIR']
+    if (shots !== undefined) {
+      mkdirSync(shots, { recursive: true })
+      await chrome.screenshot({ path: join(shots, 'default-profile-chrome.png') })
+      await dashboard.screenshot({ path: join(shots, 'default-profile-dashboard.png') })
+    }
     expect(await dashboard.locator('#bookmarks-section .tile-section-title').innerText()).toMatch(/Bookmarks/i)
     expect(await waitFor(async () => (await dashboard.locator('#bookmarks-grid .tile-label').allInnerTexts()).join() === BAR.join())).toBe(true)
   } finally {

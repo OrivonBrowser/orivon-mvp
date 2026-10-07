@@ -332,7 +332,7 @@ for (const scheme of SCHEMES) {
           action: 'Resized the window content to 800x600 on the dashboard.'
         }, { width: 800, height: 600 })
         await state(check, app, `dashboard-500x400-${scheme}`, {
-          expected: 'At the smallest size a window can have, 500x400, the toolbar is one row: back, forward, reload, the star, an address field wide enough to read an address in, the all-sites button, the side-panel button and the menu. The identity placeholder and the node-status dot are gone, and nothing is cut or overlaps.',
+          expected: 'At the smallest size a window can have, 500x400, the toolbar is one row: back, forward, reload, the star, an address field wide enough to read an address in, the all-sites button, the Extensions button, the side-panel button and the menu. The identity placeholder and the node-status dot are gone, and nothing is cut or overlaps.',
           action: 'Resized the window content to 500x400, the minimum, on the dashboard.'
         }, { width: 500, height: 400 })
       })
