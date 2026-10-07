@@ -6,12 +6,14 @@
 
 ### Web3. Trustless. On-the-fly.<br>Pick all three.
 
-**Open a link, and a desktop app, a peer-to-peer client or a whole Node.js server runs in your tab,<br>
-verified on your machine and holding only the powers you grant it.**<br>
-No installer. No app store. No account. No server of ours.
+**A browser built for owning, and a platform for apps Chrome cannot run.**<br>
+Your names, code, keys and decisions belong to you. Open a link, and a desktop app, a peer-to-peer
+client or a whole Node.js server runs in your tab, verified on your machine and holding only the
+powers you grant it.<br>
+No installer. No account. No Orivon server in the path of using it.
 
 [![Release](https://img.shields.io/github/v/release/OrivonBrowser/orivon-mvp?include_prereleases&label=release&color=6d3ff2)](https://github.com/OrivonBrowser/orivon-mvp/releases/latest)
-[![Status: alpha](https://img.shields.io/badge/status-alpha-a7e638)](docs/known-limitations.md)
+[![Status: early access](https://img.shields.io/badge/status-early%20access-a7e638)](docs/known-limitations.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-6d3ff2)](LICENSE)
 [![Platforms](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-1fb4ff)](#download)
 [![CI](https://github.com/OrivonBrowser/orivon-mvp/actions/workflows/ci.yml/badge.svg)](https://github.com/OrivonBrowser/orivon-mvp/actions/workflows/ci.yml)
@@ -25,6 +27,13 @@ No installer. No app store. No account. No server of ours.
 </div>
 
 <br>
+
+## Two things, equally
+
+Orivon is a browser you can live in: Web3 for everyone, with the names, code, keys and decisions
+that matter belonging to you. It is also a platform: a capability API and a broker that run
+applications a web page could never be, such as ported desktop apps, Node.js servers in a tab and
+real sockets. Neither is the side project of the other.
 
 ## The web forbids what Web3 needs
 
@@ -96,10 +105,11 @@ through the same grants. Nothing an app ships runs as machine code on your syste
 </td>
 <td valign="top">
 
-### 🏠 No Orivon server
+### 🏠 No Orivon server in the path
 
-No account, no cloud, no sync service: your keys and data stay on your machine. Usage statistics
-only if you say yes. Copyleft under the AGPL, so it stays that way.
+Nothing of ours sits between you and an app. No account, no cloud: your keys and data stay on your
+machine. Usage statistics and bug reports go to a small endpoint we run, and only if you say yes.
+Copyleft under the AGPL, so it stays that way.
 
 </td>
 </tr>
@@ -119,7 +129,7 @@ Every one of these is a real app, published to IPFS and named on Ethereum.
 | **Orivon Explore** | [`explore.orivonstack.eth`](https://explore.orivonstack.eth.limo) | A directory of Web3 sites, each with its Web3 Score |
 
 In another browser these links go through the eth.limo gateway, and the app says it needs Orivon.
-In Orivon the same link opens as the real `.eth` name, proven on your machine. The ports are alpha
+In Orivon the same link opens as the real `.eth` name, proven on your machine. The ports are early-access
 software: keep funds you cannot afford to lose out of the wallets for now.
 
 <table>
@@ -133,7 +143,7 @@ software: keep funds you cannot afford to lose out of the wallets for now.
 </tr>
 </table>
 
-## Your everyday browser, too
+## Built for owning, and for living in
 
 Orivon is built to be lived in, not opened only when you need a dapp.
 
@@ -144,9 +154,9 @@ Orivon is built to be lived in, not opened only when you need a dapp.
 | 🕶️ **Profiles and private windows** | Each profile is a separate browser with its own data. A private window keeps nothing and sends no statistics |
 | 🗂️ **Tabs that scale** | Groups, split view, pinning, tab search, idle tabs put to sleep, tear-off with a live preview, and session restore |
 | 🔒 **Privacy controls** | Global Privacy Control on by default, third-party cookie blocking, Do Not Track, HTTPS-only, DNS over HTTPS, and pop-ups blocked unless you clicked |
-| 📊 **Telemetry only if you say yes** | The first screen asks once, with two equal buttons, and Settings has a switch. A monthly count of use, split into Web3, Web2.5 and Web2 time, goes to Orivon's own server in the EU; never a page address or your IP. The [privacy notice](docs/privacy/notice.md) lists every field |
+| 📊 **Telemetry only if you say yes** | The first screen asks once, with two equal buttons, and Settings has a switch. A monthly count of use, split into Web3, Web2.5 and Web2 time, goes to a small endpoint Orivon runs in the EU; never a page address or your IP. The [privacy notice](docs/privacy/notice.md) lists every field |
 | 🧰 **Everything else you expect** | A password manager in your OS keyring, bookmarks and history imported from Chrome, Edge, Brave or Firefox, reader view, printing to PDF, screenshots, screen sharing and picture-in-picture |
-| 🐧 **Linux first** | Native on X11 and Wayland, with packages for Windows and macOS |
+| 🖥️ **Linux, Windows and macOS** | The same browser on all three, with packages for each. On Linux it runs natively on X11 and on Wayland |
 
 ## How it works
 
@@ -259,36 +269,27 @@ has the details.
 
 ## Roadmap
 
-**Built**
+**Now:** a full browser shell with profiles, private windows and Chrome extensions · the capability
+broker and a Node.js layer · the app loader with hash-pinned apps · `.eth` names and
+`ipfs://` / `ipns://` content verified on your machine · the Web3 Score with providers you choose ·
+packages for Linux, Windows and macOS.
 
-- [x] A full browser shell: tabs, profiles, private windows, Chrome extensions
-- [x] The capability broker: per-app grants, enforced on network, TLS, files, keys and media
-- [x] A Node.js layer: `net`, `tls`, `dgram`, `fs`, `http`, `child_process`, `worker_threads`, `sqlite`
-- [x] The app loader: discovery, hash-pinned cache, one plain-words prompt, DDOC
-- [x] `.eth` names and `ipfs://` / `ipns://` content, verified on your machine
-- [x] The Web3 Score, with providers you choose
-- [x] Packages for Linux, Windows and macOS, each release also on IPFS
+**Expected next, with no promise and no date:** a native wallet is on the way · signed self-update ·
+Orivon Explore as a directory of apps · more ported apps.
 
-**Not built yet**
-
-- [ ] A wallet. An app can hold a signing key Orivon derives for it, with no funds and no seed
-      phrase; holding and sending crypto comes later, under its own security model
-- [ ] A developer mode in the UI for loading an unpacked app, and an app store
-- [ ] DDOC anchored in DNS, and Arweave as a second delivery path
-- [ ] Identity export and backup
-- [ ] Signed Windows and macOS installers
-
-**Further out:** Tor and proxy chains · a WebAssembly runtime that contains untrusted apps · mobile ·
-Web3 search · cross-device sync.
+**Later:** mobile · cross-device sync · stronger sandboxing of untrusted apps · native desktop apps
+such as Bisq · Tor and proxy chains · Web3 search.
 
 The goal that runs through all of it: any Web3 codebase, from a full node to a DEX to a Tor proxy,
-running as a site the moment you open its name. [docs.orivonstack.com](https://docs.orivonstack.com)
-describes that vision; [`docs/scope.md`](docs/scope.md) says what this version holds.
+running as a site the moment you open its name. [`docs/roadmap.md`](docs/roadmap.md) has the whole
+list and [`docs/features.md`](docs/features.md) says what works today.
 
 ## Documentation
 
 | | |
 |---|---|
+| [Features](docs/features.md) | What works today, one line each |
+| [Roadmap](docs/roadmap.md) | What is expected next, and what is later |
 | [Known limitations](docs/known-limitations.md) | What Orivon does not do yet, and what each server it talks to can see |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | How the pieces fit, in five minutes |
 | [`docs/README.md`](docs/README.md) | The documentation index |

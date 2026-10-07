@@ -7,7 +7,7 @@ of the codebase are meant to survive, and which decisions are already settled.
 ## What is tied to Electron, and what is not
 
 Almost all of this is tied to Electron: the shell, the preload, the renderer chrome, the Node
-shim. Each is how the current version works, and each would be rewritten if the foundation
+shim. Each is how Orivon works today, and each would be rewritten if the foundation
 underneath changed.
 
 One thing would not, and that is the interface apps program against, in
@@ -15,8 +15,9 @@ One thing would not, and that is the interface apps program against, in
 that is a Node `net.Socket` in an Electron main process, and the interface is shaped so it could
 be something else later without any app already written having to change.
 
-That is a property of the design, not a plan. A WASM runtime is not scheduled
-([`docs/scope.md`](docs/scope.md) §LATER).
+That is a property of the design, not a plan. Stronger sandboxing is expected later, and WASI and
+WebAssembly are explored inside the layer that runs apps today
+([`docs/roadmap.md`](docs/roadmap.md)).
 
 The practical rule that follows: a shortcut in `src/main/` costs a refactor of code tied to
 Electron. A shortcut in `src/contracts/` costs every app ever written for Orivon. Spend your care
@@ -146,13 +147,13 @@ you disagree with one, the ADR is where the objections are already answered.
   in an app as it runs in Node, so a component compiled to it qualifies like JavaScript; a native
   addon does not carry over
   ([`ADR-0036`](docs/decisions/ADR-0036-an-app-qualifies-by-running-in-the-node-environment.md)).
-- **The capability API is the durable asset.** A WASM runtime is deferred, not cancelled:
-  containment for untrusted code and mobile portability are both real goals, and neither is
-  built yet ([`ADR-0002`](docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md)).
+- **The capability API is the durable asset.** The engine beneath it may change. Stronger
+  sandboxing of untrusted code is expected later, and a switch to a WebAssembly runtime is a
+  possible option, not a plan ([`ADR-0002`](docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md)).
 
 **How an app reaches you**
 
-- **Apps are addressed by URL and cached, never bundled or installed.** No store, no review, no
+- **Apps are addressed by URL and cached, never bundled or installed.** No review and no
   gatekeeper. It also forces the hard problem to be solved rather than avoided
   ([`ADR-0005`](docs/decisions/ADR-0005-apps-are-url-addressed-not-bundled.md)).
 - **A cached bundle keeps its real origin.** Serving it from a synthetic origin would break the
@@ -162,8 +163,9 @@ you disagree with one, the ADR is where the objections are already answered.
 **What you are told, and what is kept**
 
 - **Local-first storage; no Orivon server holds user data.** Per-origin isolation, keys derived
-  on the machine. There is no account to breach because there is no account
-  ([`ADR-0003`](docs/decisions/ADR-0003-local-first-storage.md)).
+  on the machine. There is no account to breach because there is no account. The only servers of
+  ours are the endpoint for opt-in statistics and bug reports and static hosting of first-party
+  app bundles ([`ADR-0003`](docs/decisions/ADR-0003-local-first-storage.md)).
 - **Telemetry is an explicit choice on first run.** The metric requires measurement; the first
   screen asks with two equal buttons, nothing preselected, nothing sent before you choose, and
   Settings shows the literal messages ([`ADR-0004`](docs/decisions/ADR-0004-telemetry.md),
@@ -193,14 +195,15 @@ you disagree with one, the ADR is where the objections are already answered.
 Each was considered and decided against, and each gets suggested again by someone who assumes it
 was simply overlooked.
 
-- **App signing, cut from v0.** With one publisher it is capability-identical to no signing,
+- **App signing, not built.** With one publisher it is capability-identical to no signing,
   nothing specified the mechanism, and it would have put a red UNSIGNED badge beside
   *"connect to any computer on the internet"* in every first-party app's prompt. Integrity is hash-pinning,
   and a site can publish its bundle hash tree, which the Web3 Score page compares with the pin
   (DDOC, `ADR-0029`).
-- **Auto-install of updates, cut.** Unsigned `electron-updater` verifies a hash fetched from the
-  same host that serves the binary, which is a standing remote-code-execution channel and weaker
-  than what is demanded of third-party apps. v0 checks and notifies.
+- **Auto-install of unsigned updates, not built.** Unsigned `electron-updater` verifies a hash
+  fetched from the same host that serves the binary, which is a standing remote-code-execution
+  channel and weaker than what is demanded of third-party apps. Today Orivon checks and notifies;
+  installing a signed update is expected next ([`docs/roadmap.md`](docs/roadmap.md)).
 - **`activeSec` rather than uptime**, in the success metric. Not a cut, but the same kind of
   call: some apps do their work in the background, a node syncing or a client seeding, so
   measuring "app open" would let someone who started one and walked away hit the target on day
@@ -208,7 +211,7 @@ was simply overlooked.
 
 ## Two facts that are expensive to rediscover
 
-Both were found by measurement during the week-0 spike, and both contradict what you would
+Both were found by measurement, and both contradict what you would
 reasonably assume.
 
 **1. Transferable `ArrayBuffer`s renderer → main silently never arrive.**
@@ -233,5 +236,5 @@ resolution overrides in `electron.vite.config.ts`.
 | [`src/contracts/`](src/contracts/) | The product surface, in eight files |
 | [`docs/architecture/capability-api.md`](docs/architecture/capability-api.md) | The specification those files transcribe |
 | [`docs/architecture/handle-contracts.md`](docs/architecture/handle-contracts.md) | What each handle does: backpressure, close semantics, errors, revocation |
-| [`docs/architecture/security-model.md`](docs/architecture/security-model.md) | The threat model. This version's model is authorisation, not containment; see [`SECURITY.md`](SECURITY.md) |
+| [`docs/architecture/security-model.md`](docs/architecture/security-model.md) | The threat model. Today's model is authorisation, not containment; stronger sandboxing is expected later; see [`SECURITY.md`](SECURITY.md) |
 | [`docs/development/parallel-work.md`](docs/development/parallel-work.md) | How several people work here at once |
