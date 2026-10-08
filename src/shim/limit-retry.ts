@@ -6,7 +6,9 @@
 // The broker also holds an origin to LIMITS.inFlightOperations calls at once, plus as many waiting, and refuses
 // the rest. Node never refuses a file call for being one too many: libuv queues it. So the asynchronous fs calls
 // also queue here, in order, under half that bound (fsQueue), and a program writing at full speed (a torrent
-// client) waits where Node would wait instead of meeting a refusal its code never expects.
+// client) waits where Node would wait instead of meeting a refusal its code never expects. Socket dials queue under
+// a quarter of it (dialQueue): a dial holds its place until the broker's dial timeout even when the program has
+// given up on it, and a peer-to-peer program gives up on many.
 
 import { LIMITS } from '../contracts/limits.js'
 
@@ -51,3 +53,6 @@ export function createCallQueue (max: number): <T>(run: () => Promise<T>) => Pro
 
 /** The asynchronous fs calls of this realm, kept to half the broker's per-origin bound so net calls and other realms keep room. */
 export const fsQueue = createCallQueue(Math.floor(LIMITS.inFlightOperations / 2))
+
+/** This realm's socket dials (net.Socket#connect), kept to a quarter of the same bound. */
+export const dialQueue = createCallQueue(Math.floor(LIMITS.inFlightOperations / 4))
