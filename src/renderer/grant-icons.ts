@@ -124,6 +124,12 @@ function folderIcon (): SVGSVGElement {
   return el
 }
 
+function usbIcon (): SVGSVGElement {
+  const el = svg('0 0 24 24')
+  el.append(rect(7, 2, 10, 9, 1), line(10, 5, 10, 7), line(14, 5, 14, 7), path('M12 11v11', '2'))
+  return el
+}
+
 function bellIcon (): SVGSVGElement {
   const el = svg('0 0 24 24')
   el.append(
@@ -151,6 +157,7 @@ const BUILDERS: Record<GrantIconKind, () => SVGSVGElement> = {
   'web.embed': appWindowIcon,
   secrets: lockKeyholeIcon,
   'trust.score': globeIcon,
+  'devices.hid': usbIcon,
   'media.camera': cameraIcon,
   'media.microphone': micIcon,
   'media.screen': screenShareIcon,

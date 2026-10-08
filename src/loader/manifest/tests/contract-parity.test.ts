@@ -34,8 +34,8 @@ type Full<T> = Required<T>
 type FullManifest = Omit<Full<Manifest>, 'capabilities'> & {
   // 'clipboard' (ADR-0032) has no app door and 'secrets' (ADR-0033) has no
   // fields, so a kitchen-sink manifest naming them would fail the round-trip
-  // or prove nothing.
-  readonly capabilities: Omit<Full<Capabilities>, 'net' | 'fs' | 'id' | 'web' | 'media' | 'clipboard' | 'secrets' | 'trust'> & {
+  // or prove nothing. 'devices' (ADR-0068) has no loader parser yet.
+  readonly capabilities: Omit<Full<Capabilities>, 'net' | 'fs' | 'id' | 'web' | 'media' | 'clipboard' | 'secrets' | 'trust' | 'devices'> & {
     readonly media: Full<MediaCapability>
     readonly trust: Full<TrustCapability>
     readonly net: Omit<Full<NetCapability>, 'tcp' | 'udp' | 'https'> & {

@@ -32,6 +32,9 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 - **`app-screen-declared-shows-the-picker`, `app-screen-undeclared-is-refused`, `electron-desktop-capturer-serves-the-picked-source`**:
   a declared `media.screen` is asked once, then Orivon's picker opens; the `electron` shim's `desktopCapturer.getSources`
   returns the one source chosen and its `chromeMediaSource: 'desktop'` call takes it once. Apps that list every screen: use that. Recheck: Element.
+- **`contracts/devices.ts`, `contracts/index.ts`, `contracts/manifest.ts`, `contracts/limits.ts`**: new capability kind `devices.hid`
+  (declare `"devices": { "hid": [{ "vendorId": 11415 }] }`, at most `LIMITS.hidFilters` filters); an app then uses
+  `navigator.hid`. Each device is still asked. Recheck: none; the loader does not accept it yet.
 
 ### Added
 
