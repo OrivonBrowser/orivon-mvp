@@ -27,7 +27,7 @@ import { createFileHandleWrapper, VALID_OPEN_FLAGS } from './fs-handle-wrapper.j
 import type { HandleTable } from '../handles/handles.js'
 import type { FailableFileHandle, OperationScope } from '../handles/handle-contracts.js'
 import type { GrantLedger } from '../grants/grant-ledger.js'
-import type { Broker, CreateBrokerOptions, OpenedFile, RawFileStat } from '../broker-contracts.js'
+import type { Broker, BrokerFsSync, CreateBrokerOptions, OpenedFile, RawFileStat } from '../broker-contracts.js'
 import type { Grant, OrivonError } from '../../contracts/index.js'
 
 export interface FsCapabilityOptions {
@@ -116,11 +116,19 @@ export function createFsCapability ({ deps, handleTable, ledger, canonical }: Fs
   // session before anything charges or frees bytes (README.md's Design
   // notes). A failed measurement starts from zero and is retried next call.
   const measured = new Map<string, Promise<void>>()
+  // Origins whose usage is already in the ledger -- by the async measurement or the synchronous one below, whichever
+  // came first, so the second never charges the same bytes again.
+  const measuredDone = new Set<string>()
   async function ensureMeasured (key: string): Promise<void> {
+    if (measuredDone.has(key)) return
     let pending = measured.get(key)
     if (pending === undefined) {
-      pending = (async () => { ledger.chargeFsBytes(key, await deps.fs.diskUsage?.(deps.fs.rootFor(key)) ?? 0) })()
-        .catch(() => { measured.delete(key) })
+      pending = (async () => {
+        const usage = await deps.fs.diskUsage?.(deps.fs.rootFor(key)) ?? 0
+        if (measuredDone.has(key)) return
+        measuredDone.add(key)
+        ledger.chargeFsBytes(key, usage)
+      })().catch(() => { measured.delete(key) })
       measured.set(key, pending)
     }
     await pending
@@ -167,6 +175,100 @@ export function createFsCapability ({ deps, handleTable, ledger, canonical }: Fs
   function confineSync (origin: string, path: string): string {
     const key = canonical(origin)
     return confineForOrigin(key, path).resolved
+  }
+
+  /** The blocking twins' base: the `sync` adapter, or `unavailable` where the injected filesystem has none. */
+  function syncIo (): BrokerFsSync {
+    if (deps.fs.sync === undefined) throw fail('unavailable', 'synchronous file calls are not available here')
+    return deps.fs.sync
+  }
+
+  /** `ensureMeasured`, blocking: the first synchronous charge or refund walks the origin's files itself rather than skip the quota. A failed walk starts from zero and is retried next call. */
+  function ensureMeasuredSync (key: string): void {
+    if (measuredDone.has(key)) return
+    let usage: number
+    try {
+      usage = syncIo().diskUsage(deps.fs.rootFor(key))
+    } catch (error) {
+      if (isOrivonErrorLike(error)) throw error
+      return
+    }
+    measuredDone.add(key)
+    measured.set(key, Promise.resolve())
+    ledger.chargeFsBytes(key, usage)
+  }
+
+  /** `fileSize`, blocking. */
+  function fileSizeSync (path: string): number {
+    try {
+      const info = syncIo().stat(path)
+      return info.isFile ? info.size : 0
+    } catch {
+      return 0
+    }
+  }
+
+  /** `bytesAt`, blocking. */
+  function bytesAtSync (path: string): number {
+    try {
+      return syncIo().diskUsage(path)
+    } catch {
+      return 0
+    }
+  }
+
+  /** `writeFile`'s blocking twin: the same growth-only charge against the same ledger, the same refund when nothing landed or the file shrank. */
+  function writeFileSync (origin: string, path: string, data: Uint8Array): void {
+    const key = canonical(origin)
+    const { resolved } = confineForOrigin(key, path)
+    const io = syncIo()
+    ensureMeasuredSync(key)
+    const growth = data.length - fileSizeSync(resolved)
+    if (growth > 0 && !ledger.reserveFsBytes(key, growth)) {
+      throw fail('limit', "this write would exceed the app's declared storage quota")
+    }
+    try {
+      io.writeFile(resolved, data)
+    } catch (error) {
+      if (growth > 0) ledger.releaseFsBytes(key, growth)
+      throw error
+    }
+    if (growth < 0) ledger.releaseFsBytes(key, -growth)
+  }
+
+  function mkdirSync (origin: string, path: string, opts?: { recursive?: boolean }): void {
+    syncIo().mkdir(confineForOrigin(canonical(origin), path).resolved, opts)
+  }
+
+  function readdirSync (origin: string, path: string): readonly string[] {
+    return syncIo().readdir(confineForOrigin(canonical(origin), path).resolved)
+  }
+
+  function statSync (origin: string, path: string): RawFileStat {
+    return syncIo().stat(confineForOrigin(canonical(origin), path).resolved)
+  }
+
+  /** `rm`'s blocking twin: what it removed goes back to the quota, measured just before. */
+  function rmSync (origin: string, path: string, opts?: { recursive?: boolean }): void {
+    const key = canonical(origin)
+    const { resolved } = confineForOrigin(key, path)
+    const io = syncIo()
+    ensureMeasuredSync(key)
+    const freed = bytesAtSync(resolved)
+    io.rm(resolved, opts)
+    ledger.releaseFsBytes(key, freed)
+  }
+
+  /** `rename`'s blocking twin: both sides confined independently, and a file the rename replaces gives its bytes back. */
+  function renameSync (origin: string, from: string, to: string): void {
+    const key = canonical(origin)
+    const source = confineForOrigin(key, from)
+    const destination = confineForOrigin(key, to)
+    const io = syncIo()
+    ensureMeasuredSync(key)
+    const replaced = source.resolved === destination.resolved ? 0 : fileSizeSync(destination.resolved)
+    io.rename(source.resolved, destination.resolved)
+    ledger.releaseFsBytes(key, replaced)
   }
 
   async function readFile (origin: string, path: string): Promise<Uint8Array> {
@@ -332,5 +434,5 @@ export function createFsCapability ({ deps, handleTable, ledger, canonical }: Fs
     return fail('denied', 'no such file handle for this origin', handleId)
   }
 
-  return { readFile, writeFile, confineSync, mkdir, readdir, stat, rm, rename, open, handleGone }
+  return { readFile, writeFile, confineSync, sync: { writeFile: writeFileSync, mkdir: mkdirSync, readdir: readdirSync, stat: statSync, rm: rmSync, rename: renameSync }, mkdir, readdir, stat, rm, rename, open, handleGone }
 }

@@ -104,12 +104,12 @@ export function readFileSync (path: PathLike, options?: ReadFileOptions | string
 }
 
 /**
- * On the page: over readFileSync, the one synchronous orivon.fs call
- * (ADR-0016) -- a file it can read exists, and so does a directory, which
- * fails EISDIR. It cannot tell a missing path from one it may not read, so
- * both are false, as Node's own existsSync reports any failure. In a Worker
- * with the synchronous twin, a stat answers it directly (core-sync.ts's
- * existsSyncCore) -- no whole-file read.
+ * With a synchronous twin (the page's, or a Worker's), a stat answers it
+ * directly (core-sync.ts's existsSyncCore). Without one, it goes over
+ * readFileSync, the one synchronous orivon.fs call (ADR-0016) -- a file it
+ * can read exists, and so does a directory, which fails EISDIR. That route
+ * cannot tell a missing path from one it may not read, so both are false,
+ * as Node's own existsSync reports any failure.
  */
 export function existsSync (path: PathLike): boolean {
   return existsSyncCore(path, (confined) => retriedSync(() => getOrivon().fs.readFileSync(confined)))

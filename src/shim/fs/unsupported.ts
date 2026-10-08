@@ -1,10 +1,11 @@
 // The named error every `fs` `*Sync` refusal throws -- same pattern as
 // http/unsupported.ts's own gaps. Every `fs` `*Sync` export now works in a
-// Worker of a cross-origin isolated app (fs/core-sync.ts, ADR-0016's
-// amendment, over the Worker's synchronous twin, sync-orivon.ts's `syncFs`)
-// and throws this same error only on the page, or in a Worker with no
-// SharedArrayBuffer -- `syncFs()` itself is the one place that throws it,
-// not a per-export helper here.
+// Worker of a cross-origin isolated app and every path-based one works on
+// the page (fs/core-sync.ts, ADR-0016's amendment, over the synchronous
+// twin, sync-orivon.ts's `syncFs`). This error is thrown for a Worker with
+// no SharedArrayBuffer, and for a handle-based call on the page --
+// `syncFs()` and `syncFsWithOpen()` are the places that throw it, not a
+// per-export helper here.
 
 import { OrivonShimError } from '../errors.js'
 

@@ -175,6 +175,14 @@ export function stubBroker (
         if (overrides.confineSync !== undefined) return overrides.confineSync(origin, path)
         throw new Error('this stub method was not configured for this test')
       },
+      sync: {
+        writeFile: () => { throw new Error('this stub method was not configured for this test') },
+        mkdir: () => { throw new Error('this stub method was not configured for this test') },
+        readdir: () => { throw new Error('this stub method was not configured for this test') },
+        stat: () => { throw new Error('this stub method was not configured for this test') },
+        rm: () => { throw new Error('this stub method was not configured for this test') },
+        rename: () => { throw new Error('this stub method was not configured for this test') }
+      },
       mkdir: async (origin, path, opts) => {
         calls.push({ method: 'fs.mkdir', origin, args: { path, opts } })
         await (overrides.mkdir?.(origin, path, opts) ?? notStubbed())

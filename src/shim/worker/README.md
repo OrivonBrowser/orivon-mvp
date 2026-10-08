@@ -93,12 +93,12 @@ The Worker posts the call as usual and waits in `Atomics.wait`; the page makes i
 isolated app has `SharedArrayBuffer`: elsewhere a Worker's `readFileSync` refuses by name, and an
 addon's file calls refuse with `NOSYS`. The synchronous twin sits under
 `Symbol.for('orivon.synchronous')` on the Worker's `orivon`, a registered symbol so each bundle's
-shim finds the same one. It is not part of the contract, and `window.orivon` has none. A reply
+shim finds the same one. It is not part of the contract. `window.orivon` has a twin of its own with the path-based `fs` members only and no `open` (the preload serves it over a blocking IPC call, `../../broker/transport/sync-fs.ts`). A reply
 carries no stream, so a call returning one refuses, and the page closes what that call opened. **Never make a synchronous call from the
 thread that serves it**: it waits forever, which is why `tests/sync-channel.test.ts` runs the
 Worker end in a `worker_threads` thread. Every path-based `fs` `*Sync` call ([`../fs/`](../fs/))
-rides this same twin, one `orivon.fs` member at a time; `readFileSync`/`existsSync` alone also work
-outside a Worker, over the runtime's own synchronous channel
+rides this same twin, one `orivon.fs` member at a time; on the page the same path-based calls run over the page's own
+twin, and `readFileSync`/`existsSync` also work with no twin at all, over the runtime's own synchronous channel
 ([`ADR-0016`](../../../docs/decisions/ADR-0016-synchronous-file-reads-are-permitted.md)).
 
 **`child_process.spawnSync`/`execSync`/`execFileSync` are not an `orivon.*` call, so they carry

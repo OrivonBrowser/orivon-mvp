@@ -419,6 +419,16 @@ export function installOrivon (
   const netConnectImpl = async (opts: { host: string, port: number }): Promise<unknown> => buildSocket(await callRevived(bridge.netConnect(opts)))
   const netConnectSecureImpl = async (opts: SecureConnectOptions): Promise<unknown> => buildSocket(await callRevived(bridge.netConnectSecure(opts)))
 
+  /** One blocking round trip over `bridge.fsSync`. It never throws, so the failure is built and thrown HERE, never via callRevived. */
+  function syncCall (op: string, args: unknown[]): unknown {
+    const r = bridge.fsSync(op, args)
+    if (r.ok) return r.result
+    throw toOrivonError(r.code, r.platformCode === undefined ? { message: r.message } : { message: r.message, platformCode: r.platformCode })
+  }
+  // The page's synchronous twin of `fs` (`Symbol.for('orivon.synchronous')`, like a Worker's): the path-based members only, no `open`, attributed like readFileSync.
+  const synchronousFs: Record<string, unknown> = {}
+  for (const op of ['stat', 'readFile', 'writeFile', 'mkdir', 'readdir', 'rm', 'rename']) synchronousFs[op] = guarded((...args: unknown[]) => syncCall(op, args), true)
+
   const api = {
     version: 0,
     app: Object.freeze({
@@ -429,14 +439,8 @@ export function installOrivon (
     fs: Object.freeze({
       readFile: guarded(async (path: string) => await callRevived(bridge.fsReadFile(path))),
       writeFile: guarded(async (path: string, data: Uint8Array) => { await callRevived(bridge.fsWriteFile(path, data)) }),
-      // NOT `async`, genuinely synchronous through `executeInMainWorld` -- `bridge.fsReadFileSync` never throws, so the failure branch is built and thrown HERE, never via callRevived.
-      readFileSync: guarded((path: string) => {
-        const response = bridge.fsReadFileSync(path)
-        if (response.ok) return response.result
-        throw toOrivonError(response.code, response.platformCode === undefined
-          ? { message: response.message }
-          : { message: response.message, platformCode: response.platformCode })
-      }, true),
+      // NOT `async`, genuinely synchronous through `executeInMainWorld` -- see `syncCall`.
+      readFileSync: guarded((path: string) => syncCall('readFile', [path]) as Uint8Array, true),
       mkdir: guarded(async (path: string, opts?: { recursive?: boolean }) => { await callRevived(bridge.fsMkdir(path, opts)) }),
       readdir: guarded(async (path: string) => await callRevived(bridge.fsReaddir(path))),
       stat: guarded(async (path: string) => await callRevived(bridge.fsStat(path))),
@@ -477,6 +481,8 @@ export function installOrivon (
       lookup: guarded(async (opts: { hostname: string }) => await callRevived(bridge.netLookup(opts)))
     })
   }
+  // Not on the child host's object: it never meets a page, so there is no call to attribute.
+  if (attributeCallers) Object.defineProperty(api, Symbol.for('orivon.synchronous'), { value: Object.freeze({ fs: Object.freeze(synchronousFs) }) })
   // A plain assignment would let a page script replace orivon.net.connect for every other script on the same page.
   Object.defineProperty(target, 'orivon', { value: Object.freeze(api), writable: false, configurable: false, enumerable: true })
 

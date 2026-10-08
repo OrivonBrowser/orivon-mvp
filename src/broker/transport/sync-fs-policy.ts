@@ -38,6 +38,14 @@ export function createSyncFsPolicy (
 ): SyncFsPolicy {
   return {
     confine: (origin, path) => broker.fs.confineSync(origin, path),
+    // A write blocks the main thread as long as a read does, so it takes the same cap.
+    sync: {
+      ...broker.fs.sync,
+      writeFile: (origin, path, data) => {
+        if (data.length > maxReadBytes) throw fail('limit', 'the data exceeds the synchronous write size cap')
+        broker.fs.sync.writeFile(origin, path, data)
+      }
+    },
     readFileSync: (resolvedPath) => {
       // stat before read, not read-then-measure -- the whole point is that
       // the main process must never block on bytes it is about to refuse.
