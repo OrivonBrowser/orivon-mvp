@@ -198,6 +198,7 @@ if (isInvokedDirectly(import.meta.url)) {
   console.log(summary)
   if (process.argv.includes('--explain')) for (const file of changed) console.log(`  ${file} -> ${tokensFor(map, file).join(' ') || 'ignored'}`)
   if (process.argv.includes('--json')) console.log(JSON.stringify({ ...plan, shards }, null, 2))
+  else if (plan.mode === 'full' && !process.env['GITHUB_OUTPUT']) console.log('Run: every spec, which CI does; locally run only the specs of what you changed (--json lists them)')
   else if (shards.length > 0 && !process.env['GITHUB_OUTPUT']) console.log(`Run: node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts ${plan.files.join(' ')}`)
   if (process.env['GITHUB_OUTPUT']) {
     appendFileSync(process.env['GITHUB_OUTPUT'], `mode=${plan.mode}\ncount=${String(shards.length)}\nmatrix=${JSON.stringify(matrix)}\n`)
