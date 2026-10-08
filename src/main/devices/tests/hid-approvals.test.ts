@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { HidApprovals, parseHidApprovals } from '../hid-approvals.js'
+import { HidApprovals, MAX_PER_ORIGIN, parseHidApprovals } from '../hid-approvals.js'
 import { deviceKey } from '../hid-policy.js'
 
 const APP = 'https://wallet.example'
@@ -33,6 +33,14 @@ describe('HidApprovals', () => {
     expect(store.list(APP)).toHaveLength(1)
     expect(changed).toHaveBeenCalledTimes(1)
     expect(changed).toHaveBeenCalledWith(APP)
+  })
+
+  it('says so when an origin holds as many as it may, and still reports an approved one as approved', () => {
+    const store = new HidApprovals(null)
+    for (let serial = 0; serial < MAX_PER_ORIGIN; serial += 1) expect(store.approve(APP, { ...NANO, serialNumber: String(serial) })).toBe(true)
+    expect(store.approve(APP, { ...NANO, serialNumber: 'one too many' })).toBe(false)
+    expect(store.has(APP, deviceKey({ ...NANO, serialNumber: 'one too many' }))).toBe(false)
+    expect(store.approve(APP, { ...NANO, serialNumber: '0' })).toBe(true)
   })
 
   it('forgets one device, then every device of an origin', () => {

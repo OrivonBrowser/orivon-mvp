@@ -67,4 +67,3 @@ export class AppsState {
     await this.load()
   }
 }
-

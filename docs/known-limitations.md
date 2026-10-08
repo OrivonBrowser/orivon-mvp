@@ -49,6 +49,9 @@ servers for data. None of them is trusted to be right; each of them sees what it
 - **A device is asked about again when its identity changes.** An approval is kept for a device's
   vendor id, product id, serial number and name together, so a device that reappears with another
   product id (after unlocking, or after a firmware step) is asked once more.
+- **Two units of one model with no serial number are one device.** An approval names a device by
+  vendor id, product id, serial number and name, so two identical keys that report no serial number
+  share it: approving one approves the other.
 - **Native code runs only as WebAssembly.** A Node addon loads through its WebAssembly build and a
   spawned program is a WASI program from the app's own files. An app that needs a native binary
   or a program installed on your system is refused, by name.

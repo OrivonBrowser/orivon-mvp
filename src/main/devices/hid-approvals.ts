@@ -16,7 +16,7 @@ export interface ApprovedDevice {
 }
 
 const FILE_VERSION = 1
-const MAX_PER_ORIGIN = 256
+export const MAX_PER_ORIGIN = 256
 const MAX_TEXT = 200
 
 const isId = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 0xffff
@@ -86,12 +86,15 @@ export class HidApprovals {
     return [...this.#loaded().keys()]
   }
 
-  approve (origin: string, device: HidDeviceInfo): void {
+  /** True when the device is approved afterwards (already, or now); false when the origin holds `MAX_PER_ORIGIN` others. */
+  approve (origin: string, device: HidDeviceInfo): boolean {
     const row = rowOf(device, this.#now())
     const rows = this.#loaded().get(origin) ?? []
-    if (rows.some((existing) => existing.key === row.key) || rows.length >= MAX_PER_ORIGIN) return
+    if (rows.some((existing) => existing.key === row.key)) return true
+    if (rows.length >= MAX_PER_ORIGIN) return false
     this.#loaded().set(origin, [...rows, row])
     this.#changed(origin)
+    return true
   }
 
   forget (origin: string, key: string): boolean {

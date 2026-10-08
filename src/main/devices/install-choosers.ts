@@ -11,7 +11,7 @@ import { siteAsks } from '../sessions/site-asks.js'
 import type { ShellInstaller } from '../shell/shell-installers.js'
 import { askQuestion } from '../shell/question/ask-question.js'
 import { isRegisteredAppOrigin } from '../site-settings/app-origin.js'
-import { createHidAsker } from './hid-asker.js'
+import { createHidAsker, NO_ANSWER } from './hid-asker.js'
 import { createHidGate } from './hid-gate.js'
 import { deviceKey, hidInfoOf } from './hid-policy.js'
 import { handleSelectHidDevice } from './hid-select.js'
@@ -41,8 +41,17 @@ export const installChoosers: ShellInstaller = {
         }
       },
       isAlive: (tab, origin) => !tab.isDestroyed() && originFromUrl(tab.getURL()) === origin,
-      question: async (tab, spec) => await askQuestion({ contents: tab }, spec, { endOnNavigation: true }),
-      approve: (origin, device) => { approvals.approve(origin, device) },
+      question: async (tab, spec) => {
+        // The question ends as a cancel when the page navigates or closes, which is no answer from the person.
+        let ended = false
+        const end = (): void => { ended = true }
+        tab.once('did-navigate', end)
+        tab.once('destroyed', end)
+        const result = await askQuestion({ contents: tab }, spec, { endOnNavigation: true })
+        if (!tab.isDestroyed()) { tab.removeListener('did-navigate', end); tab.removeListener('destroyed', end) }
+        return ended ? { ...result, response: NO_ANSWER } : result
+      },
+      approve: (origin, device) => approvals.approve(origin, device),
       decline: (origin, device) => { gate.decline(origin, device) },
       announce: (origin, devices) => {
         const triples = devices.map((device) => [device.vendorId, device.productId, device.name ?? ''])
@@ -67,7 +76,7 @@ export const installChoosers: ShellInstaller = {
 
     const select = {
       gate,
-      approve: (origin: string, device: Parameters<typeof approvals.approve>[1]) => { approvals.approve(origin, device) },
+      approve: (origin: string, device: Parameters<typeof approvals.approve>[1]) => approvals.approve(origin, device),
       target: (frame: Electron.WebFrameMain | null) => {
         const contents = frame === null ? undefined : webContents.fromFrame(frame)
         // A frame inside the page never gets a chooser: the page's own code is the only caller a device is for.

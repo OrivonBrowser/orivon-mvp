@@ -10,7 +10,8 @@ export interface HidSelectDeps<Frame> {
   readonly gate: HidGate
   /** Where the sheet goes: the committed origin of the tab whose top frame asked. Null for any other frame, which is cancelled. */
   readonly target: (frame: Frame | null) => { readonly origin: string, readonly ask: (spec: ChooserSpec) => Promise<string | null> } | null
-  readonly approve: (origin: string, device: HidDeviceInfo) => void
+  /** False when the approval could not be kept: the pick is then cancelled, because Chromium would not honour it. */
+  readonly approve: (origin: string, device: HidDeviceInfo) => boolean
 }
 
 interface Details<Frame> {
@@ -44,8 +45,7 @@ export function handleSelectHidDevice<Frame> (
     const deviceId = picked === undefined ? undefined : deviceIds.get(picked)
     if (picked === undefined || deviceId === undefined) { callback(''); return }
     // Once a device permission handler is set, Chromium keeps a pick only if the handler says yes for that device.
-    deps.approve(target.origin, picked)
-    callback(deviceId)
+    callback(deps.approve(target.origin, picked) ? deviceId : '')
   }
   answer().catch((error: unknown) => {
     console.error('[hid] the device chooser failed:', error)

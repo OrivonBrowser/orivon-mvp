@@ -10,7 +10,7 @@ const NANO = { deviceId: '/sys/a', vendorId: 0x2c97, productId: 0x4011, serialNu
 const KEY = { deviceId: '/sys/b', vendorId: 0x1209, productId: 0x0001, name: 'Test Key', collections: [] }
 const FRAME = { id: 'frame' }
 
-function setup (options: { origin?: string | null, patterns?: readonly string[], blocked?: boolean, choose?: (spec: ChooserSpec) => string | null } = {}) {
+function setup (options: { origin?: string | null, patterns?: readonly string[], blocked?: boolean, full?: boolean, choose?: (spec: ChooserSpec) => string | null } = {}) {
   const approved: Array<[string, string]> = []
   const order: string[] = []
   const gate = createHidGate({
@@ -24,7 +24,7 @@ function setup (options: { origin?: string | null, patterns?: readonly string[],
   const deps: HidSelectDeps<typeof FRAME> = {
     gate,
     target: () => options.origin === null ? null : { origin: options.origin ?? APP, ask: async (spec) => { specs.push(spec); return options.choose?.(spec) ?? null } },
-    approve: (origin, device) => { approved.push([origin, deviceKey(device)]); order.push('approve') }
+    approve: (origin, device) => { approved.push([origin, deviceKey(device)]); order.push('approve'); return options.full !== true }
   }
   const callback = vi.fn((_id?: string | null) => { order.push('callback') })
   const event = { preventDefault: vi.fn() }
@@ -80,6 +80,12 @@ describe('handleSelectHidDevice', () => {
     expect(callback).toHaveBeenCalledWith('/sys/b')
     expect(approved).toEqual([[SITE, deviceKey({ vendorId: 0x1209, productId: 1, name: 'Test Key' })]])
     expect(order).toEqual(['approve', 'callback'])
+  })
+
+  it('cancels the pick when the approval could not be kept, because Chromium would not honour it', async () => {
+    const { run, callback } = setup({ origin: SITE, choose: () => '0', full: true })
+    await run()
+    expect(callback).toHaveBeenCalledWith('')
   })
 
   it('picks the right device when the grant hid the ones before it', async () => {

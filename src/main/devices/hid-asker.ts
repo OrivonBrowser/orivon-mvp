@@ -11,7 +11,8 @@ export interface HidAskerDeps<Tab> {
   /** The tab is still open and still on the origin that was asked about. */
   readonly isAlive: (tab: Tab, origin: string) => boolean
   readonly question: (tab: Tab, spec: QuestionSpec) => Promise<QuestionResult>
-  readonly approve: (origin: string, device: HidDeviceInfo) => void
+  /** False when the approval could not be kept, in which case nothing is announced. */
+  readonly approve: (origin: string, device: HidDeviceInfo) => boolean
   readonly decline: (origin: string, device: HidDeviceInfo) => void
   /** Tells every page of the origin that these devices are now usable. */
   readonly announce: (origin: string, devices: readonly HidDeviceInfo[]) => void
@@ -22,6 +23,9 @@ export interface HidAsker {
 }
 
 const ALLOW = 0
+const NOT_NOW = 1
+/** What `question` answers when the page moved on or closed before the person did: no decision, so the device is asked about again. */
+export const NO_ANSWER = -1
 const hex = (value: number): string => value.toString(16).padStart(4, '0')
 
 /** How the question names a device: its own words for itself, then its USB ids, the one thing a person can look up. */
@@ -42,16 +46,15 @@ export function createHidAsker<Tab> (deps: HidAskerDeps<Tab>): HidAsker {
       detail: `${serial}The app may use USB devices of this kind, but only the ones you allow. You can take this one back in Settings, under Apps.`,
       origin,
       buttons: ['Allow', 'Not now'],
-      cancelId: 1,
+      cancelId: NOT_NOW,
       guarded: [ALLOW],
       focus: 'dialog'
     })
     // A tab that closed or moved on during the question never answered it: the device is asked about again.
     if (!deps.isAlive(tab, origin)) return
     if (result.response === ALLOW) {
-      deps.approve(origin, device)
-      deps.announce(origin, [device])
-    } else {
+      if (deps.approve(origin, device)) deps.announce(origin, [device])
+    } else if (result.response === NOT_NOW) {
       deps.decline(origin, device)
     }
   }

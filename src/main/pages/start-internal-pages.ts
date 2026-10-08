@@ -54,6 +54,7 @@ import { siteSettingsControllerFor } from '../site-settings/site-settings-runner
 import { createDeviceRows } from '../devices/hid-rows.js'
 import { forgetDevicesWhenGrantEnds } from '../devices/hid-grant-watch.js'
 import { isRegisteredAppOrigin } from '../site-settings/app-origin.js'
+import { isWebOrigin } from '../site-settings/site-settings-controller.js'
 import { sitesDomain } from '../site-settings/sites-domain.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
@@ -86,7 +87,9 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   const permissions = createPermissionsController(ctx)
   const siteSettings = siteSettingsControllerFor(services, ctx)
   // An app's devices are listed on its Apps card, a website's under Sites; the origin decides which (ADR-0068).
-  const deviceRows = createDeviceRows(services.hidDevices, (origin) => !isRegisteredAppOrigin(ctx, origin))
+  // An app not opened this session is still an app: its record on disk says so.
+  const deviceRows = createDeviceRows(services.hidDevices, (origin) =>
+    isWebOrigin(origin) && !isRegisteredAppOrigin(ctx, origin) && ctx.broker?.app.persistedAppsSync().some((app) => app.origin === origin) !== true)
   if (ctx.extensions === undefined) {
     throw new Error('startInternalPages requires ctx.extensions -- check extensionsSubsystem\'s position in subsystems.ts')
   }

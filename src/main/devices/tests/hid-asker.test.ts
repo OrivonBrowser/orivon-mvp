@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createHidAsker, type HidAskerDeps } from '../hid-asker.js'
+import { createHidAsker, NO_ANSWER, type HidAskerDeps } from '../hid-asker.js'
 import type { HidDeviceInfo } from '../hid-policy.js'
 import type { QuestionResult, QuestionSpec } from '../../shell/question/question-spec.js'
 
@@ -22,7 +22,7 @@ function setup (answer: number | 'hold' = 0, overrides: Partial<HidAskerDeps<Tab
       if (answer === 'hold') return await new Promise<QuestionResult>((resolve) => { releases.push(resolve) })
       return { response: answer, checkboxChecked: false }
     },
-    approve: vi.fn(),
+    approve: vi.fn(() => true),
     decline: vi.fn(),
     announce: vi.fn(),
     ...overrides
@@ -59,6 +59,24 @@ describe('createHidAsker', () => {
     expect(deps.decline).toHaveBeenCalledWith(APP, NANO)
     expect(deps.approve).not.toHaveBeenCalled()
     expect(deps.announce).not.toHaveBeenCalled()
+  })
+
+  it('announces nothing when the approval could not be kept', async () => {
+    const { asker, deps } = setup(0, { approve: vi.fn(() => false) })
+    asker.ask(APP, NANO)
+    await settle()
+    expect(deps.announce).not.toHaveBeenCalled()
+  })
+
+  it('takes a question that ended with no answer as no decision: the device is asked about again', async () => {
+    const { asker, deps, asked } = setup(NO_ANSWER)
+    asker.ask(APP, NANO)
+    await settle()
+    expect(deps.decline).not.toHaveBeenCalled()
+    expect(deps.approve).not.toHaveBeenCalled()
+    asker.ask(APP, NANO)
+    await settle()
+    expect(asked).toHaveLength(2)
   })
 
   it('keeps one open question for one origin and device, and a second one for another serial', async () => {
