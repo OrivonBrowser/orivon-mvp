@@ -1,0 +1,150 @@
+name: Live session
+
+# Keeps Orivon running on a GitHub-hosted Windows, macOS or Linux runner and lets a terminal drive it step by step
+# with Playwright code, through a Cloudflare quick tunnel: scripts/ci/live-host.mjs on the runner,
+# scripts/ci/live-session.mjs on the caller's side (scripts/ci/README.md section Other systems). The runner is given
+# only the SHA-256 of the caller's token, and the host refuses every request without that token. The session ends on
+# `stop`, after `minutes`, or after 20 minutes without a request. A pull request that changes the live session starts
+# one on every system with a token of its own and drives it once through the real tunnel.
+on:
+  workflow_dispatch:
+    inputs:
+      system:
+        description: 'windows, macos or linux'
+        default: 'macos'
+      minutes:
+        description: 'how long the session may last, at most 300'
+        default: '60'
+      token_sha256:
+        description: "the SHA-256 of the caller's token, which live-session.mjs start sends"
+        required: true
+  pull_request:
+    paths:
+      - .github/workflows/live-session.yml
+      - scripts/ci/live-host.mjs
+      - scripts/ci/live-session.mjs
+
+concurrency:
+  group: live-session-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: scripts
+          persist-credentials: false
+
+      - name: Systems to run on
+        id: matrix
+        env:
+          SYSTEMS: ${{ github.event_name == 'pull_request' && 'windows,macos,linux' || inputs.system }}
+        run: echo "matrix=$(node scripts/ci/cross-os.mjs --matrix "$SYSTEMS")" >> "$GITHUB_OUTPUT"
+
+  live:
+    name: live (${{ matrix.system }})
+    needs: plan
+    runs-on: ${{ matrix.os }}
+    # The session's own limit is 300 minutes; the rest is install and build.
+    timeout-minutes: ${{ github.event_name == 'pull_request' && 45 || 340 }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      MINUTES: ${{ github.event_name == 'pull_request' && '15' || inputs.minutes || '60' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install from source
+        run: npm ci
+
+      - name: Install a virtual display, ImageMagick for desktop pictures, and Chromium's setuid sandbox helper
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update && sudo apt-get install -y xvfb imagemagick
+          sudo chown root:root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+
+      - name: Build with the developer-only hooks Playwright drives
+        run: node scripts/build-e2e.mjs
+
+      - name: Fetch the pinned cloudflared
+        run: echo "CLOUDFLARED=$(node scripts/ci/live-host.mjs fetch-cloudflared "$RUNNER_TEMP/cloudflared")" >> "$GITHUB_ENV"
+
+      # A dispatch brings the caller's hash; a pull request makes a token of its own for the self-test.
+      - name: The token's hash
+        env:
+          GIVEN: ${{ inputs.token_sha256 }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            GIVEN="$(node scripts/ci/live-host.mjs new-token "$RUNNER_TEMP/live-token")"
+          fi
+          echo "TOKEN_SHA256=$GIVEN" >> "$GITHUB_ENV"
+
+      # Its output goes to a file: on Windows a background process that holds the step's output keeps the step open.
+      - name: Start the session
+        run: |
+          mkdir -p live
+          nohup node scripts/run-headless.mjs node scripts/ci/live-host.mjs serve --hash "$TOKEN_SHA256" \
+            --cloudflared "$CLOUDFLARED" --out live --minutes "$MINUTES" > live/host.log 2>&1 &
+          for _ in $(seq 1 150); do
+            if [ -f live/url ]; then echo "tunnel up"; exit 0; fi
+            if [ -f live/stopped ]; then break; fi
+            sleep 2
+          done
+          echo "::error::the live host opened no tunnel: $(cat live/stopped 2>/dev/null || echo 'no answer within 5 minutes')"
+          tail -n 80 live/host.log
+          exit 1
+
+      - name: Hand the address to the caller
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: live-session-url-${{ matrix.system }}
+          path: live/url
+          retention-days: 1
+
+      # A separate step on purpose: it proves the host outlives the step that started it, on every system.
+      - name: Drive it once through the tunnel
+        if: github.event_name == 'pull_request'
+        run: node scripts/ci/live-session.mjs selftest --url-file live/url --token-file "$RUNNER_TEMP/live-token" --out live/selftest
+
+      # The host touches live/alive every 30 seconds; a stale file means it died without saying so.
+      - name: Hold until the session ends
+        run: |
+          while [ ! -f live/stopped ]; do
+            if [ -z "$(find live/alive -mmin -2 2>/dev/null)" ]; then
+              echo "::error::the live host stopped without ending the session"
+              tail -n 80 live/host.log
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "session ended: $(cat live/stopped)"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ !cancelled() }}
+        with:
+          name: live-session-${{ matrix.system }}
+          path: |
+            live/
+            qa-artifacts/latest/
+          if-no-files-found: warn
+          retention-days: 7

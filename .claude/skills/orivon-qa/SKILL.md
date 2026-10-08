@@ -47,8 +47,10 @@ One spec: `node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e
    test pass; if the test is wrong, say why in the change.
 5. **Platform change** (`src/main/os/`, a `process.platform` branch, the install or launch scripts, a dependency):
    push, then `node scripts/ci/cross-os.mjs` in the background; add `--specs` for the specs of what you touched.
-   Read its screenshots as below. This machine cannot stand in for the other systems: Wine is not Windows, and
-   macOS runs only on Apple hardware.
+   Read its screenshots as below. When a failure there needs probing step by step, `node scripts/ci/live-session.mjs
+   start --system <system>` keeps Orivon running on that runner for Playwright calls from here
+   (`scripts/ci/README.md` section Live sessions). This machine cannot stand in for the other systems: Wine is not
+   Windows, and macOS runs only on Apple hardware.
 6. **Before done**: `npm run qa` and the named specs above, one heavy command at a time; for
    anything in 3 or 4, the e2e shards CI selects must pass on the PR, and the PR takes the `ci:e2e-full` label so the
    whole suite runs before it merges.

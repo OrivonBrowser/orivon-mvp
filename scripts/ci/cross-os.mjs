@@ -111,7 +111,7 @@ function arg (name) {
   return at === -1 ? undefined : process.argv[at + 1]
 }
 
-function listRuns (workflow, branch, event) {
+export function listRuns (workflow, branch, event) {
   const args = ['run', 'list', '--workflow', workflow, '--limit', '20', '--json', 'databaseId,headSha']
   if (branch !== undefined) args.push('--branch', branch)
   if (event !== undefined) args.push('--event', event)
@@ -119,7 +119,7 @@ function listRuns (workflow, branch, event) {
 }
 
 /** Starts `workflow` on the current branch and returns the new run's id. */
-async function dispatch (workflow, inputs) {
+export async function dispatch (workflow, inputs) {
   const branch = git('rev-parse', '--abbrev-ref', 'HEAD')
   const sha = git('rev-parse', 'HEAD')
   const pushed = git('ls-remote', 'origin', `refs/heads/${branch}`).split(/\s/)[0]
