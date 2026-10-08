@@ -12,7 +12,11 @@ the code it describes. Read it now:
    this job.
 2. `../orivon-ports/CLAUDE.md`, whose rules apply to every change made there.
 
-If `../orivon-ports` is missing, ask the owner where it is. Nothing in this repository depends on it.
+If a file that SKILL.md names is missing, that checkout is behind its `origin/main` (the owner's is
+often dirty, so it is not fast-forwarded for them): read it with
+`git -C ../orivon-ports show origin/main:.claude/skills/orivon-porting/<file>` after a
+`git -C ../orivon-ports fetch`, and tell the owner their checkout is behind. If `../orivon-ports`
+is missing, ask the owner where it is. Nothing in this repository depends on it.
 
 ## What this repository owes a port
 
