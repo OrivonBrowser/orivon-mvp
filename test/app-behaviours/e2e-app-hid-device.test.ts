@@ -10,6 +10,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { appManifest, grantApp, startAppServer, type AppServer } from './app-behaviour-support.js'
 import { chooserShown, clickRequest, echoRoundTrip, heardEvents, HID_ROUTES, listedDevices, openSettings, requestResult, waitChooser } from './hid-support.js'
+import { shoot } from '../support/auth-support.js'
 import { runPhase } from '../support/e2e-helpers.js'
 import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
 import { launchShell, QA_TEST_TIMEOUT_MS, visit } from '../support/qa-helpers.js'
@@ -48,9 +49,11 @@ async function plug (serial: string): Promise<VirtualHidDevice> {
 const unplug = async (device: VirtualHidDevice): Promise<void> => { await device.stop().catch(() => {}) }
 
 /** The page asks for its devices the way an Electron app does, and the person answers the question that follows. */
-async function allowFromGetDevices (electron: ElectronApplication, view: Page, label = 'Allow'): Promise<{ message: string, detail: string, buttons: string[] }> {
+async function allowFromGetDevices (electron: ElectronApplication, view: Page, label = 'Allow', shot?: { chrome: Page, name: string }): Promise<{ message: string, detail: string, buttons: string[] }> {
   const listing = listedDevices(view)
-  const question = await readQuestion(await waitQuestion(electron))
+  const panel = await waitQuestion(electron)
+  const question = await readQuestion(panel)
+  if (shot !== undefined) await shoot(electron, shot.chrome, panel, shot.name)
   await answerQuestion(electron, label)
   await listing
   return question
@@ -135,13 +138,14 @@ test('[app:app-hid-device-can-be-forgotten] Forget in Settings and revoking the 
     await runPhase('app hid forget', async (check) => {
       await grantApp(electron, app().origin, MANIFEST('hid-forget'), [GRANT])
       const view = await visit(electron, chrome, `${app().origin}/`)
-      await allowFromGetDevices(electron, view)
+      await allowFromGetDevices(electron, view, 'Allow', { chrome, name: 'hid-question' })
       const port = new URL(app().origin).port
 
       const settings = await openSettings(electron, chrome, '/apps')
       await settings.waitForSelector('.app-card')
       const card = settings.locator('.app-card', { hasText: `127.0.0.1:${port}` })
       check('[app:app-hid-device-can-be-forgotten] the app\'s card lists the device', await waitFor(async () => (await card.locator('.perm', { hasText: 'Test Key' }).count()) === 1))
+      await shoot(electron, chrome, settings, 'hid-settings-apps')
       await card.locator('.perm', { hasText: 'Test Key' }).locator('button', { hasText: 'Forget' }).click()
       check('[app:app-hid-device-can-be-forgotten] Forget removes the row', await waitFor(async () => (await card.locator('.perm', { hasText: 'Test Key' }).count()) === 0))
       await chrome.evaluate(() => { document.querySelectorAll<HTMLElement>('.tab')[0]?.click() })
@@ -174,6 +178,7 @@ test('[app:website-hid-chooser-unless-blocked] a website picks the device in the
       await clickRequest(view)
       const sheet = await waitChooser(electron)
       check('[app:website-hid-chooser-unless-blocked] the chooser lists the device with its USB ids and serial number', await waitFor(async () => (await sheet.locator('.listbox-item').count()) === 1) && /Test Key/.test(await sheet.locator('.listbox-item').first().innerText()) && /1209:0001/.test(await sheet.locator('.listbox-item').first().innerText()) && /SN-A/.test(await sheet.locator('.listbox-item').first().innerText()))
+      await shoot(electron, chrome, sheet, 'hid-chooser')
       await sheet.locator('.listbox-item').first().click()
       await sheet.locator('button:has-text("Connect")').click().catch(() => {})
       check('[app:website-hid-chooser-unless-blocked] the pick resolves requestDevice with that device', await requestResult(view) === 'devices:Test Key')
@@ -185,6 +190,8 @@ test('[app:website-hid-chooser-unless-blocked] a website picks the device in the
       await settings.waitForSelector('#row-sites-list .site-item')
       check('[app:website-hid-chooser-unless-blocked] Sites lists the site with a device badge', /1 device allowed/.test(await settings.locator('#row-sites-list .site-badges').first().innerText()))
       await settings.locator('#row-sites-list .site-toggle').first().click()
+      await settings.waitForSelector('#row-sites-list .site-kinds li')
+      await shoot(electron, chrome, settings, 'hid-settings-sites')
       await settings.locator('#row-sites-list .site-kinds li', { hasText: 'Test Key' }).locator('button', { hasText: 'Forget' }).click()
       await chrome.evaluate(() => { document.querySelectorAll<HTMLElement>('.tab')[0]?.click() })
       check('[app:website-hid-chooser-unless-blocked] after Forget the page lists nothing', await waitFor(async () => (await listedDevices(view)).length === 0))

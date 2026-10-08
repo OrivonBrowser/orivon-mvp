@@ -20,10 +20,8 @@ function announceInMainWorld (triples: readonly DeviceTriple[]): void {
   const EventType = (globalThis as unknown as { HIDConnectionEvent?: new (type: string, init: object) => Event }).HIDConnectionEvent
   if (hid === undefined || EventType === undefined) return
   // A device object is announced once: the page's `getDevices()` hands back the same object for the same device.
-  const marker = Symbol.for('orivon.hid.announced')
-  const holder = hid as unknown as Record<symbol, WeakSet<object> | undefined>
-  const announced = holder[marker] ?? new WeakSet<object>()
-  Object.defineProperty(hid, marker, { value: announced, configurable: true })
+  const announced = (hid as unknown as { orivonAnnounced?: WeakSet<object> }).orivonAnnounced ?? new WeakSet<object>()
+  Object.defineProperty(hid, 'orivonAnnounced', { value: announced, writable: true, configurable: true })
   void hid.getDevices().then((devices) => {
     for (const device of devices) {
       const wanted = triples.some(([vendorId, productId, name]) =>
