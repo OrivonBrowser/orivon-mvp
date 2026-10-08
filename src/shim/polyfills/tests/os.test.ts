@@ -1,8 +1,10 @@
-// The `os` module target: os-browserify's answers, with the directories moved
-// to the virtual root every other Node-shaped path agrees on.
+// The `os` module target: os-browserify's answers, with platform, type and arch
+// agreeing with `process` and the directories moved to the virtual root every
+// other Node-shaped path agrees on.
 
 import { describe, expect, it } from 'vitest'
 import os, { cpus, homedir, tmpdir } from '../os.js'
+import { NODE_IDENTITY } from '../../node-identity.js'
 import { VIRTUAL_ROOT, VIRTUAL_TMPDIR } from '../../virtual-root.js'
 
 describe('os', () => {
@@ -21,8 +23,16 @@ describe('os', () => {
 
   it('keeps os-browserify\'s own answers for the rest', () => {
     expect(os.EOL).toBe('\n')
-    expect(os.platform()).toBe('browser')
     expect(os.endianness()).toBe('LE')
+  })
+
+  // d-0594: Node-shaped by default. os and process answer alike, so a library comparing the two sees one machine.
+  it('platform(), type() and arch() are the ones process reports', () => {
+    expect(os.platform()).toBe(NODE_IDENTITY.platform)
+    expect(os.platform()).toBe('linux')
+    expect(os.type()).toBe('Linux')
+    expect(os.arch()).toBe(NODE_IDENTITY.arch)
+    expect(os.arch()).toBe('x64')
   })
 
   it('refuses a member it lacks by name, only when called', () => {

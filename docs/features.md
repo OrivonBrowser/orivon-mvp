@@ -10,7 +10,7 @@ rely on, row by row. A new feature adds its line here when it lands.
 - **Capability broker**: an app's manifest, the person's grants, and per-origin enforcement on every call.
 - **`orivon.*` capability API**: the interface apps are written against, as types in `src/contracts/`.
 - **App loader**: fetch a manifest from a URL, cache the bundle hash-pinned, check its integrity, and ask once in plain words before the app runs.
-- **`orivon-node-shim`**: Node's `net`, `tls`, `dgram`, `fs`, `http`, `child_process`, `worker_threads` and `node:sqlite` mapped onto the same capabilities, enough to run a Node web server (Express, Socket.IO) in a tab.
+- **`orivon-node-shim`**: Node's `net`, `tls`, `dgram`, `fs`, `http`, `child_process`, `worker_threads` and `node:sqlite` mapped onto the same capabilities, enough to run a Node web server (Express, Socket.IO) in a tab. An app's `process` and `os` present as Node on Linux (a Node version, no `browser` flag, `linux`, `x64`), so a library takes the path it takes under Node.
 - **UDP sockets** (`net.udpBind`) for peer-to-peer protocols a web page cannot open.
 - **Ported desktop apps**: FreeTube, Element, The Lounge, AirGap Vault and ASGARDEX run from a name, unmodified, with a bridge file kept in `orivon-ports`.
 - **WASI and native modules as WebAssembly**: a WASI host over `orivon.fs`, native addons loaded as their WebAssembly build, and `spawn` and `fork` as WebAssembly programs and workers.

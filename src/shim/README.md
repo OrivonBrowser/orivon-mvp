@@ -78,9 +78,15 @@ Also read [`.claude/skills/orivon-electron/SKILL.md`](../../.claude/skills/orivo
 [`ADR-0021`](../../docs/decisions/ADR-0021-page-globals-carry-the-platform-descriptor.md).
 `npm run check:page-globals` and `tests/globals.test.ts` guard it.
 
-**`process` answers what libraries read without claiming to be Node.** Provisional (`d-0079`):
-each value and its reason is in `globals-types.ts`; where a `nextTick`/`setImmediate` error goes,
-and why `setImmediate` is a `MessageChannel` task, is in `globals.ts`.
+**`process` and `os` answer as Node does, on Linux.** Provisional ([`ADR-0072`](../../docs/decisions/ADR-0072-apps-see-a-node-process-on-linux-x64.md)): `process.version` and
+`versions.node` are the Node release `node-builtin-exports.generated.json` is measured against, there is no
+`process.browser`, and `platform`, `arch`, `os.platform()`, `os.type()` and `os.arch()` are `linux` and `x64` on
+every host, because the files an app sees follow Linux rules ([`node-identity.ts`](node-identity.ts) is the one
+place, passed to `installGlobals` as an option so that function stays self-contained). A library then takes the
+path it takes under Node and Electron. Orivon never sets `versions.electron` or `process.type`: they belong to an
+Electron port's own build. Each field and its reason is in `globals-types.ts`; where a `nextTick`/`setImmediate`
+error goes, and why `setImmediate` is a `MessageChannel` task, is in `globals.ts`. A forked child and a thread get the
+same identity from the same function (`worker/early-globals.ts`).
 
 **Refusing an unbuilt member by name (A135, A169).** `net/net.ts`, `net/dns.ts`, `fs/fs.ts` and
 `http/http.ts`/`https.ts` wrap their default export with `refusingProxy`; every other module does

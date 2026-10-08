@@ -2,6 +2,8 @@
 // itself must stay one self-contained function (its serialisation-safety
 // test says why), and the types are most of what a reader needs.
 
+import type { NodeIdentity } from './node-identity.js'
+
 /** Which installed primitive produced a report. 'warning' is process.emitWarning, held to the same "louder, not quieter" standard as the two timing primitives. */
 export type GlobalsErrorOrigin = 'nextTick' | 'setImmediate' | 'warning'
 
@@ -16,18 +18,12 @@ export type GlobalsErrorReporter = (error: unknown, origin: GlobalsErrorOrigin) 
 
 export interface InstallGlobalsOptions {
   readonly reportError?: GlobalsErrorReporter | undefined
+  /** node-identity.ts's NODE_IDENTITY, passed in for the same reason as `root`. */
+  readonly node: NodeIdentity
   /** virtual-root.ts's VIRTUAL_ROOT and VIRTUAL_TMPDIR, passed in: installGlobals may not name a module-level value. */
   readonly root: string
   readonly tmpdir: string
 }
-
-/**
- * Node's process.platform is a closed union of real OS names, and this is
- * deliberately not one: there is no real platform to read here, and
- * 'browser' can never equal one, so `platform === 'win32'` safely falls
- * through to a generic branch instead of firing on a wrong guess.
- */
-export type ShimPlatform = NodeJS.Platform | 'browser'
 
 /**
  * The options-object form of process.emitWarning's second argument. Every
@@ -50,29 +46,29 @@ export interface ShimStdio {
 }
 
 export interface ShimProcess {
-  readonly platform: ShimPlatform
+  readonly [Symbol.toStringTag]: 'process'
+  /** 'linux' on every host: the platform whose rules the app's files follow (node-identity.ts), so a library takes its POSIX paths and XDG directories. */
+  readonly platform: NodeIdentity['platform']
   /** Fresh per install and never seeded from any ambient environment, which would be a disclosure bug: only the directory variables, all naming the virtual root. */
   readonly env: Record<string, string | undefined>
-  /** '' rather than a fabricated Node version (npm's `process` polyfill makes the same choice): a real-looking one invites a Node-only code path. */
+  /** `v` and the Node version the shim's surface is measured against. */
   readonly version: string
-  /** Present but empty, for the same reason: `process.versions.node` reads undefined, so a check for Node or Electron takes its browser branch, instead of throwing on `undefined.node`. */
-  readonly versions: Readonly<Record<string, string>>
   /**
-   * Always true, and NOT optional. Real readers take their browser branch on
-   * it (bittorrent-tracker, crypto-browserify, webtorrent); leaving it off
-   * would make each quietly take the Node branch instead of failing loudly.
+   * `node` alone. Every other key is a build fact of a real Node or Electron that the shim cannot state honestly:
+   * `modules` and `napi` pick a native addon's binary, and Orivon runs none (natives are WebAssembly);
+   * `electron` and `chrome` belong to an Electron port's own build, which knows its Electron.
    */
-  readonly browser: true
+  readonly versions: Readonly<Record<string, string>>
   readonly argv: string[]
   readonly execArgv: string[]
-  /** '' for the reason `version` is: a string, as every reader expects (`path.dirname(process.execPath)`), naming no binary that could invite a Node-only code path. */
+  /** '' : a string, as every reader expects (`path.dirname(process.execPath)`), naming no binary: there is none to run. */
   readonly execPath: string
   readonly pid: number
   readonly ppid: number
   readonly title: string
-  /** os.arch()'s answer too: no real architecture to report, and one that matches none. */
-  readonly arch: string
-  readonly release: { readonly name: string }
+  /** 'x64', os.arch()'s answer too, on every host. A library that picks a native prebuild by it finds none and fails by name, as under Node without one. */
+  readonly arch: NodeIdentity['arch']
+  readonly release: { readonly name: 'node' }
   exitCode: number | undefined
   readonly stdout: ShimStdio
   readonly stderr: ShimStdio
