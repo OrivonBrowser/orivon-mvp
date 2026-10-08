@@ -6,13 +6,16 @@
 // shim's surface is measured against (node-builtin-exports.generated.json),
 // so the version an app reads and the members it finds agree.
 
-import { NODE_BUILTIN_EXPORTS } from './node-builtin-exports.js'
+import { nodeVersion } from './node-builtin-exports.generated.json'
 
 export interface NodeIdentity {
   /** `process.versions.node`: no `v`. */
   readonly node: string
   readonly platform: 'linux'
+  /** `os.type()`'s name for the platform. */
+  readonly osType: 'Linux'
   readonly arch: 'x64'
 }
 
-export const NODE_IDENTITY: NodeIdentity = { node: NODE_BUILTIN_EXPORTS.nodeVersion, platform: 'linux', arch: 'x64' }
+// A named import, so a bundler keeps this one string and not the generated file's export tables.
+export const NODE_IDENTITY: NodeIdentity = { node: nodeVersion, platform: 'linux', osType: 'Linux', arch: 'x64' }

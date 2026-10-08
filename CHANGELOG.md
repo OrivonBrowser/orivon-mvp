@@ -20,7 +20,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 - **`process-is-node-shaped`**: an app's `process` and `os` now present as Node on Linux: `process.version` is `v24.11.1`, `versions` holds
   `node`, `process.browser` is gone, `platform` is `linux` and `arch` `x64` on every host (it was `''`, `{}`, `true`, `'browser'` and `'javascript'`). A
-  library that detects Node takes its Node path; a port that compiled these values into its bundle can drop them. Recheck: webtorrent (it now looks like a production install and starts upstream's telemetry).
+  library that detects Node takes its Node path; a port that compiled these values into its bundle can drop them. Recheck: webtorrent, rebuilt with its bridge that compiles in an Electron development run's `execPath`; without it upstream reads the app as a production install and starts its telemetry.
 - **`contracts/app.ts`, `contracts/capability-api.ts`, `contracts/index.ts`, `contracts/manifest.ts`**: `orivon.app` gains `onOpenUrl`, `requestSchemeHandler` and `isSchemeHandler`, so a link of a scheme the manifest lists in `protocols` (first `magnet:`) can open in the app the person chooses. Nothing existing changes; an app that wants links declares the scheme and registers a listener. Recheck: webtorrent.
 - **`fs-open-create-in-place`**: `fs.open` with `O_CREAT` and no `O_TRUNC`, `O_APPEND` or `O_EXCL` (`O_RDWR | O_CREAT`) now
   creates a missing file and keeps an existing one, where it failed `EINVAL`. Apps that opened such files by another

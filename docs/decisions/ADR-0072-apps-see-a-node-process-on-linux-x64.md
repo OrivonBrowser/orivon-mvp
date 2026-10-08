@@ -60,9 +60,7 @@ answer, because no code path that depends on it exists to be misled.
 
 Measured on real ports (the regression sweep in the pull request): FreeTube, Element, ASGARDEX, AirGap
 Vault, Explore, WebTorrent and The Lounge render and do their main job before and after the change,
-with the same page errors. The one consequence found is in WebTorrent Desktop, whose `config.js`
-treats `platform === 'linux'` with an execPath that does not end in `/electron` as a production
-install, and so starts sending its telemetry; see Consequences.
+with the same page errors. The one consequence found is in WebTorrent Desktop (see Consequences).
 
 ## Consequences
 - A library that detects Node (`process.versions.node`) now takes its Node path. Where that path needs a
@@ -71,6 +69,17 @@ install, and so starts sending its telemetry; see Consequences.
 - A port that compiled Electron's `process` values into its bundle to work around the browser shape
   can drop the workaround; one that relied on the browser shape (an `isProduction()` that read an
   unknown platform as false) must now say what it means.
+- A library keyed on `process.browser` may lose a fast path. crypto-browserify's `pbkdf2` asked SubtleCrypto
+  only when `process.browser` was `true`, so the shim's own `crypto.pbkdf2` now reaches SubtleCrypto itself
+  (`polyfills/pbkdf2-native.ts`); another dependency with the same habit would be slower, not wrong.
+- Emscripten glue on a page tests `process.versions.node` (and, in newer releases, `process.type !=
+  'renderer'`) and so takes its Node branch, which reads the `.wasm` through `fs`. An app builds it for
+  `web,worker`, or sets `process.type` to `renderer` as Electron's renderer has. Not measured: no port of
+  the sweep runs Emscripten glue on its main page.
+- WebTorrent Desktop's `config.js` treats `platform === 'linux'` with an `execPath` that does not end in
+  `/electron` as a packaged install, and so started its telemetry and update check. Found by the sweep and
+  closed in the port by compiling an Electron development run's `execPath` into its bundle (an
+  orivon-ports change); a published copy needs a rebuild.
 - `process.platform` is `linux` on a Windows or macOS host. A program that asks the platform in order
   to find a host path (`%LOCALAPPDATA%`, `~/Library`) finds the virtual root instead, which is the
   only place an app's files are.

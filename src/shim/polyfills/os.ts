@@ -20,7 +20,7 @@ export const networkInterfaces = browserOs.networkInterfaces
 export function platform (): 'linux' { return NODE_IDENTITY.platform }
 export const release = browserOs.release
 export const totalmem = browserOs.totalmem
-export function type (): 'Linux' { return 'Linux' }
+export function type (): 'Linux' { return NODE_IDENTITY.osType }
 export const uptime = browserOs.uptime
 
 export function homedir (): string { return VIRTUAL_ROOT }
