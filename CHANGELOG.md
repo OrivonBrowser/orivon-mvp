@@ -18,6 +18,10 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- **`page-media-from-own-listener`**: an app that holds a `tcp.listen` grant may point `<img>`, `<audio>` and `<video>`
+  at `http://localhost:<port>`, `127.0.0.1` or `[::1]` when `<port>` is one its own listener holds, which Node and
+  Electron allow and the page's policy refused; every other loopback port stays refused for images and media. Apps
+  that run their own HTTP server for their player need no change. Recheck: `webtorrent`.
 - **`ipfs-url-opens`**: an `ipns://` key now opens the site its signed record names, as an `ipns://` DNSLink name
   already did; nothing changes for apps already published. Apps that keep grants across releases may ship under a key.
   Recheck: none.

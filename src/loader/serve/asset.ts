@@ -122,7 +122,8 @@ export function buildResponse (
   request: Request,
   connectPatterns: readonly Pattern[],
   securePatterns: readonly Pattern[],
-  crossOriginIsolated = false
+  crossOriginIsolated = false,
+  ownListenerMedia = false
 ): Response {
   // nosniff on every pinned response -- content-type is derived from the
   // PATH's own extension (contentTypeFor), never sniffed from bytes in this
@@ -131,7 +132,7 @@ export function buildResponse (
   // image with a polyglot payload) execute as one if it is ever reached
   // through a context that runs what it loads.
   const policy: Record<string, string> = {
-    'content-security-policy': cspHeaderValue(connectPatterns, securePatterns),
+    'content-security-policy': cspHeaderValue(connectPatterns, securePatterns, { ownListenerMedia }),
     'x-content-type-options': 'nosniff'
   }
   if (crossOriginIsolated) Object.assign(policy, ISOLATION_HEADERS)

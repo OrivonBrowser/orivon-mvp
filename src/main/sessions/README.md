@@ -19,7 +19,11 @@ each site's notification answer; `tab-prompts.ts` is what each tab remembers bet
 through `CreateBrokerOptions.webContextHost`. `web-request-owner.ts` is the one place anything
 registers Electron's own `onBeforeRequest`/`onBeforeSendHeaders`/`onHeadersReceived` on a session
 it covers, composing every registered handler through `web-request-compose.ts`'s pure ordering
-logic; see this file's Design notes below. `session-attribution.ts` publishes
+logic; see this file's Design notes below. `own-listener-media-gate.ts` is `ADR-0069`'s Electron half:
+it cancels a loopback image or media request from a page that holds a `tcp.listen` grant when the
+port is not one its own listeners hold, on the default session and on each session an app is served
+from, with the pure decision in [`../../broker/policy/own-listener-media.ts`](../../broker/policy/own-listener-media.ts).
+`session-attribution.ts` publishes
 `ctx.senderAttributed` (`../registry.ts`): whether a WebContents is attributed to the origin it
 claims, decided at that document's own commit and reused afterward rather than re-decided live (except a cache-served origin and a local file, checked live),
 reusing [`../shell/tab-view.ts`](../shell/tab-view.ts)'s own `partitionForTarget` rule so every
@@ -35,8 +39,8 @@ a document is fixed for its life, so only the session can be wrong.
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts), [`../shell/`](../shell/) (the native
 question `external-link-prompt.ts`; `showing-window.ts`;
 `exclusive-access-notice.ts`; `lock-navigation.ts`; `tab-view.ts`'s `partitionForTarget`), [`../local-files/`](../local-files/)'s `partition.ts`, the
-top-level `registry.ts`. Only `permission-gate.ts`, `web-context-host.ts`, `web-request-owner.ts`
-and `session-attribution.ts` import `electron`: the decision files, `web-request-compose.ts`
+top-level `registry.ts`. Only `permission-gate.ts`, `web-context-host.ts`, `web-request-owner.ts`,
+`own-listener-media-gate.ts` and `session-attribution.ts` import `electron`: the decision files, `web-request-compose.ts`
 included, are unit-tested under plain vitest.
 
 **What it must never import.** Nothing security-relevant about an isolated context may live in
@@ -45,7 +49,7 @@ Electron-free by its own rule, which is why this directory exists. The partition
 construction and the network confinement have to live somewhere Electron-shaped, and this is it.
 
 **Durable or tied to Electron.** `permission-gate.ts`, `web-context-host.ts`,
-`web-request-owner.ts` and `session-attribution.ts` are tied to Electron's `Session`; the decision
+`web-request-owner.ts`, `own-listener-media-gate.ts` and `session-attribution.ts` are tied to Electron's `Session`; the decision
 files (`web-request-compose.ts` included), the notification store and `tab-capture-grants.ts` are
 plain Node and would survive an engine change.
 
