@@ -17,7 +17,7 @@ import { runPhase } from '../support/e2e-helpers.js'
 import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
 import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion, type QuestionText } from '../support/question-support.js'
 import { launchShell, QA_TEST_TIMEOUT_MS, visit } from '../support/qa-helpers.js'
-import { ABSENCE_SETTLE_MS, delay, findViewShowing, tabIds, waitFor } from '../support/smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, delay, evaluateRetrying, findViewShowing, tabIds, waitFor } from '../support/smoke-helpers.mjs'
 
 const SHOTS_DIR = process.env.ORIVON_UI_SHOTS_DIR
 const HTML = 'text/html; charset=utf-8'
@@ -91,8 +91,9 @@ async function launchWithApps (): Promise<{ app: ElectronApplication, chrome: Pa
   return { app, chrome, launched: openers.launched }
 }
 
-const linksOf = async (view: Page): Promise<string[]> => await view.evaluate(() => (window as unknown as { __links: string[] }).__links)
-const settledOf = async (view: Page): Promise<string[]> => await view.evaluate(() => (window as unknown as { __settled: string[] }).__settled)
+/** What the page was sent so far; a page whose script has not run yet has been sent nothing. */
+const linksOf = async (view: Page): Promise<string[]> => await evaluateRetrying(view, () => (window as unknown as { __links?: string[] }).__links ?? [])
+const settledOf = async (view: Page): Promise<string[]> => await evaluateRetrying(view, () => (window as unknown as { __settled?: string[] }).__settled ?? [])
 const appView = (app: ElectronApplication, chrome: Page): Page | undefined => findViewShowing(app, chrome, `${torrent.origin}/`)
 
 /** The button that opens the link in an app, whatever the panel calls the app's origin. */
@@ -144,7 +145,7 @@ it('[app:scheme-link-offers-declared-apps] [app:scheme-link-opens-in-chosen-app]
 
       // Without Always the next link asks again; the system's app is a choice of its own.
       await selectTab(chrome, siteTab)
-      await waitFor(async () => (await siteView.evaluate(() => document.visibilityState)) === 'visible')
+      await waitFor(async () => (await evaluateRetrying(siteView, () => document.visibilityState)) === 'visible')
       await siteView.click('#second')
       const again = await readQuestion(await waitQuestion(app))
       check('[app:scheme-link-opens-in-chosen-app] with no Always chosen, the next link asks again', again.buttons.includes(SYSTEM) && again.detail.includes(SECOND), JSON.stringify(again))
@@ -180,7 +181,7 @@ it('[app:scheme-link-always-skips-the-question] [app:scheme-link-malformed-is-re
       await waitFor(async () => (await linksOf(view)).length === 1)
 
       await selectTab(chrome, siteTab)
-      await waitFor(async () => (await siteView.evaluate(() => document.visibilityState)) === 'visible')
+      await waitFor(async () => (await evaluateRetrying(siteView, () => document.visibilityState)) === 'visible')
       const tabsBefore = (await tabIds(chrome)).length
       await siteView.click('#second')
       const delivered = await waitFor(async () => (await linksOf(view)).length === 2)
@@ -188,7 +189,7 @@ it('[app:scheme-link-always-skips-the-question] [app:scheme-link-malformed-is-re
 
       // A page's own window.open(magnet) is the same link as a click.
       await selectTab(chrome, siteTab)
-      await waitFor(async () => (await siteView.evaluate(() => document.visibilityState)) === 'visible')
+      await waitFor(async () => (await evaluateRetrying(siteView, () => document.visibilityState)) === 'visible')
       await siteView.click('#open')
       check('[app:scheme-link-always-skips-the-question] window.open of a magnet link goes to the default app too', await waitFor(async () => (await linksOf(view)).length === 3) && (await linksOf(view))[2] === FOURTH && launched() === '', JSON.stringify(await linksOf(view)))
 
@@ -204,7 +205,7 @@ it('[app:scheme-link-always-skips-the-question] [app:scheme-link-malformed-is-re
       check('[app:scheme-link-always-skips-the-question] Stop in Settings takes the choice back', await waitFor(async () => !/Opens magnet links/.test(await card.innerText())))
 
       await selectTab(chrome, siteTab)
-      await waitFor(async () => (await siteView.evaluate(() => document.visibilityState)) === 'visible')
+      await waitFor(async () => (await evaluateRetrying(siteView, () => document.visibilityState)) === 'visible')
       await siteView.click('#third')
       const asked = await readQuestion(await waitQuestion(app))
       check('[app:scheme-link-always-skips-the-question] after Stop the next link asks again', asked.buttons.includes(SYSTEM) && asked.detail.includes(THIRD) && (await linksOf(view)).length === 3, JSON.stringify(asked))
