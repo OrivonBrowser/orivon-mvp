@@ -1,9 +1,9 @@
 name: Cross-OS
 
 # Runs Orivon from source on Windows and macOS (Linux when asked), the way a person on that system runs it: `npm ci`
-# with no compiler for npm to reach, the build `npm start` makes, `smoke` (the real shell driven by clicks and
-# typing), then e2e specs, by default the QA states spec, which saves a screenshot of every state it reaches. Each
-# system uploads what it saw as `cross-os-<system>`. Start and read it from a terminal with
+# with the Rule 8 guard over that system's dependency tree, the build `npm start` makes, `smoke` (the real shell
+# driven by clicks and typing), then e2e specs, by default the QA states spec, which saves a screenshot of every state
+# it reaches. Each system uploads what it saw as `cross-os-<system>`. Start and read it from a terminal with
 # `node scripts/ci/cross-os.mjs` (scripts/ci/README.md); release.yml covers the packages.
 on:
   workflow_dispatch:
@@ -77,15 +77,13 @@ jobs:
           node-version: '24'
           cache: npm
 
-      # npm builds a native addon through node-gyp. Pointed at a script that fails, a dependency that needs a compiler
-      # fails the install here, instead of being built by the toolchain the runner happens to carry (Rule 8). An
-      # optional one is dropped, as it would be on a machine with no compiler.
-      - name: Install from source, with no compiler for npm to reach
+      # npm ci's postinstall runs the Rule 8 guard over this system's own dependency tree, which differs per system:
+      # a dependency that compiles here fails it, even though the runner carries a compiler.
+      - name: Install from source
         id: install
         run: |
           mkdir -p cross-os
-          echo 'console.error("cross-os: a dependency tried to compile a native addon"); process.exit(1)' > "$RUNNER_TEMP/no-node-gyp.js"
-          npm_config_node_gyp="$RUNNER_TEMP/no-node-gyp.js" npm ci 2>&1 | tee cross-os/install.log
+          npm ci 2>&1 | tee cross-os/install.log
 
       - name: Install a virtual display and Chromium's setuid sandbox helper
         if: runner.os == 'Linux'
