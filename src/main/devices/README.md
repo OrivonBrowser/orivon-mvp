@@ -47,3 +47,8 @@ disk; the disk side covers an app not opened this session.
 **The `hid` check arrives with no page attached.** Before a chooser can open Electron asks "may this origin request a
 device" with a null web contents (measured), so `hid-site-asker.ts` answers that from the origin alone. The frame is
 then checked where it is known: `hid-select.ts` serves only a tab's top frame.
+
+**Sessions that are not tabs answer no for every device themselves.** Electron's device handler gets an origin and a device
+and no page, and the gate installs the same handler on every session, so the web-context session, the child-host session and
+each embed partition each set `setDevicePermissionHandler(() => false)` next to their deny-all permission handlers. Without
+it a document there, at an origin a tab was given a device for, would be handed that device by `getDevices()`.

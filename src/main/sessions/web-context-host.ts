@@ -182,10 +182,13 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
   async function configureSession (contextSession: Session, opener: string, origin: string): Promise<void> {
     // NOT redundant with permission-gate.ts, which allows several
     // permissions browser-wide and asks the person for two more (its
-    // README has the list): these two lines are the only thing keeping all
+    // README has the list): these lines are the only thing keeping all
     // of them away from a document running another site's script, in a page
     // the person cannot see or act in. Deleting them as duplication reopens
-    // every one.
+    // every one. The device line matters most: Chromium's getDevices() asks
+    // only the device handler, which the gate answers from the origin alone,
+    // so without it this document would be given a device a tab was.
+    contextSession.setDevicePermissionHandler(() => false)
     contextSession.setPermissionCheckHandler(() => false)
     contextSession.setPermissionRequestHandler((_webContents, _permission, callback) => { callback(false) })
 
