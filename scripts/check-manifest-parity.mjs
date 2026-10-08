@@ -26,6 +26,7 @@ import { join } from 'node:path'
 import { isInvokedDirectly } from './cli.mjs'
 
 export const CONTRACT_FILE = 'src/contracts/manifest.ts'
+const DEVICES_CONTRACT_FILE = 'src/contracts/devices.ts'
 
 /**
  * Every interface this check ties to the loader's own field allowlist, and
@@ -55,7 +56,10 @@ export const PARITY_MAP = [
   // added to either side, this check catches the drift immediately instead
   // of needing to be remembered.
   { interfaceName: 'SecretsCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'SECRETS_CAPABILITY_KEYS' },
-  { interfaceName: 'TrustCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'TRUST_CAPABILITY_KEYS' }
+  { interfaceName: 'TrustCapability', loaderFile: 'src/loader/manifest/capabilities.ts', arrayName: 'TRUST_CAPABILITY_KEYS' },
+  // The device contracts live in their own file, because manifest.ts is at the source-size limit.
+  { interfaceName: 'DevicesCapability', loaderFile: 'src/loader/manifest/devices.ts', arrayName: 'DEVICES_CAPABILITY_KEYS', contractFile: DEVICES_CONTRACT_FILE },
+  { interfaceName: 'HidDeviceFilter', loaderFile: 'src/loader/manifest/devices.ts', arrayName: 'HID_DEVICE_FILTER_KEYS', contractFile: DEVICES_CONTRACT_FILE }
 ]
 
 /**
@@ -87,12 +91,6 @@ export const DELIBERATELY_DEFERRED = [
     field: 'read',
     reason: 'ADR-0032: CLIPBOARD_CAPABILITY_KEYS does not exist until the clipboard.read app door is ' +
       'built, which removes this entry.'
-  },
-  {
-    interfaceName: 'Capabilities',
-    field: 'devices',
-    reason: 'ADR-0068: devices.hid is declared in this contracts-only PR. The loader starts ' +
-      'accepting `devices` in the implementation PR that follows, which removes this entry.'
   }
 ]
 
@@ -228,17 +226,22 @@ function readSafe (path) {
 export function checkManifestParity (root, options = {}) {
   const parityMap = options.parityMap ?? PARITY_MAP
   const deferred = options.deferred ?? DELIBERATELY_DEFERRED
-  const contractSource = readSafe(join(root, CONTRACT_FILE))
+  const contractSources = new Map()
+  const sourceOf = (file) => {
+    if (!contractSources.has(file)) contractSources.set(file, readSafe(join(root, file)))
+    return contractSources.get(file)
+  }
 
   const gaps = []
   const stale = []
   const unreadable = []
   const missingReadonly = []
 
-  for (const { interfaceName, loaderFile, arrayName } of parityMap) {
+  for (const { interfaceName, loaderFile, arrayName, contractFile = CONTRACT_FILE } of parityMap) {
+    const contractSource = sourceOf(contractFile)
     const contractFields = interfaceFields(contractSource, interfaceName)
     if (contractFields === null) {
-      unreadable.push(`interface ${interfaceName} in ${CONTRACT_FILE}`)
+      unreadable.push(`interface ${interfaceName} in ${contractFile}`)
       continue
     }
 

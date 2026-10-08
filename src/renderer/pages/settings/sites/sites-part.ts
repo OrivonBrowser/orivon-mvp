@@ -27,6 +27,16 @@ function rowsOf (reply: unknown): readonly SiteKindRow[] | null {
   return isRecord(reply) && Array.isArray(reply['rows']) ? reply['rows'] as readonly SiteKindRow[] : null
 }
 
+/** A USB device the site was given, as main worded it, with the key that forgets it. */
+export interface SiteDeviceRow {
+  readonly key: string
+  readonly label: string
+}
+
+function devicesOf (reply: unknown): readonly SiteDeviceRow[] {
+  return isRecord(reply) && Array.isArray(reply['devices']) ? reply['devices'] as readonly SiteDeviceRow[] : []
+}
+
 export class SitesPart implements SettingsPart {
   /** False until main has answered. */
   loaded = false
@@ -38,6 +48,7 @@ export class SitesPart implements SettingsPart {
   /** The sites open to their own rows, and those rows as main last gave them. */
   readonly open = new Set<string>()
   readonly rows = new Map<string, readonly SiteKindRow[]>()
+  readonly devices = new Map<string, readonly SiteDeviceRow[]>()
   armedReset: string | null = null
   armedResetAll = false
   private readonly listeners = new Set<() => void>()
@@ -109,6 +120,17 @@ export class SitesPart implements SettingsPart {
     this.local()
   }
 
+  /** Gives one USB device back; the site's rows and its place in the list are read again after. */
+  async forgetDevice (origin: string, key: string): Promise<void> {
+    const reply = await this.bridge.request('sites', { type: 'forgetDevice', origin, key })
+    const rows = rowsOf(reply)
+    if (rows !== null) {
+      this.rows.set(origin, rows)
+      this.devices.set(origin, devicesOf(reply))
+    }
+    await this.refresh()
+  }
+
   /** First click arms, the second forgets every answer of the site. */
   async pressReset (origin: string): Promise<void> {
     if (this.armedReset !== origin) {
@@ -145,14 +167,20 @@ export class SitesPart implements SettingsPart {
   }
 
   private async loadRows (origin: string): Promise<void> {
-    const rows = rowsOf(await this.bridge.request('sites', { type: 'rows', origin }))
-    if (rows === null) this.close(origin)
-    else this.rows.set(origin, rows)
+    const reply = await this.bridge.request('sites', { type: 'rows', origin })
+    const rows = rowsOf(reply)
+    if (rows === null) {
+      this.close(origin)
+    } else {
+      this.rows.set(origin, rows)
+      this.devices.set(origin, devicesOf(reply))
+    }
   }
 
   private close (origin: string): void {
     this.open.delete(origin)
     this.rows.delete(origin)
+    this.devices.delete(origin)
   }
 
   private after (name: string, run: () => void): void {

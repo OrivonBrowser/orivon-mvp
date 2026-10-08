@@ -202,10 +202,12 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     return ledger.grantsFor(key).length > 0
   }
 
-  function heldSync (origin: string, capability: CapabilityKind): boolean {
+  function grantedPatternsSync (origin: string, capability: CapabilityKind): readonly Pattern[] | undefined {
     const key = isolationKeyFromUrl(origin)
-    return key !== null && ledger.currentGrant(key, capability) !== undefined
+    return key === null ? undefined : ledger.currentGrant(key, capability)?.patterns
   }
+
+  const heldSync = (origin: string, capability: CapabilityKind): boolean => grantedPatternsSync(origin, capability) !== undefined
 
   /**
    * A200: `Broker.app.socketAllowanceSync`'s implementation -- a thin,
@@ -470,7 +472,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   }
 
   return {
-    app: { manifest, grants, isRegisteredSync, hasGrantsSync, heldSync, registeredOriginsSync, persistedAppsSync, hydrateFromPinnedManifest, pickedPaths: pickedPathsFor, socketAllowanceSync },
+    app: { manifest, grants, isRegisteredSync, hasGrantsSync, heldSync, grantedPatternsSync, registeredOriginsSync, persistedAppsSync, hydrateFromPinnedManifest, pickedPaths: pickedPathsFor, socketAllowanceSync },
     net,
     id,
     web,

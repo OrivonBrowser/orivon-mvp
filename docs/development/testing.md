@@ -239,6 +239,11 @@ built app, and unless the build is the ordinary one (`ORIVON_ORDINARY_BUILD=1`),
 does; it binds 9000 and 6667. The server's release check may reach `api.github.com` from the main process
 (`--host-resolver-rules` does not cover it); no assertion depends on the answer.
 
+A spec that needs a USB HID device makes one with
+[`virtual-hid`](../../test/support/virtual-hid/README.md): a Docker container creates it through `/dev/uhid`
+and opens its hidraw node to the user. Where Docker or `/dev/uhid` is missing the spec skips with the reason in
+its name, and `ORIVON_REQUIRE_VIRTUAL_HID=1` makes the skip a failure.
+
 **They run automatically.** `npm run test:e2e` runs every `test/**/*.test.ts` outside `test/apps/` under
 `test/vitest.e2e.config.ts`, and `.github/workflows/ci.yml`'s `e2e` job runs it on every push and
 pull request (see section How to run above).
@@ -477,6 +482,15 @@ exercises and it is the one most likely to break silently.
   cannot clash. A failed shard uploads `qa-artifacts/latest/` (section Visual QA and failure evidence).
 - **`e2e`** is the one e2e status: it passes when every selected shard passed or nothing was selected. **`e2e-ordinary`**
   runs the specs that need the build without the developer-only hooks, whenever any e2e is selected.
+
+**Windows and macOS.** Everything above runs on Linux. [`cross-os.yml`](../../.github/workflows/cross-os.yml) runs
+Orivon from source on hosted Windows and macOS runners: `npm ci` with the Rule 8 guard over that system's own dependencies, `smoke`, and the QA
+states spec with its screenshots. It runs nightly on `main`, on a pull request that changes the install or launch
+scripts, `package.json` or `src/main/os/`, and on demand through `node scripts/ci/cross-os.mjs`, which waits and
+brings the evidence back ([`scripts/ci/README.md`](../../scripts/ci/README.md) section Other systems).
+`node scripts/ci/live-session.mjs` keeps Orivon running on one of those runners and drives it step by step from a
+terminal (the same README, section Live sessions).
+[`release.yml`](../../.github/workflows/release.yml) builds, installs and launches the packages on the same systems.
 
 **With no dedicated code reviewer, CI is the reviewer.** A pull request whose `check` or selected e2e shards are
 red does not merge. The e2e job is not a required status check: the rule is kept by whoever merges, and

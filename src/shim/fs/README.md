@@ -21,6 +21,12 @@ README's "What it must never import".
 **An asynchronous call the limiter refuses is asked again** (`../limit-retry.ts`, used by `paths.ts`'s `guarded`: pauses from 10 ms to 800 ms, thirteen retries, about five seconds)
 the same way, for the same reason.
 
+**Asynchronous calls queue in the shim, under half the broker's in-flight bound** (`../limit-retry.ts`'s `fsQueue`,
+used by `guarded`). The broker holds an origin to `LIMITS.inFlightOperations` calls at once plus as many waiting
+and refuses the rest, but Node never refuses a file call for being one too many: libuv queues it. So at most 128
+calls of this realm are with the broker at once and the others wait here, in order, without limit. Half, so that
+net calls and other realms of the origin keep room.
+
 **A synchronous call the broker's per-origin limiter refuses is asked again** (`sync-orivon.ts`'s
 `guardedSync`): it backs off from 25 ms up to 200 ms for at most 40 attempts, then throws the error. The
 limiter refuses before anything runs, so asking again cannot repeat an effect, and a synchronous caller

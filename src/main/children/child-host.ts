@@ -85,6 +85,8 @@ function schemesFor (origin: string): readonly string[] {
  * nothing here ever opening an `RTCPeerConnection`.
  */
 async function configureHostSession (hostSession: Session, origin: string, broker: Broker): Promise<void> {
+  // The device handler too: the gate answers it from the origin alone, so the host would be given a device a tab was.
+  hostSession.setDevicePermissionHandler(() => false)
   hostSession.setPermissionCheckHandler(() => false)
   hostSession.setPermissionRequestHandler((_webContents, _permission, callback) => { callback(false) })
 

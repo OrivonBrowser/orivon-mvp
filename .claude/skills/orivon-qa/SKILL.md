@@ -19,6 +19,7 @@ window on the owner's screen, silent audio) is in `orivon-electron` and CLAUDE.m
 | `npm run qa:report` | writes `qa-artifacts/latest/inspect.md` | to read states against expectations |
 | `npm run test:e2e` | every e2e spec, each leaving evidence on failure | CI runs the specs a change can reach on a PR and everything on `main`. Not locally: the development machine is shared and has crashed under load (`.claude/hookify.machine-load.local.md`) |
 | `npm run smoke` | the real shell once, JSON failure list | when `src/main/` changed |
+| `node scripts/ci/cross-os.mjs` | smoke and `e2e-qa-visual` from source on GitHub's Windows and macOS runners, evidence brought back | after a platform change (item 5 below) |
 
 One spec: `node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/<area>/<file> -t "<name>"`
 (after `node scripts/build-e2e.mjs`). Never launch Electron any other way.
@@ -44,7 +45,13 @@ One spec: `node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e
    specs (`e2e-capability-boundary`, `e2e-udp-capability`, `e2e-loopback-grant`, `e2e-connect-secure-capability`
    and the ones for what you touched), then `e2e-qa-adversarial`. Never relax a boundary to make a
    test pass; if the test is wrong, say why in the change.
-5. **Before done**: `npm run qa` and the named specs above, one heavy command at a time; for
+5. **Platform change** (`src/main/os/`, a `process.platform` branch, the install or launch scripts, a dependency):
+   push, then `node scripts/ci/cross-os.mjs` in the background; add `--specs` for the specs of what you touched.
+   Read its screenshots as below. When a failure there needs probing step by step, `node scripts/ci/live-session.mjs
+   start --system <system>` keeps Orivon running on that runner for Playwright calls from here
+   (`scripts/ci/README.md` section Live sessions). This machine cannot stand in for the other systems: Wine is not
+   Windows, and macOS runs only on Apple hardware.
+6. **Before done**: `npm run qa` and the named specs above, one heavy command at a time; for
    anything in 3 or 4, the e2e shards CI selects must pass on the PR, and the PR takes the `ci:e2e-full` label so the
    whole suite runs before it merges.
    Compiling is not done.

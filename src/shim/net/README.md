@@ -27,6 +27,11 @@ runs here, in Node's order, and a failing verdict closes the handle before the d
 queued write never reaches an unverified peer (`tls-options.ts`). STARTTLS and a prebuilt
 `secureContext` refuse by name: the broker has no in-place upgrade (A226).
 
+**`Socket#connect` queues its dial** (`../limit-retry.ts`'s `dialQueue`: at most a quarter of the broker's in-flight
+bound, 64, at a time, in order). A dial holds an operation slot until the broker's 30 s dial timeout even after the
+program has destroyed the socket, so a program that abandons many dials would otherwise fill the origin's slots
+and fail its file calls. A socket destroyed while its dial waits is never dialled.
+
 **[`server.ts`](server.ts) and [`dgram-socket.ts`](dgram-socket.ts) map a bind address onto a
 scope, and refuse an address that is neither loopback nor "every interface"**
 ([`../bind-scope.ts`](../bind-scope.ts), `ADR-0034`). `127.0.0.1`, `::1` and `localhost` ask for
