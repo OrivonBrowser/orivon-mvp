@@ -51,6 +51,10 @@ Ports are named only where the compatibility pages already name them.
 | `local-listener-accepts-connections` | An app granted a local listener port accepts connections on `127.0.0.1` from other programs | apps that embed a server | The Lounge | [`e2e-http-server`](../node-runtime/e2e-http-server.test.ts) |
 | `second-listener-gets-eaddrinuse` | Listening on a port another program holds fails with `EADDRINUSE` | apps that detect a running copy of themselves | The Lounge | [`e2e-app-broker-rules`](./e2e-app-broker-rules.test.ts) |
 | `page-media-from-own-listener` | An app that holds a `tcp.listen` grant plays `<audio>` and `<video>` and shows `<img>` from `http://localhost` or `http://127.0.0.1` on a port its own listener holds, and a request from the same page to any other loopback port is cancelled before it connects; a page with no listen grant loads loopback images as before | apps that serve media to their own player | WebTorrent | [`e2e-app-own-listener-media`](e2e-app-own-listener-media.test.ts) |
+| `udp-bind-picks-granted-port` | A `dgram` socket bound with no address and port 0 gets a port inside the granted `udp.bind` range, on every interface under a `udp.bind.network` grant and on loopback only under a `udp.bind.local` grant | apps with a DHT or UDP trackers | WebTorrent | [`e2e-app-network-sockets`](e2e-app-network-sockets.test.ts) |
+| `udp-send-reaches-granted-peer` | A datagram sent to a `host:port` the `udp.send` grant names arrives, and the peer's reply is a `message` event on the same socket with that peer's address and port | apps with a DHT or UDP trackers | WebTorrent | [`e2e-app-network-sockets`](e2e-app-network-sockets.test.ts) |
+| `udp-send-outside-grant-is-dropped` | A datagram to a host and port the `udp.send` grant does not name, `*:*` included for a loopback address, reaches nobody: the `dgram` send still calls back without an error, the socket keeps working, and `orivon.net.udpBind` reports the refusal as `denied` on `refusals` | apps whose peer lists name addresses outside the grant | WebTorrent | [`e2e-app-network-sockets`](e2e-app-network-sockets.test.ts) |
+| `tcp-listen-any-interface-accepts-connections` | `net.createServer().listen(0)` with no host, under a `tcp.listen.network` grant, listens on every interface at a port inside the granted range and accepts a connection from another program | apps that accept peers | WebTorrent | [`e2e-app-network-sockets`](e2e-app-network-sockets.test.ts) |
 
 ## Files and stored data
 
@@ -92,6 +96,7 @@ Ports are named only where the compatibility pages already name them.
 | `window-open-external-address-asks` | A page's `window.open` of an address another program handles (`mailto:`, `magnet:`) raises the external-link question, as a click on a link to it does, and opens no tab | apps that hand links to the system | WebTorrent | [`e2e-app-electron-clipboard-shell`](e2e-app-electron-clipboard-shell.test.ts) |
 | `electron-clipboard-reads-the-pasted-text` | The `electron` shim's `clipboard.readText()` answers the text being pasted while a `paste` event is dispatched and `''` at any other time, and `writeText` copies through the browser and returns nothing | apps that add what the person pastes | WebTorrent | [`e2e-app-electron-clipboard-shell`](e2e-app-electron-clipboard-shell.test.ts) |
 | `electron-shell-open-external-opens-a-tab` | The `electron` shim's `shell.openExternal(url)` opens an address in a new tab, hands an address another program handles to the external-link question, and rejects with `invalid-usage` a value that is not an absolute URL | apps with links to the outside | WebTorrent | [`e2e-app-electron-clipboard-shell`](e2e-app-electron-clipboard-shell.test.ts) |
+| `media-element-track-lists` | In an app's tab every `<audio>` and `<video>` element has the standard `audioTracks` and `videoTracks` lists (empty before media loads), so a player that reads their `length` on `loadedmetadata` works; an ordinary site's tab keeps Chromium's default, which has neither | media players | WebTorrent | [`e2e-app-media-tracks`](e2e-app-media-tracks.test.ts) |
 
 ## Running code and showing other pages
 
@@ -130,10 +135,10 @@ has a line, so a capability cannot land without that decision.
 |---|---|
 | `tcp.connect` | `tcp-connect-to-granted-loopback-port`, `wildcard-host-never-reaches-loopback`, `reserved-port-needs-exact-pattern`, `concurrent-sockets-limit-holds`, `file-calls-complete-beside-hung-dials` |
 | `tcp.listen.local` | `local-listener-accepts-connections`, `second-listener-gets-eaddrinuse`, `page-media-from-own-listener` |
-| `tcp.listen.network` | not covered: a network-scope listener is reachable from the local network, and the end-to-end suite is loopback only |
-| `udp.bind.local` | not covered: no ported app relies on UDP yet; `e2e-udp-capability` proves the capability itself, and a row is added when a port needs it |
-| `udp.bind.network` | not covered: as `udp.bind.local`, and reachable from the local network |
-| `udp.send` | not covered: as `udp.bind.local` |
+| `tcp.listen.network` | `tcp-listen-any-interface-accepts-connections`; not covered: that a listener on every interface is reached from another machine, since the end-to-end suite is loopback only (the spec reads the bound address `0.0.0.0` instead) |
+| `udp.bind.local` | `udp-bind-picks-granted-port`, `udp-send-reaches-granted-peer` |
+| `udp.bind.network` | `udp-bind-picks-granted-port`, `udp-send-reaches-granted-peer`, `udp-send-outside-grant-is-dropped`; not covered: that the socket is reached from another machine, since the end-to-end suite is loopback only (the spec reads the bound address `0.0.0.0` instead) |
+| `udp.send` | `udp-send-reaches-granted-peer`, `udp-send-outside-grant-is-dropped` |
 | `https.connect` | `routed-fetch-reaches-granted-hosts`, `tls-self-signed-refused-unless-opted-out` |
 | `fs` | `fs-confined-to-app-root`, `fs-quota-refuses-past-limit`, `app-files-survive-restart`, `atomic-write-by-rename`, `node-fs-writes-land-at-app-root`, `page-sync-fs-writes-land`, `fs-open-create-in-place`, `local-file-grant` |
 | `id` | not covered: no ported app uses `orivon.id` yet; `e2e-id-capability` proves the capability itself |
