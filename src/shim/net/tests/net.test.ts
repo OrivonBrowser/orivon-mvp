@@ -42,7 +42,7 @@ describe('net/net.ts', () => {
     const net = await import('../net.js')
     net.connect({ host: 'router.bittorrent.com', port: 6881 })
     await vi.waitFor(() => expect(connectCalls).toHaveLength(1))
-    expect(connectCalls[0]).toEqual({ host: 'router.bittorrent.com', port: 6881 })
+    expect(connectCalls[0]).toEqual({ host: 'router.bittorrent.com', port: 6881, signal: expect.any(AbortSignal) })
   })
 
   it('new net.Socket().connect(port, host) dials through orivon.net.connect, found when connect() runs rather than at construction', async () => {
@@ -50,7 +50,7 @@ describe('net/net.ts', () => {
     const socket = new net.Socket()
     const { connectCalls } = installFakeOrivon()
     socket.connect(6881, 'peer.example')
-    await vi.waitFor(() => expect(connectCalls).toEqual([{ host: 'peer.example', port: 6881 }]))
+    await vi.waitFor(() => expect(connectCalls).toEqual([{ host: 'peer.example', port: 6881, signal: expect.any(AbortSignal) }]))
   })
 
   it('createConnection is the same factory as connect', async () => {

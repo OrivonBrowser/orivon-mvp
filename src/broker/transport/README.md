@@ -52,6 +52,11 @@ grant check comes first, so an app without `trust.score` learns nothing, not eve
 needs it and must not import `ipc.ts`, which imports `dispatchNet`: that is a cycle. `ipc.ts`
 re-exports it.
 
+**`net.cancel` withdraws a pending dial** ([`pending-dials.ts`](pending-dials.ts), `ADR-0071`). A `net.connect` or
+`net.connectSecure` request is findable by its id from the moment it arrives, even while the limiter holds it, under the
+sending frame and the origin derived for it; a frame cancels only what it began. The dial's `AbortSignal` goes to the
+broker, which answers the request `'closed'`. A `signal` in the payload of either call is never read.
+
 ### [`picker-dialog.ts`](picker-dialog.ts): the OS picker's wording
 
 **Folder wording is owner-approved verbatim** (`d-0032`, 2026-09-16): three drafts were proposed,

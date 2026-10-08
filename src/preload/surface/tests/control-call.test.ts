@@ -37,3 +37,33 @@ describe('call() -- a refusal thrown rather than rejected', () => {
     await expect(call('fs.writeFile', {}, 1_000)).rejects.toMatchObject({ code: 'invalid' })
   })
 })
+
+describe('call() -- a call the page can abandon', () => {
+  it('sends net.cancel naming the pending request when the page abandons it', async () => {
+    invoke.mockResolvedValue({ id: 'x', ok: true, result: undefined })
+    let abandon!: () => void
+
+    await call('net.connect', { host: 'x.example', port: 1 }, 1_000, (listener) => { abandon = listener })
+    abandon()
+
+    const [first, second] = invoke.mock.calls.map((args) => args[1] as { id: string, method: string, payload: unknown })
+    expect(second?.method).toBe('net.cancel')
+    expect(second?.payload).toEqual({ requestId: first?.id })
+  })
+
+  it('sends no cancel unless the page abandons it', async () => {
+    invoke.mockResolvedValue({ id: 'x', ok: true, result: undefined })
+
+    await call('net.connect', { host: 'x.example', port: 1 }, 1_000, () => {})
+
+    expect(invoke).toHaveBeenCalledOnce()
+  })
+
+  it('survives a cancel the transport refuses', async () => {
+    invoke.mockResolvedValueOnce({ id: 'x', ok: true, result: undefined }).mockRejectedValue(new Error('boom'))
+    let abandon!: () => void
+    await call('net.connect', {}, 1_000, (listener) => { abandon = listener })
+
+    expect(() => { abandon() }).not.toThrow()
+  })
+})
