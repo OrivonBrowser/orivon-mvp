@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest'
-import { failedSpecs, nextStep, normalize, runIds } from '../ai/pr-watch.mjs'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { failedSpecs, nextStep, normalize, runIds, updateBranch } from '../ai/pr-watch.mjs'
 
 const pass = (name: string) => ({ name, conclusion: 'SUCCESS' })
 const fail = (name: string) => ({ name, conclusion: 'FAILURE' })
@@ -62,5 +66,54 @@ describe('runIds', () => {
       { name: 'live (macos)', conclusion: 'CANCELLED', url: url(9, 3) },
       { name: 'check', conclusion: 'SUCCESS', url: url(8, 4) }
     ])).toEqual(['7', '9'])
+  })
+})
+
+describe('updateBranch', () => {
+  const identity = { GIT_AUTHOR_NAME: 'test', GIT_AUTHOR_EMAIL: 'test@example.invalid', GIT_COMMITTER_NAME: 'test', GIT_COMMITTER_EMAIL: 'test@example.invalid' }
+  const saved: Record<string, string | undefined> = {}
+  const roots: string[] = []
+  beforeAll(() => { for (const [key, value] of Object.entries(identity)) { saved[key] = process.env[key]; process.env[key] = value } })
+  afterAll(() => {
+    for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value }
+    for (const root of roots) rmSync(root, { recursive: true, force: true })
+  })
+
+  const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+  const commit = (cwd: string, file: string, text: string) => { writeFileSync(join(cwd, file), text); git(cwd, 'add', file); git(cwd, 'commit', '-q', '-m', file) }
+
+  /** An origin with `main` and a pushed `feature` branch checked out in `mine`, and `main` moved on from `theirs`. */
+  function repos (theirFile: string) {
+    const root = mkdtempSync(join(tmpdir(), 'pr-watch-test-'))
+    roots.push(root)
+    git(root, 'init', '-q', '--bare', '-b', 'main', 'origin.git')
+    git(root, 'clone', '-q', 'origin.git', 'mine')
+    const mine = join(root, 'mine')
+    commit(mine, 'shared.txt', 'base\n')
+    git(mine, 'push', '-q', 'origin', 'HEAD:main')
+    git(mine, 'checkout', '-q', '-b', 'feature')
+    commit(mine, 'shared.txt', 'feature\n')
+    git(mine, 'push', '-q', '-u', 'origin', 'feature')
+    git(root, 'clone', '-q', 'origin.git', 'theirs')
+    const theirs = join(root, 'theirs')
+    commit(theirs, theirFile, 'main moved\n')
+    git(theirs, 'push', '-q', 'origin', 'HEAD:main')
+    return { root, mine }
+  }
+
+  it('merges main into the branch and pushes it', () => {
+    const { root, mine } = repos('other.txt')
+    const head = updateBranch(mine)
+    expect(head).toBe(git(mine, 'rev-parse', 'HEAD'))
+    expect(git(join(root, 'origin.git'), 'rev-parse', 'feature')).toBe(head)
+    expect(git(mine, 'log', '-1', '--format=%P').split(' ')).toHaveLength(2)
+  })
+
+  it('leaves the worktree as it was when main does not merge cleanly', () => {
+    const { mine } = repos('shared.txt')
+    const before = git(mine, 'rev-parse', 'HEAD')
+    expect(updateBranch(mine)).toBeUndefined()
+    expect(git(mine, 'rev-parse', 'HEAD')).toBe(before)
+    expect(git(mine, 'status', '--porcelain')).toBe('')
   })
 })

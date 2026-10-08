@@ -71,10 +71,13 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Telemetry now asks in a calm popup over the blurred browser after "Enter Orivon"; the default-browser question arrives 30 s into first use.
 - Re-aligned the whole repo with today's Orivon: early-access product, two equal pillars, roadmap replaces scope, 54 open questions closed.
 - The porting skill now covers port upkeep and which mvp tests each port needs, drawn from 33 past sessions; a guard keeps it current.
+- Agents on Linux can now run Orivon on real Windows and macOS runners and read back smoke results and screenshots in five minutes.
+- First cross-OS runs: Windows and macOS install and pass smoke; their screenshots exposed three Linux-only test assumptions and a new-tab race behind Linux flakes.
 - Apps can ask for USB hardware: a vendor-bounded grant, then a question for each specific device; websites get Chrome's device chooser.
 - Ledger Wallet desktop ported and tested against an emulated Ledger (Speculos plus a virtual USB device); CI now tests real HID devices.
 - WebTorrent Desktop now runs as an Orivon app: streams torrents from real peers in its own player, published on IPFS and listed in Explore.
 - Porting it closed six Orivon gaps: synchronous file writes, local media streaming, posters by path, clipboard paste, media tracks, and shim fixes.
+- Live sessions: agents here drive Orivon step by step on real Windows, macOS and Linux runners through a token-guarded Cloudflare tunnel.
 
 ### In my head
 

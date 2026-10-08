@@ -290,6 +290,9 @@ orivon.version                       // => 0
 orivon.app.manifest()                // => Manifest
 orivon.app.grants()                  // => Grant[]  (what was actually granted)
 orivon.app.requestGrant(cap)         // => Promise<boolean>  (may prompt the user)
+orivon.app.onOpenUrl(fn)             // => () => void  (a link the person sent to this app; manifest `protocols`)
+orivon.app.requestSchemeHandler(s)   // => Promise<boolean>  (asks to be the default for a scheme; needs a click)
+orivon.app.isSchemeHandler(s)        // => Promise<boolean>
 
 // --- net ---
 orivon.net.connect({ host, port, signal? }) // => Promise<TcpSocket>

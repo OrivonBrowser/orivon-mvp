@@ -14,9 +14,9 @@
 // surface is disposable; this interface is not.
 //
 // Reading order for someone new: errors -> handles -> manifest ->
-// capability-api -> trust -> devices. Those six are the product surface;
+// capability-api -> app -> trust -> devices. Those seven are the product surface;
 // ./limits.ts and ./ipc.ts hold its two runtime values, and this file
-// re-exports all eight.
+// re-exports all nine.
 
 export type { OrivonErrorCode, OrivonError } from './errors.js'
 
@@ -63,7 +63,6 @@ export type {
 
 export type {
   Orivon,
-  OrivonApp,
   OrivonNet,
   OrivonFs,
   OrivonId,
@@ -73,11 +72,12 @@ export type {
   EmbedEventMap,
   WebContextOptions,
   OrivonSecrets,
-  CapabilityRequest,
   ConnectOptions,
   SecureConnectOptions,
   BindScope
 } from './capability-api.js'
+
+export type { OrivonApp, CapabilityRequest } from './app.js'
 
 export type { OrivonTrust, WebsiteScore } from './trust.js'
 

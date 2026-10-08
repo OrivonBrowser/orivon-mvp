@@ -6,7 +6,7 @@
 
 import type { OrivonErrorCode } from '../../contracts/errors.js'
 import type { SendRefusal, UdpSocket } from '../../contracts/handles.js'
-import type { BindScope, CapabilityRequest, SecureConnectOptions } from '../../contracts/capability-api.js'
+import type { BindScope, CapabilityRequest, SecureConnectOptions } from '../../contracts/index.js'
 import type {
   CallSiteMethods, MainWorldBridge, MainWorldDatagram, MainWorldDirectoryBridge, MainWorldFileBridge, MainWorldServerBridge,
   MainWorldSocketBridge, MainWorldUdpBridge, MainWorldWebContextBridge, OrivonLimits
