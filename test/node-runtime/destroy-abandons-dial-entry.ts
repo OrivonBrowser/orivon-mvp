@@ -45,7 +45,7 @@ async function signalAbandonsDials (port: number): Promise<NonNullable<AbandonRe
   const probeStarted = Date.now()
   let probeDoneAt: number | undefined
   let probeError: string | undefined
-  const probe = fs.promises.stat('.').then(() => { probeDoneAt = Date.now() }, (error: unknown) => { probeDoneAt = Date.now(); probeError = String(error) })
+  const probe = fs.promises.writeFile('probe.txt', 'x').then(() => { probeDoneAt = Date.now() }, (error: unknown) => { probeDoneAt = Date.now(); probeError = String(error) })
   await wait(500)
   const probePendingBeforeAbort = probeDoneAt === undefined
   const abortedAt = Date.now()
