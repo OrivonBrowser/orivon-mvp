@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   apiListener, cloudflaredAsset, desktopShotCommand, functionBody, isTokenHash, newToken, serialize, tokenHash, tokenMatches, tunnelUrl
 } from '../live-host.mjs'
-import { errorText, formatReply, nextShotPath, runTitle, saveShots, urlArtifact } from '../live-session.mjs'
+import { call, errorText, formatReply, lookupVia, nextShotPath, runTitle, saveShots, urlArtifact } from '../live-session.mjs'
 
 const dirs: string[] = []
 const scratch = (): string => {
@@ -92,6 +92,15 @@ describe('the API', () => {
     expect(seen).toEqual([])
   })
 
+  it('is reached by the caller with the token, and refuses the caller without it', async () => {
+    const server = createServer(apiListener({ hash: tokenHash(token), routes: { 'GET /health': async () => ({ ok: true }) } }))
+    servers.push(server)
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const url = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`
+    expect(await call({ url, token }, 'GET', '/health')).toEqual({ status: 200, ok: true })
+    expect(await call({ url, token: 'd'.repeat(64) }, 'GET', '/health')).toEqual({ status: 401, ok: false, error: 'bad token' })
+  })
+
   it('runs calls one at a time, and answers health and stop while a call is still running', async () => {
     const { seen, release, send } = await api()
     const first = send('POST', '/eval', JSON.stringify({ code: 'hold' }))
@@ -104,6 +113,25 @@ describe('the API', () => {
     expect((await first).json.value).toBe('hold')
     expect((await second).json.value).toBe('next')
     expect(seen.at(-1)).toBe('eval next')
+  })
+})
+
+describe('lookupVia', () => {
+  type Answer = [Error | null, unknown, number?]
+  const ask = async (lookup: ReturnType<typeof lookupVia>, all: boolean) => await new Promise<Answer>((resolve) => {
+    lookup('x.trycloudflare.com', { all }, (...answer: Answer) => { resolve(answer) })
+  })
+  const system = (_host: string, _options: unknown, callback: (...answer: Answer) => void) => { callback(null, '10.0.0.1', 4) }
+
+  it('takes the public answer, in the shape the connection asked for', async () => {
+    const lookup = lookupVia(async () => ['104.16.0.1', '104.16.0.2'], system)
+    expect(await ask(lookup, false)).toEqual([null, '104.16.0.1', 4])
+    expect(await ask(lookup, true)).toEqual([null, [{ address: '104.16.0.1', family: 4 }, { address: '104.16.0.2', family: 4 }]])
+  })
+
+  it('asks the system when the public resolvers fail or give nothing', async () => {
+    expect(await ask(lookupVia(async () => { throw Object.assign(new Error('refused'), { code: 'ECONNREFUSED' }) }, system), false)).toEqual([null, '10.0.0.1', 4])
+    expect(await ask(lookupVia(async () => [], system), false)).toEqual([null, '10.0.0.1', 4])
   })
 })
 
