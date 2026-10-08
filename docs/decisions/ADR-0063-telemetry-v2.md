@@ -78,7 +78,7 @@ response channel) and widens what is measured and how the person chooses.
     wants to check the server's claims can only read what the notice says; that is the cost.
 
 ## Context
-The success metric is 100 active users in EU/USA at 25 hours a month (Rule 4). One identifier per
+The success metric counts active people (Rule 4). One identifier per
 install counted a person with two profiles, or a source and a packaged run, as several, and
 overstated the base. The owner also wants to know what kind of site the time goes to, since the
 product's claim is Web3 and Web2.5 use, and which single sites those are. The owner asked for a

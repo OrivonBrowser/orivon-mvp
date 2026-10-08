@@ -44,7 +44,7 @@ a global whose entire promise is that *"every existing Nostr web client works un
 ## Alternatives considered
 
 **Fix each global as an app reports it.** Rejected on the project's own success metric: the
-genericity test in [`../scope.md`](../scope.md) claims app #3 costs dramatically less
+genericity test in `scope.md` claims app #3 costs dramatically less
 than app #1, and a per-app rediscovery of the same one-line cause is that claim failing.
 
 **One shared `defineAppGlobal()` helper every install site calls.** The obvious Rule 3 answer,

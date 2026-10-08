@@ -21,16 +21,13 @@ sequential download, while seeding back to the swarm. A **Nostr client** follows
 cheap second sticky app.
 
 ## Context
-The MVP's success metric is **100 active users in EU/USA, where active = 25 hours/month**
-(~50 min/day). That is daily-driver usage: the product must replace the user's normal
+The success metric (its numbers are kept privately) is daily-driver usage: the product must replace the user's normal
 browser for some real task, not merely be tried once. One solo developer, one month of
-build, Claude Max for AI assistance. Target early adopters are "A+ players with liberal
-mindset": Monero / Tor / Bitcoin-maximalist / Durov / Vitalik sensibilities. Distribution
-is organic plus ~€50.
+build, Claude Max for AI assistance. Distribution is organic plus ~€50.
 
 ## Alternatives considered
 - **Wallet (Monero/Bitcoin) as flagship.** Rejected: nobody spends 50 min/day in a wallet.
-  Episodic usage cannot reach 25 h/month. Also does not clip well for distribution.
+  Episodic usage cannot reach the active-use threshold. Also does not clip well for distribution.
 - **Bisq / decentralised trading.** Rejected: trading is episodic, not daily. Bisq is a JVM
   app (compatibility **tier 3**), so bundling a JVM is heavy work for few daily minutes.
 - **Mastodon.** Rejected outright, not merely as flagship. Mastodon's *client* is a website,
@@ -63,7 +60,7 @@ Seven properties, and torrent streaming is the only candidate with all of them:
 4. **Cheap.** `webtorrent` in the main process ships a built-in HTTP streaming server;
    sequential download feeds a `<video>` in the renderer. Reuse is at the *library* level,
    not by forking someone's app.
-5. **Exact audience fit.** Anti-bloat, pro-P2P, privacy-first: the target A+ players, and
+5. **Exact audience fit.** Anti-bloat, pro-P2P, privacy-first, and
    reachable organically.
 6. **It clips.** Distribution is Show HN / Reddit / X / Discord with ~€50. "Magnet link, no
    client installed, instantly streaming" is a 15-second video. A wallet is not.
