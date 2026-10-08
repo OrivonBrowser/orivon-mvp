@@ -8,7 +8,7 @@
 import { isAbsolute, normalize } from 'path'
 import { getOrivon } from '../orivon-global.js'
 import { codedError, toNodeError } from '../node-errors.js'
-import { retryLimited } from '../limit-retry.js'
+import { fsQueue, retryLimited } from '../limit-retry.js'
 import { VIRTUAL_ROOT, VIRTUAL_TMPDIR } from '../virtual-root.js'
 import { syncFs } from './sync-orivon.js'
 
@@ -40,7 +40,7 @@ export function fsError (code: string, description: string, syscall: string, pat
  */
 export async function guarded<T> (run: () => Promise<T>, pause?: (ms: number) => Promise<void>): Promise<T> {
   try {
-    return await retryLimited(run, pause)
+    return await fsQueue(async () => await retryLimited(run, pause))
   } catch (error) {
     throw toNodeError(error)
   }
