@@ -4,7 +4,8 @@
 - **Date:** 2026-10-08
 - **Type:** security
 - **Decided by:** owner (apps get a hardware grant, and the browser asks again for each specific
-  device); AI recommendation accepted by default (the filter shape, the canonical pattern string,
+  device; an approved device is remembered until removed; ordinary websites get WebHID through the
+  chooser); AI recommendation accepted by default (the filter shape, the canonical pattern string,
   the limit of 16, the device key)
 
 ## Decision
@@ -33,8 +34,15 @@ In the grant ledger a filter is one canonical string: the fields it names in the
 `product`, `usagePage`, `usage`, each as four lowercase hex digits (`vendor=2c97,product=4011`).
 The contracts live in `src/contracts/devices.ts`, the ninth file.
 
-Out of scope here: WebUSB and Web Serial stay denied, as do web contexts, child hosts and ordinary
-websites (no manifest, so no grant).
+**Ordinary websites** (no manifest, so no grant) get WebHID the way Chrome gives it. A site's
+`navigator.hid.requestDevice()` opens the same Orivon chooser, and the pick is the per-device
+approval, remembered for that site until the person removes it in Settings under Sites. A site
+never gets the question in the tab at `getDevices()` time: only the chooser. The site-settings row
+"USB and HID devices" carries it, Ask (the default) or Block. An app keeps the stricter path above:
+the `devices.hid` filters bound what it can be offered, and each device is still asked.
+
+Out of scope here: WebUSB and Web Serial stay denied for every page, as do web contexts and child
+hosts.
 
 ## Context
 Ledger Wallet's desktop app uses WebHID in its renderer: it lists devices with
@@ -52,14 +60,16 @@ specific device.
   app that talks to a device through a library written for `navigator.hid` would need a bridge.
 - **`node-hid` in a child host.** Rejected: it is a native module, which Rule 8 and `ADR-0040`
   rule out, and it would give an app raw access with no per-device question.
+- **Apps only, websites denied.** Simpler and the narrower surface. Rejected by the owner: a
+  website that works in Chrome should work here, and the chooser already names each device the
+  person picks, so no grant is needed for it.
 - **A grant that names no vendor ("any HID device").** Rejected: it hands an app every keyboard,
   security key and sensor the person plugs in. A required `vendorId` keeps a manifest honest about
   what it talks to, and gives the consent row something a person can recognise.
 - **The grant alone, with no per-device question.** Rejected by the owner: a person who accepted
   "Ledger devices" has not agreed to every device of that vendor, nor to one plugged in later.
-- **Ask at every connection.** Considered; the default is to remember an approved device until it
-  is removed, because a wallet that asks at each plug-in is not usable. Whether that default stays
-  is an open question to the owner.
+- **Ask at every connection.** Rejected by the owner: an approved device is remembered for the
+  origin until removed, because a wallet that asks at each plug-in is not usable.
 
 ## Reasoning
 Parity with Electron and Chrome is what ported apps expect, and the grant system can keep it
@@ -68,6 +78,8 @@ per-device question is the browser's own gate. Reusing `navigator.hid` means the
 declaration and no call for an app to learn.
 
 ## Consequences
+- The reserved site-settings row for devices becomes available with the runtime, with Ask and
+  Block; nothing in this change touches it, and the permission gate still denies every device.
 - `devices.hid` is a new member of `CapabilityKind`; every exhaustive switch over it gains a case,
   and the catalogue line says `not covered` until the runtime lands.
 - The runtime is a change to the permission gate, a new chooser and question, and a persisted
@@ -75,7 +87,7 @@ declaration and no call for an app to learn.
   every device permission stays denied.
 - A person is asked twice for the first use of an app: once for the kind, once for the device.
 - An app can enumerate nothing outside its filters; a device that matches a filter but is not
-  approved is invisible to the page.
+  approved is invisible to the page. A website sees only devices the person picked in the chooser.
 - A key that is too specific makes a person approve the same hardware again; one that is too loose
   lets a different device inherit an approval.
 - Adding a field to `src/contracts/` is a change every app feels; this one is additive.

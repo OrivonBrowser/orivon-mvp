@@ -47,7 +47,8 @@ export interface HidDeviceFilter {
  * matching device is plugged in. An approved device is remembered for that
  * origin until it is removed, and revoking the grant forgets them all.
  *
- * WebUSB and Web Serial stay unavailable to apps; neither has a field here.
+ * An ordinary website has no manifest and so no grant here: it is offered devices only through the chooser,
+ * under the person's site settings. WebUSB and Web Serial stay unavailable; neither has a field here.
  */
 export interface DevicesCapability {
   readonly hid?: readonly HidDeviceFilter[]

@@ -391,8 +391,11 @@ orivon.web.setEmbedScript(source)    // => Promise<void>  the script that runs f
 > the app's tab ("connect this device?") when the app only calls `navigator.hid.getDevices()` and a
 > matching device is plugged in. An approved device is remembered for the origin until the person
 > removes it, and revoking the grant forgets them all. WebUSB and Web Serial stay unavailable, and
-> so do web contexts, child hosts and ordinary websites. In this build the kind is declared in the
-> contracts and the loader does not accept `devices` yet, so no device is offered to any app.
+> so do web contexts and child hosts. An ordinary website, with no manifest and so no grant, uses
+> `navigator.hid.requestDevice()` the way it does in Chrome: Orivon's chooser opens, the pick is
+> the approval and is remembered for the site until removed in Settings, and the site is never
+> asked at `getDevices()` time. In this build the kind is declared in the contracts and the loader
+> does not accept `devices` yet, so no device is offered to any app.
 
 > **`media.camera`, `media.microphone` and `clipboard.read` (ADR-0032) have no `orivon.*` entry
 > point of their own.** They are Chromium platform permissions (`getUserMedia`,

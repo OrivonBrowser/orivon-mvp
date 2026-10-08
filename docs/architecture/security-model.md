@@ -232,8 +232,10 @@ build step explain why.
 Adding it requires an ADR. USB HID is the one device class an app may hold, as `devices.hid`
 (`ADR-0068`): the manifest names filters that each need a vendor id, and the grant only bounds what
 can be offered, because the person approves each specific device for the origin before the app can
-open it. WebUSB and Web Serial stay denied for every page, and so does any device no filter
-matches. In this build the kind is declared in the contracts and the permission gate still denies every
+open it. An ordinary website, with no manifest, gets WebHID through the same chooser: its
+`requestDevice()` opens Orivon's chooser, the pick is the approval, and the site is never asked at
+`getDevices()` time (`ADR-0068`). WebUSB and Web Serial stay denied for every page, and so does any
+device an app's filters do not match. In this build the kind is declared in the contracts and the permission gate still denies every
 device, until the runtime that enforces the per-device question is built. `ADR-0040` keeps `subprocess` out: a
 ported app's native modules and child processes run as WebAssembly inside its own tab, where a
 WASI program's every file call is an `orivon.fs` call under the app's grants, and a WASI 0.2
