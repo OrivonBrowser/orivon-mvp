@@ -253,6 +253,8 @@ export interface Broker {
      * Reads the ledger, never the manifest, so a declared kind nobody granted is false. Never throws.
      */
     heldSync(origin: string, capability: CapabilityKind): boolean
+    /** The patterns `capability` is granted over to `origin` now, or undefined when it is not granted. Synchronous and never throws, like `heldSync`. */
+    grantedPatternsSync(origin: string, capability: CapabilityKind): readonly Pattern[] | undefined
     /** Every origin the broker has an app loaded for this session. Synchronous
      * for the same reason `isRegisteredSync` is: it reads the in-memory ledger
      * and cannot fail. */

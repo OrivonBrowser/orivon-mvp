@@ -51,7 +51,7 @@ describe('the popover\'s permissions', () => {
 
   it('answers null for a change it refused, so the popover does not claim one', () => {
     const { access, store } = setup()
-    expect(access.set(SHOP, 'devices', 'block')).toBeNull()
+    expect(access.set(SHOP, 'devices', 'allow')).toBeNull()
     expect(access.set(SHOP, 'camera', 'sometimes')).toBeNull()
     expect(access.set('https://app.example', 'camera', 'allow')).toBeNull()
     expect(store.entries()).toEqual([])

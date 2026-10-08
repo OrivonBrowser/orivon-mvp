@@ -9,7 +9,7 @@ origin redeeming a live `chrome.tabCapture` grant (`tab-capture-media.ts`, with
 gate asks `site-asks.ts`, a registry of per-site askers: each answers only the permissions it owns,
 only for a tab, and answers `undefined` otherwise, so the gate's rules decide. An asker may be added first (`addFirst`) when
 it must see a request before the general askers do, and may hear every grant once the gate has told
-Electron (`afterGrant`). `display-media-handler.ts` is the slot `setDisplayMediaRequestHandler`
+Electron (`afterGrant`). `device-permission-handler.ts` is the slot `setDevicePermissionHandler` points at: it answers no for every device until [`../devices/`](../devices/) binds the handler for a HID device, and no for USB and serial always. `display-media-handler.ts` is the slot `setDisplayMediaRequestHandler`
 points at on every session: it answers no stream (the page's call fails) until
 [`../display-capture/`](../display-capture/) binds the handler that gives the source the person picked. `external-links.ts` and
 `site-notifications.ts` decide the two that ask the person; `notification-decisions.ts` remembers

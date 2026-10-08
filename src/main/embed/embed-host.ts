@@ -78,9 +78,11 @@ interface AppNotifier {
  * request judged against the app's LIVE grant, read fresh per request so a
  * revoke or a narrowed re-consent reaches the next load. The permission
  * gate already covers this session through its own `session-created`
- * listener.
+ * listener, except for devices: its device handler answers from the origin
+ * alone, so a shown page at the app's origin would be given a device a tab was.
  */
 function configureEmbedSession (embedSession: Session, appOrigin: string, broker: Broker, notify: AppNotifier): void {
+  embedSession.setDevicePermissionHandler(() => false)
   embedSession.on('will-download', (event, item, guest) => {
     // The item is gone from the next tick once cancelled: read it first.
     const detail = downloadDetail({ urlChain: item.getURLChain(), filename: item.getFilename(), mimeType: item.getMimeType(), totalBytes: item.getTotalBytes() })

@@ -49,12 +49,16 @@ const rowOf = (rows: ReturnType<ReturnType<typeof setup>['controller']['rowsFor'
 /** A table the content lane's kinds would join: a JavaScript kind that is available, a pop-up kind that is not. */
 const WITH_CONTENT: readonly SiteKindDef[] = SITE_KINDS.map((kind) => kind.id === 'javascript' ? { ...kind, available: true } : kind)
 
+/** A table where one kind's feature is not built: devices stands in, whatever the real table says. */
+const DEVICES_NOT_BUILT: readonly SiteKindDef[] = SITE_KINDS.map((kind) => kind.id === 'devices' ? { ...kind, available: false } : kind)
+
 describe('rows for one site', () => {
   it('lists every available kind and no other, each following the default until the site has an answer', () => {
     const { controller } = setup()
     const rows = controller.rowsFor(SHOP)
     expect(rows.map((row) => row.kind)).toEqual(SITE_KINDS.filter((kind) => kind.available).map((kind) => kind.id))
-    expect(rows.map((row) => row.kind)).not.toContain('devices')
+    expect(rows.map((row) => row.kind)).toContain('devices')
+    expect(setup({ kinds: DEVICES_NOT_BUILT }).controller.rowsFor(SHOP).map((row) => row.kind)).not.toContain('devices')
     expect(rows.every((row) => row.value === 'default')).toBe(true)
     expect(rowOf(rows, 'camera')).toMatchObject({ label: 'Camera', defaultValue: 'ask' })
   })
@@ -128,7 +132,7 @@ describe('changing an answer', () => {
   })
 
   it.each([
-    ['a kind that is not available', SHOP, 'devices', 'block'],
+    ['a kind that is not available', SHOP, 'popups', 'sometimes'],
     ['an unknown kind', SHOP, 'teleport', 'allow'],
     ['a kind that is not text', SHOP, 3, 'allow'],
     ['a prototype key', SHOP, 'toString', 'allow'],
@@ -142,6 +146,13 @@ describe('changing an answer', () => {
     expect(controller.set(origin, kind, value)).toBe(false)
     expect(store.entries()).toEqual([])
     expect(notifications.map.size).toBe(0)
+  })
+
+  it('refuses a kind whose feature is not built, and a value its kind does not keep', () => {
+    const { controller, store } = setup({ kinds: DEVICES_NOT_BUILT })
+    expect(controller.set(SHOP, 'devices', 'block')).toBe(false)
+    expect(setup().controller.set(SHOP, 'devices', 'allow')).toBe(false)
+    expect(store.entries()).toEqual([])
   })
 })
 
@@ -192,7 +203,7 @@ describe('the sites with answers of their own', () => {
   })
 
   it('hides a kind that is not available, an app, and anything stored that is not a website', () => {
-    const { controller, store, notifications } = setup()
+    const { controller, store, notifications } = setup({ kinds: DEVICES_NOT_BUILT })
     store.set(SHOP, 'devices', 'block')
     store.set(APP, 'camera', 'allow')
     notifications.map.set(APP, 'allow')
@@ -214,7 +225,8 @@ describe('the defaults', () => {
     const { controller } = setup({ kinds: WITH_CONTENT })
     const defaults = controller.defaults()
     expect(defaults.map((row) => row.kind)).toContain('javascript')
-    expect(defaults.map((row) => row.kind)).not.toContain('devices')
+    expect(defaults.map((row) => row.kind)).toContain('devices')
+    expect(setup({ kinds: DEVICES_NOT_BUILT }).controller.defaults().map((row) => row.kind)).not.toContain('devices')
     expect(defaults.find((row) => row.kind === 'camera')).toMatchObject({ settingKey: 'sites.camera', group: 'permission', options: [{ value: 'ask', label: 'Ask' }, { value: 'block', label: 'Block' }] })
     expect(defaults.find((row) => row.kind === 'javascript')).toMatchObject({ options: [{ value: 'allow', label: 'Allow' }, { value: 'block', label: 'Block' }] })
   })

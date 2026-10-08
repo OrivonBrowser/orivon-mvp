@@ -10,12 +10,13 @@ const ROWS: SiteKindRow[] = [{ kind: 'camera', label: 'Camera', group: 'permissi
 beforeEach(() => { vi.useFakeTimers() })
 afterEach(() => { vi.useRealTimers() })
 
-function setup (sites: SiteSummary[] = [SHOP, BLOG]): { part: SitesPart, request: ReturnType<typeof vi.fn>, notify: ReturnType<typeof vi.fn>, draws: ReturnType<typeof vi.fn>, current: { sites: SiteSummary[] } } {
-  const current = { sites }
+function setup (sites: SiteSummary[] = [SHOP, BLOG]): { part: SitesPart, request: ReturnType<typeof vi.fn>, notify: ReturnType<typeof vi.fn>, draws: ReturnType<typeof vi.fn>, current: { sites: SiteSummary[], devices: Array<{ key: string, label: string }> } } {
+  const current = { sites, devices: [{ key: 'k1', label: 'Nano X (USB 2c97:4011)' }] }
   const request = vi.fn(async (_domain: string, command: { type: string }) => {
     await Promise.resolve()
     if (command.type === 'list') return { isPrivate: false, defaults: [], sites: current.sites }
-    if (command.type === 'rows' || command.type === 'set') return { rows: ROWS }
+    if (command.type === 'rows' || command.type === 'set') return { rows: ROWS, devices: current.devices }
+    if (command.type === 'forgetDevice') { current.devices = []; return { ok: true, rows: ROWS, devices: [] } }
     return { ok: true }
   })
   const notify = vi.fn()
@@ -26,6 +27,18 @@ function setup (sites: SiteSummary[] = [SHOP, BLOG]): { part: SitesPart, request
 }
 
 const calls = (request: ReturnType<typeof vi.fn>, type: string): unknown[] => request.mock.calls.filter(([, command]) => (command as { type: string }).type === type).map(([, command]) => command)
+
+describe('SitesPart devices', () => {
+  it('keeps the devices a site was given with its rows, and forgets one with a request and a fresh list', async () => {
+    const { part, request } = setup()
+    await part.load()
+    await part.toggle(SHOP.origin)
+    expect(part.devices.get(SHOP.origin)).toEqual([{ key: 'k1', label: 'Nano X (USB 2c97:4011)' }])
+    await part.forgetDevice(SHOP.origin, 'k1')
+    expect(calls(request, 'forgetDevice')).toEqual([{ type: 'forgetDevice', origin: SHOP.origin, key: 'k1' }])
+    expect(part.devices.get(SHOP.origin)).toEqual([])
+  })
+})
 
 describe('SitesPart', () => {
   it('is not loaded until main has answered, and ignores an answer it does not recognise', async () => {
