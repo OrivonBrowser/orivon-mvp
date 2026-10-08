@@ -29,7 +29,15 @@ describe('url', () => {
     'https://user:pw@example.com:8080/p/a/t/h?query=string&a=1#hash',
     'http://example.com',
     '/relative/path?x=1#frag',
-    'mailto:someone@example.com'
+    'mailto:someone@example.com',
+    'http://h/16 - Artist - Title.mp3',
+    'http://h/a"b?q="x y"#h ash',
+    'http://h/{a}|b^c`d',
+    'http://h/a<b>\\c?d\\e',
+    "http://h/it's",
+    '/rel path?x=1 2',
+    'http://h/a%20b',
+    'javascript:alert("a b")'
   ])('legacy parse(%s) matches Node', (input) => {
     const ours = parse(input)
     const node = nodeUrl.parse(input)

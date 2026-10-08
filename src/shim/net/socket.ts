@@ -22,7 +22,7 @@ import type { TcpSocket } from '../../contracts/handles.js'
 import { abortError, codedError, systemError, toNodeError } from '../node-errors.js'
 import { toBytes } from '../stream-bytes.js'
 import { refuseShim } from '../errors.js'
-import { retryLimited } from '../limit-retry.js'
+import { dialQueue, retryLimited } from '../limit-retry.js'
 import { getOrivon } from '../orivon-global.js'
 import { isIP } from './isip.js'
 import { connectPort, normalizeConnectArgs, type ConnectTarget } from './args.js'
@@ -108,7 +108,11 @@ export class Socket extends Duplex {
     // An async IIFE, never a bare call: `dial` can throw synchronously
     // (getOrivon() does before the preload has run), and that must still
     // arrive as an 'error' event, never a throw out of connect().
-    const promise = (async () => await this.dial({ host, port }))()
+    // Queued (limit-retry.ts's dialQueue); a socket destroyed while it waited is never dialled.
+    const promise = (async () => await dialQueue(async () => {
+      if (this.destroyed) throw socketClosedError()
+      return await this.dial({ host, port })
+    }))()
     this.connectPromise = promise
     // Two-argument then(): a throw from a 'connect' listener must stay the
     // app's own uncaught error, not be caught here and destroy the socket.

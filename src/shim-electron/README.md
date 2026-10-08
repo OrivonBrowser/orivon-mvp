@@ -1,6 +1,6 @@
 # `src/shim-electron/`: the `electron` module compatibility package
 
-**What lives here.** Electron's `app`, `dialog`, `safeStorage`, `desktopCapturer`, `ipcRenderer`/`ipcMain`,
+**What lives here.** Electron's `app`, `dialog`, `safeStorage`, `desktopCapturer`, `clipboard`, `shell`, `ipcRenderer`/`ipcMain`,
 `BrowserWindow`, `Menu` and `Tray`, rebuilt (or refused by name) on `orivon.*`, so a ported app's
 `require('electron')` resolves instead of failing to load. What each API maps to, and which
 refuse, is [`compatibility-matrix.md`](../../docs/planning/compatibility-matrix.md) Table 2's
@@ -39,7 +39,7 @@ and AirGap Vault's documented non-keyring fallbacks check for.
 named entry points read more plainly than `construct`/`get` traps.
 
 **One refusal mechanism, `unimplemented.ts`'s `refusingProxy`**, reused for a whole missing module
-(`shell`, `clipboard`, the rest of `index.ts`'s list), for one extra method (`dialog`'s others), and
+(`session`, `protocol`, the rest of `index.ts`'s list), for one extra method (`dialog`'s others), and
 for the default export (`withUnimplementedFallback`). `src/shim/` reuses it with its own error type.
 
 **Why "total" stops at the default export.** An ES module namespace (`import * as electron`,
@@ -49,6 +49,14 @@ leaves an undeclared name `undefined`; the same `Proxy` as `default` throws corr
 `import electron from 'electron'` refuses every unknown name, while `import { someNewApi }` fails
 at bundle time, outside `ElectronShimError`. `index.ts`'s curated list closes this for the names
 ported apps use most; naming every real Electron export is not this package's job.
+
+**`file-urls.ts` rewrites `file:///orivon/app/<path>` where a page sets a media or image address.** An Electron
+app builds `'file://' + path` for its own files, and Chromium refuses a `file:` URL on an http(s) page before a
+request leaves. The rewrite turns that address into `/orivon/app/<path>`, which the app's origin answers from its
+files (ADR-0070), through `src` on `<audio>`, `<video>`, `<img>` and `<source>`, `setAttribute('src', ...)` on them
+and `new Audio(url)`. It installs when the `electron` shim loads, because only an Electron port builds such
+URLs; the Node shim has no use for it. Any other `file:` URL is left alone. Markup an app parses and CSS
+`url(file://...)` are not covered: an app that needs them uses the root-absolute path.
 
 **`desktopCapturer` runs Orivon's picker, and serves what the person picked.** `getSources` calls the page's
 `getDisplayMedia` (so the picker, the sharing indicators and the stop control are Orivon's, never the app's), keeps
@@ -67,3 +75,21 @@ source the person picks holds a live capture (the sharing indicator stays on) un
 scaled to fit, empty at 0 by 0) with `toDataURL`, `toPNG`, `toJPEG`, `isEmpty` and `getSize`; `display_id` is `''`,
 `appIcon` is `null`, and `fetchWindowIcons` has nothing to fetch. The app needs `media.screen` declared, and
 `navigator.mediaDevices` (a secure context) to be present.
+
+**`clipboard.readText()` answers the text being pasted, and `''` otherwise.** Electron reads the system clipboard
+synchronously; a page can neither read it synchronously nor read it at all without a grant, so the shim answers from
+what it can honestly know: a capture-phase `paste` listener on the document, installed when the module loads, keeps
+that event's `clipboardData` text until the next task. Capture phase, so an app listener that stops propagation cannot
+hide it. A task and not a microtask, because the browser runs microtasks between one listener's callback and the next,
+which would clear the text before the app's own listener read it. Outside a paste (a modal that prefills a field from
+the clipboard) the answer is `''`, which is the truth: the page has no way to know. The `type` argument is ignored, and
+`read`, `readHTML`, `readImage`, `has` and the rest refuse. `writeText` calls `navigator.clipboard.writeText` and returns
+at once; a refused copy is a console warning, never an exception, since Electron's call cannot fail.
+
+**`shell.openExternal` opens the address with `window.open(url, '_blank', 'noopener,noreferrer')`.** The browser is the
+system's handler: an `http(s)` address opens a tab (in front, as a click on a `target=_blank` link does), and an address
+another program handles (`mailto:`, `magnet:`) meets the external-link question, which the window-open handler raises
+exactly as a clicked link does. `noopener` makes `window.open` return `null` whether the tab opened or the browser
+declined, so the returned window says nothing and the promise resolves once the call returns; a string that is not an
+absolute URL rejects with `invalid-usage` before any window is asked for. Electron's `options` are ignored. `openPath`,
+`showItemInFolder`, `trashItem` and `beep` refuse as `desktop-shell`; every other member as `unimplemented`.

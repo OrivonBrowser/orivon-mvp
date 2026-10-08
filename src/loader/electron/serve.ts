@@ -221,6 +221,16 @@ export async function holdsListenGrant (broker: Broker, origin: string): Promise
   }
 }
 
+/** Whether `origin` holds a live `fs` grant, which opens its `img-src` and `media-src` to the app-file scheme (ADR-0070). Shared with main/sessions/app-files-by-url.ts for the same reason as `holdsListenGrant`. */
+export async function holdsFsGrant (broker: Broker, origin: string): Promise<boolean> {
+  try {
+    const grants = await broker.app.grants(origin)
+    return grants.some((grant) => grant.capability === 'fs')
+  } catch {
+    return false
+  }
+}
+
 /** `connect-src`'s source -- `tcp.connect` is the ONLY thing standing
  * between an app's page and a live `WebSocket` connection (`docs/
  * open-questions.md` A42), so this must never be wider than what is truly
@@ -238,13 +248,21 @@ async function secureHeaderPatternsFor (broker: Broker, origin: string): Promise
   return await liveGrantedPatternsFor(broker, origin, 'https.connect')
 }
 
+/** The widenings of `origin`'s `img-src` and `media-src` its live grants call for, read fresh per response. */
+async function liveMediaSources (broker: Broker, origin: string): Promise<Pick<CspOptions, 'ownListenerMedia' | 'appFiles'>> {
+  const [ownListenerMedia, appFiles] = await Promise.all([holdsListenGrant(broker, origin), holdsFsGrant(broker, origin)])
+  return { ownListenerMedia, appFiles }
+}
+
 /**
  * The CSP a served response carries, from `origin`'s live grants -- shared with src/main/install/granted-origin-csp.ts, so an origin granted without installing runs under the same policy an installed one does.
- * `options.ownListenerMedia` is a request, not a fact: the loopback sources are emitted only when the ledger also shows a listen grant, and only for the callers whose documents the media gate attributes.
+ * `options.ownListenerMedia` and `options.appFiles` are requests, not facts: the loopback sources are emitted only when the ledger also shows a listen grant, the app-file scheme only when it shows an `fs` grant, and both only for the callers whose documents the request gates attribute.
  */
 export async function liveCspHeaderFor (broker: Broker, origin: string, options: CspOptions = {}): Promise<string> {
-  const ownListenerMedia = options.ownListenerMedia === true && await holdsListenGrant(broker, origin)
-  return cspHeaderValue(await grantedConnectPatternsFor(broker, origin), await secureHeaderPatternsFor(broker, origin), { ...options, ownListenerMedia })
+  const live = await liveMediaSources(broker, origin)
+  const ownListenerMedia = options.ownListenerMedia === true && live.ownListenerMedia === true
+  const appFiles = options.appFiles === true && live.appFiles === true
+  return cspHeaderValue(await grantedConnectPatternsFor(broker, origin), await secureHeaderPatternsFor(broker, origin), { ...options, ownListenerMedia, appFiles })
 }
 
 /**
@@ -371,7 +389,7 @@ export async function registerServingFor (storage: LoaderStorage, origin: string
     reachSlots?.release,
     pin === null ? undefined : retainedAssets(origin, pin),
     resolved,
-    broker === undefined ? undefined : async () => await holdsListenGrant(broker, origin)
+    broker === undefined ? undefined : async () => await liveMediaSources(broker, origin)
   )
   const { session } = await import('electron')
   registerAppOrigin(session.fromPartition(partitionFor(origin)), origin, handler)
