@@ -14,6 +14,8 @@
 // hint in HTML already delivered -- the only trigger; there is no separate
 // user action (capability-api.md's 2026-09-03 correction).
 
+import type { DevicesCapability } from './devices.js'
+
 /** Opaque identifier for one persisted grant. See ./capability-api.js. */
 export type GrantId = string
 
@@ -154,23 +156,19 @@ export interface Capabilities {
   readonly web?: WebCapability
   /**
    * Camera, microphone and/or screen capture (ADR-0032, ADR-0055). Presence
-   * of a flag, not a boolean VALUE on it, is the declaration -- the same shape
-   * `fs` and `id` already use, because there is no narrower "how much camera"
-   * to ask for the way `net`'s patterns narrow a host. `true` is the only
-   * value the loader accepts for any flag; omit a flag to not ask for it.
+   * of a flag is the declaration, as with `fs` and `id`: there is no narrower
+   * "how much camera" to ask for the way `net`'s patterns narrow a host.
+   * `true` is the only value the loader accepts; omit a flag to not ask.
    */
   readonly media?: MediaCapability
   /** `navigator.clipboard.readText()`/`read()` (ADR-0032). Same presence-only shape as `media`. */
   readonly clipboard?: ClipboardCapability
-  /**
-   * An origin-bound encrypt/decrypt pair backed by the OS keyring (ADR-0033).
-   * Presence-only, like `fs` and `id`: there is nothing narrower to ask for
-   * than "an app-private secret", so this interface declares no fields of
-   * its own in v0. See `capability-api.ts`'s `OrivonSecrets`.
-   */
+  /** An origin-bound encrypt/decrypt pair backed by the OS keyring (ADR-0033). Presence-only: see `OrivonSecrets`. */
   readonly secrets?: SecretsCapability
   /** What the person's Web3 Score provider says about other sites (ADR-0058). Presence-only, like `media`. */
   readonly trust?: TrustCapability
+  /** USB HID devices, bounded by filters; each device is still asked (ADR-0068). See `devices.ts`. */
+  readonly devices?: DevicesCapability
   /**
    * Schemes the shell may route to this app, e.g. `["magnet"]`. Declaration
    * alone never wins the default: routing requires its own user prompt, first
@@ -498,3 +496,5 @@ export type CapabilityKind =
   | 'clipboard.read'
   | 'secrets'
   | 'trust.score'
+  /** One HID device filter per pattern, in `devices.ts`'s canonical string (ADR-0068). */
+  | 'devices.hid'

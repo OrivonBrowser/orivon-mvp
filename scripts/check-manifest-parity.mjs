@@ -87,6 +87,12 @@ export const DELIBERATELY_DEFERRED = [
     field: 'read',
     reason: 'ADR-0032: CLIPBOARD_CAPABILITY_KEYS does not exist until the clipboard.read app door is ' +
       'built, which removes this entry.'
+  },
+  {
+    interfaceName: 'Capabilities',
+    field: 'devices',
+    reason: 'ADR-0068: devices.hid is declared in this contracts-only PR. The loader starts ' +
+      'accepting `devices` in the implementation PR that follows, which removes this entry.'
   }
 ]
 

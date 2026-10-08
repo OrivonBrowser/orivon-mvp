@@ -33,6 +33,7 @@ export const REQUIRED_CONTRACT_FILES = [
   'limits.ts',
   'ipc.ts',
   'trust.ts',
+  'devices.ts',
   'index.ts'
 ]
 

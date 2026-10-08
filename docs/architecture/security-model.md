@@ -227,9 +227,14 @@ A43): the pattern is `fetch`-blocked, not merely CSP-uncovered, and `omitted` is
 build step explain why.
 
 ## Capabilities excluded from the API, on security grounds
-`subprocess` and `hid` are absent from the API entirely, for signed apps too, not merely
-unsigned ones (`capability-api.md`). No ported app needs them, and they are the largest
-available attack surface. Adding either requires an ADR. `ADR-0040` keeps `subprocess` out: a
+`subprocess` is absent from the API entirely, for signed apps too, not merely unsigned ones
+(`capability-api.md`). No ported app needs it, and it is the largest available attack surface.
+Adding it requires an ADR. USB HID is the one device class an app may hold, as `devices.hid`
+(`ADR-0068`): the manifest names filters that each need a vendor id, and the grant only bounds what
+can be offered, because the person approves each specific device for the origin before the app can
+open it. WebUSB and Web Serial stay denied for every page, and so does any device no filter
+matches. In this build the kind is declared in the contracts and the permission gate still denies every
+device, until the runtime that enforces the per-device question is built. `ADR-0040` keeps `subprocess` out: a
 ported app's native modules and child processes run as WebAssembly inside its own tab, where a
 WASI program's every file call is an `orivon.fs` call under the app's grants, and a WASI 0.2
 component's every socket an `orivon.net` call. That adds no threat row: each host translates and

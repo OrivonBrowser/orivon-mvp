@@ -153,6 +153,9 @@ field is ignored, and the loader logs a warning naming it. An unknown field anyw
     "secrets": {},                                    // ADR-0033; presence alone is the ask
     "trust": { "score": true },                       // ADR-0058; what the person's Web3 Score provider says
                                                        // about other sites
+    "devices": {                                      // ADR-0068; USB HID devices, used through navigator.hid
+      "hid": [{ "vendorId": 11415 }]                  // each filter needs a vendorId (0..65535); 16 filters at most
+    },
     "protocols": ["magnet"]            // shell routes magnet: links to this app
                                        // (first registrant is default; conflicts → user chooses)
   },
@@ -374,6 +377,23 @@ orivon.web.setEmbedScript(source)    // => Promise<void>  the script that runs f
 > `web3-score-provider.md` describes, now also when an app asks, and the grant says so to the
 > person. This bounds this build of Orivon.
 
+> **`devices.hid` (ADR-0068) lets an app use the USB HID devices its manifest names, through the
+> web-standard `navigator.hid` in its own page.** There is no `orivon.*` member: Chromium does the
+> device I/O, and Orivon owns the gates. The manifest declares up to 16 filters,
+> `{ vendorId, productId?, usagePage?, usage? }`, each integer 0 to 65535; `vendorId` is required,
+> so there is no grant for "any HID device", and `usage` needs `usagePage`. A grant's patterns are
+> one canonical string per filter, the fields it names in the order `vendor`, `product`,
+> `usagePage`, `usage`, each as four lowercase hex digits (`vendor=2c97,product=4011`). The grant is
+> asked on visit with the other kinds, and its row names the vendors and says each device is asked
+> again. Holding it does not make a device usable: a device is offered to the app only if a filter
+> matches it, and it is usable only after the person approved that specific device for that
+> origin, either in a chooser when the app calls `navigator.hid.requestDevice()` or in a question in
+> the app's tab ("connect this device?") when the app only calls `navigator.hid.getDevices()` and a
+> matching device is plugged in. An approved device is remembered for the origin until the person
+> removes it, and revoking the grant forgets them all. WebUSB and Web Serial stay unavailable, and
+> so do web contexts, child hosts and ordinary websites. In this build the kind is declared in the
+> contracts and the loader does not accept `devices` yet, so no device is offered to any app.
+
 > **`media.camera`, `media.microphone` and `clipboard.read` (ADR-0032) have no `orivon.*` entry
 > point of their own.** They are Chromium platform permissions (`getUserMedia`,
 > `navigator.clipboard.readText`/`read`), not broker calls: the manifest declares them and the
@@ -523,12 +543,14 @@ extension; the *data* is what sits behind consent (`security-model.md` T16).
   the largest attack surface in the design. A ported app's child processes and native modules run
   as WebAssembly in its own tab instead, under the grants it already holds, so they need no
   capability of their own (`ADR-0040`).
-- **`hid` / USB.** No ported app needs it yet, and a device capability is a large attack surface.
+- **WebUSB and Web Serial.** No ported app needs either, and a device capability is a large attack
+  surface. Only `devices.hid` exists (below).
 - **Raw sockets / ICMP.** No use case, and unreachable from WASM later anyway.
 
 > **Narrower than ADR-0002.** That ADR says `subprocess` and `hid` are "not grantable to
-> unsigned apps". This spec narrows further: they are absent from the API entirely, for signed apps
-> too.
+> unsigned apps". `subprocess` is absent from the API entirely, for signed apps too. `hid` is one
+> declared grant (`devices.hid`) that every app may hold, whatever its origin, because each device is
+> asked again and a filter always names a vendor.
 
 ### Signing is not in v0
 
@@ -538,8 +560,8 @@ extension; the *data* is what sits behind consent (`security-model.md` T16).
 on a publisher signature. **Neither is built.** Three reasons, from the audit:
 
 1. **The tiers were already capability-identical.** Their only stated difference was
-   `subprocess` and `hid`, and this spec removes both for *every* tier. The distinction cost
-   real work and bought nothing.
+   `subprocess` and `hid`, and this spec gives neither on a tier basis: `subprocess` is absent
+   for every app and `hid` is open to every app. The distinction cost real work and bought nothing.
 2. **Nothing specified or scheduled the mechanism.** No signature format, no covered bytes, no
    detached-signature location, no key generation, no tooling, and no build step. As written,
    `publisherKey` was a self-asserted string inside the very document it was meant to

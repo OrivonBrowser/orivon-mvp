@@ -21,6 +21,7 @@ import type { CapabilityGrantSummary } from './grant-prompt-connect.js'
 import { cappedRows, describeConnectCapability, portsPhrase, WARNING_MARK } from './grant-prompt-connect.js'
 import { patternSetFromCapabilities } from '../../broker/policy/manifest-patterns.js'
 import { describeEmbedGrant } from './grant-prompt-embed.js'
+import { describeDevicesGrant } from './grant-prompt-devices.js'
 import { describeMediaGrant } from './grant-prompt-media.js'
 import { extensionsOnSiteLine } from './grant-prompt-extensions.js'
 import type { PatternSet } from '../../broker/policy/update.js'
@@ -185,13 +186,14 @@ export function describeCapabilityGrant (capability: CapabilityKind, patterns: r
         message: 'See what your Web3 Score provider says about other sites',
         explanation: 'The provider you chose is asked about sites this app names. It sees which group of sites each one falls in, as when Orivon checks a site for you. With no provider chosen, nothing is asked.'
       }
+    case 'devices.hid':
+      return describeDevicesGrant(capability, patterns)
     case 'media.camera':
     case 'media.microphone':
     case 'media.screen':
       return describeMediaGrant(capability)
     case 'clipboard.read':
-      // ADR-0032: no app door yet, so no live grant reaches this switch.
-      // Thrown, not rendered, until one is built and gives it real copy.
+      // ADR-0032: no app door yet, so no live grant reaches this switch; thrown until one gives it copy.
       throw new Error(`grant-prompt-render: ${capability} is not renderable yet (ADR-0032)`)
     default: {
       // Exhaustiveness guard, matching app-install.ts's own pattern: a new

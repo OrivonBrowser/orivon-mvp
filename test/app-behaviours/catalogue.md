@@ -136,3 +136,4 @@ has a line, so a capability cannot land without that decision.
 | `clipboard.read` | not covered: a contract entry with no implementation behind it |
 | `secrets` | not covered: no spec drives `orivon.secrets` from an app's page |
 | `trust.score` | `score-lookup-needs-the-trust-grant`, `score-lookup-answers-the-chosen-provider` |
+| `devices.hid` | not covered: the runtime lands in the next PR |

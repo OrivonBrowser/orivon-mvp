@@ -100,6 +100,16 @@ export interface OrivonSecrets {
   encrypt(plaintext: Uint8Array): Promise<Uint8Array>
   decrypt(ciphertext: Uint8Array): Promise<Uint8Array>
 }
+== devices.ts
+export interface HidDeviceFilter {
+  readonly vendorId: number
+  readonly productId?: number
+  readonly usagePage?: number
+  readonly usage?: number
+}
+export interface DevicesCapability {
+  readonly hid?: readonly HidDeviceFilter[]
+}
 == errors.ts
 export type OrivonErrorCode =
   | 'denied'
@@ -276,6 +286,7 @@ export type {
   BindScope
 } from './capability-api.js'
 export type { OrivonTrust, WebsiteScore } from './trust.js'
+export type { DevicesCapability, HidDeviceFilter } from './devices.js'
 export type { Limits } from './limits.js'
 export { LIMITS } from './limits.js'
 export type {
@@ -445,10 +456,12 @@ export const LIMITS = {
   embeds: 32,
   embedScriptBytes: 4 * 1024 * 1024,
   embedEventUrlBytes: 2 * 1024 * 1024,
-  secretBytes: 64 * 1024
+  secretBytes: 64 * 1024,
+  hidFilters: 16
 } as const
 export type Limits = typeof LIMITS
 == manifest.ts
+import type { DevicesCapability } from './devices.js'
 export type GrantId = string
 export type Pattern = string
 export type ConsentGranularity =
@@ -475,6 +488,7 @@ export interface Capabilities {
   readonly clipboard?: ClipboardCapability
   readonly secrets?: SecretsCapability
   readonly trust?: TrustCapability
+  readonly devices?: DevicesCapability
   readonly protocols?: readonly string[]
 }
 export interface NetCapability {
@@ -546,6 +560,7 @@ export type CapabilityKind =
   | 'clipboard.read'
   | 'secrets'
   | 'trust.score'
+  | 'devices.hid'
 == trust.ts
 export interface OrivonTrust {
   websiteScore(address: string): Promise<WebsiteScore>
