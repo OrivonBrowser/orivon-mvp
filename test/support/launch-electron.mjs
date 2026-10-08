@@ -60,6 +60,25 @@ const SILENT_AUDIO_ENV = { PULSE_SERVER: 'unix:/nonexistent' }
 const SILENT_AUDIO_SWITCH = '--alsa-output-device=null'
 
 /**
+ * Why a launch must not start, or undefined when it may. On a Linux desktop a window only stays off the
+ * owner's screen when the launch runs under scripts/run-headless.mjs (a virtual display, the desktop's
+ * Wayland socket hidden), which marks its child with ORIVON_RUN_HEADLESS. A driver script that launches
+ * Electron without it opens a real window on the desktop, so it is refused here instead.
+ * ORIVON_ALLOW_VISIBLE_WINDOW=1 is for a run someone means to watch.
+ * @param {Record<string, string | undefined>} env
+ * @param {string} [platform]
+ * @returns {string | undefined}
+ */
+export function visibleDesktopRefusal (env, platform = process.platform) {
+  if (platform !== 'linux') return undefined
+  if (env['ORIVON_RUN_HEADLESS'] !== undefined || env['ORIVON_ALLOW_VISIBLE_WINDOW'] === '1') return undefined
+  if (env['WAYLAND_DISPLAY'] === undefined && env['DISPLAY'] === undefined) return undefined
+  return 'launchElectron: refusing to open a window on the desktop. Run the command through ' +
+    '`node scripts/run-headless.mjs <command>` (or an npm script that does), or set ORIVON_ALLOW_VISIBLE_WINDOW=1 ' +
+    'for a run you mean to watch.'
+}
+
+/**
  * Ceiling on any single Playwright ACTION (click, fill, press) started
  * through an app launched here.
  *
@@ -240,6 +259,8 @@ export async function launchElectron ({
   if (stripped.length > 0) {
     console.log(`[launch] stripped from env: ${stripped.join(', ')}`)
   }
+  const refusal = visibleDesktopRefusal(env)
+  if (refusal !== undefined) throw new Error(refusal)
 
   // Nothing a test plays may reach the owner's real speakers -- see
   // SILENT_AUDIO_ENV/SILENT_AUDIO_SWITCH's own doc. A caller that already

@@ -54,7 +54,9 @@ export function headlessLaunch ({ platform, env, has, command, args }) {
   if (privateBus && !(virtualDisplay && has('dbus-run-session'))) {
     return { refused: 'ORIVON_PRIVATE_BUS=1 needs xvfb-run and dbus-run-session on PATH; not running on the desktop session bus' }
   }
-  if (!virtualDisplay) return { file: command, args, env, virtualDisplay, privateBus }
+  // ORIVON_RUN_HEADLESS marks the child as launched here: test/support/launch-electron.mjs refuses a
+  // Linux desktop launch without it, so a driver that skips this file fails instead of showing a window.
+  if (!virtualDisplay) return { file: command, args, env: { ...env, ORIVON_RUN_HEADLESS: 'direct' }, virtualDisplay, privateBus }
 
   // XVFB-RUN ALONE IS NOT ENOUGH ON A WAYLAND DESKTOP, and this is the whole
   // reason this block exists. `xvfb-run` creates an X server and sets DISPLAY.
@@ -70,7 +72,7 @@ export function headlessLaunch ({ platform, env, has, command, args }) {
   // warns that forcing it there crashes the GPU process. This changes only
   // what the child can DISCOVER, never what the app asks for, so the app's
   // normal launch on a real desktop is untouched.
-  const childEnv = { ...env }
+  const childEnv = { ...env, ORIVON_RUN_HEADLESS: 'virtual' }
   delete childEnv.WAYLAND_DISPLAY
   if (childEnv.XDG_SESSION_TYPE === 'wayland') childEnv.XDG_SESSION_TYPE = 'x11'
   if (!privateBus) return { file: 'xvfb-run', args: ['-a', command, ...args], env: childEnv, virtualDisplay, privateBus }
