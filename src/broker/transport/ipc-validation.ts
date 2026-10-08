@@ -29,7 +29,7 @@ import { MAX_PATTERNS } from '../policy/connect.js'
  * the correct reuse, not a second mechanism).
  */
 export type ControlMethod =
-  | 'app.manifest' | 'app.grants' | 'app.requestGrant' | 'fs.readFile' | 'fs.writeFile'
+  | 'app.manifest' | 'app.grants' | 'app.requestGrant' | 'app.nextOpenUrl' | 'app.requestSchemeHandler' | 'app.isSchemeHandler' | 'fs.readFile' | 'fs.writeFile'
   | 'fs.mkdir' | 'fs.readdir' | 'fs.stat' | 'fs.rm' | 'fs.rename'
   | 'fs.open' | 'fs.read' | 'fs.write' | 'fs.fstat' | 'fs.truncate' | 'fs.sync' | 'fs.close'
   | 'fs.userSelected'
@@ -44,6 +44,7 @@ export type ControlMethod =
 
 export function isControlMethod (method: string): method is ControlMethod {
   return method === 'app.manifest' || method === 'app.grants' || method === 'app.requestGrant' ||
+    method === 'app.nextOpenUrl' || method === 'app.requestSchemeHandler' || method === 'app.isSchemeHandler' ||
     method === 'fs.readFile' || method === 'fs.writeFile' ||
     method === 'fs.mkdir' || method === 'fs.readdir' || method === 'fs.stat' ||
     method === 'fs.rm' || method === 'fs.rename' ||
@@ -134,6 +135,11 @@ export interface NetCloseParams { readonly id: string }
 export interface NetLookupParams { readonly hostname: string }
 export interface NetSetNoDelayParams { readonly id: string, readonly on: boolean }
 export interface NetSetKeepAliveParams { readonly id: string, readonly on: boolean, readonly initialDelayMs?: number }
+/**
+ * `app.requestSchemeHandler` and `app.isSchemeHandler`. The scheme is checked against the URI scheme grammar here,
+ * so a value that is no scheme name is an 'invalid' call; whether the scheme may be routed is the shell's to decide.
+ */
+export interface AppSchemeParams { readonly scheme: string }
 /** The wire shape of `CapabilityRequest` (capability-api.ts) -- untrusted, including `capability`, which `main/request-grant.ts` narrows against the manifest; this file only checks shape. */
 export interface AppRequestGrantParams { readonly capability: string, readonly patterns?: readonly Pattern[] }
 
@@ -182,8 +188,35 @@ export interface TrustCtx {
   readonly websiteScore?: ((origin: string, address: string) => Promise<WebsiteScore>) | undefined
 }
 
+/**
+ * What an app's `orivon.app.onOpenUrl`, `requestSchemeHandler` and `isSchemeHandler` reach (d-0596): the shell's
+ * routing of a link scheme to an app. Read live like `TrustCtx`, because the shell is built after the broker is wired.
+ */
+export interface SchemeHost {
+  /**
+   * The next link routed to `origin`'s app, or null after a wait with none (the page asks again). Ends, answering
+   * null, when `abandoned` fires or the page that asked (`contents`, the sending tab) leaves: a link must never be
+   * handed to a document that is gone.
+   */
+  readonly nextUrl: (origin: string, abandoned: AbortSignal, contents: unknown) => Promise<string | null>
+  /** Asks the person whether `origin`'s app becomes the default for `scheme`; false when it may not or they decline. */
+  readonly requestHandler: (origin: string, scheme: string, caller: RequestGrantCaller) => Promise<boolean>
+  readonly isHandler: (origin: string, scheme: string) => Promise<boolean>
+}
+
+export interface SchemeCtx {
+  readonly schemeHost?: SchemeHost | undefined
+}
+
 /** What the control channel reads, live, from the subsystem context. */
-export type ControlCtx = RequestGrantCtx & TrustCtx
+export type ControlCtx = RequestGrantCtx & TrustCtx & SchemeCtx
+
+/** A URI scheme name, lower case as the manifest holds it (RFC 3986), short enough that no honest caller is refused. */
+export function isAppSchemeParams (payload: unknown): payload is AppSchemeParams {
+  if (typeof payload !== 'object' || payload === null) return false
+  const { scheme } = payload as { scheme?: unknown }
+  return typeof scheme === 'string' && scheme.length <= 64 && /^[a-z][a-z0-9+.-]*$/.test(scheme)
+}
 
 export function isNetUdpBindParams (payload: unknown): payload is NetUdpBindParams {
   if (typeof payload !== 'object' || payload === null) return false

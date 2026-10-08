@@ -1,11 +1,12 @@
 // What the Settings page may ask about the apps that hold permissions: the same
 // list the toolbar's all-sites panel shows, what each has stored, whether the
-// identity key is kept, and revoking one permission, one picked path or one approved device. The
+// identity key is kept, and revoking one permission, one picked path, one approved device or the kind of link it was chosen to open. The
 // requests are data from a document, so each field is checked here, and a
 // revoke reaches the broker only through the permissions controller.
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { isCapabilityKind } from '../../broker/policy/request-grant.js'
 import type { DeviceRows } from '../devices/hid-rows.js'
+import type { SchemeChoices } from '../scheme-routing/scheme-choices.js'
 import type { InternalDomain } from '../pages/internal-ipc.js'
 import type { PermissionsController } from './permissions.js'
 import { orivonStorageFor } from './site-data-runner.js'
@@ -16,6 +17,7 @@ interface AppsRequest {
   readonly capability?: unknown
   readonly pickId?: unknown
   readonly key?: unknown
+  readonly scheme?: unknown
 }
 
 export interface AppsDeps {
@@ -23,6 +25,8 @@ export interface AppsDeps {
   readonly userDataPath: string
   /** The USB devices the person approved for each app (ADR-0068). */
   readonly devices: Pick<DeviceRows, 'rows' | 'forget'>
+  /** The kinds of link each app was chosen to open (d-0596). */
+  readonly links: Pick<SchemeChoices, 'schemesOf' | 'get' | 'forget'>
   readonly identity: () => Promise<'keychain' | 'session-only' | 'not-started'>
 }
 
@@ -39,7 +43,7 @@ export function appsDomain (deps: AppsDeps): InternalDomain {
       switch (request.type) {
         case 'list': {
           const apps = await deps.permissions.list()
-          const withStorage = await Promise.all(apps.map(async (app) => ({ ...app, deviceRows: deps.devices.rows(app.origin), storage: await orivonStorageFor(deps.userDataPath, app.origin, undefined, undefined) })))
+          const withStorage = await Promise.all(apps.map(async (app) => ({ ...app, deviceRows: deps.devices.rows(app.origin), linkSchemes: deps.links.schemesOf(app.origin), storage: await orivonStorageFor(deps.userDataPath, app.origin, undefined, undefined) })))
           return { apps: withStorage, identity: await deps.identity() }
         }
         case 'revoke': {
@@ -58,6 +62,11 @@ export function appsDomain (deps: AppsDeps): InternalDomain {
           const origin = originOf(request.origin)
           if (origin === null || typeof request.key !== 'string' || request.key === '') return { ok: false }
           return { ok: deps.devices.forget(origin, request.key) }
+        }
+        case 'forgetLink': {
+          const origin = originOf(request.origin)
+          if (origin === null || typeof request.scheme !== 'string' || deps.links.get(request.scheme) !== origin) return { ok: false }
+          return { ok: deps.links.forget(request.scheme) }
         }
         default:
           return undefined

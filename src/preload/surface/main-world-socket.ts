@@ -392,11 +392,9 @@ export function installOrivon (
     try { if (setLimit) { if (savedLimit !== undefined) defineOwn(RealError, 'stackTraceLimit', savedLimit); else delete (RealError as { stackTraceLimit?: unknown }).stackTraceLimit } } catch { /* best effort restore */ }
     return { tampered, frames }
   }
-  // Forces the bootstrap capture above to happen NOW, before any page or
-  // extension script runs, rather than on whatever call is first; a failed
-  // bootstrap leaves savedCallSiteMethods permanently mismatched (`{}`),
-  // refusing every call. Genuinely CALLED, not just referenced --
-  // captureStackTrace's exclude only trims a frame that is on the stack.
+  // Forces the bootstrap capture above to happen NOW, before any page or extension script runs, not on the first call;
+  // a failed bootstrap leaves savedCallSiteMethods `{}` and refuses every call. CALLED, not just referenced: the
+  // exclude argument of captureStackTrace only trims a frame that is on the stack.
   function bootstrapCallSiteMethods (): void { captureCaller(bootstrapCallSiteMethods) }
   bootstrapCallSiteMethods()
   if (savedCallSiteMethods === undefined) savedCallSiteMethods = {}
@@ -434,7 +432,10 @@ export function installOrivon (
     app: Object.freeze({
       manifest: guarded(async () => await callRevived(bridge.appManifest())),
       grants: guarded(async () => await callRevived(bridge.appGrants())),
-      requestGrant: guarded(async (request: CapabilityRequest) => await callRevived(bridge.appRequestGrant(request)))
+      requestGrant: guarded(async (request: CapabilityRequest) => await callRevived(bridge.appRequestGrant(request))),
+      onOpenUrl: guarded((listener: (url: string) => void) => bridge.appOnOpenUrl(listener)),
+      requestSchemeHandler: guarded(async (scheme: string) => await callRevived(bridge.appRequestSchemeHandler(scheme))),
+      isSchemeHandler: guarded(async (scheme: string) => await callRevived(bridge.appIsSchemeHandler(scheme)))
     }),
     fs: Object.freeze({
       readFile: guarded(async (path: string) => await callRevived(bridge.fsReadFile(path))),

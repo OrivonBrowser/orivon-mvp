@@ -312,6 +312,7 @@ describe('installOrivon: real caller attribution', () => {
       function fakeBridge () {
         const ok = () => Promise.resolve({ orivonApiVersion: 0 })
         return { appManifest: ok, appGrants: async () => [], appRequestGrant: async () => false,
+          appOnOpenUrl: () => () => {}, appRequestSchemeHandler: async () => false, appIsSchemeHandler: async () => false,
           fsReadFile: ok, fsWriteFile: ok, fsSync: () => ({ id: '', ok: true, result: new Uint8Array() }),
           fsMkdir: ok, fsReaddir: async () => [], fsStat: ok, fsRm: ok, fsRename: ok, fsOpen: ok,
           fsUserSelected: async () => [], fsUserSelectedDirectory: async () => null,

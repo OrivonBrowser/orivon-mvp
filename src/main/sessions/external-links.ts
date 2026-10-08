@@ -4,7 +4,9 @@
 // Electron pass the URL to the OS's default app for that scheme, so this
 // never launches anything itself. The person is asked every time. A
 // `magnet:` link is additionally checked against its own strict grammar
-// before it is even offered -- see `isWellFormedMagnetLink` below.
+// before it is even offered -- see `isWellFormedMagnetLink` below. An app
+// that declares the scheme can be chosen instead (`LinkRouting`): the link
+// then goes to that app's page and the OS is never asked.
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { tabPromptState, type PromptingTab } from './tab-prompts.js'
@@ -81,6 +83,13 @@ function isWellFormedMagnetLink (parsed: URL): boolean {
   return xt.length > 0 && v1 + v2 === xt.length && v1 <= 1 && v2 <= 1
 }
 
+/** Whether a page's link of this scheme may go to another program or app at all, whoever the person would pick. */
+export function isHandableScheme (scheme: string): boolean {
+  if (!SCHEME_GRAMMAR.test(scheme)) return false
+  // A protocol's address loads in the browser (../shell/tab-view.ts), never in whatever app claims the scheme.
+  return !(NEVER_EXTERNAL.has(scheme) || scheme.startsWith(INTERNAL_SCHEME_PREFIX) || BUILTIN_ADDRESSES.servesScheme(scheme))
+}
+
 /** The scheme to ask about, lower-cased and without its colon, or null for
  * one the person is never asked about. */
 export function askableScheme (url: string): string | null {
@@ -91,11 +100,39 @@ export function askableScheme (url: string): string | null {
     return null
   }
   const scheme = parsed.protocol.slice(0, -1)
-  if (!SCHEME_GRAMMAR.test(scheme)) return null
-  // A protocol's address loads in the browser (../shell/tab-view.ts), never in whatever app claims the scheme.
-  if (NEVER_EXTERNAL.has(scheme) || scheme.startsWith(INTERNAL_SCHEME_PREFIX) || BUILTIN_ADDRESSES.servesScheme(scheme)) return null
+  if (!isHandableScheme(scheme)) return null
   if (scheme === 'magnet' && !isWellFormedMagnetLink(parsed)) return null
   return scheme
+}
+
+/** The longest link handed to an app: far past any real magnet or payment link, short enough that a page cannot queue megabytes in an app's inbox. */
+export const MAX_ROUTED_URL_LENGTH = 4096
+
+/** An app that declares a scheme and holds a grant, as the question names it. */
+export interface AppLinkOption {
+  readonly origin: string
+  /** What the app calls itself: claimed, never trusted, shown beside its origin. */
+  readonly name: string
+}
+
+/** What the person answered when apps were among the choices. */
+export type LinkAnswer =
+  | { readonly kind: 'system' }
+  | { readonly kind: 'cancel' }
+  | { readonly kind: 'app', readonly origin: string, readonly remember: boolean }
+
+/** Where a link of a scheme some app declares can go instead of the OS (d-0596). */
+export interface LinkRouting<W> {
+  /** The apps that may take a link of `scheme`, in the order they are offered. */
+  appsFor: (scheme: string) => Promise<readonly AppLinkOption[]>
+  /** The app the person made the default for `scheme` while it is still among `apps`, else undefined. */
+  defaultAmong: (scheme: string, apps: readonly AppLinkOption[]) => string | undefined
+  /** Draws the question with `apps` as choices beside the system's app. */
+  choose: (window: W, question: ExternalLinkQuestion, apps: readonly AppLinkOption[], tab: PromptingTab) => Promise<LinkAnswer>
+  /** Makes `origin` the default for `scheme`. */
+  remember: (scheme: string, origin: string) => void
+  /** Hands `url` to the app: shows its tab, opening one if there is none, and queues the link for its page. */
+  open: (origin: string, url: string, from: PromptingTab) => void
 }
 
 export interface ExternalLinkDeps<W> {
@@ -103,9 +140,11 @@ export interface ExternalLinkDeps<W> {
   windowShowing: (tab: PromptingTab) => W | undefined
   /** True only if the person chose to open it. Gets the tab, so the question is drawn in it. */
   confirm: (window: W, question: ExternalLinkQuestion, tab: PromptingTab) => Promise<boolean>
+  /** Absent in a test, and before the shell exists: every link then goes to the OS question alone. */
+  routing?: () => LinkRouting<W> | undefined
 }
 
-/** The `openExternal` request handler's decision: true launches the URL. */
+/** The `openExternal` request handler's decision: true launches the URL in the OS's app. A link the person sent to an app answers false: the OS is not asked, and the app's page gets it. */
 export function createExternalLinks<W> (deps: ExternalLinkDeps<W>) {
   return async function request (tab: PromptingTab, details: { externalURL?: string | undefined, requestingUrl?: string | undefined }): Promise<boolean> {
     const url = details.externalURL
@@ -125,7 +164,18 @@ export function createExternalLinks<W> (deps: ExternalLinkDeps<W>) {
     state.prompting = true
     state.touched = false
     try {
-      return await deps.confirm(window, { scheme, url, origin }, tab)
+      const question = { scheme, url, origin }
+      const routing = deps.routing?.()
+      const apps = routing === undefined || url.length > MAX_ROUTED_URL_LENGTH ? [] : await routing.appsFor(scheme)
+      if (routing === undefined || apps.length === 0) return await deps.confirm(window, question, tab)
+      const chosen = routing.defaultAmong(scheme, apps)
+      const answer: LinkAnswer = chosen === undefined ? await routing.choose(window, question, apps, tab) : { kind: 'app', origin: chosen, remember: false }
+      if (answer.kind === 'system') return true
+      if (answer.kind === 'app') {
+        if (answer.remember) routing.remember(scheme, answer.origin)
+        routing.open(answer.origin, url, tab)
+      }
+      return false
     } catch {
       return false
     } finally {

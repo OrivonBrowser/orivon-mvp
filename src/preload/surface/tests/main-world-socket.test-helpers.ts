@@ -176,6 +176,8 @@ export function fakeBridge (
 ): {
   appManifest: () => Promise<unknown>, appGrants: () => Promise<unknown>
   appRequestGrant: (request: { capability: string, patterns?: readonly string[] }) => Promise<boolean>
+  appOnOpenUrl: (listener: (url: string) => void) => () => void
+  appRequestSchemeHandler: (scheme: string) => Promise<boolean>, appIsSchemeHandler: (scheme: string) => Promise<boolean>
   fsReadFile: (path: string) => Promise<Uint8Array>, fsWriteFile: (path: string, data: Uint8Array) => Promise<void>
   fsSync: (op: string, args: unknown[]) => ResponseEnvelope<unknown>
   fsMkdir: (path: string, opts?: { recursive?: boolean }) => Promise<void>
@@ -203,6 +205,9 @@ export function fakeBridge (
     appManifest: async () => ({ orivonApiVersion: 0 }),
     appGrants: async () => [],
     appRequestGrant: async () => true,
+    appOnOpenUrl: () => () => {},
+    appRequestSchemeHandler: async () => false,
+    appIsSchemeHandler: async () => false,
     fsReadFile: async () => new Uint8Array(),
     fsWriteFile: async () => {},
     fsSync,

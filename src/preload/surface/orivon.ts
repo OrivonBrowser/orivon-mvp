@@ -4,6 +4,7 @@ import { installOrivon } from './main-world-socket.js'
 import type { MainWorldDirectoryBridge, MainWorldFileBridge } from './main-world-socket.js'
 import { call, TIMEOUT_MS } from './control-call.js'
 import { netConnectBridge, netConnectSecureBridge, netListenBridge, netLookupBridge, netUdpBindBridge } from './net.js'
+import { appIsSchemeHandler, appOnOpenUrl, appRequestSchemeHandler } from './open-url.js'
 import { webOpenContextBridge } from './web.js'
 import type { MainWorldWebContextBridge } from './web.js'
 import type { MainWorldBridge } from './main-world-bridges.js'
@@ -280,7 +281,7 @@ function exposeFallback (): void {
   console.error('[orivon] window.orivon has no caller-attribution filter on this path (executeInMainWorld is absent or failed); every capability call will be refused')
   contextBridge.exposeInMainWorld('orivon', {
     version: 0,
-    app: { manifest: deniedRejection, grants: deniedRejection, requestGrant: deniedRejection },
+    app: { manifest: deniedRejection, grants: deniedRejection, requestGrant: deniedRejection, onOpenUrl: deniedThrow, requestSchemeHandler: deniedRejection, isSchemeHandler: deniedRejection },
     fs: {
       readFile: deniedRejection,
       writeFile: deniedRejection,
@@ -334,6 +335,9 @@ export function buildOrivonBridge (): MainWorldBridge {
     appManifest,
     appGrants,
     appRequestGrant,
+    appOnOpenUrl,
+    appRequestSchemeHandler,
+    appIsSchemeHandler,
     fsReadFile,
     fsWriteFile,
     fsSync: fsSyncEnvelope,

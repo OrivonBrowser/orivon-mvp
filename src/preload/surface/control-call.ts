@@ -27,6 +27,11 @@ export const TIMEOUT_MS = {
    */
   net: 35_000,
   /**
+   * app.nextOpenUrl: ./open-url.ts's long poll. The shell ends each wait after 25 s (`OPEN_URL_POLL_MS`), so this
+   * budget is always the later of the two and the answer is the shell's own, null for "none yet".
+   */
+  openUrl: 30_000,
+  /**
    * app.requestGrant: a native dialog awaiting a human decision, not I/O --
    * no natural bound exists, but contracts/ipc.ts's rule 2 requires one
    * anyway. Generous rather than tuned: `withTimeout` (../broker/transport/

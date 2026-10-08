@@ -187,6 +187,10 @@ export interface MainWorldBridge {
   appManifest: () => Promise<unknown>
   appGrants: () => Promise<unknown>
   appRequestGrant: (request: CapabilityRequest) => Promise<boolean>
+  /** Registers a page's listener in the isolated world, which runs the poll for links (./open-url.ts); returns the removal. */
+  appOnOpenUrl: (listener: (url: string) => void) => () => void
+  appRequestSchemeHandler: (scheme: string) => Promise<boolean>
+  appIsSchemeHandler: (scheme: string) => Promise<boolean>
   fsReadFile: (path: string) => Promise<Uint8Array>
   fsWriteFile: (path: string, data: Uint8Array) => Promise<void>
   /**

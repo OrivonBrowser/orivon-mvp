@@ -14,6 +14,7 @@ import { startupDomain } from '../startup/startup-domain.js'
 import { shortcutsDomain } from '../shortcuts/shortcuts-domain.js'
 import { pagesDomain } from './pages-domain.js'
 import { appsDomain } from '../permissions/apps-domain.js'
+import { forgetChoicesWhenGrantEnds } from '../scheme-routing/grant-watch.js'
 import { identityKeyStorage } from '../keyring/electron-keychain.js'
 import { onVerifierChange, verifierView } from '../verifier/verifier-subsystem.js'
 import { web3Domain } from '../verifier/web3-domain.js'
@@ -169,7 +170,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       deleteFile: async (key) => await deleteLocalFileData({ broker: ctx.broker, userDataPath: app.getPath('userData'), clearPartition: async (partition) => { await session.fromPartition(partition).clearData() } }, key),
       clearShared: async () => { await session.fromPartition(LOCAL_FILES_PARTITION).clearData() }
     }),
-    apps: appsDomain({ permissions, devices: deviceRows, userDataPath: app.getPath('userData'), identity: identityKeyStorage }),
+    apps: appsDomain({ permissions, devices: deviceRows, links: services.schemeChoices, userDataPath: app.getPath('userData'), identity: identityKeyStorage }),
     web3: web3Domain({
       view: verifierView,
       enabled: () => services.settings.get('web3.lightClient'),
@@ -230,6 +231,9 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     services.internalPages.publish('sites.changed', undefined, ['settings'])
   })
   if (ctx.broker !== undefined) forgetDevicesWhenGrantEnds(ctx.broker, services.hidDevices)
+  if (ctx.broker !== undefined) forgetChoicesWhenGrantEnds(ctx.broker, services.schemeChoices)
+  // The app a kind of link opens in is part of its card in Apps.
+  services.schemeChoices.onChange(() => { services.internalPages.publish('apps.changed', undefined, ['settings']) })
   services.passwords.onChange(() => { services.internalPages.publish('passwords.changed', undefined, ['settings']) })
   services.profiles.onChange(() => { services.internalPages.publish('profiles.changed', undefined, ['settings', 'profiles']) })
   // Never fires in a private session: telemetry never runs there, and

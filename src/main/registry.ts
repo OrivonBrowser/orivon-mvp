@@ -25,6 +25,7 @@ import type { Broker } from '../broker/broker-contracts.js'
 import type { Loader, LoadResult } from '../loader/index.js'
 import type { GrantedWithoutInstall } from './install/grant-without-install.js'
 import type { DialogCaller } from './consent/request-grant.js'
+import type { SchemeHost } from '../broker/transport/ipc-validation.js'
 import type { CapabilityRequest, WebsiteScore } from '../contracts/index.js'
 import type { ExtensionsApi } from './extensions/extensions-subsystem.js'
 import type { AppUpdates } from './install/app-updates.js'
@@ -132,6 +133,12 @@ export interface SubsystemContext {
    */
   readonly websiteScore: ((origin: string, address: string) => Promise<WebsiteScore>) | undefined
   /**
+   * What an app's `orivon.app.onOpenUrl`, `requestSchemeHandler` and `isSchemeHandler` reach (d-0596): the routing of a
+   * link scheme to an app, built with the shell. Published in `main/index.ts`, so a reader treats `undefined` as
+   * routine early in startup and reads it at the moment of the call, as `../broker/transport/ipc.ts` does.
+   */
+  readonly schemeHost: SchemeHost | undefined
+  /**
    * Whether the WebContents making a call is attributed to the origin it
    * claims -- `isAttributedSession`'s (`../broker/policy/origin.js`)
    * injected other half. Every renderer-reachable broker channel
@@ -221,6 +228,7 @@ const openTabsSlot = createPublishedSlot<OpenTabs>('openTabs', 'a second one cou
 const scoreVerdictForSlot = createPublishedSlot<(id: string | undefined, waitMs?: number) => Promise<ProviderVerdict>>('scoreVerdictFor', 'a second one could ask a different provider than the one the person chose')
 
 const websiteScoreSlot = createPublishedSlot<(origin: string, address: string) => Promise<WebsiteScore>>('websiteScore', 'a second one would keep a second set of per-caller caches, and a page could tell them apart')
+const schemeHostSlot = createPublishedSlot<SchemeHost>('schemeHost', 'a second one would keep a second queue of links, and an app would hear each link from only one of them')
 const showNoticeSlot = createPublishedSlot<(notice: { readonly title: string, readonly message: string }) => void>('showNotice', 'a second one could draw a message somewhere the first does not')
 
 class SubsystemContextImpl implements SubsystemContext {
@@ -278,6 +286,10 @@ class SubsystemContextImpl implements SubsystemContext {
 
   get websiteScore (): ((origin: string, address: string) => Promise<WebsiteScore>) | undefined {
     return websiteScoreSlot.get(this)
+  }
+
+  get schemeHost (): SchemeHost | undefined {
+    return schemeHostSlot.get(this)
   }
 }
 
@@ -355,6 +367,11 @@ export function publishShowNotice (ctx: SubsystemContext, showNotice: (notice: {
 /** The one sanctioned way to set `ctx.websiteScore` -- see `publishBroker`'s own doc; same guarantee, same reason. */
 export function publishWebsiteScore (ctx: SubsystemContext, websiteScore: (origin: string, address: string) => Promise<WebsiteScore>): void {
   websiteScoreSlot.publish(ctx, websiteScore)
+}
+
+/** The one sanctioned way to set `ctx.schemeHost` -- see `publishBroker`'s own doc; same guarantee, same reason. */
+export function publishSchemeHost (ctx: SubsystemContext, schemeHost: SchemeHost): void {
+  schemeHostSlot.publish(ctx, schemeHost)
 }
 
 export interface Subsystem {
