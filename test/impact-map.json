@@ -115,6 +115,7 @@
     { "prefix": "scripts/perf-probe.mjs", "run": [] },
     { "prefix": "scripts/probe-*", "run": [] },
     { "prefix": "scripts/worktree-gc.mjs", "run": [] },
+    { "prefix": "scripts/ai", "run": [] },
     { "prefix": "scripts/dev*", "run": [] },
     { "prefix": "scripts/qa*", "run": ["qa"] },
     { "prefix": "scripts", "run": ["@full"] },

@@ -92,7 +92,8 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
     row only for an owner decision or a reversal, an ADR only when Rule 1 applies, and no other
     page is edited just to cite it. Locally run `npm run test:changed` and the e2e specs `select-e2e` names; CI runs both
     whole suites. Prove a new test fails without the change only for a bug fix or a security
-    check. `node scripts/ai/session-report.mjs` shows where a session's time went.
+    check. `node scripts/ai/session-report.mjs` shows where a session's time went, and with
+    `--grep <regex> --digest` what past sessions were told and concluded, to improve a skill from.
 19. **Node-shaped APIs behave exactly like Node wherever possible**: the same results and error
     codes (`writeFile` into a missing parent fails with ENOENT), so a ported app needs no change.
     A deliberate difference is documented where the API lives.

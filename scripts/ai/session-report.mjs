@@ -3,9 +3,12 @@
 // (~/.claude/projects/<checkout path with every non-alphanumeric as ->/<session>.jsonl, and its
 // subagents/ folder). Time is each tool call's call-to-result span, plus the model's time to answer;
 // what is left of the wall clock is waiting (for the owner, CI or a background task). For cost in
-// money, `npx ccusage` reads the same transcripts.
+// money, `npx ccusage` reads the same transcripts. `--digest` prints instead what the owner said and
+// what the model concluded, tool calls left out: the material a skill is improved from.
+// `--grep <regex>` picks the sessions whose transcript matches at least `--min` times, most first.
 //
-//   node scripts/ai/session-report.mjs [<session id prefix>...] [--last N] [--dir <folder>] [--json]
+//   node scripts/ai/session-report.mjs [<session id prefix>...] [--last N] [--grep <regex> [--min N]]
+//     [--digest] [--dir <folder>] [--json]
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -130,13 +133,49 @@ function print ({ id, main, agents }) {
   return out.join('\n')
 }
 
+const MARKUP = /<(ide_selection|ide_opened_file|system-reminder)>[\s\S]*?<\/\1>/g
+
+/** The owner's messages and the model's prose of one transcript, oldest first; tool calls and their results left out. */
+export function digest (lines, { ownerChars = 4000, modelChars = 1500 } = {}) {
+  const out = []
+  for (const line of lines) {
+    if (line.isSidechain === true || line.isMeta === true) continue
+    const content = line.message?.content
+    const at = (line.timestamp ?? '').slice(0, 16)
+    const texts = typeof content === 'string' ? [content] : Array.isArray(content) ? content.filter((c) => c.type === 'text').map((c) => c.text ?? '') : []
+    for (const raw of texts) {
+      const text = raw.replace(MARKUP, '').trim()
+      if (text === '' || /^<(?:command-|local-command|task-notification)/.test(text)) continue
+      if (line.type === 'user') out.push(`### owner ${at}\n${text.slice(0, ownerChars)}`)
+      else if (line.type === 'assistant') out.push(`--- model ${at}\n${text.slice(0, modelChars)}`)
+    }
+  }
+  return out.join('\n\n')
+}
+
+/** Sessions whose transcript matches `pattern` at least `min` times, most matches first. */
+function grepSessions (dir, sessions, pattern, min) {
+  const regex = new RegExp(pattern, 'g')
+  return sessions.map((id) => ({ id, hits: (readFileSync(join(dir, `${id}.jsonl`), 'utf8').match(regex) ?? []).length }))
+    .filter((s) => s.hits >= min).sort((a, b) => b.hits - a.hits).map((s) => s.id)
+}
+
 function main (argv) {
   const flag = (name) => { const at = argv.indexOf(name); return at === -1 ? undefined : argv[at + 1] }
   const dir = flag('--dir') ?? join(homedir(), '.claude', 'projects', process.cwd().replace(/[^A-Za-z0-9]/g, '-'))
-  const prefixes = argv.filter((arg, i) => !arg.startsWith('--') && !['--dir', '--last'].includes(argv[i - 1] ?? ''))
+  const prefixes = argv.filter((arg, i) => !arg.startsWith('--') && !['--dir', '--last', '--grep', '--min'].includes(argv[i - 1] ?? ''))
   const sessions = readdirSync(dir).filter((f) => f.endsWith('.jsonl')).map((f) => f.slice(0, -'.jsonl'.length))
     .sort((a, b) => statSync(join(dir, `${b}.jsonl`)).mtimeMs - statSync(join(dir, `${a}.jsonl`)).mtimeMs)
-  const chosen = prefixes.length > 0 ? sessions.filter((id) => prefixes.some((p) => id.startsWith(p))) : sessions.slice(0, Number(flag('--last') ?? 1))
+  const grep = flag('--grep')
+  const chosen = prefixes.length > 0
+    ? sessions.filter((id) => prefixes.some((p) => id.startsWith(p)))
+    : grep !== undefined
+      ? grepSessions(dir, sessions, grep, Number(flag('--min') ?? 1)).slice(0, flag('--last') === undefined ? undefined : Number(flag('--last')))
+      : sessions.slice(0, Number(flag('--last') ?? 1))
+  if (argv.includes('--digest')) {
+    console.log(chosen.map((id) => `# Session ${id}\n\n${digest(readLines(join(dir, `${id}.jsonl`)))}`).join('\n\n'))
+    return 0
+  }
   const reports = chosen.map((id) => report(dir, id))
   console.log(argv.includes('--json') ? JSON.stringify(reports, null, 2) : reports.map(print).join('\n\n'))
   return 0
