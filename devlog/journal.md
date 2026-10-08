@@ -71,6 +71,8 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Telemetry now asks in a calm popup over the blurred browser after "Enter Orivon"; the default-browser question arrives 30 s into first use.
 - Re-aligned the whole repo with today's Orivon: early-access product, two equal pillars, roadmap replaces scope, 54 open questions closed.
 - The porting skill now covers port upkeep and which mvp tests each port needs, drawn from 33 past sessions; a guard keeps it current.
+- WebTorrent Desktop now runs as an Orivon app: streams torrents from real peers in its own player, published on IPFS and listed in Explore.
+- Porting it closed six Orivon gaps: synchronous file writes, local media streaming, posters by path, clipboard paste, media tracks, and shim fixes.
 
 ### In my head
 
