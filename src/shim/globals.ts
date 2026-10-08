@@ -190,6 +190,7 @@ export function installGlobals (
     browser: true,
     argv: [],
     execArgv: [],
+    execPath: '',
     pid: 1,
     ppid: 0,
     title: 'browser',

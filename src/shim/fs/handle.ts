@@ -24,7 +24,7 @@ import { getOrivon } from '../orivon-global.js'
 import { toNodeStats, type NodeStats } from './stats.js'
 import { encode, encodingOf } from '../encoding.js'
 import { announce, canCreate, watchersExist } from './notices.js'
-import { normalizeOpenFlags } from './flags.js'
+import { normalizeOpenFlags, openFlagged, openFlaggedSync } from './flags.js'
 import { assertMode, confine, confineSync, fsError, guarded, type PathLike } from './paths.js'
 import { refuseShim } from '../errors.js'
 import {
@@ -149,7 +149,7 @@ export class NodeFileHandle {
     }
     const existed = !(canCreate(flags) && watchersExist()) || await getOrivon().fs.stat(confined).then(() => true, () => false)
     return await guarded(async () => {
-      const handle = await getOrivon().fs.open(confined, flags)
+      const handle = await openFlagged(async (at, mode) => await getOrivon().fs.open(at, mode), confined, flags)
       const cursor = new LocalCursor(await initialCursor(handle, flags))
       const fd = nextFd++
       const wrapped = new NodeFileHandle(fd, handle, cursor, confined)
@@ -410,7 +410,7 @@ class SyncNodeFileHandle {
     }
     const existed = !(canCreate(flags) && watchersExist()) || tryStatSync(confined) !== false
     return guardedSync(() => {
-      const handle = syncFsWithOpen('fs.openSync').open(confined, flags)
+      const handle = openFlaggedSync((at, mode) => syncFsWithOpen('fs.openSync').open(at, mode), confined, flags)
       const cursor = new SyncLocalCursor(initialCursorSync(handle, flags))
       const fd = nextFd++
       const wrapped = new SyncNodeFileHandle(fd, handle, cursor, confined)
