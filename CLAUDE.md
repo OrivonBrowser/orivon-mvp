@@ -26,7 +26,7 @@ today: `docs/planning/compatibility-matrix.md`.
 | Opening a PR | `docs/development/pr-blueprint.md` |
 | Asking why, or who decided | `docs/decisions/decision-log.md` |
 | Hunting for a document | `docs/README.md` |
-| Running or porting a third-party app. Use to get also instructions when user ask to port an APp | `../orivon-ports/CLAUDE.md` |
+| Running, porting, updating, republishing or fixing a third-party app | the `orivon-porting` skill: it loads `../orivon-ports/CLAUDE.md` and the porting skill kept there |
 | Changes of the official Web3 Scoring provider | `~/git/web3-score-manager` |
 
 ## The load-bearing idea
@@ -92,7 +92,8 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
     row only for an owner decision or a reversal, an ADR only when Rule 1 applies, and no other
     page is edited just to cite it. Locally run `npm run test:changed` and the e2e specs `select-e2e` names; CI runs both
     whole suites. Prove a new test fails without the change only for a bug fix or a security
-    check. `node scripts/ai/session-report.mjs` shows where a session's time went.
+    check. `node scripts/ai/session-report.mjs` shows where a session's time went, and with
+    `--grep <regex> --digest` what past sessions were told and concluded, to improve a skill from.
 19. **Node-shaped APIs behave exactly like Node wherever possible**: the same results and error
     codes (`writeFile` into a missing parent fails with ENOENT), so a ported app needs no change.
     A deliberate difference is documented where the API lives.
@@ -160,6 +161,7 @@ at the step named here. **Check this table at the start of every build step.**
 | `claude-md-management` | **Manual: `/revise-claude-md` at the end of any session that changed an assumption in this file** | Keeps this file true as the code moves |
 | `orivon-electron` (project skill) | **Manual: before writing or debugging any Electron or webtorrent code** | The renderer-bundling alias recipe, the `app.windows()`-not-`app.firstWindow()` rule, `MessagePortMain`'s silent failures, and why to check `electron.d.ts` before trusting any claim about `BaseWindow` options. Exists nowhere else |
 | `orivon-comments` (project skill) | **Manual: before writing or editing a comment in `src/`** | Where rationale goes when it is not a "you will break this line" comment, and how to handle a header over budget |
+| `orivon-porting` (project skill) | **Manual: before porting, updating, republishing or fixing an app, or a change here that a port asked for** | Loads the porting skill kept in `../orivon-ports`, and says what this repository owes a port: a generic fix, a catalogue row and a spec |
 | `adversarial-reviewer` (user skill) | **Manual: after each build step lands** | A multi-perspective hostile review; `docs/planning/audit-2026-08-25.md` is what one produces. Run it on the broker and the app loader at minimum |
 | `/code-review`, `/security-review`, `/simplify` | Manual | Per-diff review before each commit on the critical path |
 
