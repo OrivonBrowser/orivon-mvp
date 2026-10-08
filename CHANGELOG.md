@@ -18,6 +18,14 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- **`fs-open-create-in-place`**: `fs.open` with `O_CREAT` and no `O_TRUNC`, `O_APPEND` or `O_EXCL` (`O_RDWR | O_CREAT`) now
+  creates a missing file and keeps an existing one, where it failed `EINVAL`. Apps that opened such files by another
+  route: open them directly. Recheck: webtorrent.
+- **`file-calls-complete-beside-hung-dials`**: asynchronous `fs` calls queue in the shim under half the per-origin
+  operation bound and socket dials under a quarter, so a program that writes at full speed or abandons many dials
+  waits where Node would, and no longer meets `limit`. Apps that retried `limit` on files may drop it. Recheck: webtorrent.
+- **`node-constants-and-exec-path`**: `require('constants')` resolves to Node's table (Linux values) and `process.execPath`
+  is `''` rather than `undefined`. Apps that stubbed either for their bundle: remove the stub. Recheck: webtorrent.
 - **`page-shows-own-files-by-url`**: an app that holds `fs` may point `<img>`, a CSS image, `<audio>` and `<video>` at
   `/orivon/app/<path>` (the virtual root `os.homedir()` and `app.getPath('userData')` name) and at
   `file:///orivon/app/<path>`, and the browser shows the file `orivon.fs` calls that path, which Electron allows and a web
@@ -36,6 +44,9 @@ public surface of `src/contracts/` (named `contracts/<file>`).
   at `http://localhost:<port>`, `127.0.0.1` or `[::1]` when `<port>` is one its own listener holds, which Node and
   Electron allow and the page's policy refused; every other loopback port stays refused for images and media. Apps
   that run their own HTTP server for their player need no change. Recheck: `webtorrent`.
+- **`url-parse-escapes-like-node`**: the legacy `url.parse` now percent-encodes a space, quotes, `<`, `>`, braces, the caret and
+  the backtick after the host and turns backslashes before the query into slashes, as Node's does. Apps that escaped paths
+  before `http.request` to avoid `ERR_UNESCAPED_CHARACTERS`: drop that. Recheck: webtorrent.
 - **`page-sync-fs-writes-land`**: the page's `fs.mkdirSync`, `writeFileSync`, `copyFileSync`, `statSync`, `readdirSync`,
   `renameSync` and `rmSync` now work instead of throwing; `openSync` and its family still refuse on the page. Apps that
   worked around the refusal: use them directly. Recheck: webtorrent.

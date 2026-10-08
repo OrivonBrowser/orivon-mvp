@@ -26,6 +26,7 @@ describe('process fields', () => {
     expect(process.versions['node']).toBeUndefined()
     expect(process.argv).toEqual([])
     expect(process.execArgv).toEqual([])
+    expect(process.execPath).toBe('')
     expect(process.pid).toBeGreaterThan(0)
     expect(process.title).toBe('browser')
     expect(process.arch).toBe('javascript')
