@@ -2,7 +2,7 @@
  * The runner's half of a live session (live-session.yml): launches Orivon under Playwright, serves a small HTTP API
  * on loopback that runs the caller's Playwright code against it, and opens a Cloudflare quick tunnel to that API.
  * Every request carries a bearer token whose SHA-256 is all the runner is given. Writes `<out>/url` once the tunnel
- * is up, touches `<out>/alive` every 30 seconds, and writes `<out>/stopped` when the session ends: on `/stop`, after
+ * is up, writes the time to `<out>/alive` every 30 seconds, and writes `<out>/stopped` when the session ends: on `/stop`, after
  * `--minutes`, after 20 idle minutes, or when it fails to start.
  *
  *   node scripts/run-headless.mjs node scripts/ci/live-host.mjs serve --hash <sha256> --cloudflared <path> --out <dir>
@@ -27,6 +27,8 @@ const CLOUDFLARED = {
 const IDLE_MS = 20 * 60_000
 const MAX_MINUTES = 300
 const EVAL_TIMEOUT_MS = 60_000
+/** Cloudflare ends a tunnelled response at 100 seconds, so no call may run longer than this. */
+export const MAX_EVAL_MS = 90_000
 const MAX_BODY = 1024 * 1024
 const MAX_VALUE = 20_000
 
@@ -119,29 +121,60 @@ export function newToken (file) {
   return tokenHash(token)
 }
 
+/**
+ * The API's request listener. A request without the token is refused before anything else is read or reset. `/health`
+ * and `/stop` are answered at once; every other route runs one at a time, in the order the requests came.
+ * @param {{ hash: string, routes: Record<string, (body: any) => Promise<unknown>>, onRequest?: () => void }} api
+ */
+export function apiListener ({ hash, routes, onRequest = () => {} }) {
+  let queue = Promise.resolve()
+  return (req, res) => {
+    const reply = (status, payload) => {
+      if (res.headersSent || res.destroyed) return
+      res.writeHead(status, { 'content-type': 'application/json' })
+      res.end(JSON.stringify(payload))
+    }
+    if (!tokenMatches(req.headers.authorization, hash)) { reply(401, { ok: false, error: 'bad token' }); return }
+    const key = `${req.method ?? ''} ${(req.url ?? '').split('?')[0]}`
+    const route = routes[key]
+    if (route === undefined) { reply(404, { ok: false, error: 'no such route' }); return }
+    onRequest()
+    const answer = async (body) => {
+      try { reply(200, await route(body)) } catch (error) { reply(500, { ok: false, error: String(error?.stack ?? error) }) }
+    }
+    readBody(req).then((body) => {
+      if (key === 'GET /health' || key === 'POST /stop') return answer(body)
+      queue = queue.then(() => answer(body))
+      return queue
+    }, (error) => { reply(400, { ok: false, error: String(error?.message ?? error) }) })
+  }
+}
+
 async function serve ({ hash, cloudflared, out, minutes }) {
   if (!isTokenHash(hash)) throw new Error('--hash is not a SHA-256 in hex: live-session.mjs start makes one')
   const { closeElectron, launchElectron, mainOutput } = await import('../../test/support/launch-electron.mjs')
   const helpers = await import('../../test/support/smoke-helpers.mjs')
   mkdirSync(out, { recursive: true })
+  // Caller code that leaves a promise to reject, or throws in a callback, must not end the session.
+  process.on('unhandledRejection', (error) => { console.error(`[live-host] unhandled rejection: ${String(error?.stack ?? error)}`) })
+  process.on('uncaughtException', (error) => { console.error(`[live-host] uncaught exception: ${String(error?.stack ?? error)}`) })
   const started = Date.now()
   let app
   let launchOptions = {}
   let lastRequest = Date.now()
-  let queue = Promise.resolve()
   let tunnel
   let stopping = false
+  let pictures = 0
 
-  const launch = async (options = {}) => {
-    launchOptions = options
+  const launch = async (options) => {
     app = await launchElectron({ appPath: '.', ...options })
     await helpers.waitForChromeView(app)
+    launchOptions = options
   }
-  const chrome = () => helpers.findChrome(app)
   const page = (part) => app.windows().find((p) => p.url().includes(part))
-  const shots = []
-  const shot = async (target = 'desktop', name = `shot-${String(shots.length + 1)}`) => {
-    const file = join(tmpdir(), `orivon-live-${String(process.pid)}-${String(shots.length)}.png`)
+  /** A `shot` that adds its pictures to one call's reply only, even if that call has timed out and still runs. */
+  const shooter = (shots) => async (target = 'desktop', name = `shot-${String(shots.length + 1)}`) => {
+    const file = join(tmpdir(), `orivon-live-${String(process.pid)}-${String(++pictures)}.png`)
     if (target === 'desktop') {
       const command = desktopShotCommand(process.platform, file)
       execFileSync(command.file, command.args, { stdio: 'ignore', timeout: 30_000 })
@@ -169,16 +202,19 @@ async function serve ({ hash, cloudflared, out, minutes }) {
     }),
     'GET /log': async () => ({ log: mainOutput(app).split('\n').slice(-300).join('\n') }),
     'POST /eval': async (body) => {
-      shots.length = 0
+      const shots = []
       const logs = []
       const log = (...parts) => { logs.push(parts.map((p) => typeof p === 'string' ? p : serialize(p)).join(' ')) }
       const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
       const run = new AsyncFunction('ctx', `const { app, chrome, page, shot, log, helpers } = ctx\n${functionBody(String(body.code ?? ''))}`)
-      const timeout = Math.min(Number(body.timeoutMs) || EVAL_TIMEOUT_MS, 10 * 60_000)
+      const timeout = Math.min(Number(body.timeoutMs) || EVAL_TIMEOUT_MS, MAX_EVAL_MS)
+      // Left undefined once the shell's view is gone, so code can still look at app.windows() and the log.
+      let chrome
+      try { chrome = helpers.findChrome(app) } catch {}
       let timer
       try {
         const value = await Promise.race([
-          run({ app, chrome: chrome(), page, shot, log, helpers }),
+          run({ app, chrome, page, shot: shooter(shots), log, helpers }),
           new Promise((_resolve, reject) => { timer = setTimeout(() => reject(new Error(`no result within ${timeout} ms`)), timeout) })
         ])
         return { ok: true, value: serialize(value), logs, shots: [...shots] }
@@ -194,17 +230,8 @@ async function serve ({ hash, cloudflared, out, minutes }) {
     'POST /stop': async () => { setTimeout(() => { void stop('asked to stop') }, 200); return { ok: true } }
   }
 
-  const server = createServer((req, res) => {
-    const reply = (status, payload) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(payload)) }
-    if (!tokenMatches(req.headers.authorization, hash)) { reply(401, { ok: false, error: 'bad token' }); return }
-    const route = routes[`${req.method} ${(req.url ?? '').split('?')[0]}`]
-    if (route === undefined) { reply(404, { ok: false, error: 'no such route' }); return }
-    lastRequest = Date.now()
-    queue = queue.then(async () => {
-      try { reply(200, await route(await readBody(req))) } catch (error) { reply(500, { ok: false, error: String(error?.stack ?? error) }) }
-    })
-  })
-  await launch()
+  const server = createServer(apiListener({ hash, routes, onRequest: () => { lastRequest = Date.now() } }))
+  await launch({})
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
   const port = server.address().port
 
@@ -218,9 +245,11 @@ async function serve ({ hash, cloudflared, out, minutes }) {
   }
   tunnel.stdout.on('data', hear)
   tunnel.stderr.on('data', hear)
+  tunnel.on('error', (error) => { void stop(`cloudflared did not run: ${error.message}`) })
   tunnel.on('exit', (code) => { void stop(`cloudflared exited (${String(code)})`) })
 
-  const beat = () => { writeFileSync(join(out, 'alive'), `${new Date().toISOString()}\n`) }
+  // Seconds since the epoch: the workflow's hold step compares it with `date +%s` on every system.
+  const beat = () => { writeFileSync(join(out, 'alive'), `${String(Math.floor(Date.now() / 1000))}\n`) }
   beat()
   setTimeout(() => { void stop(`${String(minutes)} minutes passed`) }, minutes * 60_000)
   setInterval(() => {

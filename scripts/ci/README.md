@@ -65,7 +65,7 @@ keeps Orivon running on one runner and takes Playwright code from a terminal one
 session does:
 
 ```bash
-git push                                                   # the runner builds the branch as it is on GitHub
+git push                                                   # a branch, never main: the runner builds it as it is on GitHub
 node scripts/ci/live-session.mjs start --system windows    # about five minutes; says when it is live
 node scripts/ci/live-session.mjs eval --system windows "app.windows().map((p) => p.url())"
 node scripts/ci/live-session.mjs eval --system windows --file probe.js --timeout 120000
@@ -78,9 +78,11 @@ node scripts/ci/live-session.mjs stop --system windows
 
 The code is the body of an async function that sees `app` (Playwright's `ElectronApplication`), `chrome` (the
 shell's page), `page(urlPart)`, `shot(target, name)`, `log(...)` and `helpers` (`test/support/smoke-helpers.mjs`); a
-lone expression is returned. Pictures land in `qa-artifacts/live/<run id>/`. The runner is reached through a
-Cloudflare quick tunnel. It is given only the SHA-256 of a token made on the caller's machine and kept in
-`qa-artifacts/live/<system>.json`, and it refuses every request without that token. A session ends on `stop`, after
-`--minutes` (60 by default, at most 300), or after 20 minutes without a request. A pull request that changes the
-live session's files starts one on each system and drives it once through the tunnel.
+lone expression is returned. One call runs at most 90 seconds, because Cloudflare ends a response at 100; split
+longer work into several calls, which run one at a time. Pictures land in `qa-artifacts/live/<run id>/`. The runner
+is reached through a Cloudflare quick tunnel. It is given only the SHA-256 of a token made on the caller's machine
+and kept in `qa-artifacts/live/<system>.json`, and it refuses every request without that token. Whatever the session
+prints, Orivon's own log included, is uploaded with the run's evidence, which anyone can read. A session ends on
+`stop`, after `--minutes` (60 by default, at most 300), or after 20 minutes without a request. A pull request that
+changes the live session's files starts one on each system and drives it once through the tunnel.
 

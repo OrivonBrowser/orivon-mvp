@@ -1,11 +1,13 @@
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { createServer, type Server } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  cloudflaredAsset, desktopShotCommand, functionBody, isTokenHash, newToken, serialize, tokenHash, tokenMatches, tunnelUrl
+  apiListener, cloudflaredAsset, desktopShotCommand, functionBody, isTokenHash, newToken, serialize, tokenHash, tokenMatches, tunnelUrl
 } from '../live-host.mjs'
-import { errorText, formatReply, nextShotPath, saveShots, urlArtifact } from '../live-session.mjs'
+import { errorText, formatReply, nextShotPath, runTitle, saveShots, urlArtifact } from '../live-session.mjs'
 
 const dirs: string[] = []
 const scratch = (): string => {
@@ -41,6 +43,67 @@ describe('the token', () => {
     expect(saved).toMatch(/^[0-9a-f]{64}$/)
     expect(printed).toBe(tokenHash(saved))
     expect(tokenMatches(`Bearer ${saved}`, printed)).toBe(true)
+  })
+})
+
+describe('the API', () => {
+  const token = 'c'.repeat(64)
+  const servers: Server[] = []
+  afterEach(() => { for (const server of servers.splice(0)) server.close() })
+
+  /** A listener on loopback with routes that record their calls; `release` lets a held `/eval` finish. */
+  async function api () {
+    const seen: string[] = []
+    let requests = 0
+    let release = (): void => {}
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const routes = {
+      'GET /health': async () => { seen.push('health'); return { ok: true } },
+      'POST /eval': async (body: { code?: string }) => {
+        seen.push(`eval ${String(body.code)}`)
+        if (body.code === 'hold') await held
+        return { ok: true, value: body.code }
+      },
+      'POST /stop': async () => { seen.push('stop'); return { ok: true } }
+    }
+    const server = createServer(apiListener({ hash: tokenHash(token), routes, onRequest: () => { requests++ } }))
+    servers.push(server)
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`
+    const send = async (method: string, path: string, body?: string, auth = `Bearer ${token}`) => {
+      const response = await fetch(`${base}${path}`, { method, headers: { authorization: auth }, body: body ?? null })
+      return { status: response.status, json: await response.json() as Record<string, unknown> }
+    }
+    return { seen, requests: () => requests, release, send }
+  }
+
+  it('refuses a request without the token before reading its body, running a route or counting it', async () => {
+    const { seen, requests, send } = await api()
+    expect((await send('POST', '/eval', 'x'.repeat(2 * 1024 * 1024), 'Bearer wrong')).status).toBe(401)
+    expect((await send('GET', '/health', undefined, '')).status).toBe(401)
+    expect(seen).toEqual([])
+    expect(requests()).toBe(0)
+  })
+
+  it('answers an unknown route and a body that is not JSON with an error', async () => {
+    const { seen, send } = await api()
+    expect((await send('GET', '/nothing')).status).toBe(404)
+    expect((await send('POST', '/eval', '{not json')).status).toBe(400)
+    expect(seen).toEqual([])
+  })
+
+  it('runs calls one at a time, and answers health and stop while a call is still running', async () => {
+    const { seen, release, send } = await api()
+    const first = send('POST', '/eval', JSON.stringify({ code: 'hold' }))
+    const second = send('POST', '/eval', JSON.stringify({ code: 'next' }))
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect((await send('GET', '/health')).json.ok).toBe(true)
+    expect((await send('POST', '/stop')).json.ok).toBe(true)
+    expect(seen).toEqual(['eval hold', 'health', 'stop'])
+    release()
+    expect((await first).json.value).toBe('hold')
+    expect((await second).json.value).toBe('next')
+    expect(seen.at(-1)).toBe('eval next')
   })
 })
 
@@ -96,8 +159,11 @@ describe('serialize', () => {
 })
 
 describe('the caller side', () => {
-  it('names the address artifact per system, as the workflow uploads it', () => {
+  it('names the address artifact per system, and its run by the token\'s hash, as the workflow does', () => {
     expect(urlArtifact('windows')).toBe('live-session-url-windows')
+    const workflow = readFileSync(new URL('../../../.github/workflows/live-session.yml', import.meta.url), 'utf8')
+    expect(workflow).toContain('name: live-session-url-${{ matrix.system }}')
+    expect(workflow).toContain(`format('Live session on {0}, ${runTitle('{1}')}', inputs.system, inputs.token_sha256)`)
   })
 
   it('numbers a picture after the ones already saved, with a file-safe name', () => {

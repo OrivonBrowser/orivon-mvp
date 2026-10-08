@@ -6,6 +6,8 @@ name: Live session
 # only the SHA-256 of the caller's token, and the host refuses every request without that token. The session ends on
 # `stop`, after `minutes`, or after 20 minutes without a request. A pull request that changes the live session starts
 # one on every system with a token of its own and drives it once through the real tunnel.
+# The run's name carries the token's hash, so two sessions started on one commit each find their own run.
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('Live session on {0}, token {1}', inputs.system, inputs.token_sha256) || github.event.pull_request.title }}
 on:
   workflow_dispatch:
     inputs:
@@ -23,6 +25,11 @@ on:
       - .github/workflows/live-session.yml
       - scripts/ci/live-host.mjs
       - scripts/ci/live-session.mjs
+      - scripts/ci/cross-os.mjs
+      - scripts/cli.mjs
+      - scripts/run-headless.mjs
+      - test/support/launch-electron.mjs
+      - test/support/smoke-helpers.mjs
 
 concurrency:
   group: live-session-${{ github.event.pull_request.number || github.run_id }}
@@ -33,6 +40,9 @@ permissions:
 
 jobs:
   plan:
+    # Never on the default branch: a session runs whatever code its caller sends, and a run there could write the
+    # caches that branch's other workflows restore.
+    if: github.event_name == 'pull_request' || github.ref_name != github.event.repository.default_branch
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -87,7 +97,9 @@ jobs:
         run: node scripts/build-e2e.mjs
 
       - name: Fetch the pinned cloudflared
-        run: echo "CLOUDFLARED=$(node scripts/ci/live-host.mjs fetch-cloudflared "$RUNNER_TEMP/cloudflared")" >> "$GITHUB_ENV"
+        run: |
+          binary="$(node scripts/ci/live-host.mjs fetch-cloudflared "$RUNNER_TEMP/cloudflared")"
+          echo "CLOUDFLARED=$binary" >> "$GITHUB_ENV"
 
       # A dispatch brings the caller's hash; a pull request makes a token of its own for the self-test.
       - name: The token's hash
@@ -97,6 +109,7 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
             GIVEN="$(node scripts/ci/live-host.mjs new-token "$RUNNER_TEMP/live-token")"
           fi
+          if ! [[ "$GIVEN" =~ ^[0-9a-f]{64}$ ]]; then echo "::error::token_sha256 is not a SHA-256 in hex"; exit 1; fi
           echo "TOKEN_SHA256=$GIVEN" >> "$GITHUB_ENV"
 
       # Detached from the step's input and output: on Windows a background process that holds them keeps the step open.
@@ -126,11 +139,12 @@ jobs:
         if: github.event_name == 'pull_request'
         run: node scripts/ci/live-session.mjs selftest --url-file live/url --token-file "$RUNNER_TEMP/live-token" --out live/selftest
 
-      # The host touches live/alive every 30 seconds; a stale file means it died without saying so.
+      # The host writes the time to live/alive every 30 seconds; two minutes without it means it died without saying so.
       - name: Hold until the session ends
         run: |
           while [ ! -f live/stopped ]; do
-            if [ -z "$(find live/alive -mmin -2 2>/dev/null)" ]; then
+            beat="$(cat live/alive 2>/dev/null || true)"
+            if [[ "$beat" =~ ^[0-9]+$ ]] && [ $(( $(date +%s) - beat )) -gt 120 ] && [ ! -f live/stopped ]; then
               echo "::error::the live host stopped without ending the session"
               tail -n 80 live/host.log
               exit 1

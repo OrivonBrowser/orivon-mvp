@@ -28,6 +28,12 @@ describe('pickRun', () => {
   it('finds nothing while the new run has not appeared', () => {
     expect(pickRun([7, 8], after, 'abc')).toBeUndefined()
   })
+
+  it('tells two new runs on one commit apart by a part of their name', () => {
+    const two = [{ databaseId: 11, headSha: 'abc', displayTitle: 'Live session on macos, token 22' }, { databaseId: 10, headSha: 'abc', displayTitle: 'Live session on windows, token 11' }]
+    expect(pickRun([], two, 'abc', 'token 11')?.databaseId).toBe(10)
+    expect(pickRun([], two, 'abc', 'token 33')).toBeUndefined()
+  })
 })
 
 describe('smokeResult', () => {

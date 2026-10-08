@@ -16,7 +16,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { join } from 'node:path'
 import { isInvokedDirectly } from '../cli.mjs'
 import { dispatch, parseSystems } from './cross-os.mjs'
-import { tokenHash } from './live-host.mjs'
+import { MAX_EVAL_MS, tokenHash } from './live-host.mjs'
 
 export const LIVE_DIR = join('qa-artifacts', 'live')
 export const WORKFLOW = 'live-session.yml'
@@ -88,20 +88,32 @@ export function saveShots (dir, shots) {
   })
 }
 
+/** The part of a live run's name that tells it from another started on the same commit (live-session.yml run-name). */
+export const runTitle = (hash) => `token ${hash}`
+
 async function start (system, minutes) {
   parseSystems(system)
+  const branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' }).trim()
+  if (branch === JSON.parse(gh('repo', 'view', '--json', 'defaultBranchRef')).defaultBranchRef.name) {
+    throw new Error(`live sessions never run on ${branch}: start one from a branch (git switch -c <name> and push it)`)
+  }
   const token = randomBytes(32).toString('hex')
-  const id = await dispatch(WORKFLOW, { system, minutes: String(minutes), token_sha256: tokenHash(token) })
+  const hash = tokenHash(token)
+  const id = await dispatch(WORKFLOW, { system, minutes: String(minutes), token_sha256: hash }, runTitle(hash))
   console.log(`run ${String(id)}: installing and building on ${system}, then opening the tunnel (about 5 minutes)`)
   const dir = join(LIVE_DIR, String(id))
+  let artifactId
   for (const deadline = Date.now() + READY_MS; ; await sleep(10_000)) {
     if (Date.now() > deadline) throw new Error(`run ${String(id)} opened no tunnel within ${READY_MS / 60_000} minutes`)
     const run = JSON.parse(gh('run', 'view', String(id), '--json', 'status,conclusion'))
     if (run.status === 'completed') throw new Error(`run ${String(id)} ended (${run.conclusion}) before its tunnel opened: node scripts/ci/cross-os.mjs --run ${String(id)}`)
-    const names = gh('api', `repos/{owner}/{repo}/actions/runs/${String(id)}/artifacts`, '-q', '.artifacts[].name').split('\n')
-    if (names.includes(urlArtifact(system))) break
+    const artifacts = JSON.parse(gh('api', `repos/{owner}/{repo}/actions/runs/${String(id)}/artifacts`, '-q', '.artifacts'))
+    artifactId = artifacts.find((artifact) => artifact.name === urlArtifact(system))?.id
+    if (artifactId !== undefined) break
   }
   gh('run', 'download', String(id), '-n', urlArtifact(system), '-D', dir)
+  // Anyone signed in can download a public repository's artifacts; the address is only needed here.
+  try { gh('api', '-X', 'DELETE', `repos/{owner}/{repo}/actions/artifacts/${String(artifactId)}`) } catch {}
   const session = { system, runId: id, url: readFileSync(join(dir, 'url'), 'utf8').trim(), token }
   for (const deadline = Date.now() + HEALTH_MS; ; await sleep(3000)) {
     const health = await call(session, 'GET', '/health', undefined, 10_000).catch(failed)
@@ -109,7 +121,7 @@ async function start (system, minutes) {
     if (Date.now() > deadline) throw new Error(`the tunnel at ${session.url} never answered: ${String(health.error)}`)
   }
   mkdirSync(LIVE_DIR, { recursive: true })
-  writeFileSync(sessionPath(system), `${JSON.stringify(session, null, 2)}\n`)
+  writeFileSync(sessionPath(system), `${JSON.stringify(session, null, 2)}\n`, { mode: 0o600 })
   console.log(`live on ${system} until ${String(session.endsAt)}: send code with node scripts/ci/live-session.mjs eval --system ${system} '<code>'`)
 }
 
@@ -148,8 +160,8 @@ if (isInvokedDirectly(import.meta.url)) {
       const code = command === 'shot'
         ? `await shot(${JSON.stringify(target || 'desktop')}, ${JSON.stringify(target || 'desktop')}); return 'saved'`
         : arg('file') !== undefined ? readFileSync(arg('file'), 'utf8') : target
-      const timeoutMs = Number(arg('timeout') ?? 60_000)
-      const reply = await call(session, 'POST', '/eval', { code, timeoutMs }, timeoutMs + 30_000)
+      const timeoutMs = Math.min(Number(arg('timeout') ?? 60_000), MAX_EVAL_MS)
+      const reply = await call(session, 'POST', '/eval', { code, timeoutMs }, timeoutMs + 15_000)
       console.log(formatReply(reply))
       for (const path of saveShots(join(LIVE_DIR, String(session.runId)), reply.shots)) console.log(`picture: ${path}`)
       process.exit(reply.ok ? 0 : 1)
@@ -158,9 +170,12 @@ if (isInvokedDirectly(import.meta.url)) {
     } else if (command === 'restart') {
       console.log(JSON.stringify(await call(readSession(system), 'POST', '/restart', { options: arg('options') === undefined ? undefined : JSON.parse(arg('options')) }, 180_000)))
     } else if (command === 'stop') {
-      await call(readSession(system), 'POST', '/stop').catch(() => {})
+      const session = readSession(system)
+      const reply = await call(session, 'POST', '/stop').catch(failed)
+      const ended = reply.ok === true || JSON.parse(gh('run', 'view', String(session.runId), '--json', 'status')).status === 'completed'
+      if (!ended) throw new Error(`the ${system} session did not stop (${String(reply.error)}); its token stays in ${sessionPath(system)}`)
       rmSync(sessionPath(system), { force: true })
-      console.log(`stopped the ${system} session`)
+      console.log(reply.ok === true ? `stopped the ${system} session` : `the ${system} session had already ended`)
     } else if (command === 'status') {
       for (const file of existsSync(LIVE_DIR) ? readdirSync(LIVE_DIR).filter((f) => f.endsWith('.json')) : []) {
         const session = JSON.parse(readFileSync(join(LIVE_DIR, file), 'utf8'))
