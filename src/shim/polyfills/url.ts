@@ -72,10 +72,23 @@ function splitAt (text: string, marker: string): [string, string | null] {
   return at === -1 ? [text, null] : [text.slice(0, at), text.slice(at)]
 }
 
+/** The characters Node's url.parse percent-encodes wherever they stand after the host (its autoEscapeChars). */
+const AUTO_ESCAPE = /[\t\n\r "'<>\\^`{|}]/g
+
+function autoEscape (text: string | null): string | null {
+  return text === null ? null : text.replace(AUTO_ESCAPE, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`)
+}
+
+/** As Node's does: a backslash before the query or the hash is a slash. */
+function slashesBeforeQuery (input: string): string {
+  const end = input.search(/[?#]/)
+  return end === -1 ? input.replace(/\\/g, '/') : input.slice(0, end).replace(/\\/g, '/') + input.slice(end)
+}
+
 /** Node's legacy url.parse, over the same field rules. */
 export function parse (input: string, parseQueryString = false, slashesDenoteHost = false): Url {
   if (typeof input !== 'string') throw nodeTypeError('ERR_INVALID_ARG_TYPE', `The "url" argument must be of type string. Received ${typeof input}`)
-  let [rest, hash] = splitAt(input.trim(), '#')
+  let [rest, hash] = splitAt(slashesBeforeQuery(input.trim()), '#')
   let search: string | null
   ;[rest, search] = splitAt(rest, '?')
   const protocolMatch = /^[a-z0-9.+-]+:/i.exec(rest)
@@ -99,6 +112,12 @@ export function parse (input: string, parseQueryString = false, slashesDenoteHos
     hostname = portMatch === null ? host : host.slice(0, portMatch.index)
   }
 
+  // Everything after the host is escaped as Node escapes it, but for a javascript: URL.
+  if (!HOSTLESS_PROTOCOLS.has(protocol ?? '')) {
+    rest = autoEscape(rest) ?? ''
+    search = autoEscape(search)
+    hash = autoEscape(hash)
+  }
   let pathname: string | null = rest === '' ? null : rest
   if (pathname === null && hostname !== null && SLASHED_PROTOCOLS.has(protocol ?? '')) pathname = '/'
   const queryText = search === null ? null : search.slice(1)
