@@ -1,3 +1,17 @@
+== app.ts
+import type { Grant, Manifest, Pattern } from './manifest.js'
+export interface OrivonApp {
+  manifest(): Promise<Manifest>
+  grants(): Promise<readonly Grant[]>
+  requestGrant(capability: CapabilityRequest): Promise<boolean>
+  onOpenUrl(listener: (url: string) => void): () => void
+  requestSchemeHandler(scheme: string): Promise<boolean>
+  isSchemeHandler(scheme: string): Promise<boolean>
+}
+export interface CapabilityRequest {
+  readonly capability: string
+  readonly patterns?: readonly Pattern[]
+}
 == capability-api.ts
 import type {
   DirectoryHandle,
@@ -11,7 +25,7 @@ import type {
   UdpSocket,
   WebContext
 } from './handles.js'
-import type { Grant, Manifest, Pattern } from './manifest.js'
+import type { OrivonApp } from './app.js'
 import type { OrivonTrust } from './trust.js'
 export interface Orivon {
   readonly version: 0
@@ -22,15 +36,6 @@ export interface Orivon {
   readonly web: OrivonWeb
   readonly secrets: OrivonSecrets
   readonly trust: OrivonTrust
-}
-export interface OrivonApp {
-  manifest(): Promise<Manifest>
-  grants(): Promise<readonly Grant[]>
-  requestGrant(capability: CapabilityRequest): Promise<boolean>
-}
-export interface CapabilityRequest {
-  readonly capability: string
-  readonly patterns?: readonly Pattern[]
 }
 export interface SecureConnectOptions {
   readonly host: string
@@ -271,7 +276,6 @@ export type {
 } from './manifest.js'
 export type {
   Orivon,
-  OrivonApp,
   OrivonNet,
   OrivonFs,
   OrivonId,
@@ -281,10 +285,10 @@ export type {
   EmbedEventMap,
   WebContextOptions,
   OrivonSecrets,
-  CapabilityRequest,
   SecureConnectOptions,
   BindScope
 } from './capability-api.js'
+export type { OrivonApp, CapabilityRequest } from './app.js'
 export type { OrivonTrust, WebsiteScore } from './trust.js'
 export type { DevicesCapability, HidDeviceFilter } from './devices.js'
 export type { Limits } from './limits.js'

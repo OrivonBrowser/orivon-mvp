@@ -21,7 +21,10 @@ function fakeOrivon (requestIdentity: Orivon['id']['requestIdentity']): Orivon {
     app: {
       manifest: notImplemented('app.manifest'),
       grants: notImplemented('app.grants'),
-      requestGrant: notImplemented('app.requestGrant')
+      requestGrant: notImplemented('app.requestGrant'),
+      onOpenUrl: notImplemented('app.onOpenUrl'),
+      requestSchemeHandler: notImplemented('app.requestSchemeHandler'),
+      isSchemeHandler: notImplemented('app.isSchemeHandler')
     },
     net: {
       connect: notImplemented('net.connect'),

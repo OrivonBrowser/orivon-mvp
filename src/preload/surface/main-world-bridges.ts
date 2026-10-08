@@ -19,7 +19,7 @@
 
 import type { OrivonErrorCode } from '../../contracts/errors.js'
 import type { FileStat, LookupAddress, SecureHandshake, SendRefusal } from '../../contracts/handles.js'
-import type { BindScope, CapabilityRequest, SecureConnectOptions } from '../../contracts/capability-api.js'
+import type { BindScope, CapabilityRequest, SecureConnectOptions } from '../../contracts/index.js'
 import type { ResponseEnvelope } from '../../contracts/ipc.js'
 import type { WebsiteScore } from '../../contracts/trust.js'
 

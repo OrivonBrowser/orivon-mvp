@@ -15,7 +15,7 @@ const MANIFEST: Manifest = {
 
 /** Only the slice of `Orivon` app.ts reads -- see app.ts's own `Pick`. */
 function fakeOrivon (manifest: Manifest = MANIFEST): Pick<Orivon, 'app'> {
-  return { app: { manifest: vi.fn(async () => manifest), grants: vi.fn(async () => []), requestGrant: vi.fn(async () => false) } }
+  return { app: { manifest: vi.fn(async () => manifest), grants: vi.fn(async () => []), requestGrant: vi.fn(async () => false), onOpenUrl: vi.fn(() => () => {}), requestSchemeHandler: vi.fn(async () => false), isSchemeHandler: vi.fn(async () => false) } }
 }
 
 describe('createApp', () => {
