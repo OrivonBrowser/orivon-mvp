@@ -102,6 +102,26 @@ export interface BrokerFs {
    * configured just skips that one check.
    */
   dataRoot?(): string
+  /**
+   * The same raw I/O, blocking, for the page's synchronous `fs` calls
+   * (ADR-0016): one method per async twin above, same already-confined
+   * paths, same raw Node errors for the caller to map. Optional so a test
+   * double that never serves a page's synchronous call is not forced to
+   * invent one; without it every synchronous call fails `unavailable`.
+   */
+  sync?: BrokerFsSync
+}
+
+/** `BrokerFs`'s blocking twins -- see its `sync` member. */
+export interface BrokerFsSync {
+  writeFile(path: string, data: Uint8Array): void
+  mkdir(path: string, opts?: { recursive?: boolean }): void
+  readdir(path: string): readonly string[]
+  stat(path: string): RawFileStat
+  rm(path: string, opts?: { recursive?: boolean }): void
+  rename(from: string, to: string): void
+  /** `BrokerFs.diskUsage`, blocking: the bytes the regular files at or under `path` occupy, symlinks never followed, 0 for nothing there. */
+  diskUsage(path: string): number
 }
 
 /**
@@ -125,6 +145,17 @@ export interface BrokerFsMethods {
    * not.
    */
   confineSync(origin: string, path: string): string
+  /**
+   * The page's synchronous path-based calls (ADR-0016): each one confines
+   * like its async namesake, charges and refunds the SAME per-origin
+   * storage quota, and runs blocking on the main thread -- outside the
+   * in-flight budget, for `confineSync`'s reason. They throw OrivonErrors
+   * for a refusal (`denied`, `limit`, `unavailable`) and RAW Node errors
+   * from the disk, which the caller (`./transport/sync-fs.ts`) maps.
+   * `readFile` is not here: the size-capped read stays in
+   * `./transport/sync-fs-policy.ts` over `confineSync`.
+   */
+  readonly sync: BrokerFsSyncMethods
   /**
    * Confined the same way `readFile`/`writeFile` are (`./capabilities/fs.ts`'s
    * `confineForOrigin`) and run under the same per-origin in-flight budget
@@ -187,6 +218,16 @@ export interface BrokerFsMethods {
    */
   userSelected(origin: string, opts: { directory: true }): Promise<FailableDirectoryHandle | null>
   userSelected(origin: string, opts?: { directory?: false, multiple?: boolean }): Promise<readonly FailableFileHandle[]>
+}
+
+/** `BrokerFsMethods['sync']`: one blocking method per async twin, keyed by origin like them. */
+export interface BrokerFsSyncMethods {
+  writeFile(origin: string, path: string, data: Uint8Array): void
+  mkdir(origin: string, path: string, opts?: { recursive?: boolean }): void
+  readdir(origin: string, path: string): readonly string[]
+  stat(origin: string, path: string): RawFileStat
+  rm(origin: string, path: string, opts?: { recursive?: boolean }): void
+  rename(origin: string, from: string, to: string): void
 }
 
 /**

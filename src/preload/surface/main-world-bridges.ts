@@ -190,16 +190,18 @@ export interface MainWorldBridge {
   fsReadFile: (path: string) => Promise<Uint8Array>
   fsWriteFile: (path: string, data: Uint8Array) => Promise<void>
   /**
-   * ADR-0016's one synchronous call. Returns the raw envelope, NEVER
-   * throws -- a value THROWN by this closure would cross the
+   * ADR-0016's synchronous calls: readFileSync, and the path-based twin the
+   * page's shim reaches under `Symbol.for('orivon.synchronous')`. `op` is one
+   * of `../../broker/transport/sync-fs.ts`'s `SyncFsOp`. Returns the raw
+   * envelope, NEVER throws -- a value THROWN by this closure would cross the
    * contextBridge proxy boundary back into this main-world code stripped
    * of everything but `.message` (found live; see surface/orivon.ts's own
-   * `fsReadFileSyncEnvelope` for the full argument), so the failure shape
+   * `fsSyncEnvelope` for the full argument), so the failure shape
    * is built and thrown by `./main-world-socket.ts`'s own `installOrivon`,
    * entirely inside that already-main-world function, from data that
    * crossed intact instead.
    */
-  fsReadFileSync: (path: string) => ResponseEnvelope<Uint8Array>
+  fsSync: (op: string, args: unknown[]) => ResponseEnvelope<unknown>
   // The extended fs surface (queue item 2.1) -- no main-world stream
   // wrapping needed, exactly like fsReadFile/fsWriteFile above, so these
   // four are plain proxied closures too.

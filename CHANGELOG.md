@@ -22,6 +22,9 @@ public surface of `src/contracts/` (named `contracts/<file>`).
   at `http://localhost:<port>`, `127.0.0.1` or `[::1]` when `<port>` is one its own listener holds, which Node and
   Electron allow and the page's policy refused; every other loopback port stays refused for images and media. Apps
   that run their own HTTP server for their player need no change. Recheck: `webtorrent`.
+- **`page-sync-fs-writes-land`**: the page's `fs.mkdirSync`, `writeFileSync`, `copyFileSync`, `statSync`, `readdirSync`,
+  `renameSync` and `rmSync` now work instead of throwing; `openSync` and its family still refuse on the page. Apps that
+  worked around the refusal: use them directly. Recheck: webtorrent.
 - **`ipfs-url-opens`**: an `ipns://` key now opens the site its signed record names, as an `ipns://` DNSLink name
   already did; nothing changes for apps already published. Apps that keep grants across releases may ship under a key.
   Recheck: none.
