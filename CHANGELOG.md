@@ -18,6 +18,12 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- **`page-shows-own-files-by-url`**: an app that holds `fs` may point `<img>`, a CSS image, `<audio>` and `<video>` at
+  `/orivon/app/<path>` (the virtual root `os.homedir()` and `app.getPath('userData')` name) and at
+  `file:///orivon/app/<path>`, and the browser shows the file `orivon.fs` calls that path, which Electron allows and a web
+  page did not; a path an app joined for its own page needs no change. For an app that holds `fs`, a file its own host
+  serves under `/orivon/app/` is shadowed for images and media. `fetch` and `XMLHttpRequest` of the path are not served:
+  use `orivon.fs`. Recheck: `webtorrent`.
 - **`page-media-from-own-listener`**: an app that holds a `tcp.listen` grant may point `<img>`, `<audio>` and `<video>`
   at `http://localhost:<port>`, `127.0.0.1` or `[::1]` when `<port>` is one its own listener holds, which Node and
   Electron allow and the page's policy refused; every other loopback port stays refused for images and media. Apps

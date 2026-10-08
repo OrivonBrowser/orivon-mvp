@@ -50,6 +50,14 @@ leaves an undeclared name `undefined`; the same `Proxy` as `default` throws corr
 at bundle time, outside `ElectronShimError`. `index.ts`'s curated list closes this for the names
 ported apps use most; naming every real Electron export is not this package's job.
 
+**`file-urls.ts` rewrites `file:///orivon/app/<path>` where a page sets a media or image address.** An Electron
+app builds `'file://' + path` for its own files, and Chromium refuses a `file:` URL on an http(s) page before a
+request leaves. The rewrite turns that address into `/orivon/app/<path>`, which the app's origin answers from its
+files (ADR-0070), through `src` on `<audio>`, `<video>`, `<img>` and `<source>`, `setAttribute('src', ...)` on them
+and `new Audio(url)`. It installs when the `electron` shim loads, because only an Electron port builds such
+URLs; the Node shim has no use for it. Any other `file:` URL is left alone. Markup an app parses and CSS
+`url(file://...)` are not covered: an app that needs them uses the root-absolute path.
+
 **`desktopCapturer` runs Orivon's picker, and serves what the person picked.** `getSources` calls the page's
 `getDisplayMedia` (so the picker, the sharing indicators and the stop control are Orivon's, never the app's), keeps
 the stream under an id `orivon-shared:<random>` and resolves that one source: the person chose it, so there is no

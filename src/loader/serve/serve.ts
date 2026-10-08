@@ -34,6 +34,7 @@ import { entryCanonicalPath } from '../fetch/bundle.js'
 import { parseManifest } from '../manifest/manifest.js'
 import type { PinCoverageOutcome } from './pin-coverage.js'
 import { buildResponse, openServable } from './asset.js'
+import type { CspOptions } from './csp.js'
 import type { RetainedVerdicts } from './asset.js'
 import { isCorsPreflight, preflightResponse, withReachCors } from '../reach/cors.js'
 import { guardReachResponse } from '../reach/guard.js'
@@ -73,8 +74,11 @@ export type GrantedConnectPatterns = () => Promise<readonly Pattern[]>
  */
 export type GrantedSecurePatterns = () => Promise<readonly Pattern[]>
 
-/** Whether the app holds a live `tcp.listen` grant, which its CSP answers with loopback media sources (ADR-0069). */
-export type GrantsOwnListener = () => Promise<boolean>
+/**
+ * The two grant-derived widenings of an app's `img-src` and `media-src`: loopback media for a live
+ * `tcp.listen` grant (ADR-0069), the app-file scheme for a live `fs` grant (ADR-0070).
+ */
+export type GrantedMediaSources = () => Promise<Pick<CspOptions, 'ownListenerMedia' | 'appFiles'>>
 
 /**
  * THE live authorisation gate for a third-party request -- the only thing
@@ -346,7 +350,7 @@ export async function createAppRequestHandler (
    * function had resolved it directly.
    */
   preResolved?: VerifiedBundleResult,
-  grantsOwnListener?: GrantsOwnListener
+  grantedMediaSources?: GrantedMediaSources
 ): Promise<AppRequestHandler> {
   const resolved = preResolved ?? await resolveVerifiedBundle(storage, origin)
   if (!resolved.ok) {
@@ -388,8 +392,8 @@ export async function createAppRequestHandler (
 
     const connectPatterns = grantedConnectPatterns === undefined ? [] : await grantedConnectPatterns()
     const securePatterns = grantedSecurePatterns === undefined ? [] : await grantedSecurePatterns()
-    const ownListenerMedia = grantsOwnListener === undefined ? false : await grantsOwnListener()
-    const response = buildResponse(servable.file, request, connectPatterns, securePatterns, manifest.crossOriginIsolated === true, ownListenerMedia)
+    const mediaSources = grantedMediaSources === undefined ? {} : await grantedMediaSources()
+    const response = buildResponse(servable.file, request, connectPatterns, securePatterns, manifest.crossOriginIsolated === true, mediaSources)
     // A175: record what was actually SENT -- a Range request serves only a
     // slice, and a 416 serves no body at all, a KNOWN zero rather than a size
     // that could not be measured (pin-coverage.ts's `bytesIncomplete`).

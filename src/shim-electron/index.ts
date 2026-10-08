@@ -14,6 +14,8 @@
 import { createApp } from './app.js'
 import { createDesktopCapturer, type LegacyNavigator } from './desktop-capturer.js'
 import { createDialog } from './dialog.js'
+import { installFileUrlRewrite } from './file-urls.js'
+import type { FileUrlScope } from './file-urls.js'
 import { createIpc } from './ipc.js'
 import { createSafeStorage } from './safe-storage.js'
 import { BrowserWindow, Menu, Tray } from './desktop-shell.js'
@@ -42,6 +44,9 @@ export function getOrivon (): Orivon {
 }
 
 const orivon = getOrivon()
+
+// A ported app builds `file://` URLs to its own files (ADR-0070); see file-urls.ts.
+installFileUrlRewrite(globalThis as FileUrlScope)
 
 export const app = createApp(orivon)
 export const dialog = createDialog(orivon)
