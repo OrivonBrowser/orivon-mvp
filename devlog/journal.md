@@ -72,6 +72,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 
 ### In my head
 
+- Re-aligned the whole repo with today's Orivon: early-access product, two equal pillars, roadmap replaces scope, 54 open questions closed.
 - AI runs were slow from process, not code: a fast lane for small changes, related-only local tests, and a session time report.
 - Asking for telemetry with a forced choice, not a pre-ticked box: legal in Europe, and people say yes almost as often.
 
