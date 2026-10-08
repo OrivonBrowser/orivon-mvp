@@ -42,11 +42,11 @@ describe('smokeResult', () => {
 })
 
 describe('logHighlights', () => {
-  it('keeps errors and failed specs with the timestamps stripped', () => {
+  it('keeps errors and failed specs with the timestamps and colours stripped', () => {
     const log = [
       '2026-10-08T10:00:00.1234567Z Run npm ci',
       '2026-10-08T10:00:01.1234567Z ##[error]Process completed with exit code 1.',
-      '2026-10-08T10:00:02.1234567Z  FAIL  test/qa/e2e-qa-visual.test.ts > states',
+      '2026-10-08T10:00:02.1234567Z \u001b[41m\u001b[1m FAIL \u001b[22m\u001b[49m test/qa/e2e-qa-visual.test.ts > states',
       '2026-10-08T10:00:03.1234567Z   - the tab strip rendered -- no tab found'
     ].join('\n')
     expect(logHighlights(log)).toEqual([

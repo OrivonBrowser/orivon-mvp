@@ -65,8 +65,9 @@ jobs:
     defaults:
       run:
         shell: bash
+    # A pull request changes the install or the launch, so it runs install and smoke only.
     env:
-      SPECS: ${{ inputs.specs || 'test/qa/e2e-qa-visual.test.ts' }}
+      SPECS: ${{ github.event_name == 'pull_request' && 'none' || inputs.specs || 'test/qa/e2e-qa-visual.test.ts' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:

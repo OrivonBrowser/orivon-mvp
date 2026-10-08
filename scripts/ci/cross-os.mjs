@@ -63,10 +63,10 @@ export function smokeResult (stdout) {
   try { return JSON.parse(lines.slice(start, end + 1).join('\n')) } catch { return undefined }
 }
 
-/** Lines of a job log worth reading first: errors and failed specs, timestamps stripped, at most `max`. */
+/** Lines of a job log worth reading first: errors and failed specs, timestamps and colours stripped, at most `max`. */
 export function logHighlights (log, max = LOG_LINES) {
   return log.split(/\r?\n/)
-    .map((line) => line.replace(/^\d{4}-\d\d-\d\dT[\d:.]+Z ?/, ''))
+    .map((line) => line.replace(/^\d{4}-\d\d-\d\dT[\d:.]+Z ?/, '').replace(/\x1b\[[\d;]*m/g, ''))
     .filter((line) => /##\[error\]| FAIL |\bFAILED\b|Smoke check FAILED|^\s+- .+ -- /.test(line))
     .slice(0, max)
 }

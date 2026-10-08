@@ -40,7 +40,7 @@ changes enough that shards drift well apart.
 the way a person on that system runs it: `npm ci`, whose `postinstall` runs the Rule 8 guard over that system's own
 dependency tree, the build `npm start` makes, `smoke`, then e2e specs, by default the QA
 states spec, which saves a screenshot of every state it reaches. It runs every night on `main`, on a pull request that
-changes the install, the launch scripts, `package.json` or `src/main/os/`, and on demand:
+changes the install, the launch scripts, `package.json` or `src/main/os/` (install and `smoke` only), and on demand:
 
 ```bash
 git push                                         # the runners test the branch as it is on GitHub
@@ -51,7 +51,7 @@ node scripts/ci/cross-os.mjs --packaged          # release.yml: build, install a
 node scripts/ci/cross-os.mjs --run latest        # read main's last nightly run, start nothing
 ```
 
-It polls quietly, so it can run in the background, and takes 15 to 25 minutes. The summary names each failed step
+It polls quietly, so it can run in the background; a run takes about five minutes. The summary names each failed step
 and smoke check; the evidence lands in `qa-artifacts/cross-os/<run id>/<system>/`: `smoke.out`, `install.log`, the
 failed job's `job.log`, and `qa-artifacts/latest/` with the screenshots and `inspect.md`, read as the `orivon-qa`
 skill says. Pixel baselines are never compared there (`CI=true`): read the screenshots, do not diff them.
