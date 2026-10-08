@@ -7,6 +7,7 @@ import { canonicalAssetPath } from '../../broker/policy/canonical-path.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { fetchWithBudget, rejected } from './budget.js'
 import type { ByteBudget, Fetch, FetchBundleRejected } from './budget.js'
+import { retryTransient } from './retry.js'
 import { leafOf } from '../leaf-hash.js'
 import type { LoaderStorage } from '../cache/storage.js'
 
@@ -34,6 +35,8 @@ export interface AssetFetchContext {
   readonly budget: ByteBudget
   readonly assetCap: number
   readonly bundleSignal: AbortSignal
+  /** Pauses between attempts at one asset. */
+  readonly retryBackoffMs: readonly number[]
 }
 
 /**
@@ -89,6 +92,10 @@ function servedAsHtml (path: string, contentType: string | null, head: Uint8Arra
  * `Fetch`'s own doc).
  */
 export async function fetchAssetToStaging (ctx: AssetFetchContext, assetPath: string): Promise<StagedAsset | FetchBundleRejected> {
+  return await retryTransient(async () => await fetchAssetOnce(ctx, assetPath), ctx.retryBackoffMs, ctx.bundleSignal)
+}
+
+async function fetchAssetOnce (ctx: AssetFetchContext, assetPath: string): Promise<StagedAsset | FetchBundleRejected> {
   const assetUrl = resolveUrl(assetPath, `${ctx.canonicalOrigin}/`)
   if (assetUrl === null) return rejected(`asset path is not a valid URL: ${assetPath}`)
   const requestedOrigin = originFromUrl(assetUrl)

@@ -24,6 +24,7 @@ import { isOrivonErrorLike } from '../../broker/errors.js'
 import { MAX_MANIFEST_BYTES, describeValue, parseManifest } from '../manifest/manifest.js'
 import { BUNDLE_TIMEOUT_MS, ByteBudget, NOT_MODIFIED, fetchWithBudget, joinChunks, raceAbort, rejected } from './budget.js'
 import type { Fetch, FetchBundleRejected } from './budget.js'
+import { RETRY_BACKOFF_MS, retryTransient } from './retry.js'
 import { FETCH_CONCURRENCY, fetchAssetToStaging, forEachBounded, resolveUrl, stageBytes } from './asset.js'
 import type { StagedAsset } from './asset.js'
 import { fetchDdocDeclaration } from '../ddoc-declaration.js'
@@ -67,6 +68,8 @@ export type FetchBundleResult = FetchBundleOk | FetchBundleRejected | FetchBundl
 export interface FetchLimits {
   readonly assetBytes: number
   readonly bundleBytes: number
+  /** Pauses between attempts at a file that met a transient fault; RETRY_BACKOFF_MS when absent. */
+  readonly retryBackoffMs?: readonly number[]
 }
 
 const DEFAULT_LIMITS: FetchLimits = { assetBytes: MAX_ASSET_BYTES, bundleBytes: MAX_BUNDLE_BYTES }
@@ -96,15 +99,19 @@ async function fetchManifest (
   storage: LoaderStorage,
   budget: ByteBudget,
   bundleSignal: AbortSignal,
-  validators: ManifestValidators | undefined
+  validators: ManifestValidators | undefined,
+  retryBackoffMs: readonly number[]
 ): Promise<{ readonly manifest: Manifest, readonly staged: StagedAsset, readonly validators: ManifestValidators | undefined } | FetchBundleRejected | FetchBundleNotModified> {
   // Always exactly `<origin>${MANIFEST_PATH}` (capability-api.md "How a URL
   // becomes an app"), never a path component of `hintedUrl`: bundleTree()
   // rejects any bundle with no leaf at that literal path anyway.
   const manifestUrl = `${canonicalOrigin}${MANIFEST_PATH}`
-  const chunks: Uint8Array[] = []
-  const fetched = await fetchWithBudget(fetchFn, manifestUrl, pinnedAddresses, MAX_MANIFEST_BYTES, budget, 'manifest', bundleSignal,
-    async (chunk) => { chunks.push(chunk) }, validators === undefined ? undefined : conditionalHeaders(validators))
+  let chunks: Uint8Array[] = []
+  const fetched = await retryTransient(async () => {
+    chunks = []
+    return await fetchWithBudget(fetchFn, manifestUrl, pinnedAddresses, MAX_MANIFEST_BYTES, budget, 'manifest', bundleSignal,
+      async (chunk) => { chunks.push(chunk) }, validators === undefined ? undefined : conditionalHeaders(validators))
+  }, retryBackoffMs, bundleSignal)
   if ('ok' in fetched) return fetched
   if (validators !== undefined && fetched.response.status === NOT_MODIFIED) {
     return { ok: false, notModified: true, reason: `the manifest for ${canonicalOrigin} is unchanged since the last check` }
@@ -212,7 +219,7 @@ async function fetchStaged (
   // SAME validated literals, never a fresh, unguarded re-resolution.
   const pinnedAddresses = originResult.addresses
   const budget = new ByteBudget(limits.bundleBytes)
-  const fetchedManifest = await fetchManifest(fetchFn, canonicalOrigin, pinnedAddresses, storage, budget, bundleController.signal, validators)
+  const fetchedManifest = await fetchManifest(fetchFn, canonicalOrigin, pinnedAddresses, storage, budget, bundleController.signal, validators, limits.retryBackoffMs ?? RETRY_BACKOFF_MS)
   if ('ok' in fetchedManifest) return fetchedManifest
   const { manifest } = fetchedManifest
 
@@ -226,7 +233,7 @@ async function fetchStaged (
 
   const declaration = await fetchDdocDeclaration(fetchFn, canonicalOrigin, pinnedAddresses, budget, bundleController.signal)
 
-  const context = { fetchFn, canonicalOrigin, pinnedAddresses, storage, budget, assetCap: limits.assetBytes, bundleSignal: bundleController.signal }
+  const context = { fetchFn, canonicalOrigin, pinnedAddresses, storage, budget, assetCap: limits.assetBytes, bundleSignal: bundleController.signal, retryBackoffMs: limits.retryBackoffMs ?? RETRY_BACKOFF_MS }
   const assets = await forEachBounded(assetPaths, FETCH_CONCURRENCY, async (path) => await fetchAssetToStaging(context, path), () => { bundleController.abort() })
   if (!Array.isArray(assets)) return assets
   const entries = [fetchedManifest.staged, ...assets]
