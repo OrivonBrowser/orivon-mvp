@@ -18,6 +18,12 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- **`page-shows-own-files-by-url`**: an app that holds `fs` may point `<img>`, a CSS image, `<audio>` and `<video>` at
+  `/orivon/app/<path>` (the virtual root `os.homedir()` and `app.getPath('userData')` name) and at
+  `file:///orivon/app/<path>`, and the browser shows the file `orivon.fs` calls that path, which Electron allows and a web
+  page did not; a path an app joined for its own page needs no change. For an app that holds `fs`, a file its own host
+  serves under `/orivon/app/` is shadowed for images and media. `fetch` and `XMLHttpRequest` of the path are not served:
+  use `orivon.fs`. Recheck: `webtorrent`.
 - **`media-element-track-lists`**: an app's tab now gives every `<audio>` and `<video>` element the standard `audioTracks`
   and `videoTracks` lists, which Electron apps get from `enableBlinkFeatures: 'AudioVideoTracks'` in their window; an
   ordinary site's tab is unchanged. A player that guarded or polyfilled the lists: read them directly. Recheck: webtorrent.

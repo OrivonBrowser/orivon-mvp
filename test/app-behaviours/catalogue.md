@@ -49,6 +49,10 @@ Ports are named only where the compatibility pages already name them.
 | `local-listener-accepts-connections` | An app granted a local listener port accepts connections on `127.0.0.1` from other programs | apps that embed a server | The Lounge | [`e2e-http-server`](../node-runtime/e2e-http-server.test.ts) |
 | `second-listener-gets-eaddrinuse` | Listening on a port another program holds fails with `EADDRINUSE` | apps that detect a running copy of themselves | The Lounge | [`e2e-app-broker-rules`](./e2e-app-broker-rules.test.ts) |
 | `page-media-from-own-listener` | An app that holds a `tcp.listen` grant plays `<audio>` and `<video>` and shows `<img>` from `http://localhost` or `http://127.0.0.1` on a port its own listener holds, and a request from the same page to any other loopback port is cancelled before it connects; a page with no listen grant loads loopback images as before | apps that serve media to their own player | WebTorrent | [`e2e-app-own-listener-media`](e2e-app-own-listener-media.test.ts) |
+| `udp-bind-picks-granted-port` | A `dgram` socket bound with no address and port 0 gets a port inside the granted `udp.bind` range, on every interface under a `udp.bind.network` grant and on loopback only under a `udp.bind.local` grant | apps with a DHT or UDP trackers | WebTorrent | [`e2e-app-network-sockets`](e2e-app-network-sockets.test.ts) |
+| `udp-send-reaches-granted-peer` | A datagram sent to a `host:port` the `udp.send` grant names arrives, and the peer's reply is a `message` event on the same socket with that peer's address and port | apps with a DHT or UDP trackers | WebTorrent | [`e2e-app-network-sockets`](e2e-app-network-sockets.test.ts) |
+| `udp-send-outside-grant-is-dropped` | A datagram to a host and port the `udp.send` grant does not name, `*:*` included for a loopback address, reaches nobody: the `dgram` send still calls back without an error, the socket keeps working, and `orivon.net.udpBind` reports the refusal as `denied` on `refusals` | apps whose peer lists name addresses outside the grant | WebTorrent | [`e2e-app-network-sockets`](e2e-app-network-sockets.test.ts) |
+| `tcp-listen-any-interface-accepts-connections` | `net.createServer().listen(0)` with no host, under a `tcp.listen.network` grant, listens on every interface at a port inside the granted range and accepts a connection from another program | apps that accept peers | WebTorrent | [`e2e-app-network-sockets`](e2e-app-network-sockets.test.ts) |
 
 ## Files and stored data
 
@@ -60,6 +64,7 @@ Ports are named only where the compatibility pages already name them.
 | `atomic-write-by-rename` | Writing a temporary file and renaming it over an existing one leaves the new contents | libraries that save atomically | The Lounge | [`e2e-app-state-restart`](./e2e-app-state-restart.test.ts) |
 | `node-fs-writes-land-at-app-root` | Node-shaped `fs` calls, from the page, a forked child or a worker, write into the app's files and read back | ported Node programs | FreeTube, The Lounge | [`e2e-child-process`](../node-runtime/e2e-child-process.test.ts), [`e2e-sqlite`](../node-runtime/e2e-sqlite.test.ts) |
 | `page-sync-fs-writes-land` | The page can call Node's synchronous path-based `fs` (`mkdirSync`, `writeFileSync`, `copyFileSync`, `statSync`, `readdirSync`, `renameSync`, `readFileSync`, `rmSync`): what they write is what `orivon.fs` and `fs.promises` read back, a write past the declared quota is refused as `limit`, and a call that holds a file handle (`openSync`) is refused by name | ported Node programs that run Node in their window | WebTorrent | [`e2e-page-sync-fs`](../node-runtime/e2e-page-sync-fs.test.ts) |
+| `page-shows-own-files-by-url` | An app that holds `fs` shows its own files by URL: an `<img>`, a CSS image, an `<audio>` or a `<video>` loads `/orivon/app/<path>` from the files the app wrote, and a `file:///orivon/app/<path>` address set through `src`, `setAttribute('src', ...)`, `<source>` or `new Audio(url)` loads the same file; another origin's page, a page with no `fs` grant, a path that leaves the root (by `..` or a symlink) and a `file:` URL outside the root show nothing | ported Electron apps that show their own posters, sounds and icons from a path | WebTorrent | [`e2e-app-files-by-url`](./e2e-app-files-by-url.test.ts) |
 | `indexeddb-survives-restart` | Data an app writes to IndexedDB is there after the browser restarts on the same profile | web apps with local databases | Element, FreeTube | [`e2e-app-state-restart`](./e2e-app-state-restart.test.ts) |
 | `localstorage-survives-restart` | `localStorage` values survive a restart | web apps with settings | Element, AirGap Vault | [`e2e-app-state-restart`](./e2e-app-state-restart.test.ts) |
 | `non-extractable-cryptokey-survives-restart` | A non-extractable `CryptoKey` stored in IndexedDB still decrypts after a restart | apps that wrap secrets with a stored key | Element | [`e2e-app-state-restart`](./e2e-app-state-restart.test.ts) |
@@ -127,12 +132,12 @@ has a line, so a capability cannot land without that decision.
 |---|---|
 | `tcp.connect` | `tcp-connect-to-granted-loopback-port`, `wildcard-host-never-reaches-loopback`, `reserved-port-needs-exact-pattern`, `concurrent-sockets-limit-holds` |
 | `tcp.listen.local` | `local-listener-accepts-connections`, `second-listener-gets-eaddrinuse`, `page-media-from-own-listener` |
-| `tcp.listen.network` | not covered: a network-scope listener is reachable from the local network, and the end-to-end suite is loopback only |
-| `udp.bind.local` | not covered: no ported app relies on UDP yet; `e2e-udp-capability` proves the capability itself, and a row is added when a port needs it |
-| `udp.bind.network` | not covered: as `udp.bind.local`, and reachable from the local network |
-| `udp.send` | not covered: as `udp.bind.local` |
+| `tcp.listen.network` | `tcp-listen-any-interface-accepts-connections`; not covered: that a listener on every interface is reached from another machine, since the end-to-end suite is loopback only (the spec reads the bound address `0.0.0.0` instead) |
+| `udp.bind.local` | `udp-bind-picks-granted-port`, `udp-send-reaches-granted-peer` |
+| `udp.bind.network` | `udp-bind-picks-granted-port`, `udp-send-reaches-granted-peer`, `udp-send-outside-grant-is-dropped`; not covered: that the socket is reached from another machine, since the end-to-end suite is loopback only (the spec reads the bound address `0.0.0.0` instead) |
+| `udp.send` | `udp-send-reaches-granted-peer`, `udp-send-outside-grant-is-dropped` |
 | `https.connect` | `routed-fetch-reaches-granted-hosts`, `tls-self-signed-refused-unless-opted-out` |
-| `fs` | `fs-confined-to-app-root`, `fs-quota-refuses-past-limit`, `app-files-survive-restart`, `atomic-write-by-rename`, `node-fs-writes-land-at-app-root`, `page-sync-fs-writes-land`, `local-file-grant` |
+| `fs` | `fs-confined-to-app-root`, `fs-quota-refuses-past-limit`, `app-files-survive-restart`, `atomic-write-by-rename`, `node-fs-writes-land-at-app-root`, `page-sync-fs-writes-land`, `page-shows-own-files-by-url`, `local-file-grant` |
 | `id` | not covered: no ported app uses `orivon.id` yet; `e2e-id-capability` proves the capability itself |
 | `web.context` | `web-context-open-evaluate-close` |
 | `web.embed` | `webview-shows-local-pattern`, `webview-popup-reaches-the-app` |
