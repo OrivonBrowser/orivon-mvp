@@ -292,7 +292,9 @@ orivon.app.grants()                  // => Grant[]  (what was actually granted)
 orivon.app.requestGrant(cap)         // => Promise<boolean>  (may prompt the user)
 
 // --- net ---
-orivon.net.connect({ host, port })       // => Promise<TcpSocket>
+orivon.net.connect({ host, port, signal? }) // => Promise<TcpSocket>
+                                          //   aborting `signal` before it settles abandons the
+                                          //   dial and rejects 'closed' (ADR-0071); connectSecure too
 orivon.net.connectSecure({ host, port, ...tls }) // => Promise<SecureTcpSocket>  TLS terminated
                                           //   in the broker (ADR-0017) under the app's own
                                           //   Node TLS options; connect()'s handle plus the

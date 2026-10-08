@@ -74,6 +74,7 @@ export type {
   WebContextOptions,
   OrivonSecrets,
   CapabilityRequest,
+  ConnectOptions,
   SecureConnectOptions,
   BindScope
 } from './capability-api.js'
