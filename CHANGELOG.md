@@ -38,6 +38,9 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **USB HID devices for apps and websites** (`devices.hid`): an app that declares the vendors it talks to uses `navigator.hid`, and the
+  person approves each device, in a chooser or in a question in the tab; a website gets the chooser. Approved devices are listed in
+  Settings with Forget, and "USB and HID devices" joins the site settings. WebUSB and Web Serial stay refused (ADR-0068).
 - **Docs: a features list and a roadmap** replace the scope page and the build plan; the README leads with a browser built for owning and a platform for apps Chrome cannot run.
 - **A new profile starts with something in it**: five bookmarks in the bar, uBlock Origin installed and pinned to the toolbar, the Extensions
   button shown, and "Orivon Featured" (Explore, The Lounge, FreeTube, ASGARDEX, Element) on the new tab in place of the Torrent and Nostr tiles. The Web3 Score

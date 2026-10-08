@@ -6,11 +6,8 @@ import { expect } from 'vitest'
 import { overlayShown, safely, waitOverlay } from '../support/auth-support.js'
 import { waitFor } from '../support/smoke-helpers.mjs'
 
-/** Records into `window.__r`: `req` (what the last requestDevice settled to) and `events` (each `connect`/`disconnect` the page heard). */
-export const HID_PAGE = `<!doctype html><title>hid</title><body style="font:16px sans-serif">
-<button id="req">request</button>
-<script>
-window.__r = { req: null, events: [] }
+/** The page's script, served as its own file: an app origin's policy does not run inline script. Records into `window.__r`: `req` (what the last requestDevice settled to) and `events` (each `connect`/`disconnect` the page heard). */
+export const HID_SCRIPT = `window.__r = { req: null, events: [] }
 window.__filters = [{ vendorId: 0x1209 }]
 const describeDevice = (device) => device === null ? null : { vendorId: device.vendorId, productId: device.productId, productName: device.productName }
 if (navigator.hid) {
@@ -41,7 +38,17 @@ document.getElementById('req').addEventListener('click', async () => {
     window.__r.req = 'ERR:' + error.name
   }
 })
-</script></body>`
+`
+
+export const HID_PAGE = `<!doctype html><title>hid</title><body style="font:16px sans-serif">
+<button id="req">request</button>
+<script src="/hid-page.js"></script></body>`
+
+/** The routes a spec's server needs to serve the page. */
+export const HID_ROUTES = {
+  '/': { type: 'text/html; charset=utf-8', body: HID_PAGE },
+  '/hid-page.js': { type: 'text/javascript', body: HID_SCRIPT }
+}
 
 /** The settled result of the last `requestDevice` click, once it is not pending. */
 export async function requestResult (view: Page): Promise<string> {
@@ -53,7 +60,7 @@ export async function requestResult (view: Page): Promise<string> {
   return result
 }
 
-export const clickRequest = async (view: Page): Promise<void> => { await view.click('#req') }
+export const clickRequest = async (view: Page): Promise<void> => { await view.click('#req', { noWaitAfter: true, timeout: 15_000 }) }
 
 /** What `navigator.hid.getDevices()` lists now, as product names. */
 export async function listedDevices (view: Page): Promise<string[]> {
@@ -73,8 +80,9 @@ export async function waitChooser (app: ElectronApplication): Promise<Page> {
   return sheet
 }
 
+/** The first button of the sheet: Cancel, or Close when the list is empty. */
 export async function cancelChooser (sheet: Page): Promise<void> {
-  await safely(sheet.click('button:has-text("Cancel")'))
+  await safely(sheet.locator('.btn-row .btn').first().click())
 }
 
 export async function chooserShown (app: ElectronApplication): Promise<boolean> {

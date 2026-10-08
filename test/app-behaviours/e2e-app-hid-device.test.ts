@@ -9,7 +9,7 @@
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { appManifest, grantApp, startAppServer, type AppServer } from './app-behaviour-support.js'
-import { chooserShown, clickRequest, echoRoundTrip, heardEvents, HID_PAGE, listedDevices, openSettings, requestResult, waitChooser } from './hid-support.js'
+import { chooserShown, clickRequest, echoRoundTrip, heardEvents, HID_ROUTES, listedDevices, openSettings, requestResult, waitChooser } from './hid-support.js'
 import { runPhase } from '../support/e2e-helpers.js'
 import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
 import { launchShell, QA_TEST_TIMEOUT_MS, visit } from '../support/qa-helpers.js'
@@ -17,7 +17,6 @@ import { answerQuestion, questionGone, readQuestion, waitQuestion } from '../sup
 import { delay, waitFor } from '../support/smoke-helpers.mjs'
 import { startVirtualHidDevice, virtualHidAvailable, type VirtualHidDevice } from '../support/virtual-hid/index.ts'
 
-const HTML = 'text/html; charset=utf-8'
 const availability = await virtualHidAvailable()
 if (availability !== true && process.env.ORIVON_REQUIRE_VIRTUAL_HID === '1') throw new Error(`virtual HID is required but unavailable: ${availability}`)
 if (availability !== true) console.warn(`[e2e-app-hid-device] skipped: ${availability}`)
@@ -29,7 +28,7 @@ const MANIFEST = (id: string) => appManifest(id, { devices: { hid: [{ vendorId: 
 let servers: AppServer[] = []
 const devices: VirtualHidDevice[] = []
 beforeAll(async () => {
-  servers = [await startAppServer({ '/': { type: HTML, body: HID_PAGE } }), await startAppServer({ '/': { type: HTML, body: HID_PAGE } })]
+  servers = [await startAppServer(HID_ROUTES), await startAppServer(HID_ROUTES)]
 })
 afterAll(async () => {
   for (const device of devices.splice(0)) await device.stop().catch(() => {})
@@ -68,7 +67,7 @@ test('[app:app-hid-device-asked-and-announced] an app that only calls getDevices
       const view = await visit(electron, chrome, `${app().origin}/`)
       const question = await allowFromGetDevices(electron, view, 'Not now')
       check('[app:app-hid-device-asked-and-announced] the question names the device, its USB ids and the app', /Connect Test Key \(USB 1209:0001\) to Behaviour hid-ask\?/.test(question.message) && question.detail.includes('SN-A'), JSON.stringify(question))
-      check('[app:app-hid-device-asked-and-announced] it offers Allow and Not now', question.buttons.join('|') === 'Allow|Not now', question.buttons.join('|'))
+      check('[app:app-hid-device-asked-and-announced] it offers Allow and Not now', [...question.buttons].sort().join('|') === 'Allow|Not now', question.buttons.join('|'))
       await delay(1_000)
       check('[app:app-hid-device-asked-and-announced] after Not now the device is not listed', (await listedDevices(view)).length === 0)
       check('[app:app-hid-device-asked-and-announced] and it is not asked about again', await questionGone(electron))

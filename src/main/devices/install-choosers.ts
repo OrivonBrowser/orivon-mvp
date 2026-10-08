@@ -45,7 +45,7 @@ export const installChoosers: ShellInstaller = {
       approve: (origin, device) => { approvals.approve(origin, device) },
       decline: (origin, device) => { gate.decline(origin, device) },
       announce: (origin, devices) => {
-        const triples = devices.map((device) => [device.vendorId, device.productId, device.serialNumber ?? ''])
+        const triples = devices.map((device) => [device.vendorId, device.productId, device.name ?? ''])
         for (const tab of services.windows.liveTabsOn(origin)) {
           if (!tab.isDestroyed()) tab.mainFrame.send(HID_ANNOUNCE_CHANNEL, { devices: triples })
         }

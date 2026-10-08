@@ -211,5 +211,5 @@ export const DISPLAY_CAPTURE_CHANNEL = 'orivon-display-capture:report'
 /** Main -> a tab's top frame: `{ nonce }`, stop every track handed out for that share and tell the page they ended. */
 export const DISPLAY_CAPTURE_STOP_CHANNEL = 'orivon-display-capture:stop'
 
-/** Main -> a tab's top frame: `{ devices: Array<[vendorId, productId, serialNumber]> }`, the USB HID devices the person just allowed for this page; the tab preload tells the page's `navigator.hid` each one has connected (src/preload/hid-announce.ts). */
+/** Main -> a tab's top frame: `{ devices: Array<[vendorId, productId, productName]> }`, the USB HID devices the person just allowed for this page; the tab preload tells the page's `navigator.hid` each one has connected (src/preload/hid-announce.ts). */
 export const HID_ANNOUNCE_CHANNEL = 'orivon-hid:announce'

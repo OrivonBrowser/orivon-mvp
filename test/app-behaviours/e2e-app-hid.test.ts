@@ -7,21 +7,20 @@
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { appManifest, grantApp, startAppServer, type AppServer } from './app-behaviour-support.js'
-import { cancelChooser, chooserShown, clickRequest, HID_PAGE, listedDevices, requestResult, waitChooser } from './hid-support.js'
+import { cancelChooser, chooserShown, clickRequest, HID_ROUTES, listedDevices, requestResult, waitChooser } from './hid-support.js'
 import { runPhase } from '../support/e2e-helpers.js'
 import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
 import { launchShell, QA_TEST_TIMEOUT_MS, visit } from '../support/qa-helpers.js'
 import { delay, waitFor } from '../support/smoke-helpers.mjs'
 
-const HTML = 'text/html; charset=utf-8'
 
 let undeclared: AppServer
 let declared: AppServer
 let website: AppServer
 beforeAll(async () => {
-  undeclared = await startAppServer({ '/': { type: HTML, body: HID_PAGE } })
-  declared = await startAppServer({ '/': { type: HTML, body: HID_PAGE } })
-  website = await startAppServer({ '/': { type: HTML, body: HID_PAGE } })
+  undeclared = await startAppServer(HID_ROUTES)
+  declared = await startAppServer(HID_ROUTES)
+  website = await startAppServer(HID_ROUTES)
 })
 afterAll(async () => {
   await undeclared.close()

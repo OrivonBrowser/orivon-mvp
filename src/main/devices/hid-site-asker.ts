@@ -16,11 +16,15 @@ export function createHidSiteAsker (deps: HidSiteAskerDeps): SiteAsker {
     name: 'hid',
     check (contents, permission, requestingOrigin, details) {
       if (permission !== 'hid') return undefined
-      if (contents === null || !deps.isTab(contents)) return false
-      if ((details as { isMainFrame?: unknown } | undefined)?.isMainFrame === false) return false
       const origin = originFromUrl(requestingOrigin)
+      if (origin === null) return false
+      // Electron asks whether `requestDevice` may open a chooser at all with no page attached (measured), so that
+      // question is answered from the origin alone; which devices, and which frame, the other gates decide.
+      if (contents === null) return deps.mayUse(origin)
+      if (!deps.isTab(contents)) return false
+      if ((details as { isMainFrame?: unknown } | undefined)?.isMainFrame === false) return false
       // The check is about the page the person is looking at: a frame or a stale document cannot borrow its answer.
-      if (origin === null || origin !== originFromUrl(deps.urlOf(contents))) return false
+      if (origin !== originFromUrl(deps.urlOf(contents))) return false
       return deps.mayUse(origin)
     }
   }

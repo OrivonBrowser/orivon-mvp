@@ -29,10 +29,15 @@ describe('createHidSiteAsker', () => {
 
   it('refuses a frame inside the page, a page that is not a tab, and a request for another origin than the tab\'s', () => {
     expect(setup(() => true)('hid', APP, { isMainFrame: false })).toBe(false)
-    expect(setup(() => true)('hid', APP, { isMainFrame: true }, null)).toBe(false)
     expect(setup(() => true, { isTab: false })('hid')).toBe(false)
     expect(setup(() => true)('hid', 'https://evil.example')).toBe(false)
     expect(setup(() => true, { tabUrl: 'about:blank' })('hid')).toBe(false)
+  })
+
+  it('answers a check with no page attached from the origin alone, as Electron asks before a chooser', () => {
+    expect(setup((origin) => origin === APP)('hid', APP, {}, null)).toBe(true)
+    expect(setup((origin) => origin === APP)('hid', 'https://evil.example', {}, null)).toBe(false)
+    expect(setup(() => true)('hid', 'not a url', {}, null)).toBe(false)
   })
 
   it('has no say in a permission request, because WebHID asks through the device handler', () => {

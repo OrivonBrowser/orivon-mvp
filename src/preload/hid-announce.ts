@@ -7,7 +7,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { HID_ANNOUNCE_CHANNEL } from '../main/channels.js'
 import { inMainFrame } from './frame.js'
 
-/** `[vendorId, productId, serialNumber]` of each device to announce. */
+/** `[vendorId, productId, productName]` of each device to announce: WebHID shows a page no serial number. */
 type DeviceTriple = readonly [number, number, string]
 
 /**
@@ -16,14 +16,20 @@ type DeviceTriple = readonly [number, number, string]
  * person's approval.
  */
 function announceInMainWorld (triples: readonly DeviceTriple[]): void {
-  const hid = (navigator as unknown as { hid?: EventTarget & { getDevices: () => Promise<Array<{ vendorId: number, productId: number, serialNumber?: string }>> } }).hid
+  const hid = (navigator as unknown as { hid?: EventTarget & { getDevices: () => Promise<Array<{ vendorId: number, productId: number, productName?: string }>> } }).hid
   const EventType = (globalThis as unknown as { HIDConnectionEvent?: new (type: string, init: object) => Event }).HIDConnectionEvent
   if (hid === undefined || EventType === undefined) return
+  // A device object is announced once: the page's `getDevices()` hands back the same object for the same device.
+  const marker = Symbol.for('orivon.hid.announced')
+  const holder = hid as unknown as Record<symbol, WeakSet<object> | undefined>
+  const announced = holder[marker] ?? new WeakSet<object>()
+  Object.defineProperty(hid, marker, { value: announced, configurable: true })
   void hid.getDevices().then((devices) => {
     for (const device of devices) {
-      const wanted = triples.some(([vendorId, productId, serial]) =>
-        device.vendorId === vendorId && device.productId === productId && (device.serialNumber ?? '') === serial)
-      if (!wanted) continue
+      const wanted = triples.some(([vendorId, productId, name]) =>
+        device.vendorId === vendorId && device.productId === productId && (device.productName ?? '') === name)
+      if (!wanted || announced.has(device)) continue
+      announced.add(device)
       const event = new EventType('connect', { device })
       Object.defineProperty(event, 'device', { value: device, enumerable: true })
       hid.dispatchEvent(event)
