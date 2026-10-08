@@ -38,7 +38,7 @@ import type {
   UdpSocket,
   WebContext
 } from './handles.js'
-import type { Grant, Manifest, Pattern } from './manifest.js'
+import type { OrivonApp } from './app.js'
 import type { OrivonTrust } from './trust.js'
 
 /** The root object injected into an app's page as `orivon`. */
@@ -51,19 +51,6 @@ export interface Orivon {
   readonly web: OrivonWeb
   readonly secrets: OrivonSecrets
   readonly trust: OrivonTrust
-}
-
-export interface OrivonApp {
-  manifest(): Promise<Manifest>
-  /** What was ACTUALLY granted, which is a subset of what the manifest declares. */
-  grants(): Promise<readonly Grant[]>
-  /** May prompt the user. Resolves false if declined or not declared. */
-  requestGrant(capability: CapabilityRequest): Promise<boolean>
-}
-
-export interface CapabilityRequest {
-  readonly capability: string
-  readonly patterns?: readonly Pattern[]
 }
 
 /**

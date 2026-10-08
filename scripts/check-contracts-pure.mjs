@@ -30,6 +30,7 @@ export const REQUIRED_CONTRACT_FILES = [
   'handles.ts',
   'manifest.ts',
   'capability-api.ts',
+  'app.ts',
   'limits.ts',
   'ipc.ts',
   'trust.ts',
