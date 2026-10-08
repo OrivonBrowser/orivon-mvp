@@ -48,7 +48,7 @@
     { "prefix": "src/main/consent", "run": ["@core"] },
     { "prefix": "src/main/dev", "run": ["@core"] },
     { "prefix": "src/main/default-profile", "run": ["window", "extensions", "toolbar", "shell-pages"] },
-    { "prefix": "src/main/devices", "run": ["sites"] },
+    { "prefix": "src/main/devices", "run": ["sites", "app-behaviours"] },
     { "prefix": "src/main/devtools", "run": ["page"] },
     { "prefix": "src/main/display-capture", "run": ["sites", "tabs", "qa"] },
     { "prefix": "src/main/downloads", "run": ["library", "sites"] },

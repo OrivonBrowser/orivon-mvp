@@ -14,15 +14,18 @@ afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
 
 const APP = { origin: 'https://app.example', appName: 'App', rows: [], pickedPathRows: [] }
 
-function setup (): { call: (command: unknown) => Promise<unknown>, permissions: Record<'list' | 'revokeCapability' | 'revokePickedPath', ReturnType<typeof vi.fn>> } {
+const NO_DEVICES = { rows: () => [], forget: () => false }
+const DEVICE = { key: 'k1', label: 'Nano X (USB 2c97:4011)' }
+
+function setup (devices: Parameters<typeof appsDomain>[0]['devices'] = NO_DEVICES): { call: (command: unknown) => Promise<unknown>, permissions: Record<'list' | 'revokeCapability' | 'revokePickedPath', ReturnType<typeof vi.fn>> } {
   const permissions = { list: vi.fn(async () => [APP]), revokeCapability: vi.fn(async () => {}), revokePickedPath: vi.fn(async () => {}) }
-  const domain = appsDomain({ permissions, userDataPath: dir, identity: async () => 'session-only' })
+  const domain = appsDomain({ permissions, devices, userDataPath: dir, identity: async () => 'session-only' })
   return { call: async (command) => await domain.handle(command, CALLER), permissions }
 }
 
 describe('the apps domain', () => {
   it('is for Settings only', () => {
-    expect(appsDomain({ permissions: {} as never, userDataPath: dir, identity: async () => 'keychain' }).pages).toEqual(['settings'])
+    expect(appsDomain({ permissions: {} as never, devices: NO_DEVICES, userDataPath: dir, identity: async () => 'keychain' }).pages).toEqual(['settings'])
   })
 
   it('lists the apps with what each has stored, and where the identity key is kept', async () => {
@@ -32,7 +35,7 @@ describe('the apps domain', () => {
     await writeFile(join(root, 'files', 'a.txt'), 'x'.repeat(100))
     await writeFile(join(root, 'code', 'index.js'), 'y'.repeat(30))
     const { call } = setup()
-    expect(await call({ type: 'list' })).toEqual({ apps: [{ ...APP, storage: { filesBytes: 100, filesQuotaBytes: undefined, codeBytes: 30, codeVersion: undefined } }], identity: 'session-only' })
+    expect(await call({ type: 'list' })).toEqual({ apps: [{ ...APP, deviceRows: [], storage: { filesBytes: 100, filesQuotaBytes: undefined, codeBytes: 30, codeVersion: undefined } }], identity: 'session-only' })
   })
 
   it('takes back a permission or a picked path for an origin and a name that are what they should be', async () => {
@@ -41,6 +44,23 @@ describe('the apps domain', () => {
     expect(await call({ type: 'revokePickedPath', origin: 'https://app.example', pickId: 'pick-1' })).toEqual({ ok: true })
     expect(permissions.revokeCapability).toHaveBeenCalledWith('https://app.example', 'fs')
     expect(permissions.revokePickedPath).toHaveBeenCalledWith('https://app.example', 'pick-1')
+  })
+
+  it('lists each app with the devices the person approved for it', async () => {
+    const { call } = setup({ rows: (origin) => origin === 'https://app.example' ? [DEVICE] : [], forget: () => false })
+    expect(await call({ type: 'list' })).toMatchObject({ apps: [{ origin: 'https://app.example', deviceRows: [DEVICE] }] })
+  })
+
+  it('forgets one approved device for an origin that is what it should be, and refuses the rest', async () => {
+    const forget = vi.fn(() => true)
+    const { call } = setup({ rows: () => [], forget })
+    expect(await call({ type: 'forgetDevice', origin: 'https://app.example', key: 'k1' })).toEqual({ ok: true })
+    expect(forget).toHaveBeenCalledWith('https://app.example', 'k1')
+    forget.mockClear()
+    for (const request of [{ origin: 'https://app.example/path', key: 'k1' }, { origin: 'https://app.example', key: '' }, { origin: 'https://app.example', key: 3 }, { origin: 5, key: 'k1' }]) {
+      expect(await call({ type: 'forgetDevice', ...request })).toEqual({ ok: false })
+    }
+    expect(forget).not.toHaveBeenCalled()
   })
 
   it('takes back each media permission, which are capability kinds like the rest', async () => {

@@ -13,6 +13,7 @@
 import type {
   BindScopes,
   Capabilities,
+  DevicesCapability,
   EmbedCapability,
   FsCapability,
   HttpsCapability,
@@ -30,6 +31,7 @@ import { MAX_HOST_LENGTH, MAX_PORT } from '../../broker/policy/canonical-host.js
 import { declarableConnectHostRejection, parsePattern as parseConnectPattern, type ConnectPatternKind } from '../../broker/policy/connect-patterns.js'
 import { ownProperty } from '../../broker/policy/own-property.js'
 import { webContextOriginRejection } from '../../broker/policy/web-context-origin.js'
+import { readDevices } from './devices.js'
 import { readEmbed } from './embed.js'
 import { readMedia } from './media.js'
 import { UNSAFE_TEXT_CHARS, describeValue, extraKey, isAny, isRecord, optionalStringArray, reject } from './manifest.js'
@@ -50,7 +52,7 @@ const MAX_CURVES = 8
 /** capability-api.md's open item A9, point 1: privileged ports denied outright, at every tier. */
 const MIN_UNPRIVILEGED_PORT = 1024
 
-const CAPABILITIES_KEYS = ['net', 'fs', 'id', 'web', 'secrets', 'media', 'trust', 'protocols']
+const CAPABILITIES_KEYS = ['net', 'fs', 'id', 'web', 'secrets', 'media', 'trust', 'devices', 'protocols']
 const NET_KEYS = ['tcp', 'udp', 'https', 'concurrentSockets']
 const TCP_KEYS = ['connect', 'listen']
 const UDP_KEYS = ['bind', 'send']
@@ -475,11 +477,12 @@ export function readCapabilities (raw: unknown, path: string): Capabilities {
   const secretsRaw = ownProperty(raw, 'secrets', isAny)
   const mediaRaw = ownProperty(raw, 'media', isAny)
   const trustRaw = ownProperty(raw, 'trust', isAny)
+  const devicesRaw = ownProperty(raw, 'devices', isAny)
   const protocols = optionalStringArray(raw, path, 'protocols', MAX_PROTOCOLS, (scheme, i) => {
     validateSchemeName(scheme, `${path}.protocols[${i}]`)
   })
 
-  const result: { net?: NetCapability, fs?: FsCapability, id?: IdCapability, web?: WebCapability, secrets?: SecretsCapability, media?: MediaCapability, trust?: TrustCapability, protocols?: readonly string[] } = {}
+  const result: { net?: NetCapability, fs?: FsCapability, id?: IdCapability, web?: WebCapability, secrets?: SecretsCapability, media?: MediaCapability, trust?: TrustCapability, devices?: DevicesCapability, protocols?: readonly string[] } = {}
   if (netRaw !== undefined) result.net = readNet(netRaw, `${path}.net`)
   if (fsRaw !== undefined) result.fs = readFs(fsRaw, `${path}.fs`)
   if (idRaw !== undefined) result.id = readIdCapability(idRaw, `${path}.id`)
@@ -487,6 +490,7 @@ export function readCapabilities (raw: unknown, path: string): Capabilities {
   if (secretsRaw !== undefined) result.secrets = readSecrets(secretsRaw, `${path}.secrets`)
   if (mediaRaw !== undefined) result.media = readMedia(mediaRaw, `${path}.media`)
   if (trustRaw !== undefined) result.trust = readTrust(trustRaw, `${path}.trust`)
+  if (devicesRaw !== undefined) result.devices = readDevices(devicesRaw, `${path}.devices`)
   if (protocols !== undefined) result.protocols = protocols
   return result
 }

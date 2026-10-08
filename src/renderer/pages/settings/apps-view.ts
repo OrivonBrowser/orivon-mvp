@@ -1,5 +1,5 @@
 // The apps that hold permissions, one card each: what it may do (each with a
-// button that takes it away), the files it was given, and what it has stored.
+// button that takes it away), the files it was given, the devices it may use, and what it has stored.
 // Text goes in as text: an app's name and the words for what it asked for come
 // from the app, and are never markup.
 import { BUILTIN_ADDRESSES } from '../../../protocols/builtin.js'
@@ -32,7 +32,10 @@ function card (app: AppRow, state: SettingsState): HTMLElement {
       revoke('Revoke', async () => { await state.apps.revoke(app.origin, row.capability) }))),
     ...app.pickedPathRows.map((row) => h('li', { className: row.warning ? 'perm warning' : 'perm' },
       h('span', { className: 'perm-text', textContent: row.message }),
-      revoke('Remove', async () => { await state.apps.revokePickedPath(app.origin, row.pickId) })))
+      revoke('Remove', async () => { await state.apps.revokePickedPath(app.origin, row.pickId) }))),
+    ...app.deviceRows.map((row) => h('li', { className: 'perm' },
+      h('span', { className: 'perm-text', textContent: `Can use ${row.label}.` }),
+      revoke('Forget', async () => { await state.apps.forgetDevice(app.origin, row.key) })))
   ]
   const stored = `Stores ${sizeWords(app.storage.filesBytes)} of files and ${sizeWords(app.storage.codeBytes)} of its own code.`
   return h('section', { className: 'app-card' },

@@ -15,6 +15,7 @@ import { noteExclusiveAccess, type ExclusiveAccess } from '../shell/exclusive-ac
 import { confirmExternalLink } from '../shell/external-link-prompt.js'
 import { windowShowing } from '../shell/showing-window.js'
 import { EXCLUSIVE_ACCESS, isAllowed } from './allowed-permissions.js'
+import { handleDevicePermission } from './device-permission-handler.js'
 import { handleDisplayMedia } from './display-media-handler.js'
 import { createExternalLinks } from './external-links.js'
 import { askSite } from '../site-settings/ask-site.js'
@@ -126,11 +127,9 @@ function denyByDefault (target: Session): void {
     if (permission === 'media') return false
     return isAllowed(permission, details)
   })
-  // WebHID/WebUSB/Web Serial have no capability path at all in v0
-  // (security-model.md: "subprocess and hid are absent from the v0 API
-  // entirely") -- deny outright rather than falling through to whatever a
-  // device chooser dialog would otherwise return.
-  target.setDevicePermissionHandler(() => false)
+  // WebUSB and Web Serial have no path at all (ADR-0068). WebHID is answered by src/main/devices/, which binds its
+  // handler in ./device-permission-handler.ts; until it does, and for any other device kind, the answer is no.
+  target.setDevicePermissionHandler(handleDevicePermission)
   // Electron runs this only for a `media` request the handlers above granted, and Electron itself offers no
   // source without one: the default answers nothing (the page's call fails), and the display-capture gate binds
   // the handler that answers for a share the person picked (src/main/display-capture/).

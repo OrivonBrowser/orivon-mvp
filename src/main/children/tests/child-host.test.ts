@@ -18,6 +18,7 @@ interface FakeSession {
   }
   setPermissionCheckHandler: ReturnType<typeof vi.fn>
   setPermissionRequestHandler: ReturnType<typeof vi.fn>
+  setDevicePermissionHandler: ReturnType<typeof vi.fn>
   setProxy: ReturnType<typeof vi.fn>
   on: ReturnType<typeof vi.fn>
   removeAllListeners: ReturnType<typeof vi.fn>
@@ -43,6 +44,7 @@ function fakeSession (partition: string): FakeSession {
     },
     setPermissionCheckHandler: vi.fn(),
     setPermissionRequestHandler: vi.fn(),
+    setDevicePermissionHandler: vi.fn(),
     setProxy: vi.fn(async () => {}),
     on: vi.fn(),
     removeAllListeners: vi.fn(),
@@ -130,6 +132,14 @@ describe('createChildHostPool', () => {
     const pool = createChildHostPool(() => stubBroker())
     await pool.getOrCreate('http://localhost:5173')
     expect(viewOptions.current).toMatchObject({ webPreferences: { disableDialogs: true, sandbox: true } })
+  })
+
+  it('answers no for every device on the host session, whatever a tab of the same origin was given', async () => {
+    const pool = createChildHostPool(() => stubBroker())
+    await pool.getOrCreate('http://localhost:5173')
+    const hostSession = [...sessionsByPartition.values()][0] as FakeSession
+    const deviceHandler = hostSession.setDevicePermissionHandler.mock.calls.at(-1)?.[0] as (details: unknown) => boolean
+    expect(deviceHandler({ deviceType: 'hid', origin: 'http://localhost:5173', device: {} })).toBe(false)
   })
 
   it('handles both http and https on the host session, with the same document handler, for an http: origin', async () => {

@@ -69,8 +69,66 @@ describe('the sites domain', () => {
     expect(ask({ type: 'set', origin: { toString: 1 }, kind: 'camera', value: 'allow' })).toBeUndefined()
     expect(ask({ type: 'resetSite', origin: ['a'] })).toBeUndefined()
     expect(ask({ type: 'set', origin: SHOP, kind: 'camera', value: 'ask' })).toMatchObject({ ok: false })
-    expect(ask({ type: 'set', origin: SHOP, kind: 'devices', value: 'block' })).toMatchObject({ ok: false })
+    expect(ask({ type: 'set', origin: SHOP, kind: 'devices', value: 'allow' })).toMatchObject({ ok: false })
     expect(ask({ type: 'set', origin: 'https://app.example', kind: 'camera', value: 'allow' })).toMatchObject({ ok: false, rows: [] })
     expect(store.entries()).toEqual([])
+  })
+})
+
+describe('the sites domain with approved devices', () => {
+  const APPROVED = [{ key: 'k1', label: 'Nano X (USB 2c97:4011)' }]
+
+  function withDevices () {
+    const store = new SiteSettingsStore(null)
+    const rows = new Map<string, Array<{ key: string, label: string }>>([[SHOP, [...APPROVED]], ['https://only-devices.example', [...APPROVED]]])
+    const devices = {
+      rows: (origin: string) => rows.get(origin) ?? [],
+      siteRows: (origin: string) => rows.get(origin) ?? [],
+      forget: (origin: string, key: string) => {
+        const list = rows.get(origin) ?? []
+        const kept = list.filter((row) => row.key !== key)
+        if (kept.length === list.length) return false
+        if (kept.length === 0) rows.delete(origin)
+        else rows.set(origin, kept)
+        return true
+      },
+      websites: () => [...rows].map(([origin, list]) => ({ origin, devices: list.length })),
+      forgetSite: (origin: string) => rows.delete(origin),
+      forgetAllWebsites: () => { rows.clear() }
+    }
+    const notifications = new Map<string, 'allow' | 'block'>()
+    const controller = createSiteSettingsController({
+      store,
+      notifications: { get: (o) => notifications.get(o), set: () => {}, forget: () => {}, clear: () => {}, entries: () => [], onChange: () => () => {} },
+      defaultFor: (kind) => kind.values[0] ?? 'ask',
+      isApp: (origin) => origin === 'https://app.example'
+    })
+    const domain = sitesDomain(controller, { isPrivate: false, devices })
+    return { ask: (command: unknown) => domain.handle(command, caller), store, rows }
+  }
+
+  it('lists a site that only holds a device, and counts the devices of one with answers', () => {
+    const { ask, store } = withDevices()
+    store.set(SHOP, 'camera', 'block')
+    const list = ask({ type: 'list' }) as { sites: Array<{ origin: string, kinds: unknown[], devices?: number }> }
+    expect(list.sites.map((site) => [site.origin, site.kinds.length, site.devices])).toEqual([['https://only-devices.example', 0, 1], [SHOP, 1, 1]])
+  })
+
+  it('answers a site\'s devices with its rows, and forgets one only if the site holds it', () => {
+    const { ask, rows } = withDevices()
+    expect(ask({ type: 'rows', origin: SHOP })).toMatchObject({ devices: APPROVED })
+    expect(ask({ type: 'forgetDevice', origin: SHOP, key: 'nope' })).toMatchObject({ ok: false })
+    expect(rows.get(SHOP)).toHaveLength(1)
+    expect(ask({ type: 'forgetDevice', origin: SHOP, key: 'k1' })).toMatchObject({ ok: true, devices: [] })
+    expect(rows.has(SHOP)).toBe(false)
+    expect(ask({ type: 'forgetDevice', origin: 3, key: 'k1' })).toBeUndefined()
+  })
+
+  it('forgets a site\'s devices with the rest of its settings, and every website\'s with a full reset', () => {
+    const { ask, rows } = withDevices()
+    expect(ask({ type: 'resetSite', origin: SHOP })).toEqual({ ok: true })
+    expect(rows.has(SHOP)).toBe(false)
+    ask({ type: 'resetAll' })
+    expect(rows.size).toBe(0)
   })
 })

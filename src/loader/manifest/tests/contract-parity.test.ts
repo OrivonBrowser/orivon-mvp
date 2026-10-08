@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { parseManifest } from '../manifest.js'
 import type {
   Capabilities,
+  DevicesCapability,
   EmbedCapability,
+  HidDeviceFilter,
   FsCapability,
   HttpsCapability,
   IdCapability,
@@ -34,8 +36,9 @@ type Full<T> = Required<T>
 type FullManifest = Omit<Full<Manifest>, 'capabilities'> & {
   // 'clipboard' (ADR-0032) has no app door and 'secrets' (ADR-0033) has no
   // fields, so a kitchen-sink manifest naming them would fail the round-trip
-  // or prove nothing. 'devices' (ADR-0068) has no loader parser yet.
+  // or prove nothing.
   readonly capabilities: Omit<Full<Capabilities>, 'net' | 'fs' | 'id' | 'web' | 'media' | 'clipboard' | 'secrets' | 'trust' | 'devices'> & {
+    readonly devices: Omit<Full<DevicesCapability>, 'hid'> & { readonly hid: ReadonlyArray<Full<HidDeviceFilter>> }
     readonly media: Full<MediaCapability>
     readonly trust: Full<TrustCapability>
     readonly net: Omit<Full<NetCapability>, 'tcp' | 'udp' | 'https'> & {
@@ -77,7 +80,8 @@ const KITCHEN_SINK: FullManifest = {
     id: { curves: ['secp256k1'] },
     web: { contexts: ['https://kitchen-sink.example'], embed: { origins: ['*'] } },
     media: { camera: true, microphone: true, screen: true },
-    trust: { score: true }
+    trust: { score: true },
+    devices: { hid: [{ vendorId: 0x2c97, productId: 0x4011, usagePage: 0xffa0, usage: 1 }] }
   }
 }
 
