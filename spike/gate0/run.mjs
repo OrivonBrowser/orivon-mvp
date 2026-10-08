@@ -5,7 +5,7 @@
 // ~25x the 1-5 MB/s that 1080p streaming needs, leaving room for the shim.
 //
 // Transferable ArrayBuffers are recorded as a FINDING, not a gate. If they
-// are unavailable (electron#34905), build-plan.md's "day 2 with transferables"
+// are unavailable (electron#34905), the retired build plan's "day 2 with transferables"
 // rescue for a gate-4 failure does not exist, and capability-api.md
 // SS Throughput must drop its transferable language.
 import { mkdirSync, writeFileSync } from 'node:fs'

@@ -53,7 +53,7 @@ non-empty, and hiding it is half the fix: main must shrink the view too (`window
 `data-bookmarks` on `<html>` from the same push. `smoke.mjs` asserts the two together
 (`bookmarksBarMatches`), since either alone passes while the feature is visibly broken.
 
-**Bookmarks are a real feature** (`docs/scope.md`, ADR-0003): `src/main/browsing/bookmarks.ts`
+**Bookmarks are a real feature** (`docs/features.md`, ADR-0003): `src/main/browsing/bookmarks.ts`
 holds and persists the tree of folders and pages, and this directory renders the bar items main sends
 (when they change) and asks main to open, move, edit or remove, as the tab strip does for tabs.
 The star, the folder menu, the edit bubble, the address suggestions and the downloads bubble are

@@ -37,7 +37,7 @@ it actually got. An app holding the network grant is served on every interface a
 refusal of any other host names the fix; a warning would be quiet exactly where the mistake is a
 security one, and the broker binds loopback or every interface, never one other address. Accepted
 sockets close with the server, unlike Node: the broker closes derived handles with the server
-handle ([`handle-contracts.md`](../../../docs/architecture/handle-contracts.md) §TcpServer).
+handle ([`handle-contracts.md`](../../../docs/architecture/handle-contracts.md) section TcpServer).
 
 **A taken port is Node's `EADDRINUSE`, worded as Node words it.** The broker answers `limit` with
 `platformCode: 'EADDRINUSE'` when every port the grant covers is held; the `'error'` event carries

@@ -5,8 +5,8 @@ is the wire format, precise enough to implement without reading Orivon's code. `
 it has this shape; [web3-score-manager](https://github.com/OrivonBrowser/web3-score-manager)
 is a tool that builds a provider as a static site.
 
-A Web3 Score provider publishes judged levels from the canonical scale
-(docs.orivonstack.com/docs/implementations/web3-score): the levels a browser cannot observe by
+A Web3 Score provider publishes judged levels from the scale below (the README
+lists it): the levels a browser cannot observe by
 itself, such as "this site's code is open source and runs nothing external without consent".
 Each judgement is attached to a content identity, never to a domain name: a site without DDOC has
 no stable identity, so nothing can be said about it.
@@ -45,7 +45,7 @@ Two kinds of file, both JSON in UTF-8, each at most 1 MiB.
 |---|---|---|
 | `standard` | yes | Exactly `orivon-web3-score/1` |
 | `name` | yes | 1 to 80 characters. Shown beside every level this provider judges |
-| `bucketHexChars` | yes | 1 or 2: how many hex characters name a bucket (16 or 256 buckets). A client refuses any other value, for the reason §What the provider learns gives |
+| `bucketHexChars` | yes | 1 or 2: how many hex characters name a bucket (16 or 256 buckets). A client refuses any other value, for the reason section What the provider learns gives |
 | `about` | no | An address where a person reads who runs the provider and how it judges |
 
 ### `P/<subject>/<bucket>.json`

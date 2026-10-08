@@ -47,7 +47,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 - **Question:** May a repository-wide guideline or lint sweep run on one `backlog-NN` branch that
   touches every stream's paths?
-- **Why it matters:** `parallel-work.md` §`backlog-NN` branches says two streams' paths means two
+- **Why it matters:** `parallel-work.md` section `backlog-NN` branches says two streams' paths means two
   branches; a sweep touches all of them on purpose, and splitting it only adds git overhead.
 - **Options:** write an explicit sweep carve-out into `parallel-work.md` (rec.); allow each sweep
   as a named one-off exception; keep the rule and split sweeps by stream. See A31.
@@ -108,7 +108,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 ### A47: `publishX` setters in `registry.ts` are an unnamed append point **[AI-REC]**
 
 - **Question:** `src/main/README.md` says other streams never edit `registry.ts`, yet four
-  `publishX` setters live there. Should `parallel-work.md` §4 name them an append point?
+  `publishX` setters live there. Should `parallel-work.md` section 4 name them an append point?
 - **Why it matters:** without a rule, each stream guesses what an "additive" edit to
   `SubsystemContext` may be.
 - **Options:** name "an optional `SubsystemContext` field plus its guarded `publishX` setter"
@@ -135,7 +135,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** fail fast with a native dialog, since shell chrome cannot vouch that the broker
   is down (rec.); a degraded shell with a banner; a retry or diagnostics flow.
 - **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** packaging (build step 10); related to A47
+- **Blocks:** nothing; related to A47
 
 ### A52: Can `net.request` hand the loader one oversized body chunk **[RESEARCH]**
 
@@ -150,8 +150,9 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 ### A53: Every `BookmarkStore` stays in a static set until exit **[AI-REC]**
 
-- **Question:** `BookmarkStore` registers itself in a static set so the quit path can
-  `flushAll()`, and a closed window's store is never removed. Replace the registry?
+- **Question:** `BookmarkStore` registers itself in a static set (`DebouncedWriter.instances`,
+  `src/main/storage/debounced-writer.ts`) so the quit path can `flushAll()`, and a closed window's
+  store is never removed. Replace the registry?
 - **Why it matters:** a long session that opens and closes many windows retains every store.
 - **Options:** hand each window's store to the quit path and drop the registry (rec.); a
   `dispose()` on window close; a `WeakRef` registry.
@@ -180,17 +181,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A66: The install fetch cannot pin its connection to the checked address **[OWNER]**
-
-- **Question:** Is the residual DNS-rebind window in the loader's `net.fetch` acceptable, or does
-  the install fetch move to a socket layer this code controls?
-- **Why it matters:** The guard re-checks Chromium's resolver before each request, but a rebind
-  between check and fetch is still possible: `net.fetch` cannot dial a pinned address.
-- **Options:** keep today's narrowing (`src/loader/electron/fetch.ts`); Node `fetch` with a pinned
-  `lookup`, losing session, proxy and cookie integration.
-- **Who decides:** owner
-- **Blocks:** nothing until a threat model assumes full DNS-rebind closure
-
 ### A67: An update that drops a capability can lift its scalar limit **[AI-REC]**
 
 - **Question:** How should `widensAuthority` (`src/broker/policy/update.ts`) see a dropped block,
@@ -201,17 +191,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   per-field check with its own justification.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
-
-### A68: A rollback acknowledgement covers one exact version, not the origin **[AI-REC]**
-
-- **Question:** Does accepting a below-floor version trust only that version, or every later
-  rollback from the same origin?
-- **Why it matters:** A per-origin flag would let one accepted rollback wave through any other old
-  version, `0.0.1` included, with no further consent.
-- **Options:** remember the exact version (rec., built in `src/broker/grants/update-safety.ts`);
-  a per-origin flag.
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing; `d-0017`'s log row says "per origin" and should agree
 
 ### A69: A peer FIN ends our writable early; the obvious fix breaks EOF **[RESEARCH]**
 
@@ -234,81 +213,9 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A85: Directory import boundaries are stated in READMEs, enforced by nothing **[OWNER]**
-
-- **Question:** Build a `check:layers` guard now, or keep waiting to see which boundary drifts?
-- **Why it matters:** `policy/` must do no I/O, `handles/` import no `node:*`, `adapters/` no
-  `electron`, and `src/broker/` none of shim, loader, preload or renderer. The repository-wide
-  `tests/` placement rule is unguarded too.
-- **Options:** `scripts/check-layers.mjs` generalising `check-contracts-pure.mjs`, with a named
-  exemption for `grants/node-ledger-storage.ts` (rec.); keep deferring.
-- **Who decides:** owner
-- **Blocks:** nothing
-
-### A86: The UDP inbound window is bounded by count and by bytes **[AI-REC]**
-
-- **Question:** Is the UDP inbound window only a datagram count, as `handle-contracts.md`
-  §UdpSocket says, or also a byte bound?
-- **Why it matters:** A count alone lets 64 sockets pin about 1 GiB per origin; bytes alone leave
-  the per-message count unbounded.
-- **Options:** both, whichever runs out first drops, dropped in the broker (rec., built:
-  `LIMITS.inboundDatagramWindow` 256, `inboundDatagramWindowBytes` 1 MiB); count only.
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing; cheap to overrule while `orivonApiVersion` is 0
-
-### A88: Binding port 0 picks a port inside the granted ranges **[AI-REC]**
-
-- **Question:** When an app binds port 0, may the OS pick any port, or only one the grant names?
-- **Why it matters:** DHT clients bind 0 routinely; an OS-picked port outside "ports 6881-6889"
-  makes the approved prompt untrue.
-- **Options:** pick at random inside the granted ranges, failing `'limit'` when all are taken (rec.,
-  built: `src/broker/adapters/port-pick.ts`); deny port 0; let the OS pick anywhere.
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing; the grant prompt's wording must agree with it
-
-### A89: UDP sockets are IPv4-only **[AI-REC]**
-
-- **Question:** Should UDP sockets stay `udp4` on `0.0.0.0`, or go dual-stack?
-- **Why it matters:** Dual-stack reports IPv4 peers as `::ffff:` mapped addresses that must be
-  normalised before any policy check; IPv4-only means no DHT on an IPv6-only network.
-- **Options:** stay IPv4 and list it as a known limitation (rec.; `docs/planning/torrent-app.md`
-  does); dual-stack, un-mapping addresses before `policy/address.ts`.
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
-### A91: `§` in docs against the ASCII-only prose rule **[OWNER]**
-
-- **Question:** Allow `§` in docs, relaxing `CLAUDE.md`'s ASCII-only rule, or sweep it out of
-  `docs/`?
-- **Why it matters:** `§` is used widely across `docs/`, headings included, while the rule as
-  written says ASCII. Source comments already spell out "section".
-- **Options:** allow `§` in docs, the de facto convention (rec.); sweep it out.
-- **Who decides:** owner
-- **Blocks:** nothing
-
-### A92: Telemetry credits all time to the placeholder `SHELL_APP_ID` **[AI-REC]**
-
-- **Question:** Should telemetry attribute session time to the app in a tab, not to
-  `SHELL_APP_ID = 'shell'` (`src/telemetry/runner.ts`)?
-- **Why it matters:** Per-app engagement cannot be judged while everything is one id; the success
-  metric uses whole-browser `activeSec`, which this already measures.
-- **Options:** attribute to the tab's real app id, now that the loader knows it (rec.); keep the
-  placeholder.
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** per-app engagement numbers
-
-### A93: The telemetry ingest endpoint does not exist **[OWNER]**
-
-- **Question:** Where is the self-hosted ingest endpoint `ADR-0004` requires, and who provisions it?
-- **Why it matters:** `TELEMETRY_INGEST_URL` (`src/telemetry/runner.ts`) is an unresolvable
-  `.example` address, so no event reaches a server and active use cannot be counted.
-- **Options:** provision a self-hosted endpoint and set the URL; keep telemetry off until then.
-- **Who decides:** owner
-- **Blocks:** enabling telemetry for real users
-
 ### A106: `net.listen` accept backpressure is a broker queue, not the OS backlog **[AI-REC]**
 
-- **Question:** Amend `handle-contracts.md` §TcpServer and §Conformance item 7, which promise
+- **Question:** Amend `handle-contracts.md` section TcpServer and section Conformance item 7, which promise
   OS-level accept backpressure, to match what is built?
 - **Why it matters:** Node cannot defer `accept()`, so `listenTcp` queues up to 64 unclaimed
   connections (`LISTEN_ACCEPT_QUEUE_LIMIT`) and resets later arrivals. The spec overstates.
@@ -321,22 +228,10 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Question:** When is `window.nostr` (`src/nostr/nip07.ts`) injected into pages?
 - **Why it matters:** It signs through `orivon.id.requestIdentity`, the named-identity path that
   keeps one npub across sites, and that is unbuilt. A method that always throws is worse than none.
-- **Options:** inject it together with a working `requestIdentity` and its connect prompt (rec.);
-  stub it earlier.
+- **Options:** inject it together with a working `requestIdentity` and its connect rule (automatic
+  on a Level 4 site, a grant elsewhere) (rec.); stub it earlier.
 - **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** Nostr identity (`docs/scope.md` §LATER)
-
-### A112: Synchronous `fs` reads skip the per-origin in-flight budget **[OWNER]**
-
-- **Question:** Does `fs.readFileSync` (`src/broker/transport/sync-fs.ts`) need its own per-origin
-  admission control, beside the shared rate limiter it already checks?
-- **Why it matters:** One origin can monopolise synchronous file I/O from many frames or a tight
-  loop. Grant check and confinement are shared; this is fairness, not confinement.
-- **Options:** a synchronous admission counter beside `HandleTable`'s async budget (it cannot
-  await a slot without stalling main); or rule the rate limiter enough, since a blocked renderer
-  limits itself per frame.
-- **Who decides:** owner
-- **Blocks:** any app relying on `readFileSync` under load
+- **Blocks:** Nostr identity (under Later in `docs/roadmap.md`)
 
 ### A113: The `exposeFallback` path drops `OrivonError.code` **[RESEARCH]**
 
@@ -447,17 +342,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A139: First-visit consent may bring back prompt fatigue **[OWNER]**
-
-- **Question:** Does the once-per-origin consent dialog on a first visit read as reasonable, or
-  as an interruption the person did not ask for?
-- **Why it matters:** ADR-0012 rejected asking before fetch because unprompted dialogs train
-  dismissal; asking on first visit brings a version of that back.
-- **Options:** keep as built, bounded: nothing asked for a manifest declaring nothing, once per
-  origin, one dialog for the whole set (rec.); revisit `d-0025`'s ask-before-run rule.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A140: `app.requestGrant`'s 120-second IPC timeout is a guess **[AI-REC]**
 
 - **Question:** Is 120 s right for a call that waits on a person (`TIMEOUT_MS.grant`,
@@ -480,17 +364,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A147: Cached-delivery wording on the Web3 Score shield **[OWNER]**
-
-- **Question:** Is a hover-only "Running from local cache, pinned" enough for ADR-0007's "the UI
-  must say so"? Is "pinned" the right word? Should cached and secure ever show together?
-- **Why it matters:** A hover-only signal is easy to miss, "pinned" is jargon, and `.cached`
-  replaces secure/insecure outright. The site-info Web3 Score page shows it in text, one click in.
-- **Options:** keep hover-only plus the site-info text (rec.); visible text on the shield itself;
-  plainer "Running offline from a saved copy"; show both facts at once.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A150: Wording of the reconsent, widening and rollback update dialogs **[AI-REC]**
 
 - **Question:** Is the text in `src/main/consent/grant-prompt-render.ts` right, including "Keep the
@@ -500,17 +373,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** keep as written (rec.); show only the new capabilities, which needs held grants
   that the Electron- and broker-free renderer cannot read.
 - **Who decides:** AI, the recommendation stands unless the owner objects on reading the dialogs
-- **Blocks:** nothing
-
-### A157: Install consent is inferred from held grants, never recorded **[OWNER]**
-
-- **Question:** Is "every declared capability is held or declined" an acceptable floor for
-  skipping install consent, or should an accept be recorded explicitly?
-- **Why it matters:** A grant through `app.requestGrant` can fill the set without
-  `requestInstallConsent` ever running. The decline side is recorded (A145).
-- **Options:** accept the inference, since a persisted grant is itself the record (rec.); extend
-  `src/broker/grants/declined-consent.ts`'s record to accepts.
-- **Who decides:** owner
 - **Blocks:** nothing
 
 ### A160: `src/shim/` imports `src/shim-electron/` directly **[AI-REC]**
@@ -524,29 +386,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A161: Origin display hides the tenant behind unlisted private suffixes **[OWNER]**
-
-- **Question:** Adopt a public-suffix-list dependency (`psl`/`tldts`, parked under A142) so origin
-  display always keeps the tenant label?
-- **Why it matters:** Hosts like `bucket.s3.us-east-1.amazonaws.com` still get the plain three-label
-  cut, which can read as the platform's own domain.
-- **Options:** keep the three-label rule plus the evidenced allow-list in
-  `src/main/consent/grant-prompt-origin.ts` until a real report (rec.); review a PSL dependency
-  before onboarding 100 users.
-- **Who decides:** owner
-- **Blocks:** nothing
-
-### A162: Per-capability consent for update-time widening **[OWNER]**
-
-- **Question:** Are staged native dialogs the right floor for `consentGranularity:
-  'per-capability'`, and should an update that widens capabilities get the same choice?
-- **Why it matters:** Only install consent honours the field; `capabilityPrompt` in
-  `src/main/consent/update-outcomes.ts` stays a yes/no with no declined-consent record.
-- **Options:** staged native dialogs (rec.) or a self-rendered privileged window; extend to update
-  widening reusing the "outstanding" gate and decline record, or with its own; leave updates as is.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A163: Third-party reach proxies `https:` only; plain `http:` stays denied **[AI-REC]**
 
 - **Question:** Should `fetchThirdParty` (`src/loader/serve/serve.ts`) ever proxy a plain `http:`
@@ -556,49 +395,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** keep `http:` denied until Electron or Node exposes address pinning (rec.); accept
   the risk for a stated narrower reason, as A66 did.
 - **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
-### A166: Should pin coverage change the delivery rung or score? **[OWNER]**
-
-- **Question:** How should pin coverage (requests and bytes from the pin vs third-party hosts)
-  affect the delivery ladder or what a person sees as the Web3 Score?
-- **Why it matters:** A two-file bundle that fetches thirty remote scripts sits on the same D2
-  rung as one that ships everything it runs. Today coverage is shown, never scored.
-- **Options:** keep it evidence-only; lower or cap the rung below a coverage threshold; add a
-  separate coverage grade (`src/trust/delivery-ladder.ts`).
-- **Who decides:** owner
-- **Blocks:** nothing
-
-### A170: Should Deny on the install dialog revoke an already-held capability **[OWNER]**
-
-- **Question:** When the all-or-nothing install dialog lists a capability the app already holds
-  (granted earlier through `app.requestGrant`), should Deny also revoke it?
-- **Why it matters:** held rows are marked `[Already allowed]` and Deny applies to the rest;
-  revoking would take back a grant the person agreed to separately, a surprise of its own.
-- **Options:** keep the held grant, as today; revoke every listed capability on Deny.
-- **Who decides:** owner
-- **Blocks:** nothing
-
-### A180: The app, not the person, decides whether consent is per-capability **[OWNER]**
-
-- **Question:** Should "Choose individually" be offered even when the manifest declares, or
-  defaults to, `'all-or-nothing'`, turning `consentGranularity` from a gate into a hint?
-- **Why it matters:** an author always gains by declaring all-or-nothing, so the refusal the
-  person was given may never be reachable; ADR-0017 argued the same about unlimited declarations.
-- **Options:** keep the manifest as the gate (an app with no code path for a partial grant stays
-  safe); always offer the choice, with the manifest's declaration shown as a warning.
-- **Who decides:** owner
-- **Blocks:** nothing
-
-### A182: Which unbuilt shim members read as absent, not as named refusals **[OWNER]**
-
-- **Question:** Which unimplemented shim members should be genuinely `undefined`, so a feature
-  check skips them, instead of a function that throws a named refusal when called?
-- **Why it matters:** since A169 a feature-detecting library takes the branch and crashes at the
-  call. Named refusals (A135) serve the developer; absence serves unmodified third-party code.
-- **Options:** decide by reason: `'not-applicable'` (never to be built) absent, planned-but-unbuilt
-  named (rec.); every member named, as today; every member absent.
-- **Who decides:** owner
 - **Blocks:** nothing
 
 ### A184: When `FileHandle.readable()`/`writable()` reach the page **[AI-REC]**
@@ -634,18 +430,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A189: A page that never closes an `fs.open` handle leaks its fd **[OWNER]**
-
-- **Question:** How is an abandoned `orivon.fs.open` handle reclaimed, and must that land before
-  `fs.open` carries a real page-facing grant?
-- **Why it matters:** a handle dropped without `close()` keeps its OS fd and registry slot for the
-  broker's life; unlike sockets and servers it has no per-handle port whose closing signals it.
-- **Options:** (a) a dedicated port per handle, reopening A184's boundary; (b) call
-  `HandleTable.dropOrigin`, which has no production caller, on navigation or session teardown,
-  closing the whole class at once (rec.).
-- **Who decides:** owner
-- **Blocks:** nothing named; safe production use of `fs.open`
-
 ### A193: `OrivonNet.lookup`'s contract comment still names `https.connect` **[AI-REC]**
 
 - **Question:** `src/contracts/capability-api.ts` says `net.lookup` rides `https.connect` patterns
@@ -653,28 +437,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Why it matters:** The contracts are the product surface; a reader learns the wrong bound.
 - **Options:** fold it into the next contracts PR (rec.); a docs-only contracts PR.
 - **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
-### A195: `DirectoryHandle`'s method set is wired but never owner-confirmed **[OWNER]**
-
-- **Question:** Confirm or revise `DirectoryHandle`'s methods (A167 item 2: readdir, stat, mkdir,
-  rm, rename, readFile, writeFile, open), now reachable from a page through the `fs.dir*` methods?
-- **Why it matters:** It mirrors `OrivonFs`, not the web's `FileSystemDirectoryHandle`, and lives in
-  `src/contracts/handles.ts`: a later change costs every app.
-- **Options:** confirm as built (rec.); reshape it, and the dispatch and preload layer follow.
-- **Who decides:** owner
-- **Blocks:** nothing
-
-### A201: Two different apps are both called `freetube` **[OWNER]**
-
-- **Question:** `test/apps/freetube/` (a from-scratch test app) and `orivon-ports`'s
-  `apps/freetube/` (upstream FreeTube, ported) share a name. Rename one, or name the repository
-  at every mention?
-- **Why it matters:** "The FreeTube test" is ambiguous: `e2e-freetube-app` and `-live-origin` drive
-  the demo, `e2e-freetube-real` drives the port.
-- **Options:** rename this repository's test app, since the port carries upstream's name (rec.); a
-  prose convention naming the repository.
-- **Who decides:** owner, since the name spans both repositories
 - **Blocks:** nothing
 
 ### A203: `src/broker/transport/` imports `src/main/`, against a stated rule **[AI-REC]**
@@ -688,36 +450,15 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A204: `updateCheckSubsystem` is built but never wired **[OWNER]**
-
-- **Question:** Add `updateCheckSubsystem` to `src/main/subsystems.ts`, or confirm the self-update
-  check stays unwired, and why?
-- **Why it matters:** The GitHub-release check is built and unit-tested but never runs in a build.
-- **Options:** wire it after `brokerIpcSubsystem` (no ordering constraint); leave it unwired until
-  a real release exists to check against.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A205: File System Access: prompts for write-back, stored handles and folders **[AI-REC]**
 
 - **Question:** Electron decides File System Access in the synchronous check handler, which cannot
   ask. Should write-back, a reused IndexedDB handle, or a folder ever get a prompt, as in Chrome?
 - **Why it matters:** The first two are silently allowed here; folders are refused outright.
-- **Options:** leave all three this build (rec.: bounded to a file the person handed over; folder
+- **Options:** leave all three until Electron routes it (rec.: bounded to a file the person handed over; folder
   apps have `fs.userSelected`); prompts once Electron routes it through the request handler.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing; reopen for a port needing a folder or a misused stored handle
-
-### A206: The site-data page cannot delete an app's private files **[OWNER]**
-
-- **Question:** How does the site-info data page delete `orivon.fs` private files (ADR-0003's "a
-  way to delete data"), and what does it say when a file open on Windows blocks the delete?
-- **Why it matters:** The page shows sizes but no delete; `session.clearData` covers only
-  browser storage.
-- **Options:** a `Broker` method (after splitting `broker-contracts.ts`) that revokes private-file
-  handles, deletes the directory, resets `fsBytesWritten` (A29), then lifts the revocation.
-- **Who decides:** owner on the failure wording; AI on the mechanism
-- **Blocks:** ADR-0003's delete-data requirement
 
 ### A207: The routed network path's numbers are guesses **[AI-REC]**
 
@@ -765,7 +506,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   or subframe, CSP refuses even a granted host. Admit it?
 - **Why it matters:** Admitting means `wss:` CSP sources, so CSP becomes the only gate, with no live
   re-check behind it.
-- **Options:** leave it refused this build (rec.); emit `wss:` sources.
+- **Options:** leave it refused until a port needs it (rec.); emit `wss:` sources.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing; a port that runs its socket in a worker
 
@@ -789,16 +530,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A214: The in-flight cap now queues briefly, changing T11b's wording **[OWNER]**
-
-- **Question:** Confirm d-0063: past `LIMITS.inFlightOperations` (256) an operation waits in a
-  per-origin FIFO (256 waiters, 10 s) instead of being refused at once?
-- **Why it matters:** It rewords a stated security rule; ported Node code fires hundreds at once.
-- **Options:** confirm (rec.: T11b forbids an unbounded queue; this one is bounded in length and
-  time); revert to immediate refusal.
-- **Who decides:** owner
-- **Blocks:** nothing (`src/contracts/limits.ts` already carries the new text)
-
 ### A216: The fs quota miscounts in-place rewrites and files removed while open **[AI-REC]**
 
 - **Question:** A `FileHandle`'s `write` and `writable()` charge every byte, so a rewrite counts
@@ -809,21 +540,11 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A217: Should `orivon.fs.writeFile` create missing parent directories? **[OWNER]**
-
-- **Question:** The broker's `writeFile` makes missing parents first
-  (`src/broker/adapters/node-fs-adapter.ts`); Node fails `ENOENT`. Which does the capability
-  promise?
-- **Why it matters:** Node code sometimes detects a missing directory by that failure; the shim can
-  give Node's behaviour either way.
-- **Options:** keep creating parents (tests pin it); fail `ENOENT` as Node does.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A218: UDP sockets and TCP servers are IPv4-only **[AI-REC]**
 
 - **Question:** `udpBind` makes a `udp4` socket and `listen` binds `0.0.0.0`. Go dual-stack?
-- **Why it matters:** No UDP to IPv6-only DHT peers; no inbound IPv6 connections.
+- **Why it matters:** No UDP to IPv6-only DHT peers; no inbound IPv6 connections. This also
+  covers UDP sockets alone, which A89 asked.
 - **Options:** stay IPv4 until a measurement shows IPv6-only peers matter (rec.); dual-stack, with
   mapped-address normalisation wherever a peer address is compared.
 - **Who decides:** AI, the recommendation stands unless the owner objects
@@ -916,28 +637,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A236: The update check at a plain host sees a release only when the manifest changes **[OWNER]**
-
-- **Question:** At an https host a 304 ends the conditional check (d-0088), so files shipped under a
-  byte-identical manifest are never picked up there. Is "bump `version` every release" a publisher
-  requirement? (At a name the bundle hash is compared, `ADR-0056`.)
-- **Why it matters:** A publisher who does not change the manifest never ships an update.
-- **Options:** state the requirement; a daily unconditional check; compare the published hash-tree
-  root (ADR-0029) with the pin, a cheaper backstop.
-- **Who decides:** owner
-- **Blocks:** nothing
-
-### A237: An all-or-nothing re-prompt re-grants what the person revoked **[OWNER]**
-
-- **Question:** After a widening update, an `all-or-nothing` prompt shows the full set; accepting
-  clears every decline (d-0087), so a revoked capability returns. Intended?
-- **Why it matters:** A permission deliberately taken away comes back inside a yes to
-  something else.
-- **Options:** accept (the full set is shown); keep revoked capabilities out, giving the app less
-  than `all-or-nothing` promises.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A238: A first visit after restart can skip the install finish **[AI-REC]**
 
 - **Question:** Inside the persisted interval (d-0088), a first visit answers `'up-to-date'` with no
@@ -985,16 +684,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A243: `Notification.permission` reads `'denied'` for an undecided site **[OWNER]**
-
-- **Question:** The boolean check handler makes an undecided site read `'denied'`, not `'default'`,
-  from `Notification.permission` and the Permissions API, and so for every kind a site is asked about. Override or accept?
-- **Why it matters:** A page that checks first and gives up on `'denied'` never asks;
-  `requestPermission()` still reaches the prompt.
-- **Options:** a main-world override reporting `'default'`, under ADR-0021; a documented divergence.
-- **Who decides:** owner
-- **Blocks:** the first port that gates on `'default'`
-
 ### A244: E2e tests run on the user's real session bus **[AI-REC]**
 
 - **Question:** `scripts/run-headless.mjs` starts a private D-Bus only with `ORIVON_PRIVATE_BUS=1`,
@@ -1003,16 +692,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** a guard failing any e2e file that constructs a notification outside the private-bus
   runner (rec.); a private bus for every launch, with a stand-in keyring for `safeStorage` suites.
 - **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
-### A245: Under `*:443`, a public name resolving to the LAN still reaches it **[OWNER]**
-
-- **Question:** Should `*:443` ever reach the LAN through a public name with a trusted certificate
-  (`*.plex.direct`)? A196 closed literals only; verified `connectSecure` does not resolve.
-- **Why it matters:** A certificate binds a name, not an address.
-- **Options:** apply d-0098's resolve-once check to every `connectSecure`, costing one resolution
-  per connection and an address grant for such services (rec.); accept the residual.
-- **Who decides:** owner
 - **Blocks:** nothing
 
 ### A246: TLS credentials are parsed on the main thread per connection **[AI-REC]**
@@ -1033,37 +712,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   carry the chain in `PeerCertificate` (a contracts change).
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
-
-### A248: Confirm the address check on an unbound TLS handshake **[OWNER]**
-
-- **Question:** Confirm d-0098: when a TLS option unbinds the certificate from the name, resolve
-  once, apply `tcp.connect`'s address rule, and dial only the checked address?
-- **Why it matters:** Without it, `rejectUnauthorized: false` under `*:443` reaches loopback by
-  rebinding; the cost is a self-signed LAN node must be granted by address.
-- **Options:** confirm, argued in `src/broker/README.md` (rec.); drop the check.
-- **Who decides:** owner
-- **Blocks:** nothing
-
-### A249: Nothing is named as the daily-use driver or distribution asset **[OWNER]**
-
-- **Question:** With the torrent app an idea (d-0105), what carries daily use and distribution: a
-  port, the `.eth` journey, something else -- or is the success metric restated?
-- **Why it matters:** `scope.md`'s organic-traction failure criterion cannot fire until one
-  is named.
-- **Options:** name a port; name the `.eth` journey; restate the metric.
-- **Who decides:** owner
-- **Blocks:** packaging (build step 10) and any distribution
-
-### A252: Any web page reaches loopback services with no prompt **[OWNER]**
-
-- **Question:** Electron 44 disables `LocalNetworkAccessChecks`, so any page can fetch
-  `http://127.0.0.1:<port>/` unseen by the gate. Accept this build, or block it?
-- **Why it matters:** a gap in `security-model.md` T12 (covers only `orivon.*` sockets). `.eth`
-  pages are served from loopback; `test/web3/e2e-eth-verified.test.ts` is the canary.
-- **Options:** accept and say so in T12; block in the shell (a `webRequest` filter on private
-  destinations requested from public documents).
-- **Who decides:** owner
-- **Blocks:** packaging (build step 10)
 
 ### A253: The light client's consensus side has one keyless HTTPS beacon API **[OWNER]**
 
@@ -1131,18 +779,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   exactly like ISP forgery and is routed around too.
 - **Options:** scope T20 to app capabilities and say in T40 why the verifier differs, with A262's
   live check (rec.); read T40 as a T20 violation and drop the route whenever a proxy could apply.
-- **Who decides:** owner
-- **Blocks:** nothing
-
-### A264: Taking the direct gateway route is silent **[OWNER]**
-
-- **Question:** Should the person learn that their resolver forges a gateway's address, and that
-  Orivon went around it?
-- **Why it matters:** today it is one line on the verifier host's stderr. The person learns
-  neither fact, though the second changes which route their traffic takes.
-- **Options:** a line in Settings' verifier section and a switch to turn the route off (rec.: it
-  is a fact about the network, not one site); a `route` field on `SiteProvenance`
-  (`src/protocols/verifier-host/protocol.ts`) shown in the site-info popover; leave it silent.
 - **Who decides:** owner
 - **Blocks:** nothing
 
@@ -1240,26 +876,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A274: A second profile counts as a second install in usage statistics **[OWNER]**
-
-- **Question:** Should a second profile send its own usage statistics, or share the default's install id?
-- **Why it matters:** telemetry's install id is kept in the data directory, so each profile reports its
-  own time and a person with two profiles counts as two installs. The success metric counts people.
-- **Options:** the default profile's directory keeps the id and other profiles send nothing (rec.);
-  other profiles share its id; leave it. Each is a small change to `src/telemetry/`.
-- **Who decides:** owner
-- **Blocks:** nothing
-
-### A275: The update check is off until the owner decides **[OWNER]**
-
-- **Question:** Should looking for a newer release be on by default, and should Settings link to it?
-- **Why it matters:** the check asks GitHub once a day and installs nothing (`update-check.ts`); a
-  request to a third party at every start is a decision about what the browser tells one. It only
-  notifies, and Settings gives no way to the release page.
-- **Options:** keep it off, with "Check now" in Settings (rec.); on by default with a disclosure.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A277: Dragging a tab into another window is best effort on Wayland **[RESEARCH]**
 
 - **Question:** Can a tab dropped over another window find it under Wayland?
@@ -1268,16 +884,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   where the compositor puts it. The tab's menu and the commands never depend on position.
 - **Options:** measure drag and drop on a real Wayland session (rec.); use the compositor's protocol.
 - **Who decides:** research first
-- **Blocks:** nothing
-
-### A278: A development run and an installed one share a data directory **[OWNER]**
-
-- **Question:** Should a development run and an installed browser use different directories by default?
-- **Why it matters:** both use the operating system's directory, and a profile allows one browser at a
-  time, so starting one while the other runs hands over to it (`ADR-0042`). Both at once needs
-  `--user-data-dir`.
-- **Options:** keep sharing and document the switch (rec.); separate them by default.
-- **Who decides:** owner
 - **Blocks:** nothing
 
 ### A279: Sweeping a private session's directory on Windows is unmeasured **[RESEARCH]**
@@ -1306,16 +912,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** list apps from what is pinned as well as granted, once a real app is installed without a
   grant (rec.).
 - **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
-### A282: The first-run usage statistics screen is not built **[OWNER]**
-
-- **Question:** Where in the welcome flow does the usage statistics question sit?
-- **Why it matters:** `ADR-0004` calls for a first-run screen with the exact text and two buttons,
-  neither preselected. Settings has the same choice, undecided until made and nothing sent before it,
-  but no screen asks on first run.
-- **Options:** build it on the welcome flow once the owner says where (rec.).
-- **Who decides:** owner
 - **Blocks:** nothing
 
 ### A283: Fs confinement checks a path, then the adapter opens it by name **[AI-REC]**
@@ -1407,15 +1003,15 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 ### B4: UI words for app keys, named identities and wallets **[OWNER]**
 
 - **Question:** What words tell apart silent per-origin app keys, named identities (shared
-  across sites by a per-site connect prompt) and a funds-bearing wallet? The model is settled
-  in `capability-api.md`.
+  across sites, connected automatically only on a Web3 Score Level 4 site and by a one-click
+  grant elsewhere) and a funds-bearing wallet? The model is settled in `capability-api.md`.
 - **Why it matters:** blurred words invite exposing an identity or funds where a throwaway key
   was meant.
 - **Options:** one noun per kind, used for nothing else (rec.); the nouns are the owner's.
 - **Who decides:** owner
-- **Blocks:** the named-identity connect prompt and any wallet UI (neither is a build step)
+- **Blocks:** the named-identity connect prompt and the wallet UI (neither is built)
 
-### B5: Where FreeTube's storage assertions belong, and what they assert **[AI-REC]**
+### B7: Where FreeTube's storage assertions belong, and what they assert **[AI-REC]**
 
 - **Question:** `test/ported-apps/e2e-freetube-real.test.ts` asserts nedb files at the app's fs root, a claim
   about a bundle built in `orivon-ports` (ADR-0020). Move those checks there? Its IndexedDB
@@ -1424,15 +1020,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** move the storage checks beside the bundle in `orivon-ports` (rec.); keep them
   here and assert no IndexedDB database exists at all.
 - **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
-### BB1: `orivon.mdx` states a bitcoind goal in the present tense **[OWNER]**
-
-- **Question:** `orivon.mdx` says bitcoind "would be already runnable as a site on Orivon".
-  Fix the tense and keep the ambition?
-- **Why it matters:** it is the first claim a technical evaluator will test, and it fails today.
-- **Options:** rewrite it as a goal, ambition intact (rec.); leave it.
-- **Who decides:** owner (the public docs live in `<vision-corpus>`)
 - **Blocks:** nothing
 
 ### C1: Does DDOC justify self-signed HTTPS, as `Glossario` claims **[RESEARCH]**
@@ -1452,7 +1039,7 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Why it matters:** the estimate is unverified.
 - **Options:** a cheap conformance check before relying on the estimate (rec.).
 - **Who decides:** research first
-- **Blocks:** Nostr identity (an idea, `docs/scope.md` §LATER)
+- **Blocks:** Nostr identity (an idea under Later in `docs/roadmap.md`)
 
 ### C5: Which tool writes a publisher's `orivon-ddoc.json` **[AI-REC]**
 
@@ -1464,17 +1051,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   let publishers write their own; a second generator here.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing until a publisher outside `orivon-ports` needs DDOC
-
-### C6: Why `_electron` never attached to the week-0 video window **[AI-REC]**
-
-- **Question:** In spike gate 3, Playwright's `_electron` saw no target for the window though a
-  direct launch worked (`planning/spike-results/gate-3.json`). The cause is unknown.
-- **Why it matters:** only if it recurs: tests match windows via `app.windows()`, and the
-  address-bar click flake has a bounded retry.
-- **Options:** close as not worth pursuing (rec.); probe the untried causes (the `<video>`
-  element, a raw CDP client).
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
 
 ### A295: A `<webview>`'s own `webpreferences` attribute may reach a shown page **[AI-REC]**
 
@@ -1498,29 +1074,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A299: Developer mode is switched on by an environment variable **[OWNER]**
-
-- **Question:** Should developer mode be reachable only from the browser's own UI, or stay an
-  environment switch (`ORIVON_DEV_ORIGINS=1`) read at launch?
-- **Why it matters:** it routes loopback and developer `.eth` names, grants without install for
-  them, enables the Level 4 override (T39) and DevTools in shown pages; anything that sets a
-  launch's environment (a desktop shortcut, a same-user process) can turn it on. No page can.
-- **Options:** a Settings switch read at launch, with the variable honoured only in an unpackaged
-  build (rec.); keep the variable and say so (today, T13c).
-- **Who decides:** owner
-- **Blocks:** nothing
-
-### A300: The verifier host has Node and no sandbox **[AI-REC]**
-
-- **Question:** Should the untrusted parsers T34 names run in a sandboxed process with no Node?
-- **Why it matters:** T34 keeps a parser bug out of main, but the host is a Node utility process:
-  a bug exploited there reads and writes the person's files and reaches the network as they can.
-- **Options:** move UnixFS, dag-pb, IPNS, CCIP answers and the light client's WebAssembly into a
-  sandboxed process that only computes, keeping I/O in a thin host (rec.); keep one host and say so
-  (today).
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
 ### A301: One `orivon.fs` call has no byte cap **[AI-REC]**
 
 - **Question:** Should a single `orivon.fs` read, write or whole-file read be capped in bytes?
@@ -1541,18 +1094,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** redirect every non-canonical `chrome-extension://` path to its canonical form before it loads,
   then confirm the query is refused (rec.); find the Electron native binding that answers and patch it; leave it.
 - **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
-### A309: The welcome screen's corner prism covers the brand logo **[OWNER]**
-
-- **Question:** `.brand-logo` is a 40 px circle at the top-left, but `.prism` (115 x 158 px, pinned to the window's
-  corner, painted later with no `z-index`) covers that spot, so the "ORIVON" wordmark shows with an empty gap
-  before it. A full-window capture of the welcome screen shows the prism and no logo.
-- **Why it matters:** the first screen a new person sees either hides the product's logo by accident or replaces it
-  on purpose, and nothing in the source says which.
-- **Options:** keep the prism as the mark and drop `.brand-logo` and its gap; lift the brand above the prism
-  (`z-index`), or move the prism clear of the brand (rec.: the owner picks); leave it.
-- **Who decides:** owner
 - **Blocks:** nothing
 
 ### A310: A member the shim lacks does not always refuse by name **[AI-REC]**
@@ -1590,18 +1131,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** rewrite each page to the code (rec.); change the code where the page states the intent.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
-
-### A313: Most ports do not consume the Node shim **[OWNER]**
-
-- **Question:** The Lounge's port bundles against the shim through `src/shim/bundler/esbuild-plugin.ts`; the
-  other ports in `orivon-ports` bring their own polyfills and empty stubs. Should every port bundle against the
-  shim, which for the webpack-built ones means a webpack preset of the same alias table and the page globals?
-- **Why it matters:** what the compatibility tables say the shim offers reaches only the ports that bundle
-  against it, and a port's own `crypto-browserify` or empty `fs` hides both the shim's gains and its gaps.
-- **Options:** a preset for each bundler the ports use, esbuild's being built, and each port moved over when it
-  is next touched (rec.); keep per-port polyfills and describe the shim as for apps written for Orivon.
-- **Who decides:** owner
-- **Blocks:** how much of compatibility Tables 2 and 3 a port benefits from
 
 ### A315: The `node:sqlite` VFS assumes one connection per file **[AI-REC]**
 
@@ -1653,15 +1182,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A320: Spell checking downloads its dictionaries from Chromium's host **[OWNER]**
-
-- **Question:** With spell checking on (the default), Chromium fetches each language's dictionary once, from a host
-  the person never chose. The Settings row says so. Is that egress acceptable, or should Orivon host the files?
-- **Why it matters:** the project tells people what leaves the machine; this is a request to a third party with no consent step.
-- **Options:** keep it, named in Settings (current); off until the person turns it on; self-host the dictionaries.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A321: "Save link as" and "Save image as" save with no dialog by default **[OWNER]**
 
 - **Question:** These two context-menu items are downloads like any other, so with "Ask where to save each file" off
@@ -1669,17 +1189,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Why it matters:** the label promises a choice of place; the file appears in the folder and the downloads peek shows it.
 - **Options:** keep one rule for every download (current); the two items always ask; the items ask only when no folder
   has been chosen in Settings.
-- **Who decides:** owner
-- **Blocks:** nothing
-
-### A322: Orivon opens any finished download that is not a program or a script **[OWNER]**
-
-- **Question:** A click on a finished row opens the file with the system's default program unless its type runs code.
-  Should Orivon open only a short allowlist of types (images, text, PDF, audio, video, archives) and show the rest in
-  the file manager?
-- **Why it matters:** the list of types that run code is open-ended (a new script host, a document with macros); an
-  allowlist shuts that gap but changes what a click does for every file the person downloads.
-- **Options:** keep the block list (current); an allowlist for Open, the file manager for everything else.
 - **Who decides:** owner
 - **Blocks:** nothing
 
@@ -1792,24 +1301,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A338: A content blocker's blocking is run only with a fixture extension **[RESEARCH]**
-
-- **Question:** Does a real MV3 blocker (uBlock Origin Lite) block through Orivon's `declarativeNetRequest` engine? The
-  opt-in real-extension end-to-end file skips itself when no extracted extensions are configured.
-- **Why it matters:** the changelog and the scope row say content blockers work; only a fixture has shown it.
-- **Options:** run `e2e-extensions-real` with the four extensions extracted and record the result (rec.).
-- **Who decides:** research first
-- **Blocks:** nothing
-
-### A339: The side panel lists a reading list that nothing can fill **[OWNER]**
-
-- **Question:** The reading list was taken out (no command, button or menu row saves to it), but the side panel still has a Reading list view
-  that reads the bookmark file's reading-list root. Should the view stay, or leave until the reading list is built?
-- **Why it matters:** the picker shows a view that is always empty, with a line saying pages you save for later appear there.
-- **Options:** remove the view and its row code now (rec.); keep it for when the reading list lands; hide it while the root is empty.
-- **Who decides:** owner
-- **Blocks:** nothing
-
 ### A342: Pinning a tab ended the browser, and the cause is not found **[OWNER]**
 
 - **Question:** Pinning a tab was reported to end the browser after a leak warning. No code path that throws was found in pinning, moving, grouping, sleeping or the session recorder, and repeated pins of a plain, a grouped, a moved and a sleeping tab (from its menu) end cleanly. Which tab was it, and what did the terminal print around it?
@@ -1846,15 +1337,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   320 px) measures 234 px and does not scroll. Which surface scrolled, and on which layout, settles it.
 - **Why it matters:** a menu that scrolls where the screen has room reads as broken, and a native menu has no lever.
 - **Options:** keep the menus native (owner's call, recorded in `d-0399`); on a repro, draw that menu as an overlay.
-- **Who decides:** research first
-- **Blocks:** nothing
-
-### A343: A split's new pane took no input, and the cause was not reproduced **[RESEARCH]**
-
-- **Question:** After a tab was dropped onto an app tab, the new pane took no clicks or keys while the first pane worked. Does it still
-  happen now that the pane is stacked beside its partner and the dropped page takes the keyboard?
-- **Why it matters:** the order fix and the focus are built from what the code showed; nothing reproduced the failure.
-- **Options:** repeat the drop on a real session (rec.); if it persists, read `contentView.children` and each view's bounds then.
 - **Who decides:** research first
 - **Blocks:** nothing
 
@@ -1897,17 +1379,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** re-key the tab's asks to the new window and show them there (rec.; the panel, the site ask, the
   sign-in and the chooser each hold the window); cancel and ask again in the new window; leave it as a cancel.
 - **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
-### A371: Exported passwords that start with `-`, `+`, `=` or `@` carry a quote other password managers keep **[OWNER]**
-
-- **Question:** The export puts a leading `'` on any cell a spreadsheet would run as a formula (`d-0304`), the
-  password cell included. Orivon's own import removes it; Chrome, Firefox, Bitwarden and 1Password keep it, so such a
-  login no longer signs in there. About 1 in 61 passwords Orivon generates starts with `-`.
-- **Why it matters:** the export is how a person leaves for another browser or password manager.
-- **Options:** leave the password cell as it is and say so on the export's confirmation (rec.); escape only cells that
-  read as a formula after the sign; keep `d-0304` as it is.
-- **Who decides:** owner
 - **Blocks:** nothing
 
 ### A372: A web context's WebSocket listener may break the redirects its reach handler returns **[RESEARCH]**
@@ -1998,15 +1469,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A387: Does a desktop list Orivon for web links with only the two scheme handlers? **[RESEARCH]**
-
-- **Question:** The entry lists `x-scheme-handler/http` and `/https` and no `text/html`. GNOME's browser list is
-  believed to key on the schemes, which is unmeasured; the `.deb` has not been installed to check `gio mime`.
-- **Why it matters:** if a desktop needs `text/html` to list a browser, the default-browser button has nothing to set.
-- **Options:** install the built package and read `gio mime x-scheme-handler/https` (rec.); put `text/html` back.
-- **Who decides:** research first
-- **Blocks:** nothing
-
 ### A382: Chrome stops extensions scripting the Chrome Web Store page; Orivon does not **[RESEARCH]**
 
 - **Question:** Chrome refuses every extension's content scripts, `chrome.scripting` and `webRequest` on the Web Store's own origin. Orivon runs them there, so an extension can rewrite the page that installs extensions. Refuse the store origin as Chrome does?
@@ -2021,26 +1483,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Why it matters:** too short and an extension that opens its panel after a network answer is refused; too long and one click opens panels for a while.
 - **Options:** keep five seconds (rec.: it matches the length of a page's transient activation); measure Chrome's, and take that.
 - **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
-### A385: Does a real wallet extension work with its panel on a toolbar click? **[RESEARCH]**
-
-- **Question:** MetaMask sets `openPanelOnActionClick`, opens its panel from its popup with `open({ windowId })` and returns with `window.close()`; behind a remote flag its worker calls `open({ tabId })` with no gesture. Only a fixture extension has been run against the panel.
-- **Why it matters:** the toolbar click of the extension with the most users now opens a panel instead of its popup.
-- **Options:** run `test/extensions/e2e-extensions-real.test.ts` with `ORIVON_REAL_EXTENSIONS_DIR` set before merging (rec.); do nothing until a report comes in.
-- **Who decides:** research first
-- **Blocks:** nothing
-
-### A388: A gateway address opened as a .eth name skips what the gateway or an extension would have done **[OWNER]**
-
-- **Question:** With "Open .eth.limo addresses as .eth names" on, a name that points at Swarm or Arweave, has not
-  synced, or cannot be reached shows Orivon's error page, and a typed gateway address cannot be opened as it is. The
-  redirect also runs before extensions' request handlers, so a block an extension holds for an `eth.limo` host never fires.
-- **Why it matters:** the gateway would have loaded some of these pages; the only way out is to turn the setting off.
-- **Options:** keep it as it is, both limits named on the compatibility pages (rec.); offer "Open through eth.limo" once
-  on the error page, which needs a decision on what a gateway-served page may do here; run the redirect after
-  extensions' request handlers, and map no address before a request while one with a block on the host is loaded.
-- **Who decides:** owner
 - **Blocks:** nothing
 
 ### A389: Is "an evaluation for the exact CID" the right bar for a verified update? **[OWNER]**
@@ -2063,16 +1505,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** keep it (rec.: a website has no grants or data to protect and no version to compare);
   hold websites at a pin too, which breaks every site whose content changes daily.
 - **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
-### A391: One key holds the provider and Explore's name **[OWNER]**
-
-- **Question:** The official provider and the Explore catalogue publish from the same server, so one
-  compromise could pass an app's update as verified under its own name (`security-model.md` T81).
-- **Why it matters:** "verified" is only as independent as the provider is from the publisher.
-- **Options:** a separate provider key held elsewhere (rec.); accept it while the apps are the
-  project's own; a second provider the person adds.
-- **Who decides:** owner
 - **Blocks:** nothing
 
 ### A395: A page's score lookup reads a judged name's manifest in the name's own partition **[AI-REC]**
@@ -2207,5 +1639,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Why it matters:** without an Article 28 agreement the consent covers the transfer but not the processor's duties.
 - **Options:** use an Anthropic offering with a processing agreement and no training on inputs (rec.); give reports
   to Claude only after removing personal data by hand; stop giving reports to an AI and rewrite the notice.
-- **Who decides:** owner
+- **Who decides:** owner, who does not know the plan's data terms yet. Until they are settled, an agent
+  redacts personal data from a bug report before reading it.
 - **Blocks:** nothing in the code; the notice's AI paragraph is *provisional* until it is settled

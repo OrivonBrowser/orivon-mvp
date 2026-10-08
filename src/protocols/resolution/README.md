@@ -1,9 +1,8 @@
 # `src/protocols/resolution/`: name resolvers and data gatherers
 
-**What lives here.** The two provider shapes the canonical
-[DNS resolution](https://docs.orivonstack.com/docs/implementations/dns-resolution) and
-[Data gathering](https://docs.orivonstack.com/docs/implementations/data-gathering) pages give
-Apps, as internal TypeScript: a `NameResolver` returns a name's records for the namespaces it
+**What lives here.** The two provider shapes a name resolver and a data gatherer have,
+as internal TypeScript (the older published docs describe them; verify anything taken from there
+with the owner): a `NameResolver` returns a name's records for the namespaces it
 declares, and a `DataGatherer` loads a site from those records and reports DDOC. Plus
 [`pointer-chain.ts`](pointer-chain.ts), the one rule both an open page and an installed app use to
 judge a chain of pointers, and three helpers the providers, the verifier host and its supervisor

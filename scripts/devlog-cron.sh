@@ -23,7 +23,7 @@ echo "=== $(date -Is) devlog cron run ===" >> "$LOG"
 
 # This run is UNATTENDED with auto-approved edits, and its inputs include git
 # commit messages -- attacker-controlled text once outside contributions land,
-# which build-plan.md actively wants. Containments, in order of value:
+# which the project wants. Containments, in order of value:
 #
 #   1. Edit/Write are granted ONLY for ./devlog/**, and --permission-mode
 #      acceptEdits is deliberately NOT used. This is an allow-list, not a

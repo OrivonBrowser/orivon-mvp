@@ -37,7 +37,7 @@ and `tests/support/` keep `node:*`; `tests/support/page-buffer.ts` and `page-str
 test the page's own classes.
 
 **`zlib` is gzip/deflate only**: `browserify-zlib` predates brotli. Why each polyfill package was
-chosen: [`shim-dependency-review.md`](../../docs/planning/shim-dependency-review.md) §Status.
+chosen: [`shim-dependency-review.md`](../../docs/planning/shim-dependency-review.md) section Status.
 
 **Breaking an app.** What a working app relies on is a row of
 [`test/app-behaviours/catalogue.md`](../../test/app-behaviours/catalogue.md), proven by an end-to-end spec, so a
@@ -59,7 +59,7 @@ main-process authority.
 `module-map.ts`.
 
 **Binding requirements.** Read
-[`handle-contracts.md`](../../docs/architecture/handle-contracts.md) §What the shim must do
+[`handle-contracts.md`](../../docs/architecture/handle-contracts.md) section What the shim must do
 before writing a line here; code cites its rules by number:
 
 1. Completeness is measured against a dependency's real call graph (`net.isIP()`, which

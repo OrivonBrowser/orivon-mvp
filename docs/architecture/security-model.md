@@ -9,9 +9,9 @@ an ordinary browser never does.
 they were granted) rather than *containment*. If the broker has a hole, a hostile app has the user's
 machine.
 
-This is stated in the product (`scope.md` non-goals), it is why developer mode carries a
-real warning rather than a reassuring one, and it is the concrete reason `orivon-runtime`
-exists on the roadmap (`ADR-0002`).
+This is stated in the product, it is why developer mode carries a real warning rather than a
+reassuring one, and it is why stronger sandboxing is expected in the future, not now
+(`ADR-0002`).
 
 ## Assets
 User's filesystem · the machine's network position (an app can reach the LAN, localhost, and
@@ -46,12 +46,12 @@ arbitrary hosts) · identity seed and derived keys · other apps' data · attent
 | T7 | App escapes its manifest by rewriting its own code | Code cache is **read-only to the app**; only the broker writes it (`ADR-0003`) |
 | T8 | Identity key exfiltration | Seed in `safeStorage`, never exposed; apps receive **derived** keys and secrets only (`orivon.id`, and `orivon.secrets` under a distinct salt, [`ADR-0033`](../decisions/ADR-0033-an-app-may-hold-an-origin-bound-secret-in-the-os-keyring.md)); raw export is not a capability at any tier. **Scope of that protection:** `safeStorage` defends against another OS user and against offline disk access, but not against same-user code (T24) |
 | T8b | A connected site silently signs destructive or authenticating events with a named identity | **Not built:** named identities do not exist yet (A111), so nothing signs under one. When they are built: named identities expose `signEvent(obj)`, **never raw-payload signing**. The broker screens `kind`: 1/6/7 silent; **0, 3, 5, 22242 and any delegation prompt**. Derive a separate secret per `(label, curve)` via length-prefixed HKDF, never one scalar across two schemes. `nip04`/`nip44` decrypt, if offered at all, is a **separate grant** from signing. A local append-only signing log (origin, identity, kind, time) with a viewer is the missing repudiation control |
-| T9 | Cross-app identity correlation | App keys derive per origin, so apps cannot link a user silently. **Named identities** (e.g. Nostr) are cross-origin *by explicit consent only*; the connect prompt is the boundary (`capability-api.md`) |
+| T9 | Cross-app identity correlation | App keys derive per origin, so apps cannot link a user silently. **Named identities** (e.g. Nostr) are cross-origin and connect automatically only on a Web3 Score Level 4 site; elsewhere a one-click or broker grant is the boundary, and a value-bearing action always prompts (`capability-api.md`) |
 | T10 | Hostile peer serves corrupt torrent data | Piece verification against the infohash, inherent to BitTorrent and not something Orivon adds |
 | T11 | Resource exhaustion (disk, sockets, bandwidth) | `fs.quotaBytes` enforcement, socket count limits, disk-usage UI (`ADR-0003`). Quota default must be a fraction of **free disk measured at grant time**, not the absolute 50 GiB constant in the manifest example |
 | T11b | One app saturates the broker and freezes every tab | The broker runs on the UI thread, so a loop of `orivon.fs.stat()` hangs the whole browser. Per-origin in-flight cap and a token-bucket rate limit on IPC dispatch; all `fs` work genuinely async |
 | T11c | Handle IDs are forgeable across origins | **Per-origin handle tables** plus an ownership check on every operation. A single global map with sequential integers lets one app read another's open file or write its socket |
-| T12 | App reaches localhost or the LAN to attack other services | **Manifest patterns must be checked against resolved addresses, not hostnames**, because otherwise DNS rebinding defeats them. Private ranges denied unless explicitly declared. `net.connectSecure` matches by name only while default certificate verification binds the name to the peer; any TLS option that unbinds it (`rejectUnauthorized: false`, the app's own `ca`, another `servername`) adds the resolve-once address check |
+| T12 | App reaches localhost or the LAN to attack other services | **Manifest patterns must be checked against resolved addresses, not hostnames**, because otherwise DNS rebinding defeats them. Private ranges denied unless explicitly declared. `net.connectSecure` matches by name only while default certificate verification binds the name to the peer; any TLS option that unbinds it (`rejectUnauthorized: false`, the app's own `ca`, another `servername`) adds the resolve-once address check. **Loopback from a web page is not covered:** the gate covers `orivon.*` sockets, and Electron 44 disables Chromium's local-network check, so any page can `fetch` a service on `127.0.0.1` without a prompt. `.eth` pages are served from loopback, which is why the shell keeps that reach rather than block it |
 | T13 | Telemetry endpoint used to correlate users | Random install ID, no third party, **monthly aggregate rather than a per-session timeline**, since session timestamps against a stable ID are a daily activity pattern, and the metric needs a sum (`ADR-0004`). The client **ignores the response body entirely**: no server-driven config, no kill switch, no remote-control channel |
 | T13b | Origin-as-path collapses distinct origins, or escapes the app root | Directory names are `sha256(canonical_origin)`, never the origin string, because otherwise `https://Example.com` and `https://example.com` share a directory on macOS/Windows. Code and data live under **separate roots**, so a one-level `fs` escape reaches an empty parent rather than executable code. Opaque origins (`data:`, `blob:`, sandboxed frames) are rejected outright. A document opened from this computer is keyed on its own `file:` URL (empty host, no query or fragment, at most 2,048 characters), so a sibling file is another origin and a moved file is asked again; a sandboxed one is refused like any sandboxed frame, and its saved data lives under `app-data/<hash>` like any origin's (`localFileKey`, `src/broker/policy/origin.ts`) |
 | T13c | Grants persist on a loopback origin and are inherited by an unrelated local server on the same port | Never persist grants for loopback or plain-`http` origins. Session-scoped only, re-prompt each launch, permanent insecure marker in the tab. A local file's key is an exact path, not a place another server can occupy, so its grants, saved data, `id` keys and `secrets` persist like a website's; what the path holds can change, so a different file saved at the same path inherits them, and the consent says so (`ADR-0060`). Only a file the person let use Orivon permissions holds grants (a page of any other file gets `false` from `app.requestGrant`, and its site-info switches turn nothing on), and its grants come back only from a manifest read at the document itself, from under its own folder (real paths, no link out, size-capped). The question is the warning style and its Allow answers only on a second press within 1.5 s, armed after the guard and the pointer's or the focus's arrival on it (a pointer resting through the guard arms nothing until it enters again), so one stray click or key grants nothing (`src/main/shell/question/question-overlay.ts`); a manifest that now widens a held capability asks again, and a limit no pattern shows (quota, curves, sockets) does not (A404). Developer mode is switched on only by the `ORIVON_DEV_ORIGINS` environment variable at launch: unreachable from renderer IPC and from any command-line flag. Whether it should be reachable only from the browser's own UI is A299 |
@@ -226,9 +226,9 @@ emitting a token the browser silently discards. Same consequence as a `*` grant 
 A43): the pattern is `fetch`-blocked, not merely CSP-uncovered, and `omitted` is what lets a later
 build step explain why.
 
-## Capabilities excluded from v0, on security grounds
-`subprocess` and `hid` are absent from the v0 API entirely, for signed apps too, not merely
-unsigned ones (`capability-api.md`). No app in this version needs them, and they are the largest
+## Capabilities excluded from the API, on security grounds
+`subprocess` and `hid` are absent from the API entirely, for signed apps too, not merely
+unsigned ones (`capability-api.md`). No ported app needs them, and they are the largest
 available attack surface. Adding either requires an ADR. `ADR-0040` keeps `subprocess` out: a
 ported app's native modules and child processes run as WebAssembly inside its own tab, where a
 WASI program's every file call is an `orivon.fs` call under the app's grants, and a WASI 0.2
@@ -246,9 +246,11 @@ disk; the choice is not shown to the person for now, only logged.
 
 ## Not defended against, stated plainly
 - A hostile app that a user deliberately installs in developer mode and grants capabilities to.
-  That is the point of developer mode, and containment arrives with `orivon-runtime`.
+  That is the point of developer mode; stronger sandboxing is expected in the future, not now.
 - A compromised build machine or a malicious release. There is no reproducible build and, on
-  Linux, no signing in v0.
-- Traffic analysis. No Tor integration in this version.
+  Linux, no signing.
+- Traffic analysis. There is no Tor support today.
+- A DNS rebind between the app loader's address check and its install fetch. The fetch goes through Chromium's network stack, which cannot dial a pinned address, so the check narrows the window and does not close it.
+- A public name with a trusted certificate that resolves to a LAN address, reached under a `*:443` grant. A certificate binds a name, not an address, and `connectSecure` does not resolve; only literal addresses are checked there.
 - A script running inside the real site, or an extension's content script on it, reading a form field Orivon has filled from the password store. It reads the field exactly as it reads one the person typed.
 - A person who answers a permission prompt or the HTTPS-only sheet with Allow or Continue.

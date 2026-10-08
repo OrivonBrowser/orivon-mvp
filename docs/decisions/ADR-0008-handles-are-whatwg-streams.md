@@ -12,7 +12,7 @@ The durable shape underneath every Orivon capability handle (`TcpSocket`, `TcpSe
 Node-style `EventEmitter` and not a raw `MessagePortMain` handed to app code. Node's own
 shapes are still what an app sees, but only because `orivon-node-shim` reconstructs them on
 top of this layer, but the streams interface is what survives into `handle-contracts.md`, and
-what every future engine (Wasmtime, a Chromium/Mojo fork) must be able to implement under.
+what any future engine must be able to implement under.
 
 ## Context
 
@@ -39,8 +39,7 @@ solve this natively via `highWaterMark` and `pull()`.
 **A raw `MessagePortMain` per handle, transferred to the app.** Fastest possible path,
 structurally, with no broker-side stream wrapping at all. Rejected for two independent reasons,
 either alone sufficient: (1) `MessagePort` has no WASM equivalent, so any code written
-against it stops being portable the moment the Wasmtime leg (`docs/decisions/`, the
-Node-broker-now/Wasmtime-later/Chromium-later roadmap) is built, which is precisely the kind
+against it stops being portable the moment the engine beneath changes, which is precisely the kind
 of dead end Rule 5 forbids; (2) a transferred port carries no sender identity
 (`security-model.md` T17). Handing one to app code makes it a bearer capability, so any
 origin that gets hold of the port object can act with the capability regardless of which
@@ -49,7 +48,7 @@ transferable handles for this reason; this alternative would have violated it di
 
 **Recommended and decided: WHATWG streams as the durable interface.** `ReadableStream` and
 `WritableStream` are available in every target (a browser renderer today, WASI's own stream
-model later, Mojo data pipes are stream-shaped already), have backpressure built into their
+model too), have backpressure built into their
 contract (`highWaterMark`, `pull()`, `write()` resolving only on acceptance), and are not
 transferable across `contextBridge` in a way that leaks sender identity: the broker holds
 the raw port, the app only ever sees a stream backed by `contextBridge` closures.
@@ -69,7 +68,7 @@ engine backend or by every app author working around a leaky abstraction.
 - `capability-api.md` design rule 1 ("mirror Node's API shapes") is **rescoped, not
   reversed**: it now applies to `orivon-node-shim`'s output, not to the capability layer
   itself. The capability layer's actual durable shape is what this ADR states. See the
-  correction recorded in `capability-api.md` §Design rules.
+  correction recorded in `capability-api.md` section Design rules.
 - `handle-contracts.md` is the full specification built on this decision: the credit-window
   backpressure design, the close/half-close semantics keyed off `readable`/`writable`
   lifecycle, and the derived-handle-as-child-stream model for `TcpServer.connections` all
@@ -77,7 +76,7 @@ engine backend or by every app author working around a leaky abstraction.
 - `orivon-node-shim`'s job grows: every Node-shaped entry point (`net.Socket`, `dgram.Socket`,
   `fs.promises.FileHandle`) is now a wrapper reconstructed from a stream pair plus captured
   synchronous properties, not a renamed pass-through. This is accounted for in
-  `handle-contracts.md` §What the shim must do.
+  `handle-contracts.md` section What the shim must do.
 
 ## Reversibility
 
@@ -85,6 +84,5 @@ engine backend or by every app author working around a leaky abstraction.
   `handle-contracts.md`. Before that point, changing `orivonApiVersion: 0`'s shape is
   explicitly permitted (`capability-api.md`, top-of-document status note).
 - **What would make us revisit:** WHATWG streams turning out not to be implementable, at
-  acceptable cost, on the Wasmtime host-function boundary when that work actually starts,
-  which is the premise this decision is staked on, currently unverified because Wasmtime is deferred
-  post-MVP. Record any such finding in `open-questions.md`, not silently.
+  acceptable cost, beneath another engine if that work ever starts, which is the premise this
+  decision is staked on, currently unverified because no such engine is planned. Record any such finding in `open-questions.md`, not silently.

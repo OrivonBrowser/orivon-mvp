@@ -6,7 +6,7 @@ pattern: (npm|pnpm|yarn)\s+(i|install|add)\b.*\b(node-datachannel|utp-native|buf
 action: block
 ---
 
-**Native module install blocked (CLAUDE.md Rule 8 / build-plan.md "Platform policy").**
+**Native module install blocked (CLAUDE.md Rule 8 / `docs/development/packaging.md`).**
 
 Windows and macOS are supported via run-from-source (`git clone && npm install && npm start`).
 Any dependency needing node-gyp, CMake or a C++ toolchain breaks that path silently.

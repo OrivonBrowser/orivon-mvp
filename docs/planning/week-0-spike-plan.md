@@ -13,8 +13,8 @@ preload holds the raw port in the isolated world and exposes only `contextBridge
 Playwright `_electron` for driving the app, `webtorrent@3.0.21`, `streamx` for the shim's
 stream shapes.
 
-**Spec:** [`build-plan.md`](build-plan.md) §Week 0 · [`audit-2026-08-25.md`](audit-2026-08-25.md) ·
-[`capability-api.md`](../architecture/capability-api.md) §Throughput
+**Spec:** the retired build plan, section Week 0 · [`audit-2026-08-25.md`](audit-2026-08-25.md) ·
+[`capability-api.md`](../architecture/capability-api.md) section Throughput
 
 ---
 
@@ -118,10 +118,10 @@ Copied verbatim from the specs. Every task inherits these.
 
 - **TypeScript only.** No Rust, no C++ (`ADR-0002`).
 - **Pure-JS dependencies only.** Zero `binding.gyp` and zero `prebuilds/` anywhere under
-  `node_modules` (Rule 8, `build-plan.md` §Platform policy).
+  `node_modules` (Rule 8, `build-plan.md` section Platform policy).
 - **`contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`.** The raw
   `MessagePort` **never** crosses into the main world; the preload holds it in the isolated
-  world and exposes only closures (`capability-api.md` §Throughput; `security-model.md` T17).
+  world and exposes only closures (`capability-api.md` section Throughput; `security-model.md` T17).
 - **All storage through `app.getPath('userData')`.** Never a hardcoded XDG path (`ADR-0003`).
 - **Video is MP4/H.264 only.** MKV has no path in v0.
 - **Toolchain:** Node 24.11.1, npm 11.6.2 (verified present 2026-08-25).
@@ -152,7 +152,7 @@ stale here. **Three of these correct the spec.**
 **`MessagePortMain.postMessage` only accepts `MessagePortMain` objects in its transfer list**,
 so transferring an `ArrayBuffer` renderer → main may not be *possible*, not just unreliable.
 
-`build-plan.md` §Week 0 structures Gate 4 as "day 1 naive → day 2 with transferable
+`build-plan.md` section Week 0 structures Gate 4 as "day 1 naive → day 2 with transferable
 `ArrayBuffer`s and 64-256 KB batching", and calls "passes, but only with transferables" the
 likeliest outcome. **If transferables are unavailable on this path, that mitigation does not
 exist** and a Gate-4 failure would have no day-2 rescue.
@@ -322,7 +322,7 @@ Expected: PASS, 5 tests.
 - [ ] **Step 5: Wire up the project**
 
 `package.json`: note `webtorrent` is a **devDependency** here. It is a pre-built app asset, not
-a shell dependency (`build-plan.md` §Platform policy), and the spike only needs it locally.
+a shell dependency (`build-plan.md` section Platform policy), and the spike only needs it locally.
 
 ```json
 {
@@ -421,7 +421,7 @@ git commit -m "Scaffold: electron-vite + TypeScript + Vitest, with the native-mo
 
 **Why first:** `electron#34905` is open, and the reporter's diagnosis is that
 `MessagePortMain.postMessage` accepts *only* `MessagePortMain` in its transfer list. Every later
-gate, and the entire `capability-api.md` §Throughput design, sits on this path. If structured
+gate, and the entire `capability-api.md` section Throughput design, sits on this path. If structured
 clone renderer → main is also broken, nothing else in the plan matters.
 
 **Files:**
@@ -456,7 +456,7 @@ export function installGate0Echo (win: BrowserWindow): void {
 - [ ] **Step 2: Hold the port in the isolated world**
 
 The preload keeps the raw port and exposes closures. This is the rule from
-`capability-api.md` §Throughput, and the spike follows it so that Gate 4 measures the path the
+`capability-api.md` section Throughput, and the spike follows it so that Gate 4 measures the path the
 product can actually ship.
 
 ```ts
@@ -539,7 +539,7 @@ Run: `npm run dev`, trigger `runGate0()`, write the returned object to
 twenty-five times the 1-5 MB/s that 1080p needs, so it leaves ample room for the shim's overhead.
 
 **Whatever `transfer` shows, it is a finding, not a gate.** If transfers fail, record that
-`capability-api.md` §Throughput must drop its transferable-`ArrayBuffer` language and
+`capability-api.md` section Throughput must drop its transferable-`ArrayBuffer` language and
 `build-plan.md`'s "day 2 with transferables" rescue does not exist. Copying at ≥50 MB/s is
 sufficient on its own.
 
@@ -962,8 +962,8 @@ At minimum, already known before the spike starts:
 - webtorrent is **3.0.21**, not 2.x (`build-plan.md`, `CLAUDE.md`)
 - the `browser` field map is wider than documented, and `dgram` is not in it
 - whatever Gate 0 concluded about transferable `ArrayBuffer`s
-  (`capability-api.md` §Throughput)
-- `createServer`'s `force` parameter (`build-plan.md` §5)
+  (`capability-api.md` section Throughput)
+- `createServer`'s `force` parameter (`build-plan.md` section 5)
 
 - [ ] **Step 3: Write the project skill**
 
@@ -983,7 +983,7 @@ the evidence for the verdict and they outlive the code that produced them.
 
 ## Self-review against the spec
 
-**Spec coverage.** `build-plan.md` §Week 0 lists four ordered checks; they are Tasks 3+4, 5, 6
+**Spec coverage.** `build-plan.md` section Week 0 lists four ordered checks; they are Tasks 3+4, 5, 6
 and 7. The `electron#34905` verification it requires "first" is Task 2. The scaffold, test stack
 and CI job it puts in week 0 are Task 1. The `postinstall` native check it asks for is Task 1
 Step 3. The day-1-naive → day-2-batched structure is Task 7 Step 4.

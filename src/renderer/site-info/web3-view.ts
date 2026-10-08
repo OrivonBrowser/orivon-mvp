@@ -21,7 +21,7 @@ import { judgedElsewhereNote } from '../../trust/domain-binding.js'
 // still-unwired per-app axis (the "Connections: Not observed yet" row
 // below) -- see that module's own header.
 
-/** The canonical meanings, summarised: docs.orivonstack.com/docs/implementations/web3-score. */
+/** The level meanings, summarised from the scale in the root README.md. */
 const LEVEL_LABELS = [
   'Standard website (Web2)',
   'DDOC: its files match what its owner published',

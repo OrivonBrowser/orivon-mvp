@@ -96,13 +96,13 @@ function computeRedirectUrl(matchedRule: VendorMatchedRule, requestURI: URL): st
   if (redirect.extensionPath) {
     // Orivon serves an extension's own resources at chrome-extension://<id>/,
     // matching electron-chrome-extensions's convention (extensionId is the
-    // host). See this directory's README §Design notes.
+    // host). See this directory's README section Design notes.
     return `chrome-extension://${extensionId}${redirect.extensionPath}`
   }
   if (redirect.transform) {
     // Unlike redirect.url, the final scheme/host here can depend on
     // requestURI (a field transform.* leaves unset inherits it) -- README
-    // §Design notes has why validation alone cannot rule out every case,
+    // section Design notes has why validation alone cannot rule out every case,
     // and why this defence-in-depth check must run against the real URL.
     const transformed = ExtensionDNR.applyURLTransform(requestURI, redirect.transform)
     return ExtensionDNR.isRedirectTargetAllowed(transformed, extensionId) ? transformed.href : null

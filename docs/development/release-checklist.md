@@ -2,8 +2,8 @@
 
 Run before every release.
 
-**Why this file exists.** [`scope.md`](../scope.md) describes the user journeys as
-prose, and prose cannot be run identically twice: two people reading "paste a magnet link"
+**Why this file exists.** The user journeys are described as
+prose elsewhere, and prose cannot be run identically twice: two people reading "paste a magnet link"
 test two different things, and the same person tests something different next month. Every item
 here therefore has a **precondition**, a **fixed input**, and a **falsifiable assertion**.
 
@@ -79,8 +79,8 @@ without the user being told.
 
 **The supported path most likely to break silently, because nothing in CI exercises it.** CI
 builds and launches the Windows and macOS packages, but never runs from source there; both
-platforms are supported that way too ([`build-plan.md`](../planning/build-plan.md) §Platform
-policy), and those users count toward the success metric.
+platforms are supported that way too ([`packaging.md`](packaging.md)), and those users count
+toward the success metric.
 
 **Precondition.** A machine with **no C++ toolchain installed**: no Visual Studio Build Tools
 on Windows, no Xcode command-line tools beyond git on macOS. A machine that already has them
@@ -154,7 +154,7 @@ forgotten.
 - [ ] CI green on `main`.
 - [ ] After publishing: the Release workflow is green and the release carries the deb, the
       AppImage, the Windows installer, both dmgs and `ipfs.json` ([`packaging.md`](packaging.md)
-      §Releases); within about 15 minutes `ipfs://<cid>` from its notes opens in Orivon.
+      section Releases); within about 15 minutes `ipfs://<cid>` from its notes opens in Orivon.
 - [ ] [`CHANGELOG.md`](../../CHANGELOG.md) updated.
 - [ ] Known limitations stated **in-product**, not only in the README: peers see the user's IP;
       no automatic port forwarding behind NAT; address-bar search text goes to DuckDuckGo.

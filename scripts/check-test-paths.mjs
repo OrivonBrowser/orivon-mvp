@@ -24,7 +24,7 @@ const EXEMPT_PREFIXES = [
   'docs/development/review-coverage.md', 'devlog/', 'docs/planning/'
 ]
 /** Under `docs/planning/`, these are live pages and are checked. */
-const CHECKED_PLANNING = ['docs/planning/build-plan.md', 'docs/planning/compatibility-matrix.md', 'docs/planning/compatibility/']
+const CHECKED_PLANNING = ['docs/planning/compatibility-matrix.md', 'docs/planning/compatibility/']
 const SYNTHETIC = /^scripts\/(?:[^/]+\/)*tests\//
 const TOKEN = /(?<![\w.:@/-])((?:\.\.\/)*)test\/[\w.@+*-]+(?:\/[\w.@+*-]+)*/g
 

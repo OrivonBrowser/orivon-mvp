@@ -51,16 +51,18 @@ Orivon itself is not owned by it.
 **Web4**: the era Orivon aims to open, meaning easy interfaces to *use* Web3, as Web2 was easy
 interfaces to *read and write* Web1 (`OrivonBook/Web3 Potential.md`).
 
-**WASM Orivon Execution Layer**: current name for what earlier documents called "Advanced
-WASM" or "programs on-fly". Today this capability is delivered by the broker, not by
-a WASM runtime (`ADR-0002`).
+**Execution layer**: whatever runs an app from a URL. Today that is the broker, the Node shim and
+the WASI host inside Electron. WebAssembly support grows inside it; a switch to a WebAssembly
+runtime is a possible option, not a plan (`ADR-0002`).
 
-**Web3 Accounts**: the no-setup identity system. Silent per-origin app keys, plus
-named identities (e.g. the Nostr identity) that are cross-origin by explicit consent
-(`capability-api.md`). Not a wallet: no funds, no seed phrase shown, no send or receive.
+**Web3 Accounts**: the no-setup identity system. Silent per-origin app keys, plus named
+identities (wallet accounts, the Nostr identity, `orivon.id`) that are cross-origin. They connect
+automatically only on a Web3 Score Level 4 site; elsewhere the person grants them with one click
+or a broker prompt, and a value-bearing action always asks (`capability-api.md`). No wallet is
+built yet; a native wallet is on the way.
 
-**Web3 Green mark**: the site-facing incentive marking to adopt trustless technology; the
-inverse of the yellow "you are in Web2" badge.
+**Web3 Green mark**: another name for the Web3 Score shield. It is not a
+separate feature.
 
 ## Architecture
 
@@ -89,12 +91,6 @@ change alone changes the bundle hash (`ADR-0009`, `architecture/bundle-hash.md`)
 
 **`orivon-node-shim`**: implements Node's `net`, `dgram` and `fs` over `orivon.*`, so existing
 Electron apps port mechanically. Load-bearing for every Node.js app (`ADR-0005`).
-
-**`orivon-runtime`**: the deferred Wasmtime host. Purpose: containment for untrusted code, and
-mobile portability. Not cancelled (`ADR-0002`).
-
-**`orivon-core`**: in the published docs, the client wrapping `orivon-runtime`. Orivon
-Browser's broker occupies this role; the name is not yet used in this codebase.
 
 **Developer mode**: off by default; loads unpacked, unsigned apps at the user's risk, with a
 reduced capability set.
@@ -128,7 +124,7 @@ by hash bucket, so a request names a group of sites, never the site
 level on the subject's scale, and for a website its operations and connections. Unsigned in this
 build (*provisional*, `ADR-0054`).
 
-**Observed behaviour**: what the broker actually saw an app do. The basis of this version's
+**Observed behaviour**: what the broker actually saw an app do. The basis of today's
 indicator. Always reported as *observed*, never *guaranteed*.
 
 **TOFU**: trust on first use. The delivery host is trusted once at install; the bundle is then

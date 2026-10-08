@@ -1,4 +1,4 @@
-# Capability API: v0 specification
+# Capability API specification
 
 > **Status: specified.** Per-method build status is not tracked in this document.
 > [`../planning/compatibility-matrix.md`](../planning/compatibility-matrix.md) carries it cell by
@@ -8,10 +8,10 @@
 >
 > Per ADR-0002 this is the highest-care artefact in the repository. The Electron shell is
 > tied to one engine; **this interface is not.** Every app ever written for Orivon codes against it,
-> and it must survive the swap from Node → Wasmtime → Chromium/Mojo underneath.
+> and it must survive a change of the engine underneath.
 >
-> `orivonApiVersion: 0` explicitly means unstable: breaking changes are permitted while
-> it is 0. Once it reaches 1, breaking changes require a major version bump and an ADR.
+> `orivonApiVersion: 0` is the API's version number, not a scope. It explicitly means unstable:
+> breaking changes are permitted while it is 0. Once it reaches 1, breaking changes require a major version bump and an ADR.
 
 ## Design rules
 
@@ -36,7 +36,7 @@
    `queueMicrotask`-based polyfill does not route into the same handlers, so an exception
    thrown from inside a `nextTick` callback vanishes instead of crashing loudly. This is exactly
    backwards from what a security-relevant shim needs: a broker-side error should be *louder*
-   than Node's default, not quieter. **Both traps are binding requirements; see `handle-contracts.md` §What the shim must do.**
+   than Node's default, not quieter. **Both traps are binding requirements; see `handle-contracts.md` section What the shim must do.**
 2. **Network operations are async, with no exception. `fs` gets exactly one narrow,
    deliberate synchronous exception.**
    > **Why the exception is `fs`-only** (`ADR-0016`). The async rule is reasoned entirely from
@@ -118,8 +118,8 @@ field is ignored, and the loader logs a warning naming it. An unknown field anyw
   "version": "0.1.0",
   "entry": "index.html",
   "assets": ["style.css", "app.js"],  // every other frontend file; omit if entry is the whole app
-  // NOTE: "publisherKey" is CUT from v0. See "Signing is not in
-  // v0" below. Every v0 app is unsigned; integrity rests on hash-pinning, with
+  // NOTE: "publisherKey" does not exist. See "Signing is not in
+  // v0" below. Every app is unsigned; integrity rests on hash-pinning, with
   // the site's published hash tree (/.well-known/orivon-ddoc.json) shown as DDOC evidence.
 
   "capabilities": {
@@ -231,7 +231,7 @@ under.
 `Manifest.version` is a **semver core plus optional prerelease**, build metadata stripped and
 ignored (per semver, `1.2.3+a` and `1.2.3+b` are the same version and neither is a rollback of the
 other). Two versions compare by release components in order (missing trailing components are
-zero, so `1.2` and `1.2.0` are equal), then by prerelease per semver §11.3-11.4 (a prerelease
+zero, so `1.2` and `1.2.0` are equal), then by prerelease per semver section 11.3-11.4 (a prerelease
 sorts below its release; numeric identifiers sort below alphanumeric ones).
 
 This is not a new rule; it transcribes what `src/broker/policy/update.ts`'s `compareVersions`
@@ -384,7 +384,7 @@ orivon.web.setEmbedScript(source)    // => Promise<void>  the script that runs f
 > `src/main/sessions/README.md` for the mechanism.
 
 > **No raw signing oracle for named identities.** Signing arbitrary bytes
-> silently after one connect prompt would let a compromised client wipe the follow list
+> silently after one connect would let a compromised client wipe the follow list
 > (kind 3), delete posts (kind 5), replace the profile (kind 0), or authenticate as the user to
 > relays (NIP-42, kind 22242), and `ADR-0003` excludes export/backup, so the user cannot
 > rotate. `signEvent` is also what NIP-07 clients actually call.
@@ -394,7 +394,7 @@ orivon.web.setEmbedScript(source)    // => Promise<void>  the script that runs f
 
 ### `connectSecure`'s TLS options
 
-`connectSecure` takes Node's own `tls.connect` options, and `handle-contracts.md` §TcpSocket
+`connectSecure` takes Node's own `tls.connect` options, and `handle-contracts.md` section TcpSocket
 defines the `SecureTcpSocket` it returns. By default the broker validates the certificate chain
 against the runtime's built-in roots and the certificate against `host`, and checks `host`
 against the `https.connect` grant by name: that verification is what binds the name to whoever
@@ -488,12 +488,12 @@ different Nostr identity to snort.social and noStrudel. So `id` yields two disti
 | | **App keys** | **Named identities** |
 |---|---|---|
 | Scope | one origin, silent | cross-origin **by design** |
-| Consent | none needed, since it cannot link users across apps | explicit connect prompt per site, revocable |
+| Consent | none needed, since it cannot link users across apps | connects automatically on a Web3 Score Level 4 site; elsewhere a one-click or broker grant per site, revocable. A value-bearing action always prompts |
 | Backing | `derive(seed, "app", origin)` | `derive(seed, "identity", identityId)` |
 | Consumer | app-internal crypto | `window.nostr` (NIP-07), future wallet connect |
 
 **What `origin` and `identityId` are, precisely** (`ADR-0010`). Both
-are frozen into a key that this version cannot export, back up or migrate (`ADR-0003`), so two
+are frozen into a key that Orivon cannot yet export, back up or migrate (`ADR-0003`), so two
 spellings of one of them are two different identities, permanently.
 
 - **`origin`** is the *canonical* origin, as produced by `originFromSenderFrame()` in
@@ -508,29 +508,36 @@ spellings of one of them are two different identities, permanently.
   Otherwise renaming an identity, or merely changing its case, destroys the npub with nothing to
   restore from.
 
-`window.nostr` semantics, once named identities are built (they are not: A111): injected in ordinary tabs; first `getPublicKey()` per site triggers
-the connect prompt; after connecting, signing is silent for that site (per-event prompts would
+The connect rule for named identities, wallet accounts included, once they are built (they are
+not: A111): they connect automatically only on a site at Web3 Score Level 4 (trustless); on any
+other site a one-click or broker grant is asked first; a value-bearing action (a signature that
+moves money, a send) always prompts, on every site.
+
+`window.nostr` semantics, once named identities are built: injected in ordinary tabs; first
+`getPublicKey()` per site connects under the rule above; after connecting, signing is silent for that site (per-event prompts would
 make Nostr unusable). Presence of `window.nostr` is fingerprintable, as it is of every NIP-07
 extension; the *data* is what sits behind consent (`security-model.md` T16).
 
-### Deliberately **not** in v0
-- **`subprocess`.** No tier-3 app is in this version (Bisq is cut), so it buys nothing and costs
+### Deliberately **not** built
+- **`subprocess`.** No tier-3 app is ported yet (Bisq is a later direction), so it buys nothing and costs
   the largest attack surface in the design. A ported app's child processes and native modules run
   as WebAssembly in its own tab instead, under the grants it already holds, so they need no
   capability of their own (`ADR-0040`).
-- **`hid` / USB.** No wallet app in this version.
+- **`hid` / USB.** No ported app needs it yet, and a device capability is a large attack surface.
 - **Raw sockets / ICMP.** No use case, and unreachable from WASM later anyway.
 
 > **Narrower than ADR-0002.** That ADR says `subprocess` and `hid` are "not grantable to
-> unsigned apps". This spec narrows further: they are absent from v0 entirely, for signed apps
+> unsigned apps". This spec narrows further: they are absent from the API entirely, for signed apps
 > too.
 
 ### Signing is not in v0
 
-`ADR-0002` posits signed and unsigned trust tiers; `ADR-0005`'s amendment keyed silent updates
-on a publisher signature. **Both are cut from v0.** Three reasons, from the audit:
+("v0" here is the API version number.)
 
-1. **The tiers were already capability-identical in v0.** Their only stated difference was
+`ADR-0002` posits signed and unsigned trust tiers; `ADR-0005`'s amendment keyed silent updates
+on a publisher signature. **Neither is built.** Three reasons, from the audit:
+
+1. **The tiers were already capability-identical.** Their only stated difference was
    `subprocess` and `hid`, and this spec removes both for *every* tier. The distinction cost
    real work and bought nothing.
 2. **Nothing specified or scheduled the mechanism.** No signature format, no covered bytes, no
@@ -542,7 +549,7 @@ on a publisher signature. **Both are cut from v0.** Three reasons, from the audi
    every grant prompt*, so each would show a red UNSIGNED badge beside "connect to any computer
    on the internet."
 
-**What v0 actually ships:** hash-pinning (TOFU on the bundle) as the integrity mechanism, with
+**What ships today:** hash-pinning (TOFU on the bundle) as the integrity mechanism, with
 **no UNSIGNED badge anywhere**, because "unsigned" is not a distinction when everything is.
 Signing returns when a second publisher exists, which is also when prompt fatigue, its stated
 justification, first becomes possible.
@@ -557,7 +564,7 @@ justification, first becomes possible.
   why, and the call resolves as a cancellation.
 - `net` requires manifest-declared patterns, surfaced verbatim in the grant prompt.
 - `id` app keys derive per origin silently; **named identities** are cross-origin only through
-  the explicit connect prompt. In both modes the seed is never exposed and raw key export is
+  the connect rule above. In both modes the seed is never exposed and raw key export is
   not a capability at any tier.
 - `secrets` derives its own key from that same seed, per origin, with a distinct salt from `id`'s
   (`ADR-0033`); an app never holds, and cannot derive, the seed itself.
@@ -585,7 +592,7 @@ which anchors the site's DDOC off its host (`ADR-0029`).
 > is strictly worse than the `window.nostr` fingerprint accepted in T16, and it costs a request
 > per navigation.
 >
-> **v0 discovery is therefore:** a `<link rel="orivon-manifest">` hint in HTML already
+> **Discovery is therefore:** a `<link rel="orivon-manifest">` hint in HTML already
 > delivered, with zero extra requests. The well-known path is fetched *only after* seeing that hint
 > in a page the browser is already loading, never speculatively.
 
@@ -635,7 +642,7 @@ IPC channel. Control operations (open, close, options) use normal IPC; bulk byte
 **Throughput is not the constraint.** The wrapper moves ~310 MB/s main to renderer (measured
 below) against the 1-5 MB/s 1080p needs. What decides a torrent app is whether a renderer bundle
 fetches *ordinary* (non-WebRTC) torrents at all, and whether the tree stays free of native
-modules; see `build-plan.md` §Week 0. If renderer-side networking cannot carry it, the fallback
+modules; the week-0 spike measured it. If renderer-side networking cannot carry it, the fallback
 is an Electron **`utilityProcess`**, not the main process.
 
 ### Measured, 2026-08-25: spike gate 0 (`planning/spike-results/gate-0.json`)
@@ -667,7 +674,7 @@ Two consequences:
    mode of this transport is silence, not an error.
 
 **`MessagePortMain` has no documented backpressure**, so without flow control of its own a fast
-swarm would grow renderer memory without bound. `handle-contracts.md` §TcpSocket "Backpressure:
+swarm would grow renderer memory without bound. `handle-contracts.md` section TcpSocket "Backpressure:
 a credit window" is that flow control: a byte-credit window on top of `ReadableStream`/`WritableStream`
 (`ADR-0008`), with the broker stopping the underlying OS socket read once credit is exhausted
 rather than buffering in the main process.
@@ -680,23 +687,21 @@ stronger than guarding a localhost server with a token (T15). Chromium then prov
 track selection for free. MSE is the *worse* option: it needs fMP4 the torrents do not contain, and it forces
 hand-implemented seeking.
 
-**v0 plays MP4/H.264 only.** MSE cannot demux Matroska and neither can Chromium's `<video>`, so
+**Playback is MP4/H.264 only.** MSE cannot demux Matroska and neither can Chromium's `<video>`, so
 MKV has no path at all without a remuxer, and is deferred post-launch (`libav-wasm`, pure-WASM).
 Stock Electron ships H.264/AAC, so nothing extra is needed; HEVC is hardware-decode-only and is
 out. The limitation is stated in-product, not hidden.
 
-## Why this survives the engine swap
+## Why this survives a change of engine
 
 Apps call `orivon.net.connect`. Underneath, that is:
 
 | phase | implementation |
 |---|---|
 | now | Node `net.Socket` in the main process |
-| later | a Wasmtime host function |
-| later | Mojo IPC in a Chromium fork |
 
-None of those transitions is visible to an app already written. That property, not Electron
-and not Wasmtime, is what keeps the path to a Chromium fork open.
+A change of the engine underneath would not be visible to an app already written. That property,
+not Electron, is what the interface is built to keep.
 
 ## Open items: provisional defaults, not yet confirmed
 
@@ -735,7 +740,7 @@ conflated:
 > Additionally, record a per-origin **version floor** and flag any lower version, so a
 > validly-hash-pinned *older* bundle is never installed unnoticed (`security-model.md` T19).
 > Flagged, not rejected: a below-floor version is warned and offered as a choice, never silently
-> blocked. See this document's §`version` section.
+> blocked. See this document's `version` section.
 
 ### 3. Is `fs.quotaBytes` enforced or advisory? → **Enforced**
 Advisory means a buggy or hostile app fills the user's disk, which is threat **T11** in

@@ -32,4 +32,4 @@ failing two or more levels down escapes it as an unhandled rejection, which woul
 host on one bad block from a hostile gateway. The exporter resolves paths only.
 
 Why raw blocks and not CARs, and the limits' real-site figures:
-[`spike-results/ens-ipfs.md`](../../../docs/planning/spike-results/ens-ipfs.md) §EI-1c.
+[`spike-results/ens-ipfs.md`](../../../docs/planning/spike-results/ens-ipfs.md) section EI-1c.

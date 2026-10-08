@@ -15,7 +15,7 @@
 // THE SPLIT THIS FILE EXISTS FOR: `activeSec` (focused AND interacted with,
 // within an idle timeout) and `backgroundSec` (running but not that) are
 // separate numbers, and the project's success metric is stated on
-// `activeSec` alone (ADR-0004, scope.md's "Success metric" section). A
+// `activeSec` alone (ADR-0004). A
 // torrent seeds in the background by design; counting that as "active" is
 // the bug that made the metric satisfiable by a user who left after one
 // magnet link. Every subtlety below exists to not reintroduce that bug in
@@ -102,8 +102,8 @@ export const initialState: AccountingState = {
 }
 
 /**
- * No document in the corpus sets this figure (checked: scope.md,
- * ADR-0004, open-questions.md all describe the SHAPE of "active" -- focused
+ * No document in the corpus sets this figure (checked: ADR-0004 and
+ * open-questions.md both describe the SHAPE of "active" -- focused
  * and interacted with -- but not a duration). Five minutes is a judgment
  * call, picked to match common OS idle-detection defaults; flagged here
  * rather than silently assumed. It is a parameter, not a hardcoded
@@ -195,8 +195,7 @@ function withoutOpenSession (sessions: OpenSessions, app: AppId): OpenSessions {
  * WHY: without this, activity in the tab the user just left would make the
  * newly-focused tab look "active" before they have touched anything in it
  * -- overcounting activeSec the same way the original durationSec metric
- * overcounted by not distinguishing focus at all (scope.md's
- * corrected Success metric section). Re-asserting focus on the app that
+ * overcounted by not distinguishing focus at all. Re-asserting focus on the app that
  * already has it (a duplicate event) is not a change and must not cost the
  * user their in-progress idle window.
  */

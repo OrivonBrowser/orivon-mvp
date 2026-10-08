@@ -2,7 +2,7 @@
   "name": "orivon-spike-app",
   "version": "0.0.0",
   "private": true,
-  "description": "Spike-only. webtorrent lives HERE, not in the shell tree, mirroring build-plan.md's pre-built app asset design.",
+  "description": "Spike-only. webtorrent lives HERE, not in the shell tree, mirroring the retired build plan's pre-built app asset design.",
   "dependencies": {
     "buffer": "^6.0.3",
     "crypto-browserify": "^3.12.1",

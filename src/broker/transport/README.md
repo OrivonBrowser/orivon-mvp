@@ -33,7 +33,7 @@ is well-behaved.
 **Bytes never travel over request/response IPC.** `net.connect` returns a plain descriptor and
 separately hands the frame a dedicated port; the read pump and the write sink relay over it, each
 bounded by a credit window ([`contracts/ipc.ts`](../../contracts/ipc.ts),
-[`handle-contracts.md`](../../../docs/architecture/handle-contracts.md) §Backpressure).
+[`handle-contracts.md`](../../../docs/architecture/handle-contracts.md) section Backpressure).
 
 ## Design notes
 
@@ -146,7 +146,7 @@ defeating TCP backpressure to the peer, and `NaN` poisons the counter for good.
 
 The credit window run backwards: the broker grants the renderer a byte window to post into,
 because a `MessagePortMain` has no `pause()` or drain (T11b). Why there is no sequence number and
-why the heartbeat exists: `handle-contracts.md` §Backpressure: write direction. An ack flushes at
+why the heartbeat exists: `handle-contracts.md` section Backpressure: write direction. An ack flushes at
 `CREDIT_COALESCE_BYTES` or when nothing else is outstanding, so a lone slow write is never held
 back by coalescing. The `writer.close()` trap is at the call.
 

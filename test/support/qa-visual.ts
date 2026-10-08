@@ -4,7 +4,7 @@
 // checkState(); scripts/qa-report.mjs turns the records into inspect.md.
 //
 // What each part can and cannot prove is in docs/development/testing.md
-// §Visual QA and failure evidence. Short version: the audit and the blank check
+// section Visual QA and failure evidence. Short version: the audit and the blank check
 // are deterministic and always enforced; the pixel baseline is machine-local,
 // so it is skipped when CI=true; the AI reading is never a substitute for
 // either.

@@ -43,7 +43,7 @@ count is new state, since a reach request is never a `HandleTable` resource: one
 checked and reserved in one synchronous step. Full account: `docs/open-questions.md` A200.
 
 **Why a reach request over the allowance waits in a queue, when T11b says limits reject rather
-than queue.** T11b (`handle-contracts.md` §Limits) is about unbounded broker work on the UI
+than queue.** T11b (`handle-contracts.md` section Limits) is about unbounded broker work on the UI
 thread. A queued reach request is a pending promise and a timer, bounded in length
 (`REACH_SLOT_MAX_WAITERS`) and in time (`REACH_SLOT_WAIT_MS`), and refused past either. Refusing
 at once broke real pages: a browser queues an over-limit request, and a page has no retry for an

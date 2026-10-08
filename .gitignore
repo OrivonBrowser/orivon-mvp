@@ -63,7 +63,7 @@ Thumbs.db
 npm-debug.log*
 
 # Spike-only build output and the isolated app tree (webtorrent is an app
-# asset, never a shell dependency - see build-plan.md Platform policy)
+# asset, never a shell dependency - see CLAUDE.md Rule 8)
 spike/*/dist/
 spike/app/node_modules/
 spike/results/

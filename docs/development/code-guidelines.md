@@ -17,11 +17,11 @@ holding the whole tree in its head. Both are served by the same five things: sho
 honest comments, one implementation per idea, one home per fact, and a browser that stays
 light on the machine it runs on.
 
-**Read §Rules 1-5 to write code here. Everything below them is background**: why each rule is
+**Read section Rules 1-5 to write code here. Everything below them is background**: why each rule is
 shaped the way it is, and what is still open. It is there so a settled argument is not reopened,
 not because you need it to start.
 
-> The five rules and every exception stated with them are settled. §Status is what is still
+> The five rules and every exception stated with them are settled. section Status is what is still
 > open. No ADR was written: none of this is architecture, and the one structural piece,
 > `src/shared/`, is freely reversible while it is small.
 
@@ -61,7 +61,7 @@ out.setUint32(0, bytes.length, false)
 
 Worked example: [`connection-log.ts`](../../src/trust/connection-log.ts), header 29 lines before
 this rule and 7 after. Its rationale lives in
-[`src/trust/README.md`](../../src/trust/README.md) §Design notes.
+[`src/trust/README.md`](../../src/trust/README.md) section Design notes.
 
 | Comment | Verdict |
 |---|---|
@@ -156,7 +156,7 @@ source kept in its upstream shape, patched as its `UPSTREAM.md` lists).
 | Test files (`*.test.ts`, anything under [`test/`](../../test/) except [`test/apps/`](../../test/apps/), and [`scripts/smoke.mjs`](../../scripts/smoke.mjs)) | **800** |
 
 Everything else in `scripts/` is source and gets 500
-([`parallel-work.md`](parallel-work.md) §Why `scripts/` is split). So are the apps under
+([`parallel-work.md`](parallel-work.md) section Why `scripts/` is split). So are the apps under
 [`test/apps/`](../../test/apps/): the suites serve them, which makes them app code sitting
 beside the tests, not test code.
 
@@ -173,7 +173,7 @@ came from: same coupling, plus a new lie in its name. If a file cannot be split 
 seam, that is a design signal; raise it rather than cutting arbitrarily.
 
 Each new file lands inside the owning stream's paths
-([`parallel-work.md`](parallel-work.md) §The ownership map), and each directory's `README.md`
+([`parallel-work.md`](parallel-work.md) section The ownership map), and each directory's `README.md`
 already states what it may import.
 
 **Why tests get 800.** Table-driven tests grow with their vector tables, and that growth is
@@ -248,7 +248,7 @@ change touching every stream at once):
 - **It imports nothing from `src/`.** Pure, dependency-free helpers only. If it needs `electron`,
   a broker type, or anything stream-owned, it does not belong there.
 - **A change to it goes in its own PR and merges first**, never mixed with an implementation
-  ([`parallel-work.md`](parallel-work.md) §3).
+  ([`parallel-work.md`](parallel-work.md) section 3).
 
 **It is not a dumping ground.** A helper earns its place by being needed on both sides of a
 boundary. One caller means it stays where it is. See
@@ -268,7 +268,7 @@ and the others go stale while still reading as true.
   whether it is tied to Electron, and the traps a reader would otherwise walk into. It links an
   ADR rather than restating it, and does not walk through the files one by one.
 - **A change is recorded once per audience**: the page it governs states the behaviour, the
-  decision log says who decided it, `CHANGELOG.md` gives it at most three lines, and the PR
+  decision log says who decided it (owner decisions and reversals only), `CHANGELOG.md` gives it at most three lines, and the PR
   body carries the rest.
 
 ## Rule 5: Cost follows change and use
@@ -369,5 +369,5 @@ path `Write`/`Edit` pass, and dies silently.
 |---|---|
 | [`parallel-work.md`](parallel-work.md) | Who owns which paths, and a split under Rule 2 must respect it |
 | [`testing.md`](testing.md) | What is tested here, and why so little is |
-| [`CLAUDE.md`](../../CLAUDE.md) | §Rules 6 and 7: prefer mature components, and no abstractions for elegance alone |
+| [`CLAUDE.md`](../../CLAUDE.md) | section Rules 6 and 7: prefer mature components, and no abstractions for elegance alone |
 | [`.claude/skills/orivon-comments/`](../../.claude/skills/orivon-comments/SKILL.md) | The working method for applying Rule 1 while writing code: this document is the policy, that skill is how |

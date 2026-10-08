@@ -14,7 +14,7 @@ parent README says.
 ## Design notes
 
 **Helios needs four wrappers**
-([`ADR-0031`](../../../../docs/decisions/ADR-0031-helios-is-the-light-client.md) §Decision): a
+([`ADR-0031`](../../../../docs/decisions/ADR-0031-helios-is-the-light-client.md) section Decision): a
 `WorkerGlobalScope` shim, or its WebAssembly timer panics on the first failed consensus request; a
 URL on every response, since Electron's `net.fetch` leaves it empty and Helios throws parsing it;
 its revert text as `{ code: 3, data }`, or viem never sees a CCIP-Read `OffchainLookup`; and

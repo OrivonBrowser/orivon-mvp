@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Puts Orivon's GitHub releases on IPFS (docs/development/packaging.md §On IPFS).
+# Puts Orivon's GitHub releases on IPFS (docs/development/packaging.md section On IPFS).
 #
 #   pin-releases.sh manifest <dir>   prints the ipfs.json the release workflow attaches: the CID of
 #                                    <dir> and each file's name and SHA-256. Hashes only; stores nothing.

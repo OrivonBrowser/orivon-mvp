@@ -7,7 +7,7 @@
 // mechanism for socket data, and electron#34905 (still open) reports that
 // MessagePortMain.postMessage accepts only MessagePortMain in its transfer
 // list -- which would mean transferable ArrayBuffers are UNAVAILABLE here, not
-// merely unreliable. build-plan.md names transferables as the rescue if
+// merely unreliable. the retired build plan names transferables as the rescue if
 // throughput fails, so if they do not exist, that rescue does not exist.
 //
 // Throwaway. Deleted when the spike resolves.

@@ -1,11 +1,11 @@
 # Known limitations
 
 What Orivon does not do yet, or does in a way worth knowing before you rely on it. Each one is a
-boundary of this version, written down so you meet it here rather than in use. None is a bug.
+boundary of Orivon today, written down so you meet it here rather than in use. None is a bug.
 
 ## Network privacy
 
-- **Peers see your IP address.** This version has no Tor or proxy routing, so a peer-to-peer app
+- **Peers see your IP address.** Orivon has no Tor or proxy routing today, so a peer-to-peer app
   connects from your real address. When a system proxy is set, `orivon.net` refuses to open
   sockets or resolve names rather than go around the proxy.
 - **No automatic port forwarding.** There is no UPnP, so behind NAT an app listening for peers is
@@ -15,6 +15,9 @@ boundary of this version, written down so you meet it here rather than in use. N
   default; Settings > Search offers a short list or your own address. Suggestions from the engine
   as you type are off by default; switched on, each pause in typing sends the text, and a private
   window never sends it.
+- **Spell-check dictionaries are downloaded from Chromium's dictionary host.** The download happens
+  once per language, the first time that language is used while spell checking is on (Settings,
+  on by default). The request names a language and nothing else.
 
 ## What `.eth` and IPFS reveal
 
@@ -58,3 +61,6 @@ servers for data. None of them is trusted to be right; each of them sees what it
 - **Nothing is measured or sent until you choose.** Usage statistics are a choice between two
   buttons, neither preselected; the exact text that would be sent is shown beside them. A private
   window neither measures nor sends.
+- **Statistics and bug reports go to a small endpoint we run.** It is the one Orivon server a
+  person can reach, it is used only after an explicit choice or a click on Send, and it is not in
+  the path of using any app.

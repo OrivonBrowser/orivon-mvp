@@ -3,14 +3,14 @@
 How several people, or several agent sessions, work in this repository at the same time
 without corrupting each other's work.
 
-If you are working alone and sequentially, you need only §The merge protocol. The rest costs
+If you are working alone and sequentially, you need only section The merge protocol. The rest costs
 you nothing.
 
 ---
 
 ## Why parallelism has to be manufactured
 
-[`build-plan.md`](../planning/build-plan.md) is dependency-ordered:
+The build is dependency-ordered:
 
 ```
 spike -> shell -> broker -> shim -> app loader -> Node.js apps -> ENS and IPFS
@@ -258,7 +258,8 @@ loader, shim) takes the `ci:e2e-full` label, so the whole suite runs before it m
    `stream/<name>`.
 2. **Work.** Stay in your paths. Commit often; a small PR is reviewed in seconds and a large one
    is not reviewed at all.
-3. **Rebase on `main`** before opening the PR, and run the full gate locally:
+3. **Bring the branch level with `main`** (rebase it, or merge `main` in) before opening the PR,
+   and run the full gate locally:
    ```bash
    npm run typecheck && npm run test:changed && npm run check:natives && npm run check:contracts
    npm run smoke     # only if you touched src/main/
@@ -270,8 +271,11 @@ loader, shim) takes the `ci:e2e-full` label, so the whole suite runs before it m
    another. **Its labels are how you see which streams are open at once**.
 5. **CI must be green**: `check`, and the e2e shards it selected. A shard that fails on a spec your change
    cannot reach is a flake: rerun that shard and say so in the PR.
-6. **The owner merges.** Branch protection is `strict`, so merging PR N+1 always needs a fresh
-   merge of `main` into its branch first, even when it touches none of PR N's files.
+6. **Merge once green.** The author merges its own PR once `check` and the selected e2e shards
+   pass and there is no conflict ([`CLAUDE.md`](../../CLAUDE.md) Rules 12 and 14); the owner
+   decides only when the choice is critical. Branch protection is `strict`, so merging PR N+1
+   always needs a fresh merge of `main` into its branch first, even when it touches none of PR
+   N's files.
 
 The pull requests are also the public record of the work. Someone arriving in six months reads
 them to find out not just what was built, but what was tried and why it is shaped this way.
@@ -307,17 +311,15 @@ semantically stale on its new base.
 Read this page before starting any build step. Then:
 
 - Work in a worktree on `stream/<name>`, with `node_modules`; base it on the branch you are
-  stacked on, if any (§1).
+  stacked on, if any (rule 1 above).
 - Stay inside your owned paths.
-- **Open one or two PRs per working day, not one per feature.**
-  This applies to AI sessions only. An outside contributor sending a single change
-  still opens a single PR, which is why §The merge protocol above is unchanged. The reason is
-  volume: continuous AI work merged 423 PRs over 17 days here, about 25 a day, and nobody
-  reviews that. Branches still converge rather than each opening their own.
-- Never modify `src/contracts/` in the same PR as an implementation. **This holds regardless of
-  cadence**: it is the one carve-out, so a day that touches contracts gets an extra PR.
+- **Ship your own work, in as many PRs as its changes need.** Only the session that wrote a
+  change can fix its failing checks in line with what it meant, so it opens the PR, fixes every
+  red check, merges once green (section The merge protocol, step 6), and syncs local `main`.
+- Never modify `src/contracts/` or `src/shared/` in the same PR as an implementation. That change
+  goes alone as its own PR and merges first.
 - Append at the append points rather than editing shared logic.
-- Sync `main` only as §Syncing `main` with `origin` says: never `git pull`, and on a dirty tree
+- Sync `main` only as section Syncing `main` with `origin` says: never `git pull`, and on a dirty tree
   report rather than act.
 - Surface contradictions rather than smoothing them over, filing them in
   [`open-questions.md`](../open-questions.md) in its fixed shape ([`CLAUDE.md`](../../CLAUDE.md)

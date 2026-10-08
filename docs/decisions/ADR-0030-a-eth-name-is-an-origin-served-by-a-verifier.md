@@ -10,7 +10,7 @@
 - **Date:** 2026-09-24
 - **Type:** architecture / security
 - **Decided by:** owner, for what a `.eth` name loads as and how its trust is shown
-  (`ens-ipfs-plan.md` §Decisions taken). AI recommendation, for the serving mechanism, the block a
+  (`ens-ipfs-plan.md` section Decisions taken). AI recommendation, for the serving mechanism, the block a
   name is proven at, and which ENS record anchors DDOC.
 
 ## Decision
@@ -59,7 +59,7 @@ Two parts were *provisional*; the second is settled by the Amendment below:
 
 ## Context
 
-`ens-ipfs-plan.md` is the work queue this ADR records the shape of, and its §Decisions taken are the
+`ens-ipfs-plan.md` is the work queue this ADR records the shape of, and its section Decisions taken are the
 owner's. `docs/planning/spike-results/ens-ipfs.md` has the measurements the mechanism rests on:
 the loopback design passed all four of its gates in Electron 44, with one caveat on the third.
 

@@ -6,17 +6,17 @@ Forty-odd documents. Pick one of the three tracks below rather than reading them
 
 | | |
 |---|---|
-| 1. [`scope.md`](scope.md) | What Orivon Browser proves first, the metric that judges it, the four journeys, and what is not built yet |
+| 1. [`features.md`](features.md) and [`roadmap.md`](roadmap.md) | What Orivon does today, what is expected next, and what is later |
 | 2. [`architecture/capability-api.md`](architecture/capability-api.md) | The highest-care artefact here. What apps program against |
 | 3. [`architecture/handle-contracts.md`](architecture/handle-contracts.md) | What a `TcpSocket`, `FileHandle` or `IdentityHandle` actually does: backpressure, close semantics, errors, revocation |
 
 Its sibling in code is [`src/contracts/`](../src/contracts/), which is those two documents
-transcribed into TypeScript. If you would rather read types than prose, start there: seven
+transcribed into TypeScript. If you would rather read types than prose, start there: eight
 files, and it is the whole product surface.
 
 Then [`architecture/security-model.md`](architecture/security-model.md) for what is being
 defended against, and [`glossary.md`](glossary.md) when a term does not parse.
-[`known-limitations.md`](known-limitations.md) lists what this version does not do yet, and what
+[`known-limitations.md`](known-limitations.md) lists what Orivon does not do yet, and what
 each server Orivon talks to can see.
 
 What the browser sends, and to whom, is in [`privacy/`](privacy/):
@@ -42,9 +42,9 @@ is where dates and decision IDs live.
 | | |
 |---|---|
 | [`ADR-0001`](decisions/ADR-0001-flagship-app-bittorrent-streaming.md) | BitTorrent streaming as the flagship. **Withdrawn**: kept as the case for a torrent app, which is an idea |
-| [`ADR-0002`](decisions/ADR-0002-capability-api-is-the-durable-asset.md) | The capability API is the durable asset; the WASM runtime deferred, not cancelled |
+| [`ADR-0002`](decisions/ADR-0002-capability-api-is-the-durable-asset.md) | The capability API is the durable asset; the engine beneath it may change |
 | [`ADR-0003`](decisions/ADR-0003-local-first-storage.md) | Local-first storage, per-origin isolation, no Orivon server for user data |
-| [`ADR-0004`](decisions/ADR-0004-telemetry.md) | Telemetry: a first-run explicit choice, self-hosted, inspectable |
+| [`ADR-0004`](decisions/ADR-0004-telemetry.md) | Telemetry: a first-run explicit choice, an endpoint we run, inspectable |
 | [`ADR-0005`](decisions/ADR-0005-apps-are-url-addressed-not-bundled.md) | Apps are URL-addressed and cached, never bundled |
 | [`ADR-0006`](decisions/ADR-0006-trust-indicator-from-observed-behaviour.md) | Trust indicator from observed behaviour, not a grade |
 | [`ADR-0007`](decisions/ADR-0007-cached-bundles-served-at-their-own-origin.md) | Cached bundles keep their real origin |
@@ -62,7 +62,7 @@ is where dates and decision IDs live.
 > **Several carry amendments that supersede parts of their own text.** ADR-0002, ADR-0005
 > and ADR-0009 have inline amendments; ADR-0008 rescopes ADR-0002's mirror-Node's-shapes rule to
 > the shim rather than the capability layer. Read the amendment blocks; they are not
-> decoration. ADR-0009's is the sharpest example: its §Reasoning argues for a sort-order rule
+> decoration. ADR-0009's is the sharpest example: its section Reasoning argues for a sort-order rule
 > that its amendment then shows cannot be reached, while the rule that *was* load-bearing had a
 > bug nobody caught until the code existed.
 
@@ -75,7 +75,6 @@ is where dates and decision IDs live.
 | 3. [`development/code-guidelines.md`](development/code-guidelines.md) | How code is written here: comment discipline, the 500-line file limit, one implementation per idea |
 | 4. [`development/testing.md`](development/testing.md) | What is tested, and why so little is |
 | 5. [`development/pr-blueprint.md`](development/pr-blueprint.md) | How a pull request is titled, described and labelled. Read before opening one |
-| 6. [`planning/build-plan.md`](planning/build-plan.md) | The dependency-ordered work, step by step |
 
 Also: [`development/release-checklist.md`](development/release-checklist.md),
 [`development/readability-log.md`](development/readability-log.md),
@@ -110,8 +109,8 @@ Four reversals worth knowing about, because they are the ones people still repea
 
 | Question | Read |
 |---|---|
-| What is Orivon, long-term? | [orivon-docs](https://github.com/OrivonBrowser/orivon-docs), canonical, deployed at docs.orivonstack.com. Not duplicated here |
-| What is in this version? | [`scope.md`](scope.md) |
+| What does Orivon do today, and what is next? | [`features.md`](features.md), [`roadmap.md`](roadmap.md) |
+| What is the longer-term vision? | The owner's OrivonBook holds. The older [orivon-docs](https://github.com/OrivonBrowser/orivon-docs) site is outdated: verify anything taken from it with the owner before treating it as true |
 | What do apps program against? | [`architecture/capability-api.md`](architecture/capability-api.md) |
 | What does a handle do? | [`architecture/handle-contracts.md`](architecture/handle-contracts.md) |
 | What identifies an app's content, and how is a change to it noticed? | [`architecture/bundle-hash.md`](architecture/bundle-hash.md), [`ADR-0009`](decisions/ADR-0009-the-bundle-hash-is-an-app-s-content-identity.md) |
@@ -147,4 +146,4 @@ in words rather than leaning on the token alone.
 | [`architecture/`](architecture/) | How it works, and what it defends against. The two contract documents are the highest-care artefacts in the repository |
 | [`decisions/`](decisions/) | ADRs, plus `decision-log.md` for the smaller calls. Monotonically numbered, never renumbered. Superseded ADRs are rewritten in place with the reversal recorded |
 | [`development/`](development/) | How to work here: setup, testing, parallel work, code guidelines, the PR blueprint, release checklist |
-| [`planning/`](planning/) | Scope, build plan, readiness, audits, the spike record, and design documents. Historical as much as current, so read the dates |
+| [`planning/`](planning/) | Readiness, audits, the spike record, and design documents. Historical as much as current, so read the dates |

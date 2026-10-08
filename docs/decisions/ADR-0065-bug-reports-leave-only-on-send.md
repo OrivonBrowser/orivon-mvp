@@ -19,7 +19,7 @@
    an allowlist of settings, recent problems), `log` (Orivon's last log lines) and `page` (the
    crashed tab's address), plus `dump`. `POST /v1/report-erase` with the report ID deletes it. The
    client reads only the status of either answer. The fields are listed in
-   [`notice.md`](../privacy/notice.md) §Bug reports you send, and a unit test compares that table
+   [`notice.md`](../privacy/notice.md) section Bug reports you send, and a unit test compares that table
    with the payload.
 3. **Crash dumps are opt-in.** Electron's crash handler (Crashpad) runs with its upload switched
    off, so native crash dumps stay in the profile. A dump goes with a report only when the person

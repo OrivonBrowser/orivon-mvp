@@ -20,7 +20,7 @@ A comment is the second-best fix. In order, cheapest first:
 3. **A named helper instead of a narrated block.** If three lines need four lines of comment to
    explain what they do as a unit, the unit wants a name.
 4. **A rename of the thing itself**, when the existing name is what forces the comment to exist
-   (`docs/development/code-guidelines.md` Rule 1 §Test 3 has the full statement and its one
+   (`docs/development/code-guidelines.md` Rule 1 section Test 3 has the full statement and its one
    exception).
 
 **Skip all four in a file with zero unit-test coverage.** A rename or extraction is a behavior-
@@ -44,14 +44,14 @@ its keep by making the *what* free; it does not make the *why-not-the-obvious-al
 
 None of these resolve for a reader who was not in the room when the comment was written. Write
 the constraint they were protecting instead — see `docs/README.md`'s
-[§Reference shorthand](../../../docs/README.md#reference-shorthand) for which tokens resolve to
+[section Reference shorthand](../../../docs/README.md#reference-shorthand) for which tokens resolve to
 a document and which do not.
 
 | Instead of | Write |
 |---|---|
-| `SS<Word>` (an ASCII stand-in for `§`, common in older source) | `"<Word>" section` — spell it out, do not introduce a literal `§` into `src/` (ASCII-only prose; `docs/open-questions.md` A91 is the filed contradiction between that rule and the docs corpus's own 185 real `§` characters) |
+| `SS<Word>` (an ASCII stand-in for the section sign, common in older source) | `"<Word>" section` — spell it out, do not introduce a literal section sign into `src/` (ASCII-only prose; `docs/open-questions.md` A91 is the filed contradiction between that rule and the docs corpus's own 185 real the section sign characters) |
 | A bare per-review finding ID (`F2`, `B-F8`, `P-F13`) | The actual constraint the finding was about. It resolves to nothing once the review round closes — `code-guidelines.md`'s comment-budget table bans it outright |
-| A PR/branch/commit reference | The constraint, not the episode — already banned in `code-guidelines.md` §Describe the code, not the change that produced it |
+| A PR/branch/commit reference | The constraint, not the episode — already banned in `code-guidelines.md` section Describe the code, not the change that produced it |
 | "Fixed <date>", "found by review, <date>" | Nothing, once the fix itself is what the surrounding comment already states. Keep the date only when the *history itself* is the load-bearing fact (a frozen-vector one-way door, a revised owner decision) |
 | "this lane", "this task", "this PR" | Name the actual boundary or component instead (`policy/` may not import `loader/`, not "this task doesn't touch that file") |
 | A bare `d-NNNN` owner-decision id | The token, plus the decision spelled out in words next to it, so the comment reads without opening the decision log |
@@ -108,7 +108,7 @@ of the shape:
 - **A block that genuinely cannot shrink stays, with a reason**:
   `// orivon:comment-budget -- <why>`. The reason is mandatory — a bare pragma is rejected — and
   `npm run check:comments -- --exemptions` lists every one in the tree, so the escape hatch stays
-  visible rather than silent (`docs/development/code-guidelines.md` §The budget).
+  visible rather than silent (`docs/development/code-guidelines.md` section The budget).
 
 ## What a comment-only change still has to verify
 

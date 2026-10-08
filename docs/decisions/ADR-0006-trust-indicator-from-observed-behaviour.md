@@ -191,7 +191,7 @@ No provider exists yet, so no judged level is ever displayed in month 1.
   (partition CSP, persisted per-origin summaries, byte-asymmetry signal, evidence-first UI).
   Accepted by the owner: the data already exists inside the broker, and the indicator is what
   ties the MVP to the Orivon brand rather than leaving it a torrent client with tabs.
-  **Note the schedule consequence honestly:** `build-plan.md` §Risks names this feature as the
+  **Note the schedule consequence honestly:** `build-plan.md` section Risks names this feature as the
   first thing to cut under pressure. It is now more expensive *and* still first-to-cut, and the
   month was already oversubscribed before the amendment. That tension is unresolved.
 - The broker must keep a **per-app connection log** (in memory, summarised for display), and
@@ -238,11 +238,11 @@ trustless resolution. The D-ladder is unchanged, and trustless resolution landin
 ## Amendment, 2026-09-24: judged levels ship, from a provider that need not be trustless
 
 The owner put judged score levels in scope for this build: site L4's "open source" half, site L5
-and operation depth. They attach exactly as §How judged scores attach later describes, as a
+and operation depth. They attach exactly as section How judged scores attach later describes, as a
 provider's attestation over the bundle hash, so nothing above changes shape. What changes is who
 may issue them: in this build the provider need not be trustless, and it may run locally, on the
 user's own machine. Three passages above are withdrawn: the Decision's deferral of source-code
-honesty, the closing "no judged level is ever displayed in month 1" of §How judged scores attach
+honesty, the closing "no judged level is ever displayed in month 1" of section How judged scores attach
 later, and the rejection of shipping judged levels under Alternatives considered.
 
 That rejection's reason still binds how the levels are shown. A judged level is its provider's
@@ -252,7 +252,7 @@ centralised or local provider is shown as what it is, because trusting the level
 that provider. Which provider this build ships with is `open-questions.md` A250.
 
 Nostr signing, the Operation ladder's concrete instance, is an idea rather than a build step
-(`scope.md` §LATER), so the operation ladder has no scheduled instance; `orivon.id` signing
+(`scope.md` section LATER), so the operation ladder has no scheduled instance; `orivon.id` signing
 remains the candidate.
 
 ## Amendment, 2026-09-25: Website levels follow the canonical Web3 scores page

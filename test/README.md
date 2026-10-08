@@ -16,6 +16,9 @@ capabilities its manifest declares.
 A spec goes in the folder of the area it proves. A helper used by one area lives in that area; one used by
 more goes in `support/`. A new area is a new folder and a new row here; `npm run check:test-paths` fails a
 spec left at the top of `test/` and a folder with no row. File names keep their `e2e-` prefix.
+A spec and its tests are named after the behaviour they prove; the app that inspired one is named only
+in a code comment ([`CLAUDE.md`](../CLAUDE.md) Rule 20). That holds in `ported-apps/` too, where a spec
+runs a real upstream app.
 
 | Folder | What it proves |
 |---|---|
@@ -85,7 +88,7 @@ prove.
 | `support/qa-layout-audit.mjs` | The in-page layout audit. Plain JavaScript and self-contained: Playwright serialises the function, so it may close over nothing |
 | `support/qa-visual.ts` | The audit wrapper, the machine-local pixel baseline, `captureState` and `checkState` |
 | `support/qa-helpers.ts` | A port-0 fixture server, a launched shell, and navigation that waits on what it asserts |
-| `qa/` | The specs (`e2e-qa-*`, `qa-visual`, `qa-evidence`); `docs/development/testing.md` §Visual QA and failure evidence lists what each proves |
+| `qa/` | The specs (`e2e-qa-*`, `qa-visual`, `qa-evidence`); `docs/development/testing.md` section Visual QA and failure evidence lists what each proves |
 
 `launchElectron({ reuseProfile })` relaunches on a profile that `closeElectron(app, { keepProfile: true })`
 kept, for a test that needs the first run's state on disk; only a temp `orivon-test-*` directory the

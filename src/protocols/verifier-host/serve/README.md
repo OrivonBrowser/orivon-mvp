@@ -20,7 +20,7 @@ parent README says.
 Why a loopback server and not `protocol.handle`, why every cache is kept per partition, how long a
 name stays mounted, and why an install pins its root:
 [`ADR-0030`](../../../../docs/decisions/ADR-0030-a-eth-name-is-an-origin-served-by-a-verifier.md)
-§Alternatives considered and its two amendments. Each limit is explained where it is defined.
+section Alternatives considered and its two amendments. Each limit is explained where it is defined.
 
 **The certificate is DER-encoded here** ([`certificate.ts`](certificate.ts)), about sixty lines
 over `node:crypto`; Chromium accepts it by fingerprint alone. `@peculiar/x509` would need a

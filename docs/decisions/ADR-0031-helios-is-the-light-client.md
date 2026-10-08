@@ -4,7 +4,7 @@
 - **Date:** 2026-09-24
 - **Type:** architecture / security
 - **Decided by:** owner, for a light client proving `.eth` names and starting at launch
-  (`ens-ipfs-plan.md` §Decisions taken). AI recommendation, for Helios and the conditions below.
+  (`ens-ipfs-plan.md` section Decisions taken). AI recommendation, for Helios and the conditions below.
 
 ## Decision
 
@@ -32,7 +32,7 @@ of which the verifier host enforces:
 
 The owner decided that a `.eth` name is proven by a light client started at launch. The spike
 measured Helios in an Electron 44 utility process (`docs/planning/spike-results/ens-ipfs.md`
-§EI-1b): it initialises in about 260 ms, never delays the first window, syncs in 1 to 2 s from a
+section EI-1b): it initialises in about 260 ms, never delays the first window, syncs in 1 to 2 s from a
 checkpoint up to 10 days old, and returned no wrong value under any tampering tried.
 
 **Why it breaches neither of the rules it looks as if it might.** `ADR-0002` makes this repository

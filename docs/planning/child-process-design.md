@@ -54,12 +54,12 @@ shapes (a program the person picks, and a container image) as separate, smaller 
 | [`capability-api.md`](../architecture/capability-api.md) | "Deliberately not in v0: `subprocess`. No tier-3 app is in this version, so it buys nothing and costs the largest attack surface" |
 | [`ADR-0002`](../decisions/ADR-0002-capability-api-is-the-durable-asset.md) | "Not grantable to unsigned apps, because a Node broker cannot contain them: `subprocess` (helper-process spawn)". Its month-1 diagram named "Node sockets / fs / supervised helper process" as the first implementation |
 | [`ADR-0036`](../decisions/ADR-0036-an-app-qualifies-by-running-in-the-node-environment.md) | An app qualifies by running in the Node environment; WebAssembly called from JavaScript already runs |
-| [`scope.md`](../scope.md) OUT | "No app here needs them yet, and they are the largest attack surface" |
+| The retired `scope.md` OUT table | "No app here needs them yet, and they are the largest attack surface" |
 | [`container-apps-opportunity.md`](container-apps-opportunity.md) | Parked. `subprocess` as "start the container image this manifest declares", Linux first, a VM on Windows and macOS |
 | `open-questions.md` A94 | Route B, app code in a Worker blocking on `Atomics.wait` over a `SharedArrayBuffer`, was weighed for synchronous `fs` and **not rejected**. `wasm-compatibility.md` section 2 measures both halves of it: isolation headers work through `protocol.handle`, and JSPI makes the worker unnecessary for a WASI host |
 
 The vision corpus (`<vision-corpus>`, swept 2026-09-28) never mentions spawning a host process. Its
-answer to "apps need OS power" is a WASM module running in `orivon-runtime` under WASI and
+answer to "apps need OS power" is a WASM module running in a separate runtime under WASI and
 WIT-defined interfaces, with per-module OS Grants, and mobile is promised on the strength of WASM
 portability alone. A native-process capability would be the one part of this repository the vision
 could not carry to mobile.
@@ -95,7 +95,7 @@ target, so no WASM work here turns them into tabs either.
 | Containment | Chromium's renderer sandbox plus the WASM sandbox, both existing | Only an OS sandbox: `bwrap`/user namespaces (Linux), `sandbox-exec` (macOS, deprecated), **nothing on Windows without native code, which Rule 8 forbids** | The program's own | Podman |
 | Linux / Windows / macOS | all three | Linux and macOS with containment; Windows uncontained | all three | Linux; a resident VM on Windows and macOS |
 | Android (not enforced, "better if possible") | **Yes**: WebAssembly and JSPI are Chromium's; Workers and isolation too, when they are wanted | **No.** No Electron, and since Android 10 an app may execute only from its own packaged native-library dir | Yes, as an `ACTION_VIEW` intent: the platform's chooser is the consent | No |
-| Fits the vision | Exactly (`orivon-runtime.mdx`) | Not mentioned; contradicts its mobile promise | A shell feature, not a capability | Not mentioned |
+| Fits the vision | Exactly (the older runtime page) | Not mentioned; contradicts its mobile promise | A shell feature, not a capability | Not mentioned |
 | New `src/contracts/` surface | **None** for `child_process` itself; the isolation field of `wasm-compatibility.md` section 5.7 is a separate, optional step | A capability kind that no other kind's guards can defend | None if built as an `ADR-0027` extension | A capability kind |
 | Covers the daemon case | Only a daemon that compiles to WASI 0.2 with sockets (Rust `std::net` on `wasm32-wasip2` does; Go does not), and only once `wasm-compatibility.md` step 3 lands | Yes, at the cost above | No | Yes, Linux |
 

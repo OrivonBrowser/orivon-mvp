@@ -68,7 +68,7 @@ export interface DnrUrlTransform {
   /** Chrome's own allowed values; dnr-engine.ts's computeRedirectUrl and the
    * vendored RuleValidator both refuse anything else (and refuse
    * "chrome-extension" unless it names the rule's own extension) -- see
-   * this directory's README §Design notes. */
+   * this directory's README section Design notes. */
   scheme?: 'http' | 'https' | 'ftp' | 'chrome-extension'
   username?: string
   password?: string

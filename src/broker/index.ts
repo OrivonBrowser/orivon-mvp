@@ -1,12 +1,11 @@
 // The capability broker. Everything under ./policy/ is a decision function;
 // this file is what MAKES the decisions and HOLDS the state -- the piece
-// build-plan.md's "Week 0 -- the gate" section calls the day-1 structural
-// decision. GrantLedger (the per-origin state -- manifest and grants, kept
+// structural decision of the broker. GrantLedger (the per-origin state -- manifest and grants, kept
 // apart on purpose) lives in ./grants/grant-ledger.ts; this file keeps the
 // dependency shape and the five capability entry points that consult it.
 //
 // `createBroker({ dial, resolve, now, fs, keychain })` -- EXACTLY that shape.
-// It is fixed on purpose (build-plan.md, policy/README.md): every capability
+// It is fixed on purpose (policy/README.md): every capability
 // test then runs against stubs, with no Electron and no network, which is
 // what makes the six security-critical unit tests in
 // docs/development/testing.md cheap enough to actually exist. Do not widen

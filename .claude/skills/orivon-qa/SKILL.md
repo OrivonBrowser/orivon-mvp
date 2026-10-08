@@ -7,8 +7,8 @@ description: Use after changing the shell UI, a user flow, or code that touches 
 
 The shell is driven through its real UI by the Electron e2e suite (Playwright's `_electron`
 library, run by Vitest). This skill is the loop around it. Mechanics and layout are in
-`docs/development/testing.md` §Visual QA and failure evidence; launch hygiene (headless only, no
-window on the owner's screen, silent audio) is in `orivon-electron` and CLAUDE.md §Local quirks.
+`docs/development/testing.md` section Visual QA and failure evidence; launch hygiene (headless only, no
+window on the owner's screen, silent audio) is in `orivon-electron` and CLAUDE.md section Local quirks.
 
 ## Commands
 

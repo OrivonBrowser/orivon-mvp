@@ -12,11 +12,11 @@ a test red whose title carries the behaviour's id, whichever file the change was
 - no spec carries an `[app:<id>]` this page lacks;
 - a row that no spec proves yet says `not covered: <reason>`, and the reason is the debt.
 
-[`testing.md`](../../docs/development/testing.md) §App behaviours says how to add a row. **A row changes only with a line
+[`testing.md`](../../docs/development/testing.md) section App behaviours says how to add a row. **A row changes only with a line
 under `### Changed for apps` in [`CHANGELOG.md`](../../CHANGELOG.md)** (`**<id>**: what changed. Apps
 that do Y must now do Z. Recheck: the ports.`): CI fails a pull request that rewrites or removes a
 behaviour's sentence without one, and the same for a change to the public surface of `src/contracts/`
-(§The contracts surface in [`testing.md`](../../docs/development/testing.md)). The matrix of what works today is
+(section The contracts surface in [`testing.md`](../../docs/development/testing.md)). The matrix of what works today is
 [`compatibility-matrix.md`](../../docs/planning/compatibility-matrix.md); this page is its test-side index.
 
 Ports are named only where the compatibility pages already name them.
