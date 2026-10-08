@@ -59,6 +59,11 @@ against nothing.
 `launchElectron()` strips it and verifies the launch is real. **Never launch Electron
 directly.** See [`.claude/skills/orivon-electron/SKILL.md`](../.claude/skills/orivon-electron/SKILL.md).
 
+On Linux, `launchElectron()` also refuses to start unless the command runs under
+`node scripts/run-headless.mjs` (every npm script that launches Electron does), because a launch
+outside it opens a real window on the desktop. Set `ORIVON_ALLOW_VISIBLE_WINDOW=1` for a run you
+mean to watch.
+
 ## Every launch tears itself down, by construction
 
 `launchElectron()` registers its own `--user-data-dir` temp profile and its own root pid the
