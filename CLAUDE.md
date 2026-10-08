@@ -100,6 +100,9 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
 20. **A gap a port finds is fixed generically in Orivon, never patched in the port**; the port
     stays upstream plus a bridge. Tests are generic and named after the behaviour; the app that
     inspired one is named only in a code comment.
+21. **Node-shaped, never browser-shaped**: a port bundles for Node, and Orivon's Node layer presents
+    to an app as Node, so a library takes the path it takes under Node and Electron (d-0594). A
+    port's original behaviour is the target: where Node gives it, Orivon gives it too.
 
 ## Commands
 

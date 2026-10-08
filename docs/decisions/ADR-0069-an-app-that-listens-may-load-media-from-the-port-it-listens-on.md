@@ -1,9 +1,9 @@
 # ADR-0069: An app that listens may load media and images from the port it listens on
 
-- **Status:** accepted, provisional
+- **Status:** accepted
 - **Date:** 2026-10-08
 - **Type:** security
-- **Decided by:** AI recommendation accepted by default; provisional until the owner confirms
+- **Decided by:** AI recommendation, confirmed by the owner on 2026-10-08
 
 ## Decision
 A page whose origin holds a live `tcp.listen.local` or `tcp.listen.network` grant may load
