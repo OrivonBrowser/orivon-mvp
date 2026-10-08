@@ -55,13 +55,7 @@ to: append one bullet to the current week of `devlog/journal.md`, **Done / resul
 outcomes, **In my head** for thinking. At most 25 words; `npm run check:devlog` checks it.
 Skip routine sessions.
 
-## Landing a session, and opening a PR
-
-A session ends by merging its branch into local `main` at the root checkout, only when that tree
-is clean (CLAUDE.md, section Syncing `main`). It does not push local `main` and does not open the
-day PR: the routine in `.claude/commands/ship-day.md` does, at 13:00 and 21:00. A session opens a
-PR itself only for a change to `src/contracts/` or `src/shared/`, alone, from a branch based on
-`origin/main`, and for a repair the routine cannot make. The recipes below apply to both.
+## Opening and editing a PR
 
 - `gh pr create --title ... --body-file <file>`. `--body` bypasses the template silently;
   `--label` on create fails with a GraphQL "Projects (classic)" error.

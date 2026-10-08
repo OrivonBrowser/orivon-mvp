@@ -37,8 +37,7 @@ shortcut in `src/main/` costs a refactor of code tied to Electron; a shortcut in
 
 ## Session budget
 
-- One branch per session, merged into local `main` at its end (section Syncing `main`). A new task
-  is a new session; never resume a session across days.
+- A new task is a new session; never resume a session across days.
 - Compact when the task changes, with a one-line summary of what is done and what is next.
 - Explore with an `Explore` agent, not `cat`. Never print a file over 300 lines: use `sed -n`
   ranges or `grep -n`.
@@ -114,26 +113,15 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
 | `npm run qa`, `qa:visual`, `qa:report` | Before calling a UI, flow or boundary change done; `orivon-qa` says which, and how to read the screenshots |
 | `npm run dev` | Humans only: it opens a real window |
 
-## Syncing `main`, and the day PR
+## Syncing `main`, and PR cadence
 
-Local `main`, in the root checkout, is where the owner tests every session's work together. It
-may hold work GitHub does not have yet.
-
-- **Never a bare `git pull`, never `--force`, never push local `main` yourself.** Clean tree:
-  `git merge origin/main` without asking (a merge commit is allowed, because local `main` may
-  hold unshipped work). Dirty tree: report, do not act; name the files dirty locally and changed
-  upstream, and stash only when told to.
-- **A session ends by landing its branch on local `main`.** Finish the work and its checks, bring
-  the branch level with local `main` (rebase or merge it), then merge the branch into local `main`
-  at the root checkout, only when that tree is clean. When it is dirty, leave the branch unmerged
-  and say so, naming the dirty files, in the last lines of the report. Rule 14's merge is this one.
-- **The day PR is not a session's job.** A routine (`.claude/commands/ship-day.md`) runs at 13:00
-  and 21:00, ships local `main` to GitHub as the day's PR and merges it when green (Rule 12). Each
-  `## Changes` entry must stay findable on its own and `## How it was verified` covers the whole
-  day, because a day PR is harder to revert and bisect.
-- **The carve-out:** a change to `src/contracts/` or `src/shared/` goes alone as its own PR, from a
-  branch based on `origin/main`, and merges first; the session then merges `origin/main` into local
-  `main`.
+- **Never a bare `git pull`.** Clean tree: `git merge --ff-only origin/main` without asking;
+  never a merge commit, never `--force`. Dirty tree: report, do not act; name the files dirty
+  locally and changed upstream, and stash only when told to.
+- **A session ships its own work, in as many PRs as its changes need.** Only the session that
+  wrote a change can fix its failing checks in line with what it meant, so it opens the PR, fixes
+  every red check (Rule 12), merges it when green (Rule 14), and then syncs local `main` as
+  above. The carve-out: a change to `src/contracts/` or `src/shared/` goes alone and merges first.
 
 ## Local quirks
 

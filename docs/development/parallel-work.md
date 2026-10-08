@@ -284,11 +284,6 @@ them to find out not just what was built, but what was tried and why it is shape
 
 ## Syncing `main` with `origin`
 
-Local `main`, in the root checkout, is where the owner tests every session's work together, so
-it may hold commits GitHub does not have yet. Sessions merge their finished branches into it;
-nobody pushes it. A routine (`.claude/commands/ship-day.md`) runs at 13:00 and 21:00, ships local
-`main` to GitHub as the day PR and merges it when green.
-
 Never a bare `git pull`: it refuses to run on a dirty tree, and the obvious recoveries
 (`git checkout -- .`, a badly resolved rebase) destroy the uncommitted work silently. Check first:
 
@@ -297,13 +292,12 @@ git fetch origin --prune
 git rev-list --left-right --count main...origin/main
 ```
 
-- **Clean tree: sync, without asking first.** `git merge origin/main`. A merge commit is allowed,
-  because local `main` may hold unshipped work; `--ff-only` is enough when it holds none. Never
-  `--force`, and never push local `main` yourself.
+- **Clean tree: sync, without asking first.** `git merge --ff-only origin/main`. Never a merge
+  commit, never `--force`.
 - **Dirty tree: report, do not act.** Say which files are dirty locally **and** changed upstream;
   that is where conflicts come from. If told to go ahead, back the tree up outside the repository
   first: `git diff > <scratch>/uncommitted.patch` **plus** a tarball, since no stash captures
-  untracked files. Then stash, `git merge origin/main`, `git stash pop`. A conflict
+  untracked files. Then stash, `git merge --ff-only origin/main`, `git stash pop`. A conflict
   keeps the stash, so nothing is lost.
 
 Afterwards run `npm run typecheck` and `npm run check:contracts`, plus `npm install` if
@@ -319,20 +313,14 @@ Read this page before starting any build step. Then:
 - Work in a worktree on `stream/<name>`, with `node_modules`; base it on the branch you are
   stacked on, if any (rule 1 above).
 - Stay inside your owned paths.
-- **End the session by landing the branch on local `main`**, not by opening a PR. Bring the branch
-  level with local `main`, then merge it into local `main` at the root checkout, only when that
-  tree is clean; when it is dirty, leave the branch unmerged and say so, naming the dirty files.
-  The 13:00 and 21:00 routine turns local `main` into one or two PRs a day. This applies to AI
-  sessions only. An outside contributor sending a single change still opens a single PR, which is
-  why section The merge protocol above is unchanged. The reason is volume: continuous AI work
-  merged 423 PRs over 17 days here, about 25 a day, and nobody reviews that.
-- Never modify `src/contracts/` or `src/shared/` in the same PR as an implementation. **This
-  holds regardless of cadence**: it is the one carve-out. That change goes alone as its own PR,
-  from a branch based on `origin/main`, and merges first; then merge `origin/main` into local
-  `main`.
+- **Ship your own work, in as many PRs as its changes need.** Only the session that wrote a
+  change can fix its failing checks in line with what it meant, so it opens the PR, fixes every
+  red check, merges once green (section The merge protocol, step 6), and syncs local `main`.
+- Never modify `src/contracts/` or `src/shared/` in the same PR as an implementation. That change
+  goes alone as its own PR and merges first.
 - Append at the append points rather than editing shared logic.
 - Sync `main` only as section Syncing `main` with `origin` says: never `git pull`, and on a dirty tree
-  report rather than act, and never push local `main`.
+  report rather than act.
 - Surface contradictions rather than smoothing them over, filing them in
   [`open-questions.md`](../open-questions.md) in its fixed shape ([`CLAUDE.md`](../../CLAUDE.md)
   Rule 3).

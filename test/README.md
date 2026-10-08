@@ -17,8 +17,8 @@ A spec goes in the folder of the area it proves. A helper used by one area lives
 more goes in `support/`. A new area is a new folder and a new row here; `npm run check:test-paths` fails a
 spec left at the top of `test/` and a folder with no row. File names keep their `e2e-` prefix.
 A spec and its tests are named after the behaviour they prove; the app that inspired one is named only
-in a code comment ([`CLAUDE.md`](../CLAUDE.md) Rule 20). `ported-apps/` runs real upstream apps and is
-named after them.
+in a code comment ([`CLAUDE.md`](../CLAUDE.md) Rule 20). That holds in `ported-apps/` too, where a spec
+runs a real upstream app.
 
 | Folder | What it proves |
 |---|---|
