@@ -145,6 +145,25 @@ says which QA follows a UI, flow or boundary change.
   tests for the preset.
 - **Decision:** `d-0585`.
 
+## F15: Port specs named after the behaviour they prove
+
+- **Goal:** the specs in `test/ported-apps/` (`e2e-freetube-*.test.ts`, `e2e-the-lounge-real.test.ts` and
+  their helpers) take names that say what they prove, such as a Node server in a tab or real TCP to an
+  IRC server; the app each one runs is named in a code comment.
+- **Likely files:** `test/ported-apps/`, `test/impact-map.json`, `scripts/ci/select-e2e.mjs` if it names
+  them, `test/app-behaviours/catalogue.md` rows that cite them.
+- **Test:** `npm run check:test-paths`, `check:impact-map` and `check:app-behaviours` pass; CI selects the
+  renamed specs for a change in their area.
+- **Decision:** `d-0577`, CLAUDE.md Rule 20.
+
+## F16: The levels link in the site-info popover
+
+- **Goal:** the site-info text that explains the Web3 Score levels stops pointing at the outdated docs
+  site and points at a page that says how the levels work now.
+- **Likely files:** `src/renderer/site-info/web3-view.ts` (`SCORES_PAGE`), the page it should name.
+- **Test:** the site-info unit test that renders the "no provider" text.
+- **Decision:** `d-0573`.
+
 ## F14: Smaller accepted items
 
 These are decided and small enough to ride along with other work in the same area.

@@ -1,5 +1,4 @@
-// The journey docs/planning/build-plan.md's SS Testing has specified since
-// the beginning, and docs/development/testing.md's "The end-to-end test"
+// The app-loader journey, which docs/development/testing.md's "The end-to-end test"
 // section names as still not fully closed: a fixture app served over real
 // localhost HTTP with a real /.well-known/orivon.json -> loaded via the app
 // loader -> grant accepted -> require('net') THROUGH THE SHIM connects to a

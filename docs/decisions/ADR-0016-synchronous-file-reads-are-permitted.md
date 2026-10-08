@@ -58,7 +58,7 @@ milliseconds and invisible; an app that reads files constantly stutters, which i
 and is observable rather than mysterious.
 
 Portability survives it, and [ADR-0002](./ADR-0002-capability-api-is-the-durable-asset.md) turns on portability: a WASM host makes synchronous host
-calls natively, and Mojo has synchronous IPC. A synchronous `fs` is not an Electron trick that
+calls natively, and other IPC systems offer synchronous calls too. A synchronous `fs` is not an Electron trick that
 would have to be unwound if the engine underneath changes.
 
 Choosing the cheaper mechanism first is not a shortcut here, because **the interface is identical
