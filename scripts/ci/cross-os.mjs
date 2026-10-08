@@ -42,13 +42,16 @@ export function matrixFor (text) {
 }
 
 /**
- * The run a dispatch started: the newest one on that commit that was not there before it. `gh workflow run`
- * prints no id, and matching by id rather than by time holds whatever the two clocks say.
+ * The run a dispatch started: the newest one on that commit that was not there before it and, given `title`, whose
+ * name holds it, so two dispatches on one commit each find their own. `gh workflow run` prints no id, and matching
+ * by id rather than by time holds whatever the two clocks say.
  * @param {number[]} before run ids listed before the dispatch
- * @param {Array<{ databaseId: number, headSha: string }>} after runs listed since, newest first
+ * @param {Array<{ databaseId: number, headSha: string, displayTitle?: string }>} after runs listed since, newest first
+ * @param {string} [title]
  */
-export function pickRun (before, after, sha) {
-  return after.find((run) => run.headSha === sha && !before.includes(run.databaseId))
+export function pickRun (before, after, sha, title) {
+  return after.find((run) => run.headSha === sha && !before.includes(run.databaseId) &&
+    (title === undefined || (run.displayTitle ?? '').includes(title)))
 }
 
 /**
@@ -111,15 +114,15 @@ function arg (name) {
   return at === -1 ? undefined : process.argv[at + 1]
 }
 
-function listRuns (workflow, branch, event) {
-  const args = ['run', 'list', '--workflow', workflow, '--limit', '20', '--json', 'databaseId,headSha']
+export function listRuns (workflow, branch, event) {
+  const args = ['run', 'list', '--workflow', workflow, '--limit', '20', '--json', 'databaseId,headSha,displayTitle']
   if (branch !== undefined) args.push('--branch', branch)
   if (event !== undefined) args.push('--event', event)
   return JSON.parse(gh(...args))
 }
 
-/** Starts `workflow` on the current branch and returns the new run's id. */
-async function dispatch (workflow, inputs) {
+/** Starts `workflow` on the current branch and returns the new run's id; `title` is a part of the run's name. */
+export async function dispatch (workflow, inputs, title) {
   const branch = git('rev-parse', '--abbrev-ref', 'HEAD')
   const sha = git('rev-parse', 'HEAD')
   const pushed = git('ls-remote', 'origin', `refs/heads/${branch}`).split(/\s/)[0]
@@ -130,7 +133,7 @@ async function dispatch (workflow, inputs) {
   gh('workflow', 'run', workflow, '--ref', branch, ...Object.entries(inputs).flatMap(([key, value]) => ['-f', `${key}=${value}`]))
   console.log(`started ${workflow} on ${branch} at ${sha.slice(0, 12)}`)
   for (const deadline = Date.now() + FIND_RUN_MS; Date.now() < deadline; await sleep(5000)) {
-    const run = pickRun(before, listRuns(workflow, branch, 'workflow_dispatch'), sha)
+    const run = pickRun(before, listRuns(workflow, branch, 'workflow_dispatch'), sha, title)
     if (run !== undefined) return run.databaseId
   }
   throw new Error(`no ${workflow} run appeared on ${branch} within ${FIND_RUN_MS / 1000} s: look at gh run list --workflow ${workflow}`)

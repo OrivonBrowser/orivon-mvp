@@ -488,6 +488,8 @@ Orivon from source on hosted Windows and macOS runners: `npm ci` with the Rule 8
 states spec with its screenshots. It runs nightly on `main`, on a pull request that changes the install or launch
 scripts, `package.json` or `src/main/os/`, and on demand through `node scripts/ci/cross-os.mjs`, which waits and
 brings the evidence back ([`scripts/ci/README.md`](../../scripts/ci/README.md) section Other systems).
+`node scripts/ci/live-session.mjs` keeps Orivon running on one of those runners and drives it step by step from a
+terminal (the same README, section Live sessions).
 [`release.yml`](../../.github/workflows/release.yml) builds, installs and launches the packages on the same systems.
 
 **With no dedicated code reviewer, CI is the reviewer.** A pull request whose `check` or selected e2e shards are
