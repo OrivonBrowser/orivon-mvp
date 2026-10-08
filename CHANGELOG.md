@@ -26,6 +26,15 @@ public surface of `src/contracts/` (named `contracts/<file>`).
   waits where Node would, and no longer meets `limit`. Apps that retried `limit` on files may drop it. Recheck: webtorrent.
 - **`node-constants-and-exec-path`**: `require('constants')` resolves to Node's table (Linux values) and `process.execPath`
   is `''` rather than `undefined`. Apps that stubbed either for their bundle: remove the stub. Recheck: webtorrent.
+- **`electron-clipboard-reads-the-pasted-text`**, **`electron-shell-open-external-opens-a-tab`** and
+  **`window-open-external-address-asks`**: the `electron` shim's `clipboard.writeText`, `clipboard.readText` (the text of
+  a paste in progress, `''` otherwise) and `shell.openExternal` now work instead of refusing, and a `window.open` of a
+  `mailto:` or `magnet:` address asks the person instead of leaving a blank tab. Apps that bridged these by hand: use
+  them directly. Recheck: webtorrent.
+- **`page-media-from-own-listener`**: an app that holds a `tcp.listen` grant may point `<img>`, `<audio>` and `<video>`
+  at `http://localhost:<port>`, `127.0.0.1` or `[::1]` when `<port>` is one its own listener holds, which Node and
+  Electron allow and the page's policy refused; every other loopback port stays refused for images and media. Apps
+  that run their own HTTP server for their player need no change. Recheck: `webtorrent`.
 - **`page-sync-fs-writes-land`**: the page's `fs.mkdirSync`, `writeFileSync`, `copyFileSync`, `statSync`, `readdirSync`,
   `renameSync` and `rmSync` now work instead of throwing; `openSync` and its family still refuse on the page. Apps that
   worked around the refusal: use them directly. Recheck: webtorrent.

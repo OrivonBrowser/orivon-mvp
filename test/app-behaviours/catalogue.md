@@ -49,6 +49,7 @@ Ports are named only where the compatibility pages already name them.
 | `tls-self-signed-refused-unless-opted-out` | `connectSecure` refuses a self-signed server as `unreachable` with a platform code, and reaches it, unauthorized, when the app passes `rejectUnauthorized: false` | apps for servers with their own certificates | The Lounge | [`e2e-app-broker-rules`](./e2e-app-broker-rules.test.ts) |
 | `local-listener-accepts-connections` | An app granted a local listener port accepts connections on `127.0.0.1` from other programs | apps that embed a server | The Lounge | [`e2e-http-server`](../node-runtime/e2e-http-server.test.ts) |
 | `second-listener-gets-eaddrinuse` | Listening on a port another program holds fails with `EADDRINUSE` | apps that detect a running copy of themselves | The Lounge | [`e2e-app-broker-rules`](./e2e-app-broker-rules.test.ts) |
+| `page-media-from-own-listener` | An app that holds a `tcp.listen` grant plays `<audio>` and `<video>` and shows `<img>` from `http://localhost` or `http://127.0.0.1` on a port its own listener holds, and a request from the same page to any other loopback port is cancelled before it connects; a page with no listen grant loads loopback images as before | apps that serve media to their own player | WebTorrent | [`e2e-app-own-listener-media`](e2e-app-own-listener-media.test.ts) |
 
 ## Files and stored data
 
@@ -87,6 +88,9 @@ Ports are named only where the compatibility pages already name them.
 | `clipboard-write-without-prompt` | A page writes to the clipboard on a click with no question | apps with copy buttons | AirGap Vault | [`e2e-clipboard-write`](../capabilities/e2e-clipboard-write.test.ts) |
 | `page-declared-favicon-shows` | A page's `<link rel="icon">` shows in its tab, and comes back on a return after a blank page or a failed load | every app | all | [`e2e-tab-favicon`](../tabs/e2e-tab-favicon.test.ts) |
 | `target-blank-link-opens-tab` | A `target="_blank"` link opens a tab | apps with external links | ASGARDEX, The Lounge | [`e2e-link-open`](../tabs/e2e-link-open.test.ts) |
+| `window-open-external-address-asks` | A page's `window.open` of an address another program handles (`mailto:`, `magnet:`) raises the external-link question, as a click on a link to it does, and opens no tab | apps that hand links to the system | WebTorrent | [`e2e-app-electron-clipboard-shell`](e2e-app-electron-clipboard-shell.test.ts) |
+| `electron-clipboard-reads-the-pasted-text` | The `electron` shim's `clipboard.readText()` answers the text being pasted while a `paste` event is dispatched and `''` at any other time, and `writeText` copies through the browser and returns nothing | apps that add what the person pastes | WebTorrent | [`e2e-app-electron-clipboard-shell`](e2e-app-electron-clipboard-shell.test.ts) |
+| `electron-shell-open-external-opens-a-tab` | The `electron` shim's `shell.openExternal(url)` opens an address in a new tab, hands an address another program handles to the external-link question, and rejects with `invalid-usage` a value that is not an absolute URL | apps with links to the outside | WebTorrent | [`e2e-app-electron-clipboard-shell`](e2e-app-electron-clipboard-shell.test.ts) |
 
 ## Running code and showing other pages
 
@@ -124,7 +128,7 @@ has a line, so a capability cannot land without that decision.
 | Capability | Proven by rows |
 |---|---|
 | `tcp.connect` | `tcp-connect-to-granted-loopback-port`, `wildcard-host-never-reaches-loopback`, `reserved-port-needs-exact-pattern`, `concurrent-sockets-limit-holds`, `file-calls-complete-beside-hung-dials` |
-| `tcp.listen.local` | `local-listener-accepts-connections`, `second-listener-gets-eaddrinuse` |
+| `tcp.listen.local` | `local-listener-accepts-connections`, `second-listener-gets-eaddrinuse`, `page-media-from-own-listener` |
 | `tcp.listen.network` | not covered: a network-scope listener is reachable from the local network, and the end-to-end suite is loopback only |
 | `udp.bind.local` | not covered: no ported app relies on UDP yet; `e2e-udp-capability` proves the capability itself, and a row is added when a port needs it |
 | `udp.bind.network` | not covered: as `udp.bind.local`, and reachable from the local network |

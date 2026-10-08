@@ -94,3 +94,26 @@ describe('cspHeaderValue -- reach from the live grants', () => {
     expect(cspHeaderValue(['*:*'], [])).toBe(EMPTY)
   })
 })
+
+describe('cspHeaderValue -- media from the app\'s own loopback listener', () => {
+  const LOOPBACK = ['http://localhost:*', 'http://127.0.0.1:*']
+
+  it('adds the two loopback sources to media-src and img-src only when the app holds a listen grant', () => {
+    const own = cspHeaderValue([], [], { ownListenerMedia: true })
+    for (const name of ['media-src', 'img-src']) {
+      expect([name, directive(own, name)]).toEqual([name, ["'self'", 'data:', 'blob:', ...LOOPBACK]])
+    }
+    expect(cspHeaderValue([], [], { ownListenerMedia: false })).toBe(EMPTY)
+  })
+
+  it('leaves every other directive as it was: no connect, frame, font or script reach to loopback', () => {
+    const own = cspHeaderValue([], [], { ownListenerMedia: true })
+    const rest = (header: string): string[] => header.split('; ').filter((d) => !d.startsWith('media-src') && !d.startsWith('img-src'))
+    expect(rest(own)).toEqual(rest(EMPTY))
+  })
+
+  it('keeps the granted https reach beside the loopback sources', () => {
+    const own = cspHeaderValue([], ['cdn.example.com:443'], { ownListenerMedia: true })
+    expect(directive(own, 'media-src')).toEqual(["'self'", 'data:', 'blob:', ...LOOPBACK, 'https://cdn.example.com:443'])
+  })
+})
