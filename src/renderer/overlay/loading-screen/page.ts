@@ -11,8 +11,8 @@ const ADDRESS_FIT = 44
 
 export function isLoadingScreenView (value: unknown): value is LoadingScreenView {
   if (typeof value !== 'object' || value === null) return false
-  const { title, detail, address } = value as Record<string, unknown>
-  return typeof title === 'string' && typeof detail === 'string' && typeof address === 'string'
+  const { title, detail, address, busy } = value as Record<string, unknown>
+  return typeof title === 'string' && typeof detail === 'string' && typeof address === 'string' && typeof busy === 'boolean'
 }
 
 export const loadingScreenPage: OverlayPage = {
@@ -24,10 +24,11 @@ export const loadingScreenPage: OverlayPage = {
     return {
       shown (payload) {
         if (!isLoadingScreenView(payload)) { overlay.close(); return }
+        column.setAttribute('aria-busy', String(payload.busy))
         column.replaceChildren(
           h('p', { className: 'loading-screen-title' }, payload.title),
           h('p', { className: 'loading-screen-address', title: payload.address }, shortenMiddle(payload.address, ADDRESS_FIT)),
-          h('div', { className: 'loading-screen-bar', ariaHidden: 'true' }, h('span', { className: 'loading-screen-slide' })),
+          ...(payload.busy ? [h('div', { className: 'loading-screen-bar', ariaHidden: 'true' }, h('span', { className: 'loading-screen-slide' }))] : []),
           ...(payload.detail === '' ? [] : [h('p', { className: 'loading-screen-detail' }, payload.detail)]))
       }
     }

@@ -21,6 +21,8 @@ export interface LoadingScreenDeps {
   readonly screenFor: (url: string) => LoadingScreen | undefined
   /** Builds the overlay's view ahead of its show, so the screen appears with its page ready. */
   readonly prewarm: (window: ShellWindow) => void
+  /** A first visit to an app owns this tab's cover (`../app-setup/`): the protocol's own screen would replace its words. */
+  readonly claimed?: (contents: WebContents) => boolean
 }
 
 interface Cover {
@@ -48,7 +50,7 @@ export function watchLoadingScreen (contents: WebContents, deps: LoadingScreenDe
 
   const show = (url: string): void => {
     const found = deps.findTab(contents)
-    if (found === null) return
+    if (found === null || deps.claimed?.(contents) === true) return
     const mine: Cover = { handle: undefined, ended: false }
     mine.handle = deps.ask({
       window: found.window,

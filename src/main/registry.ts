@@ -29,6 +29,8 @@ import type { SchemeHost } from '../broker/transport/ipc-validation.js'
 import type { CapabilityRequest, WebsiteScore } from '../contracts/index.js'
 import type { ExtensionsApi } from './extensions/extensions-subsystem.js'
 import type { AppUpdates } from './install/app-updates.js'
+import type { FirstVisit } from './install/first-visit.js'
+import type { TabSetup } from './app-setup/tab-screens.js'
 import type { ProviderVerdict } from '../trust/score-provider.js'
 
 export interface SubsystemContext {
@@ -102,6 +104,18 @@ export interface SubsystemContext {
    * `./install/manifest-hint.ts` from the frame that reported the hint.
    */
   readonly installApp: ((hintingOrigin: string, hintedUrl: string, caller?: DialogCaller) => Promise<LoadResult | GrantedWithoutInstall>) | undefined
+  /**
+   * A published app's first visit (`./install/first-visit.ts`): whether an origin is one, and the
+   * ask-download-verify order over a tab's `SetupHost`. Closed over the same one `Broker`/`Loader`
+   * and consent prompts as `installApp`, for the same reason; published by `appInstallSubsystem`.
+   */
+  readonly firstVisit: FirstVisit | undefined
+  /**
+   * The screens a tab shows while a first visit runs (`./app-setup/tab-screens.ts`): the setup cover
+   * and the warning and retry sheets. Published by the shell installer that builds them, once the
+   * shell exists, so a reader treats `undefined` as routine early in startup.
+   */
+  readonly tabSetup: TabSetup | undefined
   /**
    * Resolves the window CURRENTLY holding a tab's `WebContents`, or
    * undefined if none can be found (the tab closed, or moved somewhere this
@@ -219,6 +233,8 @@ const brokerSlot = createPublishedSlot<Broker>('broker', 'a second Broker would 
 const loaderSlot = createPublishedSlot<Loader>('loader', 'a second Loader would create two disagreeing ideas of what is installed for one running app')
 const requestGrantSlot = createPublishedSlot<(origin: string, request: CapabilityRequest, caller?: DialogCaller, abandoned?: AbortSignal) => Promise<boolean>>('requestGrant', 'a second one could close over a different Broker instance than the one every other subsystem reads')
 const installAppSlot = createPublishedSlot<(hintingOrigin: string, hintedUrl: string, caller?: DialogCaller) => Promise<LoadResult | GrantedWithoutInstall>>('installApp', 'a second one could close over a different Broker or Loader instance than the one every other subsystem reads')
+const firstVisitSlot = createPublishedSlot<FirstVisit>('firstVisit', 'a second one could close over a different Broker or Loader and ask the same person twice')
+const tabSetupSlot = createPublishedSlot<TabSetup>('tabSetup', 'a second one could draw a second setup screen over the same tab')
 const senderAttributedSlot = createPublishedSlot<(sender: unknown, origin: string) => boolean>('senderAttributed', 'a second one could disagree with the first about which sender is attributed to which origin, and every broker channel must apply the same answer')
 const extensionsSlot = createPublishedSlot<ExtensionsApi>('extensions', 'a second one could load into a different session than the one every extension actually runs in')
 const windowForSenderSlot = createPublishedSlot<(sender: WebContents) => BaseWindow | undefined>('windowForSender', 'a second one could disagree about which window currently holds a given tab')
@@ -254,6 +270,14 @@ class SubsystemContextImpl implements SubsystemContext {
 
   get installApp (): ((hintingOrigin: string, hintedUrl: string, caller?: DialogCaller) => Promise<LoadResult | GrantedWithoutInstall>) | undefined {
     return installAppSlot.get(this)
+  }
+
+  get firstVisit (): FirstVisit | undefined {
+    return firstVisitSlot.get(this)
+  }
+
+  get tabSetup (): TabSetup | undefined {
+    return tabSetupSlot.get(this)
   }
 
   get senderAttributed (): ((sender: unknown, origin: string) => boolean) | undefined {
@@ -327,6 +351,16 @@ export function publishRequestGrant (ctx: SubsystemContext, requestGrant: (origi
 /** The one sanctioned way to set `ctx.installApp` -- see `publishBroker`'s own doc; same guarantee, same reason. */
 export function publishInstallApp (ctx: SubsystemContext, installApp: (hintingOrigin: string, hintedUrl: string, caller?: DialogCaller) => Promise<LoadResult | GrantedWithoutInstall>): void {
   installAppSlot.publish(ctx, installApp)
+}
+
+/** The one sanctioned way to set `ctx.firstVisit` -- see `publishBroker`'s own doc; same guarantee, same reason. */
+export function publishFirstVisit (ctx: SubsystemContext, firstVisit: FirstVisit): void {
+  firstVisitSlot.publish(ctx, firstVisit)
+}
+
+/** The one sanctioned way to set `ctx.tabSetup` -- see `publishBroker`'s own doc; same guarantee, same reason. */
+export function publishTabSetup (ctx: SubsystemContext, tabSetup: TabSetup): void {
+  tabSetupSlot.publish(ctx, tabSetup)
 }
 
 /** The one sanctioned way to set `ctx.senderAttributed` -- see `publishBroker`'s own doc; same guarantee, same reason. */

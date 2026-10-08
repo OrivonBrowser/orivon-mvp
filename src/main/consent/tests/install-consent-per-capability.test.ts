@@ -82,7 +82,7 @@ describe('requestInstallConsent -- per-capability path (stubbed broker)', () => 
     const manifest = perCapabilityManifest()
     const perCapabilityConsent: PerCapabilityConsentPrompt = async () => []
 
-    await expect(requestInstallConsent(broker, async () => true, APP, manifest, perCapabilityConsent)).resolves.toBeUndefined()
+    await expect(requestInstallConsent(broker, async () => true, APP, manifest, perCapabilityConsent)).resolves.toBe('declined')
 
     expect(calls.some((call) => call.method === 'grant')).toBe(false)
     expect(calls).toContainEqual({ method: 'recordDeclinedConsent', origin: APP, args: expect.arrayContaining(['tcp.connect', 'fs', 'id']) })
@@ -150,7 +150,7 @@ describe('requestInstallConsent -- per-capability path (stubbed broker)', () => 
     const perCapabilityConsent: PerCapabilityConsentPrompt = async () => { throw new Error('dialog failed to open') }
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    await expect(requestInstallConsent(broker, async () => true, APP, manifest, perCapabilityConsent)).resolves.toBeUndefined()
+    await expect(requestInstallConsent(broker, async () => true, APP, manifest, perCapabilityConsent)).resolves.toBe('left')
     consoleError.mockRestore()
 
     expect(calls.some((call) => call.method === 'grant')).toBe(false)

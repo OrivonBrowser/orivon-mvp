@@ -232,7 +232,7 @@ describe('requestInstallConsent (stubbed broker)', () => {
     const calls: BrokerCall[] = []
     const broker = stubBroker(calls, { grants: async () => [], declinedCapabilitiesFor: async () => undefined })
 
-    await expect(requestInstallConsent(broker, undefined, APP, manifestWith({ fs: {} }))).resolves.toBeUndefined()
+    await expect(requestInstallConsent(broker, undefined, APP, manifestWith({ fs: {} }))).resolves.toBe('not-asked')
 
     expect(calls.some((call) => call.method === 'grant')).toBe(false)
   })
@@ -243,7 +243,7 @@ describe('requestInstallConsent (stubbed broker)', () => {
     const consent = vi.fn(async () => { throw new Error('dialog failed to open') })
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    await expect(requestInstallConsent(broker, consent, APP, manifestWith({ fs: {} }))).resolves.toBeUndefined()
+    await expect(requestInstallConsent(broker, consent, APP, manifestWith({ fs: {} }))).resolves.toBe('left')
 
     expect(calls.some((call) => call.method === 'grant')).toBe(false)
     // A dialog that never actually asked anything must not be recorded as a

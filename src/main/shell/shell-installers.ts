@@ -5,6 +5,7 @@
 import type { App } from 'electron'
 import type { Runtime } from '../launch/start-launch.js'
 import type { SubsystemContext } from '../registry.js'
+import { installAppSetup } from '../app-setup/install-app-setup.js'
 import { installAuth } from '../auth/install-auth.js'
 import { installAutofill } from '../autofill/install-autofill.js'
 import { installChoosers } from '../devices/install-choosers.js'
@@ -39,6 +40,7 @@ export interface ShellInstaller {
 // Order is the order the per-site askers answer in: the first answer that is not `undefined` wins. `media-grants`
 // must stay ahead of `site-permissions`, which refuses every app origin, so an app's camera goes to its grant.
 export const SHELL_INSTALLERS: readonly ShellInstaller[] = [
+  installAppSetup,
   installAuth,
   installAutofill,
   installChoosers,

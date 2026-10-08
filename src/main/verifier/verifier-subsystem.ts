@@ -104,7 +104,7 @@ function targetsVerifiedHost (url: string): boolean {
  * `*.` matches a suffix's own bare host as well as any subdomain (Chromium's
  * match-pattern syntax), covering exactly what `routesToVerifier` (and so
  * `targetsVerifiedHost` above) accepts. */
-function verifiedHostFilter (): WebRequestFilter {
+export function verifiedHostFilter (): WebRequestFilter {
   return { urls: BUILTIN_ADDRESSES.routedSuffixes().map((suffix) => `https://*.${suffix}/*`) }
 }
 
