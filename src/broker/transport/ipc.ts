@@ -31,6 +31,7 @@ import { createWebContextHost } from '../../main/sessions/web-context-host.js'
 import { createElectronKeychain } from '../../main/keyring/electron-keychain.js'
 import { SESSION_ONLY_STORAGE } from '../../main/keyring/seed-store.js'
 import { createPortRegistry } from './relay/port-registry.js'
+import { createPendingDials } from './pending-dials.js'
 import type { RateLimiter } from './token-bucket.js'
 import { admitControlCall, createControlLimiter } from './control-limiter.js'
 import type { ControlLimiter } from './control-limiter.js'
@@ -58,7 +59,7 @@ export { CONTROL_CHANNEL, PORT_CHANNEL }
 export type {
   AppRequestGrantParams, ControlMethod, FsPathWithRecursiveParams, FsReaddirParams, FsReadFileParams, FsRenameParams,
   FsStatParams, FsWriteFileParams, IdPublicKeyParams, IdSignParams,
-  NetConnectParams, NetCloseParams, NetSetKeepAliveParams, NetSetNoDelayParams, NetUdpBindParams, RequestGrantCtx,
+  NetCancelParams, NetConnectParams, NetCloseParams, NetSetKeepAliveParams, NetSetNoDelayParams, NetUdpBindParams, RequestGrantCtx,
   SecretsDecryptParams, SecretsEncryptParams, TrustCtx, TrustWebsiteScoreParams,
   WebCloseParams, WebEvaluateParams, WebOpenContextParams
 } from './ipc-validation.js'
@@ -87,6 +88,7 @@ async function dispatch (
   requestGrantCtx: ControlCtx | undefined,
   fsTransport: FsTransport | undefined,
   abandoned: AbortSignal,
+  dialAbandoned: AbortSignal | undefined,
   windowForSender?: (sender: unknown) => unknown
 ): Promise<unknown> {
   if (!isControlMethod(method)) throw fail('invalid', `unknown control method: ${method}`)
@@ -144,7 +146,8 @@ async function dispatch (
     case 'net.setNoDelay':
     case 'net.setKeepAlive':
     case 'net.lookup':
-      return await dispatchNet(broker, origin, method, payload, event, transport)
+    case 'net.cancel':
+      return await dispatchNet(broker, origin, method, payload, event, transport, dialAbandoned)
     case 'web.openContext':
     case 'web.evaluate':
     case 'web.close':
@@ -266,21 +269,30 @@ export async function handleControlRequest (
     return { id: envelope.id, ok: false, code: 'denied', message: 'this document is not in the session its origin belongs to' }
   }
 
-  // Checked before dispatch() ever runs, so a throttled call never reaches
-  // the broker at all (A38). Which budget a method draws on, and why one of
-  // them paces instead of refusing: ./control-limiter.ts.
-  if (!(await admitControlCall(limiter, origin, envelope.method))) {
-    return { id: envelope.id, ok: false, code: 'limit', message: 'this origin is calling too frequently; wait and retry' }
-  }
-
+  // A dial is findable by its request id from here on, even while the limiter below holds it, so a cancel sent
+  // right behind it always finds it (ADR-0071).
+  const dial = (envelope.method === 'net.connect' || envelope.method === 'net.connectSecure') && event.senderFrame !== null
+    ? transport?.dials.begin(event.senderFrame, origin, envelope.id)
+    : undefined
   try {
-    const result = await withTimeout(
-      async (abandoned) => await dispatch(broker, origin, envelope.method, envelope.payload, event, transport, requestGrantCtx, fsTransport, abandoned, windowForSender),
-      envelope.timeoutMs
-    )
-    return { id: envelope.id, ok: true, result }
-  } catch (error) {
-    return toFailureResponse(envelope.id, error)
+    // Checked before dispatch() ever runs, so a throttled call never reaches
+    // the broker at all (A38). Which budget a method draws on, and why one of
+    // them paces instead of refusing: ./control-limiter.ts.
+    if (!(await admitControlCall(limiter, origin, envelope.method))) {
+      return { id: envelope.id, ok: false, code: 'limit', message: 'this origin is calling too frequently; wait and retry' }
+    }
+
+    try {
+      const result = await withTimeout(
+        async (abandoned) => await dispatch(broker, origin, envelope.method, envelope.payload, event, transport, requestGrantCtx, fsTransport, abandoned, dial?.signal, windowForSender),
+        envelope.timeoutMs
+      )
+      return { id: envelope.id, ok: true, result }
+    } catch (error) {
+      return toFailureResponse(envelope.id, error)
+    }
+  } finally {
+    dial?.end()
   }
 }
 
@@ -416,7 +428,7 @@ export const brokerIpcSubsystem: Subsystem = {
       privateSessionGuard,
       notifyPickRefused: (info) => { notifyPickRefused(info, ctx.showNotice) }
     }
-    const transport: PortTransport = { createPortPair: realPortPair, registry: createPortRegistry() }
+    const transport: PortTransport = { createPortPair: realPortPair, registry: createPortRegistry(), dials: createPendingDials() }
     // fs.open's own per-origin lookup (A184) -- the same generic
     // createPortRegistry `transport.registry` above uses, over
     // FailableFileHandle instead of RegisteredSocket. One instance for the

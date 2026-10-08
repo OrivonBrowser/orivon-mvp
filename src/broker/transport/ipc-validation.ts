@@ -37,7 +37,7 @@ export type ControlMethod =
   | 'fs.dirReadFile' | 'fs.dirWriteFile' | 'fs.dirOpen'
   | 'id.publicKey' | 'id.sign'
   | 'net.connect' | 'net.connectSecure' | 'net.udpBind' | 'net.listen' | 'net.close'
-  | 'net.setNoDelay' | 'net.setKeepAlive' | 'net.lookup'
+  | 'net.setNoDelay' | 'net.setKeepAlive' | 'net.lookup' | 'net.cancel'
   | 'web.openContext' | 'web.evaluate' | 'web.close' | 'web.awaitClose' | 'web.setEmbedScript'
   | 'secrets.available' | 'secrets.encrypt' | 'secrets.decrypt'
   | 'trust.websiteScore'
@@ -58,7 +58,7 @@ export function isControlMethod (method: string): method is ControlMethod {
     method === 'net.connect' || method === 'net.connectSecure' ||
     method === 'net.udpBind' || method === 'net.listen' || method === 'net.close' ||
     method === 'net.setNoDelay' || method === 'net.setKeepAlive' ||
-    method === 'net.lookup' ||
+    method === 'net.lookup' || method === 'net.cancel' ||
     method === 'web.openContext' || method === 'web.evaluate' || method === 'web.close' || method === 'web.awaitClose' ||
     method === 'web.setEmbedScript' ||
     method === 'secrets.available' || method === 'secrets.encrypt' || method === 'secrets.decrypt' ||
@@ -131,6 +131,8 @@ export interface NetConnectParams { readonly host: string, readonly port: number
  */
 export interface NetUdpBindParams { readonly port: number, readonly scope?: BindScope }
 export interface NetCloseParams { readonly id: string }
+/** `net.cancel` (ADR-0071): the id of the page's own pending `net.connect` or `net.connectSecure` request, not a handle id. */
+export interface NetCancelParams { readonly requestId: string }
 /** `net.lookup` (d-0030) -- no port, unlike NetConnectParams: a lookup is bounded by the origin's held network grants, never by a port of its own. */
 export interface NetLookupParams { readonly hostname: string }
 export interface NetSetNoDelayParams { readonly id: string, readonly on: boolean }
@@ -446,6 +448,11 @@ export function isNetSetKeepAliveParams (payload: unknown): payload is NetSetKee
 export function isNetCloseParams (payload: unknown): payload is NetCloseParams {
   return typeof payload === 'object' && payload !== null &&
     typeof (payload as { id?: unknown }).id === 'string'
+}
+
+export function isNetCancelParams (payload: unknown): payload is NetCancelParams {
+  return typeof payload === 'object' && payload !== null &&
+    typeof (payload as { requestId?: unknown }).requestId === 'string'
 }
 
 export function isNetLookupParams (payload: unknown): payload is NetLookupParams {

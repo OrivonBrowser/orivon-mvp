@@ -45,6 +45,10 @@ is bounded in length and in time, a waiting call runs nothing, and the queue is 
 one origin's queue never delays another's. A waiting call is registered with the handle or grant
 it needs, so a close or revoke cancels it like a running one.
 
+**An app can abandon a call of its own** (`HandleTable.run`'s `abandon` signal, [`abandon.ts`](abandon.ts), `ADR-0071`).
+The call rejects `'closed'` at once and its slot, or its place in the queue, is free whether or not the work notices:
+`run` stops waiting for the work, which is why an abandoned dial that ignores the abort still frees its slot.
+
 **Replacing a grant is not revoking it** ([`grant-replacement.ts`](grant-replacement.ts)). A
 wider `app.requestGrant`, or install consent after an update, replaces a capability's one live
 grant, and revoking every handle then reset every connection an app held the moment it asked for

@@ -239,9 +239,10 @@ export interface MainWorldBridge {
   webOpenContext: (opts: { origin: string, width?: number, height?: number }) => Promise<MainWorldWebContextBridge>
   /** ADR-0039 -- plain request/reply, `idPublicKey`'s own shape: no main-world wrapping needed. */
   webSetEmbedScript: (source: string) => Promise<void>
-  netConnect: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
+  /** `onAbandon` registers the page's cancel for the pending call (ADR-0071): the page's `AbortSignal` itself cannot cross this bridge. */
+  netConnect: (opts: { host: string, port: number }, onAbandon?: (listener: () => void) => void) => Promise<MainWorldSocketBridge>
   /** net.connectSecure's own closure -- resolves to netConnect's bridge shape plus `tls`; `./main-world-socket.ts`'s own `buildSocket` is shared by both (Rule 3). The options pass through untouched: the broker validates them. */
-  netConnectSecure: (opts: SecureConnectOptions) => Promise<MainWorldSocketBridge>
+  netConnectSecure: (opts: Omit<SecureConnectOptions, 'signal'>, onAbandon?: (listener: () => void) => void) => Promise<MainWorldSocketBridge>
   netUdpBind: (opts: { port: number, scope?: BindScope }) => Promise<MainWorldUdpBridge>
   netListen: (opts: { port: number, scope?: BindScope }) => Promise<MainWorldServerBridge>
   /** `net.lookup` (d-0030) -- plain data, not a bridge: no per-socket state to wrap, unlike every other `net*` entry above. */

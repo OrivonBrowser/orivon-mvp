@@ -44,15 +44,20 @@ export function createOrivonClient (port: MessagePort, activity?: ClientActivity
 
   const send = (request: Request): void => { port.postMessage(request) }
 
-  const call = async (body: CallBody): Promise<unknown> => {
+  /** `signal`, the Worker's AbortSignal (it cannot cross the port): its abort is sent as `{ abandon: id }` (ADR-0071). */
+  const call = async (body: CallBody, signal?: AbortSignal): Promise<unknown> => {
     const id = nextId++
+    const onAbort = (): void => { send({ abandon: id }) }
     activity?.ref()
     try {
       return await new Promise((resolve, reject) => {
         pending.set(id, { resolve, reject })
-        send({ ...body, id })
+        send({ ...body, id, ...(signal === undefined ? {} : { abandonable: true as const }) })
+        signal?.addEventListener('abort', onAbort, { once: true })
+        if (signal?.aborted === true) onAbort()
       })
     } finally {
+      signal?.removeEventListener('abort', onAbort)
       activity?.unref()
     }
   }
@@ -130,12 +135,19 @@ export function createOrivonClient (port: MessagePort, activity?: ClientActivity
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, decodeSync(item)]))
   }
 
+  /** `net.connect` and `net.connectSecure` take a `signal`; the call goes without it, and its abort follows as a message. */
+  const callAbandonable = async (path: readonly string[], opts: unknown): Promise<unknown> => {
+    const { signal, ...rest } = (typeof opts === 'object' && opts !== null ? opts : {}) as { signal?: unknown }
+    return await call({ path, args: [signal === undefined && typeof opts !== 'object' ? opts : rest] }, signal instanceof AbortSignal ? signal : undefined)
+  }
+
   const synchronous = hasSharedMemory() ? namespaces((name, member) => (...args: unknown[]) => callSync({ path: [name, member], args })) : undefined
   /** Set only where a Worker can block (hasSharedMemory()): child_process.spawnSync's own route, over the same channel, never an orivon.* path. */
   const spawnSync = hasSharedMemory() ? (payload: unknown) => callSync({ spawnSync: payload }) : undefined
 
   return namespaces((name, member) => {
     if (name === 'fs' && member === 'readFileSync') return synchronous === undefined ? syncUnavailable : (path: string) => callSync({ path: ['fs', 'readFile'], args: [path] })
+    if (name === 'net' && (member === 'connect' || member === 'connectSecure')) return async (opts: unknown) => await callAbandonable([name, member], opts)
     return async (...args: unknown[]) => await call({ path: [name, member], args })
   }, synchronous, spawnSync)
 }

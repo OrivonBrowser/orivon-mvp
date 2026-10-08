@@ -195,8 +195,8 @@ export function fakeBridge (
   trustWebsiteScore: (address: string) => Promise<{ provider: string | null, level: 1 | 2 | 3 | 4 | null }>
   webOpenContext: (opts: { origin: string, width?: number, height?: number }) => Promise<MainWorldWebContextBridge>
   webSetEmbedScript: (source: string) => Promise<void>
-  netConnect: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
-  netConnectSecure: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
+  netConnect: (opts: { host: string, port: number }, onAbandon?: (listener: () => void) => void) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
+  netConnectSecure: (opts: { host: string, port: number }, onAbandon?: (listener: () => void) => void) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
   netUdpBind: (opts: { port: number, scope?: BindScope }) => Promise<MainWorldUdpBridge>
   netListen: (opts: { port: number, scope?: BindScope }) => Promise<MainWorldServerBridge>
   netLookup: (opts: { hostname: string }) => Promise<ReadonlyArray<{ address: string, family: 'IPv4' | 'IPv6' }>>
