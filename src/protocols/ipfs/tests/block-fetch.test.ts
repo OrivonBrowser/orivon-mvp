@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { CID } from 'multiformats/cid'
-import { fetchVerifiedBlock } from '../block-fetch.js'
+import { MAX_PASSES, fetchVerifiedBlock } from '../block-fetch.js'
 import type { FetchDeps } from '../block-fetch.js'
 import { GatewayPool } from '../gateways.js'
 import { DEFAULT_LIMITS } from '../limits.js'
@@ -136,18 +136,55 @@ describe('fetchVerifiedBlock -- rate limits and outages', () => {
   })
 })
 
+describe('fetchVerifiedBlock -- a gateway that is itself unwell', () => {
+  it.each([500, 502, 503, 504])('a lone gateway that answers %i once is asked again and serves the block', async (status) => {
+    const gateways = fakeGateways(dag.blocks)
+    gateways.failNext(A, status)
+    const d = deps(gateways, [A])
+    expect(await fetchVerifiedBlock(leaf, d, signal, noRefusal)).toEqual(leafBytes)
+    expect(gateways.requests).toHaveLength(2)
+  })
+
+  it('a 5xx from one gateway while the others answer 404 earns another pass over all of them', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    gateways.missing.add(B)
+    gateways.missing.add(C)
+    gateways.failNext(A, 502)
+    const d = deps(gateways, [A, B, C])
+    expect(await fetchVerifiedBlock(leaf, d, signal, noRefusal)).toEqual(leafBytes)
+  })
+
+  it('stays bounded: a gateway that keeps answering 502 ends as unavailable after MAX_PASSES requests', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    gateways.failNext(A, 502, 100)
+    const d = deps(gateways, [A])
+    await expect(fetchVerifiedBlock(leaf, d, signal, noRefusal)).rejects.toMatchObject({ failure: 'unavailable' })
+    expect(gateways.requests).toHaveLength(MAX_PASSES)
+  })
+})
+
 describe('fetchVerifiedBlock -- passes', () => {
   it('gives up as unavailable once every pass is exhausted against a down gateway', async () => {
     const gateways = fakeGateways(dag.blocks)
-    gateways.failing.add(A) // a plain miss (500, no Retry-After) never earns a retry pass
+    gateways.failing.add(A)
     const d = deps(gateways, [A])
     await expect(fetchVerifiedBlock(leaf, d, signal, noRefusal)).rejects.toMatchObject({ failure: 'unavailable' })
+    expect(gateways.requests).toHaveLength(MAX_PASSES)
+  })
+
+  it('a plain 404 earns no second pass', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    gateways.missing.add(A)
+    gateways.missing.add(B)
+    const d = deps(gateways, [A, B])
+    await expect(fetchVerifiedBlock(leaf, d, signal, noRefusal)).rejects.toMatchObject({ failure: 'unavailable' })
+    expect(gateways.requests).toHaveLength(2)
   })
 
   it('is unavailable, never verified, when nothing answers and nothing lied', async () => {
     const gateways = fakeGateways(dag.blocks)
-    gateways.failing.add(A)
-    gateways.failing.add(B)
+    gateways.missing.add(A)
+    gateways.missing.add(B)
     const d = deps(gateways, [A, B])
     await expect(fetchVerifiedBlock(leaf, d, signal, noRefusal)).rejects.toMatchObject({ failure: 'unavailable' })
   })
@@ -155,7 +192,7 @@ describe('fetchVerifiedBlock -- passes', () => {
   it('a lie earns no second pass over gateways that already missed, and names the liar', async () => {
     const gateways = fakeGateways(dag.blocks)
     gateways.tamper(leafKey, [A])
-    gateways.failing.add(B)
+    gateways.missing.add(B)
     const d = deps(gateways, [A, B])
     const failure = fetchVerifiedBlock(leaf, d, signal, noRefusal)
     await expect(failure).rejects.toMatchObject({ failure: 'unverifiable' })

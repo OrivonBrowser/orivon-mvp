@@ -39,6 +39,22 @@ describe('GatewayHealth', () => {
     expect(health.cooling()).toBe(false)
   })
 
+  it('a server error cools briefly, longer each time, and a success resets it', () => {
+    const c = clock()
+    const health = new GatewayHealth(c.now)
+    health.note({ kind: 'server-error' })
+    const first = health.readyAt()
+    expect(health.cooling()).toBe(true)
+    c.set(first)
+    expect(health.cooling()).toBe(false)
+    health.note({ kind: 'server-error' })
+    expect(health.readyAt() - c.now()).toBeGreaterThan(first)
+    health.note({ kind: 'ok' })
+    c.set(health.readyAt())
+    health.note({ kind: 'server-error' })
+    expect(health.readyAt() - c.now()).toBe(first)
+  })
+
   it('a rate-limited outcome cools for its own Retry-After, capped', () => {
     const c = clock()
     const health = new GatewayHealth(c.now)

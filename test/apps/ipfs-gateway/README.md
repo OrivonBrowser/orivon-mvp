@@ -5,7 +5,9 @@ starts, then serves their blocks the way a public trustless gateway does (`?form
 signed IPNS record of each site named in `ipnsKeys` under a key made at start (`?format=ipns-record`,
 the key in `keys`), and DNSLink TXT answers in the JSON form of DNS-over-HTTPS. A file is text or
 bytes. It logs every request, so a test can count what the verifier asked for; it can flip one byte
-in any file's block, so a test can watch the verifier refuse it; `blockDelayMs` holds every block
+in any file's block, so a test can watch the verifier refuse it; `failNext` makes a file's block answer
+a status (a 502, say) for its next few requests and then serve it, as a gateway that is briefly
+unwell does; `blockDelayMs` holds every block
 answer that long, as a slow public gateway does; and `hang` answers nothing at all, as a dead one
 behind a proxy does.
 
