@@ -77,10 +77,12 @@ without the user being told.
 
 ## 3. Run from source on Windows and macOS
 
-**The supported path most likely to break silently, because nothing in CI exercises it.** CI
-builds and launches the Windows and macOS packages, but never runs from source there; both
-platforms are supported that way too ([`packaging.md`](packaging.md)), and those users count
-toward the success metric.
+**The supported path most likely to break silently.** Both systems are supported this way as well as by package
+([`packaging.md`](packaging.md)), and those users count toward the success metric.
+[`cross-os.yml`](../../.github/workflows/cross-os.yml) runs it every night on hosted Windows and macOS runners: the
+Rule 8 guard over each system's own dependency tree, then `smoke`, which covers assertions 2 and 3 below. Read its
+last run before a release (`node scripts/ci/cross-os.mjs --run latest`). What a runner cannot show is still checked
+here: an install on a machine with no toolchain at all, the first-run screen, and where storage lands.
 
 **Precondition.** A machine with **no C++ toolchain installed**: no Visual Studio Build Tools
 on Windows, no Xcode command-line tools beyond git on macOS. A machine that already has them

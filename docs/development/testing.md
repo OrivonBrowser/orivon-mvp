@@ -478,6 +478,13 @@ exercises and it is the one most likely to break silently.
 - **`e2e`** is the one e2e status: it passes when every selected shard passed or nothing was selected. **`e2e-ordinary`**
   runs the specs that need the build without the developer-only hooks, whenever any e2e is selected.
 
+**Windows and macOS.** Everything above runs on Linux. [`cross-os.yml`](../../.github/workflows/cross-os.yml) runs
+Orivon from source on hosted Windows and macOS runners: `npm ci` with the Rule 8 guard over that system's own dependencies, `smoke`, and the QA
+states spec with its screenshots. It runs nightly on `main`, on a pull request that changes the install or launch
+scripts, `package.json` or `src/main/os/`, and on demand through `node scripts/ci/cross-os.mjs`, which waits and
+brings the evidence back ([`scripts/ci/README.md`](../../scripts/ci/README.md) section Other systems).
+[`release.yml`](../../.github/workflows/release.yml) builds, installs and launches the packages on the same systems.
+
 **With no dedicated code reviewer, CI is the reviewer.** A pull request whose `check` or selected e2e shards are
 red does not merge. The e2e job is not a required status check: the rule is kept by whoever merges, and
 `e2e` is the status to require if the repository ever wants it enforced.
