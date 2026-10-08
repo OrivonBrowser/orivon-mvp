@@ -46,6 +46,7 @@ export interface ShimStdio {
 }
 
 export interface ShimProcess {
+  readonly [Symbol.toStringTag]: 'process'
   /** 'linux' on every host: the platform whose rules the app's files follow (node-identity.ts), so a library takes its POSIX paths and XDG directories. */
   readonly platform: NodeIdentity['platform']
   /** Fresh per install and never seeded from any ambient environment, which would be a disclosure bug: only the directory variables, all naming the virtual root. */

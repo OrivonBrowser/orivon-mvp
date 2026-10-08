@@ -184,6 +184,8 @@ export function installGlobals (
   }
 
   const process: ShimProcess = {
+    // '[object process]' in Node, which is how detect-node-style checks tell it apart.
+    [Symbol.toStringTag]: 'process',
     platform: node.platform,
     env: { HOME: root, USERPROFILE: root, APPDATA: root, TMPDIR: tmpdir, TMP: tmpdir, TEMP: tmpdir },
     version: `v${node.node}`,
@@ -217,9 +219,6 @@ export function installGlobals (
     listeners: (event) => (listeners.get(event) ?? []).map((entry) => entry.listener),
     listenerCount: (event) => listeners.get(event)?.length ?? 0
   }
-
-  // `Object.prototype.toString.call(process)` is '[object process]' in Node, which is how detect-node-style checks tell it apart.
-  Object.defineProperty(process, Symbol.toStringTag, { value: 'process', configurable: true })
 
   // Plain assignments, never a locked defineProperty: ADR-0021, an app may
   // shadow or replace any of these (README.md's Design notes).
