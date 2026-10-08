@@ -121,12 +121,30 @@ function retainedAssets (origin: string, pin: PinRecord): ReadonlyMap<string, st
  * re-verified pin, never a stale one left over from before the update.
  */
 export function registerAppOrigin (appSession: Session, origin: string, handler: AppRequestHandler): void {
+  if (!appSessions.has(appSession)) {
+    appSessions.add(appSession)
+    for (const listener of [...appSessionListeners]) listener(appSession)
+  }
   const scheme = new URL(origin).protocol.replace(':', '')
   if (appSession.protocol.isProtocolHandled(scheme)) {
     appSession.protocol.unhandle(scheme)
   }
   appSession.protocol.handle(scheme, handler)
   servedPartitions.add(partitionFor(origin))
+}
+
+/** The sessions `registerAppOrigin` has served an origin from, and who wants to hear of each. */
+const appSessions = new Set<Session>()
+const appSessionListeners = new Set<(appSession: Session) => void>()
+
+/**
+ * Calls `listener` with every session an app is served from: the ones already so, and each new one
+ * as its first origin registers. A cache-served app's page runs in such a session, so whatever must
+ * guard an app's requests there installs through this rather than waiting for a tab to open.
+ */
+export function forEachAppSession (listener: (appSession: Session) => void): void {
+  appSessionListeners.add(listener)
+  for (const appSession of [...appSessions]) listener(appSession)
 }
 
 /** Partitions this process has actually installed a cache handler into.
@@ -188,6 +206,21 @@ async function liveGrantedPatternsFor (broker: Broker, origin: string, capabilit
   }
 }
 
+/**
+ * Whether `origin` holds a live `tcp.listen` grant of either scope -- the one fact that opens its
+ * `img-src` and `media-src` to the loopback ports its own listeners hold (ADR-0069). Shared with
+ * main/sessions/own-listener-media-gate.ts, so the header and the gate that narrows it read the same
+ * ledger. Falls back to false, the strictest answer.
+ */
+export async function holdsListenGrant (broker: Broker, origin: string): Promise<boolean> {
+  try {
+    const grants = await broker.app.grants(origin)
+    return grants.some((grant) => grant.capability === 'tcp.listen.local' || grant.capability === 'tcp.listen.network')
+  } catch {
+    return false
+  }
+}
+
 /** `connect-src`'s source -- `tcp.connect` is the ONLY thing standing
  * between an app's page and a live `WebSocket` connection (`docs/
  * open-questions.md` A42), so this must never be wider than what is truly
@@ -205,9 +238,13 @@ async function secureHeaderPatternsFor (broker: Broker, origin: string): Promise
   return await liveGrantedPatternsFor(broker, origin, 'https.connect')
 }
 
-/** The CSP a served response carries, from `origin`'s live grants -- shared with src/main/install/granted-origin-csp.ts, so an origin granted without installing runs under the same policy an installed one does. */
+/**
+ * The CSP a served response carries, from `origin`'s live grants -- shared with src/main/install/granted-origin-csp.ts, so an origin granted without installing runs under the same policy an installed one does.
+ * `options.ownListenerMedia` is a request, not a fact: the loopback sources are emitted only when the ledger also shows a listen grant, and only for the callers whose documents the media gate attributes.
+ */
 export async function liveCspHeaderFor (broker: Broker, origin: string, options: CspOptions = {}): Promise<string> {
-  return cspHeaderValue(await grantedConnectPatternsFor(broker, origin), await secureHeaderPatternsFor(broker, origin), options)
+  const ownListenerMedia = options.ownListenerMedia === true && await holdsListenGrant(broker, origin)
+  return cspHeaderValue(await grantedConnectPatternsFor(broker, origin), await secureHeaderPatternsFor(broker, origin), { ...options, ownListenerMedia })
 }
 
 /**
@@ -333,7 +370,8 @@ export async function registerServingFor (storage: LoaderStorage, origin: string
     reachSlots?.reserve,
     reachSlots?.release,
     pin === null ? undefined : retainedAssets(origin, pin),
-    resolved
+    resolved,
+    broker === undefined ? undefined : async () => await holdsListenGrant(broker, origin)
   )
   const { session } = await import('electron')
   registerAppOrigin(session.fromPartition(partitionFor(origin)), origin, handler)

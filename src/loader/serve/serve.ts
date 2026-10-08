@@ -73,6 +73,9 @@ export type GrantedConnectPatterns = () => Promise<readonly Pattern[]>
  */
 export type GrantedSecurePatterns = () => Promise<readonly Pattern[]>
 
+/** Whether the app holds a live `tcp.listen` grant, which its CSP answers with loopback media sources (ADR-0069). */
+export type GrantsOwnListener = () => Promise<boolean>
+
 /**
  * THE live authorisation gate for a third-party request -- the only thing
  * `fetchThirdParty` ever asks before proxying one to the real network.
@@ -342,7 +345,8 @@ export async function createAppRequestHandler (
    * false` result here still denies every request, the same as if this
    * function had resolved it directly.
    */
-  preResolved?: VerifiedBundleResult
+  preResolved?: VerifiedBundleResult,
+  grantsOwnListener?: GrantsOwnListener
 ): Promise<AppRequestHandler> {
   const resolved = preResolved ?? await resolveVerifiedBundle(storage, origin)
   if (!resolved.ok) {
@@ -384,7 +388,8 @@ export async function createAppRequestHandler (
 
     const connectPatterns = grantedConnectPatterns === undefined ? [] : await grantedConnectPatterns()
     const securePatterns = grantedSecurePatterns === undefined ? [] : await grantedSecurePatterns()
-    const response = buildResponse(servable.file, request, connectPatterns, securePatterns, manifest.crossOriginIsolated === true)
+    const ownListenerMedia = grantsOwnListener === undefined ? false : await grantsOwnListener()
+    const response = buildResponse(servable.file, request, connectPatterns, securePatterns, manifest.crossOriginIsolated === true, ownListenerMedia)
     // A175: record what was actually SENT -- a Range request serves only a
     // slice, and a 416 serves no body at all, a KNOWN zero rather than a size
     // that could not be measured (pin-coverage.ts's `bytesIncomplete`).
