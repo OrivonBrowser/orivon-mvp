@@ -87,6 +87,9 @@ Ports are named only where the compatibility pages already name them.
 | `clipboard-write-without-prompt` | A page writes to the clipboard on a click with no question | apps with copy buttons | AirGap Vault | [`e2e-clipboard-write`](../capabilities/e2e-clipboard-write.test.ts) |
 | `page-declared-favicon-shows` | A page's `<link rel="icon">` shows in its tab, and comes back on a return after a blank page or a failed load | every app | all | [`e2e-tab-favicon`](../tabs/e2e-tab-favicon.test.ts) |
 | `target-blank-link-opens-tab` | A `target="_blank"` link opens a tab | apps with external links | ASGARDEX, The Lounge | [`e2e-link-open`](../tabs/e2e-link-open.test.ts) |
+| `window-open-external-address-asks` | A page's `window.open` of an address another program handles (`mailto:`, `magnet:`) raises the external-link question, as a click on a link to it does, and opens no tab | apps that hand links to the system | WebTorrent | [`e2e-app-electron-clipboard-shell`](e2e-app-electron-clipboard-shell.test.ts) |
+| `electron-clipboard-reads-the-pasted-text` | The `electron` shim's `clipboard.readText()` answers the text being pasted while a `paste` event is dispatched and `''` at any other time, and `writeText` copies through the browser and returns nothing | apps that add what the person pastes | WebTorrent | [`e2e-app-electron-clipboard-shell`](e2e-app-electron-clipboard-shell.test.ts) |
+| `electron-shell-open-external-opens-a-tab` | The `electron` shim's `shell.openExternal(url)` opens an address in a new tab, hands an address another program handles to the external-link question, and rejects with `invalid-usage` a value that is not an absolute URL | apps with links to the outside | WebTorrent | [`e2e-app-electron-clipboard-shell`](e2e-app-electron-clipboard-shell.test.ts) |
 
 ## Running code and showing other pages
 

@@ -35,6 +35,12 @@ export function notificationDecisions (): NotificationDecisions {
 }
 
 const externalLinks = createExternalLinks({ windowShowing, confirm: async (_window, question, tab) => await confirmExternalLink({ contents: tab }, question) })
+
+/** The question an `openExternal` request raises, asked for a link the page opens itself (a `window.open`), with the same rules as a clicked one: true only when the person said yes. */
+export async function askExternalLink (tab: WebContents, url: string): Promise<boolean> {
+  return await externalLinks(tab, { externalURL: url, requestingUrl: tab.getURL() })
+}
+
 let notificationsBlocked: () => boolean = () => false
 
 /**
