@@ -73,9 +73,8 @@ describe('ownListenerMediaVerdict -- a page may load media from a loopback port 
     expect(ownListenerMediaVerdict(request({ holdsListenGrant: false, holdsPort: () => false }))).toBe('allow')
   })
 
-  it('cancels a loopback request it cannot attribute to a page', () => {
-    expect(ownListenerMediaVerdict(request({ document: { kind: 'unknown' } }))).toBe('cancel')
-    expect(ownListenerMediaVerdict(request({ document: { kind: 'unknown' }, holdsListenGrant: false }))).toBe('cancel')
+  it('leaves a request that names no page alone: it is the browser fetching a tab icon, and no page reads it', () => {
+    expect(ownListenerMediaVerdict(request({ document: { kind: 'unknown' } }))).toBe('allow')
   })
 
   it('leaves a page of another kind (a local file, an extension) to the policy it already has', () => {

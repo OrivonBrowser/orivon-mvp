@@ -14,7 +14,7 @@ Two layers, both required. The page's Content-Security-Policy gets those two hos
 port, in `img-src` and `media-src` only. A main-process gate then cancels any loopback image or
 media request from that page to a port its own listeners do not hold, before it connects. The
 gate reads the same listener table `web.embed`'s local pattern reads (ADR-0047). A loopback
-request that cannot be attributed to a page is cancelled too. `connect-src` is not widened (the
+request that names no page (the browser's own fetch of a tab icon) is left alone, since no page can read what it fetches. `connect-src` is not widened (the
 page's `fetch` already goes through the broker) and neither is `frame-src` (`web.embed` is that
 grant).
 
@@ -54,7 +54,8 @@ service it did not open.
   filter names only loopback hosts and two resource types, so ordinary browsing is not routed here.
 - A page without a listen grant is untouched, as is a page of another kind (a local file, an
   extension page).
-- The gate is as strong as its attribution: a request whose frame is gone is cancelled.
+- A request is attributed to the frame that made it, or to the first ancestor with a web address; a
+  page's own requests always carry a frame.
 - A cache-served app is not offered `http://` through its own scheme handler; its loopback media
   loads from the network stack, and the gate is the only check on it.
 - A listener is the page's own only: a second app's page cannot load from it, because the port must

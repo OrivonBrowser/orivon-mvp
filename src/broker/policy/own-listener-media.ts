@@ -25,7 +25,7 @@ export function isLoopbackUrl (url: string): boolean {
 /**
  * Which document made a request: a web page (`http:`/`https:`, the only schemes an app's origin has),
  * a page of another kind (a local file, an extension, one of the shell's own pages) that no listen
- * grant can attach to, or no page that can be found.
+ * grant can attach to, or no page at all (the browser's own fetch for a page).
  */
 export type RequestingDocument =
   | { readonly kind: 'web', readonly origin: string }
@@ -78,13 +78,13 @@ const DEFAULT_PORTS: Readonly<Record<string, number>> = { 'http:': 80, 'https:':
  * no opinion on, which is every request that is not loopback and every loopback one from a page that
  * holds no listen grant (its CSP never admitted loopback, so nothing changed for it).
  *
- * A loopback request that cannot be attributed to any document is cancelled: it cannot be shown to
- * belong to a page that holds the port.
+ * A request that names no page at all is left alone. It is the browser's own fetch for a page, its
+ * tab icon, and the page cannot read what it fetches. Every request a page itself makes carries its
+ * frame.
  */
 export function ownListenerMediaVerdict (request: OwnListenerMediaRequest): 'allow' | 'cancel' {
   if (!isLoopbackUrl(request.url)) return 'allow'
-  if (request.document.kind === 'unknown') return 'cancel'
-  if (request.document.kind === 'not-web') return 'allow'
+  if (request.document.kind !== 'web') return 'allow'
   // A page loading from its own loopback origin is same-origin, which no listener grant decides.
   if (originFromUrl(request.url) === request.document.origin) return 'allow'
   if (!request.holdsListenGrant) return 'allow'

@@ -9,7 +9,7 @@
 // served from (a cache-served origin's own partition). Both register through the web-request owner,
 // never a raw `session.webRequest.onBeforeRequest`, which would replace a sibling's listener.
 
-import { session } from 'electron'
+import { session, webContents } from 'electron'
 import type { OnBeforeRequestListenerDetails, Session, WebFrameMain, WebRequestFilter } from 'electron'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { ownListenerMediaVerdict, requestingDocumentOf } from '../../broker/policy/own-listener-media.js'
@@ -27,10 +27,15 @@ export const OWN_LISTENER_MEDIA_FILTER: WebRequestFilter = {
   types: ['image', 'media']
 }
 
-/** The frame Electron reports for a request, or undefined: the getter throws once the frame is gone. */
+/**
+ * The frame a request belongs to, or undefined: the `frame` getter throws once the frame is gone. A
+ * request the browser itself makes for a page (its tab icon) has no frame but names the page's
+ * contents, and belongs to that page's main frame.
+ */
 function frameOf (details: OnBeforeRequestListenerDetails): WebFrameMain | null | undefined {
   try {
-    return details.frame
+    if (details.frame !== null && details.frame !== undefined) return details.frame
+    return details.webContentsId === undefined ? undefined : webContents.fromId(details.webContentsId)?.mainFrame
   } catch {
     return undefined
   }
