@@ -99,12 +99,12 @@ jobs:
           fi
           echo "TOKEN_SHA256=$GIVEN" >> "$GITHUB_ENV"
 
-      # Its output goes to a file: on Windows a background process that holds the step's output keeps the step open.
+      # Detached from the step's input and output: on Windows a background process that holds them keeps the step open.
       - name: Start the session
         run: |
           mkdir -p live
           nohup node scripts/run-headless.mjs node scripts/ci/live-host.mjs serve --hash "$TOKEN_SHA256" \
-            --cloudflared "$CLOUDFLARED" --out live --minutes "$MINUTES" > live/host.log 2>&1 &
+            --cloudflared "$CLOUDFLARED" --out live --minutes "$MINUTES" < /dev/null > live/host.log 2>&1 &
           for _ in $(seq 1 150); do
             if [ -f live/url ]; then echo "tunnel up"; exit 0; fi
             if [ -f live/stopped ]; then break; fi
