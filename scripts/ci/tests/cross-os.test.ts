@@ -87,4 +87,8 @@ describe('summarize', () => {
     expect(text).toContain('screenshots: 12, read qa-artifacts/cross-os/1/windows/qa-artifacts/latest/inspect.md')
     expect(text).toContain('pass: plan')
   })
+
+  it('says a run was cancelled rather than failed', () => {
+    expect(summarize({ url: 'u', conclusion: 'cancelled', jobs: [] }, {})).toBe('CANCELLED  u')
+  })
 })
