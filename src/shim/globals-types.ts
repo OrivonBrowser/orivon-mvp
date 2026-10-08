@@ -65,6 +65,8 @@ export interface ShimProcess {
   readonly browser: true
   readonly argv: string[]
   readonly execArgv: string[]
+  /** '' for the reason `version` is: a string, as every reader expects (`path.dirname(process.execPath)`), naming no binary that could invite a Node-only code path. */
+  readonly execPath: string
   readonly pid: number
   readonly ppid: number
   readonly title: string

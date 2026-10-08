@@ -11,6 +11,8 @@
 // none is left. A count that is not repeated lapses, so a context that died
 // without saying so is forgotten.
 
+import { CREATE_IN_PLACE } from './flags.js'
+
 export type WatchKind = 'rename' | 'change'
 export type NoticeListener = (path: string, kind: WatchKind) => void
 
@@ -120,5 +122,5 @@ export function announceWrite (path: string, existed: boolean): void {
 
 /** Whether a write opened with `flags` can create its file. */
 export function canCreate (flags: string): boolean {
-  return /^[wa]/.test(flags)
+  return /^[wa]/.test(flags) || flags === CREATE_IN_PLACE
 }
