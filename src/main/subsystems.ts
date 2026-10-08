@@ -35,6 +35,7 @@ import { embedSubsystem } from './embed/embed-subsystem.js'
 import { childrenSubsystem } from './children/children-subsystem.js'
 import { loaderSubsystem } from '../loader/subsystem.js'
 import { ownListenerMediaGateSubsystem } from './sessions/own-listener-media-gate.js'
+import { appFilesByUrlSubsystem } from './sessions/app-files-by-url.js'
 import { appInstallSubsystem } from './install/app-install-subsystem.js'
 import { manifestHintSubsystem } from './install/manifest-hint.js'
 import { telemetrySubsystem } from '../telemetry/runner.js'
@@ -76,6 +77,7 @@ export const subsystems: Subsystem[] = [
   // to be published before its first hint can arrive.
   manifestHintSubsystem,
   ownListenerMediaGateSubsystem, // ADR-0069: the loopback ports a listen-granted page may load media from -> src/main/sessions/. Reads ctx.broker -- must stay below brokerIpcSubsystem.
+  appFilesByUrlSubsystem, // ADR-0070: an app's page shows its own files at /orivon/app/<path> -> src/main/sessions/. Reads ctx.broker -- must stay below brokerIpcSubsystem.
   // build step 7: trust     -> src/trust/
   // nostr -> src/nostr/, parked: an idea, not a build step
   telemetrySubsystem, // build step 8: telemetry -> src/telemetry/

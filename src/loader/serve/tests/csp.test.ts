@@ -117,3 +117,20 @@ describe('cspHeaderValue -- media from the app\'s own loopback listener', () => 
     expect(directive(own, 'media-src')).toEqual(["'self'", 'data:', 'blob:', ...LOOPBACK, 'https://cdn.example.com:443'])
   })
 })
+
+describe('cspHeaderValue -- the app\'s own files shown by URL', () => {
+  it('adds the app-file scheme to media-src and img-src only when asked, and to nothing else', () => {
+    const files = cspHeaderValue([], [], { appFiles: true })
+    for (const name of ['media-src', 'img-src']) {
+      expect([name, directive(files, name)]).toEqual([name, ["'self'", 'data:', 'blob:', 'orivon-file:']])
+    }
+    const rest = (header: string): string[] => header.split('; ').filter((d) => !d.startsWith('media-src') && !d.startsWith('img-src'))
+    expect(rest(files)).toEqual(rest(EMPTY))
+    expect(cspHeaderValue([], [], { appFiles: false })).toBe(EMPTY)
+  })
+
+  it('sits beside the loopback sources when the app also listens', () => {
+    const both = cspHeaderValue([], [], { appFiles: true, ownListenerMedia: true })
+    expect(directive(both, 'img-src')).toEqual(["'self'", 'data:', 'blob:', 'http://localhost:*', 'http://127.0.0.1:*', 'orivon-file:'])
+  })
+})
