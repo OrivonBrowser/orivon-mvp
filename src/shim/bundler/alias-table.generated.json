@@ -173,6 +173,11 @@
       "implementation": "./polyfills/assert.js"
     },
     {
+      "specifier": "constants",
+      "kind": "local",
+      "implementation": "./polyfills/constants.js"
+    },
+    {
       "specifier": "tty",
       "kind": "local",
       "implementation": "./polyfills/tty.js"
