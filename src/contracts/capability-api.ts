@@ -3,10 +3,9 @@
 // capability-api.ts - What an app can ask for
 //
 // THIS IS THE DURABLE ASSET (ADR-0002). Apps call orivon.net.connect; beneath
-// it that is a Node net.Socket in the main process today, a Wasmtime host
-// function later, Mojo IPC in a Chromium fork after that. None of those
-// transitions is visible to an app already written, and that property -- not
-// Electron, not Wasmtime -- is what keeps the path to a Chromium fork open.
+// it that is a Node net.Socket in the main process today. The engine beneath
+// may change, and no such change may be visible to an app already written:
+// that property, not Electron, is what this file protects.
 //
 // DESIGN RULES THIS FILE OBEYS:
 //   2. Network is async, full stop; fs gets one narrow synchronous exception
