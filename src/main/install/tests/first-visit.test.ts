@@ -61,7 +61,7 @@ function harness (options: {
     installFetched: vi.fn(async (origin, manifest, tree) => {
       events.push('install')
       if (options.installed === 'rejected') return { outcome: 'rejected' as const, reason: 'disk' }
-      return { outcome: 'installed' as const, canonicalOrigin: origin, manifest, pin: { schema: 1, origin, bundleHash: tree.root, assets: [], version: manifest.version, pinnedAt: 0 } }
+      return { outcome: 'installed' as const, canonicalOrigin: origin, manifest, pin: { schema: 1 as const, origin, bundleHash: tree.root, assets: [], version: manifest.version, pinnedAt: 0 } }
     })
   }
   const consent: InstallConsentPrompt = vi.fn(async () => { events.push('ask'); return options.answer ?? true })
@@ -133,8 +133,17 @@ describe('runFirstVisit', () => {
     expect((await run(h)).outcome).toBe('entered')
   })
 
+  it('on a bundle that is bad for good (a missing or unacceptable file) never installs, revokes every grant and warns, with no Try again', async () => {
+    const h = harness({ bundles: [{ ok: false, reason: 'asset fetch failed: HTTP 404 (/app.js)' }] })
+    expect(await run(h)).toMatchObject({ outcome: 'blocked' })
+    expect(h.host.sheets[0]).toMatchObject({ kind: 'blocked', name: 'Test App', differing: [], invalid: 'asset fetch failed: HTTP 404 (/app.js)' })
+    expect(await h.broker.app.grants(ORIGIN)).toEqual([])
+    expect(h.loader.installFetched).not.toHaveBeenCalled()
+    expect(h.broker.app.isRegisteredSync(ORIGIN)).toBe(false)
+  })
+
   it('on a download failure keeps the grants, shows Try again, and a retry downloads again without asking again', async () => {
-    const h = harness({ bundles: [{ ok: false, reason: 'gateway 502' }, bundle()], choices: ['retry'] })
+    const h = harness({ bundles: [{ ok: false, reason: 'gateway 502', transient: true }, bundle()], choices: ['retry'] })
     expect((await run(h)).outcome).toBe('entered')
     expect(h.events).toEqual(['read', 'show:asking', 'ask', 'show:verifying', 'fetch', 'sheet:download-failed', 'read', 'show:asking', 'show:verifying', 'fetch', 'install', 'enter'])
     expect(h.consent).toHaveBeenCalledTimes(1)
@@ -143,7 +152,7 @@ describe('runFirstVisit', () => {
   })
 
   it('when the person leaves a failed download, grants stay, nothing is installed and no warning is shown', async () => {
-    const h = harness({ bundles: [{ ok: false, reason: 'gateway 502' }], choices: ['leave'] })
+    const h = harness({ bundles: [{ ok: false, reason: 'gateway 502', transient: true }], choices: ['leave'] })
     expect(await run(h)).toMatchObject({ outcome: 'failed' })
     expect(h.events.at(-1)).toBe('end')
     expect(h.loader.installFetched).not.toHaveBeenCalled()

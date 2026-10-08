@@ -54,6 +54,19 @@ const FILE_LIMIT = 120
 export function sheetView (sheet: SetupSheet, address: string, token: string): SetupSheetView {
   const name = displayName(sheet.name)
   const shown = address.slice(0, ADDRESS_LIMIT)
+  if (sheet.kind === 'blocked' && sheet.invalid !== undefined) {
+    return {
+      token,
+      kind: 'blocked',
+      title: 'Security warning: this app\'s files could not be accepted',
+      body: `${name} was not opened. Its files are incomplete or not acceptable, and every permission you gave it has been removed.`,
+      files: [],
+      more: '',
+      address: shown,
+      note: sheet.invalid.slice(0, NOTE_LIMIT),
+      canRetry: false
+    }
+  }
   if (sheet.kind === 'blocked') {
     const listed = sheet.differing.slice(0, MAX_LISTED_FILES).map((path) => path.slice(0, FILE_LIMIT))
     const left = sheet.differingCount - listed.length

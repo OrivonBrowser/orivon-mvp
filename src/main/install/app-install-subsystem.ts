@@ -14,7 +14,8 @@
 
 import { net, session } from 'electron'
 import type { Subsystem, SubsystemContext } from '../registry.js'
-import { publishAppUpdates, publishInstallApp } from '../registry.js'
+import { publishAppUpdates, publishFirstVisit, publishInstallApp } from '../registry.js'
+import { createFirstVisit } from './first-visit.js'
 import { installFromHint } from './app-install.js'
 import { createInstallConsentPrompt, createPerCapabilityConsentPrompt } from '../consent/install-consent-prompt.js'
 import { createCapabilityPrompt, createReconsentPrompt, createRollbackChoicePrompt } from '../consent/update-outcomes-prompt.js'
@@ -146,6 +147,13 @@ export const appInstallSubsystem: Subsystem = {
       },
       intervalMs: updateWatchMs() ?? OPEN_TAB_CHECK_MS
     })
+    // A page's first visit (ADR-0074): asks, then downloads and checks, before the tab is let into the app. It
+    // leaves alone the origins that never install: a local file, loopback and developer origins, anything not https.
+    publishFirstVisit(ctx, createFirstVisit({
+      deps: { broker, loader, consent, perCapabilityConsent },
+      untouched: (origin) => isLocalFileKey(origin) || grantableWithoutInstall(origin, devModeEnabled()) || !origin.startsWith('https://'),
+      servedFromCache: isOriginServedFromCacheSync
+    }))
     const localFileConsent = createLocalFileConsentPrompt()
     const localFileRefusals = new Set<string>()
     publishInstallApp(ctx, async (hintingOrigin, hintedUrl, caller) => {

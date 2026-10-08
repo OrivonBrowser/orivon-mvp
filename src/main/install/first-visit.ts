@@ -28,7 +28,15 @@ export interface SetupStage {
 
 /** A sheet over the tab. `blocked` has no way forward; `download-failed` offers Try again. */
 export type SetupSheet =
-  | { readonly kind: 'blocked', readonly name: string, readonly differing: readonly string[], readonly differingCount: number, readonly rootMatches: boolean }
+  | {
+    readonly kind: 'blocked'
+    readonly name: string
+    readonly differing: readonly string[]
+    readonly differingCount: number
+    readonly rootMatches: boolean
+    /** Set when the bundle was refused for being bad (a file missing or unacceptable) rather than for differing from the declaration. */
+    readonly invalid?: string
+  }
   | { readonly kind: 'download-failed', readonly name: string, readonly reason: string }
 
 /** The tab a first visit happens in. */
@@ -84,7 +92,13 @@ export async function runFirstVisit (deps: FirstVisitDeps, hintingOrigin: string
     }
 
     let failure: string
-    if (!bundle.ok) {
+    if (!bundle.ok && bundle.transient !== true) {
+      // Retrying would fetch the same bad files: like files that differ from the declaration, never entered.
+      await revokeAllGrants(deps.broker, origin).catch((error: unknown) => { console.error('[first-visit] grants of a blocked app remain', origin, error) })
+      await host.sheet({ kind: 'blocked', name, differing: [], differingCount: 0, rootMatches: true, invalid: bundle.reason })
+      host.end()
+      return { outcome: 'blocked', differing: [] }
+    } else if (!bundle.ok) {
       failure = bundle.reason
     } else {
       const judgement = judgeBundle(bundle.tree, bundle.declaration)
@@ -106,7 +120,7 @@ export async function runFirstVisit (deps: FirstVisitDeps, hintingOrigin: string
         return { outcome: 'entered', installed }
       }
       await bundle.discard()
-      failure = installed.outcome === 'rejected' ? installed.reason : `the app could not be installed (${installed.outcome})`
+      failure = installed.reason
     }
 
     const choice = await host.sheet({ kind: 'download-failed', name, reason: failure })

@@ -47,7 +47,8 @@ export type FirstBundle =
     /** Empties the staging area when the bundle is not going to be installed. */
     readonly discard: () => Promise<void>
   }
-  | { readonly ok: false, readonly reason: string }
+  /** `transient`: the download failed in a way that may pass (a gateway's 502, a dropped connection, a manifest that moved meanwhile) after its attempts; otherwise the bundle itself is bad. */
+  | { readonly ok: false, readonly reason: string, readonly transient?: true }
 
 export interface FirstVisitApi {
   /** The manifest of the app at `hintedUrl`'s origin and nothing else of its files. Never throws. */
@@ -81,7 +82,7 @@ export function createFirstVisit (
 
   async function fetchForInstall (read: FirstManifestApp, hintedUrl: string): Promise<FirstBundle> {
     const fetched = await fetchBundle(pinnedToRoot(options.fetch, read.content?.cid), hintedUrl, options.resolve, options.storage)
-    if (!fetched.ok) return { ok: false, reason: fetched.reason }
+    if (!fetched.ok) return { ok: false, reason: fetched.reason, ...('transient' in fetched && fetched.transient === true ? { transient: true as const } : {}) }
     const discard = async (): Promise<void> => {
       await options.storage.clearStaging(fetched.canonicalOrigin).catch((error: unknown) => {
         console.error('[loader] could not clear a discarded bundle\'s staging area', fetched.canonicalOrigin, error)
@@ -90,7 +91,7 @@ export function createFirstVisit (
     const shown = await leafOf(MANIFEST_PATH, read.bytes.length, [read.bytes])
     if (fetched.tree.assets.find((asset) => asset.path === MANIFEST_PATH)?.leaf !== shown) {
       await discard()
-      return { ok: false, reason: `${fetched.canonicalOrigin}'s manifest changed while the app was being downloaded` }
+      return { ok: false, reason: `${fetched.canonicalOrigin}'s manifest changed while the app was being downloaded`, transient: true }
     }
     return { ok: true, canonicalOrigin: fetched.canonicalOrigin, manifest: fetched.manifest, tree: fetched.tree, entries: fetched.entries, declaration: fetched.declaration, content: read.content, discard }
   }

@@ -165,7 +165,9 @@ describe('installFromHint', () => {
       quietOffers: vi.fn(async () => ({ quiet: [] })),
       keepQuiet: vi.fn(async () => {}),
       manifestFor: vi.fn(async () => undefined),
-      manifestAt: vi.fn(async () => ({ kind: 'website' as const }))
+      manifestAt: vi.fn(async () => ({ kind: 'website' as const })),
+      readManifest: vi.fn(async () => ({ kind: 'website' as const })),
+      fetchForInstall: vi.fn(async () => ({ ok: false as const, reason: 'unused' }))
     }
     const deps: AppInstallDeps = { broker, loader }
 

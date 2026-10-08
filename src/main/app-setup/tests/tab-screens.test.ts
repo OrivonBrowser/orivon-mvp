@@ -26,7 +26,8 @@ function rig (): { contents: EventEmitter, asks: SlotAsk[], cancels: Array<Retur
     },
     prewarm: () => {},
     newToken: () => `token-${String(tokens++)}`,
-    navigate: (_window, _tabId, url) => { navigated.push(url) }
+    navigate: (_window, _tabId, url) => { navigated.push(url) },
+    leavePage: () => {}
   })
   return { contents, asks, cancels, navigated, setup }
 }

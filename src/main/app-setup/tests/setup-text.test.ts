@@ -41,6 +41,12 @@ describe('sheetView', () => {
     expect(view.more).toBe(`and ${String(31 - MAX_LISTED_FILES)} more`)
   })
 
+  it('names an invalid bundle by its reason, and lists no files', () => {
+    const view = sheetView({ kind: 'blocked', name: 'Ledger', differing: [], differingCount: 0, rootMatches: true, invalid: 'asset fetch failed: HTTP 404 (/app.js)' }, 'a', 't')
+    expect(view).toMatchObject({ files: [], canRetry: false, note: 'asset fetch failed: HTTP 404 (/app.js)' })
+    expect(view.title).toMatch(/could not be accepted/)
+  })
+
   it('names a published root that disagrees with its own files', () => {
     const view = sheetView({ ...blocked, differing: [], differingCount: 0, rootMatches: false }, 'a', 't')
     expect(view.files).toEqual([])

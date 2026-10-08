@@ -33,7 +33,7 @@ export function firstVisitBeforeRequest (deps: HookDeps): (details: OnBeforeRequ
     if (details.resourceType !== 'mainFrame' || details.method !== 'GET') return current
     const visit = deps.firstVisit()
     const setup = deps.tabSetup()
-    const contents = deps.contentsById(details.webContentsId)
+    const contents = details.webContentsId === undefined ? undefined : deps.contentsById(details.webContentsId)
     const origin = originFromUrl(details.url)
     if (visit === undefined || setup === undefined || contents === undefined || origin === null) return current
     if (await visit.kindOf(origin) !== 'first') return current

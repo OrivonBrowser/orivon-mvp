@@ -111,12 +111,34 @@ describe('Loader.fetchForInstall', () => {
 
   it('fails, with nothing left staged, when a declared file cannot be downloaded', async () => {
     const storage = memoryStorage()
-    const loader = createLoader({ fetch: stubFetch(routes({ [`${ORIGIN}/app.js`]: { status: 502, body: utf8('') } })), storage, now: () => 1, resolve: PUBLIC_RESOLVER })
+    const loader = createLoader({ fetch: stubFetch(routes({ [`${ORIGIN}/app.js`]: { status: 404, body: utf8('') } })), storage, now: () => 1, resolve: PUBLIC_RESOLVER })
     const read = await loader.readManifest(ORIGIN)
     if (read.kind !== 'app') throw new Error('expected an app')
     const fetched = await loader.fetchForInstall(read, ORIGIN)
     expect(fetched.ok).toBe(false)
     expect(storage.staged.size).toBe(0)
+  })
+
+  it('says a download failed for good only when the bundle itself is bad: a 404 is, a gateway\'s 502 that outlasts its attempts is not', async () => {
+    vi.useFakeTimers()
+    try {
+      const bad = loaderOver(stubFetch(routes({ [`${ORIGIN}/app.js`]: { status: 404, body: utf8('') } })))
+      const badRead = await bad.readManifest(ORIGIN)
+      if (badRead.kind !== 'app') throw new Error('expected an app')
+      const badFetch = await bad.fetchForInstall(badRead, ORIGIN)
+      expect(badFetch).toMatchObject({ ok: false })
+      expect(!badFetch.ok && badFetch.transient).toBeUndefined()
+
+      const unwell = loaderOver(stubFetch(routes({ [`${ORIGIN}/app.js`]: { status: 502, body: utf8('') } })))
+      const read = await unwell.readManifest(ORIGIN)
+      if (read.kind !== 'app') throw new Error('expected an app')
+      const pending = unwell.fetchForInstall(read, ORIGIN)
+      await vi.runAllTimersAsync()
+      const fetched = await pending
+      expect(!fetched.ok && fetched.transient).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('refuses a bundle whose manifest is not the one the person was asked about', async () => {
@@ -129,6 +151,7 @@ describe('Loader.fetchForInstall', () => {
     const fetched = await loader.fetchForInstall(read, ORIGIN)
     expect(fetched).toMatchObject({ ok: false })
     expect(!fetched.ok && fetched.reason).toMatch(/changed/)
+    expect(!fetched.ok && fetched.transient).toBe(true)
   })
 
   it('carries the tree the site publishes', async () => {
