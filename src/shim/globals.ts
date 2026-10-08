@@ -17,8 +17,9 @@ import type {
 
 export type {
   EmitWarningOptions, GlobalsErrorOrigin, GlobalsErrorReporter, GlobalsTarget, ImmediateHandle, InstallGlobalsOptions,
-  ShimPlatform, ShimProcess
+  ShimProcess
 } from './globals-types.js'
+export { NODE_IDENTITY } from './node-identity.js'
 export { VIRTUAL_ROOT, VIRTUAL_TMPDIR } from './virtual-root.js'
 
 /**
@@ -30,7 +31,7 @@ export function installGlobals (
   options: InstallGlobalsOptions,
   target: GlobalsTarget = typeof window === 'undefined' ? {} : window as unknown as GlobalsTarget
 ): void {
-  const { root, tmpdir } = options
+  const { root, tmpdir, node } = options
   const listeners = new Map<string, Array<{ listener: ProcessListener, once: boolean }>>()
 
   // THE RULE THIS FILE EXISTS FOR. An exception escaping a nextTick or
@@ -77,8 +78,8 @@ export function installGlobals (
   // KNOWN, ACCEPTED DIFFERENCE FROM REAL NODE -- ordering. Node drains its
   // nextTick queue before any promise continuation; queueMicrotask
   // interleaves the two FIFO. `process-nextick-args`, the package most
-  // sensitive to it, branches on `!process.version` and takes its own
-  // fallback here, so nothing in the known graph depends on the stricter order.
+  // sensitive to it, now calls this nextTick directly, so nothing in the
+  // known graph depends on the stricter order.
   function nextTick<Args extends readonly unknown[]> (callback: (...args: Args) => void, ...args: Args): void {
     queueMicrotask(() => {
       try {
@@ -183,19 +184,18 @@ export function installGlobals (
   }
 
   const process: ShimProcess = {
-    platform: 'browser',
+    platform: node.platform,
     env: { HOME: root, USERPROFILE: root, APPDATA: root, TMPDIR: tmpdir, TMP: tmpdir, TEMP: tmpdir },
-    version: '',
-    versions: {},
-    browser: true,
+    version: `v${node.node}`,
+    versions: { node: node.node },
     argv: [],
     execArgv: [],
     execPath: '',
     pid: 1,
     ppid: 0,
-    title: 'browser',
-    arch: 'javascript',
-    release: { name: 'browser' },
+    title: 'node',
+    arch: node.arch,
+    release: { name: 'node' },
     exitCode: undefined,
     stdout: stdio(1, (text) => { console.log(text) }),
     stderr: stdio(2, (text) => { console.error(text) }),
@@ -217,6 +217,9 @@ export function installGlobals (
     listeners: (event) => (listeners.get(event) ?? []).map((entry) => entry.listener),
     listenerCount: (event) => listeners.get(event)?.length ?? 0
   }
+
+  // `Object.prototype.toString.call(process)` is '[object process]' in Node, which is how detect-node-style checks tell it apart.
+  Object.defineProperty(process, Symbol.toStringTag, { value: 'process', configurable: true })
 
   // Plain assignments, never a locked defineProperty: ADR-0021, an app may
   // shadow or replace any of these (README.md's Design notes).

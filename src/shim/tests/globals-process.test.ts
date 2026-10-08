@@ -3,10 +3,11 @@
 // callback error goes when no reporter is passed: the page's own.
 
 import { describe, expect, it, vi } from 'vitest'
-import { installGlobals, VIRTUAL_ROOT, VIRTUAL_TMPDIR, type GlobalsTarget } from '../globals.js'
+import { installGlobals, NODE_IDENTITY, VIRTUAL_ROOT, VIRTUAL_TMPDIR, type GlobalsTarget } from '../globals.js'
+import { NODE_BUILTIN_EXPORTS } from '../node-builtin-exports.js'
 
 function install (target: GlobalsTarget = {}): GlobalsTarget & { process: NonNullable<GlobalsTarget['process']> } {
-  installGlobals({ root: VIRTUAL_ROOT, tmpdir: VIRTUAL_TMPDIR }, target)
+  installGlobals({ root: VIRTUAL_ROOT, tmpdir: VIRTUAL_TMPDIR, node: NODE_IDENTITY }, target)
   if (target.process === undefined) throw new Error('setup failed')
   return target as GlobalsTarget & { process: NonNullable<GlobalsTarget['process']> }
 }
@@ -20,18 +21,42 @@ describe('global', () => {
 })
 
 describe('process fields', () => {
-  it('answers the fields libraries read, without claiming to be Node', () => {
+  // d-0594: apps are Node-shaped, so the fields a library reads to pick its Node path say Node.
+  it('answers the fields libraries read as Node does', () => {
     const { process } = install()
-    expect(process.versions).toEqual({})
-    expect(process.versions['node']).toBeUndefined()
+    expect(process.versions).toEqual({ node: NODE_BUILTIN_EXPORTS.nodeVersion })
     expect(process.argv).toEqual([])
     expect(process.execArgv).toEqual([])
     expect(process.execPath).toBe('')
     expect(process.pid).toBeGreaterThan(0)
-    expect(process.title).toBe('browser')
-    expect(process.arch).toBe('javascript')
-    expect(process.release.name).not.toBe('node')
+    expect(process.title).toBe('node')
+    expect(process.arch).toBe('x64')
+    expect(process.release.name).toBe('node')
     expect(process.umask()).toBe(0o022)
+  })
+
+  it('reports the Node version the shim\'s surface is measured against, as Node writes it', () => {
+    const { process } = install()
+    expect(process.version).toBe(`v${NODE_BUILTIN_EXPORTS.nodeVersion}`)
+    expect(process.version).toMatch(/^v\d+\.\d+\.\d+$/)
+  })
+
+  it('has no browser flag, so a library guarding on process.browser takes its Node path', () => {
+    const { process } = install()
+    expect('browser' in process).toBe(false)
+    expect((process as unknown as { browser?: unknown }).browser).toBeUndefined()
+  })
+
+  it('reports no Electron or Chrome version: those belong to an Electron port\'s own build', () => {
+    const { process } = install()
+    expect(process.versions['electron']).toBeUndefined()
+    expect(process.versions['chrome']).toBeUndefined()
+    expect((process as unknown as { type?: unknown }).type).toBeUndefined()
+  })
+
+  it('stringifies as Node\'s process does, which is how detect-node-style checks find it', () => {
+    const { process } = install()
+    expect(Object.prototype.toString.call(process)).toBe('[object process]')
   })
 
   it('hrtime is monotonic, takes a previous reading, and has a bigint form', () => {

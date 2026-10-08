@@ -18,6 +18,9 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- **`process-is-node-shaped`**: an app's `process` and `os` now present as Node on Linux: `process.version` is `v24.11.1`, `versions` holds
+  `node`, `process.browser` is gone, `platform` is `linux` and `arch` `x64` on every host (it was `''`, `{}`, `true`, `'browser'` and `'javascript'`). A
+  library that detects Node takes its Node path; a port that compiled these values into its bundle can drop them. Recheck: webtorrent (it now looks like a production install and starts upstream's telemetry).
 - **`fs-open-create-in-place`**: `fs.open` with `O_CREAT` and no `O_TRUNC`, `O_APPEND` or `O_EXCL` (`O_RDWR | O_CREAT`) now
   creates a missing file and keeps an existing one, where it failed `EINVAL`. Apps that opened such files by another
   route: open them directly. Recheck: webtorrent.
