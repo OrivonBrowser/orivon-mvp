@@ -13,9 +13,11 @@
 
 import { createApp } from './app.js'
 import { createDesktopCapturer, type LegacyNavigator } from './desktop-capturer.js'
+import { createClipboard } from './clipboard.js'
 import { createDialog } from './dialog.js'
 import { createIpc } from './ipc.js'
 import { createSafeStorage } from './safe-storage.js'
+import { createShell } from './shell.js'
 import { BrowserWindow, Menu, Tray } from './desktop-shell.js'
 import { notConsidered, refusingProxy, unimplementedMember, withUnimplementedFallback } from './unimplemented.js'
 import type { Orivon } from '../contracts/capability-api.js'
@@ -23,6 +25,8 @@ import type { Orivon } from '../contracts/capability-api.js'
 export { ElectronShimError } from './errors.js'
 export type { ElectronShimReason } from './errors.js'
 export type { ElectronApp } from './app.js'
+export type { ClipboardDeps, ElectronClipboard } from './clipboard.js'
+export type { ElectronShell, ShellDeps } from './shell.js'
 export type { DesktopCapturerSource, ElectronDesktopCapturer, ShimNativeImage, SourcesOptions } from './desktop-capturer.js'
 export type { ElectronDialog, OpenDialogOptions, OpenDialogReturnValue } from './dialog.js'
 export type { ElectronIpcMain, ElectronIpcRenderer, IpcEvent, IpcHandler, IpcListener } from './ipc.js'
@@ -53,6 +57,16 @@ export const desktopCapturer = refusingProxy(createDesktopCapturer({
   random: () => crypto.randomUUID()
 }), (prop) => notConsidered(`desktopCapturer.${prop}`))
 
+// A worker has no document: its paste events are none, so readText answers ''.
+export const clipboard = createClipboard({
+  document: (globalThis as { document?: EventTarget }).document ?? new EventTarget(),
+  navigator: (globalThis as { navigator?: Navigator }).navigator ?? {},
+  warn: (message, error) => { console.warn(message, error) }
+})
+export const shell = createShell({
+  open: (url, target, features) => (globalThis as unknown as { open: (...args: string[]) => unknown }).open(url, target, features)
+})
+
 const bus = createIpc()
 export const ipcRenderer = bus.ipcRenderer
 export const ipcMain = bus.ipcMain
@@ -60,16 +74,14 @@ export const ipcMain = bus.ipcMain
 /**
  * Real Electron's top-level surface this package has not implemented and
  * has not decided whether it will -- the names real ported apps reach for
- * most. Named individually, rather than left absent, so `import { shell }
- * from 'electron'` resolves and `mod.shell` (this package's own tests read
+ * most. Named individually, rather than left absent, so `import { session }
+ * from 'electron'` resolves and `mod.session` (this package's own tests read
  * the module the same way) both throw a named `ElectronShimError` instead
  * of silently reading `undefined` -- the defect this file exists to close.
  * A name entirely outside this list still fails loudly, either at the point
  * a bundler resolves a named import against it or via the default export
  * below, never as a bare TypeError deep in a call.
  */
-export const shell = unimplementedMember('shell')
-export const clipboard = unimplementedMember('clipboard')
 export const session = unimplementedMember('session')
 export const protocol = unimplementedMember('protocol')
 export const webContents = unimplementedMember('webContents')
