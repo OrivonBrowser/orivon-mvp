@@ -28,10 +28,12 @@ cannot wait and ask again itself -- a program that starts with a burst of file c
 the first call past the bucket. `existsSync`'s own probe asks again the same way, so a refused stat is never read
 as a missing file.
 
-**Every `fs` `*Sync` export, including `realpathSync`, works only in a Worker of a
+**Every path-based `fs` `*Sync` export, including `realpathSync`, works on the page and in a Worker of a
 cross-origin isolated app** ([`ADR-0016`](../../../docs/decisions/ADR-0016-synchronous-file-reads-are-permitted.md)'s
-amendment), except `readFileSync`/`existsSync`, which work everywhere -- over the Worker's
-synchronous twin (`../worker/README.md`'s own note) -- [`core-sync.ts`](core-sync.ts) is the
+amendments), over a synchronous twin: the Worker's (`../worker/README.md`'s own note), or the page's, which the
+preload serves over a blocking IPC call and which has no `open`. A call that holds a file handle (`openSync` and what
+rides it, a non-`'w'` flag on `writeFileSync`, `appendFileSync`) works in a Worker only and refuses by name on the
+page, as does every `*Sync` call in a Worker with no `SharedArrayBuffer`. `readFileSync`/`existsSync` work everywhere -- [`core-sync.ts`](core-sync.ts) is the
 synchronous twin of [`core.ts`](core.ts)'s `do*()` functions, sharing confinement
 ([`paths.ts`](paths.ts)), root special-casing ([`root.ts`](root.ts)) and stats conversion
 ([`stats.ts`](stats.ts)) with them; only the "await or not" itself cannot be shared, so each
@@ -80,8 +82,7 @@ follow `mtime`. The `is*` device predicates are false.
 `fs.promises.lchmod` and `FileHandle#chmod`. The mode is validated as Node does and then not
 stored, because the confined fs has no mode to keep (`stat` reports the fixed one above); a
 missing path fails `ENOENT` and an unknown descriptor `EBADF`. `chmodSync` checks with
-`existsSync`, so it works on a page as well as in a Worker, and reads a path it may not open as
-missing. `chown` and its variants still refuse as *not-applicable*: no uid or gid exists to set.
+`existsSync`, so it works on a page as well as in a Worker. `chown` and its variants still refuse as *not-applicable*: no uid or gid exists to set.
 
 **`fs.watch` hears only the writes made through this shim** ([`watch.ts`](watch.ts),
 [`notices.ts`](notices.ts)). `orivon.fs` has no change feed, so every mutating call here

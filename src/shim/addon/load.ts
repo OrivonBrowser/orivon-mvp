@@ -23,10 +23,11 @@ const preloading = new Map<string, Promise<void>>()
 /** A synchronous module's file calls go to `syncFs`; the asynchronous orivon.fs is never reached. */
 const NO_FS = new Proxy({}, { get: () => { throw new Error('a native addon has no file system here') } }) as WasiFs
 
-/** A forked child's orivon has a synchronous twin when the app is cross-origin isolated; a page's has none. */
+/** A forked child's orivon has a synchronous twin when the app is cross-origin isolated. A page's twin has no `open`, which a module's file calls need, so it counts as none. */
 function synchronousFs (): SyncWasiFs | undefined {
   const orivon = (globalThis as { orivon?: Record<PropertyKey, unknown> }).orivon
-  return (orivon?.[SYNCHRONOUS] as { fs?: SyncWasiFs } | undefined)?.fs
+  const fs = (orivon?.[SYNCHRONOUS] as { fs?: SyncWasiFs & { open?: unknown } } | undefined)?.fs
+  return typeof fs?.open === 'function' ? fs : undefined
 }
 
 interface WritableStdio { write?: (chunk: Uint8Array) => unknown }

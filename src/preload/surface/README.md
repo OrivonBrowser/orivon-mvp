@@ -32,7 +32,8 @@ locks `window.orivon`, the one page global that stays locked
 ([ADR-0021](../../../docs/decisions/ADR-0021-page-globals-carry-the-platform-descriptor.md)).
 
 **What is wired, and what is left off.** The broker side is
-`../../broker/transport/ipc.ts`'s `handleControlRequest`; `fs.readFileSync` alone goes over
+`../../broker/transport/ipc.ts`'s `handleControlRequest`; `fs.readFileSync`, and the page's synchronous
+path-based `fs` twin (`Symbol.for('orivon.synchronous')`, no `open`), go over
 `SYNC_CONTROL_CHANNEL`
 ([ADR-0016](../../../docs/decisions/ADR-0016-synchronous-file-reads-are-permitted.md)). Left
 off under the parent README's rule, because the broker does not implement them: `fs.open`'s

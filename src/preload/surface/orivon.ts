@@ -19,10 +19,10 @@ import { toOrivonError } from '../orivon-error.js'
 // ./control-call.ts and ./net.ts).
 //
 // Nothing below hands the page anything but a Promise-returning closure,
-// with ONE exception -- ADR-0016's deliberately narrow synchronous call,
+// with ONE exception -- ADR-0016's synchronous fs calls,
 // still never touching `ipcRenderer` directly from the PAGE (it stays a
 // plain proxied closure, exactly like every other method here; only this
-// preload script's own `fsReadFileSyncEnvelope` touches `ipcRenderer.
+// preload script's own `fsSyncEnvelope` touches `ipcRenderer.
 // sendSync` itself). `./control-call.ts`'s `call()` is the only thing that
 // touches `ipcRenderer.invoke` (the raw MessagePortMain/ipcRenderer never
 // crossing into the main world is this whole directory's rule, not just
@@ -181,7 +181,7 @@ async function fsUserSelectedDirectory (): Promise<MainWorldDirectoryBridge | nu
 }
 
 /**
- * ADR-0016's one synchronous call. `ipcRenderer.sendSync` blocks THIS
+ * ADR-0016's synchronous calls. `ipcRenderer.sendSync` blocks THIS
  * RENDERER until ../../broker/transport/sync-fs.ts's main-process handler
  * replies -- the required behaviour, not a bug, so this deliberately has no
  * timeout wrapper the way `call()` above does: a timeout on a call that
@@ -199,12 +199,13 @@ async function fsUserSelectedDirectory (): Promise<MainWorldDirectoryBridge | nu
  * the envelope as data, and whichever caller sits on the SAME side the
  * throw needs to happen on builds the real `OrivonError` there:
  * `../main-world-socket.ts`'s `installOrivon` does this for the
- * `executeInMainWorld` path (see its own `readFileSync`, reusing its own
+ * `executeInMainWorld` path (see its `syncCall`, reusing its own
  * `toOrivonError`). `exposeFallback` below never calls this: its own
- * `readFileSync` refuses before touching `ipcRenderer` at all.
+ * `readFileSync` refuses before touching `ipcRenderer` at all, and it has
+ * no synchronous twin.
  */
-function fsReadFileSyncEnvelope (path: string): ResponseEnvelope<Uint8Array> {
-  return ipcRenderer.sendSync(SYNC_CONTROL_CHANNEL, { path }) as ResponseEnvelope<Uint8Array>
+function fsSyncEnvelope (op: string, args: unknown[]): ResponseEnvelope<unknown> {
+  return ipcRenderer.sendSync(SYNC_CONTROL_CHANNEL, { op, args }) as ResponseEnvelope<unknown>
 }
 
 async function idPublicKey (curve: string): Promise<Uint8Array> { return await call('id.publicKey', { curve }, TIMEOUT_MS.id) }
@@ -335,7 +336,7 @@ export function buildOrivonBridge (): MainWorldBridge {
     appRequestGrant,
     fsReadFile,
     fsWriteFile,
-    fsReadFileSync: fsReadFileSyncEnvelope,
+    fsSync: fsSyncEnvelope,
     fsMkdir,
     fsReaddir,
     fsStat,

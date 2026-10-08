@@ -18,6 +18,9 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- **`page-sync-fs-writes-land`**: the page's `fs.mkdirSync`, `writeFileSync`, `copyFileSync`, `statSync`, `readdirSync`,
+  `renameSync` and `rmSync` now work instead of throwing; `openSync` and its family still refuse on the page. Apps that
+  worked around the refusal: use them directly. Recheck: webtorrent.
 - **`ipfs-url-opens`**: an `ipns://` key now opens the site its signed record names, as an `ipns://` DNSLink name
   already did; nothing changes for apps already published. Apps that keep grants across releases may ship under a key.
   Recheck: none.
