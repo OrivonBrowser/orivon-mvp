@@ -23,6 +23,10 @@ logic; see this file's Design notes below. `own-listener-media-gate.ts` is `ADR-
 it cancels a loopback image or media request from a page that holds a `tcp.listen` grant when the
 port is not one its own listeners hold, on the default session and on each session an app is served
 from, with the pure decision in [`../../broker/policy/own-listener-media.ts`](../../broker/policy/own-listener-media.ts).
+`app-files-by-url.ts` is `ADR-0070`'s Electron half: on the same sessions it redirects an app page's image or
+media request for `/orivon/app/<path>` to the `orivon-file:` scheme and answers that scheme with the app's own
+file (`app-file-response.ts`, no Electron in it), with the pure decision in
+[`../../broker/policy/app-files-by-url.ts`](../../broker/policy/app-files-by-url.ts).
 `session-attribution.ts` publishes
 `ctx.senderAttributed` (`../registry.ts`): whether a WebContents is attributed to the origin it
 claims, decided at that document's own commit and reused afterward rather than re-decided live (except a cache-served origin and a local file, checked live),
@@ -40,7 +44,7 @@ a document is fixed for its life, so only the session can be wrong.
 question `external-link-prompt.ts`; `showing-window.ts`;
 `exclusive-access-notice.ts`; `lock-navigation.ts`; `tab-view.ts`'s `partitionForTarget`), [`../local-files/`](../local-files/)'s `partition.ts`, the
 top-level `registry.ts`. Only `permission-gate.ts`, `web-context-host.ts`, `web-request-owner.ts`,
-`own-listener-media-gate.ts` and `session-attribution.ts` import `electron`: the decision files, `web-request-compose.ts`
+`own-listener-media-gate.ts`, `app-files-by-url.ts` and `session-attribution.ts` import `electron`: the decision files, `web-request-compose.ts`
 included, are unit-tested under plain vitest.
 
 **What it must never import.** Nothing security-relevant about an isolated context may live in
@@ -49,7 +53,7 @@ Electron-free by its own rule, which is why this directory exists. The partition
 construction and the network confinement have to live somewhere Electron-shaped, and this is it.
 
 **Durable or tied to Electron.** `permission-gate.ts`, `web-context-host.ts`,
-`web-request-owner.ts`, `own-listener-media-gate.ts` and `session-attribution.ts` are tied to Electron's `Session`; the decision
+`web-request-owner.ts`, `own-listener-media-gate.ts`, `app-files-by-url.ts` and `session-attribution.ts` are tied to Electron's `Session`; the decision
 files (`web-request-compose.ts` included), the notification store and `tab-capture-grants.ts` are
 plain Node and would survive an engine change.
 
@@ -57,6 +61,16 @@ plain Node and would survive an engine change.
 (`web-context-host.ts`). Maintenance only.
 
 ## Design notes
+
+**[`app-files-by-url.ts`](app-files-by-url.ts) redirects instead of answering, on purpose.** An app's files
+have to reach a page of a granted loopback origin on the shared session, and `protocol.handle('http')` there
+would route every `http:` request of every tab through JavaScript. A web-request handler filtered to
+`/orivon/app/` images and media redirects the one verified request to `orivon-file:` (measured on Electron 44:
+the redirect crosses origins, `img-src`/`media-src` check its target, `Range` reaches the scheme handler and a
+media element seeks). A cache-served app's session sees the same request through the handler's `onBeforeRequest`
+before its own scheme handler does. The scheme is open to every page of those sessions, so the URL carries a
+MAC over origin and path that only this process makes: without it a page could name another app's file.
+The handle comes from `Broker.fs.open`, which confines and checks the grant again at the read.
 
 **[`permission-gate.ts`](permission-gate.ts): wired through `app.on('session-created', ...)`,
 not at any one session's construction site.** Electron fires that event once for every `Session`
