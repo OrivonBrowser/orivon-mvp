@@ -11,6 +11,7 @@
  */
 import { randomBytes } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
+import { lookup } from 'node:dns/promises'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { isInvokedDirectly } from '../cli.mjs'
@@ -45,6 +46,14 @@ function gh (...args) {
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** An error with the network code fetch hides behind "fetch failed". */
+export function errorText (error) {
+  const cause = error?.cause
+  return `${String(error?.message ?? error)}${cause === undefined ? '' : ` (${String(cause.code ?? cause.message ?? cause)})`}`
+}
+
+const failed = (error) => ({ ok: false, error: errorText(error) })
 
 function arg (name) {
   const at = process.argv.indexOf(`--${name}`)
@@ -95,7 +104,7 @@ async function start (system, minutes) {
   gh('run', 'download', String(id), '-n', urlArtifact(system), '-D', dir)
   const session = { system, runId: id, url: readFileSync(join(dir, 'url'), 'utf8').trim(), token }
   for (const deadline = Date.now() + HEALTH_MS; ; await sleep(3000)) {
-    const health = await call(session, 'GET', '/health', undefined, 10_000).catch((error) => ({ ok: false, error: String(error) }))
+    const health = await call(session, 'GET', '/health', undefined, 10_000).catch(failed)
     if (health.ok === true) { session.endsAt = health.endsAt; break }
     if (Date.now() > deadline) throw new Error(`the tunnel at ${session.url} never answered: ${String(health.error)}`)
   }
@@ -109,14 +118,15 @@ async function selftest (urlFile, tokenFile, out) {
   const session = { url: readFileSync(urlFile, 'utf8').trim(), token: readFileSync(tokenFile, 'utf8').trim() }
   let health
   for (const deadline = Date.now() + HEALTH_MS; ; await sleep(3000)) {
-    health = await call(session, 'GET', '/health', undefined, 10_000).catch((error) => ({ ok: false, error: String(error) }))
+    health = await call(session, 'GET', '/health', undefined, 10_000).catch(failed)
     if (health.ok === true || Date.now() > deadline) break
   }
-  const refused = await call({ ...session, token: '0'.repeat(64) }, 'GET', '/health', undefined, 10_000)
-  const reply = await call(session, 'POST', '/eval', { code: "log(await chrome.title()); await shot(chrome, 'chrome'); await shot('desktop', 'desktop'); return chrome.url()" })
+  const refused = await call({ ...session, token: '0'.repeat(64) }, 'GET', '/health', undefined, 10_000).catch(failed)
+  const reply = await call(session, 'POST', '/eval', { code: "log(await chrome.title()); await shot(chrome, 'chrome'); await shot('desktop', 'desktop'); return chrome.url()" }).catch(failed)
   const saved = saveShots(out, reply.shots)
+  const resolved = health.ok === true ? '' : await lookup(new URL(session.url).hostname, { all: true }).then((all) => all.map((a) => a.address).join(', '), (error) => String(error.code))
   const failures = [
-    health.ok === true ? undefined : `health: ${String(health.error)}`,
+    health.ok === true ? undefined : `health: ${String(health.error)}; the name resolves to ${resolved}`,
     refused.status === 401 ? undefined : `a wrong token got ${String(refused.status)}, not 401`,
     reply.ok === true && /orivon-shell:/.test(String(reply.value)) ? undefined : `eval: ${formatReply(reply)}`,
     saved.length === 2 ? undefined : `${String(saved.length)} of 2 pictures came back`
@@ -154,7 +164,7 @@ if (isInvokedDirectly(import.meta.url)) {
     } else if (command === 'status') {
       for (const file of existsSync(LIVE_DIR) ? readdirSync(LIVE_DIR).filter((f) => f.endsWith('.json')) : []) {
         const session = JSON.parse(readFileSync(join(LIVE_DIR, file), 'utf8'))
-        const health = await call(session, 'GET', '/health', undefined, 10_000).catch((error) => ({ ok: false, error: String(error) }))
+        const health = await call(session, 'GET', '/health', undefined, 10_000).catch(failed)
         console.log(`${session.system}: ${health.ok === true ? `up, ends ${String(health.endsAt)}, windows ${health.windows.length}` : `gone (${String(health.error)})`}`)
       }
     } else if (command === 'selftest') {
@@ -164,7 +174,7 @@ if (isInvokedDirectly(import.meta.url)) {
       process.exit(2)
     }
   } catch (error) {
-    console.error(`live-session: ${error.stderr?.trim() || error.message}`)
+    console.error(`live-session: ${error.stderr?.trim() || errorText(error)}`)
     process.exit(2)
   }
 }

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   cloudflaredAsset, desktopShotCommand, functionBody, isTokenHash, newToken, serialize, tokenHash, tokenMatches, tunnelUrl
 } from '../live-host.mjs'
-import { formatReply, nextShotPath, saveShots, urlArtifact } from '../live-session.mjs'
+import { errorText, formatReply, nextShotPath, saveShots, urlArtifact } from '../live-session.mjs'
 
 const dirs: string[] = []
 const scratch = (): string => {
@@ -51,10 +51,11 @@ describe('cloudflared', () => {
     expect(() => cloudflaredAsset('linux', 'arm64')).toThrow('no pinned cloudflared for linux-arm64')
   })
 
-  it('gives its quick tunnel address among its other output', () => {
-    const said = '2026-10-08T10:00:00Z INF |  https://quiet-river-1a2b.trycloudflare.com  |\nINF Registered'
-    expect(tunnelUrl(said)).toBe('https://quiet-river-1a2b.trycloudflare.com')
+  it('gives its quick tunnel address once a connection to it is registered', () => {
+    const created = '2026-10-08T10:00:00Z INF |  https://quiet-river-1a2b.trycloudflare.com  |\n'
     expect(tunnelUrl('INF Requesting new quick Tunnel on trycloudflare.com...')).toBeUndefined()
+    expect(tunnelUrl(created)).toBeUndefined()
+    expect(tunnelUrl(`${created}INF Registered tunnel connection connIndex=0 protocol=quic`)).toBe('https://quiet-river-1a2b.trycloudflare.com')
   })
 })
 
@@ -111,6 +112,11 @@ describe('the caller side', () => {
     expect(saved).toEqual([join(dir, '001-chrome.png'), join(dir, '002-desktop.png')])
     expect(readdirSync(dir)).toHaveLength(2)
     expect(saveShots(dir, undefined)).toEqual([])
+  })
+
+  it('names the network code behind "fetch failed"', () => {
+    expect(errorText(new TypeError('fetch failed', { cause: Object.assign(new Error('getaddrinfo'), { code: 'ENOTFOUND' }) }))).toBe('fetch failed (ENOTFOUND)')
+    expect(errorText(new Error('bad token'))).toBe('bad token')
   })
 
   it('prints the value or the error, then what the code logged', () => {

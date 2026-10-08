@@ -11,7 +11,7 @@
  */
 import { execFileSync, spawn } from 'node:child_process'
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -37,8 +37,12 @@ export function cloudflaredAsset (platform, arch) {
   return { ...asset, url: `https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/${asset.file}` }
 }
 
-/** The quick tunnel's address, from what cloudflared prints. */
+/**
+ * The quick tunnel's address, from what cloudflared prints, once it has registered a connection: it prints the
+ * address first, and a name asked for before then may not resolve yet.
+ */
 export function tunnelUrl (output) {
+  if (!/Registered tunnel connection/.test(output)) return undefined
   return /https:\/\/[a-z0-9-]+\.trycloudflare\.com/.exec(output)?.[0]
 }
 
@@ -207,6 +211,7 @@ async function serve ({ hash, cloudflared, out, minutes }) {
   tunnel = spawn(cloudflared, ['tunnel', '--url', `http://127.0.0.1:${String(port)}`, '--no-autoupdate'], { stdio: ['ignore', 'pipe', 'pipe'] })
   let said = ''
   const hear = (chunk) => {
+    appendFileSync(join(out, 'cloudflared.log'), chunk)
     said += chunk
     const url = tunnelUrl(said)
     if (url !== undefined && !existsSync(join(out, 'url'))) { writeFileSync(join(out, 'url'), `${url}\n`); console.log('[live-host] tunnel up') }
