@@ -81,6 +81,7 @@
     { "prefix": "src/main/sad-tab", "run": ["tabs"] },
     { "prefix": "src/main/self-update", "run": ["shell-pages"] },
     { "prefix": "src/main/session-restore", "run": ["window", "tabs"] },
+    { "prefix": "src/main/scheme-routing", "run": ["@core", "sites"] },
     { "prefix": "src/main/sessions", "run": ["@core"] },
     { "prefix": "src/main/settings", "run": ["shell-pages"] },
     { "prefix": "src/main/shell", "run": ["tabs", "toolbar", "window", "page", "shell-pages"] },

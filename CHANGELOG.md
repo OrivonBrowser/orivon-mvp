@@ -18,6 +18,7 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- **`scheme-link-offers-declared-apps`**, **`scheme-link-opens-in-chosen-app`**, **`scheme-link-held-until-the-app-listens`**, **`scheme-link-always-skips-the-question`**, **`scheme-link-malformed-is-refused`** and **`scheme-app-asks-to-be-default`**: new rows. An app that lists a scheme in `protocols` and holds a grant is offered when a page opens a link of it; it hears the link through `orivon.app.onOpenUrl` (or `app.on('open-url')` in the `electron` shim), and the `electron` shim's `app.on` now exists for `open-url` alone and throws `unimplemented` for any other event, where it read `undefined`. Apps that polled or bridged links by hand: use these. Recheck: webtorrent.
 - **`contracts/app.ts`, `contracts/capability-api.ts`, `contracts/index.ts`, `contracts/manifest.ts`**: `orivon.app` gains `onOpenUrl`, `requestSchemeHandler` and `isSchemeHandler`, so a link of a scheme the manifest lists in `protocols` (first `magnet:`) can open in the app the person chooses. Nothing existing changes; an app that wants links declares the scheme and registers a listener. Recheck: webtorrent.
 - **`fs-open-create-in-place`**: `fs.open` with `O_CREAT` and no `O_TRUNC`, `O_APPEND` or `O_EXCL` (`O_RDWR | O_CREAT`) now
   creates a missing file and keeps an existing one, where it failed `EINVAL`. Apps that opened such files by another
@@ -71,6 +72,11 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **A link of a scheme an app lists opens in the app you choose**: a `magnet:` click or `window.open` asks which app should open it
+  (an app that lists the scheme and holds a grant, or your system's app), "Always use the app I pick" makes it the default, and the
+  app's page receives the link. Settings, under Apps, lists the default with Stop. An app can ask to be the default from a click,
+  and the `electron` shim's `app.setAsDefaultProtocolClient` and `app.on('open-url')` work (ADR-0072). Links from other programs
+  and `.torrent` files are not routed yet.
 - **USB HID devices for apps and websites** (`devices.hid`): an app that declares the vendors it talks to uses `navigator.hid`, and the
   person approves each device, in a chooser or in a question in the tab; a website gets the chooser. Approved devices are listed in
   Settings with Forget, and "USB and HID devices" joins the site settings. WebUSB and Web Serial stay refused (ADR-0068).

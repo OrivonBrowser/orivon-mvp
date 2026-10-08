@@ -19,6 +19,7 @@ rely on, row by row. A new feature adds its line here when it lands.
 - **Cross-origin isolation on request** (`crossOriginIsolated` in the manifest) for WebAssembly built with threads.
 - **Per-app storage isolation** with a disk-usage view.
 - **Identity seed and `orivon.secrets`**: a seed kept in the OS keyring and an app's own origin-bound encrypted secret.
+- **Links to an app**: a link of a scheme an app lists in its manifest (`magnet:`) opens in the app the person chooses, with the choice remembered per scheme and listed in Settings, and the app's page receives the link.
 - **Developer mode**: load an unpacked app from a folder.
 - **App updates at a name**: an installed app keeps its version until the person accepts a newer one.
 - **Files as apps**: a local HTML, SVG or PDF file opens in a tab, and a file that links a manifest asks once per run.
