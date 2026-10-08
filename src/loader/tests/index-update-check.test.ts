@@ -28,7 +28,7 @@ describe('createLoader: updateCheckIntervalMs', () => {
   })
 
   it('does not hold back a retry after a rejected check', async () => {
-    const fetch = vi.fn(stubFetch({}))
+    const fetch = vi.fn(stubFetch({ [MANIFEST_URL]: { status: 404, body: utf8('') } }))
     const loader = createLoader({ fetch, storage: memoryStorage(), now: () => 0, resolve: PUBLIC_RESOLVER, updateCheckIntervalMs: 60_000 })
 
     expect((await loader.load(ORIGIN, NO_GRANTS)).outcome).toBe('rejected')

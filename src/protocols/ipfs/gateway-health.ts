@@ -16,13 +16,19 @@ export type GatewayOutcome =
   | { readonly kind: 'unreachable' }
   /** Connected and sent nothing back before the request's own deadline. */
   | { readonly kind: 'timeout' }
-  /** Answered, just not with this block/record -- a 404, a 5xx with no
-   * Retry-After, or a body over the size limit. Not a strike: the gateway
+  /** Answered with a 500, 502, 503 (no Retry-After) or 504: the gateway is
+   * reachable but unwell, which usually passes within seconds. Cools it
+   * briefly, so another pass over the gateways does not start at once. */
+  | { readonly kind: 'server-error' }
+  /** Answered, just not with this block/record -- a 404, any other status
+   * outside 2xx, or a body over the size limit. Not a strike: the gateway
    * is reachable and behaving, it simply doesn't have this one. */
   | { readonly kind: 'miss' }
 
 const RATE_LIMIT_BASE_MS = 1_000
 const RATE_LIMIT_CAP_MS = 15_000
+const SERVER_ERROR_BASE_MS = 500
+const SERVER_ERROR_CAP_MS = 5_000
 const UNREACHABLE_BASE_MS = 2_000
 const UNREACHABLE_CAP_MS = 60_000
 /** One timeout alone is filebase's own observed shape here: it hangs on a
@@ -48,6 +54,7 @@ export class GatewayHealth {
   private cooldownUntil = 0
   private rateLimitStrikes = 0
   private unreachableStrikes = 0
+  private serverErrorStrikes = 0
   private timeoutsSinceSuccess = 0
 
   constructor (private readonly now: () => number = Date.now) {}
@@ -71,6 +78,7 @@ export class GatewayHealth {
         // happened to land afterward must not undo it.
         this.rateLimitStrikes = 0
         this.unreachableStrikes = 0
+        this.serverErrorStrikes = 0
         this.timeoutsSinceSuccess = 0
         return
       case 'miss':
@@ -79,6 +87,12 @@ export class GatewayHealth {
         this.rateLimitStrikes += 1
         const backoff = Math.min(RATE_LIMIT_BASE_MS * 2 ** (this.rateLimitStrikes - 1), RATE_LIMIT_CAP_MS)
         const delay = Math.min(outcome.retryAfterMs ?? backoff, RATE_LIMIT_CAP_MS)
+        this.cooldownUntil = Math.max(this.cooldownUntil, this.now() + delay)
+        return
+      }
+      case 'server-error': {
+        this.serverErrorStrikes += 1
+        const delay = Math.min(SERVER_ERROR_BASE_MS * 2 ** (this.serverErrorStrikes - 1), SERVER_ERROR_CAP_MS)
         this.cooldownUntil = Math.max(this.cooldownUntil, this.now() + delay)
         return
       }

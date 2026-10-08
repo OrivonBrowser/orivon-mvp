@@ -56,6 +56,11 @@ export class GatewayPool {
     return Math.min(...usable.map((g) => this.health.get(g)!.readyAt()))
   }
 
+  /** When `gateway` is worth asking again; a time already past when it is not cooling. */
+  readyAt (gateway: string): number {
+    return this.health.get(gateway)?.readyAt() ?? 0
+  }
+
   /** For the rest of this session: a gateway that sent one bad block is not asked again. */
   drop (gateway: string): void {
     this.dropped.add(gateway)
@@ -128,6 +133,9 @@ export class GatewayFailure extends Error {
   }
 }
 
+/** Statuses a gateway answers while it is the one that is unwell, as opposed to not having the block. */
+const SERVER_ERRORS: ReadonlySet<number> = new Set([500, 502, 503, 504])
+
 const CANCELLED = 'the caller no longer needs this attempt'
 
 function message (error: unknown): string {
@@ -184,8 +192,9 @@ export async function askGateway<T> (
     }
     if (!response.ok) {
       await response.body?.cancel()
-      pool.note(gateway, { kind: 'miss' })
-      throw new GatewayFailure({ kind: 'miss' }, `${gateway} answered ${String(response.status)}`)
+      const outcome: RecordedFailure = SERVER_ERRORS.has(response.status) ? { kind: 'server-error' } : { kind: 'miss' }
+      pool.note(gateway, outcome)
+      throw new GatewayFailure(outcome, `${gateway} answered ${String(response.status)}`)
     }
     try {
       const value = await read(response)

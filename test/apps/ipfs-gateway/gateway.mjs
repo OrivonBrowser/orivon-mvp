@@ -51,6 +51,8 @@ export async function startFixtureGateway (sites, options = {}) {
 
   const requests = []
   const tampered = new Set()
+  /** @type {Map<string, { status: number, times: number }>} block -> the next answers it fails with */
+  const failures = new Map()
 
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', `http://${HOST}`)
@@ -68,6 +70,12 @@ export async function startFixtureGateway (sites, options = {}) {
       const key = CID.parse(raw[1]).toString()
       const block = blocks.get(key)
       if (block === undefined) { res.writeHead(404).end('not found'); return }
+      const scheduled = failures.get(key)
+      if (scheduled !== undefined && scheduled.times > 0) {
+        scheduled.times -= 1
+        res.writeHead(scheduled.status).end('unwell')
+        return
+      }
       const body = Buffer.from(block)
       if (tampered.has(key)) body[body.length - 1] ^= 0x01
       const answer = () => { res.writeHead(200, { 'content-type': 'application/vnd.ipld.raw' }).end(body) }
@@ -103,6 +111,12 @@ export async function startFixtureGateway (sites, options = {}) {
       const cid = files.get(`${site}/${path}`)
       if (cid === undefined) throw new Error(`no file ${path} in ${site}`)
       tampered.add(cid)
+    },
+    /** Answer this site's file with `status` for its next `times` requests, then serve it: a gateway that is briefly unwell. */
+    failNext: (site, path, status, times = 1) => {
+      const cid = files.get(`${site}/${path}`)
+      if (cid === undefined) throw new Error(`no file ${path} in ${site}`)
+      failures.set(cid, { status, times })
     },
     /** Gone at once, as a dead gateway is: open connections are cut, or a client that keeps reusing one holds close() open. */
     close: async () => {

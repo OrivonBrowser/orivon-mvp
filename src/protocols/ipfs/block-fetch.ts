@@ -13,7 +13,7 @@ import { BlockRefused, checkCidAccepted, inlineBlock, verifyBlock } from './veri
 import { racePass } from './race.js'
 import type { AttemptOutcome, PassResult } from './race.js'
 
-/** A rate-limited or unreachable pass earns one retry, up to this many total. */
+/** A pass that met a rate limit, an unreachable gateway or a gateway's own 5xx earns another, up to this many passes in all. */
 export const MAX_PASSES = 3
 
 export interface FetchDeps {
@@ -31,7 +31,7 @@ function limitFailure (error: unknown): ResolutionError {
   return new ResolutionError(unsupported ? 'unsupported' : 'unverifiable', message)
 }
 
-async function attemptGateway (gateway: string, cid: CID, key: string, deps: FetchDeps, signal: AbortSignal, onRefusal: (refusal: Refusal) => void): Promise<AttemptOutcome<Uint8Array>> {
+async function attemptGateway (gateway: string, cid: CID, key: string, deps: FetchDeps, signal: AbortSignal, onRefusal: (refusal: Refusal) => void, unwell: Set<string>): Promise<AttemptOutcome<Uint8Array>> {
   let bytes: Uint8Array
   try {
     bytes = await askGateway(
@@ -43,8 +43,11 @@ async function attemptGateway (gateway: string, cid: CID, key: string, deps: Fet
   } catch (error) {
     if (!(error instanceof GatewayFailure)) throw error
     if (error.outcome.kind === 'cancelled') return { kind: 'failed', retryable: false, reason: `${gateway}: cancelled` }
-    return { kind: 'failed', retryable: error.outcome.kind === 'rate-limited' || error.outcome.kind === 'unreachable', reason: error.message }
+    if (error.outcome.kind === 'server-error') unwell.add(gateway)
+    else unwell.delete(gateway)
+    return { kind: 'failed', retryable: error.outcome.kind === 'rate-limited' || error.outcome.kind === 'unreachable' || error.outcome.kind === 'server-error', reason: error.message }
   }
+  unwell.delete(gateway)
   try {
     await verifyBlock(cid, bytes, deps.limits)
   } catch (error) {
@@ -88,10 +91,20 @@ export async function fetchVerifiedBlock (cid: CID, deps: FetchDeps, signal: Abo
   // it again, see it return instantly, and spin forever making no progress.
   const MAX_COOLDOWN_WAITS = MAX_PASSES * 2
 
+  // Gateways whose latest answer in THIS fetch was a 5xx: unwell, not
+  // lacking the block. The next pass waits for them (their cooldown is a
+  // few seconds) instead of settling for the gateways that said 404.
+  const unwell = new Set<string>()
+
   let pass = 0
   let cooldownWaits = 0
   while (pass < MAX_PASSES) {
     if (signal.aborted) throw new ResolutionError('unavailable', 'aborted')
+    const unwellReadyAt = Math.max(0, ...deps.pool.usable().filter((g) => unwell.has(g)).map((g) => deps.pool.readyAt(g)))
+    if (unwellReadyAt > deps.pool.now()) {
+      await sleepOrAbort(unwellReadyAt - deps.pool.now(), signal)
+      if (signal.aborted) throw new ResolutionError('unavailable', 'aborted')
+    }
     const candidates = deps.pool.candidates()
     if (candidates.length === 0) {
       if (deps.pool.usable().length === 0) break
@@ -104,7 +117,7 @@ export async function fetchVerifiedBlock (cid: CID, deps: FetchDeps, signal: Abo
 
     let result: PassResult<Uint8Array>
     try {
-      result = await racePass(candidates, (gateway, attemptSignal) => attemptGateway(gateway, cid, key, deps, attemptSignal, onRefusal), deps.limits.hedgeDelayMs, signal)
+      result = await racePass(candidates, (gateway, attemptSignal) => attemptGateway(gateway, cid, key, deps, attemptSignal, onRefusal, unwell), deps.limits.hedgeDelayMs, signal)
     } catch (error) {
       // racePass only ever rejects for the caller's own signal aborting
       // (its own attempts never reject: a bug there surfaces as `fatal`,
@@ -120,7 +133,7 @@ export async function fetchVerifiedBlock (cid: CID, deps: FetchDeps, signal: Abo
     pass++
     // A lie alone earns no new pass: the liar is dropped, and every other
     // gateway in this pass has already answered.
-    if (!result.retryable) break
+    if (!result.retryable && unwell.size === 0) break
   }
 
   if (deps.pool.usable().length === 0) throw new ResolutionError('unverifiable', `block ${key}: every gateway was dropped this session for sending bytes that failed their hash`)

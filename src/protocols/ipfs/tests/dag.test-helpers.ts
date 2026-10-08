@@ -36,6 +36,10 @@ export interface FakeGateway {
   tamper: (cid: string, gateways?: readonly string[]) => void
   /** These gateways answer every request with 500. */
   failing: Set<string>
+  /** These gateways answer every request with 404: they have none of these blocks. */
+  missing: Set<string>
+  /** The next `times` requests to this gateway answer `status`, then it serves normally. */
+  failNext: (gateway: string, status: number, times?: number) => void
   /** These gateways never answer at all -- the fetch settles only once the
    * caller's own signal aborts, the same shape a hung connection takes. */
   hanging: Set<string>
@@ -57,6 +61,8 @@ export function fakeGateways (blocks: ReadonlyMap<string, Uint8Array>): FakeGate
   const tampered = new Map<string, readonly string[] | undefined>()
   const oversized = new Map<string, number>()
   const failing = new Set<string>()
+  const missing = new Set<string>()
+  const failures = new Map<string, { status: number, times: number }>()
   const hanging = new Set<string>()
   const unreachable = new Set<string>()
   const rateLimited = new Map<string, string | undefined>()
@@ -76,7 +82,13 @@ export function fakeGateways (blocks: ReadonlyMap<string, Uint8Array>): FakeGate
       const retryAfter = rateLimited.get(gateway)
       return new Response('slow down', { status: 429, headers: retryAfter !== undefined ? { 'retry-after': retryAfter } : {} })
     }
+    const scheduled = failures.get(gateway)
+    if (scheduled !== undefined && scheduled.times > 0) {
+      scheduled.times -= 1
+      return new Response('unwell', { status: scheduled.status })
+    }
     if (failing.has(gateway)) return new Response('down', { status: 500 })
+    if (missing.has(gateway)) return new Response('not found', { status: 404 })
     const ipns = /^\/ipns\/([^/?]+)$/.exec(parsed.pathname)
     if (ipns !== null && parsed.searchParams.get('format') === 'ipns-record') {
       const served = (records.get(ipns[1]!) ?? []).find((r) => r.only === undefined || r.only.includes(gateway))
@@ -98,6 +110,8 @@ export function fakeGateways (blocks: ReadonlyMap<string, Uint8Array>): FakeGate
     fetch,
     requests,
     failing,
+    missing,
+    failNext: (gateway, status, times = 1) => { failures.set(gateway, { status, times }) },
     hanging,
     unreachable,
     rateLimit: (gateway, retryAfter) => { rateLimited.set(gateway, retryAfter) },

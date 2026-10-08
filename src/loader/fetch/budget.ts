@@ -121,11 +121,20 @@ export const BUNDLE_TIMEOUT_MS = 30 * 60_000
 export interface FetchBundleRejected {
   readonly ok: false
   readonly reason: string
+  /** A fault that may pass on its own (a gateway's 502/503/504, a dropped connection): worth fetching again, and, once the attempts run out, a failed download rather than a bad bundle. */
+  readonly transient?: true
 }
 
 export function rejected (reason: string): FetchBundleRejected {
   return { ok: false, reason }
 }
+
+function transientlyRejected (reason: string): FetchBundleRejected {
+  return { ok: false, reason, transient: true }
+}
+
+/** Statuses a gateway or proxy answers while it is the one that is unwell. A 500 is not here: an origin answers it for a fault that will repeat. */
+const TRANSIENT_STATUSES: ReadonlySet<number> = new Set([502, 503, 504])
 
 /**
  * The bundle's byte budget, shared by every asset fetch running at once:
@@ -146,6 +155,11 @@ export class ByteBudget {
     if (bytes > this.#remaining) return false
     this.#remaining -= bytes
     return true
+  }
+
+  /** Returns bytes taken by a download that is being fetched again from the start. */
+  give (bytes: number): void {
+    this.#remaining += bytes
   }
 }
 
@@ -267,13 +281,20 @@ export async function fetchWithBudget (
     try {
       response = await raceAbort(fetchFn(url, pinnedAddresses, controller.signal, conditional), controller.signal, abortError)
     } catch (error) {
-      return rejected(`could not fetch ${label} (${url}): ${error instanceof Error ? error.message : String(error)}`)
+      const reason = `could not fetch ${label} (${url}): ${error instanceof Error ? error.message : String(error)}`
+      // The fetch itself failed, as opposed to this call's own deadline or idle timer cutting it off.
+      return controller.signal.aborted ? rejected(reason) : transientlyRejected(reason)
     }
     if (conditional !== undefined && response.status === NOT_MODIFIED) {
       response.body?.cancel().catch(() => {})
       return { response, byteLength: 0 }
     }
-    if (!response.ok) return rejected(`${label} fetch failed: HTTP ${String(response.status)} (${url})`)
+    if (!response.ok) {
+      const reason = `${label} fetch failed: HTTP ${String(response.status)} (${url})`
+      if (!TRANSIENT_STATUSES.has(response.status)) return rejected(reason)
+      response.body?.cancel().catch(() => {})
+      return transientlyRejected(reason)
+    }
 
     const declared = declaredLength(response)
     if (declared !== undefined) {
@@ -285,6 +306,7 @@ export async function fetchWithBudget (
     if (body === null) return { response, byteLength: 0 }
     const reader = body.getReader()
     let total = 0
+    let taken = 0
     while (true) {
       idle.touch()
       let step: ReadableStreamReadResult<Uint8Array>
@@ -292,7 +314,10 @@ export async function fetchWithBudget (
         step = await raceAbort(reader.read(), controller.signal, abortError)
       } catch (error) {
         reader.cancel().catch(() => {})
-        return rejected(`reading ${label} failed (${url}): ${error instanceof Error ? error.message : String(error)}`)
+        const reason = `reading ${label} failed (${url}): ${error instanceof Error ? error.message : String(error)}`
+        if (controller.signal.aborted) return rejected(reason)
+        budget.give(taken)
+        return transientlyRejected(reason)
       }
       if (step.done) break
       total += step.value.byteLength
@@ -304,6 +329,7 @@ export async function fetchWithBudget (
         reader.cancel().catch(() => {})
         return rejected(`${label} does not fit in the bundle's remaining byte budget (MAX_BUNDLE_BYTES): ${url}`)
       }
+      taken += step.value.byteLength
       idle.pause()
       try {
         await onChunk(step.value)
