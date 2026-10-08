@@ -30,7 +30,7 @@ import { refuseShim } from '../errors.js'
 import {
   assertRootOpenAllowed, isRootPath, rootDirectoryHandle, rootDirectoryHandleSync, rootReadError, rootTruncateError, rootWriteError
 } from './root.js'
-import { guardedSync, syncFs, tryStatSync, type SyncFileHandleWire } from './sync-orivon.js'
+import { guardedSync, syncFsWithOpen, tryStatSync, type SyncFileHandleWire } from './sync-orivon.js'
 
 export type NodeCallback<T> = (error: Error | null, result?: T) => void
 
@@ -410,7 +410,7 @@ class SyncNodeFileHandle {
     }
     const existed = !(canCreate(flags) && watchersExist()) || tryStatSync(confined) !== false
     return guardedSync(() => {
-      const handle = syncFs('fs.openSync').open(confined, flags)
+      const handle = syncFsWithOpen('fs.openSync').open(confined, flags)
       const cursor = new SyncLocalCursor(initialCursorSync(handle, flags))
       const fd = nextFd++
       const wrapped = new SyncNodeFileHandle(fd, handle, cursor, confined)

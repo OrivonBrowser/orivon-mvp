@@ -1,8 +1,8 @@
 # `src/broker/transport/`: how a page reaches the broker, and how bytes move
 
 **What lives here.** The Electron IPC front door ([`ipc.ts`](ipc.ts)), its message validation,
-the per-origin rate limiter, and `orivon.fs.readFileSync`'s synchronous channel
-(`SYNC_CONTROL_CHANNEL`,
+the per-origin rate limiter, and the page's synchronous `fs` channel (`readFileSync` and the path-based twin;
+`SYNC_CONTROL_CHANNEL`,
 [`ADR-0016`](../../../docs/decisions/ADR-0016-synchronous-file-reads-are-permitted.md)).
 [`dispatch/`](dispatch/) holds `dispatch()`'s per-capability switch cases; [`relay/`](relay/)
 holds the byte path: the credit-window pumps, the sinks, the port registry and the per-kind

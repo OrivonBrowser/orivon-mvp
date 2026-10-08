@@ -65,14 +65,16 @@
    blocking cost is bounded and visible there, and a chatty use of it is the app's own cost
    to pay, not a reason to widen the exception further.
 
-   > **Widened once since, at the shim, not at the contract** (`ADR-0016`'s amendment). In a
-   > Worker (a forked child or a `worker_threads` thread) of a cross-origin isolated app, the
-   > shim offers every path-based `fs` `*Sync` call over the same shared-memory channel
-   > `readFileSync` already used there as its deferred route B -- a page that blocks freezes
-   > the tab, which is what this rule guards against, but a Worker that blocks freezes no
-   > page. `orivon.fs` itself still has exactly one synchronous member; nothing was added to
-   > the contract to widen it. Elsewhere -- the page, or a Worker with no
-   > `SharedArrayBuffer` -- every one of those calls still refuses by name.
+   > **Widened at the shim, not at the contract** (`ADR-0016`'s amendments). The shim offers
+   > every path-based `fs` `*Sync` call, on the page and in a Worker (a forked child or a
+   > `worker_threads` thread) of a cross-origin isolated app. On the page it rides the same
+   > blocking channel `readFileSync` uses, one message per call; in a Worker it rides the
+   > shared-memory channel, and a Worker that blocks freezes no page. Both are a registered
+   > symbol on `orivon` (`Symbol.for('orivon.synchronous')`), so `orivon.fs` itself still has
+   > exactly one synchronous member and nothing was added to the contract. Every call is
+   > confined, quota-checked and attributed like its async twin. A call that holds a file
+   > handle across calls works in a Worker only, and a Worker with no `SharedArrayBuffer`
+   > refuses every one by name.
 3. **Handles, not ambient authority.** `connect()` returns a handle; later operations
    reference the handle. Capability is checked once, at acquisition. This avoids TOCTOU and
    avoids re-authorising on every call.

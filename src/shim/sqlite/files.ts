@@ -4,7 +4,7 @@
 
 import { refuseShim } from '../errors.js'
 import { confineSync } from '../fs/paths.js'
-import { guardedSync, syncFs, type SyncFileHandleWire } from '../fs/sync-orivon.js'
+import { guardedSync, syncFsWithOpen, type SyncFileHandleWire } from '../fs/sync-orivon.js'
 import { VIRTUAL_TMPDIR } from '../virtual-root.js'
 
 const API = 'sqlite.DatabaseSync'
@@ -46,9 +46,9 @@ function wrap (handle: SyncFileHandleWire): SqliteFile {
 
 /** The synchronous file calls, or a refusal that names why a database file cannot be opened here. `:memory:` never asks. */
 export function orivonSqliteFiles (): SqliteFiles {
-  let fs: ReturnType<typeof syncFs>
+  let fs: ReturnType<typeof syncFsWithOpen>
   try {
-    fs = syncFs(API)
+    fs = syncFsWithOpen(API)
   } catch {
     throw refuseShim(API, 'not-built',
       'a database file needs synchronous file calls, which work only in a forked child or a worker_threads.Worker ' +

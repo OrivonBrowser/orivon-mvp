@@ -34,7 +34,7 @@ import type {
 // ./fs-contracts.js (split out once `open`'s types pushed this file past
 // Rule 2's 500 lines) -- re-exported so no existing
 // `from '../broker-contracts.js'` import site needs to change.
-export type { BrokerFs, BrokerFsMethods, OpenedFile, PickPath, PickPathResult, RawFileStat } from './fs-contracts.js'
+export type { BrokerFs, BrokerFsMethods, BrokerFsSync, BrokerFsSyncMethods, OpenedFile, PickPath, PickPathResult, RawFileStat } from './fs-contracts.js'
 export type { BrokerWebMethods, WebContextHost } from './web-context-contracts.js'
 export type { BrokerEmbedMethods } from './embed-contracts.js'
 export type { BrokerSecretsMethods, Keychain } from './secrets-contracts.js'

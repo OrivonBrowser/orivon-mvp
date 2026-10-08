@@ -105,3 +105,37 @@ No contracts change: the Worker's synchronous twin (`Symbol.for('orivon.synchron
 `spawnSync`'s request rides the same channel under its own registered symbol
 (`Symbol.for('orivon.spawnSync')`) rather than through `src/contracts/`, exactly as this ADR's own
 mechanism (`ipcRenderer.sendSync`) never appeared in the contract either.
+
+## Amendment (2026-10-08)
+
+**On the page, every path-based `fs` `*Sync` call works too, over the same blocking
+`ipcRenderer.sendSync` channel `readFileSync` already used.** The owner decided it: Orivon's
+compatibility goal is Node, not the browser, and a ported Electron app that runs Node in its window
+(28 of the 80 apps in the compatibility survey) calls `mkdirSync`, `writeFileSync`, `copyFileSync` and
+`statSync` at startup. WebTorrent Desktop's first start runs `mkdirSync` twice, `copyFileSync` ten
+times and `readFileSync` five, and threw before it rendered. This reverses the page half of the
+2026-09-29 amendment, which kept the page to `readFileSync` and `existsSync`.
+
+The mechanism is the Worker's synchronous twin again, for `fs` only: the preload installs
+`Symbol.for('orivon.synchronous')` on the page's `orivon`, holding `stat`, `readFile`, `writeFile`,
+`mkdir`, `readdir`, `rm` and `rename`, and the shim's path-based `*Sync` calls run over it exactly as
+they do in a Worker. The twin is a registered symbol, not part of the contract. Each call is one
+`{ op, args }` message on `SYNC_CONTROL_CHANNEL`, answered by the main process synchronously and never
+behind an `await`.
+
+What does not change, and what the broker checks the same way as the async call: the grant and the path
+confinement (both sides of a `rename`), the per-origin rate limit shared with `CONTROL_CHANNEL`, the
+session and caller attribution (ADR-0045), the closed error codes, and `fs.quotaBytes`, which the
+synchronous `writeFile`, `rm` and `rename` charge and refund on the one per-origin ledger the async
+calls use (measuring the origin's files synchronously the first time it is needed). A synchronous
+write is held to the same 2 MiB cap as a synchronous read, because it blocks the main process just as
+long.
+
+What stays refused on the page, by name (`ERR_ORIVON_FS_SYNC_UNSUPPORTED`): every call that holds a file
+handle across calls (`openSync`, `readSync`, `writeSync`, `fstatSync`, `ftruncateSync`, `closeSync`, a
+non-`'w'` flag on `writeFileSync`, `appendFileSync`), since a blocking handle would need the main
+process to keep state for a caller that cannot yield; they work in a Worker of a cross-origin isolated
+app. Synchronous `net` stays excluded, for the reason this ADR gave.
+
+The cost is the one this ADR already weighed for `readFileSync`: the page blocks for the length of the
+call. It is now incurred by writes as well, bounded by the size cap and the rate limit.

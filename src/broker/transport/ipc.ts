@@ -37,7 +37,7 @@ import type { ControlLimiter } from './control-limiter.js'
 import { additionalProtectedRoots, notifyPickRefused, privateSessionGuard } from './picker-guard-wiring.js'
 import { createPickPath } from './picker-dialog.js'
 import { createSyncFsPolicy } from './sync-fs-policy.js'
-import { handleSyncFsReadRequest } from './sync-fs.js'
+import { handleSyncFsRequest } from './sync-fs.js'
 import type { SyncControlEvent, SyncFsPolicy } from './sync-fs.js'
 import { callerKeyFromSenderFrame, isAttributedSession } from '../policy/origin.js'
 import { fail } from '../errors.js'
@@ -317,10 +317,10 @@ export interface IpcMainOnLike {
   ): void
 }
 
-/** Thin wiring over `handleSyncFsReadRequest`, sharing `limiter` with `registerBrokerIpc` so this channel cannot be used to dodge CONTROL_CHANNEL's rate limit. */
+/** Thin wiring over `handleSyncFsRequest`, sharing `limiter` with `registerBrokerIpc` so this channel cannot be used to dodge CONTROL_CHANNEL's rate limit. */
 export function registerSyncFsIpc (ipc: IpcMainOnLike, policy: SyncFsPolicy, limiter?: RateLimiter, attributed?: (sender: unknown, origin: string) => boolean): void {
   ipc.on(SYNC_CONTROL_CHANNEL, (event, payload) => {
-    event.returnValue = handleSyncFsReadRequest(policy, event, payload, limiter, attributed)
+    event.returnValue = handleSyncFsRequest(policy, event, payload, limiter, attributed)
   })
 }
 

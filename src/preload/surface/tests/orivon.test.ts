@@ -697,7 +697,7 @@ describe('exposeOrivon -- fs.readFileSync (ADR-0016)', () => {
 
     expect(result).toBe(bytes)
     expect(invoke).not.toHaveBeenCalled()
-    expect(sendSync).toHaveBeenCalledWith('orivon:control-sync', { path: '/a/b.txt' })
+    expect(sendSync).toHaveBeenCalledWith('orivon:control-sync', { op: 'readFile', args: ['/a/b.txt'] })
   })
 
   it('throws an OrivonError-shaped object (not a rejection) on a denial, with no platformCode', () => {
@@ -730,7 +730,7 @@ describe('exposeOrivon -- fs.readFileSync (ADR-0016)', () => {
     } catch (e) {
       caught = e
     }
-    expect(sendSync).toHaveBeenCalledWith('orivon:control-sync', { path: '../../../etc/passwd' })
+    expect(sendSync).toHaveBeenCalledWith('orivon:control-sync', { op: 'readFile', args: ['../../../etc/passwd'] })
     expect(caught).toMatchObject({ name: 'OrivonError', code: 'denied' })
   })
 

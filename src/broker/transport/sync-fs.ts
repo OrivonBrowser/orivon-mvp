@@ -1,4 +1,5 @@
-// orivon.fs.readFileSync's main-process handler (ADR-0016, queue item 2.2).
+// The main-process handler for the page's synchronous fs calls (ADR-0016): readFileSync
+// and the path-based twin the page's shim calls over SYNC_CONTROL_CHANNEL.
 // Sibling of ./ipc.ts's handleControlRequest, but never behind an `await`:
 // ipcRenderer.sendSync blocks the renderer until this function returns, so
 // nothing on this path may suspend -- see ADR-0016 for why that block is the
@@ -22,6 +23,7 @@ import { callerKeyFromSenderFrame, isAttributedSession } from '../policy/origin.
 import type { SenderFrameLike } from '../policy/origin.js'
 import { mapIoError } from '../io-errors.js'
 import type { ResponseEnvelope } from '../../contracts/ipc.js'
+import type { BrokerFsSyncMethods } from '../fs-contracts.js'
 import type { RateLimiter } from './token-bucket.js'
 import { toFailureResponse } from './response-envelope.js'
 
@@ -37,11 +39,44 @@ export interface SyncControlEvent {
   }
 }
 
-export interface SyncFsReadRequest { readonly path: string }
+/** The seven names the page's synchronous twin has (`handle`-based calls are not among them). */
+export type SyncFsOp = 'stat' | 'readFile' | 'writeFile' | 'mkdir' | 'readdir' | 'rm' | 'rename'
 
-export function isSyncFsReadRequest (payload: unknown): payload is SyncFsReadRequest {
-  return typeof payload === 'object' && payload !== null &&
-    typeof (payload as { path?: unknown }).path === 'string'
+export interface SyncFsRequest {
+  readonly op: SyncFsOp
+  readonly args: readonly unknown[]
+}
+
+const SYNC_FS_OPS: ReadonlySet<string> = new Set<SyncFsOp>(['stat', 'readFile', 'writeFile', 'mkdir', 'readdir', 'rm', 'rename'])
+
+function isRecursiveOptions (value: unknown): boolean {
+  if (value === undefined) return true
+  return typeof value === 'object' && value !== null &&
+    ((value as { recursive?: unknown }).recursive === undefined || typeof (value as { recursive?: unknown }).recursive === 'boolean')
+}
+
+/** The shape of `args` each op takes, mirroring `ipc-validation.ts`'s per-method checks for the async channel. */
+function argsMatch (op: SyncFsOp, args: readonly unknown[]): boolean {
+  const isString = (value: unknown): boolean => typeof value === 'string'
+  switch (op) {
+    case 'stat':
+    case 'readFile':
+    case 'readdir':
+      return args.length === 1 && isString(args[0])
+    case 'writeFile':
+      return args.length === 2 && isString(args[0]) && args[1] instanceof Uint8Array
+    case 'mkdir':
+    case 'rm':
+      return args.length >= 1 && args.length <= 2 && isString(args[0]) && isRecursiveOptions(args[1])
+    case 'rename':
+      return args.length === 2 && isString(args[0]) && isString(args[1])
+  }
+}
+
+export function isSyncFsRequest (payload: unknown): payload is SyncFsRequest {
+  if (typeof payload !== 'object' || payload === null) return false
+  const { op, args } = payload as { op?: unknown, args?: unknown }
+  return typeof op === 'string' && SYNC_FS_OPS.has(op) && Array.isArray(args) && argsMatch(op as SyncFsOp, args)
 }
 
 /**
@@ -54,7 +89,7 @@ export function isSyncFsReadRequest (payload: unknown): payload is SyncFsReadReq
  * not guess whether a thrown value already carries the closed error enum.
  *
  * `readFileSync` is the raw disk read. It is expected to throw a RAW Node
- * error (ENOENT and friends); `handleSyncFsReadRequest` maps it through
+ * error (ENOENT and friends); `handleSyncFsRequest` maps it through
  * ../io-errors.ts's `mapIoError`, the same translation `../index.ts`'s
  * `runFsIo` applies to the async path, so an app sees the identical closed
  * code either way.
@@ -62,6 +97,12 @@ export function isSyncFsReadRequest (payload: unknown): payload is SyncFsReadReq
 export interface SyncFsPolicy {
   confine: (origin: string, path: string) => string
   readFileSync: (resolvedPath: string) => Uint8Array
+  /**
+   * Every other op, confined and quota-checked by the broker itself
+   * (`Broker.fs.sync`): refusals arrive as OrivonErrors, disk failures raw,
+   * mapped here like `readFileSync`'s.
+   */
+  sync: BrokerFsSyncMethods
 }
 
 /**
@@ -82,13 +123,13 @@ const NO_ID = ''
  * the same `limiter` instance, so this path cannot be used to dodge it),
  * then payload shape, then the policy decision itself.
  */
-export function handleSyncFsReadRequest (
+export function handleSyncFsRequest (
   policy: SyncFsPolicy,
   event: SyncControlEvent,
   payload: unknown,
   limiter?: RateLimiter,
   attributed?: (sender: unknown, origin: string) => boolean
-): ResponseEnvelope<Uint8Array> {
+): ResponseEnvelope<unknown> {
   const origin = callerKeyFromSenderFrame(event.senderFrame)
   if (origin === null) {
     return { id: NO_ID, ok: false, code: 'denied', message: 'no authenticated origin for this frame' }
@@ -104,20 +145,37 @@ export function handleSyncFsReadRequest (
     return { id: NO_ID, ok: false, code: 'limit', message: 'this origin is calling too frequently; wait and retry' }
   }
 
-  if (!isSyncFsReadRequest(payload)) {
-    return { id: NO_ID, ok: false, code: 'invalid', message: 'fs.readFileSync requires { path: string }' }
+  if (!isSyncFsRequest(payload)) {
+    return { id: NO_ID, ok: false, code: 'invalid', message: 'the synchronous fs channel requires { op, args } with a known op' }
   }
 
   try {
-    const resolved = policy.confine(origin, payload.path)
-    let bytes: Uint8Array
+    return { id: NO_ID, ok: true, result: runOp(policy, origin, payload) }
+  } catch (error) {
+    return toFailureResponse(NO_ID, error)
+  }
+}
+
+/** One op, run to completion. A raw Node error is mapped here; an OrivonError from the broker passes through `mapIoError` unchanged. */
+function runOp (policy: SyncFsPolicy, origin: string, { op, args }: SyncFsRequest): unknown {
+  if (op === 'readFile') {
+    const resolved = policy.confine(origin, args[0] as string)
     try {
-      bytes = policy.readFileSync(resolved)
+      return policy.readFileSync(resolved)
     } catch (error) {
       throw mapIoError(error, 'fs')
     }
-    return { id: NO_ID, ok: true, result: bytes }
+  }
+  try {
+    switch (op) {
+      case 'stat': return policy.sync.stat(origin, args[0] as string)
+      case 'readdir': return policy.sync.readdir(origin, args[0] as string)
+      case 'writeFile': policy.sync.writeFile(origin, args[0] as string, args[1] as Uint8Array); return undefined
+      case 'mkdir': policy.sync.mkdir(origin, args[0] as string, args[1] as { recursive?: boolean } | undefined); return undefined
+      case 'rm': policy.sync.rm(origin, args[0] as string, args[1] as { recursive?: boolean } | undefined); return undefined
+      case 'rename': policy.sync.rename(origin, args[0] as string, args[1] as string); return undefined
+    }
   } catch (error) {
-    return toFailureResponse(NO_ID, error)
+    throw mapIoError(error, 'fs')
   }
 }
