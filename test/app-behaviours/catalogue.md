@@ -45,6 +45,7 @@ Ports are named only where the compatibility pages already name them.
 | `wildcard-host-never-reaches-loopback` | A `*:*` grant does not reach a loopback or private address, even where something listens; the call is refused as `denied` | every app with `*:*` | The Lounge, ASGARDEX | [`e2e-app-broker-rules`](./e2e-app-broker-rules.test.ts) |
 | `reserved-port-needs-exact-pattern` | A `*:*` grant does not reach a reserved port such as 6667; only a pattern naming the port does | apps that dial IRC or other fixed services | The Lounge | [`e2e-app-broker-rules`](./e2e-app-broker-rules.test.ts) |
 | `concurrent-sockets-limit-holds` | With `concurrentSockets` set, the socket past the limit is refused as `limit`, and one opens again after a close | apps that open many sockets | The Lounge, ASGARDEX | [`e2e-app-broker-rules`](./e2e-app-broker-rules.test.ts) |
+| `file-calls-complete-beside-hung-dials` | While hundreds of `net.connect` dials hang with no answer, the app's ordinary `fs` calls still complete at once, because dials queue in the shim and leave the origin's operation slots free | peer-to-peer programs that start and abandon many connections while they write files | WebTorrent | [`e2e-node-gaps`](../node-runtime/e2e-node-gaps.test.ts) |
 | `tls-self-signed-refused-unless-opted-out` | `connectSecure` refuses a self-signed server as `unreachable` with a platform code, and reaches it, unauthorized, when the app passes `rejectUnauthorized: false` | apps for servers with their own certificates | The Lounge | [`e2e-app-broker-rules`](./e2e-app-broker-rules.test.ts) |
 | `local-listener-accepts-connections` | An app granted a local listener port accepts connections on `127.0.0.1` from other programs | apps that embed a server | The Lounge | [`e2e-http-server`](../node-runtime/e2e-http-server.test.ts) |
 | `second-listener-gets-eaddrinuse` | Listening on a port another program holds fails with `EADDRINUSE` | apps that detect a running copy of themselves | The Lounge | [`e2e-app-broker-rules`](./e2e-app-broker-rules.test.ts) |
@@ -59,6 +60,7 @@ Ports are named only where the compatibility pages already name them.
 | `atomic-write-by-rename` | Writing a temporary file and renaming it over an existing one leaves the new contents | libraries that save atomically | The Lounge | [`e2e-app-state-restart`](./e2e-app-state-restart.test.ts) |
 | `node-fs-writes-land-at-app-root` | Node-shaped `fs` calls, from the page, a forked child or a worker, write into the app's files and read back | ported Node programs | FreeTube, The Lounge | [`e2e-child-process`](../node-runtime/e2e-child-process.test.ts), [`e2e-sqlite`](../node-runtime/e2e-sqlite.test.ts) |
 | `page-sync-fs-writes-land` | The page can call Node's synchronous path-based `fs` (`mkdirSync`, `writeFileSync`, `copyFileSync`, `statSync`, `readdirSync`, `renameSync`, `readFileSync`, `rmSync`): what they write is what `orivon.fs` and `fs.promises` read back, a write past the declared quota is refused as `limit`, and a call that holds a file handle (`openSync`) is refused by name | ported Node programs that run Node in their window | WebTorrent | [`e2e-page-sync-fs`](../node-runtime/e2e-page-sync-fs.test.ts) |
+| `fs-open-create-in-place` | `fs.open` with the numeric flags `O_RDWR` and `O_CREAT` together (no `O_TRUNC`, `O_APPEND` or `O_EXCL`) creates the file when it is missing and, when it exists, opens it with its bytes kept, so a write at an offset changes only those bytes | storage libraries that open every file this way | WebTorrent | [`e2e-node-gaps`](../node-runtime/e2e-node-gaps.test.ts) |
 | `indexeddb-survives-restart` | Data an app writes to IndexedDB is there after the browser restarts on the same profile | web apps with local databases | Element, FreeTube | [`e2e-app-state-restart`](./e2e-app-state-restart.test.ts) |
 | `localstorage-survives-restart` | `localStorage` values survive a restart | web apps with settings | Element, AirGap Vault | [`e2e-app-state-restart`](./e2e-app-state-restart.test.ts) |
 | `non-extractable-cryptokey-survives-restart` | A non-extractable `CryptoKey` stored in IndexedDB still decrypts after a restart | apps that wrap secrets with a stored key | Element | [`e2e-app-state-restart`](./e2e-app-state-restart.test.ts) |
@@ -93,6 +95,7 @@ Ports are named only where the compatibility pages already name them.
 | `fork-runs-module-in-worker` | `child_process.fork` of a bundled module runs it in a Worker with its own `fs`, and its output and exit come back | ported Node servers | The Lounge | [`e2e-child-process`](../node-runtime/e2e-child-process.test.ts) |
 | `forked-child-ends-with-last-page` | A forked child outlives the tab that started it and ends when the app's last page closes | ported Node servers | The Lounge | [`e2e-child-host`](../node-runtime/e2e-child-host.test.ts) |
 | `node-sqlite-in-worker` | `node:sqlite` in a forked child opens a real database file in the app's files | apps with an embedded database | The Lounge | [`e2e-sqlite`](../node-runtime/e2e-sqlite.test.ts) |
+| `node-constants-and-exec-path` | A bundled dependency can `require('constants')` and read the open flags and errno numbers from it, and `path.dirname(process.execPath)` works: `process.execPath` is a string | dependencies that read these as they load | WebTorrent | [`e2e-node-gaps`](../node-runtime/e2e-node-gaps.test.ts) |
 | `webview-shows-local-pattern` | An app granted `web.embed` for a loopback pattern shows that page in a `<webview>` and talks to it | apps that serve their own UI | The Lounge | [`e2e-embed-local`](../capabilities/e2e-embed-local.test.ts) |
 | `webview-popup-reaches-the-app` | A window request or a download from a page shown in a `<webview>` reaches the app as one bubbling event, and nothing opens and no file is written until the app decides | apps that embed a site | The Lounge | [`e2e-embed-events`](../capabilities/e2e-embed-events.test.ts) |
 | `web-context-open-evaluate-close` | `orivon.web.openContext` opens a hidden page on a granted origin, `evaluate` runs in it, and `close` ends it | apps that need a site's own scripts | FreeTube | [`e2e-web-context`](../capabilities/e2e-web-context.test.ts) |
@@ -120,14 +123,14 @@ has a line, so a capability cannot land without that decision.
 
 | Capability | Proven by rows |
 |---|---|
-| `tcp.connect` | `tcp-connect-to-granted-loopback-port`, `wildcard-host-never-reaches-loopback`, `reserved-port-needs-exact-pattern`, `concurrent-sockets-limit-holds` |
+| `tcp.connect` | `tcp-connect-to-granted-loopback-port`, `wildcard-host-never-reaches-loopback`, `reserved-port-needs-exact-pattern`, `concurrent-sockets-limit-holds`, `file-calls-complete-beside-hung-dials` |
 | `tcp.listen.local` | `local-listener-accepts-connections`, `second-listener-gets-eaddrinuse` |
 | `tcp.listen.network` | not covered: a network-scope listener is reachable from the local network, and the end-to-end suite is loopback only |
 | `udp.bind.local` | not covered: no ported app relies on UDP yet; `e2e-udp-capability` proves the capability itself, and a row is added when a port needs it |
 | `udp.bind.network` | not covered: as `udp.bind.local`, and reachable from the local network |
 | `udp.send` | not covered: as `udp.bind.local` |
 | `https.connect` | `routed-fetch-reaches-granted-hosts`, `tls-self-signed-refused-unless-opted-out` |
-| `fs` | `fs-confined-to-app-root`, `fs-quota-refuses-past-limit`, `app-files-survive-restart`, `atomic-write-by-rename`, `node-fs-writes-land-at-app-root`, `page-sync-fs-writes-land`, `local-file-grant` |
+| `fs` | `fs-confined-to-app-root`, `fs-quota-refuses-past-limit`, `app-files-survive-restart`, `atomic-write-by-rename`, `node-fs-writes-land-at-app-root`, `page-sync-fs-writes-land`, `fs-open-create-in-place`, `local-file-grant` |
 | `id` | not covered: no ported app uses `orivon.id` yet; `e2e-id-capability` proves the capability itself |
 | `web.context` | `web-context-open-evaluate-close` |
 | `web.embed` | `webview-shows-local-pattern`, `webview-popup-reaches-the-app` |
