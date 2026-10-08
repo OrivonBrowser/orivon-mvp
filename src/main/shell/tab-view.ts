@@ -59,6 +59,12 @@ export const MAX_TABS = 100
  * 999 (the preload's). Same reason as MAX_TABS for living here. */
 export const EXIT_FULLSCREEN_WORLD_ID = 1001
 
+/** Blink features an app tab turns on, as Electron apps do in their own window's
+ * webPreferences (WebTorrent Desktop's player reads `videoTracks.length` and
+ * `audioTracks.length` on `loadedmetadata`). `AudioVideoTracks` adds the
+ * standard `audioTracks` / `videoTracks` lists to media elements. */
+const APP_TAB_BLINK_FEATURES = 'AudioVideoTracks'
+
 /** Every tab's webPreferences, with the standard, non-negotiable ones
  * (contextIsolation/sandbox/no Node integration/webSecurity) -- shared by
  * makeTabView() and a popup's own, so no tab can drift from them (Rule 3).
@@ -66,12 +72,14 @@ export const EXIT_FULLSCREEN_WORLD_ID = 1001
  * `webviewTag` only for a registered app's tab (ADR-0039): the element is
  * inert everywhere else, and even there every attach is decided by
  * `../embed/embed-host.ts` against the live `web.embed` grant, so turning
- * the tag on grants nothing by itself.
+ * the tag on grants nothing by itself. An app tab also gets `AudioVideoTracks`
+ * (above); an ordinary site's tab keeps Chromium's default surface.
  *
  * Neither `disableDialogs` nor `nodeIntegrationInSubFrames` is set: a page's
  * `alert` and `confirm` are answered by `./page-dialogs.ts` from Electron's own
  * dialog event, which Chromium raises per frame once its own checks pass. */
 export function tabWebPreferences (preload: string, partition: string | undefined, additionalArguments?: string[]): WebPreferences {
+  const appTab = additionalArguments?.includes(APP_TAB_FLAG) === true
   return {
     preload,
     ...(additionalArguments !== undefined ? { additionalArguments } : {}),
@@ -80,7 +88,8 @@ export function tabWebPreferences (preload: string, partition: string | undefine
     sandbox: true,
     nodeIntegration: false,
     webSecurity: true,
-    webviewTag: additionalArguments?.includes(APP_TAB_FLAG) === true
+    webviewTag: appTab,
+    ...(appTab ? { enableBlinkFeatures: APP_TAB_BLINK_FEATURES } : {})
   }
 }
 
