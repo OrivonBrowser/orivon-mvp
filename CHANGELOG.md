@@ -18,6 +18,11 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- **`electron-clipboard-reads-the-pasted-text`**, **`electron-shell-open-external-opens-a-tab`** and
+  **`window-open-external-address-asks`**: the `electron` shim's `clipboard.writeText`, `clipboard.readText` (the text of
+  a paste in progress, `''` otherwise) and `shell.openExternal` now work instead of refusing, and a `window.open` of a
+  `mailto:` or `magnet:` address asks the person instead of leaving a blank tab. Apps that bridged these by hand: use
+  them directly. Recheck: webtorrent.
 - **`page-sync-fs-writes-land`**: the page's `fs.mkdirSync`, `writeFileSync`, `copyFileSync`, `statSync`, `readdirSync`,
   `renameSync` and `rmSync` now work instead of throwing; `openSync` and its family still refuse on the page. Apps that
   worked around the refusal: use them directly. Recheck: webtorrent.
