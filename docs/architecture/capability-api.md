@@ -295,7 +295,9 @@ orivon.app.requestSchemeHandler(s)   // => Promise<boolean>  (asks to be the def
 orivon.app.isSchemeHandler(s)        // => Promise<boolean>
 
 // --- net ---
-orivon.net.connect({ host, port })       // => Promise<TcpSocket>
+orivon.net.connect({ host, port, signal? }) // => Promise<TcpSocket>
+                                          //   aborting `signal` before it settles abandons the
+                                          //   dial and rejects 'closed' (ADR-0071); connectSecure too
 orivon.net.connectSecure({ host, port, ...tls }) // => Promise<SecureTcpSocket>  TLS terminated
                                           //   in the broker (ADR-0017) under the app's own
                                           //   Node TLS options; connect()'s handle plus the
