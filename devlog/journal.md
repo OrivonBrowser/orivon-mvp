@@ -77,6 +77,9 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Ledger Wallet desktop ported and tested against an emulated Ledger (Speculos plus a virtual USB device); CI now tests real HID devices.
 - WebTorrent Desktop now runs as an Orivon app: streams torrents from real peers in its own player, published on IPFS and listed in Explore.
 - Porting it closed six Orivon gaps: synchronous file writes, local media streaming, posters by path, clipboard paste, media tracks, and shim fixes.
+- `magnet:` links now open in an app that declares them, after asking once; WebTorrent can ask to become the default torrent app.
+- Apps now see a Node-shaped `process`, so bundled libraries take their Node paths; every port was rechecked against it.
+- A socket an app destroys while still connecting now drops its dial at once, as in Node, freeing room for the next peer.
 - Live sessions: agents here drive Orivon step by step on real Windows, macOS and Linux runners through a token-guarded Cloudflare tunnel.
 
 ### In my head
