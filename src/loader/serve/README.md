@@ -54,6 +54,13 @@ caller whose session loads no extension, a granted local file (`../../main/local
   included, and `fetchThirdParty` re-authorises it, still refusing loopback and private
   addresses (measured). A native WebSocket is the one thing the handler cannot re-check, and
   `https:` does not admit `wss:` (measured, `test/app-loading/e2e-served-csp.test.ts`).
+- **A `tcp.listen` grant adds `http://localhost:*` and `http://127.0.0.1:*` to
+  `img-src` and `media-src`, and to nothing else** (`ownListenerMedia`, ADR-0069; no `[::1]`, which
+  CSP's grammar cannot express and Chromium drops with a warning, measured). An app that runs
+  its own HTTP server in its page points its `<video>` at it. CSP cannot name the port the
+  listener was given, so the policy admits any port and `../../main/sessions/own-listener-media-gate.ts`
+  cancels a request to a loopback port the page's own listeners do not hold. `fetch` and sockets
+  already go through the broker, and `frame-src` is `web.embed`'s, so neither is widened.
 - **No `form-action`.** Restricting it would also refuse a form-post sign-in's redirects, and
   would bound nothing: top-level navigation is not governed by CSP (A42).
 - **`object-src 'none'`.** `default-src 'self'` alone still admits a same-origin

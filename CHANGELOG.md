@@ -23,6 +23,10 @@ public surface of `src/contracts/` (named `contracts/<file>`).
   a paste in progress, `''` otherwise) and `shell.openExternal` now work instead of refusing, and a `window.open` of a
   `mailto:` or `magnet:` address asks the person instead of leaving a blank tab. Apps that bridged these by hand: use
   them directly. Recheck: webtorrent.
+- **`page-media-from-own-listener`**: an app that holds a `tcp.listen` grant may point `<img>`, `<audio>` and `<video>`
+  at `http://localhost:<port>`, `127.0.0.1` or `[::1]` when `<port>` is one its own listener holds, which Node and
+  Electron allow and the page's policy refused; every other loopback port stays refused for images and media. Apps
+  that run their own HTTP server for their player need no change. Recheck: `webtorrent`.
 - **`page-sync-fs-writes-land`**: the page's `fs.mkdirSync`, `writeFileSync`, `copyFileSync`, `statSync`, `readdirSync`,
   `renameSync` and `rmSync` now work instead of throwing; `openSync` and its family still refuse on the page. Apps that
   worked around the refusal: use them directly. Recheck: webtorrent.

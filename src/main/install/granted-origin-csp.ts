@@ -143,7 +143,7 @@ export function defaultSessionGrantedOriginCsp (broker: Broker): HeadersReceived
     // A manifest that cannot be read means "not isolated", never a document
     // without its policy.
     const [csp, isolated] = await Promise.all([
-      liveCspHeaderFor(broker, origin),
+      liveCspHeaderFor(broker, origin, { ownListenerMedia: true }),
       documentOrigin !== null ? broker.app.manifest(origin).then((manifest) => manifest.crossOriginIsolated === true).catch(() => false) : Promise.resolve(false)
     ])
     const withCsp = withAppendedCsp(current.responseHeaders, csp)
