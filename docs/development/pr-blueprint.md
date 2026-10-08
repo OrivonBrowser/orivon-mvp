@@ -157,8 +157,8 @@ worth questioning.
 
 The section pairs with the `ux:` label, so the answer is also filterable.
 
-**Why it is mandatory.** The metric this project is judged by is **100 active users at
-25 h/month** ([`scope.md`](../scope.md)), not lines of code. A section that forces the
+**Why it is mandatory.** The metric this project is judged by is active use by real people (the
+success metric), not lines of code. A section that forces the
 question on every change is cheap; noticing six months late that nothing shipped touched anybody
 is not. The point is that somebody looked, and answered.
 
@@ -219,11 +219,12 @@ Four short lines. This is the block that makes parallel work safe, so it stays t
 Mark anything provisional as provisional. Presenting an unconfirmed call as settled is how a
 project ends up defending a choice nobody made.
 
-If the change files anything in [`open-questions.md`](../open-questions.md), in its fixed
-shape, or resolves an entry into [`resolved-questions.md`](../decisions/resolved-questions.md),
+A contradiction you can settle from the repository is fixed and named here, not filed. If the
+change files anything in [`open-questions.md`](../open-questions.md), in its fixed
+shape (only when truly blocked on the owner), or resolves an entry into [`resolved-questions.md`](../decisions/resolved-questions.md),
 **list the A-numbers here**. Take them from `main`'s highest, not your branch's: on 2026-08-27 four
 branches each claimed A15, and a merged renumber left `origin.ts` citing a stranger's question.
-[`parallel-work.md`](parallel-work.md) §Open-question numbers has the one-liner that prevents it.
+[`parallel-work.md`](parallel-work.md) section Open-question numbers has the one-liner that prevents it.
 Taking the number from `main`'s highest reduces the collision, but two branches opened at the
 same time can still both take the same next number, and `npm run check:questions` catches it in CI;
 the fix is to renumber whichever branch merges later and move its citations with it.

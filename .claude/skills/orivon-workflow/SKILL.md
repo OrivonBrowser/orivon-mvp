@@ -45,8 +45,8 @@ Two practices with no tool behind them:
 3. **The readability check.** Give the owner the one document a newcomer would hit at that
    point and ask only: *"Read this cold. Where is the first place you got lost, or had to
    guess?"* Record the answer in `docs/development/readability-log.md` (method in its
-   §The protocol). "Nothing confused me" is a result, and it is logged.
-4. `scope.md` records what landed.
+   section The protocol). "Nothing confused me" is a result, and it is logged.
+4. `docs/features.md` records what landed, and `docs/roadmap.md` moves the item out of Expected next.
 
 ## At the end of a notable session
 
@@ -55,7 +55,13 @@ to: append one bullet to the current week of `devlog/journal.md`, **Done / resul
 outcomes, **In my head** for thinking. At most 25 words; `npm run check:devlog` checks it.
 Skip routine sessions.
 
-## Opening and editing a PR
+## Landing a session, and opening a PR
+
+A session ends by merging its branch into local `main` at the root checkout, only when that tree
+is clean (CLAUDE.md, section Syncing `main`). It does not push local `main` and does not open the
+day PR: the routine in `.claude/commands/ship-day.md` does, at 13:00 and 21:00. A session opens a
+PR itself only for a change to `src/contracts/` or `src/shared/`, alone, from a branch based on
+`origin/main`, and for a repair the routine cannot make. The recipes below apply to both.
 
 - `gh pr create --title ... --body-file <file>`. `--body` bypasses the template silently;
   `--label` on create fails with a GraphQL "Projects (classic)" error.
@@ -73,8 +79,8 @@ Skip routine sessions.
 ## Context that rarely changes what you do
 
 - `docs/inventory.md` indexes all prior material; do not re-crawl the filesystem for it.
-- `<prior-mvp>` is a failed prior MVP: a visual reference for its GUI, never a baseline.
-- The vision corpus at `<vision-corpus>` is canonical and public as orivon-docs. Summarise and
-  link; never copy it here.
+- `<prior-mvp>` is an earlier prototype that failed: a visual reference for its GUI, never a baseline.
+- The vision corpus at `<vision-corpus>` (orivon-docs) is outdated. Verify anything derived from
+  it with the owner before treating it as true, and never copy it here.
 - ADRs are numbered in sequence and never renumbered once on `main`. Two branches can take the
   same number without a git conflict; the one that merges later renumbers its own.

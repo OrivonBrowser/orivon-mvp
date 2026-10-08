@@ -7,20 +7,22 @@ holds the tooling table, the review shape, the build-step-end checklist and the 
 boundary, and again before calling such a change done**: it says which QA to run, how to read a
 failure and a screenshot, and why a check is never weakened to pass. Compiling is not done.
 
-Status and roadmap: `README.md`. What works today: `docs/planning/compatibility-matrix.md`.
+Status: `README.md`. What is next: `docs/roadmap.md`. What ships: `docs/features.md`. What works
+today: `docs/planning/compatibility-matrix.md`.
 
 ## Read before
 
 | Before | Read |
 |---|---|
 | Proposing a design | `ARCHITECTURE.md` |
+| Choosing what to build | `docs/roadmap.md` (Now, Expected next, Later) |
 | Writing against the API | `src/contracts/`: the product surface in eight files |
 | Editing in a directory | its `README.md`: what it may depend on and must never import |
-| Writing code | `docs/development/code-guidelines.md` §Rules, nothing else |
+| Writing code | `docs/development/code-guidelines.md` section Rules, nothing else |
 | Adding a test or a `check:*` guard | `test/README.md` (where a spec goes), then `docs/development/testing.md` |
 | **Adding or changing a capability or an `orivon.*` member, porting an app, or fixing a bug an app reported** | `test/app-behaviours/README.md`: a catalogue row and an e2e spec are required; CI fails a capability kind with no catalogue line |
 | Changing UI, a flow, or broker, IPC, preload, natives, filesystem or network code | the `orivon-qa` skill |
-| Starting a build step, or syncing `main` | `docs/development/parallel-work.md` §If you are an agent |
+| Starting a build step, or syncing `main` | `docs/development/parallel-work.md` section If you are an agent |
 | Opening a PR | `docs/development/pr-blueprint.md` |
 | Asking why, or who decided | `docs/decisions/decision-log.md` |
 | Hunting for a document | `docs/README.md` |
@@ -35,7 +37,8 @@ shortcut in `src/main/` costs a refactor of code tied to Electron; a shortcut in
 
 ## Session budget
 
-- One PR per session. A new task is a new session; never resume a session across days.
+- One branch per session, merged into local `main` at its end (section Syncing `main`). A new task
+  is a new session; never resume a session across days.
 - Compact when the task changes, with a one-line summary of what is done and what is next.
 - Explore with an `Explore` agent, not `cat`. Never print a file over 300 lines: use `sed -n`
   ranges or `grep -n`.
@@ -55,15 +58,16 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
    alternative may stay as a reason, never as a story. Mark an unconfirmed call *provisional*
    and say what would settle it. Exempt: `CHANGELOG.md`, `docs/decisions/`,
    `docs/open-questions.md`, the readability and review-coverage logs, `devlog/`, and
-   `docs/planning/` except `build-plan.md` and `compatibility-matrix.md`.
-3. **Surface contradictions, never smooth them over.** File one in `docs/open-questions.md` in
-   its fixed shape (12 lines at most); a resolved entry becomes one row in
-   `docs/decisions/resolved-questions.md`. A page found wrong is rewritten to be right, never
-   given a correction block, and the change earns a decision-log row.
-4. **Build a feature when a need calls for it**: a real app, a user, or the success metric (100
-   active users in EU/USA, active = 25 h/month). Name the need first; `docs/scope.md` records
-   what lands. When scope is why you stop, say so plainly.
-5. **Label every component durable or tied to Electron** (`ARCHITECTURE.md` §Where things live).
+   `docs/planning/` except `compatibility-matrix.md`.
+3. **Surface contradictions, never smooth them over.** One you can settle from the repository is
+   fixed in place and named in the PR. One that blocks you, because only the owner can answer it,
+   is filed in `docs/open-questions.md` in its fixed shape (12 lines at most); a resolved entry
+   becomes one row in `docs/decisions/resolved-questions.md`. A page found wrong is rewritten to
+   be right, never given a correction block.
+4. **Build a feature when a need calls for it**: a real app, a user, a roadmap item, or the
+   success metric (its numbers are kept in `CLAUDE.local.md`). Name the need first;
+   `docs/features.md` records what lands. When scope is why you stop, say so plainly.
+5. **Label every component durable or tied to Electron** (`ARCHITECTURE.md` section Where things live).
 6. **Prefer mature components.** Build, use a library, fork, embed, or define an interface; do
    not reinvent without a written reason.
 7. **Don't over-document trivia**, and don't create abstractions for elegance alone.
@@ -71,8 +75,8 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
    macOS. JavaScript and WebAssembly pass. This bounds this repository's `npm install`, never
    the apps Orivon runs (ADR-0036).
 9. **Say which scope a sentence bounds**: this build, this repository, or the project. Never
-   state a boundary of this version as permanent, or an aspiration as a plan here. Worked
-   examples: `docs/development/readability-log.md` §What these rounds changed.
+   state a boundary of this build as permanent, or an aspiration as a plan here. Worked
+   examples: `docs/development/readability-log.md` section What these rounds changed.
 10. **Remove worktrees once their work is on `main`**: `node scripts/worktree-gc.mjs --remove`.
 11. **A rule the owner states twice goes into the repository in the same session**: a hook, a
     guard or a line here, never only memory. Memory is keyed to the checkout path and stops
@@ -85,11 +89,17 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
 17. **Fix long-term AI optimization issues**, if you find any issue you incur as AI and wastes too many tokens, ensure that the future AI's doesn't fall for the same issue as well, apply a long term automated or simpler solution to that problem or procedure
 18. **Take the fast lane for a small change**: about ten code files or fewer, nothing in
     `src/contracts/`, `src/shared/`, the broker, preload, IPC or consent code, and no new
-    dependency. The session that plans it implements it: no plan file, no subagent. A decision
-    gets a decision-log row, an ADR only when Rule 1 applies, and no other page is edited just to
-    cite it. Locally run `npm run test:changed` and the e2e specs `select-e2e` names; CI runs both
+    dependency. The session that plans it implements it: no plan file, no subagent. A decision-log
+    row only for an owner decision or a reversal, an ADR only when Rule 1 applies, and no other
+    page is edited just to cite it. Locally run `npm run test:changed` and the e2e specs `select-e2e` names; CI runs both
     whole suites. Prove a new test fails without the change only for a bug fix or a security
     check. `node scripts/ai/session-report.mjs` shows where a session's time went.
+19. **Node-shaped APIs behave exactly like Node wherever possible**: the same results and error
+    codes (`writeFile` into a missing parent fails with ENOENT), so a ported app needs no change.
+    A deliberate difference is documented where the API lives.
+20. **A gap a port finds is fixed generically in Orivon, never patched in the port**; the port
+    stays upstream plus a bridge. Tests are generic and named after the behaviour; the app that
+    inspired one is named only in a code comment.
 
 ## Commands
 
@@ -97,23 +107,33 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
 |---|---|
 | `npm run typecheck` | After any `.ts` change; it covers `test/` as well as `src/` |
 | `npm run test:changed` | The unit tests your change can affect, against `origin/main` (`-- --base <ref>`; `-- --all` for everything). A bare `npm test` or `npx vitest run` is blocked: CI runs the whole suite on every PR |
-| `npm run check:<name>` | The seventeen guards in `docs/development/testing.md` §Guards; CI runs each |
+| `npm run check:<name>` | The seventeen guards in `docs/development/testing.md` section Guards; CI runs each |
 | `node scripts/ci/select-e2e.mjs --base origin/main` | Prints the e2e areas and specs CI would run for your change (`--explain` says why). Run the named specs of them locally, never the whole suite; a bare `npm run test:e2e` is blocked |
 | `npm run smoke` | The real shell launches and works. Read its JSON failure list, not the exit code |
 | `npm run test:e2e` | The Electron end-to-end suite; a failed spec leaves its evidence in `qa-artifacts/latest/` |
 | `npm run qa`, `qa:visual`, `qa:report` | Before calling a UI, flow or boundary change done; `orivon-qa` says which, and how to read the screenshots |
 | `npm run dev` | Humans only: it opens a real window |
 
-## Syncing `main`, and PR cadence
+## Syncing `main`, and the day PR
 
-- **Never a bare `git pull`.** Clean tree: `git merge --ff-only origin/main` without asking;
-  never a merge commit, never `--force`. Dirty tree: report, do not act; name the files dirty
-  locally and changed upstream, and stash only when told to.
-- **Open one or two PRs per working day, not one per feature.** A second only when the day
-  splits into two unrelated themes; `stream/` branches converge into the day's PR. The
-  carve-out: a change to `src/contracts/` or `src/shared/` goes alone and merges first. A day
-  PR is harder to revert and bisect, so each `## Changes` entry must be findable on its own and
-  `## How it was verified` covers the whole day.
+Local `main`, in the root checkout, is where the owner tests every session's work together. It
+may hold work GitHub does not have yet.
+
+- **Never a bare `git pull`, never `--force`, never push local `main` yourself.** Clean tree:
+  `git merge origin/main` without asking (a merge commit is allowed, because local `main` may
+  hold unshipped work). Dirty tree: report, do not act; name the files dirty locally and changed
+  upstream, and stash only when told to.
+- **A session ends by landing its branch on local `main`.** Finish the work and its checks, bring
+  the branch level with local `main` (rebase or merge it), then merge the branch into local `main`
+  at the root checkout, only when that tree is clean. When it is dirty, leave the branch unmerged
+  and say so, naming the dirty files, in the last lines of the report. Rule 14's merge is this one.
+- **The day PR is not a session's job.** A routine (`.claude/commands/ship-day.md`) runs at 13:00
+  and 21:00, ships local `main` to GitHub as the day's PR and merges it when green (Rule 12). Each
+  `## Changes` entry must stay findable on its own and `## How it was verified` covers the whole
+  day, because a day PR is harder to revert and bisect.
+- **The carve-out:** a change to `src/contracts/` or `src/shared/` goes alone as its own PR, from a
+  branch based on `origin/main`, and merges first; the session then merges `origin/main` into local
+  `main`.
 
 ## Local quirks
 
@@ -131,7 +151,7 @@ no notification, no sound (`test/support/launch-electron.mjs` silences every lau
 
 ## Conventions
 
-- Docs are Markdown, `kebab-case.md`, ASCII prose (`§` is open, A91). Code is TypeScript only.
+- Docs are Markdown, `kebab-case.md`, ASCII prose: write "section", never the section sign. Code is TypeScript only.
 - Ported third-party apps live in `../orivon-ports`, and nothing here may depend on that
   checkout; the apps this repository's own tests serve live under `test/apps/`.
 

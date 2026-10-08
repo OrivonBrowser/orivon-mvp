@@ -3,9 +3,8 @@
 ## Read this first, because the test suite looks neglected and is not
 
 There are no coverage targets and a deliberately small number of unit tests, and the UI is
-covered by an end-to-end suite that drives the real shell (§Visual QA and failure evidence). The
-small unit count is a decision, not a backlog ([`build-plan.md`](../planning/build-plan.md)
-§Testing).
+covered by an end-to-end suite that drives the real shell (section Visual QA and failure evidence).
+The small unit count is a decision, not a backlog.
 
 The reasoning: this is a browser built by one person, and at that scale broad test suites
 cost more than they return: they are written once, then maintained forever, against code that

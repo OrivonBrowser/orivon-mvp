@@ -268,7 +268,7 @@ and the others go stale while still reading as true.
   whether it is tied to Electron, and the traps a reader would otherwise walk into. It links an
   ADR rather than restating it, and does not walk through the files one by one.
 - **A change is recorded once per audience**: the page it governs states the behaviour, the
-  decision log says who decided it, `CHANGELOG.md` gives it at most three lines, and the PR
+  decision log says who decided it (owner decisions and reversals only), `CHANGELOG.md` gives it at most three lines, and the PR
   body carries the rest.
 
 ## Rule 5: Cost follows change and use

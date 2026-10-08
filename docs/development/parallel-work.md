@@ -3,14 +3,14 @@
 How several people, or several agent sessions, work in this repository at the same time
 without corrupting each other's work.
 
-If you are working alone and sequentially, you need only §The merge protocol. The rest costs
+If you are working alone and sequentially, you need only section The merge protocol. The rest costs
 you nothing.
 
 ---
 
 ## Why parallelism has to be manufactured
 
-[`build-plan.md`](../planning/build-plan.md) is dependency-ordered:
+The build is dependency-ordered:
 
 ```
 spike -> shell -> broker -> shim -> app loader -> Node.js apps -> ENS and IPFS
@@ -258,7 +258,8 @@ loader, shim) takes the `ci:e2e-full` label, so the whole suite runs before it m
    `stream/<name>`.
 2. **Work.** Stay in your paths. Commit often; a small PR is reviewed in seconds and a large one
    is not reviewed at all.
-3. **Rebase on `main`** before opening the PR, and run the full gate locally:
+3. **Bring the branch level with `main`** (rebase it, or merge `main` in) before opening the PR,
+   and run the full gate locally:
    ```bash
    npm run typecheck && npm run test:changed && npm run check:natives && npm run check:contracts
    npm run smoke     # only if you touched src/main/
@@ -270,8 +271,11 @@ loader, shim) takes the `ci:e2e-full` label, so the whole suite runs before it m
    another. **Its labels are how you see which streams are open at once**.
 5. **CI must be green**: `check`, and the e2e shards it selected. A shard that fails on a spec your change
    cannot reach is a flake: rerun that shard and say so in the PR.
-6. **The owner merges.** Branch protection is `strict`, so merging PR N+1 always needs a fresh
-   merge of `main` into its branch first, even when it touches none of PR N's files.
+6. **Merge once green.** The author merges its own PR once `check` and the selected e2e shards
+   pass and there is no conflict ([`CLAUDE.md`](../../CLAUDE.md) Rules 12 and 14); the owner
+   decides only when the choice is critical. Branch protection is `strict`, so merging PR N+1
+   always needs a fresh merge of `main` into its branch first, even when it touches none of PR
+   N's files.
 
 The pull requests are also the public record of the work. Someone arriving in six months reads
 them to find out not just what was built, but what was tried and why it is shaped this way.
@@ -279,6 +283,11 @@ them to find out not just what was built, but what was tried and why it is shape
 ---
 
 ## Syncing `main` with `origin`
+
+Local `main`, in the root checkout, is where the owner tests every session's work together, so
+it may hold commits GitHub does not have yet. Sessions merge their finished branches into it;
+nobody pushes it. A routine (`.claude/commands/ship-day.md`) runs at 13:00 and 21:00, ships local
+`main` to GitHub as the day PR and merges it when green.
 
 Never a bare `git pull`: it refuses to run on a dirty tree, and the obvious recoveries
 (`git checkout -- .`, a badly resolved rebase) destroy the uncommitted work silently. Check first:
@@ -288,12 +297,13 @@ git fetch origin --prune
 git rev-list --left-right --count main...origin/main
 ```
 
-- **Clean tree: sync, without asking first.** `git merge --ff-only origin/main`. Never a merge
-  commit, never `--force`.
+- **Clean tree: sync, without asking first.** `git merge origin/main`. A merge commit is allowed,
+  because local `main` may hold unshipped work; `--ff-only` is enough when it holds none. Never
+  `--force`, and never push local `main` yourself.
 - **Dirty tree: report, do not act.** Say which files are dirty locally **and** changed upstream;
   that is where conflicts come from. If told to go ahead, back the tree up outside the repository
   first: `git diff > <scratch>/uncommitted.patch` **plus** a tarball, since no stash captures
-  untracked files. Then stash, `git merge --ff-only origin/main`, `git stash pop`. A conflict
+  untracked files. Then stash, `git merge origin/main`, `git stash pop`. A conflict
   keeps the stash, so nothing is lost.
 
 Afterwards run `npm run typecheck` and `npm run check:contracts`, plus `npm install` if
@@ -307,18 +317,22 @@ semantically stale on its new base.
 Read this page before starting any build step. Then:
 
 - Work in a worktree on `stream/<name>`, with `node_modules`; base it on the branch you are
-  stacked on, if any (§1).
+  stacked on, if any (rule 1 above).
 - Stay inside your owned paths.
-- **Open one or two PRs per working day, not one per feature.**
-  This applies to AI sessions only. An outside contributor sending a single change
-  still opens a single PR, which is why §The merge protocol above is unchanged. The reason is
-  volume: continuous AI work merged 423 PRs over 17 days here, about 25 a day, and nobody
-  reviews that. Branches still converge rather than each opening their own.
-- Never modify `src/contracts/` in the same PR as an implementation. **This holds regardless of
-  cadence**: it is the one carve-out, so a day that touches contracts gets an extra PR.
+- **End the session by landing the branch on local `main`**, not by opening a PR. Bring the branch
+  level with local `main`, then merge it into local `main` at the root checkout, only when that
+  tree is clean; when it is dirty, leave the branch unmerged and say so, naming the dirty files.
+  The 13:00 and 21:00 routine turns local `main` into one or two PRs a day. This applies to AI
+  sessions only. An outside contributor sending a single change still opens a single PR, which is
+  why section The merge protocol above is unchanged. The reason is volume: continuous AI work
+  merged 423 PRs over 17 days here, about 25 a day, and nobody reviews that.
+- Never modify `src/contracts/` or `src/shared/` in the same PR as an implementation. **This
+  holds regardless of cadence**: it is the one carve-out. That change goes alone as its own PR,
+  from a branch based on `origin/main`, and merges first; then merge `origin/main` into local
+  `main`.
 - Append at the append points rather than editing shared logic.
-- Sync `main` only as §Syncing `main` with `origin` says: never `git pull`, and on a dirty tree
-  report rather than act.
+- Sync `main` only as section Syncing `main` with `origin` says: never `git pull`, and on a dirty tree
+  report rather than act, and never push local `main`.
 - Surface contradictions rather than smoothing them over, filing them in
   [`open-questions.md`](../open-questions.md) in its fixed shape ([`CLAUDE.md`](../../CLAUDE.md)
   Rule 3).
