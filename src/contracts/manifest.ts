@@ -170,11 +170,11 @@ export interface Capabilities {
   /** USB HID devices, bounded by filters; each device is still asked (ADR-0068). See `devices.ts`. */
   readonly devices?: DevicesCapability
   /**
-   * Schemes the shell may route to this app, e.g. `["magnet"]`. Declaration
-   * alone never wins the default: routing requires its own user prompt, first
-   * registrant is the default, and conflicts are resolved by the user. The URI
-   * is validated against a strict grammar before it touches any other code
-   * (security-model.md T23).
+   * Schemes the shell may route to this app, e.g. `["magnet"]`, delivered to
+   * `orivon.app.onOpenUrl`. Declaration alone never wins the default: the
+   * person chooses, per scheme, which app a link opens in. `http`, `https`,
+   * `file`, `javascript` and `orivon*` are never routed. The URI is validated
+   * against a strict grammar before it touches any other code (T23).
    */
   readonly protocols?: readonly string[]
 }

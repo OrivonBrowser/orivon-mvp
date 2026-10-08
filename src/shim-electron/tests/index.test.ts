@@ -17,7 +17,7 @@ function fakeOrivon (): Orivon {
   const unusedSync = (): never => { throw new Error('unused in this test') }
   return {
     version: 0,
-    app: { manifest: async () => MANIFEST, grants: async () => [], requestGrant: async () => false },
+    app: { manifest: async () => MANIFEST, grants: async () => [], requestGrant: async () => false, onOpenUrl: () => () => {}, requestSchemeHandler: async () => false, isSchemeHandler: async () => false },
     net: { connect: unused, connectSecure: unused, listen: unused, udpBind: unused, lookup: unused },
     fs: {
       readFile: async () => new Uint8Array(),
