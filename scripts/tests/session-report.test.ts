@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bucketOf, kindOfPath, summarize } from '../ai/session-report.mjs'
+import { bucketOf, digest, kindOfPath, summarize } from '../ai/session-report.mjs'
 
 describe('bucketOf', () => {
   it('sorts tool calls into what the time was spent on', () => {
@@ -40,5 +40,20 @@ describe('summarize', () => {
     expect(s.waitingMs).toBe(60_000)
     expect(s.tokens).toEqual({ output: 47, input: 3, cacheRead: 300 })
     expect(s.files).toEqual({ code: 1, tests: 0, docs: 0 })
+  })
+})
+
+describe('digest', () => {
+  it('keeps what the owner said and what the model concluded, and drops tools, markup, notifications and subagents', () => {
+    const lines = [
+      { type: 'user', timestamp: '2026-10-08T09:00:00Z', message: { content: [{ type: 'text', text: '<ide_opened_file>x</ide_opened_file>' }, { type: 'text', text: 'Port the app' }] } },
+      { type: 'assistant', timestamp: '2026-10-08T09:01:00Z', message: { content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: {} }, { type: 'text', text: 'Recon first.' }] } },
+      { type: 'user', timestamp: '2026-10-08T09:02:00Z', message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: 'noise' }] } },
+      { type: 'assistant', isSidechain: true, timestamp: '2026-10-08T09:03:00Z', message: { content: [{ type: 'text', text: 'a subagent' }] } },
+      { type: 'user', timestamp: '2026-10-08T09:04:00Z', message: { content: '<command-name>/clear</command-name>' } },
+      { type: 'user', timestamp: '2026-10-08T09:05:00Z', message: { content: '<task-notification>done</task-notification>' } },
+      { type: 'user', isMeta: true, timestamp: '2026-10-08T09:06:00Z', message: { content: [{ type: 'text', text: 'injected skill text' }] } }
+    ]
+    expect(digest(lines)).toBe('### owner 2026-10-08T09:00\nPort the app\n\n--- model 2026-10-08T09:01\nRecon first.')
   })
 })
