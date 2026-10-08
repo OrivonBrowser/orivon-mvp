@@ -69,6 +69,10 @@ Skip routine sessions.
   An empty `statusCheckRollup` is no run yet, never "all passed": checks appear some seconds after a
   push, and a `DIRTY` PR (a conflict with `main`) starts none until `main` is merged in. A wait loop
   ends only when the list is non-empty and nothing in it is pending.
+- Wait and merge: `node scripts/ai/pr-watch.mjs <n>`, in the background; never hand-write the loop. It reruns
+  failed e2e shards and unacquired runners at most twice and prints the failed specs, which the PR then names as
+  flakes (Rule 12); it merges when every check passed and the branch is CLEAN, and stops on any other failure, on
+  BEHIND or DIRTY (merge `main` in, push, run it again) and on a moved head.
 
 ## Context that rarely changes what you do
 
