@@ -8,9 +8,10 @@ const real = createRequire(import.meta.url)('node:constants') as Record<string, 
 
 describe('constants', () => {
   it('carries the names and values of Node\'s module, which graceful-fs and random-access-file read their open flags from', () => {
-    // crypto.constants varies with the OpenSSL a Node build links (CI's patch release lacks a few), so the
-    // crypto names are compared where both have them; every fs, errno and signal name must be here.
-    const required = { ...nodeFs.constants, ...nodeOs.constants.errno, ...nodeOs.constants.signals }
+    // The UV_* and crypto names vary with the build (a Node patch release, Windows), so they are compared where
+    // both have them; every open flag, mode, errno and signal name must be here.
+    const fsFlags = Object.fromEntries(Object.entries(nodeFs.constants).filter(([name]) => /^(O_|S_|[FRWX]_OK$)/.test(name)))
+    const required = { ...fsFlags, ...nodeOs.constants.errno, ...nodeOs.constants.signals }
     for (const [name, value] of Object.entries(required)) expect(constants[name], name).toBe(value)
     for (const [name, value] of Object.entries(real)) if (name in constants) expect(constants[name], name).toBe(value)
     expect(constants.O_RDWR).toBe(2)
