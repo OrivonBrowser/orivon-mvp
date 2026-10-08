@@ -224,7 +224,9 @@ app from any other session opens as an ordinary tab in the app's own session, th
 pinned bundle is served (`ADR-0007`). A popup's app-tab flag follows its own URL, not its
 opener's. A window a page
 opens without the person's own click or key press is refused before any of this, by the pop-up blocker
-in [`../site-settings/`](../site-settings/) that `PopupHost.popupBlocked` asks.
+in [`../site-settings/`](../site-settings/) that `PopupHost.popupBlocked` asks. A window opened at an address
+another program handles (`mailto:`, `magnet:`) is never opened: `PopupHost.openExternal` puts the same
+question to the person that a click on a link to it raises, and a tab at that address would stay blank.
 
 **`routePopup`'s `isApp` catches a gap `targetPartition === opener.partition` alone cannot see.**
 A held grant alone puts no origin in its own partition (`ADR-0044`), so a granted,

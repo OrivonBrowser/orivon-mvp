@@ -2,7 +2,7 @@
 // partition it gets -- split out of tabs.ts (see that directory's README,
 // `## Design notes`, for why). Pure with respect to TabManager: neither
 // function here reads or writes any tab-collection state.
-import { WebContentsView } from 'electron'
+import { shell, WebContentsView } from 'electron'
 import type { NativeImage, WebContents, WebPreferences } from 'electron'
 import { localFileKey, originFromUrl } from '../../broker/policy/origin.js'
 import { faviconOnCommit } from '../browsing/favicon.js'
@@ -28,6 +28,7 @@ import { settleOuterHistory } from './tab-history.js'
 import { parseInternalUrl } from '../pages/internal-pages.js'
 import { canViewSource } from '../page-tools/view-source.js'
 import { sitePopups } from '../site-settings/site-popups.js'
+import { askExternalLink } from '../sessions/permission-gate.js'
 import { refuseHeldNavigation, refuseHeldWindow } from './navigation-hold.js'
 import { loadServedAddresses } from './served-address.js'
 import { gatewayRedirectFor } from './eth-gateway-rule.js'
@@ -371,7 +372,8 @@ export function wireView (id: string, record: TabRecord): void {
     webPreferencesFor: (url) => tabWebPreferences(record.host.preloadPath, undefined, appTabArgsFor(url, record.host.broker)),
     isApp: (url) => popupTargetIsApp(url, record.host.broker),
     gatewayTarget,
-    popupBlocked: (details, from) => refuseHeldWindow(wc, details.url) || sitePopups.check(wc, from.url, details.url)
+    popupBlocked: (details, from) => refuseHeldWindow(wc, details.url) || sitePopups.check(wc, from.url, details.url),
+    openExternal: (url) => { void askExternalLink(wc, url).then((allowed) => { if (allowed) return shell.openExternal(url) }).catch(() => {}) }
   }, () => ({ url: wc.getURL(), partition: record.partition })))
   wireTabSignals(id, record)
 }

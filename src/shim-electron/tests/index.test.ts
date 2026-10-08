@@ -81,7 +81,7 @@ describe('the electron module entry point', () => {
  * call site, which is the defect this whole file exists to close.
  */
 const NOT_YET_CONSIDERED = [
-  'shell', 'clipboard', 'session', 'protocol', 'webContents', 'nativeImage',
+  'session', 'protocol', 'webContents', 'nativeImage',
   'screen', 'contextBridge', 'crashReporter', 'powerMonitor',
   'systemPreferences', 'globalShortcut', 'nativeTheme', 'webFrame', 'desktopCapturer'
 ] as const
@@ -107,6 +107,18 @@ describe('electron exports this package has not yet considered', () => {
       expect((error as { reason?: string }).reason).toBe('unimplemented')
       expect((error as { api?: string }).api).toBe(`${name}.someMethod`)
     }
+  })
+})
+
+describe('clipboard and shell', () => {
+  it('are built, not whole-module refusals: writeText and openExternal exist and the rest refuse by name', async () => {
+    vi.stubGlobal('orivon', fakeOrivon())
+    const mod = await import('../index.js')
+    expect(mod.clipboard.readText()).toBe('')
+    expect(() => mod.clipboard.writeText('x')).not.toThrow()
+    await expect(mod.shell.openExternal('not a url')).rejects.toThrow(mod.ElectronShimError)
+    expect(() => (mod.shell as unknown as Record<string, () => void>).openPath!()).toThrow(mod.ElectronShimError)
+    expect(() => (mod.clipboard as unknown as Record<string, () => void>).read!()).toThrow(mod.ElectronShimError)
   })
 })
 

@@ -18,6 +18,11 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- **`electron-clipboard-reads-the-pasted-text`**, **`electron-shell-open-external-opens-a-tab`** and
+  **`window-open-external-address-asks`**: the `electron` shim's `clipboard.writeText`, `clipboard.readText` (the text of
+  a paste in progress, `''` otherwise) and `shell.openExternal` now work instead of refusing, and a `window.open` of a
+  `mailto:` or `magnet:` address asks the person instead of leaving a blank tab. Apps that bridged these by hand: use
+  them directly. Recheck: webtorrent.
 - **`page-media-from-own-listener`**: an app that holds a `tcp.listen` grant may point `<img>`, `<audio>` and `<video>`
   at `http://localhost:<port>`, `127.0.0.1` or `[::1]` when `<port>` is one its own listener holds, which Node and
   Electron allow and the page's policy refused; every other loopback port stays refused for images and media. Apps

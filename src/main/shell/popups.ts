@@ -7,6 +7,7 @@ import { WebContentsView } from 'electron'
 import type { HandlerDetails, LoadURLOptions, WebContents, WebPreferences, WindowOpenHandlerResponse } from 'electron'
 import { localFileKey, originFromUrl } from '../../broker/policy/origin.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
+import { askableScheme } from '../sessions/external-links.js'
 
 export type PopupRoute = 'adopt' | 'new-tab'
 
@@ -98,6 +99,8 @@ export interface PopupHost {
   gatewayTarget?: (url: string) => string | undefined
   /** True when the pop-up blocker refuses this open (site-settings/popup-blocker.ts). Absent in a test with no blocker: nothing is refused. */
   popupBlocked?: (details: HandlerDetails, opener: PopupOpener) => boolean
+  /** Asks the person whether `url`, an address another program on the computer handles, may be handed to it: what a click on a link to it does. Absent in a test with no gate: such an open does nothing. */
+  openExternal?: (url: string) => void
 }
 
 /** The webContents Chromium already built for the open, if any -- present in the `options`
@@ -193,6 +196,11 @@ export function windowOpenHandler (
     if (host.atCapacity()) return { action: 'deny' }
     const from = opener()
     if (host.popupBlocked?.(details, from) === true) return { action: 'deny' }
+    // A mailto: or magnet: address has no page to load: a tab would stay blank and nothing would ask the person, as a click on a link to it does.
+    if (askableScheme(details.url) !== null) {
+      host.openExternal?.(details.url)
+      return { action: 'deny' }
+    }
     // Every browser opens a middle click or a plain ctrl+click behind the current tab.
     const active = details.disposition !== 'background-tab'
     if (isFileTarget(details.url)) {
