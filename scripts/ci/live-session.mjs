@@ -11,8 +11,11 @@
  */
 import { randomBytes } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { lookup } from 'node:dns/promises'
+import { lookup as systemLookup } from 'node:dns'
+import { Resolver, lookup } from 'node:dns/promises'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { request as httpRequest } from 'node:http'
+import { request as httpsRequest } from 'node:https'
 import { join } from 'node:path'
 import { isInvokedDirectly } from '../cli.mjs'
 import { dispatch, parseSystems } from './cross-os.mjs'
@@ -47,7 +50,7 @@ function gh (...args) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-/** An error with the network code fetch hides behind "fetch failed". */
+/** An error with the network code behind it, where the message hides it ("fetch failed"). */
 export function errorText (error) {
   const cause = error?.cause
   return `${String(error?.message ?? error)}${cause === undefined ? '' : ` (${String(cause.code ?? cause.message ?? cause)})`}`
@@ -67,15 +70,53 @@ function readSession (system) {
 }
 
 /** One request to the runner, with the token; `timeoutMs` bounds the whole round trip. */
+/**
+ * Public resolvers, asked before the system's. A quick tunnel's name resolves a few seconds after cloudflared
+ * registers it; the macOS runner's resolver, asked in between, went on answering "no such name" for minutes, and
+ * some home resolvers answer an unknown name with an address of their own.
+ */
+const PUBLIC_DNS = ['1.1.1.1', '8.8.8.8']
+
+/**
+ * A `lookup` for node:http that takes the addresses `resolve4` gives, and the system's lookup when it gives none.
+ * @param {(hostname: string) => Promise<string[]>} resolve4
+ * @param {(hostname: string, options: any, callback: (...answer: any[]) => void) => void} [system]
+ */
+export function lookupVia (resolve4, system = systemLookup) {
+  return (hostname, options, callback) => {
+    resolve4(hostname).then((addresses) => {
+      if (addresses.length === 0) throw new Error(`no address for ${hostname}`)
+      if (options.all === true) callback(null, addresses.map((address) => ({ address, family: 4 })))
+      else callback(null, addresses[0], 4)
+    }).catch(() => { system(hostname, options, callback) })
+  }
+}
+
+function publicResolve4 (hostname) {
+  const resolver = new Resolver({ timeout: 2000, tries: 1 })
+  resolver.setServers(PUBLIC_DNS)
+  return resolver.resolve4(hostname)
+}
+
 export async function call (session, method, path, body, timeoutMs = 90_000) {
-  const response = await fetch(`${session.url}${path}`, {
-    method,
-    headers: { authorization: `Bearer ${session.token}`, 'content-type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(timeoutMs)
+  const url = new URL(path, session.url)
+  const send = url.protocol === 'https:' ? httpsRequest : httpRequest
+  const { status, text } = await new Promise((resolve, reject) => {
+    const req = send(url, {
+      method,
+      lookup: lookupVia(publicResolve4),
+      headers: { authorization: `Bearer ${session.token}`, 'content-type': 'application/json' },
+      signal: AbortSignal.timeout(timeoutMs)
+    }, (res) => {
+      const chunks = []
+      res.on('data', (chunk) => { chunks.push(chunk) })
+      res.on('end', () => { resolve({ status: res.statusCode, text: Buffer.concat(chunks).toString('utf8') }) })
+      res.on('error', reject)
+    })
+    req.on('error', reject)
+    req.end(body === undefined ? undefined : JSON.stringify(body))
   })
-  const text = await response.text()
-  try { return { status: response.status, ...JSON.parse(text) } } catch { return { status: response.status, ok: false, error: text.slice(0, 500) } }
+  try { return { status, ...JSON.parse(text) } } catch { return { status, ok: false, error: text.slice(0, 500) } }
 }
 
 /** Saves the pictures a reply carries, and returns their paths. */
@@ -136,7 +177,11 @@ async function selftest (urlFile, tokenFile, out) {
   const refused = await call({ ...session, token: '0'.repeat(64) }, 'GET', '/health', undefined, 10_000).catch(failed)
   const reply = await call(session, 'POST', '/eval', { code: "log(await chrome.title()); await shot(chrome, 'chrome'); await shot('desktop', 'desktop'); return chrome.url()" }).catch(failed)
   const saved = saveShots(out, reply.shots)
-  const resolved = health.ok === true ? '' : await lookup(new URL(session.url).hostname, { all: true }).then((all) => all.map((a) => a.address).join(', '), (error) => String(error.code))
+  const host = new URL(session.url).hostname
+  const resolved = health.ok === true ? '' : [
+    `public ${await publicResolve4(host).then((all) => all.join(', '), (error) => String(error.code))}`,
+    `system ${await lookup(host, { all: true }).then((all) => all.map((a) => a.address).join(', '), (error) => String(error.code))}`
+  ].join(', ')
   const failures = [
     health.ok === true ? undefined : `health: ${String(health.error)}; the name resolves to ${resolved}`,
     refused.status === 401 ? undefined : `a wrong token got ${String(refused.status)}, not 401`,
