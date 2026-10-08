@@ -113,6 +113,13 @@ function withSignal<T extends object> (options: T, signal: AbortSignal | undefin
   return signal === undefined ? options : { ...options, signal }
 }
 
+/** A dial the page abandoned in the moment between the broker finishing it and this reply: close the socket instead of delivering it. */
+async function refuseIfAbandoned (socket: FailableTcpSocket, dialAbandoned: AbortSignal | undefined): Promise<void> {
+  if (dialAbandoned?.aborted !== true) return
+  await socket.close().catch(() => {})
+  throw fail('closed', 'the app abandoned this connection attempt')
+}
+
 /** A validated bind payload as the broker takes it: `scope` left out, not set to undefined, when the app omitted it. */
 function bindOptions (payload: NetUdpBindParams): { port: number, scope?: BindScope } {
   return payload.scope === undefined ? { port: payload.port } : { port: payload.port, scope: payload.scope }
@@ -134,6 +141,7 @@ export async function dispatchNet (
       if (!isNetConnectParams(payload)) throw fail('invalid', 'net.connect requires { host: string, port: number }')
       if (transport === undefined) throw fail('internal', 'no port transport configured for this broker')
       const socket = await broker.net.connect(origin, withSignal({ host: payload.host, port: payload.port }, dialAbandoned))
+      await refuseIfAbandoned(socket, dialAbandoned)
       return await deliverTcpSocket(origin, socket, event, transport)
     }
     // A SIBLING of net.connect above, not a variant: the payload's TLS
@@ -147,6 +155,7 @@ export async function dispatchNet (
       if (!parsed.ok) throw fail('invalid', `net.connectSecure: ${parsed.problem}`)
       if (transport === undefined) throw fail('internal', 'no port transport configured for this broker')
       const socket = await broker.net.connectSecure(origin, withSignal(parsed.params, dialAbandoned))
+      await refuseIfAbandoned(socket, dialAbandoned)
       const descriptor = await deliverTcpSocket(origin, socket, event, transport)
       return { ...descriptor, tls: handshakeOf(socket) }
     }

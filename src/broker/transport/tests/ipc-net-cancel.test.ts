@@ -154,3 +154,22 @@ describe('net.cancel', () => {
     expect(secure).toMatchObject({ ok: false, code: 'invalid' })
   })
 })
+
+describe('a dial abandoned in the moment it finished', () => {
+  it('closes the socket the broker returned and answers closed, delivering no port', async () => {
+    const { socket } = fakeTcpSocket()
+    let release!: () => void
+    const finished = new Promise<void>((resolve) => { release = resolve })
+    const broker = stubBroker([], { connect: async () => { await finished; return socket } })
+    const transport = fakeTransport(fakePortPair().pair)
+    const event = frameFor(APP)
+    const dial = handleControlRequest(broker, event, dialEnvelope('r1'), transport)
+    await tick()
+
+    await handleControlRequest(broker, event, cancelEnvelope('r1'), transport)
+    release()
+
+    expect(await dial).toMatchObject({ ok: false, code: 'closed' })
+    expect(event.senderFrame?.postMessage).not.toHaveBeenCalled()
+  })
+})

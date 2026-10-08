@@ -8,8 +8,9 @@ import { createPacingLimiter, createTokenBucketLimiter } from './token-bucket.js
 import type { RateLimiter } from './token-bucket.js'
 
 /**
- * Calls against a handle the origin already holds: no path to confine, no
- * grant to consult, no new resource. Everything else, including the `fs.dir*`
+ * Calls against a handle the origin already holds, and `net.cancel` (which frees a pending dial and so must never wait
+ * behind the control budget the dials it cancels drew on): no path to confine, no grant to consult, no new resource.
+ * Everything else, including the `fs.dir*`
  * calls (each one names a path inside a picked folder), is a control call.
  */
 const HANDLE_IO_METHODS: ReadonlySet<string> = new Set<ControlMethod>([

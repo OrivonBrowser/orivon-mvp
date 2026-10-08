@@ -37,31 +37,35 @@ async function startSilentListener (): Promise<{ port: number, stop: () => void 
 }
 
 it('[app:socket-destroy-abandons-dial] [app:connect-signal-abandons-dial] destroying a connecting socket, or aborting the signal of orivon.net.connect, frees the dial at once: queued file calls run, a new dial connects, and the abandoned sockets close without an error', async () => {
-  const silent = await startSilentListener()
   const live = createServer((socket) => { socket.on('error', () => {}) })
-  await new Promise<void>((resolve) => { live.listen(0, '127.0.0.1', resolve) })
-  const livePort = (live.address() as AddressInfo).port
-  const patterns = [`127.0.0.1:${String(silent.port)}`, `127.0.0.1:${String(livePort)}`]
-  const manifest: Manifest = {
-    orivonApiVersion: 0,
-    id: 'app.orivon.destroy-abandons-dial-e2e',
-    name: 'destroy abandons dial e2e fixture',
-    version: '1.0.0',
-    entry: 'index.html',
-    assets: ['app.js'],
-    capabilities: { fs: { quotaBytes: 4_194_304 }, net: { tcp: { connect: patterns }, concurrentSockets: 1024 } }
-  }
-  const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
+  let silent: Awaited<ReturnType<typeof startSilentListener>> | undefined
+  let app: Awaited<ReturnType<typeof launchElectron>> | undefined
   try {
+    silent = await startSilentListener()
+    await new Promise<void>((resolve) => { live.listen(0, '127.0.0.1', resolve) })
+    const silentPort = silent.port
+    const livePort = (live.address() as AddressInfo).port
+    const patterns = [`127.0.0.1:${String(silentPort)}`, `127.0.0.1:${String(livePort)}`]
+    const manifest: Manifest = {
+      orivonApiVersion: 0,
+      id: 'app.orivon.destroy-abandons-dial-e2e',
+      name: 'destroy abandons dial e2e fixture',
+      version: '1.0.0',
+      entry: 'index.html',
+      assets: ['app.js'],
+      capabilities: { fs: { quotaBytes: 4_194_304 }, net: { tcp: { connect: patterns }, concurrentSockets: 1024 } }
+    }
+    const launched = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
+    app = launched
     await runPhase('destroy abandons dial', async (check) => {
-      const html = `<!doctype html><html><head><title>destroy abandons dial fixture</title><meta name="silent-port" content="${String(silent.port)}"><meta name="live-port" content="${String(livePort)}"><script src="/app.js"></script></head><body><h1>destroy abandons dial fixture</h1></body></html>`
-      const served = await serveApp(app, ORIGIN, manifest, 'fs', {
+      const html = `<!doctype html><html><head><title>destroy abandons dial fixture</title><meta name="silent-port" content="${String(silentPort)}"><meta name="live-port" content="${String(livePort)}"><script src="/app.js"></script></head><body><h1>destroy abandons dial fixture</h1></body></html>`
+      const served = await serveApp(launched, ORIGIN, manifest, 'fs', {
         '/index.html': new TextEncoder().encode(html),
         '/app.js': await bundleForApp(fileURLToPath(new URL('./destroy-abandons-dial-entry.ts', import.meta.url)))
       }, [], [{ capability: 'tcp.connect', patterns }])
       check('the fixture is granted fs and tcp.connect and registered for serving', served.granted && served.registered, JSON.stringify(served))
 
-      const view = await navigateToFixture(app, `${ORIGIN}/`, 'destroy abandons dial fixture')
+      const view = await navigateToFixture(launched, `${ORIGIN}/`, 'destroy abandons dial fixture')
       await waitForPageGlobal(view, 'abandonE2e')
       const results = await evaluateRetrying(view, async () => await (globalThis as unknown as { abandonE2e: { run: () => Promise<AbandonResults> } }).abandonE2e.run(), 120_000)
       const detail = JSON.stringify(results)
@@ -75,8 +79,8 @@ it('[app:socket-destroy-abandons-dial] [app:connect-signal-abandons-dial] destro
       check('a new dial to a live peer connects within two seconds of the destroys', results.destroy?.freshError === undefined && (results.destroy?.freshConnectMs ?? Infinity) < 2000, detail)
     })
   } finally {
-    await closeElectronApp(app)
-    silent.stop()
+    if (app !== undefined) await closeElectronApp(app)
+    silent?.stop()
     live.close()
   }
 }, 300_000)

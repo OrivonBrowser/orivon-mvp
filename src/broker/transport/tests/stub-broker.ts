@@ -10,14 +10,14 @@
 import type { Broker, FailableSecureTcpSocket, RawFileStat } from '../../broker-contracts.js'
 import { LIMITS } from '../../../contracts/index.js'
 import { fail } from '../../errors.js'
+import type { ConnectOptions, Grant, LookupAddress, Manifest, SecureConnectOptions } from '../../../contracts/index.js'
+import type { FailableDirectoryHandle, FailableFileHandle, FailableTcpServer, FailableTcpSocket, FailableUdpSocket } from '../../handles/handle-contracts.js'
 
 /** A recorded dial without its cancel signal, which every dial carries and no assertion on the other options cares about. */
 function withoutSignal<T extends { signal?: AbortSignal }> (opts: T): Omit<T, 'signal'> {
   const { signal: _signal, ...rest } = opts
   return rest
 }
-import type { ConnectOptions, Grant, LookupAddress, Manifest, SecureConnectOptions } from '../../../contracts/index.js'
-import type { FailableDirectoryHandle, FailableFileHandle, FailableTcpServer, FailableTcpSocket, FailableUdpSocket } from '../../handles/handle-contracts.js'
 
 export interface BrokerCall { readonly method: string, readonly origin: string, readonly args: unknown }
 

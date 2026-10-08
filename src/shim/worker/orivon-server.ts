@@ -261,7 +261,8 @@ export function serveOrivon (port: MessagePort, orivon: object, runSpawnSync?: R
         const { fn, self } = target(request)
         if (typeof fn !== 'function') throw new TypeError(`orivon has no method ${'path' in request ? request.path.join('.') : request.method}`)
         const args = [...request.args]
-        if (request.abandonable === true && typeof args[0] === 'object' && args[0] !== null) {
+        if (request.abandonable === true && 'path' in request && request.path[0] === 'net' && (request.path[1] === 'connect' || request.path[1] === 'connectSecure') &&
+          typeof args[0] === 'object' && args[0] !== null) {
           const controller = new AbortController()
           abandoning.set(request.id, controller)
           args[0] = { ...args[0], signal: controller.signal }

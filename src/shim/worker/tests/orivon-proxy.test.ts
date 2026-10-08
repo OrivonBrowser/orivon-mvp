@@ -288,4 +288,14 @@ describe('a net.connect the Worker abandons (ADR-0071)', () => {
 
     expect(seen).toEqual([{ host: 'x', port: 443 }])
   })
+
+  it('injects a signal into net.connect and net.connectSecure alone, whatever a message claims', async () => {
+    const seen: unknown[] = []
+    channel = new MessageChannel()
+    server = serveOrivon(channel.port1, { fs: { readFile: async (opts: unknown) => { seen.push(opts); return new Uint8Array() } } })
+    channel.port2.postMessage({ path: ['fs', 'readFile'], args: [{ a: 1 }], id: 1, abandonable: true })
+
+    await vi.waitFor(() => { expect(seen).toHaveLength(1) })
+    expect(seen[0]).toEqual({ a: 1 })
+  })
 })
