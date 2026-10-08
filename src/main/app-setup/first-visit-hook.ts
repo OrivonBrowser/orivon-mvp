@@ -54,7 +54,8 @@ export function firstVisitBeforeRequest (deps: HookDeps): (details: OnBeforeRequ
         sheet: async (sheet) => await screens.sheet(sheet),
         enter: () => { answer({ cancel: true }, () => { screens.navigate(details.url) }) },
         plain: () => { answer(current) },
-        end: () => { answer({ cancel: true }) }
+        // Stopped first: a request cancelled under a navigation that is still pending commits an error page for the address, and the tab should stay on the page it was on.
+        end: () => { answer({ cancel: true }, () => { if (!contents.isDestroyed()) contents.stop() }) }
       }
       const settle = (result: FirstVisitResult): void => {
         if (result.outcome === 'known') host.enter()

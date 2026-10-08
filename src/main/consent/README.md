@@ -1,7 +1,7 @@
 # `src/main/consent/`: decide what to ask, say it, ask it
 
 **What lives here.** Every grant decision this browser makes, in three layers per feature:
-`install-consent.ts`, `request-grant.ts` and `update-outcomes.ts` decide;
+`install-consent.ts` (whose `requestInstallConsent` says what the question came to: granted, declined, not asked or left), `request-grant.ts` and `update-outcomes.ts` decide;
 `grant-prompt-render.ts` (with `grant-prompt-connect.ts`, `grant-prompt-origin.ts`,
 `grant-prompt-choice.ts` and `grant-prompt-extensions.ts`) turns a decision into words; the three
 `*-prompt.ts` files put those words to the person as a question in the panel of the tab that asked

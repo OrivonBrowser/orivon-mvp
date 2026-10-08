@@ -52,20 +52,20 @@ it('[app:consent-question-holds-the-page] installs an app served from a typed ip
       const chrome = findChrome(running)
       await waitForAddressBarStable(chrome)
       await clickAddressBarRetrying(chrome, `ipfs://${root}`)
-      const loaded = await waitForTab(chrome, { address: `ipfs://${root}/`, title: 'ipfs app' })
-      check(`the typed ipfs:// address loaded (${JSON.stringify(loaded.info)})`, loaded.ok)
-
-      const pinned = await waitFor(() => existsSync(pinFile), 25_000)
-      check(`the hint installed it: a pin exists for ${origin}`, pinned)
-      const pin = pinned ? JSON.parse(readFileSync(pinFile, 'utf8')) as { content?: { cid: string } } : {}
-      check(`the pin records the root CID (${JSON.stringify(pin.content)})`, pin.content?.cid === root)
-      // The pin lands before the consent step runs, so the question is waited for, never looked for once.
+      // The question comes first (ADR-0074): the page is held back until it is answered and the files are checked.
       let asked: QuestionText | undefined
       try {
         asked = await answerAccepting(running)
       } catch (error) {
         check(`the install consent question appeared (${String(error)})`, false)
       }
+      const loaded = await waitForTab(chrome, { address: `ipfs://${root}/`, title: 'ipfs app' }, 60_000)
+      check(`the typed ipfs:// address loaded (${JSON.stringify(loaded.info)})`, loaded.ok)
+
+      const pinned = await waitFor(() => existsSync(pinFile), 25_000)
+      check(`the hint installed it: a pin exists for ${origin}`, pinned)
+      const pin = pinned ? JSON.parse(readFileSync(pinFile, 'utf8')) as { content?: { cid: string } } : {}
+      check(`the pin records the root CID (${JSON.stringify(pin.content)})`, pin.content?.cid === root)
       const namesApp = asked !== undefined && JSON.stringify(asked).includes(root)
       check(`the install consent question names the app's address (${JSON.stringify(asked)})`, namesApp)
 

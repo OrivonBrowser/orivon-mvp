@@ -1,7 +1,7 @@
 # ADR-0012: Fetch-and-cache is automatic and silent; consent is asked once, before the app runs
 
 - **Status:** accepted; second half amended 2026-09-13 (see the amendment below); the per-app
-  cap and the pruning point amended 2026-09-22 (section Consequences)
+  cap and the pruning point amended 2026-09-22 (section Consequences); its order for a first visit is superseded by [ADR-0074](ADR-0074-a-published-app-is-asked-about-and-checked-before-its-page-is-entered.md)
 - **Date:** 2026-09-03
 - **Type:** architecture / security
 - **Decided by:** owner

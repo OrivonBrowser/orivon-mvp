@@ -3,7 +3,7 @@
 - **Status:** accepted, **amended 2026-09-24: the off-host anchor is in scope, as the name's ENS
   record**, **2026-09-25: that record is the contenthash, and a verified tree is Website Level
   2**, and **2026-09-28: in developer mode, a local origin's served tree counts as its DDOC** (see
-  the Amendments below)
+  the Amendments below); for a first install the declared tree blocks ([ADR-0074](ADR-0074-a-published-app-is-asked-about-and-checked-before-its-page-is-entered.md))
 - **Date:** 2026-09-24
 - **Type:** architecture
 - **Decided by:** owner

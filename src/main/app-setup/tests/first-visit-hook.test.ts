@@ -29,7 +29,7 @@ function rig (options: { kind?: 'first' | 'declined' | 'known', run?: (host: Set
   const screens = screensFake()
   const run = vi.fn(async (_origin: string, _url: string, _caller: unknown, host: SetupHost): Promise<FirstVisitResult> => await (options.run ?? (async () => { host.plain(); return { outcome: 'plain', why: 'website' } }))(host))
   const visit: FirstVisit = { kindOf: vi.fn(async () => options.kind ?? 'first'), run: run as unknown as FirstVisit['run'] }
-  const contents = { isDestroyed: () => false } as unknown as WebContents
+  const contents = { isDestroyed: () => false, stop: () => { screens.calls.push('stop') } } as unknown as WebContents
   const handler = firstVisitBeforeRequest({
     firstVisit: () => visit,
     tabSetup: () => options.screens === false ? () => undefined : () => screens,
@@ -82,7 +82,7 @@ describe('firstVisitBeforeRequest', () => {
   it('cancels the request when the visit ends with the app not opened', async () => {
     const { handler, screens } = rig({ run: async (host) => { host.end(); return { outcome: 'blocked', differing: [] } } })
     expect(await handler(details(), CONTINUE)).toEqual({ cancel: true })
-    expect(screens.calls).toEqual(['end'])
+    expect(screens.calls).toEqual(['end', 'stop'])
   })
 
   it('goes into the app when another tab finished the visit first, and opens a plain website when it was refused there', async () => {

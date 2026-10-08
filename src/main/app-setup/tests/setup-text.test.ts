@@ -47,7 +47,8 @@ describe('sheetView', () => {
     expect(view.title).toMatch(/could not be accepted/)
   })
 
-  it('names a published root that disagrees with its own files', () => {
+  it('says the declared tree contradicts itself only when no file differs', () => {
+    expect(sheetView({ ...blocked, rootMatches: false }, 'a', 't').body).not.toMatch(/contradict/i)
     const view = sheetView({ ...blocked, differing: [], differingCount: 0, rootMatches: false }, 'a', 't')
     expect(view.files).toEqual([])
     expect(view.body).toMatch(/contradict/i)
@@ -62,6 +63,7 @@ describe('sheetView', () => {
   it('cuts the failure reason and the address to fit', () => {
     const view = sheetView({ kind: 'download-failed', name: 'L', reason: 'r'.repeat(900) }, 'a'.repeat(900), 't')
     expect(view.note.length).toBeLessThanOrEqual(160)
+    expect(sheetView({ kind: 'download-failed', name: 'L', reason: 'asset app.js fetch failed: HTTP 502 (https://abc.ipfs.orivon/app.js)' }, 'a', 't').note).toBe('asset app.js fetch failed: HTTP 502')
     expect(view.address.length).toBeLessThanOrEqual(200)
   })
 })

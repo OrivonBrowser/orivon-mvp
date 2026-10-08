@@ -30,6 +30,7 @@ import type { RateLimiter } from '../../broker/transport/token-bucket.js'
 import { dialogCallerFor } from './dialog-caller.js'
 import type { DialogCaller } from '../consent/request-grant.js'
 import type { TabScreens } from '../app-setup/tab-screens.js'
+import { firstVisitNow, tabSetupNow } from '../app-setup/tab-setup-ref.js'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import type { FirstVisit } from './first-visit.js'
 import { hintHost } from './hint-host.js'
@@ -215,8 +216,8 @@ export const manifestHintSubsystem: Subsystem = {
     // main/index.ts once the shell exists, well after this subsystem's
     // afterReady runs.
     registerManifestHintIpc(ipcMain, ctx.installApp, ctx.senderAttributed, (sender) => ctx.windowForSender?.(sender as WebContents), {
-      firstVisit: () => ctx.firstVisit,
-      screensFor: (sender, address) => ctx.tabSetup?.(sender as WebContents, address)
+      firstVisit: firstVisitNow,
+      screensFor: (sender, address) => tabSetupNow()?.(sender as WebContents, address)
     })
   }
 }

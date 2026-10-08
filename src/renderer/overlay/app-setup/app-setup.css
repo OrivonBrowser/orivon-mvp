@@ -9,5 +9,5 @@ body[data-overlay='app-setup-sheet'] .app-setup-text { margin: 10px 0 0; color: 
 body[data-overlay='app-setup-sheet'] .app-setup-files { margin: 8px 0 0; padding: 0; list-style: none; color: var(--wink); font-size: 12px; font-family: var(--wmono, monospace); }
 body[data-overlay='app-setup-sheet'] .app-setup-files li { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 body[data-overlay='app-setup-sheet'] .app-setup-more { margin: 2px 0 0; color: var(--wink-dim); font-size: 12px; }
-body[data-overlay='app-setup-sheet'] .app-setup-note { margin: 8px 0 0; color: var(--wink-dim); font-size: 12px; }
+body[data-overlay='app-setup-sheet'] .app-setup-note { margin: 8px 0 0; overflow-wrap: anywhere; color: var(--wink-dim); font-size: 12px; }
 body[data-overlay='app-setup-sheet'] .btn-row { margin-top: 16px; }

@@ -5,13 +5,13 @@ import { session, webContents } from 'electron'
 import { servedByVerifier } from '../../loader/fetch/verifier-origin.js'
 import { LOADING_SCREEN_OVERLAY } from '../loading-screen/loading-screen-watch.js'
 import { requestSlot } from '../overlays/tab-slots.js'
-import { publishTabSetup } from '../registry.js'
 import { webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import { goHome } from '../shell/home.js'
 import type { ShellInstaller } from '../shell/shell-installers.js'
 import { verifiedHostFilter } from '../verifier/verifier-subsystem.js'
 import { firstVisitBeforeRequest } from './first-visit-hook.js'
 import { createTabSetup } from './tab-screens.js'
+import { firstVisitNow, publishTabSetup, tabSetupNow } from './tab-setup-ref.js'
 
 /** After the verifier's listening gate (order 0), which starts the host and waits for it: this reads the app's manifest through it. */
 const AFTER_THE_LISTENING_GATE = 10
@@ -31,14 +31,14 @@ export const installAppSetup: ShellInstaller = {
         else goHome(window.tabs, services.settings, { newTab: false })
       }
     })
-    publishTabSetup(ctx, setup)
+    publishTabSetup(setup)
     webRequestOwnerFor(session.defaultSession).onBeforeRequest(
       AFTER_THE_LISTENING_GATE,
       verifiedHostFilter(),
       servedByVerifier,
       firstVisitBeforeRequest({
-        firstVisit: () => ctx.firstVisit,
-        tabSetup: () => ctx.tabSetup,
+        firstVisit: firstVisitNow,
+        tabSetup: tabSetupNow,
         contentsById: (id) => webContents.fromId(id),
         windowForSender: (contents) => ctx.windowForSender?.(contents)
       })

@@ -51,6 +51,11 @@ export interface SetupSheetView {
 
 const FILE_LIMIT = 120
 
+/** A failure's reason names the address it asked, which the sheet already shows. */
+function withoutAddresses (reason: string): string {
+  return reason.replace(/\s*\(https?:[^)]*\)/g, '')
+}
+
 export function sheetView (sheet: SetupSheet, address: string, token: string): SetupSheetView {
   const name = displayName(sheet.name)
   const shown = address.slice(0, ADDRESS_LIMIT)
@@ -63,7 +68,7 @@ export function sheetView (sheet: SetupSheet, address: string, token: string): S
       files: [],
       more: '',
       address: shown,
-      note: sheet.invalid.slice(0, NOTE_LIMIT),
+      note: withoutAddresses(sheet.invalid).slice(0, NOTE_LIMIT),
       canRetry: false
     }
   }
@@ -74,7 +79,7 @@ export function sheetView (sheet: SetupSheet, address: string, token: string): S
       token,
       kind: 'blocked',
       title: 'Security warning: this app\'s files do not match',
-      body: sheet.rootMatches
+      body: sheet.rootMatches || sheet.differingCount > 0
         ? `${name} was not opened. Its files are not the ones its publisher declared, and every permission you gave it has been removed.`
         : `${name} was not opened. The hash tree its publisher declared contradicts its own files, and every permission you gave it has been removed.`,
       files: listed,
@@ -92,7 +97,7 @@ export function sheetView (sheet: SetupSheet, address: string, token: string): S
     files: [],
     more: '',
     address: shown,
-    note: sheet.reason.slice(0, NOTE_LIMIT),
+    note: withoutAddresses(sheet.reason).slice(0, NOTE_LIMIT),
     canRetry: true
   }
 }

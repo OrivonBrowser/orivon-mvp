@@ -1,7 +1,7 @@
 # `src/main/install/`: a hinted manifest becomes a registered, consented app
 
 **What lives here.** `manifest-hint.ts` turns a page's `<link rel="orivon-manifest">` hint into
-an install. `app-install.ts` is the loader-to-broker glue (A60, A61), and
+an install, or into a first visit (`first-visit.ts`, `first-visit-decisions.ts`, `hint-host.ts`, `revoke-all-grants.ts`). `app-install.ts` is the loader-to-broker glue (A60, A61), and
 `app-install-subsystem.ts` publishes it as `ctx.installApp`. `origin-queue.ts` serialises
 concurrent `load()` calls for one origin (A62). `grant-without-install.ts` grants an origin the
 install path refuses (loopback in every build; an orivon-ports `.eth` name in developer mode)
@@ -18,13 +18,13 @@ applies the offered root on Yes or a confirmed Trust & Force, and reloads every 
 `dialog-caller.ts` is how a question finds the tab that raised it.
 
 **Tied to Electron.** `app-install-subsystem.ts` and `manifest-hint.ts` import `electron`; the
-other four -- `granted-origin-csp.ts` included -- must not.
+others -- `granted-origin-csp.ts` included -- must not.
 
 **What it depends on.** [`../../broker/`](../../broker/) (`broker-contracts.ts` type,
 `policy/origin.ts`, `policy/update.ts`, `policy/manifest-patterns.ts`, `grants/origin-hash.ts`,
 `transport/token-bucket.ts`), [`../../loader/`](../../loader/) (`index.ts` type,
 `manifest/manifest.ts`, `electron/serve.ts`'s `liveCspHeaderFor` and
-`isOriginServedFromCacheSync`), [`../consent/`](../consent/) (`install-consent*`,
+`isOriginServedFromCacheSync`), [`../app-setup/`](../app-setup/) (`TabScreens`, a type), [`../../trust/ddoc.ts`](../../trust/ddoc.ts) (`ddocVerdict`), [`../consent/`](../consent/) (`install-consent*`,
 `update-outcomes*`), [`../dev/`](../dev/) (`dev-mode.ts`, `eth-resolver.ts`'s name pattern, `score-levels.ts`),
 [`../extensions/site-reach-runner.ts`](../extensions/site-reach-runner.ts)'s
 `extensionNamesForOrigin` (the extensions disclosure, `docs/planning/extensions-exploration.md`, wired into
@@ -40,14 +40,15 @@ constructs its own `Broker` or `Loader`: read `ctx.broker`/`ctx.loader` from `re
 
 ## Design notes
 
-**[`app-install.ts`](app-install.ts): consent resolves before `installFromHint` does, not before
-the page's scripts run.** The hint is reported once the page is already running, so on a first
-visit an app's early capability call can get `'denied'` while the dialog is up (A146, accepted).
-That first load also runs outside the app tab (no routed fetch, no process shim), because a
-tab's flag and partition are fixed when it is built. So [`manifest-hint.ts`](manifest-hint.ts)
-reloads the reporting tab once after consent, only when this install newly registered the origin
-(`newlyRegistered`); a repeat visit or a startup restore is never reloaded, so it cannot loop
-(A234, `d-0053`).
+**[`first-visit.ts`](first-visit.ts) is the order of a first visit, and [`app-install.ts`](app-install.ts) is every visit after it
+(`ADR-0074`).** An origin Orivon has never held (no registration, pin or saved version, and not refused) is asked about as soon as its
+manifest is read, then downloaded and checked against the tree its site declares, and only then pinned, registered and entered; the loader's
+`readManifest` and `fetchForInstall` are the two reads, and `installFetched` the install. `installFromHint` keeps the update, re-consent and
+rollback paths of an app Orivon already holds. A first visit that began from a page's hint (`hint-host.ts`, the `https` apps, and the fallback for
+a first page that could not be held) runs after the page's scripts have run up to `DOMContentLoaded`: it stops the page when it has read an app's
+manifest, and enters through the address bar's own path. The verifier-served origins are held earlier, in
+[`../app-setup/`](../app-setup/README.md), so nothing runs. A refused origin (`visitKind` `declined`) is ignored by the hint listener; `revoke-all-grants.ts` is what
+a block takes back.
 
 **[`app-install-subsystem.ts`](app-install-subsystem.ts) is the one wiring of
 `installFromHint`.** Two call sites building their own deps could drift, one forgetting

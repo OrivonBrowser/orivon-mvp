@@ -116,6 +116,7 @@ export async function runFirstVisit (deps: FirstVisitDeps, hintingOrigin: string
         } catch (error) {
           console.error('[first-visit] registerApp failed after a successful install; the bundle is installed but its version floor was not persisted', installed.canonicalOrigin, error)
         }
+        console.log(`[orivon] installed ${installed.canonicalOrigin}; entering the tab as the app`)
         host.enter()
         return { outcome: 'entered', installed }
       }

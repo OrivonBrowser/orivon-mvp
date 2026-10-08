@@ -2,6 +2,7 @@
 // sheet when the app was not opened, over a tab whose page has not been allowed to run. Follows the tab
 // itself: another navigation or its destruction ends the visit's screens at once.
 import type { WebContents } from 'electron'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { LOADING_SCREEN_OVERLAY } from '../loading-screen/loading-screen-watch.js'
 import { claimCover } from '../loading-screen/claim.js'
 import type { requestSlot } from '../overlays/tab-slots.js'
@@ -98,7 +99,7 @@ export function createTabSetup (deps: TabSetupDeps): TabSetup {
             sheet?.cancel()
           })
           const mine = deps.ask({
-            window, tabId, slot: 'center', overlay: SETUP_SHEET_OVERLAY, payload: sheetView(shown, address, token),
+            window, tabId, slot: 'center', overlay: SETUP_SHEET_OVERLAY, payload: sheetView(shown, BUILTIN_ADDRESSES.displayUrl(address), token),
             closed: () => { if (sheet === mine) sheet = undefined; forgetAnswer?.(); settleSheet?.('leave') }
           })
           sheet = mine
