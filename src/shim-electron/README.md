@@ -34,6 +34,16 @@ by `orivon.secrets`
 the sync trio cannot be (`safe-storage.ts` says why), and `false` is the signal Element Desktop's
 and AirGap Vault's documented non-keyring fallbacks check for.
 
+**`app-links.ts` backs the links half of `app` on `orivon.app`, and answers differently from Electron where the person
+decides.** `setAsDefaultProtocolClient(scheme)` returns at once, as Electron's does, but the answer is `true` only when the
+app already is the default: otherwise it asks `requestSchemeHandler` (which needs a click or key press, and a scheme the
+manifest lists) and answers `false` while the question is open, so `isDefaultProtocolClient` is what reads the result. That
+read is the state at `whenReady()` plus the app's own requests since, and a change made in Settings shows at the next start;
+`removeAsDefaultProtocolClient` answers `false`. `app.on('open-url', (event, url))` subscribes to `onOpenUrl` only while a
+listener exists, works before `whenReady()` and keeps the page's links held until then; every other event name throws
+`unimplemented` by name, because an accepted listener that can never fire would look like a working one
+([`ADR-0072`](../../docs/decisions/ADR-0072-a-link-scheme-an-app-declares-opens-in-the-app-the-person-chooses.md)).
+
 **`desktop-shell.ts` uses three small classes, not a `Proxy`.** Apps call statics
 (`Menu.setApplicationMenu`, `BrowserWindow.getAllWindows`) before constructing one, and a few
 named entry points read more plainly than `construct`/`get` traps.

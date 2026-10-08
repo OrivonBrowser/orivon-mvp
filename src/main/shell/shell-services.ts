@@ -8,6 +8,7 @@ import { defaultBookmarks } from '../default-profile/default-profile.js'
 import { startsFromDefaultProfile } from '../default-profile/profile-start.js'
 import { currentDefaultProfileDir } from '../default-profile/default-profile-dir.js'
 import { HidApprovals } from '../devices/hid-approvals.js'
+import { SchemeChoices } from '../scheme-routing/scheme-choices.js'
 import { SearchEngineStore } from '../browsing/search-engine-store.js'
 import { InternalPageRegistry } from '../pages/internal-registry.js'
 import { SettingsStore } from '../settings/settings-store.js'
@@ -72,6 +73,8 @@ export interface ShellServices {
   readonly history: HistoryService
   /** The USB HID devices the person approved, per app and per site (ADR-0068). */
   readonly hidDevices: HidApprovals
+  /** The app each kind of link opens in, when the person chose one (d-0596). */
+  readonly schemeChoices: SchemeChoices
   readonly internalPages: InternalPageRegistry
   /** This process is a private session: it never writes a store file of its own. */
   readonly isPrivate: boolean
@@ -151,6 +154,7 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     extensionsLoaded: createLoadedExtensions(session.defaultSession),
     history: new HistoryService(openedHistory.store, settings, openedHistory.problem, Date.now, (from, to) => { closedTabs.forgetBetween(from, to) }),
     hidDevices: new HidApprovals(runtime.isPrivate ? null : join(userDataPath, 'hid-devices.json')),
+    schemeChoices: new SchemeChoices(runtime.isPrivate ? null : join(userDataPath, 'scheme-handlers.json')),
     internalPages,
     isPrivate: runtime.isPrivate,
     kiosk,

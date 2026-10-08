@@ -66,6 +66,30 @@ describe('installOrivon', () => {
     expect(calls).toEqual([{ capability: 'fs' }])
   })
 
+  it('app.onOpenUrl hands the page\'s listener to the bridge and returns its removal; the scheme calls delegate with the scheme', async () => {
+    const target: Record<string, unknown> = {}
+    const bridge = fakeBridge(fakeSocketBridgeResult())
+    const listeners: Array<(url: string) => void> = []
+    let removed = 0
+    bridge.appOnOpenUrl = (listener) => { listeners.push(listener); return () => { removed += 1 } }
+    const asked: string[] = []
+    bridge.appRequestSchemeHandler = async (scheme) => { asked.push(`request ${scheme}`); return true }
+    bridge.appIsSchemeHandler = async (scheme) => { asked.push(`is ${scheme}`); return false }
+    installOrivon(bridge, LIMITS, target)
+
+    const { app } = asPage(target.orivon) as { app: { onOpenUrl: (listener: (url: string) => void) => () => void, requestSchemeHandler: (scheme: string) => Promise<boolean>, isSchemeHandler: (scheme: string) => Promise<boolean> } }
+    const heard: string[] = []
+    const stop = app.onOpenUrl((url) => { heard.push(url) })
+    listeners[0]?.('magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567')
+    stop()
+
+    expect(heard).toEqual(['magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567'])
+    expect(removed).toBe(1)
+    expect(await app.requestSchemeHandler('magnet')).toBe(true)
+    expect(await app.isSchemeHandler('magnet')).toBe(false)
+    expect(asked).toEqual(['request magnet', 'is magnet'])
+  })
+
   it('fs.mkdir/readdir/stat/rm/rename delegate to the matching bridge closures, args intact', async () => {
     const target: Record<string, unknown> = {}
     const bridge = fakeBridge(fakeSocketBridgeResult())

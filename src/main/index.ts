@@ -41,6 +41,7 @@ import { runUpdateCheck } from './self-update/update-check-runner.js'
 import { scheduleUpdateChecks } from './self-update/update-schedule.js'
 import { configureVerifier, verifierEthContentCid } from './verifier/verifier-subsystem.js'
 import { createPageScoreLookup } from './browsing/page-score-lookup.js'
+import { installSchemeRouting } from './scheme-routing/install-scheme-routing.js'
 import { netFetchJson } from './browsing/score-provider-client.js'
 import { isDevEthName } from './dev/eth-resolver.js'
 import { isOriginServedFromCacheSync } from '../loader/electron/serve.js'
@@ -207,6 +208,8 @@ export function boot (runtime: Runtime): void {
       resolveEthContent: verifierEthContentCid,
       manifestAt: async (origin, cid) => await ctx.loader?.manifestAt(origin, cid) ?? { kind: 'unread', reason: 'the loader is not running' }
     }).websiteScore)
+    // A link of a scheme an app declares can open in that app, once the windows that show it exist.
+    installSchemeRouting(ctx, shell)
     // A refusal the person should read, drawn in the window they are using.
     publishShowNotice(ctx, ({ title, message }) => { void askQuestion({}, { kind: 'notice', title, message, buttons: ['OK'], cancelId: 0 }) })
     // Before the first window, so it opens in the chosen theme with the chosen

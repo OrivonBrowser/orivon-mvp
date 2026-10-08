@@ -13,6 +13,8 @@ export interface AppRow {
   readonly rows: ReadonlyArray<{ readonly capability: string, readonly warning: boolean, readonly message: string }>
   readonly pickedPathRows: ReadonlyArray<{ readonly pickId: string, readonly kind: string, readonly warning: boolean, readonly message: string }>
   readonly deviceRows: ReadonlyArray<{ readonly key: string, readonly label: string }>
+  /** The kinds of link the person chose this app to open (`magnet`), each shown with a button that takes it back. */
+  readonly linkSchemes: readonly string[]
   readonly storage: { readonly filesBytes: number, readonly codeBytes: number }
 }
 
@@ -59,6 +61,11 @@ export class AppsState {
 
   async revokePickedPath (origin: string, pickId: string): Promise<void> {
     await this.bridge.request('apps', { type: 'revokePickedPath', origin, pickId })
+    await this.load()
+  }
+
+  async forgetLink (origin: string, scheme: string): Promise<void> {
+    await this.bridge.request('apps', { type: 'forgetLink', origin, scheme })
     await this.load()
   }
 

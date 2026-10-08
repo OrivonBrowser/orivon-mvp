@@ -125,6 +125,13 @@ describe('AppsState.handle', () => {
     const bridge = { request: async () => { throw new Error('must not be called') } } as unknown as OrivonInternal
     expect(new AppsState(bridge, () => {}).handle('settings.changed')).toBe(false)
   })
+
+  it('asks main to take back a kind of link, then fetches the list again', async () => {
+    const sent: unknown[] = []
+    const bridge = { request: async (_domain: string, command: unknown) => { sent.push(command); return { apps: [], identity: 'not-started' } } } as unknown as OrivonInternal
+    await new AppsState(bridge, () => {}).forgetLink('https://torrent.example', 'magnet')
+    expect(sent).toEqual([{ type: 'forgetLink', origin: 'https://torrent.example', scheme: 'magnet' }, { type: 'list' }])
+  })
 })
 
 describe('PrivacyState.handle', () => {
