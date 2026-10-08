@@ -110,6 +110,7 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
 | `npm run check:<name>` | The seventeen guards in `docs/development/testing.md` section Guards; CI runs each |
 | `node scripts/ci/select-e2e.mjs --base origin/main` | Prints the e2e areas and specs CI would run for your change (`--explain` says why). Run the named specs of them locally, never the whole suite; a bare `npm run test:e2e` is blocked |
 | `npm run smoke` | The real shell launches and works. Read its JSON failure list, not the exit code |
+| `node scripts/ci/cross-os.mjs` | Orivon on Windows and macOS from this machine: GitHub's runners run the pushed branch from source (smoke, screenshots; `--packaged` for the packages) and it brings the evidence back. Run it in the background after touching the install, launch scripts, OS integration or a dependency (`scripts/ci/README.md` section Other systems). Never a local VM or Wine |
 | `npm run test:e2e` | The Electron end-to-end suite; a failed spec leaves its evidence in `qa-artifacts/latest/` |
 | `npm run qa`, `qa:visual`, `qa:report` | Before calling a UI, flow or boundary change done; `orivon-qa` says which, and how to read the screenshots |
 | `npm run dev` | Humans only: it opens a real window |

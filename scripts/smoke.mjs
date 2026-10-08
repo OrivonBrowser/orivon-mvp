@@ -386,9 +386,12 @@ async function main () {
         `tab view width tracks resize (${tabViewport.w} === ${targetWidth})`,
         tabViewport.w === targetWidth
       )
+      // The height the window got, not the one asked for: macOS keeps a window inside the visible screen, and a
+      // screen shorter than targetHeight gets a shorter window.
+      const contentHeight = await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0].getContentBounds().height)
       check(
-        `tab view height is window height minus CHROME_HEIGHT (${tabViewport.h} === ${targetHeight - CHROME_HEIGHT})`,
-        tabViewport.h === targetHeight - CHROME_HEIGHT
+        `tab view height is window height minus CHROME_HEIGHT (${tabViewport.h} === ${contentHeight - CHROME_HEIGHT})`,
+        tabViewport.h === contentHeight - CHROME_HEIGHT
       )
     }
 
