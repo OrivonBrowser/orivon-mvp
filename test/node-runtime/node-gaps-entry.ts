@@ -1,17 +1,20 @@
 // Bundled against the shim by ./e2e-node-gaps.test.ts into the fixture app's page script: the Node module
-// `constants` and `process.execPath` a dependency reads as it loads, `fs` opens that create in place, and file
-// calls made while many socket dials hang. (A torrent client inspired each; random-access-file opens every file with O_RDWR | O_CREAT.)
+// `constants` and `process.execPath` a dependency reads as it loads, `fs` opens that create in place, file
+// calls made while many socket dials hang, and a request whose URL went through `url.parse`. (A torrent client inspired each; random-access-file opens every file with O_RDWR | O_CREAT.)
 
 import constants from 'constants'
 import * as fs from 'fs'
+import * as http from 'http'
 import * as net from 'net'
 import * as path from 'path'
+import * as url from 'url'
 
 export interface NodeGapsResults {
   readonly constants?: { create: unknown, readWrite: unknown, matchesFs: boolean, errnoNames: boolean }
   readonly execPath?: { type: string, dirname: string }
   readonly createInPlace?: { created: string, kept: string, missingCreated: boolean, secondOpenKeeps: string }
   readonly filesBesideHungDials?: { calls: number, failed: number, firstError: string | undefined, elapsedMs: number, dialConnects: number, dialErrors: number, dialError: string | undefined }
+  readonly requests?: Array<{ status?: number | undefined, error?: string | undefined }>
   readonly error?: string
 }
 
@@ -76,8 +79,22 @@ async function filesBesideHungDials (port: number): Promise<NonNullable<NodeGaps
   }
 }
 
+/** `http.get` of a legacy-parsed URL whose path holds characters Node's parser percent-encodes. */
+async function requestsAfterUrlParse (port: number): Promise<NonNullable<NodeGapsResults['requests']>> {
+  const targets = [`http://127.0.0.1:${String(port)}/16 - Artist "Title" {1}.mp3`, `http://127.0.0.1:${String(port)}/dir\\file.bin?x=1`]
+  return await Promise.all(targets.map(async (target) => await new Promise<{ status?: number | undefined, error?: string | undefined }>((resolve) => {
+    const parsed = url.parse(target)
+    const request = http.get({ hostname: parsed.hostname ?? '', port: parsed.port ?? '', path: parsed.path ?? '' }, (response) => {
+      response.resume()
+      response.on('end', () => { resolve({ status: response.statusCode }) })
+    })
+    request.on('error', (error: Error & { code?: string }) => { resolve({ error: `${error.code ?? ''} ${error.message}`.trim() }) })
+  })))
+}
+
 async function run (): Promise<NodeGapsResults> {
   const port = Number(document.querySelector('meta[name=silent-port]')?.getAttribute('content'))
+  const httpPort = Number(document.querySelector('meta[name=http-port]')?.getAttribute('content'))
   return {
     constants: {
       create: constants.O_CREAT,
@@ -87,7 +104,8 @@ async function run (): Promise<NodeGapsResults> {
     },
     execPath: { type: typeof process.execPath, dirname: path.dirname(process.execPath) },
     createInPlace: await createInPlace(),
-    filesBesideHungDials: await filesBesideHungDials(port)
+    filesBesideHungDials: await filesBesideHungDials(port),
+    requests: await requestsAfterUrlParse(httpPort)
   }
 }
 

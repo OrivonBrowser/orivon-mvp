@@ -1,4 +1,6 @@
+import * as nodeFs from 'node:fs'
 import { createRequire } from 'node:module'
+import * as nodeOs from 'node:os'
 import { describe, expect, it } from 'vitest'
 import constants from '../constants.js'
 
@@ -6,7 +8,11 @@ const real = createRequire(import.meta.url)('node:constants') as Record<string, 
 
 describe('constants', () => {
   it('carries the names and values of Node\'s module, which graceful-fs and random-access-file read their open flags from', () => {
-    expect(Object.keys(constants).sort()).toEqual(Object.keys(real).sort())
+    // crypto.constants varies with the OpenSSL a Node build links (CI's patch release lacks a few), so the
+    // crypto names are compared where both have them; every fs, errno and signal name must be here.
+    const required = { ...nodeFs.constants, ...nodeOs.constants.errno, ...nodeOs.constants.signals }
+    for (const [name, value] of Object.entries(required)) expect(constants[name], name).toBe(value)
+    for (const [name, value] of Object.entries(real)) if (name in constants) expect(constants[name], name).toBe(value)
     expect(constants.O_RDWR).toBe(2)
     expect(constants.O_CREAT).toBe(64)
     expect(constants.ENOENT).toBe(2)

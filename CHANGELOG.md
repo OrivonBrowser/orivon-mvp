@@ -35,6 +35,9 @@ public surface of `src/contracts/` (named `contracts/<file>`).
   at `http://localhost:<port>`, `127.0.0.1` or `[::1]` when `<port>` is one its own listener holds, which Node and
   Electron allow and the page's policy refused; every other loopback port stays refused for images and media. Apps
   that run their own HTTP server for their player need no change. Recheck: `webtorrent`.
+- **`url-parse-escapes-like-node`**: the legacy `url.parse` now percent-encodes a space, quotes, `<`, `>`, braces, the caret and
+  the backtick after the host and turns backslashes before the query into slashes, as Node's does. Apps that escaped paths
+  before `http.request` to avoid `ERR_UNESCAPED_CHARACTERS`: drop that. Recheck: webtorrent.
 - **`page-sync-fs-writes-land`**: the page's `fs.mkdirSync`, `writeFileSync`, `copyFileSync`, `statSync`, `readdirSync`,
   `renameSync` and `rmSync` now work instead of throwing; `openSync` and its family still refuse on the page. Apps that
   worked around the refusal: use them directly. Recheck: webtorrent.
