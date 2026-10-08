@@ -51,6 +51,9 @@ import { deleteLocalFileData } from '../local-files/delete-local-file-data.js'
 import { localFileApps } from '../local-files/local-file-apps.js'
 import { LOCAL_FILES_PARTITION } from '../local-files/partition.js'
 import { siteSettingsControllerFor } from '../site-settings/site-settings-runner.js'
+import { createDeviceRows } from '../devices/hid-rows.js'
+import { forgetDevicesWhenGrantEnds } from '../devices/hid-grant-watch.js'
+import { isRegisteredAppOrigin } from '../site-settings/app-origin.js'
 import { sitesDomain } from '../site-settings/sites-domain.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
@@ -82,6 +85,8 @@ function aboutDomain (): InternalDomain {
 export function startInternalPages (services: ShellServices, ctx: SubsystemContext): void {
   const permissions = createPermissionsController(ctx)
   const siteSettings = siteSettingsControllerFor(services, ctx)
+  // An app's devices are listed on its Apps card, a website's under Sites; the origin decides which (ADR-0068).
+  const deviceRows = createDeviceRows(services.hidDevices, (origin) => !isRegisteredAppOrigin(ctx, origin))
   if (ctx.extensions === undefined) {
     throw new Error('startInternalPages requires ctx.extensions -- check extensionsSubsystem\'s position in subsystems.ts')
   }
@@ -154,14 +159,14 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
         .map((app) => session.fromPartition(partitionFor(app.origin))),
       now: Date.now
     }),
-    sites: sitesDomain(siteSettings, { isPrivate: services.isPrivate }),
+    sites: sitesDomain(siteSettings, { isPrivate: services.isPrivate, devices: deviceRows }),
     siteData: siteDataDomain(() => session.defaultSession),
     localFileData: localFilesDomain({
       list: () => localFileApps()?.list() ?? [],
       deleteFile: async (key) => await deleteLocalFileData({ broker: ctx.broker, userDataPath: app.getPath('userData'), clearPartition: async (partition) => { await session.fromPartition(partition).clearData() } }, key),
       clearShared: async () => { await session.fromPartition(LOCAL_FILES_PARTITION).clearData() }
     }),
-    apps: appsDomain({ permissions, userDataPath: app.getPath('userData'), identity: identityKeyStorage }),
+    apps: appsDomain({ permissions, devices: deviceRows, userDataPath: app.getPath('userData'), identity: identityKeyStorage }),
     web3: web3Domain({
       view: verifierView,
       enabled: () => services.settings.get('web3.lightClient'),
@@ -216,6 +221,12 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   services.downloads.onChange(throttleChanges((change) => { services.internalPages.publish('downloads.changed', change, ['downloads']) }))
   services.zoomStore.onChange(() => { services.internalPages.publish('privacy.changed', undefined, ['settings']) })
   siteSettings.onChange(() => { services.internalPages.publish('sites.changed', undefined, ['settings']) })
+  // An approval or a forgotten device changes an app's card and a site's row alike.
+  services.hidDevices.onChange(() => {
+    services.internalPages.publish('apps.changed', undefined, ['settings'])
+    services.internalPages.publish('sites.changed', undefined, ['settings'])
+  })
+  if (ctx.broker !== undefined) forgetDevicesWhenGrantEnds(ctx.broker, services.hidDevices)
   services.passwords.onChange(() => { services.internalPages.publish('passwords.changed', undefined, ['settings']) })
   services.profiles.onChange(() => { services.internalPages.publish('profiles.changed', undefined, ['settings', 'profiles']) })
   // Never fires in a private session: telemetry never runs there, and

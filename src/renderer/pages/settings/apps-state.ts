@@ -12,6 +12,7 @@ export interface AppRow {
   readonly appName: string
   readonly rows: ReadonlyArray<{ readonly capability: string, readonly warning: boolean, readonly message: string }>
   readonly pickedPathRows: ReadonlyArray<{ readonly pickId: string, readonly kind: string, readonly warning: boolean, readonly message: string }>
+  readonly deviceRows: ReadonlyArray<{ readonly key: string, readonly label: string }>
   readonly storage: { readonly filesBytes: number, readonly codeBytes: number }
 }
 
@@ -60,4 +61,10 @@ export class AppsState {
     await this.bridge.request('apps', { type: 'revokePickedPath', origin, pickId })
     await this.load()
   }
+
+  async forgetDevice (origin: string, key: string): Promise<void> {
+    await this.bridge.request('apps', { type: 'forgetDevice', origin, key })
+    await this.load()
+  }
 }
+

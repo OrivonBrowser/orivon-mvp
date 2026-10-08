@@ -34,7 +34,7 @@ applications a web page cannot be, and both are in use now.
 - Tor and proxy chains.
 - Arweave, and content-addressed stores other than IPFS.
 - DDOC anchored in DNS.
-- A reading list, address autofill, and device choosers for WebUSB and WebHID.
+- A reading list, address autofill, and a device chooser for WebUSB.
 - Identity export and backup.
 - Ideas, not scheduled: a BitTorrent streaming app ([`planning/torrent-app.md`](planning/torrent-app.md))
   and Nostr identity as `window.nostr`.

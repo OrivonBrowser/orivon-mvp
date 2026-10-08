@@ -27,6 +27,8 @@ export interface SiteKindRow {
 export interface SiteSummary {
   readonly origin: string
   readonly kinds: ReadonlyArray<{ readonly kind: SiteKind, readonly label: string, readonly value: SiteDecision }>
+  /** How many USB devices the site was given (ADR-0068); added by the Settings domain, absent when none. */
+  readonly devices?: number | undefined
 }
 
 /** A kind's own default, as the Settings page lists it. */

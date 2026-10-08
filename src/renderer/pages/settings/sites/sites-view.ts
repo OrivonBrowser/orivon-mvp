@@ -7,7 +7,7 @@ import { SITE_KIND_ICONS } from '../../shared/site-kind-icons.js'
 import type { SettingsState } from '../state.js'
 import { badgesFor, hostOf, markColor, markLetter, sentenceFor } from './sites-model.js'
 import type { SiteKindRow, SiteSummary } from './sites-model.js'
-import type { SitesPart } from './sites-part.js'
+import type { SiteDeviceRow, SitesPart } from './sites-part.js'
 
 const EMPTY_TEXT = 'No site has its own settings yet. Choices you make when a site asks appear here.'
 const PRIVATE_TEXT = 'Choices made in a private window are forgotten when it closes.'
@@ -23,6 +23,13 @@ function kindRow (origin: string, row: SiteKindRow, part: SitesPart): HTMLElemen
   // A choice that was made is finished, though it keeps the keyboard.
   select.addEventListener('change', () => { select.dataset['settled'] = 'true'; void part.choose(origin, row.kind, select.value) })
   return h('li', { className: 'site-kind' }, h('span', { className: 'site-kind-label' }, icon, h('span', { textContent: row.label })), select)
+}
+
+function deviceRow (origin: string, device: SiteDeviceRow, part: SitesPart): HTMLElement {
+  const forget = h('button', { className: 'btn small', type: 'button', textContent: 'Forget', onclick: () => { void part.forgetDevice(origin, device.key) } })
+  forget.setAttribute('aria-label', `Forget ${device.label} on ${hostOf(origin)}`)
+  forget.dataset['focusKey'] = `${origin}:device:${device.key}`
+  return h('li', { className: 'site-kind' }, h('span', { className: 'site-kind-label' }, h('span', { textContent: device.label })), forget)
 }
 
 function resetButton (site: SiteSummary, part: SitesPart): HTMLButtonElement {
@@ -56,9 +63,10 @@ function siteItem (site: SiteSummary, part: SitesPart): HTMLElement {
   toggle.setAttribute('aria-label', `${open ? 'Hide' : 'Show'} the settings of ${sentenceFor(site)}`)
   toggle.dataset['focusKey'] = `${site.origin}:toggle`
   const rows = part.rows.get(site.origin) ?? []
+  const devices = part.devices.get(site.origin) ?? []
   const item = h('li', { className: open ? 'site-item open' : 'site-item' },
     h('div', { className: 'site-line' }, toggle, resetButton(site, part)),
-    open ? h('ul', { className: 'site-kinds' }, ...rows.map((row) => kindRow(site.origin, row, part))) : null)
+    open ? h('ul', { className: 'site-kinds' }, ...rows.map((row) => kindRow(site.origin, row, part)), ...devices.map((device) => deviceRow(site.origin, device, part))) : null)
   item.dataset['origin'] = site.origin
   return item
 }

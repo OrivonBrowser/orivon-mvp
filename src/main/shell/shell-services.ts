@@ -7,6 +7,7 @@ import { BookmarkStore } from '../browsing/bookmarks.js'
 import { defaultBookmarks } from '../default-profile/default-profile.js'
 import { startsFromDefaultProfile } from '../default-profile/profile-start.js'
 import { currentDefaultProfileDir } from '../default-profile/default-profile-dir.js'
+import { HidApprovals } from '../devices/hid-approvals.js'
 import { SearchEngineStore } from '../browsing/search-engine-store.js'
 import { InternalPageRegistry } from '../pages/internal-registry.js'
 import { SettingsStore } from '../settings/settings-store.js'
@@ -69,6 +70,8 @@ export interface ShellServices {
   /** The extensions loaded in the session pages run in, and when that changes. */
   readonly extensionsLoaded: LoadedExtensions
   readonly history: HistoryService
+  /** The USB HID devices the person approved, per app and per site (ADR-0068). */
+  readonly hidDevices: HidApprovals
   readonly internalPages: InternalPageRegistry
   /** This process is a private session: it never writes a store file of its own. */
   readonly isPrivate: boolean
@@ -147,6 +150,7 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     downloads: createDownloadService(userDataPath, runtime.isPrivate, settings),
     extensionsLoaded: createLoadedExtensions(session.defaultSession),
     history: new HistoryService(openedHistory.store, settings, openedHistory.problem, Date.now, (from, to) => { closedTabs.forgetBetween(from, to) }),
+    hidDevices: new HidApprovals(runtime.isPrivate ? null : join(userDataPath, 'hid-devices.json')),
     internalPages,
     isPrivate: runtime.isPrivate,
     kiosk,

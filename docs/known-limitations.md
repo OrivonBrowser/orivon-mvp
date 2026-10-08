@@ -44,6 +44,11 @@ servers for data. None of them is trusted to be right; each of them sees what it
 - **On a first visit, an app's own code starts before you answer its prompt.** Anything it asks
   for in that moment is refused; once you accept, the tab reloads and every later visit starts
   with the grant already held.
+- **Only WebHID reaches a USB device.** WebUSB and Web Serial stay refused for every page. An app
+  that needs them has no route to its hardware.
+- **A device is asked about again when its identity changes.** An approval is kept for a device's
+  vendor id, product id, serial number and name together, so a device that reappears with another
+  product id (after unlocking, or after a firmware step) is asked once more.
 - **Native code runs only as WebAssembly.** A Node addon loads through its WebAssembly build and a
   spawned program is a WASI program from the app's own files. An app that needs a native binary
   or a program installed on your system is refused, by name.
