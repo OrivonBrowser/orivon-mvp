@@ -78,7 +78,7 @@ Also read [`.claude/skills/orivon-electron/SKILL.md`](../../.claude/skills/orivo
 [`ADR-0021`](../../docs/decisions/ADR-0021-page-globals-carry-the-platform-descriptor.md).
 `npm run check:page-globals` and `tests/globals.test.ts` guard it.
 
-**`process` and `os` answer as Node does, on Linux.** Provisional ([`ADR-0072`](../../docs/decisions/ADR-0072-apps-see-a-node-process-on-linux-x64.md)): `process.version` and
+**`process` and `os` answer as Node does, on Linux.** Provisional ([`ADR-0073`](../../docs/decisions/ADR-0073-apps-see-a-node-process-on-linux-x64.md)): `process.version` and
 `versions.node` are the Node release `node-builtin-exports.generated.json` is measured against, there is no
 `process.browser`, and `platform`, `arch`, `os.platform()`, `os.type()` and `os.arch()` are `linux` and `x64` on
 every host, because the files an app sees follow Linux rules ([`node-identity.ts`](node-identity.ts) is the one

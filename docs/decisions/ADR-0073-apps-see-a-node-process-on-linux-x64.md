@@ -1,4 +1,4 @@
-# ADR-0072: An app sees a Node `process`, on Linux, x64
+# ADR-0073: An app sees a Node `process`, on Linux, x64
 
 - **Status:** accepted, provisional
 - **Date:** 2026-10-08
