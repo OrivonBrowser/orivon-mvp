@@ -32,7 +32,7 @@ export const OWN_LISTENER_MEDIA_FILTER: WebRequestFilter = {
  * request the browser itself makes for a page (its tab icon) has no frame but names the page's
  * contents, and belongs to that page's main frame.
  */
-function frameOf (details: OnBeforeRequestListenerDetails): WebFrameMain | null | undefined {
+export function frameOf (details: OnBeforeRequestListenerDetails): WebFrameMain | null | undefined {
   try {
     if (details.frame !== null && details.frame !== undefined) return details.frame
     return details.webContentsId === undefined ? undefined : webContents.fromId(details.webContentsId)?.mainFrame

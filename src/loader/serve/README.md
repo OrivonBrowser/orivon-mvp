@@ -61,6 +61,10 @@ caller whose session loads no extension, a granted local file (`../../main/local
   listener was given, so the policy admits any port and `../../main/sessions/own-listener-media-gate.ts`
   cancels a request to a loopback port the page's own listeners do not hold. `fetch` and sockets
   already go through the broker, and `frame-src` is `web.embed`'s, so neither is widened.
+- **An `fs` grant adds the `orivon-file:` scheme to `img-src` and `media-src`, and to nothing else**
+  (`appFiles`, ADR-0070). An app's page shows its own files at `/orivon/app/<path>`; the main process
+  redirects that request to `orivon-file:` (`../../main/sessions/app-files-by-url.ts`), so the policy
+  must admit the scheme. The scheme alone decides nothing: its URLs carry a MAC the main process makes.
 - **No `form-action`.** Restricting it would also refuse a form-post sign-in's redirects, and
   would bound nothing: top-level navigation is not governed by CSP (A42).
 - **`object-src 'none'`.** `default-src 'self'` alone still admits a same-origin

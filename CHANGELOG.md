@@ -26,6 +26,12 @@ public surface of `src/contracts/` (named `contracts/<file>`).
   waits where Node would, and no longer meets `limit`. Apps that retried `limit` on files may drop it. Recheck: webtorrent.
 - **`node-constants-and-exec-path`**: `require('constants')` resolves to Node's table (Linux values) and `process.execPath`
   is `''` rather than `undefined`. Apps that stubbed either for their bundle: remove the stub. Recheck: webtorrent.
+- **`page-shows-own-files-by-url`**: an app that holds `fs` may point `<img>`, a CSS image, `<audio>` and `<video>` at
+  `/orivon/app/<path>` (the virtual root `os.homedir()` and `app.getPath('userData')` name) and at
+  `file:///orivon/app/<path>`, and the browser shows the file `orivon.fs` calls that path, which Electron allows and a web
+  page did not; a path an app joined for its own page needs no change. For an app that holds `fs`, a file its own host
+  serves under `/orivon/app/` is shadowed for images and media. `fetch` and `XMLHttpRequest` of the path are not served:
+  use `orivon.fs`. Recheck: `webtorrent`.
 - **`media-element-track-lists`**: an app's tab now gives every `<audio>` and `<video>` element the standard `audioTracks`
   and `videoTracks` lists, which Electron apps get from `enableBlinkFeatures: 'AudioVideoTracks'` in their window; an
   ordinary site's tab is unchanged. A player that guarded or polyfilled the lists: read them directly. Recheck: webtorrent.

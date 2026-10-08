@@ -8,6 +8,7 @@ import type { Pattern } from '../../contracts/index.js'
 import { leafOf } from '../leaf-hash.js'
 import { contentTypeFor } from './content-type.js'
 import { cspHeaderValue, ISOLATION_HEADERS } from './csp.js'
+import type { CspOptions } from './csp.js'
 import { parseRange } from './range.js'
 import type { LoaderStorage, OpenedAsset } from '../cache/storage.js'
 
@@ -123,7 +124,7 @@ export function buildResponse (
   connectPatterns: readonly Pattern[],
   securePatterns: readonly Pattern[],
   crossOriginIsolated = false,
-  ownListenerMedia = false
+  liveCsp: Pick<CspOptions, 'ownListenerMedia' | 'appFiles'> = {}
 ): Response {
   // nosniff on every pinned response -- content-type is derived from the
   // PATH's own extension (contentTypeFor), never sniffed from bytes in this
@@ -132,7 +133,7 @@ export function buildResponse (
   // image with a polyglot payload) execute as one if it is ever reached
   // through a context that runs what it loads.
   const policy: Record<string, string> = {
-    'content-security-policy': cspHeaderValue(connectPatterns, securePatterns, { ownListenerMedia }),
+    'content-security-policy': cspHeaderValue(connectPatterns, securePatterns, liveCsp),
     'x-content-type-options': 'nosniff'
   }
   if (crossOriginIsolated) Object.assign(policy, ISOLATION_HEADERS)
