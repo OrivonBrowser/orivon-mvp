@@ -390,7 +390,8 @@ export async function writeFailureEvidence ({ file, name, error, retried }) {
     const bundle = await bundleFor(app, { alive: true }).catch(() => undefined)
     if (bundle !== undefined) bundles.push(bundle)
   }
-  const rel = join(slug(file), slug(name))
+  // Forward slashes on every system: it is a link in index.md as well as a path.
+  const rel = `${slug(file)}/${slug(name)}`
   const dir = join(LATEST_DIR, rel)
   const lines = [`# ${name}`, '', `File: ${file}`, retried ? '**RETRIED: this test needed a retry to reach this state.**' : '', '', '## Error', '', '```', String(error ?? 'unknown').slice(0, 6000), '```', '']
   for (const [i, bundle] of bundles.entries()) {

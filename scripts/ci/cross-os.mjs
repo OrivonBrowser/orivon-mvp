@@ -77,7 +77,8 @@ export function logHighlights (log, max = LOG_LINES) {
  * @param {Record<string, { smoke?: ReturnType<typeof smokeResult>, screenshots: number, inspect?: string, failures?: string, highlights?: string[], log?: string }>} evidence by job name
  */
 export function summarize (run, evidence) {
-  const out = [`${run.conclusion === 'success' ? 'PASS' : 'FAIL'}  ${run.url}`]
+  const verdict = { success: 'PASS', failure: 'FAIL' }[run.conclusion] ?? (run.conclusion || 'unfinished').toUpperCase()
+  const out = [`${verdict}  ${run.url}`]
   for (const job of run.jobs) {
     const seen = evidence[job.name] ?? { screenshots: 0 }
     out.push('', `${job.conclusion === 'success' ? 'pass' : job.conclusion || 'unfinished'}: ${job.name}`)

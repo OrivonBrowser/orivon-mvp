@@ -13,6 +13,7 @@
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
@@ -24,6 +25,7 @@ import { answerQuestion, noNativeDialogs, readQuestion, stubNativeDialogs, waitQ
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from '../support/qa-helpers.js'
 import { captureState, checkState, prepareWindow, type Check, type Rect, type StateSpec } from '../support/qa-visual.js'
 import { ABSENCE_SETTLE_MS, delay, evaluateRetrying, findChrome, findViewShowing, popoverShown, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { fuseFilePath, readFileProtocolFuse } from '../../src/main/local-files/file-fuse.js'
 
 /** The address text of a fixture page: its port changes on every run. */
 const FIXTURE_ADDRESS: Rect = { x: 240, y: 44, width: 260, height: 24 }
@@ -43,6 +45,14 @@ const MANIFEST = JSON.stringify({
   entry: 'index.html',
   capabilities: { fs: { quotaBytes: 1024 } }
 })
+
+/** Windows lets no program make itself the default browser, so the row there opens Windows' own settings. */
+const MAKE_DEFAULT = process.platform === 'win32' ? 'Open Windows Settings' : 'Make default'
+
+// Local files serve nothing while the binary's file-protocol fuse is on, and a checkout flips it on Linux alone
+// (A394). On Linux, e2e-file-protocol-fuse fails when it is on, so skipping here hides nothing there.
+const electronPath: string = createRequire(import.meta.url)('electron')
+const localFilesServed = await readFileProtocolFuse(fuseFilePath(electronPath)) === 'off'
 
 /** The schemes every state is captured in. */
 const requested = (process.env['ORIVON_QA_SCHEMES'] ?? 'light,dark').split(',').map((s) => s.trim())
@@ -150,7 +160,7 @@ for (const scheme of SCHEMES) {
         await chrome.click('#menu')
         expect(await waitFor(async () => await popoverShown(app, 'overlay=menu'))).toBe(true)
         const menuPage = app.windows().find((page) => page.url().includes('overlay=menu')) as Page
-        check('the menu card fills its view to the right edge', await menuPage.evaluate(() => window.innerWidth - document.body.getBoundingClientRect().right) === 0)
+        check('the menu card fills its view to the right edge', await menuPage.evaluate(() => document.documentElement.clientWidth - document.body.getBoundingClientRect().right) === 0)
         await state(check, app, `menu-popup-${scheme}`, {
           expected: 'The main menu is open as a popup under the menu button at the top right: a list of labelled entries, none cut off or overlapping, inside the window.',
           action: 'Clicked the menu button and waited for the popup to be shown.'
@@ -234,9 +244,9 @@ for (const scheme of SCHEMES) {
       await runPhase('visual state of Settings > Default browser', async (check) => {
         const settings = await openInternal(app, chrome, 'settings', '/default-browser')
         await settings.waitForSelector('#row-default-browser button')
-        check('Settings > Default browser has the section in the navigation and a Make default button', (await settings.locator('.nav-list').innerText()).includes('Default browser') && await settings.getByRole('button', { name: 'Make default' }).isVisible())
+        check(`Settings > Default browser has the section in the navigation and a ${MAKE_DEFAULT} button`, (await settings.locator('.nav-list').innerText()).includes('Default browser') && await settings.getByRole('button', { name: MAKE_DEFAULT }).isVisible())
         await state(check, app, `settings-default-browser-${scheme}`, {
-          expected: 'orivon://settings/default-browser is open with "Default browser" selected in the navigation, directly under Search. The section has a short intro line and one row labelled "Default browser" with the help text "Links you click in other programs open in Orivon." and a "Make default" button on its right.',
+          expected: `orivon://settings/default-browser is open with "Default browser" selected in the navigation, directly under Search. The section has a short intro line and one row labelled "Default browser" with the help text "Links you click in other programs open in Orivon." and a "${MAKE_DEFAULT}" button on its right.`,
           action: 'Opened orivon://settings/default-browser on a build that can register as the default browser.'
         })
       })
@@ -388,7 +398,7 @@ for (const scheme of SCHEMES) {
     }
   }, QA_TEST_TIMEOUT_MS)
 
-  it(`a local file's question and its mark look right (${scheme})`, async () => {
+  it.skipIf(!localFilesServed)(`a local file's question and its mark look right (${scheme})`, async () => {
     const folder = realpathSync(mkdtempSync(join(tmpdir(), 'orivon-visual-local-')))
     writeFileSync(join(folder, 'orivon.json'), MANIFEST)
     writeFileSync(join(folder, 'app.html'), '<!doctype html><meta charset="utf-8"><title>Local fixture</title><link rel="orivon-manifest" href="orivon.json"><body style="font:16px sans-serif;margin:32px"><h1>Local fixture</h1><p>A file on this computer.</p>')
