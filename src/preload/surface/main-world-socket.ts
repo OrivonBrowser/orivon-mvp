@@ -1,10 +1,8 @@
-// The one function handed to `contextBridge.executeInMainWorld`. SERIALISED
-// (Function.prototype.toString) and re-evaluated fresh in the main world, so
-// every helper it needs -- streams, the caller-attribution check below --
-// must be declared INSIDE its own body: no free variables, no imports, no
-// module-level consts. See README.md's Design notes for why. `bridge` is a
-// plain object of proxied closures surface/orivon.ts built, one per
-// CONTROL_CHANNEL method; `target` defaults to the real `window` (overridable, matching src/shim/globals.ts) so a test never mutates the shared global.
+// The one function handed to `contextBridge.executeInMainWorld`. SERIALISED (Function.prototype.toString) and
+// re-evaluated fresh in the main world, so every helper it needs must be declared INSIDE its own body: no free
+// variables, no imports, no module-level consts (README.md's Design notes). `bridge` is a plain object of proxied
+// closures surface/orivon.ts built, one per CONTROL_CHANNEL method; `target` defaults to the real `window`
+// (overridable, matching src/shim/globals.ts) so a test never mutates the shared global.
 
 import type { OrivonErrorCode } from '../../contracts/errors.js'
 import type { SendRefusal, UdpSocket } from '../../contracts/handles.js'
@@ -14,10 +12,8 @@ import type {
   MainWorldSocketBridge, MainWorldUdpBridge, MainWorldWebContextBridge, OrivonLimits
 } from './main-world-bridges.js'
 
-// The bridge shapes -- including `bridge`'s own PARAMETER shape,
-// MainWorldBridge -- live in ./main-world-bridges.ts (Rule 2: an `interface`
-// produces no JS, so this is safe despite the constraint above). Re-exported
-// so no import site changes.
+// The bridge shapes, MainWorldBridge included, live in ./main-world-bridges.ts (an `interface` produces no JS, so the
+// constraint above does not apply); re-exported so no import site changes.
 export type {
   MainWorldBridge, MainWorldDatagram, MainWorldDirectoryBridge, MainWorldFileBridge, MainWorldServerBridge,
   MainWorldSocketBridge, MainWorldUdpBridge, MainWorldWebContextBridge, OrivonLimits
@@ -392,11 +388,7 @@ export function installOrivon (
     try { if (setLimit) { if (savedLimit !== undefined) defineOwn(RealError, 'stackTraceLimit', savedLimit); else delete (RealError as { stackTraceLimit?: unknown }).stackTraceLimit } } catch { /* best effort restore */ }
     return { tampered, frames }
   }
-  // Forces the bootstrap capture above to happen NOW, before any page or
-  // extension script runs, rather than on whatever call is first; a failed
-  // bootstrap leaves savedCallSiteMethods permanently mismatched (`{}`),
-  // refusing every call. Genuinely CALLED, not just referenced --
-  // captureStackTrace's exclude only trims a frame that is on the stack.
+  // Forces the bootstrap capture NOW, before any page script runs; a failed one leaves savedCallSiteMethods `{}`, refusing every call. Genuinely CALLED: captureStackTrace's exclude only trims a frame on the stack.
   function bootstrapCallSiteMethods (): void { captureCaller(bootstrapCallSiteMethods) }
   bootstrapCallSiteMethods()
   if (savedCallSiteMethods === undefined) savedCallSiteMethods = {}
@@ -415,9 +407,18 @@ export function installOrivon (
     return wrapped as unknown as F
   }
 
-  // UNWRAPPED net.connect/net.connectSecure -- ../routed/dial.ts's own use, via the internal-net slot below (README.md's Design notes).
-  const netConnectImpl = async (opts: { host: string, port: number }): Promise<unknown> => buildSocket(await callRevived(bridge.netConnect(opts)))
-  const netConnectSecureImpl = async (opts: SecureConnectOptions): Promise<unknown> => buildSocket(await callRevived(bridge.netConnectSecure(opts)))
+  // UNWRAPPED net.connect/net.connectSecure for ../routed/dial.ts (internal-net slot below). ADR-0071: an AbortSignal cannot
+  // cross the bridge, so the isolated side gets a function registering its cancel instead.
+  async function dial (open: (rest: never, onAbandon?: (listener: () => void) => void) => Promise<Awaited<ReturnType<typeof bridge.netConnect>>>, opts: unknown): Promise<unknown> {
+    const { signal, ...rest } = (typeof opts === 'object' && opts !== null ? opts : {}) as { signal?: unknown }
+    if (signal !== undefined && !(signal instanceof AbortSignal)) throw toOrivonError('invalid', { message: 'orivon: signal must be an AbortSignal' })
+    if (signal?.aborted === true) throw toOrivonError('closed', { message: 'orivon: the connection attempt was aborted before it began' })
+    let hook = (): void => {}
+    const onAbandon = signal === undefined ? undefined : (listener: () => void): void => { hook = () => { listener() }; signal.addEventListener('abort', hook, { once: true }) }
+    try { return buildSocket(await callRevived(open(rest as never, onAbandon))) } finally { signal?.removeEventListener('abort', hook) }
+  }
+  const netConnectImpl = async (opts: { host: string, port: number, signal?: AbortSignal }): Promise<unknown> => await dial(bridge.netConnect, opts)
+  const netConnectSecureImpl = async (opts: SecureConnectOptions): Promise<unknown> => await dial(bridge.netConnectSecure, opts)
 
   /** One blocking round trip over `bridge.fsSync`. It never throws, so the failure is built and thrown HERE, never via callRevived. */
   function syncCall (op: string, args: unknown[]): unknown {
@@ -483,7 +484,7 @@ export function installOrivon (
   }
   // Not on the child host's object: it never meets a page, so there is no call to attribute.
   if (attributeCallers) Object.defineProperty(api, Symbol.for('orivon.synchronous'), { value: Object.freeze({ fs: Object.freeze(synchronousFs) }) })
-  // A plain assignment would let a page script replace orivon.net.connect for every other script on the same page.
+  // Not assignable: a page script could otherwise replace orivon.net.connect for every other script on the page.
   Object.defineProperty(target, 'orivon', { value: Object.freeze(api), writable: false, configurable: false, enumerable: true })
 
   // A private slot for the ../routed/ installers alone -- README.md's Design notes. `callerIsPage` is `guarded`'s own attribution, shared rather than copied a third time.

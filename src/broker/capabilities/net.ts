@@ -20,7 +20,7 @@ import { assertSocketRoom } from './socket-room.js'
 import { isPublicUnicast } from '../policy/address.js'
 import { proxyProbeUrl } from '../policy/proxy-guard.js'
 import type { Broker, CreateBrokerOptions, DialedSocket } from '../broker-contracts.js'
-import type { CapabilityKind, LookupAddress } from '../../contracts/index.js'
+import type { CapabilityKind, ConnectOptions, LookupAddress } from '../../contracts/index.js'
 
 /**
  * The two capabilities `orivon.net.lookup` reads a grant from (d-0030,
@@ -84,7 +84,7 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical, lis
     }
   }
 
-  async function connect (origin: string, opts: { host: string, port: number }): Promise<FailableTcpSocket> {
+  async function connect (origin: string, opts: ConnectOptions): Promise<FailableTcpSocket> {
     const key = canonical(origin)
 
     // THE NARROWING. `current.patterns` is what the user granted; nothing
@@ -152,7 +152,7 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical, lis
       })
 
       return toFailableSocket(key, entry, socketFields)
-    })
+    }, opts.signal)
   }
 
   /** `orivon.net.connectSecure` (ADR-0017) -- ./net-connect-secure.ts, sharing this file's state and `toFailableSocket`. */

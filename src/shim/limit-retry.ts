@@ -7,8 +7,8 @@
 // the rest. Node never refuses a file call for being one too many: libuv queues it. So the asynchronous fs calls
 // also queue here, in order, under half that bound (fsQueue), and a program writing at full speed (a torrent
 // client) waits where Node would wait instead of meeting a refusal its code never expects. Socket dials queue under
-// a quarter of it (dialQueue): a dial holds its place until the broker's dial timeout even when the program has
-// given up on it, and a peer-to-peer program gives up on many.
+// a quarter of it (dialQueue): a dial holds its place until it connects or the broker's dial timeout passes, and a
+// peer-to-peer program starts many. One the program destroys is abandoned at once (ADR-0071) and frees its place.
 
 import { LIMITS } from '../contracts/limits.js'
 

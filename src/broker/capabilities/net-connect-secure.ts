@@ -57,7 +57,7 @@ export function createConnectSecure ({ deps, handleTable, ledger, canonical, soc
 
   return async function connectSecure (origin, opts) {
     const key = canonical(origin)
-    const { host: hostArg, port, ...options } = opts
+    const { host: hostArg, port, signal: abandon, ...options } = opts
 
     const current = ledger.currentGrant(key, 'https.connect')
     if (current === undefined) throw fail('denied', 'https.connect is not granted to this origin')
@@ -121,6 +121,6 @@ export function createConnectSecure ({ deps, handleTable, ledger, canonical, soc
         ? { authorized, alpnProtocol, peerCertificate }
         : { authorized, authorizationError, alpnProtocol, peerCertificate }
       return { ...toFailableSocket(key, entry, socketFields), ...handshake }
-    })
+    }, abandon)
   }
 }

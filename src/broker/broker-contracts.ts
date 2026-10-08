@@ -18,6 +18,7 @@ import type { DialSecure, FailableSecureTcpSocket } from './secure-dial-contract
 import type {
   BindScope,
   CapabilityKind,
+  ConnectOptions,
   Datagram,
   Grant,
   GrantId,
@@ -297,7 +298,7 @@ export interface Broker {
   readonly net: {
     /** Returns a `FailableTcpSocket` -- a `TcpSocket` plus one broker-internal
      * escape hatch, see handle-contracts.ts. */
-    connect(origin: string, opts: { host: string, port: number }): Promise<FailableTcpSocket>
+    connect(origin: string, opts: ConnectOptions): Promise<FailableTcpSocket>
     /**
      * TLS terminated on the trusted side (ADR-0017) -- checked against
      * `https.connect`, a SEPARATE grant from `tcp.connect` above, matched by
