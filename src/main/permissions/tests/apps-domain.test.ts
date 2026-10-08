@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InternalCaller } from '../../pages/internal-ipc.js'
 import { appsDomain } from '../apps-domain.js'
 import { appRootDirectoryName } from '../../../loader/index.js'
+import { SchemeChoices } from '../../scheme-routing/scheme-choices.js'
 
 const CALLER = {} as InternalCaller
 
@@ -17,15 +18,15 @@ const APP = { origin: 'https://app.example', appName: 'App', rows: [], pickedPat
 const NO_DEVICES = { rows: () => [], forget: () => false }
 const DEVICE = { key: 'k1', label: 'Nano X (USB 2c97:4011)' }
 
-function setup (devices: Parameters<typeof appsDomain>[0]['devices'] = NO_DEVICES): { call: (command: unknown) => Promise<unknown>, permissions: Record<'list' | 'revokeCapability' | 'revokePickedPath', ReturnType<typeof vi.fn>> } {
+function setup (devices: Parameters<typeof appsDomain>[0]['devices'] = NO_DEVICES, links = new SchemeChoices(null)): { call: (command: unknown) => Promise<unknown>, permissions: Record<'list' | 'revokeCapability' | 'revokePickedPath', ReturnType<typeof vi.fn>> } {
   const permissions = { list: vi.fn(async () => [APP]), revokeCapability: vi.fn(async () => {}), revokePickedPath: vi.fn(async () => {}) }
-  const domain = appsDomain({ permissions, devices, userDataPath: dir, identity: async () => 'session-only' })
+  const domain = appsDomain({ permissions, devices, links, userDataPath: dir, identity: async () => 'session-only' })
   return { call: async (command) => await domain.handle(command, CALLER), permissions }
 }
 
 describe('the apps domain', () => {
   it('is for Settings only', () => {
-    expect(appsDomain({ permissions: {} as never, devices: NO_DEVICES, userDataPath: dir, identity: async () => 'keychain' }).pages).toEqual(['settings'])
+    expect(appsDomain({ permissions: {} as never, devices: NO_DEVICES, links: new SchemeChoices(null), userDataPath: dir, identity: async () => 'keychain' }).pages).toEqual(['settings'])
   })
 
   it('lists the apps with what each has stored, and where the identity key is kept', async () => {
@@ -35,7 +36,7 @@ describe('the apps domain', () => {
     await writeFile(join(root, 'files', 'a.txt'), 'x'.repeat(100))
     await writeFile(join(root, 'code', 'index.js'), 'y'.repeat(30))
     const { call } = setup()
-    expect(await call({ type: 'list' })).toEqual({ apps: [{ ...APP, deviceRows: [], storage: { filesBytes: 100, filesQuotaBytes: undefined, codeBytes: 30, codeVersion: undefined } }], identity: 'session-only' })
+    expect(await call({ type: 'list' })).toEqual({ apps: [{ ...APP, deviceRows: [], linkSchemes: [], storage: { filesBytes: 100, filesQuotaBytes: undefined, codeBytes: 30, codeVersion: undefined } }], identity: 'session-only' })
   })
 
   it('takes back a permission or a picked path for an origin and a name that are what they should be', async () => {
@@ -61,6 +62,27 @@ describe('the apps domain', () => {
       expect(await call({ type: 'forgetDevice', ...request })).toEqual({ ok: false })
     }
     expect(forget).not.toHaveBeenCalled()
+  })
+
+  it('lists the kinds of link each app was chosen to open, and lets the person take one back', async () => {
+    const links = new SchemeChoices(null)
+    links.set('magnet', 'https://app.example')
+    links.set('mailto', 'https://mail.example')
+    const { call } = setup(NO_DEVICES, links)
+    expect(await call({ type: 'list' })).toMatchObject({ apps: [{ origin: 'https://app.example', linkSchemes: ['magnet'] }] })
+    expect(await call({ type: 'forgetLink', origin: 'https://app.example', scheme: 'magnet' })).toEqual({ ok: true })
+    expect(links.get('magnet')).toBeUndefined()
+    expect(links.get('mailto')).toBe('https://mail.example')
+  })
+
+  it('forgets a kind of link only for the app it was chosen for, and refuses the rest', async () => {
+    const links = new SchemeChoices(null)
+    links.set('magnet', 'https://app.example')
+    const { call } = setup(NO_DEVICES, links)
+    for (const request of [{ origin: 'https://other.example', scheme: 'magnet' }, { origin: 'https://app.example', scheme: 'mailto' }, { origin: 'https://app.example/path', scheme: 'magnet' }, { origin: 'https://app.example', scheme: 5 }, { origin: 5, scheme: 'magnet' }]) {
+      expect(await call({ type: 'forgetLink', ...request })).toEqual({ ok: false })
+    }
+    expect(links.get('magnet')).toBe('https://app.example')
   })
 
   it('takes back each media permission, which are capability kinds like the rest', async () => {

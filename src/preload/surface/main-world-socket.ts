@@ -340,8 +340,7 @@ export function installOrivon (
     if (applyOwn(someOwn, frames, [isExtension])) return true
     return !applyOwn(someOwn, frames, [isPage])
   }
-  // The four CallSite.prototype methods, saved by mapFrames' own first call
-  // (forced synchronously below); a live/saved mismatch is itself tamper. README.md's Design notes.
+  // The four CallSite.prototype methods, saved by mapFrames' own first call (forced synchronously below); a live/saved mismatch is itself tamper. README.md's Design notes.
   let savedCallSiteMethods: CallSiteMethods | undefined
   function mapFrames (raw: readonly NodeJS.CallSite[]): CallerFrame[] {
     return applyOwn(mapOwn, raw, [(cs: NodeJS.CallSite) => {
@@ -435,7 +434,8 @@ export function installOrivon (
     app: Object.freeze({
       manifest: guarded(async () => await callRevived(bridge.appManifest())),
       grants: guarded(async () => await callRevived(bridge.appGrants())),
-      requestGrant: guarded(async (request: CapabilityRequest) => await callRevived(bridge.appRequestGrant(request)))
+      requestGrant: guarded(async (request: CapabilityRequest) => await callRevived(bridge.appRequestGrant(request))),
+      onOpenUrl: guarded((listener: (url: string) => void) => bridge.appOnOpenUrl(listener)), requestSchemeHandler: guarded(async (scheme: string) => await callRevived(bridge.appRequestSchemeHandler(scheme))), isSchemeHandler: guarded(async (scheme: string) => await callRevived(bridge.appIsSchemeHandler(scheme)))
     }),
     fs: Object.freeze({
       readFile: guarded(async (path: string) => await callRevived(bridge.fsReadFile(path))),

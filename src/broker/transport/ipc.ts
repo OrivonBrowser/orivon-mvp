@@ -97,6 +97,9 @@ async function dispatch (
     case 'app.manifest':
     case 'app.grants':
     case 'app.requestGrant':
+    case 'app.nextOpenUrl':
+    case 'app.requestSchemeHandler':
+    case 'app.isSchemeHandler':
       // Both closures re-read `event.sender` LIVE, whenever the dialog
       // actually calls them (A153), never a value captured here. `id` is
       // `event.sender` itself: a stable per-tab identity for

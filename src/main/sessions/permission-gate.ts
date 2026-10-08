@@ -9,7 +9,7 @@
 // session's own construction site -- that placement is load-bearing, not a
 // style choice, and moving it back "for clarity" reopens the gap.
 import { join } from 'node:path'
-import { app, session, type Session, type WebContents } from 'electron'
+import { app, session, type BaseWindow, type Session, type WebContents } from 'electron'
 import type { Subsystem } from '../registry.js'
 import { noteExclusiveAccess, type ExclusiveAccess } from '../shell/exclusive-access-notice.js'
 import { confirmExternalLink } from '../shell/external-link-prompt.js'
@@ -17,7 +17,7 @@ import { windowShowing } from '../shell/showing-window.js'
 import { EXCLUSIVE_ACCESS, isAllowed } from './allowed-permissions.js'
 import { handleDevicePermission } from './device-permission-handler.js'
 import { handleDisplayMedia } from './display-media-handler.js'
-import { createExternalLinks } from './external-links.js'
+import { createExternalLinks, type LinkRouting } from './external-links.js'
 import { askSite } from '../site-settings/ask-site.js'
 import { NotificationDecisions } from './notification-decisions.js'
 import { siteAsks } from './site-asks.js'
@@ -35,7 +35,14 @@ export function notificationDecisions (): NotificationDecisions {
   return decisions
 }
 
-const externalLinks = createExternalLinks({ windowShowing, confirm: async (_window, question, tab) => await confirmExternalLink({ contents: tab }, question) })
+let linkRouting: LinkRouting<BaseWindow> | undefined
+
+/** Lets a link of a scheme some app declares open in that app (d-0596); published once the shell exists, and until then every such link asks the OS question alone. */
+export function configureLinkRouting (routing: LinkRouting<BaseWindow>): void {
+  linkRouting = routing
+}
+
+const externalLinks = createExternalLinks({ windowShowing, confirm: async (_window, question, tab) => await confirmExternalLink({ contents: tab }, question), routing: () => linkRouting })
 
 /** The question an `openExternal` request raises, asked for a link the page opens itself (a `window.open`), with the same rules as a clicked one: true only when the person said yes. */
 export async function askExternalLink (tab: WebContents, url: string): Promise<boolean> {

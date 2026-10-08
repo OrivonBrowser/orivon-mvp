@@ -29,6 +29,7 @@ applications a web page cannot be, and both are in use now.
 - Native desktop apps rendered in a tab, such as Bisq (compatibility tier 3).
 - Deeper WASI and WebAssembly support inside the layer that runs apps today.
 - Spell-check dictionaries served from `.eth` names.
+- Orivon as the system's handler for a link scheme or a file type, so a link clicked in another program, or a `.torrent` file, opens in an app.
 - Windows and macOS code signing with bought certificates.
 - Web3 search.
 - Tor and proxy chains.
