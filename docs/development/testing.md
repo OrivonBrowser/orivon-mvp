@@ -239,6 +239,11 @@ built app, and unless the build is the ordinary one (`ORIVON_ORDINARY_BUILD=1`),
 does; it binds 9000 and 6667. The server's release check may reach `api.github.com` from the main process
 (`--host-resolver-rules` does not cover it); no assertion depends on the answer.
 
+A spec that needs a USB HID device makes one with
+[`virtual-hid`](../../test/support/virtual-hid/README.md): a Docker container creates it through `/dev/uhid`
+and opens its hidraw node to the user. Where Docker or `/dev/uhid` is missing the spec skips with the reason in
+its name, and `ORIVON_REQUIRE_VIRTUAL_HID=1` makes the skip a failure.
+
 **They run automatically.** `npm run test:e2e` runs every `test/**/*.test.ts` outside `test/apps/` under
 `test/vitest.e2e.config.ts`, and `.github/workflows/ci.yml`'s `e2e` job runs it on every push and
 pull request (see section How to run above).
